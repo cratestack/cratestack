@@ -92,10 +92,17 @@ impl cratestack_schema::ComputedFieldResolver for TestResolver {
         &self,
         _db: &cratestack_schema::Cratestack,
         source: &cratestack_schema::SelfClientPhoto,
+        params: Option<&cratestack_schema::SelfClientProxyParams>,
         _ctx: &CratestackContext,
     ) -> impl core::future::Future<Output = Result<String, CratestackError>> + Send {
         let storage_key = source.storageKey.clone();
-        async move { Ok(format!("https://cdn.example/{storage_key}")) }
+        let width = params.and_then(|p| p.width);
+        async move {
+            Ok(match width {
+                Some(width) => format!("https://cdn.example/{storage_key}?w={width}"),
+                None => format!("https://cdn.example/{storage_key}"),
+            })
+        }
     }
 
     fn resolve_self_client_image_badge(
@@ -178,12 +185,106 @@ async fn self_client_model_get_includes_the_resolved_computed_field() {
     // self-client's decode target actually changed.
     let photo = client
         .self_client_photos()
-        .get(&1, &[])
+        .get(&1, None, &[])
         .await
         .expect("get should succeed");
 
     assert_eq!(photo.storageKey, "media/one.png");
     assert_eq!(photo.proxyUrl, "https://cdn.example/media/one.png");
+}
+
+/// Decisive proof for the typed Rust client's `computedParams` surface
+/// (`crates/cratestack-macros/src/client/computed_params.rs`,
+/// `docs/design/computed-fields.md`'s "Downstream" section): passing a
+/// `SelfClientPhotoComputedParams { proxyUrl: Some(..width 800..) }`
+/// through `get` must change the resolved value the same way the raw
+/// `?computedParams=` query parameter does in `computed_fields_router.rs`
+/// — proving the typed struct's `to_query_value()` actually reaches the
+/// server, not just that it compiles.
+#[tokio::test]
+async fn self_client_get_with_typed_computed_params_changes_the_resolved_value() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+    seed(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let params = cratestack_schema::client::SelfClientPhotoComputedParams {
+        proxyUrl: Some(cratestack_schema::SelfClientProxyParams { width: Some(800) }),
+    };
+    let photo = client
+        .self_client_photos()
+        .get(&1, Some(&params), &[])
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(
+        photo.proxyUrl, "https://cdn.example/media/one.png?w=800",
+        "typed computedParams must reach the resolver's `width` argument"
+    );
+}
+
+/// `Default::default()` (every field `None`) must resolve to the
+/// unparameterized value — `to_query_value()` returning `None` in that
+/// case is what keeps a caller who never touches `computedParams` from
+/// silently sending an empty-but-present `?computedParams={}`.
+#[tokio::test]
+async fn self_client_get_with_default_computed_params_uses_the_unparameterized_value() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+    seed(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let params = cratestack_schema::client::SelfClientPhotoComputedParams::default();
+    let photo = client
+        .self_client_photos()
+        .get(&1, Some(&params), &[])
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(photo.proxyUrl, "https://cdn.example/media/one.png");
+}
+
+/// `list`'s typed `computedParams` parameter — same wiring as `get`,
+/// exercised through the list route instead.
+#[tokio::test]
+async fn self_client_list_with_typed_computed_params_changes_the_resolved_value() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+    seed(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let params = cratestack_schema::client::SelfClientPhotoComputedParams {
+        proxyUrl: Some(cratestack_schema::SelfClientProxyParams { width: Some(800) }),
+    };
+    let photos = client
+        .self_client_photos()
+        .list(&[], Some(&params), &[])
+        .await
+        .expect("list should succeed");
+
+    assert_eq!(photos.len(), 1);
+    assert_eq!(
+        photos[0].proxyUrl,
+        "https://cdn.example/media/one.png?w=800"
+    );
 }
 
 #[tokio::test]

@@ -13,6 +13,7 @@ use crate::shared::{ident, is_paged_model, is_primary_key, rust_type_tokens};
 pub(super) fn generate_generated_rpc_model_client(
     model: &Model,
     bearing: &BTreeSet<String>,
+    computed_params_ident: Option<&syn::Ident>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let model_name = &model.name;
     let client_ident = ident(&format!("{}Client", model.name));
@@ -41,23 +42,47 @@ pub(super) fn generate_generated_rpc_model_client(
     let update_op = format!("model.{model_name}.update");
     let delete_op = format!("model.{model_name}.delete");
 
-    Ok(quote! {
-        #[derive(Clone)]
-        pub struct #client_ident<C = ::cratestack::client_rust::CborCodec>
-        where
-            C: ::cratestack::client_rust::HttpClientCodec + Clone,
-        {
-            rpc: ::cratestack::client_rust::RpcClient<C>,
-        }
-
-        impl<C> #client_ident<C>
-        where
-            C: ::cratestack::client_rust::HttpClientCodec + Clone + Send + 'static,
-        {
-            fn new(rpc: ::cratestack::client_rust::RpcClient<C>) -> Self {
-                Self { rpc }
+    // `computed_params_ident` gates `list`/`get` on whether this model
+    // declares at least one parameterized `@computed` field
+    // (`crate::client::computed_params::model_computed_params_ident`) —
+    // an ungated model keeps the exact tokens this function emitted
+    // before this feature existed, INCLUDING `get`'s `RpcPkInput { id }`
+    // shape: only a gated model's `get` switches to `RpcGetInput`, since
+    // that's the only case with a `computedParams` value to carry.
+    let list_method = match computed_params_ident {
+        Some(computed_params_ident) => quote! {
+            /// `POST /rpc/model.X.list` — server decodes `RpcListInput`,
+            /// synthesizes a query string, and runs the same list
+            /// handler as the REST binding. Output shape is unchanged:
+            /// paged models return `Page<Model>`, non-paged return
+            /// `Vec<Model>`.
+            ///
+            /// `computed_params`, when `Some`, overwrites `input`'s own
+            /// `computed_params` field with the typed struct's encoded
+            /// value — pass `None` to use whatever `input.computed_params`
+            /// already carries (e.g. a raw hand-built value).
+            ///
+            /// Returns a [`BatchableCall`](::cratestack::client_rust::BatchableCall)
+            /// — `.await` to fire immediately, or
+            /// `.queue(&mut batch)` to defer into a multiplexed
+            /// `/rpc/batch` round-trip.
+            pub fn list(
+                &self,
+                input: &::cratestack::rpc::RpcListInput,
+                computed_params: ::core::option::Option<&#computed_params_ident>,
+            ) -> ::cratestack::client_rust::BatchableCall<C, #list_output_type> {
+                let mut input = input.clone();
+                if let Some(params) = computed_params {
+                    input.computed_params = params.to_query_value();
+                }
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #list_op,
+                    &input,
+                )
             }
-
+        },
+        None => quote! {
             /// `POST /rpc/model.X.list` — server decodes `RpcListInput`,
             /// synthesizes a query string, and runs the same list
             /// handler as the REST binding. Output shape is unchanged:
@@ -78,7 +103,32 @@ pub(super) fn generate_generated_rpc_model_client(
                     input,
                 )
             }
-
+        },
+    };
+    let get_method = match computed_params_ident {
+        Some(computed_params_ident) => quote! {
+            /// `POST /rpc/model.X.get` — wraps `id` and the typed
+            /// `computed_params`' encoded value in `RpcGetInput { id,
+            /// computed_params }` (not `RpcPkInput`, which `delete` also
+            /// decodes — see `RpcGetInput`'s own doc for why the two
+            /// aren't shared).
+            pub fn get(
+                &self,
+                id: &#primary_key_type,
+                computed_params: ::core::option::Option<&#computed_params_ident>,
+            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
+                let input = ::cratestack::rpc::RpcGetInput {
+                    id: id.clone(),
+                    computed_params: computed_params.and_then(|params| params.to_query_value()),
+                };
+                ::cratestack::client_rust::BatchableCall::new(
+                    self.rpc.clone(),
+                    #get_op,
+                    &input,
+                )
+            }
+        },
+        None => quote! {
             /// `POST /rpc/model.X.get` — wraps `id` in `RpcPkInput { id }`.
             pub fn get(
                 &self,
@@ -93,6 +143,29 @@ pub(super) fn generate_generated_rpc_model_client(
                     &input,
                 )
             }
+        },
+    };
+
+    Ok(quote! {
+        #[derive(Clone)]
+        pub struct #client_ident<C = ::cratestack::client_rust::CborCodec>
+        where
+            C: ::cratestack::client_rust::HttpClientCodec + Clone,
+        {
+            rpc: ::cratestack::client_rust::RpcClient<C>,
+        }
+
+        impl<C> #client_ident<C>
+        where
+            C: ::cratestack::client_rust::HttpClientCodec + Clone + Send + 'static,
+        {
+            fn new(rpc: ::cratestack::client_rust::RpcClient<C>) -> Self {
+                Self { rpc }
+            }
+
+            #list_method
+
+            #get_method
 
             /// `POST /rpc/model.X.create` — body is the create input
             /// directly (no envelope; server delegates to the existing

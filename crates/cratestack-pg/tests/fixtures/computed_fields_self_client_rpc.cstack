@@ -10,13 +10,25 @@ transport rpc
 // `BatchableCall<C, super::wire::<Owner>>`) got the same fix as the REST
 // ones, for both a model GET and a nested computed-bearing procedure
 // output.
+//
+// `proxyUrl` is parameterized (`params: SelfClientRpcProxyParams?`)
+// rather than bare so this fixture also exercises the generated RPC
+// client's typed `computedParams` surface
+// (`SelfClientRpcPhotoComputedParams`,
+// `crates/cratestack-macros/src/client/computed_params.rs`,
+// `crates/cratestack-macros/src/client/rpc/model.rs`'s `RpcGetInput`
+// wiring) over `get`'s `Some`/`None`.
 model SelfClientRpcPhoto {
   id Int @id
   storageKey String
-  proxyUrl String @computed
+  proxyUrl String @computed(params: SelfClientRpcProxyParams?)
 
   @@allow("read", auth() != null)
   @@allow("create", auth() != null)
+}
+
+type SelfClientRpcProxyParams {
+  width Int?
 }
 
 type SelfClientRpcImage {

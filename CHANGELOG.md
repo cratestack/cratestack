@@ -54,8 +54,12 @@ completion; the Dart and TypeScript client generators emit computed fields in re
 (excluded from create/update inputs, filters, and sorts) and add an untyped `computedParams` escape
 hatch to `get`/`list` (Dart gates it per model, offered only when the model has a *parameterized*
 computed field; TypeScript's lives on one shared query type used by every model). The generated Rust
-client has no `computedParams` surface yet (tracked follow-up) but still decodes computed field values
-correctly on responses.
+client (`include_client_schema!` and the server's own embedded self-client) gets a **typed**
+`computedParams` surface instead of an escape hatch: one `<Model>ComputedParams` struct per model with
+a parameterized field, gated the same way Dart's parameter is, with a `to_query_value()` helper that
+encodes it for both transports; gated `get`/`list` take an extra `computed_params:
+Option<&<Model>ComputedParams>` argument (RPC `get` switches to a new `RpcGetInput`, `list` overwrites
+its `RpcListInput`'s `computed_params` field), and an ungated model's `get`/`list` tokens are unchanged.
 
 ### `just cbor-example-verify-ios` no longer fails when the live log capture drops the marker
 

@@ -30,6 +30,9 @@ use std::collections::BTreeSet;
 use cratestack_core::{Model, Procedure};
 use quote::quote;
 
+use crate::client::computed_params::{
+    generate_model_computed_params_struct, model_computed_params_ident,
+};
 use crate::shared::{ident, pluralize, to_snake_case};
 
 use model::generate_generated_rpc_model_client;
@@ -40,10 +43,18 @@ pub(super) fn generate_generated_rpc_client_module(
     procedures: &[Procedure],
     bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
-    let model_clients = models
-        .iter()
-        .map(|model| generate_generated_rpc_model_client(model, bearing))
-        .collect::<Result<Vec<_>, String>>()?;
+    let mut model_clients = Vec::new();
+    for model in models {
+        if let Some(computed_params_struct) = generate_model_computed_params_struct(model) {
+            model_clients.push(computed_params_struct);
+        }
+        let computed_params_ident = model_computed_params_ident(model);
+        model_clients.push(generate_generated_rpc_model_client(
+            model,
+            bearing,
+            computed_params_ident.as_ref(),
+        )?);
+    }
     let model_client_accessors = models
         .iter()
         .map(|model| {

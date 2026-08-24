@@ -16,6 +16,7 @@ use crate::shared::{
 pub(super) fn generate_generated_model_client(
     model: &Model,
     bearing: &BTreeSet<String>,
+    computed_params_ident: Option<&syn::Ident>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let client_ident = ident(&format!("{}Client", model.name));
     let create_input_ident = ident(&format!("Create{}Input", model.name));
@@ -53,6 +54,68 @@ pub(super) fn generate_generated_model_client(
         }
     };
 
+    // `computed_params_ident` gates both `list` and `get` on whether this
+    // model declares at least one parameterized `@computed` field
+    // (`crate::client::computed_params::model_computed_params_ident`) —
+    // an ungated model keeps the exact tokens this function emitted
+    // before this feature existed (see that module's doc for why).
+    let list_method = match computed_params_ident {
+        Some(computed_params_ident) => quote! {
+            pub async fn list(
+                &self,
+                query: &[::cratestack::client_rust::QueryPair<'_>],
+                computed_params: ::core::option::Option<&#computed_params_ident>,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<#list_output_type, ::cratestack::client_rust::ClientError> {
+                let computed_params_value =
+                    computed_params.and_then(|params| params.to_query_value());
+                let mut full_query: ::std::vec::Vec<::cratestack::client_rust::QueryPair<'_>> =
+                    query.to_vec();
+                if let Some(value) = &computed_params_value {
+                    full_query.push(("computedParams", value.as_str()));
+                }
+                self.runtime.get(#route_path, &full_query, headers).await
+            }
+        },
+        None => quote! {
+            pub async fn list(
+                &self,
+                query: &[::cratestack::client_rust::QueryPair<'_>],
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<#list_output_type, ::cratestack::client_rust::ClientError> {
+                self.runtime.get(#route_path, query, headers).await
+            }
+        },
+    };
+    let get_method = match computed_params_ident {
+        Some(computed_params_ident) => quote! {
+            pub async fn get(
+                &self,
+                id: &#primary_key_type,
+                computed_params: ::core::option::Option<&#computed_params_ident>,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
+                let computed_params_value =
+                    computed_params.and_then(|params| params.to_query_value());
+                let query: &[::cratestack::client_rust::QueryPair<'_>] =
+                    match &computed_params_value {
+                        Some(value) => &[("computedParams", value.as_str())],
+                        None => &[],
+                    };
+                self.runtime.get(&format!("{}/{}", #route_path, id), query, headers).await
+            }
+        },
+        None => quote! {
+            pub async fn get(
+                &self,
+                id: &#primary_key_type,
+                headers: &[::cratestack::client_rust::HeaderPair<'_>],
+            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
+                self.runtime.get(&format!("{}/{}", #route_path, id), &[], headers).await
+            }
+        },
+    };
+
     Ok(quote! {
         #[derive(Clone)]
         pub struct #client_ident<C = ::cratestack::client_rust::CborCodec>
@@ -70,13 +133,7 @@ pub(super) fn generate_generated_model_client(
                 Self { runtime }
             }
 
-            pub async fn list(
-                &self,
-                query: &[::cratestack::client_rust::QueryPair<'_>],
-                headers: &[::cratestack::client_rust::HeaderPair<'_>],
-            ) -> Result<#list_output_type, ::cratestack::client_rust::ClientError> {
-                self.runtime.get(#route_path, query, headers).await
-            }
+            #list_method
 
             pub async fn list_view<P>(
                 &self,
@@ -90,13 +147,7 @@ pub(super) fn generate_generated_model_client(
                 #list_view_call
             }
 
-            pub async fn get(
-                &self,
-                id: &#primary_key_type,
-                headers: &[::cratestack::client_rust::HeaderPair<'_>],
-            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
-                self.runtime.get(&format!("{}/{}", #route_path, id), &[], headers).await
-            }
+            #get_method
 
             /// Same call as [`Self::get`], but returns the status and
             /// response headers alongside the record (issue #493) — read

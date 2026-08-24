@@ -17,6 +17,7 @@
 //! third arm) was removed in 0.8.5 — `TransportStyle` is Rest/Rpc only now,
 //! so this function's two arms are exhaustive without a wildcard.
 
+mod computed_params;
 mod rest;
 mod rpc;
 

@@ -254,11 +254,23 @@ unreachable over RPC get. This is a scope limit, not a gap.
   `computedParams` key for a field with no params type); TypeScript's
   `computedParams` lives on one shared query type used by every model's
   `get`/`list`, so it has no equivalent per-model gate.
-- **The generated Rust client (`include_client_schema!`) has no
-  `computedParams` surface at all in v1** (tracked follow-up) — the
-  `?computedParams=` query parameter has no constructor, builder method, or
-  argument anywhere in `cratestack-macros/src/client/`. It still *decodes*
-  computed field values correctly on responses (via the client-side struct
-  shapes described above), it just cannot request non-default resolver
-  parameters.
+- **The generated Rust client** (both `include_client_schema!` and the
+  server's own embedded self-client, since both go through the single
+  `crate::client::generate_client_module` call site) has a **typed**
+  `computedParams` surface, unlike Dart/TS's untyped escape hatches above —
+  `cratestack-macros/src/client/computed_params.rs` emits one
+  `<Model>ComputedParams` struct per model with at least one *parameterized*
+  `@computed(params: <Type>?)` field (same per-model gate Dart uses; a
+  bare-`@computed`-only model gets neither the struct nor an extra
+  parameter), with one `Option<super::types::<Params>>` field per resolver
+  and a `to_query_value()` helper that serializes to the same JSON-object
+  text both transports expect (`None` when every field is unset, matching
+  the server's "absent key -> resolver gets `None`" default). `get`/`list`
+  on a gated model's REST client take an extra `computed_params:
+  Option<&<Model>ComputedParams>` parameter; RPC's `get` switches from
+  `RpcPkInput` to `RpcGetInput { id, computed_params }` and `list` clones
+  its `RpcListInput` and overwrites `computed_params` with the typed
+  struct's encoded value. An ungated model's `get`/`list` tokens are
+  unchanged from before this surface existed, including RPC `get`'s
+  `RpcPkInput` shape.
 - LSP: `@computed` added to attribute completion if a list exists.

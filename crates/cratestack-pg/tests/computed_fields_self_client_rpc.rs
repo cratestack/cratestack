@@ -72,10 +72,17 @@ impl cratestack_schema::ComputedFieldResolver for TestResolver {
         &self,
         _db: &cratestack_schema::Cratestack,
         source: &cratestack_schema::SelfClientRpcPhoto,
+        params: Option<&cratestack_schema::SelfClientRpcProxyParams>,
         _ctx: &CratestackContext,
     ) -> impl core::future::Future<Output = Result<String, CratestackError>> + Send {
         let storage_key = source.storageKey.clone();
-        async move { Ok(format!("https://cdn.example/{storage_key}")) }
+        let width = params.and_then(|p| p.width);
+        async move {
+            Ok(match width {
+                Some(width) => format!("https://cdn.example/{storage_key}?w={width}"),
+                None => format!("https://cdn.example/{storage_key}"),
+            })
+        }
     }
 
     fn resolve_self_client_rpc_image_badge(
@@ -155,12 +162,105 @@ async fn rpc_self_client_model_get_includes_the_resolved_computed_field() {
     // SelfClientRpcPhoto`, which has no `proxyUrl` field at all.
     let photo = client
         .self_client_rpc_photos()
-        .get(&1)
+        .get(&1, None)
         .await
         .expect("get should succeed");
 
     assert_eq!(photo.storageKey, "media/rpc.png");
     assert_eq!(photo.proxyUrl, "https://cdn.example/media/rpc.png");
+}
+
+/// RPC counterpart to
+/// `computed_fields_self_client.rs`'s typed-`computedParams` proof:
+/// `RpcGetInput { id, computed_params }` (`crates/cratestack-macros/src/
+/// client/rpc/model.rs`) must carry the typed struct's encoded value all
+/// the way through the RPC dispatcher's `parse_model_fetch_query` reuse
+/// (`docs/design/computed-fields.md`'s "Parameterized resolvers on the
+/// wire" section) to the resolver.
+#[tokio::test]
+async fn rpc_self_client_get_with_typed_computed_params_changes_the_resolved_value() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+    seed(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let params = cratestack_schema::client::SelfClientRpcPhotoComputedParams {
+        proxyUrl: Some(cratestack_schema::SelfClientRpcProxyParams { width: Some(800) }),
+    };
+    let photo = client
+        .self_client_rpc_photos()
+        .get(&1, Some(&params))
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(
+        photo.proxyUrl, "https://cdn.example/media/rpc.png?w=800",
+        "typed computedParams must reach the resolver's `width` argument over RPC"
+    );
+}
+
+/// `Default::default()` (every field `None`) must resolve to the
+/// unparameterized value over RPC, same as REST.
+#[tokio::test]
+async fn rpc_self_client_get_with_default_computed_params_uses_the_unparameterized_value() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+    seed(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let params = cratestack_schema::client::SelfClientRpcPhotoComputedParams::default();
+    let photo = client
+        .self_client_rpc_photos()
+        .get(&1, Some(&params))
+        .await
+        .expect("get should succeed");
+
+    assert_eq!(photo.proxyUrl, "https://cdn.example/media/rpc.png");
+}
+
+/// `list`'s typed `computedParams` parameter over RPC — clones the
+/// caller's `RpcListInput` and overwrites its `computed_params` field
+/// with the typed struct's encoded value
+/// (`crates/cratestack-macros/src/client/rpc/model.rs`).
+#[tokio::test]
+async fn rpc_self_client_list_with_typed_computed_params_changes_the_resolved_value() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+    seed(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let params = cratestack_schema::client::SelfClientRpcPhotoComputedParams {
+        proxyUrl: Some(cratestack_schema::SelfClientRpcProxyParams { width: Some(800) }),
+    };
+    let photos = client
+        .self_client_rpc_photos()
+        .list(&cratestack::rpc::RpcListInput::default(), Some(&params))
+        .await
+        .expect("list should succeed");
+
+    assert_eq!(photos.len(), 1);
+    assert_eq!(
+        photos[0].proxyUrl,
+        "https://cdn.example/media/rpc.png?w=800"
+    );
 }
 
 #[tokio::test]
