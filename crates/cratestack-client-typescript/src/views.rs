@@ -5,7 +5,10 @@ use cratestack_core::{EnumDecl, Field, Model, TypeArity};
 use serde::Serialize;
 
 use crate::naming::{escape_ts_string, pluralize, to_camel_case, to_kebab_case, ts_identifier};
-use crate::types::{is_paged_model, model_allows_create, primary_key_field, ts_type};
+use crate::types::{
+    computed_params_fields, has_parameterized_computed_fields, is_paged_model, model_allows_create,
+    primary_key_field, ts_type,
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnumView {
@@ -69,6 +72,21 @@ pub(crate) struct ModelApiView {
     pub(crate) create_mutation_key: String,
     pub(crate) update_mutation_key: String,
     pub(crate) delete_mutation_key: String,
+    /// The generated `<Model>ComputedParams` interface's own name (e.g.
+    /// `ImageComputedParams`) when `model` declares at least one
+    /// parameterized `@computed(params: <Type>?)` field
+    /// (`docs/design/computed-fields.md`), else `None`. This is the
+    /// per-model type-system gate: templates instantiate
+    /// `CratestackQueryRequestConfig<{{ computed_params_interface }}>`
+    /// only when this is `Some`, and fall back to the bare (default-`never`)
+    /// generic otherwise — so passing `computedParams` on a model with no
+    /// parameterized computed field is a `tsc` error, matching the
+    /// server's own 422 for the same case. The interface's own field list
+    /// is built separately by [`build_computed_params_interface`] and
+    /// pushed alongside every other generated interface (never carried on
+    /// this view) — this field only carries the *name* a query-config
+    /// generic instantiation references.
+    pub(crate) computed_params_interface: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -156,7 +174,51 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         create_mutation_key: format!("{}Create", to_camel_case(&model.name)),
         update_mutation_key: format!("{}Update", to_camel_case(&model.name)),
         delete_mutation_key: format!("{}Delete", to_camel_case(&model.name)),
+        computed_params_interface: has_parameterized_computed_fields(model)
+            .then(|| computed_params_interface_name(&model.name)),
     }
+}
+
+/// The generated `<Model>ComputedParams` interface's own name — always
+/// `{ModelName}ComputedParams`, the same convention `Create{Model}Input`/
+/// `Update{Model}Input` already use for their own model-derived names.
+pub(crate) fn computed_params_interface_name(model_name: &str) -> String {
+    format!("{model_name}ComputedParams")
+}
+
+/// Builds the `<Model>ComputedParams` interface (`docs/design/computed-fields.md`
+/// §"Downstream") — one optional property per parameterized
+/// `@computed(params: <Type>?)` field on `model`, wire-keyed by the
+/// field's own name and typed as its declared params `type`. `None` when
+/// `model` has no such field, which callers treat as "no interface to
+/// emit" (mirrors [`ModelApiView::computed_params_interface`] being
+/// `None` in that same case).
+///
+/// Deliberately not built on top of [`build_interface`]: that helper maps
+/// a field's own `TypeRef` through `ts_type`, which would append `| null`
+/// for the field's arity — but here the *interface property* itself
+/// carries the optionality (every entry is `?`, since a caller supplying
+/// `computedParams` need not populate every parameterized field), and the
+/// *value* type is the params `type`'s bare name, not the computed
+/// field's own declared type.
+pub(crate) fn build_computed_params_interface(model: &Model) -> Option<InterfaceView> {
+    let fields = computed_params_fields(model);
+    if fields.is_empty() {
+        return None;
+    }
+    Some(InterfaceView {
+        name: computed_params_interface_name(&model.name),
+        has_fields: true,
+        fields: fields
+            .into_iter()
+            .map(|(field, params_type)| FieldView {
+                property: ts_identifier(&field.name),
+                wire_name: field.name.clone(),
+                type_name: params_type.to_owned(),
+                optional: true,
+            })
+            .collect(),
+    })
 }
 
 /// `list_query_key`/`get_query_key`/etc. are each derived from

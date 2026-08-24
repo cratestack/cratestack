@@ -54,7 +54,7 @@ import {
 
 export function {{ list_hook }}(
   runtime: CratestackRuntime,
-  options: CratestackQueryRequestConfig = {},
+  options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
   config?: SWRConfiguration<{{ model.list_return_type }}, Error>,
 ): SWRResponse<{{ model.list_return_type }}, Error> {
   return useSWR(swrKeys.model.{{ model.name }}.list(options.query), () => {{ list_fn }}(runtime, options), config);
@@ -68,7 +68,7 @@ export function {{ list_hook }}(
 export function {{ get_hook }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }} | null | undefined,
-  options: CratestackQueryRequestConfig = {},
+  options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
   config?: SWRConfiguration<{{ model_interface.name }}, Error>,
 ): SWRResponse<{{ model_interface.name }}, Error> {
   return useSWR(

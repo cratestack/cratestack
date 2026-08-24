@@ -287,10 +287,11 @@ fn create_is_gated_on_allow_create_policy() {
 
 /// A `model` computed field (`docs/design/computed-fields.md`) is part of
 /// the response interface but is never a create/update input, filter, or
-/// sort key — and `get`/`list` accept the escape-hatch `computedParams`
-/// query parameter (`CratestackFetchQuery.computedParams`, a
-/// `Record<string, unknown>` keyed by computed field name — v1, untyped
-/// per model; see this crate's report on why).
+/// sort key — and `get`/`list` accept a typed, per-model-gated
+/// `computedParams` query parameter (`CratestackFetchQuery<TComputedParams>`,
+/// gated to the generated `<Model>ComputedParams` interface — the field is
+/// `@computed(params: ProxyParams?)`, a *parameterized* computed field, so
+/// `Image` is gated).
 #[test]
 fn model_computed_field_is_response_only_and_computed_params_is_available_on_reads() {
     let schema = cratestack_parser::parse_schema(
@@ -298,9 +299,14 @@ fn model_computed_field_is_response_only_and_computed_params_is_available_on_rea
 model Image {
   id Int @id
   storageKey String
-  proxyUrl String @computed
+  proxyUrl String @computed(params: ProxyParams?)
 
   @@allow("create", true)
+}
+
+type ProxyParams {
+  width Int?
+  height Int?
 }
 "#,
     )
@@ -311,6 +317,7 @@ model Image {
 
     let models = package_file(&package, "src/models.ts");
     let queries = package_file(&package, "src/queries.ts");
+    let client = package_file(&package, "src/client.ts");
 
     // Response interface: computed field present exactly like any other
     // field.
@@ -371,15 +378,40 @@ model Image {
         "ImageSortField union must never carry a computed field variant: {models}"
     );
 
-    // The shared query type carries the escape-hatch computedParams
-    // field, folded into the query-parameter object by `toSearchQuery`.
+    // The shared query type carries the typed computedParams field,
+    // folded into the query-parameter object by `toSearchQuery`.
     assert!(
-        queries.contains("computedParams?: Record<string, unknown>;"),
-        "CratestackFetchQuery must carry computedParams: {queries}"
+        queries.contains("export interface CratestackFetchQuery<TComputedParams = never>"),
+        "CratestackFetchQuery must be generic over TComputedParams (default never): {queries}"
+    );
+    assert!(
+        queries.contains("computedParams?: TComputedParams;"),
+        "CratestackFetchQuery must carry a typed computedParams: {queries}"
     );
     assert!(
         queries.contains("output.computedParams = query.computedParams;"),
         "toSearchQuery must fold computedParams into the request's query parameters: {queries}"
+    );
+
+    // `Image` declares a *parameterized* computed field, so it's gated:
+    // `models.ts` gets a generated `ImageComputedParams` interface (one
+    // optional prop per parameterized computed field, typed as its
+    // declared params interface, wire-keyed by field name), and
+    // `client.ts`'s `list`/`get` instantiate `CratestackQueryRequestConfig`
+    // with it instead of relying on the `never` default.
+    assert!(
+        models.contains("export interface ImageComputedParams {\n  proxyUrl?: ProxyParams;\n}"),
+        "models.ts must carry the generated ImageComputedParams interface: {models}"
+    );
+    assert!(
+        client.contains("list(options: CratestackQueryRequestConfig<ImageComputedParams> = {})"),
+        "client.ts's list() must instantiate CratestackQueryRequestConfig<ImageComputedParams>: {client}"
+    );
+    assert!(
+        client.contains(
+            "get(id: number, options: CratestackQueryRequestConfig<ImageComputedParams> = {})"
+        ),
+        "client.ts's get() must instantiate CratestackQueryRequestConfig<ImageComputedParams>: {client}"
     );
 }
 

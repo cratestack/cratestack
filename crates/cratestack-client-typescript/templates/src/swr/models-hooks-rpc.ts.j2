@@ -50,11 +50,14 @@ import {
   type {{ create_input.name }},
 {% endif %}
   type {{ update_input.name }},
+{% if model.computed_params_interface %}
+  type {{ model.api_name }}GetOptions,
+{% endif %}
 } from "./{{ file_stem }}.js";
 
 export function {{ list_hook }}(
   runtime: CratestackRpcRuntime,
-  query: CratestackRpcListQuery = {},
+  query: CratestackRpcListQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
   config?: SWRConfiguration<{{ model.list_return_type }}, Error>,
 ): SWRResponse<{{ model.list_return_type }}, Error> {
   return useSWR(swrKeys.model.{{ model.name }}.list(query), () => {{ list_fn }}(runtime, query), config);
@@ -65,6 +68,22 @@ export function {{ list_hook }}(
 // `swrKeys.model.{{ model.name }}.get` returns `null` in that case, which is
 // SWR's conditional-fetching idiom: `useSWR(null, ...)` never fires a
 // request, unlike calling {{ get_fn }} directly with `undefined` would.
+{% if model.computed_params_interface %}
+export function {{ get_hook }}(
+  runtime: CratestackRpcRuntime,
+  id: {{ model.primary_key_type }} | null | undefined,
+  options: {{ model.api_name }}GetOptions = {},
+  config?: SWRConfiguration<{{ model_interface.name }}, Error>,
+): SWRResponse<{{ model_interface.name }}, Error> {
+  return useSWR(
+    // `computedParams` must be part of the cache key — see `../swr-keys.js`'s
+    // `get` key comment for why.
+    swrKeys.model.{{ model.name }}.get(id, options.computedParams),
+    () => {{ get_fn }}(runtime, id as {{ model.primary_key_type }}, options),
+    config,
+  );
+}
+{% else %}
 export function {{ get_hook }}(
   runtime: CratestackRpcRuntime,
   id: {{ model.primary_key_type }} | null | undefined,
@@ -76,6 +95,7 @@ export function {{ get_hook }}(
     config,
   );
 }
+{% endif %}
 
 {% if create_input %}
 export function {{ create_hook }}(

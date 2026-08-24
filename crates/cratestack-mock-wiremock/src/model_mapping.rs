@@ -85,6 +85,17 @@ fn build_static_rpc_mappings(
 
 fn build_static_mapping(route: &VerbRoute, body: &Value, model_name: &str) -> Value {
     json!({
+        // `urlPath` matches on the request path only — WireMock ignores
+        // any query string entirely unless a `queryParameters` matcher is
+        // also present, and none is added here. This is load-bearing for
+        // `?computedParams=` (`docs/design/computed-fields.md`): a real
+        // client's `get`/`list` call carrying a `computedParams` query
+        // parameter still matches this stub exactly like a request with
+        // none, since the generator has no way to synthesize a response
+        // that varies per resolver-params value anyway (see
+        // `docs/design/wiremock-stubs.md`'s "How do callers vary
+        // responses?" open question). Do not add a `queryParameters`
+        // matcher here without also handling `computedParams`.
         "request": { "method": route.method, "urlPath": route.url },
         "response": {
             "status": route.status,

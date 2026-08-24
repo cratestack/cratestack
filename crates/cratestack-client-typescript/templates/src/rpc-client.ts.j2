@@ -34,10 +34,21 @@ export class {{ client_class_name }} {
 }
 
 {% for model in models %}
+{% if model.computed_params_interface %}
+/** Extends {@link CratestackRpcCallOptions} with the typed `computedParams`
+ *  escape hatch for `{{ model.api_name }}.get` (`docs/design/computed-fields.md`)
+ *  — {{ model.name }} declares at least one parameterized
+ *  `@computed(params: <Type>?)` field, so (unlike a model with none) it
+ *  gets this option, rather than the bare `CratestackRpcCallOptions`. */
+export interface {{ model.api_name }}GetOptions extends CratestackRpcCallOptions {
+  computedParams?: {{ model.computed_params_interface }};
+}
+
+{% endif %}
 export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
-  list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
+  list(query: CratestackRpcListQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
     return this.runtime.call<Record<string, unknown>, unknown>(
       "model.{{ model.name }}.list",
       toRpcListInput(query),
@@ -45,6 +56,17 @@ export class {{ model.api_name }} {
     ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
+{% if model.computed_params_interface %}
+  get(id: {{ model.primary_key_type }}, options: {{ model.api_name }}GetOptions = {}): Promise<{{ model.name }}> {
+    return this.runtime.call<Record<string, unknown>, unknown>(
+      "model.{{ model.name }}.get",
+      options.computedParams !== undefined
+        ? { id, computedParams: JSON.stringify(options.computedParams) }
+        : { id },
+      options,
+    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
+  }
+{% else %}
   get(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
     return this.runtime.call<{ id: {{ model.primary_key_type }} }, unknown>(
       "model.{{ model.name }}.get",
@@ -52,6 +74,7 @@ export class {{ model.api_name }} {
       options,
     ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
+{% endif %}
 
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {

@@ -70,9 +70,20 @@ export interface {{ update_input.name }} {
 {% endif %}
 }
 
+{% if model.computed_params_interface %}
+/** Extends {@link CratestackRpcCallOptions} with the typed `computedParams`
+ *  escape hatch for {@link {{ get_fn }} } (`docs/design/computed-fields.md`)
+ *  — {{ model.name }} declares at least one parameterized
+ *  `@computed(params: <Type>?)` field, so (unlike a model with none) it
+ *  gets this option, rather than the bare `CratestackRpcCallOptions`. */
+export interface {{ model.api_name }}GetOptions extends CratestackRpcCallOptions {
+  computedParams?: {{ model.computed_params_interface }};
+}
+
+{% endif %}
 export async function {{ list_fn }}(
   runtime: CratestackRpcRuntime,
-  query: CratestackRpcListQuery = {},
+  query: CratestackRpcListQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ model.list_return_type }}> {
   return runtime.call<Record<string, unknown>, unknown>(
@@ -82,6 +93,21 @@ export async function {{ list_fn }}(
   ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
 }
 
+{% if model.computed_params_interface %}
+export async function {{ get_fn }}(
+  runtime: CratestackRpcRuntime,
+  id: {{ model.primary_key_type }},
+  options: {{ model.api_name }}GetOptions = {},
+): Promise<{{ model_interface.name }}> {
+  return runtime.call<Record<string, unknown>, unknown>(
+    "model.{{ model.name }}.get",
+    options.computedParams !== undefined
+      ? { id, computedParams: JSON.stringify(options.computedParams) }
+      : { id },
+    options,
+  ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
+}
+{% else %}
 export async function {{ get_fn }}(
   runtime: CratestackRpcRuntime,
   id: {{ model.primary_key_type }},
@@ -93,6 +119,7 @@ export async function {{ get_fn }}(
     options,
   ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
+{% endif %}
 
 {% if create_input %}
 export async function {{ create_fn }}(

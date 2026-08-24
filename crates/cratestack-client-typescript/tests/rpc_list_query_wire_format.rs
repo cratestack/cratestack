@@ -25,6 +25,18 @@
 //! no Rust CI job in this repo currently provisions Node, so this
 //! degrades to a printed skip rather than failing a job that was never
 //! going to have `node`/`npx` on `PATH`.
+//!
+//! Also covers `computedParams` (`docs/design/computed-fields.md`'s typed
+//! `computedParams` surface, stage 4): the TS side passes a plain object
+//! (`{ proxyUrl: { width: 800 } }`), and the Rust side asserts against
+//! `RpcListInput::computed_params`'s `Option<String>` — the raw
+//! `JSON.stringify`d text, not a nested JSON value. Deliberately does NOT
+//! `JSON.stringify` on the TS side itself; `toRpcListInput` must do that
+//! internally, so a regression that emits the object directly is caught
+//! here as a concrete value mismatch (proven by temporarily reverting
+//! that stringify call and confirming this test fails with exactly that
+//! shape of diff — not committed, see this crate's own report for the
+//! transcript).
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -109,6 +121,13 @@ const input = toRpcListInput({{
   where: "published=true",
   or: "authorId=1|authorId=2",
   filters: [{{ key: "authorId", value: "42" }}],
+  // `toRpcListInput` must JSON.stringify this into a raw string, matching
+  // `RpcListInput::computed_params`'s `Option<String>` wire shape
+  // (`docs/design/computed-fields.md`) — NOT hand `JSON.stringify` it
+  // here, so a regression that emits the object directly (rather than
+  // stringifying inside `toRpcListInput`) is caught by the mismatch
+  // below, not silently matched by this script doing the encoding itself.
+  computedParams: {{ proxyUrl: {{ width: 800 }} }},
 }});
 console.log(JSON.stringify(input));
 "#
@@ -152,11 +171,11 @@ console.log(JSON.stringify(input));
             key: "authorId".to_owned(),
             value: "42".to_owned(),
         }],
-        // The generated TypeScript RPC client has no `computedParams`
-        // surface yet (docs/design/computed-fields.md's "Downstream"
-        // section, `include_client_schema!` Rust client parity note) —
-        // this stays `None` until that follow-up lands.
-        computed_params: None,
+        // Must equal `JSON.stringify({ proxyUrl: { width: 800 } })`
+        // byte-for-byte — the wire contract is the raw JSON-object TEXT,
+        // not a nested object (`RpcListInput::computed_params`'s own doc
+        // comment; `docs/design/computed-fields.md`'s "RPC" section).
+        computed_params: Some("{\"proxyUrl\":{\"width\":800}}".to_owned()),
     };
     let expected_json = serde_json::to_value(&expected_input)
         .expect("serialize the real RpcListInput the server actually decodes");

@@ -34,6 +34,11 @@
 // variants happen to be in cache.
 
 import type { CratestackRpcListQuery } from "./queries.js";
+{% for model in models %}
+{% if model.computed_params_interface %}
+import type { {{ model.computed_params_interface }} } from "./models/{{ model.file_stem }}.js";
+{% endif %}
+{% endfor %}
 {% for procedure in procedures_file.procedures %}
 {% if procedure.kind == "query" %}
 import type { {{ procedure.args_name }} } from "./procedures.js";
@@ -44,9 +49,19 @@ export const swrKeys = {
   model: {
 {% for model in models %}
     {{ model.name }}: {
-      list: (query: CratestackRpcListQuery = {}) => ["model.{{ model.name }}.list", query] as const,
+      list: (query: CratestackRpcListQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}) => ["model.{{ model.name }}.list", query] as const,
+{% if model.computed_params_interface %}
+      // `computedParams` MUST be part of the cache key (not just `id`):
+      // two reads of the same id with different resolver params are
+      // different responses (`docs/design/computed-fields.md`), so
+      // omitting it here would collide two genuinely different cached
+      // values under one key.
+      get: (id: {{ model.primary_key_type }} | null | undefined, computedParams?: {{ model.computed_params_interface }}) =>
+        id == null ? null : (["model.{{ model.name }}.get", id, computedParams] as const),
+{% else %}
       get: (id: {{ model.primary_key_type }} | null | undefined) =>
         id == null ? null : (["model.{{ model.name }}.get", id] as const),
+{% endif %}
       listMatches: (key: unknown): boolean =>
         Array.isArray(key) && key[0] === "model.{{ model.name }}.list",
 {% if model.allows_create %}

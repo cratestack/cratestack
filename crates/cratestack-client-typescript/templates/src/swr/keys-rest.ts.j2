@@ -32,6 +32,11 @@
 // variants happen to be in cache.
 
 import type { CratestackFetchQuery } from "./queries.js";
+{% for model in models %}
+{% if model.computed_params_interface %}
+import type { {{ model.computed_params_interface }} } from "./models/{{ model.file_stem }}.js";
+{% endif %}
+{% endfor %}
 {% for procedure in procedures_file.procedures %}
 {% if procedure.kind == "query" %}
 import type { {{ procedure.args_name }} } from "./procedures.js";
@@ -42,8 +47,8 @@ export const swrKeys = {
   model: {
 {% for model in models %}
     {{ model.name }}: {
-      list: (query?: CratestackFetchQuery) => ["{{ model.route }}", "list", query] as const,
-      get: (id: {{ model.primary_key_type }} | null | undefined, query?: CratestackFetchQuery) =>
+      list: (query?: CratestackFetchQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %}) => ["{{ model.route }}", "list", query] as const,
+      get: (id: {{ model.primary_key_type }} | null | undefined, query?: CratestackFetchQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %}) =>
         id == null ? null : (["{{ model.route }}", "detail", id, query] as const),
       listMatches: (key: unknown): boolean =>
         Array.isArray(key) && key[0] === "{{ model.route }}" && key[1] === "list",

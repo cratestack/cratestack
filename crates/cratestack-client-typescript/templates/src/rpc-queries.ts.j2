@@ -48,8 +48,14 @@ export interface RpcListPredicate {
  *  `RpcListInput` field of the same semantics; see this file's header
  *  comment for the two departures from `CratestackFetchQuery` (`where`/
  *  `or` are DSL strings, not objects; `includeFields` serializes under
- *  the wire key `include_fields`). */
-export interface CratestackRpcListQuery {
+ *  the wire key `include_fields`).
+ *
+ *  `TComputedParams` is this model's own generated `<Model>ComputedParams`
+ *  interface (`docs/design/computed-fields.md`) when the model declares a
+ *  parameterized `@computed(params: <Type>?)` field, or the default
+ *  `never` otherwise — same per-model gate `CratestackFetchQuery` uses on
+ *  the REST side, enforced by `tsc`. */
+export interface CratestackRpcListQuery<TComputedParams = never> {
   limit?: number;
   offset?: number;
   fields?: string[];
@@ -59,13 +65,24 @@ export interface CratestackRpcListQuery {
   where?: string;
   or?: string;
   filters?: RpcListPredicate[];
+  /** Params for `@computed(params: <Type>?)` resolver fields, keyed by
+   *  computed field name — e.g. `{ proxyUrl: { width: 800 } }`. Unlike
+   *  REST's `CratestackFetchQuery.computedParams`, this travels on the
+   *  wire as `RpcListInput::computed_params`'s raw JSON-object TEXT (a
+   *  `String`, not a nested object) — see that field's own doc comment
+   *  in `cratestack-core::rpc::inputs` for why (CBOR `Option::None`
+   *  corruption through `serde_json::Value`, `/rpc/batch`'s re-encode
+   *  round trip). `toRpcListInput` below does the `JSON.stringify`. */
+  computedParams?: TComputedParams;
 }
 
 /** Builds the exact object shape `RpcListInput` expects on the wire.
  *  Omits every unset/empty field, mirroring `RpcListInput`'s
  *  `skip_serializing_if` attributes so an empty query serializes the same
  *  as `RpcListInput::default()` — an empty object, `{}`. */
-export function toRpcListInput(query?: CratestackRpcListQuery): Record<string, unknown> {
+export function toRpcListInput<TComputedParams = never>(
+  query?: CratestackRpcListQuery<TComputedParams>,
+): Record<string, unknown> {
   const input: Record<string, unknown> = {};
   if (!query) {
     return input;
@@ -97,6 +114,9 @@ export function toRpcListInput(query?: CratestackRpcListQuery): Record<string, u
   }
   if (query.filters?.length) {
     input.filters = query.filters;
+  }
+  if (query.computedParams !== undefined) {
+    input.computedParams = JSON.stringify(query.computedParams);
   }
 
   return input;

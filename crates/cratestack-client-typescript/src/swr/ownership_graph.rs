@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cratestack_core::{Model, Procedure};
+use cratestack_core::{Model, Procedure, computed_params_type_name};
 
 use crate::types::base_type_name;
 
@@ -36,10 +36,26 @@ pub(super) fn model_referenced_eligible_names<'a>(
     model: &'a Model,
     eligible: &BTreeSet<&str>,
 ) -> BTreeSet<&'a str> {
-    type_decl_adjacency(
-        crate::types::visible_model_fields(model).into_iter(),
-        eligible,
-    )
+    let fields = crate::types::visible_model_fields(model);
+    let mut names = type_decl_adjacency(fields.iter().copied(), eligible);
+    // A `@computed(params: <Type>?)` field's params type
+    // (`docs/design/computed-fields.md`) is a real reference to that
+    // declared `type` — the generated `<Model>ComputedParams` interface
+    // (`crate::views::build_computed_params_interface`) names it directly
+    // — but it's carried in the field's attribute text, not its own
+    // `TypeRef`, so `type_decl_adjacency` (which only walks `field.ty`)
+    // can never see it. Without this, a params type referenced by no
+    // *ordinary* field would be wrongly treated as unreachable from this
+    // model, and `--swr`'s per-model file would reference an undeclared,
+    // unimported name.
+    for field in fields.iter().copied() {
+        if let Some(params_type) = computed_params_type_name(field)
+            && eligible.contains(params_type)
+        {
+            names.insert(params_type);
+        }
+    }
+    names
 }
 
 pub(super) fn procedure_referenced_eligible_names<'a>(

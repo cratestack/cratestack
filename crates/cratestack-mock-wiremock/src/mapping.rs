@@ -53,6 +53,13 @@ pub(crate) fn build_procedure_mapping(
     Ok(json!({
         "request": {
             "method": "POST",
+            // Path-only match, same as `model_mapping::build_static_mapping`
+            // — no `queryParameters` matcher, so any query string a caller
+            // sends is ignored. Procedures have no `computedParams` surface
+            // at all (`docs/design/computed-fields.md` scopes that to model
+            // `get`/`list`), but this is the same load-bearing property:
+            // don't add a `queryParameters` matcher here without checking
+            // whether it would also need to account for that.
             "urlPath": url_path,
         },
         "response": {

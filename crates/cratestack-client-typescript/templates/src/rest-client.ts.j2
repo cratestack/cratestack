@@ -39,7 +39,7 @@ export class {{ client_class_name }} {
 export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRuntime) {}
 
-  list(options: CratestackQueryRequestConfig = {}): Promise<{{ model.list_return_type }}> {
+  list(options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}): Promise<{{ model.list_return_type }}> {
     return this.runtime.get<unknown>("{{ model.route }}", {
       headers: options.headers,
       query: toSearchQuery(options.query),
@@ -47,7 +47,7 @@ export class {{ model.api_name }} {
     }).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
-  get(id: {{ model.primary_key_type }}, options: CratestackQueryRequestConfig = {}): Promise<{{ model.name }}> {
+  get(id: {{ model.primary_key_type }}, options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}): Promise<{{ model.name }}> {
     return this.runtime.get<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
       headers: options.headers,
       query: toSearchQuery(options.query),
@@ -60,7 +60,7 @@ export class {{ model.api_name }} {
   // to get the value `update`/`delete`'s `ifMatch` option needs.
   getWithResponse(
     id: {{ model.primary_key_type }},
-    options: CratestackQueryRequestConfig = {},
+    options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
   ): Promise<CratestackResponseEnvelope<{{ model.name }}>> {
     return this.runtime.getWithResponse<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
       headers: options.headers,
