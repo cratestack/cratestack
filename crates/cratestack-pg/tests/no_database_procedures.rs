@@ -74,6 +74,7 @@ fn build_router() -> cratestack::axum::Router {
     cratestack_schema::axum::router(
         db,
         Procedures,
+        (),
         JsonCodec,
         AllowAllAuth,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

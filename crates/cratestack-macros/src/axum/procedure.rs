@@ -52,14 +52,15 @@ pub(crate) fn generate_procedure_axum_handler(
     Ok(quote! {
         // REST mount (`transport rest` / the `/$procs/<name>` route): the
         // canonical request identity IS the REST route path.
-        async fn #handler_ident<R, C, Auth>(
-            State(state): State<ProcedureRouterState<R, C, Auth>>,
+        async fn #handler_ident<R, CR, C, Auth>(
+            State(state): State<ProcedureRouterState<R, CR, C, Auth>>,
             headers: HeaderMap,
             client_ip_ctx: ClientIpContext,
             body: Bytes,
         ) -> Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -85,8 +86,8 @@ pub(crate) fn generate_procedure_axum_handler(
         // passes `POST /rpc/procedure.<name>` with the raw frame bytes so on
         // `transport rpc` the actual rpc request is the single canonical for
         // url, dispatch, signing, and logs — `/$procs/*` never appears.
-        pub(super) async fn #dispatch_ident<R, C, Auth>(
-            state: ProcedureRouterState<R, C, Auth>,
+        pub(super) async fn #dispatch_ident<R, CR, C, Auth>(
+            state: ProcedureRouterState<R, CR, C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             client_ip_ctx: ClientIpContext,
@@ -94,6 +95,7 @@ pub(crate) fn generate_procedure_axum_handler(
         ) -> Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {

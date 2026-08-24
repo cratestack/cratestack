@@ -175,6 +175,7 @@ pub fn build_router_with(procedures: Procedures) -> Router {
     cratestack_schema::axum::rpc_router(
         build_db(),
         procedures,
+        (),
         CodecSet::new(CborCodec, JsonCodec),
         HeaderAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

@@ -19,6 +19,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
     let validate_selection_ident = &p.validate_selection_ident;
     let list_builder_ident = &p.list_builder_ident;
     let serialize_model_value_ident = &p.serialize_model_value_ident;
+    let parse_computed_params_ident = &p.parse_computed_params_ident;
     let accessor_ident = &p.accessor_ident;
     let total_count_block = &p.total_count_block;
     let list_success_value = &p.list_success_value;
@@ -26,13 +27,14 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
 
     quote! {
         // REST mount (`GET /<plural>`): canonical request identity is the REST route path.
-        async fn #list_handler_ident<C, Auth>(
-            State(state): State<ModelRouterState<C, Auth>>,
+        async fn #list_handler_ident<CR, C, Auth>(
+            State(state): State<ModelRouterState<CR, C, Auth>>,
             headers: HeaderMap,
             RawQuery(raw_query): RawQuery,
             client_ip_ctx: ClientIpContext,
         ) -> Response
         where
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -56,14 +58,15 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
         // (`request_context`) and the `cratestack_route` tracing field. REST
         // passes `GET /<plural>` with an empty body; RPC dispatch passes
         // `POST /rpc/model.<M>.list` with the raw frame bytes.
-        pub(super) async fn #list_dispatch_ident<C, Auth>(
-            state: ModelRouterState<C, Auth>,
+        pub(super) async fn #list_dispatch_ident<CR, C, Auth>(
+            state: ModelRouterState<CR, C, Auth>,
             canonical: CanonicalRequest<'_>,
             headers: HeaderMap,
             client_ip_ctx: ClientIpContext,
             raw_query: Option<String>,
         ) -> Response
         where
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -148,6 +151,16 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     cratestack_detail = error.detail().unwrap_or(""), "cratestack model list selection validation failed");
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
+            // Validated before any DB access (docs/design/computed-fields.md):
+            // a malformed `computedParams` value never reaches the list query.
+            let computed_params = match #parse_computed_params_ident(query.computed_params.as_deref(), &query.selection) {
+                Ok(computed_params) => computed_params,
+                Err(error) => {
+                    ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(),
+                        cratestack_detail = error.detail().unwrap_or(""), "cratestack model list computedParams validation failed");
+                    return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
+                }
+            };
 
             let request = match #list_builder_ident(&state.db, &query, true) {
                 Ok(request) => request,
@@ -163,7 +176,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     let mut values = Vec::with_capacity(records.len());
                     let mut error = None;
                     for record in &records {
-                        match #serialize_model_value_ident(&state.db, &ctx, record, &query.selection).await {
+                        match #serialize_model_value_ident(&state.db, &state.resolvers, &ctx, record, &query.selection, Some(&computed_params)).await {
                             Ok(value) => values.push(value),
                             Err(inner) => {
                                 error = Some(inner);

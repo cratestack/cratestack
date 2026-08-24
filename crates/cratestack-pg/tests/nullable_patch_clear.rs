@@ -130,7 +130,7 @@ async fn patch_null_clears_a_nullable_column_over_json() {
     seed(pool, 1, Some("has a note")).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     // Mirrors the issue's own repro shape exactly: `name` genuinely
     // changes in the SAME request as the `null`. This matters for the
@@ -178,7 +178,7 @@ async fn absent_key_leaves_a_nullable_column_untouched() {
     seed(pool, 2, Some("keep me")).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     let response = router
         .oneshot(
@@ -212,7 +212,7 @@ async fn explicit_value_sets_a_nullable_column() {
     seed(pool, 3, None).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     let response = router
         .oneshot(
@@ -243,7 +243,7 @@ async fn omitting_a_non_nullable_field_still_means_untouched() {
     seed(pool, 4, Some("note stays")).await;
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     // `name` is non-nullable (`Option<T>`, single layer — not
     // double-Option), so this fixture's fix path doesn't touch it at all.

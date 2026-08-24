@@ -6,6 +6,7 @@
 //! rather than routing the record through `serde_json::to_value`
 //! (cratestack#430).
 
+mod computed_fields;
 mod projection_fields;
 
 use quote::quote;
@@ -13,27 +14,45 @@ use quote::quote;
 pub(super) use projection_fields::build_projection_helpers;
 
 use super::builders::RelationArmCollections;
+use super::computed::ModelComputedField;
 use super::prep::ModelHandlerPrep;
 
 pub(super) fn build_serialize_helper(
     p: &ModelHandlerPrep,
     arms: &RelationArmCollections,
+    computed_fields: &[ModelComputedField],
 ) -> proc_macro2::TokenStream {
     let serialize_model_value_ident = &p.serialize_model_value_ident;
     let project_model_value_ident = &p.project_model_value_ident;
     let model_ident = &p.model_ident;
     let relation_include_arms = &arms.relation_include_arms;
+    let computed_resolve_arms = computed_fields::build_computed_resolve_arms(computed_fields);
+    // Models with no `@computed` fields get an empty resolve-arm list —
+    // `resolvers`/`computed_params` would then be genuinely unused
+    // parameters. Reference them unconditionally instead of only when
+    // the loop is non-empty, so every model gets the exact same fn
+    // signature (`serialize_<model>_model_value<CR>`, always taking
+    // both) whether or not the schema author later adds a computed
+    // field — no signature churn at call sites either way.
+    let silence_unused_when_no_computed_fields = if computed_resolve_arms.is_empty() {
+        quote! { let _ = (resolvers, computed_params); }
+    } else {
+        proc_macro2::TokenStream::new()
+    };
 
     quote! {
-        fn #serialize_model_value_ident<'a>(
+        fn #serialize_model_value_ident<'a, CR: super::computed::ComputedFieldResolver>(
             db: &'a super::Cratestack,
+            resolvers: &'a CR,
             ctx: &'a ::cratestack::CratestackContext,
             record: &'a super::models::#model_ident,
             selection: &'a ModelSelectionQuery,
+            computed_params: Option<&'a ComputedParamsQuery>,
         ) -> ::core::pin::Pin<
             Box<dyn ::core::future::Future<Output = Result<::cratestack::ProjectedValue, CratestackError>> + Send + 'a>,
         > {
             Box::pin(async move {
+                #silence_unused_when_no_computed_fields
                 let mut object = #project_model_value_ident(record, selection.fields.as_deref())?;
 
                 for include in selection.direct_includes() {
@@ -42,6 +61,8 @@ pub(super) fn build_serialize_helper(
                         _ => unreachable!("validated include should be supported"),
                     }
                 }
+
+                #(#computed_resolve_arms)*
 
                 Ok(::cratestack::ProjectedValue::Object(object))
             })

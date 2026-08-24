@@ -213,7 +213,7 @@ async fn validation_errors_surface_as_422_over_http_with_redacted_message() {
     let pool = &test_pg.pool;
     reset_schema(pool).await;
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     let response = router
         .oneshot(

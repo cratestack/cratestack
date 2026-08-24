@@ -41,7 +41,7 @@ fn router() -> axum::Router {
         .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
         .expect("lazy pool should parse");
     let db = cratestack_schema::Cratestack::builder(pool).build();
-    cratestack_schema::axum::model_router(db, cratestack_codec_cbor::CborCodec, AllowAllAuth)
+    cratestack_schema::axum::model_router(db, (), cratestack_codec_cbor::CborCodec, AllowAllAuth)
 }
 
 async fn hit_unmatched_path_with_header(header: Option<&str>) -> StatusCode {

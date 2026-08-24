@@ -138,6 +138,7 @@ async fn subscribe_sse_receives_model_events_as_they_happen() {
     let app = cratestack_schema::axum::rpc_router(
         db.clone(),
         RpcProcedures,
+        (),
         CborCodec,
         AlwaysAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,
@@ -254,6 +255,7 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
     let router = cratestack_schema::axum::rpc_router(
         db.clone(),
         RpcProcedures,
+        (),
         CborCodec,
         AlwaysAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

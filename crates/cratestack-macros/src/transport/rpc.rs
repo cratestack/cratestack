@@ -34,6 +34,7 @@ pub(crate) fn generate_procedure_rpc_dispatch_arm(
                 ProcedureRouterState {
                     db: state.db.clone(),
                     registry: state.registry.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 },
@@ -111,6 +112,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
             #list_id => {
                 let model_state = ModelRouterState {
                     db: state.db.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 };
@@ -140,6 +142,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
             #get_id => {
                 let model_state = ModelRouterState {
                     db: state.db.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 };
@@ -169,6 +172,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
             #create_id => {
                 let model_state = ModelRouterState {
                     db: state.db.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 };
@@ -191,6 +195,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
             #update_id => {
                 let model_state = ModelRouterState {
                     db: state.db.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 };
@@ -232,6 +237,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
             #delete_id => {
                 let model_state = ModelRouterState {
                     db: state.db.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: state.auth_provider.clone(),
                 };

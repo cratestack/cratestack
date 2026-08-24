@@ -70,7 +70,14 @@ impl cratestack::AuthProvider for AllowAllAuth {
 
 fn build_router(body_limit_bytes: usize) -> cratestack::axum::Router {
     let db = cratestack_schema::Cratestack::builder().build();
-    cratestack_schema::axum::router(db, Procedures, JsonCodec, AllowAllAuth, body_limit_bytes)
+    cratestack_schema::axum::router(
+        db,
+        Procedures,
+        (),
+        JsonCodec,
+        AllowAllAuth,
+        body_limit_bytes,
+    )
 }
 
 fn ping_body(message_len: usize) -> Vec<u8> {

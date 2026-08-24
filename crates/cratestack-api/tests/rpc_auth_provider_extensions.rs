@@ -76,6 +76,7 @@ fn router() -> cratestack::axum::Router {
     cratestack_schema::axum::rpc_router(
         db,
         Procedures,
+        (),
         CborCodec,
         MarkerReadingAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

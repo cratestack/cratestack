@@ -60,6 +60,8 @@ pub use headers::{
 
 pub use projection::ProjectedValue;
 
-pub use query::{QueryExpr, parse_filter_expression, parse_query_pairs};
+pub use query::{
+    QueryExpr, parse_computed_params_object, parse_filter_expression, parse_query_pairs,
+};
 
 pub use trusted_proxy::{ForwardedHeader, TrustedProxyConfig};

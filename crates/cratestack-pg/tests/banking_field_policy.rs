@@ -116,7 +116,7 @@ async fn server_only_field_is_stripped_from_json_responses() {
 
     // Client-side: the same record encoded as JSON via the codec must
     // never include `internalScore`.
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
     let response = router
         .oneshot(
             Request::get("/vaults/1")
@@ -155,7 +155,7 @@ async fn requesting_server_only_field_via_fields_query_is_rejected() {
         .expect("seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     let response = router
         .oneshot(
@@ -193,7 +193,7 @@ async fn readonly_field_is_not_writable_via_http_patch() {
         .expect("seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     // The PATCH body tries to set `balance` (which is `@readonly`). The
     // generated `UpdateAccountInput` doesn't have that field, so JSON

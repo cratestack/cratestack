@@ -386,6 +386,7 @@ mod advanced_policy_schema {
             AdvancedProcedures {
                 invocations: std::sync::Arc::clone(&invocations),
             },
+            (),
             codec.clone(),
             AdvancedPolicyRouteAuthProvider,
         );
@@ -669,17 +670,24 @@ fn test_db() -> cratestack_schema::Cratestack {
 }
 
 fn test_model_router(codec: CborCodec) -> cratestack::axum::Router {
-    cratestack_schema::axum::model_router(test_db(), codec, TestAuthProvider)
+    cratestack_schema::axum::model_router(test_db(), (), codec, TestAuthProvider)
 }
 
 fn test_procedure_router(codec: CborCodec) -> cratestack::axum::Router {
-    cratestack_schema::axum::procedure_router(test_db(), TestProcedures, codec, TestAuthProvider)
+    cratestack_schema::axum::procedure_router(
+        test_db(),
+        TestProcedures,
+        (),
+        codec,
+        TestAuthProvider,
+    )
 }
 
 fn test_combined_router(codec: CborCodec) -> cratestack::axum::Router {
     cratestack_schema::axum::router(
         test_db(),
         TestProcedures,
+        (),
         codec,
         TestAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,
@@ -690,6 +698,7 @@ fn test_negotiated_procedure_router() -> cratestack::axum::Router {
     cratestack_schema::axum::procedure_router(
         test_db(),
         TestProcedures,
+        (),
         CodecSet::new(CborCodec, JsonCodec),
         TestAuthProvider,
     )
@@ -1938,6 +1947,36 @@ mod computed_fields_schema {
         );
         assert_ne!(without_params, with_params);
     }
+
+    // No `procedure` declarations in this fixture, so `ProcedureRegistry`
+    // has zero required methods — still needs a real (non-`()`) impl,
+    // since the macro only special-cases the *computed*-resolver trait
+    // for a unit fallback (docs/design/computed-fields.md decision 4),
+    // not every zero-method generated trait.
+    #[derive(Clone)]
+    struct NoProcedures;
+
+    impl cratestack_schema::procedures::ProcedureRegistry for NoProcedures {}
+
+    // `Image`/`ProxyParams` are `type`s, not `model`s, so this schema has
+    // zero models — `model_router`/`procedure_router`/`router` still
+    // compile and build (empty) routers with a real, non-`()` resolver.
+    // `router()`'s new resolver parameter is unconditional
+    // (docs/design/computed-fields.md decision 4), independent of
+    // whether the schema has any *model* computed fields to serve over
+    // HTTP.
+    #[tokio::test]
+    async fn router_construction_compiles_with_a_real_resolver() {
+        let db = computed_fields_test_db();
+        let _router = cratestack_schema::axum::router(
+            db,
+            NoProcedures,
+            TestComputedFieldResolver,
+            CborCodec,
+            TestAuthProvider,
+            cratestack::DEFAULT_BODY_LIMIT_BYTES,
+        );
+    }
 }
 
 mod model_computed_fields_schema {
@@ -2041,6 +2080,200 @@ mod model_computed_fields_schema {
             .expect("computed field should resolve");
 
         assert_eq!(resolved, "https://imgproxy.example/media/original.png");
+    }
+
+    #[derive(Clone)]
+    struct NoProcedures;
+
+    impl cratestack_schema::procedures::ProcedureRegistry for NoProcedures {}
+
+    /// Router construction compiles with a real (non-`()`) resolver for
+    /// a schema whose only computed field is on a `model` (as opposed to
+    /// `computed_fields_schema` above, whose only computed fields are on
+    /// a `type`) — both owner kinds go through the same generated
+    /// `ComputedFieldResolver` trait and `router()` parameter.
+    #[tokio::test]
+    async fn router_construction_compiles_with_a_real_resolver() {
+        let db = model_computed_fields_test_db();
+        let _router = cratestack_schema::axum::router(
+            db,
+            NoProcedures,
+            TestModelComputedFieldResolver,
+            CborCodec,
+            TestAuthProvider,
+            cratestack::DEFAULT_BODY_LIMIT_BYTES,
+        );
+    }
+}
+
+// `computed_fields_router.cstack` (also used by the PG-gated e2e suite in
+// `tests/computed_fields_router.rs`) has both a parameterized computed
+// field (`CompRouterPhoto.proxyUrl`) and a bare one (`thumbnailUrl`) on
+// the same model — the shape needed to exercise every `?computedParams=`
+// validation error kind (docs/design/computed-fields.md's "Parameterized
+// resolvers on the wire" section) DB-lessly: `handlers_crud.rs`/
+// `handlers_list.rs` are generated to validate `computedParams` strictly
+// *before* any DB access (right after selection validation), so a
+// malformed/illegal value never reaches `find_unique`/`find_many` at all
+// — this module proves that ordering by using a resolver that panics if
+// ever invoked, over a lazily-connected pool the tests below never
+// actually query.
+mod computed_params_validation_schema {
+    use super::*;
+
+    include_server_schema!(
+        "tests/fixtures/computed_fields_router.cstack",
+        db = Postgres
+    );
+
+    #[derive(Clone)]
+    struct UnreachableResolver;
+
+    impl cratestack_schema::ComputedFieldResolver for UnreachableResolver {
+        fn resolve_comp_router_photo_proxy_url(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _source: &cratestack_schema::CompRouterPhoto,
+            _params: Option<&cratestack_schema::CompRouterProxyParams>,
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
+        {
+            async {
+                panic!(
+                    "resolver must not be invoked once computedParams validation \
+                     has already failed"
+                )
+            }
+        }
+
+        fn resolve_comp_router_photo_thumbnail_url(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            _source: &cratestack_schema::CompRouterPhoto,
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
+        {
+            async {
+                panic!(
+                    "resolver must not be invoked once computedParams validation \
+                     has already failed"
+                )
+            }
+        }
+    }
+
+    fn validation_test_db() -> cratestack_schema::Cratestack {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
+            .expect("lazy pool should parse");
+        cratestack_schema::Cratestack::builder(pool).build()
+    }
+
+    fn validation_test_router() -> cratestack::axum::Router {
+        cratestack_schema::axum::model_router(
+            validation_test_db(),
+            UnreachableResolver,
+            CborCodec,
+            TestAuthProvider,
+        )
+    }
+
+    // Router construction itself compiles with a real (non-`()`)
+    // resolver — the positive half of `router()`'s new required
+    // parameter (docs/design/computed-fields.md decision 4); the
+    // schema-with-no-computed-fields half is covered by
+    // `schema_without_computed_fields_lets_unit_type_be_the_resolver`
+    // below.
+    #[tokio::test]
+    async fn router_construction_compiles_with_a_real_resolver() {
+        let _router = validation_test_router();
+    }
+
+    #[tokio::test]
+    async fn malformed_computed_params_json_is_rejected_before_any_db_access() {
+        let router = validation_test_router();
+
+        let response = router
+            .oneshot(
+                Request::get("/comp_router_photos/1?computedParams=not-json")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn unknown_computed_params_key_is_rejected_before_any_db_access() {
+        let router = validation_test_router();
+
+        let response = router
+            .oneshot(
+                Request::get("/comp_router_photos/1?computedParams=%7B%22nope%22%3A%7B%7D%7D")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    // `thumbnailUrl` is a real computed field on this model, just not a
+    // parameterized one — distinct from an unknown-name key or a
+    // non-computed stored field name.
+    #[tokio::test]
+    async fn computed_params_for_a_param_less_field_is_rejected_before_any_db_access() {
+        let router = validation_test_router();
+
+        let response = router
+            .oneshot(
+                Request::get(
+                    "/comp_router_photos/1?computedParams=%7B%22thumbnailUrl%22%3A%7B%7D%7D",
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn non_object_computed_params_json_is_rejected_before_any_db_access() {
+        let router = validation_test_router();
+
+        let response = router
+            .oneshot(
+                Request::get("/comp_router_photos/1?computedParams=%5B1%2C2%5D")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    // The list endpoint validates `computedParams` the same way, at the
+    // same point (before `find_many` runs).
+    #[tokio::test]
+    async fn list_route_rejects_malformed_computed_params_before_any_db_access() {
+        let router = validation_test_router();
+
+        let response = router
+            .oneshot(
+                Request::get("/comp_router_photos?computedParams=not-json")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("request should succeed");
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 }
 
@@ -2810,6 +3043,7 @@ mod transport_rpc_schema {
         cratestack_schema::axum::rpc_router(
             rpc_test_db(),
             RpcTestProcedures,
+            (),
             codec,
             RpcTestAuthProvider,
             cratestack::DEFAULT_BODY_LIMIT_BYTES,

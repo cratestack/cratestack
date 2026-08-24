@@ -10,7 +10,8 @@ use quote::quote;
 
 use crate::relation::order_catalog_ident;
 use crate::shared::{
-    ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case,
+    computed_model_fields, ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens,
+    to_snake_case,
 };
 use crate::transport::{
     model_read_transport_capabilities_tokens, model_write_transport_capabilities_tokens,
@@ -44,6 +45,8 @@ pub(super) struct ModelHandlerPrep {
     pub(super) project_object_fields_ident: syn::Ident,
     pub(super) project_serialized_value_ident: syn::Ident,
     pub(super) serialize_model_value_ident: syn::Ident,
+    pub(super) parse_computed_params_ident: syn::Ident,
+    pub(super) has_computed_fields: bool,
     pub(super) filter_expr_builder_ident: syn::Ident,
     pub(super) query_expr_builder_ident: syn::Ident,
     pub(super) order_catalog_ident: syn::Ident,
@@ -162,6 +165,8 @@ pub(super) fn build_prep(model: &Model) -> Result<ModelHandlerPrep, String> {
         project_object_fields_ident: ident(&format!("project_{}_object_fields", snake)),
         project_serialized_value_ident: ident(&format!("project_{}_serialized_value", snake)),
         serialize_model_value_ident: ident(&format!("serialize_{}_model_value", snake)),
+        parse_computed_params_ident: ident(&format!("parse_{}_computed_params", snake)),
+        has_computed_fields: !computed_model_fields(model).is_empty(),
         filter_expr_builder_ident: ident(&format!("build_{}_filter_expr", snake)),
         query_expr_builder_ident: ident(&format!("build_{}_query_expr", snake)),
         order_catalog_ident: order_catalog_ident(&model.name),

@@ -459,6 +459,7 @@ async fn http_request_cannot_produce_a_system_context() {
 
     let router = cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
+        (),
         cratestack_codec_json::JsonCodec,
         SystemPrincipalAuthProvider,
     );

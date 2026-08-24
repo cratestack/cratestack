@@ -432,6 +432,7 @@ async fn db_backed_policy_enforcement() {
     let codec = CborCodec;
     let router = cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
+        (),
         codec.clone(),
         PolicyDbAuthProvider,
     );

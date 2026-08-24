@@ -69,6 +69,7 @@ fn build_router() -> cratestack::axum::Router {
     cratestack_schema::axum::rpc_router(
         db,
         Procedures,
+        (),
         CborCodec,
         AlwaysAuthProvider,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

@@ -34,37 +34,41 @@ use super::super::super::parse::ServerDb;
 pub(super) fn build(db: ServerDb) -> proc_macro2::TokenStream {
     match db {
         ServerDb::Postgres => quote! {
-            pub fn router<R, C, Auth>(
+            pub fn router<R, CR, C, Auth>(
                 db: super::Cratestack,
                 registry: R,
+                resolvers: CR,
                 codec: C,
                 auth_provider: Auth,
                 body_limit_bytes: usize,
             ) -> axum::Router
             where
                 R: super::procedures::ProcedureRegistry,
+                CR: super::computed::ComputedFieldResolver,
                 C: HttpTransport,
                 Auth: AuthProvider,
             {
-                model_router(db.clone(), codec.clone(), auth_provider.clone())
-                    .merge(procedure_router(db, registry, codec, auth_provider))
+                model_router(db.clone(), resolvers.clone(), codec.clone(), auth_provider.clone())
+                    .merge(procedure_router(db, registry, resolvers, codec, auth_provider))
                     .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
             }
         },
         ServerDb::None => quote! {
-            pub fn router<R, C, Auth>(
+            pub fn router<R, CR, C, Auth>(
                 db: super::Cratestack,
                 registry: R,
+                resolvers: CR,
                 codec: C,
                 auth_provider: Auth,
                 body_limit_bytes: usize,
             ) -> axum::Router
             where
                 R: super::procedures::ProcedureRegistry,
+                CR: super::computed::ComputedFieldResolver,
                 C: HttpTransport,
                 Auth: AuthProvider,
             {
-                procedure_router(db, registry, codec, auth_provider)
+                procedure_router(db, registry, resolvers, codec, auth_provider)
                     .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
             }
         },
