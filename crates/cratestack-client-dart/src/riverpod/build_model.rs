@@ -191,6 +191,13 @@ pub(crate) fn build_model_file(
     imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
     imports.insert("import '../runtime.dart';".to_owned());
     imports.insert("import '../client.dart';".to_owned());
+    // `<Model>ComputedParams.operator ==`/`hashCode`
+    // (`computed_params_class.dart.j2`) are wire-equality, built on
+    // `jsonEncode(toWire())` — only needed when this model actually emits
+    // that class, per this module's "only import what's used" rule.
+    if model_api.computed_params_class_name.is_some() {
+        imports.insert("import 'dart:convert';".to_owned());
+    }
     // cratestack#625/#630: a `Bytes` field maps to `Uint8List`
     // (`dart:typed_data`) and a `Decimal` field to `Decimal`
     // (`package:decimal/decimal.dart`) — neither is in scope by default,

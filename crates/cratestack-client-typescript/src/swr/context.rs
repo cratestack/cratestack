@@ -19,7 +19,9 @@ use crate::types::{
     enum_name_set, is_computed_field, is_generated_on_create, is_paged_model, is_primary_key,
     model_allows_create, model_name_set, scalar_model_fields, visible_model_fields,
 };
-use crate::views::{InterfaceKind, build_interface, build_model_api};
+use crate::views::{
+    InterfaceKind, build_computed_params_interface, build_interface, build_model_api,
+};
 
 use super::context_imports::{
     build_imports, model_refs_in_fields, owned_by, procedure_arg_fields, procedure_model_refs,
@@ -230,6 +232,18 @@ pub(crate) fn build_model_file_contexts(
             owned_enums.push(build_sort_field_view(model, &model_names));
             owned_interfaces.push(build_order_by_clause_interface(model));
             owned_interfaces.push(build_find_many_interface(model, where_interface.is_some()));
+            // `<Model>ComputedParams` (`docs/design/computed-fields.md`) is
+            // single-model-owned by construction, same as
+            // `<Model>Where`/`<Model>FindMany` above — inlined here, never
+            // imported. Its own params-type reference (e.g. `ProxyParams`)
+            // is still resolved through the normal owned/shared import
+            // machinery: `super::ownership_graph::model_referenced_eligible_names`
+            // treats a `@computed(params: <Type>?)` field as reaching that
+            // type, so it lands in `owned_interfaces`/`imports` above
+            // exactly like any other type this model's fields reference.
+            if let Some(computed_params_interface) = build_computed_params_interface(model) {
+                owned_interfaces.push(computed_params_interface);
+            }
 
             let is_paged = is_paged_model(model);
             let mut shared_names = ownership.shared_imports_for_model(&model.name);

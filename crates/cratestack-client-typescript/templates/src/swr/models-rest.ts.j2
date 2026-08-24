@@ -84,7 +84,7 @@ export interface {{ update_input.name }} {
 
 export async function {{ list_fn }}(
   runtime: CratestackRuntime,
-  options: CratestackQueryRequestConfig = {},
+  options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
 ): Promise<{{ model.list_return_type }}> {
   return runtime.get<unknown>("{{ model.route }}", {
     headers: options.headers,
@@ -96,7 +96,7 @@ export async function {{ list_fn }}(
 export async function {{ get_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
-  options: CratestackQueryRequestConfig = {},
+  options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
 ): Promise<{{ model_interface.name }}> {
   return runtime.get<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
     headers: options.headers,
@@ -114,7 +114,7 @@ export async function {{ get_fn }}(
 export async function {{ get_with_response_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
-  options: CratestackQueryRequestConfig = {},
+  options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
 ): Promise<CratestackResponseEnvelope<{{ model_interface.name }}>> {
   return runtime.getWithResponse<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
     headers: options.headers,

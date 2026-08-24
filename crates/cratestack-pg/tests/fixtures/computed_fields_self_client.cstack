@@ -1,0 +1,48 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// Model names prefixed `SelfClient` so their auto-derived tables don't
+// collide with any other fixture's tables on the shared external test
+// Postgres (same convention as `CompRouter*`).
+//
+// This fixture exists to prove the embedded self/peer-calling client
+// (`include_server_schema!`'s `cratestack_schema::client::Client` —
+// `crate::client::generate_client_module`, `docs/design/computed-
+// fields.md`'s "Exclusions" section) actually carries `@computed`
+// values, for both a model GET (through the real generated router
+// against real Postgres) and a procedure returning a computed-bearing
+// `type` nested through another `type` (recursive substitution:
+// `SelfClientCard.cover` is itself computed-bearing).
+//
+// `proxyUrl` is parameterized (`params: SelfClientProxyParams?`) rather
+// than bare so this fixture also exercises the generated Rust client's
+// typed `computedParams` surface (`SelfClientPhotoComputedParams`,
+// `crates/cratestack-macros/src/client/computed_params.rs`) end to end
+// over both `get`'s `Some`/`None` — a bare-only model would never gain
+// that struct or the extra `get`/`list` parameter at all.
+model SelfClientPhoto {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: SelfClientProxyParams?)
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type SelfClientProxyParams {
+  width Int?
+}
+
+type SelfClientImage {
+  storageKey String
+  badge String @computed
+}
+
+type SelfClientCard {
+  cover SelfClientImage
+}
+
+procedure getSelfClientCard(storageKey: String): SelfClientCard
+  @allow(auth() != null)

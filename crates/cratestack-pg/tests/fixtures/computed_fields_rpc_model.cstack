@@ -1,0 +1,36 @@
+// `transport rpc` counterpart to `computed_fields_router.cstack` — proves
+// `computedParams` reaches model GET/LIST reads over the RPC binding
+// (docs/design/rpc-transport.md's `RpcGetInput`/`RpcListInput.computedParams`
+// section, docs/design/computed-fields.md's "Parameterized resolvers on the
+// wire"). `computed_fields_rpc.cstack` (no models, procedure-only) already
+// covers RPC + computed *procedure* output composition; this fixture is the
+// missing model-CRUD-over-RPC counterpart.
+//
+// Model names prefixed `CompRpc` so their auto-derived tables don't collide
+// with any other fixture's tables on the shared external test Postgres
+// (same convention as `computed_fields_router.cstack`'s own `CompRouter*`
+// prefix — see the comment atop that file).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model CompRpcPhoto {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: CompRpcProxyParams?)
+  // Bare (param-less) sibling of `proxyUrl` — exists so a
+  // `computedParams` frame naming it gets rejected with "not a
+  // parameterized computed field", same case REST covers.
+  thumbnailUrl String @computed
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type CompRpcProxyParams {
+  width Int?
+}

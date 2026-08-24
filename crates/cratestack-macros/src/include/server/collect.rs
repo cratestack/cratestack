@@ -17,7 +17,7 @@ use crate::client::generate_client_module;
 use crate::computed::{
     computed_bearing_names, generate_compose_helpers, generate_model_computed_field_descriptors,
     generate_model_computed_field_resolver_methods, generate_type_computed_field_descriptors,
-    generate_type_computed_field_resolver_methods,
+    generate_type_computed_field_resolver_methods, generate_wire_structs,
 };
 use crate::event::generate_event_module;
 use crate::shared::schema_lit;
@@ -44,6 +44,7 @@ pub(super) struct ServerCollected {
     pub(super) computed_field_descriptors: Vec<Ts>,
     pub(super) computed_field_resolver_methods: Vec<Ts>,
     pub(super) compose_helpers: Vec<Ts>,
+    pub(super) wire_structs: Vec<Ts>,
     pub(super) model_structs: Vec<Ts>,
     pub(super) pg_from_row_impls: Vec<Ts>,
     pub(super) primary_key_accessor_impls: Vec<Ts>,
@@ -150,6 +151,7 @@ pub(super) fn collect_server_schema(
     // to decide whether a given dispatch fn's tail composes at all.
     let bearing = computed_bearing_names(schema);
     let compose_helpers = generate_compose_helpers(schema, &model_name_set, &bearing);
+    let wire_structs = generate_wire_structs(schema, &model_name_set, &enum_name_set, &bearing);
 
     let mc = models::collect_models(schema, schema_path, &model_name_set, &enum_name_set, auth)?;
     let pc = procedures::collect_procedures(schema, schema_path, &enum_name_set, auth, &bearing)?;
@@ -213,9 +215,13 @@ pub(super) fn collect_server_schema(
         Vec::new()
     };
 
-    let generated_client_module =
-        generate_client_module(&schema.models, &schema.procedures, schema.transport)
-            .map_err(|e| compile_error(schema_path, e))?;
+    let generated_client_module = generate_client_module(
+        &schema.models,
+        &schema.procedures,
+        schema.transport,
+        &bearing,
+    )
+    .map_err(|e| compile_error(schema_path, e))?;
     let generated_event_module =
         generate_event_module(&schema.models).map_err(|e| compile_error(schema_path, e))?;
 
@@ -262,6 +268,7 @@ pub(super) fn collect_server_schema(
         computed_field_descriptors,
         computed_field_resolver_methods,
         compose_helpers,
+        wire_structs,
         model_structs: mc.structs,
         pg_from_row_impls: mc.pg_from_row_impls,
         primary_key_accessor_impls: mc.primary_key_accessor_impls,

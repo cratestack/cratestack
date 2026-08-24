@@ -81,6 +81,7 @@ pub(super) fn compose_server_schema(
             enum_types,
             computed_field_descriptors,
             computed_field_resolver_methods,
+            wire_structs,
             model_structs,
             pg_from_row_impls,
             primary_key_accessor_impls,
@@ -138,6 +139,29 @@ pub(super) fn compose_server_schema(
             quote! { impl ComputedFieldResolver for () {} }
         } else {
             proc_macro2::TokenStream::new()
+        };
+
+        // The wire-shape mirror of every computed-bearing owner
+        // (`crate::computed::wire`), consumed by the embedded self/peer-
+        // calling client's decode targets (`crate::client`) so a resolved
+        // computed field survives the round trip instead of being
+        // silently dropped into the server-side struct shape
+        // (`docs/design/computed-fields.md`'s "Exclusions" section).
+        // Skipped entirely for a schema with no `@computed` fields at
+        // all — `wire_structs` is empty exactly when `bearing` (computed
+        // in `collect_server_schema`) is, so this mirrors the
+        // `unit_computed_resolver_impl` "zero generated code when there's
+        // nothing computed" convention above.
+        let wire_module = if wire_structs.is_empty() {
+            proc_macro2::TokenStream::new()
+        } else {
+            quote! {
+                pub mod wire {
+                    use ::cratestack::serde;
+
+                    #(#wire_structs)*
+                }
+            }
         };
 
         let expanded = quote! {
@@ -213,6 +237,8 @@ pub(super) fn compose_server_schema(
                 }
 
                 pub use inputs::*;
+
+                #wire_module
 
                 #generated_client_module
                 #generated_event_module

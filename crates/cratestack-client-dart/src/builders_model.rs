@@ -10,8 +10,9 @@ use crate::naming::{
     scalar_model_fields,
 };
 use crate::views::{
-    ConstantView, ModelAccessorView, ModelApiView, ProcedureView, SelectedFieldAccessorView,
-    SelectedRelationAccessorView, SelectionGroupView, SelectionModelView,
+    ComputedParamsFieldView, ConstantView, ModelAccessorView, ModelApiView, ProcedureView,
+    SelectedFieldAccessorView, SelectedRelationAccessorView, SelectionGroupView,
+    SelectionModelView,
 };
 use crate::wire_decode::decode_value_expr;
 
@@ -112,6 +113,30 @@ pub(crate) fn build_model_accessor(model: &Model, provider_prefix: &str) -> Mode
 pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let primary_key = primary_key_field(model).expect("validated schemas always have an id field");
     let paged = is_paged_model(model);
+    // The typed client computedParams surface — see
+    // `docs/design/computed-fields.md`'s "Downstream" section: the typed
+    // `{Model}ComputedParams` class replaces the v1 untyped
+    // `Map<String, Object?>?` escape hatch. `computed_params_class_name`
+    // and `computed_params_fields` are always in lockstep with each
+    // other and with `has_parameterized_computed_fields` below — all
+    // three are one computation, kept as separate fields because every
+    // template call site branches on the bool.
+    let computed_params_fields: Vec<ComputedParamsFieldView> = model
+        .fields
+        .iter()
+        .filter_map(|field| {
+            computed_params_type_name(field).map(|params_type| ComputedParamsFieldView {
+                identifier: dart_identifier(&field.name),
+                wire_name: field.name.clone(),
+                params_type: params_type.to_owned(),
+            })
+        })
+        .collect();
+    let computed_params_class_name = if computed_params_fields.is_empty() {
+        None
+    } else {
+        Some(format!("{}ComputedParams", model.name))
+    };
     ModelApiView {
         api_class_name: format!("{}Api", model.name),
         model_name: model.name.clone(),
@@ -142,10 +167,9 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
                 model.name
             )
         },
-        has_parameterized_computed_fields: model
-            .fields
-            .iter()
-            .any(|field| computed_params_type_name(field).is_some()),
+        has_parameterized_computed_fields: !computed_params_fields.is_empty(),
+        computed_params_class_name,
+        computed_params_fields,
     }
 }
 

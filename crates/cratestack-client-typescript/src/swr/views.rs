@@ -71,6 +71,10 @@ pub(crate) struct SwrModelSummary {
     pub(crate) create_hook: String,
     pub(crate) update_hook: String,
     pub(crate) delete_hook: String,
+    /// Same predicate and name as `crate::views::ModelApiView::computed_params_interface`
+    /// — `swr-keys.ts.j2`'s `get`/`list` key builders read this to decide
+    /// whether to accept (and key on) a `computedParams` argument at all.
+    pub(crate) computed_params_interface: Option<String>,
 }
 
 /// `src/procedures.ts`'s content.

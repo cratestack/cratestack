@@ -1,4 +1,7 @@
 import 'dart:typed_data';
+{% if has_computed_params_class %}
+import 'dart:convert';
+{% endif %}
 
 import 'package:decimal/decimal.dart';
 
@@ -470,6 +473,9 @@ class {{ data_class.name }} {
 
 {% include "model_builder_class.dart.j2" %}
 
+{% endfor %}
+{% for model_api in model_apis %}
+{% include "computed_params_class.dart.j2" %}
 {% endfor %}
 {% for selection in selection_models %}
 class {{ selection.projected_class_name }} {

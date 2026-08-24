@@ -385,6 +385,52 @@ model Image {{
     );
 }
 
+/// `docs/design/computed-fields.md`: a real client's `get`/`list` request
+/// can carry a `?computedParams=<url-encoded JSON object>` query
+/// parameter. WireMock's `urlPath`/`urlPathPattern` request matchers are
+/// path-only — they ignore any query string unless a `queryParameters`
+/// matcher is ALSO present on the same `request` object. This is
+/// load-bearing (see `model_mapping::build_static_mapping`'s and
+/// `model_state::mapping::envelope`'s own doc comments): a stub that
+/// gained a `queryParameters` matcher would need to be updated to
+/// account for `computedParams`, or every `computedParams`-carrying
+/// request would stop matching and fall through to WireMock's own 404.
+/// Covers both transports — `transport rest` (stateful) and `transport
+/// rpc` (static) build mappings through entirely separate code paths
+/// (`model_mapping::build_model_mappings`), so this has to prove the
+/// property on both, not just one.
+#[test]
+fn no_query_parameters_matcher_is_emitted_for_model_stub_mappings() {
+    for (transport_prefix, verbs) in [
+        ("", ["create", "get", "update", "delete", "list"].as_slice()),
+        (
+            "transport rpc\n\n",
+            ["create", "get", "update", "delete", "list"].as_slice(),
+        ),
+    ] {
+        let schema = schema(&format!(
+            "{transport_prefix}{PG_DATASOURCE}
+model Widget {{
+  id Int @id
+  name String
+}}
+"
+        ));
+
+        let package = generate_package(&schema, &WireMockGeneratorConfig::default()).unwrap();
+
+        for verb in verbs {
+            let mapping = mapping(&package, &format!("mappings/model.Widget.{verb}.json"));
+            assert!(
+                mapping["request"].get("queryParameters").is_none(),
+                "transport_prefix={transport_prefix:?} {verb}: model stub mappings must never \
+                 emit a `queryParameters` request matcher — see \
+                 `model_mapping::build_static_mapping`'s doc comment for why: {mapping}"
+            );
+        }
+    }
+}
+
 #[test]
 fn unsupported_field_types_fall_back_to_a_frozen_static_value_not_a_template() {
     let schema = schema(&format!(

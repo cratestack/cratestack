@@ -21,21 +21,64 @@ Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(
   Ref ref,
   {{ model_api.primary_key_type }} id, {
   CratestackFetchQuery? query,
+{% if model_api.has_parameterized_computed_fields %}
+  // `{{ model_api.computed_params_class_name }}` (`docs/design/computed-fields.md`)
+  // is exactly the wire-equal class this family provider's caching
+  // needs (`computed_params_class.dart.j2`: `operator ==`/`hashCode`
+  // compare `jsonEncode(toWire())`, not field identity) — see this
+  // file's own module doc above.
+  {{ model_api.computed_params_class_name }}? computedParams,
+{% endif %}
 }) {
+{% if model_api.has_parameterized_computed_fields %}
+  return ref.watch({{ accessor.provider_name }}).get(
+    id,
+    query: query,
+    computedParams: computedParams,
+  );
+{% else %}
   return ref.watch({{ accessor.provider_name }}).get(id, query: query);
+{% endif %}
 }
 
 @riverpod
 Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref ref, {
   CratestackListQuery? query,
+{% if model_api.has_parameterized_computed_fields %}
+  {{ model_api.computed_params_class_name }}? computedParams,
+{% endif %}
 }) {
+{% if model_api.has_parameterized_computed_fields %}
+  return ref.watch({{ accessor.provider_name }}).list(
+    query: query,
+    computedParams: computedParams,
+  );
+{% else %}
   return ref.watch({{ accessor.provider_name }}).list(query: query);
+{% endif %}
+}
+{% else %}
+{% if model_api.has_parameterized_computed_fields %}
+@riverpod
+Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {{ model_api.primary_key_type }} id, {
+  // `{{ model_api.computed_params_class_name }}` (`docs/design/computed-fields.md`)
+  // is exactly the wire-equal class this family provider's caching
+  // needs (`computed_params_class.dart.j2`: `operator ==`/`hashCode`
+  // compare `jsonEncode(toWire())`, not field identity) — see this
+  // file's own module doc above.
+  {{ model_api.computed_params_class_name }}? computedParams,
+}) {
+  return ref.watch({{ accessor.provider_name }}).get(
+    id,
+    computedParams: computedParams,
+  );
 }
 {% else %}
 @riverpod
 Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {{ model_api.primary_key_type }} id) {
   return ref.watch({{ accessor.provider_name }}).get(id);
 }
+{% endif %}
 
 // Issue #331: RPC transport has no typed query-builder class (unlike
 // REST's `CratestackListQuery` — see this story's PR body for the
@@ -48,11 +91,28 @@ Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {
 // (`fast_immutable_collections`, already a riverpod-preset dependency)
 // has real value equality, so a `@riverpod` family lookup with a
 // freshly-built-but-equal input actually dedupes.
+{% if model_api.has_parameterized_computed_fields %}
+// `computedParams` (when offered) is the same
+// `{{ model_api.computed_params_class_name }}` class REST uses — it
+// already carries hand-rolled wire equality
+// (`computed_params_class.dart.j2`: `jsonEncode(toWire())` comparison),
+// so it needs no `IMap`-style wrapper of its own.
+{% endif %}
 @riverpod
 Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref ref, {
   IMap<String, Object?>? input,
+{% if model_api.has_parameterized_computed_fields %}
+  {{ model_api.computed_params_class_name }}? computedParams,
+{% endif %}
 }) {
+{% if model_api.has_parameterized_computed_fields %}
+  return ref.watch({{ accessor.provider_name }}).list(
+    input: input?.unlock ?? const <String, Object?>{},
+    computedParams: computedParams,
+  );
+{% else %}
   return ref.watch({{ accessor.provider_name }}).list(input: input?.unlock ?? const <String, Object?>{});
+{% endif %}
 }
 {% endif %}
 

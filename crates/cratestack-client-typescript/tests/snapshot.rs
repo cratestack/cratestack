@@ -73,7 +73,7 @@ fn rpc_client_uses_typed_list_query_builder() {
         "queries.ts is missing CratestackRpcListQuery:\n{queries}"
     );
     assert!(
-        queries.contains("export function toRpcListInput("),
+        queries.contains("export function toRpcListInput<TComputedParams = never>("),
         "queries.ts is missing toRpcListInput:\n{queries}"
     );
 

@@ -34,5 +34,6 @@ pub(super) fn build_model_summary(model: &Model) -> SwrModelSummary {
         create_hook: hooks.create,
         update_hook: hooks.update,
         delete_hook: hooks.delete,
+        computed_params_interface: api.computed_params_interface,
     }
 }

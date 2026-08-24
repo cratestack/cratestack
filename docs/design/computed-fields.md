@@ -72,6 +72,15 @@ never stored, fetched, or hand-constructed. Client-side shapes (generated Rust c
 via `include_client_schema!`, Dart, TypeScript) **include** them (that is the wire
 shape) but exclude them from create/update inputs, filters, and sorts.
 
+The server's own embedded self/peer-calling client (an internal use of
+`crate::client::generate_client_module`, shared with standalone
+`include_client_schema!`) decodes computed-bearing model/type responses into
+a dedicated `wire::<Owner>` struct set, not into the server-side
+`models::*`/`types::*` structs above — so a server calling its own or a
+peer's API observes resolved computed values instead of silently losing
+them. The `wire` module is emitted only when the schema has at least one
+computed-bearing owner.
+
 Per schema, the macro emits a `computed` module:
 
 ```rust
@@ -140,22 +149,67 @@ same way. Procedure-context resolution always passes `params: None` in v1.
 
 ### Parameterized resolvers on the wire
 
-Model GET/list REST requests accept one query parameter:
+Both transports carry the same logical payload — a JSON object keyed by computed
+field name, each value deserializing into the generated params `type` struct via
+serde — just in different envelopes.
+
+**REST.** Model GET/list requests accept one query parameter:
 
 ```
 ?computedParams=%7B%22proxyUrl%22%3A%7B%22width%22%3A800%7D%7D
    (URL-encoded {"proxyUrl": {"width": 800}})
 ```
 
-- JSON object keyed by computed field name; each value deserializes into the
-  generated params `type` struct via serde. Malformed JSON, unknown field keys,
-  keys naming non-computed or param-less fields, or a params payload for a field
-  excluded by `?fields=` → `CratestackError::Validation`.
+**RPC.** `model.<X>.list` decodes `RpcListInput`, which carries a
+`computedParams` field (raw JSON-object text — see below for why not
+`serde_json::Value`); `model.<X>.get` decodes a dedicated `RpcGetInput { id,
+computedParams }` rather than reusing `RpcPkInput` (which `delete` also
+decodes, and would otherwise gain a silently-ignored field). Server-side, the
+RPC dispatcher synthesizes the equivalent `?computedParams=` query string from
+the decoded field and hands it to the exact same fetch/list query parser REST
+uses (`parse_model_fetch_query`/`parse_model_list_query`,
+`cratestack-macros/src/axum/shared_support.rs`) — one validation
+implementation, no drift between transports. On `/rpc/batch`, each frame
+carries its own `computedParams` inside that frame's `input`, resolved
+independently per frame; in-frame params are signed by construction, since the
+canonical signed body under `transport rpc` is the raw frame bytes themselves
+(`docs/design/rpc-transport.md` §5).
+
+Why `computedParams` is a `String` (raw JSON text) on the RPC input types
+rather than `serde_json::Value`: `RpcUpdateInput`'s own doc comment already
+documents that round-tripping an `Option`-bearing value through
+`serde_json::Value` corrupts CBOR `Option::None` (`minicbor-serde` encodes it
+as `0xf6` simple-null, `serde_json::Value` encodes it as the CBOR empty-array
+marker) — generated params types are bags of optionals, so they'd hit this
+head-on. `/rpc/batch` additionally re-encodes each frame's opaque `input`
+through `serde_json::Value` before re-dispatching it
+(`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`'s
+`build_batch_block` — the *input* re-encode site, not response-frame
+handling); a `String` field survives that round trip verbatim, a nested
+object wouldn't.
+
+Both transports:
+
+- Malformed JSON, unknown field keys, keys naming non-computed or param-less
+  fields, or a params payload for a field excluded by `?fields=` (REST only —
+  RPC `get` has no `fields`/`include` slot, see below) →
+  `CratestackError::Validation`, same HTTP status either way.
 - Absent `computedParams` (or absent key) → resolver gets `None`.
 - Applies to the request's *root* model only in v1; relation-included records and
   all non-read paths resolve with `None`.
-- Generated clients (Rust/Dart/TS) expose typed optional params on get/list calls
-  and serialize them into this query parameter.
+- Generated clients (Rust/Dart/TS) expose a **typed** per-model `computedParams`
+  parameter on `get`/`list`, gated the same way on every language (offered only
+  when the model has at least one parameterized `@computed(params: <Type>?)`
+  field), over both REST and RPC transport — see "Downstream" below for the
+  exact per-language shape.
+
+**Deliberate asymmetry: RPC `get` has no `fields`/`include`.** Unlike
+`RpcListInput` (which mirrors the REST list query 1:1, including `fields`),
+`RpcGetInput` carries only `id` and `computedParams`. RPC `get` always decodes
+its response into the full generated model type in every client, which has no
+representation for a partial (fields-selected) payload — so the REST
+"excluded by `?fields=`" rejection branch is reachable over RPC list but
+unreachable over RPC get. This is a scope limit, not a gap.
 
 ## Exclusions (v1, documented)
 
@@ -166,21 +220,6 @@ Model GET/list REST requests accept one query parameter:
 - Views cannot declare computed fields.
 - Audit-log redaction (`@pii`/`@sensitive`) doesn't apply (cannot combine with
   `@computed`); resolvers must not return data needing redaction.
-- **The server's embedded self-client decodes into server-side structs and
-  silently drops computed fields in v1** (tracked follow-up). `include_server_schema!`
-  generates an internal `cratestack_schema::client::Client` for self/peer calls
-  (`crate::client::generate_client_module`, shared with standalone
-  `include_client_schema!`), but its per-model methods return
-  `super::models::<Model>` — the server-side struct type
-  (`generate_model_struct_only`), which excludes computed fields by design. Only
-  a *standalone* `include_client_schema!` call (its own `models`/`types` modules,
-  built by `generate_client_model_struct`/`generate_client_type_struct`) gets the
-  client-side struct shape that actually carries computed field values.
-- **RPC transport model reads have no `computedParams` slot** — `?computedParams=`
-  is a REST query-string parameter only; RPC unary/batch dispatch for
-  `model.<Model>.get`/`model.<Model>.list` never reads or threads one through
-  (procedure output composition, unlike model reads, works identically under
-  both transports).
 - **Create/update/delete commit the DB write before resolvers run.** The
   handler calls `.create()`/`.update()`/`.delete()` (each a real,
   already-committed write) and only afterward runs response composition
@@ -206,22 +245,51 @@ Model GET/list REST requests accept one query parameter:
 
 - `cratestack-migrate`: computed fields excluded from DDL/diff.
 - Wiremock generator: computed fields fabricated like ordinary response fields.
-- Dart/TS clients: computed fields in response classes, excluded from inputs,
-  filters, sorts. Both expose a `computedParams` surface on `get`/`list`, but
-  it is an **untyped v1 escape hatch** in both — Dart's is
-  `Map<String, Object?>?`, TypeScript's is `Record<string, unknown>` — not a
-  generated per-model params type; a typed wrapper is tracked follow-up work.
-  Dart additionally gates the parameter per model (offered only when the
-  model has at least one *parameterized* `@computed(params: <Type>?)` field —
-  a bare-`@computed`-only model never gets it, since the server would 422 any
-  `computedParams` key for a field with no params type); TypeScript's
-  `computedParams` lives on one shared query type used by every model's
-  `get`/`list`, so it has no equivalent per-model gate.
-- **The generated Rust client (`include_client_schema!`) has no
-  `computedParams` surface at all in v1** (tracked follow-up) — the
-  `?computedParams=` query parameter has no constructor, builder method, or
-  argument anywhere in `cratestack-macros/src/client/`. It still *decodes*
-  computed field values correctly on responses (via the client-side struct
-  shapes described above), it just cannot request non-default resolver
-  parameters.
+- Dart clients: computed fields in response classes, excluded from inputs,
+  filters, sorts. `get`/`list` gain a **typed** `<Model>ComputedParams`
+  parameter — a generated class with a const constructor, one declared-type
+  field per parameterized `@computed(params: <Type>?)` field, a `toWire()`
+  encoder, and value `==`/`hashCode` (riverpod family providers key their
+  cache on argument equality, so this is load-bearing, not decoration) — on
+  both REST and RPC; RPC mode folds `jsonEncode(toWire())` into the frame via
+  a shared runtime helper. Gated per model exactly like the Rust client below
+  (offered only when the model has at least one parameterized computed
+  field; a bare-`@computed`-only model gets neither the class nor the extra
+  parameter, since the server would 422 any `computedParams` key for a field
+  with no params type). The `@riverpod` get/list convenience providers gain
+  the same gated parameter, and riverpod partition reachability now seeds
+  params types referenced only from `@computed` attribute text — they
+  weren't otherwise reachable from the response-type graph.
+- TypeScript clients: computed fields in response classes, excluded from
+  inputs, filters, sorts. `CratestackFetchQuery`/`CratestackRpcListQuery`
+  become generic over `TComputedParams` (default `never`, so
+  `computedParams` is unassignable on an ungated model — enforced by `tsc`
+  at compile time, not a runtime check). A gated model gets a generated
+  `<Model>ComputedParams` interface, used on its REST query config, its RPC
+  list query, and a dedicated per-model RPC `get` options bag —
+  `JSON.stringify`d to match the server's `Option<String>` frame field. swr
+  RPC `get` cache keys now incorporate `computedParams` too (previously two
+  reads of the same model with different params collided on one cache key);
+  the ownership graph deciding which types swr's generated module reaches
+  was fixed the same way Dart's riverpod partition was — a params type
+  referenced only from `@computed` attribute text is now reachable.
+- **The generated Rust client** (both `include_client_schema!` and the
+  server's own embedded self-client, since both go through the single
+  `crate::client::generate_client_module` call site) has the same **typed**
+  `computedParams` surface Dart and TypeScript expose above, via its own code
+  path — `cratestack-macros/src/client/computed_params.rs` emits one
+  `<Model>ComputedParams` struct per model with at least one *parameterized*
+  `@computed(params: <Type>?)` field (same per-model gate Dart uses; a
+  bare-`@computed`-only model gets neither the struct nor an extra
+  parameter), with one `Option<super::types::<Params>>` field per resolver
+  and a `to_query_value()` helper that serializes to the same JSON-object
+  text both transports expect (`None` when every field is unset, matching
+  the server's "absent key -> resolver gets `None`" default). `get`/`list`
+  on a gated model's REST client take an extra `computed_params:
+  Option<&<Model>ComputedParams>` parameter; RPC's `get` switches from
+  `RpcPkInput` to `RpcGetInput { id, computed_params }` and `list` clones
+  its `RpcListInput` and overwrites `computed_params` with the typed
+  struct's encoded value. An ungated model's `get`/`list` tokens are
+  unchanged from before this surface existed, including RPC `get`'s
+  `RpcPkInput` shape.
 - LSP: `@computed` added to attribute completion if a list exists.

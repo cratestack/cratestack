@@ -15,7 +15,9 @@
 
 use std::io::Write as _;
 
-use cratestack_axum::query::{QueryExpr, parse_filter_expression, parse_query_pairs};
+use cratestack_axum::query::{
+    QueryExpr, parse_computed_params_object, parse_filter_expression, parse_query_pairs,
+};
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
 #[test]
@@ -45,6 +47,126 @@ fn fetch_query_type_no_longer_json_encodes_where_or_filters() {
         queries.contains("for (const [key, value] of Object.entries(query.filters ?? {}))"),
         "toSearchQuery() must spread `filters` as individual query params, not nest them \
          under a `filters` key:\n{queries}"
+    );
+}
+
+/// `toSearchQuery`'s typed `computedParams` surface — see
+/// `docs/design/computed-fields.md`'s "Downstream" section — round trips
+/// as a single URL-encoded JSON-object query
+/// parameter — the same `appendQueryValue` object-value branch `where`/
+/// `or`/`filters` deliberately do NOT use (see this file's own header
+/// comment for why those are flat DSL strings instead), but which IS the
+/// correct wire shape for `?computedParams=` specifically (`docs/design/computed-fields.md`'s
+/// REST section: `?computedParams=<url-encoded JSON object>`). Decoded
+/// back with the real server-side parser
+/// (`cratestack_axum::query::parse_computed_params_object`, the same
+/// function every generated model's REST handler calls), not a hand-
+/// rolled JSON check.
+///
+/// Best-effort/skippable — see `rest_list_query_round_trips_through_the_real_server_filter_grammar`'s
+/// doc comment for the Node-availability convention.
+#[test]
+fn computed_params_round_trips_as_a_single_url_encoded_json_object() {
+    if !node_and_npx_available() {
+        eprintln!(
+            "skipping computed_params_round_trips_as_a_single_url_encoded_json_object: \
+             `node`/`npx` not on PATH"
+        );
+        return;
+    }
+
+    let package = generate_for("tiny_rest", "tiny-rest-computed-params-check");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    for file in &package.files {
+        let path = dir.path().join(&file.file_name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(&path, &file.contents).expect("write generated file");
+    }
+
+    let install = std::process::Command::new("npm")
+        .args(["install", "--no-audit", "--no-fund"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npm install");
+    assert!(
+        install.status.success(),
+        "npm install failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&install.stdout),
+        String::from_utf8_lossy(&install.stderr)
+    );
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
+    let port = listener.local_addr().expect("local addr").port();
+    let server = std::thread::spawn(move || capture_one_request_line(listener));
+
+    let script_path = dir.path().join("smoke.ts");
+    let mut script = std::fs::File::create(&script_path).expect("create smoke script");
+    write!(
+        script,
+        r#"
+import {{ TinyRestComputedParamsCheckClient }} from "./src/client";
+
+const client = new TinyRestComputedParamsCheckClient("http://127.0.0.1:{port}", {{ basePath: "/api" }});
+await client.widgets.list({{
+  query: {{
+    computedParams: {{ proxyUrl: {{ width: 800 }} }},
+  }},
+}});
+console.log("REST_COMPUTED_PARAMS_CHECK_OK");
+"#
+    )
+    .expect("write smoke script");
+
+    let output = std::process::Command::new("npx")
+        .args(["--yes", "tsx", "smoke.ts"])
+        .current_dir(dir.path())
+        .output()
+        .expect("run npx tsx");
+
+    let request_line = server.join().expect("stub server thread");
+
+    assert!(
+        output.status.success(),
+        "smoke script failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("REST_COMPUTED_PARAMS_CHECK_OK"),
+        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let raw_query = request_line
+        .split_once('?')
+        .map(|(_, rest)| rest)
+        .and_then(|rest| rest.split_once(" HTTP/"))
+        .map(|(query, _)| query)
+        .unwrap_or_else(|| panic!("captured request line has no query string: {request_line}"));
+
+    let pairs = parse_query_pairs(Some(raw_query)).expect(
+        "the client's query string must parse with the real server-side pair parser \
+         (cratestack_axum::parse_query_pairs)",
+    );
+    let raw_computed_params = pairs
+        .iter()
+        .find(|(k, _)| k == "computedParams")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or_else(|| panic!("missing 'computedParams' in parsed query pairs: {pairs:?}"));
+
+    // The real server-side parser, not a hand-rolled JSON check — proves
+    // this is genuinely the shape `?computedParams=` handlers decode, not
+    // just superficially JSON-shaped text.
+    let decoded = parse_computed_params_object(raw_computed_params)
+        .expect("the client's computedParams value must parse with the real server-side parser");
+    assert_eq!(
+        decoded.get("proxyUrl"),
+        Some(&serde_json::json!({ "width": 800 })),
+        "decoded computedParams did not round-trip the client's value: {decoded:?}"
     );
 }
 

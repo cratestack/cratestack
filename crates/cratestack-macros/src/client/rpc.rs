@@ -23,23 +23,38 @@
 //! `CratestackClient::with_request_authorizer`.
 
 mod model;
+mod procedure;
 
-use cratestack_core::{Model, Procedure, TypeArity};
+use std::collections::BTreeSet;
+
+use cratestack_core::{Model, Procedure};
 use quote::quote;
 
-use crate::procedure::procedure_client_output_item_tokens;
+use crate::client::computed_params::{
+    generate_model_computed_params_struct, model_computed_params_ident,
+};
 use crate::shared::{ident, pluralize, to_snake_case};
 
 use model::generate_generated_rpc_model_client;
+use procedure::generate_generated_rpc_procedure_client_method;
 
 pub(super) fn generate_generated_rpc_client_module(
     models: &[Model],
     procedures: &[Procedure],
+    bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
-    let model_clients = models
-        .iter()
-        .map(generate_generated_rpc_model_client)
-        .collect::<Result<Vec<_>, String>>()?;
+    let mut model_clients = Vec::new();
+    for model in models {
+        if let Some(computed_params_struct) = generate_model_computed_params_struct(model) {
+            model_clients.push(computed_params_struct);
+        }
+        let computed_params_ident = model_computed_params_ident(model);
+        model_clients.push(generate_generated_rpc_model_client(
+            model,
+            bearing,
+            computed_params_ident.as_ref(),
+        )?);
+    }
     let model_client_accessors = models
         .iter()
         .map(|model| {
@@ -54,7 +69,7 @@ pub(super) fn generate_generated_rpc_client_module(
         .collect::<Vec<_>>();
     let procedure_methods = procedures
         .iter()
-        .map(generate_generated_rpc_procedure_client_method)
+        .map(|procedure| generate_generated_rpc_procedure_client_method(procedure, bearing))
         .collect::<Result<Vec<_>, String>>()?;
 
     Ok(quote! {
@@ -140,66 +155,4 @@ pub(super) fn generate_generated_rpc_client_module(
             }
         }
     })
-}
-
-fn generate_generated_rpc_procedure_client_method(
-    procedure: &Procedure,
-) -> Result<proc_macro2::TokenStream, String> {
-    let method_ident = ident(&to_snake_case(&procedure.name));
-    let module_ident = ident(&to_snake_case(&procedure.name));
-    let op_id = format!("procedure.{}", procedure.name);
-
-    if matches!(procedure.return_type.arity, TypeArity::List) {
-        // Sequence procedure → streaming. Return an `RpcStream<Item>`
-        // so callers consume frames as they parse off the wire; the
-        // bounded mpsc channel gives natural backpressure.
-        let item_type = procedure_client_output_item_tokens(&procedure.return_type);
-        Ok(quote! {
-            #[doc = concat!(
-                "Streaming RPC call to `",
-                #op_id,
-                "`. Returns an `RpcStream<Item>` — a bounded `mpsc::Receiver` ",
-                "that yields each cbor-seq item as it parses off the wire. ",
-                "Non-2xx responses surface as `Err` from this call before the ",
-                "channel ever opens; per-item failures appear as terminal `Err` ",
-                "items on the channel."
-            )]
-            pub async fn #method_ident(
-                &self,
-                args: &super::procedures::#module_ident::Args,
-            ) -> Result<
-                ::cratestack::client_rust::RpcStream<#item_type>,
-                ::cratestack::client_rust::RpcClientError,
-            > {
-                self.rpc
-                    .call_streaming::<_, #item_type>(#op_id, args)
-                    .await
-            }
-        })
-    } else {
-        // Unary procedure → BatchableCall. `.await` to fire
-        // immediately, `.queue(&mut batch)` to defer into a
-        // `/rpc/batch` round-trip.
-        Ok(quote! {
-            #[doc = concat!(
-                "Unary RPC call to `",
-                #op_id,
-                "`. Returns a `BatchableCall` — `.await` to fire immediately, ",
-                "or `.queue(&mut batch)` to defer."
-            )]
-            pub fn #method_ident(
-                &self,
-                args: &super::procedures::#module_ident::Args,
-            ) -> ::cratestack::client_rust::BatchableCall<
-                C,
-                super::procedures::#module_ident::Output,
-            > {
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #op_id,
-                    args,
-                )
-            }
-        })
-    }
 }

@@ -25,6 +25,19 @@
 //! no Rust CI job in this repo currently provisions Node, so this
 //! degrades to a printed skip rather than failing a job that was never
 //! going to have `node`/`npx` on `PATH`.
+//!
+//! Also covers `computedParams` (`docs/design/computed-fields.md`'s typed
+//! client computedParams surface — see its "Downstream" section): the TS
+//! side passes a plain object
+//! (`{ proxyUrl: { width: 800 } }`), and the Rust side asserts against
+//! `RpcListInput::computed_params`'s `Option<String>` — the raw
+//! `JSON.stringify`d text, not a nested JSON value. Deliberately does NOT
+//! `JSON.stringify` on the TS side itself; `toRpcListInput` must do that
+//! internally, so a regression that emits the object directly is caught
+//! here as a concrete value mismatch (proven by temporarily reverting
+//! that stringify call and confirming this test fails with exactly that
+//! shape of diff — not committed, see this crate's own report for the
+//! transcript).
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -109,8 +122,22 @@ const input = toRpcListInput({{
   where: "published=true",
   or: "authorId=1|authorId=2",
   filters: [{{ key: "authorId", value: "42" }}],
+  // `toRpcListInput` must JSON.stringify this into a raw string, matching
+  // `RpcListInput::computed_params`'s `Option<String>` wire shape
+  // (`docs/design/computed-fields.md`) — NOT hand `JSON.stringify` it
+  // here, so a regression that emits the object directly (rather than
+  // stringifying inside `toRpcListInput`) is caught by the mismatch
+  // below, not silently matched by this script doing the encoding itself.
+  computedParams: {{ proxyUrl: {{ width: 800 }} }},
 }});
 console.log(JSON.stringify(input));
+
+// An explicit-but-empty `computedParams: {{}}` (no own keys — as opposed
+// to a genuinely populated object above) must be omitted from the frame
+// entirely, matching REST's `CratestackFetchQuery`/Dart/Rust omission
+// behavior for the same shape — not serialized as `computedParams: "{{}}"`.
+const emptyInput = toRpcListInput({{ computedParams: {{}} }});
+console.log(JSON.stringify(emptyInput));
 "#
     )
     .expect("write smoke script");
@@ -128,11 +155,21 @@ console.log(JSON.stringify(input));
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let actual_json: serde_json::Value = stdout
+    // Two `console.log(JSON.stringify(...))` calls above, in order: the
+    // fully-populated input, then the explicit-but-empty-`computedParams`
+    // one. Filters rather than indexes by fixed line number because
+    // `tsx` can print non-JSON noise (warnings, etc.) ahead of either.
+    let json_lines: Vec<serde_json::Value> = stdout
         .lines()
-        .last()
-        .and_then(|line| serde_json::from_str(line).ok())
-        .unwrap_or_else(|| panic!("swr={swr}: smoke script did not print valid JSON:\n{stdout}"));
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .collect();
+    assert!(
+        json_lines.len() >= 2,
+        "swr={swr}: smoke script should print two JSON lines (the full input, then the \
+         empty-computedParams input):\n{stdout}"
+    );
+    let actual_json = json_lines[json_lines.len() - 2].clone();
+    let empty_computed_params_json = json_lines[json_lines.len() - 1].clone();
 
     let mut include_fields = BTreeMap::new();
     include_fields.insert(
@@ -152,9 +189,22 @@ console.log(JSON.stringify(input));
             key: "authorId".to_owned(),
             value: "42".to_owned(),
         }],
+        // Must equal `JSON.stringify({ proxyUrl: { width: 800 } })`
+        // byte-for-byte — the wire contract is the raw JSON-object TEXT,
+        // not a nested object (`RpcListInput::computed_params`'s own doc
+        // comment; `docs/design/computed-fields.md`'s "RPC" section).
+        computed_params: Some("{\"proxyUrl\":{\"width\":800}}".to_owned()),
     };
     let expected_json = serde_json::to_value(&expected_input)
         .expect("serialize the real RpcListInput the server actually decodes");
+
+    assert!(
+        empty_computed_params_json.get("computedParams").is_none(),
+        "swr={swr}: toRpcListInput({{ computedParams: {{}} }}) must omit computedParams from \
+         the frame entirely — an object with no own keys is not a real params value, matching \
+         REST's CratestackFetchQuery/Dart/Rust omission behavior for the same shape — got: \
+         {empty_computed_params_json}"
+    );
 
     assert_eq!(
         actual_json, expected_json,

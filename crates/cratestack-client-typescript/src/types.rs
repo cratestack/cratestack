@@ -2,6 +2,15 @@ use std::collections::BTreeSet;
 
 use cratestack_core::{EnumDecl, Field, Model, TypeArity, TypeRef};
 
+// `is_computed_field`/`computed_params_fields`/
+// `has_parameterized_computed_fields` live in `crate::computed_params`
+// (split out per the repo's 200-LoC file convention) and are re-exported
+// here so every existing `use crate::types::{...}` call site keeps
+// working unchanged.
+pub(crate) use crate::computed_params::{
+    computed_params_fields, has_parameterized_computed_fields, is_computed_field,
+};
+
 pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String {
     if type_ref.is_page() {
         let item = type_ref
@@ -109,18 +118,6 @@ fn is_server_only_field(field: &Field) -> bool {
         .attributes
         .iter()
         .any(|attribute| attribute.raw == "@server_only")
-}
-
-/// Field carries `@computed`/`@computed(params: <Type>?)`
-/// (`docs/design/computed-fields.md`) — resolved at response time, never
-/// stored. Unlike a relation or `@server_only` field, a computed field
-/// IS part of the default model projection (`scalar_model_fields`/
-/// `visible_model_fields` deliberately do NOT exclude it — a computed
-/// field is exactly as "scalar" as any other leaf field from the wire's
-/// point of view), so call sites that need to exclude it (create/update
-/// inputs, `Where`/`SortField` builders) check this explicitly.
-pub(crate) fn is_computed_field(field: &Field) -> bool {
-    cratestack_core::is_computed_field(field)
 }
 
 /// Model has at least one `@@allow("create", ...)` or

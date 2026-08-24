@@ -10,7 +10,10 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, TypeArity};
 use quote::quote;
 
-use crate::shared::{doc_attrs, ident, is_server_only_field, rust_type_tokens_with_scope};
+use crate::shared::{
+    doc_attrs, ident, is_server_only_field, rust_type_tokens_with_scope,
+    rust_type_tokens_with_wire_scope,
+};
 
 /// The exact type tokens [`struct_field_definition`] puts on the field.
 /// Extracted so the typestate builder emitter can take a setter argument
@@ -122,6 +125,57 @@ pub(crate) fn struct_field_definition(
         // empty array, which would corrupt round-trips). `#[serde(default)]`
         // lets the client struct accept "missing field" as `None`,
         // restoring the round-trip without changing the wire format.
+        quote! { #[serde(default)] }
+    } else {
+        quote! {}
+    };
+
+    quote! {
+        #docs
+        #serde_attr
+        pub #field_ident: #field_type,
+    }
+}
+
+/// [`struct_field_type`]'s wire-scope counterpart, for
+/// `generate_wire_model_struct` (`crate::model::struct_only`) — mirrors
+/// `struct_field_type`'s `wrap_for_patch = false` shape (a wire model
+/// struct is response-only) exactly, including the enum special case
+/// (`super::types::<Enum>` — enums are never computed-bearing, so this
+/// branch needs no substitution), and only changes the non-enum "other"
+/// resolution: [`rust_type_tokens_with_wire_scope`] redirects a bearing
+/// field to the sibling `super::wire::<Owner>` instead of the plain
+/// server-side `super::<Owner>`.
+pub(crate) fn struct_field_type_with_wire_scope(
+    field: &Field,
+    enum_names: &BTreeSet<&str>,
+    bearing: &BTreeSet<String>,
+) -> proc_macro2::TokenStream {
+    if enum_names.contains(field.ty.name.as_str()) {
+        let enum_ident = ident(&field.ty.name);
+        return match field.ty.arity {
+            TypeArity::Required => quote! { super::types::#enum_ident },
+            TypeArity::Optional => quote! { Option<super::types::#enum_ident> },
+            TypeArity::List => quote! { Vec<super::types::#enum_ident> },
+        };
+    }
+    rust_type_tokens_with_wire_scope(&field.ty, bearing)
+}
+
+/// [`struct_field_definition`]'s wire-scope counterpart. The `serde_attr`
+/// selection only ever reaches the `wrap_for_patch = false` branches
+/// (wire model structs never wrap for patch), so this mirrors just those.
+pub(crate) fn struct_field_definition_with_wire_scope(
+    field: &Field,
+    enum_names: &BTreeSet<&str>,
+    bearing: &BTreeSet<String>,
+) -> proc_macro2::TokenStream {
+    let field_ident = ident(&field.name);
+    let docs = doc_attrs(&field.docs);
+    let field_type = struct_field_type_with_wire_scope(field, enum_names, bearing);
+    let serde_attr = if is_server_only_field(field) {
+        quote! { #[serde(skip_serializing, default)] }
+    } else if matches!(field.ty.arity, TypeArity::Optional) {
         quote! { #[serde(default)] }
     } else {
         quote! {}

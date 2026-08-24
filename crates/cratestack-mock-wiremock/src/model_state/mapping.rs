@@ -8,6 +8,17 @@
 use serde_json::{Value, json};
 
 /// A `list`/`create` mapping — no `customMatcher`, an exact `urlPath`.
+///
+/// `urlPath` (like every other request-match shape in this module) is a
+/// path-only matcher — WireMock ignores any query string unless a
+/// `queryParameters` matcher is also present, and none is added anywhere
+/// in this file. This is the load-bearing site for `?computedParams=`
+/// (`docs/design/computed-fields.md`): `list`'s stub here, and `get`'s
+/// [`envelope_with_matcher`] below, both match a real client's request
+/// whether or not it carries `computedParams` — the generator has no way
+/// to synthesize a response that varies per resolver-params value, so
+/// this is deliberate, not an oversight. Don't add a `queryParameters`
+/// matcher to either without also handling `computedParams`.
 pub(super) fn envelope(
     method: &str,
     url_path: &str,

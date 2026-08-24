@@ -10,20 +10,25 @@
 //! trait's methods) — `@computed` fields are resolved at response-
 //! composition time.
 //!
-//! This file only emits the metadata/trait shape; the two submodules
+//! This file only emits the metadata/trait shape; the three submodules
 //! cover the rest of response composition:
 //! [`bearing`] re-derives which owners are "computed-bearing" (needed
-//! by both this crate and `crate::axum::procedure`'s dispatch codegen)
-//! and [`compose`] emits the `compose_<owner>_value` fns that walk a
+//! by both this crate and `crate::axum::procedure`'s dispatch codegen),
+//! [`compose`] emits the `compose_<owner>_value` fns that walk a
 //! bearing owner's value into a `::cratestack::ProjectedValue`, invoked
 //! from generated procedure dispatch when a procedure's output reaches
-//! one. Model GET/list/create/update/delete composition is a separate,
-//! earlier-landed path (`crate::axum::model::serializers::computed_
-//! fields`) that doesn't reuse these — it walks `?fields=`/`?computed
-//! Params=` selection state these owner-level compose fns don't need.
+//! one, and [`wire`] emits the server composer's dedicated `wire` module
+//! — one wire-shape struct per computed-bearing owner, fixing the
+//! embedded self/peer-calling client's silent-drop bug (`docs/design/
+//! computed-fields.md`'s "Exclusions" section). Model GET/list/create/
+//! update/delete composition is a separate, earlier-landed path
+//! (`crate::axum::model::serializers::computed_fields`) that doesn't
+//! reuse these — it walks `?fields=`/`?computedParams=` selection state
+//! these owner-level compose fns don't need.
 
 mod bearing;
 mod compose;
+mod wire;
 
 use cratestack_core::{Field, Model, TypeDecl, computed_params_type_name};
 use quote::quote;
@@ -38,6 +43,7 @@ pub(crate) use bearing::{
     procedure_output_composition,
 };
 pub(crate) use compose::generate_compose_helpers;
+pub(crate) use wire::generate_wire_structs;
 
 fn resolver_method_name(owner_name: &str, field_name: &str) -> String {
     format!(

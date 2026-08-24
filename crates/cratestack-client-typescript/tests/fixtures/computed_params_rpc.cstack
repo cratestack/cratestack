@@ -1,0 +1,25 @@
+// Same surface as computed_params.cstack, but under `transport rpc` — the
+// RPC counterpart of the typed `computedParams` per-model gate (see
+// docs/design/computed-fields.md's "Downstream" section).
+
+transport rpc
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+
+  @@allow("create", true)
+}
+
+type ProxyParams {
+  width Int?
+  height Int?
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("create", true)
+}

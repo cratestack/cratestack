@@ -69,6 +69,30 @@ Object cratestackRequireWireValue(String ownerName, String fieldName, Object? va
   return value;
 }
 
+/// Folds a typed computed-params class's already-`.toWire()`'d map
+/// (same call-site convention as `rest-runtime.dart.j2`'s
+/// `cratestackWithComputedParams`) into an RPC `model.<X>.get`/
+/// `model.<X>.list` input frame under the `computedParams` key, encoded
+/// as raw JSON text rather than left as a nested object
+/// (`docs/design/computed-fields.md`'s "Why `computedParams` is a
+/// `String`" section: `/rpc/batch` re-encodes each frame's opaque
+/// `input` through `serde_json::Value` before re-dispatching it, and a
+/// nested `Option`-bearing object doesn't survive that round trip —
+/// a `String` field does). Absent/empty `computedParams` leaves `input`
+/// untouched — never adds an empty `computedParams` key.
+Map<String, Object?> cratestackWithRpcComputedParams(
+  Map<String, Object?> input,
+  Map<String, Object?>? computedParams,
+) {
+  if (computedParams == null || computedParams.isEmpty) {
+    return input;
+  }
+  return <String, Object?>{
+    ...input,
+    'computedParams': jsonEncode(computedParams),
+  };
+}
+
 /// Stable gRPC-style error codes the server emits. Open string union
 /// at runtime — a future server-side code lands as a plain string
 /// rather than crashing the client.

@@ -17,8 +17,8 @@ use crate::types::{
     model_name_set, scalar_model_fields, version_field, visible_model_fields,
 };
 use crate::views::{
-    EnumView, InterfaceKind, InterfaceView, ModelApiView, build_enum_view, build_interface,
-    build_model_api, disambiguate_model_api_keys,
+    EnumView, InterfaceKind, InterfaceView, ModelApiView, build_computed_params_interface,
+    build_enum_view, build_interface, build_model_api, disambiguate_model_api_keys,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -185,6 +185,13 @@ pub(crate) fn build_template_context(
         enums.push(build_sort_field_view(model, &model_names));
         interfaces.push(build_order_by_clause_interface(model));
         interfaces.push(build_find_many_interface(model, where_interface.is_some()));
+        // `docs/design/computed-fields.md`'s typed `computedParams` surface
+        // (cratestack#stage4): only emitted for a model with at least one
+        // *parameterized* computed field — see
+        // `crate::views::build_computed_params_interface`'s doc comment.
+        if let Some(computed_params_interface) = build_computed_params_interface(model) {
+            interfaces.push(computed_params_interface);
+        }
     }
     for procedure in &schema.procedures {
         let fields = procedure

@@ -1,4 +1,16 @@
-export interface CratestackFetchQuery {
+/**
+ * `TComputedParams` is this model's own generated `<Model>ComputedParams`
+ * interface (`docs/design/computed-fields.md`'s typed `computedParams`
+ * surface) when the model declares at least one parameterized
+ * `@computed(params: <Type>?)` field, or the default `never` otherwise —
+ * see `models.ts`'s per-model `<Model>ComputedParams` interfaces and
+ * `crate::views::ModelApiView::computed_params_interface`'s doc comment
+ * for the generator side of this gate. `never` makes `computedParams`
+ * unassignable on an ungated model, enforced by `tsc`: the server 422s a
+ * `computedParams` key that doesn't name a parameterized field of that
+ * model, so this is a real, checked precondition, not decoration.
+ */
+export interface CratestackFetchQuery<TComputedParams = never> {
   fields?: string[];
   include?: string[];
   includeFields?: Record<string, string[]>;
@@ -18,13 +30,11 @@ export interface CratestackFetchQuery {
    * encoded `computedParams` query parameter
    * (`appendQueryValue`'s object branch in `runtime.ts` already
    * `JSON.stringify`s any object-valued query entry, so no extra
-   * encoding step is needed here). Untyped (`Record<string, unknown>`)
-   * rather than a generated per-model params type — v1 escape hatch,
-   * see `docs/design/computed-fields.md`'s "Downstream" section. Applies
-   * to `get`/`list` only, same as the server's own `?computedParams=`
-   * support (root model, read paths only).
+   * encoding step is needed here). Applies to `get`/`list` only, same as
+   * the server's own `?computedParams=` support (root model, read paths
+   * only).
    */
-  computedParams?: Record<string, unknown>;
+  computedParams?: TComputedParams;
 }
 
 export interface CratestackRequestConfig {
@@ -32,8 +42,8 @@ export interface CratestackRequestConfig {
   headers?: HeadersInit;
 }
 
-export interface CratestackQueryRequestConfig extends CratestackRequestConfig {
-  query?: CratestackFetchQuery;
+export interface CratestackQueryRequestConfig<TComputedParams = never> extends CratestackRequestConfig {
+  query?: CratestackFetchQuery<TComputedParams>;
 }
 
 // Issue #610: the WRITE half of the ETag/If-Match round trip — an
@@ -65,7 +75,9 @@ export function withIfMatchHeader(
   return merged;
 }
 
-export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unknown> | undefined {
+export function toSearchQuery<TComputedParams = never>(
+  query?: CratestackFetchQuery<TComputedParams>,
+): Record<string, unknown> | undefined {
   if (!query) {
     return undefined;
   }
@@ -95,7 +107,7 @@ export function toSearchQuery(query?: CratestackFetchQuery): Record<string, unkn
   if (query.or) {
     output.or = query.or;
   }
-  if (query.computedParams && Object.keys(query.computedParams).length > 0) {
+  if (query.computedParams && Object.keys(query.computedParams as Record<string, unknown>).length > 0) {
     output.computedParams = query.computedParams;
   }
 

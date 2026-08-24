@@ -14,8 +14,8 @@ use std::collections::BTreeSet;
 
 use cratestack_core::{Field, TypeArity};
 
-use crate::model::struct_only::struct_field_type;
-use crate::shared::{doc_attrs, field_type, ident};
+use crate::model::struct_only::{struct_field_type, struct_field_type_with_wire_scope};
+use crate::shared::{doc_attrs, field_type, field_type_with_wire_scope, ident};
 
 use super::BuilderField;
 
@@ -125,6 +125,46 @@ pub(crate) fn scoped_builder_fields<'a>(
         .map(|field| {
             build_spec(field, wrap_for_patch, |field, patch| {
                 field_type(field, patch, custom_in_super)
+            })
+        })
+        .collect()
+}
+
+/// [`model_builder_fields`]'s wire-scope counterpart, for
+/// `generate_wire_model_struct` — always `wrap_for_patch = false` (a wire
+/// model struct is response-only), matching [`struct_field_type_with_wire_scope`]
+/// field-for-field so a setter's argument type can never drift from the
+/// struct field it fills, the same guarantee `model_builder_fields` gives
+/// the plain client struct.
+pub(crate) fn model_builder_fields_with_wire_scope<'a>(
+    fields: impl IntoIterator<Item = &'a Field>,
+    enum_names: &BTreeSet<&str>,
+    bearing: &BTreeSet<String>,
+) -> Vec<BuilderField> {
+    fields
+        .into_iter()
+        .map(|field| {
+            build_spec(field, false, |field, _patch| {
+                struct_field_type_with_wire_scope(field, enum_names, bearing)
+            })
+        })
+        .collect()
+}
+
+/// [`scoped_builder_fields`]'s wire-scope counterpart, for
+/// `generate_wire_type_struct` — always `wrap_for_patch = false`,
+/// `custom_in_super` equivalent (`super::<Ident>`) preserved by
+/// [`field_type_with_wire_scope`] except for a bearing field, which
+/// resolves to `super::wire::<Ident>` instead.
+pub(crate) fn scoped_builder_fields_with_wire_scope<'a>(
+    fields: impl IntoIterator<Item = &'a Field>,
+    bearing: &BTreeSet<String>,
+) -> Vec<BuilderField> {
+    fields
+        .into_iter()
+        .map(|field| {
+            build_spec(field, false, |field, _patch| {
+                field_type_with_wire_scope(field, bearing)
             })
         })
         .collect()
