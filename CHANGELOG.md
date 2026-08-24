@@ -55,8 +55,17 @@ old and new shape.
 
 Also in `just cbor-example-verify-ios`: the failure path printed `--- device state ---` and `--- is
 the app installed? ---` twice (cratestack#705 added a second copy rather than moving the first), and a
-passing run now reports how much of the poll budget was left, which is what cratestack#704's Test Plan
-asked for and what a green run still could not tell you.
+passing run now reports what it previously kept to itself — the poll margin, the install duration and
+launch time, and how much the app actually logged (capture bytes plus Runner-attributed line count).
+
+That last pair is the point. A green iOS job used to print one tick and nothing else, with 281 seconds
+of silence before it (job 97215919059), so a failure had no healthy run to be compared against: when
+job 97199199670 captured 2335 bytes holding 13 Runner-attributed lines and then went quiet for 94
+seconds, nothing on record said whether 13 was low, normal or high for this app. The same two summary
+lines are now printed on both the passing and failing paths, in the same order, so the two can be
+diffed directly. They also settle a question that had to be reconstructed by hand from GitHub's line
+timestamps: that failing run's install took 111s, *less* than the green run's, so install contention
+alone does not predict the flake.
 
 ### `just cbor-example-verify` now runs the example's `flutter test`
 
