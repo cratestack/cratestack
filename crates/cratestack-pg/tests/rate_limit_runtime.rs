@@ -117,6 +117,7 @@ async fn rate_limit_exemption_is_selective() {
     let mut router: Router = cratestack_schema::axum::rpc_router(
         db.clone(),
         RpcProcedures,
+        (),
         codec,
         auth,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

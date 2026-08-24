@@ -1,6 +1,7 @@
 mod axum;
 mod builder;
 mod client;
+mod computed;
 mod event;
 mod include;
 mod model;

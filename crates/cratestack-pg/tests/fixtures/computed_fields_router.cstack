@@ -1,0 +1,43 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// Model names prefixed `CompRouter` so their auto-derived tables don't
+// collide with any other fixture's tables on the shared external test
+// Postgres (same convention as `ProjWidget*`/`AdvancedUser`/`AdvancedPost`).
+//
+// Exercises the response-composition path end to end
+// (docs/design/computed-fields.md): a model computed field with a
+// parameterized resolver (`proxyUrl`), fetched through GET/LIST/CREATE,
+// plus a to-many relation include (`CompRouterAlbum.photos`) so the
+// recursive `serialize_..._model_value` call on the related model's own
+// computed field can be exercised with `computedParams` always `None`.
+model CompRouterAlbum {
+  id Int @id
+  title String
+  photos CompRouterPhoto[] @relation(fields:[id],references:[albumId])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model CompRouterPhoto {
+  id Int @id
+  albumId Int
+  storageKey String
+  proxyUrl String @computed(params: CompRouterProxyParams?)
+  // Bare (param-less) sibling of `proxyUrl` — exists so
+  // `?computedParams=` validation has a same-model field name to reject
+  // with "not a parameterized computed field" rather than only ever
+  // seeing "unknown key" or "model has no parameterized fields at all".
+  thumbnailUrl String @computed
+  album CompRouterAlbum @relation(fields:[albumId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type CompRouterProxyParams {
+  width Int?
+}

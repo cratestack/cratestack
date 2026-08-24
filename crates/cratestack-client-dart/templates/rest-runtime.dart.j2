@@ -75,6 +75,28 @@ List<Object?> cratestackAsValueList(Object? value) {
   return List<Object?>.from(value as List);
 }
 
+/// Folds a `computedParams` map (keyed by `@computed` field name, each
+/// value the field's params serialized as plain JSON-compatible Dart
+/// objects — `docs/design/computed-fields.md`) into a request's other
+/// query parameters, under the single wire query key `computedParams`, as
+/// a JSON-encoded string. `dio`'s query-string builder percent-encodes
+/// map values itself, so nothing here needs to pre-escape the JSON text.
+/// Absent/empty `computedParams` leaves `queryParameters` untouched
+/// (never adds an empty `computedParams=` key) — the server treats a
+/// missing key exactly like `None` for every computed field.
+Map<String, Object?>? cratestackWithComputedParams(
+  Map<String, Object?>? queryParameters,
+  Map<String, Object?>? computedParams,
+) {
+  if (computedParams == null || computedParams.isEmpty) {
+    return queryParameters;
+  }
+  return <String, Object?>{
+    ...?queryParameters,
+    'computedParams': jsonEncode(computedParams),
+  };
+}
+
 String? cratestackCanonicalizeQuery(Map<String, Object?>? queryParameters) {
   if (queryParameters == null || queryParameters.isEmpty) {
     return null;

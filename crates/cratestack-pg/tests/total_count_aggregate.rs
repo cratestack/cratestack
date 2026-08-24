@@ -53,6 +53,7 @@ impl AuthProvider for OwnerAuthProvider {
 fn router(pool: cratestack::sqlx::PgPool) -> cratestack::axum::Router {
     cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool).build(),
+        (),
         JsonCodec,
         OwnerAuthProvider,
     )

@@ -10,6 +10,7 @@
 //! - [`routes`]: `.route(...)` chain for the router.
 
 mod builders;
+mod computed;
 mod handlers_crud;
 mod handlers_list;
 mod handlers_update;
@@ -81,7 +82,9 @@ pub(crate) fn generate_model_axum_handlers(
     let query_helpers = builders::build_query_helpers(&p, &arms);
     let validate_helpers = builders::build_validate_helpers(&p, &arms);
     let projection_helpers = serializers::build_projection_helpers(&p, model, &model_names);
-    let serialize_helper = serializers::build_serialize_helper(&p, &arms);
+    let computed_fields = computed::model_computed_fields(model);
+    let parse_computed_params_fn = computed::build_parse_computed_params_fn(&p, &computed_fields);
+    let serialize_helper = serializers::build_serialize_helper(&p, &arms, &computed_fields);
     let list_builder = serializers::build_list_builder(&p, &arms);
     let list_handler = handlers_list::build_list_handler(&p);
     let create_handler = handlers_crud::build_create_handler(&p);
@@ -96,6 +99,7 @@ pub(crate) fn generate_model_axum_handlers(
         #query_helpers
         #validate_helpers
         #projection_helpers
+        #parse_computed_params_fn
         #serialize_helper
         #list_builder
         #list_handler

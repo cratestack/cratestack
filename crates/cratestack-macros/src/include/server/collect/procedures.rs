@@ -30,6 +30,7 @@ pub(super) fn collect_procedures(
     schema_path: &LitStr,
     enum_name_set: &BTreeSet<&str>,
     auth: Option<&cratestack_core::AuthBlock>,
+    bearing: &BTreeSet<String>,
 ) -> Result<ProcedureCollected, TokenStream> {
     let modules = schema
         .procedures
@@ -54,7 +55,7 @@ pub(super) fn collect_procedures(
     let axum_handler_defs = schema
         .procedures
         .iter()
-        .map(generate_procedure_axum_handler)
+        .map(|procedure| generate_procedure_axum_handler(procedure, bearing))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| compile_error(schema_path, e))?;
     let axum_routes = schema

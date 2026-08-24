@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model};
 
 use crate::naming::{escape_ts_string, ts_identifier};
-use crate::types::scalar_model_fields;
+use crate::types::{is_computed_field, scalar_model_fields};
 use crate::views::{EnumView, FieldView, InterfaceView};
 
 /// Same 8 types `cratestack-macros`'s `find_many_where.rs` filters
@@ -46,6 +46,10 @@ pub(crate) fn build_where_interface(
 ) -> Option<InterfaceView> {
     let fields = scalar_model_fields(model, model_names)
         .into_iter()
+        // `@computed` fields are never filterable — resolved at response
+        // time, they never live in a column the server's `?where=` route
+        // can query (`docs/design/computed-fields.md`).
+        .filter(|field| !is_computed_field(field))
         .filter(|field| is_filterable_scalar(field))
         .collect::<Vec<_>>();
     if fields.is_empty() {
@@ -75,6 +79,9 @@ pub(crate) fn build_where_interface(
 pub(crate) fn build_sort_field_view(model: &Model, model_names: &BTreeSet<&str>) -> EnumView {
     let values = scalar_model_fields(model, model_names)
         .into_iter()
+        // `@computed` fields are never sortable, same reasoning as
+        // `build_where_interface` above.
+        .filter(|field| !is_computed_field(field))
         .map(|field| field.name.clone())
         .collect::<Vec<_>>();
     let union = values

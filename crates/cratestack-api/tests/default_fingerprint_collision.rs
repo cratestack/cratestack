@@ -87,6 +87,7 @@ fn build_rate_limited_router(config: RateLimitConfig) -> cratestack::axum::Route
     cratestack_schema::axum::router(
         db,
         Procedures,
+        (),
         JsonCodec,
         AllowAllAuth,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,
@@ -288,6 +289,7 @@ fn build_idempotent_router() -> cratestack::axum::Router {
     cratestack_schema::axum::router(
         db,
         Procedures,
+        (),
         JsonCodec,
         AllowAllAuth,
         cratestack::DEFAULT_BODY_LIMIT_BYTES,

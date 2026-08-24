@@ -1,6 +1,10 @@
 mod builder_collisions;
 mod builder_setter_collisions;
 mod composite_attributes;
+mod computed;
+mod computed_attribute;
+mod computed_params;
+mod computed_resolver_names;
 mod fields;
 mod index_attribute;
 mod mixins_types;
@@ -99,6 +103,11 @@ pub(crate) fn validate_schema(
     validate_auth(schema, &type_names, &page_item_type_names, &model_names)?;
     validate_procedures(schema, &type_names, &page_item_type_names, &model_names)?;
     self::views::validate_views(schema)?;
+    // Runs after the per-declaration validators above: it may assume every
+    // `@computed` attribute is already known to be bare, unique, and on a
+    // declaration kind that supports it.
+    self::computed::validate_computed(schema)?;
+    self::computed_resolver_names::validate_computed_resolver_name_collisions(schema)?;
 
     let _ = (path, source);
     Ok(())

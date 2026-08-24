@@ -1,6 +1,8 @@
 //! `include_embedded_schema!` composer — emits the embedded ORM
 //! surface backed by rusqlite. No sqlx, no axum, no procedures.
 
+mod computed_guard;
+
 use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
@@ -19,6 +21,8 @@ use crate::types::{generate_enum_type, generate_type_struct};
 use super::decimal_arg::resolve_decimal_backend;
 use super::parse::parse_schema_literal;
 
+use computed_guard::guard_embedded_no_computed_fields;
+
 pub(super) fn compose_embedded_schema(
     schema_path: &LitStr,
     decimal: Option<DecimalBackend>,
@@ -28,6 +32,9 @@ pub(super) fn compose_embedded_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) = guard_embedded_no_computed_fields(schema_path, &schema) {
+        return error;
+    }
     if let Err(error) =
         super::extension_gate::guard_embedded_declared_extensions(schema_path, &schema)
     {

@@ -58,6 +58,7 @@ async fn list_route_rejects_limit_above_max_list_limit() {
 
     let router = cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
+        (),
         JsonCodec,
         AlwaysAuthProvider,
     );
@@ -109,6 +110,7 @@ async fn list_route_defaults_omitted_limit_to_max_list_limit() {
 
     let router = cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
+        (),
         JsonCodec,
         AlwaysAuthProvider,
     );
@@ -152,6 +154,7 @@ async fn list_route_allows_limit_exactly_at_max_list_limit() {
 
     let router = cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
+        (),
         JsonCodec,
         AlwaysAuthProvider,
     );

@@ -60,6 +60,18 @@ pub(crate) fn is_relation_field(model_names: &BTreeSet<&str>, field: &Field) -> 
     model_names.contains(field.ty.name.as_str())
 }
 
+/// Field carries `@computed`/`@computed(params: <Type>?)` — a resolver-
+/// backed, response-time-only field (`docs/design/computed-fields.md`).
+/// Unlike `@server_only`, a computed field IS part of every response
+/// body — `super::model_state::fields::build_field_plan` fabricates it
+/// like any other field of its type, but always via the frozen/
+/// `synthesize`-backed bucket (never the stateful one, regardless of
+/// scalar kind), since a create/update request body never carries it
+/// and there is nothing to echo back.
+pub(crate) fn is_computed_field(field: &Field) -> bool {
+    cratestack_core::is_computed_field(field)
+}
+
 /// How a field's value round-trips through the WireMock stub's hand-
 /// assembled JSON text (`crates/cratestack-mock-wiremock/src/
 /// model_state/`) — whether the rendered Handlebars fragment needs to be

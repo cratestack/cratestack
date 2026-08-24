@@ -63,6 +63,18 @@ pub(crate) fn is_relation_field(model_names: &BTreeSet<&str>, field: &Field) -> 
     model_names.contains(field.ty.name.as_str())
 }
 
+/// Field carries `@computed`/`@computed(params: <Type>?)`
+/// (`docs/design/computed-fields.md`) — resolved at response time, never
+/// stored. Unlike a relation field, a computed field IS part of the
+/// default projection (`scalar_model_fields` deliberately does NOT
+/// exclude it — a computed field is exactly as "scalar" as any other
+/// leaf field from the wire's point of view), so call sites that need to
+/// exclude it (create/update inputs, `Where`/`SortField` builders) check
+/// this explicitly rather than routing it through `scalar_model_fields`.
+pub(crate) fn is_computed_field(field: &Field) -> bool {
+    cratestack_core::is_computed_field(field)
+}
+
 pub(crate) fn primary_key_field(model: &Model) -> Option<&Field> {
     model.fields.iter().find(|field| is_primary_key(field))
 }

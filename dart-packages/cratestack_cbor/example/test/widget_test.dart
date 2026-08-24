@@ -14,7 +14,12 @@ void main() {
     'round-trips a CBOR value through the real cratestack_cbor API and '
     'shows the result',
     (WidgetTester tester) async {
-      await tester.pumpWidget(const CratestackCborExampleApp());
+      // Started before the widget exists, exactly as `main()` does it — the
+      // app takes the future rather than starting one on first build (see
+      // `main.dart`'s comment, cratestack#704).
+      await tester.pumpWidget(CratestackCborExampleApp(
+        roundTrip: runRoundTrip(),
+      ));
       await tester.pumpAndSettle();
 
       final resultFinder = find.byKey(const Key('cratestack_cbor_result'));

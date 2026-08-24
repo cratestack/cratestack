@@ -65,7 +65,7 @@ pub(crate) fn generate_relation_include_arm(
                     .await?;
                 let mut related_value = Vec::with_capacity(related_records.len());
                 for related_record in &related_records {
-                    related_value.push(#target_serialize_ident(db, ctx, related_record, &child_selection).await?);
+                    related_value.push(#target_serialize_ident(db, resolvers, ctx, related_record, &child_selection, None).await?);
                 }
                 let related_value = ::cratestack::ProjectedValue::Array(related_value);
                 object.insert(#include_name.to_owned(), related_value);
@@ -105,7 +105,7 @@ pub(crate) fn generate_relation_include_arm(
                             .into_iter()
                             .next();
                         match related_record {
-                            Some(related_record) => #target_serialize_ident(db, ctx, &related_record, &child_selection).await?,
+                            Some(related_record) => #target_serialize_ident(db, resolvers, ctx, &related_record, &child_selection, None).await?,
                             None => ::cratestack::ProjectedValue::Null,
                         }
                     }
@@ -133,7 +133,7 @@ pub(crate) fn generate_relation_include_arm(
                     .into_iter()
                     .next();
                 let related_value = match related_record {
-                    Some(related_record) => #target_serialize_ident(db, ctx, &related_record, &child_selection).await?,
+                    Some(related_record) => #target_serialize_ident(db, resolvers, ctx, &related_record, &child_selection, None).await?,
                     None => ::cratestack::ProjectedValue::Null,
                 };
                 object.insert(#include_name.to_owned(), related_value);

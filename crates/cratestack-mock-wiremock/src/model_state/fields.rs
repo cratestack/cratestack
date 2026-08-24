@@ -4,7 +4,10 @@
 //! ([`StateField`] — echoed on create/update, read back on get/list/
 //! delete), and fields it can't ([`FrozenField`] — a fixed example
 //! value, same on every response, computed once via `values::synthesize`
-//! exactly like the pre-stateful static generator did).
+//! exactly like the pre-stateful static generator did). `@computed`
+//! fields (`docs/design/computed-fields.md`) always land in the frozen
+//! bucket too — they're part of every response but never part of a
+//! create/update request, so there's nothing to echo.
 
 use std::collections::BTreeSet;
 
@@ -12,7 +15,8 @@ use cratestack_core::{Field, Model, Schema};
 
 use crate::error::WireMockGeneratorError;
 use crate::model_attrs::{
-    ScalarKind, classify_field_kind, is_relation_field, is_server_only_field, is_version_field,
+    ScalarKind, classify_field_kind, is_computed_field, is_relation_field, is_server_only_field,
+    is_version_field,
 };
 use crate::values::synthesize;
 
@@ -81,6 +85,21 @@ pub(crate) fn build_field_plan(
             || is_server_only_field(field)
             || is_version_field(field)
         {
+            continue;
+        }
+        if is_computed_field(field) {
+            // `@computed` fields are fabricated like any other field of
+            // their type, but never echoed from a create/update request
+            // body (there is nothing to echo — the wire input never
+            // carries them either) — so they always land in the frozen
+            // bucket, regardless of what `classify_field_kind` would
+            // otherwise say about their scalar kind.
+            let mut in_progress = vec![model.name.clone()];
+            let value = synthesize(schema, &owner, &field.ty, &mut in_progress)?;
+            frozen.push(FrozenField {
+                name: field.name.clone(),
+                literal_json: value.to_string(),
+            });
             continue;
         }
         match classify_field_kind(schema, field) {

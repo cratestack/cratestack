@@ -39,6 +39,26 @@
   completion with a ranged constraint in `pubspec.yaml`. Tooling does not block
   a range — the runtime version mismatch does, and that alone is sufficient.
 
+- **The example app's round-trip marker no longer depends on a widget
+  building.** The round trip hung off a `late final` field on the page's
+  `State`, read only inside `build()`, making the marker every headless
+  verification greps for a side effect of constructing the widget tree. It
+  now starts in `main()`, and the widget is handed the already-running
+  future. Scope, precisely: `runApp` schedules the root attach on a bare
+  `Timer.run` and inflates the tree synchronously, so the old code ran one
+  event-loop turn later — no frame or platform scene was ever required, and
+  this is not a fix for cratestack#704. Example-only; no change to the
+  published `cratestack_cbor` API or to either codec backend.
+
+- **The example's `flutter test` now runs as part of `just cbor-example-verify`.**
+  It previously ran nowhere (not in CI, and it failed on a clean checkout with
+  `Unsupported operation: Isolate.resolvePackageUriSync` — `flutter test`'s
+  test VM does not support the synchronous package-URI resolution the native
+  backend's dev-mode fallback tries). The pre-existing
+  `CRATESTACK_CBOR_NATIVE_LIB` override, checked before that resolution runs,
+  now points the test at the vendored Linux blob directly. No change to the
+  published API.
+
 - **Linux arm64 is now documented as blocked upstream rather than as pending
   work.** Flutter publishes no arm64 Linux SDK on any channel (verified
   against the release manifest: 732 entries, all x64, zero containing `arm`

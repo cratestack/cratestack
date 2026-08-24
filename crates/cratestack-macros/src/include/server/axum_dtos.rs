@@ -6,6 +6,14 @@ use quote::quote;
 
 pub(super) fn build_axum_dtos() -> proc_macro2::TokenStream {
     quote! {
+        /// `{ fieldName: paramsJson }` — the decoded, key-validated shape
+        /// of a `?computedParams=` query value. Values stay `serde_json::
+        /// Value` here (not the generated params `type` struct) because
+        /// this shape is schema-independent; per-field typed
+        /// deserialization happens where the field's params type is
+        /// known — inside `serialize_<model>_model_value` — not here.
+        pub type ComputedParamsQuery = ::std::collections::BTreeMap<String, ::cratestack::serde_json::Value>;
+
         #[derive(Debug, Clone, Default)]
         pub struct ModelSelectionQuery {
             pub fields: Option<Vec<String>>,
@@ -65,11 +73,18 @@ pub(super) fn build_axum_dtos() -> proc_macro2::TokenStream {
             pub offset: Option<i64>,
             pub sort: Option<String>,
             pub filters: Vec<::cratestack::QueryExpr>,
+            /// Raw `?computedParams=` value, not yet decoded or validated
+            /// — per-model validation needs the model's computed-field
+            /// list, which isn't available at this schema-independent
+            /// parse site. See `parse_<model>_computed_params`.
+            pub computed_params: Option<String>,
         }
 
         #[derive(Debug, Clone, Default)]
         pub struct ModelFetchQuery {
             pub selection: ModelSelectionQuery,
+            /// See `ModelListQuery::computed_params`.
+            pub computed_params: Option<String>,
         }
     }
 }

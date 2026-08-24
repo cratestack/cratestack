@@ -102,7 +102,7 @@ where
     C: cratestack::HttpTransport + Clone + cratestack::CratestackCodec,
 {
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, codec.clone(), PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), codec.clone(), PassThroughAuth);
 
     let response = router
         .oneshot(

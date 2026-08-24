@@ -16,8 +16,8 @@ use crate::find_many_views::{
 use crate::naming::{model_fn_names, procedure_wrapper_name, to_kebab_case};
 use crate::procedure_views::build_procedure;
 use crate::types::{
-    enum_name_set, is_generated_on_create, is_paged_model, is_primary_key, model_allows_create,
-    model_name_set, scalar_model_fields, visible_model_fields,
+    enum_name_set, is_computed_field, is_generated_on_create, is_paged_model, is_primary_key,
+    model_allows_create, model_name_set, scalar_model_fields, visible_model_fields,
 };
 use crate::views::{InterfaceKind, build_interface, build_model_api};
 
@@ -186,6 +186,10 @@ pub(crate) fn build_model_file_contexts(
                     &scalar_fields
                         .iter()
                         .copied()
+                        // `@computed` fields are resolver-backed and
+                        // response-time only — never part of a create
+                        // input (`docs/design/computed-fields.md`).
+                        .filter(|field| !is_computed_field(field))
                         .filter(|field| !is_generated_on_create(field))
                         .collect::<Vec<_>>(),
                     InterfaceKind::Plain,
@@ -198,6 +202,10 @@ pub(crate) fn build_model_file_contexts(
                     .iter()
                     .copied()
                     .filter(|field| !is_primary_key(field))
+                    // `@computed` fields are never part of an update
+                    // input either — same reasoning as the create input
+                    // above.
+                    .filter(|field| !is_computed_field(field))
                     .collect::<Vec<_>>(),
                 InterfaceKind::Patch,
                 &enum_names,

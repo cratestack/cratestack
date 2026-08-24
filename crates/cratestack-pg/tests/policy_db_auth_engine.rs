@@ -504,12 +504,14 @@ async fn db_backed_auth_engine_supports_all_deny_and_auth_defaults() {
     let codec = CborCodec;
     let router = cratestack_schema::axum::model_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
+        (),
         codec.clone(),
         AuthEngineAuthProvider,
     );
     let procedure_router = cratestack_schema::axum::procedure_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
         AuthEngineProcedures,
+        (),
         codec.clone(),
         AuthEngineAuthProvider,
     );

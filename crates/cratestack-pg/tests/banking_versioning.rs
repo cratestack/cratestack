@@ -181,7 +181,7 @@ async fn http_patch_round_trips_etag_and_rejects_stale_if_match() {
         .expect("seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     // GET should return ETag matching the current version.
     let get_response = router
@@ -370,7 +370,7 @@ async fn http_delete_rejects_missing_and_stale_if_match_then_succeeds_with_fresh
         .expect("seed");
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let router = cratestack_schema::axum::model_router(cool, JsonCodec, PassThroughAuth);
+    let router = cratestack_schema::axum::model_router(cool, (), JsonCodec, PassThroughAuth);
 
     // DELETE without If-Match must fail with 412 and leave the row intact.
     let no_if_match = router

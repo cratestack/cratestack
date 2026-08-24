@@ -19,7 +19,9 @@ use crate::find_many_views::{
     build_where_data_class,
 };
 use crate::idents::to_camel_case;
-use crate::naming::{is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields};
+use crate::naming::{
+    is_computed_field, is_generated_on_create, is_primary_key, model_name_set, scalar_model_fields,
+};
 use crate::riverpod::imports::{
     model_file_path, model_file_stem, model_relation_targets, owned_type_decl_model_refs,
     render_import_lines, scalar_type_imports,
@@ -80,6 +82,9 @@ pub(crate) fn build_model_file(
     let create_fields = scalar_fields
         .iter()
         .copied()
+        // `@computed` fields are resolver-backed and response-time only
+        // — never part of a create input (`docs/design/computed-fields.md`).
+        .filter(|field| !is_computed_field(field))
         .filter(|field| !is_generated_on_create(field))
         .collect::<Vec<_>>();
     data_classes.push(build_data_class(
@@ -94,6 +99,9 @@ pub(crate) fn build_model_file(
         .iter()
         .copied()
         .filter(|field| !is_primary_key(field))
+        // `@computed` fields are never part of an update input either —
+        // same reasoning as `create_fields` above.
+        .filter(|field| !is_computed_field(field))
         .collect::<Vec<_>>();
     data_classes.push(build_data_class(
         &format!("Update{}Input", model.name),

@@ -45,15 +45,16 @@ use quote::quote;
 
 pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
     quote! {
-        async fn rpc_batch_dispatch<R, C, Auth>(
+        async fn rpc_batch_dispatch<R, CR, C, Auth>(
             ::cratestack::axum::extract::State(state):
-                ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
+                ::cratestack::axum::extract::State<RpcRouterState<R, CR, C, Auth>>,
             headers: ::cratestack::axum::http::HeaderMap,
             client_ip_ctx: ClientIpContext,
             body: ::cratestack::axum::body::Bytes,
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -142,6 +143,7 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                 let frame_state = RpcRouterState {
                     db: state.db.clone(),
                     registry: state.registry.clone(),
+                    resolvers: state.resolvers.clone(),
                     codec: state.codec.clone(),
                     auth_provider: cached_auth.clone(),
                 };

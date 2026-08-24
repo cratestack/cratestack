@@ -6,9 +6,11 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::builder_setter_collisions::{
     validate_no_add_setter_collision, validate_no_build_setter_collision,
 };
+use crate::validate::computed_attribute::{
+    ComputedFieldSupport, validate_computed_field_attribute,
+};
 use crate::validate::fields::{
-    CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
-    validate_field_reserved_identifier,
+    validate_default_dbgenerated_no_args, validate_field_reserved_identifier,
 };
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
@@ -63,11 +65,11 @@ pub(super) fn validate_mixins(
                     field.span,
                 ));
             }
-            validate_custom_field_attribute(
+            validate_computed_field_attribute(
                 field,
                 "mixin",
                 &mixin.name,
-                CustomFieldSupport::Rejected,
+                ComputedFieldSupport::Rejected,
             )?;
             validate_field_reserved_identifier(field, "mixin", &mixin.name)?;
             validate_type_ref(
@@ -125,7 +127,12 @@ pub(super) fn validate_types(
                     field.span,
                 ));
             }
-            validate_custom_field_attribute(field, "type", &ty.name, CustomFieldSupport::TypeOnly)?;
+            validate_computed_field_attribute(
+                field,
+                "type",
+                &ty.name,
+                ComputedFieldSupport::Supported,
+            )?;
             validate_field_reserved_identifier(field, "type", &ty.name)?;
             validate_type_ref(
                 type_names,
@@ -194,11 +201,11 @@ pub(super) fn validate_auth(
                     field.span,
                 ));
             }
-            validate_custom_field_attribute(
+            validate_computed_field_attribute(
                 field,
                 "auth block",
                 &auth.name,
-                CustomFieldSupport::Rejected,
+                ComputedFieldSupport::Rejected,
             )?;
             validate_field_reserved_identifier(field, "auth block", &auth.name)?;
             validate_type_ref(

@@ -53,6 +53,130 @@ Also fixed a stale claim in `docs/tooling/dart-publishing.md`, spotted in the sa
 narrative about the 0.8.0 first-publish rejection described the package as shipping no `ios/` folder
 in the present tense. It has shipped one since 0.8.7.
 
+### `@computed` — resolver-backed response-time fields, replacing `@custom` (`docs/design/computed-fields.md`)
+
+A schema author can now declare a field that is derived at response time by hand-written Rust rather
+than stored — a signed `proxyUrl` on an `Image`, computed while the framework composes the response:
+
+```
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}
+
+type Thumbnail {
+  url String @computed(params: ProxyParams?)
+}
+```
+
+`@computed` (bare) and `@computed(params: <Type>?)` (parameterized — `<Type>` a declared `type`, the
+trailing `?` required in v1) are accepted on `type` and `model` fields only; resolvers are invoked on
+every model HTTP response (get, list, create, update, delete, relation includes) and on any procedure
+output that reaches a computed-bearing `type`/`model`, over both REST and RPC transport.
+`include_embedded_schema!` rejects any schema declaring a computed field at macro-expansion time — the
+embedded backend has no response-composition boundary to run a resolver in. Model reads gain a
+`?computedParams=<url-encoded JSON object>` query parameter (REST only; root model only) to pass
+per-field resolver arguments.
+
+**BREAKING:** the generated `router()`, `rpc_router()`, `model_router()`, and `procedure_router()`
+functions gain a new `resolvers` parameter: `router(db, registry, resolvers, codec, auth_provider,
+body_limit_bytes)`. Pass `()` for any schema with no computed fields — a generated
+`impl ComputedFieldResolver for ()` covers that case with no extra caller-side wiring.
+
+**BREAKING:** `@custom` is removed. It generated a `CustomFieldResolver` trait that nothing ever
+invoked (the field stayed a plain struct member the caller had to fill by hand) — `@computed` replaces
+it with a trait the framework actually calls. A schema still carrying `@custom` now fails to parse,
+pointing at `@computed` as the replacement.
+
+Downstream generators: `cratestack-migrate` excludes computed fields from DDL/diff; the wiremock
+generator fabricates them like ordinary response fields; the LSP adds `@computed` to attribute
+completion; the Dart and TypeScript client generators emit computed fields in response classes only
+(excluded from create/update inputs, filters, and sorts) and add an untyped `computedParams` escape
+hatch to `get`/`list` (Dart gates it per model, offered only when the model has a *parameterized*
+computed field; TypeScript's lives on one shared query type used by every model). The generated Rust
+client has no `computedParams` surface yet (tracked follow-up) but still decodes computed field values
+correctly on responses.
+
+### `just cbor-example-verify-ios` no longer fails when the live log capture drops the marker
+
+Marker detection depended on a **live** `log stream` subscription having been listening at the moment
+the app printed. It now falls back to `log show` — a retrospective query against the log store, which
+does not care whether anything was subscribed — before declaring a failure.
+
+This is the mechanism cratestack#704 points at. In job `97199199670` every one of the 13 captured
+lines maps to the last ~15% of a normal launch (`nw_activity` at line 899 of 1069 in a healthy
+capture, `BSBlockSentinel:FBSScene` at 911, `KeyboardArbiter` at 927): the tail of a launch with none
+of the ~900 lines before it, which is the shape of a subscription that started delivering late, not of
+an app that failed to start. A recovered marker still has to pass the payload check, and the run says
+loudly that the live capture missed it — a flake that stops failing without being counted is
+indistinguishable from one that was fixed.
+
+The `--console-pty` channel could never have covered this. Flutter's `print` does not reach fd 1: it
+goes through `Logger_PrintString` → `UIDartState::LogMessage` → `syslog(LOG_ALERT)` into the unified
+log, while the branch of that function named "Stdout" emits a VM-service event for DevTools. Verified
+on a real simulator with a probe printing the same string four ways — `print` reached the unified log
+only, `stdout.writeln`/`stderr.writeln` reached the pty only. The two "independent" channels were
+never independent for this marker.
+
+The query excludes the `log` process, which is not cosmetic: `log show` logs its own invocation
+including its command line, and the command line contains the marker, so the query matches itself.
+Without the exclusion, a run where the app printed nothing would recover that self-match, fail the
+payload check, and report a "genuine round-trip failure" about an app that never printed at all.
+
+The `--console-pty` capture is no longer searched for the marker. It is still captured and still
+printed on failure — it carries native `NSLog`, dyld and crash output, and anything the app writes to
+stderr on its way down, none of which the unified log shows — but it is labelled as diagnostics, and
+the recipe no longer implies a marker could appear there. The comment claiming two independent
+channels "so the marker is found if EITHER works" is corrected in place: that claim is what made the
+cratestack#704 failure read as "the app printed nothing" on the strength of the marker being absent
+from "both".
+
+### The `cratestack_cbor` example's verification marker no longer depends on a widget building
+
+Every headless verification of that example — `just cbor-example-verify` and its `-android`,
+`-windows`, `-macos`, `-ios` siblings — greps process or console output for a marker the app prints.
+That marker was produced by a round trip hanging off `late final _future = runRoundTrip()` on a
+`State` object whose only read was inside `build()`, making the assertion everything downstream
+depends on a side effect of the app constructing its widget tree.
+
+It now starts in `main()`, before `runApp`, and the widget is handed the already-running future.
+
+Scope, stated precisely: `runApp` schedules `attachRootWidget` on a bare `Timer.run` and
+`attachToBuildOwner` inflates the tree synchronously, so the old code ran one event-loop turn after
+`runApp` — no frame and no platform scene required. This change removes a dependency on the widget
+tree building, **not** on rendering. It is not a fix for cratestack#704, which stays open: on iOS the
+engine is launched from `FlutterViewController.viewDidLoad`, upstream of any Dart code, in both the
+old and new shape.
+
+Also in `just cbor-example-verify-ios`: the failure path printed `--- device state ---` and `--- is
+the app installed? ---` twice (cratestack#705 added a second copy rather than moving the first), and a
+passing run now reports what it previously kept to itself — the poll margin, the install duration and
+launch time, and how much the app actually logged (capture bytes plus Runner-attributed line count).
+
+That last pair is the point. A green iOS job used to print one tick and nothing else, with 281 seconds
+of silence before it (job 97215919059), so a failure had no healthy run to be compared against: when
+job 97199199670 captured 2335 bytes holding 13 Runner-attributed lines and then went quiet for 94
+seconds, nothing on record said whether 13 was low, normal or high for this app. The same two summary
+lines are now printed on both the passing and failing paths, in the same order, so the two can be
+diffed directly. They also settle a question that had to be reconstructed by hand from GitHub's line
+timestamps: that failing run's install took 111s, *less* than the green run's, so install contention
+alone does not predict the flake.
+
+### `just cbor-example-verify` now runs the example's `flutter test`
+
+`dart-packages/cratestack_cbor/example/test/widget_test.dart` existed but ran nowhere in CI and failed
+on a clean checkout with `Unsupported operation: Isolate.resolvePackageUriSync` — `flutter test`'s test
+VM does not support the synchronous package-URI resolution the native backend's dev-mode fallback
+tries when no built app bundle exists yet at that point in the recipe. The pre-existing
+`CRATESTACK_CBOR_NATIVE_LIB` override (checked before either resolution strategy) sidesteps this
+entirely by pointing straight at the vendored Linux blob, so the recipe now runs the test with that set
+rather than leaving it permanently unexercised.
+
+Investigated for cratestack#704 but out of scope for that issue: it does not address the iOS flake.
+No test on this repo's Linux-only toolchain could be made to discriminate that failure mode — see
+cratestack#715 for the attempts and why they were discarded rather than shipped green.
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted

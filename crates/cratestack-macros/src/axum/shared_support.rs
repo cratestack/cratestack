@@ -36,6 +36,9 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                             )));
                         }
                     }
+                    "computedParams" => {
+                        query.computed_params = Some(value);
+                    }
                     "sort" => {
                         query.sort = Some(value);
                     }
@@ -78,6 +81,9 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                                 key,
                             )));
                         }
+                    }
+                    "computedParams" => {
+                        query.computed_params = Some(value);
                     }
                     unexpected => {
                         return Err(CratestackError::BadRequest(format!(

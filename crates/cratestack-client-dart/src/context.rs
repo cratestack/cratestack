@@ -14,8 +14,8 @@ use crate::idents::{
     dart_identifier, escape_dart_string, pluralize, to_camel_case, to_pascal_case,
 };
 use crate::naming::{
-    enum_name_set, is_generated_on_create, is_primary_key, is_relation_field, model_name_set,
-    occupied_type_names, procedure_wrapper_name, scalar_model_fields,
+    enum_name_set, is_computed_field, is_generated_on_create, is_primary_key, is_relation_field,
+    model_name_set, occupied_type_names, procedure_wrapper_name, scalar_model_fields,
 };
 use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
 
@@ -62,6 +62,11 @@ pub(crate) fn build_template_context(
         let create_fields = scalar_fields
             .iter()
             .copied()
+            // `@computed` fields are resolver-backed and response-time
+            // only — never part of a create input, since the server
+            // struct never carries them either
+            // (`docs/design/computed-fields.md`).
+            .filter(|field| !is_computed_field(field))
             .filter(|field| !is_generated_on_create(field))
             .collect::<Vec<_>>();
         data_classes.push(build_data_class(
@@ -77,6 +82,9 @@ pub(crate) fn build_template_context(
             .iter()
             .copied()
             .filter(|field| !is_primary_key(field))
+            // `@computed` fields are never part of an update input either
+            // — same reasoning as `create_fields` above.
+            .filter(|field| !is_computed_field(field))
             .collect::<Vec<_>>();
         data_classes.push(build_data_class(
             &update_name,

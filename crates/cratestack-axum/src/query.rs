@@ -2,8 +2,12 @@
 //! extraction and the structured filter expression grammar
 //! (`?where=...`) used by macro-generated `list` endpoints.
 
+mod computed_params;
+
 use cratestack_core::CratestackError;
 use url::form_urlencoded;
+
+pub use computed_params::parse_computed_params_object;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QueryExpr {

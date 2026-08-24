@@ -11,6 +11,8 @@
 //! ticket's acceptance criteria ask for (mirrors `crate::procedure::tests`,
 //! the analogous guard for cratestack#282's trait-method change).
 
+use std::collections::BTreeSet;
+
 use super::generate_procedure_axum_handler;
 
 const LIST_RETURNING_SCHEMA: &str = r#"
@@ -80,12 +82,12 @@ fn parse_first_procedure(source: &str) -> cratestack_core::Procedure {
 /// can reach `authenticate()` — see `cratestack_core::context::
 /// RequestContext`'s doc comment. Same discipline as the two notes above:
 /// real, intentional, unrelated to cratestack#283.
-const PINNED_NON_STREAM_DISPATCH: &str = "async fn handle_ticks < R , C , Auth > (State (state) : State < ProcedureRouterState < R , C , Auth >> , headers : HeaderMap , client_ip_ctx : ClientIpContext , body : Bytes ,) -> Response where R : super :: procedures :: ProcedureRegistry , C : HttpTransport , Auth : :: cratestack :: AuthProvider , { let canonical_body = body . clone () ; handle_ticks_dispatch (state , CanonicalRequest { method : \"POST\" , path : \"/$procs/ticks\" , query : None , body : canonical_body . as_ref () , } , headers , client_ip_ctx , body ,) . await } pub (super) async fn handle_ticks_dispatch < R , C , Auth > (state : ProcedureRouterState < R , C , Auth > , canonical : CanonicalRequest < '_ > , headers : HeaderMap , client_ip_ctx : ClientIpContext , body : Bytes ,) -> Response where R : super :: procedures :: ProcedureRegistry , C : HttpTransport , Auth : :: cratestack :: AuthProvider , { const CAPABILITIES : :: cratestack :: RouteTransportCapabilities = :: cratestack :: RouteTransportCapabilities { request_types : & [\"application/cbor\" , \"application/json\"] , response_types : & [\"application/cbor\" , \"application/json\" , :: cratestack :: CBOR_SEQUENCE_CONTENT_TYPE ,] , default_response_type : \"application/cbor\" , supports_sequence_response : true , } ; let canonical_route = canonical . path ; let span = :: cratestack :: tracing :: info_span ! (\"cratestack_procedure_route\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" ,) ; let _span_guard = span . enter () ; let started = :: std :: time :: Instant :: now () ; if let Err (error) = :: cratestack :: validate_transport_request_headers_for (& state . codec , & headers , & CAPABILITIES) { :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , \"cratestack procedure preflight failed\") ; let result : Result < super :: procedures :: ticks :: Output , :: cratestack :: CratestackError > = Err (error) ; return :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; } let request = request_context (canonical . method , canonical . path , canonical . query , & headers , canonical . body , & client_ip_ctx . extensions) ; let ctx = match state . auth_provider . authenticate (& request) . await { Ok (ctx) => :: cratestack :: enrich_context_from_headers (ctx , & headers , client_ip_ctx . trusted_proxy . as_ref () , client_ip_ctx . peer) , Err (error) => { let error : :: cratestack :: CratestackError = error . into () ; :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , \"cratestack procedure auth failed\") ; let result : Result < super :: procedures :: ticks :: Output , :: cratestack :: CratestackError > = Err (error) ; return :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; } } ; let args = match :: cratestack :: decode_transport_request_for :: < _ , super :: procedures :: ticks :: Args > (& state . codec , & headers , & CAPABILITIES , & body) { Ok (args) => args , Err (error) => { :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , \"cratestack procedure decode failed\") ; let result : Result < super :: procedures :: ticks :: Output , :: cratestack :: CratestackError > = Err (error) ; return :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; } } ; let registry = state . registry . clone () ; let db = state . db . clone () ; let auth_db = db . clone () ; let call_args = args . clone () ; let call_ctx = ctx . clone () ; let result = super :: procedures :: ticks :: invoke_with_db (& auth_db , & args , & ctx , | authorized | async move { registry . ticks (& db , & call_ctx , call_args , authorized) . await }) . await ; match & result { Ok (_) => :: cratestack :: tracing :: info ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_authenticated = ctx . is_authenticated () , cratestack_duration_ms = started . elapsed () . as_millis () as u64 , cratestack_request_id = ctx . request_id () . unwrap_or (\"\") , \"cratestack procedure route completed\" ,) , Err (error) => :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_authenticated = ctx . is_authenticated () , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , cratestack_duration_ms = started . elapsed () . as_millis () as u64 , cratestack_request_id = ctx . request_id () . unwrap_or (\"\") , \"cratestack procedure route failed\" ,) , } let mut response = :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; response }";
+const PINNED_NON_STREAM_DISPATCH: &str = "async fn handle_ticks < R , CR , C , Auth > (State (state) : State < ProcedureRouterState < R , CR , C , Auth >> , headers : HeaderMap , client_ip_ctx : ClientIpContext , body : Bytes ,) -> Response where R : super :: procedures :: ProcedureRegistry , CR : super :: computed :: ComputedFieldResolver , C : HttpTransport , Auth : :: cratestack :: AuthProvider , { let canonical_body = body . clone () ; handle_ticks_dispatch (state , CanonicalRequest { method : \"POST\" , path : \"/$procs/ticks\" , query : None , body : canonical_body . as_ref () , } , headers , client_ip_ctx , body ,) . await } pub (super) async fn handle_ticks_dispatch < R , CR , C , Auth > (state : ProcedureRouterState < R , CR , C , Auth > , canonical : CanonicalRequest < '_ > , headers : HeaderMap , client_ip_ctx : ClientIpContext , body : Bytes ,) -> Response where R : super :: procedures :: ProcedureRegistry , CR : super :: computed :: ComputedFieldResolver , C : HttpTransport , Auth : :: cratestack :: AuthProvider , { const CAPABILITIES : :: cratestack :: RouteTransportCapabilities = :: cratestack :: RouteTransportCapabilities { request_types : & [\"application/cbor\" , \"application/json\"] , response_types : & [\"application/cbor\" , \"application/json\" , :: cratestack :: CBOR_SEQUENCE_CONTENT_TYPE ,] , default_response_type : \"application/cbor\" , supports_sequence_response : true , } ; let canonical_route = canonical . path ; let span = :: cratestack :: tracing :: info_span ! (\"cratestack_procedure_route\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" ,) ; let _span_guard = span . enter () ; let started = :: std :: time :: Instant :: now () ; if let Err (error) = :: cratestack :: validate_transport_request_headers_for (& state . codec , & headers , & CAPABILITIES) { :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , \"cratestack procedure preflight failed\") ; let result : Result < super :: procedures :: ticks :: Output , :: cratestack :: CratestackError > = Err (error) ; return :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; } let request = request_context (canonical . method , canonical . path , canonical . query , & headers , canonical . body , & client_ip_ctx . extensions) ; let ctx = match state . auth_provider . authenticate (& request) . await { Ok (ctx) => :: cratestack :: enrich_context_from_headers (ctx , & headers , client_ip_ctx . trusted_proxy . as_ref () , client_ip_ctx . peer) , Err (error) => { let error : :: cratestack :: CratestackError = error . into () ; :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , \"cratestack procedure auth failed\") ; let result : Result < super :: procedures :: ticks :: Output , :: cratestack :: CratestackError > = Err (error) ; return :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; } } ; let args = match :: cratestack :: decode_transport_request_for :: < _ , super :: procedures :: ticks :: Args > (& state . codec , & headers , & CAPABILITIES , & body) { Ok (args) => args , Err (error) => { :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , \"cratestack procedure decode failed\") ; let result : Result < super :: procedures :: ticks :: Output , :: cratestack :: CratestackError > = Err (error) ; return :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; } } ; let registry = state . registry . clone () ; let db = state . db . clone () ; let auth_db = db . clone () ; let call_args = args . clone () ; let call_ctx = ctx . clone () ; let result = super :: procedures :: ticks :: invoke_with_db (& auth_db , & args , & ctx , | authorized | async move { registry . ticks (& db , & call_ctx , call_args , authorized) . await }) . await ; match & result { Ok (_) => :: cratestack :: tracing :: info ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_authenticated = ctx . is_authenticated () , cratestack_duration_ms = started . elapsed () . as_millis () as u64 , cratestack_request_id = ctx . request_id () . unwrap_or (\"\") , \"cratestack procedure route completed\" ,) , Err (error) => :: cratestack :: tracing :: warn ! (target : \"cratestack\" , cratestack_route = canonical_route , cratestack_procedure = \"ticks\" , cratestack_operation = \"procedure\" , cratestack_authenticated = ctx . is_authenticated () , cratestack_error = error . code () , cratestack_detail = error . detail () . unwrap_or (\"\") , cratestack_duration_ms = started . elapsed () . as_millis () as u64 , cratestack_request_id = ctx . request_id () . unwrap_or (\"\") , \"cratestack procedure route failed\" ,) , } let mut response = :: cratestack :: encode_transport_sequence_result_with_status_for (& state . codec , & headers , & CAPABILITIES , axum :: http :: StatusCode :: OK , result) ; response }";
 
 #[test]
 fn non_stream_list_procedure_dispatch_is_unchanged() {
     let procedure = parse_first_procedure(LIST_RETURNING_SCHEMA);
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert_eq!(
@@ -102,7 +104,7 @@ fn non_stream_list_procedure_dispatch_is_unchanged() {
 #[test]
 fn stream_list_procedure_dispatch_differs_from_buffered_baseline() {
     let procedure = parse_first_procedure(STREAM_SCHEMA);
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert_ne!(generated, PINNED_NON_STREAM_DISPATCH);
@@ -129,7 +131,7 @@ mutation procedure submit(args: PingArgs): Pong
   @status(202)
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -161,7 +163,7 @@ procedure ticks(args: TickerArgs): Tick[]
   @status(201)
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -191,7 +193,7 @@ type Pong {
 procedure ping(args: PingArgs): Pong
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -224,7 +226,7 @@ procedure ticks(args: TickerArgs): Tick[]
   @status(202)
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(
@@ -267,7 +269,7 @@ procedure ticks(args: TickerArgs): Tick[]
   @stream
 "#,
     );
-    let generated = generate_procedure_axum_handler(&procedure)
+    let generated = generate_procedure_axum_handler(&procedure, &BTreeSet::new())
         .expect("codegen should succeed")
         .to_string();
     assert!(

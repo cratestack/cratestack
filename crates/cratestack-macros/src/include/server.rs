@@ -79,8 +79,8 @@ pub(super) fn compose_server_schema(
             view_names,
             type_structs,
             enum_types,
-            custom_field_descriptors,
-            custom_field_resolver_methods,
+            computed_field_descriptors,
+            computed_field_resolver_methods,
             model_structs,
             pg_from_row_impls,
             primary_key_accessor_impls,
@@ -124,6 +124,20 @@ pub(super) fn compose_server_schema(
         let models_sqlx_import = match db {
             ServerDb::Postgres => quote! { use ::cratestack::sqlx; },
             ServerDb::None => proc_macro2::TokenStream::new(),
+        };
+
+        // A schema with no `@computed` fields at all gets a generated
+        // `impl ComputedFieldResolver for ()` so callers can pass `()` as
+        // `router()`'s resolver argument instead of hand-writing an empty
+        // impl of their own (docs/design/computed-fields.md decision 4).
+        // Only emitted when the trait truly has no methods — implementing
+        // an empty trait for `()` when the trait *does* have methods would
+        // be a silent "every computed field always resolves to nothing"
+        // trap disguised as ergonomics.
+        let unit_computed_resolver_impl = if computed_field_descriptors.is_empty() {
+            quote! { impl ComputedFieldResolver for () {} }
+        } else {
+            proc_macro2::TokenStream::new()
         };
 
         let expanded = quote! {
@@ -211,29 +225,32 @@ pub(super) fn compose_server_schema(
                     }
                 }
 
-                pub mod custom {
+                pub mod computed {
                     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-                    pub struct CustomFieldDescriptor {
+                    pub struct ComputedFieldDescriptor {
                         pub owner: &'static str,
                         pub field: &'static str,
                         pub resolver_method: &'static str,
+                        pub params_type: Option<&'static str>,
                     }
 
-                    pub const FIELDS: &[CustomFieldDescriptor] = &[
-                        #(#custom_field_descriptors),*
+                    pub const FIELDS: &[ComputedFieldDescriptor] = &[
+                        #(#computed_field_descriptors),*
                     ];
 
                     pub const FIELD_COUNT: usize = FIELDS.len();
 
-                    pub trait CustomFieldResolver: Clone + Send + Sync + 'static {
-                        #(#custom_field_resolver_methods)*
+                    pub trait ComputedFieldResolver: Clone + Send + Sync + 'static {
+                        #(#computed_field_resolver_methods)*
                     }
+
+                    #unit_computed_resolver_impl
                 }
 
-                pub use custom::CustomFieldResolver;
+                pub use computed::ComputedFieldResolver;
 
-                pub const CUSTOM_FIELDS: &[custom::CustomFieldDescriptor] = custom::FIELDS;
-                pub const CUSTOM_FIELD_COUNT: usize = custom::FIELD_COUNT;
+                pub const COMPUTED_FIELDS: &[computed::ComputedFieldDescriptor] = computed::FIELDS;
+                pub const COMPUTED_FIELD_COUNT: usize = computed::FIELD_COUNT;
 
                 #axum_module
 

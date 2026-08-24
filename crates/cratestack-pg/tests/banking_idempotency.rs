@@ -76,7 +76,7 @@ impl AuthProvider for StaticAuth {
 
 fn build_router(pool: cratestack::sqlx::PgPool) -> cratestack::axum::Router {
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let base = cratestack_schema::axum::model_router(cool, JsonCodec, StaticAuth);
+    let base = cratestack_schema::axum::model_router(cool, (), JsonCodec, StaticAuth);
     let store = Arc::new(cratestack::SqlxIdempotencyStore::new(pool));
     base.layer(ServiceBuilder::new().layer(IdempotencyLayer::new(store, Duration::from_secs(60))))
 }
@@ -337,7 +337,7 @@ async fn expired_reservation_can_be_replaced_on_reuse() {
     // running real auth would derive this from their auth provider.
     let store = Arc::new(cratestack::SqlxIdempotencyStore::new(pool.clone()));
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
-    let base = cratestack_schema::axum::model_router(cool, JsonCodec, StaticAuth);
+    let base = cratestack_schema::axum::model_router(cool, (), JsonCodec, StaticAuth);
     let router = base.layer(
         IdempotencyLayer::new(store, Duration::from_secs(60))
             .with_principal_fingerprint(|_| "fingerprint-static".to_owned()),

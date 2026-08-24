@@ -148,6 +148,7 @@ async fn rpc_canonical_is_concrete_rpc_url_with_raw_frame_body() {
     let router = cratestack_schema::axum::rpc_router(
         cratestack_schema::Cratestack::builder(pool.clone()).build(),
         RpcProcedures,
+        (),
         codec.clone(),
         RecordingAuthProvider {
             captured: captured.clone(),

@@ -24,17 +24,18 @@ pub(super) fn build_rpc_module(
 
     quote! {
         #[derive(Clone)]
-        pub struct RpcRouterState<R, C, Auth> {
+        pub struct RpcRouterState<R, CR, C, Auth> {
             pub db: super::Cratestack,
             pub registry: R,
+            pub resolvers: CR,
             pub codec: C,
             pub auth_provider: Auth,
         }
 
         /// Encode a `CratestackError` raised inside an RPC dispatch arm using
         /// the request's codec.
-        fn rpc_dispatch_error<R, C, Auth>(
-            state: &RpcRouterState<R, C, Auth>,
+        fn rpc_dispatch_error<R, CR, C, Auth>(
+            state: &RpcRouterState<R, CR, C, Auth>,
             headers: &::cratestack::axum::http::HeaderMap,
             error: ::cratestack::CratestackError,
         ) -> ::cratestack::axum::response::Response
@@ -57,19 +58,21 @@ pub(super) fn build_rpc_module(
         /// `axum_module/router_fn.rs`'s module doc for why this has to be
         /// a real parameter rather than a default a consumer re-layers on
         /// top of.
-        pub fn rpc_router<R, C, Auth>(
+        pub fn rpc_router<R, CR, C, Auth>(
             db: super::Cratestack,
             registry: R,
+            resolvers: CR,
             codec: C,
             auth_provider: Auth,
             body_limit_bytes: usize,
         ) -> axum::Router
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
-            let state = RpcRouterState { db, registry, codec, auth_provider };
+            let state = RpcRouterState { db, registry, resolvers, codec, auth_provider };
             axum::Router::new()
                 .route(
                     ::cratestack::rpc::RPC_BATCH_PATH,
@@ -97,8 +100,8 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
         /// REST shape) are post-processed into `RpcErrorBody` shape
         /// before returning, so callers always see one error
         /// vocabulary on the wire.
-        async fn rpc_dispatch_inner<R, C, Auth>(
-            state: RpcRouterState<R, C, Auth>,
+        async fn rpc_dispatch_inner<R, CR, C, Auth>(
+            state: RpcRouterState<R, CR, C, Auth>,
             headers: ::cratestack::axum::http::HeaderMap,
             op_id: &str,
             body: ::cratestack::axum::body::Bytes,
@@ -106,6 +109,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
@@ -137,9 +141,9 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             ).await
         }
 
-        async fn rpc_dispatch<R, C, Auth>(
+        async fn rpc_dispatch<R, CR, C, Auth>(
             ::cratestack::axum::extract::State(state):
-                ::cratestack::axum::extract::State<RpcRouterState<R, C, Auth>>,
+                ::cratestack::axum::extract::State<RpcRouterState<R, CR, C, Auth>>,
             ::cratestack::axum::extract::Path(op_id):
                 ::cratestack::axum::extract::Path<String>,
             headers: ::cratestack::axum::http::HeaderMap,
@@ -148,6 +152,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
         ) -> ::cratestack::axum::response::Response
         where
             R: super::procedures::ProcedureRegistry,
+            CR: super::computed::ComputedFieldResolver,
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
