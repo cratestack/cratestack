@@ -160,20 +160,21 @@ serde — just in different envelopes.
    (URL-encoded {"proxyUrl": {"width": 800}})
 ```
 
-**RPC.** `model.<X>.list` decodes `RpcListInput`, which carries a
-`computedParams` field (raw JSON-object text — see below for why not
-`serde_json::Value`); `model.<X>.get` decodes a dedicated `RpcGetInput { id,
+**RPC.** `model.<X>.list` decodes `RpcListInput`, which carries
+`fields`, `include`, `include_fields`, and `computedParams` fields (raw
+JSON-object text — see below for why not `serde_json::Value`); `model.<X>.get`
+decodes a dedicated `RpcGetInput { id, fields, include, include_fields,
 computedParams }` rather than reusing `RpcPkInput` (which `delete` also
-decodes, and would otherwise gain a silently-ignored field). Server-side, the
-RPC dispatcher synthesizes the equivalent `?computedParams=` query string from
-the decoded field and hands it to the exact same fetch/list query parser REST
-uses (`parse_model_fetch_query`/`parse_model_list_query`,
+decodes, and would otherwise gain silently-ignored fields). Server-side, the
+RPC dispatcher synthesizes the equivalent query string from the decoded fields
+and hands it to the exact same fetch/list query parser REST uses
+(`parse_model_fetch_query`/`parse_model_list_query`,
 `cratestack-macros/src/axum/shared_support.rs`) — one validation
 implementation, no drift between transports. On `/rpc/batch`, each frame
-carries its own `computedParams` inside that frame's `input`, resolved
-independently per frame; in-frame params are signed by construction, since the
-canonical signed body under `transport rpc` is the raw frame bytes themselves
-(`docs/design/rpc-transport.md` §5).
+carries its own selection and `computedParams` inside that frame's `input`,
+resolved independently per frame; in-frame selection and params are signed by
+construction, since the canonical signed body under `transport rpc` is the raw
+frame bytes themselves (`docs/design/rpc-transport.md` §5).
 
 Why `computedParams` is a `String` (raw JSON text) on the RPC input types
 rather than `serde_json::Value`: `RpcUpdateInput`'s own doc comment already
@@ -191,9 +192,9 @@ object wouldn't.
 Both transports:
 
 - Malformed JSON, unknown field keys, keys naming non-computed or param-less
-  fields, or a params payload for a field excluded by `?fields=` (REST only —
-  RPC `get` has no `fields`/`include` slot, see below) →
-  `CratestackError::Validation`, same HTTP status either way.
+  fields, or a params payload for a field excluded by `?fields=` →
+  `CratestackError::Validation`, same HTTP status either way. This now fires
+  on both transports — see `crates/cratestack-pg/tests/rpc_get_projection.rs::rpc_get_rejects_computed_params_for_a_field_excluded_by_fields` for the proof.
 - Absent `computedParams` (or absent key) → resolver gets `None`.
 - Applies to the request's *root* model only in v1; relation-included records and
   all non-read paths resolve with `None`.
@@ -202,14 +203,6 @@ Both transports:
   when the model has at least one parameterized `@computed(params: <Type>?)`
   field), over both REST and RPC transport — see "Downstream" below for the
   exact per-language shape.
-
-**Deliberate asymmetry: RPC `get` has no `fields`/`include`.** Unlike
-`RpcListInput` (which mirrors the REST list query 1:1, including `fields`),
-`RpcGetInput` carries only `id` and `computedParams`. RPC `get` always decodes
-its response into the full generated model type in every client, which has no
-representation for a partial (fields-selected) payload — so the REST
-"excluded by `?fields=`" rejection branch is reachable over RPC list but
-unreachable over RPC get. This is a scope limit, not a gap.
 
 ## Exclusions (v1, documented)
 
@@ -259,7 +252,10 @@ unreachable over RPC get. This is a scope limit, not a gap.
   with no params type). The `@riverpod` get/list convenience providers gain
   the same gated parameter, and riverpod partition reachability now seeds
   params types referenced only from `@computed` attribute text — they
-  weren't otherwise reachable from the response-type graph.
+  weren't otherwise reachable from the response-type graph. Every parameterized
+  `<Model>ComputedParams` also gets the standard fluent `<Model>ComputedParamsBuilder`
+  (`ImageComputedParamsBuilder().proxyUrl(ProxyParams(width: 800)).build()`),
+  matching the builder convention all other generated Dart data classes follow.
 - TypeScript clients: computed fields in response classes, excluded from
   inputs, filters, sorts. `CratestackFetchQuery`/`CratestackRpcListQuery`
   become generic over `TComputedParams` (default `never`, so
@@ -267,12 +263,16 @@ unreachable over RPC get. This is a scope limit, not a gap.
   at compile time, not a runtime check). A gated model gets a generated
   `<Model>ComputedParams` interface, used on its REST query config, its RPC
   list query, and a dedicated per-model RPC `get` options bag —
-  `JSON.stringify`d to match the server's `Option<String>` frame field. swr
-  RPC `get` cache keys now incorporate `computedParams` too (previously two
-  reads of the same model with different params collided on one cache key);
-  the ownership graph deciding which types swr's generated module reaches
-  was fixed the same way Dart's riverpod partition was — a params type
-  referenced only from `@computed` attribute text is now reachable.
+  `JSON.stringify`d to match the server's `Option<String>` frame field. The
+  per-model RPC `get` options bag now also carries `fields`, `include`, and
+  `includeFields`, emitted for every model (not just parameterized-field models),
+  alongside `computedParams`. swr RPC `get` cache keys now incorporate
+  `computedParams` too (previously two reads of the same model with different
+  params collided on one cache key); the ownership graph deciding which types
+  swr's generated module reaches was fixed the same way Dart's riverpod
+  partition was — a params type referenced only from `@computed` attribute
+  text is now reachable. TypeScript has no builder convention anywhere in its
+  generated output, so `<Model>ComputedParams` stays a plain interface.
 - **The generated Rust client** (both `include_client_schema!` and the
   server's own embedded self-client, since both go through the single
   `crate::client::generate_client_module` call site) has the same **typed**
@@ -284,12 +284,30 @@ unreachable over RPC get. This is a scope limit, not a gap.
   parameter), with one `Option<super::types::<Params>>` field per resolver
   and a `to_query_value()` helper that serializes to the same JSON-object
   text both transports expect (`None` when every field is unset, matching
-  the server's "absent key -> resolver gets `None`" default). `get`/`list`
-  on a gated model's REST client take an extra `computed_params:
-  Option<&<Model>ComputedParams>` parameter; RPC's `get` switches from
-  `RpcPkInput` to `RpcGetInput { id, computed_params }` and `list` clones
-  its `RpcListInput` and overwrites `computed_params` with the typed
-  struct's encoded value. An ungated model's `get`/`list` tokens are
-  unchanged from before this surface existed, including RPC `get`'s
-  `RpcPkInput` shape.
+  the server's "absent key -> resolver gets `None`" default). Every
+  `<Model>ComputedParams` struct gains the standard generated typestate builder
+  (`<Model>ComputedParams::builder().<field>(Some(..)).build()`, non-generic
+  because every field is optional — same shape `{Model}Where` gets). On REST,
+  `get`/`list` on a gated model take an extra `computed_params:
+  Option<&<Model>ComputedParams>` parameter; RPC's plain `get` is byte-identical
+  and still decodes into the full model type, but every model gets a `get_view<P:
+  ProjectionDecoder>(id, projection)` twin that carries `computed_params`, matching
+  REST's `get_view`. RPC's `list` carries `computed_params` and selection alongside
+  pagination and filtering. An ungated model's `get`/`list` tokens are unchanged
+  from before this surface existed.
+  
+  **Schema-evolution caveat:** the Rust client's `computed_params` parameter is
+  positional, so adding a model's first `@computed(params: <Type>?)` field changes
+  `get(id, headers)` into `get(id, computed_params, headers)` and breaks call sites.
+  Unlike Dart (named optional) and TypeScript (options bag), which are additive,
+  the builder does not fix this (it changes argument construction, not the parameter
+  list). A Rust options-bag entry point is a tracked follow-up.
 - LSP: `@computed` added to attribute completion if a list exists.
+
+## Exclusions (post-v1, documented limits)
+
+- RPC `get_view` (Rust) carries no `computedParams`, matching REST's `get_view`
+  — projection-only reads are orthogonal to resolution parameters.
+- swr's RPC `get` cache key does not incorporate `fields`/`include` — cache
+  collision is still possible on same-id reads with different projections but
+  same (or absent) computed params. Follow-up tracked.

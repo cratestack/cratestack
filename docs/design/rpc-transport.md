@@ -196,51 +196,59 @@ On the wire the frame is *unwrapped*:
 - `Content-Type` / `Accept` negotiate codec the same way the REST binding
   does today via `validate_codec_request_headers`.
 
-#### 3.1a `computedParams` on model CRUD ops (`@computed`, cratestack#719)
+#### 3.1a Selection and `computedParams` on model CRUD read inputs (`@computed`, cratestack#719)
+
+`model.<X>.list` and `model.<X>.get` both decode CRUD read frames with
+selection and computed-field parameters on parity with REST.
 
 `model.<X>.list` decodes into `RpcListInput`, which — mirroring the REST list
-query 1:1 — carries an optional `computedParams` field alongside `limit`,
-`offset`, `fields`, etc. `model.<X>.get` decodes into a dedicated
-`RpcGetInput<Pk> { id, computedParams }` rather than reusing `RpcPkInput<Pk>`:
-`model.<X>.delete` also decodes `RpcPkInput`, and giving it a `computedParams`
-field would be a silently-ignored slot on a verb with no response body to
-carry a resolved value into. Both live in `cratestack-core::rpc` (client
-crates need them without pulling in `cratestack-axum`).
+query 1:1 — carries optional `fields`, `include`, `include_fields` (snake_case
+wire key, matching `RpcListInput`), and `computedParams` fields alongside
+`limit`, `offset`, and other list constraints. `model.<X>.get` decodes into a
+dedicated `RpcGetInput<Pk> { id, fields, include, include_fields, computedParams }`
+rather than reusing `RpcPkInput<Pk>`: `model.<X>.delete` also decodes
+`RpcPkInput`, and giving it these fields would introduce silently-ignored slots
+on a verb with no response body to carry projected/resolved values into. Both
+live in `cratestack-core::rpc` (client crates need them without pulling in
+`cratestack-axum`).
 
-On both input types `computed_params` (wire name `computedParams`) is a
-`String` — the raw JSON-object text — not `serde_json::Value`. Two reasons:
+On both input types:
 
-1. Round-tripping an `Option`-bearing value through `serde_json::Value`
-   corrupts CBOR `Option::None` (`minicbor-serde` encodes it as `0xf6`
-   simple-null; `serde_json::Value` encodes it as the CBOR empty-array
-   marker — see `RpcUpdateInput`'s own doc comment, which hit this first for
-   `patch`). Computed-field params types are bags of optionals, so they'd hit
-   the same corruption head-on if carried as `Value`.
-2. `/rpc/batch` re-encodes each frame's opaque `input` back through
-   `serde_json::Value` before re-dispatching it
-   (`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`'s
-   `build_batch_block`) — a `String` field survives that round trip
-   byte-for-byte; a nested object wouldn't.
+- `fields`, `include`, `include_fields` mirror REST selection exactly.
+- `computed_params` (wire name `computedParams`) is a `String` — the raw
+  JSON-object text — not `serde_json::Value`. Two reasons:
+  1. Round-tripping an `Option`-bearing value through `serde_json::Value`
+     corrupts CBOR `Option::None` (`minicbor-serde` encodes it as `0xf6`
+     simple-null; `serde_json::Value` encodes it as the CBOR empty-array
+     marker — see `RpcUpdateInput`'s own doc comment, which hit this first for
+     `patch`). Computed-field params types are bags of optionals, so they'd hit
+     the same corruption head-on if carried as `Value`.
+  2. `/rpc/batch` re-encodes each frame's opaque `input` back through
+     `serde_json::Value` before re-dispatching it
+     (`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`'s
+     `build_batch_block`) — a `String` field survives that round trip
+     byte-for-byte; a nested object wouldn't.
 
 Server-side, `cratestack-axum::rpc::synthesize_get_query` /
-`synthesize_list_query` turn the decoded `computed_params` string back into
-the equivalent `?computedParams=<...>` query-string pair and hand it to the
-exact same `parse_model_fetch_query` / `parse_model_list_query` REST uses
+`synthesize_list_query` turn the decoded fields and `computed_params` string
+back into their equivalent query-string pairs and hand them to the exact same
+`parse_model_fetch_query` / `parse_model_list_query` REST uses
 (`cratestack-macros/src/axum/shared_support.rs`) — one validation
 implementation for both transports, so a computedParams key naming a
-param-less field, malformed JSON, etc. produce the same
-`CratestackError::Validation` (and therefore the same HTTP status) on either
-binding. `parse_model_fetch_query` hard-rejects any query key it doesn't
-recognize, so `synthesize_get_query` emits *only* the `computedParams` pair
-when one is present, and `None` (no query at all) otherwise — `RpcGetInput`
-has no `fields`/`include` slot to also emit.
+param-less field, a computed field excluded by `fields=`, malformed JSON, etc.
+produce the same `CratestackError::Validation` (and therefore the same HTTP
+status) on either binding. `parse_model_fetch_query` hard-rejects any query key
+it doesn't recognize; the `unexpected =>` arm still rejects everything else
+after `fields`, `include`, `include_fields`, and `computedParams`.
 
-**Deliberate asymmetry vs. REST/RPC-list:** RPC `get` has no `fields`/
-`include` on its input at all. Every generated client decodes an RPC `get`
-response into the full model type, which has no representation for a
-partial (fields-selected) payload — so the REST "`computedParams` for a
-field excluded by `?fields=`" rejection branch is reachable over RPC `list`
-but simply doesn't exist as a case over RPC `get`. Scope limit, not a gap.
+**Why plain `get` still sends no selection on the client surface:** the wire
+is now symmetric with list. Every generated client's `get` decodes the full
+model type, so the client surface that carries selection is the projection twin
+(`get_view` in Rust, the options bag in TypeScript), not `get`. The wire
+capability is available; the generated client surface splits selection and
+full-record reads the same way REST's does. Dart's RPC client has no projection
+surface for `list` either, so it gains none for `get`; the wire capability is
+available to hand-written Dart callers.
 
 ### 3.2 HTTP batch — `POST /rpc/batch`
 
@@ -254,12 +262,13 @@ The frame is wrapped here because the wire carries N requests.
   400 only on codec-malformed batches.
 - Per-frame idempotency: optional `idem` field on each `Request`. The
   `Idempotency-Key` header is rejected on this route as ambiguous.
-- Per-frame `computedParams`: a `model.<X>.get`/`model.<X>.list` frame's
-  `computedParams` field (§3.1a) lives inside that frame's own `input`, so
-  each batched read resolves its computed fields independently — two frames
-  in the same batch reading the same model with different `computedParams`
-  get independently-resolved outputs, order preserved (§3.2's own ordering
-  guarantee, unchanged).
+- Per-frame selection and computed parameters: a `model.<X>.get`/`model.<X>.list`
+  frame's `fields`, `include`, `include_fields`, and `computedParams` fields
+  (§3.1a) live inside that frame's own `input`, so each batched read selects
+  and resolves its fields independently — two frames in the same batch reading
+  the same model with different selection or `computedParams` get independently-
+  projected/resolved outputs, order preserved (§3.2's own ordering guarantee,
+  unchanged).
 - **Not transactional.** Each frame runs in its own transaction. The server
   is free to fan frames out in parallel.
 - **No in-batch dependencies.** A batch like
@@ -605,9 +614,11 @@ Clients (`cratestack-client-{rust,typescript,dart,flutter}`) inspect
 `Schema.transport` at codegen time and emit either a REST client or an
 RPC client. There is no client that speaks both.
 
-`computedParams` on `RpcListInput`/`RpcGetInput` (§3.1a) is the same kind of
-additive, `#[serde(default)]`-guarded change: an old `{"id": 1}` `get` frame
-(no `computedParams` key) decodes unchanged, and a new client that never
-sets `computed_params` serializes a byte-identical frame to what it produced
-before this field existed. No wire-format-version bump was needed for
-either addition.
+Selection and `computedParams` on `RpcListInput`/`RpcGetInput` (§3.1a) are the
+same kind of additive, `#[serde(default)]`-guarded changes: an old `{"id": 1}`
+`get` frame (no `fields`, `include`, `include_fields`, or `computedParams` keys)
+decodes unchanged, and a new client that never sets any of these fields
+serializes a byte-identical frame to what it produced before they existed.
+`RpcGetInput` gained `#[derive(Default)]` so callers can use
+`..Default::default()`. No wire-format-version bump was needed for any
+addition.
