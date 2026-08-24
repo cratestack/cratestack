@@ -7,7 +7,7 @@ exports:
 
 | Platform | Backend | Artifact |
 | --- | --- | --- |
-| Native (`dart.library.io`) | flutter_rust_bridge `=2.12.0` over `crates/cratestack-client-flutter`'s `cbor` module | A prebuilt `.so`/`.dylib`/`.dll` vendored into the published archive |
+| Native (`dart.library.io`) | flutter_rust_bridge `=2.13.0` over `crates/cratestack-client-flutter`'s `cbor` module | A prebuilt `.so`/`.dylib`/`.dll` vendored into the published archive |
 | Web (`dart.library.js_interop`) | The **existing** `crates/cratestack-cbor-wasm` wasm-bindgen crate (the same one `@cratestack/cbor-web` binds for npm) | A `wasm-pack --target web` build, loaded at runtime |
 
 This mirrors `packages/cratestack-cbor` (`@cratestack/cbor`), which already does native-vs-web
@@ -39,7 +39,7 @@ codec — both backends compile the same Rust.
 ```
 flutter                      3.44.1
 dart                         3.12.1
-flutter_rust_bridge_codegen  2.12.0     # must match the =2.12.0 pin exactly
+flutter_rust_bridge_codegen  2.13.0     # must match the =2.13.0 pin exactly
 wasm-pack                               # for the web artifact
 google-chrome / chromium                # required to run the web tests for real
 cargo-ndk                    4.1.2      # for the Android artifact — cargo install cargo-ndk
@@ -49,7 +49,7 @@ Android SDK + NDK 28.2.13676358         # matches Flutter's own default ndkVersi
 ```
 
 The frb version pin is exact on both sides. A mismatch between the installed
-`flutter_rust_bridge_codegen` and the `flutter_rust_bridge = "=2.12.0"` dependency produces glue
+`flutter_rust_bridge_codegen` and the `flutter_rust_bridge = "=2.13.0"` dependency produces glue
 that does not compile.
 
 **The full Flutter SDK is required — a standalone Dart SDK is not enough.** Since this became a
@@ -341,7 +341,7 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
   library is *present*, and a human running the emulator recipe is what proves it is *valid and
   loadable* — the two break-it proofs in the previous section are deliberately split the same way.
 - **`flutter (cratestack_cbor windows — real build, DLL + round-trip proof)`** runs on
-  `windows-latest`, installs `flutter_rust_bridge_codegen` (pinned `=2.12.0`) and pinned `binaryen`,
+  `windows-latest`, installs `flutter_rust_bridge_codegen` (pinned `=2.13.0`) and pinned `binaryen`,
   then `just cbor-vendor-glue` + `just cbor-vendor-lib windows-x64` + `just cbor-vendor-web` (the wasm
   pair must be vendored here too — `pubspec.yaml`'s `flutter: assets:` is unconditional and Flutter has
   no per-platform asset conditionals) followed by `just cbor-example-verify-windows` — a real
@@ -353,7 +353,7 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
 - **`flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)`** runs on
   `macos-latest`, mirroring the Windows job's shape but proving a genuinely different mechanism (see
   `macos/cratestack_cbor.podspec`'s header comment): installs both `aarch64-apple-darwin` and
-  `x86_64-apple-darwin` rustup targets, `flutter_rust_bridge_codegen` (pinned `=2.12.0`) and pinned
+  `x86_64-apple-darwin` rustup targets, `flutter_rust_bridge_codegen` (pinned `=2.13.0`) and pinned
   `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-macos` (builds both Darwin arches,
   `lipo`s them into one universal binary, assembles a versioned `.framework`, then an `.xcframework` —
   see that recipe's own comment) + `just cbor-vendor-web`, followed by `just cbor-example-verify-macos`
@@ -371,7 +371,7 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
   `macos-latest`, mirroring the macOS job's shape but for a genuinely different xcframework internal
   layout (see `ios/cratestack_cbor.podspec`'s header comment): installs `aarch64-apple-ios`,
   `aarch64-apple-ios-sim`, and `x86_64-apple-ios` rustup targets, `flutter_rust_bridge_codegen` (pinned
-  `=2.12.0`) and pinned `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-ios` (builds all
+  `=2.13.0`) and pinned `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-ios` (builds all
   three iOS triples, `lipo`s the two simulator arches into one universal simulator binary, assembles TWO
   flat/shallow `.framework`s — device and simulator — then ONE `.xcframework` with both slices, and
   asserts zero symlinks in the result — see that recipe's own comment for the "why zero, and what to do

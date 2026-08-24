@@ -148,7 +148,7 @@ Four jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (n
    (`taiki-e/install-action`), Flutter (`subosito/flutter-action` — **not** `dart-lang/setup-dart`, for
    the same reason `ci.yml`'s `cratestack-cbor-*` jobs use Flutter: this package's
    `flutter.plugin.platforms` pubspec key obliges an `environment.flutter` constraint a standalone Dart
-   SDK can't satisfy), `flutter_rust_bridge_codegen` pinned `=2.12.0`, pinned `binaryen` (`wasm-opt`,
+   SDK can't satisfy), `flutter_rust_bridge_codegen` pinned `=2.13.0`, pinned `binaryen` (`wasm-opt`,
    avoids an unpinned mid-build download that has failed a real release before — see `release-cli.yml`'s
    `publish-npm-cbor-web` job for the identical incident), `cargo-ndk` pinned `=4.1.2`, the three Android
    rustup targets, and resolves an installed Android NDK (prefers `28.2.13676358`, matching Flutter's own
@@ -181,7 +181,7 @@ test tag reach a registry that cannot delete what it published.
 
 `dart pub publish --dry-run` **exits non-zero (65) even for a fully-vendored, genuinely publishable
 package**, because `cratestack_cbor` pins `flutter_rust_bridge` to an exact version
-(`flutter_rust_bridge: 2.12.0`, no `^`) rather than a range — required, not a defect: the vendored frb
+(`flutter_rust_bridge: 2.13.0`, no `^`) rather than a range — required, not a defect: the vendored frb
 glue is codegen-version-specific (see the development doc's gotcha 3). Pub's own validator flags this
 as "potential issue" #1 every single run, vendored or not:
 
@@ -190,7 +190,7 @@ Package validation found the following potential issue:
 * Your dependency on "flutter_rust_bridge" should allow more than one version. For example:
 
   dependencies:
-    flutter_rust_bridge: ^2.12.0
+    flutter_rust_bridge: ^2.13.0
   ...
 Package has 1 warning.
 ```

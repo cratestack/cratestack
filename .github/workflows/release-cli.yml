@@ -931,7 +931,7 @@ jobs:
   # framework before `dart pub publish` was ever reached.
   # ---- shared flutter_rust_bridge glue for the release platform legs ------
   # Mirrors ci.yml's `cbor-glue` job — read that one's header for the full
-  # reasoning. Short version: frb codegen 2.12.0 CANNOT run on Windows in
+  # reasoning. Short version: frb codegen 2.13.0 CANNOT run on Windows in
   # this repo's layout (it compares a mixed-separator path against a
   # canonicalized UNC base dir and fails "prefix not found"), and running it
   # per-platform elsewhere means a multi-minute `cargo install` per leg to
@@ -965,8 +965,8 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       - name: Vendor flutter_rust_bridge glue (both halves)
         run: just cbor-vendor-glue
       # Two paths whose least-common-ancestor is the workspace root, so the
@@ -1286,8 +1286,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       # wasm-pack downloads its own binaryen (hardcoded version) mid-build
       # unless a `wasm-opt` is already on PATH — see ci.yml's identical step
       # for the incident that made this pinned rather than left to chance.

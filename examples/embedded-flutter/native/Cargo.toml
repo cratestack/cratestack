@@ -41,6 +41,6 @@ chrono = { workspace = true }
 cratestack = { package = "cratestack-sqlite", path = "../../../crates/cratestack-sqlite" }
 cratestack-macros = { path = "../../../crates/cratestack-macros" }
 cratestack-rusqlite = { path = "../../../crates/cratestack-rusqlite" }
-flutter_rust_bridge = "=2.12.0"
+flutter_rust_bridge = "=2.13.0"
 serde = { workspace = true }
 uuid = { workspace = true }

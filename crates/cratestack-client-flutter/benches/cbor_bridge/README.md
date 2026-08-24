@@ -63,7 +63,7 @@ below pure-Dart, not just underperform the original estimate.**
 
 ## Measured results (2026-08-13, this sandbox)
 
-Toolchain: Dart 3.12.1, Flutter 3.44.1, flutter_rust_bridge_codegen 2.12.0,
+Toolchain: Dart 3.12.1, Flutter 3.44.1, flutter_rust_bridge_codegen 2.13.0,
 `cargo build --release`, `x86_64-unknown-linux-gnu`. `package:cbor` 6.5.1.
 Both `dart run` (JIT) and `dart compile exe` (AOT) measured; each cell is
 encode+decode per iteration, single-threaded, after a warmup loop.

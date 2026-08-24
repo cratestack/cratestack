@@ -626,7 +626,7 @@ jobs:
   #
   # `just frb-verify-client-flutter` does four things, in order: (1)
   # regenerates the glue via the real `flutter_rust_bridge_codegen`
-  # (pinned =2.12.0, matching `crates/cratestack-client-flutter/Cargo.toml`),
+  # (pinned =2.13.0, matching `crates/cratestack-client-flutter/Cargo.toml`),
   # (2) compiles the crate against it (`--features frb-glue` — the
   # generated `mod frb_generated;` is feature-gated, off by default, so
   # this is the one path that actually exercises it), (3) `dart pub get` +
@@ -654,8 +654,8 @@ jobs:
         with:
           tool: just
       - uses: dart-lang/setup-dart@v1
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       - name: Regenerate glue, compile, and round-trip from Dart
         run: just frb-verify-client-flutter
 
@@ -710,8 +710,8 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       # Same reason as js-cbor-wasm's identical step: wasm-pack downloads
       # its own binaryen (hardcoded version) mid-build unless a `wasm-opt`
       # is already on PATH, and that unpinned fetch has failed a real
@@ -783,8 +783,8 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       # Same reason as cratestack-cbor-package's identical step: wasm-pack
       # downloads its own binaryen (hardcoded version) mid-build unless a
       # `wasm-opt` is already on PATH.
@@ -874,8 +874,8 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       # Same reason as the cbor-package and js-cbor-wasm jobs: wasm-pack
       # downloads its own binaryen (hardcoded version) mid-build unless a
       # `wasm-opt` is already on PATH, and that unpinned fetch has failed a
@@ -981,7 +981,7 @@ jobs:
   # jobs as an artifact. Two independent reasons, either of which alone
   # justifies this:
   #
-  # 1. `flutter_rust_bridge_codegen` 2.12.0 CANNOT RUN ON WINDOWS in this
+  # 1. `flutter_rust_bridge_codegen` 2.13.0 CANNOT RUN ON WINDOWS in this
   #    repo's layout. Observed on PR #685:
   #
   #      When compute_mod_from_rust_path(
@@ -1031,8 +1031,8 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Install flutter_rust_bridge_codegen (pinned =2.12.0)
-        run: cargo install --locked flutter_rust_bridge_codegen --version 2.12.0
+      - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
+        run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       - name: Vendor flutter_rust_bridge glue (both halves)
         run: just cbor-vendor-glue
       # Both halves ship: the Rust side is what makes
@@ -1064,7 +1064,7 @@ jobs:
   # <hex>` fixture. A build that merely compiles proves nothing — that is the
   # failure mode this ticket exists to catch.
   #
-  # NO frb codegen on this runner. `flutter_rust_bridge_codegen` 2.12.0 cannot
+  # NO frb codegen on this runner. `flutter_rust_bridge_codegen` 2.13.0 cannot
   # run on Windows in this repo's layout at all (mixed separators compared
   # against a canonicalized UNC base dir — see the `cbor-glue` job header for
   # the verbatim error), so the glue arrives prebuilt from `cbor-glue` as an
@@ -1122,7 +1122,7 @@ jobs:
           channel: stable
           cache: true
       # NO `cargo install flutter_rust_bridge_codegen` here, and no
-      # `just cbor-vendor-glue` below: frb codegen 2.12.0 cannot run on
+      # `just cbor-vendor-glue` below: frb codegen 2.13.0 cannot run on
       # Windows in this layout (mixed separators vs a canonicalized UNC base
       # dir — see the `cbor-glue` job header for the exact error). The glue
       # arrives prebuilt from that job instead.
