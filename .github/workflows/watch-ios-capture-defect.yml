@@ -1,0 +1,167 @@
+# Nothing greps for the iOS capture defect, so it can now happen silently.
+#
+# cratestack#718 made a dropped `log stream` subscription survivable: the marker is
+# recovered from the log store and the build goes green with a WARNING. That is the
+# right outcome for the build and the wrong one for visibility — the defect stops
+# producing a red job, and the WARNING exists only to be searched for by someone who
+# already knows to look. cratestack#720 added a second signal with the same property:
+# a readiness probe whose tag-bearing line count discriminates two causes, reported on
+# every run whether or not anything is wrong.
+#
+# This job does the searching. It reads recent completed iOS jobs and reports to
+# cratestack#723 when a run carries one of three signals. It changes nothing about CI —
+# it only makes an already-emitted line reach a human.
+#
+# Source of truth: https://github.com/cratestack/cratestack/issues/723
+name: Watch iOS capture defect
+
+on:
+  schedule:
+    # Daily. The lookback window below is wider than the interval on purpose, so a
+    # skipped or delayed run does not create a blind spot.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: "How far back to scan (default 30)"
+        required: false
+        default: "30"
+      dry_run:
+        description: "Scan and print, but do not comment on the issue"
+        required: false
+        default: "false"
+
+permissions:
+  actions: read
+  issues: write
+
+concurrency:
+  group: watch-ios-capture-defect
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan recent iOS jobs for capture-defect signals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: "723"
+          LOOKBACK_HOURS: ${{ inputs.lookback_hours || '30' }}
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          # Signals, in the order they discriminate.
+          #   1. WARNING  — the marker was recovered from the log store. The capture
+          #                 defect HAPPENED and the build went green anyway. This is
+          #                 the one that would otherwise be invisible.
+          #   2. red job  — a genuine failure; its output now says whether the log
+          #                 store held the marker, which separates harness from app.
+          #   3. unproven — cratestack#720's probe did not round-trip. The tag-bearing
+          #                 count on that line is what tells a fixable emitter/nonce
+          #                 bug (above zero) from a mechanism that needs replacing
+          #                 (zero). Reported only when the count is zero or the run
+          #                 also carries another signal, so a merely-slow probe does
+          #                 not generate daily noise.
+          WARN='WARNING: the live log capture never delivered the marker'
+          UNPROVEN='stream: readiness unproven'
+
+          cutoff="$(python3 -c "
+          import datetime, os
+          h = int(os.environ['LOOKBACK_HOURS'])
+          print((datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=h)).isoformat())
+          ")"
+          export CUTOFF="$cutoff"
+          echo "scanning CI runs completed since $cutoff"
+
+          # Cap the scan. A busy day is well under 60 CI runs, and an unbounded list
+          # would silently grow into a rate-limit problem rather than failing loudly.
+          gh run list -R "$REPO" --workflow CI -L 60 \
+            --json databaseId,createdAt,status,headBranch,url > runs.json
+
+          python3 -c "
+          import json, os
+          cutoff = os.environ['CUTOFF']
+          runs = json.load(open('runs.json'))
+          for r in runs:
+              if r['status'] == 'completed' and r['createdAt'] >= cutoff:
+                  print(r['databaseId'], r['headBranch'], r['url'])
+          " > candidates.txt
+          echo "candidate runs: $(wc -l < candidates.txt)"
+
+          # Already-reported jobs, so a hit is announced once and not once per day.
+          gh issue view "$ISSUE" -R "$REPO" --json comments \
+            --jq '[.comments[].body] | join("\n")' > reported.txt || : > reported.txt
+
+          hits=0
+          while read -r run_id branch run_url; do
+            [ -z "${run_id:-}" ] && continue
+            job=$(gh api "repos/$REPO/actions/runs/$run_id/jobs" --paginate \
+              --jq '.jobs[] | select(.name | test("cratestack_cbor ios")) | [.id, .conclusion, .html_url] | @tsv' || true)
+            [ -z "$job" ] && continue
+            job_id=$(printf '%s' "$job" | cut -f1)
+            job_concl=$(printf '%s' "$job" | cut -f2)
+            job_url=$(printf '%s' "$job" | cut -f3)
+
+            grep -qF "job $job_id" reported.txt && continue
+
+            log=$(gh run view -R "$REPO" "$run_id" --log --job "$job_id" 2>/dev/null || true)
+            [ -z "$log" ] && continue
+
+            signal=""
+            if printf '%s' "$log" | grep -qF "$WARN"; then
+              signal="RECOVERED — the marker was missed live and recovered from the log store"
+            elif [ "$job_concl" != "success" ]; then
+              signal="RED — the iOS job failed ($job_concl)"
+            elif printf '%s' "$log" | grep -qF "$UNPROVEN" \
+                 && printf '%s' "$log" | grep -qE 'readiness unproven[^\n]*— 0 tag-bearing'; then
+              signal="PROBE DEAD — readiness unproven with ZERO tag-bearing lines delivered"
+            fi
+            [ -z "$signal" ] && continue
+
+            hits=$((hits + 1))
+            {
+              echo "## iOS capture-defect signal — job $job_id"
+              echo
+              echo "**$signal**"
+              echo
+              echo "- run: $run_url (branch \`$branch\`)"
+              echo "- job: $job_url"
+              echo
+              echo "Reported lines from that job:"
+              echo '```text'
+              # `cut -f3-` strips gh's "<job name>\t<step>\t" prefix. Portable, unlike
+              # sed's \t, which BSD sed does not understand — the difference is
+              # invisible on the runner and silently wrong when testing on macOS.
+              #
+              # The leading space in the alternation is load-bearing: an unanchored
+              # `launch:` also matches `app_launch:` in com.apple.network rows, which
+              # is what this grep returned on its first test — two irrelevant network
+              # lines and none of the reported ones.
+              printf '%s' "$log" | cut -f3- \
+                | grep -E ' (poll|launch|capture|stream): |WARNING: the live log capture|FAIL: built iOS|the marker (WAS captured|never arrived)' \
+                | cut -c1-200 | head -20 || echo "(none of the reported lines are present — the job predates the instrumentation, or failed before it)"
+              echo '```'
+              echo
+              echo "Baseline for comparison: **1050 Runner-attributed lines / 270,521 bytes, marker at 13s"
+              echo "into a 90-iteration budget** (job 97378371910). The failing sample this watch exists for"
+              echo "was 13 lines / 2,335 bytes (job 97199199670)."
+              echo
+              echo "<sub>Posted by the \`Watch iOS capture defect\` workflow. It reports each job once.</sub>"
+            } > comment.md
+
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "--- DRY RUN, would comment: ---"; cat comment.md
+            else
+              # A hit is exactly the signal this ticket was waiting for, so bring it
+              # back if it was closed as not-reproducing.
+              state=$(gh issue view "$ISSUE" -R "$REPO" --json state --jq .state)
+              [ "$state" = "CLOSED" ] && gh issue reopen "$ISSUE" -R "$REPO" \
+                --comment "Reopening: a capture-defect signal appeared in job $job_id."
+              gh issue comment "$ISSUE" -R "$REPO" --body-file comment.md
+            fi
+          done < candidates.txt
+
+          echo "signals found: $hits"
