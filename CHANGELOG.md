@@ -36,6 +36,51 @@ channels "so the marker is found if EITHER works" is corrected in place: that cl
 cratestack#704 failure read as "the app printed nothing" on the strength of the marker being absent
 from "both".
 
+### The `cratestack_cbor` example's verification marker no longer depends on a widget building
+
+Every headless verification of that example — `just cbor-example-verify` and its `-android`,
+`-windows`, `-macos`, `-ios` siblings — greps process or console output for a marker the app prints.
+That marker was produced by a round trip hanging off `late final _future = runRoundTrip()` on a
+`State` object whose only read was inside `build()`, making the assertion everything downstream
+depends on a side effect of the app constructing its widget tree.
+
+It now starts in `main()`, before `runApp`, and the widget is handed the already-running future.
+
+Scope, stated precisely: `runApp` schedules `attachRootWidget` on a bare `Timer.run` and
+`attachToBuildOwner` inflates the tree synchronously, so the old code ran one event-loop turn after
+`runApp` — no frame and no platform scene required. This change removes a dependency on the widget
+tree building, **not** on rendering. It is not a fix for cratestack#704, which stays open: on iOS the
+engine is launched from `FlutterViewController.viewDidLoad`, upstream of any Dart code, in both the
+old and new shape.
+
+Also in `just cbor-example-verify-ios`: the failure path printed `--- device state ---` and `--- is
+the app installed? ---` twice (cratestack#705 added a second copy rather than moving the first), and a
+passing run now reports what it previously kept to itself — the poll margin, the install duration and
+launch time, and how much the app actually logged (capture bytes plus Runner-attributed line count).
+
+That last pair is the point. A green iOS job used to print one tick and nothing else, with 281 seconds
+of silence before it (job 97215919059), so a failure had no healthy run to be compared against: when
+job 97199199670 captured 2335 bytes holding 13 Runner-attributed lines and then went quiet for 94
+seconds, nothing on record said whether 13 was low, normal or high for this app. The same two summary
+lines are now printed on both the passing and failing paths, in the same order, so the two can be
+diffed directly. They also settle a question that had to be reconstructed by hand from GitHub's line
+timestamps: that failing run's install took 111s, *less* than the green run's, so install contention
+alone does not predict the flake.
+
+### `just cbor-example-verify` now runs the example's `flutter test`
+
+`dart-packages/cratestack_cbor/example/test/widget_test.dart` existed but ran nowhere in CI and failed
+on a clean checkout with `Unsupported operation: Isolate.resolvePackageUriSync` — `flutter test`'s test
+VM does not support the synchronous package-URI resolution the native backend's dev-mode fallback
+tries when no built app bundle exists yet at that point in the recipe. The pre-existing
+`CRATESTACK_CBOR_NATIVE_LIB` override (checked before either resolution strategy) sidesteps this
+entirely by pointing straight at the vendored Linux blob, so the recipe now runs the test with that set
+rather than leaving it permanently unexercised.
+
+Investigated for cratestack#704 but out of scope for that issue: it does not address the iOS flake.
+No test on this repo's Linux-only toolchain could be made to discriminate that failure mode — see
+cratestack#715 for the attempts and why they were discarded rather than shipped green.
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted

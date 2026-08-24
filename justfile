@@ -2001,6 +2001,32 @@ cbor-example-verify:
 	echo "=== flutter analyze: $example ==="
 	(cd "$example" && flutter analyze --fatal-warnings --no-fatal-infos)
 
+	# `flutter test` (the Dart-VM-hosted widget test, NOT a built app bundle
+	# — see test/widget_test.dart's own header comment) against the real
+	# native backend. Left unwired into CI for a long time (cratestack#704's
+	# investigation): under `flutter test`'s harness,
+	# `Isolate.resolvePackageUri` — the dev-mode fallback
+	# `resolveVendoredLibraryPath` (lib/src/native/native_cbor_codec.dart)
+	# tries when no built app bundle is on disk yet at this point in the
+	# recipe — throws `Unsupported operation: Isolate.resolvePackageUriSync`
+	# rather than returning a URI, because `flutter test` runs on a special
+	# test VM that does not support synchronous package URI resolution. The
+	# override env var `CRATESTACK_CBOR_NATIVE_LIB` (documented on that same
+	# function, and pre-existing for exactly this kind of "point at a
+	# specific library" need) sidesteps the whole resolution chain — checked
+	# FIRST, before either fallback strategy runs. This asserts the vendored
+	# Linux blob directly (not yet inside a built bundle — that assertion is
+	# the `flutter build linux` step just below), so it must run before
+	# `flutter clean` would remove any prior build, which is already the
+	# case here.
+	native_lib="$(pwd)/dart-packages/cratestack_cbor/blobs/linux-x64/libcratestack_client_flutter.so"
+	if [ ! -f "$native_lib" ]; then
+	  echo "FAIL: vendored native library not found at $native_lib — run 'just cbor-vendor-native' first." >&2
+	  exit 1
+	fi
+	echo "=== flutter test: $example ==="
+	(cd "$example" && CRATESTACK_CBOR_NATIVE_LIB="$native_lib" flutter test)
+
 	echo "=== flutter build linux (release): $example ==="
 	(cd "$example" && flutter build linux)
 	bin="$example/build/linux/x64/release/bundle/cratestack_cbor_example"
@@ -2609,7 +2635,20 @@ cbor-example-verify-ios:
 
 	echo "=== installing + launching $appId ==="
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
+	# Timestamped because between this line and the result, a GREEN run
+	# prints NOTHING — 281 seconds of silence on job 97215919059, with no
+	# way afterwards to tell how much of it was install and how much was the
+	# app. The failing job 97199199670 spent 111s here, i.e. LESS than that
+	# green run: install contention alone does not predict the failure, and
+	# reading either number required reconstructing it from GitHub's own
+	# line timestamps. Report it instead.
+	install_started="$(date +%s)"
 	xcrun simctl install "$udid" "$app"
+	# Closed HERE, not after the launch below: everything between is this
+	# recipe's own log-stream setup and a fixed `sleep 2`, and folding those
+	# into a number labelled "install" would overstate it by exactly the
+	# amount a reader is trying to measure.
+	install_secs=$(( $(date +%s) - install_started ))
 
 	# TWO CAPTURES, ONE OF WHICH CAN CARRY THE MARKER. This used to say they
 	# were two independent channels and that the marker would be found if
@@ -2670,6 +2709,7 @@ cbor-example-verify-ios:
 	sleep 2
 	xcrun simctl launch --console-pty "$udid" "$appId" > "$ios_log" 2>&1 &
 	launch_pid=$!
+	launch_at_utc="$(date -u +%H:%M:%SZ)"
 	# 90s, not 30s. A cold simulator plus a first Flutter engine start is
 	# comfortably slower than the desktop jobs this timeout was copied from,
 	# and a too-short window is indistinguishable from a real failure.
@@ -2684,6 +2724,26 @@ cbor-example-verify-ios:
 	  sleep 1
 	done
 	poll_waited=$(( $(date +%s) - poll_started ))
+
+	# HOW MUCH THE APP LOGGED, ON BOTH PATHS (cratestack#704). The failure
+	# branch below already dumps the captures, but a green run reported
+	# nothing at all — so there was no healthy baseline to diff a failure
+	# against, which is exactly what made job 97199199670 slow to read. That
+	# job captured 2335 bytes containing 13 Runner-attributed lines, all
+	# inside a single 50ms window, then nothing for 94 seconds. Whether 13
+	# is low, normal or high for this app is STILL not known, because no
+	# passing run has ever printed the number.
+	#
+	# Counted from the live capture, not a second `log show`: it is the same
+	# file the poll loop greps, so the figure is directly comparable between
+	# a red and a green run, and it costs no extra simctl round trip.
+	#
+	# `|| true` because `grep -c` exits 1 on zero matches and this recipe
+	# runs under `set -e` — a silent app must be reported as 0, not abort
+	# the summary that says so.
+	runner_lines="$(grep -c 'Runner\[' "$stream_log" || true)"
+	capture_summary="capture: unified log $(wc -c < "$stream_log" | tr -d ' ') bytes / ${runner_lines} Runner-attributed lines, console-pty $(wc -c < "$ios_log" | tr -d ' ') bytes"
+	timing_summary="launch: app launched at ${launch_at_utc} after a ${install_secs}s install"
 
 	# LIVENESS IS SAMPLED BEFORE ANYTHING IS KILLED (cratestack#704).
 	# The previous version killed the app and the log stream first and
@@ -2768,10 +2828,11 @@ cbor-example-verify-ios:
 	  # empty log and therefore told us nothing about which half broke.
 	  # Everything below is about narrowing that down on the NEXT run
 	  # rather than guessing again.
-	  echo "--- device state ---" >&2
-	  xcrun simctl list devices | grep -F "$udid" >&2 || true
-	  echo "--- is the app installed? ---" >&2
-	  xcrun simctl get_app_container "$udid" "$appId" >&2 2>&1 || echo "(get_app_container failed — app not installed)" >&2
+	  #
+	  # Device state and installation are reported ONCE, below, after the
+	  # harness block. cratestack#705 added a second copy of that pair
+	  # instead of moving it, so every failure printed both headings twice
+	  # — in the block whose entire purpose is being read quickly.
 	  # Say plainly that WE stopped it, and after how long. Without this the
 	  # reader sees "Child process terminated with signal 15" in the capture
 	  # and reasonably concludes the app crashed — it did not, we killed it.
@@ -2792,6 +2853,8 @@ cbor-example-verify-ios:
 	    echo "launch process still alive when the budget expired: $launch_alive" >&2
 	    echo "app still registered with the simulator when the budget expired: $app_alive" >&2
 	  fi
+	  echo "$timing_summary" >&2
+	  echo "$capture_summary" >&2
 	  echo "--- device state ---" >&2
 	  xcrun simctl list devices | grep -F "$udid" >&2 || true
 	  echo "--- is the app installed? ---" >&2
@@ -2827,6 +2890,24 @@ cbor-example-verify-ios:
 	  rm -f "$ios_log" "$stream_log" "$store_log"
 	  exit 1
 	fi
+	# REPORT THE MARGIN ON GREEN RUNS TOO (cratestack#704 Test Plan step 1:
+	# "instrument a passing run to record the interval between simctl launch
+	# and the marker appearing"). cratestack#705 computed `poll_waited` but
+	# echoed it only in the failure branch, so a passing run still said
+	# nothing about how close it came — which is precisely the number needed
+	# to decide whether this timeout is mistuned. A green run that reports
+	# 2s of margin is a red run that has not happened yet, and silence about
+	# it reads as comfort.
+	#
+	# The two summary lines below are the same ones the failure branch
+	# prints, deliberately identical in wording and order so a red run can
+	# be diffed against a green one line by line. That comparison did not
+	# exist while cratestack#704 was being investigated: a green iOS job
+	# emitted a single tick and nothing else, so "13 Runner-attributed lines
+	# in 2335 bytes" had no baseline to be judged against.
+	echo "poll: marker arrived ${poll_waited}s after launch, into a ${poll_budget}-iteration budget ($(( poll_budget - poll_waited ))s of margin)"
+	echo "$timing_summary"
+	echo "$capture_summary"
 	# PASSING BECAUSE THE APP WAS RIGHT, NOT BECAUSE THE HARNESS GAVE UP.
 	# A recovered marker means the round trip succeeded and the live capture
 	# missed it. That is a green build and a real defect at the same time,
