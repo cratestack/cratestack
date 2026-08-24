@@ -6,36 +6,44 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::reserved_idents::validate_reserved_identifier;
 
 #[derive(Clone, Copy)]
-pub(super) enum CustomFieldSupport {
+pub(super) enum ComputedFieldSupport {
     Rejected,
-    TypeOnly,
+    Supported,
 }
 
-pub(super) fn validate_custom_field_attribute(
+/// Validate `@computed` at field position: bare form only, at most once,
+/// only on the declarations that actually generate resolvers (`type` and
+/// `model`), and never combined with any other field attribute — a
+/// computed field is response-composition-only, so every persistence /
+/// input / policy attribute (`@id`, `@default`, `@unique`, `@readonly`,
+/// `@relation`, validators, ...) would be dead text on it. Rejecting the
+/// whole class (rather than an allowlist of known conflicts) fails closed
+/// for attributes added later.
+pub(super) fn validate_computed_field_attribute(
     field: &Field,
     owner_kind: &str,
     owner_name: &str,
-    support: CustomFieldSupport,
+    support: ComputedFieldSupport,
 ) -> Result<(), SchemaError> {
-    let mut custom_count = 0usize;
+    let mut computed_count = 0usize;
     for attribute in &field.attributes {
-        if !attribute.raw.starts_with("@custom") {
+        if !attribute.raw.starts_with("@computed") {
             continue;
         }
-        custom_count += 1;
-        if attribute.raw != "@custom" {
+        computed_count += 1;
+        if attribute.raw != "@computed" {
             return Err(span_error(
                 format!(
-                    "field `{}` on {} `{}` uses unsupported custom field directive `{}`; use bare `@custom` in this slice",
+                    "field `{}` on {} `{}` uses unsupported computed field directive `{}`; use bare `@computed`",
                     field.name, owner_kind, owner_name, attribute.raw,
                 ),
                 field.span,
             ));
         }
-        if matches!(support, CustomFieldSupport::Rejected) {
+        if matches!(support, ComputedFieldSupport::Rejected) {
             return Err(span_error(
                 format!(
-                    "field `{}` on {} `{}` cannot use `@custom`; resolver-backed custom fields are currently only supported on `type` declarations",
+                    "field `{}` on {} `{}` cannot use `@computed`; resolver-backed computed fields are only supported on `type` and `model` declarations",
                     field.name, owner_kind, owner_name,
                 ),
                 field.span,
@@ -43,11 +51,29 @@ pub(super) fn validate_custom_field_attribute(
         }
     }
 
-    if custom_count > 1 {
+    if computed_count > 1 {
         return Err(span_error(
             format!(
-                "field `{}` on {} `{}` declares `@custom` more than once",
+                "field `{}` on {} `{}` declares `@computed` more than once",
                 field.name, owner_kind, owner_name,
+            ),
+            field.span,
+        ));
+    }
+
+    if computed_count == 1 && field.attributes.len() > 1 {
+        let other = field
+            .attributes
+            .iter()
+            .find(|attribute| attribute.raw != "@computed")
+            .map(|attribute| attribute.raw.as_str())
+            .unwrap_or_default();
+        return Err(span_error(
+            format!(
+                "field `{}` on {} `{}` combines `@computed` with `{}`; a computed field is \
+                 resolved at response-composition time and is never stored or accepted as \
+                 input, so no other field attribute applies to it",
+                field.name, owner_kind, owner_name, other,
             ),
             field.span,
         ));

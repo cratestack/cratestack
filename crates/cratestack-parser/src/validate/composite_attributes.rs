@@ -149,5 +149,17 @@ pub(super) fn resolve_scalar_field<'model>(
         ));
     }
 
+    if field.attributes.iter().any(|a| a.raw == "@computed") {
+        return Err(span_error(
+            format!(
+                "model `{}` `{attribute_label}` field `{field_name}` is `@computed` — computed \
+                 fields are resolved at response time, never stored, so they cannot participate \
+                 in database keys, constraints, or indexes",
+                model.name,
+            ),
+            attribute.span,
+        ));
+    }
+
     Ok(field)
 }

@@ -8,7 +8,7 @@ use crate::validate::builder_setter_collisions::{
     validate_no_add_setter_collision, validate_no_build_setter_collision,
 };
 use crate::validate::fields::{
-    CustomFieldSupport, validate_custom_field_attribute, validate_default_dbgenerated_no_args,
+    ComputedFieldSupport, validate_computed_field_attribute, validate_default_dbgenerated_no_args,
     validate_field_list_arity_support, validate_field_policy_attributes,
     validate_field_reserved_identifier,
 };
@@ -129,11 +129,11 @@ pub(super) fn validate_models(
                 first_id_field = Some(field.name.as_str());
                 has_primary_key = true;
             }
-            validate_custom_field_attribute(
+            validate_computed_field_attribute(
                 field,
                 "model",
                 &model.name,
-                CustomFieldSupport::Rejected,
+                ComputedFieldSupport::Supported,
             )?;
             validate_field_reserved_identifier(field, "model", &model.name)?;
             validate_type_ref(
