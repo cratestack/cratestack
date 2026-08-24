@@ -73,4 +73,10 @@ pub(crate) struct ComputedParamsFieldView {
     /// declared `type`), so no `dart_type`/scalar-import mapping is
     /// needed here.
     pub(crate) params_type: String,
+    /// Fluent-builder setter name — identical to `identifier` except for
+    /// the one reserved collision: a computed field literally named
+    /// `build` would collide with the builder's own terminal `build()`,
+    /// so it gets `setBuild`. Same rule `FieldView::new` applies to every
+    /// other generated data class (`crate::field_view`).
+    pub(crate) builder_setter: String,
 }

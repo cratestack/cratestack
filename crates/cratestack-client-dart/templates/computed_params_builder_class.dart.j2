@@ -1,0 +1,26 @@
+
+/// Fluent builder for [{{ model_api.computed_params_class_name }}] --
+/// same convention every other generated data class gets
+/// (`model_builder_class.dart.j2`). Every field is optional (an unset
+/// resolver means "the server sees `None` for it"), so there is no
+/// required-field check and `build()` never throws.
+class {{ model_api.computed_params_class_name }}Builder {
+{% for field in model_api.computed_params_fields %}
+  {{ field.params_type }}? _{{ field.identifier }};
+{% endfor %}
+
+{% for field in model_api.computed_params_fields %}
+  {{ model_api.computed_params_class_name }}Builder {{ field.builder_setter }}({{ field.params_type }}? value) {
+    _{{ field.identifier }} = value;
+    return this;
+  }
+
+{% endfor %}
+  {{ model_api.computed_params_class_name }} build() {
+    return {{ model_api.computed_params_class_name }}(
+{% for field in model_api.computed_params_fields %}
+      {{ field.identifier }}: _{{ field.identifier }},
+{% endfor %}
+    );
+  }
+}

@@ -418,6 +418,23 @@ model Image {
         computed_params_class.contains("int get hashCode"),
         "ImageComputedParams must carry a matching hashCode: {computed_params_class}"
     );
+
+    // The generated `ImageComputedParamsBuilder` fluent builder: every
+    // other generated data class gets the same builder pattern, so
+    // computed params should too.
+    assert!(
+        models.contains("class ImageComputedParamsBuilder {"),
+        "ImageComputedParams must get the same fluent builder every other generated \
+         data class gets: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParamsBuilder proxyUrl(ProxyParams? value) {"),
+        "the builder needs one setter per parameterized computed field: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParams build() {"),
+        "the builder needs its terminal build(): {models}"
+    );
 }
 
 /// Negative counterpart to
