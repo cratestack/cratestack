@@ -155,9 +155,69 @@ fn rpc_transport_gates_the_same_way() {
     let parameterized_rendered = render(&parameterized, TransportStyle::Rpc, &BTreeSet::new());
     assert!(parameterized_rendered.contains("struct PhotoComputedParams"));
     assert!(parameterized_rendered.contains("RpcGetInput"));
+
+    // `get` (the full-record verb) must still use RpcPkInput on an
+    // ungated model — `get_view`, which every model now gets, is the
+    // one that legitimately names RpcGetInput.
+    let get_start = bare_rendered
+        .find("pub fn get (")
+        .expect("ungated rpc get should exist");
+    let get_end = bare_rendered[get_start..]
+        .find("pub async fn get_view")
+        .map(|offset| get_start + offset)
+        .unwrap_or(bare_rendered.len());
+    let bare_get = &bare_rendered[get_start..get_end];
     assert!(
-        !bare_rendered.contains("RpcGetInput"),
-        "an ungated model's RPC get must keep using RpcPkInput, not \
-         RpcGetInput — rendered: {bare_rendered}"
+        bare_get.contains("RpcPkInput"),
+        "an ungated model's RPC get must keep using RpcPkInput: {bare_get}"
+    );
+    assert!(
+        !bare_get.contains("RpcGetInput"),
+        "an ungated model's RPC get must not switch to RpcGetInput: {bare_get}"
+    );
+}
+
+#[test]
+fn every_rpc_model_gets_a_get_view_including_an_ungated_one() {
+    let bare = schema(BARE_ONLY_SCHEMA);
+    let bare_rendered = render(&bare, TransportStyle::Rpc, &BTreeSet::new());
+    assert!(
+        bare_rendered.contains("pub async fn get_view"),
+        "an ungated model should have get_view — rendered: {bare_rendered}"
+    );
+    assert!(
+        bare_rendered.contains("ProjectionDecoder"),
+        "get_view should reference ProjectionDecoder — rendered: {bare_rendered}"
+    );
+
+    let parameterized = schema(PARAMETERIZED_SCHEMA);
+    let parameterized_rendered = render(&parameterized, TransportStyle::Rpc, &BTreeSet::new());
+    assert!(
+        parameterized_rendered.contains("pub async fn get_view"),
+        "a gated model should have get_view — rendered: {parameterized_rendered}"
+    );
+    assert!(
+        parameterized_rendered.contains("ProjectionDecoder"),
+        "get_view should reference ProjectionDecoder — rendered: {parameterized_rendered}"
+    );
+}
+
+#[test]
+fn rpc_get_view_sends_no_computed_params() {
+    let parameterized = schema(PARAMETERIZED_SCHEMA);
+    let parameterized_rendered = render(&parameterized, TransportStyle::Rpc, &BTreeSet::new());
+
+    let get_view_start = parameterized_rendered
+        .find("pub async fn get_view")
+        .expect("get_view should exist");
+    let get_view_end = parameterized_rendered[get_view_start..]
+        .find("pub fn create (")
+        .map(|offset| get_view_start + offset)
+        .unwrap_or(parameterized_rendered.len());
+    let get_view_slice = &parameterized_rendered[get_view_start..get_view_end];
+
+    assert!(
+        get_view_slice.contains("computed_params : :: core :: option :: Option :: None"),
+        "get_view must always pass computed_params: Option::None — rendered: {get_view_slice}"
     );
 }

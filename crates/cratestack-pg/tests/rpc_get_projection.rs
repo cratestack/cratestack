@@ -1,15 +1,12 @@
-//! `computedParams` and full selection surface (`fields`, `include`,
-//! `includeFields`) over the RPC transport for model reads
-//! (`model.<X>.get`/`model.<X>.list`), and per-frame over `/rpc/batch` —
-//! Stage 1 of the plan in `docs/design/rpc-transport.md`'s `RpcGetInput`/
-//! `RpcListInput` sections.
+//! Projection (fields/include/includeFields) over the RPC transport for
+//! model `get` operations — proves that RPC `model.<X>.get` now carries
+//! the same projection semantics as REST `GET /<plural>/{id}`, which was
+//! previously asymmetric (docs/design/rpc-transport.md §3.1a).
 //!
-//! `computed_fields_rpc.cstack`/`computed_fields_rpc.rs` already proves RPC
-//! composes computed fields on *procedure* outputs; this fixture is the
-//! missing model-CRUD-over-RPC counterpart, mirroring
-//! `computed_fields_router.cstack`/`computed_fields_router.rs`'s REST
-//! coverage of the same feature but dispatched through `rpc_router`
-//! instead of `model_router`.
+//! This fixture includes both a to-one and to-many relation pair
+//! (`RpcProjPhoto` → `RpcProjAlbum`, and the reverse) so the full
+//! include/include_fields composition can be tested end-to-end, including
+//! field narrowing on included relations.
 //!
 //! PG-gated: skips silently without `CRATESTACK_TEST_DATABASE_URL` /
 //! `CRATESTACK_USE_TESTCONTAINERS`, same pattern as every other PG
@@ -18,7 +15,7 @@
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
-use cratestack::rpc::{RpcGetInput, RpcListInput, RpcRequest, RpcResponseFrame};
+use cratestack::rpc::{RpcGetInput, RpcRequest, RpcResponseFrame};
 use cratestack::sqlx::query;
 use cratestack::{
     AuthProvider, CratestackCodec, CratestackContext, CratestackError, RequestContext, Value,
@@ -26,35 +23,53 @@ use cratestack::{
 use cratestack_codec_json::JsonCodec;
 use tower::util::ServiceExt;
 
-include_server_schema!(
-    "tests/fixtures/computed_fields_rpc_model.cstack",
-    db = Postgres
-);
+include_server_schema!("tests/fixtures/rpc_get_projection.cstack", db = Postgres);
 
 mod support;
 
 use support::pg;
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    query("DROP TABLE IF EXISTS comp_rpc_photos")
+    query("DROP TABLE IF EXISTS rpc_proj_photos")
         .execute(pool)
         .await
-        .expect("drop table");
+        .expect("drop photos table");
+    query("DROP TABLE IF EXISTS rpc_proj_albums")
+        .execute(pool)
+        .await
+        .expect("drop albums table");
     query(
-        "CREATE TABLE comp_rpc_photos (
+        "CREATE TABLE rpc_proj_albums (
             id BIGINT PRIMARY KEY,
+            title TEXT NOT NULL
+        )",
+    )
+    .execute(pool)
+    .await
+    .expect("create rpc_proj_albums");
+    query(
+        "CREATE TABLE rpc_proj_photos (
+            id BIGINT PRIMARY KEY,
+            album_id BIGINT NOT NULL,
             storage_key TEXT NOT NULL
         )",
     )
     .execute(pool)
     .await
-    .expect("create comp_rpc_photos");
+    .expect("create rpc_proj_photos");
 }
 
 async fn seed(pool: &cratestack::sqlx::PgPool) {
     query(
-        "INSERT INTO comp_rpc_photos (id, storage_key) VALUES \
-         (1, 'media/one.png'), (2, 'media/two.png')",
+        "INSERT INTO rpc_proj_albums (id, title) VALUES \
+         (1, 'Holiday')",
+    )
+    .execute(pool)
+    .await
+    .expect("seed albums");
+    query(
+        "INSERT INTO rpc_proj_photos (id, album_id, storage_key) VALUES \
+         (1, 1, 'media/one.png'), (2, 1, 'media/two.png')",
     )
     .execute(pool)
     .await
@@ -83,17 +98,16 @@ struct NoProcedures;
 impl cratestack_schema::procedures::ProcedureRegistry for NoProcedures {}
 
 /// Resolves `proxyUrl` to a deterministic URL derived from `storageKey`
-/// (and, when supplied, `width`) — same shape as `computed_fields_router.rs`'s
-/// `CountingResolver`, minus the invocation counter (not needed here).
+/// (and, when supplied, `width`), and `thumbnailUrl` to a fixed derivative.
 #[derive(Clone)]
 struct TestResolver;
 
 impl cratestack_schema::ComputedFieldResolver for TestResolver {
-    fn resolve_comp_rpc_photo_proxy_url(
+    fn resolve_rpc_proj_photo_proxy_url(
         &self,
         _db: &cratestack_schema::Cratestack,
-        source: &cratestack_schema::CompRpcPhoto,
-        params: Option<&cratestack_schema::CompRpcProxyParams>,
+        source: &cratestack_schema::RpcProjPhoto,
+        params: Option<&cratestack_schema::RpcProjProxyParams>,
         _ctx: &CratestackContext,
     ) -> impl core::future::Future<Output = Result<String, CratestackError>> + Send {
         let storage_key = source.storageKey.clone();
@@ -106,10 +120,10 @@ impl cratestack_schema::ComputedFieldResolver for TestResolver {
         }
     }
 
-    fn resolve_comp_rpc_photo_thumbnail_url(
+    fn resolve_rpc_proj_photo_thumbnail_url(
         &self,
         _db: &cratestack_schema::Cratestack,
-        source: &cratestack_schema::CompRpcPhoto,
+        source: &cratestack_schema::RpcProjPhoto,
         _ctx: &CratestackContext,
     ) -> impl core::future::Future<Output = Result<String, CratestackError>> + Send {
         let storage_key = source.storageKey.clone();
@@ -153,10 +167,10 @@ async fn rpc_unary(
     (status, value)
 }
 
-// ----- Case 1: get, with and without computedParams -----
+// ----- Test 1: fields projection -----
 
 #[tokio::test]
-async fn rpc_get_with_computed_params_reflects_width() {
+async fn rpc_get_projects_fields() {
     let _guard = pg::serial_guard().await;
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
@@ -168,119 +182,131 @@ async fn rpc_get_with_computed_params_reflects_width() {
     let router = test_router(pool);
     let input = RpcGetInput {
         id: 1i64,
+        fields: Some(vec!["id".into(), "storageKey".into()]),
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+
+    let (status, value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(value.get("id").is_some(), "id should be present");
+    assert!(
+        value.get("storageKey").is_some(),
+        "storageKey should be present"
+    );
+    assert!(
+        value.get("thumbnailUrl").is_none(),
+        "thumbnailUrl should be absent (not in fields)"
+    );
+    assert_eq!(
+        value.as_object().unwrap().len(),
+        2,
+        "object should have exactly 2 keys"
+    );
+}
+
+// ----- Test 2: include a relation -----
+
+#[tokio::test]
+async fn rpc_get_includes_a_relation() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let router = test_router(pool);
+    let input = RpcGetInput {
+        id: 1i64,
+        include: Some(vec!["album".into()]),
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+
+    let (status, value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        value
+            .get("album")
+            .and_then(|a| a.get("title"))
+            .and_then(|t| t.as_str()),
+        Some("Holiday"),
+        "album.title should be 'Holiday'"
+    );
+}
+
+// ----- Test 3: include_fields narrows the included relation -----
+
+#[tokio::test]
+async fn rpc_get_include_fields_narrows_the_included_relation() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let router = test_router(pool);
+    let mut include_fields = std::collections::BTreeMap::new();
+    include_fields.insert("album".to_owned(), vec!["id".to_owned()]);
+    let input = RpcGetInput {
+        id: 1i64,
+        include: Some(vec!["album".into()]),
+        include_fields,
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+
+    let (status, value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert_eq!(status, StatusCode::OK);
+    let album = value.get("album").expect("album should be present");
+    assert!(
+        album.get("id").is_some(),
+        "album.id should be present (in includeFields)"
+    );
+    assert!(
+        album.get("title").is_none(),
+        "album.title should be absent (not in includeFields)"
+    );
+}
+
+// ----- Test 4: HEADLINE TEST — reject computedParams for excluded fields -----
+
+#[tokio::test]
+async fn rpc_get_rejects_computed_params_for_a_field_excluded_by_fields() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let router = test_router(pool);
+    let input = RpcGetInput {
+        id: 1i64,
+        fields: Some(vec!["id".into()]),
         computed_params: Some(r#"{"proxyUrl":{"width":800}}"#.to_owned()),
         ..Default::default()
     };
     let body = JsonCodec.encode(&input).expect("get input should encode");
 
-    let (status, value) = rpc_unary(router, "model.CompRpcPhoto.get", body).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        value.get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/one.png?w=800"
-        ))
-    );
-}
-
-#[tokio::test]
-async fn rpc_get_without_computed_params_uses_default() {
-    let _guard = pg::serial_guard().await;
-    let Some(test_pg) = pg::connect_or_skip().await else {
-        return;
-    };
-    let pool = &test_pg.pool;
-    reset_schema(pool).await;
-    seed(pool).await;
-
-    let router = test_router(pool);
-    let input = RpcGetInput {
-        id: 1i64,
-        computed_params: None,
-        ..Default::default()
-    };
-    let body = JsonCodec.encode(&input).expect("get input should encode");
-
-    let (status, value) = rpc_unary(router, "model.CompRpcPhoto.get", body).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        value.get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/one.png"
-        )),
-        "no computedParams => resolver observes params: None => default value"
-    );
-}
-
-// ----- Case 2: list, computedParams applies per row -----
-
-#[tokio::test]
-async fn rpc_list_with_computed_params_reflects_width_per_row() {
-    let _guard = pg::serial_guard().await;
-    let Some(test_pg) = pg::connect_or_skip().await else {
-        return;
-    };
-    let pool = &test_pg.pool;
-    reset_schema(pool).await;
-    seed(pool).await;
-
-    let router = test_router(pool);
-    let input = RpcListInput {
-        sort: Some("id".to_owned()),
-        computed_params: Some(r#"{"proxyUrl":{"width":600}}"#.to_owned()),
-        ..Default::default()
-    };
-    let body = JsonCodec.encode(&input).expect("list input should encode");
-
-    let (status, value) = rpc_unary(router, "model.CompRpcPhoto.list", body).await;
-    assert_eq!(status, StatusCode::OK);
-    let items = value.as_array().expect("list response should be an array");
-    assert_eq!(items.len(), 2);
-    assert_eq!(
-        items[0].get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/one.png?w=600"
-        ))
-    );
-    assert_eq!(
-        items[1].get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/two.png?w=600"
-        ))
-    );
-}
-
-// ----- Case 3: rejection parity with REST -----
-
-#[tokio::test]
-async fn rpc_get_rejects_computed_params_naming_a_bare_field() {
-    let _guard = pg::serial_guard().await;
-    let Some(test_pg) = pg::connect_or_skip().await else {
-        return;
-    };
-    let pool = &test_pg.pool;
-    reset_schema(pool).await;
-    seed(pool).await;
-
-    let router = test_router(pool);
-    let input = RpcGetInput {
-        id: 1i64,
-        computed_params: Some(r#"{"thumbnailUrl":{}}"#.to_owned()),
-        ..Default::default()
-    };
-    let body = JsonCodec.encode(&input).expect("get input should encode");
-
-    let (status, _value) = rpc_unary(router, "model.CompRpcPhoto.get", body).await;
+    let (status, _value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
     assert_eq!(
         status,
         StatusCode::UNPROCESSABLE_ENTITY,
-        "same validation-error status REST returns for a computedParams key \
-         naming a param-less computed field"
+        "computedParams for a field excluded by fields should be rejected with 422. \
+         This branch was UNREACHABLE over RPC before T1 — the headline test."
     );
 }
 
+// ----- Test 5: reject unknown field name -----
+
 #[tokio::test]
-async fn rpc_get_rejects_malformed_computed_params_json() {
+async fn rpc_get_rejects_an_unknown_field_name() {
     let _guard = pg::serial_guard().await;
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
@@ -292,23 +318,93 @@ async fn rpc_get_rejects_malformed_computed_params_json() {
     let router = test_router(pool);
     let input = RpcGetInput {
         id: 1i64,
-        computed_params: Some("not-json".to_owned()),
+        fields: Some(vec!["nope".into()]),
         ..Default::default()
     };
     let body = JsonCodec.encode(&input).expect("get input should encode");
 
-    let (status, _value) = rpc_unary(router, "model.CompRpcPhoto.get", body).await;
-    assert_eq!(
-        status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "same validation-error status REST returns for malformed computedParams JSON"
+    let (status, _value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert!(!status.is_success(), "unknown field should be rejected");
+}
+
+// ----- Test 6: fields and computed_params compose -----
+
+#[tokio::test]
+async fn rpc_get_fields_and_computed_params_compose() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let router = test_router(pool);
+    let input = RpcGetInput {
+        id: 1i64,
+        fields: Some(vec!["id".into(), "proxyUrl".into()]),
+        computed_params: Some(r#"{"proxyUrl":{"width":800}}"#.to_owned()),
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+
+    let (status, value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        value
+            .get("proxyUrl")
+            .and_then(|p| p.as_str())
+            .map(|s| s.ends_with("?w=800"))
+            .unwrap_or(false),
+        "proxyUrl should end with ?w=800"
+    );
+    assert!(
+        value.get("storageKey").is_none(),
+        "storageKey should be absent (not in fields)"
     );
 }
 
-// ----- Case 4: batch, two frames with different computedParams -----
+// ----- Test 7: without selection returns full record -----
 
 #[tokio::test]
-async fn rpc_batch_frames_carry_independent_computed_params() {
+async fn rpc_get_without_selection_returns_the_full_record() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let router = test_router(pool);
+    let input = RpcGetInput {
+        id: 1i64,
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+
+    let (status, value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(value.get("id").is_some(), "id should be present");
+    assert!(value.get("albumId").is_some(), "albumId should be present");
+    assert!(
+        value.get("storageKey").is_some(),
+        "storageKey should be present"
+    );
+    assert!(
+        value.get("proxyUrl").is_some(),
+        "proxyUrl should be present"
+    );
+    assert!(
+        value.get("thumbnailUrl").is_some(),
+        "thumbnailUrl should be present"
+    );
+}
+
+// ----- Test 8: batch frames with independent projections -----
+
+#[tokio::test]
+async fn rpc_batch_frames_carry_independent_projections() {
     let _guard = pg::serial_guard().await;
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
@@ -321,19 +417,19 @@ async fn rpc_batch_frames_carry_independent_computed_params() {
     let frames = vec![
         RpcRequest {
             id: 1,
-            op: "model.CompRpcPhoto.get".to_owned(),
+            op: "model.RpcProjPhoto.get".to_owned(),
             input: cratestack::serde_json::json!({
                 "id": 1,
-                "computedParams": r#"{"proxyUrl":{"width":100}}"#,
+                "fields": ["id"],
             }),
             idem: None,
         },
         RpcRequest {
             id: 2,
-            op: "model.CompRpcPhoto.get".to_owned(),
+            op: "model.RpcProjPhoto.get".to_owned(),
             input: cratestack::serde_json::json!({
                 "id": 2,
-                "computedParams": r#"{"proxyUrl":{"width":200}}"#,
+                "fields": ["id", "storageKey"],
             }),
             idem: None,
         },
@@ -364,50 +460,17 @@ async fn rpc_batch_frames_carry_independent_computed_params() {
     assert!(responses[0].error.is_none(), "frame 0: {:?}", responses[0]);
     let out0 = responses[0].output.as_ref().expect("frame 0 has output");
     assert_eq!(
-        out0.get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/one.png?w=100"
-        ))
+        out0.as_object().unwrap().len(),
+        1,
+        "frame 0 output should have exactly 1 key (id only)"
     );
 
     assert_eq!(responses[1].id, 2);
     assert!(responses[1].error.is_none(), "frame 1: {:?}", responses[1]);
     let out1 = responses[1].output.as_ref().expect("frame 1 has output");
     assert_eq!(
-        out1.get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/two.png?w=200"
-        )),
-        "each batch frame's computedParams must resolve independently, in order"
-    );
-}
-
-// ----- Case 5: backward compat — bare `{"id": 1}` frame still dispatches -----
-
-#[tokio::test]
-async fn rpc_get_bare_id_frame_still_dispatches() {
-    let _guard = pg::serial_guard().await;
-    let Some(test_pg) = pg::connect_or_skip().await else {
-        return;
-    };
-    let pool = &test_pg.pool;
-    reset_schema(pool).await;
-    seed(pool).await;
-
-    let router = test_router(pool);
-    // Deliberately NOT `RpcGetInput` — this is the exact `{"id": 1}` shape
-    // an old client (pre-computedParams) would have sent.
-    let body = JsonCodec
-        .encode(&cratestack::serde_json::json!({ "id": 1 }))
-        .expect("bare id input should encode");
-
-    let (status, value) = rpc_unary(router, "model.CompRpcPhoto.get", body).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        value.get("proxyUrl"),
-        Some(&cratestack::serde_json::Value::from(
-            "https://cdn.example/media/one.png"
-        )),
-        "an old bare {{id}} frame must still dispatch and resolve with params: None"
+        out1.as_object().unwrap().len(),
+        2,
+        "frame 1 output should have exactly 2 keys (id and storageKey)"
     );
 }

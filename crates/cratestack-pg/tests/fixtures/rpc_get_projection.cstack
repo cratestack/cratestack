@@ -1,0 +1,40 @@
+// Proves RPC `model.<X>.get` carries `fields`/`include`/`includeFields`
+// exactly like REST `GET /<plural>/{id}` does — the asymmetry
+// docs/design/rpc-transport.md §3.1a used to document as deliberate.
+//
+// Model names prefixed `RpcProj` so their auto-derived tables
+// (rpc_proj_albums / rpc_proj_photos) don't collide with any other
+// fixture's tables on the shared external test Postgres — same
+// convention as CompRpc*.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model RpcProjAlbum {
+  id Int @id
+  title String
+  photos RpcProjPhoto[] @relation(fields:[id],references:[albumId])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model RpcProjPhoto {
+  id Int @id
+  albumId Int
+  storageKey String
+  proxyUrl String @computed(params: RpcProjProxyParams?)
+  thumbnailUrl String @computed
+  album RpcProjAlbum @relation(fields:[albumId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type RpcProjProxyParams {
+  width Int?
+}

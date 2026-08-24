@@ -11,7 +11,9 @@ use crate::client::model_output_type_tokens;
 use crate::shared::{ident, is_paged_model, is_primary_key, rust_type_tokens};
 
 mod computed;
+mod view;
 use computed::{build_get_method, build_list_method};
+use view::build_get_view_method;
 
 pub(super) fn generate_generated_rpc_model_client(
     model: &Model,
@@ -60,6 +62,7 @@ pub(super) fn generate_generated_rpc_model_client(
         &primary_key_type,
         &model_output_type,
     );
+    let get_view_method = build_get_view_method(&get_op, &primary_key_type);
 
     Ok(quote! {
         #[derive(Clone)]
@@ -81,6 +84,8 @@ pub(super) fn generate_generated_rpc_model_client(
             #list_method
 
             #get_method
+
+            #get_view_method
 
             /// `POST /rpc/model.X.create` — body is the create input
             /// directly (no envelope; server delegates to the existing

@@ -81,7 +81,10 @@ pub(super) fn build_list_method(
 
 /// `pub fn get(...) -> BatchableCall<C, ModelOutput>` — wraps `id` (and,
 /// when `computed_params_ident` is `Some`, the typed `computed_params`'
-/// encoded value) in `RpcGetInput`, or `RpcPkInput` for an ungated model.
+/// encoded value) in `RpcGetInput` with all five fields, or `RpcPkInput` for
+/// an ungated model. Plain `get` deliberately sends no selection because it
+/// decodes the full model type; `get_view` is the projection surface (being
+/// added separately).
 pub(super) fn build_get_method(
     computed_params_ident: Option<&syn::Ident>,
     get_op: &str,
@@ -91,9 +94,9 @@ pub(super) fn build_get_method(
     match computed_params_ident {
         Some(computed_params_ident) => quote! {
             /// `POST /rpc/model.X.get` — wraps `id` and the typed
-            /// `computed_params`' encoded value in `RpcGetInput { id,
-            /// computed_params }` (not `RpcPkInput`, which `delete` also
-            /// decodes — see `RpcGetInput`'s own doc for why the two
+            /// `computed_params`' encoded value in `RpcGetInput` with all
+            /// selection fields explicitly set (not `RpcPkInput`, which `delete`
+            /// also decodes — see `RpcGetInput`'s own doc for why the two
             /// aren't shared).
             pub fn get(
                 &self,
@@ -102,8 +105,14 @@ pub(super) fn build_get_method(
             ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
                 let input = ::cratestack::rpc::RpcGetInput {
                     id: id.clone(),
+                    fields: ::core::option::Option::None,
+                    include: ::core::option::Option::None,
+                    include_fields: ::std::collections::BTreeMap::new(),
                     computed_params: computed_params.and_then(|params| params.to_query_value()),
                 };
+                // Explicitly spelling out all five fields instead of using
+                // `..Default::default()` to avoid imposing a `Pk: Default`
+                // bound on generated code for every model's PK type.
                 ::cratestack::client_rust::BatchableCall::new(
                     self.rpc.clone(),
                     #get_op,

@@ -93,7 +93,9 @@ fn rpc_gated_model_gets_typed_list_query_and_get_options() {
          keys, not just when it's undefined: {client}"
     );
 
-    // Widget (ungated) keeps the original, non-generic shape.
+    // Widget (ungated) keeps the original, non-generic shape for list,
+    // but now has a WidgetApiGetOptions interface (carrying projection fields,
+    // but no computedParams — that's gated).
     assert!(
         client.contains(
             "list(query: CratestackRpcListQuery = {}, options: CratestackRpcCallOptions = {})"
@@ -101,12 +103,12 @@ fn rpc_gated_model_gets_typed_list_query_and_get_options() {
         "client.ts's WidgetApi.list must stay ungated: {client}"
     );
     assert!(
-        client.contains("get(id: number, options: CratestackRpcCallOptions = {})"),
-        "client.ts's WidgetApi.get must stay ungated: {client}"
+        client.contains("get(id: number, options: WidgetApiGetOptions = {})"),
+        "client.ts's WidgetApi.get must use WidgetApiGetOptions (which carries projection fields): {client}"
     );
     assert!(
-        !client.contains("WidgetApiGetOptions"),
-        "client.ts must never declare a GetOptions type for an ungated model: {client}"
+        client.contains("export interface WidgetApiGetOptions extends CratestackRpcCallOptions"),
+        "client.ts must declare WidgetApiGetOptions (for projection fields): {client}"
     );
 }
 
@@ -155,6 +157,42 @@ fn rpc_swr_gated_model_get_omits_empty_computed_params_from_the_frame() {
         ),
         "src/swr/models/image.ts's getImage must omit computedParams from the frame when it has \
          no own keys, not just when it's undefined: {image_module}"
+    );
+}
+
+#[test]
+fn rpc_get_options_carry_projection_on_a_gated_and_an_ungated_model() {
+    let package = generate_for("computed_params_rpc", false);
+    let client = file(&package, "src/client.ts");
+
+    // Both Image (gated) and Widget (ungated) should have GetOptions
+    // interfaces that carry projection fields/include/includeFields.
+    // Image also carries computedParams (gated), Widget does not.
+
+    // Check Image's interface.
+    assert!(
+        client.contains("export interface ImageApiGetOptions extends CratestackRpcCallOptions {\n  fields?: string[];\n  include?: string[];\n  includeFields?: Record<string, string[]>;"),
+        "ImageApiGetOptions must carry projection fields: {client}"
+    );
+    assert!(
+        client.contains("computedParams?: ImageComputedParams;"),
+        "ImageApiGetOptions must carry typed computedParams (gated): {client}"
+    );
+
+    // Check Widget's interface.
+    assert!(
+        client.contains("export interface WidgetApiGetOptions extends CratestackRpcCallOptions {\n  fields?: string[];\n  include?: string[];\n  includeFields?: Record<string, string[]>;"),
+        "WidgetApiGetOptions must carry projection fields (ungated): {client}"
+    );
+    assert!(
+        !client.contains("WidgetApiGetOptions extends CratestackRpcCallOptions {\n  fields?: string[];\n  include?: string[];\n  includeFields?: Record<string, string[]>;\n  computedParams?:"),
+        "WidgetApiGetOptions must not carry computedParams (ungated): {client}"
+    );
+
+    // Check that the get method bodies build the input correctly.
+    assert!(
+        client.contains("input.include_fields = options.includeFields;"),
+        "get method must forward includeFields to the input: {client}"
     );
 }
 

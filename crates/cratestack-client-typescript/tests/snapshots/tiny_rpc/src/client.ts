@@ -31,6 +31,12 @@ export class TinyRpcClientClient {
   }
 }
 
+export interface WidgetApiGetOptions extends CratestackRpcCallOptions {
+  fields?: string[];
+  include?: string[];
+  includeFields?: Record<string, string[]>;
+}
+
 export class WidgetApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
@@ -42,10 +48,22 @@ export class WidgetApi {
     ).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
   }
 
-  get(id: number, options: CratestackRpcCallOptions = {}): Promise<Widget> {
-    return this.runtime.call<{ id: number }, unknown>(
+  get(id: number, options: WidgetApiGetOptions = {}): Promise<Widget> {
+    const input: Record<string, unknown> = { id };
+    if (options.fields?.length) {
+      input.fields = options.fields;
+    }
+    if (options.include?.length) {
+      input.include = options.include;
+    }
+    if (options.includeFields && Object.keys(options.includeFields).length > 0) {
+      // snake_case on purpose: mirrors toRpcListInput and RpcGetInput.include_fields,
+      // which carry no camelCase rename on the wire.
+      input.include_fields = options.includeFields;
+    }
+    return this.runtime.call<Record<string, unknown>, unknown>(
       "model.Widget.get",
-      { id },
+      input,
       options,
     ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
   }
