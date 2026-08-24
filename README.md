@@ -53,7 +53,7 @@ What the current slice covers, across those three shapes:
 | `auth` | Supported | Single auth block |
 | `mixin` | Supported | Reusable field sets for models |
 | `model` | Supported | Includes relation and policy attributes in current slice |
-| `type` | Supported | Supports `@custom` fields |
+| `type` | Supported | Supports `@computed` resolver fields |
 | `enum` | Supported | Enum values are untyped identifiers |
 | `procedure` / `mutation procedure` | Supported | Typed args + return type |
 | `mcp` | Supported | Parsed as config block |

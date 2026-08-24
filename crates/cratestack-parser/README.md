@@ -82,7 +82,7 @@ match parse_schema(source) {
 | `auth`          | Single auth block declaring principal fields               |
 | `mixin`         | Reusable field set, applied via `@use(...)` on a model     |
 | `model`         | Entity with fields, relations, and policy attributes       |
-| `type`          | Named record type (`@custom` fields supported)             |
+| `type`          | Named record type (`@computed` resolver fields supported)  |
 | `enum`          | Untyped identifier variants                                |
 | `procedure`     | `procedure` / `mutation procedure` with typed args/return  |
 | `mcp`           | Parsed as a config block                                   |

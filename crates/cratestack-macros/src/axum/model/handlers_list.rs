@@ -152,7 +152,12 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
             // Validated before any DB access (docs/design/computed-fields.md):
-            // a malformed `computedParams` value never reaches the list query.
+            // a `computedParams` value that isn't a JSON object, or that
+            // names an unknown/non-parameterized/`?fields=`-excluded key,
+            // never reaches the list query. Decoding a key's *value* into
+            // its field's params type is a separate, later step — it
+            // happens at resolve time in `serializers::computed_fields`,
+            // once rows have already been fetched.
             let computed_params = match #parse_computed_params_ident(query.computed_params.as_deref(), &query.selection) {
                 Ok(computed_params) => computed_params,
                 Err(error) => {

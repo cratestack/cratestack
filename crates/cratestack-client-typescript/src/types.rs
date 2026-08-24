@@ -120,10 +120,7 @@ fn is_server_only_field(field: &Field) -> bool {
 /// point of view), so call sites that need to exclude it (create/update
 /// inputs, `Where`/`SortField` builders) check this explicitly.
 pub(crate) fn is_computed_field(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@computed"))
+    cratestack_core::is_computed_field(field)
 }
 
 /// Model has at least one `@@allow("create", ...)` or

@@ -1,6 +1,6 @@
 # Computed fields (`@computed`) — resolver-backed response-time fields
 
-Status: in implementation. Source of truth for the `@computed` feature.
+Status: implemented (v1). Source of truth for the `@computed` feature.
 
 ## Problem
 
@@ -166,11 +166,62 @@ Model GET/list REST requests accept one query parameter:
 - Views cannot declare computed fields.
 - Audit-log redaction (`@pii`/`@sensitive`) doesn't apply (cannot combine with
   `@computed`); resolvers must not return data needing redaction.
+- **The server's embedded self-client decodes into server-side structs and
+  silently drops computed fields in v1** (tracked follow-up). `include_server_schema!`
+  generates an internal `cratestack_schema::client::Client` for self/peer calls
+  (`crate::client::generate_client_module`, shared with standalone
+  `include_client_schema!`), but its per-model methods return
+  `super::models::<Model>` — the server-side struct type
+  (`generate_model_struct_only`), which excludes computed fields by design. Only
+  a *standalone* `include_client_schema!` call (its own `models`/`types` modules,
+  built by `generate_client_model_struct`/`generate_client_type_struct`) gets the
+  client-side struct shape that actually carries computed field values.
+- **RPC transport model reads have no `computedParams` slot** — `?computedParams=`
+  is a REST query-string parameter only; RPC unary/batch dispatch for
+  `model.<Model>.get`/`model.<Model>.list` never reads or threads one through
+  (procedure output composition, unlike model reads, works identically under
+  both transports).
+- **Create/update/delete commit the DB write before resolvers run.** The
+  handler calls `.create()`/`.update()`/`.delete()` (each a real,
+  already-committed write) and only afterward runs response composition
+  (which invokes resolvers). A resolver error therefore always describes an
+  error *response* for a write that already happened — there is no
+  transactional rollback tying resolver success to the write.
+- **`computedParams` value decoding is not pre-DB.** Only the *keys* of a
+  `?computedParams=` object are validated before any database access (does
+  the key name a parameterized computed field of this model, is it excluded
+  by `?fields=`, is the payload even a JSON object at all). Decoding a key's
+  *value* into its field's declared params type
+  (`serde_json::from_value::<ParamsType>`) happens later, at
+  response-serialization time, after the row (or rows) has already been
+  fetched — see `cratestack-macros/src/axum/model/serializers/computed_fields.rs`.
+- **Unknown keys *inside* a params object are silently ignored** — standard
+  serde struct deserialization, not `#[serde(deny_unknown_fields)]`. Only the
+  top-level `computedParams` object's keys (the computed field names) are
+  validated; an extra, unrecognized key inside one field's params payload
+  (e.g. `{"proxyUrl": {"width": 800, "typo": true}}`) is dropped, not
+  rejected.
 
 ## Downstream
 
 - `cratestack-migrate`: computed fields excluded from DDL/diff.
 - Wiremock generator: computed fields fabricated like ordinary response fields.
 - Dart/TS clients: computed fields in response classes, excluded from inputs,
-  filters, sorts; typed params surface on read calls.
+  filters, sorts. Both expose a `computedParams` surface on `get`/`list`, but
+  it is an **untyped v1 escape hatch** in both — Dart's is
+  `Map<String, Object?>?`, TypeScript's is `Record<string, unknown>` — not a
+  generated per-model params type; a typed wrapper is tracked follow-up work.
+  Dart additionally gates the parameter per model (offered only when the
+  model has at least one *parameterized* `@computed(params: <Type>?)` field —
+  a bare-`@computed`-only model never gets it, since the server would 422 any
+  `computedParams` key for a field with no params type); TypeScript's
+  `computedParams` lives on one shared query type used by every model's
+  `get`/`list`, so it has no equivalent per-model gate.
+- **The generated Rust client (`include_client_schema!`) has no
+  `computedParams` surface at all in v1** (tracked follow-up) — the
+  `?computedParams=` query parameter has no constructor, builder method, or
+  argument anywhere in `cratestack-macros/src/client/`. It still *decodes*
+  computed field values correctly on responses (via the client-side struct
+  shapes described above), it just cannot request non-default resolver
+  parameters.
 - LSP: `@computed` added to attribute completion if a list exists.

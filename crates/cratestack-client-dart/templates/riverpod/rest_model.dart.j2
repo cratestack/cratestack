@@ -43,7 +43,16 @@ class {{ model_api.api_class_name }} {
 
   Future<{{ model_api.list_return_type }}> list({
     CratestackListQuery? query,
-{% if model_api.has_computed_fields %}
+{% if model_api.has_parameterized_computed_fields %}
+    /// Params for `@computed(params: <Type>?)` resolver fields
+    /// (`docs/design/computed-fields.md`), keyed by computed field name —
+    /// e.g. `{ 'proxyUrl': { 'width': 800 } }`. Serialized as a single
+    /// JSON-encoded `computedParams` query parameter. Untyped
+    /// (`Map<String, Object?>`) rather than a generated per-model params
+    /// type — v1 escape hatch, see `docs/design/computed-fields.md`'s
+    /// "Downstream" section. Only offered here because this model has at
+    /// least one parameterized computed field; the server 422s a
+    /// `computedParams` key naming a field with no params type.
     Map<String, Object?>? computedParams,
 {% endif %}
     CratestackCallOptions? options,
@@ -51,7 +60,7 @@ class {{ model_api.api_class_name }} {
     final body = await _client.execute(
       'GET',
       '{{ model_api.route }}',
-{% if model_api.has_computed_fields %}
+{% if model_api.has_parameterized_computed_fields %}
       queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),
 {% else %}
       queryParameters: query?.toQueryParameters(),
@@ -86,7 +95,16 @@ class {{ model_api.api_class_name }} {
 
   Future<{{ model_api.model_name }}> get({{ model_api.primary_key_type }} id, {
     CratestackFetchQuery? query,
-{% if model_api.has_computed_fields %}
+{% if model_api.has_parameterized_computed_fields %}
+    /// Params for `@computed(params: <Type>?)` resolver fields
+    /// (`docs/design/computed-fields.md`), keyed by computed field name —
+    /// e.g. `{ 'proxyUrl': { 'width': 800 } }`. Serialized as a single
+    /// JSON-encoded `computedParams` query parameter. Untyped
+    /// (`Map<String, Object?>`) rather than a generated per-model params
+    /// type — v1 escape hatch, see `docs/design/computed-fields.md`'s
+    /// "Downstream" section. Only offered here because this model has at
+    /// least one parameterized computed field; the server 422s a
+    /// `computedParams` key naming a field with no params type.
     Map<String, Object?>? computedParams,
 {% endif %}
     CratestackCallOptions? options,
@@ -94,7 +112,7 @@ class {{ model_api.api_class_name }} {
     final body = await _client.execute(
       'GET',
       '{{ model_api.detail_route }}',
-{% if model_api.has_computed_fields %}
+{% if model_api.has_parameterized_computed_fields %}
       queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),
 {% else %}
       queryParameters: query?.toQueryParameters(),

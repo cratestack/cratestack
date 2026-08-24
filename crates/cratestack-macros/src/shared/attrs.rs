@@ -16,12 +16,11 @@ pub(crate) fn supports_comparison(field: &Field) -> bool {
 /// `@computed` replaced the pre-existing `@custom` attribute — see
 /// `docs/design/computed-fields.md` — which was removed because nothing
 /// ever invoked its resolver trait; `@computed` fields are resolved at
-/// response-composition time.
+/// response-composition time. Thin re-export of `cratestack_core`'s
+/// canonical predicate — see its doc comment for why the string match
+/// must live in exactly one place.
 pub(crate) fn is_computed_field(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw == "@computed" || attribute.raw.starts_with("@computed("))
+    cratestack_core::is_computed_field(field)
 }
 
 pub(crate) fn is_primary_key(field: &Field) -> bool {

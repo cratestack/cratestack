@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 pub use composite_key::parse_composite_id_attribute;
 pub use composite_unique::parse_composite_unique_attribute;
 pub use computed_attribute::{
-    ComputedParamsArg, computed_params_type_name, parse_computed_params_arg,
+    ComputedParamsArg, computed_params_type_name, is_computed_attribute, is_computed_field,
+    parse_computed_params_arg,
 };
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use model::{

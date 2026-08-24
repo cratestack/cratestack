@@ -251,18 +251,25 @@ fn preserves_computed_fields_on_generated_types() {
 
 /// A `model` computed field (`docs/design/computed-fields.md`) is part of
 /// the response shape but is never a create/update input, filter, or sort
-/// key — and a computed field's presence unlocks the optional
-/// `computedParams` parameter on `get`/`list`, absent entirely for a
-/// model with no computed field at all (`ImageApi` below has one, so it
-/// gets the parameter; a model without one wouldn't).
+/// key — and a *parameterized* computed field's presence unlocks the
+/// optional `computedParams` parameter on `get`/`list`. Bare `@computed`
+/// (no params type) does NOT unlock it — the server 422s a `computedParams`
+/// key that doesn't name a parameterized field, so a model with only bare
+/// computed fields must never be offered the parameter in the first place
+/// (see [`bare_computed_field_does_not_unlock_computed_params_on_reads`]
+/// for that negative case).
 #[test]
 fn model_computed_field_is_response_only_and_unlocks_computed_params_on_reads() {
     let schema = parse_schema(
         r#"
+type ProxyParams {
+  width Int?
+}
+
 model Image {
   id Int @id
   storageKey String
-  proxyUrl String @computed
+  proxyUrl String @computed(params: ProxyParams?)
 }
 "#,
     )
@@ -348,6 +355,38 @@ model Image {
             "queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),"
         ),
         "ImageApi.get/list must fold computedParams into the request's query parameters: {apis}"
+    );
+}
+
+/// Negative counterpart to
+/// [`model_computed_field_is_response_only_and_unlocks_computed_params_on_reads`]:
+/// a model whose only computed field is bare `@computed` (no params type)
+/// must NOT be offered the `computedParams` parameter at all — the server
+/// 422s a `computedParams` key naming a field with no params type, so
+/// accepting the parameter here would only ever produce a request that
+/// fails.
+#[test]
+fn bare_computed_field_does_not_unlock_computed_params_on_reads() {
+    let schema = parse_schema(
+        r#"
+model Image {
+  id Int @id
+  storageKey String
+  label String @computed
+}
+"#,
+    )
+    .expect("bare computed-field model schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let apis = package_file(&package, "lib/src/apis.dart");
+
+    assert!(
+        !apis.contains("computedParams"),
+        "ImageApi.get/list must not accept computedParams for a model with only bare \
+         `@computed` fields: {apis}"
     );
 }
 

@@ -107,10 +107,7 @@ pub(super) fn is_relation_field(field: &Field) -> bool {
 /// They must never produce a column or participate in DDL diffing, the
 /// same way relation virtual fields don't (mirrors [`is_relation_field`]).
 pub(super) fn is_computed_field(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@computed"))
+    cratestack_core::is_computed_field(field)
 }
 
 fn field_default(field: &Field) -> Option<ColumnDefault> {

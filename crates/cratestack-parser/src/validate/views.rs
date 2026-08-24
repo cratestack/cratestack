@@ -22,9 +22,10 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::builder_setter_collisions::{
     validate_no_add_setter_collision, validate_no_build_setter_collision,
 };
-use crate::validate::fields::{
-    ComputedFieldSupport, validate_computed_field_attribute, validate_field_reserved_identifier,
+use crate::validate::computed_attribute::{
+    ComputedFieldSupport, validate_computed_field_attribute,
 };
+use crate::validate::fields::validate_field_reserved_identifier;
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
@@ -77,7 +78,12 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
         // A view's rows come straight out of its SQL body — there is no
         // response-composition step that could invoke a resolver, so
         // `@computed` on a view field would be inert. Reject it loudly.
-        validate_computed_field_attribute(field, "view", &view.name, ComputedFieldSupport::Rejected)?;
+        validate_computed_field_attribute(
+            field,
+            "view",
+            &view.name,
+            ComputedFieldSupport::Rejected,
+        )?;
     }
 
     // Rule 2: every source resolves to a model.

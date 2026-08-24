@@ -88,8 +88,8 @@ pub use schema::{
     EnumVariant, ExtensionKind, Field, MixinDecl, Model, OwnedSchemaSummary, ParsedIndexAttribute,
     Procedure, ProcedureArg, ProcedureKind, Schema, SchemaSummary, SelectionQuery, SourceSpan,
     TransportStyle, TypeArity, TypeDecl, TypeRef, View, ViewSource, computed_params_type_name,
-    parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
-    parse_index_attribute,
+    is_computed_attribute, is_computed_field, parse_composite_id_attribute,
+    parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
 };
 pub use store::{
     ClientStateStore, IdempotencyStore, InMemoryStateStore, JsonFileStateStore,

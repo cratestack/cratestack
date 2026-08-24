@@ -120,12 +120,17 @@ pub(crate) struct ModelApiView {
     pub(crate) is_paged: bool,
     pub(crate) list_return_type: String,
     pub(crate) list_decode_expr: String,
-    /// Whether the model declares at least one `@computed` field
-    /// (`docs/design/computed-fields.md`). Gates whether `get`/`list`
-    /// render the optional `computedParams` parameter — a model with no
-    /// computed fields has no resolver to parameterize, so the parameter
-    /// is omitted entirely rather than emitted-but-always-unused.
-    pub(crate) has_computed_fields: bool,
+    /// Whether the model declares at least one *parameterized*
+    /// `@computed(params: <Type>?)` field (`docs/design/computed-fields.md`)
+    /// — not merely `@computed` in general. Gates whether `get`/`list`
+    /// render the optional `computedParams` parameter: the server 422s a
+    /// `computedParams` key that doesn't name a parameterized field, so a
+    /// model whose only computed fields are bare (no params type at all)
+    /// must not accept the parameter in the first place — it could never
+    /// be satisfied. A model with no computed fields at all obviously has
+    /// no resolver to parameterize either, so the parameter is omitted
+    /// entirely (rather than emitted-but-always-rejected) in both cases.
+    pub(crate) has_parameterized_computed_fields: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

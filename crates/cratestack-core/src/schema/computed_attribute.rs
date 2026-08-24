@@ -5,7 +5,7 @@
 //! `cratestack-core` so `cratestack-parser`'s semantic checker and any
 //! other consumer (codegen, later) share one implementation.
 
-use super::model::Field;
+use super::model::{Attribute, Field};
 
 /// The parenthesized argument of a `@computed(...)` attribute, however
 /// it parses.
@@ -59,6 +59,36 @@ fn is_valid_type_name(value: &str) -> bool {
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
+/// True when a single attribute's raw text is either spelling of
+/// `@computed` — bare `@computed` or the parameterized `@computed(...)`
+/// form (whatever its argument, valid or not; argument-shape validation
+/// is a separate concern — see `cratestack-parser`'s
+/// `validate_computed_field_attribute`). Anchored with `starts_with("@computed(")`
+/// rather than the looser `starts_with("@computed")` deliberately: the
+/// latter would also match a hypothetical unrelated attribute merely
+/// prefixed with the same characters (e.g. `@computedSomethingElse`).
+///
+/// This is the single source of truth for "is this attribute
+/// `@computed`" — every consumer (codegen, client generators, migrate,
+/// wiremock, the parser's own semantic checks) must go through this (or
+/// [`is_computed_field`] below) rather than open-coding the string
+/// comparison, so a fix here reaches every call site. A parser bug fixed
+/// by centralizing this (cratestack composite-constraint predicate bug):
+/// a local copy that only checked `raw == "@computed"` missed the
+/// parameterized form entirely, letting `@@unique`/`@@id`/`@@index` over
+/// a parameterized computed field parse cleanly and then silently drop
+/// the constraint (or narrow a primary key) at migration time.
+pub fn is_computed_attribute(attribute: &Attribute) -> bool {
+    attribute.raw == "@computed" || attribute.raw.starts_with("@computed(")
+}
+
+/// True for a field carrying either spelling of `@computed` — bare or
+/// `@computed(params: <Type>?)`. See [`is_computed_attribute`] for why
+/// this must be the only place the string comparison is written.
+pub fn is_computed_field(field: &Field) -> bool {
+    field.attributes.iter().any(is_computed_attribute)
+}
+
 /// The params type name off a field's `@computed(params: <Type>?)`
 /// attribute, or `None` for a bare `@computed` field (or a field with no
 /// `@computed` attribute at all). Assumes the attribute is already
@@ -71,7 +101,7 @@ pub fn computed_params_type_name(field: &Field) -> Option<&str> {
     let attribute = field
         .attributes
         .iter()
-        .find(|attribute| attribute.raw.starts_with("@computed"))?;
+        .find(|attribute| is_computed_attribute(attribute))?;
     let inner = attribute
         .raw
         .strip_prefix("@computed(")
@@ -85,6 +115,61 @@ pub fn computed_params_type_name(field: &Field) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::schema::SourceSpan;
+    use crate::schema::model::TypeRef;
+
+    fn span() -> SourceSpan {
+        SourceSpan {
+            start: 0,
+            end: 0,
+            line: 1,
+        }
+    }
+
+    fn field_with_attrs(raws: &[&str]) -> Field {
+        Field {
+            docs: Vec::new(),
+            name: "field".to_string(),
+            name_span: span(),
+            ty: TypeRef {
+                name: "String".to_string(),
+                name_span: span(),
+                arity: crate::schema::model::TypeArity::Required,
+                generic_args: Vec::new(),
+                int_args: Vec::new(),
+            },
+            attributes: raws
+                .iter()
+                .map(|raw| Attribute {
+                    raw: raw.to_string(),
+                    span: span(),
+                })
+                .collect(),
+            span: span(),
+        }
+    }
+
+    #[test]
+    fn is_computed_field_true_for_bare() {
+        assert!(is_computed_field(&field_with_attrs(&["@computed"])));
+    }
+
+    #[test]
+    fn is_computed_field_true_for_parameterized() {
+        assert!(is_computed_field(&field_with_attrs(&[
+            "@computed(params: ProxyParams?)"
+        ])));
+    }
+
+    #[test]
+    fn is_computed_field_false_for_unrelated_attribute() {
+        assert!(!is_computed_field(&field_with_attrs(&["@readonly"])));
+    }
+
+    #[test]
+    fn is_computed_field_false_for_no_attributes() {
+        assert!(!is_computed_field(&field_with_attrs(&[])));
+    }
 
     #[test]
     fn parses_optional_params() {

@@ -6,9 +6,11 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::builder_setter_collisions::{
     validate_no_add_setter_collision, validate_no_build_setter_collision,
 };
+use crate::validate::computed_attribute::{
+    ComputedFieldSupport, validate_computed_field_attribute,
+};
 use crate::validate::fields::{
-    ComputedFieldSupport, validate_computed_field_attribute, validate_default_dbgenerated_no_args,
-    validate_field_reserved_identifier,
+    validate_default_dbgenerated_no_args, validate_field_reserved_identifier,
 };
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;

@@ -69,10 +69,7 @@ pub(crate) fn is_relation_field(model_names: &BTreeSet<&str>, field: &Field) -> 
 /// scalar kind), since a create/update request body never carries it
 /// and there is nothing to echo back.
 pub(crate) fn is_computed_field(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@computed"))
+    cratestack_core::is_computed_field(field)
 }
 
 /// How a field's value round-trips through the WireMock stub's hand-

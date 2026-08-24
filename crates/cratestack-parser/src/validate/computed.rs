@@ -32,22 +32,12 @@
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{Field, Schema, TypeRef, computed_params_type_name};
+use cratestack_core::{
+    Schema, TypeRef, computed_params_type_name, is_computed_field as is_computed,
+};
 
 use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::computed_params::{ComputedParamsNameSets, validate_computed_params_type};
-
-/// True for a field carrying either spelling of `@computed` — bare or
-/// `@computed(params: <Type>?)`. By the time this module runs,
-/// per-declaration validation has already rejected any other spelling
-/// (see [`super::fields::validate_computed_field_attribute`]), so
-/// `starts_with` is safe to use as the sole discriminator here.
-fn is_computed(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@computed"))
-}
 
 /// Names (of `type` declarations and `model`s) whose wire shape contains
 /// at least one `@computed` field, directly or through nested `type`

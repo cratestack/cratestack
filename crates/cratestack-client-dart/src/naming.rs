@@ -72,10 +72,7 @@ pub(crate) fn is_relation_field(model_names: &BTreeSet<&str>, field: &Field) -> 
 /// exclude it (create/update inputs, `Where`/`SortField` builders) check
 /// this explicitly rather than routing it through `scalar_model_fields`.
 pub(crate) fn is_computed_field(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@computed"))
+    cratestack_core::is_computed_field(field)
 }
 
 pub(crate) fn primary_key_field(model: &Model) -> Option<&Field> {

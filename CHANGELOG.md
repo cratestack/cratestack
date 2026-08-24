@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### `@computed` — resolver-backed response-time fields, replacing `@custom` (`docs/design/computed-fields.md`)
+
+A schema author can now declare a field that is derived at response time by hand-written Rust rather
+than stored — a signed `proxyUrl` on an `Image`, computed while the framework composes the response:
+
+```
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}
+
+type Thumbnail {
+  url String @computed(params: ProxyParams?)
+}
+```
+
+`@computed` (bare) and `@computed(params: <Type>?)` (parameterized — `<Type>` a declared `type`, the
+trailing `?` required in v1) are accepted on `type` and `model` fields only; resolvers are invoked on
+every model HTTP response (get, list, create, update, delete, relation includes) and on any procedure
+output that reaches a computed-bearing `type`/`model`, over both REST and RPC transport.
+`include_embedded_schema!` rejects any schema declaring a computed field at macro-expansion time — the
+embedded backend has no response-composition boundary to run a resolver in. Model reads gain a
+`?computedParams=<url-encoded JSON object>` query parameter (REST only; root model only) to pass
+per-field resolver arguments.
+
+**BREAKING:** the generated `router()`, `rpc_router()`, `model_router()`, and `procedure_router()`
+functions gain a new `resolvers` parameter: `router(db, registry, resolvers, codec, auth_provider,
+body_limit_bytes)`. Pass `()` for any schema with no computed fields — a generated
+`impl ComputedFieldResolver for ()` covers that case with no extra caller-side wiring.
+
+**BREAKING:** `@custom` is removed. It generated a `CustomFieldResolver` trait that nothing ever
+invoked (the field stayed a plain struct member the caller had to fill by hand) — `@computed` replaces
+it with a trait the framework actually calls. A schema still carrying `@custom` now fails to parse,
+pointing at `@computed` as the replacement.
+
+Downstream generators: `cratestack-migrate` excludes computed fields from DDL/diff; the wiremock
+generator fabricates them like ordinary response fields; the LSP adds `@computed` to attribute
+completion; the Dart and TypeScript client generators emit computed fields in response classes only
+(excluded from create/update inputs, filters, and sorts) and add an untyped `computedParams` escape
+hatch to `get`/`list` (Dart gates it per model, offered only when the model has a *parameterized*
+computed field; TypeScript's lives on one shared query type used by every model). The generated Rust
+client has no `computedParams` surface yet (tracked follow-up) but still decodes computed field values
+correctly on responses.
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted

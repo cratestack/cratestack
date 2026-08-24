@@ -91,7 +91,12 @@ pub(in super::super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::
                 return ::cratestack::encode_transport_result_with_status_for::<_, ::cratestack::serde_json::Value>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
             }
             // Validated before any DB access (docs/design/computed-fields.md):
-            // a malformed `computedParams` value never reaches `find_unique`.
+            // a `computedParams` value that isn't a JSON object, or that
+            // names an unknown/non-parameterized/`?fields=`-excluded key,
+            // never reaches `find_unique`. Decoding a key's *value* into its
+            // field's params type is a separate, later step — it happens at
+            // resolve time in `serializers::computed_fields`, after the row
+            // has already been fetched.
             let computed_params = match #parse_computed_params_ident(query.computed_params.as_deref(), &query.selection) {
                 Ok(computed_params) => computed_params,
                 Err(error) => {

@@ -10,7 +10,7 @@
 use std::collections::BTreeSet;
 
 use cratestack_core::parse_composite_unique_attribute;
-use cratestack_core::{Attribute, Model, parse_composite_id_attribute};
+use cratestack_core::{Attribute, Model, is_computed_field, parse_composite_id_attribute};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -149,7 +149,14 @@ pub(super) fn resolve_scalar_field<'model>(
         ));
     }
 
-    if field.attributes.iter().any(|a| a.raw == "@computed") {
+    // Must catch both `@computed` (bare) and the parameterized
+    // `@computed(params: <Type>?)` form — a check that only matched the
+    // bare spelling let `@@unique`/`@@id`/`@@index` over a parameterized
+    // computed field parse cleanly, then silently drop the constraint
+    // (or narrow a primary key) at migration time, since computed
+    // fields are never persisted (see `is_computed_field`'s doc comment
+    // in `cratestack-core` and `crate::tests_computed`).
+    if is_computed_field(field) {
         return Err(span_error(
             format!(
                 "model `{}` `{attribute_label}` field `{field_name}` is `@computed` — computed \
