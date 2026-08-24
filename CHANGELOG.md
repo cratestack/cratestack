@@ -4,18 +4,79 @@
 
 ## 0.8.12 (2026-08-24)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.8.11..HEAD at 3358476673223655248ac9f83bdcd1bc4bfea248 -->
+### RPC `get` gains the selection surface REST already had
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+0.8.11 shipped `@computed` resolver params over both transports, but left RPC `get` deliberately
+narrower than REST's: it carried `computedParams` and nothing else. The 0.8.11 entry below calls that
+"an intentional scope limit, not a gap". This release closes it, and `docs/design/rpc-transport.md`
+§3.1a — which is where that limit was written down — is rewritten accordingly.
 
-### Changes
+`RpcGetInput` now carries `fields`, `include`, and `include_fields` alongside `computedParams`, and
+`synthesize_get_query` routes all four through REST's `parse_model_fetch_query` byte-for-byte, so both
+transports run the same parse, validation, and projection path rather than two implementations that
+have to be kept in agreement. `include_fields` is snake_case on the wire, matching `RpcListInput`.
+`RpcGetInput` also gained `#[derive(Default)]`, so callers can use `..Default::default()`.
 
-#### Features
+Every new field is `#[serde(default)]` and additive: an old `{"id": 1}` frame decodes unchanged, and a
+client that sets no selection emits byte-identical frames — so no RPC snapshot-format-version bump was
+needed.
 
-- RPC get selection parity with REST + builders for ComputedParams (#729)
+**The pre-fix behaviour is worth knowing if you have RPC `get` calls in flight: a `fields` key on a get
+frame was silently dropped by serde and the server returned the full record.** No error, no signal —
+a request that looked like it was projecting simply wasn't. Two consequences of the fix follow from
+that. The "`computedParams` for a `?fields=`-excluded field" 422, previously unreachable over RPC, now
+fires. And `/rpc/batch` applies selection per frame, resolved and projected independently, with
+in-frame selection signed by construction since the frame bytes are the canonical request body.
+
+The `unexpected =>` arm of `parse_model_fetch_query` still rejects unknown keys on both transports.
+`crates/cratestack-pg/tests/rpc_get_projection.rs` is the parity proof.
+
+### Client projection surfaces
+
+Rust RPC clients gain `get_view<P: ProjectionDecoder>(id, projection)`, the twin of REST's. Plain
+`get` is byte-identical and still decodes into the full model type.
+
+TypeScript's per-model RPC `get` options bag now carries `fields`, `include`, and `includeFields`,
+emitted for every model.
+
+Dart RPC clients are unchanged, deliberately: Dart has no projection surface for `list` either, so
+adding one for `get` alone would trade a cross-transport asymmetry for an intra-client one. Tracked as
+a follow-up rather than treated as done.
+
+### `<Model>ComputedParams` gains the standard builder
+
+It was the one generated object still without the builder that every other generated object has had
+since cratestack#656. Rust gets the typestate builder —
+`<Model>ComputedParams::builder().<field>(Some(..)).build()` — non-generic, because every field is
+optional, which is the same shape `{Model}Where` gets. Dart gets the standard fluent
+`<Model>ComputedParamsBuilder`.
+
+TypeScript is excluded because no builder convention exists anywhere in its generated output. The
+hand-written `RpcGetInput`/`RpcListInput` are excluded too: `generate_builder` is codegen-only, and
+`..Default::default()` is those structs' idiom.
+
+### A caveat before you add your first parameterized computed field (Rust clients)
+
+The Rust client's `computed_params` parameter is **positional**. Adding a model's first parameterized
+computed field turns `get(id, headers)` into `get(id, computed_params, headers)` and breaks existing
+call sites. Dart (named optional) and TypeScript (options bag) are additive here and unaffected.
+
+The builder above does **not** fix this — it changes how the argument is constructed, not the parameter
+list. A Rust options-bag entry point is the real fix and is a tracked follow-up. This is the first time
+that caveat has been written down.
+
+### New convention: transport parity — REST and RPC ship together, never REST first
+
+Recorded in `CLAUDE.md` and `AGENTS.md`. Any feature touching the request/response surface — query
+parameters, projections, per-request arguments, new response shapes, client call surfaces — lands on
+both transports in the same PR: server dispatch, the `RpcListInput`/`RpcGetInput` frame slots, and
+every generated client.
+
+The rule exists because the `@computed` params surface shipped REST-only and took three follow-up PRs
+to close, this release included. What makes it cheap to follow is that RPC dispatch synthesizes a real
+URL query string and re-enters the REST parsing path, so the server side is usually one frame field and
+one `pairs.push`. A genuinely excluded transport is now a design-doc'd, changelog'd decision rather
+than an omission discovered later.
 
 ## 0.8.11 (2026-08-24)
 
@@ -198,21 +259,19 @@ output that reaches a computed-bearing `type`/`model`, over both REST and RPC tr
 `include_embedded_schema!` rejects any schema declaring a computed field at macro-expansion time — the
 embedded backend has no response-composition boundary to run a resolver in. Model reads gain a
 `?computedParams=<url-encoded JSON object>` query parameter (root model only) to pass per-field
-resolver arguments — on REST this is the URL query string; on RPC, `RpcListInput` and `model.<X>.get`'s
-new `RpcGetInput` both gain `fields`, `include`, `include_fields`, and `computedParams` fields (raw
-JSON-object text for `computedParams`, so `serde_json::Value` round-tripping through `/rpc/batch`
-can't corrupt an `Option::None` inside a params payload). Both input types are kept separate from
-`RpcPkInput` (`delete` still uses unmodified `RpcPkInput`, so `delete` never gains a silently-ignored
-field). All new fields are additive and `#[serde(default)]`: an old `{"id": 1}` get frame decodes
-unchanged and a client that never sets selection or `computedParams` emits byte-identical frames, so no
-RPC snapshot-format-version bump was needed. `RpcGetInput` gained `#[derive(Default)]` so callers can
-`..Default::default()`. Measured pre-fix behavior: a `fields` key on a get frame was silently dropped by
-serde and the server returned the full record — no error, no signal. `include_fields` is snake_case on the
-wire, matching `RpcListInput`. `/rpc/batch` frames carry per-frame selection and `computedParams` inside
-each frame's `input`, resolved/projected independently per frame; in-frame params and selection are
-signed by construction (the frame bytes are the canonical request body). The `unexpected =>` arm of
-`parse_model_fetch_query` still rejects unknown keys on both transports — see `docs/design/rpc-transport.md`
-§3.1a and `crates/cratestack-pg/tests/rpc_get_projection.rs` for the proof.
+resolver arguments — on REST this is the URL query string; on RPC, `RpcListInput` gains a
+`computedParams` field (raw JSON-object text, so `serde_json::Value` round-tripping through `/rpc/batch`
+can't corrupt an `Option::None` inside a params payload) and `model.<X>.get` gets a new `RpcGetInput`
+input type carrying the same field (kept separate from `RpcPkInput`, which `delete` still uses
+unmodified, so `delete` never gains a silently-ignored field). Both are additive and
+`#[serde(default)]`: an old `{"id": 1}` get frame decodes unchanged and a client that never sets
+`computedParams` emits byte-identical frames, so no RPC snapshot-format-version bump was needed.
+`/rpc/batch` frames carry per-frame `computedParams` inside each frame's `input`, and in-frame params
+are signed by construction (the frame bytes are the canonical request body). RPC `get` has no
+`fields`/`include` slot (an intentional scope limit, not a gap — see `docs/design/rpc-transport.md`
+§3.1a): it always decodes into the full model type, which can't represent a partial payload.
+*(That limit was lifted in 0.8.12 — see above. This paragraph describes 0.8.11 as released; §3.1a now
+documents the closed state.)*
 
 **BREAKING:** the generated `router()`, `rpc_router()`, `model_router()`, and `procedure_router()`
 functions gain a new `resolvers` parameter: `router(db, registry, resolvers, codec, auth_provider,
@@ -257,24 +316,6 @@ client used to decode model and procedure responses into the server-side struct 
 excluded by design), so a server calling its own or a peer's API silently lost every resolved computed
 value; it now decodes computed-bearing responses into a dedicated wire-shape struct set instead, so
 computed fields are visible there too.
-
-Rust RPC clients gain `get_view<P: ProjectionDecoder>(id, projection)` (twin of REST's; plain `get`
-is byte-identical and still decodes into the full model type); TypeScript per-model RPC `get` options
-bag now carries `fields`, `include`, `includeFields` (emitted for every model); Dart RPC clients remain
-unchanged (Dart has no projection surface for `list` either — parity preserved).
-
-`<Model>ComputedParams` was the one generated object without the standard builder. Rust gets the
-typestate builder (`<Model>ComputedParams::builder().<field>(Some(..)).build()`, non-generic because
-every field is optional — same shape `{Model}Where` gets); Dart gets the standard fluent
-`<Model>ComputedParamsBuilder`. TypeScript excluded (no builder convention exists in its generated
-output). Hand-written `RpcGetInput`/`RpcListInput` excluded — `generate_builder` is codegen-only,
-and `..Default::default()` is those structs' idiom.
-
-The Rust client's `computed_params` parameter is positional, so adding a model's first parameterized
-computed field changes `get(id, headers)` into `get(id, computed_params, headers)` and breaks call
-sites. Unlike Dart (named optional) and TypeScript (options bag), which are additive, the builder does
-not fix this (it changes argument construction, not the parameter list). A Rust options-bag entry point
-is a tracked follow-up.
 
 ### `just cbor-example-verify-ios` no longer fails when the live log capture drops the marker
 
