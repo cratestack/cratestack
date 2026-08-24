@@ -343,18 +343,69 @@ model Image {
         "ImageSortField must never carry a computed field variant: {models}"
     );
 
-    // `get`/`list` both accept the escape-hatch `computedParams` map and
-    // fold it into the request's query parameters via the shared runtime
-    // helper — see `rest-runtime.dart.j2`'s `cratestackWithComputedParams`.
+    // `get`/`list` both accept the typed `ImageComputedParams?` parameter
+    // (Stage 3 of `docs/design/computed-fields.md`'s "Downstream"
+    // section — replaces the v1 untyped `Map<String, Object?>?` escape
+    // hatch) and fold its `.toWire()` into the request's query
+    // parameters via the shared runtime helper — see
+    // `rest-runtime.dart.j2`'s `cratestackWithComputedParams`.
     assert!(
-        apis.contains("Map<String, Object?>? computedParams,"),
-        "ImageApi.get/list must accept computedParams: {apis}"
+        apis.contains("ImageComputedParams? computedParams,"),
+        "ImageApi.get/list must accept a typed ImageComputedParams: {apis}"
+    );
+    assert!(
+        !apis.contains("Map<String, Object?>? computedParams,"),
+        "ImageApi.get/list must not fall back to the untyped v1 escape hatch: {apis}"
     );
     assert!(
         apis.contains(
-            "queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams),"
+            "queryParameters: cratestackWithComputedParams(query?.toQueryParameters(), computedParams?.toWire()),"
         ),
-        "ImageApi.get/list must fold computedParams into the request's query parameters: {apis}"
+        "ImageApi.get/list must fold computedParams.toWire() into the request's query parameters: {apis}"
+    );
+
+    // The generated `ImageComputedParams` class itself: one optional
+    // field per parameterized computed field, typed as the declared
+    // params type, plus `toWire()` and hand-rolled value-based
+    // `operator ==`/`hashCode` (mandatory — this class doubles as a
+    // riverpod family provider argument, see
+    // `computed_params_class.dart.j2`'s doc comment).
+    let class_start = models
+        .find("class ImageComputedParams {")
+        .unwrap_or_else(|| panic!("ImageComputedParams class should exist: {models}"));
+    let class_end = models[class_start..]
+        .find("\nclass ")
+        .map(|offset| class_start + offset)
+        .unwrap_or(models.len());
+    let computed_params_class = &models[class_start..class_end];
+    assert!(
+        computed_params_class.contains("const ImageComputedParams({"),
+        "ImageComputedParams should have a const constructor: {computed_params_class}"
+    );
+    assert!(
+        computed_params_class.contains("this.proxyUrl,"),
+        "ImageComputedParams constructor should accept proxyUrl: {computed_params_class}"
+    );
+    assert!(
+        computed_params_class.contains("final ProxyParams? proxyUrl;"),
+        "ImageComputedParams.proxyUrl should be typed ProxyParams?: {computed_params_class}"
+    );
+    assert!(
+        computed_params_class.contains("if (proxyUrl != null) 'proxyUrl': proxyUrl!.toWire(),"),
+        "ImageComputedParams.toWire() should fold a set proxyUrl through its own toWire(): \
+         {computed_params_class}"
+    );
+    assert!(
+        computed_params_class.contains("bool operator ==(Object other)"),
+        "ImageComputedParams must carry a value-based operator==: {computed_params_class}"
+    );
+    assert!(
+        computed_params_class.contains("proxyUrl == other.proxyUrl"),
+        "ImageComputedParams.operator== must compare proxyUrl by value: {computed_params_class}"
+    );
+    assert!(
+        computed_params_class.contains("int get hashCode"),
+        "ImageComputedParams must carry a matching hashCode: {computed_params_class}"
     );
 }
 
@@ -387,6 +438,66 @@ model Image {
         !apis.contains("computedParams"),
         "ImageApi.get/list must not accept computedParams for a model with only bare \
          `@computed` fields: {apis}"
+    );
+}
+
+/// RPC-transport counterpart to
+/// [`model_computed_field_is_response_only_and_unlocks_computed_params_on_reads`]
+/// — Stage 3 of `docs/design/computed-fields.md`'s "Downstream" section
+/// closes the v1 gap where RPC mode had no `computedParams` surface at
+/// all. `get`/`list` both accept the gated typed
+/// `ImageComputedParams?` parameter and fold its `.toWire()` output
+/// into the RPC input frame's `computedParams` key as JSON text via the
+/// shared `cratestackWithRpcComputedParams` runtime helper.
+#[test]
+fn rpc_model_computed_field_unlocks_typed_computed_params_on_get_and_list() {
+    let schema = parse_schema(
+        r#"
+transport rpc
+
+type ProxyParams {
+  width Int?
+}
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+}
+"#,
+    )
+    .expect("rpc computed-field model schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let apis = package_file(&package, "lib/src/apis.dart");
+    let runtime = package_file(&package, "lib/src/runtime.dart");
+
+    assert!(
+        apis.contains("ImageComputedParams? computedParams,"),
+        "ImageApi.get/list must accept a typed ImageComputedParams under RPC transport: {apis}"
+    );
+    assert!(
+        apis.contains("cratestackWithRpcComputedParams(input, computedParams?.toWire())"),
+        "ImageApi.list must fold computedParams.toWire() into the RPC input frame: {apis}"
+    );
+    assert!(
+        apis.contains("cratestackWithRpcComputedParams({'id': id}, computedParams?.toWire())"),
+        "ImageApi.get must fold computedParams.toWire() into the RPC input frame: {apis}"
+    );
+
+    // The folding itself (JSON-encoding the already-`.toWire()`'d map
+    // under the `computedParams` wire key) lives in the shared runtime
+    // helper, not duplicated at each call site.
+    assert!(
+        runtime.contains("Map<String, Object?> cratestackWithRpcComputedParams("),
+        "runtime.dart should define the shared RPC computedParams-folding helper: {runtime}"
+    );
+    assert!(
+        runtime.contains("'computedParams': jsonEncode(computedParams),"),
+        "cratestackWithRpcComputedParams should JSON-encode the already-toWire()'d params map \
+         under the computedParams wire key: {runtime}"
     );
 }
 

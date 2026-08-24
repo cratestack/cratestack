@@ -27,6 +27,31 @@ fn generate(fixture: &str, library_name: &str, preset: DartPreset) -> GeneratedD
     .unwrap_or_else(|error| panic!("{fixture} should generate under {preset:?}: {error}"))
 }
 
+/// Like [`generate`], but for an inline schema source rather than a
+/// checked-in fixture file — used by tests that don't need a whole
+/// fixture just to exercise one small schema shape (mirrors
+/// `tests/generator.rs`'s own inline `parse_schema` usage).
+fn generate_from_source(
+    source: &str,
+    library_name: &str,
+    preset: DartPreset,
+) -> GeneratedDartPackage {
+    let schema = cratestack_parser::parse_schema(source)
+        .unwrap_or_else(|error| panic!("inline schema should parse: {error}"));
+    generate_package(
+        &schema,
+        &DartGeneratorConfig {
+            library_name: library_name.to_owned(),
+            base_path: "/api".to_owned(),
+            template_dir: None,
+            preset,
+            schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
+            native_cbor: false,
+        },
+    )
+    .unwrap_or_else(|error| panic!("inline schema should generate under {preset:?}: {error}"))
+}
+
 fn package_file<'a>(package: &'a GeneratedDartPackage, name: &str) -> &'a str {
     package
         .files
@@ -779,5 +804,98 @@ fn riverpod_procedures_dart_keeps_gated_pieces_when_schema_has_procedures_under_
         procedures.contains("part 'procedures.g.dart';"),
         "a schema with procedures still has @riverpod declarations, so the part directive must \
          stay under transport rpc too:\n{procedures}"
+    );
+}
+
+/// Stage 3 of `docs/design/computed-fields.md`'s "Downstream" section:
+/// the riverpod convenience `@riverpod` get/list providers (issue #302,
+/// `model_providers.dart.j2`) had NO `computedParams` surface at all in
+/// v1 — this closes that gap under REST transport. The generated
+/// `ImageComputedParams` class must carry hand-rolled value equality
+/// (`operator ==`/`hashCode`), since it doubles as this family
+/// provider's own argument and riverpod's family cache dedupes by
+/// argument *value*, not identity.
+#[test]
+fn riverpod_rest_convenience_providers_expose_typed_computed_params() {
+    let package = generate_from_source(
+        r#"
+type ProxyParams {
+  width Int?
+}
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+}
+"#,
+        "computed_client",
+        DartPreset::Riverpod,
+    );
+
+    let image = package_file(&package, "lib/src/models/image.dart");
+
+    assert!(
+        image.contains("class ImageComputedParams {"),
+        "image.dart should carry the typed ImageComputedParams class:\n{image}"
+    );
+    assert!(
+        image.contains("bool operator ==(Object other)") && image.contains("int get hashCode"),
+        "ImageComputedParams must carry value-based operator==/hashCode — it is a riverpod \
+         family provider argument, and reference equality breaks family caching:\n{image}"
+    );
+
+    // `imageGetProvider`/`imageListProvider` (issue #302 naming) both
+    // gain the gated parameter and forward it to `ImageApi.get`/`.list`.
+    assert!(
+        image.contains("ImageComputedParams? computedParams,"),
+        "the convenience get/list providers should expose computedParams:\n{image}"
+    );
+    assert!(
+        image.contains("computedParams: computedParams,"),
+        "the convenience get/list providers should forward computedParams to ImageApi:\n{image}"
+    );
+}
+
+/// RPC-transport counterpart to
+/// [`riverpod_rest_convenience_providers_expose_typed_computed_params`].
+#[test]
+fn riverpod_rpc_convenience_providers_expose_typed_computed_params() {
+    let package = generate_from_source(
+        r#"
+transport rpc
+
+type ProxyParams {
+  width Int?
+}
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+}
+"#,
+        "computed_rpc_client",
+        DartPreset::Riverpod,
+    );
+
+    let image = package_file(&package, "lib/src/models/image.dart");
+
+    assert!(
+        image.contains("class ImageComputedParams {"),
+        "image.dart should carry the typed ImageComputedParams class under RPC transport too:\n{image}"
+    );
+    assert!(
+        image.contains("bool operator ==(Object other)") && image.contains("int get hashCode"),
+        "ImageComputedParams must carry value-based operator==/hashCode under RPC transport too:\n{image}"
+    );
+    assert!(
+        image.contains("ImageComputedParams? computedParams,"),
+        "the convenience get/list providers should expose computedParams under RPC transport:\n{image}"
+    );
+    assert!(
+        image.contains("computedParams: computedParams,"),
+        "the convenience get/list providers should forward computedParams to ImageApi under RPC \
+         transport:\n{image}"
     );
 }

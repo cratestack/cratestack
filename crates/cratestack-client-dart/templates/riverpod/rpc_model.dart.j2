@@ -6,6 +6,7 @@ part '{{ part_file_name }}';
 part '{{ mapper_part_file_name }}';
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
+{% include "computed_params_class.dart.j2" %}
 class {{ selection.projected_class_name }} {
   const {{ selection.projected_class_name }}.fromWire(this._value);
 
@@ -43,22 +44,52 @@ class {{ model_api.api_class_name }} {
 
   Future<{{ model_api.list_return_type }}> list({
     Map<String, Object?> input = const <String, Object?>{},
+{% if model_api.has_parameterized_computed_fields %}
+    /// Typed params for `@computed(params: <Type>?)` resolver fields
+    /// (`docs/design/computed-fields.md`), one optional field per
+    /// parameterized computed field on `{{ model_api.model_name }}` (see
+    /// `{{ model_api.computed_params_class_name }}`). Folded into the
+    /// RPC input frame's `computedParams` key as JSON text. Only offered
+    /// here because this model has at least one parameterized computed
+    /// field; the server 422s a `computedParams` key naming a field with
+    /// no params type.
+    {{ model_api.computed_params_class_name }}? computedParams,
+{% endif %}
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
       'model.{{ model_api.model_name }}.list',
+{% if model_api.has_parameterized_computed_fields %}
+      cratestackWithRpcComputedParams(input, computedParams?.toWire()),
+{% else %}
       input,
+{% endif %}
       options: options,
     );
     return {{ model_api.list_decode_expr }};
   }
 
   Future<{{ model_api.model_name }}> get({{ model_api.primary_key_type }} id, {
+{% if model_api.has_parameterized_computed_fields %}
+    /// Typed params for `@computed(params: <Type>?)` resolver fields
+    /// (`docs/design/computed-fields.md`), one optional field per
+    /// parameterized computed field on `{{ model_api.model_name }}` (see
+    /// `{{ model_api.computed_params_class_name }}`). Folded into the
+    /// RPC input frame's `computedParams` key as JSON text. Only offered
+    /// here because this model has at least one parameterized computed
+    /// field; the server 422s a `computedParams` key naming a field with
+    /// no params type.
+    {{ model_api.computed_params_class_name }}? computedParams,
+{% endif %}
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
       'model.{{ model_api.model_name }}.get',
+{% if model_api.has_parameterized_computed_fields %}
+      cratestackWithRpcComputedParams({'id': id}, computedParams?.toWire()),
+{% else %}
       {'id': id},
+{% endif %}
       options: options,
     );
     return {{ model_api.model_name }}.fromWire(cratestackAsValueMap(body));

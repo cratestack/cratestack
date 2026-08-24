@@ -1,0 +1,50 @@
+{% if model_api.computed_params_class_name %}
+/// Typed parameters for `{{ model_api.model_name }}`'s parameterized
+/// `@computed(params: <Type>?)` resolver fields
+/// (`docs/design/computed-fields.md`). One optional field per
+/// parameterized computed field; an unset field is omitted from
+/// `toWire()`'s output entirely rather than serialized as `null` (the
+/// server treats a missing key exactly like an explicit `None` for that
+/// resolver). Hand-rolled value-based `operator ==`/`hashCode` (not
+/// derived) because this class also serves as a `@riverpod` family
+/// provider argument on the `riverpod` preset -- riverpod's family cache
+/// dedupes by argument *value*, not identity, the same bug class
+/// `model_providers.dart.j2` documents for `CratestackListQuery`.
+class {{ model_api.computed_params_class_name }} {
+  const {{ model_api.computed_params_class_name }}({
+{% for field in model_api.computed_params_fields %}
+    this.{{ field.identifier }},
+{% endfor %}
+  });
+
+{% for field in model_api.computed_params_fields %}
+  final {{ field.params_type }}? {{ field.identifier }};
+{% endfor %}
+
+  Map<String, Object?> toWire() {
+    return <String, Object?>{
+{% for field in model_api.computed_params_fields %}
+      if ({{ field.identifier }} != null) '{{ field.wire_name }}': {{ field.identifier }}!.toWire(),
+{% endfor %}
+    };
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is {{ model_api.computed_params_class_name }}
+{% for field in model_api.computed_params_fields %}
+        && {{ field.identifier }} == other.{{ field.identifier }}
+{% endfor %}
+        ;
+  }
+
+  @override
+  int get hashCode => Object.hashAll(<Object?>[
+{% for field in model_api.computed_params_fields %}
+        {{ field.identifier }},
+{% endfor %}
+      ]);
+}
+
+{% endif %}

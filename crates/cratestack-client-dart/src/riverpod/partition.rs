@@ -6,7 +6,7 @@
 //! a single file to live in. This module computes that assignment.
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use cratestack_core::{Schema, TypeDecl, TypeRef};
+use cratestack_core::{Schema, TypeDecl, TypeRef, computed_params_type_name};
 
 use crate::naming::{is_relation_field, model_name_set};
 
@@ -103,11 +103,23 @@ pub(crate) fn partition_types(schema: &Schema) -> TypePartition {
     let mut reachable: BTreeMap<Owner, BTreeSet<String>> = BTreeMap::new();
 
     for model in &schema.models {
+        // Stage 3 (`docs/design/computed-fields.md`'s "Downstream"
+        // section): a `@computed(params: <Type>?)` field's `<Type>` is
+        // never a field's own declared type (`field.ty` stays the
+        // computed field's *return* type, e.g. `String`), so it would
+        // otherwise never enter this model's reachable set — leaving the
+        // generated `{Model}ComputedParams` class's own `<Type>?` field
+        // referencing a `type` this model's own file never imports.
+        // Chained in as an extra seed per field, same as any other
+        // directly-referenced name.
         let seeds = model
             .fields
             .iter()
             .filter(|field| !is_relation_field(&model_names, field))
-            .map(|field| referenced_name(&field.ty));
+            .flat_map(|field| {
+                std::iter::once(referenced_name(&field.ty))
+                    .chain(computed_params_type_name(field).map(str::to_owned))
+            });
         reachable.insert(
             Owner::Model(model.name.clone()),
             reachable_closure(seeds, &type_by_name, &enum_names),
