@@ -1,5 +1,5 @@
-//! Reverse mapping: `RpcListInput` → URL query string for the existing
-//! list handler's parser.
+//! Reverse mapping: `RpcListInput` / `computedParams` → URL query string
+//! for the existing list/fetch handlers' parsers.
 
 use cratestack_core::rpc::RpcListInput;
 
@@ -36,6 +36,9 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
     for predicate in &input.filters {
         pairs.push((predicate.key.clone(), predicate.value.clone()));
     }
+    if let Some(computed_params) = &input.computed_params {
+        pairs.push(("computedParams".to_owned(), computed_params.clone()));
+    }
 
     if pairs.is_empty() {
         return None;
@@ -44,6 +47,24 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
     Some(
         url::form_urlencoded::Serializer::new(String::new())
             .extend_pairs(pairs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .finish(),
+    )
+}
+
+/// Synthesize a URL query string carrying only `computedParams=<...>` for
+/// `model.<X>.get` RPC dispatch, in the shape the macro-generated
+/// `parse_model_fetch_query` parses. Unlike [`synthesize_list_query`] this
+/// must emit *nothing else* — `parse_model_fetch_query` hard-rejects any
+/// key it doesn't recognize
+/// (`crates/cratestack-macros/src/axum/shared_support.rs`), and `get`'s
+/// RPC input (`RpcGetInput`) carries no other query-shaped fields (no
+/// `fields`/`include` — see `docs/design/rpc-transport.md` §3.1 for why
+/// that's a deliberate scope limit, not an oversight).
+pub fn synthesize_get_query(computed_params: Option<&str>) -> Option<String> {
+    let computed_params = computed_params?;
+    Some(
+        url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("computedParams", computed_params)
             .finish(),
     )
 }

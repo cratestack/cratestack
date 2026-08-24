@@ -38,6 +38,8 @@ mod tests_error;
 #[cfg(test)]
 mod tests_frame;
 #[cfg(test)]
+mod tests_get;
+#[cfg(test)]
 mod tests_list;
 #[cfg(test)]
 mod tests_response_rebuffer;
@@ -54,8 +56,8 @@ mod tests_response_rebuffer;
 // on those types for the full story.
 pub use cratestack_core::rpc::{
     RPC_BATCH_PATH, RPC_STREAM_ERROR_TAG, RPC_SUBSCRIBE_PATH, RPC_UNARY_PATH, RpcErrorBody,
-    RpcListInput, RpcListPredicate, RpcPkInput, RpcRequest, RpcResponseFrame, RpcUpdateInput,
-    cratestack_error_code_to_rpc_code, rpc_code,
+    RpcGetInput, RpcListInput, RpcListPredicate, RpcPkInput, RpcRequest, RpcResponseFrame,
+    RpcUpdateInput, cratestack_error_code_to_rpc_code, rpc_code,
 };
 
 pub use batch::response_to_frame;
@@ -63,7 +65,7 @@ pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
 pub use subscription_bridge::{SubscriptionPush, guarded_receiver_stream, subscription_channel};
-pub use synthesize::synthesize_list_query;
+pub use synthesize::{synthesize_get_query, synthesize_list_query};
 
 /// Codec/transport capabilities for every RPC binding route. Both unary
 /// and batch accept and emit CBOR or JSON, default CBOR; sequence

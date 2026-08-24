@@ -140,22 +140,64 @@ same way. Procedure-context resolution always passes `params: None` in v1.
 
 ### Parameterized resolvers on the wire
 
-Model GET/list REST requests accept one query parameter:
+Both transports carry the same logical payload — a JSON object keyed by computed
+field name, each value deserializing into the generated params `type` struct via
+serde — just in different envelopes.
+
+**REST.** Model GET/list requests accept one query parameter:
 
 ```
 ?computedParams=%7B%22proxyUrl%22%3A%7B%22width%22%3A800%7D%7D
    (URL-encoded {"proxyUrl": {"width": 800}})
 ```
 
-- JSON object keyed by computed field name; each value deserializes into the
-  generated params `type` struct via serde. Malformed JSON, unknown field keys,
-  keys naming non-computed or param-less fields, or a params payload for a field
-  excluded by `?fields=` → `CratestackError::Validation`.
+**RPC.** `model.<X>.list` decodes `RpcListInput`, which carries a
+`computedParams` field (raw JSON-object text — see below for why not
+`serde_json::Value`); `model.<X>.get` decodes a dedicated `RpcGetInput { id,
+computedParams }` rather than reusing `RpcPkInput` (which `delete` also
+decodes, and would otherwise gain a silently-ignored field). Server-side, the
+RPC dispatcher synthesizes the equivalent `?computedParams=` query string from
+the decoded field and hands it to the exact same fetch/list query parser REST
+uses (`parse_model_fetch_query`/`parse_model_list_query`,
+`cratestack-macros/src/axum/shared_support.rs`) — one validation
+implementation, no drift between transports. On `/rpc/batch`, each frame
+carries its own `computedParams` inside that frame's `input`, resolved
+independently per frame; in-frame params are signed by construction, since the
+canonical signed body under `transport rpc` is the raw frame bytes themselves
+(`docs/design/rpc-transport.md` §5).
+
+Why `computedParams` is a `String` (raw JSON text) on the RPC input types
+rather than `serde_json::Value`: `RpcUpdateInput`'s own doc comment already
+documents that round-tripping an `Option`-bearing value through
+`serde_json::Value` corrupts CBOR `Option::None` (`minicbor-serde` encodes it
+as `0xf6` simple-null, `serde_json::Value` encodes it as the CBOR empty-array
+marker) — generated params types are bags of optionals, so they'd hit this
+head-on. `/rpc/batch` additionally re-encodes each frame's opaque `input`
+through `serde_json::Value` before re-dispatching it
+(`cratestack-axum::rpc::batch`); a `String` field survives that round trip
+verbatim, a nested object wouldn't.
+
+Both transports:
+
+- Malformed JSON, unknown field keys, keys naming non-computed or param-less
+  fields, or a params payload for a field excluded by `?fields=` (REST only —
+  RPC `get` has no `fields`/`include` slot, see below) →
+  `CratestackError::Validation`, same HTTP status either way.
 - Absent `computedParams` (or absent key) → resolver gets `None`.
 - Applies to the request's *root* model only in v1; relation-included records and
   all non-read paths resolve with `None`.
-- Generated clients (Rust/Dart/TS) expose typed optional params on get/list calls
-  and serialize them into this query parameter.
+- Generated REST clients (Rust/Dart/TS) expose typed optional params on
+  get/list calls and serialize them into the query parameter; the generated
+  RPC client surface for `computedParams` is tracked separately (see
+  "Downstream" below).
+
+**Deliberate asymmetry: RPC `get` has no `fields`/`include`.** Unlike
+`RpcListInput` (which mirrors the REST list query 1:1, including `fields`),
+`RpcGetInput` carries only `id` and `computedParams`. RPC `get` always decodes
+its response into the full generated model type in every client, which has no
+representation for a partial (fields-selected) payload — so the REST
+"excluded by `?fields=`" rejection branch is reachable over RPC list but
+unreachable over RPC get. This is a scope limit, not a gap.
 
 ## Exclusions (v1, documented)
 
@@ -176,11 +218,6 @@ Model GET/list REST requests accept one query parameter:
   a *standalone* `include_client_schema!` call (its own `models`/`types` modules,
   built by `generate_client_model_struct`/`generate_client_type_struct`) gets the
   client-side struct shape that actually carries computed field values.
-- **RPC transport model reads have no `computedParams` slot** — `?computedParams=`
-  is a REST query-string parameter only; RPC unary/batch dispatch for
-  `model.<Model>.get`/`model.<Model>.list` never reads or threads one through
-  (procedure output composition, unlike model reads, works identically under
-  both transports).
 - **Create/update/delete commit the DB write before resolvers run.** The
   handler calls `.create()`/`.update()`/`.delete()` (each a real,
   already-committed write) and only afterward runs response composition

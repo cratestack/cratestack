@@ -25,8 +25,18 @@ every model HTTP response (get, list, create, update, delete, relation includes)
 output that reaches a computed-bearing `type`/`model`, over both REST and RPC transport.
 `include_embedded_schema!` rejects any schema declaring a computed field at macro-expansion time — the
 embedded backend has no response-composition boundary to run a resolver in. Model reads gain a
-`?computedParams=<url-encoded JSON object>` query parameter (REST only; root model only) to pass
-per-field resolver arguments.
+`?computedParams=<url-encoded JSON object>` query parameter (root model only) to pass per-field
+resolver arguments — on REST this is the URL query string; on RPC, `RpcListInput` gains a
+`computedParams` field (raw JSON-object text, so `serde_json::Value` round-tripping through `/rpc/batch`
+can't corrupt an `Option::None` inside a params payload) and `model.<X>.get` gets a new `RpcGetInput`
+input type carrying the same field (kept separate from `RpcPkInput`, which `delete` still uses
+unmodified, so `delete` never gains a silently-ignored field). Both are additive and
+`#[serde(default)]`: an old `{"id": 1}` get frame decodes unchanged and a client that never sets
+`computedParams` emits byte-identical frames, so no RPC snapshot-format-version bump was needed.
+`/rpc/batch` frames carry per-frame `computedParams` inside each frame's `input`, and in-frame params
+are signed by construction (the frame bytes are the canonical request body). RPC `get` has no
+`fields`/`include` slot (an intentional scope limit, not a gap — see `docs/design/rpc-transport.md`
+§3.1): it always decodes into the full model type, which can't represent a partial payload.
 
 **BREAKING:** the generated `router()`, `rpc_router()`, `model_router()`, and `procedure_router()`
 functions gain a new `resolvers` parameter: `router(db, registry, resolvers, codec, auth_provider,

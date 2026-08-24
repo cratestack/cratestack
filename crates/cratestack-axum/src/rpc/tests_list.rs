@@ -33,6 +33,7 @@ fn synthesize_list_query_round_trips_through_parse_query_pairs() {
             key: "authorId".to_owned(),
             value: "42".to_owned(),
         }],
+        computed_params: Some(r#"{"proxyUrl":{"width":800}}"#.to_owned()),
     };
 
     let query = synthesize_list_query(&input).expect("input not empty, query should exist");
@@ -49,4 +50,5 @@ fn synthesize_list_query_round_trips_through_parse_query_pairs() {
     assert!(has("sort", "createdAt desc"));
     assert!(has("where", "published=true"));
     assert!(has("authorId", "42"));
+    assert!(has("computedParams", r#"{"proxyUrl":{"width":800}}"#));
 }

@@ -152,6 +152,11 @@ console.log(JSON.stringify(input));
             key: "authorId".to_owned(),
             value: "42".to_owned(),
         }],
+        // The generated TypeScript RPC client has no `computedParams`
+        // surface yet (docs/design/computed-fields.md's "Downstream"
+        // section, `include_client_schema!` Rust client parity note) —
+        // this stays `None` until that follow-up lands.
+        computed_params: None,
     };
     let expected_json = serde_json::to_value(&expected_input)
         .expect("serialize the real RpcListInput the server actually decodes");

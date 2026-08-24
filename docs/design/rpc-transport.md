@@ -196,6 +196,51 @@ On the wire the frame is *unwrapped*:
 - `Content-Type` / `Accept` negotiate codec the same way the REST binding
   does today via `validate_codec_request_headers`.
 
+#### 3.1a `computedParams` on model CRUD ops (`@computed`, cratestack#…)
+
+`model.<X>.list` decodes into `RpcListInput`, which — mirroring the REST list
+query 1:1 — carries an optional `computedParams` field alongside `limit`,
+`offset`, `fields`, etc. `model.<X>.get` decodes into a dedicated
+`RpcGetInput<Pk> { id, computedParams }` rather than reusing `RpcPkInput<Pk>`:
+`model.<X>.delete` also decodes `RpcPkInput`, and giving it a `computedParams`
+field would be a silently-ignored slot on a verb with no response body to
+carry a resolved value into. Both live in `cratestack-core::rpc` (client
+crates need them without pulling in `cratestack-axum`).
+
+On both input types `computed_params` (wire name `computedParams`) is a
+`String` — the raw JSON-object text — not `serde_json::Value`. Two reasons:
+
+1. Round-tripping an `Option`-bearing value through `serde_json::Value`
+   corrupts CBOR `Option::None` (`minicbor-serde` encodes it as `0xf6`
+   simple-null; `serde_json::Value` encodes it as the CBOR empty-array
+   marker — see `RpcUpdateInput`'s own doc comment, which hit this first for
+   `patch`). Computed-field params types are bags of optionals, so they'd hit
+   the same corruption head-on if carried as `Value`.
+2. `/rpc/batch` re-encodes each frame's opaque `input` back through
+   `serde_json::Value` before re-dispatching it
+   (`cratestack-axum::rpc::batch::build_batch_block`) — a `String` field
+   survives that round trip byte-for-byte; a nested object wouldn't.
+
+Server-side, `cratestack-axum::rpc::synthesize_get_query` /
+`synthesize_list_query` turn the decoded `computed_params` string back into
+the equivalent `?computedParams=<...>` query-string pair and hand it to the
+exact same `parse_model_fetch_query` / `parse_model_list_query` REST uses
+(`cratestack-macros/src/axum/shared_support.rs`) — one validation
+implementation for both transports, so a computedParams key naming a
+param-less field, malformed JSON, etc. produce the same
+`CratestackError::Validation` (and therefore the same HTTP status) on either
+binding. `parse_model_fetch_query` hard-rejects any query key it doesn't
+recognize, so `synthesize_get_query` emits *only* the `computedParams` pair
+when one is present, and `None` (no query at all) otherwise — `RpcGetInput`
+has no `fields`/`include` slot to also emit.
+
+**Deliberate asymmetry vs. REST/RPC-list:** RPC `get` has no `fields`/
+`include` on its input at all. Every generated client decodes an RPC `get`
+response into the full model type, which has no representation for a
+partial (fields-selected) payload — so the REST "`computedParams` for a
+field excluded by `?fields=`" rejection branch is reachable over RPC `list`
+but simply doesn't exist as a case over RPC `get`. Scope limit, not a gap.
+
 ### 3.2 HTTP batch — `POST /rpc/batch`
 
 The frame is wrapped here because the wire carries N requests.
@@ -208,6 +253,12 @@ The frame is wrapped here because the wire carries N requests.
   400 only on codec-malformed batches.
 - Per-frame idempotency: optional `idem` field on each `Request`. The
   `Idempotency-Key` header is rejected on this route as ambiguous.
+- Per-frame `computedParams`: a `model.<X>.get`/`model.<X>.list` frame's
+  `computedParams` field (§3.1a) lives inside that frame's own `input`, so
+  each batched read resolves its computed fields independently — two frames
+  in the same batch reading the same model with different `computedParams`
+  get independently-resolved outputs, order preserved (§3.2's own ordering
+  guarantee, unchanged).
 - **Not transactional.** Each frame runs in its own transaction. The server
   is free to fan frames out in parallel.
 - **No in-batch dependencies.** A batch like
@@ -400,7 +451,10 @@ method / path / body components fed into it differ per binding (see below).
 - HTTP unary: the canonical request *is the actual rpc request*. Method
   `POST`, path `/rpc/<op_id>` (the concrete URL the client hit), no query,
   and the raw rpc frame bytes as the body. The frame body carries the
-  primary key / patch / args, so signing it binds them.
+  primary key / patch / args, so signing it binds them. A `model.<X>.get`/
+  `model.<X>.list` frame's `computedParams` field (§3.1a) is part of that
+  same frame body, so it's signed by construction along with everything
+  else in the frame — no separate signing step was needed to add it.
 - HTTP batch: the canonical request is the *envelope*, not any individual
   frame. A batch client signs exactly one request — `POST /rpc/batch`, no
   query, the raw untouched body (the whole encoded frame sequence) — once,
@@ -414,6 +468,9 @@ method / path / body components fed into it differ per binding (see below).
   broke any `AuthProvider` whose verdict is bound to the real request
   bytes or to a single-use nonce — see `crates/cratestack-macros/src/
   include/server/rpc_module/batch.rs`'s module doc for the mechanism.)
+  A per-frame `computedParams` value (§3.1a/§3.2) is likewise covered by
+  this envelope-level signature: it's bytes inside the one signed
+  `POST /rpc/batch` body, not a separately-signed value.
 - WS: the upgrade request is signed once via the existing
   `canonical_request_string` over the upgrade HTTP request. Frames inside
   the channel are not individually signed.
@@ -546,3 +603,10 @@ snapshots load with `TransportStyle::Rest`.
 Clients (`cratestack-client-{rust,typescript,dart,flutter}`) inspect
 `Schema.transport` at codegen time and emit either a REST client or an
 RPC client. There is no client that speaks both.
+
+`computedParams` on `RpcListInput`/`RpcGetInput` (§3.1a) is the same kind of
+additive, `#[serde(default)]`-guarded change: an old `{"id": 1}` `get` frame
+(no `computedParams` key) decodes unchanged, and a new client that never
+sets `computed_params` serializes a byte-identical frame to what it produced
+before this field existed. No wire-format-version bump was needed for
+either addition.
