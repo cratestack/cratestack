@@ -9,41 +9,24 @@
 
 ## 0.8.11 (2026-08-24)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.8.10..HEAD at 9185849a4f031bf3e64ba6bceb75ef662d9d21db -->
+`pubspec.yaml` no longer carries a `dependency_overrides` block pointing `cratestack_annotations` at
+the sibling directory (cratestack#714). It was a bootstrap affordance from the phase where the
+`touchFlagFields`/`nonDefaultingListFields` arguments existed only in unpublished source;
+`cratestack_annotations` 0.8.10 is live on pub.dev, so this package now resolves it from the registry
+like any other consumer. That was confirmed at the time by checking the *resolved* path
+(`.pub-cache/hosted/pub.dev/cratestack_annotations-0.8.10`) rather than by reading the manifest — a
+stale override is invisible from the manifest alone.
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+The declared constraint is unchanged at `^0.8.8`, deliberately: it names the earliest annotation
+surface this generator uses, not the current version, and caret on a `0.x` version already pins the
+second component, so `^0.8.8` resolves 0.8.10.
 
-### Changes
+No generator behaviour changed — nothing under `lib/` was touched in this range.
 
-#### Features
-
-- move flutter_rust_bridge to 2.13.0, document why the pin cannot be a range (#716) (#717)
-- @computed resolver-backed response-time fields with per-request params (replaces @custom) (#719)
-- computedParams over RPC + typed <Model>ComputedParams in all generated clients (#724)
-
-#### Fixes
-
-- start the round trip in main(), not on first build (#715)
-- emit the stream-readiness probe with logger (#722)
-- end the pre-launch wait early when the log stream proves live (#720)
-- recover the marker from the log store, not just the live stream (#718)
-- changelog-seed writes cratestack_cbor's no-op entry itself (#713) (#721)
-- assert the smoke script's status before joining the stub server (#726)
-
-#### Documentation
-
-- Linux arm64 is blocked upstream, not pending work (#711)
-
-#### Chores
-
-- drop the builder's dependency override, register its changelogs (#714)
-
-#### CI
-
-- watch for the iOS capture defect that no longer fails a build (#725)
+That placeholder is what 0.8.11 actually shipped: the release went out with the raw seed still in
+this file, because `main` has no required status checks and the gate that caught it could not block
+the merge. This entry corrects the repository and every archive from 0.8.12 onward — pub.dev's
+published 0.8.11 page keeps the seed text, since an uploaded archive is immutable.
 
 ## 0.8.10 (2026-08-23)
 
