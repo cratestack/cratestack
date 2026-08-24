@@ -2778,10 +2778,15 @@ cbor-example-verify-ios:
 	# this check a missing binary and a dead subscription produce exactly
 	# the same "unproven" line, which is the ambiguity that cost two rounds
 	# of this already.
+	# `logger` FIRST, `log show` AS THE FALLBACK. Job 97456642501 reports
+	# `logger` is not in the simulator runtime at all, so on current runner
+	# images this always falls through — but the fallback is what keeps this
+	# recipe no worse than the `log show`-only version it replaces, on any
+	# image where that changes.
 	stream_ready=0
 	stream_emitter="logger"
 	if ! xcrun simctl spawn "$udid" logger -p user.notice "$stream_probe" >/dev/null 2>&1; then
-	  stream_emitter="unavailable"
+	  stream_emitter="log-show"
 	fi
 	stream_probe_deadline=$(( $(date +%s) + 8 ))
 	stream_probe_started="$(date +%s)"
@@ -2800,35 +2805,55 @@ cbor-example-verify-ios:
 	  sleep 1
 	  if [ "$stream_emitter" = "logger" ]; then
 	    xcrun simctl spawn "$udid" logger -p user.notice "$stream_probe" >/dev/null 2>&1 || true
+	  else
+	    xcrun simctl spawn "$udid" log show --last 1s \
+	      --predicate "eventMessage CONTAINS \"$stream_probe\"" >/dev/null 2>&1 || true
 	  fi
 	done
 	stream_ready_secs=$(( $(date +%s) - stream_probe_started ))
 	# WHICH FAILURE IS IT? Job 97423719675 could not say, and that is the
 	# only reason this counter exists. It already earned its keep once: on
-	# job 97436514543 it read 1, and that single line was the stream's own
-	# invocation record, which is how the `log show` emitter was ruled out
-	# rather than tuned. Under the `process == "logger"` predicate the
-	# remaining readings are:
+	# job 97436514543 it read 1 — but see the header note below: that 1 was
+	# this counter matching `log stream`'s own header, so it established
+	# nothing, and the reading taken from it has been retracted. With the
+	# header excluded the readings are:
 	#
-	#   emitter unavailable — `logger` is not in the simulator runtime.
-	#     Replace the emitter; nothing about the subscription is implied.
-	#   tag-bearing lines = 0 — `logger` ran but nothing arrived, which is
-	#     now an actual statement about delivery: either the subscription
-	#     was not live, or `logger` output does not reach it either.
+	#   emitter log-show — `logger` is absent from the simulator runtime
+	#     (job 97456642501) and the fallback emitter is in use. On current
+	#     runner images this is the normal case.
+	#   tag-bearing lines = 0 — the emitter ran and nothing arrived. Still
+	#     ambiguous between "the subscription was not delivering" and "this
+	#     emitter's output does not reach a subscription", and no run has
+	#     yet separated them.
 	#   tag-bearing lines > 0 without readiness — records from an earlier
 	#     attach in this simulator, which is exactly what the nonce exists
 	#     to keep from being counted as this attach's proof.
 	#
 	# Counts the TAG, not the nonce: the nonce is by construction absent
 	# whenever the probe failed, so counting it would only restate that.
-	# `|| true` for `grep -c`'s exit 1 on zero matches under `set -e`.
-	stream_probe_records="$(grep -c "$stream_probe_tag" "$stream_log" || true)"
+	#
+	# THE HEADER LINE MUST BE EXCLUDED, AND NOT DOING SO MADE THIS COUNTER
+	# LIE FOR TWO RUNS. `log stream` opens its output with
+	#
+	#   Filtering the log data using "<predicate>"
+	#
+	# and the predicate now contains the tag, so a naive `grep -c` counts
+	# that header as a delivered record. Both job 97436514543 and job
+	# 97456642501 reported exactly 1 — and in both it was the header, not
+	# anything the subscription delivered. The first of those readings was
+	# used to conclude the stream had delivered its own invocation record
+	# and that delivery therefore worked; that conclusion was wrong and is
+	# retracted. Corrected, both runs read 0, and nothing has yet been
+	# established about delivery either way.
+	#
+	# awk rather than a `grep | grep -vc` pipeline: it exits 0 and prints a
+	# number even when nothing matches, which `set -o pipefail` plus
+	# `grep`'s exit-1-on-no-match does not.
+	stream_probe_records="$(awk -v tag="$stream_probe_tag" 'index($0, tag) && !index($0, "Filtering the log data using") { n++ } END { print n+0 }' "$stream_log")"
 	if [ "$stream_ready" -eq 1 ]; then
-	  echo "stream: subscription proved live after ${stream_ready_secs}s (logger probe emitted and delivered)"
-	elif [ "$stream_emitter" = "unavailable" ]; then
-	  echo "stream: readiness unproven — \`logger\` is not available in this simulator runtime, so no probe could be emitted. Treated as a fixed wait; the emitter needs replacing (cratestack#704)."
+	  echo "stream: subscription proved live after ${stream_ready_secs}s (${stream_emitter} probe emitted and delivered)"
 	else
-	  echo "stream: readiness unproven after ${stream_ready_secs}s — logger ran, ${stream_probe_records} tag-bearing line(s) reached the capture. Treated as a fixed wait and launching anyway; a marker the live capture misses is still recoverable from the log store (cratestack#718, cratestack#704)."
+	  echo "stream: readiness unproven after ${stream_ready_secs}s — emitter ${stream_emitter}, ${stream_probe_records} probe record(s) delivered (header excluded). Treated as a fixed wait and launching anyway; a marker the live capture misses is still recoverable from the log store (cratestack#718, cratestack#704)."
 	fi
 
 	xcrun simctl launch --console-pty "$udid" "$appId" > "$ios_log" 2>&1 &
@@ -2875,7 +2900,7 @@ cbor-example-verify-ios:
 	if [ "$stream_ready" -eq 1 ]; then
 	  stream_summary="stream: subscription live after ${stream_ready_secs}s"
 	else
-	  stream_summary="stream: readiness unproven (emitter ${stream_emitter}, waited ${stream_ready_secs}s, ${stream_probe_records} tag-bearing line(s) captured) — treat a missing marker here as a capture defect first"
+	  stream_summary="stream: readiness unproven (emitter ${stream_emitter}, waited ${stream_ready_secs}s, ${stream_probe_records} probe record(s) delivered) — treat a missing marker here as a capture defect first"
 	fi
 
 	# LIVENESS IS SAMPLED BEFORE ANYTHING IS KILLED (cratestack#704).
