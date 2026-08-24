@@ -1262,11 +1262,19 @@ cleanup_noop_fixture_repo
 # real, non-bump commit reaching the no-op scope ONLY through one of the
 # EXTRA directories — never the package's own directory — still writes the
 # placeholder, and the gate still fails until a human writes prose. This is
-# the concrete scenario the widened scope exists for: v0.8.6 shipped a real
-# cratestack-codec-cbor fix baked into cratestack_cbor's vendored binaries
-# while dart-packages/cratestack_cbor/ itself carried zero commits. If this
-# test instead put the commit under "pkg/", it would prove nothing new —
-# the pre-#713, package-directory-only proxy already caught that case.
+# the concrete scenario the widened scope exists for: cratestack_cbor ships
+# prebuilt binaries compiled at release time from crates outside its own
+# directory, and those crates call cratestack-codec-cbor's decoder bare — so
+# a decode-side change there alters the shipped bytes with the package
+# directory untouched (see .ci/changelog-files.sh's rationale for the exact
+# call sites). If this test instead put the commit under "pkg/", it would
+# prove nothing new — the pre-#713, package-directory-only proxy already
+# caught that case.
+#
+# cratestack#727: this header previously cited v0.8.6 as a real instance of
+# the above. It was not — that release's codec fix was encode-only and the
+# vendored bytes were unchanged. The mechanism the test exercises is sound;
+# only the example was wrong, so the test body is unchanged.
 test_header "Test 28 (cratestack#713 — DECISIVE): a change reaching only an extra scope directory (not the package's own) still blocks the gate"
 setup_noop_fixture_repo
 echo changed > "$NOOP_GIT_DIR/vendor-a/f.txt"

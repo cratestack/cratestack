@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### The changelog no-op scope keeps its shape, but its stated reason was wrong
+
+`.ci/changelog-files.sh` widened `cratestack_cbor`'s no-op scope beyond its own directory in
+cratestack#713, and justified it with v0.8.6 as a "load-bearing counter-example, not a hypothetical
+one": a real CBOR fix (cratestack#675) landed in `crates/cratestack-codec-cbor` in `v0.8.5..v0.8.6`
+while `dart-packages/cratestack_cbor/` carried zero commits, so — the argument went — the vendored
+binaries changed and a directory-only proxy would have written "No functional changes" onto a release
+whose bytes moved.
+
+The git facts were right. The conclusion was not, because it stopped one step short of the call site.
+That fix was **encode-only**, and both vendoring sources wrap values in `EncodableValue` before
+encoding — which maps `Value::Null` through `serialize_none()` at every position in the tree and had
+already shipped in v0.8.5 (`52b50cea`, cratestack#580). The wrapper bypassed the fixed branch, so the
+bytes did not change. cratestack#675's own commit message says as much: the wrappers are "kept as
+intentional defense-in-depth ... not as the only thing preventing the bug". Its edits to
+`crates/cratestack-cbor-wasm` in the same range were module-doc and test-only.
+
+So v0.8.6 was a genuine no-op for that package, and the "No functional changes" wording on `main` for
+that section is correct — the correction originally proposed here would have replaced a true statement
+with a false one.
+
+**The scope itself is unchanged and stays.** What justifies including `crates/cratestack-codec-cbor`
+is the *decode* path, which is a mechanism rather than an incident: both
+`crates/cratestack-client-flutter/src/cbor/mod.rs` and `crates/cratestack-cbor-wasm/src/wasm.rs` call
+`CborCodec.decode(bytes)` bare, with nothing in between, so a decode-side change reaches both vendored
+binaries directly. cratestack#675 merely happened to be encode-only; the next one need not be.
+
+Comment-only: `CHANGELOG_NOOP_SCOPES` is byte-identical, Test 28's body is untouched (only its
+narrative header cited the false example), and the seed suite passes 73/73 as before. Test 28 was
+re-confirmed decisive — narrowing the fixture scope back to the package directory fails three of its
+assertions.
+
+The generalisable trap, now recorded in the comment itself: **a dependency edge is not a behaviour
+path.** `cratestack-client-flutter` depends on `cratestack-codec-cbor` — true, trivial to verify, and
+insufficient. Whether a dependency change is observable depends on how the consumer *calls* it.
+
 ## 0.8.12 (2026-08-24)
 
 ### RPC `get` gains the selection surface REST already had
