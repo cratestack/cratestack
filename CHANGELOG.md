@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.8.12 (2026-08-24)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.11..HEAD at 3358476673223655248ac9f83bdcd1bc4bfea248 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- RPC get selection parity with REST + builders for ComputedParams (#729)
+
 ## 0.8.11 (2026-08-24)
 
 ### A failing TypeScript smoke test now fails in a second instead of hanging for hours
