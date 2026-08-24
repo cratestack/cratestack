@@ -148,7 +148,7 @@ Four jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (n
    (`taiki-e/install-action`), Flutter (`subosito/flutter-action` — **not** `dart-lang/setup-dart`, for
    the same reason `ci.yml`'s `cratestack-cbor-*` jobs use Flutter: this package's
    `flutter.plugin.platforms` pubspec key obliges an `environment.flutter` constraint a standalone Dart
-   SDK can't satisfy), `flutter_rust_bridge_codegen` pinned `=2.12.0`, pinned `binaryen` (`wasm-opt`,
+   SDK can't satisfy), `flutter_rust_bridge_codegen` pinned `=2.13.0`, pinned `binaryen` (`wasm-opt`,
    avoids an unpinned mid-build download that has failed a real release before — see `release-cli.yml`'s
    `publish-npm-cbor-web` job for the identical incident), `cargo-ndk` pinned `=4.1.2`, the three Android
    rustup targets, and resolves an installed Android NDK (prefers `28.2.13676358`, matching Flutter's own
@@ -181,7 +181,7 @@ test tag reach a registry that cannot delete what it published.
 
 `dart pub publish --dry-run` **exits non-zero (65) even for a fully-vendored, genuinely publishable
 package**, because `cratestack_cbor` pins `flutter_rust_bridge` to an exact version
-(`flutter_rust_bridge: 2.12.0`, no `^`) rather than a range — required, not a defect: the vendored frb
+(`flutter_rust_bridge: 2.13.0`, no `^`) rather than a range — required, not a defect: the vendored frb
 glue is codegen-version-specific (see the development doc's gotcha 3). Pub's own validator flags this
 as "potential issue" #1 every single run, vendored or not:
 
@@ -190,7 +190,7 @@ Package validation found the following potential issue:
 * Your dependency on "flutter_rust_bridge" should allow more than one version. For example:
 
   dependencies:
-    flutter_rust_bridge: ^2.12.0
+    flutter_rust_bridge: ^2.13.0
   ...
 Package has 1 warning.
 ```
@@ -336,9 +336,16 @@ support having no `ios/` folder. Please consider increasing the Flutter SDK requ
 ```
 
 The cause was `environment.flutter: ">=1.10.0"` — enough for pub's *local* check of
-`plugin.platforms`, but this package deliberately ships no `ios/` folder, and Flutter only permits
+`plugin.platforms`, but at 0.8.0 this package shipped no `ios/` folder, and Flutter only permits
 omitting platform folders from 1.20 onward. Fixed by raising the constraint (see the pubspec's own
 comment for why the number looks low next to `sdk: ^3.5.0`).
+
+**That specific rejection is void as of 0.8.7** — cratestack#563's iOS slice added a real `ios/`
+folder and an `ios: ffiPlugin: true` platform entry, so there is no longer an omitted platform
+folder for pub.dev to object to. The `>=1.20.0` floor stays anyway on independent grounds, spelled
+out in the pubspec's own comment. The episode is kept here because the *lesson* — pub.dev validates
+again server-side, with rules `--dry-run` does not run — outlived its trigger; do not read it as a
+current description of the package's platform matrix.
 
 Two things worth carrying forward:
 

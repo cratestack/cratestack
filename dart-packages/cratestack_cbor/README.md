@@ -14,11 +14,94 @@ final bytes = codec.encodeJson('{"hello":"world"}');
 final json = codec.decodeJson(bytes);
 ```
 
+## The `flutter_rust_bridge` pin — read this before `pub add`
+
+This package depends on **`flutter_rust_bridge: 2.13.0`**, and in pub's
+grammar a bare version is an *exact* pin, not a range. The practical
+consequence is blunt:
+
+> **If your app (or any other package in your dependency graph) already
+> depends on a different `flutter_rust_bridge` version, you cannot add
+> `cratestack_cbor` at all.** `pub get` fails during version solving,
+> before any code runs.
+
+```
+Because your_app depends on flutter_rust_bridge 2.12.0 and every version of
+cratestack_cbor depends on flutter_rust_bridge 2.13.0, cratestack_cbor is
+forbidden.
+```
+
+**This is not a constraint CrateStack chose, and it is not one CrateStack can
+relax.** flutter_rust_bridge requires that its codegen, its Dart runtime
+package, and its Rust runtime crate all be *exactly* the same version — see
+[upstream's compatibility page](https://cjycode.com/flutter_rust_bridge/guides/miscellaneous/compatibility),
+which states that all flutter_rust_bridge packages "will need to have exactly
+the same version". It is enforced in the generated code, not merely
+recommended: the glue this package ships carries `String get codegenVersion =>
+'2.13.0'`, and flutter_rust_bridge's `BaseEntrypoint.initImpl` compares that
+against its own runtime constant with `==` on a plain `String` and throws a
+`StateError` on any difference. flutter_rust_bridge's own project scaffolding
+emits the same exact pins it demands of us (`flutter_rust_bridge = "=X.Y.Z"`
+in `Cargo.toml`, bare `flutter_rust_bridge: X.Y.Z` in `pubspec.yaml`). Upstream
+[issue #2694](https://github.com/fzyzcjy/flutter_rust_bridge/issues/2694)
+asked for cross-minor-version compatibility for exactly this reason and was
+closed without it.
+
+**Why not a range like `^2.13.0` or `>2.12.0`?** Because a range resolves to
+the *newest* matching version, and this package's glue is fixed at one. Today
+2.13.0 is newest, so a range would appear to work. The day flutter_rust_bridge
+publishes 2.14.0, every fresh `pub get` starts selecting it while the glue in
+this archive still declares `2.13.0` — and every new consumer gets a
+`StateError` on first use. Nothing in this repository would have changed, and
+our CI would stay green, because the breakage is triggered by upstream's
+release schedule rather than by anything we do. An exact pin fails loudly at
+install time, in a way we control and can fix; a range fails quietly at
+runtime, at a moment chosen by someone else.
+
+A range also does not do what people usually hope. Pub excludes prereleases
+from ranges, so if your app is pinned to something like `2.13.0-beta.6`, no
+range on our side admits it — `>2.12.0 <2.13.0` matches *no versions at all*.
+Converging on the same stable release is the only thing that actually works.
+
+**`dependency_overrides` is not a workaround — it is a worse failure.** It
+gets you past `pub get`, and then the version check above throws at
+`createCborCodec()` instead. You have converted an install-time error into a
+runtime one. Upstream's own bypass for that check
+(`forceSameCodegenVersion: false`) is not reachable either — it is a parameter
+on the generated entrypoint's `init`, which this package calls internally
+(`lib/src/native/native_cbor_codec.dart`) and does not expose. And even if it
+were, the vendored native library here was *compiled* against
+flutter_rust_bridge 2.13.0's Rust runtime; nothing on the Dart side changes
+that half of the pair.
+
+**What to do instead**, in the order you should consider them:
+
+1. **Converge on 2.13.0** if the other package in your graph can move. The
+   mechanical part is cheaper than it looks — install
+   `flutter_rust_bridge_codegen` 2.13.0 and re-run `generate`, which rewrites
+   the Dart *and* Rust dependency for you. The cost is the re-validation:
+   this regenerates that package's bridge glue, so budget for re-testing its
+   native surface, not just for the version edit.
+2. **Use the pure-Dart CBOR codec**, which has no flutter_rust_bridge
+   dependency at all: pass `--no-native-cbor` to `cratestack generate-dart`.
+   You give up the native codec's throughput, not correctness — the pure-Dart
+   path round-trips the same wire bytes.
+3. **Tell us which version you need.** The pin is a maintainer decision that
+   tracks one flutter_rust_bridge release at a time; if adoption is
+   concentrating on a newer one, that is worth knowing. Open an issue on
+   [the tracker](https://github.com/cratestack/cratestack/issues).
+
+One wrinkle worth naming, because it surprises people: **web-only apps pay
+this pin too.** The web backend is wasm-bindgen and imports no
+flutter_rust_bridge whatsoever, but pub has no conditional-dependency
+mechanism, so the pin sits in `pubspec.yaml` unconditionally and constrains
+every consumer regardless of which backend they actually compile to.
+
 ## Backends
 
 | Platform | Backend | Artifact |
 | --- | --- | --- |
-| Native (`dart.library.io`) | [flutter_rust_bridge](https://pub.dev/packages/flutter_rust_bridge) `=2.12.0` over `crates/cratestack-client-flutter`'s `cbor` module | A **vendored prebuilt native library** — `blobs/linux-x64/libcratestack_client_flutter.so` (Linux), `blobs/android/<abi>/libcratestack_client_flutter.so` (Android: arm64-v8a, x86_64, armeabi-v7a), `blobs/windows-x64/cratestack_client_flutter.dll` (Windows), `macos/Frameworks/CratestackCborNative.xcframework` (macOS, universal arm64 + x86_64), or `ios/Frameworks/CratestackCborNative.xcframework` (iOS, device arm64 + universal simulator arm64/x86_64) in this release. No Rust toolchain, no network fetch, at consumer build time. |
+| Native (`dart.library.io`) | [flutter_rust_bridge](https://pub.dev/packages/flutter_rust_bridge) `=2.13.0` over `crates/cratestack-client-flutter`'s `cbor` module | A **vendored prebuilt native library** — `blobs/linux-x64/libcratestack_client_flutter.so` (Linux), `blobs/android/<abi>/libcratestack_client_flutter.so` (Android: arm64-v8a, x86_64, armeabi-v7a), `blobs/windows-x64/cratestack_client_flutter.dll` (Windows), `macos/Frameworks/CratestackCborNative.xcframework` (macOS, universal arm64 + x86_64), or `ios/Frameworks/CratestackCborNative.xcframework` (iOS, device arm64 + universal simulator arm64/x86_64) in this release. No Rust toolchain, no network fetch, at consumer build time. |
 | Web (`dart.library.js_interop`) | The **existing** [`cratestack-cbor-wasm`](../../crates/cratestack-cbor-wasm) wasm-bindgen artifact (already shipped to npm as [`@cratestack/cbor-web`](../../packages/cratestack-cbor-web)) | A **vendored** `wasm-pack --target web` build — `lib/src/web/wasm-pkg/` — loaded at runtime via `dart:js_interop`. No new codec binding; this reuses the exact same Rust wasm-bindgen crate the JS package already binds. |
 
 Linux, Android, Windows, macOS, and iOS share the same flutter_rust_bridge Dart glue (`lib/src/native/rust/`, platform-independent — frb codegen introspects Rust source, not a target triple) but vendor three genuinely different resolution mechanisms: Linux and Windows each resolve the vendored library by an executable-relative path (the two paths differ — no `lib/` subdirectory on Windows, see `windows/CMakeLists.txt`), Android resolves it by bare SONAME from the app's own native library directory (populated by `android/build.gradle`'s `jniLibs.srcDirs`), and macOS/iOS both resolve it by a *fixed* relative framework path with no computation at all — that only works because CocoaPods **links** the vendored xcframework into the built app rather than merely copying it (see `macos/cratestack_cbor.podspec`/`ios/cratestack_cbor.podspec` and `lib/src/native/native_cbor_codec.dart`). The two Apple platforms share that Dart-side resolution function outright (`_resolveMacosLibraryPath`, reused by the iOS branch too) — only the *xcframework's own internal shape* differs between them, not the mechanism: macOS's is a versioned bundle (`Versions/A/...` + symlinks, shipped zipped because `dart pub publish` dereferences symlinks), iOS's is flat/shallow (no symlinks at all, shipped unpacked) — see those two podspecs' header comments.

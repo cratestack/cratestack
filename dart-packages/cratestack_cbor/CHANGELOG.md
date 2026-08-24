@@ -1,5 +1,44 @@
 ## Unreleased
 
+- **`flutter_rust_bridge` moves from 2.12.0 to 2.13.0.** This is the pin that
+  decides which Flutter apps can depend on this package at all: a bare version
+  is an exact pin in pub's grammar, so an app on any other flutter_rust_bridge
+  version cannot add `cratestack_cbor` — `pub get` fails during version
+  solving (cratestack#716). The pin cannot be widened (see below), so moving it
+  is the only lever there is.
+
+  **This is a breaking change for anyone currently on 2.12.0**, and a fix for
+  anyone on 2.13.0. If you are pinned to a 2.13.0 *prerelease* such as
+  `2.13.0-beta.6`, you are still blocked and need to move to stable 2.13.0 —
+  pub excludes prereleases from ranges, so there is no constraint we can write
+  that admits both.
+
+  Verified end to end rather than by editing version strings: glue regenerated
+  with codegen 2.13.0, `cargo build --features frb-glue`, the Dart round-trip
+  harness, and this package's own `dart test` (7 tests) all pass, with the
+  cross-binding CBOR fixtures still matching byte for byte — the wire format
+  is unchanged by the upgrade.
+
+- **The pin is now documented as an install-blocking constraint**, in a README
+  section placed ahead of the quickstart rather than left implicit in a
+  dependency line. It explains why a range is not an option: a range resolves
+  to the *newest* match while the shipped glue is fixed at one version, so it
+  would work today and start handing consumers 2.14.0 against 2.13.0 glue the
+  day upstream publishes it — breaking on upstream's release schedule rather
+  than ours, with our CI still green. The README also documents the workaround
+  an affected app has today (`cratestack generate-dart --no-native-cbor`, the
+  pure-Dart codec, which has no flutter_rust_bridge dependency) and notes that
+  web-only apps are constrained by the pin too, since pub has no conditional
+  dependencies and the web backend imports no flutter_rust_bridge at all.
+
+  **Correction:** the first draft of these docs claimed flutter_rust_bridge's
+  codegen "rejects a ranged constraint outright". That was wrong and is
+  retracted. The `bail!("unexpected version range")` it cited applies to
+  `ffigen`, and reaches `flutter_rust_bridge` only through an `.is_ok()` in
+  `auto_upgrade.rs` that discards it. Measured: `just cbor-vendor-glue` runs to
+  completion with a ranged constraint in `pubspec.yaml`. Tooling does not block
+  a range — the runtime version mismatch does, and that alone is sufficient.
+
 - **The example app's round-trip marker no longer depends on a widget
   building.** The round trip hung off a `late final` field on the page's
   `State`, read only inside `build()`, making the marker every headless

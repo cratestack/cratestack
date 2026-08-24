@@ -16,7 +16,7 @@ environment:
 dependencies:
   # Keep in lock-step with ../Cargo.toml's `flutter_rust_bridge` pin and
   # examples/embedded-flutter's own pubspec.yaml.
-  flutter_rust_bridge: 2.12.0
+  flutter_rust_bridge: 2.13.0
   ffi: ^2.1.0
   # Only used by `../benches/cbor_bridge/bench.dart` (copied into this
   # directory when reproducing the benchmark — see that directory's

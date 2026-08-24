@@ -31,7 +31,7 @@ categories.workspace = true
 # the same manifest. Registered in `EXEMPT_MANUAL_OVERRIDE` in
 # `.ci/lints_workspace_check.py`.
 unsafe_code = "allow"
-# `flutter_rust_bridge_macros`@2.12.0's `#[frb(...)]` attribute checks an
+# `flutter_rust_bridge_macros`@2.13.0's `#[frb(...)]` attribute checks an
 # internal `cfg(frb_expand)` as part of its two-pass expansion; that cfg is
 # never declared via `--check-cfg`, so `#[cfg_attr(feature = "frb-glue",
 # flutter_rust_bridge::frb(sync))]` (used on `src/cbor/mod.rs`'s bridged
@@ -109,7 +109,7 @@ serde_json.workspace = true
 # different codegen-compatible versions. Only pulled into the build graph
 # when `frb-glue` is enabled, i.e. never for a default `cargo build`/
 # `cargo test -p cratestack-client-flutter`.
-flutter_rust_bridge = { version = "=2.12.0", optional = true }
+flutter_rust_bridge = { version = "=2.13.0", optional = true }
 
 [dev-dependencies]
 async-stream = "0.3"

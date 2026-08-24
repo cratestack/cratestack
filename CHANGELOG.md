@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+### flutter_rust_bridge moves to 2.13.0 (breaking for consumers on 2.12.0)
+
+Every flutter_rust_bridge pin in the workspace moves from `2.12.0` to `2.13.0`:
+`cratestack-client-flutter` and `examples/embedded-flutter/native` (Cargo), `cratestack_cbor`,
+`cratestack-client-flutter/dart` and `examples/embedded-flutter` (pub), plus the pinned
+`flutter_rust_bridge_codegen` installs in the `justfile` and both workflows.
+
+This matters because the pub-side pin decides who can use `cratestack_cbor` **at all**. A bare
+version is an exact pin in pub's grammar, so a Flutter app already depending on a different
+flutter_rust_bridge version — for unrelated native functionality of its own — cannot add the package;
+`pub get` fails during version solving. Since #702 made native CBOR the `generate-dart` default, an
+app hits this simply by upgrading the CLI and regenerating. Reported as #716.
+
+**Anyone on 2.12.0 is now blocked instead**, which is the unavoidable shape of this change: the
+constraint cannot be widened, so the pin can only ever point at one release. Apps pinned to a 2.13.0
+*prerelease* (`2.13.0-beta.6`) are still blocked and must move to stable — pub excludes prereleases
+from ranges, so no constraint admits both.
+
+Verified end to end rather than by editing version strings: glue regenerated with codegen 2.13.0,
+`cargo build --features frb-glue`, `just frb-verify-client-flutter`'s Dart round-trip harness, and
+`cratestack_cbor`'s own `dart test` (7 tests) all pass, with the cross-binding CBOR fixtures matching
+byte for byte — the wire format is unchanged. Upstream's Windows codegen bug is **not** fixed in
+2.13.0, so the Linux-only `cbor-vendor-glue` arrangement and its comments stand.
+
+### The pin is documented as install-blocking, and one earlier claim is retracted
+
+The constraint is now stated where someone hits it: a README section ahead of the quickstart, and a
+pubspec comment aimed at the next maintainer tempted to widen it. flutter_rust_bridge requires
+codegen, Dart runtime, and Rust runtime to be exactly equal, enforces that with `==` on a `String` in
+generated code, and closed
+[the request to make minor versions compatible](https://github.com/fzyzcjy/flutter_rust_bridge/issues/2694)
+without acting on it. A range is not an option for a different reason than first documented: it
+resolves to the *newest* match while the shipped glue is fixed at one version, so it would work today
+and start handing consumers 2.14.0 against 2.13.0 glue the day upstream publishes it — breaking on
+upstream's release schedule, with our CI still green.
+
+**Correction.** The first draft claimed flutter_rust_bridge's codegen "rejects a ranged constraint
+outright". That was wrong. The `bail!("unexpected version range")` cited applies to `ffigen`, and
+reaches `flutter_rust_bridge` only through an `.is_ok()` in `auto_upgrade.rs` that discards it —
+measured: `just cbor-vendor-glue` completes with a ranged constraint in `pubspec.yaml`. The claim was
+written from a code search without confirming the call path, and is retracted here, in #717, and on
+#716 where it was first stated.
+
+An affected app's option that needs no version negotiation remains `cratestack generate-dart
+--no-native-cbor`, which selects the pure-Dart codec and drops the flutter_rust_bridge dependency
+entirely.
+
+Also fixed a stale claim in `docs/tooling/dart-publishing.md`, spotted in the same report: a
+narrative about the 0.8.0 first-publish rejection described the package as shipping no `ios/` folder
+in the present tense. It has shipped one since 0.8.7.
+
 ### `@computed` — resolver-backed response-time fields, replacing `@custom` (`docs/design/computed-fields.md`)
 
 A schema author can now declare a field that is derived at response time by hand-written Rust rather

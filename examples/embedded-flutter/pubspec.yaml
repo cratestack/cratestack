@@ -13,7 +13,7 @@ dependencies:
   # flutter_rust_bridge pulls in the Dart-side runtime helpers that the
   # generated bindings under lib/src/rust/ depend on. Keep the version
   # in lock-step with `native/Cargo.toml`'s flutter_rust_bridge dep.
-  flutter_rust_bridge: 2.12.0
+  flutter_rust_bridge: 2.13.0
 
   # Standard pre-app-data-dir helper for resolving where to put the
   # SQLite file on each platform.

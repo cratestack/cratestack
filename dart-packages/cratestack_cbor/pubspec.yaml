@@ -50,11 +50,61 @@ environment:
   flutter: ">=1.20.0"
 
 dependencies:
-  # Pinned exact, matching crates/cratestack-client-flutter/Cargo.toml's
-  # `flutter_rust_bridge = "=2.12.0"` — the generated `lib/src/native/rust/`
+  # Pinned exact (a bare version is an exact pin in pub's grammar, not a
+  # range), matching crates/cratestack-client-flutter/Cargo.toml's
+  # `flutter_rust_bridge = "=2.13.0"` — the generated `lib/src/native/rust/`
   # glue in this package was produced by that exact codegen version and is
   # not forward/backward compatible across releases.
-  flutter_rust_bridge: 2.12.0
+  #
+  # DO NOT relax this to `^2.13.0` or `>=2.13.0 <3.0.0` to unblock a
+  # consumer. It has been asked for (cratestack#716) and it does not work —
+  # the constraint is upstream's, not ours, and widening our end only moves
+  # the failure from `pub get` to runtime:
+  #
+  #   * flutter_rust_bridge requires codegen, Dart runtime package, and Rust
+  #     runtime crate to be EXACTLY equal — stated policy, not incidental:
+  #     https://cjycode.com/flutter_rust_bridge/guides/miscellaneous/compatibility
+  #   * It is enforced in the generated code. Our shipped glue carries
+  #     `String get codegenVersion => '2.13.0'`; frb's `BaseEntrypoint.
+  #     initImpl` compares it to its own runtime constant with `==` on a
+  #     `String` and throws `StateError` on any difference. There is no
+  #     semver parsing anywhere in that path.
+  #   * A range resolves to the NEWEST match, while our glue is fixed at
+  #     one version. Measured: `^2.13.0`, `>2.12.0`, and `>=2.12.0 <3.0.0`
+  #     all resolve to 2.13.0 today — i.e. a range would look fine right
+  #     now, and start handing consumers 2.14.0 against 2.13.0 glue the day
+  #     upstream publishes it. CI would stay green (it pins the codegen and
+  #     resolves against a lockfile); only published consumers would break,
+  #     on upstream's schedule rather than ours.
+  #   * Widening is not even sufficient, because the other half of the pair
+  #     is already compiled: the vendored native library in this package was
+  #     built against frb 2.13.0's Rust runtime. Nothing in this file can
+  #     change that.
+  #   * A range does not admit prereleases either, so it does not solve the
+  #     case that motivated cratestack#716 (an app pinned to
+  #     `2.13.0-beta.6`). Measured: `>2.12.0 <2.13.0` matches NO versions.
+  #
+  # CORRECTION (cratestack#716, second pass): an earlier version of this
+  # comment claimed frb's codegen "REJECTS a ranged constraint outright",
+  # citing the `bail!("unexpected version range")` in dart_repo.rs. That is
+  # WRONG and was not verified before being written down. That bail is
+  # reached for `ffigen` (ensure_tools_available.rs) and, for
+  # flutter_rust_bridge, only via `.is_ok()` in auto_upgrade.rs — where it
+  # is converted to a bool, not propagated. Verified empirically: `just
+  # cbor-vendor-glue` runs to completion with `flutter_rust_bridge:
+  # ">2.12.0"` in this file. Tooling does NOT block a range; the runtime
+  # mismatch above is the whole reason, and it is sufficient.
+  #
+  # Upstream declined to make minor versions compatible
+  # (fzyzcjy/flutter_rust_bridge#2694, closed). The only real lever is
+  # MOVING this pin — both here and in Cargo.toml, then regenerating glue
+  # and re-vendoring every platform's binary. That is a deliberate,
+  # release-coupled decision, not a patch.
+  #
+  # Consumer-facing writeup (what an app blocked by this can actually do)
+  # lives in README.md's "The `flutter_rust_bridge` pin" section — keep the
+  # two in sync when this version moves.
+  flutter_rust_bridge: 2.13.0
   # Web backend only (dart:js_interop-based loader in lib/src/web/) — see
   # lib/src/web/web_cbor_codec.dart for why a real dependency, not just an
   # ambient dart:html/dart:js_interop import, is needed (DOM element types).
