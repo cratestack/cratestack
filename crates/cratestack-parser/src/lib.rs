@@ -14,6 +14,8 @@ mod tests_builder_collisions_derived;
 #[cfg(test)]
 mod tests_computed;
 #[cfg(test)]
+mod tests_computed_params;
+#[cfg(test)]
 mod tests_docs;
 #[cfg(test)]
 mod tests_enums;

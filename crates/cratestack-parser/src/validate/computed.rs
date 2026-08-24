@@ -22,18 +22,31 @@
 //!    item-by-item resolution inside the incremental HTTP encoder is
 //!    not implemented yet, and silently streaming unresolved values
 //!    would be worse than rejecting.
+//! 4. A `@computed(params: <Type>?)` params type must resolve to a
+//!    declared `type` block — not a model (no CRUD input surface to
+//!    validate a params payload against), not a builtin scalar/enum (no
+//!    fields to decode a JSON object into), not a mixin (never a
+//!    standalone type on the wire) — and must not itself be
+//!    computed-bearing (params are decoded from the request, so a
+//!    computed field inside one could never be resolved).
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{Field, Schema, TypeRef};
+use cratestack_core::{Field, Schema, TypeRef, computed_params_type_name};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::computed_params::{ComputedParamsNameSets, validate_computed_params_type};
 
+/// True for a field carrying either spelling of `@computed` — bare or
+/// `@computed(params: <Type>?)`. By the time this module runs,
+/// per-declaration validation has already rejected any other spelling
+/// (see [`super::fields::validate_computed_field_attribute`]), so
+/// `starts_with` is safe to use as the sole discriminator here.
 fn is_computed(field: &Field) -> bool {
     field
         .attributes
         .iter()
-        .any(|attribute| attribute.raw == "@computed")
+        .any(|attribute| attribute.raw.starts_with("@computed"))
 }
 
 /// Names (of `type` declarations and `model`s) whose wire shape contains
@@ -95,6 +108,7 @@ pub(super) fn validate_computed(schema: &Schema) -> Result<(), SchemaError> {
         .iter()
         .map(|model| model.name.as_str())
         .collect();
+    let name_sets = ComputedParamsNameSets::collect(schema, &model_names);
     let bearing = computed_bearing_names(schema);
 
     let owners = schema
@@ -125,6 +139,16 @@ pub(super) fn validate_computed(schema: &Schema) -> Result<(), SchemaError> {
                     ),
                     field.span,
                 ));
+            }
+            if let Some(params_type) = computed_params_type_name(field) {
+                validate_computed_params_type(
+                    owner_kind,
+                    owner_name,
+                    field,
+                    params_type,
+                    &name_sets,
+                    &bearing,
+                )?;
             }
         }
     }

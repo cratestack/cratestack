@@ -4,6 +4,7 @@
 
 pub mod composite_key;
 pub mod composite_unique;
+pub mod computed_attribute;
 mod field_list;
 pub mod index_attribute;
 pub mod model;
@@ -17,6 +18,9 @@ use serde::{Deserialize, Serialize};
 
 pub use composite_key::parse_composite_id_attribute;
 pub use composite_unique::parse_composite_unique_attribute;
+pub use computed_attribute::{
+    ComputedParamsArg, computed_params_type_name, parse_computed_params_arg,
+};
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,

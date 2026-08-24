@@ -2,6 +2,7 @@ mod builder_collisions;
 mod builder_setter_collisions;
 mod composite_attributes;
 mod computed;
+mod computed_params;
 mod fields;
 mod index_attribute;
 mod mixins_types;

@@ -84,11 +84,12 @@ pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{
-    Attribute, AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant,
-    ExtensionKind, Field, MixinDecl, Model, OwnedSchemaSummary, ParsedIndexAttribute, Procedure,
-    ProcedureArg, ProcedureKind, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle,
-    TypeArity, TypeDecl, TypeRef, View, ViewSource, parse_composite_id_attribute,
-    parse_composite_unique_attribute, parse_index_attribute,
+    Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource, EnumDecl,
+    EnumVariant, ExtensionKind, Field, MixinDecl, Model, OwnedSchemaSummary, ParsedIndexAttribute,
+    Procedure, ProcedureArg, ProcedureKind, Schema, SchemaSummary, SelectionQuery, SourceSpan,
+    TransportStyle, TypeArity, TypeDecl, TypeRef, View, ViewSource, computed_params_type_name,
+    parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
+    parse_index_attribute,
 };
 pub use store::{
     ClientStateStore, IdempotencyStore, InMemoryStateStore, JsonFileStateStore,

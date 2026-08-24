@@ -192,8 +192,8 @@ type Tick {
   label String @computed
 }
 
-@stream
 procedure ticks(): Tick[]
+  @stream
 "#,
     )
     .expect_err("@stream over computed-bearing items should fail validation");
