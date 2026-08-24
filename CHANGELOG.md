@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### `just cbor-example-verify-ios` no longer fails when the live log capture drops the marker
+
+Marker detection depended on a **live** `log stream` subscription having been listening at the moment
+the app printed. It now falls back to `log show` — a retrospective query against the log store, which
+does not care whether anything was subscribed — before declaring a failure.
+
+This is the mechanism cratestack#704 points at. In job `97199199670` every one of the 13 captured
+lines maps to the last ~15% of a normal launch (`nw_activity` at line 899 of 1069 in a healthy
+capture, `BSBlockSentinel:FBSScene` at 911, `KeyboardArbiter` at 927): the tail of a launch with none
+of the ~900 lines before it, which is the shape of a subscription that started delivering late, not of
+an app that failed to start. A recovered marker still has to pass the payload check, and the run says
+loudly that the live capture missed it — a flake that stops failing without being counted is
+indistinguishable from one that was fixed.
+
+The `--console-pty` channel could never have covered this. Flutter's `print` does not reach fd 1: it
+goes through `Logger_PrintString` → `UIDartState::LogMessage` → `syslog(LOG_ALERT)` into the unified
+log, while the branch of that function named "Stdout" emits a VM-service event for DevTools. Verified
+on a real simulator with a probe printing the same string four ways — `print` reached the unified log
+only, `stdout.writeln`/`stderr.writeln` reached the pty only. The two "independent" channels were
+never independent for this marker.
+
+The query excludes the `log` process, which is not cosmetic: `log show` logs its own invocation
+including its command line, and the command line contains the marker, so the query matches itself.
+Without the exclusion, a run where the app printed nothing would recover that self-match, fail the
+payload check, and report a "genuine round-trip failure" about an app that never printed at all.
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted
