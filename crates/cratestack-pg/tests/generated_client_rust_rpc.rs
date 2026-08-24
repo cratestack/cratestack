@@ -401,11 +401,21 @@ async fn handle_widget_get(body: Bytes, captured: CapturedBodies) -> Response<Bo
         .expect("capture lock should not be poisoned")
         .push(raw);
 
+    widget_get_response(&body)
+}
+
+/// The actual `model.Widget.get` response logic, with no capture sink —
+/// shared by [`handle_widget_get`] (used where tests inspect what was
+/// sent) and [`spawn_batch_server`]'s per-op route (present only so a
+/// misrouted batch payload 404s visibly; nothing ever reads a capture
+/// there, so it gets none instead of a `CapturedBodies` built and
+/// immediately discarded).
+fn widget_get_response(body: &Bytes) -> Response<Body> {
     // The get op can receive either RpcPkInput (from ungated `get(&id)`)
     // or RpcGetInput (from `get_view(&id, &projection)`). Decoding as
     // RpcGetInput works for both: every field but `id` is `#[serde(default)]`.
     let input: cratestack::rpc::RpcGetInput<i64> =
-        CborCodec.decode(&body).expect("decode RpcGetInput");
+        CborCodec.decode(body).expect("decode RpcGetInput");
     assert_eq!(input.id, 1, "client should have sent id=1");
     cbor_response(StatusCode::OK, &widget(1, "Alpha"))
 }
@@ -497,19 +507,17 @@ async fn handle_proc_many_pings(headers: HeaderMap, body: Bytes) -> Response<Bod
 // -----------------------------------------------------------------------------
 
 async fn spawn_batch_server() -> (url::Url, tokio::task::JoinHandle<()>) {
-    // Per-op `/rpc/model.Widget.get` still needs a `CapturedBodies` sink to
-    // match `handle_widget_get`'s signature, even though the batch tests
-    // don't inspect it — the batch route (`handle_batch`) is what actually
-    // serves `.get(...)` calls queued through `client.batch()`, not this
-    // per-op route (see the comment below).
-    let unused_capture: CapturedBodies = Arc::new(Mutex::new(Vec::new()));
+    // Per-op `/rpc/model.Widget.get` route below is present so a misrouted
+    // batch payload still 404s visibly rather than mysteriously hanging —
+    // the batch route (`handle_batch`) is what actually serves `.get(...)`
+    // calls queued through `client.batch()`, not this per-op route. It uses
+    // the non-capturing `widget_get_response` directly: no test here
+    // inspects what was sent, so no `CapturedBodies` sink is built.
     let app = Router::new()
-        // Per-op routes — present so a misrouted batch payload still 404s
-        // visibly rather than mysteriously hanging.
         .route("/rpc/model.Widget.list", post(handle_widget_list))
         .route(
             "/rpc/model.Widget.get",
-            post(move |body: Bytes| handle_widget_get(body, unused_capture.clone())),
+            post(|body: Bytes| async move { widget_get_response(&body) }),
         )
         .route("/rpc/model.Widget.create", post(handle_widget_create))
         .route("/rpc/model.Widget.update", post(handle_widget_update))

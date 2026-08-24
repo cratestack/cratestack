@@ -327,6 +327,36 @@ async fn rpc_get_rejects_an_unknown_field_name() {
     assert!(!status.is_success(), "unknown field should be rejected");
 }
 
+// ----- Test 5b: reject includeFields without a matching include -----
+
+#[tokio::test]
+async fn rpc_get_rejects_include_fields_without_matching_include() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let router = test_router(pool);
+    let input = RpcGetInput {
+        id: 1i64,
+        include_fields: std::collections::BTreeMap::from([(
+            "album".to_owned(),
+            vec!["id".to_owned()],
+        )]),
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+
+    let (status, _value) = rpc_unary(router, "model.RpcProjPhoto.get", body).await;
+    assert!(
+        !status.is_success(),
+        "includeFields[album] without a matching include=album should be rejected"
+    );
+}
+
 // ----- Test 6: fields and computed_params compose -----
 
 #[tokio::test]

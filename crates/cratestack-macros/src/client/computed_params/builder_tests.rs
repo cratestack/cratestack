@@ -30,6 +30,11 @@ type ProxyParams {\n  width Int?\n}\n";
 const BARE_ONLY_SCHEMA: &str = "\
 model BarePhoto {\n  id Int @id\n  storageKey String\n  thumbnailUrl String @computed\n}\n";
 
+const TWO_PARAMETERIZED_FIELDS_SCHEMA: &str = "\
+model Video {\n  id Int @id\n  storageKey String\n  proxyUrl String @computed(params: ProxyParams?)\n  captionUrl String @computed(params: CaptionParams?)\n}\n\
+type ProxyParams {\n  width Int?\n}\n\
+type CaptionParams {\n  locale String?\n}\n";
+
 #[test]
 fn computed_params_struct_gets_a_builder() {
     let schema = schema(PARAMETERIZED_SCHEMA);
@@ -106,6 +111,44 @@ fn bare_only_model_still_emits_no_builder() {
     assert!(
         !rendered.contains("ComputedParamsBuilder"),
         "a model with only bare @computed fields must not emit ComputedParamsBuilder — {rendered}"
+    );
+}
+
+#[test]
+fn computed_params_builder_has_a_setter_and_field_per_parameterized_computed_field() {
+    let schema = schema(TWO_PARAMETERIZED_FIELDS_SCHEMA);
+    let rendered = render(&schema, TransportStyle::Rest, &BTreeSet::new());
+
+    assert!(
+        rendered.contains("struct VideoComputedParamsBuilder"),
+        "VideoComputedParams must have a builder struct — {rendered}"
+    );
+    // Struct fields: one per parameterized computed field.
+    assert!(
+        rendered.contains("pub proxyUrl") || rendered.contains("pub proxyUrl :"),
+        "VideoComputedParams struct must have a proxyUrl field — {rendered}"
+    );
+    assert!(
+        rendered.contains("pub captionUrl") || rendered.contains("pub captionUrl :"),
+        "VideoComputedParams struct must have a captionUrl field — {rendered}"
+    );
+    // Builder setters: one per parameterized computed field.
+    assert!(
+        rendered.contains("fn proxyUrl"),
+        "VideoComputedParamsBuilder must have a proxyUrl setter — {rendered}"
+    );
+    assert!(
+        rendered.contains("fn captionUrl"),
+        "VideoComputedParamsBuilder must have a captionUrl setter — {rendered}"
+    );
+    // Each setter takes its own params type.
+    assert!(
+        rendered.contains(":: core :: option :: Option < super :: types :: ProxyParams >"),
+        "the proxyUrl setter must take Option<super::types::ProxyParams> — {rendered}"
+    );
+    assert!(
+        rendered.contains(":: core :: option :: Option < super :: types :: CaptionParams >"),
+        "the captionUrl setter must take Option<super::types::CaptionParams> — {rendered}"
     );
 }
 

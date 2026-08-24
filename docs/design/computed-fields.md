@@ -291,10 +291,11 @@ Both transports:
   `get`/`list` on a gated model take an extra `computed_params:
   Option<&<Model>ComputedParams>` parameter; RPC's plain `get` is byte-identical
   and still decodes into the full model type, but every model gets a `get_view<P:
-  ProjectionDecoder>(id, projection)` twin that carries `computed_params`, matching
-  REST's `get_view`. RPC's `list` carries `computed_params` and selection alongside
-  pagination and filtering. An ungated model's `get`/`list` tokens are unchanged
-  from before this surface existed.
+  ProjectionDecoder>(id, projection)` twin that carries NO `computed_params`,
+  matching REST's `get_view` (which also can't send it). RPC's `list` carries
+  `computed_params` and selection alongside pagination and filtering. An
+  ungated model's `get`/`list` tokens are unchanged from before this surface
+  existed.
   
   **Schema-evolution caveat:** the Rust client's `computed_params` parameter is
   positional, so adding a model's first `@computed(params: <Type>?)` field changes

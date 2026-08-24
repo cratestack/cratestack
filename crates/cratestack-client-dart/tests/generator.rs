@@ -437,6 +437,51 @@ model Image {
     );
 }
 
+/// Two *distinct* parameterized `@computed` fields on the same model — the
+/// N>1 case the single-field fixture above can't exercise. Both fields must
+/// get their own `ImageComputedParamsBuilder` setter, typed with their own
+/// declared params type.
+#[test]
+fn computed_params_builder_gets_a_setter_per_parameterized_field() {
+    let schema = parse_schema(
+        r#"
+type ProxyParams {
+  width Int?
+}
+
+type CaptionParams {
+  locale String?
+}
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+  captionUrl String @computed(params: CaptionParams?)
+}
+"#,
+    )
+    .expect("two-parameterized-field model schema should parse");
+
+    let package = generate_package(&schema, &DartGeneratorConfig::default())
+        .expect("default template should render");
+
+    let models = package_file(&package, "lib/src/models.dart");
+
+    assert!(
+        models.contains("class ImageComputedParamsBuilder {"),
+        "ImageComputedParams must get the fluent builder: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParamsBuilder proxyUrl(ProxyParams? value) {"),
+        "the builder needs a proxyUrl setter: {models}"
+    );
+    assert!(
+        models.contains("ImageComputedParamsBuilder captionUrl(CaptionParams? value) {"),
+        "the builder needs a captionUrl setter: {models}"
+    );
+}
+
 /// Negative counterpart to
 /// [`model_computed_field_is_response_only_and_unlocks_computed_params_on_reads`]:
 /// a model whose only computed field is bare `@computed` (no params type)
