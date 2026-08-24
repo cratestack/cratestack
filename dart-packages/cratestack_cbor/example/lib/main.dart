@@ -23,25 +23,29 @@ import 'package:flutter/material.dart';
 /// single literal string regardless of OK/FAILED outcome.
 const resultMarkerPrefix = 'CRATESTACK_CBOR_EXAMPLE_RESULT:';
 
-// THE ROUND TRIP STARTS HERE, NOT IN A WIDGET (cratestack#704).
+// THE ROUND TRIP STARTS HERE, NOT IN A WIDGET.
 //
 // It used to hang off `late final _future = runRoundTrip()` on the page's
 // State, whose only read was inside `build()`. `late final` initializes
-// lazily, so the round trip — and therefore the marker `print` that every
-// headless verification greps for — did not run until the widget tree
-// built, i.e. until the platform gave the app a scene and Flutter rendered
-// a frame. That made a stdout assertion depend on the UI coming up.
+// lazily, so the marker `print` that every headless verification greps for
+// was a side effect of building a widget — the app had to construct its
+// tree successfully before the assertion everything downstream depends on
+// could even be attempted.
 //
-// On a contended iOS simulator that dependency is not hypothetical: job
-// 97199199670 on `main` launched the app (PID 27519), came through UIKit
-// startup in 1.8s, then emitted ZERO Flutter-attributed log lines for 94
-// seconds until the harness's poll budget expired. The app was alive and
-// silent. No timeout is long enough for that, because nothing was pending
-// — the work had never been started.
+// HOW MUCH LATER, precisely, because an earlier version of this comment got
+// it wrong and claimed the round trip waited for a rendered frame. It did
+// not. `runApp` calls `scheduleAttachRootWidget`, which is a bare
+// `Timer.run(() => attachRootWidget(...))`, and `attachToBuildOwner`
+// inflates the element tree synchronously inside `buildScope` — so `build()`
+// ran one event-loop turn after `runApp`, with no frame and no platform
+// scene required. See `packages/flutter/lib/src/widgets/binding.dart`.
 //
-// Starting it from `main()` makes the marker depend on the Dart entrypoint
-// running and nothing else, on every platform. The widget is handed the
-// already-running future and still renders exactly what it did before.
+// So this change buys one thing, not two: the marker no longer depends on
+// the widget tree building at all. It does NOT rescue a platform that never
+// starts the Dart isolate — on iOS the engine is launched from
+// `FlutterViewController.viewDidLoad`, upstream of any Dart code, in both
+// shapes. cratestack#704 remains open and unexplained; do not read this
+// comment as its fix.
 void main() {
   // The round trip runs before `runApp`, so the binding is not yet
   // initialized as a side effect of it. Neither backend needs a platform

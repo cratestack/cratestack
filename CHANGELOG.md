@@ -36,21 +36,22 @@ channels "so the marker is found if EITHER works" is corrected in place: that cl
 cratestack#704 failure read as "the app printed nothing" on the strength of the marker being absent
 from "both".
 
-### The `cratestack_cbor` example's verification marker no longer depends on the UI rendering
+### The `cratestack_cbor` example's verification marker no longer depends on a widget building
 
 Every headless verification of that example — `just cbor-example-verify` and its `-android`,
 `-windows`, `-macos`, `-ios` siblings — greps process or console output for a marker the app prints.
 That marker was produced by a round trip hanging off `late final _future = runRoundTrip()` on a
-`State` object whose only read was inside `build()`. `late final` initializes lazily, so nothing ran
-until the platform gave the app a scene and Flutter rendered a frame: a stdout assertion gated on the
-GUI coming up.
+`State` object whose only read was inside `build()`, making the assertion everything downstream
+depends on a side effect of the app constructing its widget tree.
 
-It now starts in `main()`, before `runApp`, and the widget is handed the already-running future. The
-marker depends on the Dart entrypoint running and nothing else.
+It now starts in `main()`, before `runApp`, and the widget is handed the already-running future.
 
-This is the leading explanation for cratestack#704's iOS flake, where the app launched, came through
-UIKit startup in 1.8s, and then emitted nothing for the harness's entire 90-second budget while
-staying alive and installed. It is not yet proven to be the cause — see that issue.
+Scope, stated precisely: `runApp` schedules `attachRootWidget` on a bare `Timer.run` and
+`attachToBuildOwner` inflates the tree synchronously, so the old code ran one event-loop turn after
+`runApp` — no frame and no platform scene required. This change removes a dependency on the widget
+tree building, **not** on rendering. It is not a fix for cratestack#704, which stays open: on iOS the
+engine is launched from `FlutterViewController.viewDidLoad`, upstream of any Dart code, in both the
+old and new shape.
 
 Also in `just cbor-example-verify-ios`: the failure path printed `--- device state ---` and `--- is
 the app installed? ---` twice (cratestack#705 added a second copy rather than moving the first), and a
@@ -67,10 +68,9 @@ tries when no built app bundle exists yet at that point in the recipe. The pre-e
 entirely by pointing straight at the vendored Linux blob, so the recipe now runs the test with that set
 rather than leaving it permanently unexercised.
 
-Investigated for cratestack#704 but out of scope for that issue: does not address the iOS flake itself
-(the underlying `flutter_test` binding builds the widget tree eagerly regardless of whether a frame is
-ever rendered — see that issue and cratestack#715 for why no test on this repo's Linux-only toolchain
-could be made to discriminate the iOS failure mode).
+Investigated for cratestack#704 but out of scope for that issue: it does not address the iOS flake.
+No test on this repo's Linux-only toolchain could be made to discriminate that failure mode — see
+cratestack#715 for the attempts and why they were discarded rather than shipped green.
 
 ## 0.8.10 (2026-08-23)
 

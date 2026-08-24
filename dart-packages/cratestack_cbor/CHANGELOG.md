@@ -1,12 +1,15 @@
 ## Unreleased
 
-- **The example app's round-trip marker no longer waits for a rendered
-  frame.** The round trip hung off a `late final` field on the page's
-  `State`, read only inside `build()`, so it did not start until the
-  platform gave the app a scene and Flutter rendered — making a stdout
-  assertion depend on the UI coming up. It now starts in `main()`, and the
-  widget is handed the already-running future. Example-only; no change to
-  the published `cratestack_cbor` API or to either codec backend.
+- **The example app's round-trip marker no longer depends on a widget
+  building.** The round trip hung off a `late final` field on the page's
+  `State`, read only inside `build()`, making the marker every headless
+  verification greps for a side effect of constructing the widget tree. It
+  now starts in `main()`, and the widget is handed the already-running
+  future. Scope, precisely: `runApp` schedules the root attach on a bare
+  `Timer.run` and inflates the tree synchronously, so the old code ran one
+  event-loop turn later — no frame or platform scene was ever required, and
+  this is not a fix for cratestack#704. Example-only; no change to the
+  published `cratestack_cbor` API or to either codec backend.
 
 - **The example's `flutter test` now runs as part of `just cbor-example-verify`.**
   It previously ran nowhere (not in CI, and it failed on a clean checkout with
