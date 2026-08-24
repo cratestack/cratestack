@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.8.12 (2026-08-24)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.8.11 (2026-08-24)
 
 - **`flutter_rust_bridge` moves from 2.12.0 to 2.13.0.** This is the pin that
