@@ -14,6 +14,8 @@
 // screenshot a GUI. See this package's README for the verification
 // transcripts, including the "corrupt the vendored artifact -> the app
 // fails, loudly" proof.
+import 'dart:async';
+
 import 'package:cratestack_cbor/cratestack_cbor.dart';
 import 'package:flutter/material.dart';
 
@@ -21,12 +23,49 @@ import 'package:flutter/material.dart';
 /// single literal string regardless of OK/FAILED outcome.
 const resultMarkerPrefix = 'CRATESTACK_CBOR_EXAMPLE_RESULT:';
 
+// THE ROUND TRIP STARTS HERE, NOT IN A WIDGET (cratestack#704).
+//
+// It used to hang off `late final _future = runRoundTrip()` on the page's
+// State, whose only read was inside `build()`. `late final` initializes
+// lazily, so the round trip — and therefore the marker `print` that every
+// headless verification greps for — did not run until the widget tree
+// built, i.e. until the platform gave the app a scene and Flutter rendered
+// a frame. That made a stdout assertion depend on the UI coming up.
+//
+// On a contended iOS simulator that dependency is not hypothetical: job
+// 97199199670 on `main` launched the app (PID 27519), came through UIKit
+// startup in 1.8s, then emitted ZERO Flutter-attributed log lines for 94
+// seconds until the harness's poll budget expired. The app was alive and
+// silent. No timeout is long enough for that, because nothing was pending
+// — the work had never been started.
+//
+// Starting it from `main()` makes the marker depend on the Dart entrypoint
+// running and nothing else, on every platform. The widget is handed the
+// already-running future and still renders exactly what it did before.
 void main() {
-  runApp(const CratestackCborExampleApp());
+  // The round trip runs before `runApp`, so the binding is not yet
+  // initialized as a side effect of it. Neither backend needs a platform
+  // channel today (native resolves a path via `dart:io`/`dart:isolate`,
+  // web injects a script tag), but doing pre-`runApp` async work without
+  // this is the documented way to get bitten the moment one of them does.
+  WidgetsFlutterBinding.ensureInitialized();
+  final roundTrip = runRoundTrip();
+  // Attach a listener NOW. `runRoundTrip` rethrows after printing the
+  // FAILED marker, and between here and the first `build()` the
+  // `FutureBuilder` below is not listening yet — an error landing in that
+  // window would be reported as an unhandled async error on top of the
+  // marker we actually want read. The FutureBuilder still surfaces it.
+  unawaited(
+      roundTrip.then<void>((_) {}, onError: (Object _, StackTrace __) {}));
+  runApp(CratestackCborExampleApp(roundTrip: roundTrip));
 }
 
 class CratestackCborExampleApp extends StatelessWidget {
-  const CratestackCborExampleApp({super.key});
+  const CratestackCborExampleApp({super.key, required this.roundTrip});
+
+  /// The round trip started by [main], already in flight. Passed in rather
+  /// than started on demand — see [main]'s comment for why that matters.
+  final Future<RoundTripResult> roundTrip;
 
   @override
   Widget build(BuildContext context) {
@@ -34,20 +73,16 @@ class CratestackCborExampleApp extends StatelessWidget {
       title: 'cratestack_cbor example',
       theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple)),
-      home: const RoundTripPage(),
+      home: RoundTripPage(roundTrip: roundTrip),
     );
   }
 }
 
-class RoundTripPage extends StatefulWidget {
-  const RoundTripPage({super.key});
+class RoundTripPage extends StatelessWidget {
+  const RoundTripPage({super.key, required this.roundTrip});
 
-  @override
-  State<RoundTripPage> createState() => _RoundTripPageState();
-}
-
-class _RoundTripPageState extends State<RoundTripPage> {
-  late final Future<RoundTripResult> _future = runRoundTrip();
+  /// See [CratestackCborExampleApp.roundTrip].
+  final Future<RoundTripResult> roundTrip;
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +90,7 @@ class _RoundTripPageState extends State<RoundTripPage> {
       appBar: AppBar(title: const Text('cratestack_cbor round-trip')),
       body: Center(
         child: FutureBuilder<RoundTripResult>(
-          future: _future,
+          future: roundTrip,
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
               return const CircularProgressIndicator();

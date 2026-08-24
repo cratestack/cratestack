@@ -2768,10 +2768,11 @@ cbor-example-verify-ios:
 	  # empty log and therefore told us nothing about which half broke.
 	  # Everything below is about narrowing that down on the NEXT run
 	  # rather than guessing again.
-	  echo "--- device state ---" >&2
-	  xcrun simctl list devices | grep -F "$udid" >&2 || true
-	  echo "--- is the app installed? ---" >&2
-	  xcrun simctl get_app_container "$udid" "$appId" >&2 2>&1 || echo "(get_app_container failed — app not installed)" >&2
+	  #
+	  # Device state and installation are reported ONCE, below, after the
+	  # harness block. cratestack#705 added a second copy of that pair
+	  # instead of moving it, so every failure printed both headings twice
+	  # — in the block whose entire purpose is being read quickly.
 	  # Say plainly that WE stopped it, and after how long. Without this the
 	  # reader sees "Child process terminated with signal 15" in the capture
 	  # and reasonably concludes the app crashed — it did not, we killed it.
@@ -2827,6 +2828,15 @@ cbor-example-verify-ios:
 	  rm -f "$ios_log" "$stream_log" "$store_log"
 	  exit 1
 	fi
+	# REPORT THE MARGIN ON GREEN RUNS TOO (cratestack#704 Test Plan step 1:
+	# "instrument a passing run to record the interval between simctl launch
+	# and the marker appearing"). cratestack#705 computed `poll_waited` but
+	# echoed it only in the failure branch, so a passing run still said
+	# nothing about how close it came — which is precisely the number needed
+	# to decide whether this timeout is mistuned. A green run that reports
+	# 2s of margin is a red run that has not happened yet, and silence about
+	# it reads as comfort.
+	echo "poll: marker arrived ${poll_waited}s into a ${poll_budget}-iteration budget ($(( poll_budget - poll_waited ))s of margin)"
 	# PASSING BECAUSE THE APP WAS RIGHT, NOT BECAUSE THE HARNESS GAVE UP.
 	# A recovered marker means the round trip succeeded and the live capture
 	# missed it. That is a green build and a real defect at the same time,

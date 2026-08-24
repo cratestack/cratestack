@@ -36,6 +36,27 @@ channels "so the marker is found if EITHER works" is corrected in place: that cl
 cratestack#704 failure read as "the app printed nothing" on the strength of the marker being absent
 from "both".
 
+### The `cratestack_cbor` example's verification marker no longer depends on the UI rendering
+
+Every headless verification of that example — `just cbor-example-verify` and its `-android`,
+`-windows`, `-macos`, `-ios` siblings — greps process or console output for a marker the app prints.
+That marker was produced by a round trip hanging off `late final _future = runRoundTrip()` on a
+`State` object whose only read was inside `build()`. `late final` initializes lazily, so nothing ran
+until the platform gave the app a scene and Flutter rendered a frame: a stdout assertion gated on the
+GUI coming up.
+
+It now starts in `main()`, before `runApp`, and the widget is handed the already-running future. The
+marker depends on the Dart entrypoint running and nothing else.
+
+This is the leading explanation for cratestack#704's iOS flake, where the app launched, came through
+UIKit startup in 1.8s, and then emitted nothing for the harness's entire 90-second budget while
+staying alive and installed. It is not yet proven to be the cause — see that issue.
+
+Also in `just cbor-example-verify-ios`: the failure path printed `--- device state ---` and `--- is
+the app installed? ---` twice (cratestack#705 added a second copy rather than moving the first), and a
+passing run now reports how much of the poll budget was left, which is what cratestack#704's Test Plan
+asked for and what a green run still could not tell you.
+
 ## 0.8.10 (2026-08-23)
 
 ### `just bump` no longer silently skips a Dart package that has drifted

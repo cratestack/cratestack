@@ -1,5 +1,13 @@
 ## Unreleased
 
+- **The example app's round-trip marker no longer waits for a rendered
+  frame.** The round trip hung off a `late final` field on the page's
+  `State`, read only inside `build()`, so it did not start until the
+  platform gave the app a scene and Flutter rendered — making a stdout
+  assertion depend on the UI coming up. It now starts in `main()`, and the
+  widget is handed the already-running future. Example-only; no change to
+  the published `cratestack_cbor` API or to either codec backend.
+
 - **Linux arm64 is now documented as blocked upstream rather than as pending
   work.** Flutter publishes no arm64 Linux SDK on any channel (verified
   against the release manifest: 732 entries, all x64, zero containing `arm`
