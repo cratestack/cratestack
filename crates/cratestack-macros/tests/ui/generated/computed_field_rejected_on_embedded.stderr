@@ -1,0 +1,5 @@
+error: schema declares @computed fields (Photo.proxyUrl), which are response-composition resolvers; include_embedded_schema! has no response boundary — remove the computed fields or consume this schema through include_server_schema!/include_client_schema!
+ --> tests/ui/generated/computed_field_rejected_on_embedded.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-161/computed_field_embedded_rejected.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

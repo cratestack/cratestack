@@ -1,0 +1,10 @@
+type Image {
+  storageKey String
+  thumbnailUrl String @computed
+  proxyUrl String @computed(params: ProxyParams?)
+}
+
+type ProxyParams {
+  width Int?
+  height Int?
+}

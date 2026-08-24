@@ -1,6 +1,6 @@
 //! Field-attribute predicates: `@id`, `@readonly`, `@server_only`,
-//! `@pii`, `@sensitive`, `@version`, `@default(...)`, plus the
-//! comparison-support check used by query-filter generation.
+//! `@pii`, `@sensitive`, `@version`, `@computed`, `@default(...)`, plus
+//! the comparison-support check used by query-filter generation.
 
 use cratestack_core::{Field, Model, TypeArity};
 
@@ -12,11 +12,16 @@ pub(crate) fn supports_comparison(field: &Field) -> bool {
         )
 }
 
-pub(crate) fn is_custom_field(field: &Field) -> bool {
+/// Field carries `@computed` (bare) or `@computed(params: <Type>?)`.
+/// `@computed` replaced the pre-existing `@custom` attribute — see
+/// `docs/design/computed-fields.md` — which was removed because nothing
+/// ever invoked its resolver trait; `@computed` fields are resolved at
+/// response-composition time.
+pub(crate) fn is_computed_field(field: &Field) -> bool {
     field
         .attributes
         .iter()
-        .any(|attribute| attribute.raw == "@custom")
+        .any(|attribute| attribute.raw == "@computed" || attribute.raw.starts_with("@computed("))
 }
 
 pub(crate) fn is_primary_key(field: &Field) -> bool {

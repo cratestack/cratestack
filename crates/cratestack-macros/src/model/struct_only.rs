@@ -11,7 +11,9 @@ use cratestack_core::Model;
 use quote::quote;
 
 use crate::builder::{generate_builder, model_builder_fields};
-use crate::shared::{doc_attrs, ident, is_primary_key, rust_type_tokens, scalar_model_fields};
+use crate::shared::{
+    doc_attrs, ident, is_primary_key, rust_type_tokens, scalar_model_fields, wire_model_fields,
+};
 
 mod field_definition;
 
@@ -78,6 +80,10 @@ pub(crate) fn generate_primary_key_accessor_impl(model: &Model) -> proc_macro2::
     }
 }
 
+/// Client-side model struct — unlike [`generate_model_struct_only`], this
+/// INCLUDES `@computed` fields: they are part of the wire response shape
+/// even though the server never stores or hand-constructs them (see
+/// `docs/design/computed-fields.md`).
 pub(crate) fn generate_client_model_struct(
     model: &Model,
     model_names: &BTreeSet<&str>,
@@ -85,13 +91,13 @@ pub(crate) fn generate_client_model_struct(
 ) -> proc_macro2::TokenStream {
     let model_ident = ident(&model.name);
     let docs = doc_attrs(&model.docs);
-    let scalar_fields = scalar_model_fields(model, model_names);
-    let fields = scalar_fields
+    let wire_fields = wire_model_fields(model, model_names);
+    let fields = wire_fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
     let builder = generate_builder(
         &model_ident,
-        &model_builder_fields(scalar_fields.iter().copied(), false, enum_names),
+        &model_builder_fields(wire_fields.iter().copied(), false, enum_names),
     );
 
     quote! {

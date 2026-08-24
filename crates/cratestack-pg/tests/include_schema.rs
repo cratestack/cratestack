@@ -1813,19 +1813,211 @@ async fn single_output_procedure_route_rejects_cbor_sequence_accept_header() {
     assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
 }
 
-mod custom_fields_schema {
-    use self::cratestack_schema::CustomFieldResolver;
+mod computed_fields_schema {
+    use self::cratestack_schema::ComputedFieldResolver;
     use super::*;
 
-    include_server_schema!("tests/fixtures/custom_fields.cstack", db = Postgres);
+    include_server_schema!("tests/fixtures/computed_fields.cstack", db = Postgres);
+
+    fn computed_fields_test_db() -> cratestack_schema::Cratestack {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
+            .expect("lazy pool should parse");
+        cratestack_schema::Cratestack::builder(pool).build()
+    }
 
     #[derive(Clone)]
-    struct TestCustomFieldResolver;
+    struct TestComputedFieldResolver;
 
-    impl cratestack_schema::CustomFieldResolver for TestCustomFieldResolver {
+    impl cratestack_schema::ComputedFieldResolver for TestComputedFieldResolver {
         fn resolve_image_thumbnail_url(
             &self,
+            _db: &cratestack_schema::Cratestack,
             source: &cratestack_schema::Image,
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
+        {
+            let storage_key = source.storageKey.clone();
+            async move { Ok(format!("https://imgproxy.example/{storage_key}")) }
+        }
+
+        fn resolve_image_proxy_url(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            source: &cratestack_schema::Image,
+            params: Option<&cratestack_schema::ProxyParams>,
+            _ctx: &CratestackContext,
+        ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
+        {
+            let storage_key = source.storageKey.clone();
+            let width = params.and_then(|p| p.width);
+            async move {
+                Ok(match width {
+                    Some(width) => format!("https://imgproxy.example/{storage_key}?w={width}"),
+                    None => format!("https://imgproxy.example/{storage_key}"),
+                })
+            }
+        }
+    }
+
+    // `Image`'s server-side struct only ever carries `storageKey` — both
+    // `thumbnailUrl` and `proxyUrl` are `@computed` and excluded from the
+    // struct (docs/design/computed-fields.md); this compiles only because
+    // that's the exact field set.
+    fn test_image() -> cratestack_schema::Image {
+        cratestack_schema::Image {
+            storageKey: "media/original.png".to_owned(),
+        }
+    }
+
+    #[test]
+    fn macro_generates_computed_field_metadata() {
+        assert_eq!(cratestack_schema::COMPUTED_FIELD_COUNT, 2);
+
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[0].owner, "Image");
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[0].field, "thumbnailUrl");
+        assert_eq!(
+            cratestack_schema::COMPUTED_FIELDS[0].resolver_method,
+            "resolve_image_thumbnail_url"
+        );
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[0].params_type, None);
+
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[1].owner, "Image");
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[1].field, "proxyUrl");
+        assert_eq!(
+            cratestack_schema::COMPUTED_FIELDS[1].resolver_method,
+            "resolve_image_proxy_url"
+        );
+        assert_eq!(
+            cratestack_schema::COMPUTED_FIELDS[1].params_type,
+            Some("ProxyParams")
+        );
+    }
+
+    #[tokio::test]
+    async fn generated_computed_field_resolver_trait_is_implementable() {
+        let db = computed_fields_test_db();
+        let resolver = TestComputedFieldResolver;
+        let image = test_image();
+
+        let resolved = resolver
+            .resolve_image_thumbnail_url(&db, &image, &CratestackContext::anonymous())
+            .await
+            .expect("computed field should resolve");
+
+        assert_eq!(resolved, "https://imgproxy.example/media/original.png");
+    }
+
+    #[tokio::test]
+    async fn generated_computed_field_resolver_params_change_the_result() {
+        let db = computed_fields_test_db();
+        let resolver = TestComputedFieldResolver;
+        let image = test_image();
+
+        let without_params = resolver
+            .resolve_image_proxy_url(&db, &image, None, &CratestackContext::anonymous())
+            .await
+            .expect("computed field should resolve without params");
+
+        let params = cratestack_schema::ProxyParams {
+            width: Some(800),
+            height: None,
+        };
+        let with_params = resolver
+            .resolve_image_proxy_url(&db, &image, Some(&params), &CratestackContext::anonymous())
+            .await
+            .expect("computed field should resolve with params");
+
+        assert_eq!(
+            without_params,
+            "https://imgproxy.example/media/original.png"
+        );
+        assert_eq!(
+            with_params,
+            "https://imgproxy.example/media/original.png?w=800"
+        );
+        assert_ne!(without_params, with_params);
+    }
+}
+
+mod model_computed_fields_schema {
+    use self::cratestack_schema::ComputedFieldResolver;
+    use super::*;
+
+    include_server_schema!("tests/fixtures/model_computed_field.cstack", db = Postgres);
+
+    fn model_computed_fields_test_db() -> cratestack_schema::Cratestack {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://cratestack:cratestack@localhost/cratestack")
+            .expect("lazy pool should parse");
+        cratestack_schema::Cratestack::builder(pool).build()
+    }
+
+    #[test]
+    fn macro_generates_model_computed_field_metadata() {
+        assert_eq!(cratestack_schema::COMPUTED_FIELD_COUNT, 1);
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[0].owner, "Photo");
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[0].field, "proxyUrl");
+        assert_eq!(
+            cratestack_schema::COMPUTED_FIELDS[0].resolver_method,
+            "resolve_photo_proxy_url"
+        );
+        assert_eq!(cratestack_schema::COMPUTED_FIELDS[0].params_type, None);
+    }
+
+    // Compiles only because `Photo`'s server-side struct has exactly these
+    // two fields: `proxyUrl` is `@computed`, so the model row type never
+    // stores or hand-constructs it (docs/design/computed-fields.md).
+    #[test]
+    fn model_struct_excludes_computed_field() {
+        let _photo = cratestack_schema::Photo {
+            id: 1,
+            storageKey: "media/original.png".to_owned(),
+        };
+    }
+
+    // Same proof for the CRUD input structs — a computed field has no
+    // create/update wire slot on the server side.
+    #[test]
+    fn create_and_update_inputs_exclude_computed_field() {
+        let _create = cratestack_schema::CreatePhotoInput {
+            id: 1,
+            storageKey: "media/original.png".to_owned(),
+        };
+        let _update = cratestack_schema::UpdatePhotoInput {
+            storageKey: Some("media/updated.png".to_owned()),
+        };
+    }
+
+    // `?fields=` selection accepts a computed field name (it's resolved at
+    // response-composition time, not fetched — see
+    // `model/descriptor/columns.rs`'s `allowed_fields` doc), but `columns`
+    // (real SQL `SELECT`able columns) and `allowed_sorts` (never a legal
+    // sort key) both exclude it.
+    #[test]
+    fn model_descriptor_allows_computed_field_selection_but_not_sql_or_sort() {
+        let descriptor = &cratestack_schema::models::PHOTO_MODEL;
+
+        assert_eq!(descriptor.allowed_fields, &["id", "storageKey", "proxyUrl"]);
+        assert_eq!(
+            descriptor
+                .columns
+                .iter()
+                .map(|c| c.rust_name)
+                .collect::<Vec<_>>(),
+            vec!["id", "storageKey"]
+        );
+        assert_eq!(descriptor.allowed_sorts, &["id", "storageKey"]);
+    }
+
+    #[derive(Clone)]
+    struct TestModelComputedFieldResolver;
+
+    impl cratestack_schema::ComputedFieldResolver for TestModelComputedFieldResolver {
+        fn resolve_photo_proxy_url(
+            &self,
+            _db: &cratestack_schema::Cratestack,
+            source: &cratestack_schema::Photo,
             _ctx: &CratestackContext,
         ) -> impl core::future::Future<Output = Result<String, cratestack::CratestackError>> + Send
         {
@@ -1834,32 +2026,35 @@ mod custom_fields_schema {
         }
     }
 
-    #[test]
-    fn macro_generates_custom_field_metadata() {
-        assert_eq!(cratestack_schema::CUSTOM_FIELD_COUNT, 1);
-        assert_eq!(cratestack_schema::CUSTOM_FIELDS[0].owner, "Image");
-        assert_eq!(cratestack_schema::CUSTOM_FIELDS[0].field, "thumbnailUrl");
-        assert_eq!(
-            cratestack_schema::CUSTOM_FIELDS[0].resolver_method,
-            "resolve_image_thumbnail_url"
-        );
-    }
-
     #[tokio::test]
-    async fn generated_custom_field_resolver_trait_is_implementable() {
-        let resolver = TestCustomFieldResolver;
-        let image = cratestack_schema::Image {
+    async fn generated_model_computed_field_resolver_trait_is_implementable() {
+        let db = model_computed_fields_test_db();
+        let resolver = TestModelComputedFieldResolver;
+        let photo = cratestack_schema::Photo {
+            id: 1,
             storageKey: "media/original.png".to_owned(),
-            thumbnailUrl: "placeholder".to_owned(),
         };
 
         let resolved = resolver
-            .resolve_image_thumbnail_url(&image, &CratestackContext::anonymous())
+            .resolve_photo_proxy_url(&db, &photo, &CratestackContext::anonymous())
             .await
-            .expect("custom field should resolve");
+            .expect("computed field should resolve");
 
         assert_eq!(resolved, "https://imgproxy.example/media/original.png");
     }
+}
+
+// The top-level schema (`blog.cstack`, included at file scope above) has no
+// `@computed` fields at all — it must generate `impl ComputedFieldResolver
+// for ()` (docs/design/computed-fields.md decision 4) so a schema that
+// doesn't use the feature can pass `()` as `router()`'s resolver argument
+// instead of hand-writing an empty impl.
+#[test]
+fn schema_without_computed_fields_lets_unit_type_be_the_resolver() {
+    fn assert_computed_field_resolver<T: cratestack_schema::ComputedFieldResolver>() {}
+
+    assert_computed_field_resolver::<()>();
+    assert_eq!(cratestack_schema::COMPUTED_FIELD_COUNT, 0);
 }
 
 #[tokio::test]

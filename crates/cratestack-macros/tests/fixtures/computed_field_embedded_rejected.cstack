@@ -1,0 +1,5 @@
+model Photo {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+}
