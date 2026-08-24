@@ -48,6 +48,14 @@ CHANGELOG_FILES_SOURCE="${CHANGELOG_FILES_SOURCE:-$PROJECT_ROOT/.ci/changelog-fi
 # shellcheck source=.ci/changelog-files.sh
 source "$CHANGELOG_FILES_SOURCE"
 
+# cratestack#713: re-declared (idempotently — `declare -A` on an already
+# associative variable does not clear it) so this script never dies with
+# "unbound variable" reading ${CHANGELOG_NOOP_SCOPES[...]} below when
+# CHANGELOG_FILES_SOURCE points at a fixture that doesn't declare this map
+# at all (every self-test fixture that predates cratestack#713, and any
+# future one that isn't exercising this feature specifically).
+declare -A CHANGELOG_NOOP_SCOPES
+
 # Overridable (absolute path) so tests can target a single sandbox copy
 # instead of the declared set above, while git further below still walks
 # this repo's real history. This is the degenerate single-file case: when
@@ -301,6 +309,49 @@ if [ -n "$(printf '%s' "$unreleased_body" | tr -d '[:space:]')" ]; then
   has_prose_to_carry=true
 fi
 
+# cratestack#713: decide up front whether the eventual fallback (used by
+# both branches below that have nothing to carry forward) should write the
+# established "no functional changes" wording instead of the marker+
+# commit-list placeholder. Computed even when there IS real prose to carry
+# (the branch immediately below) — hand-written prose always wins over this
+# auto-generated wording, so the result here is simply unused in that case,
+# not special-cased around it.
+#
+# The scope is deliberately NOT just this file's own package directory —
+# see changelog-files.sh's CHANGELOG_NOOP_SCOPES comment for the concrete,
+# shipped counter-example (v0.8.6) that a narrower scope got wrong. A file
+# not present in CHANGELOG_NOOP_SCOPES (the root CHANGELOG.md, always —
+# acceptance criterion: its path takes the conversion branch above, never
+# this fallback) leaves noop_scope empty and this block is a no-op.
+noop_section=""
+noop_scope="${CHANGELOG_NOOP_SCOPES[$CHANGELOG_FILE]:-}"
+if [ -n "$noop_scope" ]; then
+  # Deliberately unquoted: $noop_scope is a space-separated list of
+  # pathspecs (see changelog-files.sh) and word-splitting it into multiple
+  # `git log -- <path> <path> ...` arguments is the point.
+  # shellcheck disable=SC2086
+  noop_commit_count=$(git log "$range" --pretty=%s -- $noop_scope | wc -l | tr -d '[:space:]')
+  if [ "$noop_commit_count" -eq 0 ]; then
+    # `printf -v`, not `noop_section=$(printf ...)`: command substitution
+    # strips ALL trailing newlines (the same reason the '## Unreleased'
+    # conversion branch above streams via `sed`/`printf` instead of a
+    # captured variable) — this needs its OWN trailing blank line preserved
+    # so the section that follows (the next tail/heading) isn't glued
+    # directly under "...shares.", matching every other section boundary in
+    # this file (see e.g. v0.8.10's shipped entry: a blank line separates
+    # "...shares." from the next "## " heading).
+    printf -v noop_section '## %s (%s)\n\n- No functional changes. Version kept in lockstep with the CrateStack\n  workspace, which every published CrateStack artifact shares.\n\n' "$VERSION" "$today"
+  fi
+fi
+
+# Whichever fallback branch below fires, it writes this — the no-op
+# wording when the check above found zero non-bump commits anywhere in
+# scope, otherwise the standard marker+commit-list placeholder, unchanged.
+section_to_write="$new_section"
+if [ -n "$noop_section" ]; then
+  section_to_write="$noop_section"
+fi
+
 tmp_file=$(mktemp)
 trap "rm -f '$tmp_file'" EXIT
 
@@ -364,7 +415,7 @@ elif [ -n "$unreleased_line" ]; then
       head -n "$before_line" "$CHANGELOG_FILE"
     fi
     printf '## Unreleased\n\n'
-    printf '%s' "$new_section"
+    printf '%s' "$section_to_write"
     total_lines=$(wc -l < "$CHANGELOG_FILE")
     if [ "$after_line" -le "$total_lines" ]; then
       tail -n "+${after_line}" "$CHANGELOG_FILE"
@@ -372,7 +423,11 @@ elif [ -n "$unreleased_line" ]; then
   } > "$tmp_file"
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place, fresh empty '## Unreleased' re-seeded above it"
+  if [ -n "$noop_section" ]; then
+    echo "$CHANGELOG_FILE: no non-bump commits in the declared no-op scope since ${last_tag:-the start of history} — wrote the standard 'No functional changes' entry for $VERSION (cratestack#713), no manual edit needed — '## Unreleased' was present but empty, replaced in place, fresh empty '## Unreleased' re-seeded above it"
+  else
+    echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker) — '## Unreleased' was present but empty, replaced in place, fresh empty '## Unreleased' re-seeded above it"
+  fi
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
@@ -399,7 +454,7 @@ else
         head -n "$before_line" "$CHANGELOG_FILE"
       fi
       printf '## Unreleased\n\n'
-      printf '%s' "$new_section"
+      printf '%s' "$section_to_write"
       tail -n "+${insert_line}" "$CHANGELOG_FILE"
     } > "$tmp_file"
   else
@@ -408,12 +463,16 @@ else
     {
       cat "$CHANGELOG_FILE"
       printf '## Unreleased\n\n'
-      printf '%s' "$new_section"
+      printf '%s' "$section_to_write"
     } > "$tmp_file"
   fi
   mv "$tmp_file" "$CHANGELOG_FILE"
 
-  echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker), fresh empty '## Unreleased' re-seeded above it"
+  if [ -n "$noop_section" ]; then
+    echo "$CHANGELOG_FILE: no non-bump commits in the declared no-op scope since ${last_tag:-the start of history} — wrote the standard 'No functional changes' entry for $VERSION (cratestack#713), no manual edit needed, fresh empty '## Unreleased' re-seeded above it"
+  else
+    echo "$CHANGELOG_FILE: seeded with section for $VERSION (marker: $section_marker), fresh empty '## Unreleased' re-seeded above it"
+  fi
   echo "  Last tag: ${last_tag:-none}"
   echo "  Commit range: $range"
   echo "  Computed from commit: $head_sha"
