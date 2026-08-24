@@ -26,6 +26,27 @@ Four changes, none of which alters what the tests assert:
 - Every job in `ci.yml` gains `timeout-minutes: 45`. There were none, so a hang ran to GitHub's 6h
   default.
 
+### The iOS CBOR job's stream-readiness probe now emits with `logger`
+
+The probe added in cratestack#720 used `log show` as its emitter, on the reasoning that it writes its
+own invocation — command line included — into the unified log. That behaviour is real, and it is how
+cratestack#718 found its self-match; it just does not reach a live *subscription*. Job `97436514543`
+settled it: exactly **one** tag-bearing line reached the capture across eight emitter calls, and that
+one was the stream's own invocation record. The store gets those records; the stream does not.
+
+`logger` writes an ordinary log event as itself, which a live subscription carries. The stream's
+predicate is now `process == "Runner" OR (process == "logger" AND eventMessage CONTAINS <tag>)`, and
+that process constraint is also what closes the self-match trap structurally rather than by
+convention — `log stream`'s own record is process `log` and cannot match at all. The nonce stays, for
+a different reason than before: it keeps a probe from an earlier attach in the same booted simulator
+from being counted as this attach's proof.
+
+`logger`'s presence in the simulator runtime is assumed, not verified, so its absence is now reported
+explicitly rather than being indistinguishable from a dead subscription — the ambiguity that already
+cost two rounds here. Either way an unproven probe degrades to the same fixed wait and never fails the
+job.
+
+Part of cratestack#704, which stays open.
 
 ### flutter_rust_bridge moves to 2.13.0 (breaking for consumers on 2.12.0)
 
