@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+## 0.8.11 (2026-08-24)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.10..HEAD at 9185849a4f031bf3e64ba6bceb75ef662d9d21db -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- move flutter_rust_bridge to 2.13.0, document why the pin cannot be a range (#716) (#717)
+- @computed resolver-backed response-time fields with per-request params (replaces @custom) (#719)
+- computedParams over RPC + typed <Model>ComputedParams in all generated clients (#724)
+
+#### Fixes
+
+- start the round trip in main(), not on first build (#715)
+- emit the stream-readiness probe with logger (#722)
+- end the pre-launch wait early when the log stream proves live (#720)
+- recover the marker from the log store, not just the live stream (#718)
+- changelog-seed writes cratestack_cbor's no-op entry itself (#713) (#721)
+- assert the smoke script's status before joining the stub server (#726)
+
+#### Documentation
+
+- Linux arm64 is blocked upstream, not pending work (#711)
+
+#### Chores
+
+- drop the builder's dependency override, register its changelogs (#714)
+
+#### CI
+
+- watch for the iOS capture defect that no longer fails a build (#725)
+
 ## 0.8.10 (2026-08-23)
 
 First release carrying the annotation arguments the CrateStack Dart generator needs, and the first
