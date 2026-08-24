@@ -226,6 +226,96 @@ fn trailing_whitespace_only_stays_valid() {
     assert_eq!(schema.models[0].fields[0].attributes[0].raw, "@id");
 }
 
+/// A string literal argument containing an unbalanced `)` and `(` must not
+/// desynchronize paren-depth tracking — the attribute is correctly attached
+/// and must parse as-is, not be misdiagnosed as whitespace-separated with a
+/// "fix" that would delete a space *inside* the string value.
+#[test]
+fn default_string_literal_with_internal_parens_parses_attached() {
+    let schema = parse_schema(
+        r#"
+model Widget {
+  id Int @id
+  status String @default("a) (b")
+}
+"#,
+    )
+    .expect("a string literal's internal parens must not be mistaken for group delimiters");
+
+    assert_eq!(
+        schema.models[0].fields[1].attributes[0].raw,
+        r#"@default("a) (b")"#
+    );
+}
+
+/// Before the quote-aware fix, a string literal containing a single `(`
+/// left `depth` permanently unbalanced, which suppressed the whitespace
+/// split that separates attributes — silently swallowing every following
+/// attribute into the string-bearing one's raw text with no diagnostic.
+#[test]
+fn default_string_literal_does_not_swallow_the_next_attribute() {
+    let schema = parse_schema(
+        r#"
+model Widget {
+  id Int @id
+  status String @default("(") @unique
+}
+"#,
+    )
+    .expect("a string-bearing attribute must not swallow a following attribute");
+
+    let fields = &schema.models[0].fields[1];
+    assert_eq!(
+        fields.attributes.len(),
+        2,
+        "attributes: {:?}",
+        fields.attributes
+    );
+    assert_eq!(fields.attributes[0].raw, r#"@default("(")"#);
+    assert_eq!(fields.attributes[1].raw, "@unique");
+}
+
+/// A string literal containing internal whitespace, with no unbalanced
+/// parens, must keep parsing as one attached attribute.
+#[test]
+fn default_string_literal_with_internal_space_parses() {
+    let schema = parse_schema(
+        r#"
+model Widget {
+  id Int @id
+  label String @default("has space")
+}
+"#,
+    )
+    .expect("a string literal's internal whitespace must not trigger a split");
+
+    assert_eq!(
+        schema.models[0].fields[1].attributes[0].raw,
+        r#"@default("has space")"#
+    );
+}
+
+/// A spaced group following a string-bearing attribute must still be
+/// rejected as whitespace-separated — the quote-awareness fix must not
+/// weaken this diagnostic once the string has closed.
+#[test]
+fn spaced_group_after_string_bearing_attribute_is_still_rejected() {
+    let error = parse_schema(
+        r#"
+model Widget {
+  id Int @id
+  label String @default("x") (y)
+}
+"#,
+    )
+    .expect_err("a spaced group after a closed string literal must still be rejected");
+
+    assert!(
+        error.to_string().contains(r#"write `@default("x")(y)`"#),
+        "error: {error}"
+    );
+}
+
 /// The diagnostic must carry a real span pointing at the offending
 /// argument group, not just a bare message.
 #[test]

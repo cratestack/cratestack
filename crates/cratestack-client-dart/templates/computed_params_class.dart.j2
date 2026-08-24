@@ -5,11 +5,19 @@
 /// parameterized computed field; an unset field is omitted from
 /// `toWire()`'s output entirely rather than serialized as `null` (the
 /// server treats a missing key exactly like an explicit `None` for that
-/// resolver). Hand-rolled value-based `operator ==`/`hashCode` (not
-/// derived) because this class also serves as a `@riverpod` family
-/// provider argument on the `riverpod` preset -- riverpod's family cache
-/// dedupes by argument *value*, not identity, the same bug class
-/// `model_providers.dart.j2` documents for `CratestackListQuery`.
+/// resolver). Hand-rolled `operator ==`/`hashCode` (not derived) because
+/// this class also serves as a `@riverpod` family provider argument on the
+/// `riverpod` preset -- riverpod's family cache dedupes by argument
+/// *value*, not identity, the same bug class `model_providers.dart.j2`
+/// documents for `CratestackListQuery`. Equality is *wire*-equality --
+/// `jsonEncode(toWire())` compared as strings -- rather than a
+/// field-by-field comparison of the nested `params_type` values, because
+/// those nested classes (each a generated data class for a schema `type`)
+/// have no `==` of their own; comparing them field-by-field here would
+/// still fall back to identity on every nested field and reintroduce the
+/// exact bug this class exists to avoid. `toWire()` builds its map in
+/// fixed declaration order, so the JSON encoding is deterministic for two
+/// structurally-equal instances.
 class {{ model_api.computed_params_class_name }} {
   const {{ model_api.computed_params_class_name }}({
 {% for field in model_api.computed_params_fields %}
@@ -33,18 +41,11 @@ class {{ model_api.computed_params_class_name }} {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is {{ model_api.computed_params_class_name }}
-{% for field in model_api.computed_params_fields %}
-        && {{ field.identifier }} == other.{{ field.identifier }}
-{% endfor %}
-        ;
+        && jsonEncode(toWire()) == jsonEncode(other.toWire());
   }
 
   @override
-  int get hashCode => Object.hashAll(<Object?>[
-{% for field in model_api.computed_params_fields %}
-        {{ field.identifier }},
-{% endfor %}
-      ]);
+  int get hashCode => jsonEncode(toWire()).hashCode;
 }
 
 {% endif %}

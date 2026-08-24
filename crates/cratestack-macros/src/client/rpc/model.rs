@@ -10,6 +10,9 @@ use quote::quote;
 use crate::client::model_output_type_tokens;
 use crate::shared::{ident, is_paged_model, is_primary_key, rust_type_tokens};
 
+mod computed;
+use computed::{build_get_method, build_list_method};
+
 pub(super) fn generate_generated_rpc_model_client(
     model: &Model,
     bearing: &BTreeSet<String>,
@@ -49,102 +52,14 @@ pub(super) fn generate_generated_rpc_model_client(
     // before this feature existed, INCLUDING `get`'s `RpcPkInput { id }`
     // shape: only a gated model's `get` switches to `RpcGetInput`, since
     // that's the only case with a `computedParams` value to carry.
-    let list_method = match computed_params_ident {
-        Some(computed_params_ident) => quote! {
-            /// `POST /rpc/model.X.list` — server decodes `RpcListInput`,
-            /// synthesizes a query string, and runs the same list
-            /// handler as the REST binding. Output shape is unchanged:
-            /// paged models return `Page<Model>`, non-paged return
-            /// `Vec<Model>`.
-            ///
-            /// `computed_params`, when `Some`, overwrites `input`'s own
-            /// `computed_params` field with the typed struct's encoded
-            /// value — pass `None` to use whatever `input.computed_params`
-            /// already carries (e.g. a raw hand-built value).
-            ///
-            /// Returns a [`BatchableCall`](::cratestack::client_rust::BatchableCall)
-            /// — `.await` to fire immediately, or
-            /// `.queue(&mut batch)` to defer into a multiplexed
-            /// `/rpc/batch` round-trip.
-            pub fn list(
-                &self,
-                input: &::cratestack::rpc::RpcListInput,
-                computed_params: ::core::option::Option<&#computed_params_ident>,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #list_output_type> {
-                let mut input = input.clone();
-                if let Some(params) = computed_params {
-                    input.computed_params = params.to_query_value();
-                }
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #list_op,
-                    &input,
-                )
-            }
-        },
-        None => quote! {
-            /// `POST /rpc/model.X.list` — server decodes `RpcListInput`,
-            /// synthesizes a query string, and runs the same list
-            /// handler as the REST binding. Output shape is unchanged:
-            /// paged models return `Page<Model>`, non-paged return
-            /// `Vec<Model>`.
-            ///
-            /// Returns a [`BatchableCall`](::cratestack::client_rust::BatchableCall)
-            /// — `.await` to fire immediately, or
-            /// `.queue(&mut batch)` to defer into a multiplexed
-            /// `/rpc/batch` round-trip.
-            pub fn list(
-                &self,
-                input: &::cratestack::rpc::RpcListInput,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #list_output_type> {
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #list_op,
-                    input,
-                )
-            }
-        },
-    };
-    let get_method = match computed_params_ident {
-        Some(computed_params_ident) => quote! {
-            /// `POST /rpc/model.X.get` — wraps `id` and the typed
-            /// `computed_params`' encoded value in `RpcGetInput { id,
-            /// computed_params }` (not `RpcPkInput`, which `delete` also
-            /// decodes — see `RpcGetInput`'s own doc for why the two
-            /// aren't shared).
-            pub fn get(
-                &self,
-                id: &#primary_key_type,
-                computed_params: ::core::option::Option<&#computed_params_ident>,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
-                let input = ::cratestack::rpc::RpcGetInput {
-                    id: id.clone(),
-                    computed_params: computed_params.and_then(|params| params.to_query_value()),
-                };
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #get_op,
-                    &input,
-                )
-            }
-        },
-        None => quote! {
-            /// `POST /rpc/model.X.get` — wraps `id` in `RpcPkInput { id }`.
-            pub fn get(
-                &self,
-                id: &#primary_key_type,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
-                let input = ::cratestack::rpc::RpcPkInput {
-                    id: id.clone(),
-                };
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #get_op,
-                    &input,
-                )
-            }
-        },
-    };
+    // Builders live in `model/computed.rs` (200-LoC file convention).
+    let list_method = build_list_method(computed_params_ident, &list_op, &list_output_type);
+    let get_method = build_get_method(
+        computed_params_ident,
+        &get_op,
+        &primary_key_type,
+        &model_output_type,
+    );
 
     Ok(quote! {
         #[derive(Clone)]

@@ -218,8 +218,9 @@ On both input types `computed_params` (wire name `computedParams`) is a
    the same corruption head-on if carried as `Value`.
 2. `/rpc/batch` re-encodes each frame's opaque `input` back through
    `serde_json::Value` before re-dispatching it
-   (`cratestack-axum::rpc::batch::build_batch_block`) — a `String` field
-   survives that round trip byte-for-byte; a nested object wouldn't.
+   (`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`'s
+   `build_batch_block`) — a `String` field survives that round trip
+   byte-for-byte; a nested object wouldn't.
 
 Server-side, `cratestack-axum::rpc::synthesize_get_query` /
 `synthesize_list_query` turn the decoded `computed_params` string back into

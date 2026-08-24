@@ -72,7 +72,7 @@ export interface {{ update_input.name }} {
 
 {% if model.computed_params_interface %}
 /** Extends {@link CratestackRpcCallOptions} with the typed `computedParams`
- *  escape hatch for {@link {{ get_fn }} } (`docs/design/computed-fields.md`)
+ *  option for {@link {{ get_fn }} } (`docs/design/computed-fields.md`)
  *  — {{ model.name }} declares at least one parameterized
  *  `@computed(params: <Type>?)` field, so (unlike a model with none) it
  *  gets this option, rather than the bare `CratestackRpcCallOptions`. */
@@ -101,7 +101,7 @@ export async function {{ get_fn }}(
 ): Promise<{{ model_interface.name }}> {
   return runtime.call<Record<string, unknown>, unknown>(
     "model.{{ model.name }}.get",
-    options.computedParams !== undefined
+    options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0
       ? { id, computedParams: JSON.stringify(options.computedParams) }
       : { id },
     options,

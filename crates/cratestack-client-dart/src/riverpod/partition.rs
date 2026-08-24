@@ -103,8 +103,9 @@ pub(crate) fn partition_types(schema: &Schema) -> TypePartition {
     let mut reachable: BTreeMap<Owner, BTreeSet<String>> = BTreeMap::new();
 
     for model in &schema.models {
-        // Stage 3 (`docs/design/computed-fields.md`'s "Downstream"
-        // section): a `@computed(params: <Type>?)` field's `<Type>` is
+        // The typed client computedParams surface — see
+        // `docs/design/computed-fields.md`'s "Downstream" section: a
+        // `@computed(params: <Type>?)` field's `<Type>` is
         // never a field's own declared type (`field.ty` stays the
         // computed field's *return* type, e.g. `String`), so it would
         // otherwise never enter this model's reachable set — leaving the

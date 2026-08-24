@@ -50,8 +50,9 @@ fn fetch_query_type_no_longer_json_encodes_where_or_filters() {
     );
 }
 
-/// `toSearchQuery`'s typed `computedParams` surface (`docs/design/computed-fields.md`
-/// stage 4) round trips as a single URL-encoded JSON-object query
+/// `toSearchQuery`'s typed `computedParams` surface — see
+/// `docs/design/computed-fields.md`'s "Downstream" section — round trips
+/// as a single URL-encoded JSON-object query
 /// parameter — the same `appendQueryValue` object-value branch `where`/
 /// `or`/`filters` deliberately do NOT use (see this file's own header
 /// comment for why those are flat DSL strings instead), but which IS the

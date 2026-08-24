@@ -183,8 +183,10 @@ as `0xf6` simple-null, `serde_json::Value` encodes it as the CBOR empty-array
 marker) — generated params types are bags of optionals, so they'd hit this
 head-on. `/rpc/batch` additionally re-encodes each frame's opaque `input`
 through `serde_json::Value` before re-dispatching it
-(`cratestack-axum::rpc::batch`); a `String` field survives that round trip
-verbatim, a nested object wouldn't.
+(`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`'s
+`build_batch_block` — the *input* re-encode site, not response-frame
+handling); a `String` field survives that round trip verbatim, a nested
+object wouldn't.
 
 Both transports:
 

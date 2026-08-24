@@ -807,14 +807,15 @@ fn riverpod_procedures_dart_keeps_gated_pieces_when_schema_has_procedures_under_
     );
 }
 
-/// Stage 3 of `docs/design/computed-fields.md`'s "Downstream" section:
-/// the riverpod convenience `@riverpod` get/list providers (issue #302,
+/// The typed client computedParams surface — see
+/// `docs/design/computed-fields.md`'s "Downstream" section: the riverpod
+/// convenience `@riverpod` get/list providers (issue #302,
 /// `model_providers.dart.j2`) had NO `computedParams` surface at all in
 /// v1 — this closes that gap under REST transport. The generated
-/// `ImageComputedParams` class must carry hand-rolled value equality
-/// (`operator ==`/`hashCode`), since it doubles as this family
-/// provider's own argument and riverpod's family cache dedupes by
-/// argument *value*, not identity.
+/// `ImageComputedParams` class must carry hand-rolled wire equality
+/// (`operator ==`/`hashCode` comparing `jsonEncode(toWire())`), since it
+/// doubles as this family provider's own argument and riverpod's family
+/// cache dedupes by argument *value*, not identity.
 #[test]
 fn riverpod_rest_convenience_providers_expose_typed_computed_params() {
     let package = generate_from_source(
@@ -835,6 +836,10 @@ model Image {
 
     let image = package_file(&package, "lib/src/models/image.dart");
 
+    assert!(
+        image.contains("import 'dart:convert';"),
+        "image.dart should import dart:convert for ImageComputedParams's wire-equality:\n{image}"
+    );
     assert!(
         image.contains("class ImageComputedParams {"),
         "image.dart should carry the typed ImageComputedParams class:\n{image}"
@@ -881,6 +886,11 @@ model Image {
 
     let image = package_file(&package, "lib/src/models/image.dart");
 
+    assert!(
+        image.contains("import 'dart:convert';"),
+        "image.dart should import dart:convert for ImageComputedParams's wire-equality under \
+         RPC transport too:\n{image}"
+    );
     assert!(
         image.contains("class ImageComputedParams {"),
         "image.dart should carry the typed ImageComputedParams class under RPC transport too:\n{image}"

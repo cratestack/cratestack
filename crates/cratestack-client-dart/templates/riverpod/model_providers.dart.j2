@@ -23,8 +23,10 @@ Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(
   CratestackFetchQuery? query,
 {% if model_api.has_parameterized_computed_fields %}
   // `{{ model_api.computed_params_class_name }}` (`docs/design/computed-fields.md`)
-  // is exactly the value-equal class this family provider's caching
-  // needs — see this file's own module doc above.
+  // is exactly the wire-equal class this family provider's caching
+  // needs (`computed_params_class.dart.j2`: `operator ==`/`hashCode`
+  // compare `jsonEncode(toWire())`, not field identity) — see this
+  // file's own module doc above.
   {{ model_api.computed_params_class_name }}? computedParams,
 {% endif %}
 }) {
@@ -60,8 +62,10 @@ Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref
 @riverpod
 Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {{ model_api.primary_key_type }} id, {
   // `{{ model_api.computed_params_class_name }}` (`docs/design/computed-fields.md`)
-  // is exactly the value-equal class this family provider's caching
-  // needs — see this file's own module doc above.
+  // is exactly the wire-equal class this family provider's caching
+  // needs (`computed_params_class.dart.j2`: `operator ==`/`hashCode`
+  // compare `jsonEncode(toWire())`, not field identity) — see this
+  // file's own module doc above.
   {{ model_api.computed_params_class_name }}? computedParams,
 }) {
   return ref.watch({{ accessor.provider_name }}).get(
@@ -90,9 +94,9 @@ Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {
 {% if model_api.has_parameterized_computed_fields %}
 // `computedParams` (when offered) is the same
 // `{{ model_api.computed_params_class_name }}` class REST uses — it
-// already carries hand-rolled value equality
-// (`computed_params_class.dart.j2`), so it needs no `IMap`-style
-// wrapper of its own.
+// already carries hand-rolled wire equality
+// (`computed_params_class.dart.j2`: `jsonEncode(toWire())` comparison),
+// so it needs no `IMap`-style wrapper of its own.
 {% endif %}
 @riverpod
 Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref ref, {

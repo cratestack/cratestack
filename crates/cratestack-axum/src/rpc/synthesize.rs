@@ -58,7 +58,7 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
 /// key it doesn't recognize
 /// (`crates/cratestack-macros/src/axum/shared_support.rs`), and `get`'s
 /// RPC input (`RpcGetInput`) carries no other query-shaped fields (no
-/// `fields`/`include` — see `docs/design/rpc-transport.md` §3.1 for why
+/// `fields`/`include` — see `docs/design/rpc-transport.md` §3.1a for why
 /// that's a deliberate scope limit, not an oversight).
 pub fn synthesize_get_query(computed_params: Option<&str>) -> Option<String> {
     let computed_params = computed_params?;

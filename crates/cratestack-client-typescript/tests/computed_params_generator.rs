@@ -1,8 +1,9 @@
 //! Static (CI-safe, no external tooling) coverage for the typed,
-//! per-model-gated `computedParams` surface (`docs/design/computed-fields.md`
-//! stage 4) — `tests/computed_params_typed_gate_tsc.rs` is the real-`tsc`
+//! per-model-gated `computedParams` surface — see
+//! `docs/design/computed-fields.md`'s "Downstream" section —
+//! `tests/computed_params_typed_gate_tsc.rs` is the real-`tsc`
 //! proof the gate is actually enforced; this file asserts the generated
-//! source itself has the right shape, and (the cache-key fix this stage
+//! source itself has the right shape, and (the cache-key fix this surface
 //! also lands) that the RPC `swr` preset's `get` cache key incorporates
 //! `computedParams`, not just `id`.
 //!
@@ -78,6 +79,19 @@ fn rpc_gated_model_gets_typed_list_query_and_get_options() {
         client.contains("get(id: number, options: ImageApiGetOptions = {})"),
         "client.ts's ImageApi.get must accept ImageApiGetOptions: {client}"
     );
+    // An explicit-but-empty `computedParams: {}` must not be forwarded as
+    // `computedParams: "{}"` on the wire — matching `toRpcListInput`'s own
+    // `Object.keys(...).length > 0` guard
+    // (`tests/rpc_list_query_wire_format.rs` proves that one at runtime;
+    // `get`'s inline ternary has no shared helper to run through Node
+    // against, so this pins the same guard textually).
+    assert!(
+        client.contains(
+            "options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0"
+        ),
+        "client.ts's ImageApi.get must omit computedParams from the frame when it has no own \
+         keys, not just when it's undefined: {client}"
+    );
 
     // Widget (ungated) keeps the original, non-generic shape.
     assert!(
@@ -121,6 +135,26 @@ fn rpc_swr_get_cache_key_incorporates_computed_params_on_a_gated_model() {
             "get: (id: number | null | undefined) =>\n        id == null ? null : ([\"model.Widget.get\", id] as const),"
         ),
         "swr-keys.ts's Widget.get key must stay id-only (ungated): {keys}"
+    );
+}
+
+/// RPC `swr` preset counterpart to
+/// [`rpc_gated_model_gets_typed_list_query_and_get_options`]'s empty-params
+/// assertion: `models-rpc.ts.j2`'s `get` re-implements the same inline
+/// ternary as `rpc-client.ts.j2` (not routed through the shared
+/// `toRpcListInput`, unlike `list`), so it needs the identical
+/// `Object.keys(...).length > 0` guard pinned separately.
+#[test]
+fn rpc_swr_gated_model_get_omits_empty_computed_params_from_the_frame() {
+    let package = generate_for("computed_params_rpc", true);
+    let image_module = file(&package, "src/swr/models/image.ts");
+
+    assert!(
+        image_module.contains(
+            "options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0"
+        ),
+        "src/swr/models/image.ts's getImage must omit computedParams from the frame when it has \
+         no own keys, not just when it's undefined: {image_module}"
     );
 }
 

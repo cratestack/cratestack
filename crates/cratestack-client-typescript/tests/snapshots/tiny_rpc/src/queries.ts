@@ -115,7 +115,7 @@ export function toRpcListInput<TComputedParams = never>(
   if (query.filters?.length) {
     input.filters = query.filters;
   }
-  if (query.computedParams !== undefined) {
+  if (query.computedParams && Object.keys(query.computedParams as Record<string, unknown>).length > 0) {
     input.computedParams = JSON.stringify(query.computedParams);
   }
 

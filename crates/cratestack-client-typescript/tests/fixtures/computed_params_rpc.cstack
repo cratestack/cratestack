@@ -1,6 +1,6 @@
 // Same surface as computed_params.cstack, but under `transport rpc` — the
-// RPC counterpart of the typed `computedParams` per-model gate
-// (docs/design/computed-fields.md stage 4).
+// RPC counterpart of the typed `computedParams` per-model gate (see
+// docs/design/computed-fields.md's "Downstream" section).
 
 transport rpc
 

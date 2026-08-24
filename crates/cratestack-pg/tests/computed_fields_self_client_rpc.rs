@@ -116,6 +116,56 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
             },
         })
     }
+
+    async fn list_self_client_rpc_cards(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CratestackContext,
+        args: cratestack_schema::procedures::list_self_client_rpc_cards::Args,
+        _authorized: cratestack_schema::procedures::list_self_client_rpc_cards::Authorized,
+    ) -> Result<
+        cratestack_schema::procedures::list_self_client_rpc_cards::Output,
+        cratestack::CratestackError,
+    > {
+        Ok(vec![
+            cratestack_schema::SelfClientRpcCard {
+                cover: cratestack_schema::SelfClientRpcImage {
+                    storageKey: args.storageKey.clone(),
+                },
+            },
+            cratestack_schema::SelfClientRpcCard {
+                cover: cratestack_schema::SelfClientRpcImage {
+                    storageKey: format!("{}-2", args.storageKey),
+                },
+            },
+        ])
+    }
+
+    async fn page_self_client_rpc_cards(
+        &self,
+        _db: &cratestack_schema::Cratestack,
+        _ctx: &CratestackContext,
+        args: cratestack_schema::procedures::page_self_client_rpc_cards::Args,
+        _authorized: cratestack_schema::procedures::page_self_client_rpc_cards::Authorized,
+    ) -> Result<
+        cratestack_schema::procedures::page_self_client_rpc_cards::Output,
+        cratestack::CratestackError,
+    > {
+        Ok(cratestack::Page::new(
+            vec![cratestack_schema::SelfClientRpcCard {
+                cover: cratestack_schema::SelfClientRpcImage {
+                    storageKey: args.storageKey,
+                },
+            }],
+            cratestack::PageInfo {
+                limit: Some(1),
+                offset: Some(0),
+                has_next_page: false,
+                has_previous_page: false,
+            },
+        )
+        .with_total_count(Some(1)))
+    }
 }
 
 async fn spawn_server(pool: cratestack::sqlx::PgPool) -> (url::Url, tokio::task::JoinHandle<()>) {
@@ -287,4 +337,78 @@ async fn rpc_self_client_procedure_output_includes_the_nested_computed_field() {
 
     assert_eq!(card.cover.storageKey, "media/rpc-two.png");
     assert_eq!(card.cover.badge, "badge-for-media/rpc-two.png");
+}
+
+/// The `List{owner}` self-client procedure-client branch
+/// (`crates/cratestack-macros/src/client/rpc/procedure.rs`'s
+/// `RpcStream<Item>` early return) had no fixture coverage at all before
+/// this test — proves a bare `T[]`-returning procedure's nested computed
+/// field is resolved on every streamed item, decoded through
+/// `super::wire::SelfClientRpcCard`.
+#[tokio::test]
+async fn rpc_self_client_procedure_list_output_includes_the_nested_computed_field() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let mut stream = client
+        .procedures()
+        .list_self_client_rpc_cards(
+            &cratestack_schema::procedures::list_self_client_rpc_cards::Args {
+                storageKey: "media/rpc-list.png".to_owned(),
+            },
+        )
+        .await
+        .expect("streaming procedure call should open the stream");
+
+    let mut cards = Vec::new();
+    while let Some(item) = stream.recv().await {
+        cards.push(item.expect("per-item should not error"));
+    }
+
+    assert_eq!(cards.len(), 2);
+    assert_eq!(cards[0].cover.storageKey, "media/rpc-list.png");
+    assert_eq!(cards[0].cover.badge, "badge-for-media/rpc-list.png");
+    assert_eq!(cards[1].cover.storageKey, "media/rpc-list.png-2");
+    assert_eq!(cards[1].cover.badge, "badge-for-media/rpc-list.png-2");
+}
+
+/// The `Page` self-client procedure-client branch
+/// (`crates/cratestack-macros/src/client/rpc/procedure.rs`'s
+/// `::cratestack::Page<super::wire::#owner_ident>` composition) had no
+/// fixture coverage at all before this test — proves a
+/// `Page<T>`-returning procedure's nested computed field is resolved on
+/// every item, with the envelope (`items`/`totalCount`/`pageInfo`) intact.
+#[tokio::test]
+async fn rpc_self_client_procedure_page_output_includes_the_nested_computed_field() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let (base_url, _server) = spawn_server(test_pg.pool.clone()).await;
+    let runtime = CratestackClient::new(ClientConfig::new(base_url), CborCodec);
+    let client = cratestack_schema::client::Client::new(runtime);
+
+    let page = client
+        .procedures()
+        .page_self_client_rpc_cards(
+            &cratestack_schema::procedures::page_self_client_rpc_cards::Args {
+                storageKey: "media/rpc-page.png".to_owned(),
+            },
+        )
+        .await
+        .expect("procedure call should succeed");
+
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].cover.storageKey, "media/rpc-page.png");
+    assert_eq!(page.items[0].cover.badge, "badge-for-media/rpc-page.png");
+    assert_eq!(page.total_count, Some(1));
 }

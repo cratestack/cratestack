@@ -1,5 +1,5 @@
-// Exercises the typed `computedParams` surface (docs/design/computed-fields.md
-// stage 4): `Image` declares a parameterized `@computed(params: ProxyParams?)`
+// Exercises the typed `computedParams` surface (docs/design/computed-fields.md's
+// "Downstream" section): `Image` declares a parameterized `@computed(params: ProxyParams?)`
 // field, so it's gated — `get`/`list` accept a typed `computedParams` option.
 // `Widget` declares none, so it stays ungated (the `never` default) — one
 // schema covers both branches of the per-model type-system gate in a single

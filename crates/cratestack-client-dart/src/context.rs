@@ -148,7 +148,10 @@ pub(crate) fn build_template_context(
         .map(|model| build_model_accessor(model, &provider_prefix))
         .collect();
 
-    let model_apis = schema.models.iter().map(build_model_api).collect();
+    let model_apis: Vec<_> = schema.models.iter().map(build_model_api).collect();
+    let has_computed_params_class = model_apis
+        .iter()
+        .any(|model_api| model_api.computed_params_class_name.is_some());
     let procedures = schema
         .procedures
         .iter()
@@ -225,5 +228,6 @@ pub(crate) fn build_template_context(
         is_riverpod_preset: config.preset == DartPreset::Riverpod,
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,
+        has_computed_params_class,
     })
 }

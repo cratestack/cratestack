@@ -281,6 +281,15 @@ model Image {
     let models = package_file(&package, "lib/src/models.dart");
     let apis = package_file(&package, "lib/src/apis.dart");
 
+    // `ImageComputedParams.operator==`/`hashCode` are wire-equality —
+    // `jsonEncode(toWire())` — which needs `dart:convert` imported. Only
+    // gated in when at least one model actually has a computed-params
+    // class, so this schema (which does) must carry it.
+    assert!(
+        models.contains("import 'dart:convert';"),
+        "models.dart should import dart:convert for ImageComputedParams's wire-equality: {models}"
+    );
+
     // Response class: computed field present exactly like any other
     // field (`ProjectionModel` kind forces every field nullable).
     assert!(models.contains("class Image {"), "models.dart:\n{models}");
@@ -344,11 +353,12 @@ model Image {
     );
 
     // `get`/`list` both accept the typed `ImageComputedParams?` parameter
-    // (Stage 3 of `docs/design/computed-fields.md`'s "Downstream"
-    // section — replaces the v1 untyped `Map<String, Object?>?` escape
-    // hatch) and fold its `.toWire()` into the request's query
-    // parameters via the shared runtime helper — see
-    // `rest-runtime.dart.j2`'s `cratestackWithComputedParams`.
+    // (the typed client computedParams surface — see
+    // `docs/design/computed-fields.md`'s "Downstream" section —
+    // replaces the v1 untyped `Map<String, Object?>?` escape hatch) and
+    // fold its `.toWire()` into the request's query parameters via the
+    // shared runtime helper — see `rest-runtime.dart.j2`'s
+    // `cratestackWithComputedParams`.
     assert!(
         apis.contains("ImageComputedParams? computedParams,"),
         "ImageApi.get/list must accept a typed ImageComputedParams: {apis}"
@@ -400,8 +410,9 @@ model Image {
         "ImageComputedParams must carry a value-based operator==: {computed_params_class}"
     );
     assert!(
-        computed_params_class.contains("proxyUrl == other.proxyUrl"),
-        "ImageComputedParams.operator== must compare proxyUrl by value: {computed_params_class}"
+        computed_params_class.contains("jsonEncode(toWire()) == jsonEncode(other.toWire())"),
+        "ImageComputedParams.operator== must compare by wire equality (jsonEncode(toWire())), \
+         not field-by-field identity on nested params values: {computed_params_class}"
     );
     assert!(
         computed_params_class.contains("int get hashCode"),
@@ -433,18 +444,25 @@ model Image {
         .expect("default template should render");
 
     let apis = package_file(&package, "lib/src/apis.dart");
+    let models = package_file(&package, "lib/src/models.dart");
 
     assert!(
         !apis.contains("computedParams"),
         "ImageApi.get/list must not accept computedParams for a model with only bare \
          `@computed` fields: {apis}"
     );
+    assert!(
+        !models.contains("import 'dart:convert';"),
+        "models.dart must not import dart:convert when no model has a computed-params class \
+         (an unused import fails `flutter analyze --fatal-warnings`): {models}"
+    );
 }
 
 /// RPC-transport counterpart to
 /// [`model_computed_field_is_response_only_and_unlocks_computed_params_on_reads`]
-/// — Stage 3 of `docs/design/computed-fields.md`'s "Downstream" section
-/// closes the v1 gap where RPC mode had no `computedParams` surface at
+/// — the typed client computedParams surface (see
+/// `docs/design/computed-fields.md`'s "Downstream" section) closes the
+/// v1 gap where RPC mode had no `computedParams` surface at
 /// all. `get`/`list` both accept the gated typed
 /// `ImageComputedParams?` parameter and fold its `.toWire()` output
 /// into the RPC input frame's `computedParams` key as JSON text via the

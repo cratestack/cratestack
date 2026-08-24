@@ -1,5 +1,5 @@
 //! Real-compiler proof for the typed, per-model-gated `computedParams`
-//! surface (`docs/design/computed-fields.md` stage 4).
+//! surface — see `docs/design/computed-fields.md`'s "Downstream" section.
 //!
 //! A string assertion on the generated source (see `tests/generator.rs`'s
 //! `model_computed_field_is_response_only_and_computed_params_is_available_on_reads`)

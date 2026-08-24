@@ -113,8 +113,9 @@ pub(crate) fn build_model_accessor(model: &Model, provider_prefix: &str) -> Mode
 pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let primary_key = primary_key_field(model).expect("validated schemas always have an id field");
     let paged = is_paged_model(model);
-    // Stage 3 (`docs/design/computed-fields.md`'s "Downstream" section):
-    // the typed `{Model}ComputedParams` class replaces the v1 untyped
+    // The typed client computedParams surface — see
+    // `docs/design/computed-fields.md`'s "Downstream" section: the typed
+    // `{Model}ComputedParams` class replaces the v1 untyped
     // `Map<String, Object?>?` escape hatch. `computed_params_class_name`
     // and `computed_params_fields` are always in lockstep with each
     // other and with `has_parameterized_computed_fields` below — all

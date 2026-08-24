@@ -42,3 +42,17 @@ type SelfClientRpcCard {
 
 procedure getSelfClientRpcCard(storageKey: String): SelfClientRpcCard
   @allow(auth() != null)
+
+// `List{owner}`/`Page` self-client procedure-client branches
+// (`crates/cratestack-macros/src/client/rpc/procedure.rs`) had no fixture
+// coverage at all before this: `listSelfClientRpcCards` exercises the
+// `RpcStream<Item>` streaming branch, `pageSelfClientRpcCards` the
+// `::cratestack::Page<super::wire::#owner_ident>` branch — both over the
+// same computed-bearing `SelfClientRpcCard` (nested through
+// `SelfClientRpcImage.badge`) `getSelfClientRpcCard` above already proves
+// for the unary case.
+procedure listSelfClientRpcCards(storageKey: String): SelfClientRpcCard[]
+  @allow(auth() != null)
+
+procedure pageSelfClientRpcCards(storageKey: String): Page<SelfClientRpcCard>
+  @allow(auth() != null)

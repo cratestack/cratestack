@@ -36,7 +36,7 @@ unmodified, so `delete` never gains a silently-ignored field). Both are additive
 `/rpc/batch` frames carry per-frame `computedParams` inside each frame's `input`, and in-frame params
 are signed by construction (the frame bytes are the canonical request body). RPC `get` has no
 `fields`/`include` slot (an intentional scope limit, not a gap — see `docs/design/rpc-transport.md`
-§3.1): it always decodes into the full model type, which can't represent a partial payload.
+§3.1a): it always decodes into the full model type, which can't represent a partial payload.
 
 **BREAKING:** the generated `router()`, `rpc_router()`, `model_router()`, and `procedure_router()`
 functions gain a new `resolvers` parameter: `router(db, registry, resolvers, codec, auth_provider,
