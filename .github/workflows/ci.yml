@@ -17,6 +17,10 @@ env:
 jobs:
   # ---- Blocking gates --------------------------------------------------
   check:
+    # Bounded so a hang fails in minutes instead of squatting on a runner for
+    # GitHub's 6h default — three jobs did exactly that on 2026-08-24 (cratestack#704
+    # investigation), and ci.yml had no timeout anywhere.
+    timeout-minutes: 45
     name: check
     runs-on: ubuntu-latest
     steps:
@@ -56,6 +60,7 @@ jobs:
           [ "$pinned" = "$declared" ] || { echo "::error::rust-toolchain.toml ($pinned) and Cargo.toml rust-version ($declared) have drifted apart"; exit 1; }
 
   msrv:
+    timeout-minutes: 45
     name: msrv (1.95.0)
     runs-on: ubuntu-latest
     steps:
@@ -69,6 +74,7 @@ jobs:
       - run: just check --locked
 
   facade-disjointness:
+    timeout-minutes: 45
     name: facade disjointness (examples/no-database-verification*, examples/client-only-verification, examples/db-transaction-verification)
     runs-on: ubuntu-latest
     # `examples/no-database-verification`, `-api`, and `client-only-
@@ -190,6 +196,7 @@ jobs:
   # none needs the GTK/WebKit deps since the tauri examples are excluded.
   # Recipes: `test-ci-{db,redis,studio,host}` in the justfile.
   tests-db:
+    timeout-minutes: 45
     name: tests (db — Postgres)
     runs-on: ubuntu-latest
     env:
@@ -240,6 +247,7 @@ jobs:
         run: just test-ci-db-cli-baseline --locked
 
   tests-redis:
+    timeout-minutes: 45
     name: tests (redis)
     runs-on: ubuntu-latest
     env:
@@ -260,6 +268,7 @@ jobs:
         run: just test-ci-redis --locked
 
   tests-studio:
+    timeout-minutes: 45
     name: tests (studio + Trunk UI)
     runs-on: ubuntu-latest
     steps:
@@ -302,6 +311,7 @@ jobs:
         run: just test-ci-studio-db --locked
 
   tests-host:
+    timeout-minutes: 45
     name: tests (host — everything else)
     runs-on: ubuntu-latest
     steps:
@@ -341,6 +351,7 @@ jobs:
   # review — it's a safety net for the case where nobody does that for a
   # while, not a substitute for it.
   tests-ignored-report:
+    timeout-minutes: 45
     name: tests (ignored — report only, non-blocking)
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -369,6 +380,7 @@ jobs:
   # so the masking can't happen. (Regression guard: sqlite_offline_first,
   # which compiled under `--workspace` but not standalone.)
   embedded-examples:
+    timeout-minutes: 45
     name: embedded examples (isolated build)
     runs-on: ubuntu-latest
     steps:
@@ -411,6 +423,7 @@ jobs:
   # explicit still compiles, including the wasm32-only edges. See
   # `.ci/feature-matrix.sh`.
   feature-matrix:
+    timeout-minutes: 45
     name: feature matrix (cratestack#421, cratestack#495)
     runs-on: ubuntu-latest
     steps:
@@ -428,6 +441,7 @@ jobs:
   # (already on the runner image) is needed, so no `rust-cache`/`just`
   # install step is required either; kept minimal on purpose.
   layer-direction:
+    timeout-minutes: 45
     name: layer direction (ADR 0014)
     runs-on: ubuntu-latest
     steps:
@@ -440,6 +454,7 @@ jobs:
   # metadata --no-deps`) — same reasoning as `layer-direction` above, no
   # `rust-cache`/`just` install step needed.
   lints-workspace-optin:
+    timeout-minutes: 45
     name: workspace lints opt-in (cratestack#523)
     runs-on: ubuntu-latest
     steps:
@@ -451,6 +466,7 @@ jobs:
   # ```ignore-fence convention check (cratestack#683). Grep-only — no
   # toolchain component beyond `actions/checkout` is needed.
   ignore-doctest-fence:
+    timeout-minutes: 45
     name: doctest fences (cratestack#683)
     runs-on: ubuntu-latest
     steps:
@@ -463,6 +479,7 @@ jobs:
   # (worse than an honest gap, because it looks maintained but isn't).
   # Blocking gate for any PR that touches CHANGELOG.md.
   changelog-verify:
+    timeout-minutes: 45
     name: changelog (no unedited seeds)
     runs-on: ubuntu-latest
     steps:
@@ -477,6 +494,7 @@ jobs:
   # Runs against an isolated sandbox copy of CHANGELOG.md, never the real,
   # tracked file — see .ci/changelog-seed-tests.sh.
   changelog-seed-test:
+    timeout-minutes: 45
     name: changelog (seed/check script tests)
     runs-on: ubuntu-latest
     steps:
@@ -494,6 +512,7 @@ jobs:
   # bump the pin deliberately. `just lint` allows a small, documented set
   # of codegen-friendly lints (see the justfile).
   clippy:
+    timeout-minutes: 45
     name: clippy
     runs-on: ubuntu-latest
     steps:
@@ -510,6 +529,7 @@ jobs:
         run: just lint
 
   rustfmt:
+    timeout-minutes: 45
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
@@ -575,6 +595,7 @@ jobs:
   # comment on that below) — introducing it is an open maintainer question,
   # not decided here, and this addition doesn't change that either way.
   dart-verify:
+    timeout-minutes: 45
     name: dart (generated packages)
     runs-on: ubuntu-latest
     steps:
@@ -602,6 +623,7 @@ jobs:
   # jobs use: these are published packages, and pub.dev's own scoring treats
   # analyzer infos as defects.
   dart-packages-verify:
+    timeout-minutes: 45
     name: dart (cratestack_annotations + cratestack_builder)
     runs-on: ubuntu-latest
     steps:
@@ -644,6 +666,7 @@ jobs:
   # unlike `dart-verify`'s `--check` discipline there is no textual diff
   # to assert zero on; the compile + real Dart execution IS the check.
   frb-verify-client-flutter:
+    timeout-minutes: 45
     name: flutter (cratestack-client-flutter frb bridge)
     runs-on: ubuntu-latest
     steps:
@@ -680,6 +703,7 @@ jobs:
   # suites already assert — proving byte-identical CBOR across backends, not
   # just internal self-consistency.
   cratestack-cbor-package:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor package — native + web)
     runs-on: ubuntu-latest
     steps:
@@ -770,6 +794,7 @@ jobs:
   # decision rather than added unilaterally, since it would be the first
   # path-filtered job in this workflow.
   cratestack-cbor-example:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor example — linux + web, real builds)
     runs-on: ubuntu-latest
     steps:
@@ -859,6 +884,7 @@ jobs:
   # dart-packages/cratestack_cbor/**-touching jobs be path-filtered"
   # question those two jobs already flagged; not decided here.
   cratestack-cbor-android:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor android — APK build + jniLibs proof)
     runs-on: ubuntu-latest
     steps:
@@ -1012,6 +1038,7 @@ jobs:
   # rewiring them is blast radius this slice does not need. They can adopt
   # this artifact later if the CI-minute saving is judged worth it.
   cbor-glue:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor frb glue — generated once, Linux)
     runs-on: ubuntu-latest
     steps:
@@ -1098,6 +1125,7 @@ jobs:
   # explicitly, mirroring this repo's existing Windows jobs.
 
   cratestack-cbor-windows:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor windows — real build, DLL + round-trip proof)
     runs-on: windows-latest
     needs: cbor-glue
@@ -1237,6 +1265,7 @@ jobs:
   # findings the spike existed to answer. That made a real wasm-pack build
   # on macOS genuinely untested until this job ran.
   cratestack-cbor-macos:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)
     runs-on: macos-latest
     needs: cbor-glue
@@ -1363,6 +1392,7 @@ jobs:
   # a deliberate change with the same reasoning written down, not a quiet
   # `continue-on-error:` added to this step.
   cratestack-cbor-ios:
+    timeout-minutes: 45
     name: flutter (cratestack_cbor ios — real build, xcframework + round-trip proof)
     runs-on: macos-latest
     needs: cbor-glue
@@ -1451,6 +1481,7 @@ jobs:
   # the default template set produces valid TypeScript; the RPC fixture
   # proves the RPC-specific template overrides do as well.
   typescript-verify:
+    timeout-minutes: 45
     name: typescript (generated packages — REST + RPC)
     runs-on: ubuntu-latest
     steps:
@@ -1492,6 +1523,7 @@ jobs:
   # `flutter run` against a live server — see the PR description's manual
   # verification section for that (run locally with the pinned SDK).
   flutter-riverpod-example:
+    timeout-minutes: 45
     name: flutter (flutter-riverpod example)
     runs-on: ubuntu-latest
     steps:
@@ -1591,6 +1623,7 @@ jobs:
   # fixture is deliberately not committed (issue #577). See the dedicated
   # `js-refine` job instead.
   js:
+    timeout-minutes: 45
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
     steps:
@@ -1648,6 +1681,7 @@ jobs:
   # package genuinely build and pass tests on CI, not that every published
   # target does.
   js-cbor-napi:
+    timeout-minutes: 45
     name: js (@cratestack/cbor-node)
     runs-on: ubuntu-latest
     steps:
@@ -1688,6 +1722,7 @@ jobs:
   # `wasm-pack build`, needing a Rust wasm32 toolchain the plain `js` job
   # deliberately doesn't set up.
   js-cbor-wasm:
+    timeout-minutes: 45
     name: js (@cratestack/cbor-web)
     runs-on: ubuntu-latest
     steps:
@@ -1746,6 +1781,7 @@ jobs:
   # a vitest `globalSetup` that throws with instructions when either
   # fixture directory is missing.
   js-refine:
+    timeout-minutes: 45
     name: js (@cratestack/refine)
     runs-on: ubuntu-latest
     steps:
@@ -1799,6 +1835,7 @@ jobs:
   # real Postgres instance; see the PR description for what was run and
   # observed.
   react-vite-swr-example:
+    timeout-minutes: 45
     name: js (react-vite-swr example)
     runs-on: ubuntu-latest
     steps:
@@ -1887,6 +1924,7 @@ jobs:
   # `cratestack-mock-wiremock` change that fixes it fails this job loudly
   # instead of leaving the README quietly wrong).
   react-vite-refine-example:
+    timeout-minutes: 45
     name: js (react-vite-refine example)
     runs-on: ubuntu-latest
     steps:
@@ -1960,6 +1998,7 @@ jobs:
   # no top-level version flag, only `-h`/`--help` (`Cli`'s clap derive
   # doesn't expose one).
   install-cratestack-cli-smoke-test:
+    timeout-minutes: 45
     name: install-cratestack-cli (${{ matrix.target }})
     strategy:
       fail-fast: false
