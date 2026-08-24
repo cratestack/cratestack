@@ -26,6 +26,32 @@ Four changes, none of which alters what the tests assert:
 - Every job in `ci.yml` gains `timeout-minutes: 45`. There were none, so a hang ran to GitHub's 6h
   default.
 
+### The iOS CBOR job's stream-readiness probe: `logger` emitter, and a counter that was lying
+
+Two corrections to cratestack#720's probe.
+
+**The readiness counter was counting `log stream`'s own header.** That header is
+`Filtering the log data using "<predicate>"`, and the predicate contains the probe tag, so a plain
+`grep -c` matched it as though it were a delivered record. Jobs `97436514543` and `97456642501` both
+reported exactly 1, and in both it was the header. The conclusion drawn from the first of those — that
+the stream had delivered its own invocation record, and that delivery therefore worked — was wrong and
+is retracted. With the header excluded both runs read **0**, and nothing has yet been established about
+delivery in either direction.
+
+**The emitter is now `logger`, with `log show` as the fallback.** `logger` writes an ordinary log event
+as itself, which a live subscription should carry, where `log show`'s self-record demonstrably does not
+reach one. Job `97456642501` then reported that `logger` is not present in the simulator runtime at
+all, so on current runner images the fallback is what actually runs — the recipe is no worse than
+before, and the attempt is there for any image where that changes.
+
+The stream's predicate constrains the probe clause to `process == "logger"`, which closes the
+self-match trap structurally rather than by convention: `log stream`'s own record is process `log` and
+cannot match. The nonce stays, now guarding against a probe from an earlier attach in the same booted
+simulator counting as this attach's proof.
+
+An unproven probe still degrades to the same fixed wait and never fails the job.
+
+Part of cratestack#704, which stays open.
 
 ### flutter_rust_bridge moves to 2.13.0 (breaking for consumers on 2.12.0)
 
