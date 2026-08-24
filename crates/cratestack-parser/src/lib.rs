@@ -6,6 +6,8 @@ mod relation_helpers;
 mod validate;
 
 #[cfg(test)]
+mod tests_attribute_spacing;
+#[cfg(test)]
 mod tests_basic;
 mod tests_builder_add_setter_collisions;
 #[cfg(test)]

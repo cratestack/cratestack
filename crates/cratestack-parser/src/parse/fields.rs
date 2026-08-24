@@ -2,6 +2,7 @@ use cratestack_core::{Attribute, EnumVariant, Field, SourceSpan};
 
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, parse_doc_comment, trimmed_span};
+use crate::parse::attribute_spacing::split_field_attributes;
 use crate::parse::types::parse_type_ref;
 
 pub(super) fn parse_fields(lines: &[Line<'_>]) -> Result<Vec<Field>, SchemaError> {
@@ -97,7 +98,7 @@ pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, S
             .find(attrs)
             .unwrap_or(ty_span.end.saturating_sub(line.start))
     };
-    let attribute_spans = split_field_attributes(attrs, attrs_offset);
+    let attribute_spans = split_field_attributes(attrs, attrs_offset, name, line)?;
 
     Ok(Field {
         docs,
@@ -121,44 +122,4 @@ pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, S
             line: line.number,
         },
     })
-}
-
-fn split_field_attributes(attrs: &str, offset: usize) -> Vec<(String, usize, usize)> {
-    let mut attributes = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0usize;
-    let mut current_start = None;
-
-    for (index, ch) in attrs.char_indices() {
-        if current.is_empty() {
-            if ch == '@' {
-                current.push(ch);
-                current_start = Some(offset + index);
-            }
-            continue;
-        }
-
-        match ch {
-            '(' | '[' => {
-                depth += 1;
-                current.push(ch);
-            }
-            ')' | ']' => {
-                depth = depth.saturating_sub(1);
-                current.push(ch);
-            }
-            ch if ch.is_whitespace() && depth == 0 => {
-                let start = current_start.take().unwrap_or(offset + index);
-                attributes.push((std::mem::take(&mut current), start, offset + index));
-            }
-            _ => current.push(ch),
-        }
-    }
-
-    if !current.is_empty() {
-        let start = current_start.unwrap_or(offset + attrs.len().saturating_sub(current.len()));
-        attributes.push((current, start, offset + attrs.len()));
-    }
-
-    attributes
 }
