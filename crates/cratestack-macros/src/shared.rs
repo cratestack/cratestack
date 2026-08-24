@@ -7,6 +7,7 @@ mod procedure_attrs;
 mod sql;
 mod types;
 mod value;
+mod wire_types;
 
 use std::collections::BTreeSet;
 
@@ -26,6 +27,9 @@ pub(crate) use types::{
     rust_type_tokens, rust_type_tokens_with_scope,
 };
 pub(crate) use value::value_tokens;
+pub(crate) use wire_types::{
+    field_definition_with_wire_scope, field_type_with_wire_scope, rust_type_tokens_with_wire_scope,
+};
 
 pub(crate) fn schema_lit(value: &str) -> LitStr {
     LitStr::new(value, proc_macro2::Span::call_site())

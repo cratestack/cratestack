@@ -52,7 +52,10 @@ mod state;
 
 use quote::{format_ident, quote};
 
-pub(crate) use fields::{model_builder_fields, scoped_builder_fields};
+pub(crate) use fields::{
+    model_builder_fields, model_builder_fields_with_wire_scope, scoped_builder_fields,
+    scoped_builder_fields_with_wire_scope,
+};
 pub(crate) use spec::BuilderField;
 pub(crate) use state::StateParams;
 

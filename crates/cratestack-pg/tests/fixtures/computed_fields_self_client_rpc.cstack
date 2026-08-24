@@ -1,0 +1,32 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+transport rpc
+
+// `transport rpc` counterpart to `computed_fields_self_client.cstack` —
+// proves the RPC self-client's decode targets (`crate::client::rpc`,
+// `BatchableCall<C, super::wire::<Owner>>`) got the same fix as the REST
+// ones, for both a model GET and a nested computed-bearing procedure
+// output.
+model SelfClientRpcPhoto {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type SelfClientRpcImage {
+  storageKey String
+  badge String @computed
+}
+
+type SelfClientRpcCard {
+  cover SelfClientRpcImage
+}
+
+procedure getSelfClientRpcCard(storageKey: String): SelfClientRpcCard
+  @allow(auth() != null)

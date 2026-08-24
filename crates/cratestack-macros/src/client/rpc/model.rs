@@ -2,17 +2,20 @@
 //! `BatchableCall<C, Output>` so callers can either `.await` them or
 //! `.queue(&mut batch)` into a multiplexed `/rpc/batch` round-trip.
 
+use std::collections::BTreeSet;
+
 use cratestack_core::Model;
 use quote::quote;
 
+use crate::client::model_output_type_tokens;
 use crate::shared::{ident, is_paged_model, is_primary_key, rust_type_tokens};
 
 pub(super) fn generate_generated_rpc_model_client(
     model: &Model,
+    bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let model_name = &model.name;
     let client_ident = ident(&format!("{}Client", model.name));
-    let model_ident = ident(&model.name);
     let create_input_ident = ident(&format!("Create{}Input", model.name));
     let update_input_ident = ident(&format!("Update{}Input", model.name));
 
@@ -23,11 +26,13 @@ pub(super) fn generate_generated_rpc_model_client(
         .ok_or_else(|| format!("model {} is missing a primary key", model.name))?;
     let primary_key_type = rust_type_tokens(&primary_key.ty);
 
+    let model_output_type = model_output_type_tokens(&model.name, bearing);
+
     let paged = is_paged_model(model);
     let list_output_type = if paged {
-        quote! { ::cratestack::Page<super::models::#model_ident> }
+        quote! { ::cratestack::Page<#model_output_type> }
     } else {
-        quote! { Vec<super::models::#model_ident> }
+        quote! { Vec<#model_output_type> }
     };
 
     let list_op = format!("model.{model_name}.list");
@@ -78,7 +83,7 @@ pub(super) fn generate_generated_rpc_model_client(
             pub fn get(
                 &self,
                 id: &#primary_key_type,
-            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
                 let input = ::cratestack::rpc::RpcPkInput {
                     id: id.clone(),
                 };
@@ -95,7 +100,7 @@ pub(super) fn generate_generated_rpc_model_client(
             pub fn create(
                 &self,
                 input: &super::inputs::#create_input_ident,
-            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
                 ::cratestack::client_rust::BatchableCall::new(
                     self.rpc.clone(),
                     #create_op,
@@ -111,7 +116,7 @@ pub(super) fn generate_generated_rpc_model_client(
                 &self,
                 id: &#primary_key_type,
                 patch: &super::inputs::#update_input_ident,
-            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
                 let input = ::cratestack::rpc::RpcUpdateInput {
                     id: id.clone(),
                     patch: patch.clone(),
@@ -128,7 +133,7 @@ pub(super) fn generate_generated_rpc_model_client(
             pub fn delete(
                 &self,
                 id: &#primary_key_type,
-            ) -> ::cratestack::client_rust::BatchableCall<C, super::models::#model_ident> {
+            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
                 let input = ::cratestack::rpc::RpcPkInput {
                     id: id.clone(),
                 };

@@ -22,6 +22,7 @@ fn empty_collected() -> ServerCollected {
         computed_field_descriptors: Vec::new(),
         computed_field_resolver_methods: Vec::new(),
         compose_helpers: Vec::new(),
+        wire_structs: Vec::new(),
         model_structs: Vec::new(),
         pg_from_row_impls: Vec::new(),
         primary_key_accessor_impls: Vec::new(),

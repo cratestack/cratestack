@@ -148,11 +148,12 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                 };
                 let input = match ::cratestack::__private::decode_rpc_body::<
                     _,
-                    ::cratestack::rpc::RpcPkInput<#pk_type>,
+                    ::cratestack::rpc::RpcGetInput<#pk_type>,
                 >(&state.codec, &headers, &body) {
                     Ok(input) => input,
                     Err(error) => return rpc_dispatch_error(&state, &headers, error),
                 };
+                let raw_query = ::cratestack::rpc::synthesize_get_query(input.computed_params.as_deref());
                 #get_dispatch(
                     model_state,
                     CanonicalRequest {
@@ -164,7 +165,7 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
                     headers,
                     client_ip_ctx,
                     input.id,
-                    None,
+                    raw_query,
                 ).await
             }
         },

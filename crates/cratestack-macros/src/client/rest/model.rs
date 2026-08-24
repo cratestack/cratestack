@@ -3,18 +3,21 @@
 //! list/get). Paged models return `Page<Model>`; non-paged return
 //! `Vec<Model>`.
 
+use std::collections::BTreeSet;
+
 use cratestack_core::Model;
 use quote::quote;
 
+use crate::client::model_output_type_tokens;
 use crate::shared::{
     ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case,
 };
 
 pub(super) fn generate_generated_model_client(
     model: &Model,
+    bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let client_ident = ident(&format!("{}Client", model.name));
-    let model_ident = ident(&model.name);
     let create_input_ident = ident(&format!("Create{}Input", model.name));
     let update_input_ident = ident(&format!("Update{}Input", model.name));
     let route_path = format!("/{}", pluralize(&to_snake_case(&model.name)));
@@ -25,10 +28,11 @@ pub(super) fn generate_generated_model_client(
         .find(|field| is_primary_key(field))
         .ok_or_else(|| format!("model {} is missing a primary key", model.name))?;
     let primary_key_type = rust_type_tokens(&primary_key.ty);
+    let model_output_type = model_output_type_tokens(&model.name, bearing);
     let list_output_type = if paged {
-        quote! { ::cratestack::Page<super::models::#model_ident> }
+        quote! { ::cratestack::Page<#model_output_type> }
     } else {
-        quote! { Vec<super::models::#model_ident> }
+        quote! { Vec<#model_output_type> }
     };
     let list_view_output_type = if paged {
         quote! { ::cratestack::Page<P::Output> }
@@ -90,7 +94,7 @@ pub(super) fn generate_generated_model_client(
                 &self,
                 id: &#primary_key_type,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::ClientError> {
+            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
                 self.runtime.get(&format!("{}/{}", #route_path, id), &[], headers).await
             }
 
@@ -107,7 +111,7 @@ pub(super) fn generate_generated_model_client(
                 id: &#primary_key_type,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<
-                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::TypedResponse<#model_output_type>,
                 ::cratestack::client_rust::ClientError,
             > {
                 self.runtime.get_with_response(&format!("{}/{}", #route_path, id), &[], headers).await
@@ -131,7 +135,7 @@ pub(super) fn generate_generated_model_client(
                 &self,
                 input: &super::inputs::#create_input_ident,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::ClientError> {
+            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
                 self.runtime.post(#route_path, input, headers).await
             }
 
@@ -140,7 +144,7 @@ pub(super) fn generate_generated_model_client(
                 id: &#primary_key_type,
                 input: &super::inputs::#update_input_ident,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::ClientError> {
+            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
                 self.runtime.patch(&format!("{}/{}", #route_path, id), input, headers).await
             }
 
@@ -156,7 +160,7 @@ pub(super) fn generate_generated_model_client(
                 input: &super::inputs::#update_input_ident,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<
-                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::TypedResponse<#model_output_type>,
                 ::cratestack::client_rust::ClientError,
             > {
                 self.runtime.patch_with_response(&format!("{}/{}", #route_path, id), input, headers).await
@@ -166,7 +170,7 @@ pub(super) fn generate_generated_model_client(
                 &self,
                 id: &#primary_key_type,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
-            ) -> Result<super::models::#model_ident, ::cratestack::client_rust::ClientError> {
+            ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
                 self.runtime.delete(&format!("{}/{}", #route_path, id), headers).await
             }
 
@@ -185,7 +189,7 @@ pub(super) fn generate_generated_model_client(
                 id: &#primary_key_type,
                 headers: &[::cratestack::client_rust::HeaderPair<'_>],
             ) -> Result<
-                ::cratestack::client_rust::TypedResponse<super::models::#model_ident>,
+                ::cratestack::client_rust::TypedResponse<#model_output_type>,
                 ::cratestack::client_rust::ClientError,
             > {
                 self.runtime.delete_with_response(&format!("{}/{}", #route_path, id), headers).await

@@ -115,15 +115,21 @@ pub(super) fn compose_client_schema(
                     .into();
             }
         };
-        let generated_client_module =
-            match generate_client_module(&schema.models, &schema.procedures, schema.transport) {
-                Ok(module) => module,
-                Err(error) => {
-                    return syn::Error::new(schema_path.span(), error)
-                        .to_compile_error()
-                        .into();
-                }
-            };
+        // Always an empty bearing set: this composer's own `models`/
+        // `types` already ARE the wire shape — see `crate::client`'s doc.
+        let generated_client_module = match generate_client_module(
+            &schema.models,
+            &schema.procedures,
+            schema.transport,
+            &BTreeSet::new(),
+        ) {
+            Ok(module) => module,
+            Err(error) => {
+                return syn::Error::new(schema_path.span(), error)
+                    .to_compile_error()
+                    .into();
+            }
+        };
 
         let expanded = quote! {
             pub mod cratestack_schema {

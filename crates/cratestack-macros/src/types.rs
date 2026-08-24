@@ -10,8 +10,13 @@ use std::collections::BTreeSet;
 use cratestack_core::TypeDecl;
 use quote::quote;
 
-use crate::builder::{generate_builder, scoped_builder_fields};
-use crate::shared::{doc_attrs, field_definition, ident, is_computed_field, value_tokens};
+use crate::builder::{
+    generate_builder, scoped_builder_fields, scoped_builder_fields_with_wire_scope,
+};
+use crate::shared::{
+    doc_attrs, field_definition, field_definition_with_wire_scope, ident, is_computed_field,
+    value_tokens,
+};
 
 pub(crate) use enums::{generate_client_enum_type, generate_enum_type};
 
@@ -81,6 +86,41 @@ pub(crate) fn generate_client_type_struct(ty: &TypeDecl) -> proc_macro2::TokenSt
         .iter()
         .map(|field| field_definition(field, false, true));
     let builder = generate_builder(&type_ident, &scoped_builder_fields(&ty.fields, false, true));
+
+    quote! {
+        #docs
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        pub struct #type_ident {
+            #(#fields)*
+        }
+
+        #builder
+    }
+}
+
+/// [`generate_client_type_struct`]'s wire-scope counterpart, for the
+/// server composer's dedicated `wire` module (`crate::computed::wire`) —
+/// emitted only for a computed-bearing `type`. Field-for-field identical
+/// except a field naming another computed-bearing owner resolves to the
+/// sibling `super::wire::<Owner>` instead of the plain server-side
+/// `super::<Owner>` — see `crate::shared::rust_type_tokens_with_wire_scope`'s
+/// doc. `bearing` is the schema-wide computed-bearing set, so this handles
+/// both "a `type` field nests another bearing `type`" (`Card.cover`) and
+/// "a `type` field references a bearing `model` directly" cases.
+pub(crate) fn generate_wire_type_struct(
+    ty: &TypeDecl,
+    bearing: &BTreeSet<String>,
+) -> proc_macro2::TokenStream {
+    let type_ident = ident(&ty.name);
+    let docs = doc_attrs(&ty.docs);
+    let fields = ty
+        .fields
+        .iter()
+        .map(|field| field_definition_with_wire_scope(field, bearing));
+    let builder = generate_builder(
+        &type_ident,
+        &scoped_builder_fields_with_wire_scope(&ty.fields, bearing),
+    );
 
     quote! {
         #docs
