@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.11 (2026-08-24)
+
 ### A failing TypeScript smoke test now fails in a second instead of hanging for hours
 
 Four tests in `cratestack-client-typescript` run generated client code under `npx tsx` against a real
