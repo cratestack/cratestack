@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### A `{field}IsSet` touch flag no longer gets a fluent setter of its own
+
+Found by measuring the generated builders against the inline ones this package replaces, rather
+than by reading the code. A patch input's touch flag (`noteIsSet` beside `note`) is an ordinary
+constructor parameter as far as the analyzer is concerned, so it was getting a setter like any other
+field — which let a caller write
+
+```dart
+UpdateGadgetInputBuilder().note('x').noteIsSet(false).build()
+```
+
+and produce a patch claiming the field is untouched while carrying a value. Order-dependent, and
+unrepresentable in the inline builder this replaces, which kept its tracking bool private.
+
+The flag is derived state: the owning field's setter marks it and `build()` defaults it to `false`.
+Both still happen; only the independent setter is gone.
+
+Suppression is computed from `touchFlagFields` — naming `note` already implies `noteIsSet` — so this
+needs no additional annotation argument.
+
 ## 0.8.12 (2026-08-24)
 
 - No functional changes. Version kept in lockstep with the CrateStack
