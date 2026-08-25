@@ -119,6 +119,18 @@ class CratestackBuilderGenerator
     final touchFlagIdentifierByField = <String, String>{
       for (final target in touchFlagFields) target: '${target}IsSet',
     };
+    // The flags themselves get NO fluent setter. They are derived state: the
+    // owning field's setter is what marks them, and `build()` defaults them
+    // to `false`. Exposing `noteIsSet(bool)` alongside `note(..)` lets a
+    // caller write `.note('x').noteIsSet(false)` and produce a patch that
+    // claims "untouched" while carrying a value — order-dependent nonsense
+    // the inline builder this replaces made unrepresentable by keeping its
+    // tracking bool private.
+    //
+    // Derived from `touchFlagFields` rather than taking a fourth annotation
+    // argument: naming `note` already tells us `noteIsSet` exists, so the
+    // annotation stays as small as the schema knowledge genuinely requires.
+    final suppressedSetters = touchFlagIdentifierByField.values.toSet();
 
     final b = StringBuffer();
     b.writeln('class ${className}Builder {');
@@ -134,6 +146,7 @@ class CratestackBuilderGenerator
 
     // Fluent setters (+ add<Field> for lists).
     for (final f in fields) {
+      if (suppressedSetters.contains(f.identifier)) continue;
       b.writeln(
           '  ${className}Builder ${f.setterName}(${f.dartTypeString} value) {');
       b.writeln('    _${f.identifier} = value;');

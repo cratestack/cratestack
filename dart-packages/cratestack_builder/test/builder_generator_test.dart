@@ -223,13 +223,19 @@ class UpdateGadgetInput {
         ));
   });
 
-  test(
-      'the {field}IsSet field keeps its own independent setter beside the '
-      'linkage', () async {
-    // The link above is additive, not a replacement: `noteIsSet` must
-    // still be independently settable (e.g. a caller reconstructing a
-    // `fromWire`-decoded state through the builder), and `note`'s setter
-    // must not affect any OTHER field's touch flag.
+  test('a {field}IsSet touch flag gets NO setter of its own', () async {
+    // Corrected from asserting the opposite. An independent
+    // `noteIsSet(bool)` setter lets a caller write
+    // `.note('x').noteIsSet(false)` and build a patch that claims the field
+    // is untouched while carrying a value — order-dependent nonsense. The
+    // inline builder this generator replaced made that unrepresentable by
+    // keeping its tracking bool private, and parity measurement against it
+    // is what surfaced the difference.
+    //
+    // The flag is derived state: `note`'s setter marks it (tested above)
+    // and `build()` defaults it to `false`. Suppression is computed from
+    // `touchFlagFields` — naming `note` already implies `noteIsSet` — so
+    // this needs no additional annotation argument.
     await expectGenerated('''
 @CratestackBuilder(listDefaults: false, touchFlagFields: {'note'})
 class UpdateGadgetInput {
@@ -237,7 +243,12 @@ class UpdateGadgetInput {
   final String? note;
   final bool noteIsSet;
 }
-''', contains('UpdateGadgetInputBuilder noteIsSet(bool value) {'));
+''',
+        allOf(
+          isNot(contains('UpdateGadgetInputBuilder noteIsSet(bool value) {')),
+          // still constructed, defaulted, and still linked to `note`
+          contains('noteIsSet: _noteIsSet ?? false'),
+        ));
   });
 
   test(
