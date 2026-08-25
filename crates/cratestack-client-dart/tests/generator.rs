@@ -303,7 +303,8 @@ model Image {
         .find("class CreateImageInput ")
         .expect("CreateImageInput class should exist");
     let create_end = models[create_start..]
-        .find("\nclass CreateImageInputBuilder")
+        .find("\n}")  // end of the class body — `\nclass <X>Builder` no longer
+        // follows it, builders moved to package:cratestack_builder (#668 phase 2)
         .map(|offset| create_start + offset)
         .unwrap_or(models.len());
     let create_class = &models[create_start..create_end];
@@ -321,7 +322,8 @@ model Image {
         .find("class UpdateImageInput ")
         .expect("UpdateImageInput class should exist");
     let update_end = models[update_start..]
-        .find("\nclass UpdateImageInputBuilder")
+        .find("\n}")  // end of the class body — `\nclass <X>Builder` no longer
+        // follows it, builders moved to package:cratestack_builder (#668 phase 2)
         .map(|offset| update_start + offset)
         .unwrap_or(models.len());
     let update_class = &models[update_start..update_end];
@@ -339,7 +341,8 @@ model Image {
     );
     let where_start = models.find("class ImageWhere ").unwrap();
     let where_end = models[where_start..]
-        .find("\nclass ImageWhereBuilder")
+        .find("\n}")  // end of the class body — `\nclass <X>Builder` no longer
+        // follows it, builders moved to package:cratestack_builder (#668 phase 2)
         .map(|offset| where_start + offset)
         .unwrap_or(models.len());
     assert!(
@@ -419,21 +422,29 @@ model Image {
         "ImageComputedParams must carry a matching hashCode: {computed_params_class}"
     );
 
-    // The generated `ImageComputedParamsBuilder` fluent builder: every
-    // other generated data class gets the same builder pattern, so
-    // computed params should too.
+    // Computed params get the same builder treatment as every other
+    // generated data class — which since #668 phase 2 means the same
+    // ANNOTATION, with `package:cratestack_builder` expanding it at the
+    // consumer's build_runner step. Asserting the annotation rather than
+    // `class ImageComputedParamsBuilder {` is what keeps this test honest:
+    // the inline class it used to look for is exactly what phase 2 removed,
+    // and #729's builder would have been silently lost if the annotation
+    // had not been added in its place.
     assert!(
-        models.contains("class ImageComputedParamsBuilder {"),
-        "ImageComputedParams must get the same fluent builder every other generated \
-         data class gets: {models}"
+        models.contains("@CratestackBuilder()\nclass ImageComputedParams {"),
+        "ImageComputedParams must carry the builder annotation like every other \
+         generated data class: {models}"
     );
+    // The setters and `build()` themselves are package:cratestack_builder's
+    // contract now, derived from the constructor it can see — proven by that
+    // package's own tests and end-to-end by `computed_params_wire_equality.rs`,
+    // which runs build_runner and a real `flutter test` over the output. What
+    // this crate still owns, and what is asserted above, is that the class is
+    // annotated and the part directive exists. Re-asserting the setter text
+    // here would just re-test the package through a second copy of its rules.
     assert!(
-        models.contains("ImageComputedParamsBuilder proxyUrl(ProxyParams? value) {"),
-        "the builder needs one setter per parameterized computed field: {models}"
-    );
-    assert!(
-        models.contains("ImageComputedParams build() {"),
-        "the builder needs its terminal build(): {models}"
+        models.contains("part 'models.builder.dart';"),
+        "models.dart must declare the part build_runner writes: {models}"
     );
 }
 
@@ -468,17 +479,23 @@ model Image {
 
     let models = package_file(&package, "lib/src/models.dart");
 
+    // Since #668 phase 2 the builder itself is emitted by
+    // `package:cratestack_builder` from the annotation below, not inline
+    // here — so this asserts the contract this crate still owns: that the
+    // class is annotated at all, and that the `part` directive exists for
+    // build_runner to expand into. The setters themselves (one per
+    // parameterized field, typed from the constructor) are the package's
+    // contract and are covered by
+    // `dart-packages/cratestack_builder/test/builder_generator_test.dart`,
+    // plus end-to-end by `computed_params_wire_equality.rs`, which runs
+    // build_runner and then a real `flutter test` over the result.
     assert!(
-        models.contains("class ImageComputedParamsBuilder {"),
-        "ImageComputedParams must get the fluent builder: {models}"
+        models.contains("@CratestackBuilder()\nclass ImageComputedParams {"),
+        "ImageComputedParams must carry the builder annotation: {models}"
     );
     assert!(
-        models.contains("ImageComputedParamsBuilder proxyUrl(ProxyParams? value) {"),
-        "the builder needs a proxyUrl setter: {models}"
-    );
-    assert!(
-        models.contains("ImageComputedParamsBuilder captionUrl(CaptionParams? value) {"),
-        "the builder needs a captionUrl setter: {models}"
+        models.contains("part 'models.builder.dart';"),
+        "models.dart must declare the part build_runner writes: {models}"
     );
 }
 

@@ -146,6 +146,34 @@ fn run_flutter_pub_get(dir: &std::path::Path) {
     );
 }
 
+/// Expand `package:cratestack_builder`'s `part '<file>.builder.dart'` before
+/// anything tries to compile the library (issue #668 phase 2).
+///
+/// Not optional and not a speed-up: since builder emission moved out of this
+/// crate, generated `models.dart` DECLARES a part file that does not exist
+/// until this runs. `flutter test` then fails at compile time with
+///
+///   Error when reading 'lib/src/models.builder.dart': No such file or directory
+///   Can't use '...' as a part, because it has no 'part of' declaration.
+///
+/// which is what this test hit the moment phase 2 rebased onto #724/#729.
+/// Every path in this repo that compiles generated Dart now needs this step —
+/// see `just verify-dart`, which gained the same one.
+fn run_build_runner(dir: &std::path::Path) {
+    let build = Command::new("dart")
+        .args(["run", "build_runner", "build", "--delete-conflicting-outputs"])
+        .current_dir(dir)
+        .output()
+        .expect("run dart build_runner build");
+    assert!(
+        build.status.success(),
+        "build_runner failed — the generated package declares a `.builder.dart` part that \
+         only this step produces, so nothing downstream can compile without it:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+}
+
 fn run_flutter_test(dir: &std::path::Path, test_relative_path: &str) {
     let run = Command::new("flutter")
         .args(["test", test_relative_path])
@@ -196,6 +224,7 @@ fn computed_params_deep_equality_holds_under_default_preset() {
     .expect("write check test");
 
     run_flutter_pub_get(&dir);
+    run_build_runner(&dir);
     run_flutter_test(&dir, "test/computed_params_wire_equality_test.dart");
 
     fs::remove_dir_all(&dir).expect("tmp dir should be removable");
@@ -238,6 +267,7 @@ fn computed_params_deep_equality_holds_under_riverpod_preset() {
     .expect("write check test");
 
     run_flutter_pub_get(&dir);
+    run_build_runner(&dir);
 
     // The riverpod preset's `build_runner`-generated `.g.dart`/`.mapper.dart`
     // parts must exist before `flutter test` can even parse the library —

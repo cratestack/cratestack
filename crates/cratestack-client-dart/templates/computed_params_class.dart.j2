@@ -59,5 +59,4 @@ class {{ model_api.computed_params_class_name }} {
   int get hashCode => jsonEncode(toWire()).hashCode;
 }
 
-{% include "computed_params_builder_class.dart.j2" %}
 {% endif %}
