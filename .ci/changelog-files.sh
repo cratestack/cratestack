@@ -30,34 +30,65 @@ CHANGELOG_FILES_DEFAULT=(
 # the gate for a package that genuinely changed.
 #
 # The scope for a package is deliberately NOT just its own directory.
-# cratestack#713 proved that "dart-packages/cratestack_cbor/" ALONE is an
-# unsafe proxy for "no functional change": that package vendors prebuilt
+# cratestack#713 established that "dart-packages/cratestack_cbor/" ALONE is
+# an unsafe proxy for "no functional change": that package vendors prebuilt
 # binaries (native .so/.dylib/.dll, xcframework, jniLibs, wasm — see
-# justfile's `cbor-vendor-*` recipes) built at release time from Rust
-# crates that live OUTSIDE dart-packages/cratestack_cbor/ and are never
-# committed. v0.8.6 is the load-bearing counter-example, not a hypothetical
-# one: `git log v0.8.5..v0.8.6 -- crates/cratestack-codec-cbor` shows a real
-# CBOR-encoding bug fix (cratestack#675) landed in that range, in a crate
-# depended on directly by BOTH crates/cratestack-client-flutter (the native
-# vendoring source — see its Cargo.toml) and crates/cratestack-cbor-wasm
-# (the web one — see its Cargo.toml), so the fix was baked into the
-# binaries v0.8.6 vendored (confirmed: `git merge-base --is-ancestor
-# <the #675 fix commit> v0.8.6` says yes) — while `git log v0.8.5..v0.8.6 --
-# dart-packages/cratestack_cbor/` shows ZERO commits.
+# justfile's `cbor-vendor-*` recipes) built at release time from Rust crates
+# that live OUTSIDE dart-packages/cratestack_cbor/ and are never committed.
+# Concretely: `cbor-vendor-lib` runs `cargo build -p
+# cratestack-client-flutter --features frb-glue`, and `cbor-vendor-web` runs
+# `wasm-pack` over crates/cratestack-cbor-wasm. A source change in either —
+# or in what either COMPILES IN — can change the shipped bytes while the
+# package's own directory stays untouched.
 #
-# What v0.8.6 actually shipped to pub.dev was the RAW, unedited seed
-# placeholder (`git show v0.8.6:dart-packages/cratestack_cbor/CHANGELOG.md`
-# — the `<!-- TODO -->` marker and "Do not commit with this placeholder
-# text" line, both present) — main had no required status checks, so the
-# gate failing didn't block the merge. The "No functional changes" wording
-# now on `main` for that section was written LATER, in cratestack#687,
-# using exactly the directory-only proxy this scope replaces — and per the
-# #675 finding above, that retroactive claim is itself wrong: the release
-# it describes did carry a real functional change, just not one visible
-# from dart-packages/cratestack_cbor/'s own directory. Scoping to the
-# package directory alone would reproduce that same mistake automatically
-# instead of a human making it by hand — worse, not better. The scope below
-# closes that specific, evidenced gap.
+# crates/cratestack-codec-cbor is in scope because of the DECODE path
+# specifically, and that is worth naming, because the encode path is NOT it.
+# Both vendoring sources call the codec's decoder bare, nothing in between:
+#
+#   crates/cratestack-client-flutter/src/cbor/mod.rs   CborCodec.decode(bytes)
+#   crates/cratestack-cbor-wasm/src/wasm.rs            CborCodec.decode(bytes)
+#
+# So any decode-side change in the codec reaches both vendored binaries
+# directly. Their ENCODE paths both wrap the value first (`EncodableValue`,
+# which routes `Value::Null` through `serialize_none()` at every position in
+# the tree), so an encode-side codec change may or may not be observable
+# here — it depends on whether that wrapper already covered it.
+#
+# cratestack#727: v0.8.6 was previously cited here as a load-bearing
+# counter-example — a real codec fix (cratestack#675) in `v0.8.5..v0.8.6`
+# with zero commits under the package directory. The git facts are right;
+# the conclusion drawn from them was not. That fix was encode-only, and
+# `EncodableValue` had already shipped in v0.8.5 (`52b50cea`,
+# cratestack#580), so the wrapper bypassed the fixed branch entirely and the
+# vendored bytes did not change. #675's own commit message says so: the
+# wrappers are "kept as intentional defense-in-depth ... not as the only
+# thing preventing the bug". Its edits to crates/cratestack-cbor-wasm in
+# that same range were module-doc and test-only. v0.8.6 was a genuine no-op
+# for this package, and the "No functional changes" wording now on `main`
+# for that section is CORRECT — do not "fix" it.
+#
+# That makes v0.8.6 an example of this scope firing CONSERVATIVELY (in-scope
+# commits, unchanged bytes) — the safe direction, costing at worst a hand-
+# written changelog line for a release that did not need one. It is not
+# evidence that the directory-only proxy has already failed in production.
+# The justification for the widened scope is the decode path above: a
+# mechanism verified end to end, not a historical incident.
+#
+# The generalisable trap, recorded so it is not repeated: A DEPENDENCY EDGE
+# IS NOT A BEHAVIOUR PATH. cratestack-client-flutter depends on
+# cratestack-codec-cbor — true, trivial to verify, and insufficient on its
+# own. Whether a change in a dependency is observable depends on how the
+# consumer CALLS it. Checking the edge and stopping there is exactly what
+# produced the false claim above.
+#
+# The problem this fallback does solve is real and evidenced: v0.8.6 shipped
+# the RAW, unedited seed placeholder to pub.dev (`git show
+# v0.8.6:dart-packages/cratestack_cbor/CHANGELOG.md` — the `<!-- TODO -->`
+# marker and the "Do not commit with this placeholder text" line, both
+# present), because main has no required status checks and the failing gate
+# did not block the merge. With this fallback in place, a release that is a
+# genuine no-op across the scope below gets the stable "No functional
+# changes" wording written automatically instead.
 #
 # It deliberately does NOT reach further into shared crates like
 # crates/cratestack-core: `git log v0.8.7..v0.8.9 -- crates/cratestack-core`
