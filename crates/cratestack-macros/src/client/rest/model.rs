@@ -2,6 +2,15 @@
 //! create / update / delete (plus `*_view` projection variants on
 //! list/get). Paged models return `Page<Model>`; non-paged return
 //! `Vec<Model>`.
+//!
+//! cratestack#743 (`docs/design/route-suppression.md`): a suppressed
+//! verb (`@@internal(...)`) gets no client method at all — calling it
+//! becomes a compile error for the SDK consumer, not a runtime 403
+//! (design doc §4/§5). `cratestack_core::model_internal_actions`, the
+//! one shared source of truth, is consulted once below; each verb
+//! group's own builder lives in [`groups_read`]/[`groups_write`]
+//! (split the same way `transport::rpc::model_dispatch` splits into
+//! `arms_read`/`arms_write`, for the 200-LoC file convention).
 
 use std::collections::BTreeSet;
 
@@ -14,28 +23,19 @@ use crate::shared::{
 };
 
 mod computed;
+mod context;
+mod groups_read;
+mod groups_write;
 mod with_response;
-use computed::{build_get_method, build_list_method};
-use with_response::{
-    build_delete_with_response_method, build_get_with_response_method,
-    build_update_with_response_method,
-};
+use context::ModelRestClientContext;
 
 pub(super) fn generate_generated_model_client(
     model: &Model,
     bearing: &BTreeSet<String>,
     computed_params_ident: Option<&syn::Ident>,
 ) -> Result<proc_macro2::TokenStream, String> {
-    // cratestack#743: a suppressed verb (`@@internal(...)`) gets no
-    // client method at all — calling it becomes a compile error for
-    // the SDK consumer, not a runtime 403 (design doc §4/§5). One
-    // shared source of truth, `cratestack_core::model_internal_actions`,
-    // consulted once here for every REST client method this function
-    // emits.
     let internal = cratestack_core::model_internal_actions(model);
     let client_ident = ident(&format!("{}Client", model.name));
-    let create_input_ident = ident(&format!("Create{}Input", model.name));
-    let update_input_ident = ident(&format!("Update{}Input", model.name));
     let route_path = format!("/{}", pluralize(&to_snake_case(&model.name)));
     let paged = is_paged_model(model);
     let primary_key = model
@@ -73,131 +73,46 @@ pub(super) fn generate_generated_model_client(
     // model declares at least one parameterized `@computed` field
     // (`crate::client::computed_params::model_computed_params_ident`) —
     // an ungated model keeps the exact tokens this function emitted
-    // before this feature existed (see that module's doc for why).
-    // Builders live in `model/computed.rs` (200-LoC file convention).
-    //
+    // before this feature existed (see `model/computed.rs`'s doc for
+    // why).
+    let ctx = ModelRestClientContext {
+        route_path,
+        primary_key_type,
+        model_output_type,
+        list_output_type,
+        list_view_output_type,
+        list_view_call,
+        create_input_ident: ident(&format!("Create{}Input", model.name)),
+        update_input_ident: ident(&format!("Update{}Input", model.name)),
+        computed_params_ident: computed_params_ident.cloned(),
+    };
+
     // Each verb group below is emitted only when `!internal.contains(...)`
     // — cratestack#743's REST client gate. `list`/`get` also cover their
     // `*_view` projection siblings, since both hit the same suppressed
     // route.
     let list_group = if !internal.contains("list") {
-        {
-            let list_method =
-                build_list_method(computed_params_ident, &route_path, &list_output_type);
-            quote! {
-                #list_method
-
-                pub async fn list_view<P>(
-                    &self,
-                    projection: &P,
-                    query: &[::cratestack::client_rust::QueryPair<'_>],
-                    headers: &[::cratestack::client_rust::HeaderPair<'_>],
-                ) -> Result<#list_view_output_type, ::cratestack::client_rust::ClientError>
-                where
-                    P: ::cratestack::ProjectionDecoder,
-                {
-                    #list_view_call
-                }
-            }
-        }
+        groups_read::list_group(&ctx)
     } else {
         Default::default()
     };
-
     let get_group = if !internal.contains("get") {
-        {
-            let get_method = build_get_method(
-                computed_params_ident,
-                &route_path,
-                &primary_key_type,
-                &model_output_type,
-            );
-            let get_with_response_method =
-                build_get_with_response_method(&route_path, &primary_key_type, &model_output_type);
-            quote! {
-                #get_method
-
-                #get_with_response_method
-
-                pub async fn get_view<P>(
-                    &self,
-                    id: &#primary_key_type,
-                    projection: &P,
-                    headers: &[::cratestack::client_rust::HeaderPair<'_>],
-                ) -> Result<P::Output, ::cratestack::client_rust::ClientError>
-                where
-                    P: ::cratestack::ProjectionDecoder,
-                {
-                    self.runtime
-                        .get_view(&format!("{}/{}", #route_path, id), projection, headers)
-                        .await
-                }
-            }
-        }
+        groups_read::get_group(&ctx)
     } else {
         Default::default()
     };
-
     let create_group = if !internal.contains("create") {
-        {
-            quote! {
-                pub async fn create(
-                    &self,
-                    input: &super::inputs::#create_input_ident,
-                    headers: &[::cratestack::client_rust::HeaderPair<'_>],
-                ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
-                    self.runtime.post(#route_path, input, headers).await
-                }
-            }
-        }
+        groups_write::create_group(&ctx)
     } else {
         Default::default()
     };
-
     let update_group = if !internal.contains("update") {
-        {
-            let update_with_response_method = build_update_with_response_method(
-                &route_path,
-                &primary_key_type,
-                &update_input_ident,
-                &model_output_type,
-            );
-            quote! {
-                pub async fn update(
-                    &self,
-                    id: &#primary_key_type,
-                    input: &super::inputs::#update_input_ident,
-                    headers: &[::cratestack::client_rust::HeaderPair<'_>],
-                ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
-                    self.runtime.patch(&format!("{}/{}", #route_path, id), input, headers).await
-                }
-
-                #update_with_response_method
-            }
-        }
+        groups_write::update_group(&ctx)
     } else {
         Default::default()
     };
-
     let delete_group = if !internal.contains("delete") {
-        {
-            let delete_with_response_method = build_delete_with_response_method(
-                &route_path,
-                &primary_key_type,
-                &model_output_type,
-            );
-            quote! {
-                pub async fn delete(
-                    &self,
-                    id: &#primary_key_type,
-                    headers: &[::cratestack::client_rust::HeaderPair<'_>],
-                ) -> Result<#model_output_type, ::cratestack::client_rust::ClientError> {
-                    self.runtime.delete(&format!("{}/{}", #route_path, id), headers).await
-                }
-
-                #delete_with_response_method
-            }
-        }
+        groups_write::delete_group(&ctx)
     } else {
         Default::default()
     };
