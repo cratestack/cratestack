@@ -1,4 +1,5 @@
 import 'client.dart';
+import 'package:cratestack_annotations/cratestack_annotations.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -13,6 +14,11 @@ part 'procedures.g.dart';
 // hit a real `uri_does_not_exist` `flutter analyze` error (confirmed
 // empirically — see `shared_types.dart.j2`'s identical guard).
 part 'procedures.mapper.dart';
+// issue #668 phase 2: same gate as `mapper_part_file_name` above, for the
+// same reason — `package:cratestack_builder`'s `PartBuilder` writes no
+// output file when this source has zero `@CratestackBuilder()`-annotated
+// classes.
+part 'procedures.builder.dart';
 
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
@@ -35,6 +41,7 @@ part 'procedures.mapper.dart';
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class EstimateFocusMinutesArgs with EstimateFocusMinutesArgsMappable {
   const EstimateFocusMinutesArgs({
 required this.args,
@@ -55,23 +62,6 @@ required this.args,
   }
 }
 
-class EstimateFocusMinutesArgsBuilder {
-  FocusEstimateArgs? _args;
-  bool _argsSet = false;
-
-  EstimateFocusMinutesArgsBuilder args(FocusEstimateArgs value) {
-    _args = value;
-    _argsSet = true;
-    return this;
-  }
-
-  EstimateFocusMinutesArgs build() {
-    return EstimateFocusMinutesArgs(
-      args: _argsSet ? (_args as FocusEstimateArgs) : (throw StateError('EstimateFocusMinutesArgs.args is required but was not set')),
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -93,6 +83,7 @@ class EstimateFocusMinutesArgsBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class FocusEstimateArgs with FocusEstimateArgsMappable {
   const FocusEstimateArgs({
 required this.taskCount,
@@ -117,32 +108,6 @@ required this.minutesPerTask,
   }
 }
 
-class FocusEstimateArgsBuilder {
-  int? _taskCount;
-  bool _taskCountSet = false;
-  int? _minutesPerTask;
-  bool _minutesPerTaskSet = false;
-
-  FocusEstimateArgsBuilder taskCount(int value) {
-    _taskCount = value;
-    _taskCountSet = true;
-    return this;
-  }
-
-  FocusEstimateArgsBuilder minutesPerTask(int value) {
-    _minutesPerTask = value;
-    _minutesPerTaskSet = true;
-    return this;
-  }
-
-  FocusEstimateArgs build() {
-    return FocusEstimateArgs(
-      taskCount: _taskCountSet ? (_taskCount as int) : (throw StateError('FocusEstimateArgs.taskCount is required but was not set')),
-      minutesPerTask: _minutesPerTaskSet ? (_minutesPerTask as int) : (throw StateError('FocusEstimateArgs.minutesPerTask is required but was not set')),
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -164,6 +129,7 @@ class FocusEstimateArgsBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class FocusEstimateResult with FocusEstimateResultMappable {
   const FocusEstimateResult({
 required this.totalMinutes,
@@ -181,23 +147,6 @@ required this.totalMinutes,
     return <String, Object?>{
       'totalMinutes': totalMinutes,
     };
-  }
-}
-
-class FocusEstimateResultBuilder {
-  int? _totalMinutes;
-  bool _totalMinutesSet = false;
-
-  FocusEstimateResultBuilder totalMinutes(int value) {
-    _totalMinutes = value;
-    _totalMinutesSet = true;
-    return this;
-  }
-
-  FocusEstimateResult build() {
-    return FocusEstimateResult(
-      totalMinutes: _totalMinutesSet ? (_totalMinutes as int) : (throw StateError('FocusEstimateResult.totalMinutes is required but was not set')),
-    );
   }
 }
 

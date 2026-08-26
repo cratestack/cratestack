@@ -24,6 +24,10 @@ pub(crate) struct PubspecFileContext {
     pub(crate) native_cbor: bool,
     /// See `crate::views::TemplateContext::cratestack_cbor_version_requirement`.
     pub(crate) cratestack_cbor_version_requirement: String,
+    /// See `crate::views::TemplateContext::cratestack_annotations_version_requirement`.
+    pub(crate) cratestack_annotations_version_requirement: String,
+    /// See `crate::views::TemplateContext::cratestack_builder_version_requirement`.
+    pub(crate) cratestack_builder_version_requirement: String,
 }
 
 pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileContext {
@@ -36,5 +40,7 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
         package_name: config.library_name.clone(),
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,
+        cratestack_annotations_version_requirement: format!("^{}", env!("CARGO_PKG_VERSION")),
+        cratestack_builder_version_requirement: format!("^{}", env!("CARGO_PKG_VERSION")),
     }
 }

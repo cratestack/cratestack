@@ -75,7 +75,6 @@ pub(crate) fn build_where_data_class(
                 false,
                 false,
                 false,
-                false,
                 format!(
                     "value['{wire}'] == null ? null : {filter_type}.fromWire(cratestackAsValueMap(value['{wire}']))",
                     wire = field.name
@@ -87,6 +86,10 @@ pub(crate) fn build_where_data_class(
     Some(DataClassView {
         name: where_name,
         has_fields: true,
+        // Never `Patch`-kind, no touch flags, no relation-valued list
+        // fields — see `DataClassView::builder_args`'s doc.
+        builder_args: String::new(),
+        emit_builder: true,
         fields,
     })
 }
@@ -126,7 +129,6 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             true,
             false,
             false,
-            false,
             format!(
                 "{sort_field_name}.fromWire(cratestackRequireWireValue('{order_by_name}', 'field', value['field']))"
             ),
@@ -139,7 +141,6 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
             true,
             false,
             false,
-            false,
             format!(
                 "SortDirection.fromWire(cratestackRequireWireValue('{order_by_name}', 'direction', value['direction']))"
             ),
@@ -149,6 +150,10 @@ pub(crate) fn build_order_by_clause_data_class(model: &Model) -> DataClassView {
     DataClassView {
         name: order_by_name.clone(),
         has_fields: true,
+        // Never `Patch`-kind, no touch flags, no relation-valued list
+        // fields — see `DataClassView::builder_args`'s doc.
+        builder_args: String::new(),
+        emit_builder: true,
         fields,
     }
 }
@@ -170,25 +175,30 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
             false,
             false,
             false,
-            false,
             format!(
                 "value['where'] == null ? null : {where_name}.fromWire(cratestackAsValueMap(value['where']))"
             ),
             "where?.toWire()".to_owned(),
         ));
     }
-    // `is_list: false` here is deliberate, not an oversight: `orderBy` is a
-    // framework-synthesized `FindMany` collection field, not a schema-
-    // declared scalar list field — issue #661's default-empty-list /
-    // `add{Field}` builder behavior is scoped to real `Field`s with
-    // `TypeArity::List` (what `crate::builders::build_data_class` passes
-    // through from the schema), not to every `List<...>` -shaped Dart type
-    // this crate happens to emit.
+    // `orderBy`'s Dart type is `List<{order_by_name}>?`, structurally
+    // identical to any genuine schema list field — but it is
+    // framework-synthesized and has no Rust-side counterpart, so it must
+    // NOT get issue #661's default-empty-list/`add{Field}` treatment. The
+    // old inline template excluded it with an `is_list: false` flag;
+    // `package:cratestack_builder` derives list-ness from the emitted Dart
+    // (`DartType.isDartCoreList`) and cannot see the distinction, so it is
+    // threaded through `nonDefaultingListFields` below instead.
+    //
+    // Not an acceptable loss, which an earlier revision of this comment
+    // claimed: leaving it defaulted changed `<Model>FindMany.orderBy` from
+    // `null` to `[]` when unset AND put it on the wire that way, a
+    // behaviour break measured at 14/16 against origin/main's 16/16 on an
+    // identical parity test.
     fields.push(FieldView::new(
         "orderBy".to_owned(),
         "orderBy".to_owned(),
         format!("List<{order_by_name}>?"),
-        false,
         false,
         false,
         false,
@@ -201,6 +211,12 @@ pub(crate) fn build_find_many_data_class(model: &Model, has_where: bool) -> Data
     DataClassView {
         name: find_many_name,
         has_fields: true,
+        // Never `Patch`-kind and no touch flags, but `orderBy` is a
+        // synthesized list that must keep its `null`-when-unset semantics —
+        // see the comment above it. `where` is not list-typed, so it needs
+        // nothing here.
+        builder_args: "nonDefaultingListFields: {'orderBy'}".to_owned(),
+        emit_builder: true,
         fields,
     }
 }

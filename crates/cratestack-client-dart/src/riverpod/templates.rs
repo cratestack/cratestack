@@ -23,20 +23,12 @@ pub(crate) const PUBSPEC: &str = "riverpod/pubspec.yaml.j2";
 pub(crate) const REST_PACKAGE_TEST: &str = "riverpod/rest_package_test.dart.j2";
 pub(crate) const RPC_PACKAGE_TEST: &str = "riverpod/rpc_package_test.dart.j2";
 
-/// `(template_name, default_source)`. The first two entries are
+/// `(template_name, default_source)`. The first three entries are
 /// include-only (issue #301's `enums_and_data_classes.dart.j2` and issue
 /// #302's `model_providers.dart.j2`/`procedure_providers.dart.j2`) —
 /// registered so `{% include %}` resolves, never rendered to disk
 /// directly, mirroring `crate::templates_fragments`.
 const TEMPLATE_SOURCES: &[(&str, &str)] = &[
-    (
-        "model_builder_class.dart.j2",
-        include_str!("../../templates/model_builder_class.dart.j2"),
-    ),
-    (
-        "computed_params_builder_class.dart.j2",
-        include_str!("../../templates/computed_params_builder_class.dart.j2"),
-    ),
     (
         "computed_params_class.dart.j2",
         include_str!("../../templates/computed_params_class.dart.j2"),

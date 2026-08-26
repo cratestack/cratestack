@@ -3,9 +3,22 @@ import 'dart:typed_data';
 import 'dart:convert';
 {% endif %}
 
+{% if data_classes | length > 0 %}
+import 'package:cratestack_annotations/cratestack_annotations.dart';
+{% endif %}
 import 'package:decimal/decimal.dart';
 
 import 'runtime.dart';
+{% if data_classes | length > 0 %}
+// issue #668 phase 2: `package:cratestack_builder`'s `build_runner` step
+// expands this into every `@CratestackBuilder()`-annotated class below —
+// gated on `data_classes` being non-empty because its `PartBuilder`
+// writes no output file at all for a source file with zero annotated
+// classes, so an unconditional `part` directive here would be a real
+// `flutter analyze --fatal-warnings` `uri_has_not_been_generated` failure
+// on a schema with no models, types, or procedures.
+part 'models.builder.dart';
+{% endif %}
 
 class PageInfo {
   const PageInfo({
@@ -413,6 +426,9 @@ enum {{ enum_type.name }} {
 
 {% endfor %}
 {% for data_class in data_classes %}
+{% if data_class.emit_builder %}
+@CratestackBuilder({{ data_class.builder_args }})
+{% endif %}
 class {{ data_class.name }} {
 {% if not data_class.has_fields %}
   const {{ data_class.name }}();
@@ -470,8 +486,6 @@ class {{ data_class.name }} {
     };
   }
 }
-
-{% include "model_builder_class.dart.j2" %}
 
 {% endfor %}
 {% for model_api in model_apis %}

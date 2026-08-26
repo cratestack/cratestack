@@ -23,24 +23,45 @@ pub(crate) fn build_enum_view(enum_decl: &EnumDecl) -> EnumView {
     }
 }
 
-/// Whether this field gets an `add{Field}` append setter (issue #661).
+/// Renders the exact text between `@CratestackBuilder(...)`'s parens (issue
+/// #668 phase 2/3) — empty for the all-defaults case, so the template can
+/// always write `@CratestackBuilder({{ builder_args }})` unconditionally
+/// rather than branching per argument.
 ///
-/// List arity, minus one exclusion: a *relation*-valued list on the model
-/// class. Rust builds that class from `scalar_model_fields`, which drops
-/// relation fields entirely, so a Dart `addPosts` there would have no Rust
-/// counterpart — reintroducing exactly the cross-language divergence #661
-/// exists to remove.
-///
-/// Deliberately scoped to `ProjectionModel` rather than applied wherever a
-/// field happens to name a model: a `type` block's fields go through Rust's
-/// `scoped_builder_fields`, which does *not* filter relations, so a
-/// model-typed list inside a `type` does get `add_` on both sides and must
-/// keep it here.
-fn emits_append_setter(field: &Field, kind: DataClassKind, model_names: &BTreeSet<&str>) -> bool {
-    if field.ty.arity != TypeArity::List {
-        return false;
+/// `touch_flag_fields`/`non_defaulting_list_fields` name FIELDS (not the
+/// flags/setters themselves) — `package:cratestack_builder` derives the
+/// rest structurally, mirroring `listDefaults`' own "one non-recoverable
+/// argument" precedent.
+fn render_builder_args(
+    list_defaults: bool,
+    touch_flag_fields: &[String],
+    non_defaulting_list_fields: &[String],
+) -> String {
+    let mut parts = Vec::new();
+    if !list_defaults {
+        parts.push("listDefaults: false".to_owned());
     }
-    !(matches!(kind, DataClassKind::ProjectionModel) && is_relation_field(model_names, field))
+    if !touch_flag_fields.is_empty() {
+        parts.push(format!(
+            "touchFlagFields: {{{}}}",
+            touch_flag_fields
+                .iter()
+                .map(|field| format!("'{field}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    if !non_defaulting_list_fields.is_empty() {
+        parts.push(format!(
+            "nonDefaultingListFields: {{{}}}",
+            non_defaulting_list_fields
+                .iter()
+                .map(|field| format!("'{field}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    parts.join(", ")
 }
 
 pub(crate) fn build_data_class(
@@ -50,7 +71,7 @@ pub(crate) fn build_data_class(
     enum_names: &BTreeSet<&str>,
     model_names: &BTreeSet<&str>,
 ) -> DataClassView {
-    let fields: Vec<FieldView> = fields
+    let field_views: Vec<FieldView> = fields
         .iter()
         .map(|field| {
             FieldView::new(
@@ -59,7 +80,6 @@ pub(crate) fn build_data_class(
                 dart_field_type(field, kind),
                 matches!(kind, DataClassKind::Plain)
                     && matches!(field.ty.arity, TypeArity::Required | TypeArity::List),
-                emits_append_setter(field, kind, model_names),
                 matches!(kind, DataClassKind::Patch),
                 matches!(field.ty.arity, TypeArity::Optional),
                 decode_value_expr(
@@ -79,9 +99,57 @@ pub(crate) fn build_data_class(
             )
         })
         .collect();
+
+    // `{field}IsSet` touch flags Rust actually synthesized (issue #668
+    // phase 2/3) — passed explicitly rather than left for
+    // `package:cratestack_builder` to recover by matching `bool` fields
+    // named `{other}IsSet`, which fires on any ordinary user-declared field
+    // shaped that way too (`cratestack-parser`'s
+    // `tests_patch_touch_flag_collisions.rs` deliberately accepts a
+    // non-nullable `weight` beside an unrelated `weightIsSet` field).
+    let touch_flag_fields: Vec<String> = field_views
+        .iter()
+        .filter(|field| field.is_nullable_patch_field)
+        .map(|field| field.identifier.clone())
+        .collect();
+
+    // A to-many *relation*-valued field on a model class (issue #661): Rust
+    // builds that class from `scalar_model_fields`, which drops relation
+    // fields entirely, so a Dart `addPosts`/`?? []` default there would
+    // conflate "this relation was not included in the response" with
+    // "included and empty" — no Rust builder counterpart, and a real
+    // wire-visible divergence. Deliberately scoped to `ProjectionModel`
+    // only: a `type` block's fields go through `scoped_builder_fields` on
+    // the Rust side historically, which does NOT filter relations, so a
+    // model-typed list inside a `type` keeps its normal list defaulting.
+    let non_defaulting_list_fields: Vec<String> = fields
+        .iter()
+        .zip(field_views.iter())
+        .filter(|(field, _)| {
+            matches!(kind, DataClassKind::ProjectionModel)
+                && field.ty.arity == TypeArity::List
+                && is_relation_field(model_names, field)
+        })
+        .map(|(_, field_view)| field_view.identifier.clone())
+        .collect();
+
+    let list_defaults = !matches!(kind, DataClassKind::Patch);
+
     DataClassView {
         name: name.to_owned(),
-        has_fields: !fields.is_empty(),
-        fields,
+        has_fields: !field_views.is_empty(),
+        // `@CratestackBuilder(...)`'s arguments (issue #668 phase 2/3) — see
+        // `render_builder_args`'s doc for the shape and
+        // `DataClassView::builder_args`'s doc for why these three are the
+        // ones that can't be recovered from the emitted Dart source alone.
+        builder_args: render_builder_args(
+            list_defaults,
+            &touch_flag_fields,
+            &non_defaulting_list_fields,
+        ),
+        // Every caller wants a builder, including `build_shared_types_file`
+        // — see `DataClassView::emit_builder`'s doc.
+        emit_builder: true,
+        fields: field_views,
     }
 }

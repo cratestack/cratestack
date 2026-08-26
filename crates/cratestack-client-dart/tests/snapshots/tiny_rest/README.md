@@ -133,6 +133,26 @@ final container = ProviderContainer(
 );
 ```
 
+## Code Generation (`build_runner`)
+
+Every generated data class carries `@CratestackBuilder(...)` (issue #668) — an annotation, not
+working code, until `package:cratestack_builder` expands it into a `{Class}Builder` via
+`build_runner`. Without this step the package will not compile, let alone
+`flutter analyze` clean.
+
+Run it after every regeneration:
+
+```sh
+dart run build_runner build --delete-conflicting-outputs
+```
+
+Or pass `--run-build-runner` to `cratestack generate-dart` to have the CLI run it for you right
+after generation (opt-in; requires a Dart SDK on `PATH`):
+
+```sh
+cratestack generate-dart --schema schema.cstack --out . --run-build-runner
+```
+
 ## Flutter Usage
 
 Selection-shaped list query in Flutter or Riverpod:

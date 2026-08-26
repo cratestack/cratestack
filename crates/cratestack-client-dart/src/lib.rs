@@ -4,6 +4,7 @@ mod computed_params_view;
 mod config;
 mod context;
 mod dart_types;
+mod data_class_view;
 mod field_view;
 mod find_many_views;
 mod generator;

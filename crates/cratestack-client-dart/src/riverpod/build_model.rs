@@ -189,6 +189,14 @@ pub(crate) fn build_model_file(
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
     imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
     imports.insert("import 'package:dart_mappable/dart_mappable.dart';".to_owned());
+    // Issue #668 phase 2: every data class this file emits carries
+    // `@CratestackBuilder(...)` (see `enums_and_data_classes.dart.j2`) —
+    // unconditional, unlike the imports below that are gated on what this
+    // particular model actually uses, because `data_classes` here is
+    // never empty (at minimum the model itself, `Create<M>Input` and
+    // `Update<M>Input`).
+    imports
+        .insert("import 'package:cratestack_annotations/cratestack_annotations.dart';".to_owned());
     imports.insert("import '../runtime.dart';".to_owned());
     imports.insert("import '../client.dart';".to_owned());
     // `<Model>ComputedParams.operator ==`/`hashCode`
@@ -278,6 +286,7 @@ pub(crate) fn build_model_file(
         imports: render_import_lines(imports),
         part_file_name: format!("{}.g.dart", model_file_stem(&model.name)),
         mapper_part_file_name: format!("{}.mapper.dart", model_file_stem(&model.name)),
+        builder_part_file_name: format!("{}.builder.dart", model_file_stem(&model.name)),
         enum_types,
         data_classes,
         selection,

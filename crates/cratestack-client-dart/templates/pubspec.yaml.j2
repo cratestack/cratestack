@@ -31,8 +31,20 @@ dependencies:
   # depends on the server's `decimal-rust-decimal` vs `decimal-bigdecimal`
   # backend choice (#495/#496).
   decimal: ^3.2.6
+  # issue #668 phase 2: the runtime-only `@CratestackBuilder` annotation
+  # every generated data class in `models.dart` carries. Deliberately a
+  # separate package from `cratestack_builder` below (a `dev_dependency`)
+  # — see `dart-packages/cratestack_annotations/pubspec.yaml`'s own header
+  # comment for why merging them would leak `analyzer`/`build`/`source_gen`
+  # into this package's runtime dependency graph.
+  cratestack_annotations: {{ cratestack_annotations_version_requirement }}
 
 dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
+  # issue #668 phase 2: expands `models.dart`'s `part 'models.builder.dart';`
+  # into the `{Class}Builder` classes this package used to generate inline
+  # — see `dart-packages/cratestack_builder`'s own README for what it does.
+  build_runner: ^2.15.0
+  cratestack_builder: {{ cratestack_builder_version_requirement }}

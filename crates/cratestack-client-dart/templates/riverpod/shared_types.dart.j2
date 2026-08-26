@@ -12,6 +12,11 @@ import '../runtime.dart';
 {% for import in imports %}
 {{ import }}
 {% endfor %}
+{# `imports` above already carries the `cratestack_annotations` import
+   (gated on `data_classes | length > 0` — see
+   `SharedTypesFileContext::builder_part_file_name`'s doc) via
+   `build_shared_types_file`'s own `BTreeSet`, sorted in among the
+   `model_file_path` imports. #}
 
 // issue #325: no `@riverpod`-generated surface lives in this file (see
 // `crate::riverpod::views::SharedTypesFileContext`'s doc for why), so
@@ -27,6 +32,21 @@ import '../runtime.dart';
 // `Owner::Shared`, so `dart_mappable_builder` always has at least one
 // `@MappableClass()` in this file to generate a part for.
 part 'shared_types.mapper.dart';
+{% if data_classes | length > 0 %}
+// issue #668 phase 2/3: gated (unlike `part 'shared_types.mapper.dart';`
+// above) because `package:cratestack_builder`'s `PartBuilder`, unlike
+// `dart_mappable_builder` on this file's hand-written filter classes,
+// writes no output file at all when this source has zero
+// `@CratestackBuilder()`-annotated classes — the hand-written
+// `StringFilter`/`NumberFilter`/etc. filter classes above never carry
+// that annotation, only the partition-assigned/orphan `type` blocks in
+// `data_classes` do (see `SharedTypesFileContext::builder_part_file_name`'s
+// doc). An unconditional directive here was a real `flutter analyze
+// --fatal-warnings` `uri_has_not_been_generated` failure on the common
+// case of a schema whose partition assigns nothing to `Owner::Shared`
+// (e.g. `ci_rpc.cstack`).
+part '{{ builder_part_file_name }}';
+{% endif %}
 
 class PageInfo {
   const PageInfo({

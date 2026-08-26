@@ -36,6 +36,10 @@ dependencies:
   # same reason, same package, this preset's `shared_types.dart.j2`
   # `DecimalFilter`/per-model data classes need it too.
   decimal: ^3.2.6
+  # issue #668 phase 2: see `pubspec.yaml.j2`'s identical dependency
+  # comment — same annotation, same reasoning, every per-model file and
+  # `procedures.dart` carries `@CratestackBuilder()` here too.
+  cratestack_annotations: ^0.8.13
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -108,3 +112,13 @@ dev_dependencies:
   #   `hashCode`/`copyWith`, and `flutter analyze --fatal-warnings
   #   --no-fatal-infos` is clean afterward.
   dart_mappable_builder: 4.8.0
+  # issue #668 phase 2: a fifth package joining the pinned-together group
+  # above, subject to the same `build_runner`-pass/`analyzer`-version wall.
+  # `cratestack_builder`'s own floor (`dart-packages/cratestack_builder/
+  # pubspec.yaml`) is `analyzer: '>=12.0.0 <13.0.0'` — squarely inside the
+  # `12.x` band `riverpod_generator: 4.0.4` and `dart_mappable_builder:
+  # 4.8.0` already resolve to above, so this doesn't move the resolved
+  # `analyzer` version either. A version range (not a pin) is fine here,
+  # unlike the trio: `cratestack_builder` isn't the thing whose own release
+  # cadence forced this wall, it just has to tolerate it.
+  cratestack_builder: ^0.8.13

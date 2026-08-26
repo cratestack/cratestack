@@ -1,6 +1,7 @@
 import '../client.dart';
 import '../queries.dart';
 import '../runtime.dart';
+import 'package:cratestack_annotations/cratestack_annotations.dart';
 import 'package:dart_mappable/dart_mappable.dart';
 import 'package:fast_immutable_collections/fast_immutable_collections.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'shared_types.dart';
 
 part 'board.g.dart';
 part 'board.mapper.dart';
+part 'board.builder.dart';
 
 enum BoardSortField {
   id('id'),  name('name');
@@ -51,6 +53,7 @@ enum BoardSortField {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class Board with BoardMappable {
   const Board({
 this.id,
@@ -75,28 +78,6 @@ this.name,
   }
 }
 
-class BoardBuilder {
-  int? _id;
-  String? _name;
-
-  BoardBuilder id(int? value) {
-    _id = value;
-    return this;
-  }
-
-  BoardBuilder name(String? value) {
-    _name = value;
-    return this;
-  }
-
-  Board build() {
-    return Board(
-      id: _id,
-      name: _name,
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -118,6 +99,7 @@ class BoardBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class CreateBoardInput with CreateBoardInputMappable {
   const CreateBoardInput({
 required this.id,
@@ -142,32 +124,6 @@ required this.name,
   }
 }
 
-class CreateBoardInputBuilder {
-  int? _id;
-  bool _idSet = false;
-  String? _name;
-  bool _nameSet = false;
-
-  CreateBoardInputBuilder id(int value) {
-    _id = value;
-    _idSet = true;
-    return this;
-  }
-
-  CreateBoardInputBuilder name(String value) {
-    _name = value;
-    _nameSet = true;
-    return this;
-  }
-
-  CreateBoardInput build() {
-    return CreateBoardInput(
-      id: _idSet ? (_id as int) : (throw StateError('CreateBoardInput.id is required but was not set')),
-      name: _nameSet ? (_name as String) : (throw StateError('CreateBoardInput.name is required but was not set')),
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -189,6 +145,7 @@ class CreateBoardInputBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder(listDefaults: false)
 class UpdateBoardInput with UpdateBoardInputMappable {
   const UpdateBoardInput({
 this.name,
@@ -209,21 +166,6 @@ this.name,
   }
 }
 
-class UpdateBoardInputBuilder {
-  String? _name;
-
-  UpdateBoardInputBuilder name(String? value) {
-    _name = value;
-    return this;
-  }
-
-  UpdateBoardInput build() {
-    return UpdateBoardInput(
-      name: _name,
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -245,6 +187,7 @@ class UpdateBoardInputBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class BoardWhere with BoardWhereMappable {
   const BoardWhere({
 this.id,
@@ -269,28 +212,6 @@ this.name,
   }
 }
 
-class BoardWhereBuilder {
-  NumberFilter? _id;
-  StringFilter? _name;
-
-  BoardWhereBuilder id(NumberFilter? value) {
-    _id = value;
-    return this;
-  }
-
-  BoardWhereBuilder name(StringFilter? value) {
-    _name = value;
-    return this;
-  }
-
-  BoardWhere build() {
-    return BoardWhere(
-      id: _id,
-      name: _name,
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -312,6 +233,7 @@ class BoardWhereBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class BoardOrderByClause with BoardOrderByClauseMappable {
   const BoardOrderByClause({
 required this.field,
@@ -336,32 +258,6 @@ required this.direction,
   }
 }
 
-class BoardOrderByClauseBuilder {
-  BoardSortField? _field;
-  bool _fieldSet = false;
-  SortDirection? _direction;
-  bool _directionSet = false;
-
-  BoardOrderByClauseBuilder field(BoardSortField value) {
-    _field = value;
-    _fieldSet = true;
-    return this;
-  }
-
-  BoardOrderByClauseBuilder direction(SortDirection value) {
-    _direction = value;
-    _directionSet = true;
-    return this;
-  }
-
-  BoardOrderByClause build() {
-    return BoardOrderByClause(
-      field: _fieldSet ? (_field as BoardSortField) : (throw StateError('BoardOrderByClause.field is required but was not set')),
-      direction: _directionSet ? (_direction as SortDirection) : (throw StateError('BoardOrderByClause.direction is required but was not set')),
-    );
-  }
-}
-
 // issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
 // alongside `riverpod_generator` in the same `build_runner` pass) gives
 // this class real `operator ==`/`hashCode`/`copyWith` — every generated
@@ -383,6 +279,7 @@ class BoardOrderByClauseBuilder {
 // (not `List.==`/identity) comparison automatically from
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder(nonDefaultingListFields: {'orderBy'})
 class BoardFindMany with BoardFindManyMappable {
   const BoardFindMany({
 this.where,
@@ -404,28 +301,6 @@ this.orderBy,
       'where': where?.toWire(),
       'orderBy': orderBy?.map((item) => item.toWire()).toList(growable: false),
     };
-  }
-}
-
-class BoardFindManyBuilder {
-  BoardWhere? _where;
-  List<BoardOrderByClause>? _orderBy;
-
-  BoardFindManyBuilder where(BoardWhere? value) {
-    _where = value;
-    return this;
-  }
-
-  BoardFindManyBuilder orderBy(List<BoardOrderByClause>? value) {
-    _orderBy = value;
-    return this;
-  }
-
-  BoardFindMany build() {
-    return BoardFindMany(
-      where: _where,
-      orderBy: _orderBy,
-    );
   }
 }
 

@@ -27,10 +27,11 @@ pub(crate) struct TemplateContext {
     /// `config.preset == DartPreset::Riverpod` (issue #303). `README.md.j2`
     /// is one of the files `crate::riverpod::generate_package` reuses
     /// verbatim from `generate_default_package` (see that module's doc),
-    /// so this flag is how the shared template gates the riverpod-only
-    /// `build_runner` section without forking the template — `false` for
-    /// every `DartPreset::Default` render, which is exactly what keeps
-    /// the default preset's output byte-identical (`tests/snapshot.rs`).
+    /// so this flag is how the shared template gates riverpod-only prose
+    /// (its own `@riverpod`/`dart_mappable` codegen reasons for needing
+    /// `build_runner`, on top of the `@CratestackBuilder(...)` reason every
+    /// preset shares as of issue #668 phase 2 — see `setup.md.j2`'s "Code
+    /// Generation" section) without forking the template.
     pub(crate) is_riverpod_preset: bool,
     /// `config.native_cbor` (issue #563) — gates whether the generated
     /// runtime imports `package:cbor` (sync, pure Dart) or
@@ -60,6 +61,21 @@ pub(crate) struct TemplateContext {
     /// `models.dart` is a single file for every model, so the import is
     /// gated on "does *any* model need it", not per-model.
     pub(crate) has_computed_params_class: bool,
+    /// `cratestack_annotations: {{ cratestack_annotations_version_requirement }}`
+    /// in `pubspec.yaml`'s `dependencies:` (issue #668 phase 2) —
+    /// `^{CARGO_PKG_VERSION}` of this crate, same lockstep convention as
+    /// `cratestack_cbor_version_requirement` above (`dart-packages/
+    /// cratestack_annotations`'s own version is bumped alongside the Cargo
+    /// workspace version by `just bump`'s `dart-packages/*/pubspec.yaml`
+    /// rewrite). Unlike `cratestack_cbor_version_requirement`, never empty
+    /// — every generated package now carries the `@CratestackBuilder`
+    /// annotation on every data class, unconditionally.
+    pub(crate) cratestack_annotations_version_requirement: String,
+    /// `cratestack_builder: {{ cratestack_builder_version_requirement }}`
+    /// in `pubspec.yaml`'s `dev_dependencies:`, alongside `build_runner` —
+    /// see `cratestack_annotations_version_requirement`'s doc for the
+    /// lockstep-versioning rationale, identical here.
+    pub(crate) cratestack_builder_version_requirement: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,12 +90,11 @@ pub(crate) struct EnumVariantView {
     pub(crate) wire_name: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct DataClassView {
-    pub(crate) name: String,
-    pub(crate) has_fields: bool,
-    pub(crate) fields: Vec<FieldView>,
-}
+// `DataClassView`/`DataClassKind` live in `crate::data_class_view` (split
+// out per the repo's 200-LoC file convention) and are re-exported here so
+// every existing `use crate::views::{..., DataClassView, DataClassKind}`
+// call site keeps working unchanged.
+pub(crate) use crate::data_class_view::{DataClassKind, DataClassView};
 
 // `FieldView` lives in `crate::field_view` (split out per the repo's
 // 200-LoC file convention) and is re-exported here so every existing
@@ -164,11 +179,4 @@ pub(crate) struct ProcedureView {
     pub(crate) route: String,
     pub(crate) return_decode_expr: String,
     pub(crate) kind: &'static str,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum DataClassKind {
-    Plain,
-    Patch,
-    ProjectionModel,
 }
