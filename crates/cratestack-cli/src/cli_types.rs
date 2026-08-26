@@ -43,11 +43,14 @@ pub(crate) enum Command {
         #[arg(long, value_enum, default_value_t = DartPresetArg::Default)]
         preset: DartPresetArg,
         /// Opt-in (issue #303): after generation, shell out to `dart run
-        /// build_runner build --delete-conflicting-outputs` in `--out` so
-        /// a `--preset riverpod` package's `@riverpod` annotations are
-        /// actually expanded — the annotated Dart alone does not
-        /// compile/analyze until `build_runner` runs. Off by default: a
-        /// Rust CLI invoking another toolchain unprompted would be a
+        /// build_runner build --delete-conflicting-outputs` in `--out`.
+        /// Every preset needs this since issue #668 phase 2/3: every
+        /// generated data class carries a `@CratestackBuilder(...)`
+        /// annotation that `package:cratestack_builder` expands into a
+        /// `{Class}Builder`; `--preset riverpod` additionally needs the
+        /// step for its own `@riverpod` annotations — the annotated Dart
+        /// alone does not compile/analyze until `build_runner` runs. Off
+        /// by default: a Rust CLI invoking another toolchain unprompted would be a
         /// surprising behaviour change for existing/scripted callers. No
         /// effect together with `--check` (drift-detection mode never
         /// writes files to run `build_runner` against). Requires a Dart

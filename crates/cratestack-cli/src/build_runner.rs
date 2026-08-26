@@ -1,9 +1,13 @@
 //! `--run-build-runner` (issue #303): after `generate-dart` writes a
 //! package to `--out`, optionally shell out to
 //! `dart run build_runner build --delete-conflicting-outputs` in that
-//! directory so a `--preset riverpod` package's `@riverpod` annotations
-//! are actually expanded into working `.g.dart` code — without this
-//! step, the generated package doesn't compile, let alone analyze.
+//! directory. Every preset needs this since issue #668 phase 2/3: every
+//! generated data class carries a `@CratestackBuilder(...)` annotation
+//! that `package:cratestack_builder` expands into working `{Class}Builder`
+//! code; a `--preset riverpod` package additionally needs the step for its
+//! own `@riverpod` annotations, expanded into working `.g.dart` code —
+//! without this step, the generated package doesn't compile, let alone
+//! analyze.
 //!
 //! Kept as its own `thiserror` enum rather than folded into the rest of
 //! this crate's `anyhow`-based handlers (see `cli_handlers.rs`) because

@@ -73,10 +73,12 @@ Flags:
   cross-model types, procedures in their own file, and package-wide DI
   providers in `lib/src/client.dart`.
 - `--run-build-runner` — after generation, shell out to `dart run
-  build_runner build --delete-conflicting-outputs` in `--out` so a
-  `--preset riverpod` package's `@riverpod` annotations are actually
-  expanded (the generated Dart doesn't compile/analyze until
-  `build_runner` runs). Off by default. No effect together with `--check`.
+  build_runner build --delete-conflicting-outputs` in `--out`. Every preset needs this
+  now (issue #668 phase 2/3): every generated data class carries a
+  `@CratestackBuilder(...)` annotation that `package:cratestack_builder` expands into a
+  `{Class}Builder`; `--preset riverpod` additionally needs the step for its own
+  `@riverpod` annotations. The generated Dart doesn't compile/analyze until
+  `build_runner` runs. Off by default. No effect together with `--check`.
   Requires a Dart SDK on `PATH`.
 
 ### `generate-typescript` (alias `generate-ts`)
