@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### `@@unique`/`@@index` gain a `where: "<sql predicate>"` argument — partial index DDL (#742)
+
+`@@unique([...], where: "...")` and `@@index([...], where: "...")` declare a **partial** index,
+following the same keyword-argument shape and verbatim-passthrough posture `using`/`opclass` already
+use (#156): the predicate is never parsed or validated, only carried through to a trailing
+`WHERE <predicate>` on the emitted `CREATE [UNIQUE] INDEX`, and left for the database to accept or
+reject. `@@unique` previously required at least two fields ("use a field-level `@unique` instead");
+that rule is relaxed for the single-field case specifically when `where:` is present, since
+field-level `@unique` has no room for a keyword argument at all — this is the motivating shape (ADR
+0038's deferred B3): a single, genuinely-optional column that must be unique only when present, e.g.
+`@@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")`.
+
+`AddIndex` gains a `where_predicate: Option<String>` field (`#[serde(default)]`, so previously
+serialized migration IR keeps deserializing); `None` renders byte-identical DDL to before this field
+existed on both backends. SQLite renders the same `WHERE` syntax (it has supported partial indexes
+since 3.8.0) — the one real divergence is what a predicate may legally *reference*, not the syntax
+(see `emit::sqlite::indexes`'s doc for SQLite's restrictions).
+
+The load-bearing part is introspection round-tripping without churn: Postgres exposes a stored
+predicate via `pg_get_expr(indpred, indrelid)`, and that text is **normalized** — verified empirically
+against a live Postgres 18 rather than assumed — wrapped in exactly one pair of parentheses with
+whitespace collapsed, so `idempotency_key IS NOT NULL` reads back as
+`(idempotency_key IS NOT NULL)`. A naive comparison against the schema's literal text would make every
+`migrate` run diff the index as changed. The diff engine (`crate::diff::indexes`) now compares matched
+indexes' predicates through that same normalization before deciding whether to no-op or drop+recreate,
+proved against a real database (not a hand-written IR fixture, which can't exhibit the normalization)
+in `crates/cratestack-migrate/tests/postgres_introspect.rs`. It deliberately does not replicate
+Postgres's other two normalizations — identifier case-folding and inserting explicit casts onto
+literals (`100` → `(100)::numeric`) — since that needs a real SQL expression parser, out of scope per
+the ticket; a predicate that needs one of those to round-trip byte-for-byte will still show as changed
+and get dropped/recreated, a documented limitation rather than a silent gap.
+
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
 `cratestack-client-dart` no longer emits `{Class}Builder` classes inline. Every generated data class

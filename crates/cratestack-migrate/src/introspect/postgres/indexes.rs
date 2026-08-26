@@ -15,11 +15,25 @@
 //! The primary key's own implicit unique index (`indisprimary = true`)
 //! is excluded — the schema-side projection never emits a standalone
 //! `AddIndex` for a primary key; `PRIMARY KEY (...)` is inline on
-//! `CREATE TABLE` instead (`emit::postgres::tables`). Expression and
-//! partial indexes (`indexprs`/`indpred` not null) are excluded too:
-//! `AddIndex` has no way to represent either, so guessing a plain
-//! column list for one would misrepresent it — skipped rather than
-//! guessed, same rule as unmapped columns.
+//! `CREATE TABLE` instead (`emit::postgres::tables`). Expression indexes
+//! (`indexprs` not null) are excluded too: `AddIndex` has no way to
+//! represent one, so guessing a plain column list for it would
+//! misrepresent it — skipped rather than guessed, same rule as unmapped
+//! columns.
+//!
+//! Partial indexes (`indpred` not null, cratestack#742) are read via
+//! `pg_get_expr(i.indpred, i.indrelid)`, the same catalog function
+//! Postgres's own `\d` / `pg_dump` use to deparse a stored predicate
+//! back into SQL text. That text is **normalized** — parenthesized,
+//! literals given explicit type casts, identifiers case-folded — so it
+//! is not, in general, byte-identical to the `.cstack` schema's literal
+//! `where: "..."` text even when nothing changed. `crate::diff::indexes`
+//! tolerates the specific normalization empirically observed against a
+//! live Postgres 18 (whitespace collapsing + exactly one wrapping pair
+//! of parens) when deciding whether a partial index's predicate
+//! changed; it does not attempt to replicate cast-insertion or
+//! identifier case-folding, which would need a real SQL expression
+//! parser (out of scope, see cratestack#742's "Out of Scope").
 
 use sqlx_core::row::Row as _;
 use sqlx_postgres::PgPool;
@@ -34,7 +48,8 @@ pub(super) async fn introspect_indexes(
 ) -> Result<Vec<AddIndex>, IntrospectError> {
     let rows = sqlx_core::query::query(
         "SELECT ic.relname, i.indisunique, \
-                array_agg(a.attname ORDER BY k.ord) AS columns \
+                array_agg(a.attname ORDER BY k.ord) AS columns, \
+                pg_get_expr(i.indpred, i.indrelid) AS predicate \
          FROM pg_index i \
          JOIN pg_class ic ON ic.oid = i.indexrelid \
          JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true \
@@ -42,8 +57,7 @@ pub(super) async fn introspect_indexes(
          WHERE i.indrelid = to_regclass($1) \
            AND i.indisprimary = false \
            AND i.indexprs IS NULL \
-           AND i.indpred IS NULL \
-         GROUP BY ic.relname, i.indisunique \
+         GROUP BY ic.relname, i.indisunique, i.indpred, i.indrelid \
          ORDER BY ic.relname",
     )
     .bind(table)
@@ -55,6 +69,7 @@ pub(super) async fn introspect_indexes(
         let name: String = row.try_get(0)?;
         let unique: bool = row.try_get(1)?;
         let columns: Vec<String> = row.try_get(2)?;
+        let where_predicate: Option<String> = row.try_get(3)?;
         out.push(AddIndex {
             name,
             table: table.to_owned(),
@@ -71,6 +86,7 @@ pub(super) async fn introspect_indexes(
             // before issue #156 either.
             using: None,
             opclass: None,
+            where_predicate,
         });
     }
     Ok(out)

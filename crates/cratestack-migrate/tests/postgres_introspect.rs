@@ -14,7 +14,7 @@
 //! `CRATESTACK_REQUIRE_DB` turns a connection/container failure into a
 //! panic instead of a skip — the CI gate sets it (`just
 //! test-ci-db-migrate-introspect`), so a broken Docker runner can't
-//! silently green this file's 7 tests while running none of them (a
+//! silently green this file's tests while running none of them (a
 //! 2026-08 CI-coverage audit found that is exactly what was happening:
 //! this crate's `postgres-introspect` feature was only ever passed by
 //! `just test-pg`, which no workflow invoked at all). This crate's
@@ -28,6 +28,7 @@
 //! to run concurrently against a shared database without a serializing
 //! mutex.
 
+use cratestack_migrate::emit::postgres::emit as emit_postgres;
 use cratestack_migrate::introspect::postgres::introspect;
 use cratestack_migrate::ir::{CheckKind, Column, ColumnArity, ColumnType};
 use cratestack_migrate::{Projections, diff_projections, project};
@@ -499,5 +500,170 @@ async fn multi_column_check_is_skipped_not_mis_attributed() {
         projected.checks.is_empty(),
         "multi-column CHECK should not appear: {:?}",
         projected.checks
+    );
+}
+
+/// cratestack#742's central risk and the ticket's decisive test:
+/// applying a migration containing a partial (`where:`) unique index,
+/// then re-planning against that same database, must produce **no**
+/// ops for the index — not a spurious drop/recreate every run. A
+/// hand-written IR fixture can't exercise this: the churn only shows up
+/// once Postgres's own `pg_get_expr` deparse of the stored predicate
+/// (verified empirically for cratestack#742 — see `crate::diff::indexes`'s
+/// module doc for the exact normalization observed against a live
+/// Postgres 18: whitespace collapsed, the whole predicate wrapped in
+/// exactly one pair of parentheses) is compared against the schema's
+/// literal `where:` text.
+#[tokio::test]
+async fn partial_unique_index_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = "introspection_probe_payments";
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbePayment {
+  id String @id
+  idempotencyKey String?
+  amount Int
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE idempotency_key IS NOT NULL"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let introspected_table = report
+        .projections
+        .tables
+        .get(table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+
+    // Prove the normalization the ticket asked us to confirm
+    // empirically actually happened here too, not just against the
+    // scratch database used to design `normalize_predicate` — the
+    // introspected predicate is Postgres's own deparse, not the
+    // schema's literal text.
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(idempotency_key IS NOT NULL)")],
+        "pg_get_expr should have normalized the stored predicate"
+    );
+
+    // The decisive assertion: re-planning against the database the
+    // migration was just applied to produces no ops for this table.
+    let ops = diff_projections(&only_table(&report.projections, table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "re-planning a database whose partial index already matches the schema \
+         must be a no-op — got: {ops:?}"
+    );
+}
+
+/// The other half of the same requirement: a predicate that genuinely
+/// changed must NOT be swallowed by the normalization-tolerant
+/// comparison above — it has to still show up as a real drop + recreate.
+#[tokio::test]
+async fn partial_unique_index_predicate_change_is_detected_as_drop_and_recreate() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    // Computed rather than hand-guessed: `table_name`'s pluralizer
+    // doesn't just append `s` (cratestack#504 — consonant + `y` → `ies`,
+    // and the plural is computed over the whole snake_cased name, not
+    // per-word), so a literal here previously drifted from what
+    // `project()` actually produced and made this test vacuous (it
+    // diffed against an empty `Projections`, not the introspected
+    // table).
+    let table = cratestack_migrate::table_name("IntrospectionProbePaymentChanged");
+
+    let original_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbePaymentChanged {
+  id String @id
+  idempotencyKey String?
+  amount Int
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")
+}
+"#;
+    let original_schema =
+        cratestack_parser::parse_schema(original_source).expect("schema should parse");
+    let original = project(&original_schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&original, &table))
+        .expect("diff should succeed");
+    exec(&pool, &emit_postgres(&create_ops).up).await;
+
+    let changed_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbePaymentChanged {
+  id String @id
+  idempotencyKey String?
+  amount Int
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL AND amount > 0")
+}
+"#;
+    let changed_schema =
+        cratestack_parser::parse_schema(changed_source).expect("schema should parse");
+    let changed = project(&changed_schema);
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let ops = diff_projections(&only_table(&report.projections, &table), &changed)
+        .expect("diff should succeed");
+
+    let index_name = format!("{table}_idempotency_key_key");
+    let drops_it = ops.iter().any(
+        |op| matches!(op, cratestack_migrate::ir::Op::DropIndex(drop) if drop.name == index_name),
+    );
+    let re_adds_it = ops.iter().any(|op| {
+        matches!(op, cratestack_migrate::ir::Op::AddIndex(add) if add.name == index_name
+            && add.where_predicate.as_deref() == Some("idempotency_key IS NOT NULL AND amount > 0"))
+    });
+    assert!(
+        drops_it && re_adds_it,
+        "a changed predicate should drop + recreate the index — got: {ops:?}"
     );
 }

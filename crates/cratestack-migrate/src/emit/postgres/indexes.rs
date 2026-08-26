@@ -6,11 +6,15 @@ use crate::ir::{AddIndex, DropIndex};
 
 use super::idents::quote_ident;
 
-/// Renders `CREATE [UNIQUE] INDEX name ON table [USING method] (columns);`
-/// — the `USING` clause and each column's operator class (issue #156)
-/// only appear when `index.using`/`index.opclass` are `Some`, so a plain
-/// `AddIndex` (every pre-existing `@unique`/`@@unique([...])`-derived
-/// index) renders byte-identical DDL to before this field existed.
+/// Renders `CREATE [UNIQUE] INDEX name ON table [USING method] (columns)
+/// [WHERE predicate];` — the `USING` clause, each column's operator
+/// class (issue #156), and the trailing `WHERE` clause (issue #742,
+/// partial indexes) only appear when `index.using`/`index.opclass`/
+/// `index.where_predicate` are `Some`, so a plain `AddIndex` (every
+/// pre-existing `@unique`/`@@unique([...])`-derived index) renders
+/// byte-identical DDL to before these fields existed. `where_predicate`
+/// is rendered verbatim — not re-quoted or otherwise transformed — same
+/// posture as `using`/`opclass`: see `docs/design/extensions.md` §2/§6.
 pub(super) fn emit_add_index(sql: &mut String, index: &AddIndex) {
     let unique = if index.unique { "UNIQUE " } else { "" };
     let using_clause = match index.using.as_deref() {
@@ -22,9 +26,13 @@ pub(super) fn emit_add_index(sql: &mut String, index: &AddIndex) {
         .iter()
         .map(|column| render_index_column(column, index.opclass.as_deref()))
         .collect();
+    let where_clause = match index.where_predicate.as_deref() {
+        Some(predicate) => format!(" WHERE {predicate}"),
+        None => String::new(),
+    };
     writeln!(
         sql,
-        "CREATE {unique}INDEX {} ON {}{using_clause} ({});",
+        "CREATE {unique}INDEX {} ON {}{using_clause} ({}){where_clause};",
         quote_ident(&index.name),
         quote_ident(&index.table),
         columns.join(", ")
