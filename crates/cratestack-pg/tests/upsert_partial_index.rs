@@ -600,6 +600,16 @@ async fn do_nothing_predicate_referencing_a_default_column_resolves_correctly() 
 /// documented, deliberately-not-fixed limitation as a clear error
 /// rather than letting a future change silently start returning wrong
 /// data for this schema shape without anyone noticing.
+///
+/// The error itself is now actionable (cratestack#741 finding 2
+/// follow-up, per maintainer request): the raw Postgres `42703` from
+/// the incoming-row probe's own derived-table query is narrowly mapped
+/// to a `CratestackError::Validation` that names the offending
+/// predicate and explains the likely cause/workaround — not the
+/// opaque `DatabaseTyped` 500 a caller got before this follow-up. This
+/// is the property the test asserts: a real, SPECIFIC, actionable
+/// failure — never a wrong Created/Updated classification, and never
+/// an unexplained "internal error".
 #[tokio::test]
 async fn do_update_predicate_referencing_a_default_column_still_errors_clearly() {
     let _guard = pg::serial_guard().await;
@@ -623,14 +633,27 @@ async fn do_update_predicate_referencing_a_default_column_still_errors_clearly()
              cannot safely skip its pre-probe, so it still surfaces an error here rather than \
              guessing Created-vs-Updated",
         );
-    // Confirms this is genuinely the predicate-evaluation failure
-    // (Postgres `42703 column "mode" does not exist` from the
-    // incoming-row check's synthetic derived table), not some other,
-    // unrelated error — a real CratestackError carrying the DB's own
-    // SQLSTATE, not a silently wrong Created/Updated classification.
+
+    // A caller-actionable 422 `Validation`, not an opaque 500
+    // `DatabaseTyped` — the whole point of the follow-up fix.
     assert_eq!(
-        err.db_sqlstate(),
-        Some("42703"),
-        "expected an 'undefined column' error from the incoming-row predicate check, got: {err:?}",
+        err.code(),
+        "VALIDATION_ERROR",
+        "expected the narrow 42703-from-the-probe mapping to produce a Validation error, \
+         got: {err:?}",
+    );
+    assert_eq!(err.status_code().as_u16(), 422, "got: {err:?}");
+
+    // The message must name the offending predicate (not just say
+    // "something went wrong") and point at the likely cause, so a
+    // developer who hits this learns what to fix.
+    let message = err.detail().unwrap_or_default();
+    assert!(
+        message.contains("mode = 'expedited'"),
+        "error message must name the offending predicate, got: {message:?}",
+    );
+    assert!(
+        message.contains("@default"),
+        "error message must explain the likely cause (a @default(...) column), got: {message:?}",
     );
 }

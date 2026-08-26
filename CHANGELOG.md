@@ -63,7 +63,11 @@ Two correctness fixes to the probe, found in review before this shipped:
   Created-vs-Updated classification and audit before-snapshot have no equivalent authoritative source)
   and still surfaces this as an error; closing that gap for real needs either backfilling literal
   `@default(...)` values into the insert set at codegen time or basing Created-vs-Updated on the real
-  statement's own result, both larger than this fix.
+  statement's own result, both larger than this fix. That remaining `DO UPDATE` error is now
+  actionable rather than an opaque 500, though: the incoming-row probe narrowly maps Postgres `42703`
+  from its own query into a `CratestackError::Validation` naming the offending predicate and
+  explaining the likely cause (a `@default(...)` column) and the workaround — every other SQLSTATE,
+  and every other call site, still gets the ordinary `cratestack_error_from_sqlx` mapping unchanged.
 
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
