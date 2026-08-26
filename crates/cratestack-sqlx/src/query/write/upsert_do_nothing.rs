@@ -38,6 +38,10 @@ where
     /// statement. The actual call wraps a `SELECT ... FOR UPDATE`
     /// probe around it and may perform a fallback `SELECT` on a lost
     /// race — see [`UpsertOutcome`] for the full sequencing.
+    ///
+    /// Deliberately does NOT call `ConflictTarget::validate` — see
+    /// `UpsertRecord::preview_sql`'s doc comment (cratestack#741
+    /// finding 3) for the full reasoning; the same applies here.
     pub fn preview_sql(&self) -> String {
         let values = self.input.sql_values();
         let placeholders = (1..=values.len())

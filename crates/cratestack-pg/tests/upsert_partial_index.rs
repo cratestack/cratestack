@@ -38,7 +38,9 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
             id BIGINT PRIMARY KEY,
             k TEXT,
             status TEXT NOT NULL,
-            payload TEXT NOT NULL
+            payload TEXT NOT NULL,
+            flag TEXT,
+            mode TEXT NOT NULL DEFAULT 'expedited'
         )",
     )
     .execute(pool)
@@ -55,6 +57,36 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
         .expect("create partial unique index");
 }
 
+/// cratestack#741 finding 1: `flag` is nullable with no default, so
+/// `flag = 'yes'` hits SQL's three-valued logic when `flag` is `NULL`
+/// — the predicate result is `NULL`, not `false`. A separate helper
+/// (not part of `reset_schema`) so it only exists for the tests that
+/// need it — every row in every OTHER test in this file defaults
+/// `mode` to `'expedited'` (finding 2's index, below), and every row
+/// has SOME `flag` value or `NULL`, so creating this unconditionally
+/// would make unrelated tests' same-`k` rows collide on an index they
+/// aren't exercising.
+async fn create_flag_index(pool: &cratestack::sqlx::PgPool) {
+    query("CREATE UNIQUE INDEX idx_markers_flag_k ON markers(k) WHERE flag = 'yes'")
+        .execute(pool)
+        .await
+        .expect("create flag partial unique index");
+}
+
+/// cratestack#741 finding 2: `mode` carries a literal `@default`, so
+/// it is excluded from `CreateMarkerInput`/`insert_values` — the
+/// predicate references a column the incoming-row check's synthetic
+/// derived table doesn't have. Kept out of `reset_schema` for the same
+/// cross-contamination reason as [`create_flag_index`]: `mode` always
+/// defaults to `'expedited'`, so this index would make every other
+/// test's same-`k` rows collide unrelatedly.
+async fn create_mode_index(pool: &cratestack::sqlx::PgPool) {
+    query("CREATE UNIQUE INDEX idx_markers_mode_k ON markers(k) WHERE mode = 'expedited'")
+        .execute(pool)
+        .await
+        .expect("create mode partial unique index");
+}
+
 fn operator() -> CratestackContext {
     CratestackContext::authenticated([("id".to_owned(), Value::Int(1))])
         .with_request_id("issue-741")
@@ -66,16 +98,51 @@ fn marker(
     status: &str,
     payload: &str,
 ) -> cratestack_schema::CreateMarkerInput {
+    // `mode` is excluded from `CreateMarkerInput` entirely (it carries
+    // a literal `@default`, cratestack#741 finding 2) — the database's
+    // own column `DEFAULT 'expedited'` fills it.
     cratestack_schema::CreateMarkerInput {
         id,
         k: k.map(str::to_owned),
         status: status.to_owned(),
         payload: payload.to_owned(),
+        flag: None,
+    }
+}
+
+fn marker_with_flag(
+    id: i64,
+    k: Option<&str>,
+    status: &str,
+    payload: &str,
+    flag: Option<&str>,
+) -> cratestack_schema::CreateMarkerInput {
+    cratestack_schema::CreateMarkerInput {
+        id,
+        k: k.map(str::to_owned),
+        status: status.to_owned(),
+        payload: payload.to_owned(),
+        flag: flag.map(str::to_owned),
     }
 }
 
 fn active_k_target() -> ConflictTarget {
     ConflictTarget::columns(&["k"]).where_index("status = 'active'")
+}
+
+/// cratestack#741 finding 1: `flag` is nullable with no default, so a
+/// `flag = 'yes'` predicate hits SQL's three-valued logic (`NULL`, not
+/// `false`) whenever the incoming row's `flag` is `NULL`.
+fn flag_k_target() -> ConflictTarget {
+    ConflictTarget::columns(&["k"]).where_index("flag = 'yes'")
+}
+
+/// cratestack#741 finding 2: `mode` carries a literal `@default`, so
+/// it is excluded from `insert_values` — the predicate references a
+/// column the incoming-row check's synthetic derived table doesn't
+/// have unless the fallback is working.
+fn mode_k_target() -> ConflictTarget {
+    ConflictTarget::columns(&["k"]).where_index("mode = 'expedited'")
 }
 
 // ───── #1 the acceptance-bar regression test ─────────────────────────────
@@ -368,4 +435,202 @@ async fn predicate_on_primary_key_is_rejected_before_any_sql_runs() {
         .unwrap()
         .get(0);
     assert_eq!(count, 0, "the rejected call must not have run any SQL");
+}
+
+// ───── #7 cratestack#741 finding 1: NULL predicate result ────────────────
+//
+// `flag = 'yes'` is SQL's three-valued logic in action: when the
+// incoming row's `flag` is `NULL`, the predicate evaluates to `NULL`,
+// not `false`. Decoding that as `(bool,)` fails with a
+// `sqlx::Error::ColumnDecode` (`UnexpectedNullError`), which
+// `cratestack_error_from_sqlx` has no dedicated arm for, so it falls
+// through to an opaque `CratestackError::Database` — a valid,
+// policy-authorized upsert 500ing whenever the predicate touches a
+// NULL column. `NULL` must be treated the same as `false` — the row
+// is outside the index's domain — so this must resolve `Inserted`
+// twice, not error.
+
+#[tokio::test]
+async fn null_predicate_result_is_treated_as_outside_the_domain_not_an_error() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    create_flag_index(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    // Status is deliberately NOT `"active"` — `idx_markers_active_k`
+    // also exists on this table (from `reset_schema`) and this test
+    // must isolate the `flag` predicate, not incidentally trip an
+    // unrelated index's conflict.
+    //
+    // `flag` is NULL (never set): `flag = 'yes'` evaluates to NULL for
+    // this row, so it must be treated as outside the partial index's
+    // domain — like `false`, not an error, and not a conflict.
+    let first = cool
+        .marker()
+        .upsert(marker_with_flag(
+            1,
+            Some("null-flag-key"),
+            "draft",
+            "a",
+            None,
+        ))
+        .on_conflict(flag_k_target())
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect("NULL-flag upsert must not error");
+    assert!(first.was_inserted(), "got: {first:?}");
+
+    // A second NULL-flag row with the SAME k: still outside the
+    // predicate's domain, so it must ALSO insert, not conflict.
+    let second = cool
+        .marker()
+        .upsert(marker_with_flag(
+            2,
+            Some("null-flag-key"),
+            "draft",
+            "b",
+            None,
+        ))
+        .on_conflict(flag_k_target())
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect("second NULL-flag upsert must not error");
+    assert!(
+        second.was_inserted(),
+        "NULL flag is outside the index predicate (three-valued logic: NULL, not false, \
+         still means 'not in the index'), so no conflict is possible: {second:?}",
+    );
+
+    let count: i64 = query("SELECT COUNT(*) FROM markers")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(count, 2, "both NULL-flag rows must exist");
+}
+
+// ───── #8 cratestack#741 finding 2: predicate references a @default column ─
+//
+// `mode` carries a literal `@default("expedited")`, which excludes it
+// from `CreateMarkerInput`/`insert_values` (any `@default(...)`, not
+// just `auth()`-derived ones, marks a field `is_generated_on_create`).
+// A predicate referencing `mode` therefore names a column absent from
+// the incoming-row check's synthetic one-row derived table, which
+// Postgres rejects with `42703 column "mode" does not exist` —
+// unconditionally 500ing every `.do_nothing()` upsert on this conflict
+// target before this fix, regardless of what the caller passed.
+
+#[tokio::test]
+async fn do_nothing_predicate_referencing_a_default_column_resolves_correctly() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    create_mode_index(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    // Status is deliberately NOT `"active"` — `idx_markers_active_k`
+    // also exists on this table (from `reset_schema`) and this test
+    // must isolate the `mode` predicate, not incidentally trip an
+    // unrelated index's conflict.
+    //
+    // `mode` is never in the insert set — the DB's own column DEFAULT
+    // ('expedited') fills it every time, so this always falls inside
+    // the `mode = 'expedited'` partial index's domain: a genuine
+    // conflict must resolve `Existing`, not error.
+    let first = cool
+        .marker()
+        .upsert(marker(1, Some("mode-key"), "pending", "v1"))
+        .on_conflict(mode_k_target())
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect("first upsert against a @default-column predicate must not 500");
+    assert!(first.was_inserted(), "got: {first:?}");
+
+    let second = cool
+        .marker()
+        .upsert(marker(
+            2,
+            Some("mode-key"),
+            "pending",
+            "v2-should-be-dropped",
+        ))
+        .on_conflict(mode_k_target())
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect("second upsert against a @default-column predicate must not 500");
+    assert!(
+        !second.was_inserted(),
+        "mode always defaults to 'expedited', so the same k must genuinely conflict: {second:?}",
+    );
+    let UpsertOutcome::Existing(existing) = second else {
+        unreachable!()
+    };
+    assert_eq!(existing.id, first.record().id);
+    assert_eq!(existing.payload, "v1", "DO NOTHING must not overwrite");
+
+    let count: i64 = query("SELECT COUNT(*) FROM markers")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(count, 1);
+}
+
+/// The DO UPDATE path (`.upsert(...).run(...)`, not `.do_nothing()`)
+/// does NOT get the same fallback (cratestack#741 finding 2 — see
+/// `upsert_exec.rs`'s doc comment for the full reasoning: skipping the
+/// pre-probe there would deterministically mislabel every genuine
+/// update as a Create, on every call, not just under a race, which is
+/// a worse silent defect than a loud error). This test locks in that
+/// documented, deliberately-not-fixed limitation as a clear error
+/// rather than letting a future change silently start returning wrong
+/// data for this schema shape without anyone noticing.
+#[tokio::test]
+async fn do_update_predicate_referencing_a_default_column_still_errors_clearly() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    let err = cool
+        .marker()
+        .upsert(marker(1, Some("mode-key-do-update"), "active", "v1"))
+        .on_conflict(mode_k_target())
+        .run(&ctx)
+        .await
+        .expect_err(
+            "known, documented limitation (cratestack#741 finding 2): the DO UPDATE path \
+             cannot safely skip its pre-probe, so it still surfaces an error here rather than \
+             guessing Created-vs-Updated",
+        );
+    // Confirms this is genuinely the predicate-evaluation failure
+    // (Postgres `42703 column "mode" does not exist` from the
+    // incoming-row check's synthetic derived table), not some other,
+    // unrelated error — a real CratestackError carrying the DB's own
+    // SQLSTATE, not a silently wrong Created/Updated classification.
+    assert_eq!(
+        err.db_sqlstate(),
+        Some("42703"),
+        "expected an 'undefined column' error from the incoming-row predicate check, got: {err:?}",
+    );
 }

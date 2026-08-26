@@ -74,6 +74,22 @@ where
     /// Render an approximate SQL preview. The actual upsert wraps a
     /// `SELECT … FOR UPDATE` around the `INSERT … ON CONFLICT`, but
     /// this preview returns only the conflict-bearing statement.
+    ///
+    /// Deliberately does NOT call [`ConflictTarget::validate`]
+    /// (cratestack#741 finding 3) — every other `preview_sql()` in
+    /// this codebase (`find_many`, `create`, `update`, `delete`, …)
+    /// returns a bare `String`, no `Result`, so it can never fail;
+    /// matching that established shape here means `cratestack-studio`'s
+    /// interactive SQL-preview tooling can keep calling it uniformly
+    /// across every builder without a special case for upsert. The
+    /// combination this would reject (a predicate on
+    /// [`ConflictTarget::PrimaryKey`]) is still caught before any SQL
+    /// *runs* — [`Self::run`]/[`Self::run_in_tx`] call `.validate()` via
+    /// `prepare_upsert_insert` first — so nothing unsafe executes;
+    /// only the preview string itself can show a `WHERE` clause paired
+    /// with a target `.validate()` would reject. A caller that wants to
+    /// know ahead of rendering can call `.validate()` on the same
+    /// `ConflictTarget` value passed to `.on_conflict(..)`.
     pub fn preview_sql(&self) -> String {
         let values = self.input.sql_values();
         let placeholders = (1..=values.len())

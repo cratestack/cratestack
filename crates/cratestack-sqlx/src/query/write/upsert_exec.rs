@@ -83,6 +83,30 @@ where
     //      an out-of-predicate incoming row could still be told
     //      "conflicts with" some unrelated in-predicate existing row
     //      that happens to share the conflict columns.
+    //
+    // Unlike `upsert_do_nothing_exec::run_upsert_do_nothing_in_tx`,
+    // this path does NOT fall back to "skip the pre-probe" when
+    // `incoming_row_satisfies_predicate` itself fails to evaluate
+    // (cratestack#741 finding 2 — e.g. the predicate references a
+    // `@default(...)` column excluded from `insert_values`). DO
+    // NOTHING can do that safely because its real `ON CONFLICT ...
+    // DO NOTHING RETURNING` statement is unconditionally authoritative
+    // for Inserted-vs-Existing on its own. This DO UPDATE path has no
+    // equivalent authoritative fallback: `before_record` is the ONLY
+    // signal that picks Created-vs-Updated, the audit before-snapshot,
+    // and the update-policy gate — it is never reconciled against what
+    // the real `ON CONFLICT ... DO UPDATE` statement actually did (see
+    // `UpsertOutcome`'s doc comment / the tracked pre-existing race on
+    // this same field). Silently treating an unevaluable predicate as
+    // "no existing row" would deterministically mislabel every genuine
+    // update on such a schema as a Create, on every call, not just
+    // under a race — a worse, silent defect, not a fix. So the probe
+    // failure is left to propagate as an error here rather than
+    // guessed at; closing this gap for real needs either teaching
+    // `insert_values` to backfill literal `@default(...)` values (a
+    // codegen change reaching every create/insert path, not just
+    // upsert) or basing Created-vs-Updated on the real statement's own
+    // result instead of a pre-probe — both bigger than this fix.
     let before_record = match conflict_target.predicate() {
         Some(predicate)
             if !incoming_row_satisfies_predicate(&mut **tx, &insert_values, predicate).await? =>

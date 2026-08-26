@@ -19,7 +19,7 @@ use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx
 use super::upsert_do_nothing_authorize::authorize_existing_row;
 use super::upsert_do_nothing_sql::upsert_returning_record_do_nothing;
 use super::upsert_outcome::UpsertOutcome;
-use super::upsert_predicate_probe::incoming_row_satisfies_predicate;
+use super::upsert_predicate_probe::try_incoming_row_satisfies_predicate;
 use super::upsert_prepare::prepare_upsert_insert;
 use super::upsert_sql::select_for_update_by_conflict_target;
 
@@ -83,20 +83,45 @@ where
     // existing rows by the predicate alone is not sufficient, because
     // an incoming row that doesn't itself satisfy the predicate can
     // never conflict via a partial index no matter what else exists.
+    //
+    // `try_incoming_row_satisfies_predicate` can itself fail to
+    // evaluate the predicate (cratestack#741 finding 2) — most
+    // commonly because the predicate references a column a
+    // `@default(...)` schema attribute excludes from `insert_values`
+    // (the database's own column DEFAULT fills it, so this crate never
+    // learns its value client-side, and the one-row derived table the
+    // check builds has no such column: Postgres raises `42703 column
+    // "..." does not exist`). This is NOT propagated as a 500 here:
+    // unlike the DO UPDATE path (see `run_upsert_in_tx`'s matching
+    // comment for why that one is different), DO NOTHING's real `ON
+    // CONFLICT ... DO NOTHING RETURNING` statement below is
+    // unconditionally the authoritative race guard and decides
+    // Inserted-vs-Existing correctly on its own — the pre-probe exists
+    // purely to avoid an extra round trip in the common case (see this
+    // function's module doc comment). So when the pre-probe can't be
+    // evaluated, the safe move is simply to skip it entirely and fall
+    // straight through to that authoritative statement, rather than
+    // guess. (`try_incoming_row_satisfies_predicate` runs the check in
+    // its own SAVEPOINT precisely so a failed check doesn't poison the
+    // rest of `tx` before we get to that authoritative statement.)
     let pre_probe = match conflict_target.predicate() {
-        Some(predicate)
-            if !incoming_row_satisfies_predicate(&mut **tx, &insert_values, predicate).await? =>
-        {
-            None
+        Some(predicate) => {
+            match try_incoming_row_satisfies_predicate(tx, &insert_values, predicate).await? {
+                Some(true) => {
+                    select_for_update_by_conflict_target(
+                        &mut **tx,
+                        descriptor,
+                        &conflict_columns,
+                        Some(predicate),
+                    )
+                    .await?
+                }
+                Some(false) | None => None,
+            }
         }
-        predicate => {
-            select_for_update_by_conflict_target(
-                &mut **tx,
-                descriptor,
-                &conflict_columns,
-                predicate,
-            )
-            .await?
+        None => {
+            select_for_update_by_conflict_target(&mut **tx, descriptor, &conflict_columns, None)
+                .await?
         }
     };
     if let Some(existing) = pre_probe {

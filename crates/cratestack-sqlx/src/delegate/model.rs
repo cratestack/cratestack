@@ -74,7 +74,7 @@ impl<'a, M: 'static, PK: 'static> ModelDelegate<'a, M, PK> {
             runtime: self.runtime,
             descriptor: self.descriptor,
             input,
-            conflict_target: cratestack_sql::ConflictTarget::PRIMARY_KEY,
+            conflict_target: cratestack_sql::ConflictTarget::PrimaryKey,
         }
     }
 

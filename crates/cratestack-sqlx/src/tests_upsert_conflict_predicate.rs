@@ -179,3 +179,30 @@ fn unpredicated_targets_validate_cleanly() {
         .validate()
         .unwrap();
 }
+
+/// `preview_sql()` deliberately does NOT call `.validate()`
+/// (cratestack#741 finding 3 — see `UpsertRecord::preview_sql`'s doc
+/// comment for the full reasoning). This locks that decision in: an
+/// invalid PK+predicate `ConflictTarget` — one `.validate()` itself
+/// rejects, per `predicate_on_primary_key_is_rejected` above — must
+/// still render a preview string rather than panicking, so a
+/// regression that made `preview_sql()` start calling `.validate()`
+/// (breaking the "every preview_sql() is infallible" convention every
+/// other builder in this codebase relies on) would be caught here.
+#[tokio::test]
+async fn do_update_preview_sql_does_not_validate_pk_plus_predicate() {
+    let runtime = runtime();
+    let bad_target = ConflictTarget::PRIMARY_KEY.where_index("status = 'active'");
+    assert!(bad_target.validate().is_err(), "sanity: must be invalid");
+    let record = UpsertRecord {
+        runtime: &runtime,
+        descriptor: &MARKER_DESCRIPTOR,
+        input: UpsertMarkerInput { k: "x".into() },
+        conflict_target: bad_target,
+    };
+    let sql = record.preview_sql();
+    assert!(
+        sql.contains("ON CONFLICT (id) WHERE status = 'active' DO UPDATE SET"),
+        "preview must still render even though the target is invalid, got: {sql}",
+    );
+}

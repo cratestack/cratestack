@@ -26,6 +26,25 @@ model Marker {
   status String
   payload String
 
+  // `flag` (nullable, no default) and `mode` (non-nullable, with a
+  // literal `@default`) exist purely to exercise cratestack#741
+  // findings 1 and 2 — see `upsert_partial_index.rs`'s tests
+  // referencing `flag = 'yes'`/`mode = 'expedited'` predicates.
+  //
+  // `flag` is nullable and carries no default, so it's a normal
+  // `CreateMarkerInput` field: a predicate that reads it can hit SQL's
+  // three-valued logic (`flag = 'yes'` is `NULL`, not `false`, when
+  // `flag` is `NULL`) — finding 1.
+  //
+  // `mode`'s `@default("expedited")` makes it `is_generated_on_create`
+  // (any `@default(...)`, not just `auth()`-derived ones, per
+  // `cratestack-macros/src/shared/attrs.rs`), so it is EXCLUDED from
+  // `CreateMarkerInput` — the database's own column `DEFAULT` fills it
+  // instead. A predicate that reads `mode` therefore references a
+  // column absent from `insert_values` — finding 2.
+  flag String?
+  mode String @default("expedited")
+
   @@audit
   @@emit(created, updated)
   @@allow("read", auth() != null)

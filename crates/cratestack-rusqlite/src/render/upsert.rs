@@ -17,13 +17,13 @@ pub fn render_upsert<M, PK>(
     descriptor: &ModelDescriptor<M, PK>,
     values: &[SqlColumnValue],
 ) -> (String, Vec<SqlValue>) {
-    render_upsert_with_conflict(dialect, descriptor, values, ConflictTarget::PRIMARY_KEY)
+    render_upsert_with_conflict(dialect, descriptor, values, ConflictTarget::PrimaryKey)
 }
 
 /// Render an upsert against an arbitrary conflict target. The default
-/// `render_upsert` wraps this with `ConflictTarget::PRIMARY_KEY` so the
+/// `render_upsert` wraps this with `ConflictTarget::PrimaryKey` so the
 /// older public surface stays bit-identical; new callers that need a
-/// composite unique key pass `ConflictTarget::columns(&[..])`.
+/// composite unique key pass `ConflictTarget::Columns(&[..])`.
 pub fn render_upsert_with_conflict<M, PK>(
     dialect: &dyn Dialect,
     descriptor: &ModelDescriptor<M, PK>,

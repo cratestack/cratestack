@@ -1,10 +1,10 @@
 use cratestack_core::CratestackError;
 
 /// Conflict target for an upsert. Defaults to the model's primary key
-/// (matching the previous PK-only behavior). [`Self::columns`] lets
-/// callers upsert on an arbitrary unique tuple — most commonly a
-/// natural key that's distinct from the PK (e.g. `(owner_id,
-/// provider)` on a per-owner-and-provider settings row, or
+/// (matching the previous PK-only behavior). [`Self::Columns`] /
+/// [`Self::columns`] let callers upsert on an arbitrary unique tuple —
+/// most commonly a natural key that's distinct from the PK (e.g.
+/// `(owner_id, provider)` on a per-owner-and-provider settings row, or
 /// `(pairing_id, slot)` on a per-slot envelope).
 ///
 /// The named columns MUST correspond to a `UNIQUE` constraint or
@@ -24,7 +24,7 @@ use cratestack_core::CratestackError;
 ///
 /// Composite-constraint-by-name (`ON CONFLICT ON CONSTRAINT
 /// my_unique_idx_v2`) is not yet exposed; pass the matching column
-/// tuple via [`Self::columns`] instead.
+/// tuple via [`Self::Columns`] instead.
 ///
 /// # Partial unique indexes (cratestack#741)
 ///
@@ -49,73 +49,109 @@ use cratestack_core::CratestackError;
 /// Declaring a partial index in the schema DDL (`@@unique([...],
 /// where: "...")`) is a separate concern (cratestack#742): this type
 /// only lets an upsert *target* a partial index that already exists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConflictTarget {
-    kind: ConflictTargetKind,
-    predicate: Option<&'static str>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ConflictTargetKind {
-    PrimaryKey,
-    Columns(&'static [&'static str]),
-}
-
-impl Default for ConflictTarget {
-    fn default() -> Self {
-        Self::PRIMARY_KEY
-    }
-}
-
-impl ConflictTarget {
+///
+/// # Why an enum with four variants, not two plus a predicate field
+///
+/// An earlier draft of this ticket's fix collapsed this type into a
+/// `{ kind, predicate }` struct, which deleted the public `PrimaryKey`
+/// and `Columns(&'static [&'static str])` variants direct construction
+/// / pattern-matching relied on. A repo-wide grep showed every in-repo
+/// call site only ever *constructs* a `ConflictTarget` (never pattern-
+/// matches one), so that break bought nothing — the maintainer ruled
+/// this be reworked additively instead (cratestack#741 finding 3):
+/// [`Self::PrimaryKey`] and [`Self::Columns`] are restored exactly as
+/// they were pre-#741, and the predicate rides along on two new,
+/// purely additive variants ([`Self::ColumnsWithPredicate`],
+/// [`Self::PrimaryKeyWithPredicate`]) reached through
+/// [`Self::where_index`] rather than constructed directly. The invalid
+/// `PrimaryKey` + predicate combination deliberately stays
+/// *representable* (via [`Self::PrimaryKeyWithPredicate`]) rather than
+/// being ruled out at the type level, so [`Self::validate`] can reject
+/// it at runtime with a clear [`CratestackError::Validation`] instead
+/// of the type system silently preventing the chain
+/// `PrimaryKey.where_index(..)` from being written at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConflictTarget {
     /// The model's `@id` primary key, unpredicated. Default.
-    pub const PRIMARY_KEY: Self = Self {
-        kind: ConflictTargetKind::PrimaryKey,
-        predicate: None,
-    };
-
+    #[default]
+    PrimaryKey,
     /// A caller-supplied tuple of columns forming a unique key on the
     /// target table, unpredicated. Chain [`Self::where_index`] to
     /// target a partial unique index instead of a plain one.
+    Columns(&'static [&'static str]),
+    /// Additive (cratestack#741): [`Self::Columns`] with an attached
+    /// partial-unique-index predicate. Reached via
+    /// `ConflictTarget::columns(&[...]).where_index(<predicate>)`; not
+    /// normally constructed directly.
+    ColumnsWithPredicate(&'static [&'static str], &'static str),
+    /// Additive (cratestack#741): [`Self::PrimaryKey`] with an
+    /// attached predicate. This combination can never correspond to a
+    /// real index — the primary key index is never partial — and
+    /// [`Self::validate`] always rejects it. It stays representable
+    /// (rather than prevented at the type level) so that rejection is
+    /// a normal runtime [`CratestackError`], not a call that can't
+    /// even be written. Reached via
+    /// `ConflictTarget::PRIMARY_KEY.where_index(<predicate>)`; not
+    /// normally constructed directly.
+    PrimaryKeyWithPredicate(&'static str),
+}
+
+impl ConflictTarget {
+    /// `ConflictTarget::PrimaryKey` as an associated const, matching
+    /// the naming convention [`Self::columns`] sets for `Columns`.
+    /// Kept alongside the `PrimaryKey` variant itself (both spellings
+    /// are used across this codebase's call sites and tests).
+    pub const PRIMARY_KEY: Self = Self::PrimaryKey;
+
+    /// Sugar for `ConflictTarget::Columns(&[...])`.
     pub const fn columns(cols: &'static [&'static str]) -> Self {
-        Self {
-            kind: ConflictTargetKind::Columns(cols),
-            predicate: None,
-        }
+        Self::Columns(cols)
     }
 
     /// Attach a partial-unique-index predicate, e.g.
     /// `ConflictTarget::columns(&["k"]).where_index("status = 'active'")`
     /// for an index declared as `UNIQUE (k) WHERE status = 'active'`.
     ///
-    /// Only valid on a [`Self::columns`] target — the primary key
-    /// index is never partial, so pairing this with
-    /// [`Self::PRIMARY_KEY`] is rejected by [`Self::validate`] rather
-    /// than silently dropped. This method itself stays infallible
-    /// (`const fn`, so it can be used in a `const` builder chain) —
-    /// the rejection happens where the target is actually consumed,
-    /// before any SQL is built.
-    pub const fn where_index(mut self, predicate: &'static str) -> Self {
-        self.predicate = Some(predicate);
-        self
+    /// Only valid when chained onto [`Self::Columns`]/[`Self::columns`]
+    /// — the primary key index is never partial, so chaining this onto
+    /// [`Self::PrimaryKey`]/[`Self::PRIMARY_KEY`] is rejected by
+    /// [`Self::validate`] rather than silently dropped. This method
+    /// itself stays infallible (`const fn`, so it can be used in a
+    /// `const` builder chain) — the rejection happens where the target
+    /// is actually consumed, before any SQL is built.
+    pub const fn where_index(self, predicate: &'static str) -> Self {
+        match self {
+            Self::PrimaryKey | Self::PrimaryKeyWithPredicate(_) => {
+                Self::PrimaryKeyWithPredicate(predicate)
+            }
+            Self::Columns(cols) | Self::ColumnsWithPredicate(cols, _) => {
+                Self::ColumnsWithPredicate(cols, predicate)
+            }
+        }
     }
 
     /// The attached partial-index predicate, if any.
     pub const fn predicate(&self) -> Option<&'static str> {
-        self.predicate
+        match self {
+            Self::ColumnsWithPredicate(_, predicate) | Self::PrimaryKeyWithPredicate(predicate) => {
+                Some(*predicate)
+            }
+            Self::PrimaryKey | Self::Columns(_) => None,
+        }
     }
 
     /// `true` when this target is the model's primary key.
     pub const fn is_primary_key(&self) -> bool {
-        matches!(self.kind, ConflictTargetKind::PrimaryKey)
+        matches!(self, Self::PrimaryKey | Self::PrimaryKeyWithPredicate(_))
     }
 
-    /// The column tuple, if this target is [`Self::columns`]; `None`
-    /// for [`Self::PRIMARY_KEY`].
+    /// The column tuple, if this target is [`Self::Columns`] /
+    /// [`Self::columns`] (predicated or not); `None` for
+    /// [`Self::PrimaryKey`]/[`Self::PRIMARY_KEY`].
     pub const fn as_columns(&self) -> Option<&'static [&'static str]> {
-        match self.kind {
-            ConflictTargetKind::Columns(cols) => Some(cols),
-            ConflictTargetKind::PrimaryKey => None,
+        match self {
+            Self::Columns(cols) | Self::ColumnsWithPredicate(cols, _) => Some(*cols),
+            Self::PrimaryKey | Self::PrimaryKeyWithPredicate(_) => None,
         }
     }
 
@@ -127,7 +163,7 @@ impl ConflictTarget {
     /// [`CratestackError::Validation`], not a silently dropped
     /// predicate or a confusing database-side error.
     pub fn validate(&self) -> Result<(), CratestackError> {
-        if self.is_primary_key() && self.predicate.is_some() {
+        if self.is_primary_key() && self.predicate().is_some() {
             return Err(CratestackError::Validation(
                 "ConflictTarget predicate requires ConflictTarget::columns(...); the primary \
                  key index is never partial, so a predicate on ConflictTarget::PRIMARY_KEY \

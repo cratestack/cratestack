@@ -24,7 +24,7 @@ fn upsert_with_composite_conflict_emits_tuple_in_on_conflict() {
                 value: SqlValue::Bool(true),
             },
         ],
-        ConflictTarget::columns(&["title", "published"]),
+        ConflictTarget::Columns(&["title", "published"]),
     );
     assert!(
         sql.contains("ON CONFLICT (title, published) DO UPDATE SET"),
@@ -51,7 +51,7 @@ fn upsert_default_conflict_target_is_primary_key() {
             column: "title",
             value: SqlValue::String("x".into()),
         }],
-        ConflictTarget::PRIMARY_KEY,
+        ConflictTarget::PrimaryKey,
     );
     assert_eq!(pk_sql, explicit_sql);
     assert!(pk_sql.contains("ON CONFLICT (id) DO UPDATE SET"));
@@ -101,5 +101,33 @@ fn predicate_on_primary_key_target_is_rejected() {
     assert!(
         err.to_string().contains("primary key"),
         "error should explain why: {err}",
+    );
+}
+
+/// `render_upsert_with_conflict` — what `UpsertRecord::preview_sql`
+/// calls — deliberately does NOT call `.validate()` (cratestack#741
+/// finding 3, mirroring `cratestack_sqlx::UpsertRecord::preview_sql`'s
+/// identical decision): it still renders a `WHERE` clause for a target
+/// `.validate()` itself rejects, rather than panicking. `.run()` /
+/// `.run_in_tx()` are what actually enforce the rejection
+/// (`conflict_target_validate` in `delegate/upsert.rs`).
+#[test]
+fn predicated_primary_key_target_still_renders_a_preview() {
+    let dialect = SqliteDialect;
+    let descriptor = fixture_descriptor();
+    let target = ConflictTarget::PRIMARY_KEY.where_index("published = TRUE");
+    assert!(target.validate().is_err(), "sanity: must be invalid");
+    let (sql, _) = render_upsert_with_conflict(
+        &dialect,
+        &descriptor,
+        &[SqlColumnValue {
+            column: "title",
+            value: SqlValue::String("hi".into()),
+        }],
+        target,
+    );
+    assert!(
+        sql.contains("ON CONFLICT (id) WHERE published = TRUE DO UPDATE SET"),
+        "got: {sql}",
     );
 }

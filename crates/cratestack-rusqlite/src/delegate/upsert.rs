@@ -37,6 +37,13 @@ where
         self
     }
 
+    /// Deliberately does NOT call `ConflictTarget::validate` — see
+    /// `cratestack_sqlx::UpsertRecord::preview_sql`'s doc comment
+    /// (cratestack#741 finding 3) for the full reasoning: every
+    /// `preview_sql()` in this codebase returns a bare `String`, and
+    /// the PK+predicate combination this would reject is still caught
+    /// before any SQL runs (`.run()`/`.run_in_tx()` call
+    /// `conflict_target_validate` first).
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let values = self.input.sql_values();

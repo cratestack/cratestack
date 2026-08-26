@@ -2,22 +2,32 @@
 
 ## Unreleased
 
-### `ConflictTarget` can target a partial unique index, and the upsert conflict probe honors it (#741)
+### `ConflictTarget` can target a partial unique index, and the upsert conflict probe honors it — breaking for exhaustive external matches (#741)
 
 An upsert can now target a **partial** unique index (`CREATE UNIQUE INDEX ... WHERE <predicate>`),
 which Postgres refuses to infer from an unpredicated `ON CONFLICT (<cols>)` — motivated by an
 optional-idempotency-key shape (`UNIQUE (key) WHERE key IS NOT NULL`) that previously had no route
 onto the framework's upsert primitive at all.
 
-`ConflictTarget` is now a struct (`cratestack-sql`) rather than a bare two-variant enum: construction
-moves from `ConflictTarget::PrimaryKey` / `ConflictTarget::Columns(&[...])` to
-`ConflictTarget::PRIMARY_KEY` / `ConflictTarget::columns(&[...])`, and a new
+`ConflictTarget` (`cratestack-sql`) stays the enum it always was: `ConflictTarget::PrimaryKey` and
+`ConflictTarget::Columns(&'static [&'static str])` are unchanged, and a new
 `ConflictTarget::columns(&[...]).where_index("<predicate>")` attaches the partial-index predicate as a
 compile-time `&'static str` — the same no-runtime-value-path precedent `@@index`'s `using`/`opclass`
-already set. **Source-breaking** for any code matching on the old variants directly or constructing
-them positionally; every in-repo call site (both backends, all tests) is updated. Pairing a predicate
-with `ConflictTarget::PRIMARY_KEY` is a clear `CratestackError::Validation`/`RusqliteError::Validation`
-(the PK index is never partial), not a silently dropped predicate.
+already set — riding along on two purely additive variants
+(`ColumnsWithPredicate`/`PrimaryKeyWithPredicate`) that `.where_index` produces rather than being
+constructed directly. An earlier draft of this change collapsed the two original variants into a
+`{ kind, predicate }` struct, which broke every direct enum-variant construction/match in the process;
+a repo-wide grep found that in-repo usage is 100% construction, zero pattern matches, so that break
+bought nothing and was reworked additively before landing — every known construction site (in-repo,
+across both backends and all tests) is unaffected and needed no changes. **Still breaking**, but only
+for external code that pattern-matches `ConflictTarget` **exhaustively without a wildcard arm**: the
+variant count grows from two to four, so such a match stops compiling (adding enum variants is
+semver-breaking in Rust regardless of how additive the rest of the change is). Pairing a predicate with
+`ConflictTarget::PrimaryKey`/`ConflictTarget::PRIMARY_KEY` is a clear
+`CratestackError::Validation`/`RusqliteError::Validation` (the PK index is never partial), not a
+silently dropped predicate — the invalid combination is deliberately kept representable
+(`PrimaryKeyWithPredicate`) so this is a runtime rejection, not something the type system prevents you
+from writing at all.
 
 Both backends emit `ON CONFLICT (<cols>) WHERE <predicate> DO UPDATE|DO NOTHING`; SQLite accepts the
 identical inference syntax (confirmed against the vendored libsqlite3-sys 0.37.0 / SQLite 3.51.3).
@@ -35,6 +45,25 @@ still handed the wrong `Inserted`/`Existing` verdict — the acceptance test for
 `col IS NOT NULL` test, since that shape happens to "work" even against a predicate-unaware probe.
 `cratestack-rusqlite` needs no equivalent probe fix — the embedded backend has no probe at all; SQLite
 resolves the conflict natively in the same statement.
+
+Two correctness fixes to the probe, found in review before this shipped:
+
+- SQL predicates are three-valued, not boolean — `status = 'active'` evaluates to `NULL`, not `false`,
+  whenever `status` is `NULL`. The incoming-row predicate check now decodes `Option<bool>` and treats
+  `NULL` the same as `false` (outside the index's domain), instead of failing the whole upsert with an
+  opaque 500 (`sqlx::Error::ColumnDecode`) the moment the predicate touched a `NULL` column.
+- A predicate referencing a column excluded from the insert set by `@default(...)` (the database's own
+  column `DEFAULT` fills it, so this crate never learns its value client-side) made the incoming-row
+  check's synthetic one-row `SELECT` fail with Postgres `42703 column "..." does not exist` —
+  unconditionally 500ing every `.do_nothing()` upsert on that conflict target, no matter what the
+  caller passed. `.do_nothing()` now falls back to skipping the pre-probe entirely and going straight
+  to the authoritative `ON CONFLICT ... DO NOTHING RETURNING` statement when the incoming-row check
+  can't be evaluated, which is always correct there (see `upsert_do_nothing_exec.rs`'s doc comment) —
+  the plain `.upsert(...).run(...)` (`DO UPDATE`) path cannot safely use the same fallback (its
+  Created-vs-Updated classification and audit before-snapshot have no equivalent authoritative source)
+  and still surfaces this as an error; closing that gap for real needs either backfilling literal
+  `@default(...)` values into the insert set at codegen time or basing Created-vs-Updated on the real
+  statement's own result, both larger than this fix.
 
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
