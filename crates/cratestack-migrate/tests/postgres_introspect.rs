@@ -1027,3 +1027,91 @@ model IntrospectionProbeAccount {
          {ops:?}"
     );
 }
+
+/// cratestack#742 post-review remediation, round 3 (Finding D): once
+/// both sides of a predicate carry an explicit `::type` cast, comparing
+/// the type names by exact string equality (round 2's fix) missed that
+/// Postgres normalizes an alias on deparse — an author-written `::int8`
+/// round-trips through introspection as `::bigint`. Without alias
+/// normalization, that would churn a drop+recreate on *every* `migrate`
+/// run, forever, for anyone who happens to write an aliased spelling —
+/// the same load-bearing "no churn" failure round 1 fixed for casts
+/// entirely, resurfacing for a narrower population. Verified empirically
+/// (a throwaway container, `psql`) that this specific pair is a clean
+/// single-cast round-trip (the literal text itself is unchanged, unlike
+/// e.g. a `varchar`-on-a-`text`-column cast, which Postgres nests behind
+/// an extra implicit cast back to `text` and would churn for a
+/// structural reason unrelated to this fix): `amount = '100'::int8`
+/// against a `bigint` column reads back as `(amount = '100'::bigint)`.
+#[tokio::test]
+async fn partial_index_with_aliased_cast_type_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeLedgerEntry");
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeLedgerEntry {
+  id String @id
+  amount Int
+
+  @@index([amount], where: "amount = '100'::int8")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, &table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE amount = '100'::int8"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+
+    // Pin the exact, empirically-verified shape Postgres normalizes the
+    // alias into — if a future Postgres version stops doing this, this
+    // assertion (not just the decisive one below) will say so plainly.
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(amount = '100'::bigint)")],
+        "pg_get_expr should have normalized int8 to its bigint alias"
+    );
+
+    // The decisive assertion: re-planning against the database the
+    // migration was just applied to produces no ops — without alias
+    // normalization this would show a spurious drop+recreate on every
+    // single run, forever.
+    let ops = diff_projections(&only_table(&report.projections, &table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "an author-written aliased cast spelling must not churn on re-plan — got: {ops:?}"
+    );
+}

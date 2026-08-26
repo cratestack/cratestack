@@ -73,12 +73,28 @@ SQL expression parser, out of scope per the ticket; a predicate that differs fro
 identifier case will still show as changed and get dropped/recreated, a documented limitation (pinned by
 a test), not a silent gap.
 
+Round 3 closed one more gap in round 2's exact-string type-name comparison: Postgres normalizes a handful
+of type-name aliases on deparse — an author-written `::int` reads back as `::integer`, `::int8` as
+`::bigint` — and since round 2 requires an exact match once both sides carry an explicit cast, an author
+who happened to write an aliased spelling got a spurious drop+recreate on *every* single `migrate` run,
+forever: round 1's exact failure, resurfacing for the narrower population that writes explicit casts.
+Fixed with `predicate::casts::type_name::alias`, a small, closed table (`int`/`int4` → `integer`,
+`int2` → `smallint`, `int8` → `bigint`, `float4` → `real`, `float8` → `double precision`,
+`varchar` → `character varying`, `char` → `character`, `bool` → `boolean`, `decimal` → `numeric`,
+`timestamptz` → `timestamp with time zone`, `timetz` → `time with time zone`) applied only to a bare,
+unqualified, unquoted, undecorated type name — never to a double-quoted user-defined type (`"int"` is a
+real, different type named `int`, not a spelling of `integer`), never to a schema-qualified spelling
+(still not equated with a bare one, unchanged from round 2), and never guessed for an unrecognized name,
+which still fails toward churn on mismatch. `serial`/`bigserial`/`smallserial` are deliberately absent —
+they aren't real column types in this sense (see `alias`'s own doc).
+
 Proved against a live database: `partial_index_with_text_literal_predicate_round_trips_without_churn`,
-`partial_index_with_numeric_literal_predicate_round_trips_without_churn`, and
-`partial_index_cast_type_change_is_detected_as_drop_and_recreate` (the last using the real `citext`
-extension to reproduce the money-relevant case end-to-end) in
-`crates/cratestack-migrate/tests/postgres_introspect.rs` — not just the `IS NOT NULL` shape that needs no
-cast and can't exercise any of this.
+`partial_index_with_numeric_literal_predicate_round_trips_without_churn`,
+`partial_index_cast_type_change_is_detected_as_drop_and_recreate` (using the real `citext` extension to
+reproduce the money-relevant case end-to-end), and
+`partial_index_with_aliased_cast_type_round_trips_without_churn` (an author-written `::int8` against a
+`bigint` column, round 3's decisive case) in `crates/cratestack-migrate/tests/postgres_introspect.rs` —
+not just the `IS NOT NULL` shape that needs no cast and can't exercise any of this.
 
 **Adoption note — widened blast radius:** introspecting partial indexes at all required dropping the
 prior `AND i.indpred IS NULL` exclusion in `introspect::postgres::indexes`, which used to make every

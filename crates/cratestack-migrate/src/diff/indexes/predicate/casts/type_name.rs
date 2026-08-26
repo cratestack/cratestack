@@ -14,9 +14,28 @@
 //! second, independent false-equality vector on top of Finding A: a
 //! hand-written `x = 1004` and a cast comparison `x = 100::int4` would
 //! have compared as the identical predicate.
+//!
+//! Round 3 review (Finding D) is why a *bare* type name additionally
+//! goes through [`alias::canonicalize`]: Postgres normalizes an alias
+//! on deparse (an author-written `::int` reads back as `::integer`), and
+//! without that step, two sides that both write an explicit cast — the
+//! `(None, _) | (_, None)` tolerance in `super::super::segments_match`
+//! doesn't apply once both sides have one — would compare unequal and
+//! churn on *every* `migrate` run, forever, for anyone who happens to
+//! write an aliased spelling.
+
+mod alias;
+
 pub(super) fn parse_type_name(chars: &[char], k: usize) -> Option<(String, usize)> {
-    let (first, mut pos) = parse_name_segment(chars, k)?;
+    let (first, first_quoted, mut pos) = parse_name_segment(chars, k)?;
     let mut out = first;
+    // Once anything beyond the single bare first segment shows up —
+    // schema qualification, a `(...)` modifier, a multi-word
+    // continuation, or an array suffix — this isn't a plain alias
+    // source anymore, and alias lookup is skipped in favor of an exact
+    // match (see the bottom of this function).
+    let mut decorated = false;
+
     // Schema qualification: `NAME '.' NAME ...` (`pg_catalog.int4`,
     // `public.citext`). Kept in the normalized output verbatim — see
     // this module's doc on why an unqualified and a schema-qualified
@@ -27,15 +46,18 @@ pub(super) fn parse_type_name(chars: &[char], k: usize) -> Option<(String, usize
     // `tests::schema_qualified_and_bare_type_names_do_not_match`).
     while chars.get(pos) == Some(&'.') {
         match parse_name_segment(chars, pos + 1) {
-            Some((seg, next)) => {
+            Some((seg, _quoted, next)) => {
                 out.push('.');
                 out.push_str(&seg);
                 pos = next;
+                decorated = true;
             }
             None => break,
         }
     }
+    let before_modifier = pos;
     pos = consume_type_modifier(chars, pos, &mut out);
+    decorated |= pos != before_modifier;
     // Additional bare, lowercase, space-separated words for multi-word
     // builtin names (`character varying`, `double precision`,
     // `timestamp with time zone`) — these are never quoted or dotted,
@@ -54,10 +76,24 @@ pub(super) fn parse_type_name(chars: &[char], k: usize) -> Option<(String, usize
         );
         pos += 1 + word_len;
         pos = consume_type_modifier(chars, pos, &mut out);
+        decorated = true;
     }
+    let before_array = pos;
     while chars.get(pos) == Some(&'[') && chars.get(pos + 1) == Some(&']') {
         out.push_str("[]");
         pos += 2;
+    }
+    decorated |= pos != before_array;
+
+    // Alias normalization only for a bare, unquoted, undecorated name —
+    // a quoted `"int"` is a user-defined type literally named `int`,
+    // not the `integer` alias, and a decorated name (qualified, array,
+    // modifier, multi-word) isn't a plain alias source in the first
+    // place. An unrecognized bare name passes through unchanged, which
+    // still fails toward churn on mismatch rather than toward silent
+    // equality — see `alias`'s own doc.
+    if !first_quoted && !decorated {
+        out = alias::canonicalize(&out).to_owned();
     }
     Some((out, pos))
 }
@@ -82,7 +118,10 @@ fn consume_type_modifier(chars: &[char], pos: usize, out: &mut String) -> usize 
 /// double-quoted identifier (`""` escaping an embedded quote, the same
 /// rule `super::parse_literal` applies to single-quoted strings), kept
 /// verbatim, since quoting makes a SQL identifier case-*sensitive*.
-fn parse_name_segment(chars: &[char], k: usize) -> Option<(String, usize)> {
+/// Returns `(text, was_quoted, next_index)` — `was_quoted` is what keeps
+/// [`parse_type_name`] from alias-normalizing a quoted user-defined type
+/// like `"int"`.
+fn parse_name_segment(chars: &[char], k: usize) -> Option<(String, bool, usize)> {
     match chars.get(k) {
         Some('"') => {
             let mut segment = String::new();
@@ -93,7 +132,7 @@ fn parse_name_segment(chars: &[char], k: usize) -> Option<(String, usize)> {
                         segment.push('"');
                         pos += 2;
                     }
-                    Some('"') => return Some((segment, pos + 1)),
+                    Some('"') => return Some((segment, true, pos + 1)),
                     Some(ch) => {
                         segment.push(*ch);
                         pos += 1;
@@ -112,6 +151,7 @@ fn parse_name_segment(chars: &[char], k: usize) -> Option<(String, usize)> {
                     .iter()
                     .collect::<String>()
                     .to_ascii_lowercase(),
+                false,
                 pos,
             ))
         }
