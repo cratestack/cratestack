@@ -754,7 +754,7 @@ verify-dart:
 	  fi
 	done
 
-	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision)
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan)
 	for fixture in "${riverpod_fixtures[@]}"; do
 	  pkg="$out/riverpod/$fixture"
 	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
