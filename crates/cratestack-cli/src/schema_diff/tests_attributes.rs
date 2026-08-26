@@ -51,6 +51,88 @@ model Transaction {
 }
 
 #[test]
+fn adding_internal_attribute_is_breaking() {
+    // cratestack#743 (`docs/design/route-suppression.md`): suppressing
+    // a live REST route / RPC dispatch arm / client stub is a real
+    // break for any consumer still calling it — `cratestack diff` must
+    // gate CI on it, not fall through to the generic "no tracked
+    // wire-shape effect" branch every other model attribute gets.
+    let prev = r#"
+model Widget {
+  id Int @id
+}
+"#;
+    let next = r#"
+model Widget {
+  id Int @id
+
+  @@internal("create")
+}
+"#;
+    let result = diff(prev, next);
+    assert!(result.has_breaking());
+    assert_eq!(
+        categories(&result, Severity::Breaking),
+        vec!["model_attribute_internal"]
+    );
+    let message = &result.changes[0].message;
+    assert!(
+        message.contains("@@internal(\"create\")"),
+        "message: {message}"
+    );
+}
+
+#[test]
+fn removing_internal_attribute_is_additive() {
+    let prev = r#"
+model Widget {
+  id Int @id
+
+  @@internal("create")
+}
+"#;
+    let next = r#"
+model Widget {
+  id Int @id
+}
+"#;
+    let result = diff(prev, next);
+    assert!(!result.has_breaking());
+    assert_eq!(
+        categories(&result, Severity::Additive),
+        vec!["model_attribute_internal"]
+    );
+}
+
+#[test]
+fn changing_internal_attribute_value_is_breaking() {
+    // The diff only sees the two raw attribute strings, not the parsed
+    // action sets, so it can't cheaply prove no action lost suppression
+    // coverage across a value change — treated as breaking to stay
+    // fail-safe rather than silently waving a route removal through.
+    let prev = r#"
+model Widget {
+  id Int @id
+
+  @@internal("create")
+}
+"#;
+    let next = r#"
+model Widget {
+  id Int @id
+
+  @@internal("update")
+}
+"#;
+    let result = diff(prev, next);
+    assert!(result.has_breaking());
+    assert_eq!(
+        categories(&result, Severity::Breaking),
+        vec!["model_attribute_internal"]
+    );
+}
+
+#[test]
 fn adding_soft_delete_attribute_is_internal_only() {
     let prev = r#"
 model Customer {

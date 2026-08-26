@@ -108,11 +108,30 @@ enum AttributeChange<'a> {
 
 /// Classifies a model-attribute change. `@@paged` is the one case the
 /// issue explicitly calls out as wire-breaking (it swaps `.list()`'s
-/// response envelope between `T[]` and `Page<T>`); every other
-/// model-level attribute (`@@soft_delete`, `@@audit`, `@@retain`,
-/// `@@emit`) affects server behavior but not the shape of the wire
-/// contract this tool tracks, so it's reported as internal-only — a
-/// documented scope gap, not an oversight.
+/// response envelope between `T[]` and `Page<T>`); `@@internal(...)`
+/// (cratestack#743, `docs/design/route-suppression.md`) is the other:
+/// *adding* it deletes a live REST route / RPC dispatch arm / client
+/// stub out from under any existing consumer calling that action —
+/// exactly the class of change `model_removed` above already treats
+/// as `Breaking` for a whole model, just scoped to one action. Every
+/// other model-level attribute (`@@soft_delete`, `@@audit`,
+/// `@@retain`, `@@emit`) affects server behavior but not the shape of
+/// the wire contract this tool tracks, so it's reported as
+/// internal-only — a documented scope gap, not an oversight.
+///
+/// *Removing* `@@internal(...)` is classified `Additive`, not
+/// `Breaking`: it restores a route/arm/stub that was previously
+/// suppressed, so no existing consumer's working call becomes invalid
+/// — the same "adding capability doesn't break anyone already using
+/// less of it" reasoning applied to plain model/field additions
+/// elsewhere in this module. A *value* change (e.g. `@@internal
+/// ("create")` → `@@internal("update")`) is conservatively classified
+/// `Breaking` too: the diff only has the two raw attribute strings to
+/// compare, not the parsed action sets, so it can't cheaply prove no
+/// action lost suppression coverage — treating it as breaking is the
+/// fail-safe direction (a false-positive gate failure a human can
+/// wave through beats a false-negative that ships a silent route
+/// removal).
 fn push_attribute_change(
     changes: &mut Vec<Change>,
     model_name: &str,
@@ -120,6 +139,7 @@ fn push_attribute_change(
     change: AttributeChange,
 ) {
     let is_paged = key == "@@paged";
+    let is_internal = key == "@@internal";
     let (severity, message) = match change {
         AttributeChange::Added(raw) if is_paged => (
             Severity::Breaking,
@@ -133,6 +153,29 @@ fn push_attribute_change(
             format!(
                 "model `{model_name}` lost `{raw}` — `{model_name}.list()`'s response \
                  envelope changes from `Page<{model_name}>` back to `{model_name}[]`"
+            ),
+        ),
+        AttributeChange::Added(raw) if is_internal => (
+            Severity::Breaking,
+            format!(
+                "model `{model_name}` gained `{raw}` — the suppressed action's REST route, \
+                 RPC dispatch arm, and client stub are all removed for any consumer still \
+                 calling it"
+            ),
+        ),
+        AttributeChange::Removed(raw) if is_internal => (
+            Severity::Additive,
+            format!(
+                "model `{model_name}` lost `{raw}` — the previously suppressed action's \
+                 route/arm/stub is restored"
+            ),
+        ),
+        AttributeChange::Changed(from, to) if is_internal => (
+            Severity::Breaking,
+            format!(
+                "model `{model_name}` attribute changed from `{from}` to `{to}` — \
+                 conservatively treated as breaking since which action(s) lost suppression \
+                 coverage can't be determined from the raw attribute text alone"
             ),
         ),
         AttributeChange::Added(raw) => (
@@ -155,6 +198,8 @@ fn push_attribute_change(
         severity,
         category: if is_paged {
             "model_attribute_paged"
+        } else if is_internal {
+            "model_attribute_internal"
         } else {
             "model_attribute_other"
         },

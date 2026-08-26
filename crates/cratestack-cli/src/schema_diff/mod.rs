@@ -9,6 +9,11 @@
 //! * Adding `@@paged` to a model is breaking: it changes that model's
 //!   `.list()` response envelope from `T[]` to `Page<T>` (and vice
 //!   versa for removal).
+//! * Adding `@@internal(...)` to a model action is breaking
+//!   (cratestack#743, `docs/design/route-suppression.md`): it removes
+//!   a live REST route, RPC dispatch arm, and client stub for any
+//!   consumer still calling that action. Removing `@@internal(...)`
+//!   is additive — it restores what was suppressed, breaking nobody.
 //! * Adding a model, an optional field, or a procedure is additive.
 //! * Adding a *required* field/argument with no default is breaking:
 //!   existing client-constructed payloads that omit it are rejected.
