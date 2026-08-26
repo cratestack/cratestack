@@ -920,3 +920,110 @@ model IntrospectionProbeLegacyOrder {
          undeclared ordinary index is already treated — got: {ops:?}"
     );
 }
+
+/// cratestack#742 post-review remediation, round 2 (Finding A): the
+/// churn-tolerance fix from round 1 independently normalized each side
+/// of a predicate before comparing them as plain strings, which threw
+/// away the `::type` cast's own type name — so a predicate whose
+/// **explicit** cast genuinely changed type (not just whether a cast was
+/// present) compared as unchanged, and the database silently kept
+/// enforcing the OLD uniqueness rule. `citext` (case-insensitive) vs.
+/// `text` (case-sensitive) is the money-relevant version of this: an
+/// author narrowing (or widening) a partial unique index's case
+/// sensitivity by changing its cast must get a real migration, not
+/// silence. Verified empirically (a throwaway container, `psql`) that
+/// Postgres preserves the distinction in `pg_get_expr`'s deparse:
+/// `email = 'x'::citext` against a `text` column reads back as
+/// `(email = ('x'::citext)::text)` — a real, different cast, not folded
+/// away — versus `(email = 'x'::text)` for the `::text` version.
+#[tokio::test]
+async fn partial_index_cast_type_change_is_detected_as_drop_and_recreate() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeAccount");
+
+    exec(&pool, "CREATE EXTENSION IF NOT EXISTS citext").await;
+
+    let original_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeAccount {
+  id String @id
+  email String
+
+  @@index([email], where: "email = 'admin@example.com'::citext")
+}
+"#;
+    let original_schema =
+        cratestack_parser::parse_schema(original_source).expect("schema should parse");
+    let original = project(&original_schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&original, &table))
+        .expect("diff should succeed");
+    exec(&pool, &emit_postgres(&create_ops).up).await;
+
+    let changed_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeAccount {
+  id String @id
+  email String
+
+  @@index([email], where: "email = 'admin@example.com'::text")
+}
+"#;
+    let changed_schema =
+        cratestack_parser::parse_schema(changed_source).expect("schema should parse");
+    let changed = project(&changed_schema);
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+
+    // Pin the exact, empirically-verified shape Postgres preserves —
+    // if a future Postgres version stops distinguishing these, this
+    // assertion (not just the decisive one below) will say so plainly.
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(email = ('admin@example.com'::citext)::text)")],
+        "pg_get_expr should preserve the citext cast, not fold it away"
+    );
+
+    let ops = diff_projections(&only_table(&report.projections, &table), &changed)
+        .expect("diff should succeed");
+
+    let index_name = format!("{table}_email_idx");
+    let drops_it = ops.iter().any(
+        |op| matches!(op, cratestack_migrate::ir::Op::DropIndex(drop) if drop.name == index_name),
+    );
+    let re_adds_it = ops.iter().any(|op| {
+        matches!(op, cratestack_migrate::ir::Op::AddIndex(add) if add.name == index_name
+            && add.where_predicate.as_deref() == Some("email = 'admin@example.com'::text"))
+    });
+    assert!(
+        drops_it && re_adds_it,
+        "a partial index whose predicate's explicit cast TYPE changed (citext -> text) must \
+         drop + recreate — silently keeping the old index would mean the database keeps \
+         enforcing case-insensitive uniqueness after the schema declared case-sensitive — got: \
+         {ops:?}"
+    );
+}

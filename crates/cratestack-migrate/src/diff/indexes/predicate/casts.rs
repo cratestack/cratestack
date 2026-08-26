@@ -1,89 +1,112 @@
-//! The literal-cast half of `super::normalize_predicate` — see that
-//! function's doc for why it exists and what it deliberately does not
-//! attempt. Split into its own file to keep `predicate.rs` under this
-//! crate's ~200-LoC convention.
+//! Tokenizes a predicate into literal-vs-everything-else [`Segment`]s so
+//! `super::predicates_equivalent` can compare two predicates' literals
+//! (and, where present, their explicit `::type` casts) *jointly* rather
+//! than independently normalizing each side into a plain string first.
+//!
+//! Round 2 review of cratestack#742 (Finding A) is why this isn't a
+//! plain string-rewriting `strip_literal_casts` anymore: independently
+//! stripping every `::type` cast from both sides before comparing them
+//! made two predicates that cast the *same* literal to two *different*
+//! types compare equal — `amount > '100'::int` vs. `amount > '100'::text`,
+//! or the money-relevant case, `email = 'x'::citext` (case-insensitive)
+//! vs. `email = 'x'::text` (case-sensitive) — because the type name was
+//! captured, verified to be present, and then thrown away. Tokenizing
+//! into segments keeps each literal's cast type (if any) around so the
+//! caller can require a match between two *explicit* casts while still
+//! forgiving the common case of one side lacking a cast entirely (the
+//! `pg_get_expr`-inserted-it-but-the-author-didn't-write-it case this
+//! module was built for in the first place).
 
-/// Removes a `::<type>` cast Postgres's deparser inserts immediately
-/// after a literal — `'active'::text` → `'active'`, `(100)::numeric` →
-/// `100` — so a predicate whose only difference from its introspected
-/// form is this cast still compares equal.
-pub(super) fn strip_literal_casts(input: &str) -> String {
+mod type_name;
+
+/// One chunk of a tokenized predicate, in original order.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Segment {
+    /// A literal's own text (quotes included, for a string), plus its
+    /// cast type if one immediately follows (`::<type>`, normalized —
+    /// see [`type_name::parse_type_name`]). `None` means the literal
+    /// appeared bare, either because the author wrote no cast or
+    /// because Postgres didn't need to insert one.
+    Literal {
+        text: String,
+        cast_type: Option<String>,
+    },
+    /// A run of everything else — operators, keywords, identifiers,
+    /// whitespace (already collapsed by the caller), parentheses that
+    /// aren't part of a literal-cast wrapper.
+    Other(String),
+}
+
+/// Splits `input` into [`Segment`]s in order. Every literal in `input`
+/// becomes its own `Literal` segment (whether or not a cast follows —
+/// alignment between two sides depends on both recognizing the same
+/// literal boundaries); everything between them collapses into `Other`
+/// runs.
+pub(super) fn tokenize(input: &str) -> Vec<Segment> {
     let chars: Vec<char> = input.chars().collect();
-    let mut out = String::new();
+    let mut out = Vec::new();
+    let mut other = String::new();
     let mut i = 0;
     while i < chars.len() {
-        match try_match_cast_literal(&chars, i) {
-            Some((literal, next_i)) => {
-                out.push_str(&literal);
+        match try_match_literal(&chars, i) {
+            Some((text, cast_type, next_i)) => {
+                if !other.is_empty() {
+                    out.push(Segment::Other(std::mem::take(&mut other)));
+                }
+                out.push(Segment::Literal { text, cast_type });
                 i = next_i;
             }
             None => {
-                out.push(chars[i]);
+                other.push(chars[i]);
                 i += 1;
             }
         }
     }
+    if !other.is_empty() {
+        out.push(Segment::Other(other));
+    }
     out
 }
 
-/// At `chars[i]`, tries to match `['('] <literal> [')'] '::' <typename>`
-/// — a literal, optionally parenthesized (Postgres wraps a numeric
-/// constant that needs a cast in one redundant pair, e.g. `(100)::numeric`
-/// — a bare string literal never gets this treatment), immediately
-/// followed by a cast. `<typename>` is one or more lowercase words
-/// separated by single spaces (covers multi-word names like `character
-/// varying`/`timestamp without time zone`), optionally followed by a
-/// `(...)` type modifier and/or `[]` array markers. Returns the bare
-/// literal text and the index just past the whole match, or `None` if
-/// `chars[i]` doesn't start this shape — including when it's preceded by
-/// an identifier character, which would make `(`/a digit part of a
-/// function call or a longer identifier rather than a fresh literal.
-fn try_match_cast_literal(chars: &[char], i: usize) -> Option<(String, usize)> {
+/// At `chars[i]`, tries to match a literal, optionally parenthesized
+/// (Postgres wraps a numeric constant that needs a cast in one redundant
+/// pair, e.g. `(100)::numeric` — a bare string literal never gets this
+/// treatment) — the parenthesized form is *only* recognized when a cast
+/// actually follows, so `(100)` with no cast is left as plain `Other`
+/// text (a `(`, a bare literal, a `)`) rather than misread — optionally
+/// followed by `'::' <typename>` (see [`type_name::parse_type_name`] for
+/// the grammar). Returns the literal's own text, its cast type if one
+/// was recognized, and the index just past the whole match; `None` if
+/// `chars[i]` doesn't start a literal at all, *or* if `::` is present
+/// but what follows isn't a type name this module's grammar recognizes
+/// — deliberately not falling back to "bare literal, ignore the `::…`"
+/// in that case, since silently dropping an unrecognized cast is exactly
+/// the false-equality failure mode this module exists to avoid; the
+/// caller's tokenizer just walks into it a character at a time instead,
+/// which fails toward two predicates comparing as structurally different
+/// (churn) rather than silently equal.
+fn try_match_literal(chars: &[char], i: usize) -> Option<(String, Option<String>, usize)> {
     if i > 0 && is_identifier_char(chars[i - 1]) {
         return None;
     }
-    let mut j = i;
-    let has_paren = chars.get(j) == Some(&'(');
-    if has_paren {
-        j += 1;
-    }
-    let (literal, mut k) = parse_literal(chars, j)?;
-    if has_paren {
-        if chars.get(k) != Some(&')') {
+    if chars.get(i) == Some(&'(') {
+        let (literal, k1) = parse_literal(chars, i + 1)?;
+        if chars.get(k1) != Some(&')') {
             return None;
         }
-        k += 1;
-    }
-    if chars.get(k) != Some(&':') || chars.get(k + 1) != Some(&':') {
-        return None;
-    }
-    k += 2;
-
-    let mut consumed_type = false;
-    loop {
-        let word_len = parse_lowercase_word(chars, k);
-        if word_len == 0 {
-            break;
+        let k2 = k1 + 1;
+        if chars.get(k2) != Some(&':') || chars.get(k2 + 1) != Some(&':') {
+            return None;
         }
-        k += word_len;
-        consumed_type = true;
-        if chars.get(k) == Some(&'(')
-            && let Some(end) = find_matching_paren(chars, k)
-        {
-            k = end + 1;
-        }
-        while chars.get(k) == Some(&'[') && chars.get(k + 1) == Some(&']') {
-            k += 2;
-        }
-        match (chars.get(k), chars.get(k + 1)) {
-            (Some(' '), Some(next)) if next.is_ascii_lowercase() => k += 1,
-            _ => break,
-        }
+        let (cast_type, k3) = type_name::parse_type_name(chars, k2 + 2)?;
+        return Some((literal, Some(cast_type), k3));
     }
-    if !consumed_type {
-        return None;
+    let (literal, k1) = parse_literal(chars, i)?;
+    if chars.get(k1) == Some(&':') && chars.get(k1 + 1) == Some(&':') {
+        let (cast_type, k2) = type_name::parse_type_name(chars, k1 + 2)?;
+        return Some((literal, Some(cast_type), k2));
     }
-    Some((literal, k))
+    Some((literal, None, k1))
 }
 
 fn is_identifier_char(ch: char) -> bool {
@@ -134,34 +157,4 @@ fn parse_literal(chars: &[char], j: usize) -> Option<(String, usize)> {
         }
         _ => None,
     }
-}
-
-/// Length, in chars, of a run of lowercase ASCII letters starting at
-/// `chars[k]` — a single word of a (possibly multi-word) type name. `0`
-/// means `chars[k]` isn't the start of one, which callers use as the
-/// loop-termination signal.
-fn parse_lowercase_word(chars: &[char], k: usize) -> usize {
-    chars[k..]
-        .iter()
-        .take_while(|ch| ch.is_ascii_lowercase())
-        .count()
-}
-
-/// Index of the `)` matching the `(` at `chars[open]`, or `None` if
-/// unbalanced.
-fn find_matching_paren(chars: &[char], open: usize) -> Option<usize> {
-    let mut depth = 0i32;
-    for (offset, ch) in chars[open..].iter().enumerate() {
-        match ch {
-            '(' => depth += 1,
-            ')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(open + offset);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
 }

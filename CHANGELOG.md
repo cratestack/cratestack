@@ -39,23 +39,46 @@ indexes' predicates through that same normalization before deciding whether to n
 proved against a real database (not a hand-written IR fixture, which can't exhibit the normalization)
 in `crates/cratestack-migrate/tests/postgres_introspect.rs`.
 
-Landed initially without also stripping the explicit `::type` cast Postgres inserts onto *every*
+Landed initially without also tolerating the explicit `::type` cast Postgres inserts onto *every*
 literal comparison — `status = 'active'` reads back as `(status = 'active'::text)`, `amount > 100`
-against a `Decimal` column as `(amount > (100)::numeric)` — which meant any predicate comparing a
-column to a literal (i.e. almost any partial index anyone would actually write) never compared equal
-to its introspected form and churned a drop+recreate on *every* `migrate` run: the ticket's load-bearing
-"no churn" requirement, silently unmet for exactly the shapes that matter. Caught in post-merge review
-and fixed in the same PR before release: `crate::diff::indexes::predicate::casts` now strips a `::type`
-cast immediately following a literal (optionally parenthesized, as Postgres wraps numeric constants —
-`(100)::numeric` → `100`), covering multi-word type names (`character varying`) generically. It
-deliberately does not replicate Postgres's remaining normalization — identifier/keyword case-folding —
-since that needs a real SQL expression parser, out of scope per the ticket; a predicate that differs
-from its stored form only by identifier case will still show as changed and get dropped/recreated, a
-documented limitation (pinned by a test), not a silent gap. Proved against a live database with literal
-predicates specifically (`partial_index_with_text_literal_predicate_round_trips_without_churn`,
-`partial_index_with_numeric_literal_predicate_round_trips_without_churn` in
-`crates/cratestack-migrate/tests/postgres_introspect.rs`), not just the `IS NOT NULL` shape that needs
-no cast and can't exercise this.
+against a floating-point column as `(amount > (100)::double precision)` — which meant any predicate
+comparing a column to a literal (i.e. almost any partial index anyone would actually write) never
+compared equal to its introspected form and churned a drop+recreate on *every* `migrate` run: the
+ticket's load-bearing "no churn" requirement, silently unmet for exactly the shapes that matter. Caught
+in post-merge review and fixed in the same PR before release, in two rounds:
+
+Round 1 independently stripped the `::type` cast from each side of the comparison before a plain string
+equality check. That closed the churn bug but opened a worse one, caught in a second review round: since
+the type name was discarded, two predicates casting the *same* literal to two *genuinely different*
+types compared as equal — `email = 'x'::citext` (case-insensitive) vs. `email = 'x'::text`
+(case-sensitive) got **no migration**, silently leaving the database enforcing the old, wrong uniqueness
+rule. An unnecessary drop+recreate is a noticed operational annoyance; a missed one is a wrong constraint
+nobody notices until it lets a duplicate through on a money path — the worse failure direction.
+
+Round 2 replaced independent normalization with a joint, type-aware comparison
+(`crate::diff::indexes::predicate` + `predicate::casts`, the latter tokenizing each predicate into
+literal-vs-everything-else segments rather than rewriting a string): a literal on one side lacking a
+cast the other side has is still forgiven (presumed Postgres-inserted), but when **both** sides carry an
+explicit `::type`, the type names must match — mismatched (e.g. changing `citext` to `text`) now
+correctly triggers a drop+recreate. The type-name grammar itself was also hardened past a plain
+lowercase-letters-only word run (which silently corrupted literals containing digits — `100::int4` lost
+its trailing `4` and it leaked back onto the literal being compared, turning it into `1004`) into one
+recognizing schema-qualified (`pg_catalog.int4`), double-quoted, and array (`text[]`) type-name shapes
+without corruption. Genuinely ambiguous shapes (schema-qualified vs. bare spellings of what might be the
+same catalog type, e.g. `public.citext` vs. `citext`; double casts; doubled parens) fail toward churn,
+never toward silent equality — this module has no catalog access to confirm two spellings really name
+the same type, and guessing risks the exact false-equality class it exists to close. It still doesn't
+replicate Postgres's remaining normalization — identifier/keyword case-folding — since that needs a real
+SQL expression parser, out of scope per the ticket; a predicate that differs from its stored form only by
+identifier case will still show as changed and get dropped/recreated, a documented limitation (pinned by
+a test), not a silent gap.
+
+Proved against a live database: `partial_index_with_text_literal_predicate_round_trips_without_churn`,
+`partial_index_with_numeric_literal_predicate_round_trips_without_churn`, and
+`partial_index_cast_type_change_is_detected_as_drop_and_recreate` (the last using the real `citext`
+extension to reproduce the money-relevant case end-to-end) in
+`crates/cratestack-migrate/tests/postgres_introspect.rs` — not just the `IS NOT NULL` shape that needs no
+cast and can't exercise any of this.
 
 **Adoption note — widened blast radius:** introspecting partial indexes at all required dropping the
 prior `AND i.indpred IS NULL` exclusion in `introspect::postgres::indexes`, which used to make every

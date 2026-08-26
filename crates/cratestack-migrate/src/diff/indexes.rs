@@ -1,7 +1,7 @@
 //! Index diff for one (prev, next) table pair.
 //!
-//! The predicate-comparison machinery (`normalize_predicate` and its
-//! cast-stripping tokenizer) lives in the sibling `predicate`/
+//! The predicate-comparison machinery (`predicates_equivalent` and its
+//! literal/cast tokenizer) lives in the sibling `predicate`/
 //! `predicate::casts` modules — split out purely to stay under this
 //! crate's ~200-LoC-per-file convention; the diff logic in *this* file
 //! (`diff_indexes`/`predicates_match`) is the part that actually decides
@@ -69,14 +69,14 @@ pub(super) fn diff_indexes(prev: &TableProjection, next: &TableProjection) -> In
 
 /// Whether two `where:` predicates should be treated as the same
 /// constraint. `None` on both sides is the common (non-partial) case.
-/// `Some`/`Some` goes through [`predicate::normalize_predicate`] rather
-/// than a byte comparison — see that function's doc for why.
+/// `Some`/`Some` goes through [`predicate::predicates_equivalent`]
+/// rather than a byte comparison — see that function's module doc for
+/// why, and for why it's a joint comparison rather than independently
+/// normalizing each side first.
 fn predicates_match(prev: Option<&str>, next: Option<&str>) -> bool {
     match (prev, next) {
         (None, None) => true,
-        (Some(a), Some(b)) => {
-            predicate::normalize_predicate(a) == predicate::normalize_predicate(b)
-        }
+        (Some(a), Some(b)) => predicate::predicates_equivalent(a, b),
         _ => false,
     }
 }
