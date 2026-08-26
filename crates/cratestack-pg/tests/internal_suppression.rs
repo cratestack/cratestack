@@ -1,12 +1,20 @@
 //! cratestack#743 — `@@internal("action")` route suppression, exercised
 //! end-to-end against real generated routers (`docs/design/
-//! route-suppression.md`). Every request here is dispatch-level only
-//! (unregistered route / unknown op id) and never actually reaches the
+//! route-suppression.md`). Most requests here are dispatch-level only
+//! (unregistered route / unknown op id) and never actually reach the
 //! database, so — like `include_schema.rs`'s existing
 //! `rpc_unary_unknown_op_returns_404` and
 //! `rpc_batch_per_frame_errors_dont_poison_other_frames` this mirrors —
-//! `connect_lazy` is enough; no live Postgres or testcontainer is
-//! needed for this file specifically.
+//! `connect_lazy` is enough for those. The one exception is
+//! `policy_evaluation_unaffected`'s
+//! `internal_create_does_not_change_policy_evaluation_for_in_process_callers`
+//! below (design doc §9's non-goal: "Changing policy evaluation
+//! semantics ... a suppressed action's policy still compiles and still
+//! gates any in-process caller"), which drives a real `.create()` call
+//! against a dedicated fixture's `Sprocket` model — carrying both
+//! `@@allow("create", auth() != null)` and `@@internal("create")` — and
+//! needs a real Postgres, hence `mod support;`/`pg::connect_or_skip()`
+//! for that one test.
 //!
 //! Three surfaces, per the design's acceptance criteria:
 //! 1. REST: a suppressed verb on a path with survivors gets axum's own
@@ -21,9 +29,13 @@ use cratestack::axum::body::Body;
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::sqlx::postgres::PgPoolOptions;
-use cratestack::{AuthProvider, CratestackContext, RequestContext};
+use cratestack::sqlx::query;
+use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext};
 use cratestack_codec_cbor::CborCodec;
 use tower::util::ServiceExt;
+
+mod support;
+use support::pg;
 
 /// Always-authenticated: every model in these fixtures gates on
 /// `auth() != null`, and these tests only care about routing/dispatch
@@ -122,6 +134,58 @@ mod rest_suppression {
                 "{method} {path} must still be routed (not suppressed)",
             );
         }
+    }
+
+    /// cratestack#743 correction (coordinator, post-review): the
+    /// `ROUTE_TRANSPORTS` registry (`crates/cratestack-macros/src/
+    /// transport/rest.rs`, `docs/design/route-suppression.md` §1.1's
+    /// "a second place any fix has to touch") must not list a
+    /// suppressed verb either, even though the only runtime reader
+    /// (`cratestack-axum/src/ratelimit/rest_ops_filter.rs`) fails
+    /// closed on a miss — it is still `pub const` in the generated
+    /// crate's public API and must not advertise a route the schema
+    /// author explicitly suppressed.
+    #[test]
+    fn route_transports_omits_suppressed_widget_create_but_keeps_the_rest() {
+        let routes = cratestack_schema::axum::ROUTE_TRANSPORTS;
+        assert!(
+            !routes
+                .iter()
+                .any(|route| route.path == "/widgets" && route.method == "POST"),
+            "suppressed POST /widgets must not appear in ROUTE_TRANSPORTS, got: {:?}",
+            routes
+                .iter()
+                .map(|r| (r.method, r.path))
+                .collect::<Vec<_>>()
+        );
+        for (method, path) in [
+            ("GET", "/widgets"),
+            ("GET", "/widgets/{id}"),
+            ("PATCH", "/widgets/{id}"),
+            ("DELETE", "/widgets/{id}"),
+        ] {
+            assert!(
+                routes
+                    .iter()
+                    .any(|route| route.path == path && route.method == method),
+                "{method} {path} must still appear in ROUTE_TRANSPORTS",
+            );
+        }
+    }
+
+    /// A model suppressing every verb (`Gadget`, `@@internal("all")`)
+    /// contributes zero `ROUTE_TRANSPORTS` entries at all.
+    #[test]
+    fn route_transports_omits_fully_suppressed_gadget_entirely() {
+        let routes = cratestack_schema::axum::ROUTE_TRANSPORTS;
+        assert!(
+            !routes.iter().any(|route| route.path.contains("gadget")),
+            "an @@internal(\"all\") model must contribute no ROUTE_TRANSPORTS entries, got: {:?}",
+            routes
+                .iter()
+                .map(|r| (r.method, r.path))
+                .collect::<Vec<_>>()
+        );
     }
 
     /// `@@internal("all")` on `Gadget`: neither path is ever
@@ -297,6 +361,99 @@ mod rpc_suppression {
         assert_eq!(
             suppressed.code, unknown.code,
             "a suppressed op and a genuinely unknown op must be byte-identical at the wire",
+        );
+    }
+}
+
+mod policy_evaluation_unaffected {
+    use super::*;
+
+    // A dedicated fixture/model (`Sprocket`, not `Widget`) rather than
+    // reusing `internal_suppression_rest.cstack`: that fixture's
+    // `Widget` -> `widgets` table already collides (by design, as a
+    // regression fixture) with two unrelated tests'
+    // `transport_rpc.cstack`-derived `widgets` tables
+    // (`rpc_subscribe_sse.rs`, `rpc_canonical_request.rs`) — see
+    // `fixture_table_names.rs`'s cross-binary collision guard. Carries
+    // the exact same `@@allow("create", ...)` + `@@internal("create")`
+    // combination the design doc's non-goal (§9) needs proven.
+    include_server_schema!(
+        "tests/fixtures/internal_suppression_policy.cstack",
+        db = Postgres
+    );
+
+    async fn reset_sprockets_table(pool: &cratestack::sqlx::PgPool) {
+        query("DROP TABLE IF EXISTS sprockets")
+            .execute(pool)
+            .await
+            .expect("drop sprockets table");
+        query("CREATE TABLE sprockets (id BIGINT PRIMARY KEY, name TEXT NOT NULL)")
+            .execute(pool)
+            .await
+            .expect("create sprockets table");
+    }
+
+    /// The design's other central claim, alongside the wire-suppression
+    /// tests above (design doc §9's non-goal — "Changing policy
+    /// evaluation semantics" — and the `@@internal` module doc's own
+    /// framing: "purely a generation-time routing decision"):
+    /// `@@internal("create")` must NOT change what `@@allow("create",
+    /// auth() != null)` decides for a caller that reaches `create`
+    /// in-process (e.g. from a custom procedure calling `db.create()`
+    /// directly), bypassing REST/RPC entirely. `Sprocket` in this
+    /// fixture carries both attributes, so this drives a real
+    /// `.create()` call through the generated `ModelDelegate` against a
+    /// real Postgres and asserts the policy still runs exactly as if
+    /// `@@internal` were absent: an authenticated caller succeeds, an
+    /// anonymous caller still gets `CratestackError::Forbidden` — the
+    /// suppression is invisible to policy evaluation in both
+    /// directions.
+    #[tokio::test]
+    async fn internal_create_does_not_change_policy_evaluation_for_in_process_callers() {
+        let _guard = pg::serial_guard().await;
+        let Some(test_pg) = pg::connect_or_skip().await else {
+            return;
+        };
+        let pool = &test_pg.pool;
+        reset_sprockets_table(pool).await;
+
+        let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
+        let authenticated =
+            CratestackContext::authenticated([("id".to_owned(), cratestack::Value::Int(1))]);
+
+        let created = db
+            .sprocket()
+            .create(cratestack_schema::CreateSprocketInput {
+                id: 1,
+                name: "in-process".to_owned(),
+            })
+            .run(&authenticated)
+            .await
+            .expect(
+                "an authenticated in-process create must still succeed under \
+                 @@allow(\"create\", auth() != null) — @@internal must not affect policy \
+                 evaluation at all",
+            );
+        assert_eq!(created.id, 1);
+        assert_eq!(created.name, "in-process");
+
+        let anonymous = CratestackContext::anonymous();
+        let denied = db
+            .sprocket()
+            .create(cratestack_schema::CreateSprocketInput {
+                id: 2,
+                name: "should be denied".to_owned(),
+            })
+            .run(&anonymous)
+            .await
+            .expect_err(
+                "an anonymous in-process create must still be denied by the exact same \
+                 @@allow(\"create\", auth() != null) policy — proving @@internal suppresses \
+                 wire reachability, not policy enforcement, in either direction",
+            );
+        assert!(
+            matches!(denied, CratestackError::Forbidden(_)),
+            "expected Forbidden, got {denied:?}",
         );
     }
 }

@@ -1,0 +1,31 @@
+// Fixture for cratestack#743 review Finding 7 (`docs/design/
+// route-suppression.md` §9's non-goal: "Changing policy evaluation
+// semantics ... a suppressed action's policy still compiles and still
+// gates any in-process caller"). Deliberately a separate model/fixture
+// from `internal_suppression_rest.cstack`'s `Widget` (also `@@internal
+// ("create")`) rather than reusing it: this drives a real `.create()`
+// against a live Postgres, and `internal_suppression_rest.cstack`'s
+// `Widget` -> `widgets` table already collides with two unrelated
+// fixtures' own `widgets` tables (`rpc_subscribe_sse.rs`,
+// `rpc_canonical_request.rs`, both sharing `transport_rpc.cstack`) —
+// see `fixture_table_names.rs`'s regression guard. `Sprocket` avoids
+// that collision entirely while carrying the exact same attribute
+// combination the test needs.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Sprocket {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@internal("create")
+}
