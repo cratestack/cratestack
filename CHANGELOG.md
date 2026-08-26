@@ -56,10 +56,14 @@ Two correctness fixes to the probe, found in review before this shipped:
   column `DEFAULT` fills it, so this crate never learns its value client-side) made the incoming-row
   check's synthetic one-row `SELECT` fail with Postgres `42703 column "..." does not exist` —
   unconditionally 500ing every `.do_nothing()` upsert on that conflict target, no matter what the
-  caller passed. `.do_nothing()` now falls back to skipping the pre-probe entirely and going straight
-  to the authoritative `ON CONFLICT ... DO NOTHING RETURNING` statement when the incoming-row check
-  can't be evaluated, which is always correct there (see `upsert_do_nothing_exec.rs`'s doc comment) —
-  the plain `.upsert(...).run(...)` (`DO UPDATE`) path cannot safely use the same fallback (its
+  caller passed. `.do_nothing()` now falls back to skipping the pre-probe when the incoming-row check
+  can't be evaluated for that specific reason (Postgres `42703`, and only `42703` — every other probe
+  failure, e.g. a connection loss or a genuinely malformed predicate, still propagates rather than being
+  silently absorbed and possibly re-raised later as a different, more confusing error from a different
+  statement; see `upsert_predicate_probe_error.rs`'s module doc comment), going straight to the
+  authoritative `ON CONFLICT ... DO NOTHING RETURNING` statement, which is always correct there (see
+  `upsert_do_nothing_probe.rs`'s doc comment) — the plain `.upsert(...).run(...)` (`DO UPDATE`) path
+  cannot safely use the same fallback (its
   Created-vs-Updated classification and audit before-snapshot have no equivalent authoritative source)
   and still surfaces this as an error; closing that gap for real needs either backfilling literal
   `@default(...)` values into the insert set at codegen time or basing Created-vs-Updated on the real

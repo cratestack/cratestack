@@ -114,7 +114,7 @@ where
     // `incoming_row_satisfies_predicate` narrowly detects Postgres
     // `42703` from this exact query and maps it to a
     // `CratestackError::Validation` naming the predicate and the fix
-    // (cratestack#741 finding 2 follow-up; see `upsert_predicate_probe.rs`).
+    // (cratestack#741 finding 2 follow-up; see `upsert_predicate_probe_error.rs`).
     // Every other error from this call — including every other
     // SQLSTATE — still propagates as the ordinary `cratestack_error_from_sqlx`
     // mapping, unchanged.

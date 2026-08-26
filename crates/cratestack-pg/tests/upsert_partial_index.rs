@@ -657,3 +657,89 @@ async fn do_update_predicate_referencing_a_default_column_still_errors_clearly()
         "error message must explain the likely cause (a @default(...) column), got: {message:?}",
     );
 }
+
+// ───── #9 cratestack#741 finding 2 follow-up: only 42703 falls back ──────
+//
+// `try_incoming_row_satisfies_predicate`'s savepoint fallback must be
+// narrow BY CONSTRUCTION: only Postgres `42703` (undefined column) is
+// treated as "unknown, fall back to the authoritative statement" —
+// every other probe failure must propagate. This test proves that with
+// a predicate that fails for a DIFFERENT reason than a missing column:
+// it calls a VOLATILE SQL function that unconditionally raises.
+// Postgres's `ON CONFLICT ... WHERE <predicate>` index inference never
+// actually INVOKES the predicate — it matches the parsed expression
+// tree structurally against `pg_index.indpred`, it does not execute
+// it — but the incoming-row probe's `SELECT (<predicate>) FROM (...)`
+// genuinely executes it as a real query. So this function can only
+// ever fire from the probe, and if it fires, the caller must see ITS
+// error, not something else (silence, or a different statement's
+// error) from a swallow-then-refail.
+
+async fn create_boom_function(pool: &cratestack::sqlx::PgPool) {
+    query(
+        "CREATE OR REPLACE FUNCTION cratestack_test_boom() RETURNS boolean AS $$
+         BEGIN
+             RAISE EXCEPTION 'cratestack_test_boom fired';
+         END;
+         $$ LANGUAGE plpgsql VOLATILE",
+    )
+    .execute(pool)
+    .await
+    .expect("create boom function");
+}
+
+#[tokio::test]
+async fn non_undefined_column_probe_failure_propagates_not_swallowed() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    create_boom_function(pool).await;
+
+    let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let ctx = operator();
+
+    let bad_target = ConflictTarget::columns(&["k"]).where_index("cratestack_test_boom()");
+    let err = cool
+        .marker()
+        .upsert(marker(1, Some("boom-key"), "active", "v1"))
+        .on_conflict(bad_target)
+        .do_nothing()
+        .run(&ctx)
+        .await
+        .expect_err("a non-42703 probe failure must propagate, not be silently swallowed");
+
+    // Must NOT be mistaken for the friendly 42703 Validation case —
+    // proves the narrow match discriminates by SQLSTATE, not "any
+    // probe error".
+    assert_ne!(
+        err.code(),
+        "VALIDATION_ERROR",
+        "a RAISE EXCEPTION failure must not be mistaken for the undefined-column case: {err:?}",
+    );
+
+    // Must be the probe's OWN failure, not a different, more confusing
+    // error from a later statement (e.g. "no unique or exclusion
+    // constraint matching the ON CONFLICT specification", which is
+    // what would happen if this were silently swallowed and the code
+    // fell through to attempt the real INSERT against a predicate no
+    // real partial index matches).
+    let detail = err.detail().unwrap_or_default();
+    assert!(
+        detail.contains("cratestack_test_boom fired"),
+        "the propagated error must be the probe's own failure: {detail:?}",
+    );
+    assert!(
+        !detail.contains("no unique or exclusion constraint"),
+        "must not have fallen through to the real statement: {detail:?}",
+    );
+
+    let count: i64 = query("SELECT COUNT(*) FROM markers")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(count, 0, "the failed call must not have inserted anything");
+}
