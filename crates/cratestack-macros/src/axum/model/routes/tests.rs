@@ -73,3 +73,85 @@ fn already_snake_case_name_is_unchanged() {
     assert_eq!(list_route, "/already_snakes");
     assert_eq!(detail_route, "/already_snakes/{id}");
 }
+
+/// cratestack#743: a model with no `@@internal` attribute must still
+/// route every verb on both paths — the byte-identical-to-today
+/// guarantee the design's acceptance criteria requires. This is the
+/// case `just regen-examples --check` pins for the generated clients;
+/// this test pins the same guarantee for the server's own route
+/// derivation.
+#[test]
+fn model_without_internal_attribute_routes_every_verb() {
+    let model = parse_first_model(
+        r#"
+model Widget {
+  id String @id
+}
+"#,
+    );
+    let generated = generate_model_axum_routes(&model).to_string();
+    assert!(generated.contains("axum :: routing :: get"));
+    assert!(generated.contains("axum :: routing :: post"));
+    assert!(generated.contains("axum :: routing :: patch"));
+    assert!(generated.contains("axum :: routing :: delete"));
+    assert!(generated.contains("widgets"));
+}
+
+/// cratestack#743 negative control's macro-level half: suppressing
+/// `create` must remove the `POST` `MethodRouter` fragment from the
+/// list path while leaving `GET` (list) and every detail-path verb
+/// routed — proving the omission is scoped to the one suppressed verb,
+/// not the whole path.
+#[test]
+fn internal_create_omits_post_but_keeps_list_and_detail() {
+    let model = parse_first_model(
+        r#"
+model Widget {
+  id String @id
+
+  @@internal("create")
+}
+"#,
+    );
+    let generated = generate_model_axum_routes(&model).to_string();
+    assert!(
+        generated.contains("axum :: routing :: get"),
+        "list GET must survive: {generated}"
+    );
+    assert!(
+        !generated.contains("axum :: routing :: post"),
+        "create POST must be omitted: {generated}"
+    );
+    assert!(
+        generated.contains("axum :: routing :: patch"),
+        "detail PATCH must survive: {generated}"
+    );
+    assert!(
+        generated.contains("axum :: routing :: delete"),
+        "detail DELETE must survive: {generated}"
+    );
+}
+
+/// cratestack#743: `@@internal("all")` suppresses every verb on both
+/// paths, so neither `.route(...)` call — and therefore neither path
+/// literal — should be emitted at all. Proves the "every verb on a
+/// path suppressed ⇒ the whole path is never registered" half of the
+/// design (§3/§4): the path falls through to axum's own default 404,
+/// not a registered-but-empty route.
+#[test]
+fn internal_all_omits_both_paths_entirely() {
+    let model = parse_first_model(
+        r#"
+model Widget {
+  id String @id
+
+  @@internal("all")
+}
+"#,
+    );
+    let generated = generate_model_axum_routes(&model).to_string();
+    assert!(
+        !generated.contains(".route("),
+        "no path should be registered when every verb is suppressed: {generated}"
+    );
+}

@@ -182,36 +182,46 @@ pub(crate) fn build_model_file_contexts(
                 model_interface_kind,
                 &enum_names,
             );
-            let create_input = model_allows_create(model).then(|| {
+            // cratestack#743: same reasoning as `context.rs`'s (non-swr)
+            // interface gating — a suppressed `create`/`update` leaves
+            // this model's own `create`/`update` fn+hook
+            // (`crate::swr::hooks`, gated on
+            // `ModelApiView::allows_create`/`allows_update`) omitted, so
+            // the input interface would otherwise be unreferenced.
+            let internal = cratestack_core::model_internal_actions(model);
+            let create_input =
+                (model_allows_create(model) && !internal.contains("create")).then(|| {
+                    build_interface(
+                        &format!("Create{}Input", model.name),
+                        &scalar_fields
+                            .iter()
+                            .copied()
+                            // `@computed` fields are resolver-backed and
+                            // response-time only — never part of a create
+                            // input (`docs/design/computed-fields.md`).
+                            .filter(|field| !is_computed_field(field))
+                            .filter(|field| !is_generated_on_create(field))
+                            .collect::<Vec<_>>(),
+                        InterfaceKind::Plain,
+                        &enum_names,
+                    )
+                });
+            let update_input = (!internal.contains("update")).then(|| {
                 build_interface(
-                    &format!("Create{}Input", model.name),
+                    &format!("Update{}Input", model.name),
                     &scalar_fields
                         .iter()
                         .copied()
-                        // `@computed` fields are resolver-backed and
-                        // response-time only — never part of a create
-                        // input (`docs/design/computed-fields.md`).
+                        .filter(|field| !is_primary_key(field))
+                        // `@computed` fields are never part of an update
+                        // input either — same reasoning as the create input
+                        // above.
                         .filter(|field| !is_computed_field(field))
-                        .filter(|field| !is_generated_on_create(field))
                         .collect::<Vec<_>>(),
-                    InterfaceKind::Plain,
+                    InterfaceKind::Patch,
                     &enum_names,
                 )
             });
-            let update_input = build_interface(
-                &format!("Update{}Input", model.name),
-                &scalar_fields
-                    .iter()
-                    .copied()
-                    .filter(|field| !is_primary_key(field))
-                    // `@computed` fields are never part of an update
-                    // input either — same reasoning as the create input
-                    // above.
-                    .filter(|field| !is_computed_field(field))
-                    .collect::<Vec<_>>(),
-                InterfaceKind::Patch,
-                &enum_names,
-            );
 
             let (mut owned_enums, mut owned_interfaces) = owned_by(
                 schema,

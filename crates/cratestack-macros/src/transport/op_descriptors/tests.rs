@@ -91,3 +91,54 @@ fn model_crud_op_descriptors_are_always_rate_limited_by_default() {
         );
     }
 }
+
+/// cratestack#743: `@@internal("create")` must drop exactly the
+/// `create` `OpDescriptor` — nothing advertises the op as callable
+/// (design doc §3, RPC unary row) — while leaving the other four
+/// intact.
+#[test]
+fn internal_create_omits_only_the_create_op_descriptor() {
+    let model = parse_first_model(
+        r#"
+model Widget {
+  id Int @id
+
+  @@internal("create")
+}
+"#,
+    );
+
+    let descriptors = generate_model_op_descriptors(&model, false);
+    let ids: Vec<String> = descriptors
+        .iter()
+        .map(|tokens| tokens.to_string())
+        .collect();
+
+    assert_eq!(
+        descriptors.len(),
+        4,
+        "expected list/get/update/delete: {ids:?}"
+    );
+    assert!(
+        !ids.iter().any(|op| op.contains("\"model.Widget.create\"")),
+        "create op id must not be emitted: {ids:?}"
+    );
+    assert!(ids.iter().any(|op| op.contains("\"model.Widget.list\"")));
+    assert!(ids.iter().any(|op| op.contains("\"model.Widget.get\"")));
+    assert!(ids.iter().any(|op| op.contains("\"model.Widget.update\"")));
+    assert!(ids.iter().any(|op| op.contains("\"model.Widget.delete\"")));
+}
+
+/// cratestack#743 negative control: with no `@@internal` attribute at
+/// all, nothing is suppressed — proves the previous test's absence
+/// assertion is actually pinned to the attribute, not accidental.
+#[test]
+fn without_internal_attribute_all_five_op_descriptors_are_emitted() {
+    let model = parse_first_model(MODEL_SCHEMA);
+    let descriptors = generate_model_op_descriptors(&model, false);
+    let ids: Vec<String> = descriptors
+        .iter()
+        .map(|tokens| tokens.to_string())
+        .collect();
+    assert!(ids.iter().any(|op| op.contains("\"model.Widget.create\"")));
+}

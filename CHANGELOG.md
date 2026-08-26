@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+### `@@internal("action")` route suppression — REST, RPC and every generated client (#743, implementing #514's accepted design)
+
+A model action can now be marked `@@internal("list" | "detail" | "read" | "create" | "update" |
+"delete" | "all")` to declare it must never be reachable from the wire — no REST route, no RPC dispatch
+arm, and no client stub in any generated SDK, on either transport. Suppression is implemented as
+*emitting nothing*: a suppressed verb on a REST path with surviving verbs gets axum's own `405 Method
+Not Allowed`; a model that suppresses every verb on a path never registers that path at all (axum's own
+`404`); a suppressed RPC op id falls into the pre-existing unknown-op-id arm and returns the exact same
+`CratestackError::NotFound` a genuinely unknown op id gets, including per-frame inside `/rpc/batch`
+(a suppressed op in one frame does not poison sibling frames). The canonical case this unblocks: a
+schema declaring `@@allow("create", auth().isSystem())` — fail-closed and correct, but until now still
+generated a `POST` route and a `.create()` client method that could only ever 403. `@@internal("create")`
+now removes both.
+
+**Breaking, per the pre-1.0 lockstep convention, and opt-in per action**: adding `@@internal` to an
+action a generated client already calls removes that client method (`Widget.create()` in Rust, Dart and
+TypeScript; the corresponding REST/RPC/riverpod/`--swr` hook/controller in Dart and TypeScript) — a
+compile error at the call site on regeneration, not a runtime `403` discovered later. It is opt-in per
+action, so nothing breaks until a schema author adds it. `Create<Model>Input`/`Update<Model>Input` are
+also omitted from every generated **client** SDK when the corresponding verb is suppressed (the
+server's own ORM-facing input types are unaffected — a suppressed action's policy still compiles and
+still gates any in-process caller, e.g. a custom procedure calling `db.create()` directly). A model with
+no `@@internal` attribute at all generates byte-identical output to before this change.
+
+The shared source of truth is `cratestack_core::model_internal_actions(&Model) -> BTreeSet<&str>`,
+consulted once per surface: `cratestack-macros`'s REST route assembly
+(`axum/model/routes.rs::generate_model_axum_routes`, now emitting per-verb `MethodRouter`s merged with
+`.merge()` rather than one fused `.get(..).post(..)` chain), RPC dispatch-arm/op-descriptor collection
+(`transport/rpc.rs`, `transport/op_descriptors.rs`), the generated Rust client
+(`client/rest/model.rs`, `client/rpc/model.rs`), `cratestack-client-dart` (both presets, REST and RPC),
+and `cratestack-client-typescript` (default, `--swr`, REST and RPC — extending the pre-existing,
+`create`-only, presence-based `model_allows_create` gate to all five verbs). An invalid action name in
+`@@internal(...)` is a compile error naming the model and the bad action
+(`cratestack-parser`'s `validate_model_attributes`).
+
+**Follow-up fixes from post-merge review (#743):**
+
+- **`generate-wiremock` now suppresses stub mappings too.** `cratestack-mock-wiremock`'s
+  `model_mapping::build_model_mappings` (both the stateful REST path and the static RPC path) consults
+  `model_internal_actions` before emitting a mapping — previously a suppressed verb still got a stub
+  advertising a working response (e.g. a stateful `201 Created` for a `create` the real server
+  suppresses), handing a mock consumer a contract the real server doesn't honor.
+- **`cratestack diff` now gates on `@@internal`.** Adding `@@internal(...)` to a model action is
+  classified `Severity::Breaking` (previously fell to the generic "no tracked wire-shape effect"
+  branch) — a PR that suppresses an action with live consumers now fails the diff gate. Removing
+  `@@internal(...)` is `Severity::Additive` for what a schema-only diff can observe (it cannot see a
+  consumer's hand-written replacement handler colliding with a regenerated route at the same path).
+  Each `@@internal("action")` declaration is now keyed independently in the diff (mirroring `@@unique`'s
+  existing per-instance keying) — a model suppressing more than one action used to collapse every
+  declaration but the last onto one `BTreeMap` entry, silently under-reporting (in the worst case,
+  reporting *zero* changes for a diff that actually restored a suppressed live action). `@@internal`
+  itself takes exactly one action per declaration, enforced by the parser (`@@internal("create",
+  "update")` is a compile error) — suppressing more than one action means writing more than one
+  `@@internal("action")` line.
+- **`ROUTE_TRANSPORTS` now omits suppressed verbs.** `generate_model_transport_constants`/
+  `generate_model_transport_entries` (`cratestack-macros/src/transport/rest.rs`) consult
+  `model_internal_actions` — this `pub const` registry in the generated crate's public API no longer
+  lists a verb the schema author explicitly suppressed, even though its one runtime reader
+  (`cratestack-axum`'s rate-limit filter) already failed closed on a miss.
+- **`@@internal` added to `cratestack-lsp` completions**, with a detail string distinguishing it from a
+  policy attribute.
+- **New test**: an in-process `.create()` call against a model carrying both `@@allow("create", ...)`
+  and `@@internal("create")` succeeds for an authenticated caller and is still denied for an
+  anonymous one — pinning that suppression is purely generation-time and leaves policy evaluation
+  untouched (design doc §9's non-goal).
+- **Known-incomplete surface documented, not silently left**: the TypeScript `swr` preset's
+  `list`/`get`/`update`/`delete` cache-key factories (not `create`'s, which is correctly gated) are
+  still emitted for a suppressed verb — confirmed inert (no generated hook ever calls through one) and
+  documented in `docs/design/route-suppression.md` §8a rather than fixed, since gating them has no
+  caller-visible effect today.
 ### `@@unique`/`@@index` gain a `where: "<sql predicate>"` argument — partial index DDL — breaking for `cratestack-core` API consumers (#742)
 
 `@@unique([...], where: "...")` and `@@index([...], where: "...")` declare a **partial** index,

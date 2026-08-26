@@ -16,6 +16,26 @@ ticket carries that once this is accepted or rejected.
 > was load-bearing for a specific claim, that is flagged in place rather
 > than silently dropped.
 
+> **Notation correction (2026-08-26, cratestack#743 post-merge review).**
+> This document's own `@@internal("action", ...)` notation (§1, §2 below)
+> reads like an `@@allow`-style call taking multiple comma-separated
+> arguments in one declaration. That is not what shipped, and re-checking
+> against the parser confirms it was never what PR #485 specified either
+> — `cratestack_core::parse_internal_attribute` accepts exactly one
+> quoted action per `@@internal(...)` declaration and hard-rejects a
+> second one in the same parens (`@@internal("create", "update")` is a
+> compile error naming the model, not a parse of two actions). Suppressing
+> more than one action on a model means writing more than one
+> `@@internal("action")` line — `@@internal("create")` on its own line,
+> `@@internal("update")` on its own line — exactly the same repeated-
+> declaration shape `@@allow`/`@@deny` already use for multiple rules on
+> one model, and exactly what `§3.1`'s `model_internal_actions` set-union
+> semantics (`BTreeSet<&str>`, order- and count-independent) already
+> assumed. Every `@@internal("action", ...)` occurrence below is citing
+> PR #485's original wording, not describing multi-argument syntax; read
+> it as `@@internal("action")` (one action, repeat the line to suppress
+> more).
+
 Scope: a design for suppressing generated routes/dispatch-arms/client
 stubs for a model action the schema author has marked unreachable from
 the wire, across all three generation surfaces —
@@ -577,6 +597,61 @@ see the scope note above.)
 - The exact `CHANGELOG.md` wording convention for a suppression-caused
   breaking change — left to whichever PR implements the first real
   `@@internal` suppression, so it can point at a concrete example.
+
+## 8a. Known-incomplete surfaces after implementation (added 2026-08-26)
+
+One surface was checked during cratestack#743's implementation review
+and found to still emit something for a suppressed verb. It was traced
+end-to-end and confirmed **not** to be a leak — documented here,
+deliberately, rather than silently left for the next person to
+re-discover by reading generated output.
+
+- **TypeScript `swr` preset's cache-key factories**
+  (`crates/cratestack-client-typescript/templates/src/swr/
+  keys-rest.ts.j2`, `keys-rpc.ts.j2`). `list`/`get`/`update`/`delete`
+  key-factory functions (e.g. `swrKeys.model.<M>.update(id)`) are
+  emitted unconditionally, with no `{% if %}` gate at all — unlike
+  `create`'s factory, which *is* correctly gated
+  (`{% if model.allows_create %}`, and `model.allows_create` is itself
+  `model_allows_create(model) && !internal.contains("create")` as of
+  this ticket, so a suppressed `create` already loses its key factory).
+  Confirmed **not a leak** for the remaining four: these are inert
+  array-tuple literals (`["<route>", "update", id] as const`) with no
+  network behavior of their own — SWR only fetches when a hook actually
+  calls `useSWR`/`useSWRMutation` with one. The *hooks* that would
+  actually issue a request (`models-hooks-rest.ts.j2`,
+  `models-hooks-rpc.ts.j2`) are correctly gated per verb on
+  `model.allows_list`/`allows_get`/`allows_update`/`allows_delete`
+  (`cratestack-client-typescript/src/views.rs`, all sourced from
+  `model_internal_actions` as of this ticket) — so a suppressed verb's
+  key factory exists but is orphaned: nothing generated ever calls it.
+  This is deliberate, not an oversight: gating four key factories per
+  model for a purely-cosmetic reason (a function reference that's never
+  called still typechecks and tree-shakes away) wasn't judged worth the
+  added branching in the template, especially since `create`'s factory
+  is the one case where leaving it ungated would have been
+  user-visible (its presence used to signal "you can create this" to a
+  reader of generated output, before this ticket). **What would have to
+  change if this ever became a real leak:** if a future preset or
+  hand-written consumer ever calls a key factory *directly* (bypassing
+  the generated hook) to seed a cache entry speculatively — e.g.
+  `mutate(swrKeys.model.Widget.update(1), someValue)` without ever
+  calling the network layer — the key would exist and look valid with
+  no corresponding request ever having been rejected, which could mask
+  the suppression from a developer reading the cache rather than the
+  network tab. If that pattern becomes real, gate `list`/`get`/
+  `update`/`delete` on `model_internal_actions` the same way `create`'s
+  factory and all five hooks already are.
+
+(The `RouteTransportDescriptor`/`ROUTE_TRANSPORTS` gap this section
+originally also listed — `crates/cratestack-macros/src/transport/
+rest.rs` emitting a const for every verb unconditionally — was fixed
+during the same review round rather than documented as known-incomplete:
+§1.1 above already named it as "a second place any fix has to touch",
+so leaving it unfiltered was closing a gap the design itself called
+out, not a new judgment call. `generate_model_transport_constants` and
+`generate_model_transport_entries` now consult `model_internal_actions`
+exactly like the other four surfaces.)
 
 ## 9. Non-goals (carried over from #514)
 

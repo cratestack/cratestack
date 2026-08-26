@@ -35,6 +35,19 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "@@id",
         "@@unique",
     ];
+    // Keywords that carry a hover/detail string, kept separate from the
+    // bare `keywords` list above rather than converting every entry to a
+    // tuple — `@@internal(...)` (cratestack#743,
+    // `docs/design/route-suppression.md`) is easy to reach for and
+    // mistake for a policy attribute (it looks like `@@allow`/`@@deny`
+    // but isn't a policy expression at all), so it's the one keyword
+    // where a one-line reminder in the completion popup earns its keep.
+    let keywords_with_detail = [(
+        "@@internal",
+        "declares a model action unreachable from the wire (no REST route, RPC dispatch arm, or \
+         client stub) — e.g. @@internal(\"create\"); purely a generation-time gate, not a policy \
+         (see docs/design/route-suppression.md)",
+    )];
     // Sourced from the parser's authoritative list rather than hand-copied,
     // so this can't silently drift the way it did before `Decimal` was
     // added here (cratestack#232) — a real editor regression that shipped
@@ -67,6 +80,17 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
             ..CompletionItem::default()
         })
         .collect::<Vec<_>>();
+
+    items.extend(
+        keywords_with_detail
+            .into_iter()
+            .map(|(label, detail)| CompletionItem {
+                label: label.to_owned(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                detail: Some(detail.to_owned()),
+                ..CompletionItem::default()
+            }),
+    );
 
     items.extend(builtin_types.into_iter().map(|label| CompletionItem {
         label: label.to_owned(),
@@ -243,6 +267,29 @@ mod tests {
         assert!(
             !labels.contains("@custom"),
             "completion list must never suggest the removed @custom attribute: {labels:?}"
+        );
+    }
+
+    /// cratestack#743: `@@internal(...)` must be offered as a completion,
+    /// with a detail string distinguishing it from a policy attribute
+    /// (`@@allow`/`@@deny`) — it's easy to reach for by analogy and get
+    /// wrong, since it looks like one but isn't.
+    #[test]
+    fn internal_attribute_is_offered_with_a_detail_string() {
+        let items = completion_items(None);
+        let internal = items
+            .iter()
+            .find(|item| item.label == "@@internal")
+            .unwrap_or_else(|| panic!("completion list must offer @@internal: {items:?}"));
+        assert_eq!(internal.kind, Some(CompletionItemKind::KEYWORD));
+        let detail = internal
+            .detail
+            .as_deref()
+            .unwrap_or_else(|| panic!("@@internal completion should carry a detail string"));
+        assert!(
+            detail.contains("generation-time"),
+            "@@internal's detail should distinguish it from a policy attribute like @@allow: \
+             {detail}"
         );
     }
 

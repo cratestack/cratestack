@@ -46,7 +46,25 @@ pub(crate) struct ModelApiView {
     pub(crate) file_stem: String,
     pub(crate) route: String,
     pub(crate) primary_key_type: String,
+    /// cratestack#743: extends the pre-existing (create-only)
+    /// `model_allows_create`-based gate to all five CRUD verbs, sourced
+    /// from `cratestack_core::model_internal_actions` — the one shared
+    /// source of truth every codegen surface consults. `allows_create`
+    /// keeps its original `model_allows_create(model)` half (a model
+    /// with no `@@allow("create", ...)`/`@@allow("all", ...)` rule at
+    /// all fail-closes on the server, so the client shouldn't expose a
+    /// `.create()` that can only ever 403 — unaffected by this
+    /// change, see the design's non-goal against touching that
+    /// presence-based heuristic) ANDed with the new suppression check,
+    /// so a model with no `@@internal` at all renders byte-identically
+    /// to before. `allows_list`/`allows_get`/`allows_update`/
+    /// `allows_delete` are new: those four verbs had no gate at all
+    /// before this feature.
+    pub(crate) allows_list: bool,
+    pub(crate) allows_get: bool,
     pub(crate) allows_create: bool,
+    pub(crate) allows_update: bool,
+    pub(crate) allows_delete: bool,
     pub(crate) create_input_name: String,
     pub(crate) update_input_name: String,
     pub(crate) list_return_type: String,
@@ -152,6 +170,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let route = format!("/{}", route_naming::model_route_segment(&model.name));
     let accessor = pluralize(&to_camel_case(&model.name));
     let is_paged = is_paged_model(model);
+    let internal = cratestack_core::model_internal_actions(model);
     ModelApiView {
         name: model.name.clone(),
         api_name: format!("{}Api", model.name),
@@ -159,7 +178,11 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         file_stem: to_kebab_case(&model.name),
         route,
         primary_key_type: ts_type(&primary_key.ty, &BTreeSet::new()),
-        allows_create: model_allows_create(model),
+        allows_list: !internal.contains("list"),
+        allows_get: !internal.contains("get"),
+        allows_create: model_allows_create(model) && !internal.contains("create"),
+        allows_update: !internal.contains("update"),
+        allows_delete: !internal.contains("delete"),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
         list_return_type: if is_paged {

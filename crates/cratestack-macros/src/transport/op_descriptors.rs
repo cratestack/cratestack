@@ -31,8 +31,17 @@ pub(crate) fn generate_model_op_descriptors(
     // so every one of them always participates in rate limiting.
     let rate_limited = true;
 
-    vec![
-        op_descriptor(
+    // cratestack#743: a suppressed verb (`@@internal(...)`) advertises
+    // no `OpDescriptor` at all — nothing tells an RPC client the op is
+    // callable, matching REST's omitted route (design doc §3, RPC
+    // unary row). `model_internal_actions` is the one shared source of
+    // truth every surface consults; this is this surface's single call
+    // site.
+    let internal = cratestack_core::model_internal_actions(model);
+
+    let mut descriptors = Vec::new();
+    if !internal.contains("list") {
+        descriptors.push(op_descriptor(
             &list_id,
             quote! { ::cratestack::OpKind::Unary },
             "",
@@ -40,8 +49,10 @@ pub(crate) fn generate_model_op_descriptors(
             true,
             rate_limited,
             auth_required,
-        ),
-        op_descriptor(
+        ));
+    }
+    if !internal.contains("get") {
+        descriptors.push(op_descriptor(
             &get_id,
             quote! { ::cratestack::OpKind::Unary },
             "",
@@ -49,8 +60,10 @@ pub(crate) fn generate_model_op_descriptors(
             true,
             rate_limited,
             auth_required,
-        ),
-        op_descriptor(
+        ));
+    }
+    if !internal.contains("create") {
+        descriptors.push(op_descriptor(
             &create_id,
             quote! { ::cratestack::OpKind::Unary },
             &create_input,
@@ -58,8 +71,10 @@ pub(crate) fn generate_model_op_descriptors(
             false,
             rate_limited,
             auth_required,
-        ),
-        op_descriptor(
+        ));
+    }
+    if !internal.contains("update") {
+        descriptors.push(op_descriptor(
             &update_id,
             quote! { ::cratestack::OpKind::Unary },
             &update_input,
@@ -67,8 +82,10 @@ pub(crate) fn generate_model_op_descriptors(
             false,
             rate_limited,
             auth_required,
-        ),
-        op_descriptor(
+        ));
+    }
+    if !internal.contains("delete") {
+        descriptors.push(op_descriptor(
             &delete_id,
             quote! { ::cratestack::OpKind::Unary },
             "",
@@ -76,8 +93,9 @@ pub(crate) fn generate_model_op_descriptors(
             false,
             rate_limited,
             auth_required,
-        ),
-    ]
+        ));
+    }
+    descriptors
 }
 
 /// `model.<X>.subscribe` op descriptor — only for models declaring

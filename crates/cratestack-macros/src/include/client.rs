@@ -2,6 +2,8 @@
 //! model/input/procedure stubs for talking to a server over the wire.
 //! No DB at all.
 
+mod input_structs;
+
 use std::collections::BTreeSet;
 
 use proc_macro::TokenStream;
@@ -10,8 +12,7 @@ use syn::LitStr;
 
 use crate::client::generate_client_module;
 use crate::model::{
-    generate_client_create_input_struct, generate_client_field_module,
-    generate_client_model_struct, generate_client_update_input_struct, generate_find_many_types,
+    generate_client_field_module, generate_client_model_struct, generate_find_many_types,
 };
 use crate::procedure::generate_client_procedure_module;
 use crate::shared::decimal_backend::{DecimalBackend, with_decimal_backend};
@@ -20,6 +21,7 @@ use crate::types::{generate_client_enum_type, generate_client_type_struct};
 
 use super::decimal_arg::resolve_decimal_backend;
 use super::parse::parse_schema_literal;
+use input_structs::client_input_structs;
 
 pub(super) fn compose_client_schema(
     schema_path: &LitStr,
@@ -68,12 +70,12 @@ pub(super) fn compose_client_schema(
             .models
             .iter()
             .map(|model| generate_client_model_struct(model, &model_name_set, &enum_name_set));
-        let create_input_structs = schema.models.iter().map(|model| {
-            generate_client_create_input_struct(model, &model_name_set, &enum_name_set)
-        });
-        let update_input_structs = schema.models.iter().map(|model| {
-            generate_client_update_input_struct(model, &model_name_set, &enum_name_set)
-        });
+        // `Create<M>Input`/`Update<M>Input`, each filtered against
+        // `@@internal(...)` — see `input_structs`'s module doc
+        // (cratestack#743) for why this composer has to filter where
+        // `include_server_schema!`'s doesn't.
+        let (create_input_structs, update_input_structs) =
+            client_input_structs(&schema, &model_name_set, &enum_name_set);
         // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
         // `<Model>FindManyInput` — the types a `FindMany<Model>` procedure
         // argument needs (issue #371's redesign). No `build_<model>_query_
