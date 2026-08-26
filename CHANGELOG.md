@@ -2,6 +2,120 @@
 
 ## Unreleased
 
+### `@@unique`/`@@index` gain a `where: "<sql predicate>"` argument — partial index DDL — breaking for `cratestack-core` API consumers (#742)
+
+`@@unique([...], where: "...")` and `@@index([...], where: "...")` declare a **partial** index,
+following the same keyword-argument shape and verbatim-passthrough posture `using`/`opclass` already
+use (#156): the predicate is never parsed or validated, only carried through to a trailing
+`WHERE <predicate>` on the emitted `CREATE [UNIQUE] INDEX`, and left for the database to accept or
+reject. `@@unique` previously required at least two fields ("use a field-level `@unique` instead");
+that rule is relaxed for the single-field case specifically when `where:` is present, since
+field-level `@unique` has no room for a keyword argument at all — this is the motivating shape (ADR
+0038's deferred B3): a single, genuinely-optional column that must be unique only when present, e.g.
+`@@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")`. An empty field list
+(`@@unique([], where: "...")`) is still rejected regardless of `where:`, matching `@@index`'s existing
+unconditional "at least one field" check — the `where:`-relaxed floor only lowers the minimum from two
+to one, it never drops it to zero.
+
+`AddIndex` gains a `where_predicate: Option<String>` field (`#[serde(default)]`, so previously
+serialized migration IR keeps deserializing); `None` renders byte-identical DDL to before this field
+existed on both backends. SQLite renders the same `WHERE` syntax (it has supported partial indexes
+since 3.8.0) — the one real divergence is what a predicate may legally *reference*, not the syntax
+(see `emit::sqlite::indexes`'s doc for SQLite's restrictions).
+
+**Breaking for `cratestack-core` API consumers:** `cratestack_core::schema::composite_unique::parse_composite_unique_attribute`
+(public, re-exported) changed its return type from `Result<Vec<String>, String>` to
+`Result<ParsedCompositeUnique, String>` to carry the new `where_predicate` field alongside the field
+list. Both in-repo call sites were updated; any external consumer calling this function directly needs
+to switch to `ParsedCompositeUnique.fields`.
+
+The load-bearing part is introspection round-tripping without churn: Postgres exposes a stored
+predicate via `pg_get_expr(indpred, indrelid)`, and that text is **normalized** — verified empirically
+against a live Postgres 18 rather than assumed — wrapped in exactly one pair of parentheses with
+whitespace collapsed, so `idempotency_key IS NOT NULL` reads back as
+`(idempotency_key IS NOT NULL)`. A naive comparison against the schema's literal text would make every
+`migrate` run diff the index as changed. The diff engine (`crate::diff::indexes`) now compares matched
+indexes' predicates through that same normalization before deciding whether to no-op or drop+recreate,
+proved against a real database (not a hand-written IR fixture, which can't exhibit the normalization)
+in `crates/cratestack-migrate/tests/postgres_introspect.rs`.
+
+Landed initially without also tolerating the explicit `::type` cast Postgres inserts onto *every*
+literal comparison — `status = 'active'` reads back as `(status = 'active'::text)`, `amount > 100`
+against a floating-point column as `(amount > (100)::double precision)` — which meant any predicate
+comparing a column to a literal (i.e. almost any partial index anyone would actually write) never
+compared equal to its introspected form and churned a drop+recreate on *every* `migrate` run: the
+ticket's load-bearing "no churn" requirement, silently unmet for exactly the shapes that matter. Caught
+in post-merge review and fixed in the same PR before release, in two rounds:
+
+Round 1 independently stripped the `::type` cast from each side of the comparison before a plain string
+equality check. That closed the churn bug but opened a worse one, caught in a second review round: since
+the type name was discarded, two predicates casting the *same* literal to two *genuinely different*
+types compared as equal — `email = 'x'::citext` (case-insensitive) vs. `email = 'x'::text`
+(case-sensitive) got **no migration**, silently leaving the database enforcing the old, wrong uniqueness
+rule. An unnecessary drop+recreate is a noticed operational annoyance; a missed one is a wrong constraint
+nobody notices until it lets a duplicate through on a money path — the worse failure direction.
+
+Round 2 replaced independent normalization with a joint, type-aware comparison
+(`crate::diff::indexes::predicate` + `predicate::casts`, the latter tokenizing each predicate into
+literal-vs-everything-else segments rather than rewriting a string): a literal on one side lacking a
+cast the other side has is still forgiven (presumed Postgres-inserted), but when **both** sides carry an
+explicit `::type`, the type names must match — mismatched (e.g. changing `citext` to `text`) now
+correctly triggers a drop+recreate. The type-name grammar itself was also hardened past a plain
+lowercase-letters-only word run (which silently corrupted literals containing digits — `100::int4` lost
+its trailing `4` and it leaked back onto the literal being compared, turning it into `1004`) into one
+recognizing schema-qualified (`pg_catalog.int4`), double-quoted, and array (`text[]`) type-name shapes
+without corruption. Genuinely ambiguous shapes (schema-qualified vs. bare spellings of what might be the
+same catalog type, e.g. `public.citext` vs. `citext`; double casts; doubled parens) fail toward churn,
+never toward silent equality — this module has no catalog access to confirm two spellings really name
+the same type, and guessing risks the exact false-equality class it exists to close. It still doesn't
+replicate Postgres's remaining normalization — identifier/keyword case-folding — since that needs a real
+SQL expression parser, out of scope per the ticket; a predicate that differs from its stored form only by
+identifier case will still show as changed and get dropped/recreated, a documented limitation (pinned by
+a test), not a silent gap.
+
+Round 3 closed one more gap in round 2's exact-string type-name comparison: Postgres normalizes a handful
+of type-name aliases on deparse — an author-written `::int` reads back as `::integer`, `::int8` as
+`::bigint` — and since round 2 requires an exact match once both sides carry an explicit cast, an author
+who happened to write an aliased spelling got a spurious drop+recreate on *every* single `migrate` run,
+forever: round 1's exact failure, resurfacing for the narrower population that writes explicit casts.
+Fixed with `predicate::casts::type_name::alias`, a small, closed table (`int`/`int4` → `integer`,
+`int2` → `smallint`, `int8` → `bigint`, `float4` → `real`, `float8` → `double precision`,
+`varchar` → `character varying`, `char` → `character`, `bool` → `boolean`, `decimal` → `numeric`,
+`timestamptz` → `timestamp with time zone`, `timetz` → `time with time zone`) applied only to a bare,
+unqualified, unquoted, undecorated type name — never to a double-quoted user-defined type (`"int"` is a
+real, different type named `int`, not a spelling of `integer`), never to a schema-qualified spelling
+(still not equated with a bare one, unchanged from round 2), and never guessed for an unrecognized name,
+which still fails toward churn on mismatch. `serial`/`bigserial`/`smallserial` are deliberately absent —
+they aren't real column types in this sense (see `alias`'s own doc).
+
+**The alias table only fixes the type-*name* mismatch, not every structural shape a cast can deparse
+into**: `int8`/`bigint` is proven end-to-end (a genuinely clean single-cast round-trip, see below), but
+`varchar` compared against a `text` column deparses with an *additional*, nested implicit cast
+(`pg_get_expr` — verified empirically — returns `(email = ('x'::character varying)::text)` for a schema's
+`email = 'x'::varchar`), a structural difference no alias table can resolve; an author writing that
+spelling still gets churn, not corruption or a silent wrong result (the safe direction), and it's pinned
+as a known limitation rather than left to be rediscovered — see `alias`'s own doc and
+`tests::alias::varchar_on_a_text_column_still_churns_due_to_the_extra_implicit_cast`.
+
+Proved against a live database: `partial_index_with_text_literal_predicate_round_trips_without_churn`,
+`partial_index_with_numeric_literal_predicate_round_trips_without_churn`,
+`partial_index_cast_type_change_is_detected_as_drop_and_recreate` (using the real `citext` extension to
+reproduce the money-relevant case end-to-end), and
+`partial_index_with_aliased_cast_type_round_trips_without_churn` (an author-written `::int8` against a
+`bigint` column, round 3's decisive case) in `crates/cratestack-migrate/tests/postgres_introspect.rs` —
+not just the `IS NOT NULL` shape that needs no cast and can't exercise any of this.
+
+**Adoption note — widened blast radius:** introspecting partial indexes at all required dropping the
+prior `AND i.indpred IS NULL` exclusion in `introspect::postgres::indexes`, which used to make every
+partial index invisible to `migrate` regardless of origin. A hand-made partial index that no `.cstack`
+schema declares — including one created outside Cratestack entirely, this ticket's own motivating
+scenario — is now visible to introspection like any other index, and an index present in the database
+but absent from the schema is a `DROP INDEX` candidate on the very next `migrate` run (no `CASCADE`,
+same as any other unmanaged index — not a new rule, just a newly-reachable one for partial indexes
+specifically). **If you're upgrading and have a hand-made partial index no schema declares, the next
+`migrate` run will drop it** — declare it via `@@unique`/`@@index([...], where: "...")` first to keep
+it. Pinned by `undeclared_partial_index_is_dropped_by_diff` in
+`crates/cratestack-migrate/tests/postgres_introspect.rs`.
 ### `ConflictTarget` can target a partial unique index, and the upsert conflict probe honors it — breaking for exhaustive external matches (#741)
 
 An upsert can now target a **partial** unique index (`CREATE UNIQUE INDEX ... WHERE <predicate>`),

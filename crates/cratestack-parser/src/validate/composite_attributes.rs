@@ -91,8 +91,9 @@ pub(super) fn validate_composite_unique_attribute(
         ));
     }
 
-    let field_names = parse_composite_unique_attribute(&attribute.raw)
+    let parsed = parse_composite_unique_attribute(&attribute.raw)
         .map_err(|message| span_error(message, attribute.span))?;
+    let field_names = parsed.fields;
 
     for field_name in &field_names {
         resolve_scalar_field(model, attribute, model_names, field_name, "@@unique([...])")?;

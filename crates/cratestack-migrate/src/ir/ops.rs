@@ -50,6 +50,19 @@ pub struct AddIndex {
     /// leaves each column's default operator class in place.
     #[serde(default)]
     pub opclass: Option<String>,
+    /// `WHERE <predicate>` clause (cratestack#742) — makes this a
+    /// *partial* index, present only for rows matching the predicate.
+    /// Carried verbatim from the `.cstack` `where: "..."` keyword
+    /// argument (schema-side) or from Postgres's own
+    /// `pg_get_expr(indpred, indrelid)` (introspection-side, always
+    /// normalized text — see `crate::introspect::postgres::indexes` and
+    /// `crate::diff::indexes` for how the diff engine tolerates that).
+    /// `None` renders the exact same plain `CREATE [UNIQUE] INDEX ...
+    /// (columns)` DDL this crate always emitted, so every pre-existing
+    /// `@unique`/`@@unique([...])`-derived index is unaffected by this
+    /// field's addition.
+    #[serde(default)]
+    pub where_predicate: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

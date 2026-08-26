@@ -1,8 +1,9 @@
-//! Model-level `@@index([...], using: ..., opclass: "...")` → a general
-//! (non-unique) `CREATE INDEX`, optionally naming a non-default Postgres
-//! access method / operator class (issue #156 — pgvector phase 2:
-//! ivfflat/hnsw ANN indexes, though the attribute itself is not
-//! pgvector-specific; see `docs/design/extensions.md` §6/§8).
+//! Model-level `@@index([...], using: ..., opclass: "...", where: "...")`
+//! → a general (non-unique) `CREATE INDEX`, optionally naming a
+//! non-default Postgres access method / operator class (issue #156 —
+//! pgvector phase 2: ivfflat/hnsw ANN indexes, though the attribute
+//! itself is not pgvector-specific; see `docs/design/extensions.md`
+//! §6/§8) and/or a partial-index predicate (issue #742).
 //!
 //! Mirrors [`super::uniques::composite_unique_indexes`]'s shape closely —
 //! same `AddIndex` op, same skip-rather-than-error discipline — the only
@@ -57,6 +58,7 @@ pub(super) fn model_index_indexes(model: &Model, table: &str, columns: &[Column]
             unique: false,
             using: parsed.using,
             opclass: parsed.opclass,
+            where_predicate: parsed.where_predicate,
         });
     }
     indexes
