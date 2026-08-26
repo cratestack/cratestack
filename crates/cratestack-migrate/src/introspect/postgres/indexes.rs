@@ -28,12 +28,37 @@
 //! literals given explicit type casts, identifiers case-folded — so it
 //! is not, in general, byte-identical to the `.cstack` schema's literal
 //! `where: "..."` text even when nothing changed. `crate::diff::indexes`
-//! tolerates the specific normalization empirically observed against a
-//! live Postgres 18 (whitespace collapsing + exactly one wrapping pair
-//! of parens) when deciding whether a partial index's predicate
-//! changed; it does not attempt to replicate cast-insertion or
-//! identifier case-folding, which would need a real SQL expression
-//! parser (out of scope, see cratestack#742's "Out of Scope").
+//! tolerates the normalization empirically observed against a live
+//! Postgres 18 (whitespace collapsing, exactly one wrapping pair of
+//! parens, and an explicit `::type` cast inserted onto every literal —
+//! see `crate::diff::indexes::predicate`'s module doc) when deciding
+//! whether a partial index's predicate changed; it does not attempt to
+//! replicate identifier case-folding, which would need a real SQL
+//! expression parser (out of scope, see cratestack#742's "Out of
+//! Scope").
+//!
+//! **Adoption note (blast-radius change, cratestack#742):** before this
+//! ticket, the query below carried an `AND i.indpred IS NULL` clause,
+//! which excluded every partial index from introspection outright — the
+//! same "skip rather than guess" treatment expression indexes still get
+//! above, since `AddIndex` had no `where_predicate` field to represent
+//! one in yet. A side effect of that exclusion was that a partial index
+//! created outside Cratestack (unmanaged, undeclared in any `.cstack`
+//! schema — cratestack#742's own motivating scenario, see the ticket's
+//! Intent section) was invisible to `migrate` and therefore could never
+//! be touched by it. Now that `AddIndex` can represent a partial index,
+//! that exclusion is gone and every partial index enters the diff like
+//! any other index: one absent from the schema is a bare `DROP INDEX`
+//! candidate (`crate::diff::indexes`/`emit::postgres::indexes`, no
+//! `CASCADE`) on the very next `migrate` run — deliberately, for
+//! consistency with how an ordinary (non-partial) unmanaged index is
+//! already treated, not a special case. **If you're upgrading past this
+//! change and have a hand-made partial index that no `.cstack` schema
+//! declares, the next `migrate` run will drop it** — declare it via
+//! `@@unique`/`@@index([...], where: "...")` first if you want to keep
+//! it. Pinned by
+//! `crates/cratestack-migrate/tests/postgres_introspect.rs`'s
+//! `undeclared_partial_index_is_dropped_by_diff`.
 
 use sqlx_core::row::Row as _;
 use sqlx_postgres::PgPool;

@@ -589,6 +589,181 @@ model IntrospectionProbePayment {
     );
 }
 
+/// cratestack#742 post-review remediation (Finding 1): the test above
+/// only exercises `IS NOT NULL`, the one predicate shape immune to the
+/// churn bug — it needs no literal, so Postgres inserts no `::type`
+/// cast on introspection. This test uses the shape the finding named as
+/// the actual production hazard: a text-literal comparison. Before the
+/// fix, `status = 'active'` introspects as `(status = 'active'::text)`,
+/// which never compared equal to the schema's literal text, so this
+/// index dropped and recreated on every single `migrate` run.
+#[tokio::test]
+async fn partial_index_with_text_literal_predicate_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeOrder");
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeOrder {
+  id String @id
+  status String
+
+  @@index([status], where: "status = 'active'")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, &table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE status = 'active'"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+
+    // Pin the exact cast Postgres inserts, so a future Postgres version
+    // that stops doing this doesn't silently make this test meaningless.
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(status = 'active'::text)")],
+        "pg_get_expr should have cast the text literal"
+    );
+
+    // The decisive assertion: re-planning against the database the
+    // migration was just applied to produces no ops — this is the
+    // finding's central claim, that without the fix this is NOT empty.
+    let ops = diff_projections(&only_table(&report.projections, &table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "a text-literal partial index predicate must not churn on re-plan — got: {ops:?}"
+    );
+}
+
+/// The numeric-literal counterpart of the text-literal test above:
+/// `amount > 100` against a column whose type needs the literal cast to
+/// a floating-point type introspects as
+/// `(amount > (100)::double precision)` — a different cast shape
+/// (parenthesized, no quotes, and — deliberately — a *multi-word* type
+/// name) than the text case, exercising the other half of the minimum
+/// bar the finding named.
+///
+/// This uses `Float` (Postgres `double precision`/`float8`), not the
+/// `Decimal`/`NUMERIC` type the finding's own example used. That's a
+/// deliberate substitution, not a narrowing of what's being proved:
+/// verified empirically (a throwaway container, `psql`), a `NUMERIC`
+/// column reproduces the exact `(amount > (100)::numeric)` shape the
+/// finding named, but `NUMERIC` columns are *permanently* unmapped by
+/// this crate's introspection regardless of this ticket
+/// (`introspect::postgres::types::map_scalar` — "unmapped → reported
+/// drift, never guessed", a pre-existing, deliberate design choice
+/// unrelated to partial indexes: see that module's doc). A `Decimal`
+/// column would make `ops.is_empty()` below fail on an unrelated
+/// `AddColumn` for the column itself, on *every* run, which would prove
+/// nothing about predicate-cast normalization one way or the other —
+/// conflating this finding with a different, pre-existing gap. `Float`
+/// triggers the identical cast-stripping code path (a parenthesized
+/// literal immediately followed by `::<type>`) while its column type
+/// *does* round-trip (`map_scalar("float8", ...) == Some("Float")`), so
+/// this test can make the finding's actual "no churn" claim — an empty
+/// re-plan — without also depending on fixing that unrelated gap. The
+/// exact `NUMERIC` shape is pinned at the unit level instead, where it
+/// doesn't need a real column to exist:
+/// `diff::indexes::tests::strips_a_parenthesized_numeric_cast`.
+#[tokio::test]
+async fn partial_index_with_numeric_literal_predicate_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeTransaction");
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeTransaction {
+  id String @id
+  amount Float
+
+  @@index([amount], where: "amount > 100")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, &table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE amount > 100"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(amount > (100)::double precision)")],
+        "pg_get_expr should have cast the numeric literal to the column's floating-point type"
+    );
+
+    let ops = diff_projections(&only_table(&report.projections, &table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "a numeric-literal partial index predicate must not churn on re-plan — got: {ops:?}"
+    );
+}
+
 /// The other half of the same requirement: a predicate that genuinely
 /// changed must NOT be swallowed by the normalization-tolerant
 /// comparison above — it has to still show up as a real drop + recreate.
@@ -665,5 +840,83 @@ model IntrospectionProbePaymentChanged {
     assert!(
         drops_it && re_adds_it,
         "a changed predicate should drop + recreate the index — got: {ops:?}"
+    );
+}
+
+/// cratestack#742 post-review remediation (Finding 2): introspecting
+/// partial indexes at all (dropping the old `AND i.indpred IS NULL`
+/// exclusion — see `introspect::postgres::indexes`'s module doc) widens
+/// the blast radius of an existing, unrelated behavior: `diff_indexes`
+/// emits a bare `DROP INDEX` for anything present in the database but
+/// absent from the schema (`emit::postgres::indexes` — no `CASCADE`,
+/// same as any other unmanaged index). Before cratestack#742, a
+/// hand-made *partial* index outside Cratestack's management was
+/// invisible to introspection and therefore never a drop candidate; now
+/// it is, deliberately — see the module doc's rationale for why this is
+/// treated the same as an ordinary unmanaged index rather than special-
+/// cased. This test pins that this is not accidental: a `migrate` run
+/// against a table carrying a hand-made partial index the schema never
+/// declared emits `DropIndex` for it.
+#[tokio::test]
+async fn undeclared_partial_index_is_dropped_by_diff() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeLegacyOrder");
+    let index_name = format!("{table}_legacy_status_partial_idx");
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    exec(
+        &pool,
+        &format!(
+            "CREATE TABLE {table} (
+                id UUID NOT NULL PRIMARY KEY,
+                status TEXT NOT NULL
+            )"
+        ),
+    )
+    .await;
+    exec(
+        &pool,
+        &format!("CREATE INDEX {index_name} ON {table} (status) WHERE status = 'archived'"),
+    )
+    .await;
+
+    // A schema for the same table that never mentions this index — the
+    // "index created outside Cratestack" scenario that is #742's own
+    // motivating example (see the ticket's Intent section).
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeLegacyOrder {
+  id String @id
+  status String
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let ops = diff_projections(
+        &only_table(&report.projections, &table),
+        &only_table(&expected, &table),
+    )
+    .expect("diff should succeed");
+
+    let drops_it = ops.iter().any(
+        |op| matches!(op, cratestack_migrate::ir::Op::DropIndex(drop) if drop.name == index_name),
+    );
+    assert!(
+        drops_it,
+        "an undeclared hand-made partial index must be a drop candidate, matching how an \
+         undeclared ordinary index is already treated — got: {ops:?}"
     );
 }
