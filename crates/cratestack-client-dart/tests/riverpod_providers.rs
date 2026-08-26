@@ -191,6 +191,30 @@ fn model_and_procedure_files_carry_the_part_directive() {
         package_file(&package, "lib/src/models/shared_types.dart")
             .contains("part 'shared_types.mapper.dart';")
     );
+    // `ci_rpc.cstack` assigns nothing to `Owner::Shared` (see the
+    // fixture's own header comment / `TypePartition`), so
+    // `shared_types.dart` has zero `data_classes` and thus zero
+    // `@CratestackBuilder()`-annotated classes in it — an unconditional
+    // builder part directive/import here dangles into a real
+    // `flutter analyze --fatal-warnings` `uri_has_not_been_generated`
+    // failure since `package:cratestack_builder`'s `PartBuilder` writes
+    // no output file for a target with no annotated classes (see
+    // `SharedTypesFileContext::builder_part_file_name`'s doc). This is
+    // the paired negative to
+    // `shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes`'s
+    // positive case.
+    let shared_types = package_file(&package, "lib/src/models/shared_types.dart");
+    assert!(
+        !shared_types.contains("part 'shared_types.builder.dart';"),
+        "ci_rpc has no shared data classes, so shared_types.dart must not carry a dangling \
+         builder part directive:\n{shared_types}"
+    );
+    assert!(
+        !shared_types
+            .contains("import 'package:cratestack_annotations/cratestack_annotations.dart';"),
+        "ci_rpc has no shared data classes, so shared_types.dart must not import \
+         cratestack_annotations unused:\n{shared_types}"
+    );
 }
 
 #[test]
@@ -221,6 +245,27 @@ fn shared_types_file_gets_the_mapper_part_directive_when_it_has_data_classes() {
             "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n@CratestackBuilder()\nclass Coordinates with CoordinatesMappable {"
         ),
         "{shared_types}"
+    );
+    // cratestack#668 regression: `@CratestackBuilder()` alone is not enough
+    // — this file also needs the annotation's import and the
+    // `dart_builder`-expanded part directive it depends on, or
+    // `flutter analyze --fatal-warnings` fails on an undefined
+    // `@CratestackBuilder` annotation and `build_runner` never produces a
+    // `CoordinatesBuilder` at all (see
+    // `SharedTypesFileContext::builder_part_file_name`'s doc). A
+    // text-only assertion on the annotation alone previously passed
+    // while both were missing — assert them explicitly so that can't
+    // recur.
+    assert!(
+        shared_types
+            .contains("import 'package:cratestack_annotations/cratestack_annotations.dart';"),
+        "shared_types.dart declares @CratestackBuilder() on Coordinates but is missing the \
+         cratestack_annotations import:\n{shared_types}"
+    );
+    assert!(
+        shared_types.contains("part 'shared_types.builder.dart';"),
+        "shared_types.dart declares @CratestackBuilder() on Coordinates but is missing the \
+         builder part directive:\n{shared_types}"
     );
 }
 
