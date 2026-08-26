@@ -88,6 +88,15 @@ real, different type named `int`, not a spelling of `integer`), never to a schem
 which still fails toward churn on mismatch. `serial`/`bigserial`/`smallserial` are deliberately absent —
 they aren't real column types in this sense (see `alias`'s own doc).
 
+**The alias table only fixes the type-*name* mismatch, not every structural shape a cast can deparse
+into**: `int8`/`bigint` is proven end-to-end (a genuinely clean single-cast round-trip, see below), but
+`varchar` compared against a `text` column deparses with an *additional*, nested implicit cast
+(`pg_get_expr` — verified empirically — returns `(email = ('x'::character varying)::text)` for a schema's
+`email = 'x'::varchar`), a structural difference no alias table can resolve; an author writing that
+spelling still gets churn, not corruption or a silent wrong result (the safe direction), and it's pinned
+as a known limitation rather than left to be rediscovered — see `alias`'s own doc and
+`tests::alias::varchar_on_a_text_column_still_churns_due_to_the_extra_implicit_cast`.
+
 Proved against a live database: `partial_index_with_text_literal_predicate_round_trips_without_churn`,
 `partial_index_with_numeric_literal_predicate_round_trips_without_churn`,
 `partial_index_cast_type_change_is_detected_as_drop_and_recreate` (using the real `citext` extension to

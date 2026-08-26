@@ -155,3 +155,34 @@ fn a_decorated_alias_source_is_not_normalized() {
         "x = '1'::numeric(10,2)"
     ));
 }
+
+/// Round 4 (cratestack#742, coordinator review): pins a real, known
+/// limitation the alias fix does NOT close, so it's executable rather
+/// than living only in a report. Empirically verified (a throwaway
+/// container, `psql`, cratestack#742's verification discipline) —
+/// `CREATE INDEX ... WHERE email = 'x'::varchar` against a `text`
+/// column deparses via `pg_get_expr` as
+/// `(email = ('x'::character varying)::text)`: comparing a
+/// `character varying`-cast literal to a `text` column needs an
+/// *additional*, implicit cast back to `text`, which Postgres nests
+/// around the whole expression rather than folding away. That's a
+/// second `::text` cast the schema's own literal `email = 'x'::varchar`
+/// never had, so the segment sequences have different shapes — one more
+/// `Other`/`Literal` boundary than the schema side — and the mismatch is
+/// structural, not a type-name spelling disagreement the alias table
+/// (`type_name::alias`) could ever resolve, however complete. This is
+/// why `partial_index_with_aliased_cast_type_round_trips_without_churn`
+/// (`tests/postgres_introspect.rs`) proves the alias fix using
+/// `int8`/`bigint` — a genuinely clean single-cast round-trip — instead
+/// of `varchar`. An author who writes `::varchar` still gets a real
+/// migration (churn), not a corruption or a silent wrong result: this
+/// is the same *safe* failure direction as every other undecorated
+/// shape this module declines to handle, just pinned explicitly instead
+/// of left to be rediscovered.
+#[test]
+fn varchar_on_a_text_column_still_churns_due_to_the_extra_implicit_cast() {
+    assert!(!predicates_equivalent(
+        "email = 'x'::varchar",
+        "(email = ('x'::character varying)::text)"
+    ));
+}
