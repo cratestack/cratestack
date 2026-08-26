@@ -184,39 +184,6 @@ fn decimal_round_trips_through_the_generated_dart_client() {
     fs::create_dir_all(test_path.parent().expect("test/ parent")).expect("create test dir");
     fs::write(&test_path, CHECK_TEST).expect("write check test");
 
-    // Issue #668 phase 2/3 bootstrap gap (see `justfile`'s `verify-dart`
-    // `local_builder_override` for the full explanation): pub.dev's
-    // currently PUBLISHED `cratestack_builder` (0.8.5 and 0.8.6 — verified
-    // against the live registry) does not contain the two fixes recorded
-    // under `dart-packages/cratestack_builder/CHANGELOG.md`'s "Unreleased"
-    // section, so a plain hosted resolution here fails to compile
-    // `models.builder.dart` for this fixture's `discountXaf Decimal?`
-    // field (`Invoice`/`UpdateInvoiceInput`'s `discountXafIsSet` touch
-    // flag hits the same `argument_type_not_assignable` `just verify-dart`
-    // hit before this override existed). Point this throwaway package at
-    // the repo's own (already-fixed) source instead — never committed by
-    // real consumers, whose generated `pubspec.yaml` still declares a
-    // plain hosted `cratestack_builder` version requirement.
-    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root should resolve");
-    // `cratestack_builder` itself now depends on `cratestack_annotations
-    // ^0.8.7` (the `touchFlagFields`/`nonDefaultingListFields` arguments
-    // it reads off `@CratestackBuilder(...)` — issue #668 phase 3), and
-    // pub.dev's currently published latest for that package is also 0.8.6
-    // — same bootstrap gap, one level up. Overridden here too so this
-    // still resolves.
-    fs::write(
-        dir.join("pubspec_overrides.yaml"),
-        format!(
-            "dependency_overrides:\n  cratestack_builder:\n    path: {}\n  cratestack_annotations:\n    path: {}\n",
-            repo_root.join("dart-packages/cratestack_builder").display(),
-            repo_root.join("dart-packages/cratestack_annotations").display()
-        ),
-    )
-    .expect("write pubspec_overrides.yaml");
-
     let pub_get = Command::new("flutter")
         .args(["pub", "get"])
         .current_dir(&dir)
