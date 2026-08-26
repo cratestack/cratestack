@@ -6,6 +6,18 @@ use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_upse
 
 use super::support::run_insert_returning;
 
+/// Reject a predicate paired with `ConflictTarget::PRIMARY_KEY`
+/// (cratestack#741) before any SQL is built. `ConflictTarget::validate`
+/// returns a `cratestack_core::CratestackError`, shared with the sqlx
+/// backend's identical check in `prepare_upsert_insert`; this just
+/// re-wraps the message as a `RusqliteError::Validation` so the
+/// embedded runtime's error type stays self-contained.
+fn conflict_target_validate(target: ConflictTarget) -> Result<(), RusqliteError> {
+    target
+        .validate()
+        .map_err(|error| RusqliteError::Validation(error.to_string()))
+}
+
 pub struct UpsertRecord<'a, M: 'static, PK: 'static, I> {
     pub(super) runtime: &'a RusqliteRuntime,
     pub(super) descriptor: &'static ModelDescriptor<M, PK>,
@@ -19,7 +31,7 @@ where
 {
     /// Choose the conflict target. See
     /// [`cratestack_sqlx::UpsertRecord::on_conflict`]; the embedded
-    /// runtime supports `ConflictTarget::Columns` symmetrically.
+    /// runtime supports `ConflictTarget::columns(...)` symmetrically.
     pub fn on_conflict(mut self, target: ConflictTarget) -> Self {
         self.conflict_target = target;
         self
@@ -38,7 +50,12 @@ where
         M: FromRusqliteRow,
     {
         // Validation is server-side concern only; the rusqlite layer matches
-        // `CreateRecord::run`, which also skips `validate()`.
+        // `CreateRecord::run`, which also skips `validate()`. The
+        // `ConflictTarget` predicate/PK-target combination check
+        // (cratestack#741) is NOT a server-only concern, though — it
+        // catches a caller error before any SQL runs on either
+        // backend — so it still runs here.
+        conflict_target_validate(self.conflict_target)?;
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
         let (sql, binds) =
@@ -53,6 +70,7 @@ where
     where
         M: FromRusqliteRow,
     {
+        conflict_target_validate(self.conflict_target)?;
         let dialect = SqliteDialect;
         let values = self.input.sql_values();
         let (sql, binds) =

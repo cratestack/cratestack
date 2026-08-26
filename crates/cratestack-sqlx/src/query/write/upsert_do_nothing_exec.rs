@@ -14,12 +14,14 @@ use cratestack_core::{
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::evaluate_create_policies;
-use crate::{ConflictTarget, ModelDescriptor, SqlValue, SqlxRuntime, UpsertModelInput, sqlx};
+use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
 
+use super::upsert_do_nothing_authorize::authorize_existing_row;
 use super::upsert_do_nothing_sql::upsert_returning_record_do_nothing;
-use super::upsert_exec::prepare_upsert_insert;
 use super::upsert_outcome::UpsertOutcome;
-use super::upsert_sql::{row_passes_update_policy, select_for_update_by_conflict_target};
+use super::upsert_predicate_probe::incoming_row_satisfies_predicate;
+use super::upsert_prepare::prepare_upsert_insert;
+use super::upsert_sql::select_for_update_by_conflict_target;
 
 /// Returns `(outcome, emits_any_event, audit_event)` — same contract
 /// as `upsert_exec::run_upsert_in_tx`: the caller decides whether to
@@ -74,10 +76,38 @@ where
     // transaction guarantees it is still there when we commit — DO
     // NOTHING semantics are then just "return what the probe found",
     // no second statement required.
-    if let Some(existing) =
-        select_for_update_by_conflict_target(&mut **tx, descriptor, &conflict_columns).await?
-    {
-        authorize_existing_row(runtime, descriptor, &conflict_columns, ctx).await?;
+    //
+    // The predicate travels with this pre-probe in two distinct ways
+    // (cratestack#741), both required — see `upsert_exec::run_upsert_in_tx`'s
+    // matching comment for the full reasoning: filtering candidate
+    // existing rows by the predicate alone is not sufficient, because
+    // an incoming row that doesn't itself satisfy the predicate can
+    // never conflict via a partial index no matter what else exists.
+    let pre_probe = match conflict_target.predicate() {
+        Some(predicate)
+            if !incoming_row_satisfies_predicate(&mut **tx, &insert_values, predicate).await? =>
+        {
+            None
+        }
+        predicate => {
+            select_for_update_by_conflict_target(
+                &mut **tx,
+                descriptor,
+                &conflict_columns,
+                predicate,
+            )
+            .await?
+        }
+    };
+    if let Some(existing) = pre_probe {
+        authorize_existing_row(
+            runtime,
+            descriptor,
+            &conflict_columns,
+            conflict_target.predicate(),
+            ctx,
+        )
+        .await?;
         // No SQL runs against the row: DO NOTHING never touches it, so
         // there is nothing to audit and no event to emit — the record
         // genuinely did not change.
@@ -129,42 +159,33 @@ where
             // first — we do not invent a result: there is no row to
             // report as `Existing` and no insert succeeded either, so
             // this surfaces `CratestackError::Conflict` and leaves retrying
-            // to the caller.
-            let existing =
-                select_for_update_by_conflict_target(&mut **tx, descriptor, &conflict_columns)
-                    .await?
-                    .ok_or_else(|| {
-                        CratestackError::Conflict(format!(
-                            "upsert do_nothing on `{}` lost a conflict race and the \
+            // to the caller. Same predicate as the pre-probe above
+            // (cratestack#741) — this fallback read must apply it too,
+            // or it can read back a row the partial index doesn't
+            // cover.
+            let existing = select_for_update_by_conflict_target(
+                &mut **tx,
+                descriptor,
+                &conflict_columns,
+                conflict_target.predicate(),
+            )
+            .await?
+            .ok_or_else(|| {
+                CratestackError::Conflict(format!(
+                    "upsert do_nothing on `{}` lost a conflict race and the \
                          conflicting row was deleted before it could be read back; retry the call",
-                            descriptor.table_name,
-                        ))
-                    })?;
-            authorize_existing_row(runtime, descriptor, &conflict_columns, ctx).await?;
+                    descriptor.table_name,
+                ))
+            })?;
+            authorize_existing_row(
+                runtime,
+                descriptor,
+                &conflict_columns,
+                conflict_target.predicate(),
+                ctx,
+            )
+            .await?;
             Ok((UpsertOutcome::Existing(existing), false, None))
         }
     }
-}
-
-/// Mirrors `run_upsert_in_tx`'s "both create AND update policy must
-/// allow" invariant. `.do_nothing()` never mutates an existing row,
-/// but it does hand the caller that row's current contents — skipping
-/// this check would let a caller who only has create authorization
-/// probe for a row's existence/contents through this call site, which
-/// is exactly the leak the DO UPDATE path's identical check exists to
-/// close off. Not a change to policy-evaluation logic: this calls the
-/// same `row_passes_update_policy` the DO UPDATE path already used,
-/// just from the DO NOTHING execution path.
-async fn authorize_existing_row<M, PK>(
-    runtime: &SqlxRuntime,
-    descriptor: &'static ModelDescriptor<M, PK>,
-    conflict_columns: &[(&'static str, SqlValue)],
-    ctx: &CratestackContext,
-) -> Result<(), CratestackError> {
-    if !row_passes_update_policy(runtime.pool(), descriptor, conflict_columns, ctx).await? {
-        return Err(CratestackError::Forbidden(
-            "update policy denied this upsert".to_owned(),
-        ));
-    }
-    Ok(())
 }

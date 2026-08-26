@@ -8,12 +8,13 @@ use cratestack_core::{
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::query::support::{apply_create_defaults, evaluate_create_policies, find_column_value};
-use crate::{ConflictTarget, ModelDescriptor, SqlValue, SqlxRuntime, UpsertModelInput, sqlx};
+use crate::query::support::evaluate_create_policies;
+use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
 
-use super::upsert_sql::{
-    row_passes_update_policy, select_for_update_by_conflict_target, upsert_returning_record,
-};
+use super::upsert_do_update_sql::upsert_returning_record;
+use super::upsert_predicate_probe::incoming_row_satisfies_predicate;
+use super::upsert_prepare::prepare_upsert_insert;
+use super::upsert_sql::{row_passes_update_policy, select_for_update_by_conflict_target};
 
 /// Returns `(record, emits_any_event, audit_event)` — the caller
 /// decides whether to drain the outbox / fan the audit event out to
@@ -66,12 +67,49 @@ where
     // Probe the conflict target under a row-level lock. If a row
     // exists, this is the update branch; otherwise it's the insert
     // branch. The lock serializes concurrent upserts on the same key.
-    let before_record =
-        select_for_update_by_conflict_target(&mut **tx, descriptor, &conflict_columns).await?;
+    //
+    // The predicate travels with the probe in two distinct ways
+    // (cratestack#741), both required:
+    //   1. Filtering on the conflict columns alone can match an
+    //      EXISTING row the partial index does not cover —
+    //      `select_for_update_by_conflict_target`'s `predicate`
+    //      argument handles this.
+    //   2. Postgres only adds a row to a partial index's B-tree if
+    //      THAT row itself satisfies the predicate — an incoming row
+    //      that does not satisfy it can never conflict via that index,
+    //      no matter what already exists. Skipping the probe entirely
+    //      when the incoming row falls outside the predicate is what
+    //      `incoming_row_satisfies_predicate` guards here; without it
+    //      an out-of-predicate incoming row could still be told
+    //      "conflicts with" some unrelated in-predicate existing row
+    //      that happens to share the conflict columns.
+    let before_record = match conflict_target.predicate() {
+        Some(predicate)
+            if !incoming_row_satisfies_predicate(&mut **tx, &insert_values, predicate).await? =>
+        {
+            None
+        }
+        predicate => {
+            select_for_update_by_conflict_target(
+                &mut **tx,
+                descriptor,
+                &conflict_columns,
+                predicate,
+            )
+            .await?
+        }
+    };
     let inserted = before_record.is_none();
 
     if !inserted
-        && !row_passes_update_policy(runtime.pool(), descriptor, &conflict_columns, ctx).await?
+        && !row_passes_update_policy(
+            runtime.pool(),
+            descriptor,
+            &conflict_columns,
+            conflict_target.predicate(),
+            ctx,
+        )
+        .await?
     {
         return Err(CratestackError::Forbidden(
             "update policy denied this upsert".to_owned(),
@@ -121,62 +159,4 @@ where
     }
 
     Ok((record, emits_event, audit_event))
-}
-
-/// Compose the full insert value set (auth-derived defaults + the
-/// seeded `@version` column) and the conflict-key tuple used to probe
-/// and target the row. Shared by the DO UPDATE path above and the DO
-/// NOTHING path in [`super::upsert_do_nothing_exec`] — both need to
-/// resolve "what row does this conflict against" identically; only
-/// what happens once a conflict is found is allowed to differ between
-/// them.
-pub(super) fn prepare_upsert_insert<M, PK, I>(
-    descriptor: &'static ModelDescriptor<M, PK>,
-    input: &I,
-    ctx: &CratestackContext,
-    conflict_target: ConflictTarget,
-) -> Result<(Vec<crate::SqlColumnValue>, Vec<(&'static str, SqlValue)>), CratestackError>
-where
-    I: UpsertModelInput<M>,
-{
-    // Mirrors `create_record_with_executor` so insert-branch semantics
-    // stay identical to `.create()`.
-    let mut insert_values =
-        apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
-    if let Some(version_col) = descriptor.version_column
-        && find_column_value(&insert_values, version_col).is_none()
-    {
-        insert_values.push(crate::SqlColumnValue {
-            column: version_col,
-            value: crate::SqlValue::Int(0),
-        });
-    }
-    if insert_values.is_empty() {
-        return Err(CratestackError::Validation(
-            "upsert input must contain at least one column".to_owned(),
-        ));
-    }
-
-    // Build the conflict-key tuple by looking up each named column's
-    // value in the (defaulted) insert set. The PrimaryKey branch keeps
-    // the old single-column path so we don't pay an extra lookup on
-    // the common case.
-    let pk_value = input.primary_key_value();
-    let conflict_columns: Vec<(&'static str, SqlValue)> = match conflict_target {
-        ConflictTarget::PrimaryKey => vec![(descriptor.primary_key, pk_value)],
-        ConflictTarget::Columns(cols) => {
-            let mut out = Vec::with_capacity(cols.len());
-            for col in cols {
-                let value = find_column_value(&insert_values, col).cloned().ok_or_else(|| {
-                    CratestackError::Validation(format!(
-                        "upsert on_conflict references column `{col}` which is not present in the input",
-                    ))
-                })?;
-                out.push((*col, value));
-            }
-            out
-        }
-    };
-
-    Ok((insert_values, conflict_columns))
 }

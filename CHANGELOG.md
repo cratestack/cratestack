@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### `ConflictTarget` can target a partial unique index, and the upsert conflict probe honors it (#741)
+
+An upsert can now target a **partial** unique index (`CREATE UNIQUE INDEX ... WHERE <predicate>`),
+which Postgres refuses to infer from an unpredicated `ON CONFLICT (<cols>)` — motivated by an
+optional-idempotency-key shape (`UNIQUE (key) WHERE key IS NOT NULL`) that previously had no route
+onto the framework's upsert primitive at all.
+
+`ConflictTarget` is now a struct (`cratestack-sql`) rather than a bare two-variant enum: construction
+moves from `ConflictTarget::PrimaryKey` / `ConflictTarget::Columns(&[...])` to
+`ConflictTarget::PRIMARY_KEY` / `ConflictTarget::columns(&[...])`, and a new
+`ConflictTarget::columns(&[...]).where_index("<predicate>")` attaches the partial-index predicate as a
+compile-time `&'static str` — the same no-runtime-value-path precedent `@@index`'s `using`/`opclass`
+already set. **Source-breaking** for any code matching on the old variants directly or constructing
+them positionally; every in-repo call site (both backends, all tests) is updated. Pairing a predicate
+with `ConflictTarget::PRIMARY_KEY` is a clear `CratestackError::Validation`/`RusqliteError::Validation`
+(the PK index is never partial), not a silently dropped predicate.
+
+Both backends emit `ON CONFLICT (<cols>) WHERE <predicate> DO UPDATE|DO NOTHING`; SQLite accepts the
+identical inference syntax (confirmed against the vendored libsqlite3-sys 0.37.0 / SQLite 3.51.3).
+Unpredicated targets emit byte-identical SQL to before this change.
+
+The non-obvious half: `cratestack-sqlx`'s conflict probe (`SELECT ... FOR UPDATE`, used to decide
+`Inserted`/`Existing`/`Created` vs `Updated` ahead of the real `ON CONFLICT` statement) now applies the
+same predicate two ways — filtering candidate existing rows by it (so a row outside the partial index
+isn't mistaken for a conflict), and short-circuiting to "no possible conflict" when the *incoming* row
+itself doesn't satisfy the predicate (mirroring Postgres's own partial-index semantics: a row is only
+ever added to a partial index's B-tree, hence only ever able to conflict via it, if that row itself
+satisfies the predicate). Skipping either half lets the emitted SQL be correct while the caller is
+still handed the wrong `Inserted`/`Existing` verdict — the acceptance test for this
+(`crates/cratestack-pg/tests/upsert_partial_index.rs`) uses a predicate that is deliberately not a
+`col IS NOT NULL` test, since that shape happens to "work" even against a predicate-unaware probe.
+`cratestack-rusqlite` needs no equivalent probe fix — the embedded backend has no probe at all; SQLite
+resolves the conflict natively in the same statement.
+
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
 `cratestack-client-dart` no longer emits `{Class}Builder` classes inline. Every generated data class

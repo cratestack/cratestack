@@ -24,7 +24,7 @@ fn upsert_with_composite_conflict_emits_tuple_in_on_conflict() {
                 value: SqlValue::Bool(true),
             },
         ],
-        ConflictTarget::Columns(&["title", "published"]),
+        ConflictTarget::columns(&["title", "published"]),
     );
     assert!(
         sql.contains("ON CONFLICT (title, published) DO UPDATE SET"),
@@ -51,8 +51,55 @@ fn upsert_default_conflict_target_is_primary_key() {
             column: "title",
             value: SqlValue::String("x".into()),
         }],
-        ConflictTarget::PrimaryKey,
+        ConflictTarget::PRIMARY_KEY,
     );
     assert_eq!(pk_sql, explicit_sql);
     assert!(pk_sql.contains("ON CONFLICT (id) DO UPDATE SET"));
+}
+
+// ───── cratestack#741: partial-index predicate ───────────────────────────
+
+#[test]
+fn unpredicated_conflict_target_emits_no_where_clause() {
+    // Regression guard: adding the predicate slot must not add a `WHERE`
+    // to the unpredicated case's `ON CONFLICT (...)`.
+    let dialect = SqliteDialect;
+    let descriptor = fixture_descriptor();
+    let values = [SqlColumnValue {
+        column: "title",
+        value: SqlValue::String("hi".into()),
+    }];
+    let (sql, _) =
+        render_upsert_with_conflict(&dialect, &descriptor, &values, ConflictTarget::PRIMARY_KEY);
+    assert!(sql.contains("ON CONFLICT (id) DO UPDATE SET"), "got: {sql}");
+    assert!(!sql.contains("WHERE"), "got: {sql}");
+}
+
+#[test]
+fn predicated_conflict_target_emits_where_before_do_update() {
+    let dialect = SqliteDialect;
+    let descriptor = fixture_descriptor();
+    let (sql, _) = render_upsert_with_conflict(
+        &dialect,
+        &descriptor,
+        &[SqlColumnValue {
+            column: "title",
+            value: SqlValue::String("hi".into()),
+        }],
+        ConflictTarget::columns(&["title"]).where_index("published = TRUE"),
+    );
+    assert!(
+        sql.contains("ON CONFLICT (title) WHERE published = TRUE DO UPDATE SET"),
+        "got: {sql}",
+    );
+}
+
+#[test]
+fn predicate_on_primary_key_target_is_rejected() {
+    let target = ConflictTarget::PRIMARY_KEY.where_index("published = TRUE");
+    let err = target.validate().expect_err("PK + predicate must error");
+    assert!(
+        err.to_string().contains("primary key"),
+        "error should explain why: {err}",
+    );
 }

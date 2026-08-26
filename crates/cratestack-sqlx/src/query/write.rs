@@ -17,10 +17,14 @@ mod update_many_exec;
 mod update_run;
 mod upsert;
 mod upsert_do_nothing;
+mod upsert_do_nothing_authorize;
 mod upsert_do_nothing_exec;
 mod upsert_do_nothing_sql;
+mod upsert_do_update_sql;
 mod upsert_exec;
 mod upsert_outcome;
+mod upsert_predicate_probe;
+mod upsert_prepare;
 mod upsert_sql;
 
 pub use create::CreateRecord;

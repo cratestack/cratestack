@@ -1,4 +1,4 @@
-//! Round-trip tests for `.on_conflict(ConflictTarget::Columns(...))` on
+//! Round-trip tests for `.on_conflict(ConflictTarget::columns(...))` on
 //! the embedded backend.
 //!
 //! Uses a hand-written `Slot` model whose PK is `id` (auto-rowid via
@@ -157,7 +157,7 @@ fn composite_key_upsert_inserts_then_updates_payload_on_second_call() {
             slot: 1,
             payload: "v1".into(),
         })
-        .on_conflict(ConflictTarget::Columns(&["envelope_id", "slot"]))
+        .on_conflict(ConflictTarget::columns(&["envelope_id", "slot"]))
         .run()
         .expect("first upsert inserts");
     assert_eq!(first.payload, "v1");
@@ -169,7 +169,7 @@ fn composite_key_upsert_inserts_then_updates_payload_on_second_call() {
             slot: 1,
             payload: "v2".into(),
         })
-        .on_conflict(ConflictTarget::Columns(&["envelope_id", "slot"]))
+        .on_conflict(ConflictTarget::columns(&["envelope_id", "slot"]))
         .run()
         .expect("second upsert updates");
     assert_eq!(second.payload, "v2");
@@ -180,7 +180,7 @@ fn composite_key_upsert_inserts_then_updates_payload_on_second_call() {
 fn distinct_composite_keys_create_distinct_rows() {
     let runtime = setup();
     let delegate = ModelDelegate::new(&runtime, &SLOT_DESCRIPTOR);
-    let target = ConflictTarget::Columns(&["envelope_id", "slot"]);
+    let target = ConflictTarget::columns(&["envelope_id", "slot"]);
 
     let a = delegate
         .upsert(UpsertSlotInput {

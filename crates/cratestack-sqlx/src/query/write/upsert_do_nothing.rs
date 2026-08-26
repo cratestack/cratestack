@@ -49,14 +49,18 @@ where
             .map(|value| value.column)
             .collect::<Vec<_>>()
             .join(", ");
-        let conflict_tuple = match self.conflict_target {
-            ConflictTarget::PrimaryKey => self.descriptor.primary_key.to_owned(),
-            ConflictTarget::Columns(cols) => cols.join(", "),
+        let conflict_tuple = match self.conflict_target.as_columns() {
+            None => self.descriptor.primary_key.to_owned(),
+            Some(cols) => cols.join(", "),
+        };
+        let conflict_predicate = match self.conflict_target.predicate() {
+            Some(predicate) => format!(" WHERE {predicate}"),
+            None => String::new(),
         };
 
         format!(
             "INSERT INTO {table} ({columns}) VALUES ({placeholders}) \
-             ON CONFLICT ({conflict_tuple}) DO NOTHING \
+             ON CONFLICT ({conflict_tuple}){conflict_predicate} DO NOTHING \
              RETURNING {projection}",
             table = self.descriptor.table_name,
             projection = self.descriptor.select_projection(),

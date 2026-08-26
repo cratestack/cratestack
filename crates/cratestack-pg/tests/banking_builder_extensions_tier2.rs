@@ -1,6 +1,6 @@
 //! End-to-end tests for the tier-2 builder verbs:
 //!
-//! * `#3` — `.upsert(input).on_conflict(ConflictTarget::Columns(...))`.
+//! * `#3` — `.upsert(input).on_conflict(ConflictTarget::columns(...))`.
 //!   Verifies that a composite unique key drives insert-vs-update
 //!   branching (so audit/event semantics stay coherent) and that the
 //!   `DO UPDATE` only touches the non-key payload.
@@ -137,7 +137,7 @@ async fn composite_upsert_inserts_then_updates_on_natural_key() {
 
     let cool = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let ctx = operator();
-    let target = ConflictTarget::Columns(&["scope", "key"]);
+    let target = ConflictTarget::columns(&["scope", "key"]);
 
     let first = cool
         .pair()
@@ -215,7 +215,7 @@ async fn composite_upsert_with_missing_conflict_column_rejects_with_validation_e
             key: "k".into(),
             payload: "p".into(),
         })
-        .on_conflict(ConflictTarget::Columns(&["scope", "nonexistent"]))
+        .on_conflict(ConflictTarget::columns(&["scope", "nonexistent"]))
         .run(&ctx)
         .await
         .expect_err("missing conflict column must fail");

@@ -36,7 +36,7 @@ where
     I: UpsertModelInput<M>,
 {
     /// Choose the conflict target. Defaults to the model's primary
-    /// key; pass [`ConflictTarget::Columns`] to upsert on a composite
+    /// key; pass [`ConflictTarget::columns`] to upsert on a composite
     /// unique key instead. The named columns must form a `UNIQUE`
     /// constraint/index on the target table.
     pub fn on_conflict(mut self, target: ConflictTarget) -> Self {
@@ -100,14 +100,18 @@ where
             ),
             None => String::new(),
         };
-        let conflict_tuple = match self.conflict_target {
-            ConflictTarget::PrimaryKey => self.descriptor.primary_key.to_owned(),
-            ConflictTarget::Columns(cols) => cols.join(", "),
+        let conflict_tuple = match self.conflict_target.as_columns() {
+            None => self.descriptor.primary_key.to_owned(),
+            Some(cols) => cols.join(", "),
+        };
+        let conflict_predicate = match self.conflict_target.predicate() {
+            Some(predicate) => format!(" WHERE {predicate}"),
+            None => String::new(),
         };
 
         format!(
             "INSERT INTO {table} ({columns}) VALUES ({placeholders}) \
-             ON CONFLICT ({conflict_tuple}) DO UPDATE SET {update_assignments}{version_bump} \
+             ON CONFLICT ({conflict_tuple}){conflict_predicate} DO UPDATE SET {update_assignments}{version_bump} \
              RETURNING {projection}",
             table = self.descriptor.table_name,
             projection = self.descriptor.select_projection(),

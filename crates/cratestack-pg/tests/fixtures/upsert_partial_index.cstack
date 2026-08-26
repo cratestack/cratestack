@@ -1,0 +1,34 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Models cratestack#741's motivating scenario: a natural key (`k`)
+// whose uniqueness only applies while `status = 'active'` — the same
+// shape as webank's `idx_registered_transfers_idempotency_key_unique`
+// (`UNIQUE (idempotency_key) WHERE idempotency_key IS NOT NULL`), but
+// with a predicate that is NOT a null test, which is the case that
+// actually exercises the conflict-probe fix (a `col IS NOT NULL`
+// predicate happens to "work" even against a predicate-unaware probe,
+// because `col = NULL` never matches — see the test file for why that
+// distinction matters). The partial unique index itself is created
+// OUTSIDE this schema, directly in the test's `reset_schema` — schema
+// DDL for partial indexes is cratestack#742, out of scope here; this
+// fixture only needs a model whose upsert can *target* one that
+// already exists.
+model Marker {
+  id Int @id
+  k String?
+  status String
+  payload String
+
+  @@audit
+  @@emit(created, updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
