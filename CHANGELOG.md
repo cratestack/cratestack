@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### `@@unique`/`@@index` gain a `where: "<sql predicate>"` argument — partial index DDL (#742)
+### `@@unique`/`@@index` gain a `where: "<sql predicate>"` argument — partial index DDL — breaking for `cratestack-core` API consumers (#742)
 
 `@@unique([...], where: "...")` and `@@index([...], where: "...")` declare a **partial** index,
 following the same keyword-argument shape and verbatim-passthrough posture `using`/`opclass` already
@@ -12,13 +12,22 @@ reject. `@@unique` previously required at least two fields ("use a field-level `
 that rule is relaxed for the single-field case specifically when `where:` is present, since
 field-level `@unique` has no room for a keyword argument at all — this is the motivating shape (ADR
 0038's deferred B3): a single, genuinely-optional column that must be unique only when present, e.g.
-`@@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")`.
+`@@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")`. An empty field list
+(`@@unique([], where: "...")`) is still rejected regardless of `where:`, matching `@@index`'s existing
+unconditional "at least one field" check — the `where:`-relaxed floor only lowers the minimum from two
+to one, it never drops it to zero.
 
 `AddIndex` gains a `where_predicate: Option<String>` field (`#[serde(default)]`, so previously
 serialized migration IR keeps deserializing); `None` renders byte-identical DDL to before this field
 existed on both backends. SQLite renders the same `WHERE` syntax (it has supported partial indexes
 since 3.8.0) — the one real divergence is what a predicate may legally *reference*, not the syntax
 (see `emit::sqlite::indexes`'s doc for SQLite's restrictions).
+
+**Breaking for `cratestack-core` API consumers:** `cratestack_core::schema::composite_unique::parse_composite_unique_attribute`
+(public, re-exported) changed its return type from `Result<Vec<String>, String>` to
+`Result<ParsedCompositeUnique, String>` to carry the new `where_predicate` field alongside the field
+list. Both in-repo call sites were updated; any external consumer calling this function directly needs
+to switch to `ParsedCompositeUnique.fields`.
 
 The load-bearing part is introspection round-tripping without churn: Postgres exposes a stored
 predicate via `pg_get_expr(indpred, indrelid)`, and that text is **normalized** — verified empirically
@@ -28,11 +37,37 @@ whitespace collapsed, so `idempotency_key IS NOT NULL` reads back as
 `migrate` run diff the index as changed. The diff engine (`crate::diff::indexes`) now compares matched
 indexes' predicates through that same normalization before deciding whether to no-op or drop+recreate,
 proved against a real database (not a hand-written IR fixture, which can't exhibit the normalization)
-in `crates/cratestack-migrate/tests/postgres_introspect.rs`. It deliberately does not replicate
-Postgres's other two normalizations — identifier case-folding and inserting explicit casts onto
-literals (`100` → `(100)::numeric`) — since that needs a real SQL expression parser, out of scope per
-the ticket; a predicate that needs one of those to round-trip byte-for-byte will still show as changed
-and get dropped/recreated, a documented limitation rather than a silent gap.
+in `crates/cratestack-migrate/tests/postgres_introspect.rs`.
+
+Landed initially without also stripping the explicit `::type` cast Postgres inserts onto *every*
+literal comparison — `status = 'active'` reads back as `(status = 'active'::text)`, `amount > 100`
+against a `Decimal` column as `(amount > (100)::numeric)` — which meant any predicate comparing a
+column to a literal (i.e. almost any partial index anyone would actually write) never compared equal
+to its introspected form and churned a drop+recreate on *every* `migrate` run: the ticket's load-bearing
+"no churn" requirement, silently unmet for exactly the shapes that matter. Caught in post-merge review
+and fixed in the same PR before release: `crate::diff::indexes::predicate::casts` now strips a `::type`
+cast immediately following a literal (optionally parenthesized, as Postgres wraps numeric constants —
+`(100)::numeric` → `100`), covering multi-word type names (`character varying`) generically. It
+deliberately does not replicate Postgres's remaining normalization — identifier/keyword case-folding —
+since that needs a real SQL expression parser, out of scope per the ticket; a predicate that differs
+from its stored form only by identifier case will still show as changed and get dropped/recreated, a
+documented limitation (pinned by a test), not a silent gap. Proved against a live database with literal
+predicates specifically (`partial_index_with_text_literal_predicate_round_trips_without_churn`,
+`partial_index_with_numeric_literal_predicate_round_trips_without_churn` in
+`crates/cratestack-migrate/tests/postgres_introspect.rs`), not just the `IS NOT NULL` shape that needs
+no cast and can't exercise this.
+
+**Adoption note — widened blast radius:** introspecting partial indexes at all required dropping the
+prior `AND i.indpred IS NULL` exclusion in `introspect::postgres::indexes`, which used to make every
+partial index invisible to `migrate` regardless of origin. A hand-made partial index that no `.cstack`
+schema declares — including one created outside Cratestack entirely, this ticket's own motivating
+scenario — is now visible to introspection like any other index, and an index present in the database
+but absent from the schema is a `DROP INDEX` candidate on the very next `migrate` run (no `CASCADE`,
+same as any other unmanaged index — not a new rule, just a newly-reachable one for partial indexes
+specifically). **If you're upgrading and have a hand-made partial index no schema declares, the next
+`migrate` run will drop it** — declare it via `@@unique`/`@@index([...], where: "...")` first to keep
+it. Pinned by `undeclared_partial_index_is_dropped_by_diff` in
+`crates/cratestack-migrate/tests/postgres_introspect.rs`.
 
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
