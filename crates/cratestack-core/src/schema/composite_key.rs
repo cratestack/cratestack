@@ -2,8 +2,12 @@
 //! attribute (Prisma's spelling). Mirrors [`crate::events::parse_emit_attribute`]'s
 //! shape: syntax parsing lives here in `cratestack-core` so both the
 //! parser's semantic checker and any other consumer share one
-//! implementation. The bracketed-field-list syntax itself is shared
-//! with `@@unique([...])` — see [`super::field_list`].
+//! implementation. The bracketed-field-list syntax itself lives in
+//! [`super::field_list`] — `@@id([...])` is that module's only caller
+//! now that `@@unique([...])`/`@@index([...])` parse their own bracket-
+//! plus-keyword-arguments shape via [`super::attribute_syntax`] instead
+//! (cratestack#156/#742's `where:`/`using:`/`opclass:` arguments; see
+//! [`super::field_list`]'s module doc for why).
 
 use super::field_list::{FieldListSpec, parse_field_list};
 
