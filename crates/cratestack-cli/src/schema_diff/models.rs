@@ -51,19 +51,37 @@ fn index(models: &[Model]) -> BTreeMap<&str, &Model> {
 /// `@@retain(days: 5)` and `@@retain(days: 10)` share the key
 /// `@@retain` — a value-only change, not an add/remove.
 ///
-/// `@@unique([...])` is the exception: a model may carry several, each
-/// a distinct constraint, so the argument list is part of the identity.
-/// Keying them all as `@@unique` would collapse them into one entry and
-/// under-report adds and removals.
+/// `@@unique([...])` and `@@internal("action")` are the exception: a
+/// model may carry several of either, each a distinct constraint/
+/// suppressed action, so the argument is part of the identity. Keying
+/// them all as `@@unique`/`@@internal` would collapse them into one
+/// `BTreeMap` entry per model — `index_attributes` below only keeps the
+/// last value written for a given key — and silently drop every
+/// suppressed action but the last (cratestack#743 post-merge review,
+/// Finding A: proven live — a model declaring both
+/// `@@internal("create")` and `@@internal("update")` reported only the
+/// `update` change, and a schema that dropped `@@internal("create")`
+/// while keeping `@@internal("update")` reported **zero** changes at
+/// all, which is precisely the class of defect this whole classification
+/// exists to catch: a PR that restores a suppressed live action passing
+/// the diff gate unnoticed).
 ///
-/// The field list is whitespace-normalised before becoming part of the
-/// key: `Attribute::raw` preserves the source line verbatim, so
-/// `@@unique([a, b])` and `@@unique([a,b])` are the same constraint but
-/// would otherwise produce different keys — reporting a cosmetic edit
-/// as a remove-then-add rather than the value-only `Changed` every
-/// other parenthesized attribute gets on a literal-text difference.
+/// The field/action text is whitespace-normalised before becoming part
+/// of the key: `Attribute::raw` preserves the source line verbatim, so
+/// `@@unique([a, b])`/`@@unique([a,b])` and `@@internal( "create" )`/
+/// `@@internal("create")` are each the same constraint/action but would
+/// otherwise produce different keys — reporting a cosmetic edit as a
+/// remove-then-add rather than the value-only `Changed` every other
+/// parenthesized attribute gets on a literal-text difference. Because
+/// the action name is now baked into the key itself, two declarations of
+/// the same action always collide onto one key regardless of which
+/// order they're written in a schema, which is also what makes ordering
+/// a non-issue for `@@internal` — `push_attribute_change`'s `Changed`
+/// arm for `@@internal` can therefore only ever fire for a whitespace-
+/// only edit of the same action (see its own doc for why that's
+/// `Severity::Internal`, not `Breaking`).
 fn attribute_key(raw: &str) -> String {
-    if raw.starts_with("@@unique") {
+    if raw.starts_with("@@unique") || raw.starts_with("@@internal") {
         return raw.chars().filter(|ch| !ch.is_ascii_whitespace()).collect();
     }
     raw.split('(').next().unwrap_or(raw).to_owned()
@@ -119,19 +137,33 @@ enum AttributeChange<'a> {
 /// the wire contract this tool tracks, so it's reported as
 /// internal-only — a documented scope gap, not an oversight.
 ///
-/// *Removing* `@@internal(...)` is classified `Additive`, not
-/// `Breaking`: it restores a route/arm/stub that was previously
-/// suppressed, so no existing consumer's working call becomes invalid
-/// — the same "adding capability doesn't break anyone already using
-/// less of it" reasoning applied to plain model/field additions
-/// elsewhere in this module. A *value* change (e.g. `@@internal
-/// ("create")` → `@@internal("update")`) is conservatively classified
-/// `Breaking` too: the diff only has the two raw attribute strings to
-/// compare, not the parsed action sets, so it can't cheaply prove no
-/// action lost suppression coverage — treating it as breaking is the
-/// fail-safe direction (a false-positive gate failure a human can
-/// wave through beats a false-negative that ships a silent route
-/// removal).
+/// *Removing* `@@internal(...)` is classified `Additive`: for the
+/// ordinary case, restoring a route/arm/stub that was previously
+/// suppressed breaks nobody's *existing, working* call — the same
+/// "adding capability doesn't break anyone already using less of it"
+/// reasoning applied to plain model/field additions elsewhere in this
+/// module. This is not a universal guarantee, though: the design's own
+/// motivating workflow (`docs/design/route-suppression.md`'s
+/// `auth().isSystem()` case) is "disable the generated `create`, supply
+/// a custom one" — if a consumer wrote that custom handler at the now-
+/// freed path, removing `@@internal` reintroduces the generated route
+/// at the same path, and the two collide at router-build time (axum
+/// panics on duplicate route registration). A schema-only diff has no
+/// way to see a consumer's out-of-schema custom handler, so it cannot
+/// detect that case; `Additive` is still the right verdict for what
+/// this tool can observe, but is not a claim that removal is always
+/// safe.
+///
+/// A *value* change (`AttributeChange::Changed`) can only reach this
+/// function for `@@internal` as a whitespace-only edit of the same
+/// action — `attribute_key` now bakes the action name into the map key
+/// (mirroring `@@unique`'s per-instance keying, cratestack#743
+/// post-merge review Finding A), so two declarations naming different
+/// actions are always a `Removed`+`Added` pair, never a same-key
+/// `Changed`. A whitespace-only edit has no tracked wire-shape effect,
+/// so it's `Internal`, not `Breaking` — there is no "which action lost
+/// coverage" ambiguity left to be conservative about, because the
+/// action is already part of the key.
 fn push_attribute_change(
     changes: &mut Vec<Change>,
     model_name: &str,
@@ -139,7 +171,7 @@ fn push_attribute_change(
     change: AttributeChange,
 ) {
     let is_paged = key == "@@paged";
-    let is_internal = key == "@@internal";
+    let is_internal = key.starts_with("@@internal(");
     let (severity, message) = match change {
         AttributeChange::Added(raw) if is_paged => (
             Severity::Breaking,
@@ -171,11 +203,12 @@ fn push_attribute_change(
             ),
         ),
         AttributeChange::Changed(from, to) if is_internal => (
-            Severity::Breaking,
+            Severity::Internal,
             format!(
                 "model `{model_name}` attribute changed from `{from}` to `{to}` — \
-                 conservatively treated as breaking since which action(s) lost suppression \
-                 coverage can't be determined from the raw attribute text alone"
+                 whitespace-only edit of the same suppressed action (a change to which \
+                 action is suppressed always keys as a separate Added/Removed pair, never \
+                 lands here; no tracked wire-shape effect)"
             ),
         ),
         AttributeChange::Added(raw) => (

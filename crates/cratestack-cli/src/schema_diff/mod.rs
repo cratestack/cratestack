@@ -13,7 +13,12 @@
 //!   (cratestack#743, `docs/design/route-suppression.md`): it removes
 //!   a live REST route, RPC dispatch arm, and client stub for any
 //!   consumer still calling that action. Removing `@@internal(...)`
-//!   is additive — it restores what was suppressed, breaking nobody.
+//!   is additive — it restores what was suppressed, which breaks no
+//!   *existing, working* call this tool can see; it is not a claim that
+//!   removal is universally safe (a consumer that hand-wrote a
+//!   replacement handler at the freed path collides with the
+//!   regenerated route, which this schema-only diff has no way to
+//!   detect — see `models.rs::push_attribute_change`'s doc).
 //! * Adding a model, an optional field, or a procedure is additive.
 //! * Adding a *required* field/argument with no default is breaking:
 //!   existing client-constructed payloads that omit it are rejected.

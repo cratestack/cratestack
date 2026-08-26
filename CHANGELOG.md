@@ -47,7 +47,15 @@ and `cratestack-client-typescript` (default, `--swr`, REST and RPC — extending
 - **`cratestack diff` now gates on `@@internal`.** Adding `@@internal(...)` to a model action is
   classified `Severity::Breaking` (previously fell to the generic "no tracked wire-shape effect"
   branch) — a PR that suppresses an action with live consumers now fails the diff gate. Removing
-  `@@internal(...)` is `Severity::Additive`.
+  `@@internal(...)` is `Severity::Additive` for what a schema-only diff can observe (it cannot see a
+  consumer's hand-written replacement handler colliding with a regenerated route at the same path).
+  Each `@@internal("action")` declaration is now keyed independently in the diff (mirroring `@@unique`'s
+  existing per-instance keying) — a model suppressing more than one action used to collapse every
+  declaration but the last onto one `BTreeMap` entry, silently under-reporting (in the worst case,
+  reporting *zero* changes for a diff that actually restored a suppressed live action). `@@internal`
+  itself takes exactly one action per declaration, enforced by the parser (`@@internal("create",
+  "update")` is a compile error) — suppressing more than one action means writing more than one
+  `@@internal("action")` line.
 - **`ROUTE_TRANSPORTS` now omits suppressed verbs.** `generate_model_transport_constants`/
   `generate_model_transport_entries` (`cratestack-macros/src/transport/rest.rs`) consult
   `model_internal_actions` — this `pub const` registry in the generated crate's public API no longer
