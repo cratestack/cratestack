@@ -45,5 +45,9 @@ into a catchable exception instead of aborting the Node process.
 ## Scope
 
 Single-item encode/decode only — no CBOR-seq/streaming support (that's a separate concern; see
-epic #285). Not the default codec for generated clients (`jsonRpcCodec` remains the default) —
-this is an available, first-party option a project opts into.
+epic #285). Since issue #746, `@cratestack/cbor` (this package's Node half, via the umbrella
+`@cratestack/cbor` re-export) **is** the default codec for a generated TypeScript RPC client —
+`--no-native-cbor` (`TypeScriptGeneratorConfig::native_cbor: false`) falls back to the
+pure-TypeScript `jsonRpcCodec`, needed on platforms this package doesn't ship a napi binary for
+(musl/Alpine Linux and `win32-arm64` — see `napi.targets` in `package.json`). REST-transport
+generated clients are unaffected either way: the REST runtime has no codec seam at all.

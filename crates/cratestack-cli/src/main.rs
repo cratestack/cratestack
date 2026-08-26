@@ -190,6 +190,7 @@ mod tests {
                 swr,
                 refine,
                 tanstack,
+                no_native_cbor,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -210,6 +211,32 @@ mod tests {
                     !tanstack,
                     "--tanstack must default to off (issue #617: opt-in, additive)"
                 );
+                assert!(
+                    !no_native_cbor,
+                    "native cbor must default to ON for RPC-transport schemas (issue #746: \
+                     @cratestack/cbor is now the default RPC codec); --no-native-cbor must be \
+                     passed explicitly to turn it off"
+                );
+            }
+            _ => panic!("expected generate-typescript command"),
+        }
+    }
+
+    #[test]
+    fn generate_typescript_clap_accepts_no_native_cbor_flag() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-typescript",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--no-native-cbor",
+        ]);
+
+        match cli.command {
+            Command::GenerateTypeScript { no_native_cbor, .. } => {
+                assert!(no_native_cbor);
             }
             _ => panic!("expected generate-typescript command"),
         }

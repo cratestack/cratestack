@@ -51,6 +51,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             swr,
             refine,
             tanstack,
+            no_native_cbor,
         } => handle_generate_typescript(
             schema,
             out,
@@ -62,6 +63,11 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             swr,
             refine,
             tanstack,
+            // Same inversion boundary as `GenerateDart`'s `no_native_cbor`
+            // above: the CLI surface is `--no-native-cbor` (default off,
+            // i.e. native-on), but the generator API stays in terms of
+            // `native_cbor`.
+            !no_native_cbor,
         )?,
         Command::GenerateWiremock {
             schema,
@@ -179,6 +185,7 @@ fn handle_generate_typescript(
     swr: bool,
     refine: bool,
     tanstack: bool,
+    native_cbor: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
     let schema_sha256 = hash_schema_source(&schema)?;
@@ -193,6 +200,7 @@ fn handle_generate_typescript(
             refine,
             tanstack,
             schema_sha256,
+            native_cbor,
         },
     )?;
     let files = into_generated_files(package.files);

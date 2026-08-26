@@ -9,7 +9,9 @@ use crate::find_many_views::{
     build_where_interface,
 };
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
-use crate::package_deps::{DependencyEntry, dev_dependencies_for, peer_dependencies_for};
+use crate::package_deps::{
+    DependencyEntry, dependencies_for, dev_dependencies_for, peer_dependencies_for,
+};
 use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::types::{
@@ -89,6 +91,27 @@ pub(crate) struct TemplateContext {
     /// Same shape and rationale as `peer_dependencies`, for
     /// `devDependencies` — see `crate::package_deps::dev_dependencies_for`.
     dev_dependencies: Vec<DependencyEntry>,
+    /// `package.json.j2`'s `dependencies` entries — see
+    /// `crate::package_deps::dependencies_for`. Always carries
+    /// `decimal.js`; additionally carries `@cratestack/cbor` when
+    /// `native_cbor` is set on an RPC-transport schema.
+    dependencies: Vec<DependencyEntry>,
+    /// Issue #746 (`--native-cbor`, on by default — see
+    /// `TypeScriptGeneratorConfig::native_cbor`'s doc comment). Read
+    /// directly by `rpc-runtime.ts.j2` to choose between
+    /// `@cratestack/cbor`'s `createCborCodec()` and the plain
+    /// `jsonRpcCodec` as the default codec. `rest-runtime.ts.j2` never
+    /// reads this field — REST has no codec seam to gate.
+    native_cbor: bool,
+    /// The semver range `package.json`'s `@cratestack/cbor` dependency is
+    /// pinned to under `native_cbor` on an RPC-transport schema. Unlike
+    /// `refine_version_requirement`, this is **not** an exact
+    /// `^{CARGO_PKG_VERSION}` pin — see
+    /// `minor_floor_version_requirement`'s doc comment for why (the
+    /// version-bump-PR hazard confirmed on the Dart side by cratestack#707).
+    /// Empty when `native_cbor` is off or the schema is REST transport,
+    /// where no template reads it.
+    native_cbor_version_requirement: String,
     /// Issue #610: `README.md.j2`'s "Optimistic concurrency" section
     /// documents `getWithResponse`/`ifMatch`, which only exist on REST
     /// output (RPC has no per-route `If-Match`/`ETag` concept — see
@@ -254,6 +277,12 @@ pub(crate) fn build_template_context(
     } else {
         String::new()
     };
+    let is_rpc_transport = schema.transport == cratestack_core::TransportStyle::Rpc;
+    let native_cbor_version_requirement = if config.native_cbor && is_rpc_transport {
+        minor_floor_version_requirement(env!("CARGO_PKG_VERSION"))
+    } else {
+        String::new()
+    };
 
     Ok(TemplateContext {
         package_name: config.package_name.clone(),
@@ -286,10 +315,49 @@ pub(crate) fn build_template_context(
         tanstack: config.tanstack,
         peer_dependencies: peer_dependencies_for(config, &refine_version_requirement),
         dev_dependencies: dev_dependencies_for(config, &refine_version_requirement),
+        dependencies: dependencies_for(config, is_rpc_transport, &native_cbor_version_requirement),
+        native_cbor: config.native_cbor,
+        native_cbor_version_requirement,
         is_rest_transport: schema.transport == cratestack_core::TransportStyle::Rest,
         has_versioned_model: schema
             .models
             .iter()
             .any(|model| version_field(model).is_some()),
     })
+}
+
+/// Semver range for `package.json`'s `@cratestack/cbor` dependency,
+/// floored to this crate's `major.minor.0` rather than pinned to its exact
+/// `CARGO_PKG_VERSION`.
+///
+/// **Why not the exact version, unlike `refine_version_requirement`:**
+/// `just bump` moves the workspace version (and therefore this crate's
+/// `CARGO_PKG_VERSION`) *before* the corresponding npm packages are
+/// published. An exact `^{CARGO_PKG_VERSION}` pin means every version-bump
+/// PR's own `just verify-typescript` — and all 16 test files under
+/// `tests/` that run a real `npm install` — try to resolve a caret range
+/// against a version that does not exist on the registry yet, and fail.
+/// This is the identical incident already recorded on the Dart side for
+/// the v0.8.9 release (cratestack#707), where the workaround was
+/// hardcoding `--no-native-cbor` into `just regen-examples` rather than
+/// fixing the pin format — issue #746 flagged this as needing a decision
+/// before implementation rather than repeating that workaround here.
+///
+/// Flooring to `^{major}.{minor}.0` survives a **patch** bump
+/// (`0.8.13` -> `0.8.14` still resolves within `^0.8.0`, since npm
+/// resolves a caret range to the latest published version satisfying it,
+/// not to an exact match) — the entire class of bump this generator's own
+/// CI exercises on every merge to `main`.
+///
+/// **Residual gap, stated plainly:** this does NOT close the window for a
+/// **minor** bump (`0.8.x` -> `0.9.0`). Between the workspace version
+/// moving and the `0.9.0` npm packages actually publishing, `^0.8.0` no
+/// longer matches what `CARGO_PKG_VERSION` reports and no `0.9.0` package
+/// exists yet either — the same class of gap #707 already documents, just
+/// narrowed from "every bump" to "every minor/major bump".
+fn minor_floor_version_requirement(version: &str) -> String {
+    let mut parts = version.splitn(3, '.');
+    let major = parts.next().unwrap_or("0");
+    let minor = parts.next().unwrap_or("0");
+    format!("^{major}.{minor}.0")
 }

@@ -407,6 +407,9 @@ fn generate_for(
             refine: false,
             tanstack: false,
             schema_sha256: String::new(),
+            // REST-only (`tiny_rest`), where `native_cbor` (issue #746) has
+            // no effect — pinned `false` like every other flag here.
+            native_cbor: false,
         },
     )
     .expect("default template should render")

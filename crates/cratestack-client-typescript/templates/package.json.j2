@@ -38,8 +38,7 @@
   "peerDependencies": {
 {% for dep in peer_dependencies %}    "{{ dep.name }}": "{{ dep.version }}"{% if not loop.last %},{% endif %}{{ "\n" }}{% endfor %}  },
   "dependencies": {
-    "decimal.js": "^10.6.0"
-  },
+{% for dep in dependencies %}    "{{ dep.name }}": "{{ dep.version }}"{% if not loop.last %},{% endif %}{{ "\n" }}{% endfor %}  },
   "devDependencies": {
 {% for dep in dev_dependencies %}    "{{ dep.name }}": "{{ dep.version }}"{% if not loop.last %},{% endif %}{{ "\n" }}{% endfor %}  }
 }
