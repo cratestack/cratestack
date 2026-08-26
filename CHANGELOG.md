@@ -25,6 +25,24 @@ Builder generation exits `cratestack generate-dart --check`'s coverage (it only 
 `build_runner build` + `flutter analyze --fatal-warnings` pass for both presets, plus
 `dart-packages/cratestack_builder`'s own generator-level test suite.
 
+### `lib/src/models/shared_types.dart` under riverpod's `--preset riverpod` was missing its builder import/part (related to #668)
+
+The phase 2/3 rollout above missed one call site: a `type` block the partition assigns to
+`Owner::Shared` (most commonly an orphan `type` referenced by nothing else — see
+`tests/fixtures/riverpod_shared_type_orphan.cstack`) rendered into `shared_types.dart` with a real
+`@CratestackBuilder(...)` annotation on it, but that file never gained the
+`cratestack_annotations` import or the `part 'shared_types.builder.dart';` directive every other
+data-class-carrying riverpod file gets — `flutter analyze --fatal-warnings` failed on the undefined
+annotation, and `build_runner` produced no `{Type}Builder` at all, a real regression against
+`origin/main`'s previous inline emission. Both are now gated on `data_classes | length > 0`
+(mirroring `rest_procedures.dart.j2`/`rpc_procedures.dart.j2`'s identical gate), not unconditional —
+this file also hand-declares the `StringFilter`/`NumberFilter`/etc. filter classes, which carry
+`@MappableClass()` but never `@CratestackBuilder()`, so the common case of a schema with nothing
+partitioned to `Owner::Shared` must stay builder-part-free.
+`just verify-dart`'s riverpod fixture loop now includes `riverpod_shared_type_orphan`, closing the
+gap that let this regression ship without a real `flutter analyze`/`build_runner` run ever exercising
+this file with a genuine shared data class in it.
+
 ## 0.8.13 (2026-08-26)
 
 ### The changelog no-op scope keeps its shape, but its stated reason was wrong

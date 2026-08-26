@@ -61,14 +61,32 @@ pub(crate) fn build_shared_types_file(
         .map(build_enum_view)
         .collect::<Vec<_>>();
 
-    let imports = referenced_models
+    let mut imports = referenced_models
         .into_iter()
         .map(|other| format!("import '{}';", model_file_path(&other)))
         .collect::<BTreeSet<_>>();
+    // Issue #668 phase 2/3: this file's `@CratestackBuilder(...)`
+    // annotations (see `enums_and_data_classes.dart.j2`) only exist when
+    // `data_classes` is non-empty — the hand-written filter classes the
+    // template hardcodes carry `@MappableClass()` but never
+    // `@CratestackBuilder()`, so gating on `data_classes` alone (not
+    // "this file always has some class in it", the way
+    // `build_model.rs`'s unconditional import reasons) is correct here.
+    // An unconditional import would be a real `unused_import`
+    // `flutter analyze --fatal-warnings` failure on the common case of a
+    // schema whose partition assigns nothing to `Owner::Shared` (e.g.
+    // `ci_rpc.cstack`) — see `SharedTypesFileContext::
+    // builder_part_file_name`'s doc for the paired part-directive concern.
+    if !data_classes.is_empty() {
+        imports.insert(
+            "import 'package:cratestack_annotations/cratestack_annotations.dart';".to_owned(),
+        );
+    }
 
     SharedTypesFileContext {
         imports: render_import_lines(imports),
         enum_types,
         data_classes,
+        builder_part_file_name: "shared_types.builder.dart".to_owned(),
     }
 }

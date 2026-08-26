@@ -93,6 +93,26 @@ pub(crate) struct SharedTypesFileContext {
     pub(crate) imports: Vec<String>,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
+    /// `part 'shared_types.builder.dart';` target (issue #668 phase 2/3) —
+    /// see `ModelFileContext::builder_part_file_name`'s doc. The *value*
+    /// is always `"shared_types.builder.dart"`; unlike
+    /// `part 'shared_types.mapper.dart';` above (unconditional — the
+    /// hand-written `StringFilter`/`NumberFilter`/etc. filter classes
+    /// carry `@MappableClass()` regardless of what the partition assigns
+    /// to `Owner::Shared`, so `dart_mappable_builder` always has a target),
+    /// those filter classes do NOT carry `@CratestackBuilder()` — only
+    /// `data_classes` (the partition-assigned/orphan `type` blocks) does,
+    /// via `build_data_class`'s unconditional `emit_builder: true`. A
+    /// schema whose partition assigns nothing to `Owner::Shared` (the
+    /// common case — `ci_rpc.cstack`) has zero `data_classes` here, and
+    /// `package:cratestack_builder`'s `PartBuilder` writes no output file
+    /// when its target has zero `@CratestackBuilder()`-annotated classes
+    /// — an unconditional directive would be a real `flutter analyze
+    /// --fatal-warnings` `uri_has_not_been_generated` failure on that
+    /// common case. `shared_types.dart.j2`'s own gate mirrors
+    /// `rest_procedures.dart.j2`/`rpc_procedures.dart.j2`'s identical
+    /// `data_classes | length > 0` condition for their own builder part.
+    pub(crate) builder_part_file_name: String,
 }
 
 /// Renders `lib/src/queries.dart` (REST only) — the transport's generic
