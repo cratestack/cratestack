@@ -161,7 +161,12 @@ fn run_flutter_pub_get(dir: &std::path::Path) {
 /// see `just verify-dart`, which gained the same one.
 fn run_build_runner(dir: &std::path::Path) {
     let build = Command::new("dart")
-        .args(["run", "build_runner", "build", "--delete-conflicting-outputs"])
+        .args([
+            "run",
+            "build_runner",
+            "build",
+            "--delete-conflicting-outputs",
+        ])
         .current_dir(dir)
         .output()
         .expect("run dart build_runner build");

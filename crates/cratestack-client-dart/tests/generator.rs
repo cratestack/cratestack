@@ -303,7 +303,7 @@ model Image {
         .find("class CreateImageInput ")
         .expect("CreateImageInput class should exist");
     let create_end = models[create_start..]
-        .find("\n}")  // end of the class body — `\nclass <X>Builder` no longer
+        .find("\n}") // end of the class body — `\nclass <X>Builder` no longer
         // follows it, builders moved to package:cratestack_builder (#668 phase 2)
         .map(|offset| create_start + offset)
         .unwrap_or(models.len());
@@ -322,7 +322,7 @@ model Image {
         .find("class UpdateImageInput ")
         .expect("UpdateImageInput class should exist");
     let update_end = models[update_start..]
-        .find("\n}")  // end of the class body — `\nclass <X>Builder` no longer
+        .find("\n}") // end of the class body — `\nclass <X>Builder` no longer
         // follows it, builders moved to package:cratestack_builder (#668 phase 2)
         .map(|offset| update_start + offset)
         .unwrap_or(models.len());
@@ -341,7 +341,7 @@ model Image {
     );
     let where_start = models.find("class ImageWhere ").unwrap();
     let where_end = models[where_start..]
-        .find("\n}")  // end of the class body — `\nclass <X>Builder` no longer
+        .find("\n}") // end of the class body — `\nclass <X>Builder` no longer
         // follows it, builders moved to package:cratestack_builder (#668 phase 2)
         .map(|offset| where_start + offset)
         .unwrap_or(models.len());
