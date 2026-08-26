@@ -79,6 +79,13 @@ pub(crate) fn build_model_file(
         &model_names,
     )];
 
+    // cratestack#743: same reasoning as the `default` preset's
+    // `context.rs` — a suppressed `create`/`update` leaves this file's
+    // own `create()`/`update()` methods (gated below via
+    // `build_riverpod_model_api`'s `allows_create`/`allows_update`)
+    // omitted, so the input class would otherwise be unreferenced.
+    let internal = cratestack_core::model_internal_actions(model);
+
     let create_fields = scalar_fields
         .iter()
         .copied()
@@ -87,13 +94,15 @@ pub(crate) fn build_model_file(
         .filter(|field| !is_computed_field(field))
         .filter(|field| !is_generated_on_create(field))
         .collect::<Vec<_>>();
-    data_classes.push(build_data_class(
-        &format!("Create{}Input", model.name),
-        &create_fields,
-        DataClassKind::Plain,
-        &enum_names,
-        &model_names,
-    ));
+    if !internal.contains("create") {
+        data_classes.push(build_data_class(
+            &format!("Create{}Input", model.name),
+            &create_fields,
+            DataClassKind::Plain,
+            &enum_names,
+            &model_names,
+        ));
+    }
 
     let update_fields = scalar_fields
         .iter()
@@ -103,13 +112,15 @@ pub(crate) fn build_model_file(
         // same reasoning as `create_fields` above.
         .filter(|field| !is_computed_field(field))
         .collect::<Vec<_>>();
-    data_classes.push(build_data_class(
-        &format!("Update{}Input", model.name),
-        &update_fields,
-        DataClassKind::Patch,
-        &enum_names,
-        &model_names,
-    ));
+    if !internal.contains("update") {
+        data_classes.push(build_data_class(
+            &format!("Update{}Input", model.name),
+            &update_fields,
+            DataClassKind::Patch,
+            &enum_names,
+            &model_names,
+        ));
+    }
 
     let locus = Owner::Model(model.name.clone());
     let mut owned_type_decls = Vec::new();

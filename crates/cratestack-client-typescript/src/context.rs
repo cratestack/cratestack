@@ -147,7 +147,18 @@ pub(crate) fn build_template_context(
             model_interface_kind,
             &enum_names,
         ));
-        if model_allows_create(model) {
+        // cratestack#743: `Create<M>Input`/`Update<M>Input` are only
+        // ever referenced from this model's own generated `create`/
+        // `update` client methods (`rest-client.ts.j2`/
+        // `rpc-client.ts.j2`), which are correspondingly omitted once
+        // `ModelApiView::allows_create`/`allows_update` is `false` — so
+        // emitting the interface anyway would be exactly the
+        // "unreferenced Create<M>Input" the acceptance criteria forbid.
+        // `allows_create` already folds in `model_allows_create`, so
+        // this preserves that pre-existing gate unchanged and only adds
+        // the new suppression check on top (see `ModelApiView`'s doc).
+        let internal = cratestack_core::model_internal_actions(model);
+        if model_allows_create(model) && !internal.contains("create") {
             interfaces.push(build_interface(
                 &format!("Create{}Input", model.name),
                 &scalar_fields
@@ -164,19 +175,21 @@ pub(crate) fn build_template_context(
                 &enum_names,
             ));
         }
-        interfaces.push(build_interface(
-            &format!("Update{}Input", model.name),
-            &scalar_fields
-                .iter()
-                .copied()
-                .filter(|field| !is_primary_key(field))
-                // `@computed` fields are never part of an update input
-                // either — same reasoning as the create input above.
-                .filter(|field| !is_computed_field(field))
-                .collect::<Vec<_>>(),
-            InterfaceKind::Patch,
-            &enum_names,
-        ));
+        if !internal.contains("update") {
+            interfaces.push(build_interface(
+                &format!("Update{}Input", model.name),
+                &scalar_fields
+                    .iter()
+                    .copied()
+                    .filter(|field| !is_primary_key(field))
+                    // `@computed` fields are never part of an update input
+                    // either — same reasoning as the create input above.
+                    .filter(|field| !is_computed_field(field))
+                    .collect::<Vec<_>>(),
+                InterfaceKind::Patch,
+                &enum_names,
+            ));
+        }
 
         let where_interface = build_where_interface(model, &model_names);
         if let Some(where_interface) = where_interface.clone() {

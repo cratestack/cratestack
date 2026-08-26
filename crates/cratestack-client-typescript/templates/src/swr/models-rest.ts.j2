@@ -74,6 +74,7 @@ export interface {{ create_input.name }} {
 }
 
 {% endif %}
+{% if update_input %}
 export interface {{ update_input.name }} {
 {% if update_input.has_fields %}
 {% for field in update_input.fields %}
@@ -82,6 +83,8 @@ export interface {{ update_input.name }} {
 {% endif %}
 }
 
+{% endif %}
+{% if model.allows_list %}
 export async function {{ list_fn }}(
   runtime: CratestackRuntime,
   options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
@@ -93,6 +96,8 @@ export async function {{ list_fn }}(
   }).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
 }
 
+{% endif %}
+{% if model.allows_get %}
 export async function {{ get_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
@@ -126,6 +131,7 @@ export async function {{ get_with_response_fn }}(
   }));
 }
 
+{% endif %}
 {% if create_input %}
 export async function {{ create_fn }}(
   runtime: CratestackRuntime,
@@ -137,6 +143,7 @@ export async function {{ create_fn }}(
 }
 
 {% endif %}
+{% if update_input %}
 export async function {{ update_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
@@ -150,6 +157,8 @@ export async function {{ update_fn }}(
     .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
 }
 
+{% endif %}
+{% if model.allows_delete %}
 export async function {{ delete_fn }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
@@ -160,3 +169,4 @@ export async function {{ delete_fn }}(
     signal: options.signal,
   });
 }
+{%- endif %}

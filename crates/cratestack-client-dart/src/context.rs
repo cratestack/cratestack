@@ -58,6 +58,16 @@ pub(crate) fn build_template_context(
             &model_names,
         ));
 
+        // cratestack#743: `Create<M>Input`/`Update<M>Input` are only
+        // ever referenced from this crate's generated `create`/`update`
+        // methods (`rest-apis.dart.j2`/`rpc-apis.dart.j2`/riverpod
+        // equivalents), which `build_model_api`'s `allows_create`/
+        // `allows_update` already omit when the verb is suppressed —
+        // so emitting the input class anyway would be exactly the
+        // "unreferenced Create<M>Input" the acceptance criteria forbid.
+        // One shared source of truth, consulted once per class here.
+        let internal = cratestack_core::model_internal_actions(model);
+
         let create_name = format!("Create{}Input", model.name);
         let create_fields = scalar_fields
             .iter()
@@ -69,13 +79,15 @@ pub(crate) fn build_template_context(
             .filter(|field| !is_computed_field(field))
             .filter(|field| !is_generated_on_create(field))
             .collect::<Vec<_>>();
-        data_classes.push(build_data_class(
-            &create_name,
-            &create_fields,
-            DataClassKind::Plain,
-            &enum_names,
-            &model_names,
-        ));
+        if !internal.contains("create") {
+            data_classes.push(build_data_class(
+                &create_name,
+                &create_fields,
+                DataClassKind::Plain,
+                &enum_names,
+                &model_names,
+            ));
+        }
 
         let update_name = format!("Update{}Input", model.name);
         let update_fields = scalar_fields
@@ -86,13 +98,15 @@ pub(crate) fn build_template_context(
             // — same reasoning as `create_fields` above.
             .filter(|field| !is_computed_field(field))
             .collect::<Vec<_>>();
-        data_classes.push(build_data_class(
-            &update_name,
-            &update_fields,
-            DataClassKind::Patch,
-            &enum_names,
-            &model_names,
-        ));
+        if !internal.contains("update") {
+            data_classes.push(build_data_class(
+                &update_name,
+                &update_fields,
+                DataClassKind::Patch,
+                &enum_names,
+                &model_names,
+            ));
+        }
 
         // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
         // `<Model>FindMany` — generated for every model unconditionally,

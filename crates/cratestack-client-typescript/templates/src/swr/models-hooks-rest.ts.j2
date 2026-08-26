@@ -38,20 +38,31 @@ import type { Page } from "./shared.js";
 {% endif %}
 import { swrKeys } from "../swr-keys.js";
 import {
+{% if model.allows_list %}
   {{ list_fn }},
+{% endif %}
+{% if model.allows_get %}
   {{ get_fn }},
+{% endif %}
 {% if create_input %}
   {{ create_fn }},
 {% endif %}
+{% if update_input %}
   {{ update_fn }},
+{% endif %}
+{% if model.allows_delete %}
   {{ delete_fn }},
+{% endif %}
   type {{ model_interface.name }},
 {% if create_input %}
   type {{ create_input.name }},
 {% endif %}
+{% if update_input %}
   type {{ update_input.name }},
+{% endif %}
 } from "./{{ file_stem }}.js";
 
+{% if model.allows_list %}
 export function {{ list_hook }}(
   runtime: CratestackRuntime,
   options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {},
@@ -60,6 +71,8 @@ export function {{ list_hook }}(
   return useSWR(swrKeys.model.{{ model.name }}.list(options.query), () => {{ list_fn }}(runtime, options), config);
 }
 
+{% endif %}
+{% if model.allows_get %}
 // `id` accepts `null`/`undefined` so this hook can be called before its
 // argument is known (e.g. a route param that hasn't resolved yet) —
 // `swrKeys.model.{{ model.name }}.get` returns `null` in that case, which is
@@ -78,6 +91,7 @@ export function {{ get_hook }}(
   );
 }
 
+{% endif %}
 {% if create_input %}
 export function {{ create_hook }}(
   runtime: CratestackRuntime,
@@ -108,6 +122,7 @@ export function {{ create_hook }}(
 }
 
 {% endif %}
+{% if update_input %}
 export function {{ update_hook }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
@@ -138,6 +153,8 @@ export function {{ update_hook }}(
   );
 }
 
+{% endif %}
+{% if model.allows_delete %}
 export function {{ delete_hook }}(
   runtime: CratestackRuntime,
   id: {{ model.primary_key_type }},
@@ -162,3 +179,4 @@ export function {{ delete_hook }}(
     },
   );
 }
+{%- endif %}

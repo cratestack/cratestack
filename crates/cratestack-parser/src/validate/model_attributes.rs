@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Model, TransportStyle, parse_emit_attribute};
+use cratestack_core::{Model, TransportStyle, parse_emit_attribute, parse_internal_attribute};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -123,6 +123,9 @@ pub(super) fn validate_model_attributes(
             )?;
         } else if attribute.raw == "@@index" || attribute.raw.starts_with("@@index(") {
             validate_index_attribute(model, attribute, model_names, &mut index_attributes)?;
+        } else if attribute.raw.starts_with("@@internal(") {
+            parse_internal_attribute(&model.name, &attribute.raw)
+                .map_err(|message| span_error(message, attribute.span))?;
         }
     }
 

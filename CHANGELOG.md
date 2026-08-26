@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### `@@internal("action")` route suppression — REST, RPC and every generated client (#743, implementing #514's accepted design)
+
+A model action can now be marked `@@internal("list" | "detail" | "read" | "create" | "update" |
+"delete" | "all")` to declare it must never be reachable from the wire — no REST route, no RPC dispatch
+arm, and no client stub in any generated SDK, on either transport. Suppression is implemented as
+*emitting nothing*: a suppressed verb on a REST path with surviving verbs gets axum's own `405 Method
+Not Allowed`; a model that suppresses every verb on a path never registers that path at all (axum's own
+`404`); a suppressed RPC op id falls into the pre-existing unknown-op-id arm and returns the exact same
+`CratestackError::NotFound` a genuinely unknown op id gets, including per-frame inside `/rpc/batch`
+(a suppressed op in one frame does not poison sibling frames). The canonical case this unblocks: a
+schema declaring `@@allow("create", auth().isSystem())` — fail-closed and correct, but until now still
+generated a `POST` route and a `.create()` client method that could only ever 403. `@@internal("create")`
+now removes both.
+
+**Breaking, per the pre-1.0 lockstep convention, and opt-in per action**: adding `@@internal` to an
+action a generated client already calls removes that client method (`Widget.create()` in Rust, Dart and
+TypeScript; the corresponding REST/RPC/riverpod/`--swr` hook/controller in Dart and TypeScript) — a
+compile error at the call site on regeneration, not a runtime `403` discovered later. It is opt-in per
+action, so nothing breaks until a schema author adds it. `Create<Model>Input`/`Update<Model>Input` are
+also omitted from every generated **client** SDK when the corresponding verb is suppressed (the
+server's own ORM-facing input types are unaffected — a suppressed action's policy still compiles and
+still gates any in-process caller, e.g. a custom procedure calling `db.create()` directly). A model with
+no `@@internal` attribute at all generates byte-identical output to before this change.
+
+The shared source of truth is `cratestack_core::model_internal_actions(&Model) -> BTreeSet<&str>`,
+consulted once per surface: `cratestack-macros`'s REST route assembly
+(`axum/model/routes.rs::generate_model_axum_routes`, now emitting per-verb `MethodRouter`s merged with
+`.merge()` rather than one fused `.get(..).post(..)` chain), RPC dispatch-arm/op-descriptor collection
+(`transport/rpc.rs`, `transport/op_descriptors.rs`), the generated Rust client
+(`client/rest/model.rs`, `client/rpc/model.rs`), `cratestack-client-dart` (both presets, REST and RPC),
+and `cratestack-client-typescript` (default, `--swr`, REST and RPC — extending the pre-existing,
+`create`-only, presence-based `model_allows_create` gate to all five verbs). An invalid action name in
+`@@internal(...)` is a compile error naming the model and the bad action
+(`cratestack-parser`'s `validate_model_attributes`).
+
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
 `cratestack-client-dart` no longer emits `{Class}Builder` classes inline. Every generated data class

@@ -20,6 +20,13 @@ pub(super) fn generate_generated_rpc_model_client(
     bearing: &BTreeSet<String>,
     computed_params_ident: Option<&syn::Ident>,
 ) -> Result<proc_macro2::TokenStream, String> {
+    // cratestack#743: a suppressed verb (`@@internal(...)`) gets no
+    // client method at all on RPC either — REST and RPC ship suppression
+    // together, never one transport first (design doc §3/§4/§5). One
+    // shared source of truth, `cratestack_core::model_internal_actions`,
+    // consulted once here for every RPC client method this function
+    // emits.
+    let internal = cratestack_core::model_internal_actions(model);
     let model_name = &model.name;
     let client_ident = ident(&format!("{}Client", model.name));
     let create_input_ident = ident(&format!("Create{}Input", model.name));
@@ -55,14 +62,102 @@ pub(super) fn generate_generated_rpc_model_client(
     // shape: only a gated model's `get` switches to `RpcGetInput`, since
     // that's the only case with a `computedParams` value to carry.
     // Builders live in `model/computed.rs` (200-LoC file convention).
-    let list_method = build_list_method(computed_params_ident, &list_op, &list_output_type);
-    let get_method = build_get_method(
-        computed_params_ident,
-        &get_op,
-        &primary_key_type,
-        &model_output_type,
-    );
-    let get_view_method = build_get_view_method(&get_op, &primary_key_type);
+    // Each verb group below is emitted only when `!internal.contains(...)`
+    // — cratestack#743's RPC client gate, mirroring the REST client's.
+    let list_group = if !internal.contains("list") {
+        build_list_method(computed_params_ident, &list_op, &list_output_type)
+    } else {
+        Default::default()
+    };
+    let get_group = if !internal.contains("get") {
+        {
+            let get_method = build_get_method(
+                computed_params_ident,
+                &get_op,
+                &primary_key_type,
+                &model_output_type,
+            );
+            let get_view_method = build_get_view_method(&get_op, &primary_key_type);
+            quote! {
+                #get_method
+
+                #get_view_method
+            }
+        }
+    } else {
+        Default::default()
+    };
+    let create_group = if !internal.contains("create") {
+        {
+            quote! {
+                /// `POST /rpc/model.X.create` — body is the create input
+                /// directly (no envelope; server delegates to the existing
+                /// REST POST handler unchanged).
+                pub fn create(
+                    &self,
+                    input: &super::inputs::#create_input_ident,
+                ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
+                    ::cratestack::client_rust::BatchableCall::new(
+                        self.rpc.clone(),
+                        #create_op,
+                        input,
+                    )
+                }
+            }
+        }
+    } else {
+        Default::default()
+    };
+    let update_group = if !internal.contains("update") {
+        {
+            quote! {
+                /// `POST /rpc/model.X.update` — wraps `id` + `patch` in
+                /// `RpcUpdateInput { id, patch }`. The patch is the same
+                /// `Update<Model>Input` struct as the REST PATCH body, so
+                /// `Option::None` round-trips through CBOR correctly.
+                pub fn update(
+                    &self,
+                    id: &#primary_key_type,
+                    patch: &super::inputs::#update_input_ident,
+                ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
+                    let input = ::cratestack::rpc::RpcUpdateInput {
+                        id: id.clone(),
+                        patch: patch.clone(),
+                    };
+                    ::cratestack::client_rust::BatchableCall::new(
+                        self.rpc.clone(),
+                        #update_op,
+                        &input,
+                    )
+                }
+            }
+        }
+    } else {
+        Default::default()
+    };
+    let delete_group = if !internal.contains("delete") {
+        {
+            quote! {
+                /// `POST /rpc/model.X.delete` — wraps `id` in `RpcPkInput { id }`.
+                /// Returns the deleted record (same as REST DELETE).
+                pub fn delete(
+                    &self,
+                    id: &#primary_key_type,
+                ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
+                    let input = ::cratestack::rpc::RpcPkInput {
+                        id: id.clone(),
+                    };
+                    ::cratestack::client_rust::BatchableCall::new(
+                        self.rpc.clone(),
+                        #delete_op,
+                        &input,
+                    )
+                }
+            }
+        }
+    } else {
+        Default::default()
+    };
 
     Ok(quote! {
         #[derive(Clone)]
@@ -81,61 +176,15 @@ pub(super) fn generate_generated_rpc_model_client(
                 Self { rpc }
             }
 
-            #list_method
+            #list_group
 
-            #get_method
+            #get_group
 
-            #get_view_method
+            #create_group
 
-            /// `POST /rpc/model.X.create` — body is the create input
-            /// directly (no envelope; server delegates to the existing
-            /// REST POST handler unchanged).
-            pub fn create(
-                &self,
-                input: &super::inputs::#create_input_ident,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #create_op,
-                    input,
-                )
-            }
+            #update_group
 
-            /// `POST /rpc/model.X.update` — wraps `id` + `patch` in
-            /// `RpcUpdateInput { id, patch }`. The patch is the same
-            /// `Update<Model>Input` struct as the REST PATCH body, so
-            /// `Option::None` round-trips through CBOR correctly.
-            pub fn update(
-                &self,
-                id: &#primary_key_type,
-                patch: &super::inputs::#update_input_ident,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
-                let input = ::cratestack::rpc::RpcUpdateInput {
-                    id: id.clone(),
-                    patch: patch.clone(),
-                };
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #update_op,
-                    &input,
-                )
-            }
-
-            /// `POST /rpc/model.X.delete` — wraps `id` in `RpcPkInput { id }`.
-            /// Returns the deleted record (same as REST DELETE).
-            pub fn delete(
-                &self,
-                id: &#primary_key_type,
-            ) -> ::cratestack::client_rust::BatchableCall<C, #model_output_type> {
-                let input = ::cratestack::rpc::RpcPkInput {
-                    id: id.clone(),
-                };
-                ::cratestack::client_rust::BatchableCall::new(
-                    self.rpc.clone(),
-                    #delete_op,
-                    &input,
-                )
-            }
+            #delete_group
         }
     })
 }

@@ -1,0 +1,29 @@
+// Fixture for cratestack#743 (`docs/design/route-suppression.md`) — RPC
+// dispatch-arm suppression, unary and batch. `Widget` suppresses `create`:
+// `POST /rpc/model.Widget.create` must fall through to
+// `rpc_dispatch_inner`'s pre-existing unknown-op-id arm, returning the
+// exact same `CratestackError::NotFound` a genuinely unknown op id gets
+// (design doc §3/§4) — including inside a `/rpc/batch` frame, where the
+// suppressed op must not poison sibling frames.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+  @@internal("create")
+}

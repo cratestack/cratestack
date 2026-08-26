@@ -16,6 +16,7 @@
 // query with the same values as a previous one must be `==` to it, or
 // Riverpod's family cache never dedupes and the provider restarts
 // `AsyncLoading` on every rebuild.
+{% if model_api.allows_get %}
 @riverpod
 Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(
   Ref ref,
@@ -40,7 +41,9 @@ Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(
   return ref.watch({{ accessor.provider_name }}).get(id, query: query);
 {% endif %}
 }
+{% endif %}
 
+{% if model_api.allows_list %}
 @riverpod
 Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref ref, {
   CratestackListQuery? query,
@@ -57,7 +60,9 @@ Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref
   return ref.watch({{ accessor.provider_name }}).list(query: query);
 {% endif %}
 }
+{% endif %}
 {% else %}
+{% if model_api.allows_get %}
 {% if model_api.has_parameterized_computed_fields %}
 @riverpod
 Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {{ model_api.primary_key_type }} id, {
@@ -79,7 +84,9 @@ Future<{{ model_api.model_name }}> {{ operations.get_function_name }}(Ref ref, {
   return ref.watch({{ accessor.provider_name }}).get(id);
 }
 {% endif %}
+{% endif %}
 
+{% if model_api.allows_list %}
 // Issue #331: RPC transport has no typed query-builder class (unlike
 // REST's `CratestackListQuery` — see this story's PR body for the
 // explicit, documented decision). `WidgetApi.list()` itself still
@@ -115,6 +122,7 @@ Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref
 {% endif %}
 }
 {% endif %}
+{% endif %}
 
 // Writes are controllers, not `FutureProvider`s: a mutation isn't a value
 // to cache and re-fetch on every listener, it's an action with its own
@@ -123,6 +131,7 @@ Future<{{ model_api.list_return_type }}> {{ operations.list_function_name }}(Ref
 // while the method itself still returns the created/updated/deleted
 // record directly for callers that just want the result.
 
+{% if model_api.allows_create %}
 @riverpod
 class {{ operations.create_controller_name }} extends _${{ operations.create_controller_name }} {
   @override
@@ -140,7 +149,9 @@ class {{ operations.create_controller_name }} extends _${{ operations.create_con
     }
   }
 }
+{% endif %}
 
+{% if model_api.allows_update %}
 @riverpod
 class {{ operations.update_controller_name }} extends _${{ operations.update_controller_name }} {
   @override
@@ -167,7 +178,9 @@ class {{ operations.update_controller_name }} extends _${{ operations.update_con
     }
   }
 }
+{% endif %}
 
+{% if model_api.allows_delete %}
 @riverpod
 class {{ operations.delete_controller_name }} extends _${{ operations.delete_controller_name }} {
   @override
@@ -185,3 +198,4 @@ class {{ operations.delete_controller_name }} extends _${{ operations.delete_con
     }
   }
 }
+{% endif %}

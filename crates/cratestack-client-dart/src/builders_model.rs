@@ -113,6 +113,9 @@ pub(crate) fn build_model_accessor(model: &Model, provider_prefix: &str) -> Mode
 pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let primary_key = primary_key_field(model).expect("validated schemas always have an id field");
     let paged = is_paged_model(model);
+    // cratestack#743: one shared source of truth, consulted once here
+    // for every verb this view gates.
+    let internal = cratestack_core::model_internal_actions(model);
     // The typed client computedParams surface — see
     // `docs/design/computed-fields.md`'s "Downstream" section: the typed
     // `{Model}ComputedParams` class replaces the v1 untyped
@@ -179,6 +182,11 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         has_parameterized_computed_fields: !computed_params_fields.is_empty(),
         computed_params_class_name,
         computed_params_fields,
+        allows_list: !internal.contains("list"),
+        allows_get: !internal.contains("get"),
+        allows_create: !internal.contains("create"),
+        allows_update: !internal.contains("update"),
+        allows_delete: !internal.contains("delete"),
     }
 }
 

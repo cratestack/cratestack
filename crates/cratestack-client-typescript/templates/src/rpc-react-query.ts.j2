@@ -28,6 +28,7 @@ export const cratestackQueryKeys = {
 };
 
 {% for model in models %}
+{% if model.allows_list %}
 export function use{{ model.name }}ListQuery(
   client: {{ client_class_name }},
   query: CratestackRpcListQuery = {},
@@ -42,6 +43,8 @@ export function use{{ model.name }}ListQuery(
   });
 }
 
+{% endif %}
+{% if model.allows_get %}
 export function use{{ model.name }}Query(
   client: {{ client_class_name }},
   id: {{ model.primary_key_type }},
@@ -56,6 +59,7 @@ export function use{{ model.name }}Query(
   });
 }
 
+{% endif %}
 {% if model.allows_create %}
 export function useCreate{{ model.name }}Mutation(
   client: {{ client_class_name }},
@@ -69,6 +73,7 @@ export function useCreate{{ model.name }}Mutation(
 }
 
 {% endif %}
+{% if model.allows_update %}
 export function useUpdate{{ model.name }}Mutation(
   client: {{ client_class_name }},
   options?: UseMutationOptions<{{ model.name }}, Error, { id: {{ model.primary_key_type }}; input: {{ model.update_input_name }} }>,
@@ -80,6 +85,8 @@ export function useUpdate{{ model.name }}Mutation(
   });
 }
 
+{% endif %}
+{% if model.allows_delete %}
 export function useDelete{{ model.name }}Mutation(
   client: {{ client_class_name }},
   options?: UseMutationOptions<void, Error, { id: {{ model.primary_key_type }} }>,
@@ -91,6 +98,7 @@ export function useDelete{{ model.name }}Mutation(
   });
 }
 
+{% endif %}
 {% endfor %}
 {% for procedure in query_procedures %}
 export function use{{ procedure.hook_name }}Query(

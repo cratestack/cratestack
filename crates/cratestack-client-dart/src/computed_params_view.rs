@@ -52,6 +52,22 @@ pub(crate) struct ModelApiView {
     /// body (`templates/computed_params_class.dart.j2`) and the
     /// `get`/`list` call sites that fold it onto the wire.
     pub(crate) computed_params_fields: Vec<ComputedParamsFieldView>,
+    /// cratestack#743: whether each verb's stub is emitted at all —
+    /// `false` exactly when the schema declares `@@internal(...)` for
+    /// that verb (`cratestack_core::model_internal_actions`, the one
+    /// shared source of truth every codegen surface, including this
+    /// one, consults). `listView`/`getView` (the `*_view` projection
+    /// siblings) share their base verb's gate: they hit the same
+    /// suppressed route. Every template that renders a per-verb method
+    /// (`rest-apis.dart.j2`, `rpc-apis.dart.j2`,
+    /// `riverpod/rest_model.dart.j2`, `riverpod/rpc_model.dart.j2`,
+    /// `riverpod/model_providers.dart.j2`) wraps that method in
+    /// `{% if model.allows_<verb> %}`.
+    pub(crate) allows_list: bool,
+    pub(crate) allows_get: bool,
+    pub(crate) allows_create: bool,
+    pub(crate) allows_update: bool,
+    pub(crate) allows_delete: bool,
 }
 
 /// One field of a model's generated `{Model}ComputedParams` class --

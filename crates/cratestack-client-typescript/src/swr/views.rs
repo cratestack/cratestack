@@ -124,7 +124,13 @@ pub(crate) struct SwrModelFileContext {
     pub(crate) model: ModelApiView,
     pub(crate) model_interface: InterfaceView,
     pub(crate) create_input: Option<InterfaceView>,
-    pub(crate) update_input: InterfaceView,
+    /// `None` when `@@internal("update")` suppresses `update` —
+    /// cratestack#743, mirrors `create_input`'s pre-existing
+    /// `model_allows_create`-gated shape (there was previously no gate
+    /// on `update` at all, since it always follows a real
+    /// `@@allow`/`@@deny` rule elsewhere; suppression is the first
+    /// reason this can now be absent).
+    pub(crate) update_input: Option<InterfaceView>,
     /// Enums/`type` blocks owned solely by this model — inlined here,
     /// never imported (see `crate::swr::ownership`'s module doc for why
     /// this can never miss a cross-file reference).

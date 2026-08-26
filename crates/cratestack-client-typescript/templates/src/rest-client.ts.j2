@@ -39,6 +39,7 @@ export class {{ client_class_name }} {
 export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRuntime) {}
 
+{% if model.allows_list %}
   list(options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}): Promise<{{ model.list_return_type }}> {
     return this.runtime.get<unknown>("{{ model.route }}", {
       headers: options.headers,
@@ -47,6 +48,8 @@ export class {{ model.api_name }} {
     }).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
+{% endif %}
+{% if model.allows_get %}
   get(id: {{ model.primary_key_type }}, options: CratestackQueryRequestConfig{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}): Promise<{{ model.name }}> {
     return this.runtime.get<unknown>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
       headers: options.headers,
@@ -72,6 +75,7 @@ export class {{ model.api_name }} {
     }));
   }
 
+{% endif %}
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRequestConfig = {}): Promise<{{ model.name }}> {
     return this.runtime.post<unknown>("{{ model.route }}", input, options)
@@ -79,6 +83,7 @@ export class {{ model.api_name }} {
   }
 
 {% endif %}
+{% if model.allows_update %}
   update(
     id: {{ model.primary_key_type }},
     input: {{ model.update_input_name }},
@@ -91,12 +96,15 @@ export class {{ model.api_name }} {
       .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
+{% endif %}
+{% if model.allows_delete %}
   delete(id: {{ model.primary_key_type }}, options: CratestackWriteRequestConfig = {}): Promise<void> {
     return this.runtime.delete<void>(`{{ model.route }}/${encodeURIComponent(String(id))}`, {
       headers: withIfMatchHeader(options.headers, options.ifMatch),
       signal: options.signal,
     });
   }
+{% endif %}
 }
 
 {% endfor %}

@@ -34,6 +34,7 @@ export class {{ client_class_name }} {
 }
 
 {% for model in models %}
+{% if model.allows_get %}
 export interface {{ model.api_name }}GetOptions extends CratestackRpcCallOptions {
   fields?: string[];
   include?: string[];
@@ -43,9 +44,11 @@ export interface {{ model.api_name }}GetOptions extends CratestackRpcCallOptions
 {% endif %}
 }
 
+{% endif %}
 export class {{ model.api_name }} {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
+{% if model.allows_list %}
   list(query: CratestackRpcListQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
     return this.runtime.call<Record<string, unknown>, unknown>(
       "model.{{ model.name }}.list",
@@ -54,6 +57,8 @@ export class {{ model.api_name }} {
     ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
   }
 
+{% endif %}
+{% if model.allows_get %}
   get(id: {{ model.primary_key_type }}, options: {{ model.api_name }}GetOptions = {}): Promise<{{ model.name }}> {
     const input: Record<string, unknown> = { id };
     if (options.fields?.length) {
@@ -79,6 +84,7 @@ export class {{ model.api_name }} {
     ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
+{% endif %}
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
     return this.runtime.call<{{ model.create_input_name }}, unknown>(
@@ -89,6 +95,7 @@ export class {{ model.api_name }} {
   }
 
 {% endif %}
+{% if model.allows_update %}
   update(
     id: {{ model.primary_key_type }},
     patch: {{ model.update_input_name }},
@@ -101,6 +108,8 @@ export class {{ model.api_name }} {
     ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
   }
 
+{% endif %}
+{% if model.allows_delete %}
   delete(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<void> {
     return this.runtime.call<{ id: {{ model.primary_key_type }} }, void>(
       "model.{{ model.name }}.delete",
@@ -108,6 +117,7 @@ export class {{ model.api_name }} {
       options,
     );
   }
+{% endif %}
 }
 
 {% endfor %}

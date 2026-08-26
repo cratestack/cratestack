@@ -68,12 +68,31 @@ pub(super) fn compose_client_schema(
             .models
             .iter()
             .map(|model| generate_client_model_struct(model, &model_name_set, &enum_name_set));
-        let create_input_structs = schema.models.iter().map(|model| {
-            generate_client_create_input_struct(model, &model_name_set, &enum_name_set)
-        });
-        let update_input_structs = schema.models.iter().map(|model| {
-            generate_client_update_input_struct(model, &model_name_set, &enum_name_set)
-        });
+        // cratestack#743: this is a pure client SDK crate — unlike
+        // `include_server_schema!`'s `pub mod inputs` (whose
+        // `Create<M>Input`/`Update<M>Input` the ORM/procedure layer
+        // needs regardless of route suppression, per the design's
+        // non-goal that a suppressed action's in-process usability is
+        // unchanged), a suppressed `create`/`update` here has no other
+        // consumer: `client/rest/model.rs` and `client/rpc/model.rs`
+        // already omit the method that would have referenced the
+        // input type (same `model_internal_actions` gate), so emitting
+        // the type anyway would be exactly the "unreferenced
+        // Create<M>Input" the acceptance criteria forbid.
+        let create_input_structs = schema
+            .models
+            .iter()
+            .filter(|&model| !cratestack_core::model_internal_actions(model).contains("create"))
+            .map(|model| {
+                generate_client_create_input_struct(model, &model_name_set, &enum_name_set)
+            });
+        let update_input_structs = schema
+            .models
+            .iter()
+            .filter(|&model| !cratestack_core::model_internal_actions(model).contains("update"))
+            .map(|model| {
+                generate_client_update_input_struct(model, &model_name_set, &enum_name_set)
+            });
         // `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
         // `<Model>FindManyInput` — the types a `FindMany<Model>` procedure
         // argument needs (issue #371's redesign). No `build_<model>_query_

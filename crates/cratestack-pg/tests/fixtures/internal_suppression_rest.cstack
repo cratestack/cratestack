@@ -1,0 +1,41 @@
+// Fixture for cratestack#743 (`docs/design/route-suppression.md`) — REST
+// route suppression. Two models:
+//
+// - `Widget` suppresses only `create`: `POST /widgets` must be gone while
+//   `GET /widgets`, `GET /widgets/{id}`, `PATCH /widgets/{id}`, and
+//   `DELETE /widgets/{id}` stay routed (axum's own 405 on the shared
+//   `/widgets` path once one verb is missing).
+// - `Gadget` suppresses `all`: neither `/gadgets` nor `/gadgets/{id}`
+//   should ever be registered (axum's own 404, since no `.route(...)`
+//   call is emitted for either path at all).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+  @@internal("create")
+}
+
+model Gadget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+  @@internal("all")
+}
