@@ -46,11 +46,11 @@ where
     }
 
     query.push(") ON CONFLICT (");
-    match conflict_target {
-        ConflictTarget::PrimaryKey => {
+    match conflict_target.as_columns() {
+        None => {
             query.push(descriptor.primary_key);
         }
-        ConflictTarget::Columns(cols) => {
+        Some(cols) => {
             for (idx, column) in cols.iter().enumerate() {
                 if idx > 0 {
                     query.push(", ");
@@ -59,7 +59,13 @@ where
             }
         }
     }
-    query.push(") DO NOTHING RETURNING ");
+    query.push(")");
+    // Unpredicated targets emit byte-identical SQL to before cratestack#741 —
+    // this branch is a no-op when `predicate()` is `None`.
+    if let Some(predicate) = conflict_target.predicate() {
+        query.push(" WHERE ").push(predicate);
+    }
+    query.push(" DO NOTHING RETURNING ");
     query.push(descriptor.select_projection());
 
     query
