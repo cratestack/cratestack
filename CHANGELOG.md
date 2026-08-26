@@ -37,6 +37,34 @@ and `cratestack-client-typescript` (default, `--swr`, REST and RPC — extending
 `@@internal(...)` is a compile error naming the model and the bad action
 (`cratestack-parser`'s `validate_model_attributes`).
 
+**Follow-up fixes from post-merge review (#743):**
+
+- **`generate-wiremock` now suppresses stub mappings too.** `cratestack-mock-wiremock`'s
+  `model_mapping::build_model_mappings` (both the stateful REST path and the static RPC path) consults
+  `model_internal_actions` before emitting a mapping — previously a suppressed verb still got a stub
+  advertising a working response (e.g. a stateful `201 Created` for a `create` the real server
+  suppresses), handing a mock consumer a contract the real server doesn't honor.
+- **`cratestack diff` now gates on `@@internal`.** Adding `@@internal(...)` to a model action is
+  classified `Severity::Breaking` (previously fell to the generic "no tracked wire-shape effect"
+  branch) — a PR that suppresses an action with live consumers now fails the diff gate. Removing
+  `@@internal(...)` is `Severity::Additive`.
+- **`ROUTE_TRANSPORTS` now omits suppressed verbs.** `generate_model_transport_constants`/
+  `generate_model_transport_entries` (`cratestack-macros/src/transport/rest.rs`) consult
+  `model_internal_actions` — this `pub const` registry in the generated crate's public API no longer
+  lists a verb the schema author explicitly suppressed, even though its one runtime reader
+  (`cratestack-axum`'s rate-limit filter) already failed closed on a miss.
+- **`@@internal` added to `cratestack-lsp` completions**, with a detail string distinguishing it from a
+  policy attribute.
+- **New test**: an in-process `.create()` call against a model carrying both `@@allow("create", ...)`
+  and `@@internal("create")` succeeds for an authenticated caller and is still denied for an
+  anonymous one — pinning that suppression is purely generation-time and leaves policy evaluation
+  untouched (design doc §9's non-goal).
+- **Known-incomplete surface documented, not silently left**: the TypeScript `swr` preset's
+  `list`/`get`/`update`/`delete` cache-key factories (not `create`'s, which is correctly gated) are
+  still emitted for a suppressed verb — confirmed inert (no generated hook ever calls through one) and
+  documented in `docs/design/route-suppression.md` §8a rather than fixed, since gating them has no
+  caller-visible effect today.
+
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
 `cratestack-client-dart` no longer emits `{Class}Builder` classes inline. Every generated data class
