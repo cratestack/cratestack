@@ -64,6 +64,22 @@ fn rejects_malformed_attribute() {
     assert!(parse_internal_attribute("Widget", "@@internal(\"create\", true)").is_err());
 }
 
+/// cratestack#743 post-merge review, Finding B: exactly one action per
+/// declaration is enforced, not merely documented — two comma-separated
+/// quoted actions in one `@@internal(...)` is malformed, the same as any
+/// other trailing content after the closing quote. Suppressing two
+/// actions means two separate `@@internal("action")` lines
+/// (`multiple_attributes_union` below), not one call with two arguments.
+#[test]
+fn rejects_two_quoted_actions_in_one_declaration() {
+    let error =
+        parse_internal_attribute("Widget", "@@internal(\"create\", \"update\")").unwrap_err();
+    assert!(
+        error.contains("Widget"),
+        "error should name the model: {error}"
+    );
+}
+
 #[test]
 fn no_internal_attributes_yields_empty_set() {
     let model = model_with_attrs(&[]);

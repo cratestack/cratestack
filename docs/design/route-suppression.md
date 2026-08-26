@@ -16,6 +16,26 @@ ticket carries that once this is accepted or rejected.
 > was load-bearing for a specific claim, that is flagged in place rather
 > than silently dropped.
 
+> **Notation correction (2026-08-26, cratestack#743 post-merge review).**
+> This document's own `@@internal("action", ...)` notation (§1, §2 below)
+> reads like an `@@allow`-style call taking multiple comma-separated
+> arguments in one declaration. That is not what shipped, and re-checking
+> against the parser confirms it was never what PR #485 specified either
+> — `cratestack_core::parse_internal_attribute` accepts exactly one
+> quoted action per `@@internal(...)` declaration and hard-rejects a
+> second one in the same parens (`@@internal("create", "update")` is a
+> compile error naming the model, not a parse of two actions). Suppressing
+> more than one action on a model means writing more than one
+> `@@internal("action")` line — `@@internal("create")` on its own line,
+> `@@internal("update")` on its own line — exactly the same repeated-
+> declaration shape `@@allow`/`@@deny` already use for multiple rules on
+> one model, and exactly what `§3.1`'s `model_internal_actions` set-union
+> semantics (`BTreeSet<&str>`, order- and count-independent) already
+> assumed. Every `@@internal("action", ...)` occurrence below is citing
+> PR #485's original wording, not describing multi-argument syntax; read
+> it as `@@internal("action")` (one action, repeat the line to suppress
+> more).
+
 Scope: a design for suppressing generated routes/dispatch-arms/client
 stubs for a model action the schema author has marked unreachable from
 the wire, across all three generation surfaces —

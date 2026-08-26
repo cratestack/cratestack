@@ -11,6 +11,20 @@
 //! never be reachable from the wire, independent of whether some
 //! future policy edit would make it satisfiable").
 //!
+//! **Exactly one action per declaration is enforced, not just
+//! documented** (cratestack#743 post-merge review, Finding B):
+//! [`parse_internal_attribute`] rejects `@@internal("create",
+//! "update")` as malformed — pinned by this module's own
+//! `rejects_two_quoted_actions_in_one_declaration` test and
+//! `cratestack-parser`'s
+//! `rejects_two_actions_in_one_internal_declaration`. Suppressing more
+//! than one action means writing more than one `@@internal("action")`
+//! line, the same repeated-declaration shape `@@allow`/`@@deny` already
+//! use for multiple rules on one model — `docs/design/
+//! route-suppression.md`'s `@@internal("action", ...)` notation cites
+//! PR #485's original wording verbatim and is not describing a
+//! multi-argument call; see that document's 2026-08-26 correction note.
+//!
 //! [`model_internal_actions`] is the single shared source of truth
 //! every surface (REST route assembly, RPC dispatch-arm collection,
 //! and every client's per-action stub emission) consults exactly

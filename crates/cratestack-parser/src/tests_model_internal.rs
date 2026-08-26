@@ -93,3 +93,34 @@ model Widget {
     .expect_err("an unquoted action must be a compile error");
     assert!(error.to_string().contains("Widget"));
 }
+
+/// cratestack#743 post-merge review, Finding B: this document's own
+/// module doc says `@@internal(...)` "takes exactly one action per
+/// declaration" — this pins that as an enforced compile error, not just
+/// documentation. Two actions in one declaration (as opposed to two
+/// separate `@@internal(...)` lines, which
+/// `accepts_multiple_internal_attributes_on_one_model` above covers) is
+/// NOT a supported "comma-separated" form; `docs/design/
+/// route-suppression.md`'s `@@internal("action", ...)` notation cites
+/// PR #485's original wording and is not multi-argument syntax — see
+/// that document's 2026-08-26 notation-correction note.
+#[test]
+fn rejects_two_actions_in_one_internal_declaration() {
+    let error = parse_schema(
+        r#"
+model Widget {
+  id String @id
+
+  @@internal("create", "update")
+}
+"#,
+    )
+    .expect_err(
+        "two actions in one @@internal(...) declaration must be a compile error, not a silent \
+         parse that drops the second action",
+    );
+    assert!(
+        error.to_string().contains("Widget"),
+        "error should name the model: {error}"
+    );
+}
