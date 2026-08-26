@@ -38,6 +38,10 @@ where
     /// statement. The actual call wraps a `SELECT ... FOR UPDATE`
     /// probe around it and may perform a fallback `SELECT` on a lost
     /// race — see [`UpsertOutcome`] for the full sequencing.
+    ///
+    /// Deliberately does NOT call `ConflictTarget::validate` — see
+    /// `UpsertRecord::preview_sql`'s doc comment (cratestack#741
+    /// finding 3) for the full reasoning; the same applies here.
     pub fn preview_sql(&self) -> String {
         let values = self.input.sql_values();
         let placeholders = (1..=values.len())
@@ -49,14 +53,18 @@ where
             .map(|value| value.column)
             .collect::<Vec<_>>()
             .join(", ");
-        let conflict_tuple = match self.conflict_target {
-            ConflictTarget::PrimaryKey => self.descriptor.primary_key.to_owned(),
-            ConflictTarget::Columns(cols) => cols.join(", "),
+        let conflict_tuple = match self.conflict_target.as_columns() {
+            None => self.descriptor.primary_key.to_owned(),
+            Some(cols) => cols.join(", "),
+        };
+        let conflict_predicate = match self.conflict_target.predicate() {
+            Some(predicate) => format!(" WHERE {predicate}"),
+            None => String::new(),
         };
 
         format!(
             "INSERT INTO {table} ({columns}) VALUES ({placeholders}) \
-             ON CONFLICT ({conflict_tuple}) DO NOTHING \
+             ON CONFLICT ({conflict_tuple}){conflict_predicate} DO NOTHING \
              RETURNING {projection}",
             table = self.descriptor.table_name,
             projection = self.descriptor.select_projection(),
