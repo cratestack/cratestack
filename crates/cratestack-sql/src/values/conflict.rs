@@ -70,7 +70,28 @@ use cratestack_core::CratestackError;
 /// it at runtime with a clear [`CratestackError::Validation`] instead
 /// of the type system silently preventing the chain
 /// `PrimaryKey.where_index(..)` from being written at all.
+///
+/// # `#[non_exhaustive]` (cratestack#741 finding 4 follow-up, maintainer-ruled)
+///
+/// This release already breaks any external crate that pattern-matches
+/// `ConflictTarget` exhaustively without a wildcard arm — the variant
+/// count just grew from two to four (see above), and that alone forces
+/// such a match to stop compiling. `#[non_exhaustive]` costs nothing
+/// *additional* on top of a break those callers must already absorb
+/// this release, and it means every *future* variant addition is
+/// non-breaking for anyone who updates their match now — deferring it
+/// would mean paying a second, separate break later for no extra
+/// benefit, so this is the cheapest moment it will ever be. It affects
+/// matching only: every existing variant, including the two additive
+/// predicate-carrying ones, stays constructible from outside this
+/// crate exactly as before — `#[non_exhaustive]` on an enum blocks
+/// exhaustive `match`es and enum-level struct-update syntax in other
+/// crates, not construction of variants that already exist. (Putting
+/// `#[non_exhaustive]` on an individual *variant* instead would be the
+/// opposite mistake — that blocks construction — and is deliberately
+/// not done here.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum ConflictTarget {
     /// The model's `@id` primary key, unpredicated. Default.
     #[default]

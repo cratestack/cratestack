@@ -29,6 +29,13 @@ silently dropped predicate — the invalid combination is deliberately kept repr
 (`PrimaryKeyWithPredicate`) so this is a runtime rejection, not something the type system prevents you
 from writing at all.
 
+`ConflictTarget` is also now `#[non_exhaustive]`. Construction is unaffected — every existing variant,
+including the two additive predicate-carrying ones, stays constructible from outside `cratestack-sql`
+exactly as before; only external *exhaustive* `match`es (already broken by the two-to-four variant
+growth above) additionally need a wildcard arm going forward. This costs nothing on top of the break
+those callers are already absorbing this release, and it makes every *future* variant addition
+non-breaking instead of requiring a second, separate break later.
+
 Both backends emit `ON CONFLICT (<cols>) WHERE <predicate> DO UPDATE|DO NOTHING`; SQLite accepts the
 identical inference syntax (confirmed against the vendored libsqlite3-sys 0.37.0 / SQLite 3.51.3).
 Unpredicated targets emit byte-identical SQL to before this change.

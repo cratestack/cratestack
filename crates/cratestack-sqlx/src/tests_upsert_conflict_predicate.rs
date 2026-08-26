@@ -180,6 +180,40 @@ fn unpredicated_targets_validate_cleanly() {
         .unwrap();
 }
 
+/// `#[non_exhaustive]` on `ConflictTarget` (cratestack#741 finding 4
+/// follow-up, maintainer-ruled) restricts exhaustive *matching* by
+/// other crates; it does NOT prevent *construction* of variants that
+/// already exist. `cratestack-sqlx` is exactly such an "other crate",
+/// so this test — constructing all four variants, including the two
+/// original ones by their original direct spelling — is the real
+/// proof, not just a claim in a doc comment: it would fail to COMPILE
+/// (not just fail to run) if `#[non_exhaustive]` had been misapplied
+/// to an individual variant instead of the enum (the one mistake the
+/// attribute must avoid — that WOULD block construction).
+#[test]
+fn non_exhaustive_does_not_block_construction_of_any_variant() {
+    // The two original variants, by their original direct spelling —
+    // restored exactly as they were pre-#741 (finding 3) and still
+    // constructible cross-crate under `#[non_exhaustive]`.
+    let pk = ConflictTarget::PrimaryKey;
+    let cols = ConflictTarget::Columns(&["k"]);
+    assert!(pk.is_primary_key());
+    assert_eq!(cols.as_columns(), Some(["k"].as_slice()));
+
+    // The two additive predicate-carrying variants, reached through
+    // `.where_index(...)` (not normally constructed directly, but
+    // still just as constructible as the other two).
+    let pk_with_predicate = ConflictTarget::PrimaryKey.where_index("status = 'active'");
+    let cols_with_predicate = ConflictTarget::Columns(&["k"]).where_index("status = 'active'");
+    assert_eq!(pk_with_predicate.predicate(), Some("status = 'active'"));
+    assert_eq!(cols_with_predicate.predicate(), Some("status = 'active'"));
+    assert_eq!(cols_with_predicate.as_columns(), Some(["k"].as_slice()));
+
+    // `Default` still resolves to `PrimaryKey` — `#[non_exhaustive]`
+    // and `#[derive(Default)]`/`#[default]` coexist without conflict.
+    assert_eq!(ConflictTarget::default(), ConflictTarget::PrimaryKey);
+}
+
 /// `preview_sql()` deliberately does NOT call `.validate()`
 /// (cratestack#741 finding 3 — see `UpsertRecord::preview_sql`'s doc
 /// comment for the full reasoning). This locks that decision in: an
