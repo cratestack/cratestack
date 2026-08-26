@@ -35,10 +35,14 @@ pub(super) fn composite_unique_indexes(
         if !attribute.raw.starts_with("@@unique(") {
             continue;
         }
-        let Ok(fields) = parse_composite_unique_attribute(&attribute.raw) else {
+        let Ok(parsed) = parse_composite_unique_attribute(&attribute.raw) else {
             continue;
         };
-        let index_columns: Vec<String> = fields.iter().map(|field| column_name(field)).collect();
+        let index_columns: Vec<String> = parsed
+            .fields
+            .iter()
+            .map(|field| column_name(field))
+            .collect();
         if !index_columns
             .iter()
             .all(|name| projected.contains(name.as_str()))
@@ -53,6 +57,7 @@ pub(super) fn composite_unique_indexes(
             unique: true,
             using: None,
             opclass: None,
+            where_predicate: parsed.where_predicate,
         });
     }
     indexes

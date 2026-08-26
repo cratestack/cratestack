@@ -147,6 +147,7 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
                 unique: true,
                 using: None,
                 opclass: None,
+                where_predicate: None,
             });
         }
         if field_has_db_enforce(field) {

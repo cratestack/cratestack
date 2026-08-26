@@ -2,6 +2,7 @@
 //! carries source-span back-pointers so consumers can map errors to
 //! positions in the original text.
 
+mod attribute_syntax;
 pub mod composite_key;
 pub mod composite_unique;
 pub mod computed_attribute;
@@ -18,7 +19,7 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize};
 
 pub use composite_key::parse_composite_id_attribute;
-pub use composite_unique::parse_composite_unique_attribute;
+pub use composite_unique::{ParsedCompositeUnique, parse_composite_unique_attribute};
 pub use computed_attribute::{
     ComputedParamsArg, computed_params_type_name, is_computed_attribute, is_computed_field,
     parse_computed_params_arg,

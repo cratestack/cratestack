@@ -72,6 +72,197 @@ and `cratestack-client-typescript` (default, `--swr`, REST and RPC — extending
   still emitted for a suppressed verb — confirmed inert (no generated hook ever calls through one) and
   documented in `docs/design/route-suppression.md` §8a rather than fixed, since gating them has no
   caller-visible effect today.
+### `@@unique`/`@@index` gain a `where: "<sql predicate>"` argument — partial index DDL — breaking for `cratestack-core` API consumers (#742)
+
+`@@unique([...], where: "...")` and `@@index([...], where: "...")` declare a **partial** index,
+following the same keyword-argument shape and verbatim-passthrough posture `using`/`opclass` already
+use (#156): the predicate is never parsed or validated, only carried through to a trailing
+`WHERE <predicate>` on the emitted `CREATE [UNIQUE] INDEX`, and left for the database to accept or
+reject. `@@unique` previously required at least two fields ("use a field-level `@unique` instead");
+that rule is relaxed for the single-field case specifically when `where:` is present, since
+field-level `@unique` has no room for a keyword argument at all — this is the motivating shape (ADR
+0038's deferred B3): a single, genuinely-optional column that must be unique only when present, e.g.
+`@@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")`. An empty field list
+(`@@unique([], where: "...")`) is still rejected regardless of `where:`, matching `@@index`'s existing
+unconditional "at least one field" check — the `where:`-relaxed floor only lowers the minimum from two
+to one, it never drops it to zero.
+
+`AddIndex` gains a `where_predicate: Option<String>` field (`#[serde(default)]`, so previously
+serialized migration IR keeps deserializing); `None` renders byte-identical DDL to before this field
+existed on both backends. SQLite renders the same `WHERE` syntax (it has supported partial indexes
+since 3.8.0) — the one real divergence is what a predicate may legally *reference*, not the syntax
+(see `emit::sqlite::indexes`'s doc for SQLite's restrictions).
+
+**Breaking for `cratestack-core` API consumers:** `cratestack_core::schema::composite_unique::parse_composite_unique_attribute`
+(public, re-exported) changed its return type from `Result<Vec<String>, String>` to
+`Result<ParsedCompositeUnique, String>` to carry the new `where_predicate` field alongside the field
+list. Both in-repo call sites were updated; any external consumer calling this function directly needs
+to switch to `ParsedCompositeUnique.fields`.
+
+The load-bearing part is introspection round-tripping without churn: Postgres exposes a stored
+predicate via `pg_get_expr(indpred, indrelid)`, and that text is **normalized** — verified empirically
+against a live Postgres 18 rather than assumed — wrapped in exactly one pair of parentheses with
+whitespace collapsed, so `idempotency_key IS NOT NULL` reads back as
+`(idempotency_key IS NOT NULL)`. A naive comparison against the schema's literal text would make every
+`migrate` run diff the index as changed. The diff engine (`crate::diff::indexes`) now compares matched
+indexes' predicates through that same normalization before deciding whether to no-op or drop+recreate,
+proved against a real database (not a hand-written IR fixture, which can't exhibit the normalization)
+in `crates/cratestack-migrate/tests/postgres_introspect.rs`.
+
+Landed initially without also tolerating the explicit `::type` cast Postgres inserts onto *every*
+literal comparison — `status = 'active'` reads back as `(status = 'active'::text)`, `amount > 100`
+against a floating-point column as `(amount > (100)::double precision)` — which meant any predicate
+comparing a column to a literal (i.e. almost any partial index anyone would actually write) never
+compared equal to its introspected form and churned a drop+recreate on *every* `migrate` run: the
+ticket's load-bearing "no churn" requirement, silently unmet for exactly the shapes that matter. Caught
+in post-merge review and fixed in the same PR before release, in two rounds:
+
+Round 1 independently stripped the `::type` cast from each side of the comparison before a plain string
+equality check. That closed the churn bug but opened a worse one, caught in a second review round: since
+the type name was discarded, two predicates casting the *same* literal to two *genuinely different*
+types compared as equal — `email = 'x'::citext` (case-insensitive) vs. `email = 'x'::text`
+(case-sensitive) got **no migration**, silently leaving the database enforcing the old, wrong uniqueness
+rule. An unnecessary drop+recreate is a noticed operational annoyance; a missed one is a wrong constraint
+nobody notices until it lets a duplicate through on a money path — the worse failure direction.
+
+Round 2 replaced independent normalization with a joint, type-aware comparison
+(`crate::diff::indexes::predicate` + `predicate::casts`, the latter tokenizing each predicate into
+literal-vs-everything-else segments rather than rewriting a string): a literal on one side lacking a
+cast the other side has is still forgiven (presumed Postgres-inserted), but when **both** sides carry an
+explicit `::type`, the type names must match — mismatched (e.g. changing `citext` to `text`) now
+correctly triggers a drop+recreate. The type-name grammar itself was also hardened past a plain
+lowercase-letters-only word run (which silently corrupted literals containing digits — `100::int4` lost
+its trailing `4` and it leaked back onto the literal being compared, turning it into `1004`) into one
+recognizing schema-qualified (`pg_catalog.int4`), double-quoted, and array (`text[]`) type-name shapes
+without corruption. Genuinely ambiguous shapes (schema-qualified vs. bare spellings of what might be the
+same catalog type, e.g. `public.citext` vs. `citext`; double casts; doubled parens) fail toward churn,
+never toward silent equality — this module has no catalog access to confirm two spellings really name
+the same type, and guessing risks the exact false-equality class it exists to close. It still doesn't
+replicate Postgres's remaining normalization — identifier/keyword case-folding — since that needs a real
+SQL expression parser, out of scope per the ticket; a predicate that differs from its stored form only by
+identifier case will still show as changed and get dropped/recreated, a documented limitation (pinned by
+a test), not a silent gap.
+
+Round 3 closed one more gap in round 2's exact-string type-name comparison: Postgres normalizes a handful
+of type-name aliases on deparse — an author-written `::int` reads back as `::integer`, `::int8` as
+`::bigint` — and since round 2 requires an exact match once both sides carry an explicit cast, an author
+who happened to write an aliased spelling got a spurious drop+recreate on *every* single `migrate` run,
+forever: round 1's exact failure, resurfacing for the narrower population that writes explicit casts.
+Fixed with `predicate::casts::type_name::alias`, a small, closed table (`int`/`int4` → `integer`,
+`int2` → `smallint`, `int8` → `bigint`, `float4` → `real`, `float8` → `double precision`,
+`varchar` → `character varying`, `char` → `character`, `bool` → `boolean`, `decimal` → `numeric`,
+`timestamptz` → `timestamp with time zone`, `timetz` → `time with time zone`) applied only to a bare,
+unqualified, unquoted, undecorated type name — never to a double-quoted user-defined type (`"int"` is a
+real, different type named `int`, not a spelling of `integer`), never to a schema-qualified spelling
+(still not equated with a bare one, unchanged from round 2), and never guessed for an unrecognized name,
+which still fails toward churn on mismatch. `serial`/`bigserial`/`smallserial` are deliberately absent —
+they aren't real column types in this sense (see `alias`'s own doc).
+
+**The alias table only fixes the type-*name* mismatch, not every structural shape a cast can deparse
+into**: `int8`/`bigint` is proven end-to-end (a genuinely clean single-cast round-trip, see below), but
+`varchar` compared against a `text` column deparses with an *additional*, nested implicit cast
+(`pg_get_expr` — verified empirically — returns `(email = ('x'::character varying)::text)` for a schema's
+`email = 'x'::varchar`), a structural difference no alias table can resolve; an author writing that
+spelling still gets churn, not corruption or a silent wrong result (the safe direction), and it's pinned
+as a known limitation rather than left to be rediscovered — see `alias`'s own doc and
+`tests::alias::varchar_on_a_text_column_still_churns_due_to_the_extra_implicit_cast`.
+
+Proved against a live database: `partial_index_with_text_literal_predicate_round_trips_without_churn`,
+`partial_index_with_numeric_literal_predicate_round_trips_without_churn`,
+`partial_index_cast_type_change_is_detected_as_drop_and_recreate` (using the real `citext` extension to
+reproduce the money-relevant case end-to-end), and
+`partial_index_with_aliased_cast_type_round_trips_without_churn` (an author-written `::int8` against a
+`bigint` column, round 3's decisive case) in `crates/cratestack-migrate/tests/postgres_introspect.rs` —
+not just the `IS NOT NULL` shape that needs no cast and can't exercise any of this.
+
+**Adoption note — widened blast radius:** introspecting partial indexes at all required dropping the
+prior `AND i.indpred IS NULL` exclusion in `introspect::postgres::indexes`, which used to make every
+partial index invisible to `migrate` regardless of origin. A hand-made partial index that no `.cstack`
+schema declares — including one created outside Cratestack entirely, this ticket's own motivating
+scenario — is now visible to introspection like any other index, and an index present in the database
+but absent from the schema is a `DROP INDEX` candidate on the very next `migrate` run (no `CASCADE`,
+same as any other unmanaged index — not a new rule, just a newly-reachable one for partial indexes
+specifically). **If you're upgrading and have a hand-made partial index no schema declares, the next
+`migrate` run will drop it** — declare it via `@@unique`/`@@index([...], where: "...")` first to keep
+it. Pinned by `undeclared_partial_index_is_dropped_by_diff` in
+`crates/cratestack-migrate/tests/postgres_introspect.rs`.
+### `ConflictTarget` can target a partial unique index, and the upsert conflict probe honors it — breaking for exhaustive external matches (#741)
+
+An upsert can now target a **partial** unique index (`CREATE UNIQUE INDEX ... WHERE <predicate>`),
+which Postgres refuses to infer from an unpredicated `ON CONFLICT (<cols>)` — motivated by an
+optional-idempotency-key shape (`UNIQUE (key) WHERE key IS NOT NULL`) that previously had no route
+onto the framework's upsert primitive at all.
+
+`ConflictTarget` (`cratestack-sql`) stays the enum it always was: `ConflictTarget::PrimaryKey` and
+`ConflictTarget::Columns(&'static [&'static str])` are unchanged, and a new
+`ConflictTarget::columns(&[...]).where_index("<predicate>")` attaches the partial-index predicate as a
+compile-time `&'static str` — the same no-runtime-value-path precedent `@@index`'s `using`/`opclass`
+already set — riding along on two purely additive variants
+(`ColumnsWithPredicate`/`PrimaryKeyWithPredicate`) that `.where_index` produces rather than being
+constructed directly. An earlier draft of this change collapsed the two original variants into a
+`{ kind, predicate }` struct, which broke every direct enum-variant construction/match in the process;
+a repo-wide grep found that in-repo usage is 100% construction, zero pattern matches, so that break
+bought nothing and was reworked additively before landing — every known construction site (in-repo,
+across both backends and all tests) is unaffected and needed no changes. **Still breaking**, but only
+for external code that pattern-matches `ConflictTarget` **exhaustively without a wildcard arm**: the
+variant count grows from two to four, so such a match stops compiling (adding enum variants is
+semver-breaking in Rust regardless of how additive the rest of the change is). Pairing a predicate with
+`ConflictTarget::PrimaryKey`/`ConflictTarget::PRIMARY_KEY` is a clear
+`CratestackError::Validation`/`RusqliteError::Validation` (the PK index is never partial), not a
+silently dropped predicate — the invalid combination is deliberately kept representable
+(`PrimaryKeyWithPredicate`) so this is a runtime rejection, not something the type system prevents you
+from writing at all.
+
+`ConflictTarget` is also now `#[non_exhaustive]`. Construction is unaffected — every existing variant,
+including the two additive predicate-carrying ones, stays constructible from outside `cratestack-sql`
+exactly as before; only external *exhaustive* `match`es (already broken by the two-to-four variant
+growth above) additionally need a wildcard arm going forward. This costs nothing on top of the break
+those callers are already absorbing this release, and it makes every *future* variant addition
+non-breaking instead of requiring a second, separate break later.
+
+Both backends emit `ON CONFLICT (<cols>) WHERE <predicate> DO UPDATE|DO NOTHING`; SQLite accepts the
+identical inference syntax (confirmed against the vendored libsqlite3-sys 0.37.0 / SQLite 3.51.3).
+Unpredicated targets emit byte-identical SQL to before this change.
+
+The non-obvious half: `cratestack-sqlx`'s conflict probe (`SELECT ... FOR UPDATE`, used to decide
+`Inserted`/`Existing`/`Created` vs `Updated` ahead of the real `ON CONFLICT` statement) now applies the
+same predicate two ways — filtering candidate existing rows by it (so a row outside the partial index
+isn't mistaken for a conflict), and short-circuiting to "no possible conflict" when the *incoming* row
+itself doesn't satisfy the predicate (mirroring Postgres's own partial-index semantics: a row is only
+ever added to a partial index's B-tree, hence only ever able to conflict via it, if that row itself
+satisfies the predicate). Skipping either half lets the emitted SQL be correct while the caller is
+still handed the wrong `Inserted`/`Existing` verdict — the acceptance test for this
+(`crates/cratestack-pg/tests/upsert_partial_index.rs`) uses a predicate that is deliberately not a
+`col IS NOT NULL` test, since that shape happens to "work" even against a predicate-unaware probe.
+`cratestack-rusqlite` needs no equivalent probe fix — the embedded backend has no probe at all; SQLite
+resolves the conflict natively in the same statement.
+
+Two correctness fixes to the probe, found in review before this shipped:
+
+- SQL predicates are three-valued, not boolean — `status = 'active'` evaluates to `NULL`, not `false`,
+  whenever `status` is `NULL`. The incoming-row predicate check now decodes `Option<bool>` and treats
+  `NULL` the same as `false` (outside the index's domain), instead of failing the whole upsert with an
+  opaque 500 (`sqlx::Error::ColumnDecode`) the moment the predicate touched a `NULL` column.
+- A predicate referencing a column excluded from the insert set by `@default(...)` (the database's own
+  column `DEFAULT` fills it, so this crate never learns its value client-side) made the incoming-row
+  check's synthetic one-row `SELECT` fail with Postgres `42703 column "..." does not exist` —
+  unconditionally 500ing every `.do_nothing()` upsert on that conflict target, no matter what the
+  caller passed. `.do_nothing()` now falls back to skipping the pre-probe when the incoming-row check
+  can't be evaluated for that specific reason (Postgres `42703`, and only `42703` — every other probe
+  failure, e.g. a connection loss or a genuinely malformed predicate, still propagates rather than being
+  silently absorbed and possibly re-raised later as a different, more confusing error from a different
+  statement; see `upsert_predicate_probe_error.rs`'s module doc comment), going straight to the
+  authoritative `ON CONFLICT ... DO NOTHING RETURNING` statement, which is always correct there (see
+  `upsert_do_nothing_probe.rs`'s doc comment) — the plain `.upsert(...).run(...)` (`DO UPDATE`) path
+  cannot safely use the same fallback (its
+  Created-vs-Updated classification and audit before-snapshot have no equivalent authoritative source)
+  and still surfaces this as an error; closing that gap for real needs either backfilling literal
+  `@default(...)` values into the insert set at codegen time or basing Created-vs-Updated on the real
+  statement's own result, both larger than this fix. That remaining `DO UPDATE` error is now
+  actionable rather than an opaque 500, though: the incoming-row probe narrowly maps Postgres `42703`
+  from its own query into a `CratestackError::Validation` naming the offending predicate and
+  explaining the likely cause (a `@default(...)` column) and the workaround — every other SQLSTATE,
+  and every other call site, still gets the ordinary `cratestack_error_from_sqlx` mapping unchanged.
 
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 

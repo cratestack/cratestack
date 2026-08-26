@@ -1,3 +1,4 @@
+mod partial_index;
 mod uniques;
 
 use super::emit;

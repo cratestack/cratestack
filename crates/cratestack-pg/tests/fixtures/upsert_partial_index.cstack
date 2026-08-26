@@ -1,0 +1,53 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Models cratestack#741's motivating scenario: a natural key (`k`)
+// whose uniqueness only applies while `status = 'active'` — the same
+// shape as webank's `idx_registered_transfers_idempotency_key_unique`
+// (`UNIQUE (idempotency_key) WHERE idempotency_key IS NOT NULL`), but
+// with a predicate that is NOT a null test, which is the case that
+// actually exercises the conflict-probe fix (a `col IS NOT NULL`
+// predicate happens to "work" even against a predicate-unaware probe,
+// because `col = NULL` never matches — see the test file for why that
+// distinction matters). The partial unique index itself is created
+// OUTSIDE this schema, directly in the test's `reset_schema` — schema
+// DDL for partial indexes is cratestack#742, out of scope here; this
+// fixture only needs a model whose upsert can *target* one that
+// already exists.
+model Marker {
+  id Int @id
+  k String?
+  status String
+  payload String
+
+  // `flag` (nullable, no default) and `mode` (non-nullable, with a
+  // literal `@default`) exist purely to exercise cratestack#741
+  // findings 1 and 2 — see `upsert_partial_index.rs`'s tests
+  // referencing `flag = 'yes'`/`mode = 'expedited'` predicates.
+  //
+  // `flag` is nullable and carries no default, so it's a normal
+  // `CreateMarkerInput` field: a predicate that reads it can hit SQL's
+  // three-valued logic (`flag = 'yes'` is `NULL`, not `false`, when
+  // `flag` is `NULL`) — finding 1.
+  //
+  // `mode`'s `@default("expedited")` makes it `is_generated_on_create`
+  // (any `@default(...)`, not just `auth()`-derived ones, per
+  // `cratestack-macros/src/shared/attrs.rs`), so it is EXCLUDED from
+  // `CreateMarkerInput` — the database's own column `DEFAULT` fills it
+  // instead. A predicate that reads `mode` therefore references a
+  // column absent from `insert_values` — finding 2.
+  flag String?
+  mode String @default("expedited")
+
+  @@audit
+  @@emit(created, updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}

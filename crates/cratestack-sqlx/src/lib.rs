@@ -108,6 +108,8 @@ mod tests_system_principal_policy;
 mod tests_update;
 #[cfg(test)]
 mod tests_update_many;
+#[cfg(test)]
+mod tests_upsert_conflict_predicate;
 mod transaction;
 
 pub use partial_row::FromPartialPgRow;

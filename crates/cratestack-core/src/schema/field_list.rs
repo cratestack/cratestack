@@ -1,11 +1,17 @@
-//! Shared parsing for model-level attributes whose sole argument is a
-//! bracketed list of local field names — `@@id([...])` (see
-//! [`super::composite_key`]) and `@@unique([...])` (see
-//! [`super::composite_unique`]).
+//! Shared parsing for `@@id([...])` (see [`super::composite_key`]), the
+//! one model-level attribute whose sole argument is a bracketed list of
+//! local field names with no trailing keyword arguments — brackets
+//! required, identifiers well-formed, no repeats.
 //!
-//! The two attributes differ only in their keyword and in what a caller
-//! does with the resulting field names, so the syntax rules — brackets
-//! required, identifiers well-formed, no repeats — live here once.
+//! `@@unique([...])`/`@@index([...])` (cratestack#156, cratestack#742)
+//! look similar but don't call into this module for their field-list
+//! parsing: both also accept trailing `key: value` arguments (`where:`,
+//! and `using:`/`opclass:` for `@@index`), so they share their own,
+//! separate bracket-plus-keyword-arguments parsing via
+//! [`super::attribute_syntax`] instead (see [`super::composite_unique`]/
+//! [`super::index_attribute`]'s module docs). The one thing still shared
+//! with this module is the identifier rule itself,
+//! [`is_valid_field_name`], which both call directly.
 
 /// Per-attribute strings woven into the syntax errors, so a malformed
 /// `@@unique` never reports itself as a malformed `@@id`.

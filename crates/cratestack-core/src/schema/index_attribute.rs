@@ -1,34 +1,42 @@
-//! Parsing for the model-level `@@index([...], using: ..., opclass: "...")`
-//! attribute (cratestack#156) — a general secondary index, optionally
-//! naming a non-default Postgres access method (e.g. `ivfflat`/`hnsw` for
-//! pgvector approximate-nearest-neighbor search) and operator class.
+//! Parsing for the model-level `@@index([...], using: ..., opclass: "...",
+//! where: "...")` attribute (cratestack#156, cratestack#742) — a general
+//! secondary index, optionally naming a non-default Postgres access
+//! method (e.g. `ivfflat`/`hnsw` for pgvector approximate-nearest-neighbor
+//! search), operator class, and a partial-index predicate.
 //!
 //! Shares its bracketed-field-list syntax with `@@id([...])`/
 //! `@@unique([...])` (see [`super::field_list`]), but unlike those,
-//! `@@index(...)` also accepts trailing `using:`/`opclass:` keyword
-//! arguments after the field list — the same shape
+//! `@@index(...)` also accepts trailing `using:`/`opclass:`/`where:`
+//! keyword arguments after the field list — the same shape
 //! `@relation(fields:[...], references:[...])` already uses
 //! (`cratestack-parser::relation_helpers::parse_relation_attribute`),
-//! reimplemented here rather than shared because that helper is private to
-//! the parser crate and this one also needs to be callable from
-//! `cratestack-migrate` (via `crate::schema::project_model`, one layer
-//! below the parser).
+//! reimplemented here (via [`super::attribute_syntax`], shared with
+//! `@@unique([...], where: "...")`) rather than shared with the parser
+//! crate's own copy because that helper is private to the parser crate
+//! and this one also needs to be callable from `cratestack-migrate` (via
+//! `crate::schema::project_model`, one layer below the parser).
 
 #[cfg(test)]
 mod tests;
 
-use super::field_list::is_valid_field_name;
+use super::attribute_syntax::{
+    parse_bracketed_field_list, parse_where_value, split_top_level_commas,
+};
 
-/// The parsed shape of an `@@index([...], using: ..., opclass: "...")`
-/// attribute.
+const LABEL: &str = "index attribute";
+const KEYWORD: &str = "@@index";
+
+/// The parsed shape of an `@@index([...], using: ..., opclass: "...",
+/// where: "...")` attribute.
 ///
-/// `using`/`opclass` are carried through verbatim — not validated against
-/// a closed list of Postgres access methods/operator classes. Per
-/// `docs/design/extensions.md` §2/§6, the framework deliberately avoids
-/// hardcoding pgvector's own index types as the only supported
-/// similarity-search backend, so any syntactically valid identifier is
-/// accepted here and left for Postgres itself to accept or reject at
-/// `CREATE INDEX` time.
+/// `using`/`opclass`/`where` are carried through verbatim — not
+/// validated against a closed list of Postgres access methods/operator
+/// classes/predicate grammar. Per `docs/design/extensions.md` §2/§6, the
+/// framework deliberately avoids hardcoding pgvector's own index types
+/// as the only supported similarity-search backend, so any syntactically
+/// valid identifier (or, for `where`, any quoted text) is accepted here
+/// and left for Postgres itself to accept or reject at `CREATE INDEX`
+/// time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedIndexAttribute {
     /// Local field names, in declaration order — the index's column
@@ -41,12 +49,18 @@ pub struct ParsedIndexAttribute {
     /// `opclass: "<name>"` — applied to every column listed in `fields`.
     /// `None` leaves each column's default operator class in place.
     pub opclass: Option<String>,
+    /// `where: "<sql predicate>"` (cratestack#742) — a partial-index
+    /// condition, carried verbatim into a trailing `WHERE <predicate>`
+    /// on the emitted `CREATE INDEX`. `None` means the index covers
+    /// every row, which renders byte-identical DDL to before this field
+    /// existed.
+    pub where_predicate: Option<String>,
 }
 
 /// Parses `@@index([field1, field2, ...])`, optionally followed by
-/// `using: <method>` and/or `opclass: "<name>"`. Callers are responsible
-/// for checking that each field name resolves to a real scalar field on
-/// the model.
+/// `using: <method>`, `opclass: "<name>"`, and/or `where: "<predicate>"`.
+/// Callers are responsible for checking that each field name resolves to
+/// a real scalar field on the model.
 pub fn parse_index_attribute(raw: &str) -> Result<ParsedIndexAttribute, String> {
     let inner = raw
         .strip_prefix("@@index(")
@@ -59,7 +73,7 @@ pub fn parse_index_attribute(raw: &str) -> Result<ParsedIndexAttribute, String> 
             "index attribute `{raw}` must list fields as `@@index([field1, field2])`"
         ));
     }
-    let fields = parse_bracketed_field_list(raw, entries.remove(0))?;
+    let fields = parse_bracketed_field_list(raw, entries.remove(0), LABEL, KEYWORD)?;
     if fields.is_empty() {
         return Err(format!(
             "index attribute `{raw}` must list at least one field"
@@ -68,6 +82,7 @@ pub fn parse_index_attribute(raw: &str) -> Result<ParsedIndexAttribute, String> 
 
     let mut using = None;
     let mut opclass = None;
+    let mut where_predicate = None;
     for entry in entries {
         let (key, value) = entry
             .split_once(':')
@@ -86,9 +101,18 @@ pub fn parse_index_attribute(raw: &str) -> Result<ParsedIndexAttribute, String> 
                     "index attribute `{raw}` declares `opclass` more than once"
                 ));
             }
+            "where" if where_predicate.is_none() => {
+                where_predicate = Some(parse_where_value(raw, value, LABEL)?);
+            }
+            "where" => {
+                return Err(format!(
+                    "index attribute `{raw}` declares `where` more than once"
+                ));
+            }
             other => {
                 return Err(format!(
-                    "index attribute `{raw}` has unsupported key `{other}`; expected `using` or `opclass`"
+                    "index attribute `{raw}` has unsupported key `{other}`; expected `using`, \
+                     `opclass`, or `where`"
                 ));
             }
         }
@@ -98,35 +122,8 @@ pub fn parse_index_attribute(raw: &str) -> Result<ParsedIndexAttribute, String> 
         fields,
         using,
         opclass,
+        where_predicate,
     })
-}
-
-fn parse_bracketed_field_list(raw: &str, entry: &str) -> Result<Vec<String>, String> {
-    let list = entry
-        .strip_prefix('[')
-        .and_then(|value| value.strip_suffix(']'))
-        .ok_or_else(|| {
-            format!("index attribute `{raw}` must list fields as `@@index([field1, field2])`")
-        })?;
-
-    let mut fields = Vec::new();
-    for part in list.split(',').map(str::trim) {
-        if part.is_empty() {
-            continue;
-        }
-        if !is_valid_field_name(part) {
-            return Err(format!(
-                "index attribute `{raw}` lists invalid field name `{part}`"
-            ));
-        }
-        if fields.contains(&part.to_owned()) {
-            return Err(format!(
-                "index attribute `{raw}` lists field `{part}` more than once"
-            ));
-        }
-        fields.push(part.to_owned());
-    }
-    Ok(fields)
 }
 
 fn parse_using_value(raw: &str, value: &str) -> Result<String, String> {
@@ -161,35 +158,4 @@ fn is_valid_identifier(value: &str) -> bool {
     let mut chars = value.chars();
     matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || first == '_')
         && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-}
-
-/// Splits `input` on top-level commas — ones not nested inside `[...]` —
-/// so the bracketed field list's own internal commas aren't mistaken for
-/// separators between it and the trailing `using:`/`opclass:` entries.
-/// Mirrors `cratestack-parser::relation_helpers::split_top_level`
-/// (private to that crate; small enough to not be worth sharing across
-/// the crate boundary).
-fn split_top_level_commas(input: &str) -> Vec<&str> {
-    let mut entries = Vec::new();
-    let mut depth = 0usize;
-    let mut start = 0usize;
-    for (index, ch) in input.char_indices() {
-        match ch {
-            '[' | '(' => depth += 1,
-            ']' | ')' => depth = depth.saturating_sub(1),
-            ',' if depth == 0 => {
-                entries.push(input[start..index].trim());
-                start = index + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    let tail = input[start..].trim();
-    if !tail.is_empty() {
-        entries.push(tail);
-    }
-    entries
-        .into_iter()
-        .filter(|entry| !entry.is_empty())
-        .collect()
 }

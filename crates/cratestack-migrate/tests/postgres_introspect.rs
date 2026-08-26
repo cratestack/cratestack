@@ -14,7 +14,7 @@
 //! `CRATESTACK_REQUIRE_DB` turns a connection/container failure into a
 //! panic instead of a skip — the CI gate sets it (`just
 //! test-ci-db-migrate-introspect`), so a broken Docker runner can't
-//! silently green this file's 7 tests while running none of them (a
+//! silently green this file's tests while running none of them (a
 //! 2026-08 CI-coverage audit found that is exactly what was happening:
 //! this crate's `postgres-introspect` feature was only ever passed by
 //! `just test-pg`, which no workflow invoked at all). This crate's
@@ -28,6 +28,7 @@
 //! to run concurrently against a shared database without a serializing
 //! mutex.
 
+use cratestack_migrate::emit::postgres::emit as emit_postgres;
 use cratestack_migrate::introspect::postgres::introspect;
 use cratestack_migrate::ir::{CheckKind, Column, ColumnArity, ColumnType};
 use cratestack_migrate::{Projections, diff_projections, project};
@@ -499,5 +500,618 @@ async fn multi_column_check_is_skipped_not_mis_attributed() {
         projected.checks.is_empty(),
         "multi-column CHECK should not appear: {:?}",
         projected.checks
+    );
+}
+
+/// cratestack#742's central risk and the ticket's decisive test:
+/// applying a migration containing a partial (`where:`) unique index,
+/// then re-planning against that same database, must produce **no**
+/// ops for the index — not a spurious drop/recreate every run. A
+/// hand-written IR fixture can't exercise this: the churn only shows up
+/// once Postgres's own `pg_get_expr` deparse of the stored predicate
+/// (verified empirically for cratestack#742 — see `crate::diff::indexes`'s
+/// module doc for the exact normalization observed against a live
+/// Postgres 18: whitespace collapsed, the whole predicate wrapped in
+/// exactly one pair of parentheses) is compared against the schema's
+/// literal `where:` text.
+#[tokio::test]
+async fn partial_unique_index_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = "introspection_probe_payments";
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbePayment {
+  id String @id
+  idempotencyKey String?
+  amount Int
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE idempotency_key IS NOT NULL"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let introspected_table = report
+        .projections
+        .tables
+        .get(table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+
+    // Prove the normalization the ticket asked us to confirm
+    // empirically actually happened here too, not just against the
+    // scratch database used to design `normalize_predicate` — the
+    // introspected predicate is Postgres's own deparse, not the
+    // schema's literal text.
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(idempotency_key IS NOT NULL)")],
+        "pg_get_expr should have normalized the stored predicate"
+    );
+
+    // The decisive assertion: re-planning against the database the
+    // migration was just applied to produces no ops for this table.
+    let ops = diff_projections(&only_table(&report.projections, table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "re-planning a database whose partial index already matches the schema \
+         must be a no-op — got: {ops:?}"
+    );
+}
+
+/// cratestack#742 post-review remediation (Finding 1): the test above
+/// only exercises `IS NOT NULL`, the one predicate shape immune to the
+/// churn bug — it needs no literal, so Postgres inserts no `::type`
+/// cast on introspection. This test uses the shape the finding named as
+/// the actual production hazard: a text-literal comparison. Before the
+/// fix, `status = 'active'` introspects as `(status = 'active'::text)`,
+/// which never compared equal to the schema's literal text, so this
+/// index dropped and recreated on every single `migrate` run.
+#[tokio::test]
+async fn partial_index_with_text_literal_predicate_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeOrder");
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeOrder {
+  id String @id
+  status String
+
+  @@index([status], where: "status = 'active'")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, &table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE status = 'active'"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+
+    // Pin the exact cast Postgres inserts, so a future Postgres version
+    // that stops doing this doesn't silently make this test meaningless.
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(status = 'active'::text)")],
+        "pg_get_expr should have cast the text literal"
+    );
+
+    // The decisive assertion: re-planning against the database the
+    // migration was just applied to produces no ops — this is the
+    // finding's central claim, that without the fix this is NOT empty.
+    let ops = diff_projections(&only_table(&report.projections, &table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "a text-literal partial index predicate must not churn on re-plan — got: {ops:?}"
+    );
+}
+
+/// The numeric-literal counterpart of the text-literal test above:
+/// `amount > 100` against a column whose type needs the literal cast to
+/// a floating-point type introspects as
+/// `(amount > (100)::double precision)` — a different cast shape
+/// (parenthesized, no quotes, and — deliberately — a *multi-word* type
+/// name) than the text case, exercising the other half of the minimum
+/// bar the finding named.
+///
+/// This uses `Float` (Postgres `double precision`/`float8`), not the
+/// `Decimal`/`NUMERIC` type the finding's own example used. That's a
+/// deliberate substitution, not a narrowing of what's being proved:
+/// verified empirically (a throwaway container, `psql`), a `NUMERIC`
+/// column reproduces the exact `(amount > (100)::numeric)` shape the
+/// finding named, but `NUMERIC` columns are *permanently* unmapped by
+/// this crate's introspection regardless of this ticket
+/// (`introspect::postgres::types::map_scalar` — "unmapped → reported
+/// drift, never guessed", a pre-existing, deliberate design choice
+/// unrelated to partial indexes: see that module's doc). A `Decimal`
+/// column would make `ops.is_empty()` below fail on an unrelated
+/// `AddColumn` for the column itself, on *every* run, which would prove
+/// nothing about predicate-cast normalization one way or the other —
+/// conflating this finding with a different, pre-existing gap. `Float`
+/// triggers the identical cast-stripping code path (a parenthesized
+/// literal immediately followed by `::<type>`) while its column type
+/// *does* round-trip (`map_scalar("float8", ...) == Some("Float")`), so
+/// this test can make the finding's actual "no churn" claim — an empty
+/// re-plan — without also depending on fixing that unrelated gap. The
+/// exact `NUMERIC` shape is pinned at the unit level instead, where it
+/// doesn't need a real column to exist:
+/// `diff::indexes::tests::strips_a_parenthesized_numeric_cast`.
+#[tokio::test]
+async fn partial_index_with_numeric_literal_predicate_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeTransaction");
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeTransaction {
+  id String @id
+  amount Float
+
+  @@index([amount], where: "amount > 100")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, &table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE amount > 100"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(amount > (100)::double precision)")],
+        "pg_get_expr should have cast the numeric literal to the column's floating-point type"
+    );
+
+    let ops = diff_projections(&only_table(&report.projections, &table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "a numeric-literal partial index predicate must not churn on re-plan — got: {ops:?}"
+    );
+}
+
+/// The other half of the same requirement: a predicate that genuinely
+/// changed must NOT be swallowed by the normalization-tolerant
+/// comparison above — it has to still show up as a real drop + recreate.
+#[tokio::test]
+async fn partial_unique_index_predicate_change_is_detected_as_drop_and_recreate() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    // Computed rather than hand-guessed: `table_name`'s pluralizer
+    // doesn't just append `s` (cratestack#504 — consonant + `y` → `ies`,
+    // and the plural is computed over the whole snake_cased name, not
+    // per-word), so a literal here previously drifted from what
+    // `project()` actually produced and made this test vacuous (it
+    // diffed against an empty `Projections`, not the introspected
+    // table).
+    let table = cratestack_migrate::table_name("IntrospectionProbePaymentChanged");
+
+    let original_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbePaymentChanged {
+  id String @id
+  idempotencyKey String?
+  amount Int
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL")
+}
+"#;
+    let original_schema =
+        cratestack_parser::parse_schema(original_source).expect("schema should parse");
+    let original = project(&original_schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&original, &table))
+        .expect("diff should succeed");
+    exec(&pool, &emit_postgres(&create_ops).up).await;
+
+    let changed_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbePaymentChanged {
+  id String @id
+  idempotencyKey String?
+  amount Int
+
+  @@unique([idempotencyKey], where: "idempotency_key IS NOT NULL AND amount > 0")
+}
+"#;
+    let changed_schema =
+        cratestack_parser::parse_schema(changed_source).expect("schema should parse");
+    let changed = project(&changed_schema);
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let ops = diff_projections(&only_table(&report.projections, &table), &changed)
+        .expect("diff should succeed");
+
+    let index_name = format!("{table}_idempotency_key_key");
+    let drops_it = ops.iter().any(
+        |op| matches!(op, cratestack_migrate::ir::Op::DropIndex(drop) if drop.name == index_name),
+    );
+    let re_adds_it = ops.iter().any(|op| {
+        matches!(op, cratestack_migrate::ir::Op::AddIndex(add) if add.name == index_name
+            && add.where_predicate.as_deref() == Some("idempotency_key IS NOT NULL AND amount > 0"))
+    });
+    assert!(
+        drops_it && re_adds_it,
+        "a changed predicate should drop + recreate the index — got: {ops:?}"
+    );
+}
+
+/// cratestack#742 post-review remediation (Finding 2): introspecting
+/// partial indexes at all (dropping the old `AND i.indpred IS NULL`
+/// exclusion — see `introspect::postgres::indexes`'s module doc) widens
+/// the blast radius of an existing, unrelated behavior: `diff_indexes`
+/// emits a bare `DROP INDEX` for anything present in the database but
+/// absent from the schema (`emit::postgres::indexes` — no `CASCADE`,
+/// same as any other unmanaged index). Before cratestack#742, a
+/// hand-made *partial* index outside Cratestack's management was
+/// invisible to introspection and therefore never a drop candidate; now
+/// it is, deliberately — see the module doc's rationale for why this is
+/// treated the same as an ordinary unmanaged index rather than special-
+/// cased. This test pins that this is not accidental: a `migrate` run
+/// against a table carrying a hand-made partial index the schema never
+/// declared emits `DropIndex` for it.
+#[tokio::test]
+async fn undeclared_partial_index_is_dropped_by_diff() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeLegacyOrder");
+    let index_name = format!("{table}_legacy_status_partial_idx");
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    exec(
+        &pool,
+        &format!(
+            "CREATE TABLE {table} (
+                id UUID NOT NULL PRIMARY KEY,
+                status TEXT NOT NULL
+            )"
+        ),
+    )
+    .await;
+    exec(
+        &pool,
+        &format!("CREATE INDEX {index_name} ON {table} (status) WHERE status = 'archived'"),
+    )
+    .await;
+
+    // A schema for the same table that never mentions this index — the
+    // "index created outside Cratestack" scenario that is #742's own
+    // motivating example (see the ticket's Intent section).
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeLegacyOrder {
+  id String @id
+  status String
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+    let ops = diff_projections(
+        &only_table(&report.projections, &table),
+        &only_table(&expected, &table),
+    )
+    .expect("diff should succeed");
+
+    let drops_it = ops.iter().any(
+        |op| matches!(op, cratestack_migrate::ir::Op::DropIndex(drop) if drop.name == index_name),
+    );
+    assert!(
+        drops_it,
+        "an undeclared hand-made partial index must be a drop candidate, matching how an \
+         undeclared ordinary index is already treated — got: {ops:?}"
+    );
+}
+
+/// cratestack#742 post-review remediation, round 2 (Finding A): the
+/// churn-tolerance fix from round 1 independently normalized each side
+/// of a predicate before comparing them as plain strings, which threw
+/// away the `::type` cast's own type name — so a predicate whose
+/// **explicit** cast genuinely changed type (not just whether a cast was
+/// present) compared as unchanged, and the database silently kept
+/// enforcing the OLD uniqueness rule. `citext` (case-insensitive) vs.
+/// `text` (case-sensitive) is the money-relevant version of this: an
+/// author narrowing (or widening) a partial unique index's case
+/// sensitivity by changing its cast must get a real migration, not
+/// silence. Verified empirically (a throwaway container, `psql`) that
+/// Postgres preserves the distinction in `pg_get_expr`'s deparse:
+/// `email = 'x'::citext` against a `text` column reads back as
+/// `(email = ('x'::citext)::text)` — a real, different cast, not folded
+/// away — versus `(email = 'x'::text)` for the `::text` version.
+#[tokio::test]
+async fn partial_index_cast_type_change_is_detected_as_drop_and_recreate() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeAccount");
+
+    exec(&pool, "CREATE EXTENSION IF NOT EXISTS citext").await;
+
+    let original_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeAccount {
+  id String @id
+  email String
+
+  @@index([email], where: "email = 'admin@example.com'::citext")
+}
+"#;
+    let original_schema =
+        cratestack_parser::parse_schema(original_source).expect("schema should parse");
+    let original = project(&original_schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&original, &table))
+        .expect("diff should succeed");
+    exec(&pool, &emit_postgres(&create_ops).up).await;
+
+    let changed_source = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeAccount {
+  id String @id
+  email String
+
+  @@index([email], where: "email = 'admin@example.com'::text")
+}
+"#;
+    let changed_schema =
+        cratestack_parser::parse_schema(changed_source).expect("schema should parse");
+    let changed = project(&changed_schema);
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+
+    // Pin the exact, empirically-verified shape Postgres preserves —
+    // if a future Postgres version stops distinguishing these, this
+    // assertion (not just the decisive one below) will say so plainly.
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(email = ('admin@example.com'::citext)::text)")],
+        "pg_get_expr should preserve the citext cast, not fold it away"
+    );
+
+    let ops = diff_projections(&only_table(&report.projections, &table), &changed)
+        .expect("diff should succeed");
+
+    let index_name = format!("{table}_email_idx");
+    let drops_it = ops.iter().any(
+        |op| matches!(op, cratestack_migrate::ir::Op::DropIndex(drop) if drop.name == index_name),
+    );
+    let re_adds_it = ops.iter().any(|op| {
+        matches!(op, cratestack_migrate::ir::Op::AddIndex(add) if add.name == index_name
+            && add.where_predicate.as_deref() == Some("email = 'admin@example.com'::text"))
+    });
+    assert!(
+        drops_it && re_adds_it,
+        "a partial index whose predicate's explicit cast TYPE changed (citext -> text) must \
+         drop + recreate — silently keeping the old index would mean the database keeps \
+         enforcing case-insensitive uniqueness after the schema declared case-sensitive — got: \
+         {ops:?}"
+    );
+}
+
+/// cratestack#742 post-review remediation, round 3 (Finding D): once
+/// both sides of a predicate carry an explicit `::type` cast, comparing
+/// the type names by exact string equality (round 2's fix) missed that
+/// Postgres normalizes an alias on deparse — an author-written `::int8`
+/// round-trips through introspection as `::bigint`. Without alias
+/// normalization, that would churn a drop+recreate on *every* `migrate`
+/// run, forever, for anyone who happens to write an aliased spelling —
+/// the same load-bearing "no churn" failure round 1 fixed for casts
+/// entirely, resurfacing for a narrower population. Verified empirically
+/// (a throwaway container, `psql`) that this specific pair is a clean
+/// single-cast round-trip (the literal text itself is unchanged, unlike
+/// e.g. a `varchar`-on-a-`text`-column cast, which Postgres nests behind
+/// an extra implicit cast back to `text` and would churn for a
+/// structural reason unrelated to this fix): `amount = '100'::int8`
+/// against a `bigint` column reads back as `(amount = '100'::bigint)`.
+#[tokio::test]
+async fn partial_index_with_aliased_cast_type_round_trips_without_churn() {
+    let Some(test_pg) = connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool;
+    let table = cratestack_migrate::table_name("IntrospectionProbeLedgerEntry");
+
+    let schema = cratestack_parser::parse_schema(
+        r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model IntrospectionProbeLedgerEntry {
+  id String @id
+  amount Int
+
+  @@index([amount], where: "amount = '100'::int8")
+}
+"#,
+    )
+    .expect("hand-authored schema should parse");
+    let expected = project(&schema);
+
+    exec(&pool, &format!("DROP TABLE IF EXISTS {table}")).await;
+    let create_ops = diff_projections(&Projections::default(), &only_table(&expected, &table))
+        .expect("diff should succeed");
+    let migration = emit_postgres(&create_ops);
+    assert!(!migration.has_lossy, "up was: {}", migration.up);
+    assert!(
+        migration.up.contains("WHERE amount = '100'::int8"),
+        "up was: {}",
+        migration.up
+    );
+    exec(&pool, &migration.up).await;
+
+    let report = introspect(&pool)
+        .await
+        .expect("introspection should succeed");
+
+    // Pin the exact, empirically-verified shape Postgres normalizes the
+    // alias into — if a future Postgres version stops doing this, this
+    // assertion (not just the decisive one below) will say so plainly.
+    let introspected_table = report
+        .projections
+        .tables
+        .get(&table)
+        .unwrap_or_else(|| panic!("{table} should have been introspected"));
+    let introspected_predicates: Vec<Option<&str>> = introspected_table
+        .indexes
+        .iter()
+        .map(|index| index.where_predicate.as_deref())
+        .collect();
+    assert_eq!(
+        introspected_predicates,
+        vec![Some("(amount = '100'::bigint)")],
+        "pg_get_expr should have normalized int8 to its bigint alias"
+    );
+
+    // The decisive assertion: re-planning against the database the
+    // migration was just applied to produces no ops — without alias
+    // normalization this would show a spurious drop+recreate on every
+    // single run, forever.
+    let ops = diff_projections(&only_table(&report.projections, &table), &expected)
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "an author-written aliased cast spelling must not churn on re-plan — got: {ops:?}"
     );
 }

@@ -47,11 +47,11 @@ pub fn render_upsert_with_conflict<M, PK>(
         binds.push(value.value.clone());
     }
     sql.push_str(") ON CONFLICT (");
-    match conflict_target {
-        ConflictTarget::PrimaryKey => {
+    match conflict_target.as_columns() {
+        None => {
             sql.push_str(descriptor.primary_key);
         }
-        ConflictTarget::Columns(cols) => {
+        Some(cols) => {
             for (idx, column) in cols.iter().enumerate() {
                 if idx > 0 {
                     sql.push_str(", ");
@@ -60,7 +60,19 @@ pub fn render_upsert_with_conflict<M, PK>(
             }
         }
     }
-    sql.push_str(") DO UPDATE SET ");
+    sql.push(')');
+    // Unpredicated targets emit byte-identical SQL to before cratestack#741 —
+    // this branch is a no-op when `predicate()` is `None`. SQLite
+    // accepts the identical `ON CONFLICT (...) WHERE <predicate>`
+    // partial-index-inference form Postgres does (confirmed against
+    // the vendored libsqlite3-sys 0.37.0 / SQLite 3.51.3 — see
+    // `render/tests_upsert.rs` and `tests/composite_upsert.rs` for the
+    // rendering + live-`rusqlite` round-trip coverage).
+    if let Some(predicate) = conflict_target.predicate() {
+        sql.push_str(" WHERE ");
+        sql.push_str(predicate);
+    }
+    sql.push_str(" DO UPDATE SET ");
     if descriptor.upsert_update_columns.is_empty() {
         // Degenerate case — touch the PK to itself so RETURNING still
         // resolves to the conflicting row. Mirrors the sqlx fallback.
