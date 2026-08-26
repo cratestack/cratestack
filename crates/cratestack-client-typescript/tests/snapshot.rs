@@ -27,6 +27,26 @@ fn rpc_snapshot_matches_fixture() {
     run_snapshot("tiny_rpc", "tiny-rpc-client");
 }
 
+/// Issue #746 review finding #4: the fixture above pins `native_cbor:
+/// false` (see `generate_for_with_full_config`'s own doc comment for why
+/// — it predates the flag and has its own dedicated coverage in
+/// `tests/native_cbor_generator.rs`), which means it no longer represents
+/// what `cratestack generate-typescript` actually emits by default. This
+/// fixture generates with the REAL `TypeScriptGeneratorConfig::default()`
+/// (`native_cbor: true`, via `DEFAULT_NATIVE_CBOR`) so the default a user
+/// actually gets — `@cratestack/cbor` wired in as the runtime's codec —
+/// has byte-reviewed golden coverage too, not just structural assertions.
+#[test]
+fn rpc_native_default_snapshot_matches_fixture() {
+    let package = generate_default_for("tiny_rpc", "tiny-rpc-native-default-client");
+    let snapshot_dir = snapshot_root().join("tiny_rpc_native_default");
+    if std::env::var_os("CRATESTACK_UPDATE_SNAPSHOTS").is_some() {
+        write_snapshot(&snapshot_dir, &package);
+        return;
+    }
+    assert_snapshot_matches(&snapshot_dir, &package);
+}
+
 #[test]
 fn rpc_client_invokes_runtime_call_with_dotted_op_ids() {
     let package = generate_for("tiny_rpc", "tiny-rpc-client");
@@ -153,9 +173,15 @@ fn rpc_runtime_exposes_pluggable_codec_option() {
         "runtime must default to jsonRpcCodec when no codec option is supplied"
     );
     assert!(
-        runtime.contains("headers.set(\"Accept\", this.codec.contentType);")
-            && runtime.contains("headers.set(\"Content-Type\", this.codec.contentType);"),
-        "call()/batch()/stream() must derive Accept/Content-Type from the configured codec"
+        runtime.contains("headers.set(\"Accept\", codec.contentType);")
+            && runtime.contains("headers.set(\"Content-Type\", codec.contentType);"),
+        // Issue #746's shared-body collapse (review finding #3): `call()`/
+        // `batch()`/`stream()`/`readUnaryResponse()` are now one body
+        // shared with the native-codec path, gated only on how the local
+        // `codec` binding is obtained (`this.codec` vs `await
+        // this.resolveCodec()`) — every use downstream of that reads the
+        // local `codec`, never `this.codec` directly.
+        "call()/batch()/stream() must derive Accept/Content-Type from the resolved codec"
     );
     assert_eq!(
         runtime.matches("\"application/json\"").count(),
@@ -643,6 +669,38 @@ fn generate_for_with_full_config(
             refine: false,
             tanstack: false,
             schema_sha256: schema_sha256.to_owned(),
+            // Issue #746's flag defaults to `true`, but these golden
+            // fixtures (and `rpc_runtime_exposes_pluggable_codec_option`'s
+            // own `jsonRpcCodec`-specific assertions below) predate the
+            // flag and pin the pure-TypeScript codec path — pinned
+            // `false` like every other flag this helper hardcodes rather
+            // than reading `TypeScriptGeneratorConfig::default()`. The
+            // native-on path has its own dedicated coverage in
+            // `tests/native_cbor_generator.rs`.
+            native_cbor: false,
+        },
+    )
+    .expect("default template should render")
+}
+
+/// Generates with the REAL `TypeScriptGeneratorConfig::default()` rather
+/// than `generate_for_with_full_config`'s hardcoded flag set — used only
+/// by `rpc_native_default_snapshot_matches_fixture` above, so that
+/// fixture tracks whatever a bare `cratestack generate-typescript`
+/// invocation actually emits (including `native_cbor`, and any future
+/// flag whose default changes) instead of a snapshot of one fixed,
+/// possibly-stale flag combination.
+fn generate_default_for(fixture_stem: &str, package_name: &str) -> GeneratedTypeScriptPackage {
+    let fixture_path = fixture_root().join(format!("{fixture_stem}.cstack"));
+    let schema = cratestack_parser::parse_schema_file(&fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: package_name.to_owned(),
+            base_path: "/api".to_owned(),
+            schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
+            ..TypeScriptGeneratorConfig::default()
         },
     )
     .expect("default template should render")

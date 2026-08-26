@@ -17,6 +17,14 @@
 //! separator" problem nested `{% if %}` blocks don't solve cleanly. A
 //! `{% for %}` loop with `loop.last` in the template solves it generically
 //! instead, over the ordered lists this module builds.
+//!
+//! Issue #746 added [`dependencies_for`], the same loop-over-`{% if %}`
+//! rewrite applied to `package.json.j2`'s `dependencies` block: it used to
+//! be a hardcoded two-line stanza (`decimal.js` only) because it never had
+//! more than one unconditional entry. `@cratestack/cbor` under
+//! `--native-cbor` (RPC transport only) is the first *conditional*
+//! `dependencies` entry, so the same combinatorial trailing-comma problem
+//! `peer_dependencies_for`/`dev_dependencies_for` solve applies here too.
 
 use crate::config::TypeScriptGeneratorConfig;
 
@@ -112,5 +120,29 @@ pub(crate) fn dev_dependencies_for(
         name: "typescript",
         version: "^7.0.2".to_owned(),
     });
+    deps
+}
+
+/// `package.json.j2`'s `dependencies` — `decimal.js` unconditionally (every
+/// generated client needs it regardless of flags or transport), plus
+/// `@cratestack/cbor` (issue #746) when `--native-cbor` is on AND the
+/// schema is RPC transport. REST-transport clients never get
+/// `@cratestack/cbor` here: `rest-runtime.ts.j2` has no codec seam at all,
+/// so the dependency would be dead weight.
+pub(crate) fn dependencies_for(
+    config: &TypeScriptGeneratorConfig,
+    is_rpc_transport: bool,
+    native_cbor_version_requirement: &str,
+) -> Vec<DependencyEntry> {
+    let mut deps = vec![DependencyEntry {
+        name: "decimal.js",
+        version: "^10.6.0".to_owned(),
+    }];
+    if config.native_cbor && is_rpc_transport {
+        deps.push(DependencyEntry {
+            name: "@cratestack/cbor",
+            version: native_cbor_version_requirement.to_owned(),
+        });
+    }
     deps
 }

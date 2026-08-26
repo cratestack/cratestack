@@ -14,9 +14,7 @@
 
 import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
 import { terminalStreamLink } from "./stream-terminal.js";
-{% if native_cbor %}
 import { createCborCodec } from "@cratestack/cbor";
-{% endif %}
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -28,7 +26,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 // server-side `tracing::warn!`, never a rejection. Empty when the CLI
 // wasn't given a schema fingerprint (e.g. this crate used as a library
 // directly, or a test) — the header is simply omitted in that case.
-export const SCHEMA_SHA256: string = "{{ schema_sha256 }}";
+export const SCHEMA_SHA256: string = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
 /** Plugs into {@link CratestackRpcRuntime} to control how request bodies
@@ -36,19 +34,18 @@ const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
  *  both the request `Content-Type` and the response `Accept` header, so
  *  it must match a `Content-Type` the server's `CodecSet` actually
  *  serves — e.g. `"application/cbor"` for a backend whose `CodecSet`
- *  defaults to CBOR in production.{% if native_cbor %} The runtime
+ *  defaults to CBOR in production. The runtime
  *  resolves `@cratestack/cbor`'s `createCborCodec()` by default (issue
- *  #746); pass a different one via `CratestackRpcClientOptions.codec`.{% else %} The runtime ships {@link jsonRpcCodec}
- *  by default; pass a different one via `CratestackRpcClientOptions.codec`.{% endif %} */
+ *  #746); pass a different one via `CratestackRpcClientOptions.codec`. */
 export interface CratestackRpcCodec {
   readonly contentType: string;
   encode(value: unknown): BodyInit;
   decode(bytes: Uint8Array): unknown;
 }
 
-/** {% if native_cbor %}Fallback codec — pass `codec: jsonRpcCodec` explicitly to opt back
+/** Fallback codec — pass `codec: jsonRpcCodec` explicitly to opt back
  *  into it; `@cratestack/cbor`'s native codec is the default (issue
- *  #746).{% else %}Default codec — the runtime's behavior before `codec` existed.{% endif %} */
+ *  #746). */
 export const jsonRpcCodec: CratestackRpcCodec = {
   contentType: "application/json",
   encode(value: unknown): BodyInit {
@@ -66,8 +63,8 @@ export interface CratestackRpcClientOptions {
   basePath?: string;
   fetch?: typeof fetch;
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
-  /** Codec for request/response bodies. Defaults to {% if native_cbor %}`@cratestack/cbor`'s
-   *  native codec (issue #746){% else %}{@link jsonRpcCodec}{% endif %}. */
+  /** Codec for request/response bodies. Defaults to `@cratestack/cbor`'s
+   *  native codec (issue #746). */
   codec?: CratestackRpcCodec;
   /** Composable interceptor chain (issue #182) — logging, retry,
    *  auth-refresh, batching, etc. Runs in array order, each link
@@ -202,7 +199,6 @@ export class CratestackRpcRuntime {
   readonly origin: string;
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
-{% if native_cbor %}
   // `@cratestack/cbor`'s `createCborCodec()` is async on every platform
   // (issue #746) — Node normalizes to async purely for call-site parity
   // with the browser build, whose WASM instantiation is genuinely async
@@ -215,26 +211,19 @@ export class CratestackRpcRuntime {
   // `resolveCodec()` below for why a rejected attempt is NOT memoized.
   private readonly explicitCodec: CratestackRpcCodec | undefined;
   private codecPromise: Promise<CratestackRpcCodec> | undefined;
-{% else %}
-  readonly codec: CratestackRpcCodec;
-{% endif %}
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
   private readonly chain: RpcLinkNext;
   private readonly streamChain: RpcStreamLinkNext;
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
-    this.basePath = options.basePath ?? "{{ base_path }}";
+    this.basePath = options.basePath ?? "/api";
     // `.bind(globalThis)` — see `rest-runtime.ts.j2`'s identical line
     // for why: some browsers' `fetch` throws `TypeError: Illegal
     // invocation` when invoked with a receiver other than the global
     // object, which storing the bare function on `this.fetchFn` does.
     this.fetchFn = options.fetch ?? fetch.bind(globalThis);
-{% if native_cbor %}
     this.explicitCodec = options.codec;
-{% else %}
-    this.codec = options.codec ?? jsonRpcCodec;
-{% endif %}
     this.defaultHeaders = options.headers;
     // Empty `links`/`streamLinks` collapses `reduceRight` to the
     // terminal link unchanged — byte-identical request as before either
@@ -248,7 +237,6 @@ export class CratestackRpcRuntime {
       terminalStreamLink,
     );
   }
-{% if native_cbor %}
   /** Resolves the runtime's codec, awaited right after `buildHeaders()`
    *  at every already-`async` call site (issue #746) — that ordering
    *  (headers first, codec second) is deliberate: it matches the
@@ -286,16 +274,11 @@ export class CratestackRpcRuntime {
       }));
     return pending;
   }
-{% endif %}
 
   /** POST /rpc/{op_id} — unary call. */
   async call<I, O>(opId: string, input: I, options: CratestackRpcCallOptions = {}): Promise<O> {
     const headers = await this.buildHeaders(options.headers);
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     headers.set("Accept", codec.contentType);
     headers.set("Content-Type", codec.contentType);
     if (options.idempotencyKey !== undefined) {
@@ -325,11 +308,7 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): Promise<RpcResponseFrame<O>[]> {
     const headers = await this.buildHeaders(options.headers);
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     headers.set("Accept", codec.contentType);
     headers.set("Content-Type", codec.contentType);
 
@@ -364,11 +343,7 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): AsyncIterable<O> {
     const headers = await this.buildHeaders(options.headers);
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${codec.contentType}`);
     headers.set("Content-Type", codec.contentType);
 
@@ -389,11 +364,7 @@ export class CratestackRpcRuntime {
   }
 
   private async readUnaryResponse(response: Response): Promise<unknown> {
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     if (response.ok) {
       if (response.status === 204) {
         return undefined;

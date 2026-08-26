@@ -1103,13 +1103,39 @@ refine-fixture:
 # alongside it — it proves the generated model classes themselves satisfy
 # `CratestackRpcModelApi` independent of the manifest generator, same as
 # every hand-written example in the package README.
+#
+# `--no-native-cbor` IS DELIBERATE (issue #746 made `@cratestack/cbor` the
+# generator's default RPC codec) — do not remove it to "use the default".
+# Tried the alternative first: adding `@cratestack/cbor` to
+# `packages/cratestack-refine`'s `devDependencies` (the workspace already
+# links same-version `packages/*` siblings via `link-workspace-packages`,
+# see `.npmrc`) DOES fix `tsc --noEmit -p tsconfig.typecheck.json` — the
+# type-only half of this package's `test` script — but the `vitest run`
+# half then fails for real: `tests/support/rpc-client.ts` imports this
+# fixture's generated `src/runtime.ts`, whose top-level
+# `import { createCborCodec } from "@cratestack/cbor"` statically resolves
+# (via `@cratestack/cbor`'s Node conditional export) to
+# `@cratestack/cbor-node`'s napi addon — which CI's `js (@cratestack/refine)`
+# job never builds (that job only sets up a Rust toolchain for the CLI
+# binary, not a `napi build`; building it is deliberately excluded from
+# `@cratestack/cbor`'s own turbo build graph too, see `turbo.json`'s
+# `@cratestack/cbor#build` override comment). Vite's static ESM import
+# analysis resolves that entry unconditionally, even though
+# `createCborCodec()` itself is never called by these tests, and fails with
+# "Failed to resolve entry for package '@cratestack/cbor-node'" before a
+# single test body runs. `--no-native-cbor` keeps this fixture on the
+# dependency-free `jsonRpcCodec` fallback so the fixture exercises the real
+# generator without requiring a native build this job doesn't do — same
+# trade `regen-examples` makes for the Flutter example, for an analogous
+# reason (see that recipe's own comment).
 refine-rpc-fixture:
 	rm -rf packages/cratestack-refine/tests/fixtures/generated-client-rpc
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture_rpc.cstack \
 	  --out packages/cratestack-refine/tests/fixtures/generated-client-rpc \
 	  --refine \
-	  --package-name refine-fixture-rpc-client
+	  --package-name refine-fixture-rpc-client \
+	  --no-native-cbor
 
 # Generates BOTH build-output artifacts `examples/react-vite-refine/web`
 # needs: the `--refine` TypeScript client (into `web/generated/`) and the

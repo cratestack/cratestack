@@ -659,6 +659,11 @@ fn generate_with_config(
             refine: false,
             tanstack: false,
             schema_sha256: String::new(),
+            // This file's assertions are about ETag/If-Match, not the RPC
+            // codec (issue #746) — pinned `false` like every other flag
+            // here rather than reading the real default, matching this
+            // file's existing (pre-#746) convention.
+            native_cbor: false,
         },
     )
     .expect("default template should render")

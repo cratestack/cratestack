@@ -1,0 +1,524 @@
+//! `native_cbor` (issue #746): gates whether the generated RPC runtime's
+//! default codec is `@cratestack/cbor`'s `createCborCodec()` instead of the
+//! pure-TypeScript `jsonRpcCodec`. Mirrors the shape of
+//! `cratestack-client-dart`'s `tests/native_cbor_generator.rs` (issue #563's
+//! own regression test): a genuine reads-the-real-default guard, a
+//! presence/shape check with the flag off (CLI: `--no-native-cbor`), and an
+//! over-emission guard proving the flag only touches the files that
+//! legitimately depend on the codec choice.
+//!
+//! **Native is now the default** (`TypeScriptGeneratorConfig::
+//! DEFAULT_NATIVE_CBOR` is `true` — see `native_cbor`'s field doc comment
+//! for the full history and the one open platform gap: `@cratestack/cbor-node`
+//! ships no musl/`win32-arm64` build). `default_config_uses_native_cbor`
+//! below reads `TypeScriptGeneratorConfig::default()` directly (never a
+//! hardcoded bool) so it fails if the constant is ever flipped back without
+//! updating this test — the same anti-pattern Dart's own doc comment for
+//! this test file calls out and that `tests/snapshot.rs`'s pre-existing
+//! (pre-#746) helper hardcodes for other flags; deliberately not repeated
+//! here.
+//!
+//! **REST is out of scope for this ticket** — `rest-runtime.ts.j2` has no
+//! codec seam at all, so every test below also asserts the flag has zero
+//! effect on a REST-transport schema's output.
+//!
+//! Mostly structural coverage (source-level assertions, no real `npm
+//! install`/`tsc`/round trip against the *published* `@cratestack/cbor` —
+//! see this crate's `tests/swr_paged_model_tsc.rs`/`tests/node_dist_esm.rs`
+//! for the established "real compiler against the published package"
+//! pattern this ticket's own Test Plan calls for as a follow-up CI job,
+//! not a `cargo test`), with ONE exception:
+//! `native_codec_factory_is_memoized_and_retried_after_a_rejection` below
+//! actually runs the generated runtime under Node against a stub
+//! `@cratestack/cbor` module, because the memoization/retry contract
+//! (issue #746's review finding #1: a rejected codec-resolution promise
+//! must not be memoized forever) is a genuine behavioral property that no
+//! amount of source-text matching can prove — see that test's own doc
+//! comment for the deliberate-break verification that confirms it
+//! actually fails when the fix is reverted.
+
+use std::process::Command;
+
+use cratestack_client_typescript::{
+    GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, generate_package,
+};
+
+const REST_FIXTURE: &str = "tiny_rest";
+const RPC_FIXTURE: &str = "tiny_rpc";
+
+#[test]
+fn default_config_uses_native_cbor() {
+    let config = TypeScriptGeneratorConfig::default();
+    assert!(
+        config.native_cbor,
+        "TypeScriptGeneratorConfig::default().native_cbor must be true (DEFAULT_NATIVE_CBOR) \
+         now that issue #746 makes @cratestack/cbor the default RPC codec"
+    );
+
+    let rpc = generate(RPC_FIXTURE, config.clone());
+    let package_json = file(&rpc, "package.json");
+    assert!(
+        package_json.contains(&format!(
+            "\"@cratestack/cbor\": \"{}\"",
+            minor_floor_version_requirement()
+        )),
+        "RPC: default config's package.json must depend on @cratestack/cbor, pinned to this \
+         crate's major.minor floor (not the exact patch — see \
+         cratestack_client_typescript::context's minor_floor_version_requirement doc comment \
+         and cratestack#707 for why):\n{package_json}"
+    );
+    let runtime = file(&rpc, "src/runtime.ts");
+    assert!(
+        runtime.contains("import { createCborCodec } from \"@cratestack/cbor\";"),
+        "RPC: default config's runtime.ts must import createCborCodec:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
+        "RPC: default config's runtime.ts must not default to jsonRpcCodec:\n{runtime}"
+    );
+
+    let rest = generate(REST_FIXTURE, config);
+    let rest_package_json = file(&rest, "package.json");
+    assert!(
+        !rest_package_json.contains("@cratestack/cbor"),
+        "REST: native_cbor must have no effect — package.json must never mention \
+         @cratestack/cbor:\n{rest_package_json}"
+    );
+}
+
+#[test]
+fn no_native_cbor_falls_back_to_json_rpc_codec() {
+    let plain = generate(
+        RPC_FIXTURE,
+        TypeScriptGeneratorConfig {
+            native_cbor: false,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    );
+
+    let package_json = file(&plain, "package.json");
+    assert!(
+        !package_json.contains("@cratestack/cbor"),
+        "native_cbor: false package.json must not mention @cratestack/cbor:\n{package_json}"
+    );
+
+    let runtime = file(&plain, "src/runtime.ts");
+    assert!(
+        runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
+        "native_cbor: false runtime.ts must default to jsonRpcCodec:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("@cratestack/cbor"),
+        "native_cbor: false runtime.ts must not mention @cratestack/cbor:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("createCborCodec"),
+        "native_cbor: false runtime.ts must not reference createCborCodec:\n{runtime}"
+    );
+}
+
+#[test]
+fn the_flag_swaps_the_package_json_dependency_and_the_runtime_codec_resolution() {
+    let native = generate(RPC_FIXTURE, TypeScriptGeneratorConfig::default());
+
+    let package_json = file(&native, "package.json");
+    assert!(
+        package_json.contains(&format!(
+            "\"@cratestack/cbor\": \"{}\"",
+            minor_floor_version_requirement()
+        )),
+        "package.json should depend on @cratestack/cbor, pinned to this crate's major.minor \
+         floor (lockstep with the npm package, but not the exact patch — cratestack#707):\n{package_json}"
+    );
+
+    let runtime = file(&native, "src/runtime.ts");
+    assert!(
+        runtime.contains("import { createCborCodec } from \"@cratestack/cbor\";"),
+        "runtime.ts should import createCborCodec:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
+        "runtime.ts must not also default to jsonRpcCodec under the flag:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("private resolveCodec(): Promise<CratestackRpcCodec> {"),
+        "runtime.ts should define the memoized async codec resolver:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("private readonly explicitCodec: CratestackRpcCodec | undefined;"),
+        "runtime.ts should capture an explicitly-supplied options.codec separately from the \
+         lazily-resolved native codec:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("private codecPromise: Promise<CratestackRpcCodec> | undefined;"),
+        "runtime.ts should memoize the resolved codec in a cached Promise field:\n{runtime}"
+    );
+}
+
+/// The Technical Context's own call-site inventory: `call()`, `batch()`,
+/// `stream()` and `readUnaryResponse()` — 4 already-`async` methods — must
+/// each `await this.resolveCodec()` exactly once, and `createCborCodec()`
+/// itself must be invoked from exactly one place (the memoized resolver),
+/// never inline at a call site (that would defeat the "at most once per
+/// runtime instance" memoization the doc comment promises).
+///
+/// This is a structural check only — it constrains *shape* (one call
+/// expression, not N), not *behavior*. It deliberately does NOT hardcode
+/// the exact operator the resolver uses internally (a prior version of
+/// this test matched the literal string `"this.codecPromise ??=
+/// createCborCodec());"`, which is that one review finding: a plain `??=`
+/// never retries after a *rejected* promise, so that string match would
+/// have kept passing even with the retry-on-rejection bug still present,
+/// since it only asserted the buggy line existed, not that retry actually
+/// works). The real behavioral proof — that the factory really is called
+/// once across N calls, and really is retried after a rejection instead
+/// of replaying it forever — is
+/// `native_codec_factory_is_memoized_and_retried_after_a_rejection`
+/// below, which actually runs the generated runtime under Node.
+#[test]
+fn native_codec_call_sites_are_structurally_sound() {
+    let native = generate(RPC_FIXTURE, TypeScriptGeneratorConfig::default());
+    let runtime = file(&native, "src/runtime.ts");
+
+    assert_eq!(
+        runtime
+            .matches("const codec = await this.resolveCodec();")
+            .count(),
+        4,
+        "call()/batch()/stream()/readUnaryResponse() should each resolve the codec exactly \
+         once:\n{runtime}"
+    );
+    // Doc comments legitimately mention `createCborCodec()` by name more
+    // than once; the actual invocation (as opposed to prose referencing
+    // it) is the one `createCborCodec().catch(...)` expression inside
+    // `resolveCodec()`.
+    assert_eq!(
+        runtime.matches("createCborCodec().catch(").count(),
+        1,
+        "createCborCodec() must be invoked from exactly one place (the memoized resolveCodec() \
+         accessor), never per-request:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("readonly codec: CratestackRpcCodec;"),
+        "the old synchronous public `codec` field must not survive alongside the native \
+         codec path:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("this.codec.") && !runtime.contains("this.codec ="),
+        "no call site on the native path should still read/write a plain `this.codec` field \
+         (it was replaced by `explicitCodec`/`codecPromise` plus the local `codec` each method \
+         resolves):\n{runtime}"
+    );
+}
+
+/// Genuine behavioral proof for issue #746's finding #1/#5: actually runs
+/// the generated `CratestackRpcRuntime` under Node (via `npx tsx`, no
+/// build step needed — this module's own imports are all relative +
+/// `@cratestack/cbor`, so unlike `tests/swr_runtime.rs`/`node_dist_esm.rs`
+/// no `npm install` is required first) against a stub `@cratestack/cbor`
+/// module substituted into a real `node_modules/@cratestack/cbor`
+/// directory, and asserts on OBSERVED behavior rather than source text:
+///
+///   1. Three `runtime.call()`s against a fresh runtime invoke the stub
+///      factory exactly once — real memoization, not a string match on
+///      the memoizing expression.
+///   2. A second, freshly-constructed runtime whose first codec
+///      resolution is made to reject still succeeds on its NEXT call,
+///      and the factory is observed being invoked again (retried) rather
+///      than the same rejection being replayed — this is finding #1's
+///      exact regression: a `??=`-based memo would leave every
+///      subsequent call throwing the same stale rejection forever, which
+///      this test would catch by the process exiting non-zero on the
+///      second `runtime2.call()`.
+///
+/// Confirmed to actually fail (not just theoretically): reverting
+/// `resolveCodec()` to the old `return (this.codecPromise ??=
+/// createCborCodec());` form and running this exact stub script makes
+/// the second `runtime2.call()` throw the stub's rejection a second
+/// time, exiting non-zero — verified by hand while writing this test,
+/// not asserted from reading the diff alone.
+///
+/// Degrades to a printed skip when `node`/`npx` aren't on `PATH`, same
+/// convention as `tests/swr_runtime.rs`/`tests/node_dist_esm.rs` (no Rust
+/// CI job in this repo currently provisions Node).
+#[test]
+fn native_codec_factory_is_memoized_and_retried_after_a_rejection() {
+    if !node_and_npx_available() {
+        eprintln!(
+            "skipping native_codec_factory_is_memoized_and_retried_after_a_rejection: \
+             `node`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+        );
+        return;
+    }
+
+    let native = generate(RPC_FIXTURE, TypeScriptGeneratorConfig::default());
+
+    let root = tempfile::tempdir().expect("tempdir");
+    let pkg_dir = root.path().join("pkg");
+    for file in &native.files {
+        let path = pkg_dir.join(&file.file_name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create parent dir");
+        }
+        std::fs::write(&path, &file.contents).expect("write generated file");
+    }
+
+    // A stub `@cratestack/cbor`, placed in a real `node_modules` directory
+    // that is an ancestor of both `pkg/src/runtime.ts` (which bare-imports
+    // "@cratestack/cbor") and this test's own driver script below, so
+    // Node's module resolution walk-up finds the SAME resolved file (and
+    // therefore the same module-level `calls`/`rejectNext` state) from
+    // both import sites.
+    let stub_dir = root.path().join("node_modules/@cratestack/cbor");
+    std::fs::create_dir_all(&stub_dir).expect("create stub dir");
+    std::fs::write(
+        stub_dir.join("package.json"),
+        r#"{ "name": "@cratestack/cbor", "version": "0.0.0-stub", "type": "module", "main": "./index.mjs", "exports": { ".": "./index.mjs" } }"#,
+    )
+    .expect("write stub package.json");
+    std::fs::write(
+        stub_dir.join("index.mjs"),
+        r#"
+let calls = 0;
+let rejectNext = false;
+
+export function __getCalls() {
+  return calls;
+}
+
+export function __setRejectNext(value) {
+  rejectNext = value;
+}
+
+export async function createCborCodec() {
+  calls++;
+  if (rejectNext) {
+    rejectNext = false;
+    throw new Error("stub-induced rejection");
+  }
+  return {
+    contentType: "application/x-stub-cbor",
+    encode(value) {
+      return new TextEncoder().encode(JSON.stringify(value ?? null));
+    },
+    decode(bytes) {
+      return bytes.length ? JSON.parse(new TextDecoder().decode(bytes)) : undefined;
+    },
+  };
+}
+"#,
+    )
+    .expect("write stub index.mjs");
+
+    // `.mts` (not `.ts`) so tsx treats it as ESM unconditionally — this
+    // temp root has no package.json of its own to declare `"type":
+    // "module"`, unlike the generated package.json one level down.
+    let smoke_path = root.path().join("smoke.mts");
+    std::fs::write(
+        &smoke_path,
+        r#"
+import { CratestackRpcRuntime } from "./pkg/src/runtime.js";
+import { __getCalls, __setRejectNext } from "@cratestack/cbor";
+
+const stubFetch: typeof fetch = async () => new Response(null, { status: 204 });
+
+const runtime = new CratestackRpcRuntime("http://stub.invalid", { fetch: stubFetch });
+await runtime.call("procedure.echoName", null);
+await runtime.call("procedure.echoName", null);
+await runtime.call("procedure.echoName", null);
+if (__getCalls() !== 1) {
+  throw new Error(
+    `expected exactly 1 createCborCodec() call after 3 runtime.call()s (memoization), got ${__getCalls()}`,
+  );
+}
+
+__setRejectNext(true);
+const runtime2 = new CratestackRpcRuntime("http://stub.invalid", { fetch: stubFetch });
+
+let firstCallThrew = false;
+try {
+  await runtime2.call("procedure.echoName", null);
+} catch {
+  firstCallThrew = true;
+}
+if (!firstCallThrew) {
+  throw new Error("expected the first call on runtime2 to throw when the codec factory rejects");
+}
+if (__getCalls() !== 2) {
+  throw new Error(`expected createCborCodec() to have been called twice (1 + rejected), got ${__getCalls()}`);
+}
+
+// The critical assertion (issue #746 finding #1): a second call after a
+// rejection must retry the factory instead of replaying the stale
+// rejection forever.
+await runtime2.call("procedure.echoName", null);
+if (__getCalls() !== 3) {
+  throw new Error(
+    `expected createCborCodec() to be retried (3rd invocation) after the prior rejection, got ${__getCalls()}`,
+  );
+}
+
+console.log("NATIVE_CBOR_MEMOIZATION_AND_RETRY_OK");
+"#,
+    )
+    .expect("write smoke script");
+
+    let output = Command::new("npx")
+        .args(["--yes", TSX_PIN, "smoke.mts"])
+        .current_dir(root.path())
+        .output()
+        .expect("run npx tsx");
+
+    assert!(
+        output.status.success(),
+        "generated runtime's codec memoization/retry behavior failed under a real Node run:\n\
+         stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("NATIVE_CBOR_MEMOIZATION_AND_RETRY_OK"),
+        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn node_and_npx_available() -> bool {
+    Command::new("node")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
+        && Command::new("npx")
+            .arg("--version")
+            .output()
+            .is_ok_and(|output| output.status.success())
+}
+
+/// Pinned, not `tsx@latest` — see `tests/swr_runtime.rs`'s identical
+/// constant for why (an unpinned tool inside a test is a dependency whose
+/// version changes without a commit here).
+const TSX_PIN: &str = "tsx@4.23.12";
+
+/// The constructor must stay synchronous under the flag — see the issue's
+/// own "Technical Context" section: an async `static create()` factory was
+/// explicitly rejected because it breaks every existing consumer's
+/// construction call.
+#[test]
+fn the_constructor_stays_synchronous_under_the_flag() {
+    let native = generate(RPC_FIXTURE, TypeScriptGeneratorConfig::default());
+    let runtime = file(&native, "src/runtime.ts");
+
+    assert!(
+        runtime.contains("constructor(origin: string, options: CratestackRpcClientOptions = {}) {"),
+        "the constructor's signature must remain a plain, synchronous constructor:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("async constructor"),
+        "TypeScript doesn't even allow `async constructor`, but assert directly against \
+         reintroducing one by accident:\n{runtime}"
+    );
+}
+
+#[test]
+fn the_flag_is_additive_only_package_json_and_runtime_differ_on_rpc() {
+    let plain = generate(
+        RPC_FIXTURE,
+        TypeScriptGeneratorConfig {
+            native_cbor: false,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    );
+    let native = generate(RPC_FIXTURE, TypeScriptGeneratorConfig::default());
+
+    assert_eq!(
+        plain.files.len(),
+        native.files.len(),
+        "native_cbor must not add or remove files, only change contents"
+    );
+
+    for plain_file in &plain.files {
+        let counterpart = native
+            .files
+            .iter()
+            .find(|candidate| candidate.file_name == plain_file.file_name)
+            .unwrap_or_else(|| panic!("native_cbor: true dropped {}", plain_file.file_name));
+        if matches!(
+            plain_file.file_name.as_str(),
+            "package.json" | "src/runtime.ts"
+        ) {
+            assert_ne!(
+                plain_file.contents, counterpart.contents,
+                "{} was expected to differ under native_cbor: true but didn't",
+                plain_file.file_name
+            );
+            continue;
+        }
+        assert_eq!(
+            plain_file.contents, counterpart.contents,
+            "native_cbor: true changed {} — it must only touch package.json and \
+             src/runtime.ts",
+            plain_file.file_name
+        );
+    }
+}
+
+#[test]
+fn the_flag_has_no_effect_at_all_on_a_rest_transport_schema() {
+    let plain = generate(
+        REST_FIXTURE,
+        TypeScriptGeneratorConfig {
+            native_cbor: false,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    );
+    let native = generate(REST_FIXTURE, TypeScriptGeneratorConfig::default());
+
+    assert_eq!(plain.files.len(), native.files.len());
+    for plain_file in &plain.files {
+        let counterpart = native
+            .files
+            .iter()
+            .find(|candidate| candidate.file_name == plain_file.file_name)
+            .unwrap_or_else(|| panic!("native_cbor: true dropped {}", plain_file.file_name));
+        assert_eq!(
+            plain_file.contents, counterpart.contents,
+            "REST: native_cbor must be a true no-op — {} differed",
+            plain_file.file_name
+        );
+    }
+}
+
+fn generate(fixture_stem: &str, config: TypeScriptGeneratorConfig) -> GeneratedTypeScriptPackage {
+    let fixture_path = format!("tests/fixtures/{fixture_stem}.cstack");
+    let schema = cratestack_parser::parse_schema_file(&fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    generate_package(&schema, &config)
+        .unwrap_or_else(|error| panic!("{fixture_stem}: generation should succeed: {error}"))
+}
+
+fn file<'a>(package: &'a GeneratedTypeScriptPackage, name: &str) -> &'a str {
+    package
+        .files
+        .iter()
+        .find(|file| file.file_name == name)
+        .unwrap_or_else(|| panic!("generated package should contain {name}"))
+        .contents
+        .as_str()
+}
+
+/// Mirrors `cratestack_client_typescript::context`'s private
+/// `minor_floor_version_requirement` exactly (can't call it directly —
+/// it's `fn`-private to that module, not `pub(crate)`), so this test
+/// asserts against the same computation the generator actually performs
+/// rather than a second hardcoded literal that could silently drift from
+/// it. See that function's doc comment for why `@cratestack/cbor` is
+/// pinned to a major.minor floor instead of the exact `CARGO_PKG_VERSION`
+/// (cratestack#707's version-bump-PR hazard).
+fn minor_floor_version_requirement() -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    let mut parts = version.splitn(3, '.');
+    let major = parts.next().unwrap_or("0");
+    let minor = parts.next().unwrap_or("0");
+    format!("^{major}.{minor}.0")
+}

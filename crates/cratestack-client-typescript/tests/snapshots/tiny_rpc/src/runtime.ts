@@ -225,8 +225,9 @@ export class CratestackRpcRuntime {
   /** POST /rpc/{op_id} — unary call. */
   async call<I, O>(opId: string, input: I, options: CratestackRpcCallOptions = {}): Promise<O> {
     const headers = await this.buildHeaders(options.headers);
-    headers.set("Accept", this.codec.contentType);
-    headers.set("Content-Type", this.codec.contentType);
+    const codec = this.codec;
+    headers.set("Accept", codec.contentType);
+    headers.set("Content-Type", codec.contentType);
     if (options.idempotencyKey !== undefined) {
       headers.set("Idempotency-Key", options.idempotencyKey);
     }
@@ -238,7 +239,7 @@ export class CratestackRpcRuntime {
       headers,
       signal: options.signal ?? null,
       ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
-      codec: this.codec,
+      codec,
       fetchFn: this.fetchFn,
       urls: this.linkUrls(),
     });
@@ -254,8 +255,9 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): Promise<RpcResponseFrame<O>[]> {
     const headers = await this.buildHeaders(options.headers);
-    headers.set("Accept", this.codec.contentType);
-    headers.set("Content-Type", this.codec.contentType);
+    const codec = this.codec;
+    headers.set("Accept", codec.contentType);
+    headers.set("Content-Type", codec.contentType);
 
     const { response } = await this.chain({
       kind: "batch",
@@ -263,7 +265,7 @@ export class CratestackRpcRuntime {
       input: requests,
       headers,
       signal: options.signal ?? null,
-      codec: this.codec,
+      codec,
       fetchFn: this.fetchFn,
       urls: this.linkUrls(),
     });
@@ -288,15 +290,16 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): AsyncIterable<O> {
     const headers = await this.buildHeaders(options.headers);
-    headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${this.codec.contentType}`);
-    headers.set("Content-Type", this.codec.contentType);
+    const codec = this.codec;
+    headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${codec.contentType}`);
+    headers.set("Content-Type", codec.contentType);
 
     for await (const frame of this.streamChain({
       opId,
       input: input ?? null,
       headers,
       signal: options.signal ?? null,
-      codec: this.codec,
+      codec,
       fetchFn: this.fetchFn,
       url: this.url(`/rpc/${encodeURIComponent(opId)}`),
     })) {
@@ -308,15 +311,16 @@ export class CratestackRpcRuntime {
   }
 
   private async readUnaryResponse(response: Response): Promise<unknown> {
+    const codec = this.codec;
     if (response.ok) {
       if (response.status === 204) {
         return undefined;
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
-      return this.codec.decode(bytes);
+      return codec.decode(bytes);
     }
 
-    throw new CratestackRpcError(response.status, await readErrorBody(response, this.codec));
+    throw new CratestackRpcError(response.status, await readErrorBody(response, codec));
   }
 
   private async buildHeaders(extra?: HeadersInit): Promise<Headers> {

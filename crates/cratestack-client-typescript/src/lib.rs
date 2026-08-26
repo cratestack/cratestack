@@ -15,7 +15,7 @@ mod types;
 mod views;
 
 pub use config::{
-    DEFAULT_TANSTACK, GeneratedTypeScriptFile, GeneratedTypeScriptPackage,
+    DEFAULT_NATIVE_CBOR, DEFAULT_TANSTACK, GeneratedTypeScriptFile, GeneratedTypeScriptPackage,
     TypeScriptGeneratorConfig,
 };
 pub use error::TypeScriptGeneratorError;

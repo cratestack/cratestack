@@ -161,6 +161,28 @@ pub(crate) enum Command {
         /// Composes freely with `--swr`/`--refine`.
         #[arg(long)]
         tanstack: bool,
+        /// Fall back to the pure-TypeScript `jsonRpcCodec` instead of the
+        /// published `@cratestack/cbor` package (napi-rs on Node,
+        /// wasm-bindgen in the browser — issue #746), which is now the
+        /// default RPC codec. **No effect on a REST-transport schema** —
+        /// `rest-runtime.ts.j2` has no codec seam at all, so REST output
+        /// never depends on this flag.
+        ///
+        /// `@cratestack/cbor-node`'s napi target matrix covers
+        /// `x86_64`/`aarch64` on macOS and glibc Linux plus
+        /// `x86_64-pc-windows-msvc` only — there is no musl (Alpine) build
+        /// and no `win32-arm64`. On either platform the napi loader fails
+        /// with a generic "Cannot find native binding…" error rather than
+        /// naming the real cause. Pass `--no-native-cbor` on those targets
+        /// to fall back to `jsonRpcCodec`, which has no native dependency
+        /// and works everywhere.
+        ///
+        /// Purely additive: with an RPC-transport schema, every other
+        /// emitted file is byte-identical with and without it; with a
+        /// REST-transport schema, output is byte-identical regardless of
+        /// this flag.
+        #[arg(long)]
+        no_native_cbor: bool,
     },
     /// Emit WireMock stub mappings (one per procedure, five per model —
     /// `list`/`get`/`create`/`update`/`delete`) derived from the

@@ -264,6 +264,62 @@ Two correctness fixes to the probe, found in review before this shipped:
   explaining the likely cause (a `@default(...)` column) and the workaround — every other SQLSTATE,
   and every other call site, still gets the ordinary `cratestack_error_from_sqlx` mapping unchanged.
 
+### `@cratestack/cbor` is now the default codec for generated TypeScript RPC clients — breaking (#746)
+
+`generate-typescript` on an RPC-transport schema now emits a client whose `CratestackRpcRuntime`
+resolves `@cratestack/cbor`'s `createCborCodec()` by default, instead of the pure-TypeScript
+`jsonRpcCodec` — closing a cross-language asymmetry `cratestack-client-dart` closed for its own native
+codec back in #563. `--no-native-cbor` (`TypeScriptGeneratorConfig::native_cbor: false`) falls back to
+today's `jsonRpcCodec` behavior. **REST-transport schemas are unaffected either way** —
+`rest-runtime.ts.j2` has no codec seam at all; this is a deliberate, documented scope boundary, not an
+oversight (see the `CratestackRpcClientOptions`/`TypeScriptGeneratorConfig::native_cbor` doc comments).
+
+**Breaking at the wire level, not at the construction API:** the constructor stays synchronous — every
+existing consumer (swr/tanstack/refine layers, examples) keeps constructing a client the same way. But
+the default codec's `contentType` changes from `application/json` to whatever `@cratestack/cbor`
+reports (`application/cbor`), which is sent as both `Content-Type` and `Accept` on every request. **A
+server built against a `CodecSet` that only understands JSON will now reject a regenerated default
+client's requests with `406 Not Acceptable` / `415 Unsupported Media Type`** — regenerating this
+client without also either updating the server's `CodecSet` to serve CBOR or passing
+`--no-native-cbor` is a functional break, not just a type-level one. `--no-native-cbor` (or an explicit
+`codec: jsonRpcCodec` passed to the constructor) restores today's JSON-only behavior exactly.
+
+What also changes on the native-cbor path: `CratestackRpcRuntime`'s public `readonly codec:
+CratestackRpcCodec` field is **removed** — it cannot stay synchronous once the default codec requires
+an async `createCborCodec()` resolution (true on both Node and the browser — see `@cratestack/cbor`'s
+own doc comment on why Node's is `async` too, purely for call-site parity). It is replaced by a
+private, lazily-created, memoized `Promise<CratestackRpcCodec>` and a `resolveCodec()` accessor that
+every already-`async` call site (`call()`, `batch()`, `stream()`, `readUnaryResponse()`) awaits —
+`createCborCodec()` itself runs at most once per runtime instance, never once per request, and (fixed
+during review) a *rejected* resolution is never memoized, so a transient failure gets retried on the
+next call rather than bricking the runtime instance forever. Nothing outside this file read the public
+`codec` field directly (verified against `packages/cratestack-link-batch`, the zod/yup validators, and
+`rpc-stream-terminal.ts.j2`, all of which only touch the per-request `RpcLinkRequest.codec`, whose
+synchronous shape is unchanged), so this has no other call sites to update. On the `--no-native-cbor`
+path, the field survives, but `call()`/`batch()`/`stream()`/`readUnaryResponse()` now read it into a
+local `codec` binding first (a review-driven de-duplication of what used to be near-identical logic
+duplicated per flag) rather than referencing `this.codec` inline — a mechanical rename with no
+behavioral effect on that path.
+
+The generated `package.json`'s `dependencies` block (previously a hardcoded `decimal.js`-only stanza)
+is now a `{% for %}` loop over a new `dependencies_for()` builder (`cratestack-client-typescript`'s
+`package_deps.rs`), matching the `peerDependencies`/`devDependencies` loops issue #617 already
+introduced; `@cratestack/cbor` is added there when the flag is on and the schema is RPC transport,
+pinned to `^{major}.{minor}.0` of this crate's own version — a *floor*, not the exact
+`CARGO_PKG_VERSION` `refine_version_requirement` uses, specifically so a version-bump PR (which moves
+the workspace version before the corresponding npm packages publish) doesn't ship a caret range that
+resolves to nothing on the registry — the same incident already recorded on the Dart side for the
+v0.8.9 release (#707). This narrows but does not close that class of gap: a *minor* bump still has a
+window between the version moving and the npm packages publishing.
+
+**Known platform gap** (documented on `TypeScriptGeneratorConfig::native_cbor`'s doc comment, the
+`--no-native-cbor` CLI flag, and `packages/cratestack-cbor-node/README.md`'s "Scope" section, which
+previously — and as of this default flip, incorrectly — said `jsonRpcCodec` remains the default):
+`@cratestack/cbor-node` ships prebuilt napi binaries for macOS (x86_64/aarch64), glibc Linux
+(x86_64/aarch64), and Windows x64 only. There is no musl (Alpine) build and no `win32-arm64`; on
+either, the napi loader fails with a generic "Cannot find native binding…" error. `--no-native-cbor`
+is the escape hatch for both, falling back to the dependency-free `jsonRpcCodec`.
+
 ### Generated Dart builders move to `package:cratestack_builder` — breaking for build tooling (#668, phase 2/3)
 
 `cratestack-client-dart` no longer emits `{Class}Builder` classes inline. Every generated data class
