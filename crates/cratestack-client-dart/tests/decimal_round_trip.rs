@@ -32,7 +32,7 @@
 //! verify-dart`, not this crate's own `cargo test`).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -219,6 +219,8 @@ fn decimal_round_trips_through_the_generated_dart_client() {
         String::from_utf8_lossy(&build_runner.stderr)
     );
 
+    assert_touch_flag_setter_stays_suppressed(&dir);
+
     let run = Command::new("flutter")
         .args(["test", "test/decimal_round_trip_test.dart"])
         .current_dir(&dir)
@@ -238,6 +240,76 @@ fn decimal_round_trips_through_the_generated_dart_client() {
     );
 
     fs::remove_dir_all(&dir).expect("tmp dir should be removable");
+}
+
+/// Regression guard for cratestack_builder#735: on `UpdateInvoiceInput`
+/// (this fixture's own `discountXaf Decimal?` field), `cratestack_builder`'s
+/// `build_runner` pass must expand `models.builder.dart`'s
+/// `UpdateInvoiceInputBuilder` with a fluent `discountXaf(Decimal? value)`
+/// setter but NO fluent `discountXafIsSet(bool value)` setter of its own.
+///
+/// `discountXafIsSet` is the Rust-synthesized touch flag
+/// (`cratestack-client-dart`'s `patch_touch.rs`) that lets the wire encoder
+/// tell "field left untouched" apart from "field explicitly cleared to
+/// null" for a nullable patch field — `discountXaf`'s own setter is already
+/// responsible for flipping it (see the generated setter body below). If
+/// `discountXafIsSet` regains its own public setter, a caller can write
+/// `.discountXaf(value).discountXafIsSet(false)` and produce a patch that
+/// LIES about being untouched while it still carries `value` on the wire —
+/// exactly the "claims a field is untouched while carrying a value" bug
+/// cratestack_builder#735 fixed (the touch flag used to be included in the
+/// generator's plain field-iteration loop with no suppression list at all).
+///
+/// This asserts against the REAL generated `models.builder.dart` — the
+/// external `cratestack_builder` pub.dev package's own `build_runner`
+/// output — not a Rust-side model of what it should contain, since the bug
+/// lives entirely in that external generator, not in this crate's own
+/// Jinja templates.
+fn assert_touch_flag_setter_stays_suppressed(package_dir: &Path) {
+    let builder_path = package_dir.join("lib/src/models.builder.dart");
+    let builder_source = fs::read_to_string(&builder_path)
+        .unwrap_or_else(|error| panic!("could not read generated {builder_path:?}: {error}"));
+
+    let class_marker = "class UpdateInvoiceInputBuilder {";
+    let class_start = builder_source.find(class_marker).unwrap_or_else(|| {
+        panic!(
+            "generated models.builder.dart has no `{class_marker}` — expected \
+             `UpdateInvoiceInput`'s builder class (does the decimal_scalar.cstack \
+             fixture still declare `Invoice.discountXaf Decimal?`?):\n{builder_source}"
+        )
+    });
+    // The class body ends at the first column-0 `}` after the opening brace
+    // — `dart format` (which `build_runner` runs generated output through)
+    // indents every member, so a bare `}` at the start of a line only ever
+    // closes the class itself, never a nested member.
+    let body_start = class_start + class_marker.len();
+    let body_end = builder_source[body_start..]
+        .find("\n}\n")
+        .map(|offset| body_start + offset)
+        .unwrap_or_else(|| {
+            panic!(
+                "could not find the end of UpdateInvoiceInputBuilder's class body \
+                 in generated models.builder.dart:\n{builder_source}"
+            )
+        });
+    let class_body = &builder_source[body_start..body_end];
+
+    assert!(
+        class_body.contains("UpdateInvoiceInputBuilder discountXaf(Decimal? value) {"),
+        "UpdateInvoiceInputBuilder is missing its ordinary `discountXaf` fluent \
+         setter — the generator or fixture changed shape underneath this \
+         regression guard:\n{class_body}"
+    );
+    assert!(
+        !class_body.contains("discountXafIsSet(bool value)"),
+        "UpdateInvoiceInputBuilder has regained a fluent `discountXafIsSet` \
+         setter of its own — this is cratestack_builder#735 (\"a {{field}}IsSet \
+         touch flag gets no setter of its own\") regressing. A caller could now \
+         write `.discountXaf(value).discountXafIsSet(false)` and produce a patch \
+         that CLAIMS `discountXaf` is untouched while it still carries a real \
+         value on the wire. The touch flag must stay derived state, set only as \
+         a side effect of `discountXaf`'s own setter:\n{class_body}"
+    );
 }
 
 fn flutter_available() -> bool {
