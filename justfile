@@ -807,6 +807,7 @@ verify-dart:
 	  --schema "$status_schema" \
 	  --out "$status_default_pkg" \
 	  --library-name "$status_library" \
+	  --no-native-cbor \
 	  --run-build-runner
 	mkdir -p "$status_default_pkg/test"
 	cp "$status_test" "$status_default_pkg/test/status_202_test.dart"
