@@ -93,10 +93,12 @@ cratestack generate-dart \
 ```
 
 `--run-build-runner` is opt-in: after generation, it shells out to `dart run
-build_runner build --delete-conflicting-outputs` in `--out` so a `riverpod` package's
-`@riverpod`/`dart_mappable` annotations are actually expanded — the annotated Dart alone
-does not compile/analyze until `build_runner` runs. Requires a Dart SDK on `PATH`. Has
-no effect together with `--check`.
+build_runner build --delete-conflicting-outputs` in `--out`. Every preset needs this now
+(issue #668 phase 2/3): every generated data class carries a `@CratestackBuilder(...)`
+annotation that `package:cratestack_builder` expands into a `{Class}Builder`; a `riverpod`
+package additionally needs the step for its `@riverpod`/`dart_mappable` annotations. The
+annotated Dart alone does not compile/analyze until `build_runner` runs. Requires a Dart
+SDK on `PATH`. Has no effect together with `--check`.
 
 ## See Also
 
