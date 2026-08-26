@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.13 (2026-08-26)
+
 ### A `{field}IsSet` touch flag no longer gets a fluent setter of its own
 
 Found by measuring the generated builders against the inline ones this package replaces, rather

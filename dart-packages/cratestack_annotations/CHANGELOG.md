@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.8.13 (2026-08-26)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.12..HEAD at 3a1f6b2d5f9b39a3d17be59ed1b6417bd85bb9fc -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Fixes
+
+- a {field}IsSet touch flag gets no setter of its own (#735)
+
+#### Documentation
+
+- correct the no-op scope rationale (#727), write the 0.8.12 narrative, restore 0.8.11 (#734)
+- write v0.8.11 prose for cratestack_annotations and cratestack_builder (#731)
+
 ## 0.8.12 (2026-08-24)
 
 - No functional changes. Version kept in lockstep with the CrateStack

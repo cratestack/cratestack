@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.13 (2026-08-26)
+
 ### The changelog no-op scope keeps its shape, but its stated reason was wrong
 
 `.ci/changelog-files.sh` widened `cratestack_cbor`'s no-op scope beyond its own directory in
