@@ -105,6 +105,13 @@ async fn connect_or_skip() -> Option<TestPg> {
         });
     }
 
+    // cratestack#747 cited this as the correct reference implementation:
+    // `cratestack-pg` and `cratestack-outbox` were missing exactly this
+    // arm, so their whole PG-backed suites reported `ok` in 0.00s with
+    // `CRATESTACK_REQUIRE_DB=1` set. Both now carry it, extracted into a
+    // pure `pick_backend` under a `#[should_panic]` test — see
+    // `crates/cratestack-pg/tests/support/require_db.rs`, which lists every
+    // sibling copy. Left inline here because it is already correct.
     if require {
         panic!(
             "CRATESTACK_REQUIRE_DB is set but neither CRATESTACK_TEST_DATABASE_URL nor \
