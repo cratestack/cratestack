@@ -131,7 +131,7 @@ model Order {
   total Decimal
 }
 
-procedure listOrders(): Page<Order>
+procedure searchOrders(): Page<Order>
 "#,
         );
         // Order's own field already trips it; this also exercises the

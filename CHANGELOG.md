@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### The parser rejects a procedure colliding with a model's generated CRUD handler (#784)
+
+`model Order` alongside `procedure getOrder` generated the Rust item `handle_get_order` twice into
+the same axum module — once from `axum/model/prep.rs`'s per-model CRUD handlers, once from
+`axum/procedure.rs`'s per-procedure handler — and the same for the `_dispatch` twins the RPC
+transport dispatches through. `cratestack check` reported `schema OK`; the only diagnostic was a raw
+`error[E0428]: the name 'handle_get_order' is defined multiple times`, which names neither the
+procedure, nor the model, nor the fix. It cost two rounds of guess-the-cause in production porting
+work (`deleteBuyerAddress` vs `model BuyerAddress`, `getOrder`/`getSubOrder` vs `model
+Order`/`SubOrder`).
+
+`cratestack-parser` now refuses such a schema, naming the procedure, the model, the operation, the
+shared identifier, and the remedy — a fifth validator in the mould of `snake_case_collisions`,
+`route_collisions`, `builder_collisions` and `procedure_idents`. Detection runs on the
+`to_snake_case`-normalized form, so `procedure get_order` is caught identically, and it covers both
+the handler and its `_dispatch` twin, so `getOrderDispatch` is caught too. `list`/`create` are
+matched against the *pluralized* stem (`handle_list_orders`) and `get`/`update`/`delete` against the
+singular one, mirroring the macro exactly.
+
+`@@internal(...)` is deliberately not an exemption: route suppression omits the `.route(...)`
+registration, not the handler function, so the ident collides either way.
+
+The collision is proved against the real emitters rather than a re-derivation —
+`cratestack-macros/src/axum/handler_collision_tests.rs` runs `generate_model_axum_handlers` and
+`generate_procedure_axum_handler` for the reported pair and asserts the emitted `fn` names
+intersect on exactly `handle_get_order` and `handle_get_order_dispatch`, and that the issue's
+recorded workaround rename clears it.
+
+Four in-repo fixtures were themselves this defect and are renamed (`listPosts` → `searchPosts`,
+`getWidget` → `widgetSummary`, `listUsers` → `searchUsers`, `listOrders` → `searchOrders`). One of
+them is #777's `--swr` collision fixture, which now exercises `create` rather than `list`: `create`
+is the only one of the five operations whose `--swr` free function (`createPost`) and generated
+handler (`handle_create_posts`) disagree on plurality, and so the only one that is a
+`--swr`-specific collision rather than an `E0428` the parser now catches first. #777's
+generator-level check is unchanged and still owns the cases this one cannot see.
+
 ## 0.8.14 (2026-08-27)
 
 ### Generated Dart clients declare an API floor, not the workspace version (#754)

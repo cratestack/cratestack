@@ -139,7 +139,7 @@ fn page_wrapped_procedure_return_type_unwraps_to_the_item_type() {
     let schema = schema(
         "enum Role {\n  admin\n  member\n}\n\
          model User {\n  id Int @id\n  role Role\n}\n\
-         procedure listUsers(limit: Int?): Page<User>\n",
+         procedure searchUsers(limit: Int?): Page<User>\n",
     );
     let ownership = compute_type_ownership(&schema);
     // `User` isn't eligible (it's a model, not an enum/type), so this

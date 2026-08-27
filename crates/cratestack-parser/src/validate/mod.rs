@@ -13,6 +13,7 @@ mod model_attributes;
 mod model_relation;
 mod models;
 mod patch_touch_flag_collisions;
+mod procedure_handler_collisions;
 mod procedure_idents;
 mod procedures;
 mod removed_attributes;
@@ -36,6 +37,7 @@ use self::mixins_types::{
     validate_auth, validate_enums_collecting, validate_mixins_collecting, validate_types_collecting,
 };
 use self::models::validate_models_collecting;
+use self::procedure_handler_collisions::validate_procedure_model_handler_collisions;
 use self::procedure_idents::validate_procedure_idents;
 use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
@@ -108,6 +110,9 @@ pub(crate) fn validate_schema_collecting(
             }
         }
         Ok(())
+    });
+    collect::record(&mut errors, || {
+        validate_procedure_model_handler_collisions(schema)
     });
     collect::record(&mut errors, || validate_datasource(schema));
     collect::record(&mut errors, || {
