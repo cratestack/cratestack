@@ -56,7 +56,7 @@ pub fn publish_tree(staging: &Path, published: &Path, is_complete: &dyn Fn(&Path
         // Destination is a non-empty directory. If it is usable, a concurrent
         // publisher won and its tree is as good as ours.
         if is_complete(published) {
-            let _ = std::fs::remove_dir_all(staging);
+            discard(staging);
             return;
         }
         // Unusable. Swap it out under a private name rather than deleting in
@@ -72,10 +72,10 @@ pub fn publish_tree(staging: &Path, published: &Path, is_complete: &dyn Fn(&Path
             let _ = std::fs::rename(&condemned, published);
             continue;
         }
-        let _ = std::fs::remove_dir_all(&condemned);
+        discard(&condemned);
     }
 
-    let _ = std::fs::remove_dir_all(staging);
+    discard(staging);
     assert!(
         is_complete(published),
         "could not publish to {} after {ATTEMPTS} attempts, and it is still not usable",
@@ -83,14 +83,30 @@ pub fn publish_tree(staging: &Path, published: &Path, is_complete: &dyn Fn(&Path
     );
 }
 
+/// Best-effort removal of a path we own, whatever kind of thing it turned out
+/// to be.
+///
+/// Tries the directory form first because that is what every path here is
+/// supposed to be, then falls back to `remove_file` — a destination left as a
+/// regular file by some other tool would otherwise survive `remove_dir_all`
+/// and leak. Failures are ignored on purpose: this only ever runs against a
+/// path already established as unusable, so failing to clean it up must not
+/// fail a test.
+fn discard(path: &Path) {
+    if std::fs::remove_dir_all(path).is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 /// A private sibling of `path`, unique per process and call.
 ///
 /// A sibling (not a tempdir) so it lands on the same filesystem and the
 /// `rename` is atomic rather than a cross-device copy.
 pub fn sibling(path: &Path, tag: &str) -> PathBuf {
-    let name = path
-        .file_name()
-        .map_or_else(|| "tree".to_owned(), |name| name.to_string_lossy().into_owned());
+    let name = path.file_name().map_or_else(
+        || "tree".to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    );
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.subsec_nanos());

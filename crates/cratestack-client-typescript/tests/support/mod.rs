@@ -20,6 +20,10 @@
 //! published tree that no test ever writes to. See `tsx.rs` for the
 //! publication mechanism.
 //!
+//! `publish.rs` owns the one genuinely subtle part — making that publication
+//! safe against a destination that already exists in any state, which on a CI
+//! runner with a restored `target/` cache is the norm rather than an edge case.
+//!
 //! `report.rs` closes the separate diagnostic gap the issue's second comment
 //! documents: a failed smoke script used to panic with `smoke script failed:`
 //! and two empty streams, giving a reader nothing to attribute the failure
