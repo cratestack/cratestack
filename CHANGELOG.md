@@ -2,6 +2,75 @@
 
 ## Unreleased
 
+### `.cstack` navigation: enum/mixin go-to-definition, and find-all-references
+
+`cratestack-lsp` now answers `textDocument/references` and
+`textDocument/documentHighlight`, and go-to-definition covers the reference sites it
+previously missed.
+
+Go-to-definition already resolved model/type field types and both halves of
+`@relation(fields: [...], references: [...])` — verified against the running server, not
+just its unit tests. What did not resolve, and now does:
+
+* **`enum` declarations.** A `role Role` field type resolved to nothing, because
+  `declaration_span` walked models, types and procedures but never `schema.enums`.
+* **`mixin` declarations and their fields**, including field types declared inside a
+  `mixin` body.
+* **`@use(Timestamps)`**, which needs recovering from source text: `expand_model_mixins`
+  inlines a mixin's fields into each consuming model and then drops the `@use(...)`
+  attribute from `Model::attributes`, so the reference site does not exist in the IR by
+  the time the language server sees the schema.
+
+Find-all-references works from either end of a relation — asking for references of
+`User.id` surfaces the `references: [id]` site on `Post` — and treats `@use(Mixin)` as a
+reference to the mixin. Field references are qualified by their owning declaration
+rather than matched by name, so `User.id` and `Post.id` stay distinct symbols; a
+regression test pins that. Mixin fields resolve to the mixin that declares them rather
+than to whichever model inlined them, since `expand_model_mixins` clones those fields
+into every consumer while keeping the mixin's spans, making both match by position.
+
+Two related limitations are unchanged and now written down in the extension README:
+diagnostics stop at the first parse error, and navigation goes quiet entirely while a
+file does not parse, because a failed parse drops the schema with no last-known-good
+fallback.
+
+### Fixed: the published VS Code extension could not activate at all
+
+Every `.vsix` attached to a GitHub Release failed activation with `Cannot find module
+'vscode-languageclient/node'`. `main` pointed at an unbundled `extension.js`, but `.vscodeignore`
+excludes `node_modules/**` and the packaging scripts pass `vsce --no-dependencies` (pnpm's symlinked
+layout defeats vsce's npm-style dependency discovery), so the extension's only runtime dependency was
+never in the package. The declarative contributions still loaded, so installs looked partly healthy:
+users got TextMate syntax highlighting and silently no language server — no diagnostics, hover,
+completion, go-to-definition or document symbols.
+
+`main` is now `dist/extension.js`, an esbuild bundle built by `scripts/build.mjs` and produced during
+packaging via `vscode:prepublish`, so `--no-dependencies` is a true statement. The release workflow
+needs no change. Alongside it:
+
+* `activate` no longer pushes `client.start()` into `context.subscriptions`. That returns
+  `Promise<void>` in vscode-languageclient 7+, not the `Disposable` it returned in 6.x, so the
+  extension registered a Promise for later disposal and left a rejected `start()` unhandled — a
+  missing or unexecutable server binary failed with nothing in the UI. The client itself is now the
+  registered `Disposable`, and a failed start reports the resolved command path.
+* `engines.vscode` moves to `^1.91.0`, the floor `vscode-languageclient@10` actually requires
+  (`^1.90.0` was declared).
+* The package's stale nested `pnpm-lock.yaml` is deleted. It was git-tracked, unused (the workspace
+  root lock governs), and pinned `vscode-languageclient ^9.0.1` against a `^10.1.0` manifest.
+
+### Fixed: the VS Code extension package is now covered by CI
+
+None of the above was caught because `packages/cratestack-vscode` declared no `build`/`test`/`lint`
+scripts, so `turbo run build test lint` skipped it entirely — the `js` job's own comment recorded this
+as expected. It now defines all three and participates in that job. Its VS Code integration suite was
+also dead on arrival independently: it looked up the pre-rename `vaam-store.cratestack-vscode`
+publisher ID, so `getExtension` always returned undefined; the ID is now derived from `package.json`.
+
+The new `test/bundle.test.js` reproduces the packaged-VSIX environment without needing vsce or a
+network — it loads the built entry point from a directory containing nothing but a `vscode` stub — and
+was confirmed to fail with the original `MODULE_NOT_FOUND` when `main` is pointed back at the
+unbundled source.
+
 ### `.upsert(..).run(..)` no longer reports `Created` for an update it lost a race on (#745)
 
 The `ON CONFLICT ... DO UPDATE` upsert decided Created-vs-Updated from a `SELECT ... FOR UPDATE`

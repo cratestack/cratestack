@@ -2,16 +2,18 @@ use tower_lsp_server::LanguageServer;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{
     CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
-    InitializeParams, InitializeResult, InitializedParams, MarkupContent, MarkupKind, MessageType,
-    OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    DidOpenTextDocumentParams, DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams,
+    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
+    Hover, HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
+    InitializedParams, Location, MarkupContent, MarkupKind, MessageType, OneOf, ReferenceParams,
+    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 
 use crate::completion::completion_items;
 use crate::definition::definition_location;
 use crate::document_symbols::document_symbols;
 use crate::hover::locate_symbol;
+use crate::navigation::reference_ranges;
 use crate::state::Backend;
 use crate::text::{position_to_offset, span_to_range};
 
@@ -29,6 +31,8 @@ impl LanguageServer for Backend {
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
                 completion_provider: Some(CompletionOptions::default()),
                 definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
+                document_highlight_provider: Some(OneOf::Left(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
@@ -127,6 +131,50 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
         Ok(Some(GotoDefinitionResponse::Scalar(location)))
+    }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let uri = params.text_document_position.text_document.uri;
+        let documents = self.documents.read().await;
+        let Some(document) = documents.get(&uri) else {
+            return Ok(None);
+        };
+        Ok(reference_ranges(
+            document,
+            params.text_document_position.position,
+            params.context.include_declaration,
+        )
+        .map(|ranges| {
+            ranges
+                .into_iter()
+                .map(|range| Location {
+                    uri: uri.clone(),
+                    range,
+                })
+                .collect()
+        }))
+    }
+
+    async fn document_highlight(
+        &self,
+        params: DocumentHighlightParams,
+    ) -> Result<Option<Vec<DocumentHighlight>>> {
+        let position = params.text_document_position_params;
+        let documents = self.documents.read().await;
+        let Some(document) = documents.get(&position.text_document.uri) else {
+            return Ok(None);
+        };
+        Ok(
+            reference_ranges(document, position.position, true).map(|ranges| {
+                ranges
+                    .into_iter()
+                    .map(|range| DocumentHighlight {
+                        range,
+                        kind: Some(DocumentHighlightKind::TEXT),
+                    })
+                    .collect()
+            }),
+        )
     }
 
     async fn document_symbol(
