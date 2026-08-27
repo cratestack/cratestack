@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+## 0.8.14 (2026-08-27)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.8.13..HEAD at 128f69b2a13a1e776d80c64e74c2118c9043c1a3 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- generated builders move to package:cratestack_builder (#668 phase 2/3) (#737)
+- @cratestack/cbor is the default codec for generated RPC clients (#746) (#752)
+- partial index DDL via @@unique/@@index where: (#742) (#749)
+- @@internal route suppression (#743) (#750)
+- rename provider (F2) (#769)
+- semantic tokens — identifiers coloured by what they resolve to (#763)
+- report every independent schema error (#771) (#772)
+- ConflictTarget can target a partial unique index (#741) (#748)
+
+#### Fixes
+
+- generated pubspecs declare an API floor, not the workspace version (#754) (#780)
+- --swr + transport rpc now honours native_cbor (#765) (#776)
+- --swr rejects a procedure colliding with a generated model function (#777) (#778)
+- encode Decimal fields before handing RPC request bodies to the codec (#764)
+- publish tsx over a pre-existing destination in any state (#738 follow-up) (#761)
+- keep serving the last schema that parsed (#767)
+- remove stray blank lines after doc comments (unbreaks clippy on main) (#773)
+- upsert do_update classifies from the statement, not a stale probe (#745) (#758)
+- make the published VSIX activate, and make .cstack files navigable (#759)
+- CRATESTACK_REQUIRE_DB fails when no DB backend is configured (#747) (#756)
+
+#### Documentation
+
+- --run-build-runner is needed by every preset, not just riverpod (#751)
+- fix stale --native-cbor/default-codec docs after #746 (#752) (#770)
+- record that Studio's [target.db] write path is beneath the schema (#744) (#755)
+
+#### Tests
+
+- resolve tsx once instead of racing on npm's shared _npx cache (#738) (#757)
+
 ## 0.8.13 (2026-08-26)
 
 ### A `{field}IsSet` touch flag no longer gets a fluent setter of its own
