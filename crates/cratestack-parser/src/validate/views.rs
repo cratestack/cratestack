@@ -22,6 +22,7 @@ use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::builder_setter_collisions::{
     validate_no_add_setter_collision, validate_no_build_setter_collision,
 };
+use crate::validate::collect::record;
 use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
@@ -30,7 +31,8 @@ use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
 
-pub(super) fn validate_views(schema: &Schema) -> Result<(), SchemaError> {
+/// Each view is checked independently so one bad view does not hide the next.
+pub(super) fn validate_views_collecting(schema: &Schema, errors: &mut Vec<SchemaError>) {
     let model_names: BTreeSet<&str> = schema
         .models
         .iter()
@@ -39,15 +41,16 @@ pub(super) fn validate_views(schema: &Schema) -> Result<(), SchemaError> {
 
     let mut seen = BTreeSet::new();
     for view in &schema.views {
-        if !seen.insert(view.name.clone()) {
-            return Err(span_error(
-                format!("duplicate view name `{}`", view.name),
-                view.span,
-            ));
-        }
-        validate_view(view, &model_names)?;
+        record(errors, || {
+            if !seen.insert(view.name.clone()) {
+                return Err(span_error(
+                    format!("duplicate view name `{}`", view.name),
+                    view.span,
+                ));
+            }
+            validate_view(view, &model_names)
+        });
     }
-    Ok(())
 }
 
 fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), SchemaError> {

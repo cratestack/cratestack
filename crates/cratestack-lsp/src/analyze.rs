@@ -10,10 +10,17 @@ pub(crate) fn analyze_document(uri: &Uri, text: &str) -> (Option<Schema>, Vec<Di
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| uri.to_string());
 
-    match cratestack_parser::parse_schema_named(&label, text) {
-        Ok(schema) => (Some(schema), Vec::new()),
-        Err(error) => (None, vec![schema_error_to_diagnostic(text, &error)]),
-    }
+    // `parse_schema_diagnostics` rather than `parse_schema_named`: the latter
+    // stops at the first problem, which meant fixing one error only revealed
+    // the next — one save per mistake. A syntax error still yields exactly one
+    // diagnostic (parsing has no recovery, so there is no second error to
+    // report), but independent validation errors all arrive together.
+    let (schema, errors) = cratestack_parser::parse_schema_diagnostics(&label, text);
+    let diagnostics = errors
+        .iter()
+        .map(|error| schema_error_to_diagnostic(text, error))
+        .collect();
+    (schema, diagnostics)
 }
 
 fn schema_error_to_diagnostic(text: &str, error: &cratestack_parser::SchemaError) -> Diagnostic {

@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### Schema validation reports every independent error, not just the first
+
+`cratestack-parser` gains `parse_schema_diagnostics`, which returns all independent
+problems in a schema instead of stopping at the first. `cratestack-lsp` uses it, so an
+editor now shows three squiggles for three unknown field types rather than handing them
+over one save at a time.
+
+Validation runs in **stages**, and a stage runs only when every earlier stage was clean.
+That is not caution for its own sake: several validators document that they assume an
+earlier one passed (`validate_computed` "may assume every `@computed` attribute is already
+known to be bare, unique, and on a declaration kind that supports it"), and
+`collect_type_names` produces the very name set the per-declaration stage checks against.
+Running a later stage over already-rejected input produces cascades of nonsense pointing at
+the wrong places, which is worse than one real error. Within a stage, declarations are
+independent and all of them report.
+
+Two properties are pinned by tests because they are what make this safe:
+
+* **The first collected error is exactly the error `parse_schema_named` returns.** Both go
+  through one set of checks in one order — the fail-fast entry point is now literally the
+  head of the collected list — so the two paths cannot drift into disagreeing about what is
+  wrong with a schema. The crate's existing 303 tests are the regression guard for that and
+  all still pass unchanged.
+* **A syntax error still yields exactly one diagnostic.** Parsing has no recovery, so
+  everything after the failure is unparsed rather than valid, and inventing further errors
+  from it would be guessing.
+
+**No behaviour change for existing consumers.** `parse_schema`, `parse_schema_named` and
+`parse_schema_file` keep their signatures and their first-error semantics; the macros, CLI
+and migrate paths are untouched.
 ### `.cstack` rename (F2)
 
 `cratestack-lsp` now answers `textDocument/rename` and `textDocument/prepareRename`.

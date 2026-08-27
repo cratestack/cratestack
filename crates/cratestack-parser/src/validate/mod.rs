@@ -1,5 +1,6 @@
 mod builder_collisions;
 mod builder_setter_collisions;
+mod collect;
 mod composite_attributes;
 mod computed;
 mod computed_attribute;
@@ -31,8 +32,10 @@ use cratestack_core::Schema;
 use crate::diagnostics::{SchemaError, span_error};
 
 use self::builder_collisions::validate_builder_name_collisions;
-use self::mixins_types::{validate_auth, validate_enums, validate_mixins, validate_types};
-use self::models::validate_models;
+use self::mixins_types::{
+    validate_auth, validate_enums_collecting, validate_mixins_collecting, validate_types_collecting,
+};
+use self::models::validate_models_collecting;
 use self::procedure_idents::validate_procedure_idents;
 use self::procedures::{
     validate_procedure_api_version_attribute, validate_procedure_deprecated_attribute,
@@ -60,26 +63,59 @@ pub(crate) fn validate_schema(
     source: &str,
     schema: &Schema,
 ) -> Result<(), SchemaError> {
-    let type_names = collect_type_names(schema)?;
+    collect::first(validate_schema_collecting(path, source, schema))
+}
 
-    // Check for cross-kind type declaration collisions under to_snake_case
-    // normalization. This must come after collect_type_names (which catches
-    // raw-name duplicates) but before kind-specific validation.
-    validate_type_declaration_collisions(schema)?;
-    validate_builder_name_collisions(schema)?;
+/// Every independent problem in `schema`, in source-validation order.
+///
+/// Runs in **stages**, and a stage only runs when every earlier stage was
+/// clean. That is not caution for its own sake — several validators document
+/// that they assume an earlier one already passed (`validate_computed` "may
+/// assume every `@computed` attribute is already known to be bare, unique, and
+/// on a declaration kind that supports it"), and `collect_type_names` produces
+/// the name set the per-declaration stage needs at all. Running a later stage
+/// over input an earlier stage already rejected produces cascades of nonsense
+/// errors pointing at the wrong places, which is worse than reporting one real
+/// one.
+///
+/// Within a stage, declarations are independent and all of their errors are
+/// collected — which is the case that matters while editing, where three models
+/// each naming a type that does not exist should not take three round trips.
+pub(crate) fn validate_schema_collecting(
+    path: &str,
+    source: &str,
+    schema: &Schema,
+) -> Vec<SchemaError> {
+    // Stage 1 — the name set everything downstream is checked against. There
+    // is nothing to fall back to if this fails, so it is the one hard stop.
+    let type_names = match collect_type_names(schema) {
+        Ok(names) => names,
+        Err(error) => return vec![error],
+    };
 
-    let mut procedure_names = BTreeSet::new();
-    for procedure in &schema.procedures {
-        if !procedure_names.insert(procedure.name.clone()) {
-            return Err(span_error(
-                format!("duplicate procedure name `{}`", procedure.name),
-                procedure.span,
-            ));
+    // Stage 2 — whole-schema shape: collisions, duplicates, datasource.
+    let mut errors = Vec::new();
+    collect::record(&mut errors, || validate_type_declaration_collisions(schema));
+    collect::record(&mut errors, || validate_builder_name_collisions(schema));
+    collect::record(&mut errors, || {
+        let mut procedure_names = BTreeSet::new();
+        for procedure in &schema.procedures {
+            if !procedure_names.insert(procedure.name.clone()) {
+                return Err(span_error(
+                    format!("duplicate procedure name `{}`", procedure.name),
+                    procedure.span,
+                ));
+            }
         }
+        Ok(())
+    });
+    collect::record(&mut errors, || validate_datasource(schema));
+    collect::record(&mut errors, || {
+        validate_no_models_under_datasource_none(schema)
+    });
+    if !errors.is_empty() {
+        return errors;
     }
-
-    validate_datasource(schema)?;
-    validate_no_models_under_datasource_none(schema)?;
 
     let page_item_type_names = schema
         .models
@@ -96,21 +132,49 @@ pub(crate) fn validate_schema(
         .map(|model| model.name.clone())
         .collect::<BTreeSet<_>>();
 
-    validate_models(schema, &type_names, &page_item_type_names, &model_names)?;
-    validate_mixins(schema, &type_names, &page_item_type_names, &model_names)?;
-    validate_types(schema, &type_names, &page_item_type_names, &model_names)?;
-    validate_enums(schema)?;
-    validate_auth(schema, &type_names, &page_item_type_names, &model_names)?;
-    validate_procedures(schema, &type_names, &page_item_type_names, &model_names)?;
-    self::views::validate_views(schema)?;
-    // Runs after the per-declaration validators above: it may assume every
-    // `@computed` attribute is already known to be bare, unique, and on a
-    // declaration kind that supports it.
-    self::computed::validate_computed(schema)?;
-    self::computed_resolver_names::validate_computed_resolver_name_collisions(schema)?;
+    // Stage 3 — per-declaration. These are independent of one another, so every
+    // declaration reports.
+    validate_models_collecting(
+        schema,
+        &type_names,
+        &page_item_type_names,
+        &model_names,
+        &mut errors,
+    );
+    validate_mixins_collecting(
+        schema,
+        &type_names,
+        &page_item_type_names,
+        &model_names,
+        &mut errors,
+    );
+    validate_types_collecting(
+        schema,
+        &type_names,
+        &page_item_type_names,
+        &model_names,
+        &mut errors,
+    );
+    validate_enums_collecting(schema, &mut errors);
+    collect::record(&mut errors, || {
+        validate_auth(schema, &type_names, &page_item_type_names, &model_names)
+    });
+    collect::record(&mut errors, || {
+        validate_procedures(schema, &type_names, &page_item_type_names, &model_names)
+    });
+    self::views::validate_views_collecting(schema, &mut errors);
+    if !errors.is_empty() {
+        return errors;
+    }
+
+    // Stage 4 — assumes every declaration above is already known good.
+    collect::record(&mut errors, || self::computed::validate_computed(schema));
+    collect::record(&mut errors, || {
+        self::computed_resolver_names::validate_computed_resolver_name_collisions(schema)
+    });
 
     let _ = (path, source);
-    Ok(())
+    errors
 }
 
 fn validate_datasource(schema: &Schema) -> Result<(), SchemaError> {
