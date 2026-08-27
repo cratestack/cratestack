@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.14 (2026-08-27)
+
 ### Generated Dart clients declare an API floor, not the workspace version (#754)
 
 A generated Dart client used to declare `cratestack_annotations: ^{workspace version}` and
