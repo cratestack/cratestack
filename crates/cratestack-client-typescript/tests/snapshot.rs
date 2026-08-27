@@ -47,6 +47,27 @@ fn rpc_native_default_snapshot_matches_fixture() {
     assert_snapshot_matches(&snapshot_dir, &package);
 }
 
+/// Cratestack#765: `--swr` on an RPC schema renders `src/swr/runtime.ts`
+/// from the same shared template as `src/runtime.ts`, through a
+/// separately-maintained context (`SwrSchemaContext`) that silently missed
+/// `native_cbor` until this ticket. No `--swr` + `transport rpc` snapshot
+/// fixture existed before this test — that absence is the direct reason
+/// the gap shipped unnoticed (see the issue's own "Verification evidence"
+/// section). Mirrors `rpc_native_default_snapshot_matches_fixture` above,
+/// generating with the REAL `TypeScriptGeneratorConfig::default()` plus
+/// `swr: true` so the fixture tracks whatever a bare `cratestack
+/// generate-typescript --swr` invocation on an RPC schema actually emits.
+#[test]
+fn swr_rpc_native_default_snapshot_matches_fixture() {
+    let package = generate_default_for_swr("tiny_rpc", "tiny-rpc-swr-native-default-client");
+    let snapshot_dir = snapshot_root().join("tiny_rpc_swr_native_default");
+    if std::env::var_os("CRATESTACK_UPDATE_SNAPSHOTS").is_some() {
+        write_snapshot(&snapshot_dir, &package);
+        return;
+    }
+    assert_snapshot_matches(&snapshot_dir, &package);
+}
+
 #[test]
 fn rpc_client_invokes_runtime_call_with_dotted_op_ids() {
     let package = generate_for("tiny_rpc", "tiny-rpc-client");
@@ -700,6 +721,28 @@ fn generate_default_for(fixture_stem: &str, package_name: &str) -> GeneratedType
             package_name: package_name.to_owned(),
             base_path: "/api".to_owned(),
             schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect("default template should render")
+}
+
+/// Like [`generate_default_for`], but with `swr: true` added on top of the
+/// real `TypeScriptGeneratorConfig::default()` — used only by
+/// `swr_rpc_native_default_snapshot_matches_fixture` above, so that
+/// fixture tracks the `--swr` layout's actual default output rather than a
+/// snapshot of one fixed, possibly-stale flag combination.
+fn generate_default_for_swr(fixture_stem: &str, package_name: &str) -> GeneratedTypeScriptPackage {
+    let fixture_path = fixture_root().join(format!("{fixture_stem}.cstack"));
+    let schema = cratestack_parser::parse_schema_file(&fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: package_name.to_owned(),
+            base_path: "/api".to_owned(),
+            schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
+            swr: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
