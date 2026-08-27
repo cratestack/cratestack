@@ -2,6 +2,7 @@
 //! generator. Anything bigger lives in sibling submodules.
 
 mod attrs;
+pub(crate) mod bytes_serde;
 pub(crate) mod decimal_backend;
 mod procedure_attrs;
 mod sql;
@@ -14,6 +15,8 @@ use std::collections::BTreeSet;
 use cratestack_core::{EnumDecl, Field, Model};
 use quote::quote;
 use syn::LitStr;
+
+pub(crate) use bytes_serde::{bytes_deserialize_with, bytes_serde_attr};
 
 pub(crate) use attrs::{
     auth_default_field, is_computed_field, is_generated_on_create, is_paged_model, is_pii_field,
