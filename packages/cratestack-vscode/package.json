@@ -22,7 +22,7 @@
     "rust"
   ],
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Programming Languages"
@@ -30,8 +30,12 @@
   "activationEvents": [
     "onLanguage:cstack"
   ],
-  "main": "./extension.js",
+  "main": "./dist/extension.js",
   "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "lint": "biome check .",
+    "test": "node ./scripts/build.mjs && node --test ./test/*.test.js",
+    "vscode:prepublish": "node ./scripts/build.mjs",
     "stage-server": "node ./scripts/stage-server.mjs",
     "package:vsix": "pnpm run stage-server && npx @vscode/vsce package --no-dependencies",
     "publish:vscode-marketplace": "pnpm run stage-server && npx @vscode/vsce publish --no-dependencies",
@@ -81,7 +85,8 @@
   },
   "devDependencies": {
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^3.9.2"
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.0"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.0"
