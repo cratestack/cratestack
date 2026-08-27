@@ -16,9 +16,9 @@
 
 mod support;
 
+use cratestack::include_server_schema;
 use cratestack::sqlx::{Row, query};
 use cratestack::{CratestackContext, UpsertOutcome, Value};
-use cratestack::include_server_schema;
 use support::{pg, race};
 
 include_server_schema!("tests/fixtures/upsert_do_update_race.cstack", db = Postgres);
@@ -55,7 +55,9 @@ fn input(id: &str, payload: &str) -> cratestack_schema::CreateRaceRowInput {
     }
 }
 
-async fn audit_rows(pool: &cratestack::sqlx::PgPool) -> Vec<(String, Option<String>, Option<String>)> {
+async fn audit_rows(
+    pool: &cratestack::sqlx::PgPool,
+) -> Vec<(String, Option<String>, Option<String>)> {
     query(
         "SELECT operation, before ->> 'payload' AS before_payload, \
                 after ->> 'payload' AS after_payload \
@@ -125,8 +127,15 @@ async fn lost_conflict_race_audits_an_update_not_a_create() {
         record.version, 1,
         "the loser's statement must have UPDATEd the winner's row, not inserted"
     );
-    assert_eq!(record.payload, "loser", "DO UPDATE merges the loser's values");
-    assert_eq!(row_count(pool).await, 1, "exactly one row at the conflict key");
+    assert_eq!(
+        record.payload, "loser",
+        "DO UPDATE merges the loser's values"
+    );
+    assert_eq!(
+        row_count(pool).await,
+        1,
+        "exactly one row at the conflict key"
+    );
 
     // THE REGRESSION ASSERTIONS. Before cratestack#745 these read
     // `("create", None, Some("loser"))` / `["created"]`: the pre-lock
