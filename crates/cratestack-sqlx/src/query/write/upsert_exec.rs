@@ -1,6 +1,8 @@
-//! Core upsert body: probe the conflict target under a row lock, pick
-//! the insert-vs-update branch, run the appropriate policy + audit +
-//! outbox writes, then issue the conflict-bearing INSERT.
+//! Core upsert body: probe the conflict target under a row lock, run
+//! the conflict-bearing INSERT through `upsert_resolve::resolve_upsert`
+//! (which reconciles the probe's prediction against what the statement
+//! actually did), then write the matching policy + audit + outbox
+//! records.
 
 use cratestack_core::{
     AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
@@ -11,10 +13,10 @@ use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::query::support::evaluate_create_policies;
 use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
 
-use super::upsert_do_update_sql::upsert_returning_record;
 use super::upsert_predicate_probe::incoming_row_satisfies_predicate;
 use super::upsert_prepare::prepare_upsert_insert;
-use super::upsert_sql::{row_passes_update_policy, select_for_update_by_conflict_target};
+use super::upsert_resolve::resolve_upsert;
+use super::upsert_sql::select_for_update_by_conflict_target;
 
 /// Returns `(record, emits_any_event, audit_event)` — the caller
 /// decides whether to drain the outbox / fan the audit event out to
@@ -88,25 +90,21 @@ where
     // this path does NOT fall back to "skip the pre-probe" when
     // `incoming_row_satisfies_predicate` itself fails to evaluate
     // (cratestack#741 finding 2 — e.g. the predicate references a
-    // `@default(...)` column excluded from `insert_values`). DO
-    // NOTHING can do that safely because its real `ON CONFLICT ...
-    // DO NOTHING RETURNING` statement is unconditionally authoritative
-    // for Inserted-vs-Existing on its own. This DO UPDATE path has no
-    // equivalent authoritative fallback: `before_record` is the ONLY
-    // signal that picks Created-vs-Updated, the audit before-snapshot,
-    // and the update-policy gate — it is never reconciled against what
-    // the real `ON CONFLICT ... DO UPDATE` statement actually did (see
-    // `UpsertOutcome`'s doc comment / the tracked pre-existing race on
-    // this same field). Silently treating an unevaluable predicate as
-    // "no existing row" would deterministically mislabel every genuine
-    // update on such a schema as a Create, on every call, not just
-    // under a race — a worse, silent defect, not a fix. So the probe
-    // failure is left to propagate as an error here rather than
-    // guessed at; closing this gap for real needs either teaching
-    // `insert_values` to backfill literal `@default(...)` values (a
-    // codegen change reaching every create/insert path, not just
-    // upsert) or basing Created-vs-Updated on the real statement's own
-    // result instead of a pre-probe — both bigger than this fix.
+    // `@default(...)` column excluded from `insert_values`), and the
+    // probe failure is left to propagate as an error rather than
+    // guessed at.
+    //
+    // cratestack#745 removed the correctness argument that used to be
+    // recorded here — `before_record` is no longer the only signal for
+    // Created-vs-Updated, because `upsert_resolve::resolve_upsert` now
+    // reconciles it against what the statement actually did, so a
+    // mispredicted "no existing row" is recovered rather than
+    // mislabelled. What is left is a plain preference: an unevaluable
+    // predicate is a *schema* mistake, and the `Validation` error
+    // `upsert_predicate_probe_error.rs` maps it to names the predicate
+    // and the fix. Swallowing it would trade that diagnostic for two
+    // extra round trips on every single call against such a schema.
+    // Changing it is cratestack#741's territory, not this path's.
     //
     // The specific, common case — the predicate references a column a
     // `@default(...)` schema attribute excludes from `insert_values` —
@@ -134,38 +132,42 @@ where
             .await?
         }
     };
-    let inserted = before_record.is_none();
 
-    if !inserted
-        && !row_passes_update_policy(
-            runtime.pool(),
-            descriptor,
-            &conflict_columns,
-            conflict_target.predicate(),
-            ctx,
-        )
-        .await?
-    {
-        return Err(CratestackError::Forbidden(
-            "update policy denied this upsert".to_owned(),
-        ));
-    }
+    // The probe's answer is a prediction, not a verdict: it locks a row
+    // it finds, but it locks nothing when it finds none, so a
+    // concurrent commit can still turn the "insert" prediction into a
+    // real UPDATE. `resolve_upsert` runs the statement and reports what
+    // the database did, recovering the update branch (policy gate and
+    // before-snapshot included) when the prediction was wrong —
+    // cratestack#745. See its module doc for why that is done with
+    // `ON CONFLICT DO NOTHING` rather than `RETURNING (xmax = 0)`.
+    let resolved = resolve_upsert(
+        tx,
+        runtime,
+        descriptor,
+        &insert_values,
+        conflict_target,
+        &conflict_columns,
+        ctx,
+        before_record,
+    )
+    .await?;
+    let inserted = resolved.inserted;
+    let record = resolved.record;
 
-    let before_snapshot = if !inserted && audit_enabled {
-        before_record
+    let before_snapshot = if audit_enabled {
+        resolved
+            .before
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok())
     } else {
         None
     };
 
-    let record =
-        upsert_returning_record(&mut **tx, descriptor, &insert_values, conflict_target).await?;
-
-    // Event + audit fan-out, driven off whether the SELECT-FOR-UPDATE
-    // saw a row. We don't lean on `xmax = 0`: keeping the
-    // discriminator in the runtime (not the SQL) makes the rusqlite
-    // mirror trivial.
+    // Event + audit fan-out, driven off what the statement actually
+    // did. The discriminator stays in the runtime rather than the SQL
+    // (no `xmax = 0`), which keeps a future rusqlite mirror a
+    // transliteration of this sequencing.
     let event_kind = if inserted {
         ModelEventKind::Created
     } else {

@@ -1,10 +1,16 @@
 //! `INSERT … ON CONFLICT (<pk>) DO UPDATE …`, but with the
-//! create/update distinction made *before* the SQL runs (via a
-//! `SELECT … FOR UPDATE` probe inside the same transaction) so we can:
+//! create/update distinction *resolved* rather than merely guessed, so
+//! we can:
 //!
 //!   * pick the right policy slot (both must allow at call time)
 //!   * emit the correct ModelEventKind (Created vs Updated)
 //!   * capture an audit `before` snapshot only on the update branch
+//!
+//! A `SELECT … FOR UPDATE` probe inside the same transaction predicts
+//! the branch — binding when it finds a row (it holds the lock), a
+//! guess when it does not — so the statement itself gets the last word.
+//! See `upsert_resolve`'s module doc for how a mispredicted insert is
+//! recovered into a proper update (cratestack#745).
 //!
 //! The upsert is always transactional regardless of whether the model
 //! emits events or has `@@audit`. One extra round-trip for the

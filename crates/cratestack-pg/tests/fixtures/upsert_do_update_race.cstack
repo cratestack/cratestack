@@ -1,0 +1,26 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// cratestack#745. `payload` is the only eligible `upsert_update_column`
+// (the PK and `@version` are excluded by construction), so a conflicting
+// upsert visibly merges `payload` AND bumps `version` -- `version == 1`
+// on the returned record is the database's own attestation that the
+// statement took the UPDATE branch rather than the INSERT branch, which
+// is what makes the race reproduction verifiable rather than assumed.
+model RaceRow {
+  id String @id
+  payload String
+  version Int @version
+
+  @@audit
+  @@emit(created, updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}

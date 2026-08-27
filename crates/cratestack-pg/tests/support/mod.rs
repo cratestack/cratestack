@@ -8,4 +8,5 @@
 #![allow(dead_code)] // each test binary uses only a subset of these helpers
 
 pub mod pg;
+pub mod race;
 pub mod tracing_capture;

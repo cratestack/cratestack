@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### `.upsert(..).run(..)` no longer reports `Created` for an update it lost a race on (#745)
+
+The `ON CONFLICT ... DO UPDATE` upsert decided Created-vs-Updated from a `SELECT ... FOR UPDATE`
+probe taken *before* the statement ran, and never reconciled that decision against what the database
+actually did. When the probe found no row and a concurrent transaction committed a conflicting row in
+the gap, Postgres serialized on the unique index and performed a genuine **UPDATE** — but the runtime
+still enqueued a `Created` model event, wrote `AuditOperation::Create` with a `null` before-snapshot,
+and skipped the update-policy gate entirely. The row handed back was correct; the audit trail and the
+event stream described something that never happened. On the money-flow call sites this primitive
+exists for, that is the record of what the service did.
+
+The insert branch now runs `INSERT ... ON CONFLICT (<target>) DO NOTHING RETURNING ...` — the same
+statement `.do_nothing()` already relies on — so the database itself answers "did I insert?". A
+returned row means a genuine insert (unchanged: `Created`, `AuditOperation::Create`, no
+before-snapshot, one statement, no extra round trip). No returned row means the race was lost *and the
+winning row has not been touched yet*, so the runtime re-enters the update branch properly: it locks
+the winner, runs the update policy gate, captures a real before-snapshot, and only then issues the
+`DO UPDATE`. A lost race now emits `Updated` / `AuditOperation::Update` with the winner's row as its
+`before`.
+
+Nothing changes off the race path: the uncontended insert and the probe-predicted update emit exactly
+the events, audit operations and snapshots they emitted before. `.upsert(..).do_nothing()` is
+untouched — it already resolved its outcome from the database — and `UpsertOutcome`'s public shape is
+unchanged. Deliberately **not** implemented with `RETURNING (xmax = 0)`: that classifies correctly but
+only *after* the prior row has already been overwritten and is unrecoverable, and it is a
+storage-layer implementation detail with no counterpart in any other engine, where
+`ON CONFLICT DO NOTHING ... RETURNING` is documented behaviour that SQLite mirrors verbatim.
+
+Known adjacent gap, unchanged and out of scope here: with `@@soft_delete`, a tombstone sitting at the
+conflict target is invisible to the probe, so a `DO UPDATE` upsert still revives it and reports a
+create. `upsert_resolve.rs` records this at the branch where it surfaces.
+
+Regression coverage is `crates/cratestack-pg/tests/upsert_do_update_race.rs`, which reproduces the
+race deterministically — a second session holds an uncommitted conflicting row (invisible to the
+probe, but something the loser's `INSERT` provably *must* block on), and the harness only commits it
+once that block is observed in `pg_stat_activity`, failing loudly rather than passing if the ordering
+never happens.
+
 ### `@@internal("action")` route suppression — REST, RPC and every generated client (#743, implementing #514's accepted design)
 
 A model action can now be marked `@@internal("list" | "detail" | "read" | "create" | "update" |

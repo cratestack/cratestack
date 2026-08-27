@@ -44,6 +44,13 @@ use tokio::sync::MutexGuard;
 /// for free.
 pub struct TestPg {
     pub pool: PgPool,
+    /// The URL [`pool`](Self::pool) was built from, so a test can open
+    /// *additional, independent* connections outside the pool. Needed
+    /// by concurrency tests (`upsert_do_update_race.rs`): the pool is
+    /// capped at two connections and the framework itself borrows from
+    /// it, so a second session driving a deliberate conflict has to
+    /// connect on its own rather than compete for a pool slot.
+    pub url: String,
     /// Held only when we spawned the container ourselves. The Drop on
     /// `ContainerAsync` issues the `docker rm -f` equivalent, so we
     /// never leak containers.
@@ -85,6 +92,7 @@ pub async fn connect_or_skip() -> Option<TestPg> {
         )?;
         return Some(TestPg {
             pool,
+            url,
             _container: None,
         });
     }
@@ -113,6 +121,7 @@ pub async fn connect_or_skip() -> Option<TestPg> {
         )?;
         return Some(TestPg {
             pool,
+            url,
             _container: Some(container),
         });
     }
