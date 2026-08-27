@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### `.cstack` semantic tokens — identifiers coloured by what they resolve to
+
+`cratestack-lsp` now answers `textDocument/semanticTokens/full`. This is what closes the
+gap the TextMate grammar structurally cannot: `String` (a builtin scalar), `User` (a model),
+`Role` (an enum) and `Timestamps` (a mixin) are four bare capitalised words to a regex and
+four different things to a resolved schema. Models colour as `struct`, enums as `enum`,
+mixins as `interface`, builtins as `type`, fields and `@relation` columns as `property`,
+enum variants as `enumMember`, procedures as `function` and their arguments as `parameter`.
+
+The tokens **supplement** the grammar rather than replace it. VS Code has no tree-sitter API
+for third-party languages, so the grammar keeps doing what regexes do well — keywords,
+strings, comments, available instantly before the server starts — and the server re-colours
+identifiers on top. Only an attribute's `@name` head is a decorator, so the columns named
+inside `@relation(fields: [...], references: [...])` keep colouring as the properties they
+are rather than being swallowed into one attribute-coloured run.
+
+One non-obvious case is pinned by a test: `expand_model_mixins` clones each mixin field into
+every consuming model *keeping the mixin's spans*, so the same span is collected twice and
+would emit a duplicate zero-width-delta token if it were not de-duplicated.
+
 ### `.cstack` navigation: enum/mixin go-to-definition, and find-all-references
 
 `cratestack-lsp` now answers `textDocument/references` and

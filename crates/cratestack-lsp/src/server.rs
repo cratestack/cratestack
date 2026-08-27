@@ -1,19 +1,22 @@
 use tower_lsp_server::LanguageServer;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{
-    CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams,
-    DocumentSymbolParams, DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse,
-    Hover, HoverContents, HoverParams, HoverProviderCapability, InitializeParams, InitializeResult,
-    InitializedParams, Location, MarkupContent, MarkupKind, MessageType, OneOf, ReferenceParams,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
+    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
+    HoverParams, InitializeParams, InitializeResult, InitializedParams, Location, MarkupContent,
+    MarkupKind, MessageType, ReferenceParams, SemanticTokens, SemanticTokensParams,
+    SemanticTokensResult, ServerInfo,
 };
 
+use crate::capabilities::server_capabilities;
 use crate::completion::completion_items;
 use crate::definition::definition_location;
 use crate::document_symbols::document_symbols;
 use crate::hover::locate_symbol;
+use crate::hover_render::hover_markdown;
 use crate::navigation::reference_ranges;
+use crate::semantic_tokens::semantic_tokens;
 use crate::state::Backend;
 use crate::text::{position_to_offset, span_to_range};
 
@@ -24,18 +27,7 @@ impl LanguageServer for Backend {
                 name: "cratestack-lsp".to_owned(),
                 version: Some(env!("CARGO_PKG_VERSION").to_owned()),
             }),
-            capabilities: ServerCapabilities {
-                text_document_sync: Some(TextDocumentSyncCapability::Kind(
-                    TextDocumentSyncKind::FULL,
-                )),
-                hover_provider: Some(HoverProviderCapability::Simple(true)),
-                completion_provider: Some(CompletionOptions::default()),
-                definition_provider: Some(OneOf::Left(true)),
-                references_provider: Some(OneOf::Left(true)),
-                document_highlight_provider: Some(OneOf::Left(true)),
-                document_symbol_provider: Some(OneOf::Left(true)),
-                ..ServerCapabilities::default()
-            },
+            capabilities: server_capabilities(),
             offset_encoding: None,
         })
     }
@@ -78,23 +70,12 @@ impl LanguageServer for Backend {
         let Some(symbol) = locate_symbol(schema, offset) else {
             return Ok(None);
         };
-        let range = span_to_range(&document.text, symbol.selection_span);
-        let mut value = format!("**{}** `{}`", symbol.kind, symbol.name);
-        if !symbol.detail.is_empty() {
-            value.push_str("\n\n");
-            value.push_str(&format!("`{}`", symbol.detail));
-        }
-        if !symbol.docs.is_empty() {
-            value.push_str("\n\n");
-            value.push_str(&symbol.docs.join("\n"));
-        }
-
         Ok(Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value,
+                value: hover_markdown(&symbol),
             }),
-            range,
+            range: span_to_range(&document.text, symbol.selection_span),
         }))
     }
 
@@ -175,6 +156,23 @@ impl LanguageServer for Backend {
                     .collect()
             }),
         )
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let documents = self.documents.read().await;
+        let Some(document) = documents.get(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        let Some(schema) = &document.schema else {
+            return Ok(None);
+        };
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data: semantic_tokens(&document.text, schema),
+        })))
     }
 
     async fn document_symbol(
