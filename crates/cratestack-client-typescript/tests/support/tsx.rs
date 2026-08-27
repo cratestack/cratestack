@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+
+use super::publish::{publish_tree, sibling};
 
 /// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
 /// version changes without a commit here, and the failure it produces lands in
@@ -41,39 +42,26 @@ fn tsx_cli() -> &'static Path {
     CLI.get_or_init(resolve).as_path()
 }
 
-/// Install-then-atomically-publish, rather than installing in place.
+/// Install into a private staging directory, then publish it atomically.
 ///
 /// `CARGO_TARGET_TMPDIR` (`<target-dir>/tmp`) is shared by every test binary
-/// and is not cleaned between runs, so the published tree survives across
-/// binaries *and* across invocations of `cargo test`: the steady state is a
-/// single `is_file()` stat and no npm process at all. It is inside `target/`,
-/// so `cargo clean` disposes of it and nothing here needs gitignoring.
+/// and is not cleaned between runs, so a published tree is reused across
+/// binaries and across invocations of `cargo test`: the steady state locally
+/// is one `is_file()` stat and no npm process at all. It lives inside
+/// `target/`, so `cargo clean` disposes of it and nothing needs gitignoring.
 ///
-/// The publish is a `rename` of a fully-populated staging directory, which is
-/// what makes concurrency safe *without* a lock. Losers of the race fail the
-/// rename with `ENOTEMPTY` (Linux refuses to rename over a non-empty
-/// directory) and adopt the winner's tree. A reader therefore only ever sees
-/// the final path either absent or complete — never half-written and never
-/// being rolled back, which is the exact state `~/.npm/_npx/<hash>` used to be
-/// left in. Concurrent cold installs write disjoint staging directories and
-/// share only npm's content-addressed `_cacache`, which unlike `_npx` is built
-/// for concurrent access.
+/// On CI that steady state does *not* hold, by design of the cache rather than
+/// by accident — `Swatinem/rust-cache` strips every regular file out of this
+/// tree before saving it, so each job re-installs once. See `publish.rs` for
+/// the mechanism and why the publish path must tolerate it.
 fn resolve() -> PathBuf {
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR"));
     let published = tmp.join(TSX_PIN.replace('@', "-"));
-    let cli = cli_path(&published);
-    if cli.is_file() {
-        return cli;
+    if is_complete(&published) {
+        return cli_path(&published);
     }
 
-    let staging = tmp.join(format!(
-        ".{}.staging-{}-{}",
-        TSX_PIN.replace('@', "-"),
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.subsec_nanos())
-    ));
+    let staging = sibling(&published, "staging");
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging).expect("create tsx staging dir");
 
@@ -89,27 +77,26 @@ fn resolve() -> PathBuf {
     install.arg(&staging).arg(TSX_PIN);
     let output = install.output().expect("run npm install to resolve tsx");
 
-    let staged_cli = cli_path(&staging);
     assert!(
-        output.status.success() && staged_cli.is_file(),
+        output.status.success() && is_complete(&staging),
         "failed to resolve {TSX_PIN} for the generated-TypeScript smoke tests\n{}",
         super::command_report(&install, &output)
     );
 
-    match std::fs::rename(&staging, &published) {
-        Ok(()) => cli,
-        Err(error) => {
-            // Another test binary published first; adopt its tree. Anything
-            // else is a real failure worth surfacing loudly.
-            let _ = std::fs::remove_dir_all(&staging);
-            assert!(
-                cli.is_file(),
-                "publishing {TSX_PIN} to {} failed and no other process had published it: {error}",
-                published.display()
-            );
-            cli
-        }
-    }
+    publish_tree(&staging, &published, &is_complete);
+    cli_path(&published)
+}
+
+/// Validates a candidate tree by the artifact we actually exec, and requires
+/// it to be non-empty.
+///
+/// Mere existence of the directory is not enough and never was: a
+/// rust-cache-restored `target/` contains this tree as a skeleton of empty
+/// directories with every file unlinked. The length check additionally rejects
+/// a truncated restore, where `cli.mjs` exists at zero bytes and would
+/// otherwise pass an `is_file()` test only to fail at exec time.
+fn is_complete(root: &Path) -> bool {
+    std::fs::metadata(cli_path(root)).is_ok_and(|meta| meta.is_file() && meta.len() > 0)
 }
 
 fn cli_path(root: &Path) -> PathBuf {

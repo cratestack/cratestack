@@ -26,6 +26,7 @@
 //! to. Every subprocess assertion in these tests now reports the command,
 //! its working directory, and its exit status alongside the streams.
 
+mod publish;
 mod report;
 mod tsx;
 
