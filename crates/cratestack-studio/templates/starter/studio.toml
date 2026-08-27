@@ -21,8 +21,15 @@ mode = "rw"
 # is routed for real only on driver = "postgres" — SQLite has no
 # event-outbox equivalent, and include_embedded_schema! itself treats
 # @@emit(...) as a no-op on the framework's own embedded backend, so
-# this is a permanent backend capability difference. @@allow policy
-# checks are never evaluated on [target.db] either way.
+# this is a permanent backend capability difference. No schema-declared
+# write constraint is enforced on [target.db] either way: @@allow /
+# @@deny are never evaluated, and @@internal(...) route suppression
+# does not apply, so a suppressed or denied action is still performable
+# here. That is deliberate for a direct-SQL admin tool
+# (cratestack#744) — `mode = "rw"` on a [target.db] target is
+# database-level access. Point the target at [target.api] instead when
+# you need the schema's constraints enforced; the deployed service
+# applies them itself.
 # `schemas/example.cstack` declares neither @version nor @@emit, so
 # none of this applies to this starter — but for a model that declares
 # @@emit(...) on a non-Postgres target, Studio refuses
