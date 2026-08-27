@@ -13,6 +13,7 @@ Current editor features come from the language server plus the bundled grammar:
 * find all references
 * document highlight
 * document symbols
+* semantic tokens
 * basic syntax highlighting
 
 Go-to-definition (Ctrl+Click / F12) resolves every reference site in a schema:
@@ -26,11 +27,17 @@ references of a model's `id` surfaces the `references: [id]` sites that point at
 it. Field references are qualified by their owning declaration, so `User.id` and
 `Post.id` are tracked as distinct symbols rather than matched by name.
 
+Semantic tokens layer on top of the TextMate grammar rather than replacing it.
+The grammar keeps colouring keywords, strings and comments — instantly, before
+the server starts — and the server then re-colours identifiers using the
+resolved schema, which is the part regexes cannot do: `String` (builtin), `User`
+(a model), `Role` (an enum) and `Timestamps` (a mixin) are all bare capitalised
+words to a grammar, and four different things to the server.
+
 Current limitations:
 
 * no rename support yet
 * no formatting support yet
-* no semantic tokens yet
 * one diagnostic per file — the parser stops at the first error
 * navigation goes quiet while a file has a syntax error, since the schema fails
   to parse and there is no last-known-good fallback

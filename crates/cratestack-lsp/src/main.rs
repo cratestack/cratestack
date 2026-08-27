@@ -1,12 +1,15 @@
 mod analyze;
+mod capabilities;
 mod completion;
 mod definition;
 mod document_symbols;
 mod hover;
+mod hover_render;
 mod mixin_use;
 mod navigation;
 mod references;
 mod relation_parse;
+mod semantic_tokens;
 mod server;
 mod state;
 mod symbol_target;
@@ -17,6 +20,8 @@ mod type_ref;
 mod tests;
 #[cfg(test)]
 mod tests_navigation;
+#[cfg(test)]
+mod tests_semantic_tokens;
 
 use state::Backend;
 use tower_lsp_server::{LspService, Server};
