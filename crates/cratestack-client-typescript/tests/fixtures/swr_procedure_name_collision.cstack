@@ -1,0 +1,31 @@
+// Deliberate collision fixture for cratestack#777: model `Post` derives
+// the free function `listPosts` under `--swr`
+// (`crate::naming::model_fn_names`), and `procedure list_posts` derives
+// the same identifier through `to_camel_case` — the snake_case spelling
+// on purpose, since the collision is NOT limited to procedure names that
+// are already camelCase; both run through the same `split_words`
+// tokenizer. `src/swr/index.ts` `export *`s `./models/post.js` and
+// `./procedures.js`, so this schema would otherwise generate a package
+// that fails `tsc` with TS2308.
+//
+// Sibling of `swr_key_collision.cstack` (issue #344, model-vs-model file
+// names) — same "fail at generation, not at the consumer's build" stance.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+model Post {
+  id Int @id
+  title String
+
+  @@allow("read", true)
+}
+
+procedure list_posts(): Post[]
+  @allow(auth() != null)

@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### `--swr` rejects a procedure whose name collides with a generated model function (#777)
+
+`--swr` is the only TypeScript layout that exports a model's CRUD operations as top-level free
+functions (`listPosts`/`getPost`/`createPost`/…, derived from the model name), and its
+`src/swr/index.ts` barrel `export *`s both `./models/<model>.js` and `./procedures.js`. A schema
+declaring `model Post` alongside `procedure listPosts` therefore put two bindings of the same name
+into that barrel, and the generated package failed to compile — `tsc` reported
+`TS2308: Module "./models/post.js" has already exported a member named 'listPosts'`. Generation
+itself exited 0 with no warning, so the failure only surfaced at the consumer's own build.
+
+`generate-typescript --swr` now refuses such a schema up front, before any file is written, naming
+the procedure, the model, the operation and the shared identifier. The collision is detected on the
+`to_camel_case`-normalized form, so `procedure list_posts` is caught too, not only an
+already-camelCase spelling. Suppressed operations are exempt: a name that `@@internal` or a missing
+`create` rule keeps out of the generated file cannot collide, and `get<Model>WithResponse` is
+checked for REST schemas only, since the RPC template never emits it.
+
+This mirrors #344's precedent (two models whose kebab-case file names collide) in both placement and
+stance: the check lives in the generator that owns the naming scheme rather than in
+`cratestack-parser` — per decision spike #317 — so a schema that never passes `--swr` is unaffected,
+and it fails loudly rather than silently picking which of two public function names to rename.
+
+The default (non-`--swr`) layout was never exposed: its model operations are methods on per-model
+client classes (`client.post.list(...)`), leaving nothing for a top-level procedure function to
+collide with. `--refine` adds no comparable surface. `--tanstack` has the same category of hazard
+structurally (model and procedure hooks share `src/react-query.ts`) but is not addressed here and no
+committed fixture triggers it — see #777's "Out of Scope".
+
+The `ci_rest.cstack`/`ci_rpc.cstack` verification fixtures rename their `listPosts` procedure to
+`searchPosts` accordingly; this is why `just verify-typescript`'s `--swr` + RPC leg, added in #776,
+is green again.
+
 ### `--swr` + `transport rpc` now honours `native_cbor` too — breaking (#765)
 
 `cratestack generate-typescript --swr` on an RPC-transport schema emits `src/swr/runtime.ts` from
