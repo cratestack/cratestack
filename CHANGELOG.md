@@ -40,6 +40,41 @@ probe, but something the loser's `INSERT` provably *must* block on), and the har
 once that block is observed in `pg_stat_activity`, failing loudly rather than passing if the ordering
 never happens.
 
+### The generated-TypeScript smoke tests no longer race on npm's shared `_npx` cache (#738)
+
+Five test files in `cratestack-client-typescript` ran their Node smoke scripts through
+`npx --yes tsx@4.23.12 <script>`. npm derives the `~/.npm/_npx/<hash>` directory from the package spec
+alone, so all seven of those call sites — spread across five *separate test binaries* that `cargo test`
+runs concurrently — resolved to one directory, `~/.npm/_npx/95c8da6ffd4052b6`, and each one installed
+into it and (on any failure) rolled its install back out of it. One shared mutable directory, three CI
+signatures from a single cause: `ERR_MODULE_NOT_FOUND` on `tsx/dist/loader.mjs`,
+`npm warn cleanup ENOTEMPTY`, and `npm error code ENOENT / syscall spawn sh`. It turned `main` red on
+`e0f92cc4` and cost four manual reruns in one session.
+
+`tsx` is now resolved **once**, by `tests/support`, into an immutable tree published under
+`CARGO_TARGET_TMPDIR` by an atomic `rename` of a fully-installed staging directory; tests invoke
+`node <cli.mjs> <script>` — exactly what npm's own `.bin/tsx` shim execs. This takes the issue's
+second Expected Behavior direction (remove `npx` from the concurrent path) rather than the first
+(give each test its own cache), because a per-test cache leaves N racers racing more politely while
+paying a cold download each, whereas nothing here writes to a shared directory at all any more. A
+reader now only ever sees the published path absent or complete, never half-written and never being
+rolled back. Verified structurally rather than by repetition: a full-suite run against a wiped,
+private npm cache creates **no `_npx` directory whatsoever** (it previously created two —
+`95c8da6ffd4052b6` for `tsx@4.23.12`, plus `fd45a72a545557e9` for a second, *unpinned* `npx --yes tsx`
+call site in `rest_list_query_wire_format.rs` that the issue had not catalogued; it now uses the pin
+like the rest).
+
+Independently, a failed smoke script is now attributable. The panic used to read `smoke script failed:`
+followed by two empty streams — on a red `main` run, one of the two failing tests printed nothing at
+all, making an npm tooling death indistinguishable from a genuine assertion failure in generated
+TypeScript. Every subprocess assertion in these tests now reports the command line, its working
+directory, and its exit status (naming a signal death rather than rendering it as a bare `-1`)
+alongside the streams.
+
+No production code changed — this is test-harness only. Both smoke tests still exercise a real HTTP
+stub round trip, `#726`'s exit-status assertion is untouched, and the Node-absent skip path still
+fires (it now probes `node`/`npm`, the two binaries the harness actually invokes, rather than
+`node`/`npm`/`npx`).
 ### `CRATESTACK_REQUIRE_DB` now fails when *no* database backend is configured (#747)
 
 `CRATESTACK_REQUIRE_DB` exists to turn a silent skip into a loud failure, so that a green run can be
