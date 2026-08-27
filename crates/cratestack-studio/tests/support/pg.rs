@@ -125,6 +125,15 @@ pub async fn connect_or_skip() -> Option<TestPg> {
         });
     }
 
+    // Load-bearing, and audited as correct by cratestack#747: the same
+    // trailing guard was MISSING in `cratestack-pg` and `cratestack-outbox`,
+    // so their whole PG-backed suites reported `ok` in 0.00s with
+    // `CRATESTACK_REQUIRE_DB=1` set. Both now carry it, extracted into a
+    // pure `pick_backend` with a `#[should_panic]` regression test
+    // (`crates/cratestack-pg/tests/support/require_db.rs` is the reference
+    // copy and lists every sibling). This crate's copy is left inline
+    // because it is already correct and has no `tests/require_guard.rs`
+    // binary to host the proof; if you touch it, mirror the pg one.
     if require {
         panic!(
             "CRATESTACK_REQUIRE_DB is set but neither CRATESTACK_TEST_DATABASE_URL nor \

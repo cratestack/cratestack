@@ -117,6 +117,11 @@ fn base_url() -> Option<String> {
         });
     }
 
+    // Audited as correct by cratestack#747, which found this arm MISSING in
+    // `cratestack-pg` and `cratestack-outbox` — their whole PG-backed
+    // suites reported `ok` in 0.00s with `CRATESTACK_REQUIRE_DB=1` set.
+    // See `crates/cratestack-pg/tests/support/require_db.rs` for the
+    // reference copy and the registry of every sibling.
     if require {
         panic!(
             "CRATESTACK_REQUIRE_DB is set but neither CRATESTACK_TEST_DATABASE_URL nor \

@@ -600,11 +600,13 @@ see the scope note above.)
 
 ## 8a. Known-incomplete surfaces after implementation (added 2026-08-26)
 
-One surface was checked during cratestack#743's implementation review
-and found to still emit something for a suppressed verb. It was traced
-end-to-end and confirmed **not** to be a leak — documented here,
-deliberately, rather than silently left for the next person to
-re-discover by reading generated output.
+One *generated* surface was checked during cratestack#743's
+implementation review and found to still emit something for a
+suppressed verb. It was traced end-to-end and confirmed **not** to be a
+leak — documented here, deliberately, rather than silently left for the
+next person to re-discover by reading generated output. (A
+non-generated surface, CrateStack Studio's admin write path, is out of
+`@@internal`'s reach entirely by decision — see §8b.)
 
 - **TypeScript `swr` preset's cache-key factories**
   (`crates/cratestack-client-typescript/templates/src/swr/
@@ -652,6 +654,60 @@ so leaving it unfiltered was closing a gap the design itself called
 out, not a new judgment call. `generate_model_transport_constants` and
 `generate_model_transport_entries` now consult `model_internal_actions`
 exactly like the other four surfaces.)
+
+## 8b. Deliberately out of scope: Studio's `[target.db]` write path (cratestack#744, added 2026-08-27)
+
+`@@internal` suppresses *generated* surfaces. CrateStack Studio's admin
+records API is not a generated surface, and one of its two channels
+does not go through one at all. This was raised as cratestack#744 and
+**decided rather than left open**: option 3, "Studio operates beneath
+the schema by design; document it," no behaviour change.
+
+- **`[target.db]` is not covered, deliberately.**
+  `POST`/`PATCH`/`DELETE` on
+  `/api/targets/{key}/models/{model}/records` go straight to SQL
+  through `PostgresSource`/`SqliteSource`
+  (`crates/cratestack-studio/src/api/records/writes.rs` →
+  `crates/cratestack-studio/src/data/`), never through the
+  macro-generated model router — so nothing suppression does at
+  generation time can reach them. The only pre-flight checks are in
+  `crates/cratestack-studio/src/api/records/guards.rs`:
+  `require_writable` (is the target `TargetMode::Rw`?) and
+  `require_write_mode` (`@version`/`@@emit` routability, plus the
+  `allow_unsafe_writes` opt-in from cratestack#507/#516).
+  `cratestack_core::model_internal_actions` is not called anywhere in
+  `cratestack-studio`, and grepping `api/records/` for policy
+  evaluation returns nothing. That is consistent with how Studio has
+  always treated `@@allow`/`@@deny` on that path — it has never
+  evaluated them either — and gating `@@internal` there while
+  `@@allow` stayed unenforced was rejected as the arbitrary half of
+  the change (#744's option 1). The trust model this rests on: a
+  direct-SQL admin tool sits beneath the schema the same way `psql`
+  does, so `mode = "rw"` on a `[target.db]` target is database-level
+  access, full stop.
+- **`[target.api]` is covered, for free.** `ApiSource`
+  (`crates/cratestack-studio/src/data/api.rs`) issues ordinary HTTP
+  requests against the deployed service's macro-generated REST routes —
+  "the same surface the TypeScript / Dart clients consume," per its own
+  module doc. A suppressed verb therefore has no route to call and the
+  request fails at the HTTP layer exactly as §4 describes (`405` when
+  the path survives for another verb, `404` when every verb on it is
+  suppressed), and `@@allow`/`@@deny` are evaluated server-side against
+  the identity in `[target.api].auth` like any other client's. Studio
+  implements neither check, which is why neither can drift.
+- **Precedence, which decides which of the two an operator gets.**
+  `crates/cratestack-studio/src/workspace/builder.rs` takes
+  `[target.db]` whenever the target declares one and falls back to
+  `[target.api]` only when there is no `[target.db]` block, so a target
+  declaring **both** is a `[target.db]` target for every read and
+  write. Adding `[target.api]` alongside a `[target.db]` buys no
+  enforcement. (`TargetApi::prefer_for` is parsed but consulted
+  nowhere; it does not redirect writes.)
+
+**Where this is promised to operators**, i.e. what a reversal would
+have to edit alongside the code: `cratestack-studio`'s crate rustdoc
+("Granting `rw`"), `TargetMode`'s doc comment, `cratestack-studio`'s
+README, both starter `studio.toml` templates, and this section.
 
 ## 9. Non-goals (carried over from #514)
 
