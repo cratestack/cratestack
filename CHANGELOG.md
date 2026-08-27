@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### `.cstack` editor features no longer blink off on every syntax error
+
+A failed parse used to drop the schema entirely, and every feature that needs one —
+go-to-definition, find-references, hover, document symbols, semantic tokens — returned
+nothing until the file was valid again. While someone is typing, a file spends most of its
+time invalid, so in practice these features flickered on and off keystroke by keystroke.
+
+The server now retains the last schema that parsed, together with **the exact text it was
+parsed from**. That pairing is the correctness argument rather than an implementation
+detail: spans index into the text that produced them, so resolving a retained span against
+the current buffer would read bytes the parser never saw and silently land in the wrong
+place — which looks like working navigation, just wrong. Providers take both halves from
+one accessor (`DocumentState::resolved`) so the two can never be mixed.
+
+Measured against the running server, opening a valid file, breaking it, then fixing it:
+
+```text
+                       before                        after
+1. valid               definition=L0 tokens=8        definition=L0 tokens=8
+2. mid-edit (broken)   definition=NONE tokens=0      definition=L0 tokens=8
+3. fixed again         definition=L0 tokens=8        definition=L0 tokens=8
+```
+
+Two limits are deliberate. Diagnostics always describe the *current* text, so a retained
+schema never suppresses a live error. And a document that has never parsed keeps nothing —
+there is no schema to fall back to, and inventing one would be worse than staying quiet.
+
+Because results can now legitimately predate what is on screen, hover marks them: a stale
+popup carries a one-line note rather than presenting itself as current.
+
 ### `.cstack` semantic tokens — identifiers coloured by what they resolve to
 
 `cratestack-lsp` now answers `textDocument/semanticTokens/full`. This is what closes the

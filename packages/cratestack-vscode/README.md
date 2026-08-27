@@ -34,13 +34,19 @@ resolved schema, which is the part regexes cannot do: `String` (builtin), `User`
 (a model), `Role` (an enum) and `Timestamps` (a mixin) are all bare capitalised
 words to a grammar, and four different things to the server.
 
+While a file has a syntax error the server keeps serving the last version that
+parsed, so navigation, symbols and colouring stay put instead of blinking off
+with every keystroke. The error itself is still reported against the current
+text — a retained schema never suppresses a live diagnostic — and hover says so
+explicitly, since a popup describing the file as it was several keystrokes ago
+should not look like a live one. A file that has never parsed has nothing to
+fall back to and stays quiet.
+
 Current limitations:
 
 * no rename support yet
 * no formatting support yet
 * one diagnostic per file — the parser stops at the first error
-* navigation goes quiet while a file has a syntax error, since the schema fails
-  to parse and there is no last-known-good fallback
 
 ## Settings
 

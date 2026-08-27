@@ -14,13 +14,13 @@ pub(crate) fn reference_ranges(
     position: Position,
     include_declaration: bool,
 ) -> Option<Vec<Range>> {
-    let schema = document.schema.as_ref()?;
-    let offset = position_to_offset(&document.text, position)?;
-    let spans = reference_spans_at(&document.text, schema, offset, include_declaration)?;
+    let (text, schema) = document.resolved()?;
+    let offset = position_to_offset(text, position)?;
+    let spans = reference_spans_at(text, schema, offset, include_declaration)?;
     Some(
         spans
             .into_iter()
-            .map(|span| range_from_offsets(&document.text, span.start, span.end))
+            .map(|span| range_from_offsets(text, span.start, span.end))
             .collect(),
     )
 }
