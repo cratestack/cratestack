@@ -19,7 +19,6 @@ use crate::validate::snake_case_collisions::validate_field_column_collisions;
 use crate::validate::type_names::validate_type_ref;
 
 /// Each mixin is checked independently.
-
 pub(super) fn validate_mixins_collecting(
     schema: &Schema,
     type_names: &BTreeSet<String>,
@@ -98,7 +97,6 @@ pub(super) fn validate_mixins_collecting(
 }
 
 /// Each `type` block is checked independently.
-
 pub(super) fn validate_types_collecting(
     schema: &Schema,
     type_names: &BTreeSet<String>,
@@ -164,7 +162,6 @@ pub(super) fn validate_types_collecting(
 }
 
 /// Each enum is checked independently so one bad enum does not hide the next.
-
 pub(super) fn validate_enums_collecting(schema: &Schema, errors: &mut Vec<SchemaError>) {
     for enum_decl in &schema.enums {
         record(errors, || {
