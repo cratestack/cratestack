@@ -19,6 +19,8 @@ mod type_ref;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_last_known_good;
+#[cfg(test)]
 mod tests_navigation;
 #[cfg(test)]
 mod tests_semantic_tokens;

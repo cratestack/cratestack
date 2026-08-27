@@ -60,11 +60,10 @@ impl LanguageServer for Backend {
         let Some(document) = documents.get(&text_document_position.text_document.uri) else {
             return Ok(None);
         };
-        let Some(schema) = &document.schema else {
+        let Some((text, schema)) = document.resolved() else {
             return Ok(None);
         };
-        let Some(offset) = position_to_offset(&document.text, text_document_position.position)
-        else {
+        let Some(offset) = position_to_offset(text, text_document_position.position) else {
             return Ok(None);
         };
         let Some(symbol) = locate_symbol(schema, offset) else {
@@ -73,9 +72,9 @@ impl LanguageServer for Backend {
         Ok(Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: hover_markdown(&symbol),
+                value: hover_markdown(&symbol, document.is_stale()),
             }),
-            range: span_to_range(&document.text, symbol.selection_span),
+            range: span_to_range(text, symbol.selection_span),
         }))
     }
 
@@ -83,7 +82,7 @@ impl LanguageServer for Backend {
         let documents = self.documents.read().await;
         let schema = documents
             .get(&params.text_document_position.text_document.uri)
-            .and_then(|document| document.schema.as_ref());
+            .and_then(|document| document.resolved().map(|(_, schema)| schema));
         Ok(Some(CompletionResponse::Array(completion_items(schema))))
     }
 
@@ -96,16 +95,15 @@ impl LanguageServer for Backend {
         let Some(document) = documents.get(&text_document_position.text_document.uri) else {
             return Ok(None);
         };
-        let Some(schema) = &document.schema else {
+        let Some((text, schema)) = document.resolved() else {
             return Ok(None);
         };
-        let Some(offset) = position_to_offset(&document.text, text_document_position.position)
-        else {
+        let Some(offset) = position_to_offset(text, text_document_position.position) else {
             return Ok(None);
         };
         let Some(location) = definition_location(
             &text_document_position.text_document.uri,
-            &document.text,
+            text,
             schema,
             offset,
         ) else {
@@ -166,12 +164,12 @@ impl LanguageServer for Backend {
         let Some(document) = documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
-        let Some(schema) = &document.schema else {
+        let Some((text, schema)) = document.resolved() else {
             return Ok(None);
         };
         Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
             result_id: None,
-            data: semantic_tokens(&document.text, schema),
+            data: semantic_tokens(text, schema),
         })))
     }
 
@@ -183,12 +181,11 @@ impl LanguageServer for Backend {
         let Some(document) = documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
-        let Some(schema) = &document.schema else {
+        let Some((text, schema)) = document.resolved() else {
             return Ok(None);
         };
         Ok(Some(DocumentSymbolResponse::Nested(document_symbols(
-            &document.text,
-            schema,
+            text, schema,
         ))))
     }
 }
