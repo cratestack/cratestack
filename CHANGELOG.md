@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Documented: Studio's `[target.db]` write path enforces no schema-declared write constraint (#744)
+
+**No behaviour change** — this records a maintainer decision (#744, option 3) about what
+`mode = "rw"` already grants, because an operator granting it needs to know which of Studio's two
+channels they are granting. A `[target.db]` target (`PostgresSource`/`SqliteSource`) is a direct SQL
+connection that sits *beneath* the schema the way `psql` does: it enforces **no** schema-declared
+write constraint — not `@@allow`/`@@deny` (on reads or writes, and never has), and not
+`@@internal(...)` route suppression (#743). A model whose `create` is suppressed with
+`@@internal("create")`, or denied by an `@@allow` rule, is still creatable through
+`POST /api/targets/{key}/models/{model}/records` on an `rw` `[target.db]` target. The only pre-flight
+checks remain `TargetMode::Rw` and `@version`/`@@emit` write routability plus the `allow_unsafe_writes`
+opt-in (#507, #516). Making Studio enforce `@@internal` was considered and rejected as the arbitrary
+half of the change while `@@allow` stayed unenforced (#744's option 1).
+
+A **`[target.api]`-only** target is the opposite and gets both for free: `ApiSource` issues ordinary
+HTTP requests against the deployed service's macro-generated REST routes — the same surface the
+TypeScript and Dart clients consume — so a suppressed verb has no route to call (`405`, or `404` when
+every verb on the path is suppressed) and policies are evaluated server-side against the identity in
+`[target.api].auth`. Note the precedence, newly written down: the workspace loader takes `[target.db]`
+whenever the target declares one, so a target declaring **both** blocks is a `[target.db]` target for
+every read and write — adding `[target.api]` alongside a `[target.db]` buys no enforcement.
+
+Written down in `cratestack-studio`'s crate rustdoc (new "Granting `rw`" section), `TargetMode`'s doc
+comment, `require_writable`'s doc comment in `api/records/guards.rs`, `cratestack-studio`'s README (new
+"What `mode = \"rw\"` grants" table), both starter `studio.toml` templates, and
+`docs/design/route-suppression.md` §8b. A new drift-guard test pins the warning in both starter
+templates, matching the one that already pins the #507 unsafe-write warning.
+
 ### `@@internal("action")` route suppression — REST, RPC and every generated client (#743, implementing #514's accepted design)
 
 A model action can now be marked `@@internal("list" | "detail" | "read" | "create" | "update" |

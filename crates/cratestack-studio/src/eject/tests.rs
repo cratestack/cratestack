@@ -121,6 +121,37 @@ fn both_starter_templates_carry_the_unsafe_write_warning() {
     }
 }
 
+/// cratestack#744 decided (option 3) that a `[target.db]` target
+/// enforces no schema-declared write constraint — `@@internal(...)` and
+/// `@@allow`/`@@deny` alike — and that the *only* remedy shipped is that
+/// an operator can read this before granting `rw`. That makes the
+/// warning itself the deliverable, so it gets the same drift guard the
+/// cratestack#507 warning above has: two independent `include_str!`
+/// literals, nothing tying them together at compile time.
+#[test]
+fn both_starter_templates_carry_the_internal_and_policy_bypass_warning() {
+    for (label, body) in [
+        ("starter/studio.toml (studio init)", crate::STARTER_CONFIG),
+        (
+            "templates/starter/studio.toml (studio eject)",
+            STARTER_STUDIO_TOML,
+        ),
+    ] {
+        assert!(
+            body.contains("@@internal"),
+            "{label} lost the @@internal bypass warning (cratestack#744)"
+        );
+        assert!(
+            body.contains("@@allow"),
+            "{label} lost the @@allow bypass warning (cratestack#744)"
+        );
+        assert!(
+            body.contains("cratestack#744"),
+            "{label} lost the cratestack#744 reference"
+        );
+    }
+}
+
 #[test]
 fn with_ui_unpacks_leptos_sources() {
     let temp = tempfile::tempdir().expect("temp");

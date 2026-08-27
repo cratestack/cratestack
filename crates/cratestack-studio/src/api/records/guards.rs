@@ -11,6 +11,23 @@ use crate::workspace::LoadedTarget;
 
 /// Reject mutation requests against read-only targets at the earliest
 /// point — before we touch the data source.
+///
+/// [`TargetMode::Rw`] is the whole check here on purpose, and the
+/// omission is the documented decision rather than a gap: no
+/// schema-declared write constraint is consulted anywhere in this
+/// module — not `@@allow`/`@@deny`, not `@@internal(...)` route
+/// suppression — because a `[target.db]` target is a direct SQL
+/// connection that sits beneath the schema the way `psql` does
+/// (cratestack#744, option 3: document it, don't enforce it; option 1,
+/// gating `@@internal` here while `@@allow` stayed unenforced, was
+/// considered and rejected as the arbitrary half). `@@internal`'s shared
+/// predicate `cratestack_core::model_internal_actions` exists and is
+/// deliberately not called from this crate. A `[target.api]`-only target
+/// gets both constraints for free from the deployed service, since its
+/// writes are ordinary HTTP calls against the generated routes. The
+/// crate's top-level rustdoc ("Granting `rw`") and
+/// `docs/design/route-suppression.md` §8b are what promise today's
+/// behavior to operators; reversing this means editing both.
 pub(in crate::api::records) fn require_writable(target: &LoadedTarget) -> Result<(), ApiError> {
     if matches!(target.mode, TargetMode::Rw) {
         Ok(())
