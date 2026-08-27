@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### `generate-dart` stops emitting dead imports for a schema with no models (#785)
+
+`cratestack generate-dart` on a schema with zero `model` blocks emitted `import 'queries.dart';`
+into `lib/src/apis.dart` and `import 'models.dart';` into `lib/src/queries.dart` unconditionally,
+with nothing on either side to reference them. `flutter analyze` reports each as `unused_import` —
+a warning, and `--fatal-warnings` (Dart's own default, and what `just verify-dart` runs) makes a
+warning a failed build. The reporting consumer had to add a `knownAnalyzeFailures` allowlist entry
+to work around it, which silently downgrades a future real regression to a warning.
+
+Both are now gated on the loop that actually consumes them: `apis.dart`'s `queries.dart` import on
+`model_apis`, and `queries.dart`'s `models.dart` import on `selection_models`. Same one-line
+mechanism as #629's `{% if procedures | length > 0 %}`, which fixed this defect one level up (a
+class body rather than an import line) and does not reach import statements.
+
+A third, unreported case is closed with it: `apis.dart`'s own `models.dart` import is live for a
+procedure-only schema (every procedure gets a generated `{Procedure}Args` wrapper there) but dead
+for a schema with **neither** models nor procedures, which is valid today. That gate is applied on
+both transports — `rpc-apis.dart.j2` carries the same import and the same condition.
+
+The riverpod preset was already correct: its `queries.dart` never imported `models.dart`.
+
+Verified end-to-end rather than by inspection. A `procedures_only_rest` fixture joins
+`just verify-dart`'s default-preset list, where `verify_pkg` runs real `flutter pub get` →
+`build_runner` → `flutter analyze --fatal-warnings`. Nothing else in that list has a zero-model
+shape, which is why this shipped: a dead import is invisible to text-level generator tests and only
+a real analyzer fails on one. Confirmed the fixture reports the two warnings on the pre-fix
+templates and `No issues found!` after — and likewise for the zero-model/zero-procedure schemas on
+both transports (three warnings before, clean after).
+
 ## 0.8.14 (2026-08-27)
 
 ### Generated Dart clients declare an API floor, not the workspace version (#754)
