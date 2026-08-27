@@ -156,6 +156,41 @@ cratestack generate-typescript \
   --tanstack
 ```
 
+## `--no-native-cbor` (`TypeScriptGeneratorConfig::native_cbor`)
+
+As of issue #746, an RPC-transport client's generated runtime defaults to the published
+[`@cratestack/cbor`](https://www.npmjs.com/package/@cratestack/cbor) package (napi-rs on
+Node, wasm-bindgen in the browser) as its codec, and `package.json` carries
+`@cratestack/cbor` in `dependencies`. `--no-native-cbor` falls back to the pure-TypeScript
+`jsonRpcCodec` this generator shipped before #746 — no native dependency, works everywhere.
+No effect on a REST-transport schema: `rest-runtime.ts.j2` hardcodes JSON and has no codec
+seam at all, so REST output never depends on this flag.
+
+Reach for `--no-native-cbor` on a platform `@cratestack/cbor-node`'s napi target matrix
+doesn't cover: it ships prebuilt binaries for `x86_64`/`aarch64` on macOS and glibc Linux
+plus `x86_64-pc-windows-msvc` only — there is no musl (Alpine) build and no `win32-arm64`.
+On either platform the napi loader fails with a generic "Cannot find native binding…" error
+that blames npm rather than naming the real cause (unsupported platform).
+
+Additive by construction: with an RPC-transport schema, every other emitted file is
+byte-identical with and without the flag — `tests/native_cbor_generator.rs` pins the
+on/off file-set difference (`package.json`, `src/runtime.ts`). With a REST-transport
+schema, output is byte-identical regardless of this flag.
+
+**Known bug (issue #765):** combined with `--swr` on an RPC-transport schema,
+`src/swr/runtime.ts` renders from the same `rpc-runtime.ts.j2` template as
+`src/runtime.ts` but from a context with no `native_cbor` field, so it always
+emits `jsonRpcCodec` regardless of this flag — one generated package ends up
+with two runtimes disagreeing on the wire codec. This is a bug, not intended
+behavior; REST `--swr` is unaffected since REST has no codec seam.
+
+```bash
+cratestack generate-typescript \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog-client \
+  --no-native-cbor
+```
+
 ## See Also
 
 - `cratestack-cli` — `generate-typescript` command
