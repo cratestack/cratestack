@@ -984,8 +984,22 @@ verify-typescript:
 	echo "=== npm install and build (typechecks with tsc): $pkg ==="
 	(cd "$pkg" && npm install && npm run build)
 
+	# Generate and typecheck --swr + RPC fixture (issue #765: src/swr/runtime.ts
+	# renders from the same shared template as src/runtime.ts above, but through
+	# a separately-maintained context — a real `tsc` build is what would have
+	# caught the two runtimes disagreeing on the codec as a hard failure)
+	pkg="$out/swr/rpc"
+	echo "=== generate-typescript (--swr + RPC): ci_rpc.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rpc.cstack" \
+	  --out "$pkg" \
+	  --package-name typescript-verify-swr-rpc \
+	  --swr
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
 	echo ""
-	echo "✓ TypeScript REST and RPC fixtures generated and typechecked successfully"
+	echo "✓ TypeScript REST, RPC, and --swr + RPC fixtures generated and typechecked successfully"
 
 # Regenerate the two committed example clients in place (issue #471).
 #

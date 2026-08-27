@@ -495,6 +495,107 @@ fn the_flag_has_no_effect_at_all_on_a_rest_transport_schema() {
     }
 }
 
+/// Cratestack#765: `--swr` on an RPC schema renders `src/swr/runtime.ts`
+/// from the same `rpc-runtime.ts.j2` template as `src/runtime.ts`, but
+/// through `SwrSchemaContext` — a context that used to have no
+/// `native_cbor` field, so every `{% if native_cbor %}` site in the shared
+/// template silently evaluated falsy (minijinja's `UndefinedBehavior::
+/// Lenient`) regardless of the actual flag. Mirrors
+/// `default_config_uses_native_cbor` above, scoped to the `swr` layout's
+/// own runtime file.
+#[test]
+fn swr_runtime_honours_native_cbor_default() {
+    let config = TypeScriptGeneratorConfig {
+        swr: true,
+        ..TypeScriptGeneratorConfig::default()
+    };
+    let native = generate(RPC_FIXTURE, config);
+
+    let runtime = file(&native, "src/swr/runtime.ts");
+    assert!(
+        runtime.contains("import { createCborCodec } from \"@cratestack/cbor\";"),
+        "swr: default config's src/swr/runtime.ts must import createCborCodec:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
+        "swr: default config's src/swr/runtime.ts must not default to jsonRpcCodec:\n{runtime}"
+    );
+}
+
+/// Mirrors `no_native_cbor_falls_back_to_json_rpc_codec` above, scoped to
+/// the `swr` layout's own runtime file — cratestack#765.
+#[test]
+fn swr_runtime_falls_back_to_json_rpc_codec_when_native_cbor_is_off() {
+    let plain = generate(
+        RPC_FIXTURE,
+        TypeScriptGeneratorConfig {
+            swr: true,
+            native_cbor: false,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    );
+
+    let runtime = file(&plain, "src/swr/runtime.ts");
+    assert!(
+        runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
+        "swr: native_cbor: false src/swr/runtime.ts must default to jsonRpcCodec:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("@cratestack/cbor"),
+        "swr: native_cbor: false src/swr/runtime.ts must not mention @cratestack/cbor:\n{runtime}"
+    );
+    assert!(
+        !runtime.contains("createCborCodec"),
+        "swr: native_cbor: false src/swr/runtime.ts must not reference createCborCodec:\n{runtime}"
+    );
+}
+
+/// The decisive regression test for cratestack#765: `src/runtime.ts` (the
+/// default layout) and `src/swr/runtime.ts` (the `--swr` layout) render
+/// from the exact same `rpc-runtime.ts.j2` template
+/// (`crate::swr::templates::RPC`'s `rpc-runtime.ts.j2` entry), through two
+/// independently-maintained context structs (`TemplateContext` vs
+/// `SwrSchemaContext`). They must therefore agree on every line except the
+/// one deliberate, Rust-computed difference between the two layouts —
+/// `models_import_path` (`"./models.js"` vs `"../models.js"`, cratestack#764)
+/// — for BOTH `native_cbor` states. This is a stronger guard than checking
+/// `native_cbor` alone: it fails on ANY future field the default layout's
+/// context gains that `SwrSchemaContext` doesn't mirror, not just this one.
+///
+/// Confirmed to actually fail: reverting the `native_cbor: config.
+/// native_cbor` line this ticket added to `swr::context::build_shared_context`
+/// makes this test (and the two above) fail — `src/swr/runtime.ts` keeps
+/// emitting the `jsonRpcCodec` fallback regardless of the flag, while
+/// `src/runtime.ts` correctly switches — verified by hand while writing
+/// this test, not asserted from reading the diff alone.
+#[test]
+fn swr_and_default_runtimes_agree_on_codec_in_both_flag_states() {
+    for native_cbor in [true, false] {
+        let config = TypeScriptGeneratorConfig {
+            swr: true,
+            native_cbor,
+            ..TypeScriptGeneratorConfig::default()
+        };
+        let package = generate(RPC_FIXTURE, config);
+
+        let default_runtime = file(&package, "src/runtime.ts");
+        let swr_runtime = file(&package, "src/swr/runtime.ts");
+
+        // The only sanctioned difference between the two layouts: the
+        // relative import depth to the shared `src/models.ts` (see
+        // `TemplateContext::models_import_path`'s doc comment).
+        let normalized_swr_runtime = swr_runtime.replace("../models.js", "./models.js");
+
+        assert_eq!(
+            default_runtime, normalized_swr_runtime,
+            "native_cbor: {native_cbor} — src/runtime.ts and src/swr/runtime.ts (after \
+             normalizing the sanctioned ../models.js -> ./models.js import-depth difference) \
+             must be byte-identical; any other divergence means SwrSchemaContext is missing a \
+             field TemplateContext has (cratestack#765)"
+        );
+    }
+}
+
 fn generate(fixture_stem: &str, config: TypeScriptGeneratorConfig) -> GeneratedTypeScriptPackage {
     let fixture_path = format!("tests/fixtures/{fixture_stem}.cstack");
     let schema = cratestack_parser::parse_schema_file(&fixture_path)

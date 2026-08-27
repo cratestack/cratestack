@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### `--swr` + `transport rpc` now honours `native_cbor` too — breaking (#765)
+
+`cratestack generate-typescript --swr` on an RPC-transport schema emits `src/swr/runtime.ts` from
+the same `rpc-runtime.ts.j2` template as the default layout's `src/runtime.ts`, but the two were
+rendered through independently-maintained context structs. `SwrSchemaContext` had no `native_cbor`
+field, so every `{% if native_cbor %}` site in the shared template silently evaluated falsy
+(minijinja's `UndefinedBehavior::Lenient` treats an undefined condition as false rather than
+erroring) regardless of the actual flag — `src/swr/runtime.ts` always emitted the plain
+`jsonRpcCodec` fallback, even though `@cratestack/cbor` became the default RPC codec for the
+default layout in #746/#752. One generated package therefore shipped two runtimes that disagreed
+about the wire codec: `src/runtime.ts` spoke `application/cbor`, `src/swr/runtime.ts` spoke
+`application/json`, for the same models.
+
+`SwrSchemaContext` now carries `native_cbor` (mirrored from `TypeScriptGeneratorConfig::
+native_cbor`, same as the default layout's `TemplateContext`), so `src/swr/runtime.ts` now resolves
+`@cratestack/cbor`'s `createCborCodec()` by default exactly like `src/runtime.ts` does, and
+`--no-native-cbor` turns both off identically. No template changes were needed — `rpc-runtime.ts.j2`
+already branched on the field name correctly; it was only ever missing from one of its two callers'
+contexts.
+
+**This is the same breaking change #752 already made and changelogged for the default layout,
+applied here for real:** regenerating a `--swr` + `transport rpc` client's wire codec changes from
+`application/json` to `application/cbor`. A server built against a JSON-only `CodecSet` will now
+reject a regenerated `--swr` client's requests with `406 Not Acceptable` / `415 Unsupported Media
+Type`, same as it already does for the default layout — `--no-native-cbor` (or an explicit `codec:
+jsonRpcCodec` passed to the constructor) restores the JSON-only behavior exactly. Anyone relying on
+the previous divergence was relying on a bug: the `--swr` and default layouts now agree by
+construction rather than by coincidence.
+
+A new `--swr` + `transport rpc` snapshot fixture (`tiny_rpc_swr_native_default`) closes the gap that
+let this ship unnoticed in #746/#752 — no such fixture existed before this ticket.
+
 ### Schema validation reports every independent error, not just the first
 
 `cratestack-parser` gains `parse_schema_diagnostics`, which returns all independent

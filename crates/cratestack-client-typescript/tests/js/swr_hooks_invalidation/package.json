@@ -6,6 +6,9 @@
   "scripts": {
     "test": "vitest run"
   },
+  "dependencies": {
+    "@cratestack/cbor": "^0.8.0"
+  },
   "devDependencies": {
     "@testing-library/react": "^16.0.0",
     "@types/react": "^19.0.0",

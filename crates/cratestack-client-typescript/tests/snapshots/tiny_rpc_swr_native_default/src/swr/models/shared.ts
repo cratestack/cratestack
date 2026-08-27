@@ -1,0 +1,156 @@
+// Types referenced by more than one model, or by no model at all (a
+// declared-but-unused type — the default preset still emits every
+// declared type regardless of use, and this preset preserves that), live
+// here and are imported by their consumers. A type referenced by exactly
+// one model is instead defined inline in that model's own file, to keep
+// single-consumer types co-located with their only consumer. See
+// `cratestack-client-typescript`'s `src/swr/ownership.rs::compute_type_ownership`
+// for the computation that decides this — this file is its "Shared"
+// output, not a hand-maintained list.
+
+import DecimalJs from "decimal.js";
+
+// cratestack#498: real arbitrary-precision `Decimal` values, not a
+// wire-format-dependent opaque `string` — see the default preset's
+// `models.ts.j2` (this file's non-`swr` counterpart) for the full
+// rationale, mirrored verbatim here. Every `Decimal`-typed field here and
+// in each per-model file is real (`DecimalFilter` encodes correctly via
+// `toJSON` with no extra glue), and — like the default preset's
+// `rest-client.ts.j2`/`rpc-client.ts.j2` — this preset's per-model
+// `models-rest.ts.j2`/`models-rpc.ts.j2` functions call
+// `reviveDecimalFields` on every decoded response too.
+export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
+export type Decimal = DecimalJs;
+
+/** See the default preset's `models.ts.j2` for the full doc comment —
+ *  identical implementation, exported here too since this preset's
+ *  per-model files call it directly (rather than importing a shared
+ *  `models.ts`, which doesn't exist in this preset's per-file layout). */
+export interface DecimalShape {
+  readonly keys: readonly string[];
+  readonly nested: Readonly<Record<string, string>>;
+}
+
+/** See the default preset's `models.ts.j2` for the full doc comment on
+ *  why this is keyed by structural path (via `nested`) rather than a
+ *  single flat, schema-wide field-name set. */
+export const decimalShapes: Readonly<Record<string, DecimalShape>> = {
+  Widget: { keys: [], nested: {  } },
+};
+
+export function reviveDecimalFields(value: unknown, shapeName: string): unknown {
+  const shape = decimalShapes[shapeName];
+  if (!shape) {
+    return value;
+  }
+  return reviveShaped(value, shape);
+}
+
+/** See the default preset's `models.ts.j2`'s identical function for the
+ *  full doc comment (`Page<T>` envelope handling). */
+export function revivePagedDecimalFields(value: unknown, shapeName: string): unknown {
+  const shape = decimalShapes[shapeName];
+  if (!shape || value === null || typeof value !== "object" || !("items" in value)) {
+    return value;
+  }
+  const page = value as { items: unknown };
+  return { ...page, items: reviveShaped(page.items, shape) };
+}
+
+function reviveShaped(value: unknown, shape: DecimalShape): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveShaped(item, shape));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const nestedShapeName = shape.nested[key];
+      if (nestedShapeName !== undefined) {
+        const nestedShape = decimalShapes[nestedShapeName];
+        result[key] = nestedShape ? reviveShaped(entry, nestedShape) : entry;
+      } else if (shape.keys.includes(key) && typeof entry === "string") {
+        result[key] = new Decimal(entry);
+      } else {
+        result[key] = entry;
+      }
+    }
+    return result;
+  }
+  return value;
+}
+
+/** See the default preset's `models.ts.j2` for the full doc comment —
+ *  identical implementation, exported here too so `./procedures.ts`'s
+ *  functions can revive a `Decimal`-typed (rather than object-typed)
+ *  return value. */
+export function reviveDecimalScalar(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => reviveDecimalScalar(item));
+  }
+  return typeof value === "string" ? new Decimal(value) : value;
+}
+
+// Mirrors cratestack-core::page::{Page, PageInfo} exactly — this is
+// the literal wire shape every `@@paged` list route serializes with
+// `#[serde(rename_all = "camelCase")]`, not an independently designed
+// client-side type. Keep field names and optionality in lockstep with
+// that struct; do not add/rename fields here without changing it
+// there first.
+export interface PageInfo {
+  limit: number | null;
+  offset: number | null;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface Page<T> {
+  items: T[];
+  totalCount: number | null;
+  pageInfo: PageInfo;
+}
+
+// Mirrors cratestack-core::page::PageInput exactly — the request-side
+// counterpart to Page/PageInfo above, currently usable only as a
+// procedure argument type. Keep field names and optionality in lockstep
+// with that struct.
+export interface PageInput {
+  limit: number | null;
+  offset: number | null;
+}
+
+// Shared building blocks for every `<Model>Where`/`<Model>FindMany`
+// pair (search-with-filters for procedures — mirrors
+// cratestack-core::find_many::FieldFilterInput and cratestack-macros's
+// per-model `<Model>Where`/`<Model>SortField`/`<Model>OrderByClause`/
+// `<Model>FindManyInput` exactly), defined in each model's own file
+// per this file's own ownership rule — see there for `<Model>Where`
+// etc. themselves. Usable only as a procedure argument type.
+export interface EqualityFilter<V> {
+  eq?: V;
+  ne?: V;
+  in?: V[];
+  isNull?: boolean;
+}
+
+export interface ComparableFilter<V> extends EqualityFilter<V> {
+  lt?: V;
+  lte?: V;
+  gt?: V;
+  gte?: V;
+}
+
+export interface StringFilter extends ComparableFilter<string> {
+  contains?: string;
+  startsWith?: string;
+}
+
+export type NumberFilter = ComparableFilter<number>;
+export type BooleanFilter = EqualityFilter<boolean>;
+export type UuidFilter = ComparableFilter<string>;
+export type DateTimeFilter = ComparableFilter<string>;
+// cratestack#498: `Decimal`, not `string` — see this file's own
+// `Decimal` doc comment above.
+export type DecimalFilter = ComparableFilter<Decimal>;
+
+export type SortDirection = "asc" | "desc";
+

@@ -156,6 +156,7 @@ pub(crate) fn build_shared_context(
         procedures_file,
         decimal_shapes: build_decimal_shapes(schema),
         models_import_path: "../models.js",
+        native_cbor: config.native_cbor,
     }
 }
 
