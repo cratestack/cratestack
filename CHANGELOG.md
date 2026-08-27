@@ -44,12 +44,19 @@ never happens.
 
 Five test files in `cratestack-client-typescript` ran their Node smoke scripts through
 `npx --yes tsx@4.23.12 <script>`. npm derives the `~/.npm/_npx/<hash>` directory from the package spec
-alone, so all seven of those call sites — spread across five *separate test binaries* that `cargo test`
-runs concurrently — resolved to one directory, `~/.npm/_npx/95c8da6ffd4052b6`, and each one installed
-into it and (on any failure) rolled its install back out of it. One shared mutable directory, three CI
+alone, so all seven of those call sites resolved to one directory,
+`~/.npm/_npx/95c8da6ffd4052b6`, and each one installed into it and (on any failure) rolled its install
+back out of it. `etag_if_match.rs`'s two smoke tests run as concurrent libtest *threads in the same
+process*, so they contend on that directory directly; the other four files add the same exposure
+against anything else on the machine resolving the same spec. One shared mutable directory, three CI
 signatures from a single cause: `ERR_MODULE_NOT_FOUND` on `tsx/dist/loader.mjs`,
 `npm warn cleanup ENOTEMPTY`, and `npm error code ENOENT / syscall spawn sh`. It turned `main` red on
 `e0f92cc4` and cost four manual reruns in one session.
+
+(Correcting a claim made in the issue's own comments and repeated in an earlier draft of this entry:
+`cargo test` runs test *binaries* **sequentially**, not in parallel — visible in any CI log's ordering.
+The concurrency that caused this is between threads inside one binary. The fix does not depend on
+which it was, but the record should be right.)
 
 `tsx` is now resolved **once**, by `tests/support`, into an immutable tree published under
 `CARGO_TARGET_TMPDIR` by an atomic `rename` of a fully-installed staging directory; tests invoke
@@ -71,10 +78,26 @@ TypeScript. Every subprocess assertion in these tests now reports the command li
 directory, and its exit status (naming a signal death rather than rendering it as a bare `-1`)
 alongside the streams.
 
+Publishing tolerates a destination that already exists in **any** state — absent, empty, complete,
+gutted, or concurrently written. This is not defensive padding: on CI a gutted destination is the
+*expected* input, and assuming otherwise turned `main` red on `248fc7ee`.
+`Swatinem/rust-cache`'s `cleanTargetDir` (`src/cleanup.ts` at the pinned `6323deb`) treats any
+directory under `target/` with no `build`/`.fingerprint`/`deps` child as a nested target directory and
+recurses into it, deleting every non-directory entry it meets — so the cache-save step walks
+`target/tmp/tsx-4.23.12/node_modules/tsx/dist/` and unlinks `cli.mjs` along with every other regular
+file, keeping the directory skeleton. That skeleton is saved and restored by the *next* run, which is
+why the first CI run after this landed was green and the one after it was not. A tree is now
+considered usable only if the artifact actually executed is present **and non-empty** (rejecting both
+the skeleton and a zero-byte file from a truncated restore); an unusable destination is swapped out
+under a private name and re-checked in private before being destroyed, so a concurrent publisher's
+good tree can never be deleted out from under a reader about to exec from it. Every mutation is a
+`rename`, which is what makes "absent or complete" a property rather than an aspiration.
+
 No production code changed — this is test-harness only. Both smoke tests still exercise a real HTTP
 stub round trip, `#726`'s exit-status assertion is untouched, and the Node-absent skip path still
 fires (it now probes `node`/`npm`, the two binaries the harness actually invokes, rather than
 `node`/`npm`/`npx`).
+
 ### `CRATESTACK_REQUIRE_DB` now fails when *no* database backend is configured (#747)
 
 `CRATESTACK_REQUIRE_DB` exists to turn a silent skip into a loud failure, so that a green run can be
