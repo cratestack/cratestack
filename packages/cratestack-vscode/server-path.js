@@ -1,8 +1,8 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require("node:fs");
+const path = require("node:path");
 
 function resolveServerCommand(extensionPath, configuredPath) {
-  if (configuredPath && configuredPath !== 'cratestack-lsp') {
+  if (configuredPath && configuredPath !== "cratestack-lsp") {
     return configuredPath;
   }
 
@@ -11,12 +11,12 @@ function resolveServerCommand(extensionPath, configuredPath) {
     return bundled;
   }
 
-  return configuredPath || 'cratestack-lsp';
+  return configuredPath || "cratestack-lsp";
 }
 
 function bundledServerPath(extensionPath, platform = process.platform) {
-  const executable = platform === 'win32' ? 'cratestack-lsp.exe' : 'cratestack-lsp';
-  const candidate = path.join(extensionPath, 'server', platform, executable);
+  const executable = platform === "win32" ? "cratestack-lsp.exe" : "cratestack-lsp";
+  const candidate = path.join(extensionPath, "server", platform, executable);
   if (fs.existsSync(candidate)) {
     return candidate;
   }

@@ -1,4 +1,4 @@
-use cratestack_core::TypeRef;
+use cratestack_core::{SourceSpan, TypeRef};
 
 use crate::text::span_contains;
 
@@ -30,6 +30,17 @@ pub(crate) fn type_ref_at_offset(ty: &TypeRef, offset: usize) -> bool {
             .generic_args
             .iter()
             .any(|inner| type_ref_at_offset(inner, offset))
+}
+
+/// Every mention of `name` inside `ty`, including generic arguments — a
+/// `Page<Post>` return type references `Post` as much as a bare field type does.
+pub(crate) fn collect_type_ref_spans(ty: &TypeRef, name: &str, out: &mut Vec<SourceSpan>) {
+    if ty.name == name {
+        out.push(ty.name_span);
+    }
+    for inner in &ty.generic_args {
+        collect_type_ref_spans(inner, name, out);
+    }
 }
 
 pub(crate) fn nested_type_reference_name_at_offset(ty: &TypeRef, offset: usize) -> Option<&str> {

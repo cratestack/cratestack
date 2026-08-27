@@ -1,6 +1,7 @@
 use cratestack_core::{Schema, SourceSpan};
 use tower_lsp_server::ls_types::{Location, Uri};
 
+use crate::mixin_use::mixin_use_names;
 use crate::relation_parse::relation_attribute_spans;
 use crate::text::{range_from_offsets, span_contains, word_at_offset};
 use crate::type_ref::nested_type_reference_name_at_offset;
@@ -12,6 +13,7 @@ pub(crate) fn definition_location(
     offset: usize,
 ) -> Option<Location> {
     let span = relation_target_span(schema, offset)
+        .or_else(|| mixin_use_target_span(text, schema, offset))
         .or_else(|| type_reference_target_span(schema, offset))
         .or_else(|| word_at_offset(text, offset).and_then(|word| declaration_span(schema, word)))?;
     Some(Location {
@@ -50,6 +52,25 @@ pub(crate) fn declaration_span(schema: &Schema, word: &str) -> Option<SourceSpan
             return Some(field.name_span);
         }
     }
+    // Mixins and enums are declarable, referenceable names like models and
+    // types are — `@use(Timestamps)` and a `Role` field type both need to
+    // resolve — but were absent here, so Ctrl+Click on either did nothing.
+    for mixin in &schema.mixins {
+        if mixin.name == word {
+            return Some(mixin.name_span);
+        }
+        if let Some(field) = mixin.fields.iter().find(|field| field.name == word) {
+            return Some(field.name_span);
+        }
+    }
+    for decl in &schema.enums {
+        if decl.name == word {
+            return Some(decl.name_span);
+        }
+        if let Some(variant) = decl.variants.iter().find(|variant| variant.name == word) {
+            return Some(variant.span);
+        }
+    }
     for procedure in &schema.procedures {
         if procedure.name == word {
             return Some(procedure.name_span);
@@ -59,6 +80,20 @@ pub(crate) fn declaration_span(schema: &Schema, word: &str) -> Option<SourceSpan
         }
     }
     None
+}
+
+/// `@use(Timestamps)` on a model resolves to the `mixin Timestamps`
+/// declaration. Read from text, not the IR — see `mixin_use::mixin_use_names`
+/// for why the attribute is gone by the time the schema arrives.
+pub(crate) fn mixin_use_target_span(
+    text: &str,
+    schema: &Schema,
+    offset: usize,
+) -> Option<SourceSpan> {
+    mixin_use_names(text)
+        .into_iter()
+        .find(|used| span_contains(used.span, offset))
+        .and_then(|used| declaration_span(schema, &used.name))
 }
 
 pub(crate) fn type_reference_target_span(schema: &Schema, offset: usize) -> Option<SourceSpan> {
@@ -71,6 +106,15 @@ pub(crate) fn type_reference_target_span(schema: &Schema, offset: usize) -> Opti
     }
     for ty in &schema.types {
         for field in &ty.fields {
+            if span_contains(field.ty.name_span, offset) {
+                return declaration_span(schema, &field.ty.name);
+            }
+        }
+    }
+    // Mixin bodies hold ordinary fields whose types deserve the same
+    // navigation as a model's or a type's.
+    for mixin in &schema.mixins {
+        for field in &mixin.fields {
             if span_contains(field.ty.name_span, offset) {
                 return declaration_span(schema, &field.ty.name);
             }

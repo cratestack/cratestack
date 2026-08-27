@@ -3,14 +3,20 @@ mod completion;
 mod definition;
 mod document_symbols;
 mod hover;
+mod mixin_use;
+mod navigation;
+mod references;
 mod relation_parse;
 mod server;
 mod state;
+mod symbol_target;
 mod text;
 mod type_ref;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_navigation;
 
 use state::Backend;
 use tower_lsp_server::{LspService, Server};

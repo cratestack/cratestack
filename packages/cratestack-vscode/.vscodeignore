@@ -1,8 +1,13 @@
 .DS_Store
+.gitignore
 .vscode-test/**
 node_modules/**
 *.vsix
 server/**/*.map
 test/**
 scripts/**
-pnpm-lock.yaml
+# The bundled `dist/extension.js` is what ships (see scripts/build.mjs); the
+# unbundled sources it is built from must not be, or `main` and the file that
+# actually resolves `vscode-languageclient` can drift apart unnoticed.
+extension.js
+server-path.js
