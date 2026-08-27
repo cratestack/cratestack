@@ -10,6 +10,7 @@ mod find_many_views;
 mod generator;
 mod idents;
 mod naming;
+mod package_floors;
 mod patch_touch;
 mod riverpod;
 mod templates;

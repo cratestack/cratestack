@@ -17,6 +17,7 @@ use crate::naming::{
     enum_name_set, is_computed_field, is_generated_on_create, is_primary_key, is_relation_field,
     model_name_set, occupied_type_names, procedure_wrapper_name, scalar_model_fields,
 };
+use crate::package_floors::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR};
 use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
 
 pub(crate) fn build_template_context(
@@ -224,11 +225,13 @@ pub(crate) fn build_template_context(
     };
 
     // Issue #668 phase 2: unlike `cratestack_cbor_version_requirement`
-    // above, never gated — every generated package now depends on both
-    // unconditionally (see `TemplateContext::cratestack_annotations_version_requirement`'s
-    // doc for the lockstep-versioning rationale).
-    let cratestack_annotations_version_requirement = format!("^{}", env!("CARGO_PKG_VERSION"));
-    let cratestack_builder_version_requirement = format!("^{}", env!("CARGO_PKG_VERSION"));
+    // above, never gated — every generated package depends on both
+    // unconditionally. cratestack#754: and unlike it, these are API
+    // compatibility *floors*, not `^{CARGO_PKG_VERSION}` — see
+    // `crate::package_floors` for why deriving them from the release
+    // version is what broke `Prepare Release` for 0.8.14.
+    let cratestack_annotations_version_requirement = CRATESTACK_ANNOTATIONS_FLOOR.to_owned();
+    let cratestack_builder_version_requirement = CRATESTACK_BUILDER_FLOOR.to_owned();
 
     Ok(TemplateContext {
         package_name: config.library_name.clone(),

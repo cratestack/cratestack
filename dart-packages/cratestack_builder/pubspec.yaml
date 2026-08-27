@@ -30,13 +30,28 @@ dependencies:
   # 3.11.0"), i.e. it parses newer syntax with older rules.
   analyzer: '>=12.0.0 <13.0.0'
   build: ^4.0.7
-  # issue #668 phase 3: 0.8.7 is the first `cratestack_annotations` release
-  # with the `touchFlagFields`/`nonDefaultingListFields` arguments this
-  # generator now reads off `@CratestackBuilder(...)` — an older resolved
-  # 0.8.5/0.8.6 has no such constant fields to read, and
-  # `ConstantReader.read(...)` on a missing field throws at generation time
-  # rather than at `pub get`.
-  cratestack_annotations: ^0.8.8
+  # issue #668 phase 3 / cratestack#754: `0.8.10` is the first
+  # `cratestack_annotations` release with the `touchFlagFields`/
+  # `nonDefaultingListFields` arguments this generator reads off
+  # `@CratestackBuilder(...)` — an older resolved release has no such
+  # constant fields to read, and `ConstantReader.read(...)` on a missing
+  # field throws at generation time rather than at `pub get`.
+  #
+  # CORRECTED by cratestack#754. This read `^0.8.8`, justified as "0.8.7
+  # is the first release with those arguments". Both halves were wrong,
+  # checked against pub.dev's API and the published archives rather than
+  # the changelog: **0.8.8 was never published** (versions run 0.8.7 ->
+  # 0.8.10, since 0.8.8/0.8.9 were skipped releases) and **0.8.7 does not
+  # contain either identifier**. It was harmless only because a caret
+  # resolves upward, so `^0.8.8` landed on 0.8.10+ anyway — a floor that
+  # had already rotted before anything could depend on it, which is why
+  # the generator's matching floors are now guarded by tests rather than
+  # by a comment (`cratestack-client-dart/src/package_floors.rs`).
+  #
+  # Raise this ONLY when this builder starts reading a newly-added
+  # annotation field — never as part of a routine version bump. See
+  # `docs/tooling/dart-publishing.md`.
+  cratestack_annotations: ^0.8.10
   source_gen: ^4.0.0
 
 dev_dependencies:

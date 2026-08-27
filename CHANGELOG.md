@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+### Generated Dart clients declare an API floor, not the workspace version (#754)
+
+A generated Dart client used to declare `cratestack_annotations: ^{workspace version}` and
+`cratestack_builder: ^{workspace version}`. Because pub.dev publishing runs off a tag pushed *after*
+the version-bump PR merges, that meant every generated client spent each release cycle naming a
+version pub.dev could not serve yet. It took down `Prepare Release` for 0.8.14: five snapshot
+fixtures, three `flutter pub get` tests, and `just regen-examples --check`, from one cause.
+
+Both requirements are now **API-compatibility floors** — constants in
+`cratestack-client-dart/src/package_floors.rs`, used by the default and riverpod presets alike, that
+name the earliest release whose annotation surface the generated code actually needs (`^0.8.10`).
+A constant never moves with the release, so it can never name an unpublished version at any bump
+size — unlike a "minor floor" (`^{major}.{minor}.0`), which still moves at a minor bump. The wider
+effect is that generator output stops being a function of the release version at all, so the
+committed snapshots and example clients survive a bump instead of being invalidated by it.
+
+**Behavioural change for consumers:** a regenerated Dart client now asks for `cratestack_annotations`
+/ `cratestack_builder` `>=0.8.10 <0.9.0` rather than pinning the current release. Pub resolves that
+to the newest 0.8.x, so the packages a client actually gets are unchanged today. After 0.9.0 ships,
+generated clients keep resolving 0.8.x until the floor is deliberately raised — staleness rather than
+breakage, and raising it is the considered act the rule prescribes.
+
+**A correction that came out of this.** `dart-packages/cratestack_builder/pubspec.yaml` declared
+`cratestack_annotations: ^0.8.8`, justified in `docs/tooling/dart-publishing.md` as "the first
+release with `touchFlagFields`/`nonDefaultingListFields`". Checked against pub.dev's API and the
+published archives, both halves were wrong: **0.8.8 was never published** (0.8.8/0.8.9 were skipped
+releases, so versions run 0.8.7 → 0.8.10) and **0.8.7 contains neither identifier** — 0.8.10 is the
+first that does. It was harmless only because a caret resolves upward. The declaration and the doc
+paragraph are corrected, and because that is a hand-maintained floor rotting before anything relied
+on it, the new floors are backed by checks rather than by comments:
+
+- Unit tests assert the emitted floor is at least the floor `cratestack_builder`'s own pubspec
+  declares (read from that file, so raising one flags the other), and that both sit strictly below
+  the current, not-yet-published workspace version.
+- CI's `flutter (flutter-riverpod example)` job now resolves the committed client at the *exact*
+  floor via a generated `pubspec_overrides.yaml` and re-analyzes it. Verified to fail as intended:
+  pinned to 0.8.7, `flutter analyze` reports `undefined_named_parameter` on the emitted
+  `@CratestackBuilder(nonDefaultingListFields: …)` call sites. Note `build_runner` alone does *not*
+  catch it — an older builder silently ignores an argument it does not know, exits 0, and reports
+  outputs written; that is why the check is `flutter analyze`.
+
+Unchanged: what the packages themselves publish as. `just bump` still moves every
+`dart-packages/*/pubspec.yaml` `version:` in lockstep with the Cargo workspace, which pub.dev's
+`v{{version}}` tag pattern requires. Also unchanged, and tracked separately: `cratestack_cbor` (Dart)
+and `@cratestack/refine` / `@cratestack/cbor` (npm) still derive their emitted requirements from the
+release version.
+
 ### `--swr` rejects a procedure whose name collides with a generated model function (#777)
 
 `--swr` is the only TypeScript layout that exports a model's CRUD operations as top-level free
