@@ -20,6 +20,9 @@ use cratestack_axum::query::{
 };
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
+mod support;
+use support::{command_report, node_toolchain_available, tsx_command};
+
 #[test]
 fn fetch_query_type_no_longer_json_encodes_where_or_filters() {
     let package = generate_for("tiny_rest", "tiny-rest-client");
@@ -67,10 +70,10 @@ fn fetch_query_type_no_longer_json_encodes_where_or_filters() {
 /// doc comment for the Node-availability convention.
 #[test]
 fn computed_params_round_trips_as_a_single_url_encoded_json_object() {
-    if !node_and_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping computed_params_round_trips_as_a_single_url_encoded_json_object: \
-             `node`/`npx` not on PATH"
+             `node`/`npm` not on PATH"
         );
         return;
     }
@@ -86,16 +89,15 @@ fn computed_params_round_trips_as_a_single_url_encoded_json_object() {
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
 
-    let install = std::process::Command::new("npm")
+    let mut install = std::process::Command::new("npm");
+    install
         .args(["install", "--no-audit", "--no-fund"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npm install");
+        .current_dir(dir.path());
+    let installed = install.output().expect("run npm install");
     assert!(
-        install.status.success(),
-        "npm install failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&install.stdout),
-        String::from_utf8_lossy(&install.stderr)
+        installed.status.success(),
+        "npm install failed:\n{}",
+        command_report(&install, &installed)
     );
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
@@ -120,25 +122,20 @@ console.log("REST_COMPUTED_PARAMS_CHECK_OK");
     )
     .expect("write smoke script");
 
-    let output = std::process::Command::new("npx")
-        .args(["--yes", "tsx", "smoke.ts"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(dir.path(), "smoke.ts");
+    let output = tsx.output().expect("run tsx");
 
     let request_line = server.join().expect("stub server thread");
 
     assert!(
         output.status.success(),
-        "smoke script failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script failed:\n{}",
+        command_report(&tsx, &output)
     );
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("REST_COMPUTED_PARAMS_CHECK_OK"),
-        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script did not print its success marker:\n{}",
+        command_report(&tsx, &output)
     );
 
     let raw_query = request_line
@@ -179,13 +176,13 @@ console.log("REST_COMPUTED_PARAMS_CHECK_OK");
 ///
 /// Best-effort/skippable: no Rust CI job in this repo currently provisions
 /// Node (see `tests/swr_runtime.rs`), so this degrades to a printed skip
-/// rather than failing a job that was never going to have `node`/`npx`.
+/// rather than failing a job that was never going to have `node`/`npm`.
 #[test]
 fn rest_list_query_round_trips_through_the_real_server_filter_grammar() {
-    if !node_and_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping rest_list_query_round_trips_through_the_real_server_filter_grammar: \
-             `node`/`npx` not on PATH"
+             `node`/`npm` not on PATH"
         );
         return;
     }
@@ -206,21 +203,20 @@ fn rest_list_query_round_trips_through_the_real_server_filter_grammar() {
     // generated package declares it as a real `dependencies` entry, not
     // just for schemas with a `Decimal` field — see `models.ts.j2`'s doc
     // comment) — so, unlike before #498, this smoke script needs a real
-    // `node_modules` to resolve against. Without this, `npx tsx` hangs
+    // `node_modules` to resolve against. Without this, `tsx` hangs
     // rather than failing fast (confirmed empirically: `output()` never
     // returns, leaving `capture_one_request_line`'s `listener.accept()`
     // blocked forever with no request ever sent — not investigated
     // further since installing first is the correct fix either way).
-    let install = std::process::Command::new("npm")
+    let mut install = std::process::Command::new("npm");
+    install
         .args(["install", "--no-audit", "--no-fund"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npm install");
+        .current_dir(dir.path());
+    let installed = install.output().expect("run npm install");
     assert!(
-        install.status.success(),
-        "npm install failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&install.stdout),
-        String::from_utf8_lossy(&install.stderr)
+        installed.status.success(),
+        "npm install failed:\n{}",
+        command_report(&install, &installed)
     );
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
@@ -252,11 +248,8 @@ console.log("REST_LIST_QUERY_CHECK_OK");
     )
     .expect("write smoke script");
 
-    let output = std::process::Command::new("npx")
-        .args(["--yes", TSX_PIN, "smoke.ts"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(dir.path(), "smoke.ts");
+    let output = tsx.output().expect("run tsx");
 
     // THE STATUS CHECK COMES BEFORE THE JOIN, AND THAT ORDER IS THE WHOLE
     // POINT. The stub server thread is parked in `accept()`; if the smoke
@@ -269,17 +262,15 @@ console.log("REST_LIST_QUERY_CHECK_OK");
     // message was never printed. Assert first, then join.
     assert!(
         output.status.success(),
-        "smoke script failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script failed:\n{}",
+        command_report(&tsx, &output)
     );
 
     let request_line = server.join().expect("stub server thread");
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("REST_LIST_QUERY_CHECK_OK"),
-        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script did not print its success marker:\n{}",
+        command_report(&tsx, &output)
     );
 
     let raw_query = request_line
@@ -336,17 +327,6 @@ console.log("REST_LIST_QUERY_CHECK_OK");
             },
         ])
     );
-}
-
-fn node_and_npx_available() -> bool {
-    std::process::Command::new("node")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-        && std::process::Command::new("npx")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
 }
 
 /// Accepts exactly one HTTP connection, records its request line, replies
@@ -473,9 +453,3 @@ fn accept_within(
         }
     }
 }
-
-/// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
-/// version changes without a commit here, and the failure it produces lands in
-/// a test whose diagnostics are printed only if everything else goes right.
-/// 4.23.12 is the latest release as of 2026-08-24.
-const TSX_PIN: &str = "tsx@4.23.12";

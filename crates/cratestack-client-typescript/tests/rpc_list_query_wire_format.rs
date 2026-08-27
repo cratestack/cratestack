@@ -24,7 +24,7 @@
 //! Same Node-availability skip convention as `tests/swr_runtime.rs`:
 //! no Rust CI job in this repo currently provisions Node, so this
 //! degrades to a printed skip rather than failing a job that was never
-//! going to have `node`/`npx` on `PATH`.
+//! going to have `node`/`npm` on `PATH`.
 //!
 //! Also covers `computedParams` (`docs/design/computed-fields.md`'s typed
 //! client computedParams surface — see its "Downstream" section): the TS
@@ -41,17 +41,19 @@
 
 use std::collections::BTreeMap;
 use std::io::Write as _;
-use std::process::Command;
 
 use cratestack_axum::rpc::{RpcListInput, RpcListPredicate};
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
+mod support;
+use support::{command_report, node_toolchain_available, tsx_command};
+
 #[test]
 fn to_rpc_list_input_matches_the_real_rpc_list_input_wire_shape() {
-    if !node_and_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping to_rpc_list_input_matches_the_real_rpc_list_input_wire_shape: \
-             `node`/`npx` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs — \
              see this test's module doc)"
         );
         return;
@@ -142,16 +144,12 @@ console.log(JSON.stringify(emptyInput));
     )
     .expect("write smoke script");
 
-    let output = Command::new("npx")
-        .args(["--yes", TSX_PIN, "smoke.ts"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(dir.path(), "smoke.ts");
+    let output = tsx.output().expect("run tsx");
     assert!(
         output.status.success(),
-        "swr={swr}: generated toRpcListInput() failed to run under Node:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "swr={swr}: generated toRpcListInput() failed to run under Node:\n{}",
+        command_report(&tsx, &output)
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -216,20 +214,3 @@ console.log(JSON.stringify(emptyInput));
          wire-format bug, not a cosmetic one"
     );
 }
-
-fn node_and_npx_available() -> bool {
-    Command::new("node")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-        && Command::new("npx")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-}
-
-/// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
-/// version changes without a commit here, and the failure it produces lands in
-/// a test whose diagnostics are printed only if everything else goes right.
-/// 4.23.12 is the latest release as of 2026-08-24.
-const TSX_PIN: &str = "tsx@4.23.12";
