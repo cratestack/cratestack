@@ -64,6 +64,42 @@ rules:
       document the safety invariants above the block.
     languages: [rust]
     severity: ERROR
+    paths:
+      exclude:
+        # The five FFI-boundary crates that deliberately override the
+        # workspace `unsafe_code = "forbid"` with `unsafe_code = "allow"`
+        # in their own Cargo.toml, each with a comment explaining why
+        # (napi-derive trampolines, flutter_rust_bridge glue, a raw C-ABI
+        # export). Keep this list in sync with `grep -rl 'unsafe_code =
+        # "allow"' --include=Cargo.toml`.
+        #
+        # Excluded rather than annotated per block, because this rule
+        # cannot do what its own message asks for. The pattern is a bare
+        # AST match on `unsafe { ... }`, and semgrep patterns do not see
+        # comments — so a block carrying a perfectly good `// SAFETY:`
+        # paragraph still matches. Measured, not assumed: with
+        # semgrep 1.171.0 (the pinned version), a block preceded by a
+        # `// SAFETY:` comment still fires; only a `// nosemgrep:` line
+        # suppresses it. In a crate that is nothing *but* FFI
+        # trampolines, that makes the rule a 100% false-positive
+        # generator, and the fix would be ~15 `nosemgrep` lines in one
+        # 185-line file — suppressions that say nothing a reader can use.
+        #
+        # This does not weaken the actual policy. `unsafe_code` is
+        # enforced at the *compiler* level, workspace-wide, via
+        # `[workspace.lints.rust]` — a hard error, not an advisory — and
+        # `just verify-lints-optin` (a CI job, `.ci/lints-workspace-check.sh`)
+        # proves every member opts in. A crate can only reach this
+        # exclusion list by first declaring the override in its own
+        # manifest, which is a visible, reviewable act. This rule was only
+        # ever a redundant second opinion on top of that gate, and it
+        # remains fully live everywhere else — including any *new* crate
+        # that adds an override without also being added here.
+        - crates/cratestack-cbor-napi/
+        - crates/cratestack-client-flutter/
+        - examples/embedded-flutter/native/
+        - examples/embedded-expo/native/
+        - examples/react-nextjs-daisyui/napi/
     metadata:
       category: safety
       cwe: "CWE-710: Improper Adherence to Coding Standards"

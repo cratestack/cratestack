@@ -11,6 +11,38 @@
 //! they call back into the impls below for each element — which is what
 //! makes a `Uint8Array` nested anywhere in the tree get the same
 //! treatment as one at the top level.
+//!
+//! # Safety
+//!
+//! Every `unsafe` block in this file discharges one of exactly two
+//! obligations, stated once here rather than restated at ~15 call sites
+//! that would all say the same sentence:
+//!
+//! 1. **Calling an `unsafe fn` from napi's own API** — `FromNapiValue::
+//!    from_napi_value`, `ToNapiValue::to_napi_value`, and the raw
+//!    `sys::napi_*` externs. Their shared contract is that `env` is a live
+//!    `napi_env` and `napi_val` a live `napi_value`, both valid for the
+//!    duration of the call. Both are satisfied structurally: every entry
+//!    point here is itself reached only from a `#[napi]`-decorated
+//!    function (`crate::addon`), which Node calls with exactly those, and
+//!    neither handle is stored, sent across threads, or outlives the call.
+//!    A `napi_value` is only valid inside the callback scope that received
+//!    it, and nothing here escapes that scope — the conversions produce
+//!    owned Rust `Value`s (or owned napi wrappers) before returning.
+//!
+//! 2. **Reading a JS-owned buffer** — [`copy_bytes`], whose own
+//!    `# Safety` section states the pointer/length obligation and whose
+//!    two callers satisfy it from the immediately-preceding
+//!    `napi_get_typedarray_info`/`napi_get_arraybuffer_info` call.
+//!
+//! Note for anyone adding to this file: the repo's `rust-unsafe-without-comment`
+//! semgrep rule does *not* check for these comments (its pattern is a bare
+//! AST match and semgrep patterns cannot see comments — measured), which is
+//! why this crate is on that rule's exclusion list. The real enforcement is
+//! the compiler: `unsafe_code` is `forbid` workspace-wide and this crate
+//! overrides it to `allow` explicitly, in its own manifest, with a comment
+//! saying why. Write the safety reasoning because the next reader needs it,
+//! not because a linter will ask.
 
 use std::collections::BTreeMap;
 use std::ptr;
