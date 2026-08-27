@@ -14,6 +14,7 @@
 
 import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
 import { terminalStreamLink } from "./stream-terminal.js";
+import { encodeDecimalFields } from "{{ models_import_path }}";
 {% if native_cbor %}
 import { createCborCodec } from "@cratestack/cbor";
 {% endif %}
@@ -186,13 +187,21 @@ export const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
 
 /** The chain's terminal link — performs the real network call. Always
  *  runs last regardless of what `links` declares; `reduceRight` wraps
- *  every declared link around this. */
+ *  every declared link around this.
+ *
+ *  `encodeDecimalFields(request.input)` runs immediately before
+ *  `codec.encode()` — the one place every unary AND batch request body
+ *  reaches a codec, so this single call site covers a `batch()` payload's
+ *  own per-frame `input` fields too (the encoder recurses through the
+ *  frame array unconditionally). See that function's own doc comment
+ *  (`models.ts.j2`) for why this runs for every codec, not just the
+ *  native one. */
 const terminalLink: RpcLinkNext = async (request) => {
   const url = request.kind === "batch" ? request.urls.batch() : request.urls.unary(request.opId);
   const response = await request.fetchFn(url, {
     method: "POST",
     headers: request.headers,
-    body: request.codec.encode(request.input),
+    body: request.codec.encode(encodeDecimalFields(request.input)),
     signal: request.signal,
   });
   return { response };

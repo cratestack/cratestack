@@ -37,6 +37,8 @@
 //! comment for the deliberate-break verification that confirms it
 //! actually fails when the fix is reverted.
 
+use std::process::Command;
+
 use cratestack_client_typescript::{
     GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, generate_package,
 };
@@ -263,6 +265,31 @@ fn native_codec_factory_is_memoized_and_retried_after_a_rejection() {
         }
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
+
+    // `runtime.ts` imports `encodeDecimalFields` from `./models.js` (the
+    // P1 fix for `@cratestack/cbor` throwing on a real `Decimal`
+    // instance), which in turn imports `decimal.js` — so this test's
+    // hand-built `node_modules` (below) needs a real `decimal.js`
+    // alongside the stub `@cratestack/cbor`, installed into the same
+    // `root` ancestor directory so Node's resolution walk-up finds it
+    // from `pkg/src/models.ts`.
+    let install_decimal = Command::new("npm")
+        .args([
+            "install",
+            "--no-save",
+            "--no-audit",
+            "--no-fund",
+            "decimal.js",
+        ])
+        .current_dir(root.path())
+        .output()
+        .expect("run npm install (decimal.js)");
+    assert!(
+        install_decimal.status.success(),
+        "npm install decimal.js failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&install_decimal.stdout),
+        String::from_utf8_lossy(&install_decimal.stderr)
+    );
 
     // A stub `@cratestack/cbor`, placed in a real `node_modules` directory
     // that is an ancestor of both `pkg/src/runtime.ts` (which bare-imports

@@ -155,6 +155,7 @@ pub(crate) fn build_shared_context(
         models,
         procedures_file,
         decimal_shapes: build_decimal_shapes(schema),
+        models_import_path: "../models.js",
     }
 }
 

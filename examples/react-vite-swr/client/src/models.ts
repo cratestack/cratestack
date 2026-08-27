@@ -15,14 +15,17 @@ import DecimalJs from "decimal.js";
 //
 // Cloned with an effectively-unbounded exponential-notation threshold
 // (`toExpNeg`/`toExpPos`) rather than used directly: decimal.js's own
-// default `.toString()`/`.toJSON()` (the encode path every `JSON.stringify`
-// call and this package's default JSON-based RPC codec go through — see
-// `rpc-runtime.ts.j2`'s `jsonRpcCodec`) switches to scientific notation
-// past ±7/21 orders of magnitude, which would make even an *ordinary*
-// value like `0.00000001` re-encode as `"1e-8"`. Forcing plain positional
-// notation instead matches `rust_decimal`'s own `Display` exactly, so a
-// re-encoded value is always accepted back by a server on *either*
-// backend without needing to know whether it parses scientific notation.
+// default `.toString()`/`.toJSON()` switches to scientific notation past
+// ±7/21 orders of magnitude, which would make even an *ordinary* value
+// like `0.00000001` re-encode as `"1e-8"`. Every outbound encode path
+// goes through one of these two: `JSON.stringify` (`jsonRpcCodec`, REST
+// bodies) or `encodeDecimalFields`'s own `.toString()` call (the native
+// `@cratestack/cbor` codec, see that function's doc comment below) — so
+// this one unbounded threshold governs all of them uniformly. Forcing
+// plain positional notation matches `rust_decimal`'s own `Display`
+// exactly, so a re-encoded value is always accepted back by a server on
+// *either* backend without needing to know whether it parses scientific
+// notation.
 export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
 export type Decimal = DecimalJs;
 
@@ -137,6 +140,71 @@ export function reviveDecimalScalar(value: unknown): unknown {
   return typeof value === "string" ? new Decimal(value) : value;
 }
 
+/** Encode-side counterpart to {@link reviveDecimalFields}/
+ *  {@link reviveDecimalScalar} (cratestack#746 follow-up): every RPC
+ *  request body — `create`/`update` inputs, procedure arguments (plain,
+ *  nested, or array-valued), a `FindMany<Model>` argument's
+ *  `<Model>Where`/`DecimalFilter` operators, and each frame's own `input`
+ *  inside a `batch()` payload — can carry a real {@link Decimal} instance
+ *  wherever the schema declares a `Decimal`-typed field, and every one of
+ *  those needs to reach the wire as a plain string before it reaches a
+ *  codec's `encode()`.
+ *
+ *  `jsonRpcCodec`'s `JSON.stringify` already handles this for free via
+ *  `Decimal.prototype.toJSON` (an alias for `.toString()`, see the
+ *  `Decimal` export's own doc comment above) — but `@cratestack/cbor`
+ *  (the default codec since #746) walks a value's *own enumerable
+ *  properties* on its way to a `serde_json::Value` and never calls
+ *  `toJSON`. `decimal.js`'s `clone()` (used to build this file's
+ *  `Decimal` export) assigns `constructor` as an own enumerable property
+ *  pointing at a function, and a function has no `serde_json::Value`
+ *  representation — so encoding any request body containing a real
+ *  `Decimal` instance under the native codec throws `JS functions cannot
+ *  be represented as a serde_json::Value` before a request is ever sent.
+ *  Confirmed against the actually-published `@cratestack/cbor`, not
+ *  theorized.
+ *
+ *  Deliberately NOT built on {@link decimalShapes}/{@link reviveShaped}'s
+ *  by-field-name registry, unlike the decode-side functions above: this
+ *  direction already has a real, unambiguous {@link Decimal} instance in
+ *  hand at every leaf, so `value instanceof Decimal` identifies exactly
+ *  what needs converting with no risk of the field-name collision hazard
+ *  {@link decimalShapes}'s own doc comment (`crate::decimal`, cratestack#499)
+ *  exists to avoid — and it needs no per-shape registry entry for
+ *  `<Model>Where`/procedure-argument wrapper interfaces, neither of which
+ *  {@link decimalShapes} describes at all (it is built only for
+ *  models/`type`s, which is all the *decode* side ever needs — see that
+ *  module's doc comment). A plain recursive walk that only special-cases
+ *  the one JS runtime type that can't survive the native codec covers
+ *  every shape above uniformly.
+ *
+ *  Called unconditionally from `rpc-runtime.ts.j2`'s `terminalLink`/
+ *  `rpc-stream-terminal.ts.j2`'s `terminalStreamLink` — the two places
+ *  every unary/batch/stream request body reaches a codec's `encode()` —
+ *  rather than gated on `native_cbor`: converting a `Decimal` to its
+ *  `.toString()` form before `JSON.stringify` produces the byte-identical
+ *  request body `jsonRpcCodec` already sends today (the same
+ *  `.toString()` `Decimal.prototype.toJSON` calls), so applying it
+ *  unconditionally is a true no-op for the JSON path and avoids a fourth
+ *  `{% if native_cbor %}` branch in these already-branchy
+ *  templates. */
+export function encodeDecimalFields(value: unknown): unknown {
+  if (value instanceof Decimal) {
+    return value.toString();
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => encodeDecimalFields(item));
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = encodeDecimalFields(entry);
+    }
+    return result;
+  }
+  return value;
+}
+
 // Mirrors cratestack-core::page::{Page, PageInfo} exactly — this is
 // the literal wire shape every `@@paged` list route serializes with
 // `#[serde(rename_all = "camelCase")]`, not an independently designed
@@ -200,10 +268,13 @@ export type DateTimeFilter = ComparableFilter<string>;
 // *outbound* as part of a `<Model>Where`/`FindMany` procedure argument
 // (`find_many_views.rs`'s own doc comment — "usable only as a procedure
 // argument type"), so it needs no `reviveDecimalFields` counterpart on
-// decode: `Decimal.prototype.toJSON` (an alias for `.toString()`) makes
-// `JSON.stringify` — both a plain REST request body and this package's
-// default `jsonRpcCodec` go through it — encode a `Decimal` correctly
-// with no generated glue at all.
+// decode. It DOES need `encodeDecimalFields` on encode, same as every
+// other `Decimal`-carrying request body (see that function's own doc
+// comment for why `Decimal.prototype.toJSON`/`JSON.stringify` alone isn't
+// enough once `@cratestack/cbor` is the codec, cratestack#746 follow-up)
+// — `rpc-runtime.ts.j2`'s `terminalLink` applies it uniformly to every
+// outbound RPC request body, so a `FindMany<Model>` argument's `where`
+// filter needs no separate glue at this call site either.
 export type DecimalFilter = ComparableFilter<Decimal>;
 
 export type SortDirection = "asc" | "desc";
