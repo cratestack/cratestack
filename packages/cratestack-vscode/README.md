@@ -51,11 +51,14 @@ be a valid identifier that is neither a keyword nor a builtin, and a name alread
 taken in that scope is rejected. It also refuses entirely while the file has a
 syntax error, since edits computed from the retained schema would apply at
 positions the buffer has since moved.
+Independent schema errors are reported together, so three models each naming a
+type that does not exist produce three squiggles rather than three save-and-retry
+rounds. A *syntax* error is still reported alone — parsing has no recovery, so
+everything after it is unparsed rather than valid.
 
 Current limitations:
 
 * no formatting support yet
-* one diagnostic per file — the parser stops at the first error
 
 ## Settings
 

@@ -37,6 +37,8 @@ mod tests_model_index;
 mod tests_model_internal;
 #[cfg(test)]
 mod tests_model_unique;
+#[cfg(test)]
+mod tests_multi_error;
 mod tests_patch_touch_flag_collisions;
 #[cfg(test)]
 mod tests_procedures;
@@ -99,6 +101,48 @@ pub fn parse_schema_named(
     let schema = parse::parse_schema_only(source)?;
     validate::validate_schema(path, source, &schema)?;
     Ok(schema)
+}
+
+/// Parse and validate, reporting **every** independent problem rather than
+/// only the first.
+///
+/// [`parse_schema_named`] stops at the first error, which is right for a
+/// compiler or a CLI: the build is failing either way, and one clear message
+/// beats a cascade. It is wrong for an editor, where stopping early means the
+/// author fixes one error, saves, and is handed the next — one round trip per
+/// mistake.
+///
+/// Semantics worth knowing:
+///
+/// * A **syntax** error still yields exactly one diagnostic. Parsing has no
+///   recovery, so there is no second error to report — everything after the
+///   failure is unparsed, not valid.
+/// * **Validation** errors are collected in stages, and a stage runs only when
+///   every earlier stage was clean. Several validators document that they
+///   assume an earlier one passed, and running them over already-rejected input
+///   produces cascades pointing at the wrong places. Within a stage, every
+///   declaration reports independently — three models each naming a type that
+///   does not exist produce three diagnostics, not three round trips.
+/// * The schema is returned only when there are no errors at all, matching
+///   [`parse_schema_named`].
+///
+/// The first element of the returned `Vec` is always the same error
+/// [`parse_schema_named`] would have returned; both go through one set of
+/// checks in one order, so they cannot drift apart.
+pub fn parse_schema_diagnostics(
+    path: &str,
+    source: &str,
+) -> (Option<cratestack_core::Schema>, Vec<SchemaError>) {
+    let schema = match parse::parse_schema_only(source) {
+        Ok(schema) => schema,
+        Err(error) => return (None, vec![error]),
+    };
+    let errors = validate::validate_schema_collecting(path, source, &schema);
+    if errors.is_empty() {
+        (Some(schema), Vec::new())
+    } else {
+        (None, errors)
+    }
 }
 
 /// Parse a `.cstack` source into a [`cratestack_core::Schema`] WITHOUT
