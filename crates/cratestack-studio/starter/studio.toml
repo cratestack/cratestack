@@ -56,16 +56,26 @@ default_mode = "ro"
 #
 # allow_unsafe_writes = true
 #
-# @@allow policy is not enforced on [target.db] reads or writes
-# either way — that's judged intended for a direct-DB admin tool, but
-# it means a target on a schema with sensitive/role-gated fields
-# grants unauthenticated database-level access to them through
-# Studio's HTTP API. Prefer [target.api] (below) when the schema
-# declares policies you need enforced.
+# NO schema-declared write constraint is enforced on a [target.db]
+# target — not @@allow / @@deny (reads or writes), and not
+# @@internal(...) route suppression. A model whose create is
+# suppressed with @@internal("create"), or denied by an @@allow rule,
+# is still creatable here. That is deliberate for a direct-SQL admin
+# tool (cratestack#744), but it means `mode = "rw"` on a [target.db]
+# target grants unauthenticated, database-level access through
+# Studio's HTTP API to anything the schema declares off-limits. Use
+# [target.api] (below) when you need the schema's constraints
+# enforced.
 #
 # [target.api]
 # base_url = "https://catalog.internal"
 # auth = { kind = "bearer", token = "env:CATALOG_TOKEN" }
 # # Writes through [target.api] go through your deployed service's own
-# # generated routes, so @version, @@emit, and @@allow all apply exactly
-# # as declared in the schema.
+# # generated routes, so @version, @@emit, @@allow/@@deny and
+# # @@internal(...) all apply exactly as declared — enforced by the
+# # service, not by Studio. `rw` here grants no more than the token
+# # above already has.
+# #
+# # A target that declares BOTH blocks is a [target.db] target for
+# # every read and write: the loader prefers [target.db] whenever it is
+# # present, so adding [target.api] alongside it buys no enforcement.

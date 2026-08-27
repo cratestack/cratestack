@@ -51,11 +51,21 @@ configured connections, and serves the API and UI at the bind address
   `403 UNSAFE_DB_WRITE` naming the attribute, unless that target sets
   `allow_unsafe_writes = true`. `[target.api]` targets are unaffected —
   those writes go through the deployed service's own generated routes,
-  which already apply `@version`/`@@emit`/`@@allow`. `@@allow`
-  enforcement on `[target.db]` itself is unchanged by this — it remains
-  unenforced on both reads and writes there, which is worth weighing
-  before pointing Studio at a schema with policy-gated or `@sensitive`
-  fields.
+  which already apply `@version`/`@@emit`/`@@allow`.
+
+  **A `[target.db]` target enforces no schema-declared write constraint
+  at all** — neither `@@allow`/`@@deny` (on reads or writes) nor
+  `@@internal(...)` route suppression. A model whose `create` is
+  suppressed with `@@internal("create")`, or denied by an `@@allow`
+  rule, is still creatable through Studio's records API on an `rw`
+  `[target.db]` target. This is a decision, not an oversight
+  (cratestack#744): a direct-SQL admin tool operates beneath the schema
+  the way `psql` does. Weigh it before pointing Studio at a schema with
+  policy-gated or `@sensitive` fields — and note that Studio's HTTP API
+  is itself unauthenticated, so "who may reach the bind address" is the
+  real boundary. Every successful write lands in the audit log, which is
+  detective, not preventive. See [What `mode = "rw"`
+  grants](#what-mode--rw-grants) below.
 - **SQL preview + query plans** — render the SQL an operation would run
   without touching the database, optionally asking the driver to
   `EXPLAIN` it. Studio never issues `EXPLAIN ANALYZE`.
@@ -72,6 +82,32 @@ configured connections, and serves the API and UI at the bind address
 
 See the [Studio docs](https://cratestack.dev/studio/quickstart) for the
 full `studio.toml` reference, endpoint list, and error codes.
+
+## What `mode = "rw"` grants
+
+`rw` is the only authorization check on Studio's write path, and it
+grants different things per channel. The loader takes `[target.db]`
+whenever the target declares one, falling back to `[target.api]` only
+when there is no `[target.db]` block — so a target declaring **both** is
+a `[target.db]` target for every read and write, and adding
+`[target.api]` alongside a `[target.db]` buys no enforcement.
+(`[target.api].prefer_for` is parsed but not consulted by anything
+today; it does not redirect writes.)
+
+| Target resolves to | `rw` grants | `@@internal` | `@@allow`/`@@deny` |
+| --- | --- | --- | --- |
+| `[target.db]` (Postgres/SQLite) | database-level access | not enforced | not enforced |
+| `[target.api]` only | exactly what `[target.api].auth`'s credential has | enforced by the service | enforced by the service |
+
+Nothing in the `[target.api]` row is Studio's doing: it issues ordinary
+HTTP requests against the deployed service's macro-generated REST
+routes — the same surface the TypeScript and Dart clients consume — so
+a verb suppressed by `@@internal(...)` has no route to call and the
+request fails at the HTTP layer (`405`, or `404` when every verb on the
+path is suppressed), while policies are evaluated server-side against
+the configured credential's identity. Studio implements neither check
+itself, which is why neither can drift out of sync with the schema the
+service was generated from.
 
 ## UI
 

@@ -87,6 +87,18 @@ pub struct TargetConfig {
     pub api: Option<TargetApi>,
 }
 
+/// Read-only (`ro`, the default) or read-write (`rw`) access to one
+/// target.
+///
+/// `Rw` is the *entire* authorization check Studio's write API applies,
+/// and what it grants depends on the channel: on a `[target.db]` target
+/// it is database-level access that bypasses every schema-declared write
+/// constraint — `@@internal(...)` and `@@allow`/`@@deny` alike, by
+/// decision (cratestack#744) — while on a `[target.api]`-only target it
+/// grants no more than the configured credential already has, since the
+/// deployed service polices those writes itself. A target declaring both
+/// blocks is a `[target.db]` target. See the crate's top-level rustdoc
+/// ("Granting `rw`") before setting it.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum TargetMode {
