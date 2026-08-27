@@ -22,8 +22,9 @@
 //! rewrite applied to `package.json.j2`'s `dependencies` block: it used to
 //! be a hardcoded two-line stanza (`decimal.js` only) because it never had
 //! more than one unconditional entry. `@cratestack/cbor` under
-//! `--native-cbor` (RPC transport only) is the first *conditional*
-//! `dependencies` entry, so the same combinatorial trailing-comma problem
+//! `native_cbor` (on by default; `--no-native-cbor` opts out — RPC
+//! transport only) is the first *conditional* `dependencies` entry, so the
+//! same combinatorial trailing-comma problem
 //! `peer_dependencies_for`/`dev_dependencies_for` solve applies here too.
 
 use crate::config::TypeScriptGeneratorConfig;
@@ -125,10 +126,11 @@ pub(crate) fn dev_dependencies_for(
 
 /// `package.json.j2`'s `dependencies` — `decimal.js` unconditionally (every
 /// generated client needs it regardless of flags or transport), plus
-/// `@cratestack/cbor` (issue #746) when `--native-cbor` is on AND the
-/// schema is RPC transport. REST-transport clients never get
-/// `@cratestack/cbor` here: `rest-runtime.ts.j2` has no codec seam at all,
-/// so the dependency would be dead weight.
+/// `@cratestack/cbor` (issue #746) when `native_cbor` is on (the default;
+/// `--no-native-cbor` opts out) AND the schema is RPC transport.
+/// REST-transport clients never get `@cratestack/cbor` here:
+/// `rest-runtime.ts.j2` has no codec seam at all, so the dependency would
+/// be dead weight.
 pub(crate) fn dependencies_for(
     config: &TypeScriptGeneratorConfig,
     is_rpc_transport: bool,

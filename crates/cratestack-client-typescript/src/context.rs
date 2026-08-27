@@ -96,7 +96,7 @@ pub(crate) struct TemplateContext {
     /// `decimal.js`; additionally carries `@cratestack/cbor` when
     /// `native_cbor` is set on an RPC-transport schema.
     dependencies: Vec<DependencyEntry>,
-    /// Issue #746 (`--native-cbor`, on by default — see
+    /// Issue #746 (on by default; `--no-native-cbor` opts out — see
     /// `TypeScriptGeneratorConfig::native_cbor`'s doc comment). Read
     /// directly by `rpc-runtime.ts.j2` to choose between
     /// `@cratestack/cbor`'s `createCborCodec()` and the plain
