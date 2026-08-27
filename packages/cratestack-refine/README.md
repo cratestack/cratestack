@@ -194,6 +194,34 @@ optimistic-lock-aware bulk workflows). Calling `update`/`deleteOne` on a `@versi
 known version and no override throws rather than silently omitting `If-Match` — omitting it doesn't
 fail on the wire the way a *stale* value does, so this package refuses to make that mistake for you.
 
+## Errors
+
+**Every method converts the same way, and conversion never destroys what was thrown.** All of
+`getList`, `getMany`, `getOne`, `create`, `update`, `deleteOne` and `custom` route a thrown value
+through `toRefineError` (exported, so you can reuse it) — there is no method that rethrows raw and
+no method whose errors reach refine without `statusCode` (cratestack#786; before that fix the two
+list methods and the four single-record methods disagreed, and which one you hit depended on which
+screen the user was on).
+
+Conversion **annotates the thrown value in place** rather than replacing it. If your transport
+throws a typed error, the value your `onError` handler receives *is* that error:
+
+```ts
+class DeviceNotEnrolledError extends Error {}
+
+// works identically on list screens and on detail/create/edit screens
+if (error instanceof DeviceNotEnrolledError) { … }
+```
+
+`message` and `statusCode` are set on it, which is what refine renders — so a `CratestackHttpError`
+gets its envelope's `payload.message` promoted, and a `412` gets the optimistic-locking message
+above, while `status`/`payload`/`response` stay readable on the same object. When the thrown value
+cannot be annotated (a thrown primitive, a frozen object), you get `{ message, statusCode, cause }`
+with the original under `cause`.
+
+Do not classify errors by string-matching `message` — it is the one field conversion is allowed to
+rewrite.
+
 ## `createMany` / `updateMany` / `deleteMany`
 
 Implemented, not declined, on both providers — but as N sequential single-record round trips
