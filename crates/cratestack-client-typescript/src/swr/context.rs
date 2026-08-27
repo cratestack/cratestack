@@ -8,7 +8,6 @@
 use cratestack_core::Schema;
 
 use crate::config::TypeScriptGeneratorConfig;
-use crate::decimal::build_decimal_shapes;
 use crate::find_many_views::{
     build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
     build_where_interface,
@@ -22,6 +21,7 @@ use crate::types::{
 use crate::views::{
     InterfaceKind, build_computed_params_interface, build_interface, build_model_api,
 };
+use crate::wire_shapes::build_wire_shapes;
 
 use super::context_imports::{
     build_imports, model_refs_in_fields, owned_by, procedure_arg_fields, procedure_model_refs,
@@ -154,7 +154,7 @@ pub(crate) fn build_shared_context(
         shared,
         models,
         procedures_file,
-        decimal_shapes: build_decimal_shapes(schema),
+        wire_shapes: build_wire_shapes(schema),
         models_import_path: "../models.js",
         native_cbor: config.native_cbor,
     }

@@ -70,21 +70,21 @@ pub(crate) struct ModelApiView {
     pub(crate) list_return_type: String,
     /// `true` when `list_return_type` is `Page<{Model}>` rather than
     /// `{Model}[]` — the generated `list()` method needs to know this to
-    /// pick `revivePagedDecimalFields` (applies this model's decimal shape
-    /// to the envelope's `.items`) over plain `reviveDecimalFields`
+    /// pick `revivePagedWireFields` (applies this model's decimal shape
+    /// to the envelope's `.items`) over plain `reviveWireFields`
     /// (cratestack#499: a `Page<T>` envelope's own keys — `items`/
     /// `totalCount`/`pageInfo` — are never themselves `T`'s fields, so
     /// `T`'s shape can't be applied to the envelope directly).
     pub(crate) is_paged: bool,
-    /// This model's own registry key into the generated `decimalShapes`
+    /// This model's own registry key into the generated `wireShapes`
     /// object (`models.ts.j2`) — always just `name` (a model's shape is
     /// always registered under its own schema name), spliced verbatim into
-    /// `rest-client.ts.j2`/`rpc-client.ts.j2`'s `reviveDecimalFields(value,
-    /// '{{ decimal_shape_name }}')` call at every CRUD method that decodes
+    /// `rest-client.ts.j2`/`rpc-client.ts.j2`'s `reviveWireFields(value,
+    /// '{{ revival_shape_name }}')` call at every CRUD method that decodes
     /// a server response. See `crate::decimal`'s module doc for why this
     /// replaced a flat, name-keyed `decimalKeys: string[]` (cratestack#499
     /// review: that scheme had a reachable field-name-collision hazard).
-    pub(crate) decimal_shape_name: String,
+    pub(crate) revival_shape_name: String,
     pub(crate) list_query_key: String,
     pub(crate) get_query_key: String,
     pub(crate) create_mutation_key: String,
@@ -191,7 +191,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
             format!("{}[]", model.name)
         },
         is_paged,
-        decimal_shape_name: model.name.clone(),
+        revival_shape_name: model.name.clone(),
         list_query_key: format!("{}List", to_camel_case(&model.name)),
         get_query_key: format!("{}Detail", to_camel_case(&model.name)),
         create_mutation_key: format!("{}Create", to_camel_case(&model.name)),
@@ -321,7 +321,7 @@ fn disambiguate_field(
 /// quoting `build_enum_view`'s union-type rendering uses, via the same
 /// `escape_ts_string` helper. `pub(crate)` (not just used within this
 /// module) since `crate::decimal::build_shape` reuses it for each
-/// `DecimalShapeView`'s `keys_js`.
+/// `WireShapeView`'s key arrays.
 pub(crate) fn js_string_array(items: &[String]) -> String {
     let quoted = items
         .iter()

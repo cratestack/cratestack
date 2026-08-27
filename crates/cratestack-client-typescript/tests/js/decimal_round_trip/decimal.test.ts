@@ -8,7 +8,7 @@
 // `tests/decimal_round_trip.rs`, mirroring `swr_hooks_invalidation.rs`'s
 // "generate a real package, `npm install`, run real vitest" pattern.
 import { describe, expect, it } from "vitest";
-import { Decimal, reviveDecimalFields } from "./src/models.js";
+import { Decimal, reviveWireFields } from "./src/models.js";
 import { InvoiceApi } from "./src/client.js";
 import { CratestackRuntime } from "./src/runtime.js";
 
@@ -35,14 +35,14 @@ describe("Decimal parsing (cratestack#498 requirement 1)", () => {
   });
 });
 
-describe("reviveDecimalFields (the generated client's decode-side hook)", () => {
-  it("is a no-op for a shape name with no decimalShapes registry entry", () => {
+describe("reviveWireFields (the generated client's decode-side hook)", () => {
+  it("is a no-op for a shape name with no wireShapes registry entry", () => {
     const value = { amountXaf: "1E-7" };
-    expect(reviveDecimalFields(value, "NotARegisteredShape")).toBe(value);
+    expect(reviveWireFields(value, "NotARegisteredShape")).toBe(value);
   });
 
   it("turns matching string fields into real Decimal instances, leaves others untouched", () => {
-    const revived = reviveDecimalFields(
+    const revived = reviveWireFields(
       { id: "inv_1", reference: "INV-1", amountXaf: "1E-7", discountXaf: null },
       "Invoice",
     ) as { id: string; amountXaf: unknown; discountXaf: unknown };
@@ -54,7 +54,7 @@ describe("reviveDecimalFields (the generated client's decode-side hook)", () => 
   });
 
   it("revives every item of an array response (the `list()` shape)", () => {
-    const revived = reviveDecimalFields(
+    const revived = reviveWireFields(
       [{ amountXaf: "1E-7" }, { amountXaf: "0.0000001" }],
       "Invoice",
     ) as Array<{ amountXaf: InstanceType<typeof Decimal> }>;

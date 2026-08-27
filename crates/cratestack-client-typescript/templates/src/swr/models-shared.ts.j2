@@ -21,7 +21,7 @@ import DecimalJs from "decimal.js";
 // `toJSON` with no extra glue), and — like the default preset's
 // `rest-client.ts.j2`/`rpc-client.ts.j2` — this preset's per-model
 // `models-rest.ts.j2`/`models-rpc.ts.j2` functions call
-// `reviveDecimalFields` on every decoded response too.
+// `reviveWireFields` on every decoded response too.
 export const Decimal = DecimalJs.clone({ toExpNeg: -1e9, toExpPos: 1e9 });
 export type Decimal = DecimalJs;
 
@@ -29,22 +29,24 @@ export type Decimal = DecimalJs;
  *  identical implementation, exported here too since this preset's
  *  per-model files call it directly (rather than importing a shared
  *  `models.ts`, which doesn't exist in this preset's per-file layout). */
-export interface DecimalShape {
-  readonly keys: readonly string[];
+export interface WireShape {
+  readonly decimalKeys: readonly string[];
+  readonly bytesKeys: readonly string[];
+  readonly bytesListKeys: readonly string[];
   readonly nested: Readonly<Record<string, string>>;
 }
 
 /** See the default preset's `models.ts.j2` for the full doc comment on
  *  why this is keyed by structural path (via `nested`) rather than a
  *  single flat, schema-wide field-name set. */
-export const decimalShapes: Readonly<Record<string, DecimalShape>> = {
-{% for shape in decimal_shapes %}
-  {{ shape.name }}: { keys: {{ shape.keys_js }}, nested: {{ shape.nested_js }} },
+export const wireShapes: Readonly<Record<string, WireShape>> = {
+{% for shape in wire_shapes %}
+  {{ shape.name }}: { decimalKeys: {{ shape.decimal_keys_js }}, bytesKeys: {{ shape.bytes_keys_js }}, bytesListKeys: {{ shape.bytes_list_keys_js }}, nested: {{ shape.nested_js }} },
 {% endfor %}
 };
 
-export function reviveDecimalFields(value: unknown, shapeName: string): unknown {
-  const shape = decimalShapes[shapeName];
+export function reviveWireFields(value: unknown, shapeName: string): unknown {
+  const shape = wireShapes[shapeName];
   if (!shape) {
     return value;
   }
@@ -53,8 +55,8 @@ export function reviveDecimalFields(value: unknown, shapeName: string): unknown 
 
 /** See the default preset's `models.ts.j2`'s identical function for the
  *  full doc comment (`Page<T>` envelope handling). */
-export function revivePagedDecimalFields(value: unknown, shapeName: string): unknown {
-  const shape = decimalShapes[shapeName];
+export function revivePagedWireFields(value: unknown, shapeName: string): unknown {
+  const shape = wireShapes[shapeName];
   if (!shape || value === null || typeof value !== "object" || !("items" in value)) {
     return value;
   }
@@ -62,7 +64,7 @@ export function revivePagedDecimalFields(value: unknown, shapeName: string): unk
   return { ...page, items: reviveShaped(page.items, shape) };
 }
 
-function reviveShaped(value: unknown, shape: DecimalShape): unknown {
+function reviveShaped(value: unknown, shape: WireShape): unknown {
   if (Array.isArray(value)) {
     return value.map((item) => reviveShaped(item, shape));
   }
@@ -71,10 +73,14 @@ function reviveShaped(value: unknown, shape: DecimalShape): unknown {
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
       const nestedShapeName = shape.nested[key];
       if (nestedShapeName !== undefined) {
-        const nestedShape = decimalShapes[nestedShapeName];
+        const nestedShape = wireShapes[nestedShapeName];
         result[key] = nestedShape ? reviveShaped(entry, nestedShape) : entry;
-      } else if (shape.keys.includes(key) && typeof entry === "string") {
+      } else if (shape.decimalKeys.includes(key) && typeof entry === "string") {
         result[key] = new Decimal(entry);
+      } else if (shape.bytesKeys.includes(key)) {
+        result[key] = toBytes(entry);
+      } else if (shape.bytesListKeys.includes(key)) {
+        result[key] = Array.isArray(entry) ? entry.map(toBytes) : entry;
       } else {
         result[key] = entry;
       }
@@ -84,13 +90,29 @@ function reviveShaped(value: unknown, shape: DecimalShape): unknown {
   return value;
 }
 
+/** See the default preset's `models.ts.j2` for the full doc comment on
+ *  why `null`/non-array values pass through untouched — identical
+ *  implementation. */
+function toBytes(value: unknown): unknown {
+  return Array.isArray(value) ? Uint8Array.from(value as number[]) : value;
+}
+
 /** See the default preset's `models.ts.j2` for the full doc comment —
  *  identical implementation, exported here too so `./procedures.ts`'s
- *  functions can revive a `Decimal`-typed (rather than object-typed)
- *  return value. */
-export function reviveDecimalScalar(value: unknown): unknown {
+ *  functions can revive a `Decimal`/`Bytes`-typed (rather than
+ *  object-typed) return value. */
+export function reviveWireScalar(value: unknown, kind: string): unknown {
+  if (kind === "bytes") {
+    return toBytes(value);
+  }
+  if (kind === "bytesList") {
+    return Array.isArray(value) ? value.map(toBytes) : value;
+  }
+  if (kind !== "decimal") {
+    return value;
+  }
   if (Array.isArray(value)) {
-    return value.map((item) => reviveDecimalScalar(item));
+    return value.map((item) => reviveWireScalar(item, kind));
   }
   return typeof value === "string" ? new Decimal(value) : value;
 }

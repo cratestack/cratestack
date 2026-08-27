@@ -1,0 +1,32 @@
+// cratestack#783 follow-up fixture: a schema `Bytes` field is a real
+// `Uint8Array` on both sides of a generated TypeScript client, converted
+// at the wire boundary (the server's outbound shape is still an array of
+// integers).
+//
+// Covers all three field shapes the revival registry distinguishes —
+// required, nullable, and list — plus `readings Int[]`, which is
+// `number[]` on the wire exactly like a `Bytes` field and must NOT be
+// revived: that collision is the entire reason revival is driven by the
+// schema rather than by the decoded value's structure.
+
+model Sample {
+  id Cuid @id @default(cs_cuid())
+  label String
+  payload Bytes
+  signature Bytes?
+  chunks Bytes[]
+  readings Int[]
+
+  @@allow("list", true)
+}
+
+type Envelope {
+  nonce Bytes
+  note String
+}
+
+procedure sealEnvelope(payload: Bytes, extra: Envelope): Envelope
+
+procedure digestOf(payload: Bytes): Bytes
+
+procedure digestsOf(payloads: Bytes[]): Bytes[]

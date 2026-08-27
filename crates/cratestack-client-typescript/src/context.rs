@@ -2,7 +2,6 @@ use cratestack_core::{Field, Schema};
 use serde::Serialize;
 
 use crate::config::TypeScriptGeneratorConfig;
-use crate::decimal::{DecimalShapeView, build_decimal_shapes};
 use crate::error::TypeScriptGeneratorError;
 use crate::find_many_views::{
     build_find_many_interface, build_order_by_clause_interface, build_sort_field_view,
@@ -22,6 +21,7 @@ use crate::views::{
     EnumView, InterfaceKind, InterfaceView, ModelApiView, build_computed_params_interface,
     build_enum_view, build_interface, build_model_api, disambiguate_model_api_keys,
 };
+use crate::wire_shapes::{WireShapeView, build_wire_shapes};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TemplateContext {
@@ -39,10 +39,10 @@ pub(crate) struct TemplateContext {
     query_procedures: Vec<ProcedureView>,
     mutation_procedures: Vec<ProcedureView>,
     /// One row per model/`type` in the schema — the generated
-    /// `decimalShapes` registry `models.ts.j2` renders and every decode
+    /// `wireShapes` registry `models.ts.j2` renders and every decode
     /// call site looks a name up in (`crate::decimal`'s module doc has the
     /// full rationale; cratestack#499 review remediation).
-    decimal_shapes: Vec<DecimalShapeView>,
+    wire_shapes: Vec<WireShapeView>,
     /// Issue #571 (`--refine`). Mirrors
     /// `TypeScriptGeneratorConfig::refine`, and is read by the two
     /// *unconditional* templates that also change under the flag —
@@ -128,7 +128,7 @@ pub(crate) struct TemplateContext {
     has_versioned_model: bool,
     /// The relative module specifier `rpc-runtime.ts.j2`'s `terminalLink`/
     /// `rpc-stream-terminal.ts.j2`'s `terminalStreamLink` use to import
-    /// `encodeDecimalFields` (cratestack#746 follow-up P1 fix). Both
+    /// `encodeWireFields` (cratestack#746 follow-up P1 fix). Both
     /// templates are rendered verbatim against two different output
     /// directories — this (default) layout's `src/runtime.ts` +
     /// `src/stream-terminal.ts`, siblings of `src/models.ts`, so `"./models.js"`
@@ -148,7 +148,7 @@ pub(crate) fn build_template_context(
     let model_names = model_name_set(&schema.models);
     let enum_names = enum_name_set(&schema.enums);
     let occupied_type_names = occupied_type_names(schema);
-    let decimal_shapes = build_decimal_shapes(schema);
+    let wire_shapes = build_wire_shapes(schema);
     let client_class_name = format!(
         "{}Client",
         to_pascal_case(&package_class_stem(&config.package_name))
@@ -308,7 +308,7 @@ pub(crate) fn build_template_context(
         procedures,
         query_procedures,
         mutation_procedures,
-        decimal_shapes,
+        wire_shapes,
         refine: config.refine,
         refine_version_requirement: refine_version_requirement.clone(),
         // Built only when the flag is on: a default run has no template

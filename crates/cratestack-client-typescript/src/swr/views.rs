@@ -107,9 +107,9 @@ pub(crate) struct SwrSchemaContext {
     pub(crate) models: Vec<SwrModelSummary>,
     pub(crate) procedures_file: SwrProceduresView,
     /// One row per model/`type` in the schema — see `crate::context::
-    /// TemplateContext::decimal_shapes`'s identical field for the full
+    /// TemplateContext::wire_shapes`'s identical field for the full
     /// rationale (`crate::decimal`'s module doc has the complete story).
-    pub(crate) decimal_shapes: Vec<crate::decimal::DecimalShapeView>,
+    pub(crate) wire_shapes: Vec<crate::wire_shapes::WireShapeView>,
     /// See `crate::context::TemplateContext::models_import_path`'s doc
     /// comment for the full rationale — always `"../models.js"` here,
     /// since `--swr` nests `runtime.ts`/`stream-terminal.ts` one directory

@@ -154,7 +154,7 @@ fn swr_preset_update_and_delete_functions_also_accept_if_match() {
 /// not — a `--swr` consumer could send `If-Match` but had no per-model
 /// way to *obtain* it. Worse, the naive workaround (call
 /// `runtime.getWithResponse()` directly) skips this file's own
-/// `reviveDecimalFields(...)` call, silently handing back an unrevived
+/// `reviveWireFields(...)` call, silently handing back an unrevived
 /// `Decimal` field — exactly the kind of trap issue #610 itself records
 /// as the *original* reason a consumer rejected the generated client.
 /// This asserts both: the symbol exists, AND it's wired through the
@@ -180,14 +180,14 @@ fn swr_preset_get_with_response_exists_and_revives_decimals() {
         "getLedgerWithResponse must surface the raw Response object:\n{model_file}"
     );
     // The decisive assertion: getLedgerWithResponse's returned `value`
-    // must go through the exact same reviveDecimalFields(...) call
+    // must go through the exact same reviveWireFields(...) call
     // getLedger uses — not the raw, unrevived runtime payload.
     assert!(
         model_file.contains(
-            "value: reviveDecimalFields(result.value, 'Ledger') as Ledger,\n    response: result.response,"
+            "value: reviveWireFields(result.value, 'Ledger') as Ledger,\n    response: result.response,"
         ),
         "getLedgerWithResponse's value must be decimal-revived exactly like getLedger's is — \
-         reaching for runtime.getWithResponse() directly instead would skip reviveDecimalFields \
+         reaching for runtime.getWithResponse() directly instead would skip reviveWireFields \
          and hand back an unrevived (string) Decimal field:\n{model_file}"
     );
 
@@ -381,7 +381,7 @@ console.log("ETAG_IF_MATCH_CHECK_OK");
 /// Real, Node-driven proof for the `--swr` preset specifically (review
 /// remediation round 2): `getLedgerWithResponse` must both reach the
 /// `ETag` AND hand back a real `Decimal` instance for the `amount`
-/// field, not the raw JSON string — proving `reviveDecimalFields` was
+/// field, not the raw JSON string — proving `reviveWireFields` was
 /// actually applied on this path, not skipped the way calling
 /// `runtime.getWithResponse()` directly would. Then the learned `ETag`
 /// is sent back as `ifMatch` on `updateLedger`, same round trip as the

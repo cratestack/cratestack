@@ -4,7 +4,7 @@ import {
   type CratestackRpcClientOptions,
 } from "./runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
-import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
+import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
   Widget,
   CreateWidgetInput,
@@ -45,7 +45,7 @@ export class WidgetApi {
       "model.Widget.list",
       toRpcListInput(query),
       options,
-    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
+    ).then((value) => reviveWireFields(value, 'Widget') as Widget[]);
   }
 
   get(id: number, options: WidgetApiGetOptions = {}): Promise<Widget> {
@@ -65,7 +65,7 @@ export class WidgetApi {
       "model.Widget.get",
       input,
       options,
-    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+    ).then((value) => reviveWireFields(value, 'Widget') as Widget);
   }
 
   create(input: CreateWidgetInput, options: CratestackRpcCallOptions = {}): Promise<Widget> {
@@ -73,7 +73,7 @@ export class WidgetApi {
       "model.Widget.create",
       input,
       options,
-    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+    ).then((value) => reviveWireFields(value, 'Widget') as Widget);
   }
 
   update(
@@ -85,7 +85,7 @@ export class WidgetApi {
       "model.Widget.update",
       { id, patch },
       options,
-    ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+    ).then((value) => reviveWireFields(value, 'Widget') as Widget);
   }
 
   delete(id: number, options: CratestackRpcCallOptions = {}): Promise<void> {
@@ -105,7 +105,7 @@ export class ProceduresApi {
       "procedure.echoName",
       args,
       options,
-    ).then((value) => reviveDecimalFields(value, 'String') as string);
+    ).then((value) => reviveWireFields(value, 'String') as string);
   }
 
 }

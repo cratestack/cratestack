@@ -29,10 +29,10 @@ import {
 // is threading a per-model "does it need Decimal" flag through the
 // ownership computation for a type-only import that costs nothing when
 // unused (this package's `tsconfig.json.j2` doesn't set
-// `noUnusedLocals`). `reviveDecimalFields` is a real (non-type) import:
+// `noUnusedLocals`). `reviveWireFields` is a real (non-type) import:
 // every function below that decodes a server response calls it, same as
 // the `default` preset's `rest-client.ts.j2`.
-import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
+import { reviveWireFields, revivePagedWireFields, type Decimal } from "./shared.js";
 import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 
 export type BoardSortField = 'id' | 'name';
@@ -78,7 +78,7 @@ export async function listBoards(
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  }).then((value) => reviveDecimalFields(value, 'Board') as Board[]);
+  }).then((value) => reviveWireFields(value, 'Board') as Board[]);
 }
 
 export async function getBoard(
@@ -90,7 +90,7 @@ export async function getBoard(
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  }).then((value) => reviveDecimalFields(value, 'Board') as Board);
+  }).then((value) => reviveWireFields(value, 'Board') as Board);
 }
 
 // Same call as `getBoard`, but returns the response alongside the
@@ -109,7 +109,7 @@ export async function getBoardWithResponse(
     query: toSearchQuery(options.query),
     signal: options.signal,
   }).then((result) => ({
-    value: reviveDecimalFields(result.value, 'Board') as Board,
+    value: reviveWireFields(result.value, 'Board') as Board,
     response: result.response,
   }));
 }
@@ -120,7 +120,7 @@ export async function createBoard(
   options: CratestackRequestConfig = {},
 ): Promise<Board> {
   return runtime.post<unknown>("/boards", input, options)
-    .then((value) => reviveDecimalFields(value, 'Board') as Board);
+    .then((value) => reviveWireFields(value, 'Board') as Board);
 }
 
 export async function updateBoard(
@@ -133,7 +133,7 @@ export async function updateBoard(
     headers: withIfMatchHeader(options.headers, options.ifMatch),
     signal: options.signal,
   })
-    .then((value) => reviveDecimalFields(value, 'Board') as Board);
+    .then((value) => reviveWireFields(value, 'Board') as Board);
 }
 
 export async function deleteBoard(

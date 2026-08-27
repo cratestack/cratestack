@@ -266,7 +266,7 @@ fn native_codec_factory_is_memoized_and_retried_after_a_rejection() {
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
 
-    // `runtime.ts` imports `encodeDecimalFields` from `./models.js` (the
+    // `runtime.ts` imports `encodeWireFields` from `./models.js` (the
     // P1 fix for `@cratestack/cbor` throwing on a real `Decimal`
     // instance), which in turn imports `decimal.js` — so this test's
     // hand-built `node_modules` (below) needs a real `decimal.js`

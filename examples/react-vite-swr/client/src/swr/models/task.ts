@@ -29,10 +29,10 @@ import {
 // is threading a per-model "does it need Decimal" flag through the
 // ownership computation for a type-only import that costs nothing when
 // unused (this package's `tsconfig.json.j2` doesn't set
-// `noUnusedLocals`). `reviveDecimalFields` is a real (non-type) import:
+// `noUnusedLocals`). `reviveWireFields` is a real (non-type) import:
 // every function below that decodes a server response calls it, same as
 // the `default` preset's `rest-client.ts.j2`.
-import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
+import { reviveWireFields, revivePagedWireFields, type Decimal } from "./shared.js";
 import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 import type { Board } from "./board.js";
 
@@ -90,7 +90,7 @@ export async function listTasks(
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  }).then((value) => reviveDecimalFields(value, 'Task') as Task[]);
+  }).then((value) => reviveWireFields(value, 'Task') as Task[]);
 }
 
 export async function getTask(
@@ -102,7 +102,7 @@ export async function getTask(
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  }).then((value) => reviveDecimalFields(value, 'Task') as Task);
+  }).then((value) => reviveWireFields(value, 'Task') as Task);
 }
 
 // Same call as `getTask`, but returns the response alongside the
@@ -121,7 +121,7 @@ export async function getTaskWithResponse(
     query: toSearchQuery(options.query),
     signal: options.signal,
   }).then((result) => ({
-    value: reviveDecimalFields(result.value, 'Task') as Task,
+    value: reviveWireFields(result.value, 'Task') as Task,
     response: result.response,
   }));
 }
@@ -132,7 +132,7 @@ export async function createTask(
   options: CratestackRequestConfig = {},
 ): Promise<Task> {
   return runtime.post<unknown>("/tasks", input, options)
-    .then((value) => reviveDecimalFields(value, 'Task') as Task);
+    .then((value) => reviveWireFields(value, 'Task') as Task);
 }
 
 export async function updateTask(
@@ -145,7 +145,7 @@ export async function updateTask(
     headers: withIfMatchHeader(options.headers, options.ifMatch),
     signal: options.signal,
   })
-    .then((value) => reviveDecimalFields(value, 'Task') as Task);
+    .then((value) => reviveWireFields(value, 'Task') as Task);
 }
 
 export async function deleteTask(
