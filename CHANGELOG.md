@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### `CRATESTACK_REQUIRE_DB` now fails when *no* database backend is configured (#747)
+
+`CRATESTACK_REQUIRE_DB` exists to turn a silent skip into a loud failure, so that a green run can be
+trusted as evidence. It did not do that in the case that matters most. `cratestack-pg`'s
+`connect_or_skip()` threaded `require` into every *connection failure* but ignored it entirely on the
+fall-through where neither `CRATESTACK_TEST_DATABASE_URL` nor `CRATESTACK_USE_TESTCONTAINERS` is set —
+the single most likely CI misconfiguration. The result: the whole `cratestack-pg` PG-backed suite
+(`banking_*`, `policy_db_*`, `generated_client_rust*`, `upsert_*`, `internal_suppression`, …) printed
+`ok` in 0.00s having touched no database, *with the guard explicitly enabled*, and three separate
+reviews accepted that green as proof that DB coverage had run.
+
+Both affected crates now panic on that path, naming both variables. **Auditing the family found a
+second broken copy the issue did not name: `cratestack-outbox`**, whose five transactional-outbox tests
+(atomic persist/rollback, cursor-ordered drain, GC sweep) were skippable in exactly the same silence.
+
+The decision is now a pure `pick_backend(has_url, use_testcontainers, require) -> Backend` in
+`tests/support/require_db.rs` in each of those two crates, adopting the shape
+`crates/cratestack-redis/tests/support/redis.rs` already used for `CRATESTACK_REQUIRE_REDIS`. Purity is
+the point: it lets `tests/require_guard.rs` prove the guard is *able to fail* with a `#[should_panic]`
+test, instead of the guard only ever being observed passing — which is precisely how this defect
+survived. Driving `connect_or_skip` with real env vars could not do that without mutating
+process-global state shared with every other test thread in the binary.
+
+Behaviour with `CRATESTACK_REQUIRE_DB` **unset** is unchanged: a silent skip remains the deliberate
+local-dev default, so a contributor without Docker still gets a quiet pass. No CI job changes state —
+all five places that set `CRATESTACK_REQUIRE_DB=1` (`.github/workflows/ci.yml`) either pair it with
+`CRATESTACK_USE_TESTCONTAINERS=1` or exclude the affected crates.
+
+The other four copies of the guard (`cratestack-studio`, `cratestack-migrate`, `cratestack-cli`, and
+`cratestack-redis`'s two) were audited and are correct; each now carries a comment pointing at
+`crates/cratestack-pg/tests/support/require_db.rs`, which holds the registry of all seven.
+`examples/db-transaction-verification` reads the variable but has no such fall-through — it always uses
+testcontainers.
+
+**A shared helper crate was considered and deliberately not built.** The pure decision is ~15 lines; the
+I/O half genuinely differs per site (three different `sqlx` import paths plus Redis) and is not
+shareable. Collapsing the decision into one crate would mean adding a workspace member under `crates/`,
+which ADR 0014 requires be assigned a layer in `docs/adr/layers.toml` — and test-only scaffolding has no
+honest place in the L0–L5 model, `tools`, or `vitrine`. Putting it anywhere else means inventing a new
+top-level directory. Both are architecture decisions larger than this bug and are left to the
+maintainer; the `#[should_panic]` regression tests are what actually stop the copies from diverging
+again silently.
 ### Documented: Studio's `[target.db]` write path enforces no schema-declared write constraint (#744)
 
 **No behaviour change** — this records a maintainer decision (#744, option 3) about what

@@ -22,12 +22,22 @@
 //!    container.
 //!
 //! 3. **Neither set** — return `None`. The caller skips the test (same
-//!    behavior every `banking_*.rs` already had).
+//!    behavior every `banking_*.rs` already had) — unless
+//!    `CRATESTACK_REQUIRE_DB` is set, in which case this is the single
+//!    most likely CI misconfiguration and must be loud. See
+//!    [`pick_backend`].
 //!
 //! Priority: explicit URL wins (most useful for "I have this thing
-//! already running"); testcontainers second; skip last.
+//! already running"); testcontainers second; skip last. That priority — and
+//! the `CRATESTACK_REQUIRE_DB` loud-failure decision layered on top of it —
+//! lives in [`super::require_db`], kept pure so it can be unit-tested
+//! without env-var mutation. Read that module's docs for the #747 history
+//! and the list of the other six copies of this guard.
 
 use std::sync::OnceLock;
+
+use super::require_db::Backend;
+use super::require_db::pick_backend;
 
 use cratestack::sqlx::PgPool;
 use cratestack::sqlx::postgres::PgPoolOptions;
@@ -60,12 +70,15 @@ pub struct TestPg {
 /// map to `None` rather than panicking — so a misconfigured local machine
 /// just skips quietly instead of failing the whole test run.
 ///
-/// **CI override:** set `CRATESTACK_REQUIRE_DB` to turn those failures
-/// into hard panics. Without it, a CI runner whose Docker can't start the
+/// **CI override:** set `CRATESTACK_REQUIRE_DB` to turn those failures —
+/// *and* a missing backend selection entirely, see [`pick_backend`] — into
+/// hard panics. Without it, a CI runner whose Docker can't start the
 /// testcontainer would skip every PG-backed test and the suite would pass
 /// green while exercising none of that coverage — so the CI gate sets it.
 pub async fn connect_or_skip() -> Option<TestPg> {
     let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
+    let has_url = std::env::var("CRATESTACK_TEST_DATABASE_URL").is_ok();
+    let use_testcontainers = std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok();
 
     // Collapse a Result into Option, but panic instead of skipping when a
     // DB is required (CI). `ctx` names the failed step for the message.
@@ -77,47 +90,51 @@ pub async fn connect_or_skip() -> Option<TestPg> {
         }
     }
 
-    if let Ok(url) = std::env::var("CRATESTACK_TEST_DATABASE_URL") {
-        let pool = need(
-            PgPoolOptions::new().max_connections(2).connect(&url).await,
-            require,
-            "connecting to CRATESTACK_TEST_DATABASE_URL",
-        )?;
-        return Some(TestPg {
-            pool,
-            _container: None,
-        });
+    // `pick_backend` panics itself when `require` is set and neither
+    // backend env var is — see its doc comment.
+    match pick_backend(has_url, use_testcontainers, require) {
+        Backend::Skip => None,
+        Backend::Url => {
+            let url =
+                std::env::var("CRATESTACK_TEST_DATABASE_URL").expect("has_url implies var is set");
+            let pool = need(
+                PgPoolOptions::new().max_connections(2).connect(&url).await,
+                require,
+                "connecting to CRATESTACK_TEST_DATABASE_URL",
+            )?;
+            Some(TestPg {
+                pool,
+                _container: None,
+            })
+        }
+        Backend::TestContainers => {
+            let container = need(
+                Postgres::default().start().await,
+                require,
+                "starting the Postgres testcontainer (is Docker available?)",
+            )?;
+            let host = need(
+                container.get_host().await,
+                require,
+                "resolving testcontainer host",
+            )?;
+            let port = need(
+                container.get_host_port_ipv4(5432).await,
+                require,
+                "resolving testcontainer port",
+            )?;
+            let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
+            let pool = need(
+                PgPoolOptions::new().max_connections(2).connect(&url).await,
+                require,
+                "connecting to the Postgres testcontainer",
+            )?;
+            Some(TestPg {
+                pool,
+                _container: Some(container),
+            })
+        }
     }
-
-    if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
-        let container = need(
-            Postgres::default().start().await,
-            require,
-            "starting the Postgres testcontainer (is Docker available?)",
-        )?;
-        let host = need(
-            container.get_host().await,
-            require,
-            "resolving testcontainer host",
-        )?;
-        let port = need(
-            container.get_host_port_ipv4(5432).await,
-            require,
-            "resolving testcontainer port",
-        )?;
-        let url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
-        let pool = need(
-            PgPoolOptions::new().max_connections(2).connect(&url).await,
-            require,
-            "connecting to the Postgres testcontainer",
-        )?;
-        return Some(TestPg {
-            pool,
-            _container: Some(container),
-        });
-    }
-
-    None
 }
 
 /// Per-binary serialisation around DROP/CREATE TABLE racing.
