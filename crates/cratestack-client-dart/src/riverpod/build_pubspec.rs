@@ -12,6 +12,7 @@
 //! exactly as `pubspec.yaml.j2` already pins them — this is additive, not
 //! a redesign.
 use crate::config::DartGeneratorConfig;
+use crate::package_floors::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,7 +41,9 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
         package_name: config.library_name.clone(),
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,
-        cratestack_annotations_version_requirement: format!("^{}", env!("CARGO_PKG_VERSION")),
-        cratestack_builder_version_requirement: format!("^{}", env!("CARGO_PKG_VERSION")),
+        // cratestack#754: API-compatibility floors, deliberately not
+        // `^{CARGO_PKG_VERSION}` — see `crate::package_floors`.
+        cratestack_annotations_version_requirement: CRATESTACK_ANNOTATIONS_FLOOR.to_owned(),
+        cratestack_builder_version_requirement: CRATESTACK_BUILDER_FLOOR.to_owned(),
     }
 }

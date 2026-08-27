@@ -62,19 +62,28 @@ pub(crate) struct TemplateContext {
     /// gated on "does *any* model need it", not per-model.
     pub(crate) has_computed_params_class: bool,
     /// `cratestack_annotations: {{ cratestack_annotations_version_requirement }}`
-    /// in `pubspec.yaml`'s `dependencies:` (issue #668 phase 2) —
-    /// `^{CARGO_PKG_VERSION}` of this crate, same lockstep convention as
-    /// `cratestack_cbor_version_requirement` above (`dart-packages/
-    /// cratestack_annotations`'s own version is bumped alongside the Cargo
-    /// workspace version by `just bump`'s `dart-packages/*/pubspec.yaml`
-    /// rewrite). Unlike `cratestack_cbor_version_requirement`, never empty
-    /// — every generated package now carries the `@CratestackBuilder`
-    /// annotation on every data class, unconditionally.
+    /// in `pubspec.yaml`'s `dependencies:` (issue #668 phase 2).
+    ///
+    /// cratestack#754: this is `crate::package_floors::
+    /// CRATESTACK_ANNOTATIONS_FLOOR`, an API-compatibility floor —
+    /// **not** `^{CARGO_PKG_VERSION}`, and explicitly *not* the lockstep
+    /// convention `cratestack_cbor_version_requirement` above still
+    /// follows. Deriving it from the release version made every generated
+    /// client name a version pub.dev could not serve until the release
+    /// tag was pushed, which took down `Prepare Release` for 0.8.14; see
+    /// `crate::package_floors`' module doc for the full mechanism and for
+    /// why a constant (rather than a "minor floor") is what actually
+    /// closes the window.
+    ///
+    /// Unlike `cratestack_cbor_version_requirement`, never empty — every
+    /// generated package carries the `@CratestackBuilder` annotation on
+    /// every data class, unconditionally.
     pub(crate) cratestack_annotations_version_requirement: String,
     /// `cratestack_builder: {{ cratestack_builder_version_requirement }}`
     /// in `pubspec.yaml`'s `dev_dependencies:`, alongside `build_runner` —
-    /// see `cratestack_annotations_version_requirement`'s doc for the
-    /// lockstep-versioning rationale, identical here.
+    /// `crate::package_floors::CRATESTACK_BUILDER_FLOOR`. See
+    /// `cratestack_annotations_version_requirement`'s doc directly above;
+    /// the reasoning is identical.
     pub(crate) cratestack_builder_version_requirement: String,
 }
 

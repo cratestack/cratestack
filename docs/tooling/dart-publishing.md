@@ -474,7 +474,7 @@ its own setup was completed.
 would "become wrong at the first minor bump". That was wrong; the behaviour is correct and should be
 left alone.
 
-`cratestack_builder` declares `cratestack_annotations: ^0.8.8`, and `just bump`'s rewrite is anchored
+`cratestack_builder` declares `cratestack_annotations: ^0.8.10`, and `just bump`'s rewrite is anchored
 to a line starting `version:`, so this indented dependency line is never rewritten. Two reasons that
 is right:
 
@@ -484,11 +484,11 @@ than assumed: a probe package constraining `^0.8.5` against a registry holding 0
 resolves to **0.8.7**. So the constraint does not need touching as patch versions land.
 
 **The lower bound states an API requirement, not a version relationship.** It should name the
-earliest version whose annotation surface the builder actually uses — `^0.8.8` because
-`touchFlagFields` and `nonDefaultingListFields` were added there. Bumping it in lockstep would
-destroy that meaning; leaving it at `any` or an older floor would let a consumer resolve an
-annotation package missing a field the generator emits, failing at codegen with
-`undefined_named_parameter` (observed, and the reason 0.8.8 exists at all).
+earliest version whose annotation surface the builder actually uses — `^0.8.10`, because that is the
+first *published* release carrying `touchFlagFields` and `nonDefaultingListFields`. Bumping it in
+lockstep would destroy that meaning; leaving it at `any` or an older floor would let a consumer
+resolve an annotation package missing a field the generator emits, failing at codegen with
+`undefined_named_parameter` (observed).
 
 The rule, therefore:
 
@@ -496,6 +496,63 @@ The rule, therefore:
 > Never as part of a routine version bump.
 
 Which leaves nothing for `just bump` to do here, and no reason to teach it otherwise.
+
+#### Corrected again, cratestack#754 — the number in this section was wrong
+
+The rule above is right and is now applied in one more place (see the next section). The *number* it
+was illustrated with was not. This section previously read `^0.8.8`, justified as "`touchFlagFields`
+and `nonDefaultingListFields` were added there", and `cratestack_builder`'s pubspec comment claimed
+`0.8.7` was the first release with them. Checked against pub.dev's API and the published archives
+rather than against the changelog:
+
+```text
+cratestack_annotations published: 0.8.5, 0.8.6, 0.8.7, 0.8.10, 0.8.11, 0.8.12, 0.8.13
+                                                ^^^^^^^^^^^^^ 0.8.8 and 0.8.9 were skipped releases
+grep of each published archive for touchFlagFields / nonDefaultingListFields:
+  0.8.5 absent   0.8.6 absent   0.8.7 absent   0.8.10 present   <- actually first
+first published cratestack_builder that READS them: 0.8.10 (0.8.7 does not; it declares ^0.8.5)
+```
+
+So the floor named a version that was never published, on a justification that was false. It was
+harmless only because a caret resolves upward — `^0.8.8` lands on 0.8.10+ regardless. **The lesson is
+not "be more careful": a hand-maintained floor rots, and this one rotted before anything depended on
+it.** That is why the generator's own floors are now backed by tests and a CI resolution at the exact
+floor rather than by a comment — see the next section.
+
+### What generated clients ask for (cratestack#754)
+
+The same rule now governs the version requirements a *generated* Dart client declares, which is a
+different thing from what the packages publish as. That distinction is the whole ticket:
+
+- **What the packages publish as** stays lockstep with the Cargo workspace version. `just bump`
+  rewriting all three `dart-packages/*/pubspec.yaml` `version:` lines is correct and load-bearing
+  (pub.dev's automated publishing is configured with tag pattern `v{{version}}`, so the pubspec and
+  the tag must agree). Unchanged.
+- **What a generated client asks for** is now an API-compatibility floor —
+  `crates/cratestack-client-dart/src/package_floors.rs`, a pair of constants used by both the default
+  preset (`context.rs`) and the riverpod preset (`riverpod/build_pubspec.rs`).
+
+It used to be `^{CARGO_PKG_VERSION}`. Because publishing runs off a tag pushed *after* the bump PR
+merges, that meant every generated client spent each release cycle naming a version pub.dev could not
+serve yet. It took down `Prepare Release` for 0.8.14: five snapshot fixtures, three `flutter pub get`
+tests, and `just regen-examples --check`, all from one cause.
+
+Note that a *minor floor* (`^{major}.{minor}.0`, which `cratestack-client-typescript` still emits for
+`@cratestack/cbor`) would not have been enough. It is still derived from the current version, so it
+moves at a minor bump and reopens the same window — narrower, not closed. A constant never moves, so
+it cannot name an unpublished version at any bump size. The wider payoff is that generator output
+stops being a function of the release version at all, which is what makes the committed snapshots and
+example clients survive a bump.
+
+Two guards keep the floors honest, since this section is itself the evidence that a comment cannot:
+
+1. `crates/cratestack-client-dart/src/package_floors_tests.rs` asserts the emitted floor is at least
+   the floor `dart-packages/cratestack_builder/pubspec.yaml` declares — read from that file, so
+   raising it there tells you to raise the emitted one too — and that both floors sit strictly below
+   the current (unpublished) workspace version.
+2. CI's `flutter (flutter-riverpod example)` job resolves the committed client at the exact floor via
+   a generated `pubspec_overrides.yaml` before running `build_runner`. A floor that is too low fails
+   there rather than at a user's build — the check that would have caught `^0.8.8`.
 
 ## See also
 
