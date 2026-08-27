@@ -37,11 +37,12 @@
 //! comment for the deliberate-break verification that confirms it
 //! actually fails when the fix is reverted.
 
-use std::process::Command;
-
 use cratestack_client_typescript::{
     GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, generate_package,
 };
+
+mod support;
+use support::{command_report, node_toolchain_available, tsx_command};
 
 const REST_FIXTURE: &str = "tiny_rest";
 const RPC_FIXTURE: &str = "tiny_rpc";
@@ -212,7 +213,7 @@ fn native_codec_call_sites_are_structurally_sound() {
 }
 
 /// Genuine behavioral proof for issue #746's finding #1/#5: actually runs
-/// the generated `CratestackRpcRuntime` under Node (via `npx tsx`, no
+/// the generated `CratestackRpcRuntime` under Node (via `tsx`, no
 /// build step needed — this module's own imports are all relative +
 /// `@cratestack/cbor`, so unlike `tests/swr_runtime.rs`/`node_dist_esm.rs`
 /// no `npm install` is required first) against a stub `@cratestack/cbor`
@@ -238,15 +239,15 @@ fn native_codec_call_sites_are_structurally_sound() {
 /// time, exiting non-zero — verified by hand while writing this test,
 /// not asserted from reading the diff alone.
 ///
-/// Degrades to a printed skip when `node`/`npx` aren't on `PATH`, same
+/// Degrades to a printed skip when `node`/`npm` aren't on `PATH`, same
 /// convention as `tests/swr_runtime.rs`/`tests/node_dist_esm.rs` (no Rust
 /// CI job in this repo currently provisions Node).
 #[test]
 fn native_codec_factory_is_memoized_and_retried_after_a_rejection() {
-    if !node_and_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping native_codec_factory_is_memoized_and_retried_after_a_rejection: \
-             `node`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
         );
         return;
     }
@@ -363,42 +364,20 @@ console.log("NATIVE_CBOR_MEMOIZATION_AND_RETRY_OK");
     )
     .expect("write smoke script");
 
-    let output = Command::new("npx")
-        .args(["--yes", TSX_PIN, "smoke.mts"])
-        .current_dir(root.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(root.path(), "smoke.mts");
+    let output = tsx.output().expect("run tsx");
 
     assert!(
         output.status.success(),
-        "generated runtime's codec memoization/retry behavior failed under a real Node run:\n\
-         stdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "generated runtime's codec memoization/retry behavior failed under a real Node run:\n{}",
+        command_report(&tsx, &output)
     );
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("NATIVE_CBOR_MEMOIZATION_AND_RETRY_OK"),
-        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script did not print its success marker:\n{}",
+        command_report(&tsx, &output)
     );
 }
-
-fn node_and_npx_available() -> bool {
-    Command::new("node")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-        && Command::new("npx")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-}
-
-/// Pinned, not `tsx@latest` — see `tests/swr_runtime.rs`'s identical
-/// constant for why (an unpinned tool inside a test is a dependency whose
-/// version changes without a commit here).
-const TSX_PIN: &str = "tsx@4.23.12";
 
 /// The constructor must stay synchronous under the flag — see the issue's
 /// own "Technical Context" section: an async `static create()` factory was

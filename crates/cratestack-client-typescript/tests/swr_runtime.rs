@@ -7,7 +7,8 @@
 //!
 //! This generates the `swr` preset's `tiny_rest` package to a temp
 //! directory, starts a real local HTTP stub server, and runs a small
-//! script (via `npx tsx` — a plain TS runner, not a UI framework) that
+//! script (via `tsx` — a plain TS runner, not a UI framework — resolved by
+//! `tests/support`, see cratestack#738) that
 //! imports `getWidget` and calls it against that server — if the
 //! generated code accidentally pulled in React or any other framework
 //! dependency, module resolution would fail outright, not just silently
@@ -21,7 +22,7 @@
 //! install` is required before running the smoke script now, mirroring
 //! `tests/rest_list_query_wire_format.rs`'s own identical fix for the
 //! `default` preset's `client.ts` (see that test's own comment on the
-//! exact same failure mode: `npx tsx` hangs rather than failing fast when
+//! exact same failure mode: `tsx` hangs rather than failing fast when
 //! it can't resolve `decimal.js` from a `node_modules` that was never
 //! installed — confirmed empirically here too). This test still proves
 //! AC #5's actual claim (no React/hook import anywhere in the invoked
@@ -32,7 +33,7 @@
 //! No Rust CI job in this repo currently provisions Node (`js` is the
 //! only one, and it doesn't run `cargo test`) — see `.github/workflows/ci.yml`.
 //! So this test degrades to a skip (printed, not silently swallowed) when
-//! `node`/`npx` aren't on `PATH`, rather than failing a CI job that was
+//! `node`/`npm` aren't on `PATH`, rather than failing a CI job that was
 //! never going to have them. Where Node *is* available (local dev, or a
 //! future CI job that adds it), this is a real, non-trivial verification.
 
@@ -42,12 +43,15 @@ use std::process::Command;
 
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
+mod support;
+use support::{command_report, node_toolchain_available, tsx_command};
+
 #[test]
 fn generated_plain_function_runs_outside_any_react_context() {
-    if !node_and_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping generated_plain_function_runs_outside_any_react_context: \
-             `node`/`npx` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs — \
              see tests/swr_runtime.rs's module doc)"
         );
         return;
@@ -77,16 +81,15 @@ fn generated_plain_function_runs_outside_any_react_context() {
     // cratestack#499: see this file's own module doc — `getWidget`'s
     // module graph now genuinely imports `decimal.js`, so `npx tsx` needs
     // a real `node_modules` to resolve it against.
-    let install = Command::new("npm")
+    let mut install = Command::new("npm");
+    install
         .args(["install", "--no-audit", "--no-fund"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npm install");
+        .current_dir(dir.path());
+    let installed = install.output().expect("run npm install");
     assert!(
-        install.status.success(),
-        "npm install failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&install.stdout),
-        String::from_utf8_lossy(&install.stderr)
+        installed.status.success(),
+        "npm install failed:\n{}",
+        command_report(&install, &installed)
     );
 
     // A real stub server, not a mock — the function under test does a
@@ -113,11 +116,8 @@ console.log("SWR_RUNTIME_CHECK_OK");
     )
     .expect("write smoke script");
 
-    let output = Command::new("npx")
-        .args(["--yes", TSX_PIN, "smoke.ts"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(dir.path(), "smoke.ts");
+    let output = tsx.output().expect("run tsx");
 
     // THE STATUS CHECK COMES BEFORE THE JOIN, AND THAT ORDER IS THE WHOLE
     // POINT. The stub server thread is parked in `accept()`; if the smoke
@@ -131,29 +131,16 @@ console.log("SWR_RUNTIME_CHECK_OK");
     assert!(
         output.status.success(),
         "generated plain function failed to run under plain Node (tsx, no React/hooks \
-         anywhere in the invoked module graph):\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+         anywhere in the invoked module graph):\n{}",
+        command_report(&tsx, &output)
     );
 
     server.join().expect("stub server thread");
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("SWR_RUNTIME_CHECK_OK"),
-        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script did not print its success marker:\n{}",
+        command_report(&tsx, &output)
     );
-}
-
-fn node_and_npx_available() -> bool {
-    Command::new("node")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-        && Command::new("npx")
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
 }
 
 /// Accepts exactly one HTTP connection, replies to any request with the
@@ -234,9 +221,3 @@ fn accept_within(
         }
     }
 }
-
-/// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
-/// version changes without a commit here, and the failure it produces lands in
-/// a test whose diagnostics are printed only if everything else goes right.
-/// 4.23.12 is the latest release as of 2026-08-24.
-const TSX_PIN: &str = "tsx@4.23.12";

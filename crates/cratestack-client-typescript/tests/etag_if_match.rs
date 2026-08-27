@@ -17,12 +17,19 @@
 //!
 //! `etag_generated_output_round_trips_through_a_real_http_stub_server`
 //! at the bottom is the real, Node-driven proof (skips, printed, when
-//! `node`/`npm`/`npx` aren't on `PATH` — same convention as
+//! `node`/`npm` aren't on `PATH` — same convention as
 //! `tests/rest_list_query_wire_format.rs` and `tests/swr_runtime.rs`).
+//!
+//! Both Node-driven tests run their smoke script through `tests/support`'s
+//! pre-resolved `tsx` rather than `npx`; see that module for why
+//! (cratestack#738).
 
 use std::io::Write as _;
 
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
+
+mod support;
+use support::{command_report, node_toolchain_available, tsx_command};
 
 #[test]
 fn versioned_model_update_and_delete_accept_if_match_and_send_the_header() {
@@ -243,10 +250,10 @@ fn readme_optimistic_concurrency_section_is_gated_on_rest_transport_and_a_versio
 /// test that only covered PATCH would miss a regression there.
 #[test]
 fn etag_generated_output_round_trips_through_a_real_http_stub_server() {
-    if !node_npm_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping etag_generated_output_round_trips_through_a_real_http_stub_server: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
         );
         return;
     }
@@ -262,16 +269,15 @@ fn etag_generated_output_round_trips_through_a_real_http_stub_server() {
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
 
-    let install = std::process::Command::new("npm")
+    let mut install = std::process::Command::new("npm");
+    install
         .args(["install", "--no-audit", "--no-fund"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npm install");
+        .current_dir(dir.path());
+    let installed = install.output().expect("run npm install");
     assert!(
-        install.status.success(),
-        "npm install failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&install.stdout),
-        String::from_utf8_lossy(&install.stderr)
+        installed.status.success(),
+        "npm install failed:\n{}",
+        command_report(&install, &installed)
     );
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
@@ -313,11 +319,8 @@ console.log("ETAG_IF_MATCH_CHECK_OK");
     )
     .expect("write smoke script");
 
-    let output = std::process::Command::new("npx")
-        .args(["--yes", TSX_PIN, "smoke.ts"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(dir.path(), "smoke.ts");
+    let output = tsx.output().expect("run tsx");
 
     // THE STATUS CHECK COMES BEFORE THE JOIN, AND THAT ORDER IS THE WHOLE
     // POINT. The stub server thread is parked in `accept()`; if the smoke
@@ -330,17 +333,15 @@ console.log("ETAG_IF_MATCH_CHECK_OK");
     // message was never printed. Assert first, then join.
     assert!(
         output.status.success(),
-        "smoke script failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script failed:\n{}",
+        command_report(&tsx, &output)
     );
 
     let captured = server.join().expect("stub server thread");
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("ETAG_IF_MATCH_CHECK_OK"),
-        "smoke script did not print its success marker:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script did not print its success marker:\n{}",
+        command_report(&tsx, &output)
     );
 
     assert!(
@@ -388,10 +389,10 @@ console.log("ETAG_IF_MATCH_CHECK_OK");
 /// this time.
 #[test]
 fn swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decimal_revival() {
-    if !node_npm_npx_available() {
+    if !node_toolchain_available() {
         eprintln!(
             "skipping swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decimal_revival: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
         );
         return;
     }
@@ -407,16 +408,15 @@ fn swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decima
         std::fs::write(&path, &file.contents).expect("write generated file");
     }
 
-    let install = std::process::Command::new("npm")
+    let mut install = std::process::Command::new("npm");
+    install
         .args(["install", "--no-audit", "--no-fund"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npm install");
+        .current_dir(dir.path());
+    let installed = install.output().expect("run npm install");
     assert!(
-        install.status.success(),
-        "npm install failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&install.stdout),
-        String::from_utf8_lossy(&install.stderr)
+        installed.status.success(),
+        "npm install failed:\n{}",
+        command_report(&install, &installed)
     );
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stub server");
@@ -464,11 +464,8 @@ console.log("SWR_ETAG_DECIMAL_CHECK_OK");
     )
     .expect("write smoke script");
 
-    let output = std::process::Command::new("npx")
-        .args(["--yes", TSX_PIN, "smoke.ts"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx tsx");
+    let mut tsx = tsx_command(dir.path(), "smoke.ts");
+    let output = tsx.output().expect("run tsx");
 
     // THE STATUS CHECK COMES BEFORE THE JOIN, AND THAT ORDER IS THE WHOLE
     // POINT. The stub server thread is parked in `accept()`; if the smoke
@@ -481,33 +478,22 @@ console.log("SWR_ETAG_DECIMAL_CHECK_OK");
     // message was never printed. Assert first, then join.
     assert!(
         output.status.success(),
-        "smoke script failed:\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        "smoke script failed:\n{}",
+        command_report(&tsx, &output)
     );
 
     let captured = server.join().expect("stub server thread");
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("SWR_ETAG_DECIMAL_CHECK_OK"),
         "smoke script did not print its success marker (this includes the Decimal-revival \
-         assertion failing):\nstdout: {}\nstderr: {}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+         assertion failing):\n{}",
+        command_report(&tsx, &output)
     );
     assert_eq!(
         captured.patch_if_match_header.as_deref(),
         Some("\"7\""),
         "updateLedger must send the If-Match header learned from getLedgerWithResponse's ETag"
     );
-}
-
-fn node_npm_npx_available() -> bool {
-    ["node", "npm", "npx"].iter().all(|cmd| {
-        std::process::Command::new(cmd)
-            .arg("--version")
-            .output()
-            .is_ok_and(|output| output.status.success())
-    })
 }
 
 struct CapturedRequests {
@@ -727,9 +713,3 @@ fn accept_within(
         }
     }
 }
-
-/// Pinned, not `tsx@latest`. An unpinned tool inside CI is a dependency whose
-/// version changes without a commit here, and the failure it produces lands in
-/// a test whose diagnostics are printed only if everything else goes right.
-/// 4.23.12 is the latest release as of 2026-08-24.
-const TSX_PIN: &str = "tsx@4.23.12";
