@@ -29,6 +29,7 @@ mod upsert_predicate_probe;
 mod upsert_predicate_probe_error;
 mod upsert_predicate_probe_savepoint;
 mod upsert_prepare;
+mod upsert_resolve;
 mod upsert_sql;
 
 pub use create::CreateRecord;
