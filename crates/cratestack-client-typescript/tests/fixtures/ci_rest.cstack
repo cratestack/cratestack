@@ -42,7 +42,14 @@ model Post {
   @@paged
 }
 
-procedure listPosts(filter: PostStatusFilter?): Post[]
+// `searchPosts`, not `listPosts` — DELIBERATE (cratestack#777). Under
+// `--swr`, model `Post` exports a free function `listPosts` and the
+// barrel `src/swr/index.ts` `export *`s both it and `./procedures.js`, so
+// a procedure named `listPosts` is a TS2308 in the generated package. The
+// generator now refuses that schema outright
+// (`TypeScriptGeneratorError::SwrProcedureNameCollision`), which means
+// renaming this back would fail generation, not just `tsc`.
+procedure searchPosts(filter: PostStatusFilter?): Post[]
   @allow(auth() != null)
 
 mutation procedure currentStatus(postId: Int): PostStatus

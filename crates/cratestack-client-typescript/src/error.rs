@@ -39,6 +39,34 @@ pub enum TypeScriptGeneratorError {
         second: String,
         file_stem: String,
     },
+    /// Issue #777: `--swr` exports a model's five CRUD operations as plain
+    /// free functions (`list{Models}`/`get{Model}`/…, `crate::naming::
+    /// model_fn_names`) and a procedure as `to_camel_case(&procedure.name)`
+    /// (`crate::procedure_views::build_procedure`), then barrel-`export *`s
+    /// `./models/<model>.js` *and* `./procedures.js` from
+    /// `src/swr/index.ts`. When the two derive the same identifier the
+    /// generated package does not compile — `tsc` reports TS2308 on the
+    /// barrel — so this fails generation instead, the way
+    /// [`Self::SwrModelFileNameCollision`] already does for the analogous
+    /// #344 file-name case. The default (non-`--swr`) layout is structurally
+    /// immune: its model operations are methods on per-model client classes,
+    /// with no top-level binding for a procedure to collide with.
+    ///
+    /// Naming the *procedure* as the thing to rename is a hint, not a rule:
+    /// renaming the model works equally well. Neither is picked for the
+    /// schema author, since a silently disambiguated public function name is
+    /// exactly what the #344 precedent refuses to do.
+    #[error(
+        "--swr: procedure `{procedure}` and model `{model}`'s generated `{operation}` function \
+         are both exported as `{identifier}` from `src/swr/index.ts` (TypeScript TS2308) — \
+         rename one of them so their camelCase forms differ"
+    )]
+    SwrProcedureNameCollision {
+        procedure: String,
+        identifier: String,
+        model: String,
+        operation: &'static str,
+    },
     /// The schema declares a composite primary key (`@@id([...])`) on at
     /// least one model. `include_*_schema!` has rejected these since the
     /// gap was found (see `cratestack_core::composite_id`), but this

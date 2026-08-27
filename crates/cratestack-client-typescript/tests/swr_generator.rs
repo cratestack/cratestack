@@ -609,6 +609,87 @@ fn swr_rejects_colliding_model_file_names() {
     }
 }
 
+/// cratestack#777, the sibling of the #344 case directly above — and the
+/// defect that turned `just verify-typescript`'s blocking CI job red the
+/// moment PR #776 added a real `tsc` build of the `--swr` + RPC leg.
+///
+/// `--swr` is the only layout that exports model operations as top-level
+/// free functions (the default layout hangs them off per-model client
+/// classes — `client.post.list(...)` — which is why it is structurally
+/// immune), and `src/swr/index.ts` barrel-`export *`s both
+/// `./models/<model>.js` and `./procedures.js`. So a procedure whose
+/// `to_camel_case` form equals a model's derived `list{Models}`/
+/// `get{Model}`/`create{Model}`/`update{Model}`/`delete{Model}` name puts
+/// two bindings of that name into the barrel: `tsc` TS2308, a generated
+/// package that does not compile, discovered only at the consumer's build.
+///
+/// The fixture spells the procedure `list_posts`, not `listPosts`, on
+/// purpose: `to_camel_case` and `to_pascal_case` share `split_words`, so
+/// the snake_case spelling collides identically — a check that only
+/// compared raw names would pass this test's fixture while still shipping
+/// the broken package.
+#[test]
+fn swr_rejects_a_procedure_colliding_with_a_model_function() {
+    let fixture_path = "tests/fixtures/swr_procedure_name_collision.cstack";
+    let schema = cratestack_parser::parse_schema_file(fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    let error = generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: "swr-fixture-client".to_owned(),
+            swr: true,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect_err("--swr must reject a procedure colliding with a model's free function");
+
+    match error {
+        cratestack_client_typescript::TypeScriptGeneratorError::SwrProcedureNameCollision {
+            procedure,
+            identifier,
+            model,
+            operation,
+        } => {
+            assert_eq!(procedure, "list_posts");
+            assert_eq!(identifier, "listPosts");
+            assert_eq!(model, "Post");
+            assert_eq!(operation, "list");
+        }
+        other => panic!("expected SwrProcedureNameCollision, got {other:?}"),
+    }
+}
+
+/// The other half of the #777 check: without it, the check could be
+/// satisfied by rejecting everything. This same fixture generates
+/// cleanly under the DEFAULT layout — the collision is `--swr`-specific,
+/// and `--swr` is opt-in, so a schema that never uses the flag must not
+/// be penalized for a name only that flag derives. (This is also why the
+/// check lives in this generator rather than in `cratestack-parser`,
+/// per decision spike #317.)
+#[test]
+fn default_layout_accepts_a_procedure_that_swr_would_reject() {
+    let fixture_path = "tests/fixtures/swr_procedure_name_collision.cstack";
+    let schema = cratestack_parser::parse_schema_file(fixture_path)
+        .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
+    let package = generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: "default-fixture-client".to_owned(),
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect("the default layout has no free-function collision to reject");
+
+    // `client.ts` proves the structural immunity claim rather than just
+    // asserting "no error": the model operation is a method on a class,
+    // so the only top-level `listPosts` binding is the procedure's.
+    let client = file(&package, "src/client.ts");
+    assert!(
+        client.contains("class PostApi"),
+        "model operations should be class methods in the default layout:\n{client}"
+    );
+}
+
 /// Found while implementing #305's `swr-keys.ts` (see this file's
 /// `swr_key_factory_keeps_similarly_named_models_distinct`, whose docs
 /// explain why `swr-keys.ts` nests under raw model names rather than
