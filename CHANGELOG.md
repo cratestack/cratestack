@@ -113,6 +113,27 @@ One non-obvious case is pinned by a test: `expand_model_mixins` clones each mixi
 every consuming model *keeping the mixin's spans*, so the same span is collected twice and
 would emit a duplicate zero-width-delta token if it were not de-duplicated.
 
+### Fixed: generated RPC clients crashed encoding a `Decimal` under the native `@cratestack/cbor` codec
+
+Every RPC call whose request body carried a `Decimal` field — `create`/`update` model
+inputs, procedure arguments, and each frame of a `batch()` payload — threw `JS functions
+cannot be represented as a serde_json::Value` before the request was ever sent, once
+`@cratestack/cbor` became the default codec (#746). `decimal.js`'s `Decimal` (the class
+generated clients represent a `Decimal` field as) assigns `constructor` as an own
+enumerable property pointing at a function; `jsonRpcCodec`'s `JSON.stringify` tolerated
+this via `Decimal.prototype.toJSON`, but `@cratestack/cbor` walks a value's own
+enumerable properties on its way to a `serde_json::Value` and never calls `toJSON`, so it
+choked on that property instead.
+
+Generated TypeScript RPC clients now export `encodeDecimalFields` (`src/models.ts`) — the
+encode-side counterpart to the existing `reviveDecimalFields`/`reviveDecimalScalar`
+decode helpers — and apply it to every outbound request body (`src/runtime.ts`'s
+`terminalLink`/`src/stream-terminal.ts`'s `terminalStreamLink`), unconditionally rather
+than gated on the codec choice: converting a `Decimal` to its `.toString()` form before
+`JSON.stringify` is a byte-identical no-op for the JSON codec, so both codecs now share
+one code path. Regenerate any RPC client committed before this fix (`just
+regen-examples`, or your own `generate-typescript` invocation) to pick it up.
+
 ### `.cstack` navigation: enum/mixin go-to-definition, and find-all-references
 
 `cratestack-lsp` now answers `textDocument/references` and

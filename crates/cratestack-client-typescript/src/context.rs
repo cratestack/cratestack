@@ -126,6 +126,19 @@ pub(crate) struct TemplateContext {
     /// schema with no versioned model has no `If-Match`/`ETag`
     /// requirement to document at all.
     has_versioned_model: bool,
+    /// The relative module specifier `rpc-runtime.ts.j2`'s `terminalLink`/
+    /// `rpc-stream-terminal.ts.j2`'s `terminalStreamLink` use to import
+    /// `encodeDecimalFields` (cratestack#746 follow-up P1 fix). Both
+    /// templates are rendered verbatim against two different output
+    /// directories — this (default) layout's `src/runtime.ts` +
+    /// `src/stream-terminal.ts`, siblings of `src/models.ts`, so `"./models.js"`
+    /// — and `--swr`'s `src/swr/runtime.ts` + `src/swr/stream-terminal.ts`,
+    /// one directory below the same `src/models.ts` (never duplicated into
+    /// `src/swr/`, see `crate::swr`'s module doc), so `"../models.js"` there
+    /// (`crate::swr::views::SwrSchemaContext::models_import_path`) — a
+    /// hardcoded `"./models.js"` in the shared template would resolve for
+    /// only one of the two.
+    models_import_path: &'static str,
 }
 
 pub(crate) fn build_template_context(
@@ -323,6 +336,7 @@ pub(crate) fn build_template_context(
             .models
             .iter()
             .any(|model| version_field(model).is_some()),
+        models_import_path: "./models.js",
     })
 }
 

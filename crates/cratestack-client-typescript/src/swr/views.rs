@@ -110,6 +110,12 @@ pub(crate) struct SwrSchemaContext {
     /// TemplateContext::decimal_shapes`'s identical field for the full
     /// rationale (`crate::decimal`'s module doc has the complete story).
     pub(crate) decimal_shapes: Vec<crate::decimal::DecimalShapeView>,
+    /// See `crate::context::TemplateContext::models_import_path`'s doc
+    /// comment for the full rationale — always `"../models.js"` here,
+    /// since `--swr` nests `runtime.ts`/`stream-terminal.ts` one directory
+    /// below the shared `src/models.ts` (never duplicated into
+    /// `src/swr/`).
+    pub(crate) models_import_path: &'static str,
 }
 
 /// The per-model context `swr-models-{rest,rpc}.ts.j2` renders once per

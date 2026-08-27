@@ -22,12 +22,17 @@ import {
 } from "./runtime.js";
 import type { RpcStreamLinkNext } from "./links.js";
 import { CborSeqBoundaryScanner, classifyCborSeqItem } from "./cbor-seq.js";
+import { encodeDecimalFields } from "./models.js";
 
+// `encodeDecimalFields(request.input)` runs immediately before
+// `codec.encode()` — the `stream()` counterpart of `./runtime.js`'s
+// `terminalLink` doing the same for `call()`/`batch()`. See
+// `encodeDecimalFields`'s own doc comment (`models.ts.j2`) for why.
 export const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
   const response = await request.fetchFn(request.url, {
     method: "POST",
     headers: request.headers,
-    body: request.codec.encode(request.input),
+    body: request.codec.encode(encodeDecimalFields(request.input)),
     signal: request.signal,
   });
 

@@ -1,0 +1,27 @@
+// Dedicated fixture for the P1 regression this file's own test
+// (tests/native_cbor_decimal_encode.rs) proves: `@cratestack/cbor` (the
+// default RPC codec since #746) throws encoding a request body that
+// carries a real `decimal.js` `Decimal` instance, because it walks a
+// value's own enumerable properties rather than calling `toJSON` —
+// `decimal.js`'s `clone()` assigns `constructor` as an own enumerable
+// property pointing at a function, and a function has no
+// `serde_json::Value` representation.
+//
+// Deliberately separate from `decimal_scalar_rpc.cstack` (used by
+// `tests/generator.rs`'s decode-side assertions): that fixture's
+// `Invoice` has no `@@allow("create", ...)` rule, so the generated client
+// has no `.create()` method at all — this fixture needs one, to exercise
+// the ENCODE direction a create call's `Decimal`-carrying input takes.
+
+transport rpc
+
+model Invoice {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountXaf Decimal
+
+  @@allow("create", true)
+  @@allow("list", true)
+}
+
+procedure quote(amount: Decimal): Decimal
