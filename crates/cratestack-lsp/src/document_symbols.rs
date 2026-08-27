@@ -1,8 +1,15 @@
 use cratestack_core::{ProcedureKind, Schema, SourceSpan};
 use tower_lsp_server::ls_types::{DocumentSymbol, SymbolKind};
 
+use crate::state::DocumentState;
 use crate::text::range_from_offsets;
 use crate::type_ref::render_type_ref;
+
+/// Symbols for a document, or `None` when nothing has parsed yet.
+pub(crate) fn document_symbols_for(document: &DocumentState) -> Option<Vec<DocumentSymbol>> {
+    let (text, schema) = document.resolved()?;
+    Some(document_symbols(text, schema))
+}
 
 pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbol> {
     let mut symbols = Vec::new();

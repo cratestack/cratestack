@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### `.cstack` rename (F2)
+
+`cratestack-lsp` now answers `textDocument/rename` and `textDocument/prepareRename`.
+Renaming a model, type, enum, mixin, procedure, field or enum variant rewrites its
+declaration and every reference in one edit — including `@relation(fields:/references:)`
+columns and `@use(Mixin)` directives.
+
+It reuses the reference index that already answers find-all-references rather than growing
+a second notion of "everywhere this appears": a rename that disagreed with Shift+F12 would
+be a rename that misses call sites.
+
+Rename is the first request here that *writes*, so it is held to a stricter standard than
+navigation. A go-to-definition that lands a line off is an annoyance; a rename computed
+from the wrong offsets rewrites the wrong text and is easy to miss in a diff. It therefore
+refuses rather than guesses:
+
+* **While the file has a syntax error.** This is the one that matters most. Since #767 the
+  server retains the last schema that parsed, and navigation happily works from it — but
+  its spans describe text the buffer no longer holds, so an edit computed from them would
+  land at the wrong positions. `prepareRename` declines too, so no rename box appears.
+* **On builtin types.** `String` and `Int` resolve as type references, but nothing declares
+  them; rewriting every `String` in a file is not a rename.
+* **On names that are not identifiers**, and on keywords or builtin type names — either
+  changes how the file parses rather than what it calls something.
+* **On a name already taken in that scope.** Scoped the way the language scopes it: field
+  names only have to be unique within their owner, so `Post.id` does not block renaming a
+  field on `User`.
+
+All four refusals carry a message explaining why, rather than returning an empty edit —
+a rename that silently does nothing is worse than one that says no.
+
 ### `.cstack` editor features no longer blink off on every syntax error
 
 A failed parse used to drop the schema entirely, and every feature that needs one —

@@ -3,22 +3,22 @@ use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{
     CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
     DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
-    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverContents,
-    HoverParams, InitializeParams, InitializeResult, InitializedParams, Location, MarkupContent,
-    MarkupKind, MessageType, ReferenceParams, SemanticTokens, SemanticTokensParams,
-    SemanticTokensResult, ServerInfo,
+    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
+    InitializeParams, InitializeResult, InitializedParams, Location, MessageType,
+    PrepareRenameResponse, ReferenceParams, RenameParams, SemanticTokens, SemanticTokensParams,
+    SemanticTokensResult, ServerInfo, TextDocumentPositionParams, WorkspaceEdit,
 };
 
 use crate::capabilities::server_capabilities;
 use crate::completion::completion_items;
 use crate::definition::definition_location;
-use crate::document_symbols::document_symbols;
-use crate::hover::locate_symbol;
-use crate::hover_render::hover_markdown;
+use crate::document_symbols::document_symbols_for;
+use crate::hover_render::hover_at;
 use crate::navigation::reference_ranges;
-use crate::semantic_tokens::semantic_tokens;
+use crate::rename::{prepare_rename, workspace_edit};
+use crate::semantic_tokens::semantic_tokens_for;
 use crate::state::Backend;
-use crate::text::{position_to_offset, span_to_range};
+use crate::text::position_to_offset;
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -55,27 +55,11 @@ impl LanguageServer for Backend {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
-        let text_document_position = params.text_document_position_params;
+        let position = params.text_document_position_params;
         let documents = self.documents.read().await;
-        let Some(document) = documents.get(&text_document_position.text_document.uri) else {
-            return Ok(None);
-        };
-        let Some((text, schema)) = document.resolved() else {
-            return Ok(None);
-        };
-        let Some(offset) = position_to_offset(text, text_document_position.position) else {
-            return Ok(None);
-        };
-        let Some(symbol) = locate_symbol(schema, offset) else {
-            return Ok(None);
-        };
-        Ok(Some(Hover {
-            contents: HoverContents::Markup(MarkupContent {
-                kind: MarkupKind::Markdown,
-                value: hover_markdown(&symbol, document.is_stale()),
-            }),
-            range: span_to_range(text, symbol.selection_span),
-        }))
+        Ok(documents
+            .get(&position.text_document.uri)
+            .and_then(|document| hover_at(document, position.position)))
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
@@ -161,16 +145,40 @@ impl LanguageServer for Backend {
         params: SemanticTokensParams,
     ) -> Result<Option<SemanticTokensResult>> {
         let documents = self.documents.read().await;
+        Ok(documents
+            .get(&params.text_document.uri)
+            .and_then(semantic_tokens_for)
+            .map(|data| {
+                SemanticTokensResult::Tokens(SemanticTokens {
+                    result_id: None,
+                    data,
+                })
+            }))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let documents = self.documents.read().await;
         let Some(document) = documents.get(&params.text_document.uri) else {
             return Ok(None);
         };
-        let Some((text, schema)) = document.resolved() else {
+        Ok(prepare_rename(document, params.position).map(PrepareRenameResponse::Range))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let documents = self.documents.read().await;
+        let Some(document) = documents.get(&uri) else {
             return Ok(None);
         };
-        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
-            result_id: None,
-            data: semantic_tokens(text, schema),
-        })))
+        Ok(Some(workspace_edit(
+            uri,
+            document,
+            params.text_document_position.position,
+            &params.new_name,
+        )?))
     }
 
     async fn document_symbol(
@@ -178,14 +186,9 @@ impl LanguageServer for Backend {
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
         let documents = self.documents.read().await;
-        let Some(document) = documents.get(&params.text_document.uri) else {
-            return Ok(None);
-        };
-        let Some((text, schema)) = document.resolved() else {
-            return Ok(None);
-        };
-        Ok(Some(DocumentSymbolResponse::Nested(document_symbols(
-            text, schema,
-        ))))
+        Ok(documents
+            .get(&params.text_document.uri)
+            .and_then(document_symbols_for)
+            .map(DocumentSymbolResponse::Nested))
     }
 }

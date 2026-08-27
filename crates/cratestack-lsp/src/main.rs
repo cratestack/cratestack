@@ -9,6 +9,7 @@ mod mixin_use;
 mod navigation;
 mod references;
 mod relation_parse;
+mod rename;
 mod semantic_tokens;
 mod server;
 mod state;
@@ -22,6 +23,8 @@ mod tests;
 mod tests_last_known_good;
 #[cfg(test)]
 mod tests_navigation;
+#[cfg(test)]
+mod tests_rename;
 #[cfg(test)]
 mod tests_semantic_tokens;
 

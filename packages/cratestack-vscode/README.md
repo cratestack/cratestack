@@ -11,6 +11,7 @@ Current editor features come from the language server plus the bundled grammar:
 * completion
 * go-to-definition
 * find all references
+* rename
 * document highlight
 * document symbols
 * semantic tokens
@@ -42,9 +43,17 @@ explicitly, since a popup describing the file as it was several keystrokes ago
 should not look like a live one. A file that has never parsed has nothing to
 fall back to and stays quiet.
 
+Rename (F2) rewrites a declaration and every reference to it in one edit —
+including `@relation` columns and `@use(Mixin)` directives — because it reuses
+the same index that answers find-all-references. It refuses rather than guesses:
+builtin types are not renameable (nothing declares `String`), the new name must
+be a valid identifier that is neither a keyword nor a builtin, and a name already
+taken in that scope is rejected. It also refuses entirely while the file has a
+syntax error, since edits computed from the retained schema would apply at
+positions the buffer has since moved.
+
 Current limitations:
 
-* no rename support yet
 * no formatting support yet
 * one diagnostic per file — the parser stops at the first error
 

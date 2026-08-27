@@ -13,6 +13,7 @@ use tower_lsp_server::ls_types::{SemanticToken, SemanticTokenType};
 
 use crate::mixin_use::mixin_use_names;
 use crate::relation_parse::relation_attribute_spans;
+use crate::state::DocumentState;
 use crate::text::offset_to_position;
 
 /// Order is load-bearing: the client resolves `token_type` as an index into
@@ -38,6 +39,12 @@ const PROPERTY: u32 = 5;
 const FUNCTION: u32 = 6;
 const PARAMETER: u32 = 7;
 const DECORATOR: u32 = 8;
+
+/// Tokens for a document, or `None` when nothing has parsed yet.
+pub(crate) fn semantic_tokens_for(document: &DocumentState) -> Option<Vec<SemanticToken>> {
+    let (text, schema) = document.resolved()?;
+    Some(semantic_tokens(text, schema))
+}
 
 pub(crate) fn semantic_tokens(text: &str, schema: &Schema) -> Vec<SemanticToken> {
     let mut entries = Vec::new();
