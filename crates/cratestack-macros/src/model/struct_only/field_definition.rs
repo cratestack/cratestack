@@ -96,7 +96,7 @@ pub(crate) fn struct_field_definition(
         // Deserialize` bound resolves to `Vec<u8>`'s strict blanket impl,
         // which is exactly the byte-string-rejecting behaviour
         // cratestack#783 fixes.
-        let double_option = bytes_deserialize_with.clone().unwrap_or_else(|| {
+        let double_option = bytes_deserialize_with.unwrap_or_else(|| {
             quote! { deserialize_with = "::cratestack::deserialize_double_option" }
         });
         quote! {

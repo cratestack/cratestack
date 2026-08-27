@@ -1,8 +1,28 @@
 rules:
   - id: rust-unwrap-in-lib
-    pattern-either:
-      - pattern: $X.unwrap()
-      - pattern: $X.expect(...)
+    patterns:
+      - pattern-either:
+          - pattern: $X.unwrap()
+          - pattern: $X.expect(...)
+      # The other half of the unit-test problem the `paths: exclude:`
+      # comment below describes, and the half a path glob structurally
+      # cannot reach: the `#[cfg(test)] mod tests { ... }` form, written
+      # *inline* in a source file that also holds production code. There
+      # is no path to exclude — `wasm.rs` is a real library file — so this
+      # has to be a pattern condition, not a glob.
+      #
+      # Matches on the module's conventional name rather than the
+      # `#[cfg(test)]` attribute: `pattern-not-inside` with the attribute
+      # attached does not suppress the inner match (measured against the
+      # pinned semgrep 1.171.0 — both the production and the in-test
+      # `.expect()` still fired), while the bare `mod tests { ... }` form
+      # correctly excludes only the test module. That is the same
+      # name-based heuristic the `**/tests.rs` / `**/*_test.rs` globs
+      # below already rely on, so it adds no new assumption. Verified in
+      # the same run that an `.expect()` in ordinary production code
+      # outside such a module is still reported.
+      - pattern-not-inside: |
+          mod tests { ... }
     message: |
       .unwrap() or .expect() found in library code.
       Library crates should propagate errors with ? operator or return Result types.
