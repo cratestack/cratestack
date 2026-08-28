@@ -205,7 +205,7 @@ model Post {
   id Int @id
 }
 
-procedure listPosts(page: PageInput): Post[]
+procedure searchPosts(page: PageInput): Post[]
 "#;
     let schema = parse_schema(source).expect("schema with PageInput arg should parse");
     let arg_type = &schema.procedures[0].args[0].ty;
