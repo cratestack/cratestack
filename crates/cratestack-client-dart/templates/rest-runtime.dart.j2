@@ -16,10 +16,32 @@ import 'constants.dart';
 // resolved once and cached here rather than per call — every
 // `_cratestackCborCodec()` caller after the first just awaits the same
 // already-in-flight (or already-resolved) `Future`.
+//
+// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
+// `??=` never re-evaluates once the field holds a settled *rejected*
+// future, so one transient failure — a wasm asset that 404s on web, a
+// vendored library that was not there yet — would brick every later
+// request in the isolate, replaying the same error forever instead of
+// giving the next caller a fresh attempt. `onError` clears the cache so
+// it can retry, and rethrows with the original stack trace so nothing is
+// swallowed. Same rule, for the same reason, as the generated TypeScript
+// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
+// `createCborCodec()`.
 Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
 
 Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
-  return _cratestackCborCodecFuture ??= cratestack_cbor.createCborCodec();
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        // Hung off the future rather than written as a `try`/`catch`
+        // around the call so it cannot run before the `??=` has
+        // assigned: an `onError` callback is always asynchronous,
+        // whereas a `catch` body fires synchronously for anything thrown
+        // before the factory's first `await`, and the assignment would
+        // then immediately re-cache the very failure it just cleared.
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
 }
 {% endif %}
 

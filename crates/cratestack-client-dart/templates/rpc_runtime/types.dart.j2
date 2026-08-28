@@ -25,10 +25,21 @@ import 'constants.dart';
 // cratestack#563: see `rest-runtime.dart.j2`'s identical
 // comment — one cached codec `Future`, shared by every adapter in this
 // file (`CratestackRpcCborDioAdapter` in `dio_cbor.dart.j2`).
+//
+// cratestack#798: and its identical `onError` too — only a SUCCESSFUL
+// resolution stays cached, so one transient failure cannot brick every
+// later request in the isolate. See that file for the full reasoning;
+// the two must not drift, which is why both transports changed in the
+// same PR.
 Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
 
 Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
-  return _cratestackCborCodecFuture ??= cratestack_cbor.createCborCodec();
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
 }
 {% endif %}
 

@@ -1,0 +1,23 @@
+# Stand-in for `package:cratestack_cbor`, used ONLY by
+# `tests/native_cbor_codec_memoization.rs` (cratestack#798) via a
+# `dependency_overrides` path entry it writes into the generated package's
+# own pubspec.
+#
+# A stub, not the real package, for one reason: the property under test is
+# what the generated runtime does when `createCborCodec()` FAILS, and the
+# real package — correctly — does not fail on a supported platform. There
+# is no env var, missing file or misconfiguration that reliably breaks it
+# from inside a `flutter test` process since cratestack#794 taught it to
+# resolve through `.dart_tool/package_config.json`. Making the factory fail
+# on demand is the only way to reach the branch.
+#
+# Same role the TypeScript suite's inline `@cratestack/cbor` stub plays for
+# `native_codec_factory_is_memoized_and_retried_after_a_rejection`
+# (`crates/cratestack-client-typescript/tests/native_cbor_generator.rs`).
+name: cratestack_cbor
+description: Controllable stub of cratestack_cbor for generated-client tests.
+publish_to: 'none'
+version: 0.0.0-stub
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
