@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.15 (2026-08-28)
+
 ### `--tanstack` rejects a procedure hook that collides with a model hook (#802)
 
 `--tanstack` emits per-model hooks (`use<Model>ListQuery`, `useCreate<Model>Mutation`, …) and
