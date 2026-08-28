@@ -32,6 +32,41 @@ compounded: the workaround for the resolution gap is what created the double-ini
 own suite now runs under `flutter test` as well as `dart test` in CI, with the env var explicitly
 unset, so neither half can regress unnoticed.
 
+### The parser rejects a schema name that collides with the generated client's own methods (#784 follow-up)
+
+Found while checking a claim made when #784 was closed, which turned out to be wrong. That comment
+said the generated Rust client had an equivalent, unfixed collision between a model accessor and a
+procedure method — `model Order` alongside `procedure orders`. It does not: accessors live on
+`Client` and procedure methods on `ProceduresClient`, so the two never share a namespace, confirmed
+by `cargo check` rather than by re-reading the templates. The claim is retracted on the issue.
+
+Checking it did turn up two real collisions, on the same surface and of the same class #784 closed —
+a schema-derived method landing on one the client defines for itself:
+
+- `model Procedure` derives the accessor `pluralize(to_snake_case("Procedure"))` = `procedures()`,
+  which `Client` already defines.
+- `procedure new` derives `to_snake_case("new")` = `new()`, which `ProceduresClient` already
+  defines.
+
+Both compiled to `error[E0592]: duplicate definitions with name ...`, naming neither the model nor
+the procedure that caused it. `cratestack-parser`'s `validate::client_method_collisions` now rejects
+both up front, naming the declaration, the derived method, the built-in it hits, the rustc error it
+would have produced, and the remedy.
+
+The check covers `new`/`runtime`/`procedures`/`rpc`/`batch` — the union across both transports —
+even though `pluralize` only appends, so `procedures` is the only one a model accessor can actually
+reach today. Checking the whole list means a built-in added to `Client` later is guarded without
+anyone re-deriving that argument.
+
+Deliberately not rejected, with tests pinning each: a model accessor matching a *procedure* method
+name (different types, compiles); an all-caps `model PROCEDURE`, which `to_snake_case` normalizes to
+`p_r_o_c_e_d_u_r_e` and so does not collide; and `procedure runtime`/`procedures`/`batch`/`rpc`,
+since those built-ins are on `Client`, not `ProceduresClient`. Model-vs-model accessor collisions
+were already rejected by `route_collisions` — an accessor name *is* the REST route segment.
+
+This affects both roles: the client module is emitted by `include_server_schema!` (for the server's
+own peer-calling client) as well as by `include_client_schema!`.
+
 ### `@cratestack/refine` converts every method's errors the same way, and stops destroying them (#786)
 
 The data provider handled a thrown error two different ways depending on which method threw.

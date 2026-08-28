@@ -14,6 +14,8 @@ mod tests_builder_add_setter_collisions;
 mod tests_builder_collisions;
 mod tests_builder_collisions_derived;
 #[cfg(test)]
+mod tests_client_method_collisions;
+#[cfg(test)]
 mod tests_computed;
 #[cfg(test)]
 mod tests_computed_params;

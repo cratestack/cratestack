@@ -1,5 +1,6 @@
 mod builder_collisions;
 mod builder_setter_collisions;
+mod client_method_collisions;
 mod collect;
 mod composite_attributes;
 mod computed;
@@ -33,6 +34,7 @@ use cratestack_core::Schema;
 use crate::diagnostics::{SchemaError, span_error};
 
 use self::builder_collisions::validate_builder_name_collisions;
+use self::client_method_collisions::validate_client_method_collisions;
 use self::mixins_types::{
     validate_auth, validate_enums_collecting, validate_mixins_collecting, validate_types_collecting,
 };
@@ -114,6 +116,7 @@ pub(crate) fn validate_schema_collecting(
     collect::record(&mut errors, || {
         validate_procedure_model_handler_collisions(schema)
     });
+    collect::record(&mut errors, || validate_client_method_collisions(schema));
     collect::record(&mut errors, || validate_datasource(schema));
     collect::record(&mut errors, || {
         validate_no_models_under_datasource_none(schema)
