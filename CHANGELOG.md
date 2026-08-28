@@ -2,6 +2,207 @@
 
 ## Unreleased
 
+### `@cratestack/refine` converts every method's errors the same way, and stops destroying them (#786)
+
+The data provider handled a thrown error two different ways depending on which method threw.
+`getList` and `getMany` had no `catch` at all and rethrew the original untouched; `getOne`,
+`create`, `update` and `deleteOne` each ran it through `toRefineError`, which returned a **plain
+object literal** for anything that was not a `CratestackHttpError` — discarding the value's class,
+`name`, `cause` and every own property, leaving only `message`.
+
+A consumer throwing a typed error from a custom `fetch` transport (a `DeviceNotEnrolledError`
+raised before the request ever leaves the browser) and classifying it with `instanceof` therefore
+got **correct behaviour on list screens and silently wrong behaviour on every detail/create/edit
+screen** — a bug that shipped, because the retry classifier was validated against the one list-only
+resource, which is the single path where `instanceof` held. The workaround it forced was
+string-matching exported message constants, the only field that survived flattening.
+
+Both halves are fixed:
+
+1. **All seven methods** — the six named in the report plus `custom`, which had the same gap —
+   now route thrown values through `toRefineError`. Leaving `custom` out would have recreated the
+   defect one method over.
+2. **`toRefineError` annotates the thrown value in place and returns it**, rather than building a
+   bare object literal. `message` and `statusCode` (the two fields refine renders) are set on the
+   original object, so `instanceof` keeps working, `name`/`cause`/own properties survive, and a
+   `CratestackHttpError`'s `status`/`payload`/`response` stay readable on the same value. Mutating
+   rather than cloning is deliberate: an `Object.create`-based copy preserves the prototype but
+   silently drops private class fields, which is the state a typed error's own methods read.
+
+When the thrown value cannot be annotated — a thrown primitive, a frozen or sealed object, a class
+exposing `message` as a getter with no setter — the result is `{ message, statusCode, cause }` with
+the original under `cause`, the report's stated minimum.
+
+Unchanged: the `412 Precondition Failed` conflict message and the promotion of a
+`CratestackHttpError` envelope's `payload.message`. `message` remains the one field conversion
+rewrites, so it remains the wrong field to classify on; the README's new "Errors" section says so.
+
+Behavioural note for existing consumers: `getList`/`getMany` errors now carry `statusCode` (they
+previously reached refine with none), and a 412 surfaced from a list call now carries the conflict
+message rather than the raw one.
+### **Breaking:** generated TypeScript clients type `Bytes` as `Uint8Array` (#783 follow-up)
+
+A schema `Bytes` field is now a real `Uint8Array` on **both** sides of a generated TypeScript
+client, not a `number[]`. This is what the Dart client has always done (`Bytes` → `Uint8List`,
+converted at the wire boundary in `wire_encode.rs`/`wire_decode.rs`), so the two clients now agree.
+
+**What breaks.** Reading a `Bytes` field as `number[]` no longer compiles:
+
+```ts
+const digest: number[] = blob.digest;        // was fine, now a type error
+const digest: Uint8Array = blob.digest;      // the replacement
+Array.from(blob.digest);                     // if you genuinely want a number[]
+```
+
+Writing one gets easier, which was the point — `client.seal({ payload: bytes })` instead of
+`client.seal({ payload: Array.from(bytes) })`. Node `Buffer` works too (it is a `Uint8Array`
+subclass).
+
+**The wire is unchanged.** A `Bytes` field still travels as an array of integers in both
+directions, so this is a client-side type change only — no server, Dart, or Rust client is
+affected, and a mixed-version fleet is fine. The conversion happens in the generated runtime:
+`encodeBinaryAsJson` on the way out, and the `bytesKeys`/`bytesListKeys` arms of the shape walk on
+the way back.
+
+Two details worth knowing:
+
+- **Why not `Uint8Array | number[]` on inputs only.** A union has to be narrowed by every *reader*,
+  and it cannot be applied consistently anyway: a `type` block is a single generated interface that
+  can sit in an argument position, a return position, or both (`procedure seal(env: Envelope):
+  Envelope`), so there is no input-only place to widen. Model interfaces and `Create`/`Update`
+  inputs *are* cleanly split, but `type` blocks are not — one type in both directions has no such
+  ambiguity.
+- **Why the runtime converts rather than the codec.** `JSON.stringify` turns a `Uint8Array` into an
+  index-keyed object (`{"0":1,"1":2}`) that no server-side `Vec<u8>` can decode — the same defect
+  #783 fixed for CBOR, in a different disguise. `encodeBinaryAsJson` runs on the JSON paths only
+  (`jsonRpcCodec` and the REST request body); the native `@cratestack/cbor` codec keeps receiving
+  the real `Uint8Array` so it can emit a compact byte string. It is a pre-walk rather than a
+  `JSON.stringify` replacer because Node's `Buffer` defines its own `toJSON`, which
+  `JSON.stringify` applies *before* any replacer, yielding `{"type":"Buffer","data":[...]}`.
+
+**Renamed generated exports.** The decode-side registry now carries `Bytes` as well as `Decimal`,
+so its names no longer say "decimal": `decimalShapes` → `wireShapes`, `DecimalShape` → `WireShape`,
+`reviveDecimalFields` → `reviveWireFields`, `revivePagedDecimalFields` → `revivePagedWireFields`,
+`reviveDecimalScalar` → `reviveWireScalar` (now taking a second `kind` argument),
+`encodeDecimalFields` → `encodeWireFields`. These are generated-client internals; application code
+rarely imports them, but a client with a customised template will need the rename.
+
+`Bytes` keys are recorded per arity (`bytesKeys` vs `bytesListKeys`) because the wire form is not
+self-identifying at every value: a populated `Bytes` is `number[]` and a populated `Bytes[]` is
+`number[][]`, but `[]` is both. The schema knows which; the runtime cannot.
+
+### `generate-dart` stops emitting dead imports for a schema with no models (#785)
+
+`cratestack generate-dart` on a schema with zero `model` blocks emitted `import 'queries.dart';`
+into `lib/src/apis.dart` and `import 'models.dart';` into `lib/src/queries.dart` unconditionally,
+with nothing on either side to reference them. `flutter analyze` reports each as `unused_import` —
+a warning, and `--fatal-warnings` (Dart's own default, and what `just verify-dart` runs) makes a
+warning a failed build. The reporting consumer had to add a `knownAnalyzeFailures` allowlist entry
+to work around it, which silently downgrades a future real regression to a warning.
+
+Both are now gated on the loop that actually consumes them: `apis.dart`'s `queries.dart` import on
+`model_apis`, and `queries.dart`'s `models.dart` import on `selection_models`. Same one-line
+mechanism as #629's `{% if procedures | length > 0 %}`, which fixed this defect one level up (a
+class body rather than an import line) and does not reach import statements.
+
+A third, unreported case is closed with it: `apis.dart`'s own `models.dart` import is live for a
+procedure-only schema (every procedure gets a generated `{Procedure}Args` wrapper there) but dead
+for a schema with **neither** models nor procedures, which is valid today. That gate is applied on
+both transports — `rpc-apis.dart.j2` carries the same import and the same condition.
+
+The riverpod preset was already correct: its `queries.dart` never imported `models.dart`.
+
+Verified end-to-end rather than by inspection. A `procedures_only_rest` fixture joins
+`just verify-dart`'s default-preset list, where `verify_pkg` runs real `flutter pub get` →
+`build_runner` → `flutter analyze --fatal-warnings`. Nothing else in that list has a zero-model
+shape, which is why this shipped: a dead import is invisible to text-level generator tests and only
+a real analyzer fails on one. Confirmed the fixture reports the two warnings on the pre-fix
+templates and `No issues found!` after — and likewise for the zero-model/zero-procedure schemas on
+both transports (three warnings before, clean after).
+### The parser rejects a procedure colliding with a model's generated CRUD handler (#784)
+
+`model Order` alongside `procedure getOrder` generated the Rust item `handle_get_order` twice into
+the same axum module — once from `axum/model/prep.rs`'s per-model CRUD handlers, once from
+`axum/procedure.rs`'s per-procedure handler — and the same for the `_dispatch` twins the RPC
+transport dispatches through. `cratestack check` reported `schema OK`; the only diagnostic was a raw
+`error[E0428]: the name 'handle_get_order' is defined multiple times`, which names neither the
+procedure, nor the model, nor the fix. It cost two rounds of guess-the-cause in production porting
+work (`deleteBuyerAddress` vs `model BuyerAddress`, `getOrder`/`getSubOrder` vs `model
+Order`/`SubOrder`).
+
+`cratestack-parser` now refuses such a schema, naming the procedure, the model, the operation, the
+shared identifier, and the remedy — a fifth validator in the mould of `snake_case_collisions`,
+`route_collisions`, `builder_collisions` and `procedure_idents`. Detection runs on the
+`to_snake_case`-normalized form, so `procedure get_order` is caught identically, and it covers both
+the handler and its `_dispatch` twin, so `getOrderDispatch` is caught too. `list`/`create` are
+matched against the *pluralized* stem (`handle_list_orders`) and `get`/`update`/`delete` against the
+singular one, mirroring the macro exactly.
+
+`@@internal(...)` is deliberately not an exemption: route suppression omits the `.route(...)`
+registration, not the handler function, so the ident collides either way.
+
+The collision is proved against the real emitters rather than a re-derivation —
+`cratestack-macros/src/axum/handler_collision_tests.rs` runs `generate_model_axum_handlers` and
+`generate_procedure_axum_handler` for the reported pair and asserts the emitted `fn` names
+intersect on exactly `handle_get_order` and `handle_get_order_dispatch`, and that the issue's
+recorded workaround rename clears it.
+
+Four in-repo fixtures were themselves this defect and are renamed (`listPosts` → `searchPosts`,
+`getWidget` → `widgetSummary`, `listUsers` → `searchUsers`, `listOrders` → `searchOrders`). One of
+them is #777's `--swr` collision fixture, which now exercises `create` rather than `list`: `create`
+is the only one of the five operations whose `--swr` free function (`createPost`) and generated
+handler (`handle_create_posts`) disagree on plurality, and so the only one that is a
+`--swr`-specific collision rather than an `E0428` the parser now catches first. #777's
+generator-level check is unchanged and still owns the cases this one cannot see.
+### `Bytes` fields round-trip a JS `Uint8Array` (#783)
+
+`@cratestack/cbor` serialised a JS `Uint8Array` as a CBOR **map** of index→value
+(`{"0":1,"1":2,…}`) rather than a byte string, because both its builds funnelled every JS value
+through `serde_json::Value` — a type with no byte-string variant, and one whose napi conversion
+classifies a typed array as a plain object. A generated Rust `Bytes` field is a `Vec<u8>` whose
+blanket `Deserialize` accepts only a sequence, so such a request failed at the codec with
+`400 invalid_argument` and never reached the handler. Callers had to write `Array.from(bytes)` at
+every call site — a workaround that is easy to "optimise" back into a break, and that costs ~2x the
+wire bytes of the byte string it stands in for (as measured in the issue, on a random-filled 16 KiB
+payload: 31,180 bytes as `number[]`, ~16,400 as a byte string, and 118,374 in the broken map form).
+
+Both codec builds now bridge through `cratestack_core::Value`, the framework's own canonical wire
+value, which has a `Bytes` variant:
+
+- **`encode`** — `Uint8Array` (including Node `Buffer`) and `ArrayBuffer` become a CBOR byte string
+  (RFC 8949 major type 2). A subarray contributes its own window, not the whole backing buffer.
+  Everything else — `Uint8ClampedArray`, `DataView`, `Int32Array`, … — keeps its previous behaviour
+  rather than being silently reinterpreted; pass
+  `new Uint8Array(view.buffer, view.byteOffset, view.byteLength)` for those. That set is identical
+  in the node and web builds on purpose: a TypeScript client has to put the same payload on the wire
+  whichever runtime it loads in, so the node build accepts no more than the web build can.
+- **`decode`** — a CBOR byte string comes back as a `Uint8Array`.
+- A plain `number[]` is unchanged in both directions. An untyped value carries no schema, so nothing
+  at the codec layer guesses that an integer array "meant" bytes.
+
+For that to work end to end, the server had to accept the shape. A schema `Bytes` field — on a
+model, a CRUD input, a `type` block, or a procedure argument — now deserializes from **either** a
+CBOR byte string or the integer array every already-deployed Rust/Dart/TypeScript client sends
+(`cratestack_core::lenient_bytes`, attached by `cratestack-macros`' `shared::bytes_serde`). That
+keeps `application/json`, where the integer array is the only expressible shape, working untouched,
+and it makes this an additive change rather than a wire break: **nothing about the outbound shape
+changed.** A `Bytes` field still serializes as an integer array on both transports and in all three
+client languages, so every existing decoder — the Dart client's `cratestackAsValueList`, the
+TypeScript client's `number[]` — keeps working. Flipping the outbound shape would be a real break
+and is deliberately not bundled here.
+
+Two knock-on effects of the bridge-type change, both edge cases of `Value`'s number model (already
+the framework's wire contract for `Json` fields, procedure `Json` arguments and RPC error details):
+an integer above `i64::MAX` (a JS `BigInt` past 9223372036854775807) now degrades to a float instead
+of staying an exact unsigned integer, and a non-finite float (`NaN`, `±Infinity`) now survives as
+itself rather than decoding as `null`. Every byte-free payload is otherwise byte-identical, pinned
+by the cross-language fixtures both the Rust and vitest suites assert.
+
+Two limits worth naming: `POST /rpc/batch` carries each frame's input as an opaque
+`serde_json::Value`, so a byte string inside a *batched* frame still fails at the envelope — send
+`number[]` there, or use unary RPC. And the generated TypeScript client still types `Bytes` as
+`number[]`, so passing a `Uint8Array` needs a cast until that type is widened.
+
 ## 0.8.14 (2026-08-27)
 
 ### Generated Dart clients declare an API floor, not the workspace version (#754)
@@ -3677,7 +3878,8 @@ Small follow-ups to the two client-preset epics landed in 0.6.1:
   its `Page`/`PageInfo` import, a real `tsc` failure (#318).
 * TypeScript REST client: widened the `SCHEMA_SHA256` constant's type to
   `string` — with a real, non-empty schema hash baked in, TypeScript
-  inferred a literal type and flagged the runtime's own `=== ""` check as
+  inferred a literal type and flagged the runtime's own `
+  ""` check as
   having no possible overlap (#323).
 
 ## 0.6.1 (2026-08-02)

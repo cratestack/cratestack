@@ -82,6 +82,13 @@ export function createCratestackRpcDataProvider(
 ): DataProvider {
   const versionCache = createVersionCache();
 
+  // cratestack#786: EVERY method below routes a thrown value through
+  // `toRefineError` — no exceptions, including the two list methods that
+  // used to rethrow raw. A method that skips it hands refine an error
+  // with no `statusCode`; a method that flattened instead of annotating
+  // would break `instanceof` for a consumer's typed transport errors.
+  // Both failure modes are invisible until a consumer classifies errors,
+  // and both are covered by `tests/error-preservation.test.ts`.
   async function getList(params: GetListParams): Promise<GetListResponse> {
     const config = requireResource(resources, params.resource);
     const usePaging = config.paged && params.pagination?.mode !== "off";
@@ -95,18 +102,22 @@ export function createCratestackRpcDataProvider(
       ...(usePaging ? { limit: pageSize, offset: (currentPage - 1) * pageSize } : {}),
     };
 
-    const result = await config.api.list(query);
-    const items = config.paged ? (result as CratestackPage<Row>).items : (result as Row[]);
-    for (const item of items) {
-      rememberVersion(versionCache, params.resource, item[config.primaryKey], item, config);
-    }
+    try {
+      const result = await config.api.list(query);
+      const items = config.paged ? (result as CratestackPage<Row>).items : (result as Row[]);
+      for (const item of items) {
+        rememberVersion(versionCache, params.resource, item[config.primaryKey], item, config);
+      }
 
-    return {
-      data: items.map((item) => withRefineId(item, config.primaryKey)),
-      total: config.paged
-        ? ((result as CratestackPage<Row>).totalCount ?? items.length)
-        : items.length,
-    };
+      return {
+        data: items.map((item) => withRefineId(item, config.primaryKey)),
+        total: config.paged
+          ? ((result as CratestackPage<Row>).totalCount ?? items.length)
+          : items.length,
+      };
+    } catch (error) {
+      throw toRefineError(error);
+    }
   }
 
   async function getOne(params: GetOneParams): Promise<GetOneResponse> {
@@ -127,12 +138,16 @@ export function createCratestackRpcDataProvider(
     const query: CratestackRpcListQuery = {
       filters: [{ key: `${config.primaryKey}__in`, value: params.ids.map(String).join(",") }],
     };
-    const result = await config.api.list(query);
-    const items = config.paged ? (result as CratestackPage<Row>).items : (result as Row[]);
-    for (const item of items) {
-      rememberVersion(versionCache, params.resource, item[config.primaryKey], item, config);
+    try {
+      const result = await config.api.list(query);
+      const items = config.paged ? (result as CratestackPage<Row>).items : (result as Row[]);
+      for (const item of items) {
+        rememberVersion(versionCache, params.resource, item[config.primaryKey], item, config);
+      }
+      return { data: items.map((item) => withRefineId(item, config.primaryKey)) };
+    } catch (error) {
+      throw toRefineError(error);
     }
-    return { data: items.map((item) => withRefineId(item, config.primaryKey)) };
   }
 
   async function create(params: CreateParams): Promise<CreateResponse> {
@@ -210,8 +225,12 @@ export function createCratestackRpcDataProvider(
           "passed to createCratestackRpcDataProvider",
       );
     }
-    const data = await procedureFn(params.payload ?? {});
-    return { data: data as BaseRecord };
+    try {
+      const data = await procedureFn(params.payload ?? {});
+      return { data: data as BaseRecord };
+    } catch (error) {
+      throw toRefineError(error);
+    }
   }
 
   // Same cast, same reasoning as REST's `createCratestackDataProvider` —

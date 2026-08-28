@@ -1,6 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+{% if model_apis | length > 0 or procedures | length > 0 %}
+{# cratestack#785, RPC's half of the same gate the REST template carries
+   (transport parity): `models.dart` is reached only from the per-model
+   API classes and from each procedure's generated args wrapper. There is
+   no `queries.dart` on this transport, so this is the only import here
+   that can go dead. #}
 import 'models.dart';
+{% endif %}
 import 'runtime.dart';
 
 class {{ client_class_name }} {

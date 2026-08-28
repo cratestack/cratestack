@@ -15,7 +15,7 @@
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "./runtime.js";
 // cratestack#498: see `procedures-rest.ts.j2`'s identical import for why
 // this is a real (not type-only) import.
-import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
+import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models/shared.js";
 {% for import in procedures_file.imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -50,7 +50,7 @@ export interface {{ interface.name }} {
 
 {% endfor %}
 {% for procedure in procedures_file.procedures %}
-{% if procedure.decimal_revival_kind == "scalar" %}
+{% if procedure.revival_kind == "scalar" %}
 export async function {{ procedure.method_name }}(
   runtime: CratestackRpcRuntime,
   args: {{ procedure.args_name }},
@@ -60,7 +60,7 @@ export async function {{ procedure.method_name }}(
     "procedure.{{ procedure.name }}",
     args,
     options,
-  ).then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
+  ).then((value) => reviveWireScalar(value, "{{ procedure.revival_scalar_kind }}") as {{ procedure.return_type }});
 }
 {% else %}
 export async function {{ procedure.method_name }}(
@@ -72,7 +72,7 @@ export async function {{ procedure.method_name }}(
     "procedure.{{ procedure.name }}",
     args,
     options,
-  ).then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+  ).then((value) => {% if procedure.revival_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ procedure.revival_shape_name }}') as {{ procedure.return_type }});
 }
 {% endif %}
 

@@ -119,3 +119,64 @@ describe("createCborCodec (built package)", () => {
     expect(Array.from(encoded)).toEqual(Array.from(rustEncodedCoolStack));
   });
 });
+
+describe("binary data (cratestack#783)", () => {
+  // Mirrors `packages/cratestack-cbor-node/tests/codec.test.ts`'s suite
+  // of the same name: the two builds wrap the same Rust codec through
+  // different FFI layers (wasm-bindgen here, N-API there) and must agree
+  // byte-for-byte on binary payloads, or a TypeScript client would speak
+  // a different wire depending on where it runs.
+  //
+  // `48` is CBOR major type 2, length 8. Before the fix a `Uint8Array`
+  // encoded as a map of index→value, which no generated Rust `Bytes`
+  // field can decode.
+  let codec: CratestackRpcCodec;
+
+  const eightBytes = [1, 2, 3, 4, 5, 6, 7, 8];
+  const BYTE_STRING = [0x48, 1, 2, 3, 4, 5, 6, 7, 8];
+
+  beforeAll(async () => {
+    codec = await createCborCodec();
+  });
+
+  it("encodes a Uint8Array as a CBOR byte string, not a map of indices", () => {
+    const bytes = codec.encode(new Uint8Array(eightBytes)) as Uint8Array;
+    expect(Array.from(bytes)).toEqual(BYTE_STRING);
+  });
+
+  it("encodes an ArrayBuffer as a CBOR byte string", () => {
+    const bytes = codec.encode(new Uint8Array(eightBytes).buffer) as Uint8Array;
+    expect(Array.from(bytes)).toEqual(BYTE_STRING);
+  });
+
+  it("encodes an empty Uint8Array as the zero-length byte string", () => {
+    // 0x40 — not 0x80 (empty array) and not 0xa0 (empty map).
+    expect(Array.from(codec.encode(new Uint8Array()) as Uint8Array)).toEqual([0x40]);
+  });
+
+  it("decodes a CBOR byte string back to a Uint8Array", () => {
+    const decoded = codec.decode(new Uint8Array(BYTE_STRING));
+    expect(decoded).toBeInstanceOf(Uint8Array);
+    expect(Array.from(decoded as Uint8Array)).toEqual(eightBytes);
+  });
+
+  it("round-trips a Uint8Array nested inside an object", () => {
+    const bytes = codec.encode({
+      nonce: new Uint8Array([0xde, 0xad]),
+      label: "mailbox",
+    }) as Uint8Array;
+    const decoded = codec.decode(bytes) as { nonce: unknown; label: string };
+    expect(decoded.nonce).toBeInstanceOf(Uint8Array);
+    expect(Array.from(decoded.nonce as Uint8Array)).toEqual([0xde, 0xad]);
+    expect(decoded.label).toBe("mailbox");
+  });
+
+  it("leaves a plain number[] as a CBOR array, in both directions", () => {
+    // The `Array.from(bytes)` workaround callers write today must keep
+    // behaving exactly as before — an untyped value carries no schema,
+    // so nothing here may guess that an integer array "meant" bytes.
+    const bytes = codec.encode(eightBytes) as Uint8Array;
+    expect(Array.from(bytes)).toEqual([0x88, ...eightBytes]);
+    expect(codec.decode(bytes)).toEqual(eightBytes);
+  });
+});

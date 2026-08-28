@@ -15,7 +15,7 @@
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "./runtime.js";
 // cratestack#498: see `procedures-rest.ts.j2`'s identical import for why
 // this is a real (not type-only) import.
-import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models/shared.js";
+import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models/shared.js";
 
 export interface EchoNameArgs {
   name: string;
@@ -30,6 +30,6 @@ export async function echoName(
     "procedure.echoName",
     args,
     options,
-  ).then((value) => reviveDecimalFields(value, 'String') as string);
+  ).then((value) => reviveWireFields(value, 'String') as string);
 }
 

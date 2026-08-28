@@ -3,20 +3,20 @@
 // had a reachable field-name-collision hazard — `Order.total: Decimal` and
 // related `Account.total: String`, `include`-ing the relation, either
 // threw decoding a real (non-numeric) account reference or silently
-// corrupted a numeric-looking one. The path-aware `decimalShapes` registry
+// corrupted a numeric-looking one. The path-aware `wireShapes` registry
 // fixes this: each type's own shape only ever describes that type's own
 // fields, so `Account.total` is checked against *Account's* shape (which
 // has no `total` key), never `Order`'s. Copied alongside a generated
 // package by `tests/decimal_collision_regression.rs`, mirroring
 // `tests/decimal_round_trip.rs`'s pattern.
 import { describe, expect, it } from "vitest";
-import { Decimal, reviveDecimalFields } from "./src/models.js";
+import { Decimal, reviveWireFields } from "./src/models.js";
 import { OrderApi } from "./src/client.js";
 import { CratestackRuntime } from "./src/runtime.js";
 
-describe("decimalShapes registry (cratestack#499 collision fix)", () => {
+describe("wireShapes registry (cratestack#499 collision fix)", () => {
   it("does not convert a related model's same-named non-Decimal field — numeric-looking value", () => {
-    const revived = reviveDecimalFields(
+    const revived = reviveWireFields(
       { id: "ord_1", total: "42.50", account: { id: "acc_1", total: "00123" } },
       "Order",
     ) as { total: unknown; account: { total: unknown } };
@@ -33,13 +33,13 @@ describe("decimalShapes registry (cratestack#499 collision fix)", () => {
 
   it("does not throw on a related model's same-named non-Decimal, non-numeric field", () => {
     expect(() =>
-      reviveDecimalFields(
+      reviveWireFields(
         { id: "ord_2", total: "42.50", account: { id: "acc_2", total: "ACC-00123" } },
         "Order",
       ),
     ).not.toThrow();
 
-    const revived = reviveDecimalFields(
+    const revived = reviveWireFields(
       { id: "ord_2", total: "42.50", account: { id: "acc_2", total: "ACC-00123" } },
       "Order",
     ) as { account: { total: unknown } };
@@ -50,7 +50,7 @@ describe("decimalShapes registry (cratestack#499 collision fix)", () => {
     // Sanity check the fixture the other way around: Account has no
     // Decimal field in this schema, so decoding it directly must leave
     // `total` untouched (it's a String there).
-    const revived = reviveDecimalFields({ id: "acc_1", total: "00123" }, "Account") as {
+    const revived = reviveWireFields({ id: "acc_1", total: "00123" }, "Account") as {
       total: unknown;
     };
     expect(revived.total).toBe("00123");

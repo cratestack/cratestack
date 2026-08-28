@@ -135,7 +135,7 @@ if (typeof decodedRequest.amountXaf !== "string") {{
     `expected amountXaf to reach the wire as a plain string, got typeof ` +
     `${{typeof decodedRequest.amountXaf}} (${{JSON.stringify(decodedRequest.amountXaf)}}) — a ` +
     `pre-fix build would have thrown before this point, so seeing a non-string here at all ` +
-    `means encodeDecimalFields regressed differently`,
+    `means encodeWireFields regressed differently`,
   );
 }}
 if (decodedRequest.amountXaf !== "1.5") {{
@@ -171,7 +171,7 @@ console.log("NATIVE_CBOR_DECIMAL_ENCODE_OK");
 /// frames, each with its own `input` — a `create` frame and a `quote`
 /// procedure frame (a *procedure argument*, not a model field, cratestack#746
 /// follow-up's other reach point) in the same batch, both carrying a real
-/// `Decimal`. Proves `terminalLink`'s single `encodeDecimalFields(request.input)`
+/// `Decimal`. Proves `terminalLink`'s single `encodeWireFields(request.input)`
 /// call recurses through the whole frame array, not just a top-level
 /// object.
 #[test]

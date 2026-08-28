@@ -1,6 +1,6 @@
 // `swr`-preset counterpart to `default.test.ts` — proves cratestack#499's
 // remediation of #498's F3 (the `swr` preset's per-model plain functions
-// now call `reviveDecimalFields` too, closing the documented "type-correct
+// now call `reviveWireFields` too, closing the documented "type-correct
 // but not yet revived" gap), F2 (procedure return type revival), and F5
 // (relation-embedded field revival), against the real generated
 // per-model-file layout, not a generated-text assertion.

@@ -2,9 +2,10 @@
 //! (`crates/cratestack-codec-cbor`) to Node, for `@cratestack/cbor-node`
 //! (issue #286, epic #285). This crate contains no CBOR wire-format logic
 //! of its own — [`encode_value`]/[`decode_bytes`] call straight into
-//! `CborCodec`; see [`json_value`] for the one deliberate translation this
-//! boundary needs (JSON `null` -> CBOR null), which is JS/Rust boundary
-//! translation, not a `CborCodec` concern.
+//! `CborCodec`; see [`js_value`] for the JS/Rust value mapping this
+//! boundary needs (notably `Uint8Array`/`ArrayBuffer` <-> CBOR byte
+//! string, cratestack#783), which is boundary translation, not a
+//! `CborCodec` concern.
 //!
 //! **Why the pure `encode_value`/`decode_bytes` split exists:** napi's
 //! `Uint8Array`/`Error` FFI types (used by the `#[napi]`-decorated
@@ -36,21 +37,21 @@
 //! specifically, not what turns `Result::Err` into a JS exception (that
 //! part just works, verified by this crate's own tests below).
 
-mod json_value;
+mod js_value;
 
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{CratestackCodec, CratestackError};
-use serde_json::Value;
+use cratestack_core::{CratestackCodec, CratestackError, Value};
 
-use json_value::CborValue;
+use js_value::JsCborValue;
 
-/// Encodes a JSON value to CBOR bytes via `CborCodec`. No napi types in
-/// the signature — see the module docs for why that matters for testing.
+/// Encodes a bridged JS value to CBOR bytes via `CborCodec`. No napi
+/// types in the signature — see the module docs for why that matters for
+/// testing.
 fn encode_value(value: &Value) -> Result<Vec<u8>, CratestackError> {
-    CborCodec.encode(&CborValue(value))
+    CborCodec.encode(value)
 }
 
-/// Decodes CBOR bytes to a JSON value via `CborCodec`.
+/// Decodes CBOR bytes to a bridged JS value via `CborCodec`.
 fn decode_bytes(bytes: &[u8]) -> Result<Value, CratestackError> {
     CborCodec.decode(bytes)
 }
@@ -59,9 +60,8 @@ fn decode_bytes(bytes: &[u8]) -> Result<Value, CratestackError> {
 mod addon {
     use napi::bindgen_prelude::Uint8Array;
     use napi_derive::napi;
-    use serde_json::Value;
 
-    use crate::{decode_bytes, encode_value};
+    use crate::{JsCborValue, decode_bytes, encode_value};
     use cratestack_codec_cbor::CborCodec;
     use cratestack_core::{CratestackCodec, CratestackError};
 
@@ -77,19 +77,34 @@ mod addon {
         CborCodec::CONTENT_TYPE
     }
 
-    /// Encodes an arbitrary JS value to CBOR bytes.
+    /// Encodes an arbitrary JS value to CBOR bytes. A `Uint8Array` (or
+    /// Node `Buffer`, or `ArrayBuffer`) becomes a CBOR byte string
+    /// (RFC 8949 major type 2).
+    ///
+    /// `ts_arg_type`/`ts_return_type`: napi-derive names an unrecognised
+    /// Rust type verbatim in the generated `native.d.mts`, which for
+    /// `JsCborValue` would be a TypeScript type that doesn't exist. The
+    /// declared surface is `unknown`, matching this addon's TypeScript
+    /// wrapper (`packages/cratestack-cbor-node/src/index.ts`) and the
+    /// `CratestackRpcCodec` contract it satisfies. `serde_json::Value`
+    /// used to produce `any` here; `unknown` is the same shape, minus the
+    /// escape hatch.
     #[napi(catch_unwind)]
-    pub fn encode(value: Value) -> napi::Result<Uint8Array> {
-        encode_value(&value)
+    pub fn encode(#[napi(ts_arg_type = "unknown")] value: JsCborValue) -> napi::Result<Uint8Array> {
+        encode_value(&value.0)
             .map(Uint8Array::from)
             .map_err(to_napi_error)
     }
 
-    /// Decodes CBOR bytes to a JS value. Malformed input returns a
-    /// catchable `Error` — never a native crash.
-    #[napi(catch_unwind)]
-    pub fn decode(bytes: Uint8Array) -> napi::Result<Value> {
-        decode_bytes(bytes.as_ref()).map_err(to_napi_error)
+    /// Decodes CBOR bytes to a JS value; a CBOR byte string comes back as
+    /// a `Uint8Array`. Malformed input returns a catchable `Error` —
+    /// never a native crash. See [`encode`] for the `ts_return_type`
+    /// rationale.
+    #[napi(catch_unwind, ts_return_type = "unknown")]
+    pub fn decode(bytes: Uint8Array) -> napi::Result<JsCborValue> {
+        decode_bytes(bytes.as_ref())
+            .map(JsCborValue)
+            .map_err(to_napi_error)
     }
 }
 
@@ -102,6 +117,15 @@ mod tests {
 
     use super::*;
 
+    /// `serde_json::Value::from` -> `cratestack_core::Value`, so the
+    /// fixtures below can stay written as readable `json!` literals. This
+    /// is the same conversion `JsCborValue`'s napi bridge applies to
+    /// scalars, so it is not test-only sleight of hand — it is the real
+    /// path a JS number/string/bool/null takes.
+    fn value(json: serde_json::Value) -> Value {
+        Value::from_plain_json(json)
+    }
+
     #[test]
     fn content_type_matches_codec_constant() {
         assert_eq!(CborCodec::CONTENT_TYPE, "application/cbor");
@@ -112,10 +136,24 @@ mod tests {
         // Exercises the exact logic napi's `encode`/`decode` delegate to
         // (not just the underlying CborCodec in isolation), per the
         // ticket's "unit tests on the napi wrapper functions directly".
-        let value = json!({"cratestack": ["cool", "stack"], "n": 42});
-        let bytes = encode_value(&value).expect("encode should succeed");
+        let input = value(json!({"cratestack": ["cool", "stack"], "n": 42}));
+        let bytes = encode_value(&input).expect("encode should succeed");
         let decoded = decode_bytes(&bytes).expect("decode should succeed");
-        assert_eq!(decoded, value);
+        assert_eq!(decoded, input);
+    }
+
+    #[test]
+    fn bytes_round_trip_through_the_wrapper_functions_directly() {
+        // cratestack#783: the shape that used to be unrepresentable at
+        // this boundary at all. `0x44` is CBOR major type 2, length 4.
+        let input = Value::Bytes(vec![1, 2, 3, 4]);
+        let bytes = encode_value(&input).expect("encode should succeed");
+        assert_eq!(bytes, vec![0x44, 0x01, 0x02, 0x03, 0x04]);
+        assert_eq!(
+            decode_bytes(&bytes).expect("decode should succeed"),
+            input,
+            "a byte string must decode back as bytes, not as a list"
+        );
     }
 
     #[test]
@@ -123,8 +161,8 @@ mod tests {
         // The single most important test per the ticket: proves this
         // wrapper preserves cratestack-codec-cbor's documented
         // `Option::None` -> CBOR null (`0xf6`) behavior, not the
-        // `Value::Null`-via-`serialize_unit` empty-array (`0x80`) quirk
-        // its own test suite warns about.
+        // `serialize_unit` empty-array (`0x80`) quirk its own test suite
+        // warns about.
         let bytes = encode_value(&Value::Null).expect("encode null should succeed");
         assert_eq!(bytes, vec![0xf6]);
         let decoded = decode_bytes(&bytes).expect("decode should succeed");
@@ -158,19 +196,24 @@ mod tests {
         // boundary is what "byte-identical to the Rust CborCodec" (not
         // just same-language round-trips) actually proves; if this test
         // ever needs to change, the JS one needs the matching update.
+        //
+        // They are also the regression guard for cratestack#783's change
+        // of bridge type: swapping `serde_json::Value` for
+        // `cratestack_core::Value` had to leave every byte-free payload
+        // byte-identical, and these are the fixtures that prove it.
         assert_eq!(
-            hex(&encode_value(&json!(["cool", "stack"])).expect("encode")),
+            hex(&encode_value(&value(json!(["cool", "stack"]))).expect("encode")),
             "8264636f6f6c65737461636b"
         );
         assert_eq!(
-            hex(
-                &encode_value(&json!({"cratestack": ["cool", "stack"], "n": 42, "ok": true}))
-                    .expect("encode")
-            ),
+            hex(&encode_value(&value(
+                json!({"cratestack": ["cool", "stack"], "n": 42, "ok": true})
+            ))
+            .expect("encode")),
             "a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
         );
         assert_eq!(
-            hex(&encode_value(&json!({"a": null, "b": [1, null, "x"]})).expect("encode")),
+            hex(&encode_value(&value(json!({"a": null, "b": [1, null, "x"]}))).expect("encode")),
             "a26161f661628301f66178"
         );
     }

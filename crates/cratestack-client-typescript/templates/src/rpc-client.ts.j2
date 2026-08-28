@@ -4,7 +4,7 @@ import {
   type CratestackRpcClientOptions,
 } from "./runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
-import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
+import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
 {% for interface in interfaces %}
   {{ interface.name }},
@@ -54,7 +54,7 @@ export class {{ model.api_name }} {
       "model.{{ model.name }}.list",
       toRpcListInput(query),
       options,
-    ).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
+    ).then((value) => {% if model.is_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ model.revival_shape_name }}') as {{ model.list_return_type }});
   }
 
 {% endif %}
@@ -81,7 +81,7 @@ export class {{ model.api_name }} {
       "model.{{ model.name }}.get",
       input,
       options,
-    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
+    ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model.name }});
   }
 
 {% endif %}
@@ -91,7 +91,7 @@ export class {{ model.api_name }} {
       "model.{{ model.name }}.create",
       input,
       options,
-    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
+    ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model.name }});
   }
 
 {% endif %}
@@ -105,7 +105,7 @@ export class {{ model.api_name }} {
       "model.{{ model.name }}.update",
       { id, patch },
       options,
-    ).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model.name }});
+    ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model.name }});
   }
 
 {% endif %}
@@ -125,13 +125,13 @@ export class ProceduresApi {
   constructor(private readonly runtime: CratestackRpcRuntime) {}
 
 {% for procedure in procedures %}
-{% if procedure.decimal_revival_kind == "scalar" %}
+{% if procedure.revival_kind == "scalar" %}
   {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
     return this.runtime.call<{{ procedure.args_name }}, unknown>(
       "procedure.{{ procedure.name }}",
       args,
       options,
-    ).then((value) => reviveDecimalScalar(value) as {{ procedure.return_type }});
+    ).then((value) => reviveWireScalar(value, "{{ procedure.revival_scalar_kind }}") as {{ procedure.return_type }});
   }
 {% else %}
   {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
@@ -139,7 +139,7 @@ export class ProceduresApi {
       "procedure.{{ procedure.name }}",
       args,
       options,
-    ).then((value) => {% if procedure.decimal_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ procedure.decimal_shape_name }}') as {{ procedure.return_type }});
+    ).then((value) => {% if procedure.revival_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ procedure.revival_shape_name }}') as {{ procedure.return_type }});
   }
 {% endif %}
 

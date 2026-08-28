@@ -1,7 +1,22 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+{% if model_apis | length > 0 or procedures | length > 0 %}
+{# cratestack#785: `models.dart` is reached from the per-model API classes
+   (`{{ model.model_name }}`, `Page<T>`) and from each procedure's
+   generated `{{ procedure.args_name }}` wrapper — and from nowhere else,
+   so a schema with neither leaves it unsatisfied. #}
 import 'models.dart';
+{% endif %}
+{% if model_apis | length > 0 %}
+{# cratestack#785: every `queries.dart` symbol this file names
+   (`CratestackListQuery`/`CratestackFetchQuery`/`CratestackProjection`)
+   appears only inside the `model_apis` list/fetch query-builder loop
+   below, so a procedure-only schema emits a dead import. `flutter
+   analyze` reports `unused_import`, and `--fatal-warnings` — Dart's own
+   default, and what `just verify-dart` runs — turns that warning into a
+   failed build. #}
 import 'queries.dart';
+{% endif %}
 import 'runtime.dart';
 
 class {{ client_class_name }} {
