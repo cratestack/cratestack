@@ -48,21 +48,6 @@ package the range modifies. Builders emit exactly what 0.8.13 emitted.
 Raise this floor **only** when this builder starts reading a newly-added annotation field, never as
 part of a routine version bump: the version moves in lockstep with the CrateStack workspace, and the
 floor deliberately does not. See `docs/tooling/dart-publishing.md`.
-### The `cratestack_annotations` floor names a version that exists
-
-This package's `pubspec.yaml` declared `cratestack_annotations: ^0.8.8`, justified in a comment as
-"0.8.7 is the first release with the `touchFlagFields`/`nonDefaultingListFields` arguments this
-generator reads". Checked against pub.dev's API and the published archives rather than against the
-changelog, both halves were wrong: **0.8.8 was never published** (0.8.8 and 0.8.9 were skipped, so
-versions run 0.8.7 → 0.8.10) and **0.8.7 contains neither identifier**. 0.8.10 is the first release
-that does.
-
-It was harmless only by accident — a caret constraint resolves upward, so `^0.8.8` landed on 0.8.10
-anyway. The floor had rotted before anything could depend on it. It now reads `^0.8.10`, and the
-generated-client floors it sits alongside are backed by tests that read this pubspec, so raising one
-without the other fails rather than drifting quietly (cratestack#754).
-
-Nothing under `lib/` changed in this range; generator behaviour is identical to 0.8.13.
 
 ### A correction to this file
 
