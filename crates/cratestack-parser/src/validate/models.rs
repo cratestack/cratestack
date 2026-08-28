@@ -15,6 +15,7 @@ use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_list_arity_support,
     validate_field_policy_attributes, validate_field_reserved_identifier,
 };
+use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::model_relation::validate_field_relation;
 use crate::validate::patch_touch_flag_collisions::validate_no_touch_flag_collision;
@@ -161,6 +162,7 @@ pub(super) fn validate_models_collecting(
                 validate_field_policy_attributes(&model.name, field)?;
                 validate_default_dbgenerated_no_args(&model.name, field)?;
                 validate_removed_field_attributes("model", &model.name, field)?;
+                validate_misspelled_field_attributes("model", &model.name, field)?;
                 validate_field_list_arity_support(
                     schema_has_datasource,
                     &model.name,

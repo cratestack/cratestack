@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### A misspelled field attribute is now a parse error, not a silent no-op (#679)
+
+`.cstack` attributes parse generically and an unrecognised one is simply inert, so a typo'd
+`@raedonly` reported `schema OK` while quietly leaving the field ordinary and writable. The author
+got positive confirmation that a protection was in place when it was not — failing in the unsafe
+direction. (`@allow`/`@deny` at field position were already rejected; this is the typo half #679
+also reports.)
+
+**Maintainer decision: option (b), near-miss detection, not a closed attribute set.** An unknown
+attribute is rejected only when it is a near-miss of a name the language knows. `@raedonly` now fails
+and names `@readonly`; `@totallyBogusAttribute` stays inert exactly as before. Option (a) — reject
+anything not on an allowlist — matches the ticket's first criterion literally but commits the
+language to a closed set with real blast radius: the supported set has to be reconstructed from
+scattered comparisons with no in-repo spec, it must be correct for all five field-bearing
+declarations, and a too-narrow list breaks users' schemas on upgrade. That is a worse failure than
+the no-op it replaces.
+
+Distance is optimal string alignment — Levenshtein plus transposition as one edit. That is
+load-bearing, not a refinement: `raedonly` -> `readonly` is a transposition, costing 2 under plain
+Levenshtein, so without it the canonical case would need a looser threshold and far more noise.
+Names under three characters never produce a suggestion, since at that length almost anything is one
+edit from something.
+
+The reference set deliberately lists every attribute the language knows at *any* position, not just
+field-valid ones — under option (b) an extra name only reduces detections and can never cause a
+false rejection, while a missing one is the only real hazard. It includes the names
+`removed_attributes` rejects outright, so an exact `@allow` still gets that module's specific
+guidance rather than a generic suggestion.
+
+Verified against every committed schema, not just new fixtures: all 195 `.cstack` files in the repo
+were parsed before and after, and the result is byte-identical (189 parse, 6 are negative fixtures).
+The rejection test was observed failing with the check disabled, and both "must still parse" controls
+stay green in that state — so "reject everything" cannot satisfy the suite. All five field-bearing
+declarations (`model`, `view`, `mixin`, `type`, `auth`) are covered, because a missed call site fails
+silently, which is the exact bug.
+
 ### `--tanstack` rejects a procedure hook that collides with a model hook (#802)
 
 `--tanstack` emits per-model hooks (`use<Model>ListQuery`, `useCreate<Model>Mutation`, …) and
