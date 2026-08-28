@@ -1,3 +1,9 @@
+// A value import back into `models.ts`, which imports `JsonValue` from
+// this file in the other direction. The cycle is fine and already
+// established by `rpc-runtime.ts.j2`'s identical import: the other leg is
+// `import type`, which is erased entirely at compile time.
+import { encodeBinaryAsJson } from "{{ models_import_path }}";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
@@ -98,7 +104,13 @@ export class CratestackRuntime {
     let body: BodyInit | undefined;
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
-      body = JSON.stringify(options.body);
+      // `encodeBinaryAsJson` rewrites every `Uint8Array` (a `Bytes`
+      // field's client-side type) into the integer array the wire uses —
+      // `JSON.stringify` alone turns one into an index-keyed object no
+      // server-side `Vec<u8>` can decode. Unconditional here, unlike the
+      // RPC transport's codec-dependent handling, because a REST request
+      // body is always JSON.
+      body = JSON.stringify(encodeBinaryAsJson(options.body));
     }
 
     for (const [key, value] of new Headers(options.headers)) {

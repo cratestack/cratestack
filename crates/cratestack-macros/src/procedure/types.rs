@@ -10,7 +10,7 @@ use cratestack_core::{Procedure, TypeArity, TypeDecl};
 use quote::quote;
 
 use crate::builder::{BuilderField, generate_builder};
-use crate::shared::{doc_attrs, ident, value_tokens};
+use crate::shared::{bytes_serde_attr, doc_attrs, ident, value_tokens};
 
 use super::type_tokens::procedure_type_tokens;
 
@@ -81,8 +81,16 @@ pub(super) fn generate_procedure_args_struct(
         let field_ident = ident(&arg.name);
         let field_type = procedure_type_tokens(&arg.ty, types, enum_names);
         let docs = doc_attrs(&arg.docs);
+        // An `Args` field carries no serde attributes of its own, so a
+        // `Bytes` argument brings its whole `#[serde(...)]` list. This is
+        // the case cratestack#783 was actually reported against — a
+        // `Bytes` argument on an RPC procedure, where `POST
+        // /rpc/procedure.<name>` decodes the body straight into this
+        // struct.
+        let serde_attr = bytes_serde_attr(&arg.ty, false);
         quote! {
             #docs
+            #serde_attr
             pub #field_ident: #field_type,
         }
     });
@@ -149,8 +157,16 @@ pub(super) fn generate_client_procedure_args_struct(
         let field_ident = ident(&arg.name);
         let field_type = procedure_type_tokens(&arg.ty, types, enum_names);
         let docs = doc_attrs(&arg.docs);
+        // An `Args` field carries no serde attributes of its own, so a
+        // `Bytes` argument brings its whole `#[serde(...)]` list. This is
+        // the case cratestack#783 was actually reported against — a
+        // `Bytes` argument on an RPC procedure, where `POST
+        // /rpc/procedure.<name>` decodes the body straight into this
+        // struct.
+        let serde_attr = bytes_serde_attr(&arg.ty, false);
         quote! {
             #docs
+            #serde_attr
             pub #field_ident: #field_type,
         }
     });

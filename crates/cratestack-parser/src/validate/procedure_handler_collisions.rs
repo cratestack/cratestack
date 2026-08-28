@@ -1,0 +1,137 @@
+//! Collision detection between a bespoke `procedure` name and the
+//! per-model CRUD handler idents `include_server_schema!` emits into the
+//! same generated axum module.
+//!
+//! The two idents are formed independently and were never compared:
+//!
+//! - procedures → `handle_{to_snake_case(procedure.name)}` and
+//!   `handle_{…}_dispatch` (`cratestack-macros/src/axum/procedure.rs`,
+//!   `.../transport/rpc.rs`)
+//! - models → `handle_{list,create}_{pluralize(to_snake_case(model.name))}`
+//!   and `handle_{get,update,delete}_{to_snake_case(model.name)}`, each
+//!   with a matching `_dispatch` twin
+//!   (`cratestack-macros/src/axum/model/prep.rs`,
+//!   `.../axum/model/routes.rs`, `.../transport/rpc/model_dispatch.rs`)
+//!
+//! So `model Order` + `procedure getOrder` both generate `handle_get_order`
+//! (and `handle_get_order_dispatch`). `cratestack check` reported `schema
+//! OK` and the only diagnostic was a raw rustc `error[E0428]: the name
+//! `handle_get_order` is defined multiple times`, which names neither the
+//! procedure, nor the model, nor the fix — the same opacity
+//! [`super::snake_case_collisions::validate_model_name_collisions`] was
+//! added to close for `FOO_MODEL`.
+//!
+//! `@@internal(...)` suppression is deliberately *not* an exemption:
+//! `axum/model/routes.rs` only omits the `.route(...)` registration for a
+//! suppressed verb, the handler and dispatch functions themselves are
+//! emitted unconditionally, so the ident collides either way.
+//!
+//! Like [`super::route_collisions`], this is a schema-wide parser check
+//! rather than a guard inside one codegen path. The colliding idents only
+//! exist on the server path (`include_embedded_schema!` ignores procedures
+//! entirely; `include_client_schema!` names its methods differently), but a
+//! schema shaped this way is broken for *any* server consumption, and the
+//! whole point of the report is that `cratestack check` should say so
+//! instead of deferring to rustc.
+
+use std::collections::BTreeMap;
+
+use cratestack_core::Schema;
+use cratestack_core::route_naming::{pluralize, to_snake_case};
+
+use crate::diagnostics::{SchemaError, span_error};
+
+/// The five generated CRUD operations, as `(operation, ident stem)` pairs
+/// for one model — mirroring `cratestack-macros/src/axum/model/prep.rs`'s
+/// `handle_*` / `handle_*_dispatch` construction exactly. `list`/`create`
+/// key off the pluralized stem (they hang off the collection route),
+/// `get`/`update`/`delete` off the singular one.
+fn model_handler_stems(model_name: &str) -> [(&'static str, String); 5] {
+    let snake = to_snake_case(model_name);
+    let plural = pluralize(&snake);
+    [
+        ("list", format!("list_{plural}")),
+        ("create", format!("create_{plural}")),
+        ("get", format!("get_{snake}")),
+        ("update", format!("update_{snake}")),
+        ("delete", format!("delete_{snake}")),
+    ]
+}
+
+/// Reject a `procedure` whose generated axum handler ident is already
+/// taken by a model's generated CRUD handler, naming the procedure, the
+/// model, the operation, the shared ident, and the fix.
+///
+/// Both of a procedure's generated idents are checked against both of each
+/// model's — so `procedure getOrder` (`handle_get_order`) and `procedure
+/// getOrderDispatch` (`handle_get_order_dispatch`) are caught alike,
+/// rather than only the first.
+pub(super) fn validate_procedure_model_handler_collisions(
+    schema: &Schema,
+) -> Result<(), SchemaError> {
+    if schema.models.is_empty() || schema.procedures.is_empty() {
+        return Ok(());
+    }
+
+    // ident -> (model name, operation). First writer wins: two models
+    // generating the same handler ident is already rejected upstream by
+    // `snake_case_collisions`/`route_collisions`, so the entry that lands
+    // here is the only one a message would ever want to name.
+    let mut generated: BTreeMap<String, (&str, &'static str)> = BTreeMap::new();
+    for model in &schema.models {
+        for (operation, stem) in model_handler_stems(&model.name) {
+            generated
+                .entry(format!("handle_{stem}"))
+                .or_insert((model.name.as_str(), operation));
+            generated
+                .entry(format!("handle_{stem}_dispatch"))
+                .or_insert((model.name.as_str(), operation));
+        }
+    }
+
+    for procedure in &schema.procedures {
+        let snake = to_snake_case(&procedure.name);
+        for handler in [
+            format!("handle_{snake}"),
+            format!("handle_{snake}_dispatch"),
+        ] {
+            let Some((model_name, operation)) = generated.get(handler.as_str()) else {
+                continue;
+            };
+            return Err(span_error(
+                format!(
+                    "procedure `{procedure}` collides with the generated `{operation}` CRUD \
+                     handler for model `{model_name}` — both emit `{handler}` into the axum \
+                     module generated by `include_server_schema!` (and the matching RPC \
+                     dispatch arm), which fails to compile as `error[E0428]`; rename the \
+                     procedure",
+                    procedure = procedure.name,
+                ),
+                procedure.name_span,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_stems_track_the_macro_naming_scheme() {
+        let stems = model_handler_stems("SubOrder");
+        let stems: Vec<&str> = stems.iter().map(|(_, stem)| stem.as_str()).collect();
+        assert_eq!(
+            stems,
+            vec![
+                "list_sub_orders",
+                "create_sub_orders",
+                "get_sub_order",
+                "update_sub_order",
+                "delete_sub_order",
+            ]
+        );
+    }
+}

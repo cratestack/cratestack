@@ -48,7 +48,26 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         "Int" | "Float" => "number".to_owned(),
         "Boolean" => "boolean".to_owned(),
         "Json" => "JsonValue".to_owned(),
-        "Bytes" => "number[]".to_owned(),
+        // cratestack#783 follow-up: a real `Uint8Array`, in *both*
+        // directions, matching what the Dart client has always done
+        // (`cratestack-client-dart`'s `dart_types.rs` maps `Bytes` to
+        // `Uint8List` and converts at the wire boundary in
+        // `wire_encode.rs`/`wire_decode.rs`). A `Bytes` field still
+        // *travels* as an array of integers — the server's outbound shape
+        // is unchanged — so the conversion happens in the generated
+        // runtime: `encodeBinaryAsJson` on the way out (JSON transports
+        // only; the native CBOR codec takes the `Uint8Array` directly and
+        // emits a byte string), and the `bytesKeys`/`bytesListKeys` arms
+        // of `models.ts.j2`'s shape walk on the way back.
+        //
+        // Deliberately not `Uint8Array | number[]`: a union would have to
+        // be narrowed by every *reader*, and it cannot be applied
+        // consistently anyway — a `type` block is a single generated
+        // interface that can sit in an argument position, a return
+        // position, or both (`procedure seal(env: Envelope): Envelope`),
+        // so there is no input-only place to widen it. One type in both
+        // directions has no such ambiguity.
+        "Bytes" => "Uint8Array".to_owned(),
         other if enum_names.contains(other) => other.to_owned(),
         other => other.to_owned(),
     };
@@ -189,4 +208,52 @@ pub(crate) fn version_field(model: &Model) -> Option<&Field> {
             .iter()
             .any(|attribute| attribute.raw == "@version")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cratestack_core::SourceSpan;
+
+    fn type_ref(name: &str, arity: TypeArity) -> TypeRef {
+        TypeRef {
+            name: name.to_owned(),
+            name_span: SourceSpan {
+                start: 0,
+                end: 0,
+                line: 1,
+            },
+            arity,
+            generic_args: Vec::new(),
+            int_args: Vec::new(),
+        }
+    }
+
+    fn rendered(name: &str, arity: TypeArity) -> String {
+        ts_type(&type_ref(name, arity), &BTreeSet::new())
+    }
+
+    #[test]
+    fn bytes_is_a_uint8_array_at_every_arity() {
+        // The headline of cratestack#783's follow-up. Pinned here because
+        // every other check of it is indirect (a snapshot, or the vitest
+        // round-trip suite), and this is the one line a well-meaning
+        // "TypeScript prefers plain arrays" change would flip back.
+        assert_eq!(rendered("Bytes", TypeArity::Required), "Uint8Array");
+        assert_eq!(rendered("Bytes", TypeArity::Optional), "Uint8Array | null");
+        assert_eq!(rendered("Bytes", TypeArity::List), "Uint8Array[]");
+    }
+
+    #[test]
+    fn an_int_list_stays_a_plain_number_array() {
+        // `Int[]` and `Bytes` are the same `number[]` on the wire, so the
+        // two must stay visibly different in the generated types — the
+        // type-level half of the same distinction
+        // `crate::wire_shapes` draws for decode-time revival.
+        assert_eq!(rendered("Int", TypeArity::List), "number[]");
+        assert_ne!(
+            rendered("Int", TypeArity::List),
+            rendered("Bytes", TypeArity::List)
+        );
+    }
 }

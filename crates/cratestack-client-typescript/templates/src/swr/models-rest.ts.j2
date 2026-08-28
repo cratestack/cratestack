@@ -29,10 +29,10 @@ import {
 // is threading a per-model "does it need Decimal" flag through the
 // ownership computation for a type-only import that costs nothing when
 // unused (this package's `tsconfig.json.j2` doesn't set
-// `noUnusedLocals`). `reviveDecimalFields` is a real (non-type) import:
+// `noUnusedLocals`). `reviveWireFields` is a real (non-type) import:
 // every function below that decodes a server response calls it, same as
 // the `default` preset's `rest-client.ts.j2`.
-import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
+import { reviveWireFields, revivePagedWireFields, type Decimal } from "./shared.js";
 {% for import in imports %}
 import type { {{ import.type_names_joined }} } from "{{ import.path }}";
 {% endfor %}
@@ -93,7 +93,7 @@ export async function {{ list_fn }}(
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  }).then((value) => {% if model.is_paged %}revivePagedDecimalFields{% else %}reviveDecimalFields{% endif %}(value, '{{ model.decimal_shape_name }}') as {{ model.list_return_type }});
+  }).then((value) => {% if model.is_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ model.revival_shape_name }}') as {{ model.list_return_type }});
 }
 
 {% endif %}
@@ -107,7 +107,7 @@ export async function {{ get_fn }}(
     headers: options.headers,
     query: toSearchQuery(options.query),
     signal: options.signal,
-  }).then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
+  }).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model_interface.name }});
 }
 
 // Same call as `{{ get_fn }}`, but returns the response alongside the
@@ -126,7 +126,7 @@ export async function {{ get_with_response_fn }}(
     query: toSearchQuery(options.query),
     signal: options.signal,
   }).then((result) => ({
-    value: reviveDecimalFields(result.value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }},
+    value: reviveWireFields(result.value, '{{ model.revival_shape_name }}') as {{ model_interface.name }},
     response: result.response,
   }));
 }
@@ -139,7 +139,7 @@ export async function {{ create_fn }}(
   options: CratestackRequestConfig = {},
 ): Promise<{{ model_interface.name }}> {
   return runtime.post<unknown>("{{ model.route }}", input, options)
-    .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
+    .then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model_interface.name }});
 }
 
 {% endif %}
@@ -154,7 +154,7 @@ export async function {{ update_fn }}(
     headers: withIfMatchHeader(options.headers, options.ifMatch),
     signal: options.signal,
   })
-    .then((value) => reviveDecimalFields(value, '{{ model.decimal_shape_name }}') as {{ model_interface.name }});
+    .then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model_interface.name }});
 }
 
 {% endif %}

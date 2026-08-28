@@ -14,7 +14,7 @@
 
 import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
 import { terminalStreamLink } from "./stream-terminal.js";
-import { encodeDecimalFields } from "./models.js";
+import { encodeBinaryAsJson, encodeWireFields } from "./models.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -46,7 +46,18 @@ export interface CratestackRpcCodec {
 export const jsonRpcCodec: CratestackRpcCodec = {
   contentType: "application/json",
   encode(value: unknown): BodyInit {
-    return JSON.stringify(value ?? null);
+    // `encodeBinaryAsJson` rewrites every `Uint8Array` (a `Bytes` field's
+    // client-side type) into the integer array the wire uses. Applied
+    // here rather than in `terminalLink`'s shared `encodeWireFields` pass
+    // on purpose: a native CBOR codec wants the real `Uint8Array` so it
+    // can emit a compact byte string, and only this JSON path needs the
+    // lossy-looking conversion. See that function's own doc comment for
+    // why `JSON.stringify` can't do it.
+    //
+    // (Deliberately no package name in this comment: `native_cbor: false`
+    // builds assert that `runtime.ts` never mentions the native codec
+    // package at all — see `tests/native_cbor_generator.rs`.)
+    return JSON.stringify(encodeBinaryAsJson(value) ?? null);
   },
   decode(bytes: Uint8Array): unknown {
     if (bytes.length === 0) {
@@ -181,7 +192,7 @@ export const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
  *  runs last regardless of what `links` declares; `reduceRight` wraps
  *  every declared link around this.
  *
- *  `encodeDecimalFields(request.input)` runs immediately before
+ *  `encodeWireFields(request.input)` runs immediately before
  *  `codec.encode()` — the one place every unary AND batch request body
  *  reaches a codec, so this single call site covers a `batch()` payload's
  *  own per-frame `input` fields too (the encoder recurses through the
@@ -193,7 +204,7 @@ const terminalLink: RpcLinkNext = async (request) => {
   const response = await request.fetchFn(url, {
     method: "POST",
     headers: request.headers,
-    body: request.codec.encode(encodeDecimalFields(request.input)),
+    body: request.codec.encode(encodeWireFields(request.input)),
     signal: request.signal,
   });
   return { response };

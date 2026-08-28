@@ -1,8 +1,28 @@
 rules:
   - id: rust-unwrap-in-lib
-    pattern-either:
-      - pattern: $X.unwrap()
-      - pattern: $X.expect(...)
+    patterns:
+      - pattern-either:
+          - pattern: $X.unwrap()
+          - pattern: $X.expect(...)
+      # The other half of the unit-test problem the `paths: exclude:`
+      # comment below describes, and the half a path glob structurally
+      # cannot reach: the `#[cfg(test)] mod tests { ... }` form, written
+      # *inline* in a source file that also holds production code. There
+      # is no path to exclude — `wasm.rs` is a real library file — so this
+      # has to be a pattern condition, not a glob.
+      #
+      # Matches on the module's conventional name rather than the
+      # `#[cfg(test)]` attribute: `pattern-not-inside` with the attribute
+      # attached does not suppress the inner match (measured against the
+      # pinned semgrep 1.171.0 — both the production and the in-test
+      # `.expect()` still fired), while the bare `mod tests { ... }` form
+      # correctly excludes only the test module. That is the same
+      # name-based heuristic the `**/tests.rs` / `**/*_test.rs` globs
+      # below already rely on, so it adds no new assumption. Verified in
+      # the same run that an `.expect()` in ordinary production code
+      # outside such a module is still reported.
+      - pattern-not-inside: |
+          mod tests { ... }
     message: |
       .unwrap() or .expect() found in library code.
       Library crates should propagate errors with ? operator or return Result types.
@@ -64,6 +84,42 @@ rules:
       document the safety invariants above the block.
     languages: [rust]
     severity: ERROR
+    paths:
+      exclude:
+        # The five FFI-boundary crates that deliberately override the
+        # workspace `unsafe_code = "forbid"` with `unsafe_code = "allow"`
+        # in their own Cargo.toml, each with a comment explaining why
+        # (napi-derive trampolines, flutter_rust_bridge glue, a raw C-ABI
+        # export). Keep this list in sync with `grep -rl 'unsafe_code =
+        # "allow"' --include=Cargo.toml`.
+        #
+        # Excluded rather than annotated per block, because this rule
+        # cannot do what its own message asks for. The pattern is a bare
+        # AST match on `unsafe { ... }`, and semgrep patterns do not see
+        # comments — so a block carrying a perfectly good `// SAFETY:`
+        # paragraph still matches. Measured, not assumed: with
+        # semgrep 1.171.0 (the pinned version), a block preceded by a
+        # `// SAFETY:` comment still fires; only a `// nosemgrep:` line
+        # suppresses it. In a crate that is nothing *but* FFI
+        # trampolines, that makes the rule a 100% false-positive
+        # generator, and the fix would be ~15 `nosemgrep` lines in one
+        # 185-line file — suppressions that say nothing a reader can use.
+        #
+        # This does not weaken the actual policy. `unsafe_code` is
+        # enforced at the *compiler* level, workspace-wide, via
+        # `[workspace.lints.rust]` — a hard error, not an advisory — and
+        # `just verify-lints-optin` (a CI job, `.ci/lints-workspace-check.sh`)
+        # proves every member opts in. A crate can only reach this
+        # exclusion list by first declaring the override in its own
+        # manifest, which is a visible, reviewable act. This rule was only
+        # ever a redundant second opinion on top of that gate, and it
+        # remains fully live everywhere else — including any *new* crate
+        # that adds an override without also being added here.
+        - crates/cratestack-cbor-napi/
+        - crates/cratestack-client-flutter/
+        - examples/embedded-flutter/native/
+        - examples/embedded-expo/native/
+        - examples/react-nextjs-daisyui/napi/
     metadata:
       category: safety
       cwe: "CWE-710: Improper Adherence to Coding Standards"

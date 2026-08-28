@@ -93,9 +93,15 @@ pub(crate) fn field_definition_with_wire_scope(
     let field_ident = ident(&field.name);
     let docs = doc_attrs(&field.docs);
     let field_type = field_type_with_wire_scope(field, bearing);
+    // Mirrors [`super::field_definition`]'s `Bytes` handling — a wire
+    // `type` struct is always `wrap_for_patch = false` (response-only),
+    // so the shape it needs is the non-patch row of the table in
+    // `super::bytes_serde` (cratestack#783).
+    let serde_attr = super::bytes_serde_attr(&field.ty, false);
 
     quote! {
         #docs
+        #serde_attr
         pub #field_ident: #field_type,
     }
 }

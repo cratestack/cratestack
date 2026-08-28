@@ -15,6 +15,8 @@
 //!   create-handler auth preflight.
 
 mod filter_arms;
+#[cfg(test)]
+mod handler_collision_tests;
 mod model;
 mod policy_attr;
 mod procedure;

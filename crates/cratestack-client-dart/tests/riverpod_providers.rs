@@ -134,9 +134,9 @@ fn every_procedure_gets_a_provider_shaped_by_its_kind() {
     );
     let procedures = package_file(&package, "lib/src/procedures.dart");
 
-    // `listPosts` is a query procedure -> plain function provider.
+    // `searchPosts` is a query procedure -> plain function provider.
     assert!(
-        procedures.contains("Future<List<Post>> listPosts(Ref ref, ListPostsArgs args) {\n  return ref.watch(dartVerifyRiverpodCiRpcProceduresApiProvider).listPosts(args);\n}"),
+        procedures.contains("Future<List<Post>> searchPosts(Ref ref, SearchPostsArgs args) {\n  return ref.watch(dartVerifyRiverpodCiRpcProceduresApiProvider).searchPosts(args);\n}"),
         "query procedure provider missing or not built on the existing ProceduresApi provider:\n{procedures}"
     );
 
@@ -444,7 +444,7 @@ fn every_riverpod_data_class_gets_mappable_class_and_mixin() {
     // A model class (`Post`), its `Create`/`Update` inputs, a shared
     // `type` (`PostStatusFilter`, owned by `Owner::Shared` since both
     // the procedure and no single model reach it exclusively), and a
-    // procedure argument wrapper (`ListPostsArgs`) — every shape
+    // procedure argument wrapper (`SearchPostsArgs`) — every shape
     // `build_data_class` produces — must all carry the annotation and
     // the generated mixin, not just models. Issue #668 phase 2:
     // `@CratestackBuilder(...)` now sits between `@MappableClass(...)` and
@@ -468,14 +468,14 @@ fn every_riverpod_data_class_gets_mappable_class_and_mixin() {
     let procedures = package_file(&package, "lib/src/procedures.dart");
     assert!(
         procedures.contains(
-            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n@CratestackBuilder()\nclass ListPostsArgs with ListPostsArgsMappable {"
+            "@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)\n@CratestackBuilder()\nclass SearchPostsArgs with SearchPostsArgsMappable {"
         ),
-        "the listPosts procedure's generated argument wrapper should be @MappableClass()/\
+        "the searchPosts procedure's generated argument wrapper should be @MappableClass()/\
          @CratestackBuilder()-annotated (this is the exact shape issue #325's bug report \
          reproduced against: a generated class used as a riverpod family provider's argument, \
-         e.g. `listPosts(Ref ref, ListPostsArgs args)`):\n{procedures}"
+         e.g. `searchPosts(Ref ref, SearchPostsArgs args)`):\n{procedures}"
     );
-    // `PostStatusFilter` is reached only by the `listPosts` procedure (no
+    // `PostStatusFilter` is reached only by the `searchPosts` procedure (no
     // model references it), so the partition (`Owner::Procedures`) inlines
     // it into `procedures.dart` rather than `shared_types.dart` — same
     // ownership rule `riverpod_shared_ownership_inlines_procedure_only_types_into_procedures_dart`

@@ -16,7 +16,7 @@
 //!
 //! cratestack#499 (the `swr` preset's F3 decode-side revival fix): unlike
 //! before, `getWidget` (and every generated model function) now really
-//! does `import { reviveDecimalFields } from "./shared.js"` — a genuine
+//! does `import { reviveWireFields } from "./shared.js"` — a genuine
 //! (not type-only) import — which in turn genuinely imports `decimal.js`,
 //! regardless of whether `Widget` itself has a `Decimal` field. `npm
 //! install` is required before running the smoke script now, mirroring

@@ -1,0 +1,33 @@
+// cratestack#785: a procedure-only REST gateway — `transport rest`, a
+// datasource, and NOT ONE `model` block. This is the shape the report was
+// filed against (`vaam-store/platform`'s `p2p.cstack`, a pairing relay),
+// and the shape that used to generate `import 'queries.dart';` into
+// `apis.dart` and `import 'models.dart';` into `queries.dart` with
+// nothing on either side to reference them.
+//
+// It is in `just verify-dart`'s default-preset fixture list on purpose:
+// the only thing that catches a dead import is a real analyzer, and
+// `verify_pkg` runs `flutter analyze --fatal-warnings`. The text-level
+// half lives in `tests/zero_model_imports.rs`.
+//
+// Deliberately keeps a procedure (rather than being wholly empty) so the
+// `models.dart` import that IS live — every procedure gets a generated
+// `{Procedure}Args` wrapper there — stays exercised alongside the two
+// that are not.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+transport rest
+
+auth SessionUser {
+  id Int
+}
+
+procedure ping(message: String): String
+  @allow(auth() != null)
+
+mutation procedure pair(peerId: String, nonce: String): Boolean
+  @allow(auth() != null)
