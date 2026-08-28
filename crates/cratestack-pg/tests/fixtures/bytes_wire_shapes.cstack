@@ -1,0 +1,47 @@
+// cratestack#783 regression fixture. `@cratestack/cbor` encodes a JS
+// `Uint8Array` as a CBOR byte string (RFC 8949 major type 2), which the
+// generated `Vec<u8>` fields used to reject outright — the reported
+// symptom was a `400 invalid_argument` on a `Bytes` procedure argument
+// over `transport rpc`, before the handler was ever reached.
+//
+// Covers every generated field shape a `Bytes` type can take, since each
+// one is emitted by a different function and needs its own
+// `deserialize_with` (see `cratestack-macros/src/shared/bytes_serde.rs`):
+// procedure `Args` (the reported case), a `type` block, and a model —
+// which additionally produces `CreateBlobInput` (unwrapped) and
+// `UpdateBlobInput` (patch-wrapped, single and double `Option`).
+//
+// `transport` is left at the REST default deliberately: RPC dispatch
+// decodes `POST /rpc/procedure.<name>` straight into the same
+// `procedures::<name>::Args` struct this fixture generates, so the decode
+// behaviour under test is transport-independent — see
+// `cratestack-macros/src/transport/rpc.rs`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+type SealedEnvelope {
+  nonce Bytes
+  aad Bytes?
+  chunks Bytes[]
+}
+
+model Blob {
+  id Int @id
+  digest Bytes
+  signature Bytes?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+procedure sealMailbox(payload: Bytes, aad: Bytes?, chunks: Bytes[]): SealedEnvelope
+  @allow(auth() != null)

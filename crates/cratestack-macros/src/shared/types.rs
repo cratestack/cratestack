@@ -87,9 +87,16 @@ pub(crate) fn field_definition(
     let field_ident = ident(&field.name);
     let docs = doc_attrs(&field.docs);
     let field_type = field_type(field, wrap_for_patch, custom_in_super);
+    // A `type`-block field carries no serde attributes of its own, so a
+    // `Bytes` field brings its whole `#[serde(...)]` list — including the
+    // `default` that keeps an omitted nullable field decoding as `None`
+    // once `deserialize_with` suppresses serde-derive's implicit handling.
+    // See `super::bytes_serde` (cratestack#783).
+    let serde_attr = super::bytes_serde_attr(&field.ty, wrap_for_patch);
 
     quote! {
         #docs
+        #serde_attr
         pub #field_ident: #field_type,
     }
 }

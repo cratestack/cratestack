@@ -10,7 +10,7 @@
 //! --workspace` never require the wasm32 target or `wasm-bindgen-cli`.
 //! Only `wasm-pack build --target web` (which needs the wasm32 target)
 //! produces the real `.wasm` artifact this package ships.
-mod json_bridge;
+mod value_bridge;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
