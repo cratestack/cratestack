@@ -196,8 +196,31 @@ independently verifies crates.io/npm rather than trusting the checkmark, confirm
 * Open VSX (dormant until configured, see above):
   `https://open-vsx.org/extension/cratestack/cratestack-vscode` shows the new version.
 
-## Known gap: no extension icon
+## Extension icon
 
-Neither the Marketplace nor Open VSX require an `icon` in `package.json` to accept a publish, but
-both listings look bare without one — worth adding a square PNG (`icon` field pointing at it) in a
-follow-up, not a blocker for the first release.
+`packages/cratestack-vscode/icon.png` — a 256x256 PNG, referenced by `package.json`'s `icon` field
+and paired with a `galleryBanner` (`#1E222E`, dark theme). It ships inside every `.vsix`: the field
+is platform-independent, so all five `vsce_target` builds carry it without per-target work.
+
+This closed cratestack#782. Neither registry *requires* an icon to accept a publish, which is why the
+extension went without one for its first releases — but both listings, and the in-editor Extensions
+sidebar after a manual `.vsix` install, fall back to a generic grey placeholder without it.
+
+Constraints worth knowing before changing it, because a Marketplace publish cannot be cleanly deleted
+and retried:
+
+* **PNG only.** SVG is rejected.
+* **Square, at least 128x128.** 256 is the source size here, for HiDPI listing rendering.
+* **`.vscodeignore` is a denylist**, so a top-level asset is included by default — but that also means
+  a future entry could silently exclude it. Verify against the built archive, not the source tree:
+
+  ```
+  pnpm run package:vsix && unzip -l ./*.vsix | grep -i icon
+  ```
+
+  (`package:vsix` runs `stage-server` first, which needs `cargo build --release -p cratestack-lsp`.)
+
+`test/icon.test.js` guards the manifest half offline — that the field exists, that it resolves to a
+real file, and that the file is a square PNG of at least 128x128, reading the dimensions straight out
+of the PNG IHDR chunk. It deliberately does *not* assert the archive contents; the source tree is the
+wrong place to detect a `.vscodeignore` exclusion, hence the `unzip` check above.

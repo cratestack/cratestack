@@ -50,6 +50,30 @@ existed before the diff — naming the file, the line, and the offending section
 itself adds (historical misfilings already on `main` do not retroactively fail future PRs), and a
 release bump's legitimate promotion of `## Unreleased` into a freshly-created dated section is not a
 violation, whether or not that promotion also adds entries under the same, newly-created heading (#739).
+### `cratestack-vscode` ships an extension icon (#782)
+
+The extension declared no `icon`, so the Marketplace, Open VSX, and the in-editor Extensions sidebar
+after a manual `.vsix` install all rendered the generic grey placeholder. For a pre-1.0 framework
+asking people to trust its codegen, an unbranded listing reads as abandoned or unofficial — and it is
+cheap to fix now, awkward once a listing is live and indexed.
+
+`packages/cratestack-vscode/icon.png` is a 256x256 PNG (Marketplace rejects SVG and enforces a
+128x128 floor; 256 is the safer HiDPI source), paired with a `galleryBanner`. There was no CrateStack
+mark to derive from, so the artwork was approved by the maintainer rather than defaulted by the
+implementation — the ticket called that out specifically, to avoid a placeholder becoming permanent
+by being first. The mark is a stack of three isometric crates.
+
+Verified inside the built archive rather than in the source tree, since `.vscodeignore` is a denylist
+and a future entry could exclude a file that exists on disk: `unzip -l ./*.vsix` lists
+`extension/icon.png`, and its sha256 matches the committed file. The field is platform-independent,
+so all five `vsce_target` builds carry it.
+
+`test/icon.test.js` guards the manifest half offline — the field exists, resolves to a real file, and
+that file is a square PNG of at least 128x128 (dimensions read from the PNG IHDR chunk, no image
+dependency). Proven by breaking it both ways the ticket names: removing the `icon` field fails three
+assertions, and renaming the file on disk while leaving the field in place fails two. Neither break
+disturbs the build, the lint, or `vsce package` — which is exactly why the test exists.
+
 ### Every generated dependency constraint is an API floor, not the workspace version (#779)
 
 #754 established the rule — *a generated dependency constraint states an API compatibility
