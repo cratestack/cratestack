@@ -1210,7 +1210,15 @@ cleanup_noop_fixture_repo() {
 test_header "Test 27 (cratestack#713): zero commits in the declared no-op scope writes the standard no-op wording, no manual edit needed, gate passes"
 setup_noop_fixture_repo
 TEST_DIR=$(mktemp -d)
-SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+# cratestack#740: SANDBOX_CHANGELOG lives INSIDE NOOP_GIT_DIR (sibling to
+# pkg/vendor-a/vendor-b, outside all three scope dirs — the commit-counting
+# semantics this test exercises are unchanged), not in the unrelated
+# $TEST_DIR. changelog-seed.sh's #740 fix appends a `:(exclude)$CHANGELOG_FILE`
+# pathspec derived from the map key, and git's exclude magic hard-errors
+# ("outside repository") if that path isn't under the GIT_WORK_TREE being
+# scanned — exactly what a changelog file disconnected from its own repo's
+# history never is in production.
+SANDBOX_CHANGELOG="$NOOP_GIT_DIR/CHANGELOG.md"
 cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
 # Changelog
 
@@ -1282,7 +1290,9 @@ git -C "$NOOP_GIT_DIR" add -A
 git -C "$NOOP_GIT_DIR" commit -q -m "fix: a real change reaching the vendored artifact, not the package directory"
 
 TEST_DIR=$(mktemp -d)
-SANDBOX_CHANGELOG="$TEST_DIR/CHANGELOG.md"
+# cratestack#740: see the identical note on Test 27 — must live inside
+# NOOP_GIT_DIR for the new `:(exclude)$CHANGELOG_FILE` pathspec to resolve.
+SANDBOX_CHANGELOG="$NOOP_GIT_DIR/CHANGELOG.md"
 cat > "$SANDBOX_CHANGELOG" <<'FIXTURE'
 # Changelog
 
@@ -1560,6 +1570,128 @@ fi
 
 rm -rf "$TEST_DIR"
 TEST_DIR=""
+
+# Test 32 (cratestack#740): the no-op scope for a package INCLUDES the
+# package's own CHANGELOG.md (see changelog-files.sh's CHANGELOG_NOOP_SCOPES
+# comment — the scope is deliberately the whole package directory), so a
+# commit that touches ONLY that file used to register as a "functional
+# change" to the package, arming the placeholder seed for a release that
+# had no real change at all. Self-perpetuating: the hand-written fix for
+# each occurrence is itself exactly this kind of commit, arming the next
+# bump (#728 -> #731 -> #736 -> 3de442b8 -> 0.8.14 armed). The fix appends
+# `:(exclude)$CHANGELOG_FILE` — derived from the map key actually being
+# looked up, not a hardcoded per-package literal — to the pathspec.
+#
+# The changelog file lives INSIDE the fixture repo's scope directory here
+# (unlike Tests 27/28's SANDBOX_CHANGELOG, which is deliberately outside
+# NOOP_GIT_DIR because those tests don't care where the write target sits)
+# because THIS defect is specifically about a file that IS part of the
+# scope being excluded from itself — a real changelog always lives inside
+# its own package's directory, which is always part of that package's own
+# scope.
+test_header "Test 32 (cratestack#740): a commit touching ONLY the package's own CHANGELOG.md does not count as a functional change — auto-fill fires"
+setup_noop_fixture_repo
+PKG_CHANGELOG="$NOOP_GIT_DIR/pkg/CHANGELOG.md"
+cat > "$PKG_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$NOOP_GIT_DIR" add -A
+git -C "$NOOP_GIT_DIR" commit -q -m "docs: hand-fix the previous seed (touches only this package's own CHANGELOG.md)"
+
+TEST_DIR=$(mktemp -d)
+NOOP_SOURCE="$TEST_DIR/changelog-files-noop.sh"
+cat > "$NOOP_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$PKG_CHANGELOG")
+declare -A CHANGELOG_NOOP_SCOPES=(
+  ["$PKG_CHANGELOG"]="$NOOP_GIT_DIR/pkg $NOOP_GIT_DIR/vendor-a $NOOP_GIT_DIR/vendor-b"
+)
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$NOOP_SOURCE" CHANGELOG_FILE="$PKG_CHANGELOG" GIT_DIR="$NOOP_GIT_DIR/.git" GIT_WORK_TREE="$NOOP_GIT_DIR" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if grep -q "TODO: edit this section from the seed below" "$PKG_CHANGELOG"; then
+    test_fail "Placeholder written even though the only in-range commit touched just this package's own CHANGELOG.md (cratestack#740)"
+  else
+    test_pass "No placeholder written — a changelog-only commit inside the scope is correctly excluded (cratestack#740)"
+  fi
+
+  if grep -q "^- No functional changes. Version kept in lockstep with the CrateStack$" "$PKG_CHANGELOG" \
+    && grep -q "^  workspace, which every published CrateStack artifact shares.$" "$PKG_CHANGELOG"; then
+    test_pass "Standard 'No functional changes' wording auto-filled, no manual edit needed"
+  else
+    test_fail "Standard no-op wording missing (or not byte-matching) from the seeded section"
+  fi
+else
+  test_fail "changelog-seed failed to run: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+cleanup_noop_fixture_repo
+
+# Test 33 (cratestack#740 — DECISIVE): the inverse of Test 32. A genuine
+# source change riding in the SAME range as a changelog-only commit must
+# still block the gate — excluding the changelog file must not become an
+# excuse to also miss a real change that happens to share the range. This
+# is the acceptance criterion that matters most: over-narrowing the scope
+# would be worse than today's loud failure (a changelog claiming "no
+# functional changes" when there were some).
+test_header "Test 33 (cratestack#740 — DECISIVE): a real source change is not masked by a changelog-only commit in the same range"
+setup_noop_fixture_repo
+PKG_CHANGELOG="$NOOP_GIT_DIR/pkg/CHANGELOG.md"
+cat > "$PKG_CHANGELOG" <<'FIXTURE'
+# Changelog
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$NOOP_GIT_DIR" add -A
+git -C "$NOOP_GIT_DIR" commit -q -m "chore: add this package's own changelog file"
+
+echo changed > "$NOOP_GIT_DIR/pkg/f.txt"
+git -C "$NOOP_GIT_DIR" add -A
+git -C "$NOOP_GIT_DIR" commit -q -m "fix: a real behavioural change in the package"
+
+echo "hand-written fix note" >> "$PKG_CHANGELOG"
+git -C "$NOOP_GIT_DIR" add -A
+git -C "$NOOP_GIT_DIR" commit -q -m "docs: hand-fix the previous seed"
+
+TEST_DIR=$(mktemp -d)
+NOOP_SOURCE="$TEST_DIR/changelog-files-noop.sh"
+cat > "$NOOP_SOURCE" <<EOF
+CHANGELOG_FILES_DEFAULT=("$PKG_CHANGELOG")
+declare -A CHANGELOG_NOOP_SCOPES=(
+  ["$PKG_CHANGELOG"]="$NOOP_GIT_DIR/pkg $NOOP_GIT_DIR/vendor-a $NOOP_GIT_DIR/vendor-b"
+)
+EOF
+
+REPLY_STATUS=0
+REPLY_OUT=$(CHANGELOG_FILES_SOURCE="$NOOP_SOURCE" CHANGELOG_FILE="$PKG_CHANGELOG" GIT_DIR="$NOOP_GIT_DIR/.git" GIT_WORK_TREE="$NOOP_GIT_DIR" "$SEED_SCRIPT" 0.9.9 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  if grep -q "TODO: edit this section from the seed below" "$PKG_CHANGELOG"; then
+    test_pass "Placeholder still written — the real source change is not hidden by the changelog-only commit's exclusion (cratestack#740, decisive)"
+  else
+    test_fail "No placeholder written — a genuine source change was masked by the exclusion (the exclusion over-reached)"
+  fi
+
+  if grep -q "No functional changes. Version kept in lockstep" "$PKG_CHANGELOG"; then
+    test_fail "No-op wording incorrectly written for a range with a real change in scope — this would hide a real change"
+  else
+    test_pass "No-op wording correctly withheld"
+  fi
+else
+  test_fail "changelog-seed failed to run: $REPLY_OUT"
+fi
+
+rm -rf "$TEST_DIR"
+cleanup_noop_fixture_repo
 
 # Test 9: none of the above ever touches the real, tracked changelogs.
 # This guards the sandbox-escape regression directly: every test above must
