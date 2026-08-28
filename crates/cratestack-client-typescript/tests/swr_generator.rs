@@ -623,11 +623,19 @@ fn swr_rejects_colliding_model_file_names() {
 /// two bindings of that name into the barrel: `tsc` TS2308, a generated
 /// package that does not compile, discovered only at the consumer's build.
 ///
-/// The fixture spells the procedure `list_posts`, not `listPosts`, on
+/// The fixture spells the procedure `create_post`, not `createPost`, on
 /// purpose: `to_camel_case` and `to_pascal_case` share `split_words`, so
 /// the snake_case spelling collides identically — a check that only
 /// compared raw names would pass this test's fixture while still shipping
 /// the broken package.
+///
+/// It exercises `create` rather than `list` (cratestack#784) because
+/// `create` is the one operation whose `--swr` free function
+/// (`createPost`) and generated Rust handler (`handle_create_posts`)
+/// disagree on plurality, making it the only genuinely `--swr`-specific
+/// collision of the five. The other four are also `error[E0428]`s that
+/// `cratestack-parser` now rejects outright, so a fixture built on one of
+/// them could no longer reach this generator at all.
 #[test]
 fn swr_rejects_a_procedure_colliding_with_a_model_function() {
     let fixture_path = "tests/fixtures/swr_procedure_name_collision.cstack";
@@ -650,10 +658,10 @@ fn swr_rejects_a_procedure_colliding_with_a_model_function() {
             model,
             operation,
         } => {
-            assert_eq!(procedure, "list_posts");
-            assert_eq!(identifier, "listPosts");
+            assert_eq!(procedure, "create_post");
+            assert_eq!(identifier, "createPost");
             assert_eq!(model, "Post");
-            assert_eq!(operation, "list");
+            assert_eq!(operation, "create");
         }
         other => panic!("expected SwrProcedureNameCollision, got {other:?}"),
     }
@@ -682,7 +690,7 @@ fn default_layout_accepts_a_procedure_that_swr_would_reject() {
 
     // `client.ts` proves the structural immunity claim rather than just
     // asserting "no error": the model operation is a method on a class,
-    // so the only top-level `listPosts` binding is the procedure's.
+    // so the only top-level `createPost` binding is the procedure's.
     let client = file(&package, "src/client.ts");
     assert!(
         client.contains("class PostApi"),

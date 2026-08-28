@@ -302,7 +302,10 @@ type Summary {
   count Int
 }
 
-procedure getWidget(id: Int): Widget
+// Not `getWidget`: that shares `handle_get_widget` with `model
+// Widget`'s generated CRUD handler, which
+// `validate::procedure_handler_collisions` rejects on its own terms.
+procedure widgetSummary(id: Int): Widget
 "#,
     )
     .expect("an ordinary schema should parse and validate fine");
@@ -311,5 +314,5 @@ procedure getWidget(id: Int): Widget
     assert_eq!(schema.models[0].name, "Widget");
     assert_eq!(schema.mixins[0].name, "Timestamps");
     assert_eq!(schema.types[0].name, "Summary");
-    assert_eq!(schema.procedures[0].name, "getWidget");
+    assert_eq!(schema.procedures[0].name, "widgetSummary");
 }

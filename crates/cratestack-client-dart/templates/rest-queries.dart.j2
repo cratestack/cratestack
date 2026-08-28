@@ -1,4 +1,16 @@
+{% if selection_models | length > 0 %}
+{# cratestack#785: this file's ONLY `models.dart` reference is the
+   `{{ selection.projected_class_name }}` in the `selection_models` loop
+   below — `CratestackProjection`/`CratestackSelectionProjection`/
+   `CratestackListQuery`/`CratestackFetchQuery` are all fully generic and
+   never name a model type. A schema with zero `model` blocks therefore
+   emits this import with nothing to satisfy it, and `flutter analyze`
+   reports `unused_import` — a warning, which `--fatal-warnings` (Dart's
+   own default, and what `just verify-dart` runs) makes a build failure.
+   Same class as #627/#629, one level down: an import line rather than a
+   class body. #}
 import 'models.dart';
+{% endif %}
 import 'runtime.dart';
 
 abstract interface class CratestackProjection<T> {

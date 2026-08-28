@@ -724,7 +724,13 @@ verify-dart:
 	  (cd "$pkg" && flutter test)
 	}
 
-	fixtures=(ci_rest ci_rpc builder_edge_cases)
+	# `procedures_only_rest` (cratestack#785): a schema with zero `model`
+	# blocks. Nothing else in this list has that shape, which is why two
+	# dead imports shipped — a dead import is invisible to the generator's
+	# own text-level tests and to `tsc`-style structure checks; only a real
+	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
+	# one.
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="

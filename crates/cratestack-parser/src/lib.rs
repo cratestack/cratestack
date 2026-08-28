@@ -41,6 +41,8 @@ mod tests_model_unique;
 mod tests_multi_error;
 mod tests_patch_touch_flag_collisions;
 #[cfg(test)]
+mod tests_procedure_handler_collisions;
+#[cfg(test)]
 mod tests_procedures;
 #[cfg(test)]
 mod tests_relation_actions;

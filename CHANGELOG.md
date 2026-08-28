@@ -53,6 +53,69 @@ rarely imports them, but a client with a customised template will need the renam
 self-identifying at every value: a populated `Bytes` is `number[]` and a populated `Bytes[]` is
 `number[][]`, but `[]` is both. The schema knows which; the runtime cannot.
 
+### `generate-dart` stops emitting dead imports for a schema with no models (#785)
+
+`cratestack generate-dart` on a schema with zero `model` blocks emitted `import 'queries.dart';`
+into `lib/src/apis.dart` and `import 'models.dart';` into `lib/src/queries.dart` unconditionally,
+with nothing on either side to reference them. `flutter analyze` reports each as `unused_import` —
+a warning, and `--fatal-warnings` (Dart's own default, and what `just verify-dart` runs) makes a
+warning a failed build. The reporting consumer had to add a `knownAnalyzeFailures` allowlist entry
+to work around it, which silently downgrades a future real regression to a warning.
+
+Both are now gated on the loop that actually consumes them: `apis.dart`'s `queries.dart` import on
+`model_apis`, and `queries.dart`'s `models.dart` import on `selection_models`. Same one-line
+mechanism as #629's `{% if procedures | length > 0 %}`, which fixed this defect one level up (a
+class body rather than an import line) and does not reach import statements.
+
+A third, unreported case is closed with it: `apis.dart`'s own `models.dart` import is live for a
+procedure-only schema (every procedure gets a generated `{Procedure}Args` wrapper there) but dead
+for a schema with **neither** models nor procedures, which is valid today. That gate is applied on
+both transports — `rpc-apis.dart.j2` carries the same import and the same condition.
+
+The riverpod preset was already correct: its `queries.dart` never imported `models.dart`.
+
+Verified end-to-end rather than by inspection. A `procedures_only_rest` fixture joins
+`just verify-dart`'s default-preset list, where `verify_pkg` runs real `flutter pub get` →
+`build_runner` → `flutter analyze --fatal-warnings`. Nothing else in that list has a zero-model
+shape, which is why this shipped: a dead import is invisible to text-level generator tests and only
+a real analyzer fails on one. Confirmed the fixture reports the two warnings on the pre-fix
+templates and `No issues found!` after — and likewise for the zero-model/zero-procedure schemas on
+both transports (three warnings before, clean after).
+### The parser rejects a procedure colliding with a model's generated CRUD handler (#784)
+
+`model Order` alongside `procedure getOrder` generated the Rust item `handle_get_order` twice into
+the same axum module — once from `axum/model/prep.rs`'s per-model CRUD handlers, once from
+`axum/procedure.rs`'s per-procedure handler — and the same for the `_dispatch` twins the RPC
+transport dispatches through. `cratestack check` reported `schema OK`; the only diagnostic was a raw
+`error[E0428]: the name 'handle_get_order' is defined multiple times`, which names neither the
+procedure, nor the model, nor the fix. It cost two rounds of guess-the-cause in production porting
+work (`deleteBuyerAddress` vs `model BuyerAddress`, `getOrder`/`getSubOrder` vs `model
+Order`/`SubOrder`).
+
+`cratestack-parser` now refuses such a schema, naming the procedure, the model, the operation, the
+shared identifier, and the remedy — a fifth validator in the mould of `snake_case_collisions`,
+`route_collisions`, `builder_collisions` and `procedure_idents`. Detection runs on the
+`to_snake_case`-normalized form, so `procedure get_order` is caught identically, and it covers both
+the handler and its `_dispatch` twin, so `getOrderDispatch` is caught too. `list`/`create` are
+matched against the *pluralized* stem (`handle_list_orders`) and `get`/`update`/`delete` against the
+singular one, mirroring the macro exactly.
+
+`@@internal(...)` is deliberately not an exemption: route suppression omits the `.route(...)`
+registration, not the handler function, so the ident collides either way.
+
+The collision is proved against the real emitters rather than a re-derivation —
+`cratestack-macros/src/axum/handler_collision_tests.rs` runs `generate_model_axum_handlers` and
+`generate_procedure_axum_handler` for the reported pair and asserts the emitted `fn` names
+intersect on exactly `handle_get_order` and `handle_get_order_dispatch`, and that the issue's
+recorded workaround rename clears it.
+
+Four in-repo fixtures were themselves this defect and are renamed (`listPosts` → `searchPosts`,
+`getWidget` → `widgetSummary`, `listUsers` → `searchUsers`, `listOrders` → `searchOrders`). One of
+them is #777's `--swr` collision fixture, which now exercises `create` rather than `list`: `create`
+is the only one of the five operations whose `--swr` free function (`createPost`) and generated
+handler (`handle_create_posts`) disagree on plurality, and so the only one that is a
+`--swr`-specific collision rather than an `E0428` the parser now catches first. #777's
+generator-level check is unchanged and still owns the cases this one cannot see.
 ### `Bytes` fields round-trip a JS `Uint8Array` (#783)
 
 `@cratestack/cbor` serialised a JS `Uint8Array` as a CBOR **map** of index→value
@@ -3777,7 +3840,8 @@ Small follow-ups to the two client-preset epics landed in 0.6.1:
   its `Page`/`PageInfo` import, a real `tsc` failure (#318).
 * TypeScript REST client: widened the `SCHEMA_SHA256` constant's type to
   `string` — with a real, non-empty schema hash baked in, TypeScript
-  inferred a literal type and flagged the runtime's own `=== ""` check as
+  inferred a literal type and flagged the runtime's own `
+  ""` check as
   having no possible overlap (#323).
 
 ## 0.6.1 (2026-08-02)
