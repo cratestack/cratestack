@@ -14,6 +14,7 @@ use crate::package_deps::{
 use crate::package_floors::{CRATESTACK_CBOR_FLOOR, CRATESTACK_REFINE_FLOOR};
 use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
+use crate::tanstack_collisions::reject_tanstack_hook_name_collisions;
 use crate::types::{
     enum_name_set, is_computed_field, is_generated_on_create, is_primary_key, model_allows_create,
     model_name_set, scalar_model_fields, version_field, visible_model_fields,
@@ -284,16 +285,19 @@ pub(crate) fn build_template_context(
         .iter()
         .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
         .collect::<Vec<_>>();
+    // Explicit `::<Vec<_>>` (cratestack#802): these used to infer their
+    // type solely from `TemplateContext`'s field, which stops working the
+    // moment anything borrows them as a slice before the struct literal.
     let query_procedures = procedures
         .iter()
         .filter(|procedure| procedure.kind == "query")
         .cloned()
-        .collect();
+        .collect::<Vec<_>>();
     let mutation_procedures = procedures
         .iter()
         .filter(|procedure| procedure.kind == "mutation")
         .cloned()
-        .collect();
+        .collect::<Vec<_>>();
 
     // cratestack#779: both are API-compatibility constants now, not
     // values derived from this crate's own version at any precision —
@@ -309,6 +313,18 @@ pub(crate) fn build_template_context(
     } else {
         String::new()
     };
+
+    // cratestack#802: refuse a schema whose `--tanstack` procedure hook
+    // name collides with a derived model hook name, before any file is
+    // rendered. Gated on the flag for #317's reason — a schema never
+    // generated with `--tanstack` must not be constrained by
+    // `--tanstack`'s naming scheme. Placed here rather than in
+    // `crate::generator` because the views it compares are built in this
+    // function and are not reachable through `TemplateContext`'s private
+    // fields.
+    if config.tanstack {
+        reject_tanstack_hook_name_collisions(&models, &query_procedures, &mutation_procedures)?;
+    }
 
     Ok(TemplateContext {
         package_name: config.package_name.clone(),

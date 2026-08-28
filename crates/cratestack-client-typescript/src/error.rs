@@ -67,6 +67,34 @@ pub enum TypeScriptGeneratorError {
         model: String,
         operation: &'static str,
     },
+    /// cratestack#802: the `--tanstack` analogue of
+    /// [`Self::SwrProcedureNameCollision`], and a sharper failure than it.
+    /// `--swr` splits model and procedure functions across files that a
+    /// barrel `export *`s, so its collision is TS2308 at the barrel;
+    /// `--tanstack` emits both hook families into the same
+    /// `src/react-query.ts`, so this is a same-file duplicate declaration
+    /// that no `export *` de-duplication can mask. See
+    /// `crate::tanstack_collisions`.
+    ///
+    /// The codes are TS2393 + TS2323, measured by running `tsc` on a
+    /// generated package from `tests/fixtures/
+    /// tanstack_mutation_hook_collision.cstack` with the check disabled.
+    /// cratestack#802 predicted TS2300; that is the *other* duplicate-
+    /// identifier code and is not what this path actually emits. The
+    /// message names the real ones so a user who greps their build output
+    /// finds this error.
+    #[error(
+        "--tanstack: procedure `{procedure}` and model `{model}`'s generated `{operation}` hook \
+         are both declared as `{identifier}` in `src/react-query.ts` (TypeScript TS2393 \
+         duplicate function implementation, plus TS2323 cannot redeclare exported variable) — \
+         rename one of them so their PascalCase forms differ"
+    )]
+    TanstackHookNameCollision {
+        procedure: String,
+        identifier: String,
+        model: String,
+        operation: &'static str,
+    },
     /// The schema declares a composite primary key (`@@id([...])`) on at
     /// least one model. `include_*_schema!` has rejected these since the
     /// gap was found (see `cratestack_core::composite_id`), but this

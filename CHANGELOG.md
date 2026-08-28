@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### `--tanstack` rejects a procedure hook that collides with a model hook (#802)
+
+`--tanstack` emits per-model hooks (`use<Model>ListQuery`, `useCreate<Model>Mutation`, …) and
+procedure hooks (`use<Procedure>Query`/`Mutation`) into the **same** `src/react-query.ts`, and
+nothing checked whether the two families derived the same identifier. A procedure named `create_post`
+alongside a `model Post` produced two `export function useCreatePostMutation` declarations in one
+file — a package that cannot compile, discovered at the consumer's build.
+
+#777 fixed this class for `--swr` and explicitly scoped `--tanstack` out as "structurally identical
+but not currently triggered". This is that half. Generation now fails up front, naming the procedure,
+the model, the operation, and the shared identifier.
+
+The check is gated on the flag, per decision spike #317: a schema never generated with `--tanstack`
+must not be constrained by `--tanstack`'s naming scheme. A test asserts the default and `--swr`
+layouts still accept the same fixtures, so "reject everything" cannot satisfy the suite. Both
+transports are covered — `rest-react-query.ts.j2` and `rpc-react-query.ts.j2` are separate templates
+emitting the same two families, so a REST-only fix would have left the hazard live on RPC.
+
+The three rejection tests were observed failing against the pre-fix generator, not merely passing
+after.
+
+**Correction to the ticket:** #802 predicted `tsc` would report TS2300. It does not. Generating the
+collision fixture with the check disabled and running real `tsc` reports **TS2393** (duplicate
+function implementation) and **TS2323** (cannot redeclare exported variable). The error message names
+the codes it actually produces, so a user grepping their build output finds it.
+
 ### `cbor-example-verify`'s Linux marker capture polls for readiness instead of sleeping a fixed 15s window (#753)
 
 The Linux half of `cbor-example-verify` ran the built example under `xvfb-run` with `timeout 15

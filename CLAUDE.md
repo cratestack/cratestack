@@ -19,9 +19,15 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 > nothing extra. The rustdoc CI job sidesteps this by building the framework crates by name, not `--workspace`.
 
 - **Pre-PR gate:** `just all-checks` — runs `cargo fmt`, `cargo fix`, `cargo clippy --fix -D warnings`,
-  `cargo check --all-targets`, and `cargo deny check`, all scoped `--workspace --exclude
+  `cargo check --all-targets`, `just lint`, and `cargo deny check`, all scoped `--workspace --exclude
   embedded_flutter_native`. This is the canonical formatting + lint pass; run it before opening a PR.
   (Deliberately **not** `--all-features` — see the plain-tests note below.)
+  The trailing `just lint` — the same no-`--fix` command CI's clippy job runs — is what makes a green
+  `all-checks` actually predictive of CI (cratestack#775). It is not redundant with the `--fix` clippy
+  line: `--fix` demotes a `-D warnings` error to a warning whenever the crate still compiles, so a lint
+  with no machine-applicable rewrite passes `--fix` silently *and* leaves no working-tree diff. Measured:
+  with such a violation present, `just lint` exited 101 while `all-checks` exited 0 on the same tree.
+  Consequence, by design: `all-checks` now fails on lint drift `--fix` used to absorb.
 - **Build:** `cargo build --workspace --exclude embedded_flutter_native` (the Flutter native crate needs
   flutter_rust_bridge-generated glue that isn't checked in — see the test note below).
 - **Plain tests (no DB):** `cargo test --workspace --exclude embedded_flutter_native`. PG-backed

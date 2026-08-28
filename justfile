@@ -61,12 +61,37 @@ default:
 #     `decimal-rust-decimal`; pass `--features decimal-bigdecimal
 #     --no-default-features` on individual `-p` invocations to build
 #     against the other one instead.
+#
+# The trailing `just lint` is the recipe's real verdict (cratestack#775),
+# and it is NOT redundant with the `--fix` clippy line above it.
+#
+# `clippy --fix` demotes what would be a `-D warnings` ERROR to a
+# non-blocking warning whenever the crate still compiles — independent of
+# whether it could rewrite anything. So for any lint with no
+# machine-applicable suggestion (`empty_line_after_doc_comments` is the
+# one that caught this), `--fix` changes nothing, exits 0, and leaves no
+# working-tree diff for a developer to notice. Measured on the real
+# thing: with such a violation present, `just lint` exited 101 while
+# `just all-checks` exited 0 on the identical tree. #772 shipped exactly
+# that way and turned CI's clippy job red on `main`.
+#
+# `just lint` verbatim rather than a re-spelled clippy invocation, so
+# this cannot drift from the CI-facing recipe the way the `--fix` line
+# did. Placed after `cargo check` so a broken autofix is reported as a
+# compile error first, and before `cargo deny check` so the lint verdict
+# is not gated behind an advisory-database fetch.
+#
+# Option 1 of the three #775 offered, per that ticket's own recorded
+# recommendation. Autofix convenience is kept; only the exit code
+# changes. Consequence, by design: `all-checks` now fails on lint drift
+# that `--fix` used to absorb silently.
 all-checks:
 	@echo "Running Rust formatting, lint, and checks"
 	just _fmt
 	cargo fix --workspace --exclude embedded_flutter_native --allow-dirty
 	cargo clippy --workspace --exclude embedded_flutter_native --all-targets --fix --allow-dirty -- -D warnings {{clippy_allow}}
 	cargo check --workspace --exclude embedded_flutter_native --all-targets
+	just lint
 	cargo deny check
 
 # Run rustfmt over every workspace member EXCEPT embedded_flutter_native.

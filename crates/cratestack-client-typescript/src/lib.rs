@@ -10,6 +10,7 @@ mod package_floors;
 mod procedure_views;
 mod refine;
 mod swr;
+mod tanstack_collisions;
 mod templates;
 mod types;
 mod views;

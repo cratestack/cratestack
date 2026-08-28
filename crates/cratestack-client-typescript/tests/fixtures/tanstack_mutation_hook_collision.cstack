@@ -1,0 +1,54 @@
+// Deliberate collision fixture for cratestack#802: model `Post` derives the
+// hook `useCreatePostMutation` under `--tanstack`
+// (`templates/src/rest-react-query.ts.j2:62`), and `mutation procedure
+// create_post` derives the same identifier through `to_pascal_case` — the
+// snake_case spelling on purpose, since the collision is NOT limited to
+// procedure names that are already PascalCase; both run through the same
+// `split_words` tokenizer.
+//
+// Unlike #777's `--swr` case this is a SAME-FILE collision: both hook
+// families are emitted into `src/react-query.ts`, so `tsc` reports TS2393
+// (duplicate function implementation) and TS2323 (cannot redeclare
+// exported variable) rather than TS2308 on a barrel. Those codes were
+// measured by generating this fixture with the check disabled and running
+// real `tsc` — not taken from #802, which predicted TS2300.
+//
+// `create`, not `list` (inherited reasoning from
+// `swr_procedure_name_collision.cstack`, cratestack#784): `create` is the
+// one operation whose derived name and whose generated Rust axum handler
+// disagree on plurality — `createPost`/`CreatePost` against
+// `handle_create_posts` — so it is the only one of the five that reaches
+// this generator at all. `procedure list_posts` is also `model Post`'s
+// `handle_list_posts`, which `cratestack-parser`'s
+// `validate::procedure_handler_collisions` rejects first, so a fixture
+// built on it could never exercise this check.
+//
+// `mutation`, explicitly: the hook suffix follows the procedure kind, and
+// only a mutation produces the `useCreatePostMutation` spelling that
+// collides here. The query-suffix half is covered by
+// `tanstack_query_hook_collision.cstack`.
+//
+// `@@allow("create", ...)` is load-bearing: without a `create` rule the
+// model has no create hook, `emitted_model_hook_names` omits
+// `useCreatePostMutation` entirely, and there would be nothing to collide
+// with.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+model Post {
+  id Int @id
+  title String
+
+  @@allow("read", true)
+  @@allow("create", auth() != null)
+}
+
+mutation procedure create_post(): Post
+  @allow(auth() != null)
