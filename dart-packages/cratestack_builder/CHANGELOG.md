@@ -4,6 +4,50 @@
 
 ## 0.8.14 (2026-08-27)
 
+### The declared `cratestack_annotations` floor moves `^0.8.8` → `^0.8.10`, and the reasoning behind the old one was wrong
+
+This generator reads `touchFlagFields` and `nonDefaultingListFields` off `@CratestackBuilder(...)`
+via `ConstantReader.read(...)`, which throws at *generation* time — not at `pub get` — when the
+resolved `cratestack_annotations` has no such field. The declared constraint therefore has to name
+the earliest release that really carries those arguments.
+
+It didn't. `^0.8.8` was justified in this file's 0.8.11 entry as naming "the earliest annotation
+surface this generator uses", and in `docs/tooling/dart-publishing.md` as "0.8.7 is the first
+release with `touchFlagFields`/`nonDefaultingListFields`" — the doc was corrected by cratestack#754;
+this changelog is the remaining copy. Both halves of the justification are false, checked against
+pub.dev's API and the published archives rather than against this repo's own changelogs:
+
+- **0.8.8 was never published.** `cratestack_annotations` runs 0.8.5, 0.8.6, 0.8.7, 0.8.10, 0.8.11,
+  … — 0.8.8 and 0.8.9 were skipped releases. The constraint named a version that does not exist.
+- **Published 0.8.7 contains neither identifier.** Downloading the 0.8.7 archive and searching its
+  `lib/` finds no `touchFlagFields` and no `nonDefaultingListFields`; the 0.8.10 archive contains
+  both. 0.8.10 is the first release that satisfies this generator, exactly as this file's own 0.8.10
+  entry says.
+
+Nothing broke, for one reason only: a caret constraint resolves *upward*, so `^0.8.8` landed on
+0.8.10 or later in practice and the missing constants were never actually missing. The floor had
+rotted before anything could depend on it — which is the argument for the change, not against it. A
+floor whose stated justification is wrong is a floor nobody can safely reason about the next time it
+needs to move.
+
+Because a hand-maintained floor can rot silently like this, the matching floors on the *generator*
+side (`cratestack-client-dart/src/package_floors.rs`, cratestack#754) are now backed by tests rather
+than by comments: they assert the emitted floor is at least the floor this package's own
+`pubspec.yaml` declares — read from that file, so raising one flags the other — and that both sit
+strictly below the current, not-yet-published workspace version.
+
+**Correction to this file.** The 0.8.11 entry below states that the constraint "names the earliest
+annotation surface this generator uses". It did not, for the two reasons above. That sentence is
+wrong as written and is superseded by this section.
+
+### No generator behaviour changed
+
+Nothing under `lib/` was touched in `v0.8.13..v0.8.14` — `pubspec.yaml` is the only file in this
+package the range modifies. Builders emit exactly what 0.8.13 emitted.
+
+Raise this floor **only** when this builder starts reading a newly-added annotation field, never as
+part of a routine version bump: the version moves in lockstep with the CrateStack workspace, and the
+floor deliberately does not. See `docs/tooling/dart-publishing.md`.
 ### The `cratestack_annotations` floor names a version that exists
 
 This package's `pubspec.yaml` declared `cratestack_annotations: ^0.8.8`, justified in a comment as
@@ -72,6 +116,12 @@ stale override is invisible from the manifest alone.
 The declared constraint is unchanged at `^0.8.8`, deliberately: it names the earliest annotation
 surface this generator uses, not the current version, and caret on a `0.x` version already pins the
 second component, so `^0.8.8` resolves 0.8.10.
+
+> **Corrected in 0.8.14.** The middle clause above is wrong: `^0.8.8` did *not* name the earliest
+> annotation surface this generator uses. 0.8.8 was never published, and published 0.8.7 carries
+> neither `touchFlagFields` nor `nonDefaultingListFields`. 0.8.10 is the earliest release that does,
+> and the constraint says so from 0.8.14 on. The last clause stands: caret resolution upward is why
+> the wrong floor was harmless.
 
 No generator behaviour changed — nothing under `lib/` was touched in this range.
 
