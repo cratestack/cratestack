@@ -2185,14 +2185,120 @@ cbor-example-verify:
 
 	echo "=== running the built Linux binary (headless via xvfb-run) ==="
 	linux_log="$(mktemp)"
-	timeout 15 xvfb-run -a "$bin" > "$linux_log" 2>&1 || true
-	if ! grep -q "$marker OK $expected_hex" "$linux_log"; then
-	  echo "FAIL: built Linux binary did not print the expected round-trip marker. Captured output:" >&2
+
+	# POLL FOR THE MARKER UP TO A DEADLINE, ENDING AS SOON AS IT APPEARS —
+	# cratestack#753, the Linux analogue of the iOS fix in cratestack#720/
+	# #722 ("end the pre-launch wait early when the log stream proves
+	# live"): a fixed wait checked once is the wrong primitive, replaced
+	# here the same way — poll, and stop the moment the signal is live.
+	#
+	# The prior `timeout 15 xvfb-run -a "$bin" > "$linux_log" 2>&1 || true`
+	# had two independent bugs. One: the marker was checked exactly ONCE,
+	# after 15s had unconditionally elapsed — a cold GTK/EGL start slower
+	# than that failed even though the app would have printed moments
+	# later. Two: `|| true` discarded the binary's exit status, so a crash,
+	# a non-zero exit, and a slow start all reached the grep identically
+	# and produced the identical "did not print the expected round-trip
+	# marker" message — true in every case, diagnostic in none.
+	#
+	# `timeout` STAYS, WRAPPING `xvfb-run` UNCHANGED, because it is not
+	# just a duration bound: verified locally (three scripted probes, not
+	# guessed) that GNU/uutils `timeout` forwards a signal sent to ITS OWN
+	# pid on to the whole process tree it started, including grandchildren
+	# `xvfb-run` itself launches without `exec`'ing them away — a plain
+	# `kill` aimed at `xvfb-run`'s pid instead would not reach the wrapped
+	# Flutter binary at all (xvfb-run runs it as an ordinary foreground
+	# child, not via `exec`, and traps only EXIT for its own Xvfb
+	# teardown), which would have left an orphaned process behind on every
+	# early-exit path this fix adds. `timeout`'s own duration-expiry path
+	# is kept too, as the outer bound: if this recipe never sends its own
+	# early kill (found=0 the whole poll), `timeout` still kills the tree
+	# unprompted once `poll_budget` elapses and reports its own well-known
+	# 124, which is read below to label that case a timeout rather than a
+	# missing marker.
+	#
+	# 45s, NOT 15s. The observed failure (job 98221929084, linked from this
+	# recipe's own header comment) hit a DRI3 device-lookup failure that
+	# forced a software EGL fallback — a plausible reason a cold start runs
+	# past 15s on a loaded runner — but no CI run has yet reported by how
+	# much, so this is deliberately generous headroom, not a number derived
+	# from measurement (unlike iOS's 8s probe ceiling, which iOS's own
+	# comment derives from two real job timings). A healthy run still pays
+	# close to what it always did, because the loop below ends the instant
+	# the marker appears; only a genuinely slow start, or a genuine hang,
+	# pays more, up to this bound. Raise it further if a real run is later
+	# observed still needing longer.
+	poll_budget=45
+	timeout "$poll_budget" xvfb-run -a "$bin" > "$linux_log" 2>&1 &
+	bin_pid=$!
+	found=0
+	poll_started="$(date +%s)"
+	for _ in $(seq 1 "$poll_budget"); do
+	  if grep -q "$marker OK $expected_hex" "$linux_log"; then
+	    found=1
+	    break
+	  fi
+	  # Notices a fast crash too, not just a fast success: once the
+	  # backgrounded `timeout`/`xvfb-run`/binary tree has exited on its
+	  # own, `kill -0` on its pid reliably reports "gone" within about one
+	  # poll tick — verified locally that bash reaps its own background
+	  # jobs promptly even without job control enabled, so this is not the
+	  # zombie-forever wait it would be against an arbitrary external pid.
+	  if ! kill -0 "$bin_pid" 2>/dev/null; then
+	    break
+	  fi
+	  sleep 1
+	done
+	poll_waited=$(( $(date +%s) - poll_started ))
+	if [ "$found" -eq 1 ]; then
+	  # Ends it now rather than waiting out the rest of the deadline for a
+	  # teardown that has nothing left to prove — see `timeout`'s note
+	  # above for why this reaches the whole tree, not just `xvfb-run`.
+	  # Harmless no-op via `|| true` if it had already exited on its own.
+	  kill "$bin_pid" 2>/dev/null || true
+	fi
+	set +e
+	wait "$bin_pid"
+	bin_status=$?
+	set -e
+
+	if [ "$found" -eq 1 ]; then
+	  # MARKER-PRINTED-THEN-NON-ZERO-EXIT IS A PASS — decided here, on
+	  # purpose, because cratestack#753 leaves it open rather than
+	  # prescribing an answer. `bin_status` is deliberately NOT consulted
+	  # in this branch. Under `xvfb-run` the app can legitimately exit
+	  # untidily on teardown — the AT-SPI/DBus "ServiceUnknown" warning
+	  # already visible in this ticket's own captured CI failure is exactly
+	  # that kind of noise, not a round-trip defect — and the thing this
+	  # recipe exists to prove already happened the moment the marker was
+	  # captured. A post-marker exit code tests xvfb/GTK shutdown, not the
+	  # CBOR codec. If a real run is later observed using this to mask a
+	  # genuine post-marker crash, revisit; nothing observed so far
+	  # distinguishes that from ordinary xvfb teardown noise.
+	  echo "✓ Linux binary round-tripped CBOR after ${poll_waited}s: $(grep "$marker" "$linux_log")"
+	elif [ "$bin_status" -eq 124 ]; then
+	  # `timeout`'s own well-known "I killed it on my own deadline" status
+	  # — reported AS a timeout, distinct from the crash branch below, per
+	  # cratestack#753's explicit ask ("a timeout report AS a timeout, not
+	  # as a missing marker").
+	  echo "FAIL: built Linux binary did not print the expected round-trip marker within the ${poll_budget}s deadline (timed out, not a crash). Captured output:" >&2
+	  cat "$linux_log" >&2
+	  rm -f "$linux_log"
+	  exit 1
+	else
+	  # Neither the marker nor a timeout — it exited on its own (crashed,
+	  # or exited cleanly without ever printing) before the deadline. Names
+	  # the exit status rather than only "missing marker" (the other half
+	  # of cratestack#753's ask): this is real, because `found=0` here
+	  # means this recipe never called `kill` above, so `bin_status` cannot
+	  # be an artifact of this recipe's own teardown — it is the tree's own
+	  # exit code, forwarded through by `timeout` (see its note above for
+	  # why that pass-through was verified rather than assumed).
+	  echo "FAIL: built Linux binary exited with status $bin_status without printing the expected round-trip marker. Captured output:" >&2
 	  cat "$linux_log" >&2
 	  rm -f "$linux_log"
 	  exit 1
 	fi
-	echo "✓ Linux binary round-tripped CBOR: $(grep "$marker" "$linux_log")"
 	rm -f "$linux_log"
 
 	echo "=== flutter build web (release): $example ==="
@@ -2428,8 +2534,9 @@ cbor-example-verify-android-emulator:
 # recipe against before it lands in CI):
 #   - `timeout` (used below to bound how long the app runs before being
 #     killed so its captured stdout can be grepped, the same idiom
-#     `cbor-example-verify`'s Linux half uses via `timeout 15 xvfb-run -a
-#     "$bin"`) is believed to be present in Git for Windows' bundled MSYS
+#     `cbor-example-verify`'s Linux half uses via `timeout "$poll_budget"
+#     xvfb-run -a "$bin"`, polled rather than checked once since
+#     cratestack#753) is believed to be present in Git for Windows' bundled MSYS
 #     environment (a GNU coreutils build) — which this justfile's global
 #     `set shell := ["bash", ...]` already depends on for EVERY recipe on
 #     Windows, not just this one — but this could not be confirmed from a
