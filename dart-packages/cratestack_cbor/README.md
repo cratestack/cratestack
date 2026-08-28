@@ -14,6 +14,18 @@ final bytes = codec.encodeJson('{"hello":"world"}');
 final json = codec.decodeJson(bytes);
 ```
 
+`createCborCodec()` is **idempotent** — call it from as many places as you like,
+concurrently or not, and you get the same one-time initialization back
+(cratestack#794). That matters because you rarely have only one caller: an app
+that uses this package directly *and* has a generated `transport rpc` Dart
+client has two, and the generated client calls it from inside its own runtime
+where you cannot hand it a codec you already built. It also respects a runtime
+you bootstrapped yourself, rather than trying to initialize
+`flutter_rust_bridge` a second time. `isCborRuntimeInitialized` (exported
+alongside `createCborCodec` on every platform) reports whether the backend
+runtime is already up, for a consumer with its own bootstrap path that wants to
+cooperate rather than guess.
+
 ## The `flutter_rust_bridge` pin — read this before `pub add`
 
 This package depends on **`flutter_rust_bridge: 2.13.0`**, and in pub's
@@ -393,7 +405,7 @@ checkout, publishing silently reverts to dropping these files.
 ## Verifying both backends
 
 ```bash
-just cbor-verify-package        # both backends, native (dart test) + web (dart test -p chrome)
+just cbor-verify-package        # both backends, native (dart test) + web (dart test -p chrome) + flutter test
 ```
 
 or directly, from this directory:
@@ -401,7 +413,19 @@ or directly, from this directory:
 ```bash
 dart test                        # native backend only (@TestOn('vm'))
 dart test -p chrome              # web backend only (@TestOn('browser'))
+flutter test                     # the same VM suite, under a different runtime
 ```
+
+The third one is not a redundant re-run of the first (cratestack#794).
+`flutter test` executes on `flutter_tester`, which does not implement
+`Isolate.resolvePackageUriSync` — so the dev-mode library resolution `dart
+test` exercises does not merely fail there, it throws `Unsupported operation`,
+and the `.dart_tool/package_config.json` fallback runs instead. Before that
+fallback existed, this package could not be exercised under `flutter test`
+without setting `CRATESTACK_CBOR_NATIVE_LIB`, which is exactly what pushed
+consumers into writing a second bootstrap of their own — and *that* is what
+collided with this package's own initialization. Run it with the env var
+unset, or it proves nothing.
 
 `@TestOn('vm')` / `@TestOn('browser')` are load-bearing, not decorative — see
 `test/web_cbor_codec_test.dart`'s doc comment for why: the conditional export
