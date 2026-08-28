@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### `cbor-example-verify`'s Linux marker capture polls for readiness instead of sleeping a fixed 15s window (#753)
+
+The Linux half of `cbor-example-verify` ran the built example under `xvfb-run` with `timeout 15
+... || true`, checking for the round-trip marker exactly once, after a fixed 15s had already
+elapsed — so a cold GTK/EGL start slower than that (observed in CI: a DRI3 device-lookup failure
+forcing a software EGL fallback) failed the job even though the app would have printed moments
+later. `|| true` also discarded the binary's exit status, so a crash, a non-zero exit, and a slow
+start all produced the identical "did not print the expected round-trip marker" message.
+
+This is the Linux analogue of the iOS fix in #720/#722: the recipe now backgrounds the run under
+`timeout` and polls the captured log for the marker up to a 45s deadline, ending the moment it
+appears rather than always paying the full window. The binary's real exit status is captured via
+`wait` and reported distinctly — a timeout reads `timeout`'s own well-known status 124 and is
+reported *as* a timeout, while a process that exited on its own without printing the marker names
+its exit status instead of only saying "missing marker". Verified locally that `timeout`, not a
+plain `kill` on `xvfb-run`'s own pid, is required to reach the whole process tree `xvfb-run` starts
+without `exec`ing away, so early-exit kills reliably clean up the wrapped Flutter binary rather than
+orphaning it.
+
+Decided explicitly, per the ticket's open question: marker-printed-then-non-zero-exit is treated as
+a **pass** — under `xvfb-run` the app can exit untidily on teardown (AT-SPI/DBus noise), and the
+round trip this recipe exists to prove has already completed by the time the marker is captured.
+
+Windows and Android verify recipes are out of scope for this ticket and unchanged, even though the
+Windows recipe has the same fixed-timeout-plus-`|| true` shape.
+
 ### The generated Dart client caches its CBOR codec for successes only (#798)
 
 Both generated Dart runtimes resolved `cratestack_cbor`'s `createCborCodec()` through a plain
