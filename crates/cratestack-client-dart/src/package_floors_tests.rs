@@ -7,7 +7,7 @@
 //! existing `*_tests.rs` convention, so the constants stay `pub(crate)`
 //! instead of being widened into the public API just to be asserted on.
 
-use super::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR};
+use super::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR};
 
 /// `^X.Y.Z` -> `(X, Y, Z)`. Panics rather than returning an `Option`:
 /// every caller here is a test whose failure message is more useful than
@@ -110,6 +110,11 @@ fn floors_are_below_the_current_unpublished_workspace_version() {
     for (package, floor) in [
         ("cratestack_annotations", CRATESTACK_ANNOTATIONS_FLOOR),
         ("cratestack_builder", CRATESTACK_BUILDER_FLOOR),
+        // cratestack#779: `cratestack_cbor` joins the same guard now that
+        // it emits a floor rather than `^{CARGO_PKG_VERSION}`. Before
+        // that it would have failed this test by construction, which is
+        // the whole point of it being here.
+        ("cratestack_cbor", CRATESTACK_CBOR_FLOOR),
     ] {
         let floor_parts = parse_caret(floor);
         let current = parse_caret(&format!("^{}", pubspec_value(package, "version")));

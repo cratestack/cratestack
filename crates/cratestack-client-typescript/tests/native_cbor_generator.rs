@@ -49,6 +49,29 @@ use support::{command_report, node_toolchain_available, tsx_command};
 const REST_FIXTURE: &str = "tiny_rest";
 const RPC_FIXTURE: &str = "tiny_rpc";
 
+/// cratestack#779: the `@cratestack/cbor` API floor a generated
+/// `package.json` declares, restated here as a **literal** rather than
+/// recomputed from `env!("CARGO_PKG_VERSION")`.
+///
+/// This file used to carry a private `minor_floor_version_requirement()`
+/// that mirrored the generator's own `^{major}.{minor}.0` computation,
+/// justified as "asserts against the same computation the generator
+/// actually performs rather than a second hardcoded literal that could
+/// silently drift from it". That reasoning is backwards for this
+/// property: agreeing with the generator by construction is exactly what
+/// made the assertion unable to observe #779. Both sides moved together
+/// on a bump and the test stayed green while the emitted range walked off
+/// the published registry.
+///
+/// A literal is the tripwire. At the next version this still expects
+/// `^0.8.0`; a generator that has gone back to deriving emits `^0.9.0`
+/// and fails here — on the bump PR, which is where #779's damage lands.
+///
+/// Kept in sync by hand with
+/// `cratestack_client_typescript::package_floors::CRATESTACK_CBOR_FLOOR`
+/// (`pub(crate)`, so not callable from an integration test).
+const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+
 #[test]
 fn default_config_uses_native_cbor() {
     let config = TypeScriptGeneratorConfig::default();
@@ -63,12 +86,12 @@ fn default_config_uses_native_cbor() {
     assert!(
         package_json.contains(&format!(
             "\"@cratestack/cbor\": \"{}\"",
-            minor_floor_version_requirement()
+            CRATESTACK_CBOR_FLOOR
         )),
         "RPC: default config's package.json must depend on @cratestack/cbor, pinned to this \
-         crate's major.minor floor (not the exact patch — see \
-         cratestack_client_typescript::context's minor_floor_version_requirement doc comment \
-         and cratestack#707 for why):\n{package_json}"
+         crate's API floor (a constant, not anything derived from CARGO_PKG_VERSION — see \
+         cratestack_client_typescript::package_floors' module doc, and cratestack#707/#779 \
+         for why):\n{package_json}"
     );
     let runtime = file(&rpc, "src/runtime.ts");
     assert!(
@@ -128,10 +151,11 @@ fn the_flag_swaps_the_package_json_dependency_and_the_runtime_codec_resolution()
     assert!(
         package_json.contains(&format!(
             "\"@cratestack/cbor\": \"{}\"",
-            minor_floor_version_requirement()
+            CRATESTACK_CBOR_FLOOR
         )),
-        "package.json should depend on @cratestack/cbor, pinned to this crate's major.minor \
-         floor (lockstep with the npm package, but not the exact patch — cratestack#707):\n{package_json}"
+        "package.json should depend on @cratestack/cbor, pinned to the API floor constant \
+         (cratestack#779 — not derived from CARGO_PKG_VERSION at any precision, including the \
+         `^{{major}}.{{minor}}.0` shape that used to be emitted here):\n{package_json}"
     );
 
     let runtime = file(&native, "src/runtime.ts");
@@ -612,20 +636,4 @@ fn file<'a>(package: &'a GeneratedTypeScriptPackage, name: &str) -> &'a str {
         .unwrap_or_else(|| panic!("generated package should contain {name}"))
         .contents
         .as_str()
-}
-
-/// Mirrors `cratestack_client_typescript::context`'s private
-/// `minor_floor_version_requirement` exactly (can't call it directly —
-/// it's `fn`-private to that module, not `pub(crate)`), so this test
-/// asserts against the same computation the generator actually performs
-/// rather than a second hardcoded literal that could silently drift from
-/// it. See that function's doc comment for why `@cratestack/cbor` is
-/// pinned to a major.minor floor instead of the exact `CARGO_PKG_VERSION`
-/// (cratestack#707's version-bump-PR hazard).
-fn minor_floor_version_requirement() -> String {
-    let version = env!("CARGO_PKG_VERSION");
-    let mut parts = version.splitn(3, '.');
-    let major = parts.next().unwrap_or("0");
-    let minor = parts.next().unwrap_or("0");
-    format!("^{major}.{minor}.0")
 }

@@ -6,6 +6,7 @@ mod find_many_views;
 mod generator;
 mod naming;
 mod package_deps;
+mod package_floors;
 mod procedure_views;
 mod refine;
 mod swr;

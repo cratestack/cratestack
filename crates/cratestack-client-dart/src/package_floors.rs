@@ -95,6 +95,34 @@ pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.8.10";
 /// schema rather than failing at `pub get`.
 pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.8.10";
 
+/// `cratestack_cbor` — the native CBOR codec a generated client lists
+/// under `dependencies:` when `native_cbor` is on (the default;
+/// `--no-native-cbor` opts out). cratestack#779.
+///
+/// `0.8.0` is the earliest release published to pub.dev at all (the
+/// version list runs `0.8.0, 0.8.2, 0.8.3, …` — there is no `0.7.x`), and
+/// it already carries the entire surface a generated runtime touches:
+/// `createCborCodec()` returning `Future<CratestackCborCodec>`, plus that
+/// class's `encodeJson(String)`/`decodeJson(List<int>)`. Verified by
+/// unpacking the published archives for 0.8.0/0.8.5/0.8.9/0.8.14 and
+/// grepping the signatures out of `lib/`, not by reading the changelog —
+/// the method #754 established after the hand-written `^0.8.8` floor
+/// turned out to name a version pub.dev never had.
+///
+/// So this floor is bounded by what exists, not by what the generator
+/// needs: there is no published `cratestack_cbor` a generated client
+/// could resolve and fail against. The caret ceiling is what makes it
+/// useful anyway — `^0.8.0` is `>=0.8.0 <0.9.0`, so it resolves the
+/// newest 0.8.x on the day the user runs `pub get`, which is how a
+/// generated client picks up #794's idempotent `createCborCodec()`
+/// without this constant moving.
+///
+/// **Not** the fix for #798's retry behaviour: that lives in the
+/// generated runtime itself (`rest-runtime.dart.j2` /
+/// `rpc_runtime/types.dart.j2`), which clears its own cache on failure
+/// and therefore needs nothing from this package's version.
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+
 #[cfg(test)]
 #[path = "package_floors_tests.rs"]
 mod package_floors_tests;

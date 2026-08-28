@@ -17,7 +17,9 @@ use crate::naming::{
     enum_name_set, is_computed_field, is_generated_on_create, is_primary_key, is_relation_field,
     model_name_set, occupied_type_names, procedure_wrapper_name, scalar_model_fields,
 };
-use crate::package_floors::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR};
+use crate::package_floors::{
+    CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR,
+};
 use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
 
 pub(crate) fn build_template_context(
@@ -213,13 +215,13 @@ pub(crate) fn build_template_context(
         }
     });
 
-    // Issue #563: only computed when the flag is actually set — mirrors
-    // `cratestack-client-typescript::context::build_template_context`'s
-    // `refine_version_requirement`, same lockstep-with-the-crate-version
-    // reasoning (see `TemplateContext::cratestack_cbor_version_requirement`'s
-    // doc comment).
+    // Issue #563: still only computed when the flag is actually set — a
+    // `--no-native-cbor` package has no `cratestack_cbor` line to render
+    // at all. cratestack#779: but the value is now an API-compatibility
+    // floor rather than `^{CARGO_PKG_VERSION}`, so it no longer moves
+    // with `just bump` — see `crate::package_floors`.
     let cratestack_cbor_version_requirement = if config.native_cbor {
-        format!("^{}", env!("CARGO_PKG_VERSION"))
+        CRATESTACK_CBOR_FLOOR.to_owned()
     } else {
         String::new()
     };
