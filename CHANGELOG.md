@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### `@cratestack/refine` converts every method's errors the same way, and stops destroying them (#786)
+
+The data provider handled a thrown error two different ways depending on which method threw.
+`getList` and `getMany` had no `catch` at all and rethrew the original untouched; `getOne`,
+`create`, `update` and `deleteOne` each ran it through `toRefineError`, which returned a **plain
+object literal** for anything that was not a `CratestackHttpError` — discarding the value's class,
+`name`, `cause` and every own property, leaving only `message`.
+
+A consumer throwing a typed error from a custom `fetch` transport (a `DeviceNotEnrolledError`
+raised before the request ever leaves the browser) and classifying it with `instanceof` therefore
+got **correct behaviour on list screens and silently wrong behaviour on every detail/create/edit
+screen** — a bug that shipped, because the retry classifier was validated against the one list-only
+resource, which is the single path where `instanceof` held. The workaround it forced was
+string-matching exported message constants, the only field that survived flattening.
+
+Both halves are fixed:
+
+1. **All seven methods** — the six named in the report plus `custom`, which had the same gap —
+   now route thrown values through `toRefineError`. Leaving `custom` out would have recreated the
+   defect one method over.
+2. **`toRefineError` annotates the thrown value in place and returns it**, rather than building a
+   bare object literal. `message` and `statusCode` (the two fields refine renders) are set on the
+   original object, so `instanceof` keeps working, `name`/`cause`/own properties survive, and a
+   `CratestackHttpError`'s `status`/`payload`/`response` stay readable on the same value. Mutating
+   rather than cloning is deliberate: an `Object.create`-based copy preserves the prototype but
+   silently drops private class fields, which is the state a typed error's own methods read.
+
+When the thrown value cannot be annotated — a thrown primitive, a frozen or sealed object, a class
+exposing `message` as a getter with no setter — the result is `{ message, statusCode, cause }` with
+the original under `cause`, the report's stated minimum.
+
+Unchanged: the `412 Precondition Failed` conflict message and the promotion of a
+`CratestackHttpError` envelope's `payload.message`. `message` remains the one field conversion
+rewrites, so it remains the wrong field to classify on; the README's new "Errors" section says so.
+
+Behavioural note for existing consumers: `getList`/`getMany` errors now carry `statusCode` (they
+previously reached refine with none), and a 412 surfaced from a list call now carries the conflict
+message rather than the raw one.
 ### **Breaking:** generated TypeScript clients type `Bytes` as `Uint8Array` (#783 follow-up)
 
 A schema `Bytes` field is now a real `Uint8Array` on **both** sides of a generated TypeScript
