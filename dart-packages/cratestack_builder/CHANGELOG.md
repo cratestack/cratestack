@@ -4,48 +4,33 @@
 
 ## 0.8.14 (2026-08-27)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.8.13..HEAD at 128f69b2a13a1e776d80c64e74c2118c9043c1a3 -->
+### The `cratestack_annotations` floor names a version that exists
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+This package's `pubspec.yaml` declared `cratestack_annotations: ^0.8.8`, justified in a comment as
+"0.8.7 is the first release with the `touchFlagFields`/`nonDefaultingListFields` arguments this
+generator reads". Checked against pub.dev's API and the published archives rather than against the
+changelog, both halves were wrong: **0.8.8 was never published** (0.8.8 and 0.8.9 were skipped, so
+versions run 0.8.7 → 0.8.10) and **0.8.7 contains neither identifier**. 0.8.10 is the first release
+that does.
 
-### Changes
+It was harmless only by accident — a caret constraint resolves upward, so `^0.8.8` landed on 0.8.10
+anyway. The floor had rotted before anything could depend on it. It now reads `^0.8.10`, and the
+generated-client floors it sits alongside are backed by tests that read this pubspec, so raising one
+without the other fails rather than drifting quietly (cratestack#754).
 
-#### Features
+Nothing under `lib/` changed in this range; generator behaviour is identical to 0.8.13.
 
-- generated builders move to package:cratestack_builder (#668 phase 2/3) (#737)
-- @cratestack/cbor is the default codec for generated RPC clients (#746) (#752)
-- partial index DDL via @@unique/@@index where: (#742) (#749)
-- @@internal route suppression (#743) (#750)
-- rename provider (F2) (#769)
-- semantic tokens — identifiers coloured by what they resolve to (#763)
-- report every independent schema error (#771) (#772)
-- ConflictTarget can target a partial unique index (#741) (#748)
+### A correction to this file
 
-#### Fixes
+0.8.14 was tagged and published with the raw, unedited seed placeholder still in this section — the
+`<!-- TODO -->` marker, the "Do not commit with this placeholder text" line, and a dump of every
+workspace commit in the range, most of which never touched this package. That is the same failure
+0.8.11's entry below records, recurring for the same reason: `main` has no required status checks,
+so the `changelog (no unedited seeds)` gate reported the problem without being able to block the
+merge.
 
-- generated pubspecs declare an API floor, not the workspace version (#754) (#780)
-- --swr + transport rpc now honours native_cbor (#765) (#776)
-- --swr rejects a procedure colliding with a generated model function (#777) (#778)
-- encode Decimal fields before handing RPC request bodies to the codec (#764)
-- publish tsx over a pre-existing destination in any state (#738 follow-up) (#761)
-- keep serving the last schema that parsed (#767)
-- remove stray blank lines after doc comments (unbreaks clippy on main) (#773)
-- upsert do_update classifies from the statement, not a stale probe (#745) (#758)
-- make the published VSIX activate, and make .cstack files navigable (#759)
-- CRATESTACK_REQUIRE_DB fails when no DB backend is configured (#747) (#756)
-
-#### Documentation
-
-- --run-build-runner is needed by every preset, not just riverpod (#751)
-- fix stale --native-cbor/default-codec docs after #746 (#752) (#770)
-- record that Studio's [target.db] write path is beneath the schema (#744) (#755)
-
-#### Tests
-
-- resolve tsx once instead of racing on npm's shared _npx cache (#738) (#757)
+This entry replaces that placeholder. The repository and every archive from here on carry the real
+text; pub.dev's published 0.8.14 page keeps the seed, since an uploaded archive is immutable.
 
 ## 0.8.13 (2026-08-26)
 

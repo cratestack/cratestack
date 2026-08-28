@@ -13,10 +13,10 @@
 //! qualifies, so `?` converts codec errors into a real JS `Error` object
 //! (readable `.message`, `instanceof Error`) instead of a bare string.
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::CratestackCodec;
+use cratestack_core::{CratestackCodec, Value};
 use wasm_bindgen::prelude::*;
 
-use crate::json_bridge::EncodableValue;
+use crate::value_bridge::JsSerializable;
 
 /// Runs once when the wasm module is instantiated (part of the generated
 /// `init()` glue) — before this, any panic elsewhere in the module would
@@ -37,44 +37,56 @@ pub fn content_type() -> String {
 
 /// Encodes an arbitrary JS value as CBOR bytes.
 ///
-/// `value` is deserialized into an owned `serde_json::Value` first (JS has
-/// no notion of the concrete Rust types `CborCodec::encode<T>` is generic
-/// over), then re-serialized through `EncodableValue` — see
-/// `json_bridge.rs` for why that indirection exists rather than encoding
-/// the `serde_json::Value` tree directly.
+/// `value` is deserialized into an owned `cratestack_core::Value` first
+/// (JS has no notion of the concrete Rust types `CborCodec::encode<T>` is
+/// generic over), then encoded. `Value` rather than `serde_json::Value`
+/// is what makes binary data work at all: a JS `Uint8Array`/`ArrayBuffer`
+/// lands in `Value::Bytes` (`serde-wasm-bindgen`'s `deserialize_any`
+/// routes both to `visit_byte_buf`) and goes out as a CBOR byte string,
+/// instead of degrading into a map of index→value that no `Vec<u8>` on
+/// the Rust side can decode — cratestack#783. See `value_bridge.rs` for
+/// the full rationale and the host-runnable byte assertions.
 #[wasm_bindgen]
 pub fn encode(value: JsValue) -> Result<Vec<u8>, JsError> {
-    let value: serde_json::Value = serde_wasm_bindgen::from_value(value)
+    let value: Value = serde_wasm_bindgen::from_value(value)
         .map_err(|error| JsError::new(&format!("invalid value for CBOR encode: {error}")))?;
-    let bytes = CborCodec.encode(&EncodableValue(&value))?;
+    let bytes = CborCodec.encode(&value)?;
     Ok(bytes)
 }
 
-/// Decodes CBOR bytes into a plain JS value. Malformed input surfaces as
-/// a rejected/thrown `Error`, never a trap — see the module doc comment.
+/// Decodes CBOR bytes into a plain JS value. A CBOR byte string comes
+/// back as a `Uint8Array` — the inverse of [`encode`]'s handling, closing
+/// cratestack#783's symmetric decode half. Two things are load-bearing
+/// for that: `JsSerializable` (which pins `Value::Bytes` to
+/// `serialize_bytes` rather than the base64 string `Value` emits for
+/// human-readable formats, and `serde_wasm_bindgen::Serializer` reports
+/// itself as one), and leaving `serialize_bytes_as_arrays` at its default
+/// so `serialize_bytes` produces a `Uint8Array` and not a plain `Array`.
+/// Malformed input surfaces as a rejected/thrown `Error`, never a trap —
+/// see the module doc comment.
 ///
 /// Two `serde_wasm_bindgen` default `Serializer` behaviors would otherwise
 /// corrupt the result, so this builds an explicit `Serializer` instead of
 /// using the `to_value` convenience function:
 ///   - `serialize_maps_as_objects(true)` — the default turns Rust maps
-///     (including `serde_json::Value::Object`) into JS `Map` instances,
-///     not plain `{}` objects. A `Map` round-trips fine through explicit
+///     (including `Value::Map`) into JS `Map` instances, not plain `{}`
+///     objects. A `Map` round-trips fine through explicit
 ///     `.get()`/`.entries()` calls, but silently renders as `"{}"` under
 ///     `JSON.stringify`, which isn't what a `decode(bytes): unknown`
 ///     caller expects.
 ///   - `serialize_missing_as_null(true)` — the default serializes both
-///     `serialize_none()` and `serialize_unit()` (what `serde_json::Value
-///     ::Null`'s own `Serialize` impl calls) as JS `undefined`, not
-///     `null`. An object property set to `undefined` is silently dropped
-///     by `JSON.stringify`, which is what made this look like data loss
+///     `serialize_none()` (what `Value::Null` calls) and
+///     `serialize_unit()` as JS `undefined`, not `null`. An object
+///     property set to `undefined` is silently dropped by
+///     `JSON.stringify`, which is what made this look like data loss
 ///     during development rather than a `null`-vs-`undefined` mismatch.
 #[wasm_bindgen]
 pub fn decode(bytes: &[u8]) -> Result<JsValue, JsError> {
-    let value: serde_json::Value = CborCodec.decode(bytes)?;
+    let value: Value = CborCodec.decode(bytes)?;
     let serializer = serde_wasm_bindgen::Serializer::new()
         .serialize_maps_as_objects(true)
         .serialize_missing_as_null(true);
-    serde::Serialize::serialize(&value, &serializer)
+    serde::Serialize::serialize(&JsSerializable(&value), &serializer)
         .map_err(|error| JsError::new(&format!("failed to convert decoded CBOR to JS: {error}")))
 }
 
@@ -127,6 +139,82 @@ mod tests {
     fn top_level_null_encodes_to_the_single_cbor_null_byte() {
         let bytes = encode(JsValue::NULL).expect("encode should succeed");
         assert_eq!(bytes, vec![0xf6]);
+    }
+
+    #[wasm_bindgen_test]
+    fn a_uint8_array_encodes_as_a_cbor_byte_string() {
+        // cratestack#783: this used to encode as a CBOR *map* of
+        // index→value (`a8 6130 01 6131 02 …`), which no `Vec<u8>` on the
+        // Rust side can decode. `0x44` is major type 2, length 4.
+        let input = js_sys::Uint8Array::from(&[1u8, 2, 3, 4][..]);
+        let bytes = encode(input.into()).expect("encode should succeed");
+        assert_eq!(bytes, vec![0x44, 0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[wasm_bindgen_test]
+    fn an_array_buffer_encodes_as_a_cbor_byte_string_too() {
+        let view = js_sys::Uint8Array::from(&[1u8, 2, 3, 4][..]);
+        let bytes = encode(view.buffer().into()).expect("encode should succeed");
+        assert_eq!(bytes, vec![0x44, 0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[wasm_bindgen_test]
+    fn a_cbor_byte_string_decodes_back_to_a_uint8_array() {
+        // The symmetric half: a server sending a `Bytes` field as major
+        // type 2 must be readable here, not just writable.
+        let decoded = decode(&[0x44, 0x01, 0x02, 0x03, 0x04]).expect("decode should succeed");
+        let array = decoded
+            .dyn_ref::<js_sys::Uint8Array>()
+            .expect("a CBOR byte string must decode to a Uint8Array");
+        assert_eq!(array.to_vec(), vec![1, 2, 3, 4]);
+    }
+
+    #[wasm_bindgen_test]
+    fn a_nested_uint8_array_round_trips() {
+        let input = js_sys::Object::new();
+        js_sys::Reflect::set(
+            &input,
+            &JsValue::from_str("nonce"),
+            &js_sys::Uint8Array::from(&[0xdeu8, 0xad, 0xbe, 0xef][..]),
+        )
+        .expect("set should succeed");
+
+        let bytes = encode(input.into()).expect("encode should succeed");
+        let nonce = js_sys::Reflect::get(
+            &decode(&bytes).expect("decode should succeed"),
+            &JsValue::from_str("nonce"),
+        )
+        .expect("nonce property should exist");
+
+        assert_eq!(
+            nonce
+                .dyn_ref::<js_sys::Uint8Array>()
+                .expect("nonce must come back as a Uint8Array")
+                .to_vec(),
+            vec![0xde, 0xad, 0xbe, 0xef]
+        );
+    }
+
+    #[wasm_bindgen_test]
+    fn a_plain_number_array_is_still_a_plain_array() {
+        // The `Array.from(bytes)` workaround callers use today must keep
+        // behaving exactly as before — an untyped value carries no
+        // schema, so nothing here may guess that an integer array "meant"
+        // bytes. `0x84` is a 4-element array, not `0x44`.
+        let input = js_sys::Array::of4(
+            &JsValue::from_f64(1.0),
+            &JsValue::from_f64(2.0),
+            &JsValue::from_f64(3.0),
+            &JsValue::from_f64(4.0),
+        );
+        let bytes = encode(input.into()).expect("encode should succeed");
+        assert_eq!(bytes, vec![0x84, 0x01, 0x02, 0x03, 0x04]);
+
+        let decoded = decode(&bytes).expect("decode should succeed");
+        assert!(
+            js_sys::Array::is_array(&decoded),
+            "an integer array must decode back as an Array, not a Uint8Array"
+        );
     }
 
     #[wasm_bindgen_test]

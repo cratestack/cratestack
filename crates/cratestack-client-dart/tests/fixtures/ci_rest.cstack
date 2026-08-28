@@ -43,7 +43,14 @@ model Post {
   @@paged
 }
 
-procedure listPosts(filter: PostStatusFilter?): Post[]
+// `searchPosts`, not `listPosts` — DELIBERATE (cratestack#784). `model
+// Post`'s generated `list` CRUD handler is `handle_list_posts`, and a
+// procedure named `listPosts` normalizes to the same ident, so the pair
+// is an `error[E0428]` in any `include_server_schema!` build. The parser
+// now refuses that schema outright
+// (`validate::procedure_handler_collisions`), which means renaming this
+// back would fail `parse_schema`, not just `cargo check`.
+procedure searchPosts(filter: PostStatusFilter?): Post[]
   @allow(auth() != null)
 
 mutation procedure currentStatus(postId: Int): PostStatus
