@@ -1,6 +1,11 @@
 .dart_tool/
 .packages
 pubspec.lock
+# `flutter test` — part of `just cbor-verify-package` since cratestack#794 —
+# builds an asset bundle here. Ordinary local build output; the publish
+# path (`release-cli.yml`'s `publish-pubdev-cbor`) runs the vendor recipes
+# only, never the test recipe, so this directory does not exist there.
+build/
 # The example app (cratestack#563) is an application target, not a
 # library — commit its lockfile for reproducibility, same convention as
 # examples/flutter-riverpod/app/pubspec.lock. This negates the broad

@@ -108,6 +108,19 @@ String _jsErrorMessage(Object error) => error.toString();
 
 bool _initialized = false;
 
+/// The in-flight-or-settled result of the first successful
+/// [createCborCodec] call — see that function's doc comment.
+Future<CratestackCborCodec>? _codecFuture;
+
+/// Whether the wasm module backing [createCborCodec] is already loaded.
+///
+/// Web counterpart of the native backend's identically-named getter
+/// (cratestack#794), so consumer code can ask the question without
+/// branching on platform. Unlike the native one there is no third-party
+/// runtime to consult here — nothing but this library loads the vendored
+/// module — so this reports the same flag [createCborCodec] sets.
+bool get isCborRuntimeInitialized => _initialized;
+
 /// Candidate base URLs (relative to [Uri.base]) the vendored `.js`/`.wasm`
 /// pair might be served from, tried in order — cratestack#563's "Flutter
 /// Web asset bundling" slice. Two genuinely different serving conventions
@@ -132,40 +145,64 @@ const _wasmPkgBaseUrlCandidates = [
   'assets/packages/cratestack_cbor/lib/src/web/wasm-pkg/',
 ];
 
-/// Loads the vendored wasm module (once — safe to call more than once) and
-/// returns the uniform codec. See [CratestackCborCodec] for the API
-/// surface.
-Future<CratestackCborCodec> createCborCodec() async {
-  if (!_initialized) {
-    final failures = <String>[];
-    Uri? loadedFrom;
-    for (final candidate in _wasmPkgBaseUrlCandidates) {
-      final baseUrl = Uri.base.resolve(candidate);
-      await _installModuleBridge(
-        baseUrl.resolve('cratestack_cbor_wasm.js').toString(),
-      );
-      final error = _bridgeError;
-      if (error == null) {
-        loadedFrom = baseUrl;
-        break;
-      }
-      failures.add('$baseUrl: ${error.toDart}');
+/// Loads the vendored wasm module (once — safe to call more than once,
+/// concurrently or not) and returns the uniform codec. See
+/// [CratestackCborCodec] for the API surface.
+///
+/// The returned `Future` is memoized, so concurrent callers share one load
+/// rather than racing to append two `<script>` bridges. The `bool` flag
+/// alone could not do that — it is only set after the `await`s below, so
+/// two callers arriving before the first finishes would both see `false`.
+/// This backend's second call was never *fatal* the way the native
+/// backend's was (cratestack#794 — flutter_rust_bridge rejects a second
+/// `init` outright), but the race was equally real, and the two backends
+/// answering "is it up?" differently would be its own trap.
+///
+/// Only a *successful* load is memoized, matching the native backend and
+/// `@cratestack/cbor-web`'s `ensureInitialized()`: a memoized rejection
+/// would replay a transient asset-loading failure forever instead of
+/// letting the next call retry.
+Future<CratestackCborCodec> createCborCodec() =>
+    _codecFuture ??= _createCborCodec().onError<Object>((error, stackTrace) {
+      // Un-memoize on failure. Hung off the future rather than written as
+      // a `try`/`catch` inside `_createCborCodec` so it cannot run before
+      // the `??=` above has assigned — an `onError` callback is always
+      // asynchronous, whereas a `catch` body would fire synchronously for
+      // anything that threw before the first `await`, and the assignment
+      // would then immediately re-memoize the very failure it cleared.
+      _codecFuture = null;
+      Error.throwWithStackTrace(error, stackTrace);
+    });
+
+Future<CratestackCborCodec> _createCborCodec() async {
+  final failures = <String>[];
+  Uri? loadedFrom;
+  for (final candidate in _wasmPkgBaseUrlCandidates) {
+    final baseUrl = Uri.base.resolve(candidate);
+    await _installModuleBridge(
+      baseUrl.resolve('cratestack_cbor_wasm.js').toString(),
+    );
+    final error = _bridgeError;
+    if (error == null) {
+      loadedFrom = baseUrl;
+      break;
     }
-    if (loadedFrom == null) {
-      throw StateError(
-        'cratestack_cbor: failed to load the vendored wasm module. Tried:\n'
-        '${failures.map((f) => '  - $f').join('\n')}\n'
-        'If this package is served from neither the dev-server '
-        'packages/cratestack_cbor/... URL nor a release flutter build '
-        'web\'s assets/packages/cratestack_cbor/... path, see this '
-        'package\'s README for how to point at a copy you host yourself.',
-      );
-    }
-    await _init(
-      loadedFrom.resolve('cratestack_cbor_wasm_bg.wasm').toString(),
-    ).toDart;
-    _initialized = true;
+    failures.add('$baseUrl: ${error.toDart}');
   }
+  if (loadedFrom == null) {
+    throw StateError(
+      'cratestack_cbor: failed to load the vendored wasm module. Tried:\n'
+      '${failures.map((f) => '  - $f').join('\n')}\n'
+      'If this package is served from neither the dev-server '
+      'packages/cratestack_cbor/... URL nor a release flutter build '
+      'web\'s assets/packages/cratestack_cbor/... path, see this '
+      'package\'s README for how to point at a copy you host yourself.',
+    );
+  }
+  await _init(
+    loadedFrom.resolve('cratestack_cbor_wasm_bg.wasm').toString(),
+  ).toDart;
+  _initialized = true;
   return const _WebCratestackCborCodec();
 }
 

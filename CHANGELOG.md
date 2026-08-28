@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### `cratestack_cbor`'s `createCborCodec()` no longer throws on a second call (#794)
+
+An app that uses CBOR directly and also has a generated `transport rpc` Dart client ends up with
+two independent initialisers: its own `createCborCodec()` call, and the one the generated client's
+RPC codec makes from inside its own runtime, against `package:cratestack_cbor` directly. The second
+threw `Bad state: Should not initialize flutter_rust_bridge twice`. Neither call site is wrong,
+neither is reachable from the other, and the generated client cannot be told to reuse an existing
+codec. It surfaced only against a live service — everything compiled and every offline suite passed.
+
+`createCborCodec()` is now idempotent by two independent mechanisms, because the `bool` flag it
+replaced provided neither. The returned `Future` is memoized, so concurrent callers share one
+initialization rather than both seeing "not initialized" and both calling `init`. And the `init`
+itself is guarded on flutter_rust_bridge's own state rather than on a flag private to the library,
+which covers what memoization structurally cannot: a consumer that already bootstrapped the bridge
+through its own path. Only a *successful* initialization is memoized — the same rule, for the same
+reason, as the generated TypeScript RPC runtime's `resolveCodec()`.
+
+A new `isCborRuntimeInitialized` is exported next to `createCborCodec` on every platform, so a
+consumer with its own bootstrap can ask instead of guess.
+
+Separately, and the reason such bootstraps get written at all: under `flutter test` the package
+could not resolve its vendored library, because `flutter_tester` does not implement
+`Isolate.resolvePackageUriSync`. That did not fail softly — it threw `Unsupported operation`, and
+the only workaround was `CRATESTACK_CBOR_NATIVE_LIB`, an env var a Dart process cannot set for
+itself. Resolution now falls back to reading `.dart_tool/package_config.json` directly, walking up
+from the working directory so nested directories and pub workspaces resolve too. The two problems
+compounded: the workaround for the resolution gap is what created the double-init. The package's
+own suite now runs under `flutter test` as well as `dart test` in CI, with the env var explicitly
+unset, so neither half can regress unnoticed.
+
 ### `@cratestack/refine` converts every method's errors the same way, and stops destroying them (#786)
 
 The data provider handled a thrown error two different ways depending on which method threw.

@@ -6,6 +6,11 @@
 // such file" import error at a call site.
 import 'cbor_codec.dart';
 
+/// Always `false` — there is no backend here to have initialized. Exists
+/// so the conditional export in `../cratestack_cbor.dart` can offer the
+/// same public surface on every compile target (cratestack#794).
+bool get isCborRuntimeInitialized => false;
+
 Future<CratestackCborCodec> createCborCodec() {
   throw UnsupportedError(
     'cratestack_cbor: no backend is available for this Dart compile '

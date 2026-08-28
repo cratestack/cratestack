@@ -76,7 +76,7 @@ wasm bundle, so tests fail until you build them:
 just cbor-vendor-native   # frb glue + blobs/linux-x64/*.so
 just cbor-vendor-web      # wasm-pack --target web -> lib/src/web/wasm-pkg/
 just cbor-vendor-android  # cargo ndk cross-compile -> blobs/android/<abi>/*.so (needs cbor-vendor-native's glue first)
-just cbor-verify-package  # runs the Linux+web backends (dart test / dart test -p chrome)
+just cbor-verify-package  # Linux+web backends (dart test / dart test -p chrome / flutter test)
 ```
 
 Android has no `dart test` story of its own (see gotcha 6 below) — verify it with a real
@@ -184,7 +184,11 @@ real Flutter app actually uses:
 
 - **Native:** `dart test` loads the vendored `.so` via `Isolate.resolvePackageUri` — that call needs
   this package's *source tree* on disk (a path dependency, or a pub cache checkout), which a compiled
-  Flutter app does not have. A real app instead needs Flutter's own plugin-bundling mechanism
+  Flutter app does not have. (`flutter test`, added to `just cbor-verify-package` by cratestack#794,
+  runs the same suite on `flutter_tester`, where that call is *unimplemented* and the
+  `.dart_tool/package_config.json` fallback in `lib/src/native/package_root.dart` answers instead —
+  a different code path, still not the compiled-app one.) A real app instead needs Flutter's own
+  plugin-bundling mechanism
   (`dart-packages/cratestack_cbor/linux/CMakeLists.txt`, an FFI plugin per
   `pubspec.yaml`'s `flutter: plugin: platforms: linux: ffiPlugin: true`) to copy the `.so` into the
   built bundle, and `lib/src/native/native_cbor_codec.dart` tries that location first, falling back to
@@ -320,7 +324,7 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
 `needs:`):
 
 - **`flutter (cratestack_cbor package — native + web)`** installs the pinned toolchain, runs both
-  vendor recipes, then `just cbor-verify-package` (the `dart test`/`dart test -p chrome` library-level
+  vendor recipes, then `just cbor-verify-package` (the `dart test`/`dart test -p chrome`/`flutter test` library-level
   proof above).
 - **`flutter (cratestack_cbor example — linux + web, real builds)`** additionally installs the Linux
   desktop toolchain (GTK3 dev headers, cmake, ninja) and `xvfb`, vendors the same artifacts, then runs

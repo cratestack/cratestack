@@ -3,8 +3,8 @@
 // inside the package, no Rust toolchain and no network fetch imposed on
 // consumers). Selected by the `dart.library.io` branch of
 // `../../cratestack_cbor.dart`'s conditional export, so this file (and its
-// `dart:io`/`dart:isolate`/`dart:ffi` imports) is never even parsed for a
-// web compile target.
+// `dart:io`/`dart:ffi` imports, and `package_root.dart`'s `dart:isolate`
+// one) is never even parsed for a web compile target.
 //
 // This slice vendors Linux x86_64 (`blobs/linux-x64/`), Android
 // arm64-v8a/x86_64/armeabi-v7a (`blobs/android/<abi>/`), Windows x86_64
@@ -25,11 +25,11 @@
 // find a library.
 import 'dart:ffi' show Abi;
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import '../cbor_codec.dart';
+import 'package_root.dart';
 import 'rust/cbor.dart' as rust_cbor;
 import 'rust/frb_generated.dart';
 import 'rust/types.dart' show FlutterRuntimeError;
@@ -67,18 +67,71 @@ class _NativeCratestackCborCodec implements CratestackCborCodec {
   }
 }
 
-bool _initialized = false;
+/// The in-flight-or-settled result of the first successful
+/// [createCborCodec] call — see that function's doc comment for why this
+/// is a memoized `Future`, not the `bool` flag it replaced
+/// (cratestack#794).
+Future<CratestackCborCodec>? _codecFuture;
+
+/// Whether the native runtime backing [createCborCodec] is already up.
+///
+/// Reports flutter_rust_bridge's OWN state
+/// (`CratestackCborRustLib.instance.initialized`), not a flag private to
+/// this library, so it stays accurate even for a consumer that bootstrapped
+/// the bridge itself rather than through [createCborCodec] — which is the
+/// whole reason it exists (cratestack#794). Never throws, and never
+/// initializes anything: a `false` here is an invitation to call
+/// [createCborCodec], not an error.
+bool get isCborRuntimeInitialized => CratestackCborRustLib.instance.initialized;
 
 /// Initializes the flutter_rust_bridge runtime against the vendored native
-/// library (once — safe to call more than once) and returns the uniform
-/// codec. See [CratestackCborCodec] for the API surface.
-Future<CratestackCborCodec> createCborCodec() async {
-  if (!_initialized) {
+/// library (once — safe to call more than once, concurrently or not) and
+/// returns the uniform codec. See [CratestackCborCodec] for the API
+/// surface.
+///
+/// **Idempotent by two independent mechanisms** (cratestack#794 — the
+/// `bool _initialized` flag this replaced provided neither, and
+/// flutter_rust_bridge's `initImpl` throws `StateError('Should not
+/// initialize flutter_rust_bridge twice')` on the second attempt rather
+/// than no-opping):
+///
+/// 1. The returned `Future` is **memoized**, so concurrent callers share
+///    one initialization instead of racing to run two. A plain `bool`
+///    guard cannot do this: it is only set *after* the `await`s below, so
+///    two callers that both arrive before the first one finishes both see
+///    `false` and both call `init`.
+/// 2. The `init` itself is guarded on [isCborRuntimeInitialized], i.e. on
+///    flutter_rust_bridge's own state rather than on this library's. That
+///    covers the case memoization structurally cannot: a consumer that
+///    already called `CratestackCborRustLib.init` through its own
+///    bootstrap path, whose work this library would otherwise have no way
+///    to observe.
+///
+/// Only a *successful* initialization is memoized — the same rule, for the
+/// same reason, as the generated TypeScript RPC runtime's `resolveCodec()`
+/// (`crates/cratestack-client-typescript/templates/src/rpc-runtime.ts.j2`)
+/// and `@cratestack/cbor-web`'s `ensureInitialized()`. A failure here is
+/// usually fixable without restarting the process (vendor the library,
+/// set [_libraryOverrideEnvVar]), and a memoized rejection would replay
+/// the same error forever instead of letting the next call retry.
+Future<CratestackCborCodec> createCborCodec() =>
+    _codecFuture ??= _createCborCodec().onError<Object>((error, stackTrace) {
+      // Un-memoize on failure. Hung off the future rather than written as
+      // a `try`/`catch` inside `_createCborCodec` so it cannot run before
+      // the `??=` above has assigned — an `onError` callback is always
+      // asynchronous, whereas a `catch` body would fire synchronously for
+      // anything that threw before the first `await`, and the assignment
+      // would then immediately re-memoize the very failure it cleared.
+      _codecFuture = null;
+      Error.throwWithStackTrace(error, stackTrace);
+    });
+
+Future<CratestackCborCodec> _createCborCodec() async {
+  if (!isCborRuntimeInitialized) {
     final libraryPath = await resolveVendoredLibraryPath();
     await CratestackCborRustLib.init(
       externalLibrary: ExternalLibrary.open(libraryPath),
     );
-    _initialized = true;
   }
   return const _NativeCratestackCborCodec();
 }
@@ -116,12 +169,15 @@ Future<CratestackCborCodec> createCborCodec() async {
 ///    only strategy proven against a real `flutter build linux` + running
 ///    the built binary (Windows is UNVERIFIED — this repo's toolchain is
 ///    Linux-only; see docs/tooling/cratestack-cbor-development.md).
-/// 2. **Dev/test mode.** `dart test`, `dart run`, or anything else that
-///    still has this package's source tree reachable (a pub cache
-///    checkout, or — as in this repo — a `path:` dependency), resolved via
-///    `Isolate.resolvePackageUri`. This is how the package's own `dart
-///    test` suite exercised the native backend before any Flutter plugin
-///    scaffolding existed, and still does (no Flutter SDK involved).
+/// 2. **Dev/test mode.** `dart test`, `dart run`, `flutter test`, or
+///    anything else that still has this package's source tree reachable (a
+///    pub cache checkout, or — as in this repo — a `path:` dependency).
+///    See [lookupPackageRoot] for the two sub-strategies this uses and why
+///    `Isolate.resolvePackageUri` alone is not enough (`flutter test` does
+///    not implement it — cratestack#794). This is how the package's own
+///    `dart test` suite exercised the native backend before any Flutter
+///    plugin scaffolding existed, and still does (no Flutter SDK
+///    involved).
 ///
 /// Windows' bare filename is deliberately never opened by relying on the
 /// OS's own DLL search order (e.g. `DynamicLibrary.open('cratestack_client_
@@ -265,18 +321,10 @@ Future<String> resolveVendoredLibraryPath() async {
     'Platform.resolvedExecutable — not found)',
   );
 
-  final packageUri = await Isolate.resolvePackageUri(
-    Uri.parse('package:cratestack_cbor/cratestack_cbor.dart'),
-  );
-  if (packageUri != null) {
-    // packageUri is .../cratestack_cbor/lib/cratestack_cbor.dart. Per RFC
-    // 3986 URI merging, resolving a SINGLE ".." against it already drops
-    // both the file name and the `lib/` segment, landing on the package
-    // root (sibling of `blobs/`) directly — verified empirically, not just
-    // by spec-reading: a naive double `resolve('..')` here overshot by one
-    // level (see this PR's verification transcript).
-    final packageRoot = packageUri.resolve('..');
-    final libraryUri = packageRoot.resolve(
+  final lookup = await lookupPackageRoot();
+  attempts.addAll(lookup.attempts);
+  if (lookup.root != null) {
+    final libraryUri = lookup.root!.resolve(
       'blobs/linux-x64/libcratestack_client_flutter.so',
     );
     final libraryFile = File.fromUri(libraryUri);
@@ -284,14 +332,7 @@ Future<String> resolveVendoredLibraryPath() async {
       return libraryFile.path;
     }
     attempts.add(
-      'vendored package source tree at ${libraryFile.path} (resolved via '
-      'Isolate.resolvePackageUri — not found)',
-    );
-  } else {
-    attempts.add(
-      'Isolate.resolvePackageUri("package:cratestack_cbor/'
-      'cratestack_cbor.dart") returned null (expected inside a compiled '
-      'Flutter app; only meaningful under dart test/dart run)',
+      'vendored package source tree at ${libraryFile.path} (not found)',
     );
   }
 
@@ -341,14 +382,12 @@ Future<String> _resolveWindowsLibraryPath() async {
     'Platform.resolvedExecutable — not found)',
   );
 
-  // Dev/test mode: same `Isolate.resolvePackageUri` strategy as Linux,
-  // just pointed at `blobs/windows-x64/` and the unprefixed `.dll` name.
-  final packageUri = await Isolate.resolvePackageUri(
-    Uri.parse('package:cratestack_cbor/cratestack_cbor.dart'),
-  );
-  if (packageUri != null) {
-    final packageRoot = packageUri.resolve('..');
-    final libraryUri = packageRoot.resolve(
+  // Dev/test mode: same [lookupPackageRoot] strategies as Linux, just
+  // pointed at `blobs/windows-x64/` and the unprefixed `.dll` name.
+  final lookup = await lookupPackageRoot();
+  attempts.addAll(lookup.attempts);
+  if (lookup.root != null) {
+    final libraryUri = lookup.root!.resolve(
       'blobs/windows-x64/cratestack_client_flutter.dll',
     );
     final libraryFile = File.fromUri(libraryUri);
@@ -356,14 +395,7 @@ Future<String> _resolveWindowsLibraryPath() async {
       return libraryFile.path;
     }
     attempts.add(
-      'vendored package source tree at ${libraryFile.path} (resolved via '
-      'Isolate.resolvePackageUri — not found)',
-    );
-  } else {
-    attempts.add(
-      'Isolate.resolvePackageUri("package:cratestack_cbor/'
-      'cratestack_cbor.dart") returned null (expected inside a compiled '
-      'Flutter app; only meaningful under dart test/dart run)',
+      'vendored package source tree at ${libraryFile.path} (not found)',
     );
   }
 

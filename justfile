@@ -2040,11 +2040,19 @@ cbor-vendor-android:
 #
 # Requires: Dart SDK on PATH, and Chrome/Chromium for the web half
 # (`CHROME_EXECUTABLE` if not auto-detected — see `dart test`'s docs).
+# `flutter` too, for the third leg below — already true of every caller,
+# since this package stopped being resolvable by a standalone Dart SDK the
+# moment it became a Flutter plugin (see `cratestack-cbor-package`'s own
+# comment in ci.yml for why `dart pub get` above needs Flutter anyway).
 cbor-verify-package:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	if ! command -v dart >/dev/null; then
 	  echo "dart not found on PATH — install the Dart SDK: https://dart.dev/get-dart" >&2
+	  exit 1
+	fi
+	if ! command -v flutter >/dev/null; then
+	  echo "flutter not found on PATH — install the Flutter SDK: https://docs.flutter.dev/get-started/install" >&2
 	  exit 1
 	fi
 	pkg=dart-packages/cratestack_cbor
@@ -2054,6 +2062,18 @@ cbor-verify-package:
 	(cd "$pkg" && dart test)
 	echo "=== dart test -p chrome (web backend, @TestOn('browser')): $pkg ==="
 	(cd "$pkg" && dart test -p chrome)
+	# The same VM suite again, under a DIFFERENT runtime — not redundant
+	# (cratestack#794). `flutter test` runs on `flutter_tester`, where
+	# `Isolate.resolvePackageUriSync` is unimplemented, so the dev-mode
+	# library resolution `dart test` exercises does not run there at all;
+	# the `.dart_tool/package_config.json` fallback does instead. Before
+	# that fallback existed this package could not be exercised under
+	# `flutter test` without `CRATESTACK_CBOR_NATIVE_LIB` — which is
+	# precisely what pushed consumers into writing the second bootstrap
+	# that then double-initialised flutter_rust_bridge. Deliberately runs
+	# WITHOUT that env var set, or it would prove nothing.
+	echo "=== flutter test (native backend under flutter_tester): $pkg ==="
+	(cd "$pkg" && env -u CRATESTACK_CBOR_NATIVE_LIB flutter test)
 	echo ""
 	echo "✓ cratestack_cbor: both backends round-trip against the vendored artifacts"
 

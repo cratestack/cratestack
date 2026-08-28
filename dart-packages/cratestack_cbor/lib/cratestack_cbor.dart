@@ -37,4 +37,4 @@ export 'src/cbor_codec.dart' show CratestackCborCodec, CratestackCborCodecError;
 export 'src/unsupported_cbor_codec.dart'
     if (dart.library.io) 'src/native/native_cbor_codec.dart'
     if (dart.library.js_interop) 'src/web/web_cbor_codec.dart'
-    show createCborCodec;
+    show createCborCodec, isCborRuntimeInitialized;

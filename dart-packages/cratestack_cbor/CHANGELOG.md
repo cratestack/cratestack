@@ -1,5 +1,37 @@
 ## Unreleased
 
+- **`createCborCodec()` is idempotent, and resolves its vendored library under
+  `flutter test`** (cratestack#794). Three related fixes; the first is the one
+  that turns a footgun into a non-issue.
+
+  1. **A second `createCborCodec()` no longer throws `Bad state: Should not
+     initialize flutter_rust_bridge twice`.** Any app that uses this package
+     directly *and* has a generated `transport rpc` Dart client has two
+     independent callers — its own code, and the generated client's RPC codec,
+     which imports `package:cratestack_cbor` itself and cannot be handed an
+     existing codec. Neither call site is wrong and neither can see the other.
+     The returned `Future` is now memoized, so concurrent callers share one
+     initialization instead of racing, and the `init` is guarded on
+     flutter_rust_bridge's own state rather than on a flag private to this
+     library, so a consumer that bootstrapped the bridge itself is respected
+     too. Only a *successful* initialization is memoized: a failure is usually
+     fixable in-process, and a memoized rejection would replay it forever.
+     The web backend gets the same memoization — its second call was never
+     fatal, but the race was identical.
+  2. **New `isCborRuntimeInitialized`**, exported alongside `createCborCodec`
+     on every platform. It reports the backend runtime's own state, so a
+     consumer with its own bootstrap path can cooperate rather than guess.
+  3. **`flutter test` can now resolve the vendored library with no
+     `CRATESTACK_CBOR_NATIVE_LIB`.** `flutter_tester` does not implement
+     `Isolate.resolvePackageUriSync`, so the dev-mode resolution strategy did
+     not merely fail there, it threw `Unsupported operation`. Resolution now
+     falls back to reading `.dart_tool/package_config.json` directly (walking
+     up from the working directory, so nested directories and pub workspaces
+     resolve too). This removes the reason consumers wrote a second bootstrap
+     in the first place — the workaround for this gap is what created the
+     double-init in (1). The package's own suite now runs under `flutter test`
+     as well as `dart test`, in CI, with that env var explicitly unset.
+
 ## 0.8.14 (2026-08-27)
 
 - No functional changes. Version kept in lockstep with the CrateStack
