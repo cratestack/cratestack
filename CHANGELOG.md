@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### The generated Dart client caches its CBOR codec for successes only (#798)
+
+Both generated Dart runtimes resolved `cratestack_cbor`'s `createCborCodec()` through a plain
+`_cratestackCborCodecFuture ??= createCborCodec()`. That never re-evaluates once the field holds a
+settled *rejected* future, so a single transient failure — a wasm asset that 404s on web, a vendored
+library that was not there yet — bricked every later request in the isolate, replaying the same
+error instead of retrying. Nothing about the failure was permanent; only the cache made it so.
+
+Both now clear the cached future on failure and rethrow with the original stack trace, so the next
+request gets a fresh attempt while a *successful* resolution stays cached exactly as before. This
+brings the Dart runtimes in line with `@cratestack/cbor-web`'s `ensureInitialized()`, the generated
+TypeScript RPC runtime's `resolveCodec()`, and `cratestack_cbor`'s own `createCborCodec()` (#794),
+which had all already been fixed for this.
+
+REST and RPC changed together, as the transport-parity rule requires — the cached accessor is
+generated twice, once in `rest-runtime.dart.j2` and once in `rpc_runtime/types.dart.j2`, so fixing
+one would have proven nothing about the other.
+
+The new test is behavioral, not a source-text match: it generates a real package per transport,
+points it at a stub `cratestack_cbor` whose factory fails on demand, and runs it under `flutter
+test`. Asserting the fixed *expression* appears in the rendered template would repeat the mistake
+the TypeScript suite already made once — a string match on the buggy line kept passing with the bug
+fully present.
+
 ### `cratestack_cbor`'s `createCborCodec()` no longer throws on a second call (#794)
 
 An app that uses CBOR directly and also has a generated `transport rpc` Dart client ends up with
