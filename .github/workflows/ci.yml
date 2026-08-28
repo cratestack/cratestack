@@ -476,14 +476,24 @@ jobs:
 
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
-  # (worse than an honest gap, because it looks maintained but isn't).
-  # Blocking gate for any PR that touches CHANGELOG.md.
+  # (worse than an honest gap, because it looks maintained but isn't), AND
+  # (cratestack#739) that no entry a PR adds landed under a dated release
+  # section instead of "## Unreleased". Blocking gate for any PR that
+  # touches a declared changelog.
   changelog-verify:
     timeout-minutes: 45
-    name: changelog (no unedited seeds)
+    name: changelog (no unedited seeds, correct placement)
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0, not the default 1 (mirrors quality.yml,
+      # prepare-release.yml, cut-release-tag.yml): the placement check
+      # diffs against `origin/main` to find the lines a PR itself adds
+      # (cratestack#739) — a shallow, single-commit checkout never has
+      # `origin/main` as a resolvable ref at all, which would make the
+      # check silently no-op on every PR rather than actually run.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: taiki-e/install-action@v2
         with:
           tool: just

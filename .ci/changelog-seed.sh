@@ -373,11 +373,29 @@ fi
 noop_section=""
 noop_scope="${CHANGELOG_NOOP_SCOPES[$CHANGELOG_FILE]:-}"
 if [ -n "$noop_scope" ]; then
+  # cratestack#740: the scope above includes the package's own directory,
+  # which includes $CHANGELOG_FILE itself — so a commit that only edits
+  # this changelog (e.g. the hand-written prose fixing the PREVIOUS
+  # occurrence of this exact defect) used to count as a change to the
+  # package, arming the placeholder seed for the NEXT bump. Self-
+  # perpetuating: #728 -> hand-fixed by #731 -> that fix caused #736 ->
+  # hand-fixed by 3de442b8 -> 0.8.14 armed, ad infinitum.
+  #
+  # Excluding $CHANGELOG_FILE — derived from the map key actually being
+  # looked up above, not a hardcoded per-package literal — closes this
+  # without narrowing the scope on any other axis: every other file the
+  # scope names (the package directory itself, plus any extra vendoring
+  # directories — see cratestack_cbor's entry) is still counted in full.
+  # Verified both directions against this repo's real v0.8.9..v0.8.10 and
+  # v0.8.12..v0.8.13 ranges (cratestack#740's PR description has the
+  # transcripts): a changelog-only commit now yields zero, a real source
+  # commit still yields non-zero.
+  #
   # Deliberately unquoted: $noop_scope is a space-separated list of
   # pathspecs (see changelog-files.sh) and word-splitting it into multiple
   # `git log -- <path> <path> ...` arguments is the point.
   # shellcheck disable=SC2086
-  noop_commit_count=$(git log "$range" --pretty=%s -- $noop_scope | wc -l | tr -d '[:space:]')
+  noop_commit_count=$(git log "$range" --pretty=%s -- $noop_scope ":(exclude)$CHANGELOG_FILE" | wc -l | tr -d '[:space:]')
   if [ "$noop_commit_count" -eq 0 ]; then
     # `printf -v`, not `noop_section=$(printf ...)`: command substitution
     # strips ALL trailing newlines (the same reason the '## Unreleased'
