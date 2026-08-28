@@ -29,7 +29,7 @@ fn related_models_with_a_same_named_non_decimal_field_do_not_collide() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping related_models_with_a_same_named_non_decimal_field_do_not_collide: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm`/`npx` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }

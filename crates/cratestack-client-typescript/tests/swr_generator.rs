@@ -2,8 +2,8 @@
 // made additive by #591): file-set shape, per-model content, the
 // ownership rule's shared/inline split, the relation-cycle fixture, and
 // the framework-free claim (by text — see `tests/swr_runtime.rs` for the
-// actual-Node-execution proof, which is best-effort/skippable since no
-// Rust CI job in this repo currently provisions Node).
+// actual-Node-execution proof, which is skippable where Node is absent,
+// i.e. a local Rust-only checkout; CI's `ubuntu-latest` ships Node).
 
 use cratestack_client_typescript::{
     GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, generate_package,

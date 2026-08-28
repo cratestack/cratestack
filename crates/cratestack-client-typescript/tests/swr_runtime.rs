@@ -30,9 +30,17 @@
 //! dependency every generated package has needed since cratestack#498,
 //! not a framework.
 //!
-//! No Rust CI job in this repo currently provisions Node (`js` is the
-//! only one, and it doesn't run `cargo test`) — see `.github/workflows/ci.yml`.
-//! So this test degrades to a skip (printed, not silently swallowed) when
+//! This test DOES run in CI, and this comment used to claim the opposite —
+//! that "no Rust CI job in this repo currently provisions Node". That was
+//! wrong: GitHub's `ubuntu-latest` image ships Node, so the `tests (host —
+//! everything else)` job (`just test-ci-host`) runs these without needing a
+//! `setup-node` step. Confirmed against a real job log rather than by reading
+//! the workflow, because a skip is indistinguishable from a pass in the
+//! summary line — both print `ok`. Wall time is the tell: a genuine run shows
+//! seconds for the `npm install`, where a skip reports `0.00s`.
+//!
+//! The skip below is therefore for a *local* Rust-only checkout, not for CI.
+//! It degrades to a skip (printed, not silently swallowed) when
 //! `node`/`npm` aren't on `PATH`, rather than failing a CI job that was
 //! never going to have them. Where Node *is* available (local dev, or a
 //! future CI job that adds it), this is a real, non-trivial verification.
@@ -51,7 +59,7 @@ fn generated_plain_function_runs_outside_any_react_context() {
     if !node_toolchain_available() {
         eprintln!(
             "skipping generated_plain_function_runs_outside_any_react_context: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this — \
              see tests/swr_runtime.rs's module doc)"
         );
         return;

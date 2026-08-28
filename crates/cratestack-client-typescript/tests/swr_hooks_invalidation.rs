@@ -19,8 +19,9 @@
 //! generates a package alongside and runs `npx vitest run` against.
 //!
 //! Skips (printed, not silently swallowed) when `node`/`npm`/`npx`
-//! aren't on `PATH`, matching `swr_runtime.rs`'s rationale: no Rust CI
-//! job in this repo currently provisions Node.
+//! aren't on `PATH`, matching `swr_runtime.rs`'s rationale. That is a
+//! *local* Rust-only checkout — in CI this runs, because `ubuntu-latest`
+//! ships Node.
 
 use std::fs;
 use std::process::Command;
@@ -32,7 +33,7 @@ fn mutation_hooks_invalidate_exactly_the_documented_queries() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping mutation_hooks_invalidate_exactly_the_documented_queries: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm`/`npx` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this — \
              see tests/swr_hooks_invalidation.rs's module doc)"
         );
         return;

@@ -10,8 +10,8 @@
 //! Structural coverage only (source-level assertions, no `tsc`/`npm`) — see
 //! `tests/swr_paged_model_tsc.rs`/`tests/node_dist_esm.rs` for this crate's
 //! established "real compiler" pattern (best-effort, skips when
-//! `node`/`npm`/`npx` aren't on `PATH`, since no Rust CI job here
-//! provisions Node).
+//! `node`/`npm`/`npx` aren't on `PATH` — a local Rust-only checkout; CI's
+//! `ubuntu-latest` ships Node, so it runs there).
 
 use cratestack_client_typescript::{
     GeneratedTypeScriptPackage, TypeScriptGeneratorConfig, generate_package,

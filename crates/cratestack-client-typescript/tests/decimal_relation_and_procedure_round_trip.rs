@@ -25,7 +25,7 @@ fn default_layout_revives_relation_and_procedure_decimal_fields() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping default_layout_revives_relation_and_procedure_decimal_fields: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm`/`npx` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }
@@ -49,7 +49,7 @@ fn swr_layout_revives_relation_and_procedure_decimal_fields() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping swr_layout_revives_relation_and_procedure_decimal_fields: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm`/`npx` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }

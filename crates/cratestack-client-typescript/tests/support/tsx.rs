@@ -17,7 +17,8 @@ const TSX_PIN: &str = "tsx@4.23.12";
 /// any more (cratestack#738). The probe asserts exactly what the harness
 /// uses; leaving `npx` in it would be a check on a tool no code path touches.
 /// In every environment this guard exists for the three ship together, so the
-/// documented skip behaviour in Rust-only CI jobs is unchanged.
+/// documented skip behaviour — a printed skip where Node is absent, i.e. a
+/// local Rust-only checkout rather than CI — is unchanged.
 pub fn node_toolchain_available() -> bool {
     ["node", "npm"].iter().all(|bin| {
         Command::new(bin)

@@ -9,10 +9,11 @@
 //! alongside it, `npm install`, `npx vitest run`.
 //!
 //! Skips (printed, not silently swallowed) when `node`/`npm`/`npx` aren't
-//! on `PATH` — same rationale as `swr_hooks_invalidation.rs`: no Rust CI
-//! job in this repo currently provisions Node (the Node-provisioned job,
-//! `typescript-verify`, only runs `tsc`, not this crate's own `cargo
-//! test`).
+//! on `PATH` — same rationale as `swr_hooks_invalidation.rs`. That means a
+//! *local* Rust-only checkout: in CI this runs, because `ubuntu-latest`
+//! ships Node, so `tests (host — everything else)` executes it even though
+//! that job has no `setup-node` step (see `swr_runtime.rs`'s module doc for
+//! how that was confirmed).
 
 use std::fs;
 use std::process::Command;
@@ -24,7 +25,7 @@ fn decimal_round_trips_through_the_generated_rest_client() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping decimal_round_trips_through_the_generated_rest_client: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm`/`npx` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this — \
              see tests/decimal_round_trip.rs's module doc)"
         );
         return;

@@ -266,14 +266,14 @@ fn native_codec_call_sites_are_structurally_sound() {
 /// not asserted from reading the diff alone.
 ///
 /// Degrades to a printed skip when `node`/`npm` aren't on `PATH`, same
-/// convention as `tests/swr_runtime.rs`/`tests/node_dist_esm.rs` (no Rust
-/// CI job in this repo currently provisions Node).
+/// convention as `tests/swr_runtime.rs`/`tests/node_dist_esm.rs` — a local
+/// Rust-only checkout; CI's `ubuntu-latest` ships Node, so this runs there.
 #[test]
 fn native_codec_factory_is_memoized_and_retried_after_a_rejection() {
     if !node_toolchain_available() {
         eprintln!(
             "skipping native_codec_factory_is_memoized_and_retried_after_a_rejection: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }

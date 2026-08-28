@@ -16,9 +16,9 @@
 //!
 //! Follows this crate's established Node-availability skip convention
 //! (`tests/swr_runtime.rs`, `tests/node_dist_esm.rs`, `tests/swr_paged_model_tsc.rs`):
-//! no Rust CI job in this repo currently provisions Node, so this degrades
-//! to a printed skip rather than failing a job that was never going to
-//! have `node`/`npm`/`npx` on `PATH`. Where Node IS available (this
+//! it degrades to a printed skip rather than failing where `node`/`npm`/
+//! `npx` are absent — a *local* Rust-only checkout, not CI, where
+//! `ubuntu-latest` ships Node and this runs. Where Node IS available (this
 //! session, and any future CI job that adds it), this is a real,
 //! non-trivial verification — proven to actually discriminate by
 //! temporarily re-adding the react-query template to the default REST
@@ -44,8 +44,9 @@ fn default_rpc_package_installs_and_typechecks_without_tanstack_react_query_pres
 fn run_for_fixture(fixture_stem: &str, package_name: &str) {
     if !node_npm_available() {
         eprintln!(
-            "skipping {package_name}: `node`/`npm` not on PATH (expected in this repo's \
-             Rust-only CI jobs — see this test's module doc)"
+            "skipping {package_name}: `node`/`npm` not on PATH (expected only where \
+             Node is absent, e.g. a local Rust-only checkout; CI runs this — see this test's \
+             module doc)"
         );
         return;
     }

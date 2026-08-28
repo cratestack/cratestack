@@ -15,10 +15,10 @@
 //! real consumer, then run plain `node` (not `tsx`, not a bundler)
 //! against it.
 //!
-//! Follows `tests/swr_runtime.rs`'s Node-availability skip convention: no
-//! Rust CI job in this repo currently provisions Node, so this degrades
-//! to a printed skip rather than failing a job that was never going to
-//! have `node`/`npm`/`npx` on `PATH`.
+//! Follows `tests/swr_runtime.rs`'s Node-availability skip convention: it
+//! degrades to a printed skip rather than failing where `node`/`npm`/`npx`
+//! are absent. That is a *local* Rust-only checkout — in CI this runs,
+//! because `ubuntu-latest` ships Node.
 
 use std::io::Write as _;
 use std::net::TcpListener;
@@ -31,7 +31,7 @@ fn generated_package_compiled_dist_imports_under_plain_node_esm() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping generated_package_compiled_dist_imports_under_plain_node_esm: \
-             `node`/`npm`/`npx` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm`/`npx` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this — \
              see this test's module doc)"
         );
         return;
