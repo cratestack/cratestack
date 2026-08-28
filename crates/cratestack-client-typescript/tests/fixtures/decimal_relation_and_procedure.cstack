@@ -3,7 +3,7 @@
 // bare scalar `Decimal` return) and F5 (a relation-embedded `Decimal`
 // field must revive too) — deliberately separate from
 // `decimal_scalar.cstack`, whose `Invoice` shape several existing tests
-// (`tests/generator.rs`) assert an exact `reviveDecimalFields(value, [...])`
+// (`tests/generator.rs`) assert an exact `reviveWireFields(value, [...])`
 // key list against; adding a relation there would perturb that list.
 
 model Customer {

@@ -18,9 +18,9 @@
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "../runtime.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
 // cratestack#498: see `models-rest.ts.j2`'s identical import for why
-// `Decimal` is unconditional and `reviveDecimalFields` is a real (not
+// `Decimal` is unconditional and `reviveWireFields` is a real (not
 // type-only) import.
-import { reviveDecimalFields, revivePagedDecimalFields, type Decimal } from "./shared.js";
+import { reviveWireFields, revivePagedWireFields, type Decimal } from "./shared.js";
 import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 
 export type WidgetSortField = 'id' | 'name' | 'weight';
@@ -72,7 +72,7 @@ export async function listWidgets(
     "model.Widget.list",
     toRpcListInput(query),
     options,
-  ).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
+  ).then((value) => reviveWireFields(value, 'Widget') as Widget[]);
 }
 
 export async function getWidget(
@@ -84,7 +84,7 @@ export async function getWidget(
     "model.Widget.get",
     { id },
     options,
-  ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+  ).then((value) => reviveWireFields(value, 'Widget') as Widget);
 }
 
 export async function createWidget(
@@ -96,7 +96,7 @@ export async function createWidget(
     "model.Widget.create",
     input,
     options,
-  ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+  ).then((value) => reviveWireFields(value, 'Widget') as Widget);
 }
 
 export async function updateWidget(
@@ -109,7 +109,7 @@ export async function updateWidget(
     "model.Widget.update",
     { id, patch },
     options,
-  ).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+  ).then((value) => reviveWireFields(value, 'Widget') as Widget);
 }
 
 export async function deleteWidget(

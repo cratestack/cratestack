@@ -1,5 +1,5 @@
 import { CratestackRuntime, type CratestackClientOptions, type CratestackResponseEnvelope } from "./runtime.js";
-import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
+import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
   Widget,
   CreateWidgetInput,
@@ -41,7 +41,7 @@ export class WidgetApi {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, 'Widget') as Widget[]);
+    }).then((value) => reviveWireFields(value, 'Widget') as Widget[]);
   }
 
   get(id: number, options: CratestackQueryRequestConfig = {}): Promise<Widget> {
@@ -49,7 +49,7 @@ export class WidgetApi {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+    }).then((value) => reviveWireFields(value, 'Widget') as Widget);
   }
 
   // Same call as `get`, but returns the response alongside the record
@@ -64,14 +64,14 @@ export class WidgetApi {
       query: toSearchQuery(options.query),
       signal: options.signal,
     }).then((result) => ({
-      value: reviveDecimalFields(result.value, 'Widget') as Widget,
+      value: reviveWireFields(result.value, 'Widget') as Widget,
       response: result.response,
     }));
   }
 
   create(input: CreateWidgetInput, options: CratestackRequestConfig = {}): Promise<Widget> {
     return this.runtime.post<unknown>("/widgets", input, options)
-      .then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+      .then((value) => reviveWireFields(value, 'Widget') as Widget);
   }
 
   update(
@@ -83,7 +83,7 @@ export class WidgetApi {
       headers: withIfMatchHeader(options.headers, options.ifMatch),
       signal: options.signal,
     })
-      .then((value) => reviveDecimalFields(value, 'Widget') as Widget);
+      .then((value) => reviveWireFields(value, 'Widget') as Widget);
   }
 
   delete(id: number, options: CratestackWriteRequestConfig = {}): Promise<void> {
@@ -99,7 +99,7 @@ export class ProceduresApi {
 
   echoName(args: EchoNameArgs, options: CratestackRequestConfig = {}): Promise<string> {
     return this.runtime.post<unknown>("/$procs/echoName", args, options)
-      .then((value) => reviveDecimalFields(value, 'String') as string);
+      .then((value) => reviveWireFields(value, 'String') as string);
   }
 
 }

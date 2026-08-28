@@ -1,5 +1,5 @@
 import { CratestackRuntime, type CratestackClientOptions, type CratestackResponseEnvelope } from "./runtime.js";
-import { reviveDecimalFields, revivePagedDecimalFields, reviveDecimalScalar } from "./models.js";
+import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
   FocusEstimateArgs,
   FocusEstimateResult,
@@ -52,7 +52,7 @@ export class BoardApi {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, 'Board') as Board[]);
+    }).then((value) => reviveWireFields(value, 'Board') as Board[]);
   }
 
   get(id: number, options: CratestackQueryRequestConfig = {}): Promise<Board> {
@@ -60,7 +60,7 @@ export class BoardApi {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, 'Board') as Board);
+    }).then((value) => reviveWireFields(value, 'Board') as Board);
   }
 
   // Same call as `get`, but returns the response alongside the record
@@ -75,14 +75,14 @@ export class BoardApi {
       query: toSearchQuery(options.query),
       signal: options.signal,
     }).then((result) => ({
-      value: reviveDecimalFields(result.value, 'Board') as Board,
+      value: reviveWireFields(result.value, 'Board') as Board,
       response: result.response,
     }));
   }
 
   create(input: CreateBoardInput, options: CratestackRequestConfig = {}): Promise<Board> {
     return this.runtime.post<unknown>("/boards", input, options)
-      .then((value) => reviveDecimalFields(value, 'Board') as Board);
+      .then((value) => reviveWireFields(value, 'Board') as Board);
   }
 
   update(
@@ -94,7 +94,7 @@ export class BoardApi {
       headers: withIfMatchHeader(options.headers, options.ifMatch),
       signal: options.signal,
     })
-      .then((value) => reviveDecimalFields(value, 'Board') as Board);
+      .then((value) => reviveWireFields(value, 'Board') as Board);
   }
 
   delete(id: number, options: CratestackWriteRequestConfig = {}): Promise<void> {
@@ -113,7 +113,7 @@ export class TaskApi {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, 'Task') as Task[]);
+    }).then((value) => reviveWireFields(value, 'Task') as Task[]);
   }
 
   get(id: number, options: CratestackQueryRequestConfig = {}): Promise<Task> {
@@ -121,7 +121,7 @@ export class TaskApi {
       headers: options.headers,
       query: toSearchQuery(options.query),
       signal: options.signal,
-    }).then((value) => reviveDecimalFields(value, 'Task') as Task);
+    }).then((value) => reviveWireFields(value, 'Task') as Task);
   }
 
   // Same call as `get`, but returns the response alongside the record
@@ -136,14 +136,14 @@ export class TaskApi {
       query: toSearchQuery(options.query),
       signal: options.signal,
     }).then((result) => ({
-      value: reviveDecimalFields(result.value, 'Task') as Task,
+      value: reviveWireFields(result.value, 'Task') as Task,
       response: result.response,
     }));
   }
 
   create(input: CreateTaskInput, options: CratestackRequestConfig = {}): Promise<Task> {
     return this.runtime.post<unknown>("/tasks", input, options)
-      .then((value) => reviveDecimalFields(value, 'Task') as Task);
+      .then((value) => reviveWireFields(value, 'Task') as Task);
   }
 
   update(
@@ -155,7 +155,7 @@ export class TaskApi {
       headers: withIfMatchHeader(options.headers, options.ifMatch),
       signal: options.signal,
     })
-      .then((value) => reviveDecimalFields(value, 'Task') as Task);
+      .then((value) => reviveWireFields(value, 'Task') as Task);
   }
 
   delete(id: number, options: CratestackWriteRequestConfig = {}): Promise<void> {
@@ -171,7 +171,7 @@ export class ProceduresApi {
 
   estimateFocusMinutes(args: EstimateFocusMinutesArgs, options: CratestackRequestConfig = {}): Promise<FocusEstimateResult> {
     return this.runtime.post<unknown>("/$procs/estimateFocusMinutes", args, options)
-      .then((value) => reviveDecimalFields(value, 'FocusEstimateResult') as FocusEstimateResult);
+      .then((value) => reviveWireFields(value, 'FocusEstimateResult') as FocusEstimateResult);
   }
 
 }

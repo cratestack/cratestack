@@ -1,7 +1,6 @@
 mod computed_params;
 mod config;
 mod context;
-mod decimal;
 mod error;
 mod find_many_views;
 mod generator;
@@ -13,6 +12,7 @@ mod swr;
 mod templates;
 mod types;
 mod views;
+mod wire_shapes;
 
 pub use config::{
     DEFAULT_NATIVE_CBOR, DEFAULT_TANSTACK, GeneratedTypeScriptFile, GeneratedTypeScriptPackage,

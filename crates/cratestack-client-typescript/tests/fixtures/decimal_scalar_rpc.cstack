@@ -1,7 +1,7 @@
 // RPC-transport counterpart to `decimal_scalar.cstack` (cratestack#498):
 // same `Invoice` model, so the RPC-specific templates
 // (`rpc-client.ts.j2`) get the same `Decimal`-typed-field/
-// `reviveDecimalFields` coverage the REST fixture proves for
+// `reviveWireFields` coverage the REST fixture proves for
 // `rest-client.ts.j2` — the ticket's requirement #6 ("both REST and RPC
 // transports").
 

@@ -8,9 +8,9 @@ use std::collections::BTreeSet;
 use cratestack_core::{Procedure, ProcedureKind};
 use serde::Serialize;
 
-use crate::decimal::{ProcedureDecimalRevival, procedure_decimal_revival};
 use crate::naming::{procedure_wrapper_name, to_camel_case, to_pascal_case};
 use crate::types::ts_type;
+use crate::wire_shapes::{ProcedureRevival, procedure_revival};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ProcedureView {
@@ -23,27 +23,33 @@ pub(crate) struct ProcedureView {
     pub(crate) kind: &'static str,
     pub(crate) query_key: String,
     pub(crate) mutation_key: String,
-    /// `"scalar"` when the return type is (optionally list/optional)
-    /// `Decimal` itself — the decoded value is a raw string (or array of
-    /// strings, or null), not an object, so the generated call site uses
-    /// `reviveDecimalScalar` instead of `reviveDecimalFields`. `"shape"`
-    /// for every other return type (cratestack#498 F2): a `Model`/`type`
-    /// (optionally `Page<...>`/list/optional-wrapped), an enum, or a plain
-    /// scalar other than `Decimal` — `decimal_shape_name` names the
-    /// registry entry for that case (a name with no entry, e.g.
-    /// `echoName(): String`, is `reviveDecimalFields`'s documented no-op
-    /// fast path).
-    pub(crate) decimal_revival_kind: &'static str,
-    /// Only meaningful when `decimal_revival_kind == "shape"` — the
+    /// `"scalar"` when the return type is a bare revivable scalar —
+    /// `Decimal` or `Bytes`, at any arity. The decoded value is a raw
+    /// string / integer array (or an array of them, or null), not an
+    /// object, so the generated call site uses `reviveWireScalar` instead
+    /// of `reviveWireFields`. `"shape"` for every other return type
+    /// (cratestack#498 F2): a `Model`/`type` (optionally
+    /// `Page<...>`/list/optional-wrapped), an enum, or a plain scalar
+    /// needing no revival — `revival_shape_name` names the registry entry
+    /// for that case (a name with no entry, e.g. `echoName(): String`, is
+    /// `reviveWireFields`'s documented no-op fast path).
+    pub(crate) revival_kind: &'static str,
+    /// Only meaningful when `revival_kind == "scalar"` — which scalar
+    /// revival the generated `reviveWireScalar(value, "...")` call asks
+    /// for (`"decimal"`, `"bytes"`, or `"bytesList"`). Empty string for
+    /// `"shape"`. See `crate::wire_shapes::ScalarRevival`, whose string
+    /// forms are a contract with `models.ts.j2`'s runtime.
+    pub(crate) revival_scalar_kind: &'static str,
+    /// Only meaningful when `revival_kind == "shape"` — the
     /// (`Page<T>`-unwrapped) base return type's name, a registry key into
-    /// `models.ts.j2`'s generated `decimalShapes` object. Empty string for
+    /// `models.ts.j2`'s generated `wireShapes` object. Empty string for
     /// `"scalar"`.
-    pub(crate) decimal_shape_name: String,
-    /// Only meaningful when `decimal_revival_kind == "shape"` — `true`
+    pub(crate) revival_shape_name: String,
+    /// Only meaningful when `revival_kind == "shape"` — `true`
     /// when the return type was `Page<T>` (see `views::ModelApiView::
     /// is_paged`'s doc comment for why that needs a different runtime
     /// helper). `false` for `"scalar"`.
-    pub(crate) decimal_paged: bool,
+    pub(crate) revival_paged: bool,
 }
 
 pub(crate) fn build_procedure(
@@ -51,10 +57,10 @@ pub(crate) fn build_procedure(
     occupied_type_names: &BTreeSet<String>,
     enum_names: &BTreeSet<&str>,
 ) -> ProcedureView {
-    let (decimal_revival_kind, decimal_shape_name, decimal_paged) =
-        match procedure_decimal_revival(&procedure.return_type) {
-            ProcedureDecimalRevival::Scalar => ("scalar", String::new(), false),
-            ProcedureDecimalRevival::Shape { shape_name, paged } => ("shape", shape_name, paged),
+    let (revival_kind, revival_scalar_kind, revival_shape_name, revival_paged) =
+        match procedure_revival(&procedure.return_type) {
+            ProcedureRevival::Scalar(scalar) => ("scalar", scalar.as_str(), String::new(), false),
+            ProcedureRevival::Shape { shape_name, paged } => ("shape", "", shape_name, paged),
         };
     ProcedureView {
         name: procedure.name.clone(),
@@ -69,8 +75,9 @@ pub(crate) fn build_procedure(
         },
         query_key: format!("{}Procedure", to_camel_case(&procedure.name)),
         mutation_key: format!("{}Procedure", to_camel_case(&procedure.name)),
-        decimal_revival_kind,
-        decimal_shape_name,
-        decimal_paged,
+        revival_kind,
+        revival_scalar_kind,
+        revival_shape_name,
+        revival_paged,
     }
 }

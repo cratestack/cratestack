@@ -66,13 +66,13 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
         client.contains("list(options: CratestackQueryRequestConfig = {}): Promise<Page<Session>>")
     );
     // cratestack#498/#499 F2: every procedure call site now decodes
-    // through `reviveDecimalFields`, keyed by the return type's own
-    // `decimalShapes` registry entry name (`Post` here — `blog.cstack`'s
+    // through `reviveWireFields`, keyed by the return type's own
+    // `wireShapes` registry entry name (`Post` here — `blog.cstack`'s
     // `Post` has no `Decimal` field, so the registry entry is a no-op,
     // but the wrapper is unconditional, mirroring the model CRUD methods
     // right above it).
     assert!(client.contains(
-        "return this.runtime.post<unknown>(\"/$procs/publishPost\", args, options)\n      .then((value) => reviveDecimalFields(value, 'Post') as Post);"
+        "return this.runtime.post<unknown>(\"/$procs/publishPost\", args, options)\n      .then((value) => reviveWireFields(value, 'Post') as Post);"
     ));
     assert!(react_query.contains("useQuery"));
     assert!(react_query.contains("useMutation"));
@@ -473,7 +473,7 @@ fn decimal_scalar_maps_to_a_real_declared_decimal_type() {
         "models.ts must export the `Decimal` instance type, got:\n{models}"
     );
     assert!(
-        models.contains("export function reviveDecimalFields("),
+        models.contains("export function reviveWireFields("),
         "models.ts must export the decode-side revival helper, got:\n{models}"
     );
     assert!(
@@ -483,9 +483,9 @@ fn decimal_scalar_maps_to_a_real_declared_decimal_type() {
 
     let client = package_file(&package, "src/client.ts");
     assert!(
-        client.contains("reviveDecimalFields(value, 'Invoice')"),
+        client.contains("reviveWireFields(value, 'Invoice')"),
         "the REST client's Invoice CRUD methods must revive via Invoice's own \
-         decimalShapes entry on decode, got:\n{client}"
+         wireShapes entry on decode, got:\n{client}"
     );
 
     let package_json = package_file(&package, "package.json");
@@ -500,7 +500,7 @@ fn decimal_scalar_revives_on_decode_over_rpc_transport_too() {
     // Requirement #6 (cratestack#498): both REST and RPC transports.
     // `decimal_scalar_maps_to_a_real_declared_decimal_type` proves the
     // REST-transport `rest-client.ts.j2`; this proves the RPC-transport
-    // `rpc-client.ts.j2` gets the identical `reviveDecimalFields` wiring.
+    // `rpc-client.ts.j2` gets the identical `reviveWireFields` wiring.
     let schema = cratestack_parser::parse_schema_file("tests/fixtures/decimal_scalar_rpc.cstack")
         .expect("fixture schema should parse");
 
@@ -515,8 +515,8 @@ fn decimal_scalar_revives_on_decode_over_rpc_transport_too() {
         );
     }
     assert!(
-        client.contains("reviveDecimalFields(value, 'Invoice')"),
+        client.contains("reviveWireFields(value, 'Invoice')"),
         "the RPC client's Invoice CRUD methods must revive via Invoice's own \
-         decimalShapes entry on decode, got:\n{client}"
+         wireShapes entry on decode, got:\n{client}"
     );
 }

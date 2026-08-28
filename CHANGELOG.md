@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+### **Breaking:** generated TypeScript clients type `Bytes` as `Uint8Array` (#783 follow-up)
+
+A schema `Bytes` field is now a real `Uint8Array` on **both** sides of a generated TypeScript
+client, not a `number[]`. This is what the Dart client has always done (`Bytes` → `Uint8List`,
+converted at the wire boundary in `wire_encode.rs`/`wire_decode.rs`), so the two clients now agree.
+
+**What breaks.** Reading a `Bytes` field as `number[]` no longer compiles:
+
+```ts
+const digest: number[] = blob.digest;        // was fine, now a type error
+const digest: Uint8Array = blob.digest;      // the replacement
+Array.from(blob.digest);                     // if you genuinely want a number[]
+```
+
+Writing one gets easier, which was the point — `client.seal({ payload: bytes })` instead of
+`client.seal({ payload: Array.from(bytes) })`. Node `Buffer` works too (it is a `Uint8Array`
+subclass).
+
+**The wire is unchanged.** A `Bytes` field still travels as an array of integers in both
+directions, so this is a client-side type change only — no server, Dart, or Rust client is
+affected, and a mixed-version fleet is fine. The conversion happens in the generated runtime:
+`encodeBinaryAsJson` on the way out, and the `bytesKeys`/`bytesListKeys` arms of the shape walk on
+the way back.
+
+Two details worth knowing:
+
+- **Why not `Uint8Array | number[]` on inputs only.** A union has to be narrowed by every *reader*,
+  and it cannot be applied consistently anyway: a `type` block is a single generated interface that
+  can sit in an argument position, a return position, or both (`procedure seal(env: Envelope):
+  Envelope`), so there is no input-only place to widen. Model interfaces and `Create`/`Update`
+  inputs *are* cleanly split, but `type` blocks are not — one type in both directions has no such
+  ambiguity.
+- **Why the runtime converts rather than the codec.** `JSON.stringify` turns a `Uint8Array` into an
+  index-keyed object (`{"0":1,"1":2}`) that no server-side `Vec<u8>` can decode — the same defect
+  #783 fixed for CBOR, in a different disguise. `encodeBinaryAsJson` runs on the JSON paths only
+  (`jsonRpcCodec` and the REST request body); the native `@cratestack/cbor` codec keeps receiving
+  the real `Uint8Array` so it can emit a compact byte string. It is a pre-walk rather than a
+  `JSON.stringify` replacer because Node's `Buffer` defines its own `toJSON`, which
+  `JSON.stringify` applies *before* any replacer, yielding `{"type":"Buffer","data":[...]}`.
+
+**Renamed generated exports.** The decode-side registry now carries `Bytes` as well as `Decimal`,
+so its names no longer say "decimal": `decimalShapes` → `wireShapes`, `DecimalShape` → `WireShape`,
+`reviveDecimalFields` → `reviveWireFields`, `revivePagedDecimalFields` → `revivePagedWireFields`,
+`reviveDecimalScalar` → `reviveWireScalar` (now taking a second `kind` argument),
+`encodeDecimalFields` → `encodeWireFields`. These are generated-client internals; application code
+rarely imports them, but a client with a customised template will need the rename.
+
+`Bytes` keys are recorded per arity (`bytesKeys` vs `bytesListKeys`) because the wire form is not
+self-identifying at every value: a populated `Bytes` is `number[]` and a populated `Bytes[]` is
+`number[][]`, but `[]` is both. The schema knows which; the runtime cannot.
+
 ### `generate-dart` stops emitting dead imports for a schema with no models (#785)
 
 `cratestack generate-dart` on a schema with zero `model` blocks emitted `import 'queries.dart';`
