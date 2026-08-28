@@ -1,0 +1,51 @@
+// RPC-transport twin of `tanstack_query_hook_collision.cstack`, for
+// cratestack#802's transport-parity requirement. Identical schema plus
+// `transport rpc`.
+//
+// It exists because `rest-react-query.ts.j2` and `rpc-react-query.ts.j2`
+// are separate templates that emit the same two hook families behind the
+// same five gates. The check is transport-agnostic *by design* — but
+// "by design" is a claim, and a REST-only fixture would leave it
+// unproven on the transport where the hazard is equally live.
+//
+// Original header follows.
+//
+// The query-suffix half of cratestack#802's collision, sibling to
+// `tanstack_mutation_hook_collision.cstack`. Model `Post` derives
+// `usePostListQuery` from `{% if model.allows_list %}`
+// (`templates/src/rest-react-query.ts.j2:31`), and the bare (i.e. query)
+// `procedure post_list` derives the same identifier: `to_pascal_case("post_list")`
+// is `PostList`, so the hook is `usePostListQuery`.
+//
+// Deliberately `post_list` and NOT `list_posts`, which would be `model
+// Post`'s own generated axum handler `handle_list_posts` and so is
+// rejected by `cratestack-parser`'s `validate::procedure_handler_collisions`
+// (cratestack#784) before this generator ever sees the schema. The
+// tokenizer treats the two as distinct word sequences — [post, list] vs
+// [list, posts] — which is exactly what lets this one through the parser
+// and into the generator where the hook-name collision actually lives.
+//
+// Both files exist because the check has two entry points, one per hook
+// suffix, and a single fixture can only ever prove the first error the
+// check returns.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+}
+
+model Post {
+  id Int @id
+  title String
+
+  @@allow("read", true)
+}
+
+procedure post_list(): Post
+  @allow(auth() != null)
