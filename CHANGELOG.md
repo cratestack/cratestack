@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+### `Bytes` fields round-trip a JS `Uint8Array` (#783)
+
+`@cratestack/cbor` serialised a JS `Uint8Array` as a CBOR **map** of index→value
+(`{"0":1,"1":2,…}`) rather than a byte string, because both its builds funnelled every JS value
+through `serde_json::Value` — a type with no byte-string variant, and one whose napi conversion
+classifies a typed array as a plain object. A generated Rust `Bytes` field is a `Vec<u8>` whose
+blanket `Deserialize` accepts only a sequence, so such a request failed at the codec with
+`400 invalid_argument` and never reached the handler. Callers had to write `Array.from(bytes)` at
+every call site — a workaround that is easy to "optimise" back into a break, and that costs ~2x the
+wire bytes of the byte string it stands in for (as measured in the issue, on a random-filled 16 KiB
+payload: 31,180 bytes as `number[]`, ~16,400 as a byte string, and 118,374 in the broken map form).
+
+Both codec builds now bridge through `cratestack_core::Value`, the framework's own canonical wire
+value, which has a `Bytes` variant:
+
+- **`encode`** — `Uint8Array` (including Node `Buffer`) and `ArrayBuffer` become a CBOR byte string
+  (RFC 8949 major type 2). A subarray contributes its own window, not the whole backing buffer.
+  Everything else — `Uint8ClampedArray`, `DataView`, `Int32Array`, … — keeps its previous behaviour
+  rather than being silently reinterpreted; pass
+  `new Uint8Array(view.buffer, view.byteOffset, view.byteLength)` for those. That set is identical
+  in the node and web builds on purpose: a TypeScript client has to put the same payload on the wire
+  whichever runtime it loads in, so the node build accepts no more than the web build can.
+- **`decode`** — a CBOR byte string comes back as a `Uint8Array`.
+- A plain `number[]` is unchanged in both directions. An untyped value carries no schema, so nothing
+  at the codec layer guesses that an integer array "meant" bytes.
+
+For that to work end to end, the server had to accept the shape. A schema `Bytes` field — on a
+model, a CRUD input, a `type` block, or a procedure argument — now deserializes from **either** a
+CBOR byte string or the integer array every already-deployed Rust/Dart/TypeScript client sends
+(`cratestack_core::lenient_bytes`, attached by `cratestack-macros`' `shared::bytes_serde`). That
+keeps `application/json`, where the integer array is the only expressible shape, working untouched,
+and it makes this an additive change rather than a wire break: **nothing about the outbound shape
+changed.** A `Bytes` field still serializes as an integer array on both transports and in all three
+client languages, so every existing decoder — the Dart client's `cratestackAsValueList`, the
+TypeScript client's `number[]` — keeps working. Flipping the outbound shape would be a real break
+and is deliberately not bundled here.
+
+Two knock-on effects of the bridge-type change, both edge cases of `Value`'s number model (already
+the framework's wire contract for `Json` fields, procedure `Json` arguments and RPC error details):
+an integer above `i64::MAX` (a JS `BigInt` past 9223372036854775807) now degrades to a float instead
+of staying an exact unsigned integer, and a non-finite float (`NaN`, `±Infinity`) now survives as
+itself rather than decoding as `null`. Every byte-free payload is otherwise byte-identical, pinned
+by the cross-language fixtures both the Rust and vitest suites assert.
+
+Two limits worth naming: `POST /rpc/batch` carries each frame's input as an opaque
+`serde_json::Value`, so a byte string inside a *batched* frame still fails at the envelope — send
+`number[]` there, or use unary RPC. And the generated TypeScript client still types `Bytes` as
+`number[]`, so passing a `Uint8Array` needs a cast until that type is widened.
+
 ## 0.8.14 (2026-08-27)
 
 ### Generated Dart clients declare an API floor, not the workspace version (#754)
