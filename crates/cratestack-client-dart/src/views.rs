@@ -42,13 +42,20 @@ pub(crate) struct TemplateContext {
     /// doc comment for the full rationale.
     pub(crate) native_cbor: bool,
     /// `cratestack_cbor: {{ cratestack_cbor_version_requirement }}` in
-    /// `pubspec.yaml` when `native_cbor` is set — `^{CARGO_PKG_VERSION}`
-    /// of this crate, matching how `cratestack_cbor`'s own
-    /// `dart-packages/cratestack_cbor/pubspec.yaml` version is bumped in
-    /// lockstep with the Cargo workspace version by `just bump` (see the
-    /// justfile's `':(glob)dart-packages/*/pubspec.yaml'` rewrite), the
-    /// same lockstep convention `cratestack-client-typescript`'s
-    /// `refine_version_requirement` already uses for `@cratestack/refine`.
+    /// `pubspec.yaml` when `native_cbor` is set.
+    ///
+    /// cratestack#779: this is `crate::package_floors::
+    /// CRATESTACK_CBOR_FLOOR`, an API-compatibility floor, on the same
+    /// terms as the two `cratestack_annotations`/`cratestack_builder`
+    /// floors below. It used to be `^{CARGO_PKG_VERSION}` — the lockstep
+    /// convention — which is what forced `just regen-examples` to
+    /// hardcode `--no-native-cbor` (#707): a committed example client
+    /// pinning the workspace version drifts on every `just bump` and
+    /// cannot resolve during the release window, because the version is
+    /// not on pub.dev until the release the bump is preparing publishes
+    /// it. With a constant, the committed example can take the default
+    /// codec like every other generated client.
+    ///
     /// Empty string when `native_cbor` is `false` (unused by the template
     /// in that case).
     pub(crate) cratestack_cbor_version_requirement: String,

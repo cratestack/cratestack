@@ -27,3 +27,10 @@ client/**/*.builder.dart
 client/.dart_tool/
 client/build/
 client/pubspec.lock
+# Written by `flutter pub get` whenever the dependency graph contains a
+# Flutter *plugin* (one with native platform code). New as of
+# cratestack#779: this client took `--no-native-cbor` until then, so it
+# depended on pure-Dart `package:cbor` and no plugin was ever resolved —
+# now it depends on `cratestack_cbor`, which is one, and the file appears.
+# Build artifact of resolution, not generator output.
+client/.flutter-plugins-dependencies

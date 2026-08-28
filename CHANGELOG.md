@@ -50,6 +50,80 @@ existed before the diff — naming the file, the line, and the offending section
 itself adds (historical misfilings already on `main` do not retroactively fail future PRs), and a
 release bump's legitimate promotion of `## Unreleased` into a freshly-created dated section is not a
 violation, whether or not that promotion also adds entries under the same, newly-created heading (#739).
+### `cratestack-vscode` ships an extension icon (#782)
+
+The extension declared no `icon`, so the Marketplace, Open VSX, and the in-editor Extensions sidebar
+after a manual `.vsix` install all rendered the generic grey placeholder. For a pre-1.0 framework
+asking people to trust its codegen, an unbranded listing reads as abandoned or unofficial — and it is
+cheap to fix now, awkward once a listing is live and indexed.
+
+`packages/cratestack-vscode/icon.png` is a 256x256 PNG (Marketplace rejects SVG and enforces a
+128x128 floor; 256 is the safer HiDPI source), paired with a `galleryBanner`. There was no CrateStack
+mark to derive from, so the artwork was approved by the maintainer rather than defaulted by the
+implementation — the ticket called that out specifically, to avoid a placeholder becoming permanent
+by being first. The mark is a stack of three isometric crates.
+
+Verified inside the built archive rather than in the source tree, since `.vscodeignore` is a denylist
+and a future entry could exclude a file that exists on disk: `unzip -l ./*.vsix` lists
+`extension/icon.png`, and its sha256 matches the committed file. The field is platform-independent,
+so all five `vsce_target` builds carry it.
+
+`test/icon.test.js` guards the manifest half offline — the field exists, resolves to a real file, and
+that file is a square PNG of at least 128x128 (dimensions read from the PNG IHDR chunk, no image
+dependency). Proven by breaking it both ways the ticket names: removing the `icon` field fails three
+assertions, and renaming the file on disk while leaving the field in place fails two. Neither break
+disturbs the build, the lint, or `vsce package` — which is exactly why the test exists.
+
+### Every generated dependency constraint is an API floor, not the workspace version (#779)
+
+#754 established the rule — *a generated dependency constraint states an API compatibility
+requirement; it is never derived from `CARGO_PKG_VERSION`, at any precision* — and applied it to two
+of the six sites that had the defect. The remaining four are fixed now: `cratestack_cbor` in both the
+default and riverpod Dart pubspecs, and `@cratestack/refine` and `@cratestack/cbor` in the generated
+`package.json`.
+
+Each one independently reopened the release-cycle window #754 closed. `just bump` moves the workspace
+version *before* the tag that publishes the packages, so anything derived from it names a version the
+registry cannot serve for the whole window. The `@cratestack/cbor` site is the subtle one: it already
+used a `^{major}.{minor}.0` floor rather than an exact pin, which survives a patch bump — but a minor
+floor is still derived from the current version, so it would move to `^0.9.0` at the 0.9.0 bump and
+name an unpublished package until that release landed. Narrowed from "every bump" to "every minor
+bump", not closed. All four are now constants, so generator output is no longer a function of the
+release version at all.
+
+The payoff beyond correctness: **`just regen-examples` no longer passes `--no-native-cbor`**, and
+`examples/flutter-riverpod/client` demonstrates the default native codec instead of the fallback.
+That flag was hardcoded specifically to dodge this defect (#707) — a committed example pinning the
+workspace version drifts on every bump and cannot resolve during the release window — and the
+justfile's own comment called the trade "real and accepted" only because the pin format forced it.
+With a constant, neither failure is reachable.
+
+The floors were chosen against the registry, not the changelog, because #754's receipt is that a
+hand-written floor read `^0.8.8` — a version pub.dev never published. Every candidate was checked by
+unpacking the published archives and grepping the shipped `lib/`/`dist/*.d.ts` for the exact
+identifiers the templates reference.
+
+Two guards, both demonstrated failing rather than merely passing:
+
+- The tests that assert the emitted constraint used to *recompute* the expected value from
+  `CARGO_PKG_VERSION`, so they agreed with the generator by construction and stayed green while the
+  emitted range walked off the registry. They now assert a literal, which disagrees the moment the
+  generator starts moving with `just bump` again — on the bump PR, which is where the damage lands.
+- A new `just verify-typescript-floors` (called by CI, so the recipe *is* the check) generates a
+  client and typechecks it against the **exact** floor versions. A plain `npm install` resolves the
+  caret to the newest match and proves only the ceiling; pinning is what tests the floor. Confirmed
+  by deliberately lowering `@cratestack/refine` to `0.7.14`, which predates the `ResourceMap` type
+  the generated `refine.ts` imports: `tsc` exits 2 with `TS2307`. The Flutter job's existing
+  resolve-at-the-floor step gained `cratestack_cbor` on the same terms.
+
+**One known gap, stated rather than absorbed.** No *published* `@cratestack/cbor` encodes a
+`Uint8Array` as a CBOR byte string — as of `0.8.14` a `Bytes` field still reaches the wire as a CBOR
+map that no server-side `Vec<u8>` can decode. #783/#787 fixed that, but the fix has not shipped
+(`0.8.14` published the day before #787 merged). The honest floor for a `Bytes`-carrying schema is
+therefore the first release containing #787, and the constant must be raised once it publishes. It is
+deliberately not raised pre-emptively: naming an unpublished version is the exact defect this ticket
+removes, and it would break every `npm install` today. The gap is unchanged by this PR — the
+`^{major}.{minor}.0` being replaced already emitted `^0.8.0`.
 
 ### The generated Dart client caches its CBOR codec for successes only (#798)
 

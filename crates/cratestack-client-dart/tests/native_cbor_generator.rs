@@ -39,6 +39,25 @@ use cratestack_client_dart::{
 
 const REST_FIXTURE: &str = "tiny_rest";
 const RPC_FIXTURE: &str = "tiny_rpc";
+
+/// cratestack#779: the `cratestack_cbor` API floor a generated pubspec
+/// declares, restated here as a **literal** rather than recomputed from
+/// `env!("CARGO_PKG_VERSION")` the way this file did before.
+///
+/// That is the entire point, not an oversight. The old assertion derived
+/// its expected value from the same input the generator derived *its*
+/// value from, so it agreed with the generator by construction and could
+/// not observe the defect #779 is about — it passed just as happily when
+/// the emitted pin tracked the release version. A literal disagrees the
+/// moment the generator starts moving with `just bump` again: at the next
+/// version this test still expects `^0.8.0`, and a regressed generator
+/// emitting `^0.9.0` fails here rather than at a user's `pub get`.
+///
+/// Kept deliberately in sync by hand with
+/// `cratestack_client_dart::package_floors::CRATESTACK_CBOR_FLOOR`
+/// (`pub(crate)`, so not callable from an integration test). Raising the
+/// floor there is supposed to require touching this line too.
+const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
 
 /// The check this replaces (`without_the_flag_output_matches_the_default_config_exactly`)
@@ -69,7 +88,7 @@ fn default_config_uses_native_cbor() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: ^{}", env!("CARGO_PKG_VERSION"))),
+            pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")),
             "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must depend on \
              cratestack_cbor by default:\n{pubspec}"
         );
@@ -129,7 +148,7 @@ fn the_flag_swaps_the_pubspec_dependency_and_the_runtime_import() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: ^{}", env!("CARGO_PKG_VERSION"))),
+            pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")),
             "{fixture}: pubspec.yaml should depend on cratestack_cbor, pinned to this crate's \
              version (lockstep with dart-packages/cratestack_cbor's own version):\n{pubspec}"
         );
@@ -258,9 +277,7 @@ fn riverpod_preset_pubspec_gates_the_same_way_as_the_default_preset() {
         assert!(!plain_pubspec.contains("cratestack_cbor"));
 
         let native_pubspec = file(&native, "pubspec.yaml");
-        assert!(
-            native_pubspec.contains(&format!("cratestack_cbor: ^{}", env!("CARGO_PKG_VERSION")))
-        );
+        assert!(native_pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")));
         assert!(!native_pubspec.contains("cbor: ^6.5.1"));
 
         // The riverpod preset reuses `lib/src/runtime.dart` verbatim from

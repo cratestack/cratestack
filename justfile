@@ -1007,6 +1007,70 @@ verify-typescript:
 	echo ""
 	echo "✓ TypeScript REST, RPC, and --swr + RPC fixtures generated and typechecked successfully"
 
+# Resolve + typecheck a generated TypeScript client at the EXACT npm API
+# floors it declares (cratestack#779). CI's `typescript (generated
+# packages — REST + RPC)` job calls this recipe, so the two cannot
+# diverge.
+#
+# This is guard #2 for `cratestack-client-typescript/src/package_floors.rs`.
+# The offline unit tests there can only check the floors' *shape* —
+# whether they are below the current version, whether they parse. Only
+# the registry can answer the question that actually matters: was this
+# version ever published, and is it high enough to typecheck against?
+# #754 found a hand-written `^0.8.8` Dart floor that named a version
+# pub.dev never had, and every offline check available was satisfied by
+# it.
+#
+# WHY THE PIN IS THE WHOLE POINT: `npm install` on the declared `^0.8.0`
+# resolves the NEWEST 0.8.x, so a plain install proves the *ceiling*
+# works and says nothing whatsoever about the floor. `--save-exact` at
+# the parsed floor version is what tests the floor. A too-low floor fails
+# here, at `tsc`, rather than at a user's `npm install`.
+#
+# The versions are read out of `package_floors.rs` rather than restated,
+# so this recipe cannot drift from the constants it is checking — same
+# mechanism as `ci.yml`'s "Resolve + analyze at the declared API floor"
+# step on the Flutter side.
+verify-typescript-floors:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	floors=crates/cratestack-client-typescript/src/package_floors.rs
+	floor() {
+	  grep -oP "${1}: &str = \"\\^\\K[0-9.]+" "$floors"
+	}
+	refine="$(floor CRATESTACK_REFINE_FLOOR)"
+	cbor="$(floor CRATESTACK_CBOR_FLOOR)"
+	if [ -z "$refine" ] || [ -z "$cbor" ]; then
+	  echo "could not read the API floors out of $floors — did the constants get renamed or reformatted? This check is meaningless until it can read them." >&2
+	  exit 1
+	fi
+	echo "pinning @cratestack/refine=$refine @cratestack/cbor=$cbor"
+
+	# An RPC schema with `--refine` is the one configuration that emits
+	# BOTH constrained packages at once: `@cratestack/cbor` is only
+	# emitted for `native_cbor` + RPC (REST has no codec seam), and
+	# `@cratestack/refine` only under `--refine`.
+	pkg=target/typescript-floor-verify
+	rm -rf "$pkg"
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/ci_rpc.cstack" \
+	  --out "$pkg" \
+	  --package-name typescript-floor-verify \
+	  --refine
+
+	cd "$pkg"
+	npm install
+	# Overwrite whatever the caret resolved to with the floor itself.
+	# `@refinedev/core` comes along because `@cratestack/refine` declares
+	# it as a peer dependency and npm would otherwise resolve it against
+	# the generated client's own (unpinned) declaration.
+	npm install --save-exact \
+	  "@cratestack/refine@$refine" \
+	  "@cratestack/cbor@$cbor"
+	npm run build
+	echo ""
+	echo "✓ generated client typechecks against @cratestack/refine@$refine and @cratestack/cbor@$cbor"
+
 # Regenerate the two committed example clients in place (issue #471).
 #
 # `examples/flutter-riverpod/client` (via `generate-dart --preset riverpod`)
@@ -1032,36 +1096,32 @@ verify-typescript:
 # unmodified checkout of `main` means the committed examples have already
 # drifted from their templates.
 regen-examples *args='':
-	# `--no-native-cbor` IS DELIBERATE — do not remove it to "use the default".
+	# This used to pass `--no-native-cbor`, under a long comment insisting it
+	# WAS DELIBERATE and must not be removed "to use the default". That was
+	# true while it was written and is not true any more — cratestack#779
+	# removed the thing it was working around, so the flag is gone and this
+	# example now demonstrates the DEFAULT (native) codec like every other
+	# generated client.
 	#
-	# The native codec is the default for generated clients, and this example
-	# is the one place that must NOT take it. The generator version-locks
-	# `cratestack_cbor` to its own crate version, and this client is
-	# COMMITTED, so a native example pins a version that:
+	# What the comment described: the generator version-locked
+	# `cratestack_cbor` to `^{CARGO_PKG_VERSION}`, so a committed native
+	# example (1) drifted on every `just bump`, because bump rewrites the
+	# version but does not regenerate examples, failing `regen-examples
+	# --check` on every release PR; and (2) could not resolve during the
+	# release window at all, because that version is not on pub.dev until the
+	# release the PR is preparing actually publishes it. Both were observed on
+	# the v0.8.9 release PR (#707).
 	#
-	#   1. drifts on every `just bump` — the committed pubspec still names the
-	#      old version while the generator emits the new one, so
-	#      `regen-examples --check` fails on every release PR (bump does not
-	#      regenerate examples), and
-	#   2. cannot resolve during the release window anyway — the version is
-	#      not on pub.dev until the release this PR is preparing publishes it,
-	#      so `flutter pub get` fails with "depends on cratestack_cbor
-	#      ^<next> which doesn't match any versions".
-	#
-	# Both were observed on the v0.8.9 release PR (#707), which is what sent
-	# this here. `package:cbor` is a third-party dependency that never moves
-	# with our version, so the committed artifact stays stable and resolvable
-	# on every branch at every point in the release cycle.
-	#
-	# The trade is real and accepted: this example demonstrates the FALLBACK
-	# codec, not the default one. `guides/dart-client-generation.md` documents
-	# the default; this directory exists to be buildable, not to showcase the
-	# codec choice.
+	# Neither is reachable now. The emitted constraint is an
+	# API-compatibility constant (`cratestack-client-dart/src/
+	# package_floors.rs`), not a function of the release version, so it does
+	# not move on a bump and never names an unpublished version. `just bump`
+	# leaves this directory byte-identical.
 	cargo run -p cratestack-cli -- generate-dart \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/flutter-riverpod/client \
 	  --library-name flutter_riverpod_client \
-	  --preset riverpod --no-native-cbor {{args}}
+	  --preset riverpod {{args}}
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema examples/react-vite-swr/schema.cstack \
 	  --out examples/react-vite-swr/client \

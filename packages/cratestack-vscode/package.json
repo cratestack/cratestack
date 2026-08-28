@@ -5,6 +5,11 @@
   "version": "0.8.14",
   "publisher": "cratestack",
   "license": "MIT",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#1E222E",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/cratestack/cratestack.git",
