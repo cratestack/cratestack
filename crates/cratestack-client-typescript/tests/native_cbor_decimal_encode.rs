@@ -61,7 +61,7 @@ fn create_input_carrying_a_real_decimal_instance_encodes_to_a_plain_string_under
     if !node_toolchain_available() {
         eprintln!(
             "skipping create_input_carrying_a_real_decimal_instance_encodes_to_a_plain_string_under_the_real_native_codec: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }
@@ -179,7 +179,7 @@ fn batch_payload_with_two_decimal_carrying_frames_encodes_both_under_the_real_na
     if !node_toolchain_available() {
         eprintln!(
             "skipping batch_payload_with_two_decimal_carrying_frames_encodes_both_under_the_real_native_codec: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }

@@ -28,10 +28,10 @@
 //!
 //! Follows this crate's established Node-availability skip convention
 //! (`tests/swr_runtime.rs`, `tests/swr_paged_model_tsc.rs`,
-//! `tests/tanstack_absent_typechecks.rs`): no Rust CI job in this repo
-//! currently provisions Node, so this degrades to a printed skip rather
-//! than failing a job that was never going to have `node`/`npm`/`npx` on
-//! `PATH`.
+//! `tests/tanstack_absent_typechecks.rs`): it degrades to a printed skip
+//! rather than failing where `node`/`npm`/`npx` are absent. That is a
+//! *local* Rust-only checkout — in CI this runs, because `ubuntu-latest`
+//! ships Node.
 
 use std::fs;
 use std::process::Command;
@@ -88,8 +88,9 @@ void client.widgets.get(1, { computedParams: { anything: 1 } });
 fn run_for_fixture(fixture_stem: &str, package_name: &str, smoke_source: &str) {
     if !node_npm_npx_available() {
         eprintln!(
-            "skipping {package_name}: `node`/`npm`/`npx` not on PATH (expected in this repo's \
-             Rust-only CI jobs — see this test's module doc)"
+            "skipping {package_name}: `node`/`npm`/`npx` not on PATH (expected only where \
+             Node is absent, e.g. a local Rust-only checkout; CI runs this — see this test's \
+             module doc)"
         );
         return;
     }

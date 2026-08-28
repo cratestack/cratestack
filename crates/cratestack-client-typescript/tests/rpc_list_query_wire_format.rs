@@ -21,10 +21,10 @@
 //! distinct template — it lands at `src/queries.ts` for the default
 //! layout and `src/swr/queries.ts` for the `--swr` subtree).
 //!
-//! Same Node-availability skip convention as `tests/swr_runtime.rs`:
-//! no Rust CI job in this repo currently provisions Node, so this
-//! degrades to a printed skip rather than failing a job that was never
-//! going to have `node`/`npm` on `PATH`.
+//! Same Node-availability skip convention as `tests/swr_runtime.rs`: it
+//! degrades to a printed skip rather than failing where `node`/`npm` are
+//! absent. That is a *local* Rust-only checkout — in CI this runs, because
+//! `ubuntu-latest` ships Node.
 //!
 //! Also covers `computedParams` (`docs/design/computed-fields.md`'s typed
 //! client computedParams surface — see its "Downstream" section): the TS
@@ -53,7 +53,7 @@ fn to_rpc_list_input_matches_the_real_rpc_list_input_wire_shape() {
     if !node_toolchain_available() {
         eprintln!(
             "skipping to_rpc_list_input_matches_the_real_rpc_list_input_wire_shape: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs — \
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this — \
              see this test's module doc)"
         );
         return;

@@ -17,7 +17,7 @@ fn page_input_procedure_output_type_checks() {
     if !node_npm_npx_available() {
         eprintln!(
             "skipping page_input_procedure_output_type_checks: `node`/`npm`/`npx` not on PATH \
-             (expected in this repo's Rust-only CI jobs — see this test's module doc)"
+             (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this — see this test's module doc)"
         );
         return;
     }

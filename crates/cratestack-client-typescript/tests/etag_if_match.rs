@@ -253,7 +253,7 @@ fn etag_generated_output_round_trips_through_a_real_http_stub_server() {
     if !node_toolchain_available() {
         eprintln!(
             "skipping etag_generated_output_round_trips_through_a_real_http_stub_server: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }
@@ -392,7 +392,7 @@ fn swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decima
     if !node_toolchain_available() {
         eprintln!(
             "skipping swr_get_with_response_round_trips_through_a_real_http_stub_server_with_decimal_revival: \
-             `node`/`npm` not on PATH (expected in this repo's Rust-only CI jobs)"
+             `node`/`npm` not on PATH (expected only where Node is absent, e.g. a local Rust-only checkout; CI runs this)"
         );
         return;
     }
