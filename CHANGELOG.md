@@ -28,6 +28,29 @@ round trip this recipe exists to prove has already completed by the time the mar
 Windows and Android verify recipes are out of scope for this ticket and unchanged, even though the
 Windows recipe has the same fixed-timeout-plus-`|| true` shape.
 
+### The changelog tooling stops arming its own next false alarm, and starts checking where entries land (#739, #740)
+
+Two related fixes to `.ci/`'s changelog tooling, sharing the test harness in `changelog-seed-tests.sh`.
+
+`changelog-seed.sh`'s no-op auto-fill scope (`CHANGELOG_NOOP_SCOPES`) included a package's own
+`CHANGELOG.md` in the range it counted commits over, so a docs-only edit to that file — including the
+hand-written fix for the *previous* occurrence of this exact defect — counted as a "functional change"
+to the package and armed the placeholder seed on the next bump (`#728` → hand-fixed by `#731` → caused
+`#736` → hand-fixed by `3de442b8` → 0.8.14 armed). The scope now excludes the changelog file itself via
+a `:(exclude)` pathspec derived from the declared map key, so it cannot go stale as packages are added.
+Verified against this repo's own `v0.8.9..v0.8.10` and `v0.8.12..v0.8.13` ranges: a changelog-only
+commit is now correctly excluded, and a real source change in the same range is still counted (#740).
+
+`changelog-check.sh` only ever grepped for the unedited-seed TODO marker; it never examined WHERE an
+entry landed, so an entry misfiled under an already-released `## X.Y.Z (date)` section instead of
+`## Unreleased` passed clean (`#672`, `#680`, `#686`, and most recently `#737`, four releases behind
+where its feature actually shipped). The check now diffs a PR's changes against its base ref and flags
+any newly-added `### ` entry whose nearest preceding `## ` heading is a dated section that already
+existed before the diff — naming the file, the line, and the offending section. Scoped to lines the PR
+itself adds (historical misfilings already on `main` do not retroactively fail future PRs), and a
+release bump's legitimate promotion of `## Unreleased` into a freshly-created dated section is not a
+violation, whether or not that promotion also adds entries under the same, newly-created heading (#739).
+
 ### The generated Dart client caches its CBOR codec for successes only (#798)
 
 Both generated Dart runtimes resolved `cratestack_cbor`'s `createCborCodec()` through a plain

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Verify that no declared changelog contains an unedited seed.
+# Verify that no declared changelog contains an unedited seed, AND that no
+# entry a PR adds landed under a dated release section instead of under
+# "## Unreleased" (cratestack#739).
 #
 # An unedited seed contains a TODO marker comment that indicates a human
 # has not yet rewritten the auto-generated content into narrative prose.
@@ -7,15 +9,27 @@
 # `main` and the changelog would silently degrade from prose to a commit list,
 # which is worse than an honest gap (it looks maintained, but isn't).
 #
+# The placement check closes a related gap: the marker check alone says
+# nothing about WHERE an entry landed, so a `### ` entry misfiled under an
+# already-released `## X.Y.Z (date)` section (cratestack#672, #680, #686,
+# #737) passed clean. It is diff-based — see changelog-placement-check.sh's
+# header for the mechanism and the release-bump carve-out — so it only
+# examines lines a PR ADDS, never the historical misfilings already sitting
+# on `main`, and never fires as a generic "every PR needs an entry" gate.
+#
 # Usage: changelog-check.sh
 #
-# Exits 0 if every declared changelog is edited (no TODO markers), 1 if any
-# contain unedited seeds (naming which ones), 2 on error.
+# Exits 0 if every declared changelog is edited (no TODO markers) and no
+# added entry is misplaced, 1 if either check finds a problem (naming which
+# files/lines), 2 on error.
 
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# shellcheck source=.ci/changelog-placement-check.sh
+source "$PROJECT_ROOT/.ci/changelog-placement-check.sh"
 
 # Every changelog the release pipeline is responsible for is declared once,
 # centrally, in changelog-files.sh — see that file for why. Overridable
@@ -97,6 +111,41 @@ if [ "${#unedited_files[@]}" -gt 0 ]; then
     echo "  - $file" >&2
   done
   echo "  Marker: $UNEDITED_MARKER" >&2
+  exit 1
+fi
+
+# --- Placement check (cratestack#739) ----------------------------------
+#
+# Only runs when a base ref is resolvable — see resolve_placement_refs in
+# changelog-placement-check.sh for the resolution order. When none is
+# (e.g. a local run with no 'origin' remote, or a fully shallow clone), this
+# degrades to a loud, explicit skip rather than a crash or a silent vacuous
+# pass: the marker check above still ran and still gates on its own.
+resolve_placement_refs
+
+if [ -z "$PLACEMENT_BASE_REF" ]; then
+  echo "warning: no base ref resolvable (checked \$CHANGELOG_CHECK_BASE_REF, origin/\$GITHUB_BASE_REF, origin/main) — skipping the changelog placement check (cratestack#739); the unedited-seed check above still ran." >&2
+  exit 0
+fi
+
+misplaced_entries=()
+for file in "${CHANGELOG_FILES[@]}"; do
+  placement_output=""
+  placement_status=0
+  placement_output=$(check_changelog_placement "$file" "$PLACEMENT_BASE_REF" "$PLACEMENT_HEAD_REF") || placement_status=$?
+  if [ "$placement_status" -ne 0 ]; then
+    while IFS= read -r placement_line; do
+      [ -n "$placement_line" ] && misplaced_entries+=("$placement_line")
+    done <<< "$placement_output"
+  fi
+done
+
+if [ "${#misplaced_entries[@]}" -gt 0 ]; then
+  echo "error: the following changelog entr(y/ies) were added under a dated release section instead of '## Unreleased' — move them before merging:" >&2
+  for placement_line in "${misplaced_entries[@]}"; do
+    echo "  - $placement_line" >&2
+  done
+  echo "  Compared: ${PLACEMENT_BASE_REF}..${PLACEMENT_HEAD_REF}" >&2
   exit 1
 fi
 

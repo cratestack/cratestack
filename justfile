@@ -1219,14 +1219,19 @@ verify-layering:
 verify-lints-optin:
 	./.ci/lints-workspace-check.sh
 
-# Changelog verification: detect unedited seeds.
+# Changelog verification: detect unedited seeds, and (cratestack#739) any
+# entry a PR adds that landed under a dated release section instead of
+# under "## Unreleased".
 #
 # Ensures that CHANGELOG.md contains no auto-generated seeds with the
 # TODO marker still present. This is load-bearing: an unedited seed reaching
 # main silently degrades the changelog from prose to a commit list, which is
-# worse than today's honest gap (it looks maintained, but isn't).
+# worse than today's honest gap (it looks maintained, but isn't). The
+# placement check closes a related gap: a misfiled entry passing this check
+# clean (cratestack#672, #680, #686, #737) permanently misrepresents which
+# release a change shipped in, once the dated section is published.
 #
-# Blocking CI gate for any PR that touches CHANGELOG.md.
+# Blocking CI gate for any PR that touches a declared changelog.
 verify-changelog:
 	./.ci/changelog-check.sh
 

@@ -1693,6 +1693,303 @@ fi
 rm -rf "$TEST_DIR"
 cleanup_noop_fixture_repo
 
+# Helper for Tests 34-40 (cratestack#739): a disposable git fixture repo
+# with its own CHANGELOG.md, built fresh by each test via
+# setup_placement_fixture_repo, then evolved by two or more commits so
+# changelog-check.sh's new diff-based placement check (BASE_REF -> HEAD_REF)
+# has real history to compare, via the same GIT_DIR/GIT_WORK_TREE seam
+# Test 5 (cratestack#670) and Tests 27-28 (cratestack#713) use.
+setup_placement_fixture_repo() {
+  PLACEMENT_GIT_DIR=$(mktemp -d)
+  git init -q -b main "$PLACEMENT_GIT_DIR"
+  git -C "$PLACEMENT_GIT_DIR" config user.email "changelog-seed-tests@example.invalid"
+  git -C "$PLACEMENT_GIT_DIR" config user.name "changelog-seed-tests"
+  git -C "$PLACEMENT_GIT_DIR" config commit.gpgsign false
+  cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+  git -C "$PLACEMENT_GIT_DIR" add -A
+  git -C "$PLACEMENT_GIT_DIR" commit -q -m "chore: init"
+}
+
+cleanup_placement_fixture_repo() {
+  rm -rf "$PLACEMENT_GIT_DIR"
+  PLACEMENT_GIT_DIR=""
+}
+
+# Runs the real changelog-check.sh end to end (marker check AND placement
+# check both active) against the fixture, diffing $1 (base ref) -> $2 (head
+# ref). Populates REPLY_STATUS/REPLY_OUT like run_capture does.
+run_placement_check() {
+  REPLY_STATUS=0
+  REPLY_OUT=$(CHANGELOG_FILE="$PLACEMENT_GIT_DIR/CHANGELOG.md" GIT_DIR="$PLACEMENT_GIT_DIR/.git" GIT_WORK_TREE="$PLACEMENT_GIT_DIR" CHANGELOG_CHECK_BASE_REF="$1" CHANGELOG_CHECK_HEAD_REF="$2" "$CHECK_SCRIPT" 2>&1) || REPLY_STATUS=$?
+}
+
+# Test 34 (cratestack#739): an entry added under "## Unreleased" passes —
+# Acceptance Criterion 2, the ordinary case.
+test_header "Test 34 (cratestack#739): an entry added under '## Unreleased' passes"
+setup_placement_fixture_repo
+base_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+### A new feature (#1)
+
+Some description.
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "docs(changelog): add entry under Unreleased"
+head_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+run_placement_check "$base_sha" "$head_sha"
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "An entry added under '## Unreleased' passes the placement check"
+else
+  test_fail "A correctly-filed entry should have passed: $REPLY_OUT"
+fi
+cleanup_placement_fixture_repo
+
+# Test 35 (cratestack#739 — mirrors #737): an entry added under a
+# PRE-EXISTING dated section fails, naming the file, the line, and the
+# section it landed in — Acceptance Criterion 1 and the Expected Behavior
+# in the ticket, verbatim.
+test_header "Test 35 (cratestack#739): an entry added under a pre-existing dated section fails, naming file/line/section"
+setup_placement_fixture_repo
+base_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+
+### A misfiled feature (#2)
+
+This landed in the wrong place.
+FIXTURE
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "docs(changelog): misfile entry under 0.7.8"
+head_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+run_placement_check "$base_sha" "$head_sha"
+if [ "$REPLY_STATUS" -ne 0 ]; then
+  test_pass "changelog-check fails on an entry misfiled under a pre-existing dated section"
+else
+  test_fail "changelog-check should have failed on the misfiled entry"
+fi
+if echo "$REPLY_OUT" | grep -qF "CHANGELOG.md:" && echo "$REPLY_OUT" | grep -q "## 0.7.8 (2026-08-08)"; then
+  test_pass "Failure names the file, the line, and the offending dated section"
+else
+  test_fail "Failure message did not name file/line/section: $REPLY_OUT"
+fi
+cleanup_placement_fixture_repo
+
+# Test 36 (cratestack#739): a PR that touches no changelog at all behaves
+# exactly as today — Acceptance Criterion 3. This must NOT become a "every
+# PR must have an entry" gate.
+test_header "Test 36 (cratestack#739): a PR touching no changelog at all behaves exactly as today"
+setup_placement_fixture_repo
+base_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+echo "unrelated" > "$PLACEMENT_GIT_DIR/other.txt"
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "chore: unrelated change, does not touch CHANGELOG.md"
+head_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+run_placement_check "$base_sha" "$head_sha"
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "A PR touching no changelog still passes cleanly"
+else
+  test_fail "A PR touching no changelog should not fail: $REPLY_OUT"
+fi
+cleanup_placement_fixture_repo
+
+# Test 37 (cratestack#739): a release bump that CARRIES existing
+# '## Unreleased' prose forward into a freshly-created dated section (the
+# real shape of cratestack#531's conversion branch, e.g. this repo's own
+# `a3290a82` v0.8.14 bump) adds ZERO new "### " lines — nothing to check,
+# trivially passes. Acceptance Criterion 4, half of it.
+test_header "Test 37 (cratestack#739): release-bump prose-carry-forward shape passes (mirrors a3290a82)"
+setup_placement_fixture_repo
+cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+### A new feature (#1)
+
+Some description.
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "docs(changelog): add entry under Unreleased"
+pre_bump_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+## 0.9.0 (2026-08-28)
+
+### A new feature (#1)
+
+Some description.
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "chore: bump workspace to v0.9.0 and seed CHANGELOG section"
+bump_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+run_placement_check "$pre_bump_sha" "$bump_sha"
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "Release-bump prose-carry-forward promotion passes (no new '### ' lines added by the bump itself)"
+else
+  test_fail "A legitimate release-bump promotion should not fail: $REPLY_OUT"
+fi
+cleanup_placement_fixture_repo
+
+# Test 38 (cratestack#739 — DECISIVE, Acceptance Criterion 4): a release
+# bump that falls back to the PLACEHOLDER-SEED shape (e.g. this repo's own
+# `68a20ccb` v0.8.12 bump — '## Unreleased' was empty pre-bump) DOES add new
+# "### " lines, directly under the freshly-created dated heading. This is
+# the case the ticket calls "most likely to break a naive implementation" —
+# a whole-file or line-only check would misread this as a misfiled entry.
+test_header "Test 38 (cratestack#739 — DECISIVE): release-bump placeholder-seed shape passes (mirrors 68a20ccb)"
+setup_placement_fixture_repo
+pre_bump_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+## 0.9.0 (2026-08-28)
+
+### Changes
+
+#### Features
+
+- some feature (#5)
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "chore: bump workspace to v0.9.0 and seed CHANGELOG section"
+bump_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+run_placement_check "$pre_bump_sha" "$bump_sha"
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "Release-bump placeholder-seed promotion passes — '### ' lines added under a heading the SAME diff created are not a violation"
+else
+  test_fail "A legitimate release-bump promotion (placeholder-seed shape) should not fail: $REPLY_OUT"
+fi
+cleanup_placement_fixture_repo
+
+# Test 39 (cratestack#739): a mixed diff — one entry correctly filed under
+# '## Unreleased', one misfiled under a pre-existing dated section in the
+# SAME diff — still fails overall, and names only the actual offender.
+test_header "Test 39 (cratestack#739): a mixed diff still fails, naming only the actual offender"
+setup_placement_fixture_repo
+base_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+cat > "$PLACEMENT_GIT_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+### A properly filed feature (#3)
+
+Filed correctly.
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+
+### A misfiled feature (#4)
+
+Filed incorrectly.
+FIXTURE
+git -C "$PLACEMENT_GIT_DIR" add -A
+git -C "$PLACEMENT_GIT_DIR" commit -q -m "docs(changelog): one correct entry, one misfiled entry"
+head_sha=$(git -C "$PLACEMENT_GIT_DIR" rev-parse HEAD)
+
+run_placement_check "$base_sha" "$head_sha"
+if [ "$REPLY_STATUS" -ne 0 ]; then
+  test_pass "Mixed diff (one correct, one misfiled) still fails overall"
+else
+  test_fail "A mixed diff with a real misfile should have failed"
+fi
+violation_count=$(echo "$REPLY_OUT" | grep -c "entry added under" || true)
+if [ "$violation_count" -eq 1 ]; then
+  test_pass "Exactly one violation named — the correctly-filed entry was not flagged"
+else
+  test_fail "Expected exactly one violation, got $violation_count: $REPLY_OUT"
+fi
+cleanup_placement_fixture_repo
+
+# Test 40 (cratestack#739): when no base ref is resolvable at all (no
+# CHANGELOG_CHECK_BASE_REF override, no GITHUB_BASE_REF, and no 'origin'
+# remote in the repo being checked), the placement check degrades to a
+# loud, explicit skip rather than crashing — and the unedited-seed check
+# still runs and still gates on its own.
+test_header "Test 40 (cratestack#739): no resolvable base ref skips the placement check loudly, without crashing"
+NO_ORIGIN_DIR=$(mktemp -d)
+git init -q -b main "$NO_ORIGIN_DIR"
+git -C "$NO_ORIGIN_DIR" config user.email "changelog-seed-tests@example.invalid"
+git -C "$NO_ORIGIN_DIR" config user.name "changelog-seed-tests"
+git -C "$NO_ORIGIN_DIR" config commit.gpgsign false
+cat > "$NO_ORIGIN_DIR/CHANGELOG.md" <<'FIXTURE'
+# Changelog
+
+## Unreleased
+
+### A new feature (#1)
+
+Some description.
+
+## 0.7.8 (2026-08-08)
+
+Some previously released, already-edited prose.
+FIXTURE
+git -C "$NO_ORIGIN_DIR" add -A
+git -C "$NO_ORIGIN_DIR" commit -q -m "chore: init, no origin remote"
+
+REPLY_STATUS=0
+REPLY_OUT=$(env -u GITHUB_BASE_REF -u CHANGELOG_CHECK_BASE_REF CHANGELOG_FILE="$NO_ORIGIN_DIR/CHANGELOG.md" GIT_DIR="$NO_ORIGIN_DIR/.git" GIT_WORK_TREE="$NO_ORIGIN_DIR" "$CHECK_SCRIPT" 2>&1) || REPLY_STATUS=$?
+
+if [ "$REPLY_STATUS" -eq 0 ]; then
+  test_pass "No crash and no vacuous failure when no base ref is resolvable"
+else
+  test_fail "Should not fail when no base ref is resolvable (marker check found nothing): $REPLY_OUT"
+fi
+if echo "$REPLY_OUT" | grep -q "skipping the changelog placement check"; then
+  test_pass "The skip is loud (explicit warning), not silent"
+else
+  test_fail "Expected an explicit skip warning: $REPLY_OUT"
+fi
+rm -rf "$NO_ORIGIN_DIR"
+
 # Test 9: none of the above ever touches the real, tracked changelogs.
 # This guards the sandbox-escape regression directly: every test above must
 # operate purely on sandbox copies via the CHANGELOG_FILE /
