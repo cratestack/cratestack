@@ -9,6 +9,7 @@ mod computed_params;
 mod computed_resolver_names;
 mod fields;
 mod index_attribute;
+mod misspelled_attributes;
 mod mixins_types;
 mod model_attributes;
 mod model_relation;

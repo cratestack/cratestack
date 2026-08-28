@@ -433,3 +433,121 @@ model User {
     )
     .expect("model-level `@@allow`/`@@deny` must keep parsing — they are real, supported policy");
 }
+
+/// cratestack#679's typo half. Mirrors
+/// `pb_field_attribute_is_rejected_on_every_field_bearing_declaration`:
+/// a missed call site in `validate::misspelled_attributes` fails
+/// *silently* — the typo goes back to being an inert no-op, which is the
+/// exact bug — so this covers all five field-bearing declarations.
+#[test]
+fn a_misspelled_field_attribute_is_rejected_on_every_field_bearing_declaration() {
+    for (kind, source) in [
+        (
+            "model",
+            r#"
+model Asset {
+  id Int @id
+  bucket String @raedonly
+}
+"#,
+        ),
+        (
+            "mixin",
+            r#"
+mixin Timestamps {
+  created_at DateTime @raedonly
+}
+"#,
+        ),
+        (
+            "type",
+            r#"
+type Address {
+  city String @raedonly
+}
+"#,
+        ),
+        (
+            "view",
+            r#"
+model Widget {
+  id Int @id
+  name String
+}
+
+view WidgetSummary from Widget {
+  id Int @id
+  name String @raedonly
+  @@sql("SELECT id, name FROM widget")
+}
+"#,
+        ),
+        (
+            "auth block",
+            r#"
+auth User {
+  id String @id
+  label String @raedonly
+}
+"#,
+        ),
+    ] {
+        let err = parse_schema(source)
+            .expect_err(&format!("`@raedonly` must be rejected on {kind} fields"));
+        let message = err.to_string();
+        assert!(
+            message.contains("@raedonly"),
+            "{kind} must name the offending attribute: {message}"
+        );
+        assert!(
+            message.contains("@readonly"),
+            "{kind} must suggest the attribute the author meant: {message}"
+        );
+    }
+}
+
+/// The other half of cratestack#679's option (b), and the reason it was
+/// chosen over a closed attribute set: an attribute that resembles nothing
+/// is left inert rather than becoming a parse error. This is the ticket's
+/// own `@totallyBogusAttribute` example.
+///
+/// Without this, "reject every unrecognised attribute" would satisfy the
+/// test above while being a different — and much larger — language change
+/// than the one that was decided.
+#[test]
+fn an_unknown_attribute_that_resembles_nothing_still_parses() {
+    parse_schema(
+        r#"
+model Asset {
+  id Int @id
+  bucket String @totallyBogusAttribute(whatever == 1)
+}
+"#,
+    )
+    .expect("an attribute that is not a near-miss of a known name stays inert (option (b))");
+}
+
+/// Guards against the near-miss check over-rejecting real, supported
+/// attributes — the failure mode that made option (a) too risky to take.
+/// Every one of these must keep parsing exactly as before.
+#[test]
+fn supported_field_attributes_are_unaffected_by_the_near_miss_check() {
+    parse_schema(
+        r#"
+model Widget {
+  id Int @id
+  code String @unique @length(min: 1, max: 10)
+  email String @email
+  price Decimal @range(min: 0)
+  slug String @regex("^[a-z]+$")
+  currency String @iso4217
+  secret String @server_only
+  balance Decimal @readonly
+  note String @sensitive
+  owner String @pii
+  rev Int @version
+}
+"#,
+    )
+    .expect("every supported field attribute must survive the near-miss check");
+}
