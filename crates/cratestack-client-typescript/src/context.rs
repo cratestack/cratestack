@@ -52,14 +52,19 @@ pub(crate) struct TemplateContext {
     /// `src/refine.ts` itself is gated by spec selection, not by this
     /// field, so it is simply absent from a default run.
     refine: bool,
-    /// The semver range the generated `package.json` pins
-    /// `@cratestack/refine` to under `--refine`. Derived from this
-    /// crate's own `CARGO_PKG_VERSION`, which `just bump` moves in
-    /// lockstep with the npm package — a generated client and the
-    /// `@cratestack/refine` it was generated against are the same
-    /// release, and a caret range on a `0.x` version resolves to that
-    /// minor line only. Empty when `refine` is off, where no template
-    /// reads it.
+    /// The semver range the generated `package.json` declares for
+    /// `@cratestack/refine` under `--refine`.
+    ///
+    /// cratestack#779: this is `crate::package_floors::
+    /// CRATESTACK_REFINE_FLOOR`, an API-compatibility constant, on the
+    /// same terms as `native_cbor_version_requirement` below. It used to
+    /// be derived from this crate's own `CARGO_PKG_VERSION`, justified by
+    /// `just bump` moving that in lockstep with the npm package — but
+    /// lockstep is exactly the problem: the bump lands *before* the tag
+    /// that publishes, so the generated client named a version the
+    /// registry could not serve for the whole release window.
+    ///
+    /// Empty when `refine` is off, where no template reads it.
     refine_version_requirement: String,
     /// One entry per model, empty unless `refine` is set. See
     /// `crate::refine`.
