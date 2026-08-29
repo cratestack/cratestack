@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Releases can be rehearsed without consuming a version number (#652)
+
+`release-cli.yml` gained a `rehearsal` input. Trigger it from the Actions tab, on any branch, with the
+tag input left empty: every artifact is built, every content gate runs, and every irreversible write
+is skipped. No registry is touched and no version number is spent.
+
+Eleven PRs (#629, #631–#638, #640, #641) fixed release-pipeline defects between v0.8.0 and v0.8.3.
+Not one was found by CI. Every one was found by cutting a real release and watching it fail — or
+watching it *succeed while shipping nothing*. The reason is structural: this workflow only ran on a
+tag push, so its first execution against any change to it **was** a production release.
+
+**It is a flag on the real pipeline, never a second copy.** That is the ticket's first Risk, and a
+diverging rehearsal stops representing reality within one release. Concretely: the seven npm
+publishes all route through the one wrapper they already shared, `npm-publish.sh`, which switches to
+`npm publish --dry-run` on `NPM_PUBLISH_REHEARSAL=1`; crates.io uses `just release-publish dry`, the
+same recipe in its existing dry mode; the pub.dev jobs run every vendor step, every cross-host
+artifact download and the archive-contents gate, and stop before `dart pub publish`.
+
+**The rehearsal cannot publish, and that is now checked rather than asserted.** The ticket asks for
+it "verified by inspection of every publish step's guard, not by trusting a flag", so the inspection
+is a script — `.ci/release-rehearsal-guard-check.py` — wired into CI as its own job. It fails if any
+irreversible write loses its `github.event_name == 'push'` guard, if a step delegating to the
+rehearsal-aware wrapper stops wiring the signal through, and if its own pattern ever matches nothing
+(a check that silently stops checking is the failure mode it exists to prevent).
+
+**What a rehearsal does NOT cover, reported rather than implied.** pub.dev's OIDC trust is configured
+per-tag-pattern, so no non-tag run can mint a token it would accept (#641). The pre-flight reports
+that channel as NOT COVERED and the manifest repeats it. A green rehearsal is never rendered as LIVE
+either — a successful publish job in rehearsal mode reads "rehearsed — gates passed, nothing
+published", because rendering it as LIVE would recreate the false-green both #651 and #652 exist to
+kill, one level up.
+
+The existing `workflow_dispatch` path that rebuilds binaries for an existing tag is unchanged; the
+tag input is now optional only so a rehearsal can run without one.
+
 ### Releases gate every publish behind one pre-flight, and end with a channel manifest (#651)
 
 Maintainer decision on #651 (2026-08-29): options **(b)** and **(c)** combined, recorded in a policy

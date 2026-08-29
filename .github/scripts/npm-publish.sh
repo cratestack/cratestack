@@ -62,6 +62,62 @@ fi
 pkg_dir=$1
 shift
 
+# REHEARSAL MODE (cratestack#652). Set by the release workflow when it is
+# rehearsing rather than releasing. Runs the full pack + validation path
+# and writes to no registry.
+#
+# It lives HERE, in the one wrapper all seven npm publishes already share,
+# rather than as a second `if:`-guarded step per job. That is #652's Risk 1
+# ("a rehearsal that becomes a second, diverging copy of the pipeline")
+# taken seriously: there is exactly one code path, and the rehearsal
+# differs from the release by two flags rather than by being a separate
+# transcription that can drift.
+#
+# `--provenance` is DROPPED, not passed through. It mints a sigstore
+# attestation tied to a real publish; with `--dry-run` there is nothing to
+# attest and npm errors out. Dropping it is therefore not a weakening of
+# the rehearsal — it is the only way the dry run reaches the packing and
+# validation this exists to exercise.
+#
+# ALREADY-PUBLISHED IS A REHEARSAL PASS, and this is measured rather than
+# reasoned. A first draft of this block asserted that a dry run "cannot
+# collide with a published version" and skipped the check below. That is
+# false: `npm publish --dry-run` still talks to the registry, and running
+# it against this repo's own `packages/cratestack-refine` at an
+# already-released version produced
+#
+#     npm error You cannot publish over the previously published versions: 0.8.15.
+#
+# after printing the full tarball manifest. The pack and validation — the
+# entire point of the rehearsal — had already succeeded at that point. So
+# the same "already published" text the real path treats as success is
+# treated as success here, for the same reason. Without this, rehearsing
+# any already-released version reports a failure that is not one, which is
+# the false-RED mirror of the false-green this ticket exists to kill.
+#
+# The sigstore tlog retry below is genuinely unreachable here, because
+# `--provenance` is dropped and no attestation is written.
+if [ "${NPM_PUBLISH_REHEARSAL:-0}" = "1" ]; then
+  dry_args=()
+  for arg in "$@"; do
+    [ "$arg" = "--provenance" ] && continue
+    dry_args+=("$arg")
+  done
+  echo "npm-publish: REHEARSAL — 'npm publish --dry-run' in $pkg_dir, no registry write" >&2
+  out=$(cd "$pkg_dir" && npm publish "${dry_args[@]}" --dry-run 2>&1)
+  rc=$?
+  printf '%s\n' "$out"
+  if [ "$rc" -eq 0 ]; then
+    exit 0
+  fi
+  if printf '%s' "$out" | grep -qi 'cannot publish over the previously published version'; then
+    echo "npm-publish: REHEARSAL — $pkg_dir is already published at this version; the tarball packed and validated, which is what the rehearsal checks" >&2
+    exit 0
+  fi
+  echo "::error::npm publish --dry-run failed for $pkg_dir for a reason other than the version already existing. The real publish would fail too." >&2
+  exit "$rc"
+fi
+
 # Overridable so the retry path can be exercised without a minute of
 # real sleeping; CI uses the defaults.
 max_attempts=${NPM_PUBLISH_MAX_ATTEMPTS:-4}
