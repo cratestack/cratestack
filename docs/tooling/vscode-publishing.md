@@ -228,3 +228,51 @@ and retried:
 real file, and that the file is a square PNG of at least 128x128, reading the dimensions straight out
 of the PNG IHDR chunk. It deliberately does *not* assert the archive contents; the source tree is the
 wrong place to detect a `.vscodeignore` exclusion, hence the `unzip` check above.
+
+## `.cstack` file icon
+
+Distinct from the extension icon above, and a different mechanism. `icon.png` brands the *listing*;
+`packages/cratestack-vscode/icons/cstack-{light,dark}.svg` brand the *file rows* in the explorer
+tree, via `contributes.languages[].icon`:
+
+```json
+"icon": {
+  "light": "./icons/cstack-light.svg",
+  "dark": "./icons/cstack-dark.svg"
+}
+```
+
+**This is a fallback, not an override.** VS Code shows a language icon only when the active file icon
+theme has no icon of its own for that language or extension, and does not set
+`"showLanguageModeIcons": false`. Under Seti (the default theme) `.cstack` matches nothing, so the
+contributed icon renders; under a theme that already ships a `.cstack` glyph, or one that opts out,
+it will not. That is the intended design — an extension cannot force a file icon into a theme the
+user chose, and shipping a whole icon theme to get one would make users abandon Seti or Material to
+see it.
+
+Requires VS Code **1.64+** (microsoft/vscode#14662). `engines.vscode` is `^1.91.0`, comfortably above
+that, and `test/language-icon.test.js` asserts the floor stays above it — below 1.64 the contribution
+is parsed and silently ignored, so lowering the floor would un-ship the icon for exactly the users a
+lower floor was widened to reach.
+
+Constraints:
+
+* **SVG, transparent background.** The explorer renders these at 16x16 against its own background;
+  the gallery mark's `#1E222E` tile must not be carried over or it renders as a dark box on every
+  theme that isn't that navy.
+* **Both variants are required by convention here.** `light` is used with light colour themes,
+  `dark` with dark ones. They share geometry; the light variant deepens the palette one step
+  (`#F7B270`/`#E88A3A`/`#BF6A26` → `#EDA05C`/`#D97B2E`/`#A85920`) because the mark's pale top face
+  washes out against a near-white explorer background at 16px.
+* **Same denylist caveat as above** — verify against the built archive:
+
+  ```
+  pnpm run package:vsix && unzip -l ./*.vsix | grep -i icons/
+  ```
+
+`test/language-icon.test.js` guards the manifest half offline: the `icon` block exists with both
+variants, both resolve to real files, both are SVG, and the engines floor still supports the feature.
+Like `icon.test.js` it does not assert archive contents, for the same reason.
+
+What none of this can check is whether the icon *looks* right at 16x16 in a real explorer — that
+needs a human with VS Code open.

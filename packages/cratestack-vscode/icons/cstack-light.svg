@@ -1,0 +1,28 @@
+<!--
+  `.cstack` file-type icon, light-theme variant. No background plate:
+  a file icon sits on the host's own background.
+
+  Geometry measured from the shipped mark (icon.png), not eyeballed — see
+  gen-svg.py in the brand asset tooling. All CrateStack marks share one
+  definition so the app icon, logomark and file icons cannot drift apart.
+  Palette deepened one step for legibility on near-white
+  backgrounds; the hue is unchanged.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img">
+  <title>CrateStack schema file</title>
+
+  <!-- bottom crate -->
+  <polygon points="16,13.89 27.55,19.47 16,25.06 4.45,19.47" fill="#EDA05C"/>
+  <polygon points="4.45,19.47 16,25.06 16,30.5 4.45,24.91" fill="#D97B2E"/>
+  <polygon points="27.55,19.47 16,25.06 16,30.5 27.55,24.91" fill="#A85920"/>
+
+  <!-- middle crate -->
+  <polygon points="16,7.69 27.55,13.28 16,18.87 4.45,13.28" fill="#EDA05C"/>
+  <polygon points="4.45,13.28 16,18.87 16,24.31 4.45,18.72" fill="#D97B2E"/>
+  <polygon points="27.55,13.28 16,18.87 16,24.31 27.55,18.72" fill="#A85920"/>
+
+  <!-- top crate -->
+  <polygon points="16,1.5 27.55,7.09 16,12.68 4.45,7.09" fill="#EDA05C"/>
+  <polygon points="4.45,7.09 16,12.68 16,18.11 4.45,12.53" fill="#D97B2E"/>
+  <polygon points="27.55,7.09 16,12.68 16,18.11 27.55,12.53" fill="#A85920"/>
+</svg>
