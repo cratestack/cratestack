@@ -5,7 +5,7 @@ description: >-
   build_runner generator producing fluent builders for classes annotated
   with CrateStack's @CratestackBuilder. A dev dependency — the annotation
   itself lives in cratestack_annotations.
-version: 0.9.1
+version: 0.9.2
 homepage: https://cratestack.dev
 repository: https://github.com/cratestack/cratestack
 issue_tracker: https://github.com/cratestack/cratestack/issues
@@ -18,17 +18,50 @@ environment:
   sdk: ^3.5.0
 
 dependencies:
-  # UPPER BOUND IS LOAD-BEARING, not defensive rounding. A generated client
-  # under the riverpod preset runs this builder in the same `build_runner`
-  # pass as `riverpod_generator`, whose own constraint is `analyzer ^12.0.0`.
-  # Allowing 13.x here makes `pub get` hard-fail in that package before any
-  # codegen is reached. Raise the ceiling only alongside riverpod_generator.
+  # SPANS BOTH MAJORS ON PURPOSE — this is the step that unblocks the
+  # analyzer-13 migration, and it is deliberately the ONLY step in it.
+  #
+  # The constraint used to be `>=12.0.0 <13.0.0`, justified as protecting
+  # `riverpod_generator`, whose own constraint was `analyzer ^12.0.0`. That
+  # stopped being true: riverpod_generator 4.0.6 moved to `^13.0.0` and
+  # 4.0.8 requires it, so the old ceiling had become the *cause* of the
+  # incompatibility it was written to prevent.
+  #
+  # It cannot be fixed by simply flipping to `>=13 <14`, because two CI
+  # gates constrain this package from opposite directions:
+  #
+  #   * `just verify-dart` resolves this builder from the WORKING TREE, so
+  #     it needs the generated-client templates to match the in-tree
+  #     constraint.
+  #   * the `flutter (flutter-riverpod example)` job pins the floors from
+  #     `crates/cratestack-client-dart/src/package_floors.rs` and resolves
+  #     from pub.dev, so it needs those same templates to match the
+  #     PUBLISHED builder.
+  #
+  # While in-tree and published sat on different majors those were mutually
+  # exclusive, and v0.9.0 proved it — the floor gate correctly refused a
+  # generated client no user could have resolved.
+  #
+  # A range spanning both majors dissolves the deadlock without disabling
+  # either gate: this release publishes a builder that satisfies analyzer 12
+  # AND 13 while the templates stay on their analyzer-12 pins (both gates
+  # green), and only THEN can the templates and `CRATESTACK_BUILDER_FLOOR`
+  # move to analyzer 13 against a published builder that already accepts it.
+  #
+  # `sdk:` below deliberately stays `^3.5.0`. analyzer 13.0.0 needs
+  # `^3.9.0` and 13.1+ needs `^3.11.0`, so on an older SDK pub simply
+  # resolves analyzer 12 from this range — the published compatibility
+  # promise does not narrow, which an outright `>=13` bump would have
+  # forced. Verified with `dart analyze --fatal-infos` against analyzer
+  # 12.1.0 and 13.3.0: the one API this package uses (see
+  # `builder_generator.dart`'s `FieldFormalParameterElement` note) compiles
+  # clean on both.
   #
   # The floor is deliberately well above the minimum that compiles: at
   # `^8.x` the analyzer reports a language version older than the SDK
   # ("SDK language version 3.13.0 is newer than `analyzer` language version
   # 3.11.0"), i.e. it parses newer syntax with older rules.
-  analyzer: '>=12.0.0 <13.0.0'
+  analyzer: '>=12.0.0 <14.0.0'
   build: ^4.0.7
   # issue #668 phase 3 / cratestack#754: `0.8.10` is the first
   # `cratestack_annotations` release with the `touchFlagFields`/
