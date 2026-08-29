@@ -16,9 +16,12 @@ codec — both backends compile the same Rust.
 
 > **Status:** Linux x86_64, Android (arm64-v8a, x86_64, armeabi-v7a), Windows x86_64, macOS (arm64 +
 > x86_64, universal), iOS (device arm64 + universal simulator arm64/x86_64), and web. Every other
-> platform throws a clear `UnsupportedError`. Linux arm64 is the one remaining deliberate maintainer
-> hold, not in-progress work — see cratestack#563's issue thread. (iOS was the other item on that
-> hold list; it landed in this repo's iOS platform-matrix slice and is no longer held.)
+> platform throws a clear `UnsupportedError`. Linux arm64 is the one remaining gap, and it is
+> blocked upstream rather than held: Flutter publishes no arm64 Linux SDK on any channel, and this
+> package requires the Flutter SDK to resolve at all, so plain `dart test`/`dart run` is not a way
+> around it either — measured in cratestack#823, which was filed on the opposite assumption and
+> closed when the measurement contradicted it. (iOS was the other item on that hold list; it landed
+> in this repo's iOS platform-matrix slice and is no longer held.)
 > **This is the intended platform scope for the first pub.dev publish**, not a partial state to wait
 > out. Publishing infrastructure (CI workflow, version-locking, archive-verification gate) now
 > exists — see `docs/tooling/dart-publishing.md` for what's left: a one-time manual first publish
