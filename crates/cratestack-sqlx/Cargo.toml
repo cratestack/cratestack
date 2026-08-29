@@ -82,15 +82,22 @@ bigdecimal = { workspace = true, optional = true }
 pgvector = { workspace = true, optional = true }
 # Pins the transitive `sqlx` facade crate pgvector's `sqlx` feature
 # pulls in to exactly the version whose `sqlx-core`/`sqlx-postgres`
-# match our own direct `=0.8.6` pins above. Without this, pgvector's
+# match our own direct `=0.9.0` pins above. Without this, pgvector's
 # own (loose) `>= 0.8, < 0.10` requirement lets Cargo resolve a
-# separate, newer `sqlx-core`/`sqlx-postgres` (e.g. 0.9.x) alongside
-# our pinned 0.8.6 ones, and `pgvector::Vector`'s `Encode`/`Type` impls
-# (written against the newer copy) then fail to satisfy
+# separate `sqlx-core`/`sqlx-postgres` (either 0.8.x or a future 0.9.x)
+# alongside our pinned ones, and `pgvector::Vector`'s `Encode`/`Type`
+# impls (written against the other copy) then fail to satisfy
 # `QueryBuilder::push_bind`'s bound (written against ours) — not a
-# missing impl, just two incompatible copies of the same trait. Not
-# used directly (we still go through the `sqlx-core`/`sqlx-postgres`
-# shim above), this dependency exists purely to anchor the resolver.
-sqlx = { version = "=0.8.6", default-features = false, features = ["postgres"], optional = true }
+# missing impl, just two incompatible copies of the same trait. This
+# failure mode is not hypothetical: it is what a plain `cargo update`
+# produced the day sqlx 0.9.0 landed while these pins still said
+# `=0.8.6`, and it is invisible to a default `cargo check --workspace`
+# because `pgvector` is off by default — reproduce with
+# `cargo check -p cratestack-pg --features pgvector --all-targets`.
+# All three pins (the two workspace-root ones and this anchor) must move
+# in the same commit. Not used directly (we still go through the
+# `sqlx-core`/`sqlx-postgres` shim above), this dependency exists purely
+# to anchor the resolver.
+sqlx = { version = "=0.9.0", default-features = false, features = ["postgres"], optional = true }
 
 [dev-dependencies]

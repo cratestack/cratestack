@@ -58,7 +58,17 @@ pub(crate) fn hash_schema_source(schema: &Path) -> Result<String> {
         .with_context(|| format!("failed to read '{}'", schema.display()))?;
     let mut hasher = Sha256::new();
     hasher.update(source.as_bytes());
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
+    // digest 0.10's `GenericArray`) implements no `LowerHex`. The
+    // byte-wise `{:02x}` fold below is this repo's existing hex idiom
+    // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
+    // `format!("{:x}", …)` produced — this string is persisted/keyed on,
+    // so it must not change shape.
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 #[cfg(test)]

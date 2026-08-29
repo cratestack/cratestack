@@ -18,6 +18,7 @@
 #![cfg(test)]
 
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::redis::Redis;
 
@@ -90,7 +91,10 @@ pub(crate) async fn redis_test_url_or_skip() -> Option<TestRedisUrl> {
         }
         Backend::TestContainers => {
             let container = need(
-                Redis::default().start().await,
+                // Tag pinned explicitly: `testcontainers-modules` hardcodes
+                // `redis:5.0` as its default, EOL since 2022. 7.4 rather than
+                // 8.x to keep the behavioural delta from the old default small.
+                Redis::default().with_tag("7.4").start().await,
                 require,
                 "starting the Redis testcontainer (is Docker available?)",
             )?;

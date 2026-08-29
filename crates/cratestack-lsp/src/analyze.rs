@@ -38,16 +38,13 @@ fn precise_relation_error_span(
     text: &str,
     error: &cratestack_parser::SchemaError,
 ) -> Option<std::ops::Range<usize>> {
-    let (field_name, list_key) = if let Some(name) =
-        extract_message_field_name(error.message(), "unknown local field `")
-    {
-        (name, "fields")
-    } else if let Some(name) = extract_message_field_name(error.message(), "unknown target field `")
-    {
-        (name, "references")
-    } else {
-        return None;
-    };
+    let (field_name, list_key) =
+        if let Some(name) = extract_message_field_name(error.message(), "unknown local field `") {
+            (name, "fields")
+        } else {
+            let name = extract_message_field_name(error.message(), "unknown target field `")?;
+            (name, "references")
+        };
 
     let line_text = text.lines().nth(error.line().saturating_sub(1))?;
     let line_start = *line_start_offsets(text).get(error.line().saturating_sub(1))?;

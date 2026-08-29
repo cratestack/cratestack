@@ -1,2 +1,59 @@
 packages:
   - "packages/*"
+
+# pnpm 10 flipped the default of `linkWorkspacePackages` from `true` to
+# `false`. This workspace's internal dependencies are declared as exact
+# versions (`"@cratestack/ts-types": "0.8.15"`), not `workspace:*`, because
+# that is the literal string that has to ship in the published tarballs.
+# With the pnpm 10+ default, those specifiers resolve from the **registry**
+# instead of linking to `packages/*` — so `pnpm -r build`/`test` would
+# silently exercise the last *published* 0.8.15 tarballs rather than the
+# working tree, and a local change to e.g. ts-types would be invisible to
+# every dependent. Measured on the pnpm 9 → 11 bump: the lockfile rewrote
+# `version: link:../cratestack-ts-types` to `version: 0.8.15` in every
+# importer. Restoring the pnpm 9 behaviour explicitly keeps the monorepo
+# testing its own source.
+linkWorkspacePackages: true
+
+# pnpm 10+ does not run dependency build (postinstall) scripts unless they
+# are listed here; pnpm 9 ran them all. These three are the only ones this
+# workspace's tree asks for. Each is deliberately *denied* — verified that
+# nothing needs them:
+#   - esbuild: its binary ships via the `@esbuild/<platform>` optional
+#     dependency, not the install script; `packages/cratestack-vscode`'s
+#     bundle build and `test/bundle.test.js` pass with the script denied.
+#   - keytar / @vscode/vsce-sign: transitive `@vscode/vsce` deps used only
+#     by the interactive `vsce publish` credential path. Packaging runs
+#     through `npx @vscode/vsce package --no-dependencies`.
+# Flip one to `true` only with evidence that the denied build actually
+# breaks something.
+allowBuilds:
+  "@vscode/vsce-sign": false
+  esbuild: false
+  keytar: false
+
+# MAINTAINER DECISION NEEDED — this entry is machine-written, not chosen.
+#
+# pnpm 11 added a supply-chain gate: it refuses lockfile entries published
+# within a ~24h `minimumReleaseAge` window, and re-verifies the *committed*
+# lockfile against that policy on every install. At its default setting pnpm
+# still resolves the newest matching version and then records an exclusion
+# for it here — i.e. it reports the gate rather than enforcing it. The line
+# below was written by `pnpm install` during the 0.8.15 refresh: `zod@4.5.2`
+# (a `^4.0.0` devDependency of this package and of @cratestack/api) had been
+# published ~15h earlier.
+#
+# It is transient: once 4.5.2 is more than a day old the exclusion is inert,
+# and it can simply be deleted at the next lockfile refresh. It is listed
+# rather than worked around because removing it today makes `pnpm install`
+# fail against the committed lockfile.
+#
+# The stricter alternative, `minimumReleaseAgeStrict: true`, was tried and
+# rejected: in this workspace it does not resolve *down* to the newest aged
+# version, it hard-fails with ERR_PNPM_NO_MATURE_MATCHING_VERSION on the
+# `^4.0.0` range, which would break installs outright. Choosing between
+# "default + periodic exclusions", "minimumReleaseAge: 0" (the pnpm 9
+# behaviour this repo had), and pinning the affected devDependencies is a
+# supply-chain posture call for a human, not part of a dependency bump.
+minimumReleaseAgeExclude:
+  - zod@4.5.2

@@ -65,8 +65,20 @@ impl From<cratestack_schema::Note> for NoteView {
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use super::*;
+    // Same pre-existing gap `examples/embedded-browser-vite/src/lib.rs`
+    // already fixed (issue #287), back-ported here: this module never
+    // actually compiled to wasm32 — there is no CI coverage for that target
+    // — and was missing the same imports the `tests` module below already
+    // has for the identical types (`create_table_sql`, `Utc`, `Uuid`,
+    // `ModelDelegate`). The two files are otherwise byte-identical, so the
+    // fix landed on one and not the other. `cargo check` on the host does
+    // not catch this; only a wasm32 build does.
+    use chrono::*;
+    use cratestack_rusqlite::ddl::*;
     use cratestack_rusqlite::opfs;
+    use cratestack_rusqlite::*;
     use std::cell::RefCell;
+    use uuid::Uuid;
     use wasm_bindgen::prelude::*;
 
     thread_local! {

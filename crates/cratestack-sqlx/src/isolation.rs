@@ -65,7 +65,10 @@ where
         attempts += 1;
         let mut tx = pool.begin().await.map_err(cratestack_error_from_sqlx)?;
         let set_stmt = format!("SET TRANSACTION ISOLATION LEVEL {}", isolation.as_sql());
-        sqlx::query(&set_stmt)
+        // `AssertSqlSafe`: `isolation.as_sql()` returns one of four
+        // `&'static str` literals, so nothing request-derived reaches this
+        // statement (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx::query(sqlx::AssertSqlSafe(set_stmt))
             .execute(&mut *tx)
             .await
             .map_err(cratestack_error_from_sqlx)?;

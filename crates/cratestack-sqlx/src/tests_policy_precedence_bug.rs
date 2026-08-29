@@ -68,7 +68,11 @@ fn allow_disjunction_is_parenthesized_so_row_filter_cannot_be_bypassed() {
     query.push(" AND ");
     push_action_policy_query(&mut query, &allow, &[], &ctx);
 
-    let sql = query.sql();
+    // `into_string`, not `sql()`: sqlx 0.9 changed `QueryBuilder::sql()` to
+    // return an owned `SqlStr` (no `Deref<str>`, no `Display`), and this
+    // assertion needs `str::contains` plus interpolation in the failure
+    // message.
+    let sql = query.into_string();
     // The allow disjunction must be wrapped as its own group so it
     // can never absorb the preceding `id = $1` filter via `OR`
     // short-circuiting past it.

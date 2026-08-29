@@ -64,7 +64,9 @@ async fn build_workspace(pool: &PgPool, allow_unsafe_db_writes: bool) -> Arc<Loa
         ),
         format!("INSERT INTO \"{TABLE}\" VALUES ('msg1', 0, 'accepted')"),
     ] {
-        sqlx_core::query::query(&sql)
+        // `AssertSqlSafe`: test-only fixture DDL built from consts in this
+        // file (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(sql))
             .execute(pool)
             .await
             .expect("fixture ddl");

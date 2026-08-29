@@ -33,6 +33,7 @@ use std::sync::OnceLock;
 use sqlx_core::pool::PoolOptions;
 use sqlx_postgres::{PgPool, Postgres};
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres as PostgresImage;
 use tokio::sync::{Mutex, MutexGuard};
@@ -96,7 +97,12 @@ pub async fn connect_or_skip() -> Option<TestPg> {
 
     if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
         let container = need(
-            PostgresImage::default().start().await,
+            // Tag pinned explicitly: `testcontainers-modules` hardcodes
+            // `postgres:11-alpine` as its default, EOL since 2023-11-09.
+            // Kept in lockstep with `compose.yml`'s `postgres:18` so the
+            // testcontainers backend (what CI runs) and the compose backend
+            // (what `just test-pg` runs) agree.
+            PostgresImage::default().with_tag("18-alpine").start().await,
             require,
             "starting the Postgres testcontainer (is Docker available?)",
         )?;

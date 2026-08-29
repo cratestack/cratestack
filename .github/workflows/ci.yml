@@ -24,7 +24,7 @@ jobs:
     name: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
       - name: Assert Cargo.lock is up to date
@@ -61,12 +61,12 @@ jobs:
 
   msrv:
     timeout-minutes: 45
-    name: msrv (1.95.0)
+    name: msrv (1.98.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/tauri-linux-deps
-      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: dtolnay/rust-toolchain@1.98.0
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
@@ -96,7 +96,7 @@ jobs:
     # prove `db.transaction(...)` actually works from that Cargo.toml, not
     # just that it compiles.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -205,7 +205,7 @@ jobs:
       # pass this gate green while skipping all PG coverage.
       CRATESTACK_REQUIRE_DB: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -257,7 +257,7 @@ jobs:
       # while skipping all 115 idempotency/rate-limit tests (issue #418).
       CRATESTACK_REQUIRE_REDIS: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -272,7 +272,7 @@ jobs:
     name: tests (studio + Trunk UI)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # wasm32 (for the Trunk build below) is installed by rustup from
       # rust-toolchain.toml's `targets` for the pinned channel.
       - uses: dtolnay/rust-toolchain@stable
@@ -315,12 +315,26 @@ jobs:
     name: tests (host — everything else)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+      # This shard contains cratestack-client-typescript's
+      # `swr_hooks_invalidation` and `decimal_round_trip` tests, which shell
+      # out to `npm`/`npx` and run a real vitest suite against unpinned `^`
+      # devDependency ranges. It had NO setup-node step, so it silently
+      # inherited whatever Node the runner image happened to ship — the exact
+      # implicit dependency that produced the reproduced `TypeError:
+      # webidl.util.markAsUncloneable is not a function` failure documented at
+      # length in prepare-release.yml (see the comment above its own
+      # setup-node step). Pin it explicitly so the version is a decision
+      # rather than a property of the runner image: 24 both matches every
+      # other Node pin in this repo and clears jsdom@30's `>=22.22.2` floor.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - name: cargo test (host — no DB, no wasm/desktop toolchain)
         # All remaining crates + light example smoke tests. DB-gated tests
         # skip cleanly here (no REQUIRE_DB). cratestack-redis is excluded
@@ -358,7 +372,7 @@ jobs:
     env:
       CRATESTACK_REQUIRE_DB: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -384,7 +398,7 @@ jobs:
     name: embedded examples (isolated build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Assert Cargo.lock is up to date
         run: cargo metadata --locked --format-version=1 > /dev/null
@@ -427,7 +441,7 @@ jobs:
     name: feature matrix (cratestack#421, cratestack#495)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -445,7 +459,7 @@ jobs:
     name: layer direction (ADR 0014)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Layer-direction check
         run: ./.ci/layer-direction-check.sh
@@ -458,10 +472,28 @@ jobs:
     name: workspace lints opt-in (cratestack#523)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Workspace-lints opt-in check
         run: ./.ci/lints-workspace-check.sh
+
+  # File-length ceiling check. `CLAUDE.md` declares a ~200-line-per-file
+  # convention; until this job existed nothing enforced it, and it had
+  # drifted to 116 files over the limit (largest 553 lines) — the same
+  # silent way `[workspace.lints]` drifted before cratestack#523.
+  # `.ci/file-length-allowlist.toml` grandfathers that backlog so the
+  # ceiling binds for NEW code immediately, and a stale entry (a file since
+  # split or deleted) is a hard failure, so the list can only shrink.
+  # Pure file I/O — no toolchain beyond `actions/checkout` and python3,
+  # which ubuntu-latest already ships.
+  file-length:
+    timeout-minutes: 45
+    name: file-length ceiling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: File-length ceiling check
+        run: ./.ci/file-length-check.sh
 
   # ```ignore-fence convention check (cratestack#683). Grep-only — no
   # toolchain component beyond `actions/checkout` is needed.
@@ -470,7 +502,7 @@ jobs:
     name: doctest fences (cratestack#683)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: '```ignore-fence convention check'
         run: ./.ci/ignore-doctest-fence-check.sh
 
@@ -489,7 +521,7 @@ jobs:
     name: release rehearsal cannot publish (cratestack#652)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install PyYAML
         run: pip install --quiet pyyaml
       - name: Every irreversible publish step is guarded
@@ -512,7 +544,7 @@ jobs:
       # (cratestack#739) — a shallow, single-commit checkout never has
       # `origin/main` as a resolvable ref at all, which would make the
       # check silently no-op on every PR rather than actually run.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: taiki-e/install-action@v2
@@ -529,7 +561,7 @@ jobs:
     name: changelog (seed/check script tests)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
           tool: just
@@ -547,7 +579,7 @@ jobs:
     name: clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/tauri-linux-deps
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -564,7 +596,7 @@ jobs:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -630,7 +662,7 @@ jobs:
     name: dart (generated packages)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -658,7 +690,7 @@ jobs:
     name: dart (cratestack_annotations + cratestack_builder)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: taiki-e/install-action@v2
         with:
           tool: just
@@ -701,7 +733,7 @@ jobs:
     name: flutter (cratestack-client-flutter frb bridge)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -738,7 +770,7 @@ jobs:
     name: flutter (cratestack_cbor package — native + web)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # wasm32-unknown-unknown is installed by rustup from
       # rust-toolchain.toml's `targets` for the pinned channel (same
       # mechanism the `js-cbor-wasm` job relies on).
@@ -829,7 +861,7 @@ jobs:
     name: flutter (cratestack_cbor example — linux + web, real builds)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -919,7 +951,7 @@ jobs:
     name: flutter (cratestack_cbor android — APK build + jniLibs proof)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # wasm-pack is needed even though this job never builds for the web —
@@ -1073,7 +1105,7 @@ jobs:
     name: flutter (cratestack_cbor frb glue — generated once, Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -1104,7 +1136,7 @@ jobs:
       # Two paths whose least-common-ancestor is the workspace root, so the
       # artifact preserves `crates/…` and `dart-packages/…` and the consumers
       # can restore it with `path: .`.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cbor-frb-glue
           path: |
@@ -1161,7 +1193,7 @@ jobs:
     runs-on: windows-latest
     needs: cbor-glue
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # wasm32-unknown-unknown is installed by rustup from
       # rust-toolchain.toml's `targets` for the pinned channel — same
       # mechanism every other cbor job relies on, cross-platform.
@@ -1186,7 +1218,7 @@ jobs:
       # dir — see the `cbor-glue` job header for the exact error). The glue
       # arrives prebuilt from that job instead.
       - name: Restore frb glue (generated once on Linux by `cbor-glue`)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: cbor-frb-glue
           path: .
@@ -1301,7 +1333,7 @@ jobs:
     runs-on: macos-latest
     needs: cbor-glue
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # rust-toolchain.toml pins the channel; add BOTH Darwin targets to
       # that pinned toolchain (not to whatever `stable` resolves to
       # separately) — `just cbor-vendor-macos` builds arm64 then x86_64 in
@@ -1311,12 +1343,12 @@ jobs:
       # NOTE: deliberately NOT `with: targets: …` on the action above. That
       # input installs targets for the toolchain the ACTION resolves
       # (`stable`), but this repo's `rust-toolchain.toml` pins the channel to
-      # 1.95.0 — so every `cargo build` here runs under 1.95.0, which would
+      # 1.98.0 — so every `cargo build` here runs under 1.98.0, which would
       # still have no Darwin cross-target and fails with
       # `error[E0463]: can't find crate for 'core'` on the x86_64 leg.
       # Observed for real on PR #685's first run. `rustup target add` as a
       # RUN step executes inside the checkout, where the toolchain file
-      # applies, so it adds to 1.95.0 — which is the toolchain that matters.
+      # applies, so it adds to 1.98.0 — which is the toolchain that matters.
       - name: Add both Darwin targets (to the pinned toolchain, not stable)
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
@@ -1337,7 +1369,7 @@ jobs:
       # and it means macOS and Windows consume byte-identical glue rather
       # than two independently-generated copies that merely ought to match.
       - name: Restore frb glue (generated once on Linux by `cbor-glue`)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: cbor-frb-glue
           path: .
@@ -1428,13 +1460,13 @@ jobs:
     runs-on: macos-latest
     needs: cbor-glue
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Present for the same reason every other Rust-using cbor job has it:
       # it is what installs/normalises the toolchain rather than relying on
       # whatever rustup the runner image happens to ship. Omitting it left
       # this job the only Rust job in the workflow without a toolchain step
       # — it might well have worked (macos-latest preinstalls Rust, and
-      # rust-toolchain.toml would pull 1.95.0 on first use), but "probably
+      # rust-toolchain.toml would pull 1.98.0 on first use), but "probably
       # fine and unlike every sibling job" is not a property worth having in
       # a job whose first real run is also its first test.
       - uses: dtolnay/rust-toolchain@stable
@@ -1443,7 +1475,7 @@ jobs:
       # separately) — same reasoning as `cratestack-cbor-macos`'s identical
       # step (see that job's own comment for the E0463 failure this avoids).
       # NOTE this must stay a RUN step, not the action's `targets:` input:
-      # that input installs against `stable`, not the pinned 1.95.0, which
+      # that input installs against `stable`, not the pinned 1.98.0, which
       # is exactly what caused a real E0463 on the macOS leg.
       - name: Add all three iOS targets (to the pinned toolchain, not stable)
         run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
@@ -1464,7 +1496,7 @@ jobs:
       # macos`'s identical step: drops a multi-minute `cargo install` and
       # guarantees every platform leg consumes byte-identical glue.
       - name: Restore frb glue (generated once on Linux by `cbor-glue`)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: cbor-frb-glue
           path: .
@@ -1516,15 +1548,15 @@ jobs:
     name: typescript (generated packages — REST + RPC)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: just
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: Generate + tsc typecheck (default layout, REST + RPC)
         run: just verify-typescript
       # cratestack#779 guard #2. The step above installs the declared
@@ -1572,7 +1604,7 @@ jobs:
     name: flutter (flutter-riverpod example)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -1601,6 +1633,29 @@ jobs:
       - name: Regenerate + run build_runner via --run-build-runner (issue #303)
         if: ${{ !cancelled() }}
         run: |
+          # Resolve `cratestack_builder`/`cratestack_annotations` from this
+          # tree rather than pub.dev. The generator deliberately emits a
+          # *published* floor (`CRATESTACK_BUILDER_FLOOR`, see
+          # `crates/cratestack-client-dart/src/package_floors.rs`), never an
+          # unpublished one — so while the in-tree builder is ahead of the
+          # newest release across an `analyzer` major (released builder:
+          # `analyzer ^12`; in-tree: `^13`), the floor resolves a builder
+          # that cannot satisfy the generated `build_runner` constraint and
+          # `pub get` fails on an empty intersection.
+          #
+          # This mirrors `justfile`'s `local_builder_override` and the same
+          # override in `crates/cratestack-client-dart/tests/
+          # computed_params_wire_equality.rs`. REMOVE all three once
+          # `CRATESTACK_BUILDER_FLOOR` is raised to a release that carries
+          # the analyzer-13 builder — they exist only to bridge the publish
+          # ordering, and leaving them in would hide a genuinely broken floor.
+          cat > examples/flutter-riverpod/client/pubspec_overrides.yaml <<EOF
+          dependency_overrides:
+            cratestack_builder:
+              path: $GITHUB_WORKSPACE/dart-packages/cratestack_builder
+            cratestack_annotations:
+              path: $GITHUB_WORKSPACE/dart-packages/cratestack_annotations
+          EOF
           cd examples/flutter-riverpod/client && flutter pub get
           cd "$GITHUB_WORKSPACE"
           # `--no-native-cbor` must match `just regen-examples` and the
@@ -1730,11 +1785,11 @@ jobs:
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
       - name: pnpm install
         # pnpm install runs postinstall for every workspace package,
@@ -1756,7 +1811,7 @@ jobs:
         # TURBO_TOKEN/TURBO_TEAM secrets neither of which exist yet.
         # This is free and needs no new setup; upgrading to the hosted
         # cache later is a drop-in env-var change, not a rewrite.
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
@@ -1788,13 +1843,13 @@ jobs:
     name: js (@cratestack/cbor-node)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
       - name: pnpm install
         env:
@@ -1829,7 +1884,7 @@ jobs:
     name: js (@cratestack/cbor-web)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # wasm32-unknown-unknown is installed by rustup from
       # rust-toolchain.toml's `targets` for the pinned channel (same
       # mechanism the `tests-studio` job's Trunk build relies on).
@@ -1852,10 +1907,10 @@ jobs:
           tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
           rm binaryen.tar.gz
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
       - name: pnpm install
         env:
@@ -1888,7 +1943,7 @@ jobs:
     name: js (@cratestack/refine)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -1898,10 +1953,10 @@ jobs:
         run: just refine-fixture
       - name: Generate the real RPC TypeScript client fixture (cratestack#571/#577)
         run: just refine-rpc-fixture
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
       - name: pnpm install
         env:
@@ -1942,7 +1997,7 @@ jobs:
     name: js (react-vite-swr example)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -1966,12 +2021,12 @@ jobs:
       - name: cargo test (offline — the DB-gated test skips cleanly without CRATESTACK_TEST_DATABASE_URL)
         if: ${{ !cancelled() }}
         run: cargo test -p react-vite-swr-example
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: ${{ !cancelled() }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: ${{ !cancelled() }}
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: examples/react-vite-swr/pnpm-lock.yaml
       - name: pnpm install
@@ -2012,9 +2067,14 @@ jobs:
   # Docker image (its own `tests/models.rs`/`tests/procedures.rs` assert
   # on generated Handlebars template *text* only, offline — see that
   # file's doc comment) — a real, if bounded, new cost: the image's build
-  # clones and Gradle-builds `wiremock-state-extension` from source, and
-  # there is no Docker layer caching wired here yet (nothing in this repo
-  # does that today), so a cold cache pays that cost on every run.
+  # downloads the pinned 2.6 MB `wiremock-state-extension-standalone` jar
+  # from Maven Central and verifies its sha256, and there is no Docker
+  # layer caching wired here yet (nothing in this repo does that today),
+  # so a cold cache pays that cost on every run. (This used to be a git
+  # clone + `./gradlew shadowJar` from source, which was far more
+  # expensive; see the Dockerfile's header for why that is no longer
+  # necessary — the shaded artifact IS published, contrary to what an
+  # earlier revision of that comment claimed.)
   #
   # Covered here: `cargo test` (offline, no Docker — the schema/generator
   # coverage in tests/smoke.rs), the real docker build + run, the
@@ -2031,7 +2091,7 @@ jobs:
     name: js (react-vite-refine example)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -2062,10 +2122,10 @@ jobs:
           echo "WireMock never became healthy" >&2
           docker logs cratestack-refine-mock
           exit 1
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
           cache-dependency-path: examples/react-vite-refine/web/pnpm-lock.yaml
       - name: pnpm install
@@ -2119,7 +2179,7 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/install-cratestack-cli
         id: install
         with:

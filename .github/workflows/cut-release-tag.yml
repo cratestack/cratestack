@@ -57,7 +57,7 @@ jobs:
     env:
       RELEASE_PAT_SET: ${{ secrets.RELEASE_PAT != '' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT || github.token }}

@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/cbor-web",
-  "version": "0.8.15",
+  "version": "0.9.0",
   "description": "wasm-bindgen CBOR codec for browser CrateStack RPC clients. Async one-time WASM init, synchronous encode/decode after — backed by the same Rust CborCodec the server and Rust client already use.",
   "license": "MIT",
   "repository": {
@@ -43,13 +43,13 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.8.15"
+    "@cratestack/ts-types": "0.9.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }

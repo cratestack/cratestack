@@ -12,5 +12,4 @@ error[E0599]: no method named `build` found for struct `WidgetBuilder<Set>` in t
   | |_________|
   |
   |
-  = note: the method was found for
-          - `WidgetBuilder<Set, Set>`
+  = note: the method was found for `WidgetBuilder<Set, Set>`

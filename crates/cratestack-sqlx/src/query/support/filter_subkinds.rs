@@ -8,7 +8,7 @@ use crate::sqlx;
 use super::values::push_bind_value;
 
 pub(super) fn push_spatial_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &cratestack_sql::SpatialFilter,
 ) {
     match filter {
@@ -48,7 +48,7 @@ pub(super) fn push_spatial_filter_query(
 /// any other `Vector(n)` value), and the threshold binds through the
 /// usual `FilterValue::Single` path.
 pub(super) fn push_vector_distance_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &cratestack_sql::VectorDistanceFilter,
 ) {
     query.push("(").push(filter.column).push(" ");
@@ -82,7 +82,7 @@ pub(super) fn push_vector_distance_filter_query(
 }
 
 fn push_vector_distance_binary(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     operator: &str,
     value: &FilterValue,
 ) {
@@ -94,7 +94,7 @@ fn push_vector_distance_binary(
 }
 
 pub(super) fn push_json_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &cratestack_sql::JsonFilter,
 ) {
     match filter {
@@ -132,7 +132,7 @@ pub(super) fn push_json_filter_query(
 }
 
 fn push_json_get_text_binary(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     operator: &str,
     value: &FilterValue,
 ) {
@@ -144,7 +144,7 @@ fn push_json_get_text_binary(
 }
 
 pub(super) fn push_coalesce_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &cratestack_sql::CoalesceFilter,
 ) {
     query.push("COALESCE(");
@@ -180,7 +180,7 @@ pub(super) fn push_coalesce_filter_query(
 }
 
 fn push_coalesce_binary(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     operator: &str,
     value: &FilterValue,
 ) {

@@ -68,7 +68,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
         self
     }
 
-    fn build_query<'q>(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+    fn build_query(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
         query
             .push(self.descriptor.select_projection_subset(&self.selected))

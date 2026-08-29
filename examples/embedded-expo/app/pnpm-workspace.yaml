@@ -1,0 +1,19 @@
+# `app/` is its OWN pnpm workspace root, for the same reason as
+# `examples/react-vite-refine/web` and the `embedded-browser-*` examples
+# (cratestack#595): without this file, `pnpm install` run inside `app/`
+# walks up past `examples/` to the repo root's `pnpm-workspace.yaml`,
+# reports "Scope: all N workspace projects", exits 0, and installs
+# nothing here.
+#
+# The same upward walk also made `pnpm audit` silently audit the *repo
+# root* lockfile from this directory — so this example's own dependency
+# tree was reported on by nothing at all, and the advisory counts it
+# appeared to have were really the root workspace's. `packages: - "."`
+# stops the walk here.
+packages:
+  - "."
+
+# pnpm 10+ does not run dependency build (postinstall) scripts unless they
+# are listed here; pnpm 9 ran them all. Keep this list in sync with what
+# `pnpm install` reports as ignored — an unlisted build script makes
+# pnpm 11 fail the install outright (ERR_PNPM_IGNORED_BUILDS).

@@ -74,7 +74,7 @@ jobs:
             vsce_target: win32-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -86,10 +86,10 @@ jobs:
       # Linux (see CLAUDE.md's Linux prerequisite note).
       - name: Build cratestack-lsp
         run: cargo build --release --locked -p cratestack-lsp --target ${{ matrix.target }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: pnpm install
         # pnpm resolves the whole workspace from here (see
         # pnpm-workspace.yaml), which runs cratestack-cli-npm's postinstall
@@ -168,7 +168,7 @@ jobs:
           fi
           file="${vsix_files[0]}"
           echo "path=packages/cratestack-vscode/$file" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsix-${{ matrix.vsce_target }}
           path: ${{ steps.vsix.outputs.path }}
@@ -196,14 +196,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           pattern: vsix-*
           path: dist
           merge-multiple: true
       - name: List vsix assets
         run: ls -la dist
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: dist/*.vsix
@@ -229,16 +229,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
         with:
           pattern: vsix-*
           path: dist
           merge-multiple: true
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: pnpm install
         working-directory: packages/cratestack-vscode
         env:
@@ -281,16 +281,16 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
         with:
           pattern: vsix-*
           path: dist
           merge-multiple: true
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
       - name: pnpm install
         working-directory: packages/cratestack-vscode
         env:

@@ -12,7 +12,7 @@ use super::policy_relation::push_relation_policy_query;
 use super::values::{auth_value_to_sql, push_bind_value, value_matches_auth_literal};
 
 pub(super) fn push_policy_predicate(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     predicate: ReadPredicate,
     ctx: &CratestackContext,
 ) {
@@ -134,7 +134,7 @@ pub(super) fn push_policy_predicate(
 /// rejects `field in []`); it collapses to the constant it means rather
 /// than emitting the invalid `IN ()`.
 fn push_in_list(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     column: &str,
     values: &[PolicyLiteral],
     negate: bool,
@@ -154,7 +154,7 @@ fn push_in_list(
     query.push(")");
 }
 
-fn push_policy_literal(query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>, literal: PolicyLiteral) {
+fn push_policy_literal(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, literal: PolicyLiteral) {
     match literal {
         PolicyLiteral::Bool(value) => query.push_bind(value),
         PolicyLiteral::Int(value) => query.push_bind(value),

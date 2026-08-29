@@ -24,7 +24,17 @@ pub fn projections_checksum(projections: &Projections) -> Result<String, Migrate
     let mut hasher = Sha256::new();
     serde_json::to_writer(ChecksumWriter(&mut hasher), projections)
         .map_err(MigrateError::ChecksumSerialize)?;
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
+    // digest 0.10's `GenericArray`) implements no `LowerHex`. The
+    // byte-wise `{:02x}` fold below is this repo's existing hex idiom
+    // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
+    // `format!("{:x}", …)` produced — this string is persisted/keyed on,
+    // so it must not change shape.
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// Feeds serialized JSON bytes straight into the hasher instead of

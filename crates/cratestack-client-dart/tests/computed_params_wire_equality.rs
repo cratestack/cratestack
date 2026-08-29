@@ -132,7 +132,44 @@ fn write_package(package: &cratestack_client_dart::GeneratedDartPackage, dir: &s
     }
 }
 
+/// Points the generated package's `cratestack_builder`/`cratestack_annotations`
+/// at this repo's in-tree copies.
+///
+/// A `pubspec_overrides.yaml` rather than an edit to the generated
+/// `pubspec.yaml`, for the same reason `override_cratestack_cbor` in
+/// `native_cbor_codec_memoization.rs` and `justfile`'s
+/// `local_builder_override` both use one: the generated file stays
+/// byte-for-byte what the generator emitted, so nothing here can mask a
+/// regression in what it emits.
+///
+/// Why this test needs it at all: the generator emits a *published* floor
+/// (`CRATESTACK_BUILDER_FLOOR`, see `src/package_floors.rs`), deliberately
+/// never an unpublished one. While the in-tree builder is ahead of the
+/// newest release — as it is across an `analyzer` major, where the released
+/// builder declares `analyzer ^12` and the in-tree one requires `^13` —
+/// resolving the floor from pub.dev picks a builder that cannot satisfy the
+/// generated `build_runner` constraint, and `pub get` fails on an empty
+/// intersection. That is a publish-ordering artifact, not a defect in the
+/// generated output, which is what this test actually asserts on. The
+/// override is removable once the floor is raised to a release carrying the
+/// new builder.
+fn override_local_builder(dir: &std::path::Path) {
+    let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should resolve");
+    fs::write(
+        dir.join("pubspec_overrides.yaml"),
+        format!(
+            "dependency_overrides:\n  cratestack_builder:\n    path: {root}/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: {root}/dart-packages/cratestack_annotations\n",
+            root = repo_root.display()
+        ),
+    )
+    .expect("write pubspec_overrides.yaml");
+}
+
 fn run_flutter_pub_get(dir: &std::path::Path) {
+    override_local_builder(dir);
     let pub_get = Command::new("flutter")
         .args(["pub", "get"])
         .current_dir(dir)

@@ -5,46 +5,73 @@
 # ../README.md).
 #
 # This is a build, not a `docker run wiremock/wiremock -v
-# extensions:/var/wiremock/extensions` — that does NOT work. The
-# extension's plain Maven Central jar throws `AbstractMethodError`/
-# `NoSuchMethodError` against every `wiremock/wiremock` image tested
-# (3.7.0, 3.9.1, 3.13.2 — the extension's own upstream issue #36
-# confirms this is a known, real packaging defect: its Handlebars
-# `Helper` classes are compiled against an unrelocated
-# `com.github.jknack.handlebars`, but every WireMock standalone
-# distribution relocates that package internally). The extension's own
-# `shadowJar` Gradle task relocates it correctly and DOES work — but
-# that artifact is never published anywhere (only built as an ephemeral
-# CI artifact upstream), so building it from pinned source is the only
-# reproducible option today. See `docs/design/wiremock-stubs.md`'s
-# "Model CRUD statefulness" section for the full investigation and
-# evidence this conclusion is based on.
+# extensions:/var/wiremock/extensions` — mounting the extension's plain
+# (non-`-standalone`) Maven Central jar does NOT work. That artifact
+# throws `AbstractMethodError`/`NoSuchMethodError` at request time
+# against every `wiremock/wiremock` image this repo tested by hand
+# (3.7.0, 3.9.1, 3.13.2 — see `docs/design/wiremock-stubs.md`'s "Model
+# CRUD statefulness" section for the full investigation). Root cause:
+# every WireMock standalone distribution relocates its bundled
+# Handlebars (`com.github.jknack.handlebars` →
+# `wiremock.com.github.jknack.handlebars`); the plain jar's `Helper`
+# classes are compiled against the unrelocated package, so they don't
+# match the ABI the relocated runtime expects.
+#
+# Note on the upstream evidence, because an earlier version of this
+# comment overstated it: the extension's issue #36 is the identical
+# `AbstractMethodError`, but it was CLOSED AS COMPLETED on 2023-08-24
+# ("the package relocation was wrong"). A 2024-11-22 comment reports a
+# recurrence and the maintainer asked for a fresh issue, which was
+# apparently never filed. So #36 is corroborating context for the
+# failure mode, not an open upstream defect — the actual evidence that
+# the plain jar does not work against these images is this repo's own
+# empirical testing recorded above.
+#
+# What does work is the `-standalone` classifier artifact, which IS the
+# output of the extension's own `shadowJar` task (Handlebars relocated
+# the same way WireMock's distribution does) and IS published to Maven
+# Central. Verified on the exact jar pinned below: 572 entries under
+# `wiremock/com/github/jknack`, 0 under an unrelocated
+# `com/github/jknack`. An earlier version of this file built that jar
+# from a git clone + `./gradlew shadowJar` because the comment claimed
+# the shaded artifact "is never published anywhere" — that was wrong
+# from release 0.9.x on. (Easy to get wrong: `search.maven.org`'s index
+# is stale and still reports 0.8.2 as the newest `-standalone`; only the
+# repo1 directory listing shows 0.9.3 … 0.10.1.)
 #
 # Pinned, deliberately not "latest" (cratestack's own Trunk/wasm-bindgen
-# incidents are why):
-#   - wiremock-state-extension @ 0d9fff0554319bc5e62310137a6b225a9760e002
-#     (tag 0.10.1) — https://github.com/wiremock/wiremock-state-extension
-#   - wiremock/wiremock:3.13.2 — the WireMock version that exact commit's
-#     own `build.gradle` (`versions.wiremock`) targets; also the version
-#     this generator's stubs were verified against by hand.
-# Bump both together, from the extension's `build.gradle` at whatever
-# commit you're moving to — mismatched versions are exactly the
-# `AbstractMethodError` class of failure this Dockerfile exists to avoid.
-
-FROM eclipse-temurin:21-jdk AS extension-build
-
-ARG WIREMOCK_STATE_EXTENSION_COMMIT=0d9fff0554319bc5e62310137a6b225a9760e002
-
-WORKDIR /build
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates \
- && rm -rf /var/lib/apt/lists/*
-RUN git clone --quiet https://github.com/wiremock/wiremock-state-extension.git . \
- && git checkout --quiet "${WIREMOCK_STATE_EXTENSION_COMMIT}"
-RUN ./gradlew --no-daemon shadowJar
+# incidents are why), and verified by sha256 at build time so a
+# republished or MITM'd URL fails the build rather than silently
+# changing the image:
+#   - org.wiremock.extensions:wiremock-state-extension-standalone:0.10.1
+#     from Maven Central (repo1), sha256
+#     8898a2700ca16f2d235fa42253e3f400cc08117f9190fdfe1686014c31619ae7
+#     (2682223 bytes) — https://github.com/wiremock/wiremock-state-extension
+#   - wiremock/wiremock:3.13.2 — the WireMock version tag 0.10.1's own
+#     `build.gradle:18` targets (`versions.wiremock = '3.13.2'`); also
+#     the version this generator's stubs were verified against by hand.
+# This pair is load-bearing: bump both together, from the extension
+# release's `build.gradle`, and re-derive the sha256. Mismatched
+# versions are exactly the `AbstractMethodError` class of failure this
+# Dockerfile exists to avoid. As of this writing 3.13.2 + 0.10.1 is
+# already the newest matched pair that exists — WireMock 4.x is
+# beta-only with no extension release targeting it.
 
 FROM wiremock/wiremock:3.13.2
-COPY --from=extension-build /build/build/libs/wiremock-state-extension-standalone-*.jar /var/wiremock/extensions/
+
+ARG WIREMOCK_STATE_EXTENSION_VERSION=0.10.1
+ARG WIREMOCK_STATE_EXTENSION_SHA256=8898a2700ca16f2d235fa42253e3f400cc08117f9190fdfe1686014c31619ae7
+
+# `curl` and `sha256sum` are both already present in the base image
+# (Ubuntu 26.04 + coreutils), so this needs no extra fetch stage and no
+# package install. `sha256sum -c` exits non-zero on a mismatch, which
+# under this `RUN` fails the build.
+RUN set -eu; \
+    mkdir -p /var/wiremock/extensions; \
+    jar="/var/wiremock/extensions/wiremock-state-extension-standalone-${WIREMOCK_STATE_EXTENSION_VERSION}.jar"; \
+    curl --fail --silent --show-error --location --retry 3 --output "${jar}" \
+      "https://repo1.maven.org/maven2/org/wiremock/extensions/wiremock-state-extension-standalone/${WIREMOCK_STATE_EXTENSION_VERSION}/wiremock-state-extension-standalone-${WIREMOCK_STATE_EXTENSION_VERSION}.jar"; \
+    echo "${WIREMOCK_STATE_EXTENSION_SHA256}  ${jar}" | sha256sum -c -
 
 # Run as non-root. `wiremock/wiremock:3.13.2` runs as root out of the box,
 # which trips this repo's own Dockerfile scan (Trivy DS-0002, HIGH) in the

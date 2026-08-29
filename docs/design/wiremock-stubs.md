@@ -533,7 +533,8 @@ extension's *published* artifact even work against a real
 `wiremock/wiremock` deployment? Tested by hand, in this order, each
 against a real container:
 
-1. `wiremock-state-extension:0.10.1` (Maven Central) + `wiremock/
+1. `wiremock-state-extension:0.10.1` (the plain, non-`-standalone` jar
+   from Maven Central) + `wiremock/
    wiremock:3.9.1` — `AbstractMethodError` on the very first request
    that renders a `{{state ...}}` helper: `StateHandlerbarHelper does
    not define or inherit an implementation of ... Helper`.
@@ -546,46 +547,59 @@ against a real container:
    before a single `state` helper is even rendered) — worse, not
    better.
 
-This is a real, independently-corroborated upstream defect, not a
-version-pinning mistake here: `wiremock/wiremock-state-extension`
-issue #36 is the identical `AbstractMethodError`, filed by another user
-via the identical deployment (`docker run wiremock/wiremock` +
-volume-mounted extension jar), confirmed by the extension's own
-maintainer as "the package relocation was wrong" — and, per a later
-comment on that same issue, it recurred for someone else after a
-supposed fix. Root cause: every `wiremock/wiremock` distribution
-*relocates* its bundled Handlebars (`com.github.jknack.handlebars` →
+Root cause: every `wiremock/wiremock` distribution *relocates* its
+bundled Handlebars (`com.github.jknack.handlebars` →
 `wiremock.com.github.jknack.handlebars`); the extension's plain Maven
 Central jar is compiled against the *unrelocated* package, so its
 Handlebars `Helper` implementations don't match the ABI the relocated
 runtime expects.
 
+`wiremock/wiremock-state-extension` issue #36 is the identical
+`AbstractMethodError`, filed by another user via the identical
+deployment (`docker run wiremock/wiremock` + volume-mounted extension
+jar), and its diagnosis is the maintainer's own: "the package
+relocation was wrong". **Read it as corroboration of the failure mode,
+not as an open upstream defect** — an earlier revision of this section
+overstated it. #36 was closed as completed on 2023-08-24; a 2024-11-22
+comment reports a recurrence, to which the maintainer replied asking
+for a fresh issue, and that issue was apparently never filed. The
+evidence that the plain jar does not work against these images is the
+three hand-run pairings above, not a live upstream ticket.
+
 **The extension's own `build.gradle` already has the fix** — a
 `shadowJar` Gradle task that relocates `com.github.ben-manes.caffeine`
 and `com.github.jknack` the same way WireMock's own distribution does.
-Building it from the pinned source commit
-(`0d9fff0554319bc5e62310137a6b225a9760e002`, tag `0.10.1`) and loading
-*that* jar into `wiremock/wiremock:3.13.2` (the WireMock version that
-exact commit's `build.gradle` targets) works — verified end to end,
-§9.6. The catch: **that `shadowJar` artifact is never published
-anywhere.** Its own release workflow (`.github/workflows/release.yml`)
-runs `gradle publish`, which ships only the plain unshaded `jar` to
-Maven Central — the `shadowJar` only exists as a same-run, unauthenticated,
-90-day-expiring CI build artifact (`build-and-test.yml`'s
-`actions/upload-artifact`), not something a downstream consumer (or a
-code generator) could fetch and pin.
+An earlier revision of this section claimed **that `shadowJar` artifact
+is never published anywhere**, and concluded that building it from a
+pinned source commit was the only reproducible option. **That was
+wrong** from release 0.9.x on: the `shadowJar` output *is* published to
+Maven Central under the `-standalone` classifier —
 
-So "wire in the extension" turned out to mean something more specific
-than "add a Maven dependency": **build the correctly-shaded jar from
-pinned source as part of standing the mock up.**
+    org.wiremock.extensions:wiremock-state-extension-standalone:0.10.1
+    https://repo1.maven.org/maven2/org/wiremock/extensions/wiremock-state-extension-standalone/0.10.1/wiremock-state-extension-standalone-0.10.1.jar
+    sha256 8898a2700ca16f2d235fa42253e3f400cc08117f9190fdfe1686014c31619ae7
+    2682223 bytes
+
+— and inspecting that jar confirms it is the correctly-shaded one: 572
+entries under `wiremock/com/github/jknack`, 0 under an unrelocated
+`com/github/jknack`. (Why it was missed: `search.maven.org`'s index is
+stale and still reports 0.8.2 as the newest `-standalone`; only the
+repo1 directory listing shows 0.9.3 … 0.10.1. The *non*-standalone
+`wiremock-state-extension-0.10.1.jar` is the ~60 KB unshaded one, which
+genuinely does not work — hence the three failures above.)
+
+So "wire in the extension" means: **fetch the `-standalone` jar,
+verified by checksum, and load it into a matched WireMock image.**
 `crates/cratestack-mock-wiremock/docker/Dockerfile` does exactly that —
-a multi-stage build cloning the extension at the pinned commit, running
-`./gradlew shadowJar`, and layering the result into a
-`wiremock/wiremock:3.13.2` base image. See that file's own header
-comment for the full pinning rationale. This is real, reproducible cost
-this design doc's own instructions asked to be written down plainly: a
-consumer of the stateful stubs needs to build (or be handed a
-pre-built) custom image, not `docker run wiremock/wiremock`.
+a single-stage image over `wiremock/wiremock:3.13.2` (the WireMock
+version release 0.10.1's own `build.gradle:18` targets) plus a
+`curl` + `sha256sum -c` download into `/var/wiremock/extensions`. No
+JDK, no git clone, no Gradle. See that file's own header comment for
+the full pinning rationale. The residual cost this design doc's
+instructions asked to be written down plainly is unchanged in kind but
+much smaller in size: a consumer of the stateful stubs still needs to
+build (or be handed) a custom image, not `docker run wiremock/wiremock`
+— it just now builds in seconds rather than running a JVM toolchain.
 
 ### 9.5 Design
 

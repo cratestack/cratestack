@@ -1,0 +1,27 @@
+{
+  // Compile-only proof that `src/` still type-checks against zod 3, the
+  // lower half of this package's published peer range
+  // (`zod: "^3.23.0 || ^4.0.0"`).
+  //
+  // `vitest` transpiles without type-checking, so the zod-3 runtime pass
+  // (`vitest.config.zod3.ts`) alone can never establish this — `ZodTypeAny`
+  // is deprecated in zod 4, and swapping it for a zod-4-only spelling
+  // (`z.ZodType` with v4 generics, `$ZodType` from `zod/v4/core`) would
+  // sail through a green runtime run while breaking every zod-3 consumer
+  // at `tsc` time. `paths` points the `zod` specifier at the `zod3`
+  // devDependency alias (`npm:zod@^3.23.0`) so the same `src/` is checked
+  // against v3's declarations.
+  //
+  // Deliberately `src/` only, matching the shape of
+  // `packages/cratestack-refine/tsconfig.typecheck.json`: this proves the
+  // *published* surface is zod-3-clean, which is the actual promise. The
+  // tests' own zod-3 compatibility is proved by running them.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "zod": ["./node_modules/zod3"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

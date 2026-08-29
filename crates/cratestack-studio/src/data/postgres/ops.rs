@@ -12,6 +12,11 @@
 //! to route) and for the legacy `allow_unsafe_writes` bypass on a model
 //! whose `@@emit` can't be routed on this driver. See
 //! [`super::ops_routed`] for the routed equivalents.
+//!
+//! Every `query(AssertSqlSafe(...))` below carries the same audit (sqlx 0.9,
+//! #3723): the string comes from a [`super::sql`] builder that only splices
+//! schema-derived identifiers, and every user-supplied value travels as a
+//! `$n` bind. `super::sql` is the boundary to re-audit if that ever changes.
 
 use cratestack_core::Schema;
 use sqlx_postgres::{PgPool, PgRow};
@@ -42,7 +47,7 @@ pub(super) async fn list(
         .map(|f| f.name.clone())
         .expect("resolve_model returns an error when there is no @id");
 
-    let rows: Vec<PgRow> = sqlx_core::query::query(&sql)
+    let rows: Vec<PgRow> = sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(sql.as_str()))
         .bind(page.cursor)
         .fetch_all(pool)
         .await?;
@@ -64,10 +69,11 @@ pub(super) async fn get(
     let (_, info) = resolve_model(schema, model)?;
     let sql = build_get_sql(&info);
 
-    let row: Option<PgRow> = sqlx_core::query::query(&sql)
-        .bind(pk)
-        .fetch_optional(pool)
-        .await?;
+    let row: Option<PgRow> =
+        sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(sql.as_str()))
+            .bind(pk)
+            .fetch_optional(pool)
+            .await?;
 
     decode_optional(row)
 }
@@ -124,7 +130,7 @@ pub(super) async fn follow(
         .map(|f| f.name.clone())
         .expect("resolve_model returns an error when there is no @id");
 
-    let rows: Vec<PgRow> = sqlx_core::query::query(&sql)
+    let rows: Vec<PgRow> = sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(sql.as_str()))
         .bind(filter_value)
         .bind(page.cursor)
         .fetch_all(pool)

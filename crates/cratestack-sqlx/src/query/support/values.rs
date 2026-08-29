@@ -8,10 +8,7 @@ use crate::{Json, PolicyLiteral, SqlColumnValue, SqlValue, sqlx};
 
 use super::decimal_bind::{bind_decimal, bind_null_decimal};
 
-pub(crate) fn push_bind_value(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
-    value: &SqlValue,
-) {
+pub(crate) fn push_bind_value(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, value: &SqlValue) {
     // Every arm is a statement (trailing `;`), not a `match`-expression
     // value: `bind_decimal`/`bind_null_decimal` can't return `&mut
     // QueryBuilder` without a lifetime parameter this free function has no

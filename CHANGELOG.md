@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+### Dependency and toolchain audit — 2026-08
+
+A full sweep of GitHub Actions, Cargo, container images, npm and pub.dev. Every "latest"
+figure was checked against a live registry/API rather than recalled, and each item below was
+verified by running the thing it claims to fix.
+
+**Deadline-driven (GitHub Actions).** Six actions still declared `runs.using: node20`, which
+GitHub removes from runners on **2026-09-23**; the `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION`
+opt-out was not set anywhere. `setup-node`→v7, `download-artifact`→v7 (deliberately **not** v8
+— that release makes digest mismatches a hard error and stops blanket-unzipping, which deserves
+its own change), `upload-artifact`→v7, `pnpm/action-setup`→v6, `action-gh-release`→v3,
+`cache`→v6, and `codeql-action/upload-sarif`→v4.37.9 (v3 is formally deprecated). Every action
+reference in `.github/` was then resolved back to its own `action.yml`: all node24 or composite,
+zero node20. `checkout`→v7 (its only breaking change restricts `pull_request_target`/
+`workflow_run`, neither of which this repo uses). `node-version: 20` → `24` at all ten sites —
+Node 20 has been EOL since 2026-04-30, and `prepare-release.yml` already carried a comment
+documenting a *reproduced* release failure caused by that exact pin.
+
+**Security.** Four HIGH advisories cleared, all inside existing caret ranges: `brace-expansion`,
+`nanoid`, `fast-uri`, `js-yaml`. The `brace-expansion` one was the only advisory with real
+end-user exposure — `cratestack-vscode` bundles with `bundle: true`, so it was inlined into the
+shipped `dist/extension.js`; the fix is verified in the rebuilt bundle, not merely in the source
+tree. A yanked `chacha20 0.10.0` reached the published `cratestack-auth` via `cuid2` and is
+cleared. `.github/dependabot.yml` added covering github-actions, cargo, and all nine pnpm
+lockfile roots — the eight example roots are independent workspaces and had nothing refreshing
+them, which is why the backlog accumulated.
+
+**CI was testing against EOL databases.** `testcontainers-modules` hardcodes `postgres:11-alpine`
+and `redis:5.0`, and no call site overrode them — so `just test-pg-tc`, which is what CI runs, was
+exercising **PostgreSQL 11** (EOL 2023-11-09) while `just test-pg` used PostgreSQL 18. Seven majors
+apart, on a framework whose job is generating SQL. All eight sites now pin explicitly (`18-alpine`
+/ `7.4`), verified by `SELECT version()` against a live container rather than by a green suite.
+A crate bump would not have fixed this: upstream still hardcodes the same defaults.
+
+**Toolchain and dependencies.** Rust 1.95.0 → **1.98.0** (`rust-version` moves in lockstep, as
+`ci.yml`'s three-way equality assertion requires — note this raises the *published* MSRV).
+`sqlx` 0.8.6 → **0.9.0**: not cosmetic, it is the durable fix for `pgvector` re-resolving onto
+sqlx 0.9 and putting two `sqlx_core` majors in one graph, a break that was invisible to a default
+`cargo check` because `pgvector` is off by default. Also `tower-http` 0.7, `base64` 0.23, `toml` 1,
+`rusqlite` 0.40.2, `minicbor` 2.3 + `minicbor-serde` 0.7.1, `syn` 3, and the
+`rand`/`sha2`/`hmac`/`ed25519-dalek` cluster as one atomic change.
+
+Two of those needed proof rather than argument. The **minicbor** bump touches the default wire
+format, so 32 representative payloads were hex-dumped through the real codec before and after:
+byte-identical, and the harness was itself shown to detect drift. **sha2 0.11** returns a type
+with no `LowerHex`, breaking `format!("{:x}", ..)` at five sites that produce *persisted* strings
+(migration checksums, Redis keys, schema hashes) — the replacement is gated by a test that fails
+if the hex casing changes.
+
+Three bare `"0"` requirements (`axum`, `chumsky`, `chrono`) were tightened to `"0.8"`/`"0.13"`/
+`"0.4"`. Under Cargo's 0.x rules every 0.x minor is a semver-major, so `"0"` opted the workspace
+into every future breaking release on any `cargo update`. Zero resolution change; two design docs
+already reasoned specifically against "axum 0.8.9, this repo's pinned version".
+
+**Container image.** `crates/cratestack-mock-wiremock/docker/Dockerfile` no longer git-clones and
+Gradle-builds `wiremock-state-extension` from source. Its comment claimed the shaded artifact "is
+never published anywhere" — that has been false since release 0.9.x. The `-standalone` classifier
+on Maven Central is the `shadowJar` output (572 relocated Handlebars entries, zero unrelocated),
+now fetched with a build-time sha256 check. The JDK stage, the git clone and the Gradle-vs-Java
+version risk all go away.
+
+**Node support floor.** `engines.node` moves to `">=24"` across the published packages (Node 18
+has been EOL since 2025-04-30, and `vitest@4` cannot run on it, so the old floor was a promise
+nothing exercised), and pnpm to 11. pnpm 11 stops reading pnpm settings from `.npmrc`, where this
+repo's `link-workspace-packages=true` lived — left unaddressed, the first install silently
+re-pointed every workspace importer at the last *published* tarballs instead of the working tree.
+`linkWorkspacePackages: true` now lives in `pnpm-workspace.yaml`.
+
+**Convention enforcement.** `just verify-file-length` added, asserting the ~200-line-per-file
+ceiling `CLAUDE.md` declares over `crates/*/src`. Nothing enforced it before and it had drifted to
+116 files, the largest at 553 lines — the same silent way `[workspace.lints]` drifted before
+cratestack#523. A dated allowlist grandfathers the backlog so the ceiling binds for new code
+immediately, and a stale entry is a hard failure so the list can only shrink. `crates/cratestack-auth`
+is deliberately absent from it: it was the worst offender and was split in the same change, from
+6 files (largest 1381 lines, all tests inline) to 65 (largest 193, zero inline test modules), with
+its public API proven unchanged.
+
+Two now-stale `deny.toml` ignores (RUSTSEC-2026-0194/0195) were deleted — their own recorded
+revisit condition, "when tauri ships a plist >=1.10", is met, and `cargo-deny` reports both as
+not-detected.
+
 ### `Bytes` now survives `transport rpc` — two independent defects, one symptom (#820, #806)
 
 A `Bytes` field on an RPC schema did not reach the wire in any shape a server-side `Vec<u8>` could

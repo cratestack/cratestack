@@ -12,7 +12,7 @@ use super::filter_subkinds::{
 use super::values::push_bind_value;
 
 pub(crate) fn push_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filters: &[FilterExpr],
 ) {
     for (index, filter) in filters.iter().enumerate() {
@@ -24,7 +24,7 @@ pub(crate) fn push_filter_query(
 }
 
 pub(crate) fn push_filter_expr_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &FilterExpr,
 ) {
     match filter {
@@ -83,7 +83,7 @@ pub(crate) fn push_filter_expr_query(
 }
 
 fn push_relation_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     relation: &RelationFilter,
 ) {
     match relation.quantifier {
@@ -136,7 +136,7 @@ fn push_relation_filter_query(
 }
 
 fn push_binary_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     column: &str,
     operator: &str,
     value: &FilterValue,
@@ -149,7 +149,7 @@ fn push_binary_filter_query(
 }
 
 fn push_grouped_filter_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filters: &[FilterExpr],
     joiner: &str,
 ) {

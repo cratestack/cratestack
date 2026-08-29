@@ -33,7 +33,7 @@ pub(crate) enum ReadPolicyKind {
 }
 
 pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
-    query: &mut sqlx::QueryBuilder<'a, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     descriptor: &dyn ReadSource<M, PK>,
     filters: &[FilterExpr],
     primary_key: Option<(&'static str, Id)>,

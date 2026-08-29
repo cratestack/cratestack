@@ -98,7 +98,10 @@ impl<'a, V: 'static, PK: 'static> ViewDelegate<'a, V, PK> {
             "REFRESH MATERIALIZED VIEW CONCURRENTLY {}",
             self.descriptor.view_name
         );
-        sqlx::query(&sql)
+        // `AssertSqlSafe`: `view_name` comes from the compile-time view
+        // descriptor the macro emitted, not from request data — there is no
+        // untrusted content in this string (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(self.runtime.pool())
             .await
             .map_err(|error| CratestackError::Database(error.to_string()))?;

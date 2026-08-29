@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **`lints` dev-dependency raised `^5.0.0` → `^6.0.0`**, matching every other package in this
+  repo — this was the sole straggler. No lint violations surfaced in analyzable code. Stated
+  precisely because it is weaker than a clean run: this package cannot be fully analyzed in a
+  bare checkout, since it needs flutter_rust_bridge-generated glue that is not committed, so the
+  analyzer's findings here are all missing-file errors rather than lint results.
+
 ## 0.8.15 (2026-08-28)
 
 - **`createCborCodec()` is idempotent, and resolves its vendored library under

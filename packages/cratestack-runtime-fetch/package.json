@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/runtime-fetch",
-  "version": "0.8.15",
+  "version": "0.9.0",
   "description": "A typeof-fetch-compatible transport for CrateStack's generated TypeScript RPC client, adding an optional per-call timeout on top of the global fetch.",
   "license": "MIT",
   "repository": {
@@ -39,9 +39,9 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }

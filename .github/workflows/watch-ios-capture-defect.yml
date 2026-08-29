@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Needed only by the signal-literal assertion, which reads `justfile`.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Scan recent iOS jobs for capture-defect signals
         env:
           GH_TOKEN: ${{ github.token }}

@@ -19,6 +19,7 @@
 //! pg.rs`.
 
 use db_transaction_verification::{create_widget_with_note, schema};
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 
@@ -34,7 +35,12 @@ async fn connect_or_skip() -> Option<cratestack::sqlx::PgPool> {
     }
 
     let container = need(
-        Postgres::default().start().await,
+        // Tag pinned explicitly: `testcontainers-modules` hardcodes
+        // `postgres:11-alpine` as its default, EOL since 2023-11-09. Kept in
+        // lockstep with `compose.yml`'s `postgres:18` so the testcontainers
+        // backend (what CI runs) and the compose backend (what `just test-pg`
+        // runs) exercise the same major.
+        Postgres::default().with_tag("18-alpine").start().await,
         require,
         "starting the Postgres testcontainer (is Docker available?)",
     )?;

@@ -242,8 +242,10 @@ runs it, generates both fixtures, and runs `pnpm run build`/`typecheck`/`lint`/`
 live container on every PR — the first CI job in this repo to actually build and run `cratestack-
 mock-wiremock`'s Docker image (its own crate tests only assert on generated template text, offline).
 No Docker layer caching is wired for it yet (nothing in this repo's CI does that today), so the
-image's Gradle-based build cost is paid on every run — a real, bounded, one-time-per-job cost, not a
-gap being hidden.
+image's build cost — a pinned, sha256-verified 2.6 MB jar download from Maven Central — is paid on
+every run. A real, bounded, one-time-per-job cost, not a gap being hidden. (It was previously a git
+clone plus a full Gradle `shadowJar` build; see the Dockerfile header for why that is no longer
+needed.)
 
 ## Docs follow-up (not made in this PR)
 

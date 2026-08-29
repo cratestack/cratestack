@@ -31,7 +31,8 @@ The Rust dispatcher in `native/src/lib.rs` is testable in isolation (`cargo test
 - Rust + cargo. For real iOS/Android builds:
   - Android: `cargo-ndk` (`cargo install cargo-ndk`) + Android Studio + NDK
   - iOS / macOS: Xcode + Xcode CLI tools + an installed iOS Simulator runtime (Xcode → Settings → Components)
-- Node.js 20+ and pnpm.
+- Node.js 24+ and pnpm. (Node 20 reached end of life on 2026-04-30; the
+  published `@cratestack/*` packages declare `engines.node >= 24`.)
 - The Expo CLI tooling: `npx expo prebuild` / `npx expo run:ios` / `npx expo run:android` run your dev builds. (`npx create-expo-module@latest` is how the native module in `app/modules/cratestack-notes/` was originally scaffolded — see the Bootstrap section below — not something you run yourself.)
 
 **Environment variables for Android.** Gradle's Android plugin needs `ANDROID_HOME` exported in the shell that runs `npx expo run:android`. If it's not set, you'll see `SDK location not found. Define a valid SDK location with an ANDROID_HOME environment variable...`. Easiest fix is in your `~/.zshrc`:

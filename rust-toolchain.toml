@@ -4,7 +4,7 @@
 # red. Bump this deliberately (and re-run `just _fmt` / `just lint`) when
 # adopting a newer Rust.
 [toolchain]
-channel = "1.95.0"
+channel = "1.98.0"
 components = ["rustfmt", "clippy"]
 # The studio UI and several examples build for wasm32 (Trunk/Leptos,
 # embedded-browser, tauri-web). Declaring the target here means rustup

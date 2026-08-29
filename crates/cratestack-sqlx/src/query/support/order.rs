@@ -8,7 +8,7 @@ use crate::{OrderClause, SortDirection, sqlx};
 use super::values::push_bind_value;
 
 pub(crate) fn push_order_and_paging(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     order_by: &[OrderClause],
     limit: Option<i64>,
     offset: Option<i64>,
@@ -42,10 +42,7 @@ pub(crate) fn push_order_and_paging(
     }
 }
 
-fn push_order_clause_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
-    clause: &OrderClause,
-) {
+fn push_order_clause_query(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, clause: &OrderClause) {
     match &clause.target {
         OrderTarget::Column(column) => {
             query

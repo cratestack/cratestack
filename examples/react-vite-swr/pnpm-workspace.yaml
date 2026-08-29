@@ -10,3 +10,17 @@
 packages:
   - "client"
   - "web"
+# pnpm 10+ does not run dependency build (postinstall) scripts unless they
+# are listed here; pnpm 9 ran them all. Without this key pnpm 11 *fails*
+# `pnpm install` outright (ERR_PNPM_IGNORED_BUILDS), which takes down this
+# example's CI job (`js (react-vite-swr example)`) at its
+# `pnpm install --frozen-lockfile` step — so the key is load-bearing, not
+# cosmetic. esbuild is denied deliberately, matching the root
+# `pnpm-workspace.yaml`'s decision: its binary ships via the
+# `@esbuild/<platform>` optional dependency, not the install script.
+# Verified with the script denied: `pnpm --filter react-vite-swr-client run
+# build`, `--filter react-vite-swr-web run typecheck`, and `run lint` all
+# pass. Flip to `true` only with evidence that the denied build breaks
+# something.
+allowBuilds:
+  esbuild: false

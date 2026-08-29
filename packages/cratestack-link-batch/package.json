@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/link-batch",
-  "version": "0.8.15",
+  "version": "0.9.0",
   "description": "A batshit-style automatic batch scheduler for CrateStack's generated TypeScript RPC client, shipped as an RpcLink.",
   "license": "MIT",
   "repository": {
@@ -38,13 +38,13 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.8.15"
+    "@cratestack/ts-types": "0.9.0"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/cli",
-  "version": "0.8.15",
+  "version": "0.9.0",
   "description": "Prebuilt cratestack-cli binary, fetched from GitHub Releases on install. No Rust toolchain required.",
   "license": "MIT",
   "repository": {
@@ -29,7 +29,7 @@
     "postinstall": "node ./scripts/install.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   },
   "os": [
     "darwin",

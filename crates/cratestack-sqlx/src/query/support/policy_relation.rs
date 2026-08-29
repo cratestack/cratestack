@@ -10,7 +10,7 @@ use super::policy::push_policy_expr_query;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn push_relation_policy_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     quantifier: RelationQuantifier,
     parent_table: &'static str,
     parent_column: &'static str,
@@ -64,14 +64,14 @@ pub(super) fn push_relation_policy_query(
 }
 
 fn push_relation_policy_exists_query<Render>(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     parent_table: &'static str,
     parent_column: &'static str,
     related_table: &'static str,
     related_column: &'static str,
     render_predicate: &Render,
 ) where
-    Render: Fn(&mut sqlx::QueryBuilder<'_, sqlx::Postgres>),
+    Render: Fn(&mut sqlx::QueryBuilder<sqlx::Postgres>),
 {
     query.push("EXISTS (SELECT 1 FROM ");
     query.push(related_table);

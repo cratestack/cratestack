@@ -50,16 +50,16 @@ for file in package.files {
 
 ## Running the stateful stubs
 
-A `transport rest` schema's model CRUD stubs need `wiremock-state-extension` loaded — **`docker run wiremock/wiremock` alone is not enough**, and neither is dropping the extension's plain Maven Central jar into `/var/wiremock/extensions`: that combination throws `AbstractMethodError`/`NoSuchMethodError` at request time against every `wiremock/wiremock` image tested (confirmed by hand across three WireMock/extension version pairings; this is a known, real upstream packaging defect — the extension's own issue #36 — not a version-pinning mistake on this generator's part).
+A `transport rest` schema's model CRUD stubs need `wiremock-state-extension` loaded — **`docker run wiremock/wiremock` alone is not enough**, and neither is dropping the extension's *plain* (non-`-standalone`) Maven Central jar into `/var/wiremock/extensions`: that combination throws `AbstractMethodError`/`NoSuchMethodError` at request time against every `wiremock/wiremock` image tested (confirmed by hand across three WireMock/extension version pairings — not a version-pinning mistake on this generator's part). The plain jar's Handlebars `Helper` classes are compiled against an unrelocated `com.github.jknack.handlebars`, but every WireMock standalone distribution relocates that package internally. The extension's issue #36 is the identical error, but it was closed as completed in 2023 and the 2024 recurrence report never became its own issue — so the evidence above is this repo's own testing, not an open upstream ticket.
 
-What actually works: `docker/Dockerfile` in this crate, which builds the extension's own `shadowJar` (correctly relocated) from pinned source and layers it into a `wiremock/wiremock:3.13.2` image:
+What actually works is the `-standalone` classifier artifact — the output of the extension's own `shadowJar` task, correctly relocated, and published to Maven Central from release 0.9.x on. `docker/Dockerfile` in this crate downloads exactly that jar, verifies it against a pinned sha256, and layers it into a `wiremock/wiremock:3.13.2` image:
 
 ```bash
 docker build -t my-org/wiremock-stateful -f crates/cratestack-mock-wiremock/docker/Dockerfile crates/cratestack-mock-wiremock/docker
 docker run -p 8080:8080 -v "$(pwd)/wiremock/mappings:/home/wiremock/mappings:ro" my-org/wiremock-stateful
 ```
 
-Versions are pinned in the Dockerfile itself (a commit SHA for the extension, an exact WireMock tag) — see its header comment for what's pinned, why, and how to bump both together safely. Procedure stubs and `transport rpc` model stubs don't need any of this; they work against a plain `docker run wiremock/wiremock`.
+Versions are pinned in the Dockerfile itself (an exact extension release plus the sha256 of its jar, and an exact WireMock tag) — see its header comment for what's pinned, why, and how to bump both together safely. The build has no JDK and no Gradle step; it is a single-stage image over `wiremock/wiremock:3.13.2` plus a checksum-verified download. Procedure stubs and `transport rpc` model stubs don't need any of this; they work against a plain `docker run wiremock/wiremock`.
 
 Every generated stub also declares `"transformers": ["response-template"]` itself, so `--global-response-templating` isn't strictly required — the Dockerfile sets it as the default `CMD` anyway since it's harmless either way.
 

@@ -28,8 +28,8 @@ jobs:
 
     steps:
       # Fetch full history so reviewdog can calculate PR diffs correctly
-      # actions/checkout v6.1.0
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
 
@@ -44,21 +44,32 @@ jobs:
       # floating tag.
       # ====================================================================
 
-      # taiki-e/install-action v2.85.2 — already used elsewhere in this
+      # taiki-e/install-action v2.87.1 — already used elsewhere in this
       # repo (ci.yml, for `just`/`trunk`); installs prebuilt binaries, no
       # compiling from source.
       - name: Install trivy, cargo-audit, cargo-deny
-        uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf
+        uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833
         with:
           tool: trivy,cargo-audit,cargo-deny
 
       # reviewdog/action-setup v1.5.0 — official installer for the
       # reviewdog CLI itself (distinct from the scanner-specific reporting
       # actions below; this just puts the `reviewdog` binary on PATH).
+      #
+      # v0.21.0 checked against its CHANGELOG for the two reporters this
+      # job actually uses (see the long reporter comment further down):
+      # `github-pr-review` and `github-pr-annotations` are both unchanged in
+      # name and meaning. v0.21.0 *added* a `github-annotations` reporter
+      # (same as `github-pr-annotations` but not restricted to PRs) — an
+      # addition, not a rename. Its one behavioural change in this area,
+      # "never filter diffs when running github-[pr-][check|annotate] on
+      # non-PRs", cannot reach us: the reviewdog step below is gated on
+      # `github.event_name == 'pull_request'`, so it only ever runs in PR
+      # context.
       - name: Install reviewdog
         uses: reviewdog/action-setup@d8a7baabd7f3e8544ee4dbde3ee41d0011c3a93f
         with:
-          reviewdog_version: v0.20.3
+          reviewdog_version: v0.21.0
 
       # actions/setup-python v7.0.0 + a version-pinned pip install. Semgrep
       # ships prebuilt wheels for Linux, so this doesn't compile anything;
@@ -168,8 +179,8 @@ jobs:
 
       - name: Upload SARIF reports
         if: always()
-        # actions/upload-artifact v4.6.2
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: quality-reports
           path: .ci/quality/reports/
@@ -255,8 +266,11 @@ jobs:
           github.ref == 'refs/heads/main' &&
           vars.ENABLE_CODE_SCANNING == 'true' &&
           always()
-        # github/codeql-action v3.37.3
-        uses: github/codeql-action/upload-sarif@f081e69141f6ea0aa740920b0c7012cd81a4fbe6
+        # github/codeql-action v4.37.9 (node24). Moved off v3, which is
+        # formally deprecated (retires December 2026) and whose last
+        # releases still declare the node20 runtime that GitHub removes
+        # from the runners on 2026-09-23.
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938
         with:
           sarif_file: .ci/quality/reports/quality.sarif
           category: quality-offline-pipeline

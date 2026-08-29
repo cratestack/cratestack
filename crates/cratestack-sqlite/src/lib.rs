@@ -1,7 +1,7 @@
 //! CrateStack embedded facade — rusqlite + shared schema surface.
 //!
 //! This crate is the embedded slice of the framework. It re-exports the
-//! shared schema / parser / policy / SQL surface plus the `rusqlite 0.39`
+//! shared schema / parser / policy / SQL surface plus the `rusqlite 0.40`
 //! runtime, which compiles to native targets *and* to
 //! `wasm32-unknown-unknown` (via rusqlite's transparent FFI switch to
 //! `sqlite-wasm-rs`).
@@ -67,7 +67,7 @@ pub use uuid;
 pub use cratestack_core::Json;
 
 // Embedded SQLite backend — wasm32-compatible alongside native (mobile,
-// desktop), via rusqlite 0.39's transparent FFI switch to `sqlite-wasm-rs`.
+// desktop), via rusqlite 0.40's transparent FFI switch to `sqlite-wasm-rs`.
 pub use cratestack_rusqlite as rusqlite_backend;
 // `DecimalColumn` only exists when a decimal backend is selected
 // (cratestack#505) — see `cratestack-core/src/decimal.rs`'s module doc.

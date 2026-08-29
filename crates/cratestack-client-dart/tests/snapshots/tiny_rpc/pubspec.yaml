@@ -4,7 +4,13 @@ publish_to: 'none'
 version: 0.1.0
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  # `^3.5.0`, matching every other declared SDK floor in this repo
+  # (`dart-packages/cratestack_annotations`, the riverpod preset's own
+  # `riverpod/pubspec.yaml.j2`, `examples/flutter-riverpod/app`). Was
+  # `'>=3.0.0 <4.0.0'` — identical upper bound written the long way, with
+  # a floor two years below anything the generated code is exercised
+  # against.
+  sdk: ^3.5.0
 
 dependencies:
   flutter:

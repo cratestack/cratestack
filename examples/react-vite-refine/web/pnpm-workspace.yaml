@@ -18,3 +18,13 @@
 #    no second package to list here.
 packages:
   - "."
+# pnpm 10+ does not run dependency build (postinstall) scripts unless they
+# are listed here; pnpm 9 ran them all. Without this key pnpm 11 *fails*
+# `pnpm install` outright (ERR_PNPM_IGNORED_BUILDS), which takes down this
+# example's CI job at its `pnpm install --frozen-lockfile` step — so the
+# key is load-bearing, not cosmetic. esbuild is denied deliberately,
+# matching the root `pnpm-workspace.yaml`'s decision: its binary ships via
+# the `@esbuild/<platform>` optional dependency, not the install script.
+# Flip to `true` only with evidence that the denied build breaks something.
+allowBuilds:
+  esbuild: false
