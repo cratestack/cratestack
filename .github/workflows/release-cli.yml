@@ -480,7 +480,7 @@ jobs:
   publish-npm:
     name: publish npm package (@cratestack/cli)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, build, preflight]
+    needs: [prepare, build, preflight, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -534,7 +534,7 @@ jobs:
   publish-npm-api-family:
     name: publish npm packages (@cratestack/api family)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, preflight]
+    needs: [prepare, preflight, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -724,7 +724,7 @@ jobs:
   publish-npm-cbor-node:
     name: publish npm package (@cratestack/cbor-node)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, build-cbor-node, preflight]
+    needs: [prepare, build-cbor-node, preflight, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -818,7 +818,7 @@ jobs:
   publish-npm-cbor-web:
     name: publish npm package (@cratestack/cbor-web)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, preflight]
+    needs: [prepare, preflight, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -906,7 +906,7 @@ jobs:
   publish-npm-cbor:
     name: publish npm package (@cratestack/cbor)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web, preflight]
+    needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web, preflight, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -959,7 +959,7 @@ jobs:
   publish-npm-refine:
     name: publish npm package (@cratestack/refine)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, preflight]
+    needs: [prepare, preflight, publish-crates]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1018,7 +1018,7 @@ jobs:
   publish-pubdev-annotations:
     name: publish pub.dev package (cratestack_annotations)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, preflight]
+    needs: [prepare, preflight, publish-crates]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1094,7 +1094,7 @@ jobs:
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     # Depends on the annotations publish, not just `prepare` — see the block
     # comment above for why the order matters on a version-bumping release.
-    needs: [prepare, publish-pubdev-annotations, preflight]
+    needs: [prepare, publish-pubdev-annotations, preflight, publish-crates]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1528,7 +1528,7 @@ jobs:
   publish-pubdev-cbor:
     name: publish pub.dev package (cratestack_cbor)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
-    needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows, preflight]
+    needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows, preflight, publish-crates]
     runs-on: ubuntu-latest
     # No job in this workflow set a timeout, so GitHub's 6-hour default
     # applied. On v0.8.1 that meant a publish blocked on an interactive OAuth

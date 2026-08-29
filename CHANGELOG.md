@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### crates.io now publishes before the other registries, because no probe can prove publish scope (#651)
+
+The pre-flight's stated purpose is that "publish-crates would fail after other channels had already
+published". It approximated that with an HTTP probe, because all eleven publish jobs ran in
+parallel behind it. Reading crates.io's own `src/auth.rs` shows the approximation cannot be made
+complete:
+
+* `AuthCheck::default()` is `allow_token: true, endpoint_scope: None`.
+* `endpoint_scope_matches` returns **false** for `(Some(scopes), None)` — a *scoped* token is
+  rejected by any endpoint that declares no scope.
+* So a scoped token only passes endpoints declaring a matching `PublishNew`/`PublishUpdate`
+  scope — and every one of those mutates. **There is no read-only endpoint that proves publish
+  authorization.**
+
+The probe is still correct for what it *can* prove. `/api/v1/me` is `only_cookie`, so it rejects at
+the `allow_token` check (`"this action can only be performed on the crates.io website"`) *before*
+reaching the scope check — which makes it behave identically for legacy and scoped tokens, and
+makes that response positive proof of authentication. It stays, with its limits documented.
+
+Authorization is now gated the only faithful way: `publish-crates` runs first and the nine npm and
+pub.dev publish jobs depend on it. A crates.io failure of any kind — bad token, wrong scope, a crate
+rejected on content — now stops the other registries before they write anything immutable, which is
+what the pre-flight was reaching for.
+
 ### The crates.io pre-flight probed a website-only endpoint, so it could never pass (#651)
 
 Follow-up to #835, which fixed the missing `User-Agent` on this check. That fix was necessary and
