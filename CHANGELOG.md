@@ -15,6 +15,38 @@ now points at `package_floors.rs` instead, and at #823 for the Linux arm64 gap i
 which used to track that gap, closed on 2026-08-29).
 
 Comment-only. The emitted `cratestack_cbor:` constraint is byte-identical.
+### `.cstack` files carry the CrateStack mark in the VS Code explorer
+
+`.cstack` files rendered with whatever generic glyph the active icon theme falls back to, so a
+schema was visually indistinguishable from any unrecognised file in the tree. The extension now
+contributes `icons/cstack-light.svg` and `icons/cstack-dark.svg` through
+`contributes.languages[].icon`.
+
+Worth being precise about what this does, because the mechanism is a fallback rather than an
+override: VS Code shows a language icon only when the active file icon theme has no icon of its own
+for that language or extension, and does not set `"showLanguageModeIcons": false`. Under Seti (the
+default) `.cstack` matches nothing, so the mark renders; a theme that already ships a `.cstack` glyph
+still wins, and one that opts out still shows nothing. An extension cannot force an icon into a theme
+the user chose — the only alternative is shipping an entire icon theme, which would make users
+abandon Seti or Material Icon Theme to see one file type.
+
+The artwork is the approved extension mark redrawn as geometry rather than traced, so it stays crisp
+at the 16x16 the explorer actually renders, with the palette sampled exact from `icon.png`
+(`#F7B270`/`#E88A3A`/`#BF6A26`). The gallery tile's `#1E222E` background is deliberately dropped: a
+file icon sits on the explorer's own background, where an opaque plate would render as a dark box on
+every theme that isn't that navy. The light variant deepens the palette one step for legibility
+against a near-white tree; the hue is unchanged.
+
+Requires VS Code 1.64+ (microsoft/vscode#14662, implemented January 2022). `engines.vscode` is
+already `^1.91.0`, so no floor change — but `test/language-icon.test.js` now asserts that floor stays
+above 1.64, because below it the contribution is parsed and silently ignored, and lowering the floor
+would un-ship the icon for exactly the users a lower floor was meant to reach. The same test guards
+that both variants are declared, resolve to real files, and are SVG. All four assertions were proven
+by breaking them independently.
+
+Both SVGs were confirmed inside a built `.vsix` by sha256 against the working tree, not inferred from
+`.vscodeignore` being a denylist. What no automated check here covers is whether the icon *looks*
+right at 16x16 in a real explorer.
 
 ### `Bytes` now survives `transport rpc` — two independent defects, one symptom (#820, #806)
 
