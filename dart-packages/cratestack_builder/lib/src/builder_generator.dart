@@ -80,16 +80,9 @@ class CratestackBuilderGenerator
       );
     }
 
-    // `param is FieldFormalParameterElement`, not the older
-    // `param.isInitializingFormal`: analyzer 13.x deprecated that getter in
-    // favour of the type test, and this package analyzes with
-    // `--fatal-infos` (see `just verify-dart-packages`), so the deprecation
-    // is a build failure here, not a warning. Semantically identical — an
-    // initializing formal (`this.foo`) is exactly what
-    // `FieldFormalParameterElement` models.
     final fields = <_BuilderField>[
       for (final param in ctor.formalParameters)
-        if (param.isNamed && param is FieldFormalParameterElement)
+        if (param.isNamed && param.isInitializingFormal)
           _BuilderField.from(
             param,
             isList: !nonDefaultingListFields.contains(param.name),

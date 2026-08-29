@@ -342,37 +342,27 @@ fn riverpod_pubspec_adds_riverpod_annotation_generator_and_build_runner() {
         "flutter_riverpod must stay exactly as the default preset already pins it:\n{pubspec}"
     );
     assert!(
-        pubspec.contains("riverpod_annotation: 4.0.6"),
-        "riverpod_annotation must be pinned to exactly 4.0.6 — riverpod_generator 4.0.8 (below) \
-         itself depends on riverpod_annotation '4.0.6' as an exact pin, not a range. This moves \
-         in lockstep with the generator and never on its own:\n{pubspec}"
+        pubspec.contains("riverpod_annotation: 4.0.3"),
+        "riverpod_annotation must be pinned to exactly 4.0.3 — riverpod_generator 4.0.4 (below) \
+         itself depends on riverpod_annotation '4.0.3' as an exact pin, not a range:\n{pubspec}"
     );
     assert!(
-        pubspec.contains("riverpod_generator: 4.0.8"),
-        "riverpod_generator must be pinned to exactly 4.0.8 — the current release, on \
-         analyzer ^13.0.0. This pin used to hold at 4.0.4 (the last release on analyzer \
-         ^12.0.0) because every flutter_test up to Flutter 3.46.x pinned `meta` to exactly \
-         1.18.0, which analyzer >=13.1.0's `meta: ^1.18.3` could not satisfy. Flutter 3.47.0 \
-         relaxed that pin to ^1.18.3 and the wall fell; riverpod_generator's own \
-         `analyzer: ^13.0.0` (>=13.0.0 <14.0.0) is now the ceiling instead. See the \
-         riverpod/pubspec.yaml.j2 template's own comment for the full chain, including why a \
-         bare analyzer pin or a dependency_overrides resolves `pub get` but genuinely breaks \
-         `build_runner build` at codegen time:\n{pubspec}"
+        pubspec.contains("riverpod_generator: 4.0.4"),
+        "riverpod_generator must be pinned to exactly 4.0.4 — the newest release still on \
+         analyzer ^12.0.0, which resolves against Flutter stable's meta 1.18.0 pin on the real \
+         SDK (Flutter 3.44.8/Dart 3.12.2), unlike newer riverpod_generator/build_runner \
+         releases (verified by downloading that exact SDK and reproducing the failure for \
+         real, not just reasoning from pub.dev version tables — see the pubspec.yaml.j2 \
+         template's own comment for the full chain, including why a bare analyzer version pin \
+         or a dependency_overrides resolves `pub get` but genuinely breaks `build_runner build` \
+         at codegen time):\n{pubspec}"
     );
     assert!(
-        pubspec.contains("build_runner: ^2.16.0"),
-        "build_runner must be open-topped at ^2.16.0. The old `\">=2.14.0 <2.15.2\"` cap existed \
-         only to keep it off the `analyzer >=13.3.0` floor that 2.15.2 introduced; 13.3.0 is now \
-         the target, so the cap is deleted rather than nudged. build_runner's own band \
-         (>=13.3.0 <15.0.0) is the widest of the three builders in this pubspec and pins \
-         nothing — riverpod_generator's <14.0.0 is what bounds the resolved analyzer:\n{pubspec}"
-    );
-    assert!(
-        pubspec.contains("dart_mappable_builder: 4.9.0"),
-        "dart_mappable_builder must be pinned to exactly 4.9.0 — it runs in the same \
-         build_runner pass as riverpod_generator and declares `analyzer: '>=13.0.0 <14.0.0'`, \
-         the same window as riverpod_generator 4.0.8's `^13.0.0`. 4.8.0 (the previous pin) caps \
-         at `<13.0.0` and is now the one band that CANNOT resolve here:\n{pubspec}"
+        pubspec.contains(r#"build_runner: ">=2.14.0 <2.15.2""#),
+        "build_runner must stay capped below 2.15.2 (not 2.15.0 — 2.15.0/2.15.1 still declare \
+         analyzer '>=8.0.0 <14.0.0', the same band 2.14.x accepts; only 2.15.2 tightens the \
+         floor past what analyzer 12.x, what riverpod_generator 4.0.4 above needs, satisfies; \
+         see issue #358):\n{pubspec}"
     );
     // A bare, non-Flutter `riverpod:` package must never be added
     // alongside `flutter_riverpod` — it already re-exports what

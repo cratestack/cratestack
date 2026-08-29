@@ -1633,29 +1633,6 @@ jobs:
       - name: Regenerate + run build_runner via --run-build-runner (issue #303)
         if: ${{ !cancelled() }}
         run: |
-          # Resolve `cratestack_builder`/`cratestack_annotations` from this
-          # tree rather than pub.dev. The generator deliberately emits a
-          # *published* floor (`CRATESTACK_BUILDER_FLOOR`, see
-          # `crates/cratestack-client-dart/src/package_floors.rs`), never an
-          # unpublished one — so while the in-tree builder is ahead of the
-          # newest release across an `analyzer` major (released builder:
-          # `analyzer ^12`; in-tree: `^13`), the floor resolves a builder
-          # that cannot satisfy the generated `build_runner` constraint and
-          # `pub get` fails on an empty intersection.
-          #
-          # This mirrors `justfile`'s `local_builder_override` and the same
-          # override in `crates/cratestack-client-dart/tests/
-          # computed_params_wire_equality.rs`. REMOVE all three once
-          # `CRATESTACK_BUILDER_FLOOR` is raised to a release that carries
-          # the analyzer-13 builder — they exist only to bridge the publish
-          # ordering, and leaving them in would hide a genuinely broken floor.
-          cat > examples/flutter-riverpod/client/pubspec_overrides.yaml <<EOF
-          dependency_overrides:
-            cratestack_builder:
-              path: $GITHUB_WORKSPACE/dart-packages/cratestack_builder
-            cratestack_annotations:
-              path: $GITHUB_WORKSPACE/dart-packages/cratestack_annotations
-          EOF
           cd examples/flutter-riverpod/client && flutter pub get
           cd "$GITHUB_WORKSPACE"
           # `--no-native-cbor` must match `just regen-examples` and the

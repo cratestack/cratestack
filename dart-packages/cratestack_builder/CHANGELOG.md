@@ -2,28 +2,6 @@
 
 ## Unreleased
 
-- **`analyzer` moves to `>=13.0.0 <14.0.0`, and the Dart SDK floor to `^3.11.0`.** The previous
-  `>=12.0.0 <13.0.0` ceiling was documented as protecting against `riverpod_generator`, which
-  constrained `analyzer ^12.0.0`. That stopped being true: `riverpod_generator` 4.0.6 moved to
-  `^13.0.0` and 4.0.8 (current) requires it, so the ceiling had become the thing *causing* the
-  incompatibility it was written to prevent. The underlying blocker — `flutter_test` pinning
-  `meta` to exactly `1.18.0`, which barred `analyzer >=13.3.0` — was removed in Flutter 3.47.0
-  (`meta: ^1.18.3`). The old comment's secondary claim, that the `matcher`/`test_api` chain
-  independently forced `<13`, was checked and is false: neither declares an `analyzer` dependency
-  at all.
-
-  The SDK floor is **forced, not rounded up** — no `analyzer` 13.x supports Dart 3.5 (13.0.0
-  needs `^3.9.0`; 13.1+ needs `^3.11.0`). This narrows the package's compatibility promise and is
-  a deliberate maintainer decision.
-
-  The ceiling stays `<14.0.0` rather than becoming `^14`, because `riverpod_generator` 4.0.8 caps
-  there. That also puts `source_gen` 4.3.0 (which requires `analyzer >=14.0.0`) out of reach; the
-  solver correctly backsolves to 4.2.4.
-
-- **Fixed `isInitializingFormal`, deprecated in analyzer 13** — now
-  `param is FieldFormalParameterElement`. This would have bitten regardless of the constraint
-  change.
-
 ## 0.8.15 (2026-08-28)
 
 - No functional changes. Version kept in lockstep with the CrateStack

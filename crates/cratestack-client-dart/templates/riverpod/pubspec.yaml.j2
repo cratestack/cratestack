@@ -4,20 +4,7 @@ publish_to: 'none'
 version: 0.1.0
 
 environment:
-  # `^3.5.0`, matching every other declared SDK floor in this repo
-  # (`dart-packages/cratestack_annotations`, the default preset's own
-  # `pubspec.yaml.j2`, `examples/flutter-riverpod/app`). Was
-  # `'>=3.0.0 <4.0.0'`, which is the same upper bound written the long way
-  # with a floor two years below anything the generated code actually
-  # parses against.
-  #
-  # Note this floor does NOT bound the dev toolchain: `riverpod_generator`
-  # and `flutter_riverpod` both declare `sdk: ^3.12.0` themselves, so pub
-  # will only hand this package the pinned dev versions below on a Dart
-  # >=3.12 SDK, and backsolve to older ones otherwise. That is pub's job,
-  # not this line's — the floor states the language level the GENERATED
-  # code needs, which is unchanged.
-  sdk: ^3.5.0
+  sdk: '>=3.0.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -29,12 +16,7 @@ dependencies:
   # exactly or pub's resolver can't solve the graph at all. See the
   # `build_runner`/`riverpod_generator` comment below for why these
   # three are pinned together as one unit.
-  #
-  # Moves in LOCKSTEP with `riverpod_generator` below and never on its
-  # own: 4.0.4 wanted `4.0.3`, 4.0.6/4.0.7 want `4.0.5`, 4.0.8 wants
-  # `4.0.6`. Read the generator's pin, then set this to whatever that
-  # release names.
-  riverpod_annotation: 4.0.6
+  riverpod_annotation: 4.0.3
 {% if native_cbor %}
   # cratestack#563: see the `default` preset's pubspec.yaml.j2 for the
   # full comment — identical reasoning, this preset just carries its own
@@ -71,119 +53,80 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   flutter_test:
     sdk: flutter
-  # THE ANALYZER-12 WALL IS GONE. This block used to hold
-  # build_runner/riverpod_generator/riverpod_annotation down as one
-  # deliberately-outdated unit; it now holds them at current releases as
-  # one deliberately-*aligned* unit. Same lockstep discipline, opposite
-  # direction, and a different reason. The history matters because the
-  # old comment named the wrong culprit, so here is what was actually
-  # true and what changed.
+  # This trio (build_runner/riverpod_generator/riverpod_annotation above)
+  # is pinned as one deliberately-outdated unit, not three independent
+  # constraints — newer releases of any one of them are individually
+  # incompatible with Flutter's `stable` channel today. Root cause,
+  # confirmed against the *exact* CI SDK (Flutter 3.44.8 / Dart 3.12.2,
+  # downloaded locally and used to reproduce this for real, not guessed
+  # from pub.dev version tables alone):
   #
-  # WHAT THE WALL REALLY WAS (one exact pin, not a chain of them):
+  #   `build_runner` >=2.15.2 requires `analyzer` >=13.3.0, which
+  #   requires `meta` ^1.18.3 — but every `flutter_test` from the SDK
+  #   pins `meta` to exactly 1.18.0.
   #
-  #   `analyzer` >=13.1.0 requires `meta: ^1.18.3`, and every
-  #   `flutter_test` shipped with Flutter up to and including 3.46.x
-  #   pinned `meta` to EXACTLY `1.18.0`. An exact pin cannot be widened
-  #   by a consumer, so nothing in a Flutter package's graph could reach
-  #   analyzer 13.1+. That single line was the entire wall.
+  # Pinning just `analyzer` down to a compatible 13.0.x release (an
+  # earlier attempt, since reverted) resolves `pub get` but does NOT
+  # work: `flutter_test`'s own transitive `test`/`matcher` chain on this
+  # exact SDK independently forces `analyzer <13.0.0`, so an explicit
+  # `analyzer: ">=13.0.0 <13.1.0"` pin only trades one version-solving
+  # failure for another. A `dependency_overrides: analyzer: 13.0.0`
+  # override *resolves* (overrides bypass the conflicting `test`-chain
+  # constraint entirely) but then genuinely breaks at codegen time —
+  # `dart_style` (pulled in by `build_runner`) references an
+  # `ExtensionTypeDeclaration.namePart` getter that doesn't exist on
+  # `analyzer` 13.0.0's AST types, a real `dart run build_runner build`
+  # failure, not a resolver artifact.
   #
-  #   CORRECTION to what this comment used to claim: it also said
-  #   `flutter_test`'s transitive `test`/`matcher` chain "independently
-  #   forces `analyzer <13.0.0`". That is not so — checked against
-  #   pub.dev's per-version API, neither `matcher` (0.12.20) nor
-  #   `test_api` (0.7.13) declares an `analyzer` dependency at all. There
-  #   was only ever one constraint to clear.
+  # `riverpod_generator: 4.0.4` is the newest release still on
+  # `analyzer: ^12.0.0`, which satisfies the `flutter_test` chain's
+  # `<13.0.0` requirement for real (no override needed) — but 4.0.4 only
+  # accepts `riverpod_annotation: '4.0.3'` exactly, hence pinning that
+  # too. `build_runner` is capped below 2.15.2, not below 2.15.0 — 2.15.0
+  # and 2.15.1 both still declare `analyzer: '>=8.0.0 <14.0.0'`, the same
+  # band 2.14.x accepts; only 2.15.2 tightens the floor to `>=13.3.0`,
+  # past what 12.x satisfies (confirmed via pub.dev's per-version API,
+  # not just the version-table UI). See issue #358.
   #
-  # WHAT CHANGED: **Flutter 3.47.0 (2026-08-12) relaxed
-  # `flutter_test`'s `meta` pin from exactly `1.18.0` to `^1.18.3`** —
-  # verified by reading `packages/flutter_test/pubspec.yaml` out of the
-  # SDK this was developed against (Flutter 3.47.2 / Dart 3.13.2), not
-  # inferred from release notes. With that pin widened, analyzer 13.x
-  # resolves in a Flutter package for the first time, and the whole
-  # pinned group can move forward together.
-  #
-  # WHAT NOW BLOCKS GOING HIGHER — the ceiling is `riverpod_generator`,
-  # not Flutter:
-  #
-  #   riverpod_generator   4.0.8  -> analyzer ^13.0.0  (>=13.0.0 <14.0.0)
-  #   dart_mappable_builder 4.9.0 -> analyzer >=13.0.0 <14.0.0
-  #   build_runner         2.16.0 -> analyzer >=13.3.0 <15.0.0
-  #   -------------------------------------------------------------
-  #   intersection: analyzer 13.3.0 (the newest 13.x; 14.1.0 exists and
-  #   is unreachable until riverpod_generator accepts 14.x)
-  #
-  # So `build_runner` gets an open-topped `^2.16.0` — its own band is the
-  # widest of the three and is not what pins anything — while
-  # riverpod_generator/riverpod_annotation/dart_mappable_builder stay
-  # exactly pinned. The old `">=2.14.0 <2.15.2"` cap existed ONLY to keep
-  # `build_runner` off the `analyzer >=13.3.0` floor; that floor is now
-  # the target, so the cap is deleted rather than nudged.
-  #
-  # `riverpod_generator: 4.0.8` is the current release (4.0.5 was never
-  # published; 4.0.6 is where the `^12.0.0` -> `^13.0.0` move landed).
-  # It accepts `riverpod_annotation: '4.0.6'` exactly, hence that pin
-  # above — read it off the generator, never bump it independently.
-  #
-  # STILL TRUE, DO NOT RE-DERIVE: pinning `analyzer` directly in this
-  # file, or reaching for `dependency_overrides`, is the wrong tool. An
-  # earlier attempt overrode `analyzer` to 13.0.0 and got a resolving
-  # `pub get` that then failed for real at codegen — `dart_style` (via
-  # `build_runner`) calls `ExtensionTypeDeclaration.namePart`, which
-  # 13.0.0's AST does not have. The lesson generalises past that specific
-  # getter: **a resolving `pub get` is not evidence this file is
-  # correct.** The check that counts is `dart run build_runner build`
-  # actually emitting `.g.dart`/`.mapper.dart`, which is why
-  # `just verify-dart` and CI's `flutter (flutter-riverpod example)` job
-  # both run it rather than stopping at resolution.
-  build_runner: ^2.16.0
-  riverpod_generator: 4.0.8
-  # issue #325: `dart_mappable_builder` joins the group above as a fourth
+  # Verified end to end against the real Flutter 3.44.8/Dart 3.12.2 SDK:
+  # `flutter pub get` resolves, `dart run build_runner build` actually
+  # generates `.g.dart` output, and `flutter analyze` is clean (only the
+  # two pre-existing, unrelated info-level findings tracked separately).
+  build_runner: ">=2.14.0 <2.15.2"
+  riverpod_generator: 4.0.4
+  # issue #325: `dart_mappable_builder` joins the trio above as a fourth
   # pinned-together package, not an independent constraint — it runs in
-  # the same `build_runner` pass as `riverpod_generator` and shares its
-  # resolved `analyzer`.
+  # the same `build_runner` pass as `riverpod_generator` and is subject
+  # to the exact same `analyzer`-version wall.
   #
-  # Pinned to *exactly* `4.9.0` (current release), not a range. Was
-  # `4.8.0`, and the reason it was held there has inverted: 4.8.0
-  # declares `analyzer: '>=10.0.0 <13.0.0'`, which was the only band
-  # reachable under the old `meta: 1.18.0` wall and is now the one band
-  # that CANNOT be used, because `riverpod_generator` 4.0.8 requires
-  # `>=13.0.0`. 4.9.0 declares `analyzer: '>=13.0.0 <14.0.0'` — the exact
-  # same window as riverpod_generator's `^13.0.0`, so the two agree
-  # without either one moving the resolved analyzer off 13.3.0.
+  # Pinned to *exactly* `4.8.0`, not a range and not latest. Verified
+  # against the real CI SDK (Flutter 3.44.8 / Dart 3.12.2, same one used
+  # to root-cause the trio's own pin above):
   #
-  # Verified end to end on Flutter 3.47.2 / Dart 3.13.2: `flutter pub
-  # get` resolves, `dart run build_runner build` runs
-  # `riverpod_generator` and `dart_mappable_builder` in the same pass and
-  # emits real `.mapper.dart` output with genuine `operator ==`/
-  # `hashCode`/`copyWith`, and `flutter analyze --fatal-warnings
-  # --no-fatal-infos` is clean afterward.
-  dart_mappable_builder: 4.9.0
-  # issue #668 phase 2: a fifth package in the same `build_runner` pass,
-  # sharing the same resolved `analyzer`. A version range (not a pin) is
-  # right here, unlike the four above: `cratestack_builder` is this
-  # repo's own package, so its constraint is something we move rather
-  # than something we work around.
+  #   `dart_mappable_builder` 4.9.0 requires `analyzer >=13.0.0` — the
+  #   exact wall the trio above already hit (Flutter stable's
+  #   `flutter_test` transitive chain pins `meta` to exactly `1.18.0`,
+  #   which only `analyzer <13.0.0` releases tolerate on this SDK).
   #
-  # RELEASE ORDERING — this is a real, temporary constraint, not a
-  # footnote. `dart-packages/cratestack_builder/pubspec.yaml` now
-  # declares `analyzer: '>=13.0.0 <14.0.0'`, which agrees with the
-  # `13.x` band above. But every release PUBLISHED to pub.dev so far
-  # (0.8.5 through 0.8.15 — checked against the registry, not the
-  # changelog) still declares `>=12.0.0 <13.0.0`, and
-  # `>=12.0.0 <13.0.0` ∩ `^13.0.0` is empty. So until a
-  # cratestack_builder release carrying the analyzer-13 constraint is
-  # actually on pub.dev, a client generated from this template cannot
-  # resolve from a clean checkout — `flutter pub get` fails version
-  # solving outright.
-  #
-  # That is the same bootstrapping gap `just verify-dart` and
-  # `just verify-dart-packages` already handle, by the same sanctioned
-  # mechanism: a `pubspec_overrides.yaml` pointing at this repo's
-  # in-repo sibling. It is NOT a defect in this file and must not be
-  # "fixed" by reverting the pins above.
-  # TODO(cratestack maintainer): once an analyzer-13 `cratestack_builder`
-  # is published, raise `CRATESTACK_BUILDER_FLOOR` in
-  # `crates/cratestack-client-dart/src/package_floors.rs` to that
-  # version, so the emitted constraint can no longer resolve to a
-  # release that caps analyzer below 13.
+  #   `dart_mappable_builder: 4.8.0` declares `analyzer: '>=10.0.0
+  #   <13.0.0'`, which overlaps `riverpod_generator: 4.0.4`'s own
+  #   `analyzer: ^12.0.0` requirement at exactly the `12.x` band pub's
+  #   resolver already lands on for the trio above — so adding this
+  #   fourth package does not move the resolved `analyzer` version at
+  #   all. Confirmed end to end on the real SDK: `flutter pub get`
+  #   resolves cleanly, `dart run build_runner build` runs
+  #   `riverpod_generator` and `dart_mappable_builder` in the same pass
+  #   and emits real `.mapper.dart` output with genuine `operator ==`/
+  #   `hashCode`/`copyWith`, and `flutter analyze --fatal-warnings
+  #   --no-fatal-infos` is clean afterward.
+  dart_mappable_builder: 4.8.0
+  # issue #668 phase 2: a fifth package joining the pinned-together group
+  # above, subject to the same `build_runner`-pass/`analyzer`-version wall.
+  # `cratestack_builder`'s own floor (`dart-packages/cratestack_builder/
+  # pubspec.yaml`) is `analyzer: '>=12.0.0 <13.0.0'` — squarely inside the
+  # `12.x` band `riverpod_generator: 4.0.4` and `dart_mappable_builder:
+  # 4.8.0` already resolve to above, so this doesn't move the resolved
+  # `analyzer` version either. A version range (not a pin) is fine here,
+  # unlike the trio: `cratestack_builder` isn't the thing whose own release
+  # cadence forced this wall, it just has to tolerate it.
   cratestack_builder: {{ cratestack_builder_version_requirement }}

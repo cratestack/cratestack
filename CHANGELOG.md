@@ -79,6 +79,17 @@ is deliberately absent from it: it was the worst offender and was split in the s
 6 files (largest 1381 lines, all tests inline) to 65 (largest 193, zero inline test modules), with
 its public API proven unchanged.
 
+**Not in this release: the Dart analyzer-13 migration.** It was attempted and reverted, and the
+reason is worth recording. `cratestack_builder`'s `analyzer <13.0.0` ceiling is stale —
+`riverpod_generator` moved to `^13.0.0` in 4.0.6, so the ceiling now causes the incompatibility it
+was written to prevent — but it cannot be fixed in one release. `just verify-dart` resolves
+`cratestack_builder` from the working tree, while the floor-pinning step in the `flutter
+(flutter-riverpod example)` job resolves the *published* floor, and both are CI gates. With the
+in-tree and published builders on different `analyzer` majors those constraints are mutually
+exclusive, so it has to be sequenced across two releases. The floor gate refused the attempt
+rather than letting a generated client ship that no user could resolve — which is exactly what it
+exists to do. Tracked in #828.
+
 Two now-stale `deny.toml` ignores (RUSTSEC-2026-0194/0195) were deleted — their own recorded
 revisit condition, "when tauri ships a plist >=1.10", is met, and `cargo-deny` reports both as
 not-detected.

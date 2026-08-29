@@ -15,63 +15,20 @@ topics:
   - builder
 
 environment:
-  # RAISED from `^3.5.0` (was: the floor this package shipped from 0.8.5
-  # through 0.8.15). This is a real narrowing of the published package's
-  # compatibility promise, made deliberately and approved by the
-  # maintainer — not a rounding-up. It is FORCED by the `analyzer`
-  # constraint below and cannot be avoided while that constraint holds:
-  #
-  #   analyzer 13.0.0 declares `sdk: ^3.9.0`
-  #   analyzer 13.1.0 / 13.2.0 / 13.3.0 declare `sdk: ^3.11.0`
-  #
-  # …so there is no analyzer 13.x that a `^3.5.0` package can resolve at
-  # all, and only 13.0.0 would be reachable at `^3.9.0`. `^3.11.0` is what
-  # the whole 13.1+ band needs, and 13.3.0 is what `build_runner` >=2.15.2
-  # (and `build` >=4.0.10) require. Read the pin below before lowering
-  # this back: the two move together or not at all.
-  #
-  # Consequence for consumers: a project still on Dart 3.5-3.10 cannot
-  # upgrade past `cratestack_builder` 0.8.15. That is the price of the
-  # analyzer-13 move and it is intentional.
-  sdk: ^3.11.0
+  sdk: ^3.5.0
 
 dependencies:
-  # UPPER BOUND IS STILL LOAD-BEARING, but the reason changed — REWRITTEN
-  # after the wall this constraint used to describe was removed upstream.
-  #
-  # What it used to say (accurate when written, false since 2026-08-12):
-  # "riverpod_generator constrains `analyzer ^12.0.0`, so allowing 13.x
-  # here makes `pub get` hard-fail in a riverpod-preset client". That was
-  # a symptom, and both halves of it have since moved:
-  #
-  #   * The real root cause was never riverpod_generator. It was the
-  #     Flutter SDK: every `flutter_test` up to and including Flutter
-  #     3.46.x pinned `meta` to EXACTLY `1.18.0`, and `analyzer` >=13.1.0
-  #     needs `meta ^1.18.3`. One exact pin, three packages downstream,
-  #     was the entire wall. **Flutter 3.47.0 relaxed that pin to
-  #     `^1.18.3`**, and the wall fell with it.
-  #   * riverpod_generator followed: 4.0.4 was the last release on
-  #     `analyzer: ^12.0.0`; 4.0.6 moved to `^13.0.0` and 4.0.8 (current)
-  #     still declares `^13.0.0`. Verified against pub.dev's per-version
-  #     API, not the version-table UI.
-  #
-  # So this is no longer a ceiling protecting the build FROM 13.x — it is
-  # a ceiling holding the package INSIDE the 13.x band, because that band
-  # is now the only one a riverpod-preset client can resolve.
-  #
-  # WHAT ACTUALLY BLOCKS GOING HIGHER: `riverpod_generator` 4.0.8's
-  # `analyzer: ^13.0.0` is `>=13.0.0 <14.0.0`. A generated riverpod client
-  # runs this builder in the same `build_runner` pass as that generator,
-  # so `<14.0.0` here is what keeps the two intersecting. It must stay
-  # `<14.0.0` and NOT become `^14` (or `<15.0.0`) until riverpod_generator
-  # itself accepts 14.x — analyzer 14.1.0 exists and is otherwise fine,
-  # and taking it would break every riverpod-preset client at `pub get`.
+  # UPPER BOUND IS LOAD-BEARING, not defensive rounding. A generated client
+  # under the riverpod preset runs this builder in the same `build_runner`
+  # pass as `riverpod_generator`, whose own constraint is `analyzer ^12.0.0`.
+  # Allowing 13.x here makes `pub get` hard-fail in that package before any
+  # codegen is reached. Raise the ceiling only alongside riverpod_generator.
   #
   # The floor is deliberately well above the minimum that compiles: at
   # `^8.x` the analyzer reports a language version older than the SDK
   # ("SDK language version 3.13.0 is newer than `analyzer` language version
   # 3.11.0"), i.e. it parses newer syntax with older rules.
-  analyzer: '>=13.0.0 <14.0.0'
+  analyzer: '>=12.0.0 <13.0.0'
   build: ^4.0.7
   # issue #668 phase 3 / cratestack#754: `0.8.10` is the first
   # `cratestack_annotations` release with the `touchFlagFields`/
@@ -95,15 +52,6 @@ dependencies:
   # annotation field — never as part of a routine version bump. See
   # `docs/tooling/dart-publishing.md`.
   cratestack_annotations: ^0.8.10
-  # Deliberately left OPEN at `^4.0.0` — do not add a ceiling here, and do
-  # not "helpfully" raise the floor to the newest release. `source_gen`
-  # 4.3.0 requires `analyzer >=14.0.0 <15.0.0`, which is disjoint from the
-  # `>=13.0.0 <14.0.0` band above, so pub's resolver correctly backsolves
-  # to 4.2.4 (`analyzer >=8.1.1 <15.0.0`) on its own. Writing that
-  # backsolve down as a hard cap would freeze it: when riverpod_generator
-  # eventually accepts analyzer 14.x and this band moves up, the open
-  # caret picks up 4.3.0 for free, whereas a cap would have to be found
-  # and edited. The resolver is the right place for this constraint.
   source_gen: ^4.0.0
 
 dev_dependencies:
