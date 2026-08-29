@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### The generated Dart `pubspec.yaml` no longer claims `cratestack_cbor` is version-locked (#563, #823)
+
+`crates/cratestack-client-dart/templates/pubspec.yaml.j2`'s comment above the `cratestack_cbor`
+dependency said the constraint was "version-locked to this generator's own crate version, the same
+lockstep convention `just bump` already applies". That stopped being true with #779, which moved
+every generated dependency constraint to a constant API floor: `context.rs` emits
+`CRATESTACK_CBOR_FLOOR`, and it deliberately does *not* move with `just bump` — which is the whole
+point, since deriving it from the release version is what broke `Prepare Release` for 0.8.14 (#754).
+The correct account was three lines below in the same file, for the sibling constraints. The comment
+now points at `package_floors.rs` instead, and at #823 for the Linux arm64 gap it mentions (#563,
+which used to track that gap, closed on 2026-08-29).
+
+Comment-only. The emitted `cratestack_cbor:` constraint is byte-identical.
+
 ### `Bytes` now survives `transport rpc` — two independent defects, one symptom (#820, #806)
 
 A `Bytes` field on an RPC schema did not reach the wire in any shape a server-side `Vec<u8>` could

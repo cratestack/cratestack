@@ -1,5 +1,20 @@
 ## Unreleased
 
+- **The Linux arm64 `dart test`/`dart run` gap is now tracked on
+  cratestack#823, not cratestack#563.** cratestack#563 — the ticket that built
+  and published this package — was closed as completed on 2026-08-29, so the
+  three places naming it as that gap's *open* home were pointing readers at a
+  closed issue: `lib/cratestack_cbor.dart`'s library doc,
+  `lib/src/native/native_cbor_codec.dart`'s header comment, and the
+  `UnsupportedError` message a user actually sees on an unsupported host.
+
+  Nothing about the gap itself changed. The Dart SDK does ship arm64 Linux, so
+  the dev-mode `Isolate.resolvePackageUri` path is reachable there and throws;
+  Flutter on arm64 Linux remains blocked upstream (no arm64 Linux SDK on any
+  channel) rather than deferred. Text-only — no behaviour change, and every
+  other cratestack#563 reference in this package is historical provenance and
+  stays as it is.
+
 ## 0.8.15 (2026-08-28)
 
 - **`createCborCodec()` is idempotent, and resolves its vendored library under

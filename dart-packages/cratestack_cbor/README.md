@@ -168,7 +168,7 @@ follow-up work — it is blocked upstream:
   use, which needs no Flutter bundling at all — is genuinely reachable on
   arm64 Linux today, and throws. Supporting just that case needs only a
   vendored `blobs/linux-arm64/` library; it is tracked separately on
-  cratestack#563 and is not what the Flutter block above rules out.
+  cratestack#823 and is not what the Flutter block above rules out.
 
 ## Flutter app integration — proven, not just `dart test`
 
