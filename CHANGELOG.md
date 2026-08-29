@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### Releases gate every publish behind one pre-flight, and end with a channel manifest (#651)
+
+Maintainer decision on #651 (2026-08-29): options **(b)** and **(c)** combined, recorded in a policy
+comment at the head of `release-cli.yml` so the next person does not re-derive it.
+
+Previously the publish jobs fanned out in parallel from `prepare`, each individually correct and
+collectively unsafe: during v0.8.1–v0.8.3 the pub.dev leg failed three times — a hang, then a false
+green, then an OIDC error — while crates.io and every npm package had *already* published
+irreversibly. Three version numbers were spent recovering from a failure in the least-established
+channel.
+
+**(b) The pre-flight.** A new `preflight` job waits on every cross-host `build-*` job and validates
+each channel's credentials; all ten publish jobs now carry it in their `needs`. A missing artifact or
+a bad credential in *any* channel therefore blocks *every* publish, rather than being discovered
+after eight of them are live.
+
+The crates.io check asks crates.io — `GET /api/v1/me` — rather than testing the secret for
+non-emptiness. That distinction is the point: an expired token is present and non-empty, and a `-z`
+check waves it through into a release that has already spent every other channel.
+
+**(c) The manifest.** A `release-manifest` job runs with `if: always()` and reports every channel as
+LIVE (irreversible) / FAILED / not attempted / cancelled at the release version, with a recovery note
+saying plainly that a mixed outcome needs a new version number rather than a re-run. `skipped` is
+reported as "not attempted" and never folded in with a failure.
+
+**pub.dev is reported as NOT COVERED, never as passed**, on any trigger other than a tag push. Its
+OIDC trust is configured per-tag-pattern, so a `workflow_dispatch` run cannot mint a token pub.dev
+would accept (#641). A pre-flight that quietly green-lit an unverifiable credential would recreate
+the exact false-green this came from.
+
+Nothing existing was weakened: the pub.dev archive-contents gate and the post-publish "did pub.dev
+actually receive this version" poll are untouched. And what the pre-flight *cannot* cover is stated
+in the workflow rather than implied — `publish-pubdev-cbor` vendors its Linux/web/Android artifacts
+inside the publish job, so those specific artifacts are not behind the barrier.
+
 ### BREAKING (`--template-dir` only): TypeScript templates render under `UndefinedBehavior::Strict` (#774)
 
 The TypeScript generator's minijinja environment no longer treats an undefined name as falsy. A
