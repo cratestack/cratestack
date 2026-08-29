@@ -38,6 +38,33 @@ was a conservative proxy for "the floor names a shipped release", correct on a b
 over-strict in the window between a release publishing and the next bump — which is exactly the
 window #806 landed in. A second test deletes the exemption once it is no longer needed, so it cannot
 rot into a blanket hole.
+### The iOS round-trip check detects from the log store, not the live subscription (#723)
+
+`cbor-example-verify-ios` decided pass/fail by grepping a live `log stream` subscription, falling back
+to the log store only after the full 90-second budget expired. #723 was opened to hold that open until
+the capture defect could be observed once rather than theorized. It has now been observed, repeatedly,
+and the verdict is recorded on the issue.
+
+**The decisive measurement** — job 97444502262: the live capture delivered **0 Runner-attributed lines
+/ 95 bytes** while the log store held the marker. The healthy baseline is ~1050 lines / 270,521 bytes.
+Not a slow subscription; nothing at all. The round trip itself was fine.
+
+The poll loop now queries the log store (every 2s, bounding the simctl round trips) and the live stream
+is demoted to diagnostics. Consequences:
+
+- A run with a dead subscription passes in **~2s instead of ~103s**. The old shape recovered the same
+  marker, but only after burning the whole budget — which is why job 97444502262 reported the marker
+  "103s after launch, -13s of margin". That was the recovery timestamp, not the app's.
+- Capture health is now reported on **every** run rather than gathered by a bespoke watch workflow. An
+  unreported signal that no longer causes failures is indistinguishable from one that was fixed.
+- The live stream is still subscribed, captured, counted and dumped on failure. It is a far richer
+  failure dump than the marker-filtered store query, and it is the measurement that keeps a future
+  regression in the subscription visible.
+
+Positive evidence from the stream is still accepted. "Detect from the store" means detection must not
+*depend* on the live stream, not that a marker it demonstrably captured should be thrown away — so the
+inverse anomaly (store empty, stream has it) passes and is reported rather than failing on a
+technicality about which channel won.
 
 ### Releases can be rehearsed without consuming a version number (#652)
 
