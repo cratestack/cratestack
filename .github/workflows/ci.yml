@@ -1218,7 +1218,7 @@ jobs:
       # dir — see the `cbor-glue` job header for the exact error). The glue
       # arrives prebuilt from that job instead.
       - name: Restore frb glue (generated once on Linux by `cbor-glue`)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-frb-glue
           path: .
@@ -1369,7 +1369,7 @@ jobs:
       # and it means macOS and Windows consume byte-identical glue rather
       # than two independently-generated copies that merely ought to match.
       - name: Restore frb glue (generated once on Linux by `cbor-glue`)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-frb-glue
           path: .
@@ -1496,7 +1496,7 @@ jobs:
       # macos`'s identical step: drops a multi-minute `cargo install` and
       # guarantees every platform leg consumes byte-identical glue.
       - name: Restore frb glue (generated once on Linux by `cbor-glue`)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-frb-glue
           path: .
