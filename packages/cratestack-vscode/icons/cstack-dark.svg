@@ -1,34 +1,26 @@
 <!--
-  File-explorer icon for `.cstack`, dark-theme variant.
+  `.cstack` file-type icon, dark-theme variant. No background plate:
+  a file icon sits on the host's own background.
 
-  Derived from the approved extension mark (`icon.png`) — same three
-  isometric crates, same palette, sampled exact: #F7B270 top, #E88A3A
-  left, #BF6A26 right. The gallery tile's #1E222E rounded-square
-  background is deliberately NOT carried over: a file icon sits on the
-  explorer's own background, so an opaque plate would render as a dark
-  box against every theme that isn't exactly that navy.
-
-  Redrawn as geometry rather than traced from the PNG, so it stays crisp
-  at the 16x16 the explorer actually renders.
+  Geometry measured from the shipped mark (icon.png), not eyeballed — see
+  gen-svg.py in the brand asset tooling. All CrateStack marks share one
+  definition so the app icon, logomark and file icons cannot drift apart.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img">
   <title>CrateStack schema file</title>
 
-  <!-- Painter's order: bottom crate first, so each crate above occludes
-       the one below it and the stack reads as a stack. -->
-
   <!-- bottom crate -->
-  <polygon points="16,15 29,20 16,25 3,20" fill="#F7B270"/>
-  <polygon points="3,20 16,25 16,29.5 3,24.5" fill="#E88A3A"/>
-  <polygon points="29,20 16,25 16,29.5 29,24.5" fill="#BF6A26"/>
+  <polygon points="16,13.89 27.55,19.47 16,25.06 4.45,19.47" fill="#F7B270"/>
+  <polygon points="4.45,19.47 16,25.06 16,30.5 4.45,24.91" fill="#E88A3A"/>
+  <polygon points="27.55,19.47 16,25.06 16,30.5 27.55,24.91" fill="#BF6A26"/>
 
   <!-- middle crate -->
-  <polygon points="16,8.5 29,13.5 16,18.5 3,13.5" fill="#F7B270"/>
-  <polygon points="3,13.5 16,18.5 16,23 3,18" fill="#E88A3A"/>
-  <polygon points="29,13.5 16,18.5 16,23 29,18" fill="#BF6A26"/>
+  <polygon points="16,7.69 27.55,13.28 16,18.87 4.45,13.28" fill="#F7B270"/>
+  <polygon points="4.45,13.28 16,18.87 16,24.31 4.45,18.72" fill="#E88A3A"/>
+  <polygon points="27.55,13.28 16,18.87 16,24.31 27.55,18.72" fill="#BF6A26"/>
 
   <!-- top crate -->
-  <polygon points="16,2 29,7 16,12 3,7" fill="#F7B270"/>
-  <polygon points="3,7 16,12 16,16.5 3,11.5" fill="#E88A3A"/>
-  <polygon points="29,7 16,12 16,16.5 29,11.5" fill="#BF6A26"/>
+  <polygon points="16,1.5 27.55,7.09 16,12.68 4.45,7.09" fill="#F7B270"/>
+  <polygon points="4.45,7.09 16,12.68 16,18.11 4.45,12.53" fill="#E88A3A"/>
+  <polygon points="27.55,7.09 16,12.68 16,18.11 27.55,12.53" fill="#BF6A26"/>
 </svg>
