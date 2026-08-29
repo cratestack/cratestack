@@ -203,6 +203,35 @@ Rejected at compile time rather than accepted quietly:
 Commas inside a quoted string literal do not split the list, so `status in ["a,b", "c"]` is two
 elements.
 
+### The `ovsx` publish CLI is pinned instead of fetched at publish time (#811)
+
+`packages/cratestack-vscode`'s `publish:open-vsx` script and the `publish (Open VSX)` job in
+`release-vscode.yml` both invoke the Open VSX CLI as `npx ovsx`, but `ovsx` was declared in neither
+`devDependencies` nor `pnpm-lock.yaml`. `npx` resolves a locally installed binary when one exists and
+otherwise downloads the package from the registry at run time — so that step executed whatever npm
+served that moment, unpinned and unreviewed, in the one job that holds `OVSX_PAT`. `@vscode/vsce`
+sitting beside it was pinned and resolved locally, so the two publish paths were asymmetric for no
+reason anyone had chosen.
+
+Nothing was failing, and that is the point: the job would have gone green either way. Open VSX
+publishing is dormant today (#811 covers turning it on), so the fix lands *before* the first real
+publish rather than after — an Open VSX publish cannot be cleanly deleted and retried.
+
+`ovsx` is now a pinned `devDependency` and present in the lockfile, so `pnpm install
+--frozen-lockfile` is what puts it on disk. Verified by the resolution flipping: on `main`,
+`npx --offline ovsx --version` fails with `ENOTCACHED` and a request to `registry.npmjs.org`, proving
+the network fetch; with the fix it prints `1.1.1` from `node_modules/.bin`.
+
+`test/publish-tooling.test.js` guards the general rule rather than the one package that broke it —
+every tool a script reaches for via `npx` must be a declared dependency — plus a second assertion that
+the scan still matches the publish scripts, so the guard cannot pass vacuously if a script is reworded
+or `npx` is swapped for `pnpm exec`. Both were proven by breaking them independently: undeclaring
+`ovsx` fails the first and not the second, and rewriting `npx ovsx` to `pnpm exec ovsx` fails the
+second and not the first.
+
+The Open VSX setup doc now runs its one-time `create-namespace` step from the package directory, so
+that command uses the pinned CLI too.
+
 ## 0.8.15 (2026-08-28)
 
 ### A misspelled field attribute is now a parse error, not a silent no-op (#679)

@@ -173,8 +173,12 @@ The namespace is `cratestack`, matching the same `publisher` field.
    Agreement" and "Agree".
 3. Generate an access token: open-vsx.org → Settings → **Access Tokens** → **Generate New Token**.
    Copy the value immediately — it's only shown once.
-4. Create the namespace once, locally (needs Node/pnpm and the token from step 3):
+4. Create the namespace once, locally (needs Node/pnpm and the token from step 3). Run it from
+   `packages/cratestack-vscode` after `pnpm install`, so `npx` resolves the `ovsx` pinned in that
+   package's `devDependencies` rather than downloading whatever the registry currently serves —
+   this command carries the token on its command line:
    ```bash
+   cd packages/cratestack-vscode && pnpm install --frozen-lockfile
    npx ovsx create-namespace cratestack -p <token>
    ```
 5. In the GitHub repo → Settings → Secrets and variables → Actions, add a repository secret named
