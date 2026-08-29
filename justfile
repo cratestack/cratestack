@@ -2622,15 +2622,22 @@ cbor-example-verify-android-emulator:
 # UNVERIFIED ASSUMPTIONS, flagged rather than silently relied on (this repo's
 # dev toolchain is Linux-only — no Windows host to actually run this
 # recipe against before it lands in CI):
-#   - `timeout` (used below to bound how long the app runs before being
-#     killed so its captured stdout can be grepped, the same idiom
-#     `cbor-example-verify`'s Linux half uses via `timeout "$poll_budget"
-#     xvfb-run -a "$bin"`, polled rather than checked once since
-#     cratestack#753) is believed to be present in Git for Windows' bundled MSYS
+#   - `timeout` (used below as the outer deadline on the app's run, the
+#     same idiom `cbor-example-verify`'s Linux half uses via
+#     `timeout "$poll_budget" xvfb-run -a "$bin"`, polled rather than
+#     checked once since cratestack#753 — and here since cratestack#803)
+#     is believed to be present in Git for Windows' bundled MSYS
 #     environment (a GNU coreutils build) — which this justfile's global
 #     `set shell := ["bash", ...]` already depends on for EVERY recipe on
 #     Windows, not just this one — but this could not be confirmed from a
 #     Linux dev machine.
+#   - Whether `kill` on that MSYS `timeout` pid propagates to the native
+#     Win32 grandchild, which is what lets the poll loop end a successful
+#     run early. Deliberately NOT assumed to carry over from the Linux
+#     recipe, whose own note derives its answer from scripted probes on
+#     Linux. If it does not propagate the recipe still reports the right
+#     verdict and merely waits out the deadline — see the launch block
+#     below, where that degradation is spelled out.
 #   - A `cdylib` built for `x86_64-pc-windows-msvc` links the VC++ runtime
 #     (`vcruntime140.dll` and friends) unless built with `+crt-static`;
 #     neither `cbor-vendor-lib windows-x64` nor Flutter's own tooling
@@ -2681,14 +2688,106 @@ cbor-example-verify-windows:
 
 	echo "=== running the built Windows executable ==="
 	win_log="$(mktemp)"
-	timeout 20 "$bin" > "$win_log" 2>&1 || true
-	if ! grep -q "$marker OK $expected_hex" "$win_log"; then
-	  echo "FAIL: built Windows executable did not print the expected round-trip marker. Captured output:" >&2
+
+	# POLL FOR THE MARKER UP TO A DEADLINE, ENDING AS SOON AS IT APPEARS —
+	# cratestack#803, the Windows half of the family fixed on iOS in
+	# cratestack#720/#722 and on Linux in cratestack#753/#800. This recipe
+	# carried the original `timeout 20 "$bin" ... || true` shape with the
+	# same two independent bugs #753 documented:
+	#
+	#   1. The marker was checked exactly ONCE, after 20s had
+	#      unconditionally elapsed. A cold start slower than that failed
+	#      even though the app would have printed moments later.
+	#   2. `|| true` discarded the exit status, so a crash, a non-zero
+	#      exit and a slow start all reached the grep identically and
+	#      produced the same "did not print the expected round-trip
+	#      marker" message — true in every case, diagnostic in none.
+	#
+	# WHY `timeout` STILL WRAPS THE LAUNCH, for a DIFFERENT reason than on
+	# Linux. There, `timeout` is load-bearing for signal delivery: it wraps
+	# `xvfb-run`, and a plain `kill` on `xvfb-run`'s pid would not reach the
+	# Flutter binary it launches without `exec`. Windows has no wrapper —
+	# the `.exe` is launched directly — so that reasoning does NOT carry
+	# over, and it was not assumed to (this recipe's header already flags
+	# what could and could not be confirmed from a Linux dev machine).
+	# `timeout` is kept here purely as the outer deadline, so the loop below
+	# can never wait forever on a hung GUI app.
+	#
+	# UNVERIFIED, and named rather than assumed away: whether `kill` on the
+	# MSYS `timeout` pid propagates to a native Win32 grandchild. THE
+	# DEGRADATION IF IT DOES NOT IS BENIGN — the pass/fail verdict is
+	# already decided by `found` before the wait, so a non-propagating kill
+	# costs wall-clock (waiting out the remaining deadline on an
+	# already-successful run) and nothing else. That is no worse than the
+	# fixed 20s wait this replaces, and every other branch still reports
+	# correctly. Read as: this fix cannot make the job flakier than it was,
+	# only faster and more diagnostic.
+	#
+	# 45s, NOT 20s — matching the Linux budget for the same reason its own
+	# comment gives: deliberately generous headroom on a loaded runner
+	# rather than a number derived from measurement. A healthy run now pays
+	# LESS than the old 20s, because the loop ends the instant the marker
+	# appears; only a genuinely slow start pays more, up to this bound.
+	poll_budget=45
+	timeout "$poll_budget" "$bin" > "$win_log" 2>&1 &
+	bin_pid=$!
+	found=0
+	poll_started="$(date +%s)"
+	for _ in $(seq 1 "$poll_budget"); do
+	  if grep -q "$marker OK $expected_hex" "$win_log"; then
+	    found=1
+	    break
+	  fi
+	  # Notices a fast crash too, not just a fast success: once the
+	  # backgrounded job has exited, `kill -0` reports "gone" within about
+	  # one poll tick.
+	  if ! kill -0 "$bin_pid" 2>/dev/null; then
+	    break
+	  fi
+	  sleep 1
+	done
+	poll_waited=$(( $(date +%s) - poll_started ))
+	if [ "$found" -eq 1 ]; then
+	  kill "$bin_pid" 2>/dev/null || true
+	fi
+	set +e
+	wait "$bin_pid"
+	bin_status=$?
+	set -e
+
+	if [ "$found" -eq 1 ]; then
+	  # MARKER-PRINTED-THEN-NON-ZERO-EXIT IS A PASS — decided here on
+	  # purpose, because cratestack#803 asks for the question to be settled
+	  # explicitly rather than left open, and answered the same way
+	  # cratestack#800 answered it for Linux. `bin_status` is deliberately
+	  # NOT consulted in this branch: once the marker is captured the round
+	  # trip is already proven, and what remains is GUI teardown. On
+	  # Windows there is a second reason the exit code is uninformative
+	  # here — this recipe's own `kill` above races the app's normal exit,
+	  # so a non-zero status in this branch may be nothing but our own
+	  # termination signal. Revisit if a real run is ever seen using this
+	  # to mask a genuine post-marker crash.
+	  echo "✓ Windows executable round-tripped CBOR after ${poll_waited}s: $(grep "$marker" "$win_log")"
+	elif [ "$bin_status" -eq 124 ]; then
+	  # `timeout`'s well-known "I killed it on my own deadline" status,
+	  # reported AS a timeout — distinct from the crash branch below, which
+	  # is cratestack#803's explicit ask ("the failure says timeout, not
+	  # 'missing marker'").
+	  echo "FAIL: built Windows executable did not print the expected round-trip marker within the ${poll_budget}s deadline (timed out, not a crash). Captured output:" >&2
+	  cat "$win_log" >&2
+	  rm -f "$win_log"
+	  exit 1
+	else
+	  # Neither the marker nor a timeout — it exited on its own before the
+	  # deadline, having crashed or having exited cleanly without printing.
+	  # Naming the exit status is the other half of #803's ask, and it is
+	  # trustworthy here: `found=0` means this recipe never called `kill`,
+	  # so `bin_status` cannot be an artifact of our own teardown.
+	  echo "FAIL: built Windows executable exited with status $bin_status without printing the expected round-trip marker. Captured output:" >&2
 	  cat "$win_log" >&2
 	  rm -f "$win_log"
 	  exit 1
 	fi
-	echo "✓ Windows executable round-tripped CBOR: $(grep "$marker" "$win_log")"
 	rm -f "$win_log"
 
 	echo ""

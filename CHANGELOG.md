@@ -36,6 +36,33 @@ Nothing existing was weakened: the pub.dev archive-contents gate and the post-pu
 actually receive this version" poll are untouched. And what the pre-flight *cannot* cover is stated
 in the workflow rather than implied — `publish-pubdev-cbor` vendors its Linux/web/Android artifacts
 inside the publish job, so those specific artifacts are not behind the barrier.
+### `cbor-example-verify-windows` polls for the marker instead of waiting a fixed 20s (#803)
+
+The Windows CBOR round-trip verification ran the built `.exe` under `timeout 20 ... || true` and
+grepped its captured stdout exactly once, after the full 20 seconds had unconditionally elapsed. Two
+independent defects, byte-for-byte the pair #753 documented on Linux:
+
+- A cold start slower than 20s failed the job even though the app would have printed moments later.
+- `|| true` discarded the exit status, so a crash, a non-zero exit and a slow start all reached the
+  same grep and produced the same "did not print the expected round-trip marker" message — true in
+  every case, diagnostic in none.
+
+It now polls to a 45s deadline and stops the instant the marker appears, so a healthy run finishes
+*faster* than the old fixed wait rather than slower. A timeout is reported as a timeout; an early
+exit names its status; a marker followed by a non-zero exit is a pass, decided explicitly and
+documented inline (the same answer #800 gave for Linux, plus a Windows-specific reason — the poll
+loop's own `kill` races the app's normal exit, so a non-zero status in that branch may be nothing but
+our own signal).
+
+This was the last platform in the family: iOS was fixed in #720/#722, Linux in #753/#800, and macOS
+and Android already polled. `expected_hex` is untouched and still shared across all five.
+
+Where the Linux fix could not simply be transplanted, that is said rather than assumed. On Linux
+`timeout` is load-bearing for signal delivery because it wraps `xvfb-run`; Windows launches the
+`.exe` directly, so `timeout` is only the outer deadline there. Whether `kill` on the MSYS `timeout`
+pid reaches a native Win32 grandchild is unverified from a Linux dev machine — and if it does not,
+the recipe still reports the correct verdict and merely waits out the deadline on an
+already-successful run, which is no worse than the fixed wait it replaces.
 
 ### BREAKING (`--template-dir` only): TypeScript templates render under `UndefinedBehavior::Strict` (#774)
 
