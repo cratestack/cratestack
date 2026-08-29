@@ -127,10 +127,11 @@ pub(crate) const CRATESTACK_REFINE_FLOOR: &str = "^0.8.0";
 /// that looked fine in review. A floor is the only mechanism that
 /// prevents it.
 ///
-/// Note this floor currently EQUALS the workspace version, which
-/// `package_floors_tests` normally rejects — see `PUBLISHED_EQUAL_FLOORS`
-/// there for why that is allowed here and how the exemption is kept from
-/// widening. It stops being a special case at the next `just bump`.
+/// This floor equalled the workspace version while both read `0.8.15`,
+/// which needed an explicit `PUBLISHED_EQUAL_FLOORS` exemption in
+/// `package_floors_tests`. The 0.9.0 bump ended that special case exactly
+/// as predicted: the floor is strictly below the workspace version again,
+/// the exemption has been deleted, and the ordinary rule covers it.
 pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.15";
 
 #[cfg(test)]

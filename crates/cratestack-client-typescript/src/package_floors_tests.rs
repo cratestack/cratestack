@@ -74,14 +74,15 @@ fn parse_caret(requirement: &str) -> (u64, u64, u64) {
 /// npm is the only authority for that, and it is CI's
 /// install-at-the-floor step (`just verify-typescript-floors`) that
 /// checks it. This test is offline by design.
-const PUBLISHED_EQUAL_FLOORS: [(&str, &str); 1] = [(
-    "CRATESTACK_CBOR_FLOOR",
-    "cratestack#806: `0.8.15` is the first published release whose codec encodes a `Uint8Array` \
-     as a CBOR byte string (major type 2). Measured against the registry, not a changelog — \
-     `npm i @cratestack/cbor@0.8.15` then encoding `{b: Uint8Array([1,2,3])}` yields \
-     `a1616243010203`, where `43 010203` is the byte string; `0.8.14` yielded a CBOR map no \
-     server-side `Vec<u8>` can decode.",
-)];
+/// Empty as of the 0.9.0 bump, and that is the mechanism working rather
+/// than an omission. `CRATESTACK_CBOR_FLOOR` was listed here while it
+/// equalled the workspace version at `0.8.15` (cratestack#806 shipped the
+/// `Bytes` byte-string fix inside that release window). At 0.9.0 the floor
+/// is strictly below the workspace version again, so the ordinary `<` rule
+/// covers it and `published_equal_floor_entries_are_still_needed` requires
+/// the entry to be deleted — leaving it would silently widen the exemption
+/// to whatever floor next lands on the current version.
+const PUBLISHED_EQUAL_FLOORS: [(&str, &str); 0] = [];
 
 #[test]
 fn floors_never_exceed_the_workspace_version() {
