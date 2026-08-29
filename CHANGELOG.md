@@ -2,6 +2,82 @@
 
 ## Unreleased
 
+### Release rehearsal was broken on any branch with a slash in its name (#652)
+
+`rehearsal: true` is documented as "safe on any branch", but it could not complete on the branches
+this repo actually creates. With no `tag` input the resolver falls back to `GITHUB_REF_NAME` — a
+**branch** name — and that value was interpolated straight into the CLI asset filename. On
+`claude/release-0.9.1` the slash is a path separator, so `tar` was asked to write
+`cratestack-cli-x86_64-unknown-linux-gnu-claude/release-0.9.1.tar.gz` into a directory that does not
+exist. All five `build` jobs failed there, *after compiling successfully*.
+
+The consequence was worse than a broken filename: `preflight` needs every `build` job, so a
+rehearsal could never reach the pre-flight — the single thing it exists to exercise, and the thing
+that had just blocked a release. Found by rehearsing rather than by reading.
+
+`prepare` now emits `asset_slug` alongside `tag`, with `/` replaced by `-`, and only the asset
+filename uses it. For a real release tag the two are identical (`v0.9.1`), so nothing about a tagged
+run changes; `ref:` checkouts and the GitHub Release `tag_name` keep using `tag` unchanged.
+
+### crates.io now publishes before the other registries, because no probe can prove publish scope (#651)
+
+The pre-flight's stated purpose is that "publish-crates would fail after other channels had already
+published". It approximated that with an HTTP probe, because all eleven publish jobs ran in
+parallel behind it. Reading crates.io's own `src/auth.rs` shows the approximation cannot be made
+complete:
+
+* `AuthCheck::default()` is `allow_token: true, endpoint_scope: None`.
+* `endpoint_scope_matches` returns **false** for `(Some(scopes), None)` — a *scoped* token is
+  rejected by any endpoint that declares no scope.
+* So a scoped token only passes endpoints declaring a matching `PublishNew`/`PublishUpdate`
+  scope — and every one of those mutates. **There is no read-only endpoint that proves publish
+  authorization.**
+
+The probe is still correct for what it *can* prove. `/api/v1/me` is `only_cookie`, so it rejects at
+the `allow_token` check (`"this action can only be performed on the crates.io website"`) *before*
+reaching the scope check — which makes it behave identically for legacy and scoped tokens, and
+makes that response positive proof of authentication. It stays, with its limits documented.
+
+Authorization is now gated the only faithful way: `publish-crates` runs first and the nine npm and
+pub.dev publish jobs depend on it. A crates.io failure of any kind — bad token, wrong scope, a crate
+rejected on content — now stops the other registries before they write anything immutable, which is
+what the pre-flight was reaching for.
+
+### The crates.io pre-flight probed a website-only endpoint, so it could never pass (#651)
+
+Follow-up to #835, which fixed the missing `User-Agent` on this check. That fix was necessary and
+revealed the real defect underneath: **`/api/v1/me` is a website-session endpoint that no API token
+can complete**, so the check's `HTTP 200` success condition was unreachable by construction. It had
+never passed, which matches the record — every `release-cli` run before v0.9.0 had no pre-flight
+job at all, so v0.9.0 was its first execution.
+
+crates.io evaluates authentication first and the endpoint's session requirement second, which makes
+the two failures ordered and separable:
+
+```
+bad/unknown token -> {"errors":[{"detail":"authentication failed"}]}
+VALID token       -> {"errors":[{"detail":"this action can only be performed on the crates.io website"}]}
+```
+
+The second message is only ever emitted **after** authentication succeeds, so reaching it is
+positive proof the credential is good — which is how the v0.9.0 token was cleared without rotating
+it. The check now treats that response as success, `authentication failed` as the only
+rotate-worthy outcome, and an empty body as an edge rejection that says nothing about the
+credential.
+
+### Released as 0.9.1, not 0.9.0
+
+v0.9.0 was tagged and its GitHub Release cut, but **nothing reached any registry**: the publish
+pre-flight (#651) failed on its first ever real run and gated all ten channels before any of them
+executed. crates.io, npm and pub.dev all remained on 0.8.15 throughout, so no version was
+half-published — which is precisely what that gate exists to prevent.
+
+The pre-flight failure itself was a bug in the check, not a bad credential (see the entry below),
+and is fixed. The version number moves to 0.9.1 as a maintainer decision: `v0.9.0` remains as a tag
+and a GitHub Release that shipped nothing to any package registry, and should not be mistaken for a
+real release.
+
+
 ### The release pre-flight failed a valid crates.io token because it sent no User-Agent (#651)
 
 The publish pre-flight added by #651 ran for the first time on v0.9.0 and blocked the release,
