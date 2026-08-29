@@ -62,8 +62,12 @@ impl<K: KeyProvider> HmacEnvelope<K> {
     }
 
     async fn compute_mac(&self, key: &[u8], input: &[u8]) -> Result<Vec<u8>, CratestackError> {
-        use hmac::{Hmac, Mac};
-        let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(key)
+        // `KeyInit` (not `Mac`) owns `new_from_slice` as of hmac 0.13 /
+        // crypto-common 0.2 — the keying half of the trait was split out of
+        // `Mac`. Same bytes on the wire; the split is purely a trait
+        // reorganisation upstream.
+        use hmac::{Hmac, KeyInit, Mac};
+        let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key)
             .map_err(|_| CratestackError::Internal("HMAC key length error".to_owned()))?;
         mac.update(input);
         Ok(mac.finalize().into_bytes().to_vec())

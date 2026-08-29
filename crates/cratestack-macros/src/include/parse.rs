@@ -58,7 +58,17 @@ pub(super) fn parse_schema_literal(
 pub(super) fn hash_schema_source(source: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(source.as_bytes());
-    format!("{:x}", hasher.finalize())
+    // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
+    // digest 0.10's `GenericArray`) implements no `LowerHex`. The
+    // byte-wise `{:02x}` fold below is this repo's existing hex idiom
+    // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
+    // `format!("{:x}", …)` produced — this string is persisted/keyed on,
+    // so it must not change shape.
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// `@@id([...])` composite primary keys are parsed and validated by

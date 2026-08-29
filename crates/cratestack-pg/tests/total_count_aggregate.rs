@@ -79,10 +79,12 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
 
 async fn seed_item(pool: &cratestack::sqlx::PgPool, id: i64, owner_id: i64, deleted: bool) {
     let deleted_expr = if deleted { "NOW()" } else { "NULL" };
-    cratestack::sqlx::query(&format!(
+    // `AssertSqlSafe`: test-only seeding, every interpolated value is a
+    // literal from this file (sqlx 0.9's `SqlSafeStr` bound).
+    cratestack::sqlx::query(cratestack::sqlx::AssertSqlSafe(format!(
         "INSERT INTO total_count_items (id, label, owner_id, deleted_at) \
          VALUES ({id}, 'item-{id}', {owner_id}, {deleted_expr})"
-    ))
+    )))
     .execute(pool)
     .await
     .expect("seed item");

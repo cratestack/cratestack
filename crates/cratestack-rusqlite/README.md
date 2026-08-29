@@ -4,9 +4,9 @@ Embedded SQLite backend for offline-first applications. Works on **native (mobil
 
 ## Overview
 
-`cratestack-rusqlite` is the sync, embedded counterpart of `cratestack-sqlx`. The same `.cstack` schema that drives a Postgres service can also drive a SQLite database living on the device — phone, embedded box, desktop app, **or browser tab**. The crate uses `rusqlite 0.39` with bundled SQLite (no system library required), no `tokio`, and no policy enforcement.
+`cratestack-rusqlite` is the sync, embedded counterpart of `cratestack-sqlx`. The same `.cstack` schema that drives a Postgres service can also drive a SQLite database living on the device — phone, embedded box, desktop app, **or browser tab**. The crate uses `rusqlite 0.40` with bundled SQLite (no system library required), no `tokio`, and no policy enforcement.
 
-Since `rusqlite 0.39`, the same crate transparently swaps its FFI backend per target:
+Since `rusqlite 0.38`, the same crate transparently swaps its FFI backend per target:
 
 - **Native** (Linux/macOS/Windows/iOS/Android): `libsqlite3-sys` with bundled SQLite.
 - **`wasm32-unknown-unknown`**: `sqlite-wasm-rs` with sync-access OPFS persistence.

@@ -27,7 +27,7 @@ use super::policy_predicate::push_policy_predicate;
 /// the targeted one. Wrapping here keeps callers from having to know
 /// this. Regression: `crate::tests_policy_precedence_bug`.
 pub(crate) fn push_action_policy_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
     ctx: &CratestackContext,
@@ -46,7 +46,7 @@ pub(crate) fn push_action_policy_query(
 }
 
 fn push_allow_policy_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     policies: &[ReadPolicy],
     ctx: &CratestackContext,
 ) {
@@ -64,7 +64,7 @@ fn push_allow_policy_query(
 }
 
 pub(crate) fn push_policy_expr_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     expr: PolicyExpr,
     ctx: &CratestackContext,
 ) {
@@ -76,7 +76,7 @@ pub(crate) fn push_policy_expr_query(
 }
 
 fn push_grouped_policy_query(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     exprs: &[PolicyExpr],
     joiner: &str,
     ctx: &CratestackContext,

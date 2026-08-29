@@ -1,7 +1,7 @@
 //! SQLite-backed [`DataSource`] for Studio.
 //!
 //! Studio uses `rusqlite` rather than `sqlx-sqlite` because the wider
-//! workspace pins `rusqlite 0.39 → libsqlite3-sys 0.37` (via
+//! workspace pins `rusqlite 0.40 → libsqlite3-sys 0.38` (via
 //! `cratestack-rusqlite` and `cratestack-client-store-sqlite`), and
 //! Cargo's `links = "sqlite3"` rule forbids a second
 //! `libsqlite3-sys` version in the graph.

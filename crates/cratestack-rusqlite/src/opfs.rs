@@ -1,6 +1,6 @@
 //! OPFS bootstrap for `wasm32-unknown-unknown`.
 //!
-//! `rusqlite 0.39` swaps its FFI to `sqlite-wasm-rs` on wasm32 transparently,
+//! `rusqlite` swaps its FFI to `sqlite-wasm-rs` on wasm32 transparently,
 //! but it defaults to the in-memory VFS — persistent storage in the browser
 //! requires installing the OPFS SAH-pool VFS first. This module wraps
 //! [`sqlite_wasm_vfs::sahpool::install`] so callers don't need to depend on

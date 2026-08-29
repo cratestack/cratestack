@@ -41,6 +41,7 @@ use sqlx_core::pool::PoolOptions;
 use sqlx_postgres::{PgPool, Postgres};
 use tempfile::TempDir;
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres as PostgresContainer;
 
@@ -80,7 +81,15 @@ fn testcontainer() -> &'static Option<ContainerAsync<PostgresContainer>> {
         let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
         block_on(async {
             need(
-                PostgresContainer::default().start().await,
+                // Tag pinned explicitly: `testcontainers-modules` hardcodes
+                // `postgres:11-alpine` as its default, EOL since 2023-11-09.
+                // Kept in lockstep with `compose.yml`'s `postgres:18` so the
+                // testcontainers backend (what CI runs) and the compose
+                // backend (what `just test-pg` runs) agree.
+                PostgresContainer::default()
+                    .with_tag("18-alpine")
+                    .start()
+                    .await,
                 require,
                 "starting the Postgres testcontainer (is Docker available?)",
             )
@@ -147,9 +156,11 @@ pub(super) fn isolated_test_db(test_name: &str) -> Option<String> {
             .connect(&base_url)
             .await
             .expect("connect to set up isolated schema");
-        sqlx_core::raw_sql::raw_sql(&format!(
+        // `AssertSqlSafe`: `schema_name` is derived from the test's own name,
+        // a literal in this crate (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx_core::raw_sql::raw_sql(sqlx_core::sql_str::AssertSqlSafe(format!(
             "DROP SCHEMA IF EXISTS {schema_name} CASCADE; CREATE SCHEMA {schema_name};"
-        ))
+        )))
         .execute(&pool)
         .await
         .expect("create isolated test schema");
@@ -167,7 +178,9 @@ pub(super) async fn connect(url: &str) -> PgPool {
 }
 
 pub(super) async fn exec(pool: &PgPool, sql: &str) {
-    sqlx_core::raw_sql::raw_sql(sql)
+    // `AssertSqlSafe`: test-only DDL assembled from literals in this crate
+    // (sqlx 0.9's `SqlSafeStr` bound).
+    sqlx_core::raw_sql::raw_sql(sqlx_core::sql_str::AssertSqlSafe(sql))
         .execute(pool)
         .await
         .unwrap_or_else(|error| panic!("DDL failed: {sql}\n{error}"));

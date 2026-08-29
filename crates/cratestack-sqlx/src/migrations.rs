@@ -138,7 +138,10 @@ pub async fn apply_pending(
         // failure can't leave partial state (and dollar-quoted PL/pgSQL
         // bodies survive intact — no client-side `;` splitting, which
         // would cut inside a `$$...$$` block).
-        sqlx::raw_sql(&migration.up)
+        // `AssertSqlSafe`: `migration.up` *is* SQL by construction — the text
+        // of a migration file the operator ships. There is no bind-parameter
+        // alternative for a DDL batch (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx::raw_sql(sqlx::AssertSqlSafe(migration.up.clone()))
             .execute(&mut *tx)
             .await
             .map_err(|error| CratestackError::Database(error.to_string()))?;

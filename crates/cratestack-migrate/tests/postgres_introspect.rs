@@ -35,6 +35,7 @@ use cratestack_migrate::{Projections, diff_projections, project};
 use sqlx_core::pool::PoolOptions;
 use sqlx_postgres::{PgPool, Postgres};
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres as PostgresContainer;
 
@@ -76,7 +77,15 @@ async fn connect_or_skip() -> Option<TestPg> {
 
     if std::env::var("CRATESTACK_USE_TESTCONTAINERS").is_ok() {
         let container = need(
-            PostgresContainer::default().start().await,
+            // Tag pinned explicitly: `testcontainers-modules` hardcodes
+            // `postgres:11-alpine` as its default, EOL since 2023-11-09.
+            // Kept in lockstep with `compose.yml`'s `postgres:18` so the
+            // testcontainers backend (what CI runs) and the compose backend
+            // (what `just test-pg` runs) introspect the same major.
+            PostgresContainer::default()
+                .with_tag("18-alpine")
+                .start()
+                .await,
             require,
             "starting the Postgres testcontainer (is Docker available?)",
         )?;
@@ -123,7 +132,9 @@ async fn connect_or_skip() -> Option<TestPg> {
 }
 
 async fn exec(pool: &PgPool, sql: &str) {
-    sqlx_core::raw_sql::raw_sql(sql)
+    // `AssertSqlSafe`: test-only DDL assembled from literals in this file
+    // (sqlx 0.9's `SqlSafeStr` bound).
+    sqlx_core::raw_sql::raw_sql(sqlx_core::sql_str::AssertSqlSafe(sql))
         .execute(pool)
         .await
         .unwrap_or_else(|error| panic!("DDL failed: {sql}\n{error}"));

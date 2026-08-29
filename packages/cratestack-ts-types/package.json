@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/ts-types",
-  "version": "0.8.15",
+  "version": "0.9.0",
   "description": "Shared TypeScript interfaces for CrateStack's generated RPC client (RpcLink, RpcLinkRequest, wire frame shapes). Types only — compiles to near-empty JS.",
   "license": "MIT",
   "repository": {
@@ -43,9 +43,9 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }

@@ -1,6 +1,6 @@
 # cratestack-sqlite
 
-The embedded facade for CrateStack: rusqlite 0.39 (SQLite on native and
+The embedded facade for CrateStack: rusqlite 0.40 (SQLite on native and
 `wasm32-unknown-unknown`) plus the shared schema / parser / policy / SQL
 surface.
 

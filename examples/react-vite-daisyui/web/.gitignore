@@ -1,0 +1,9 @@
+# TypeScript incremental build state. This package's `build`/`typecheck`
+# scripts both run `tsc -b`, which writes `tsconfig.tsbuildinfo` next to the
+# tsconfig — so it reappears untracked after any build or typecheck run.
+#
+# It was the only `tsc -b` emitter in `examples/` not covered by an ignore
+# (`examples/react-nextjs-daisyui/web/.gitignore` already carries the same
+# entry), which made a clean `git status` impossible here after running the
+# project's own scripts.
+*.tsbuildinfo

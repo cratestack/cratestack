@@ -96,9 +96,9 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.8.15"
+version = "0.9.0"
 edition = "2024"
-rust-version = "1.95.0"
+rust-version = "1.98.0"
 license = "MIT"
 description = "Rust-native schema-first framework for typed HTTP APIs, generated clients, and backend services."
 repository = "https://github.com/cratestack/cratestack"
@@ -115,9 +115,20 @@ authors = [
 anyhow = "1"
 ariadne = "0.6"
 async-stream = "0.3"
-axum = "0"
+# `"0.8"`, not a bare `"0"`: under Cargo's 0.x rules every 0.x minor is a
+# semver-MAJOR, so `"0"` (= `>=0.0.0, <1.0.0`) silently opts the workspace
+# into every future breaking axum release on any `cargo update`. Resolves to
+# the same 0.8.9 either way — this narrows the range, it does not move the
+# pin. Two design docs already reason specifically against this version
+# (`docs/design/request-response-size-bounds.md`,
+# `docs/design/trusted-proxy-client-ip.md`); a bare `"0"` would let a 0.9
+# invalidate them without a single manifest line changing.
+axum = "0.8"
 bytes = "1"
-chumsky = "0"
+# `"0.13"`, not a bare `"0"` — same 0.x-minor-is-a-major reasoning as `axum`
+# above. chumsky is the `.cstack` parser's combinator core, so an unattended
+# 0.14 would rewrite parser behaviour, not just recompile it.
+chumsky = "0.13"
 # `cratestack-auth`'s COSE-signed enrolment challenges (`build_cose_enroll_response`/
 # `parse_cose_enroll_response`).
 coset = "0.4.2"
@@ -127,7 +138,7 @@ coset = "0.4.2"
 cuid2 = "0.1.4"
 # `cratestack-auth`'s signed-request canonical signing/verification, SD-JWT
 # id-token issuance/verification, and per-service `ServiceSigningKey`.
-ed25519-dalek = "2.2.0"
+ed25519-dalek = "3.0.0"
 erased-serde = "0.4"
 # `Dir<'_>`-embedded migration trees for `cratestack-service`'s
 # `migrations::migrations_from_dir` (feature-gated behind that crate's
@@ -138,18 +149,23 @@ include_dir = "0.7"
 # present transitively via `hyper-util`, so this promotes an existing
 # dependency-tree member rather than introducing a new one.
 ipnet = "2"
-minicbor = "2.2.1"
-minicbor-serde = { version = "0.6.2", features = ["std"] }
-chrono = { version = "0", features = ["serde"] }
+minicbor = "2.3.0"
+minicbor-serde = { version = "0.7.1", features = ["std"] }
+# `"0.4"`, not a bare `"0"` — same 0.x-minor-is-a-major reasoning as `axum`
+# above. chrono's types cross the wire (the `serde` feature here) and the
+# sqlx bind path (`sqlx-postgres`'s own `chrono` feature, pinned at
+# `=0.9.0`), so an unattended 0.5 would break serialization compatibility
+# and desynchronise from what sqlx compiles against.
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
-cratestack-api = { path = "crates/cratestack-api", version = "0.8.15" }
+cratestack-api = { path = "crates/cratestack-api", version = "0.9.0" }
 # `default-features = false` (cratestack#495): real (non-dev) dependency of
 # `cratestack-pg`/`cratestack-api` — see each consumer's own decimal
 # feature for the forward. Without this, `cratestack-axum`'s own
 # `default = ["decimal-rust-decimal"]` would activate unconditionally,
 # defeating `decimal-bigdecimal` for either facade.
-cratestack-axum = { path = "crates/cratestack-axum", version = "0.8.15", default-features = false }
-cratestack-client = { path = "crates/cratestack-client", version = "0.8.15" }
+cratestack-axum = { path = "crates/cratestack-axum", version = "0.9.0", default-features = false }
+cratestack-client = { path = "crates/cratestack-client", version = "0.9.0" }
 # `default-features = false` (cratestack#495, closed for cratestack-cli's own
 # edge by #496): real (non-optional) dependency of `cratestack-cli` — see
 # that crate's own decimal feature for the forward. Without this,
@@ -157,14 +173,14 @@ cratestack-client = { path = "crates/cratestack-client", version = "0.8.15" }
 # activate unconditionally regardless of which backend `cratestack-cli`
 # itself selected, the same leak this issue closed for every other crate in
 # the closure.
-cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.8.15", default-features = false }
-cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.8.15" }
+cratestack-client-dart = { path = "crates/cratestack-client-dart", version = "0.9.0", default-features = false }
+cratestack-client-flutter = { path = "crates/cratestack-client-flutter", version = "0.9.0" }
 # `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
 # above — real dependency of `cratestack-cli`.
-cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.8.15", default-features = false }
-cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.8.15" }
-cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.8.15", default-features = false }
-cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.8.15" }
+cratestack-client-typescript = { path = "crates/cratestack-client-typescript", version = "0.9.0", default-features = false }
+cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.9.0" }
+cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.9.0", default-features = false }
+cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.9.0" }
 # `default-features = false` (cratestack#495): both codecs are direct,
 # unconditional (non-optional) `cratestack-core` consumers of their own —
 # see each crate's own Cargo.toml. Without this, a consumer that
@@ -173,9 +189,9 @@ cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite
 # `decimal-bigdecimal`: the codec's own default `decimal-rust-decimal`
 # would activate unconditionally as a side effect of depending on it at
 # all, unrelated to whatever backend the depending crate itself selected.
-cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.8.15", default-features = false }
-cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.8.15", default-features = false }
-cratestack-core = { path = "crates/cratestack-core", version = "0.8.15", default-features = false }
+cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.9.0", default-features = false }
+cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.9.0", default-features = false }
+cratestack-core = { path = "crates/cratestack-core", version = "0.9.0", default-features = false }
 # `default-features = false` (cratestack#495): although this crate's own
 # proc-macro implementation never constructs a `cratestack_core::Decimal`
 # value (it only emits `::cratestack::Decimal` tokens into the schema it
@@ -185,46 +201,46 @@ cratestack-core = { path = "crates/cratestack-core", version = "0.8.15", default
 # the "no rust_decimal anywhere in the graph" bar `--features
 # decimal-bigdecimal` is supposed to satisfy — regardless of which backend
 # the depending facade actually chose.
-cratestack-macros = { path = "crates/cratestack-macros", version = "0.8.15", default-features = false }
+cratestack-macros = { path = "crates/cratestack-macros", version = "0.9.0", default-features = false }
 # `default-features = false` (cratestack#495): real dependency of
 # `cratestack-cli` and `cratestack-studio`, dev-dependency of
 # `cratestack-pg` — see each consumer's own decimal feature for the
 # forward.
-cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.8.15", default-features = false }
+cratestack-migrate = { path = "crates/cratestack-migrate", version = "0.9.0", default-features = false }
 # `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
 # above — real dependency of `cratestack-cli`.
-cratestack-mock-wiremock = { path = "crates/cratestack-mock-wiremock", version = "0.8.15", default-features = false }
+cratestack-mock-wiremock = { path = "crates/cratestack-mock-wiremock", version = "0.9.0", default-features = false }
 # `default-features = false` (cratestack#495): `cratestack-parser` is a
 # real (non-optional) dependency of `cratestack-macros` and every
 # server-side facade — see each consumer's own `decimal-rust-decimal`/
 # `decimal-bigdecimal` feature for the forward.
-cratestack-parser = { path = "crates/cratestack-parser", version = "0.8.15", default-features = false }
-cratestack-pg = { path = "crates/cratestack-pg", version = "0.8.15" }
+cratestack-parser = { path = "crates/cratestack-parser", version = "0.9.0", default-features = false }
+cratestack-pg = { path = "crates/cratestack-pg", version = "0.9.0" }
 # `default-features = false` (cratestack#495): same reasoning as
 # `cratestack-macros` above — `cratestack-policy`'s own source never
 # constructs a `cratestack_core::Decimal`, but it IS a real dependency of
 # `cratestack-sql`/`cratestack-sqlx`/every server-side facade, so its own
 # default backend choice must not activate independently of theirs.
-cratestack-policy = { path = "crates/cratestack-policy", version = "0.8.15", default-features = false }
-cratestack-redis = { path = "crates/cratestack-redis", version = "0.8.15" }
-cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.8.15", default-features = false }
-cratestack-service = { path = "crates/cratestack-service", version = "0.8.15" }
+cratestack-policy = { path = "crates/cratestack-policy", version = "0.9.0", default-features = false }
+cratestack-redis = { path = "crates/cratestack-redis", version = "0.9.0" }
+cratestack-rusqlite = { path = "crates/cratestack-rusqlite", version = "0.9.0", default-features = false }
+cratestack-service = { path = "crates/cratestack-service", version = "0.9.0" }
 # `default-features = false` added alongside `cratestack-core`/`-sqlx`/
 # `-rusqlite` above for cratestack#495: `cratestack-sql`'s own
 # `default = ["decimal-rust-decimal"]` would otherwise force that backend
 # into every plain `cratestack-sql.workspace = true` consumer regardless
 # of which `Decimal` backend they'd actually selected via
 # `cratestack-core`, defeating `decimal-bigdecimal` for any of them.
-cratestack-sql = { path = "crates/cratestack-sql", version = "0.8.15", default-features = false }
-cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.8.15" }
-cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.8.15", default-features = false }
+cratestack-sql = { path = "crates/cratestack-sql", version = "0.9.0", default-features = false }
+cratestack-sqlite = { path = "crates/cratestack-sqlite", version = "0.9.0" }
+cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.9.0", default-features = false }
 # `default-features = false` (cratestack#496): mirrors `cratestack-client-dart`
 # above — real dependency of `cratestack-cli`. Note this only affects
 # `cratestack-studio`'s decimal-backend toggle, not its separately-gated
 # `embed-ui` feature — `cratestack-cli`'s own edge re-adds `embed-ui`
 # explicitly (see that crate's Cargo.toml) since turning off ALL default
 # features here also turns off `embed-ui`, which was previously implicit.
-cratestack-studio = { path = "crates/cratestack-studio", version = "0.8.15", default-features = false }
+cratestack-studio = { path = "crates/cratestack-studio", version = "0.9.0", default-features = false }
 minijinja = "2"
 # Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
 # name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could
@@ -289,19 +305,23 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls-no-p
 # `rustls` defaults.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-rusqlite = { version = "0.39", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
 # `cratestack-auth`'s `ServiceSigningKey::ephemeral` (test/local-dev signing
-# identity minting via `OsRng.fill_bytes`).
-rand = "0.8.5"
+# identity minting via `SysRng.try_fill_bytes` — rand 0.10's rename of 0.8's
+# `OsRng`, i.e. still the OS entropy source, not a thread-local PRNG).
+# Bumped 0.8 → 0.10 in lockstep with `sha2`/`hmac`/`ed25519-dalek` below:
+# ed25519-dalek 3.0 requires `rand_core` 0.10 / `signature` 3 / `sha2` 0.11,
+# so these four cannot move independently without forking the crypto graph.
+rand = "0.10.2"
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
-sha2 = "0.10"
+sha2 = "0.11"
 async-trait = "0.1"
-hmac = "0.12"
+hmac = "0.13"
 subtle = "2"
-base64 = "0.22"
+base64 = "0.23"
 serde_json = "1"
 serde_urlencoded = "0.7.1"
 http = "1"
@@ -316,16 +336,16 @@ serde = { version = "1.0.228", features = ["derive"] }
 # rationale — this is what keeps it compatible with the sqlx-core/
 # sqlx-postgres-direct shim `cratestack-sqlx` already uses).
 pgvector = { version = "0.4", default-features = false, features = ["sqlx"] }
-sqlx-core = { version = "=0.8.6", default-features = false, features = ["migrate", "any", "_rt-tokio", "_tls-rustls-ring-webpki"] }
-sqlx-postgres = { version = "=0.8.6", default-features = false, features = ["chrono", "uuid", "json", "migrate", "any", "offline"] }
-syn = { version = "2.0.108", features = ["full"] }
+sqlx-core = { version = "=0.9.0", default-features = false, features = ["migrate", "any", "_rt-tokio", "_tls-rustls-ring-webpki"] }
+sqlx-postgres = { version = "=0.9.0", default-features = false, features = ["chrono", "uuid", "json", "migrate", "any", "offline"] }
+syn = { version = "3.0.4", features = ["full"] }
 thiserror = "2.0.17"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-toml = "0.9"
+toml = "1"
 testcontainers = "0.27"
 testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.7", features = ["cors"] }
 tower-lsp-server = "0.23"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["registry", "std"] }

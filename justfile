@@ -830,6 +830,17 @@ verify-dart:
 	  --out "$status_default_pkg" \
 	  --library-name "$status_library" \
 	  --no-native-cbor
+	# These two status-202 blocks were the only generated-package paths in
+	# this recipe that resolved `cratestack_builder` from pub.dev instead of
+	# from the working tree — `verify_pkg`/`verify_riverpod_pkg` both call
+	# `local_builder_override` first. The gap was latent for as long as the
+	# in-tree builder stayed API- and constraint-compatible with the
+	# published one, and only bit once they diverged (the analyzer-13 bump:
+	# in-tree needs `analyzer ^13`, every published release declares `^12`,
+	# so `pub get` here hard-failed on an empty intersection). Overriding
+	# makes this block verify THIS tree's builder, which is what the recipe
+	# is for.
+	local_builder_override "$status_default_pkg"
 	(cd "$status_default_pkg" && flutter pub get)
 	# cratestack#668 phase 2/3: expand `part 'models.builder.dart';` before
 	# `flutter test` runs — see `verify_pkg`'s identical step above for why.
@@ -853,6 +864,8 @@ verify-dart:
 	  --library-name "$status_library" \
 	  --preset riverpod \
 	  --no-native-cbor
+	# Same override as the default block above, for the same reason.
+	local_builder_override "$status_riverpod_pkg"
 	(cd "$status_riverpod_pkg" && flutter pub get)
 	echo "=== generate-dart --preset riverpod --run-build-runner: $status_riverpod_pkg ==="
 	cargo run --quiet -p cratestack-cli -- generate-dart \
@@ -1303,6 +1316,20 @@ verify-layering:
 # `.ci/lints-workspace-check.sh` for the full rationale.
 verify-lints-optin:
 	./.ci/lints-workspace-check.sh
+
+# File-length ceiling check — asserts the ~200-line-per-file convention
+# CLAUDE.md declares ("200-LoC file ceiling") over `crates/*/src`. Until this
+# recipe existed nothing enforced it, and it had drifted the same silent way
+# `[workspace.lints]` did before cratestack#523: 116 files past the ceiling,
+# the largest at 553 lines.
+#
+# `.ci/file-length-allowlist.toml` grandfathers that backlog so the ceiling is
+# enforced for NEW code immediately. A stale entry — a file since split, or
+# deleted — is a hard failure, so the allowlist can only shrink and cannot
+# quietly become a second way to disable the check. See
+# `.ci/file-length-check.sh` for what is in scope and what deliberately isn't.
+verify-file-length:
+	./.ci/file-length-check.sh
 
 # Changelog verification: detect unedited seeds, and (cratestack#739) any
 # entry a PR adds that landed under a dated release section instead of
@@ -3665,6 +3692,31 @@ bump NEW:
 	if [ "$current" = "{{NEW}}" ]; then
 	  echo "already at {{NEW}}; nothing to do"
 	  exit 0
+	fi
+	# Pre-flight: every external tool this recipe needs, checked BEFORE the
+	# first mutation. This is not defensive padding — it closes a real
+	# failure mode hit during the 0.8.15 -> 0.9.0 bump. `pnpm` was missing
+	# from PATH, and because the check did not exist, the recipe had already
+	# rewritten Cargo.toml and every `packages/*/package.json` before dying
+	# at `pnpm install`. That leaves the tree in a state no later run can
+	# repair on its own: the `current` value is read from Cargo.toml, which
+	# now equals NEW, so a re-run takes the "already at NEW; nothing to do"
+	# branch above and silently skips the pubspec/podspec/lockfile steps
+	# that never ran. The half-applied bump then reaches a tag, and
+	# pub.dev/npm reject a publish whose manifest disagrees with the tag
+	# (the cratestack#699/#707 class of failure the pubspec guard below
+	# exists to catch).
+	#
+	# Failing here costs nothing and leaves the tree untouched.
+	missing=""
+	for tool in perl awk pnpm; do
+	  command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+	done
+	if [ -n "$missing" ]; then
+	  echo "bump: required tool(s) not on PATH:$missing" >&2
+	  echo "      Refusing to start — a partial bump cannot be repaired by re-running" >&2
+	  echo "      (this recipe short-circuits on 'already at NEW')." >&2
+	  exit 1
 	fi
 	echo "bumping $current -> {{NEW}}"
 	# `perl -i` instead of `sed -i` for portability: BSD sed (macOS)

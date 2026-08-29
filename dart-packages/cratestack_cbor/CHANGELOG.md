@@ -1,5 +1,11 @@
 ## Unreleased
 
+- **`lints` dev-dependency raised `^5.0.0` → `^6.0.0`**, matching every other package in this
+  repo — this was the sole straggler. No lint violations surfaced in analyzable code. Stated
+  precisely because it is weaker than a clean run: this package cannot be fully analyzed in a
+  bare checkout, since it needs flutter_rust_bridge-generated glue that is not committed, so the
+  analyzer's findings here are all missing-file errors rather than lint results.
+
 - **Linux arm64 is blocked upstream in both halves, not just the Flutter
   one** (cratestack#823). The README's "Scope of this release", the library
   doc comment, this package's `UnsupportedError` message and

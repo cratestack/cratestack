@@ -35,9 +35,9 @@ async fn hmac_envelope_rejects_stale_timestamp() {
     // Recompute MAC to ensure the envelope is structurally valid —
     // we want to isolate that the timestamp window is what blocks it.
     use base64::Engine;
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     let key = keys.resolve_signing_key("ops-1").await.expect("key");
-    let mut mac = <Hmac<sha2::Sha256> as Mac>::new_from_slice(&key).unwrap();
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(&key).unwrap();
     mac.update(&sealed.signing_input().unwrap());
     sealed.mac_b64 = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
 

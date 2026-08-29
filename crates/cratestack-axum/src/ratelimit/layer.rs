@@ -65,7 +65,14 @@ pub(super) fn default_key_fn(req: &Request) -> Result<String, CratestackError> {
     {
         let mut h = Sha256::new();
         h.update(auth_str.as_bytes());
-        return Ok(format!("auth:{:x}", h.finalize()));
+        // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
+        // digest 0.10's `GenericArray`) implements no `LowerHex`. The
+        // byte-wise `{:02x}` fold below is this repo's existing hex idiom
+        // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
+        // `format!("{:x}", …)` produced — this string is persisted/keyed on,
+        // so it must not change shape.
+        let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        return Ok(format!("auth:{hex}"));
     }
 
     // Fall back to the real TCP peer address for unauthenticated requests, to

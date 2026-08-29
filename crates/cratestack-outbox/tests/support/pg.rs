@@ -22,6 +22,7 @@ use std::sync::OnceLock;
 use super::require_db::Backend;
 use super::require_db::pick_backend;
 use testcontainers::ContainerAsync;
+use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
 use tokio::sync::{Mutex, MutexGuard};
@@ -63,7 +64,12 @@ pub async fn connect_or_skip() -> Option<TestPg> {
         }
         Backend::TestContainers => {
             let container = need(
-                Postgres::default().start().await,
+                // Tag pinned explicitly: `testcontainers-modules` hardcodes
+                // `postgres:11-alpine` as its default, EOL since 2023-11-09.
+                // Kept in lockstep with `compose.yml`'s `postgres:18` so the
+                // testcontainers backend (what CI runs) and the compose
+                // backend (what `just test-pg` runs) exercise the same major.
+                Postgres::default().with_tag("18-alpine").start().await,
                 require,
                 "starting the Postgres testcontainer (is Docker available?)",
             )?;

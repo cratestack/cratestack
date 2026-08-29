@@ -43,7 +43,9 @@ async fn fixture(pool: &PgPool) -> PostgresSource {
         format!("CREATE TABLE \"{TABLE}\" (probe_id BIGINT PRIMARY KEY, label TEXT NOT NULL)"),
         format!("INSERT INTO \"{TABLE}\" VALUES (1, 'one'), (2, 'two')"),
     ] {
-        sqlx_core::query::query(&sql)
+        // `AssertSqlSafe`: test-only fixture DDL built from consts in this
+        // file (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(sql))
             .execute(pool)
             .await
             .expect("fixture ddl");

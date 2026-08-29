@@ -17,7 +17,7 @@ use crate::sqlx;
 /// type — but multiple arms may be *compiled in* at once when both
 /// features are active; the downcast picks the one that actually matches.
 pub(super) fn bind_decimal(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     value: &dyn cratestack_sql::DecimalLike,
 ) {
     #[cfg(feature = "decimal-rust-decimal")]
@@ -49,12 +49,12 @@ pub(super) fn bind_decimal(
 /// `decimal-rust-decimal` when both are active, falling back to
 /// `decimal-bigdecimal`, matching `bind_decimal`'s own preference order.
 #[cfg(feature = "decimal-rust-decimal")]
-pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>) {
+pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<sqlx::Postgres>) {
     query.push_bind(Option::<rust_decimal::Decimal>::None);
 }
 
 #[cfg(all(feature = "decimal-bigdecimal", not(feature = "decimal-rust-decimal")))]
-pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>) {
+pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<sqlx::Postgres>) {
     query.push_bind(Option::<bigdecimal::BigDecimal>::None);
 }
 
@@ -69,7 +69,7 @@ pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<'_, sqlx::Postgre
 // `Vector`/`NullVector`) — an upstream invariant violation, not a case to
 // handle gracefully.
 #[cfg(not(any(feature = "decimal-rust-decimal", feature = "decimal-bigdecimal")))]
-pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>) {
+pub(super) fn bind_null_decimal(query: &mut sqlx::QueryBuilder<sqlx::Postgres>) {
     let _ = query;
     unreachable!(
         "SqlValue::NullDecimal requires a decimal backend Cargo feature \

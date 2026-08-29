@@ -96,19 +96,16 @@ ignore = [
     { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
     { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version, unmaintained upstream (no safe upgrade); reachable only via urlpattern -> tauri-utils -> tauri examples" },
 
-    # --- Vulnerabilities: quick-xml (via plist, via tauri) ---
-    # Fix is quick-xml >=0.41.0, but `plist` v1.9.0 (the version tauri
-    # v2.11.5, the latest tauri 2.x, depends on) pins `quick-xml = "^0.39.2"`
-    # — verified by `cargo update -p quick-xml` (no-op) and
-    # `cargo update -p quick-xml --precise 0.41.0` (hard version-selection
-    # failure against plist's own requirement). No safe upgrade is available
-    # from this repo today; reachable only via tauri-native-shell-example /
-    # tauri-web-shell-example (which parse local, trusted plist/Info.plist
-    # build metadata, not attacker-controlled XML), never from any
-    # published crate. Revisit when tauri ships a plist >=1.10 or an
-    # equivalent quick-xml bump.
-    { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic duplicate-attribute check; pinned below the fix by plist v1.9.0 (tauri's dependency) requiring quick-xml ^0.39.2; reachable only via tauri examples parsing trusted local plist files, not any published crate or untrusted input" },
-    { id = "RUSTSEC-2026-0195", reason = "quick-xml unbounded namespace-declaration allocation; same plist v1.9.0 pin as RUSTSEC-2026-0194; reachable only via tauri examples parsing trusted local plist files, not any published crate or untrusted input" },
+    # --- Vulnerabilities: quick-xml (via plist, via tauri) — RESOLVED ---
+    # RUSTSEC-2026-0194 and RUSTSEC-2026-0195 used to be ignored here. Their
+    # own recorded revisit condition was "when tauri ships a plist >=1.10 or
+    # an equivalent quick-xml bump" — that has now happened: `plist` moved
+    # 1.9.0 -> 1.10.0, which pulls `quick-xml` 0.41.0, at or above the
+    # >=0.41.0 fix line for both advisories. `cargo deny check advisories`
+    # confirms it by reporting `advisory-not-detected` for both ids, which
+    # this configuration treats as a hard failure precisely so a stale
+    # ignore cannot outlive the problem it documented. Entries deleted
+    # rather than left to rot.
 ]
 
 [bans]

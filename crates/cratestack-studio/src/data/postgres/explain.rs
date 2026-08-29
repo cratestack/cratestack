@@ -41,12 +41,15 @@ pub(super) async fn explain(
         }
     };
 
+    // `AssertSqlSafe` (sqlx 0.9, #3723): `sql` here is one of `super::sql`'s
+    // builder outputs, prefixed with a literal — no user data is interpolated,
+    // the cursor still travels as the `$1` bind below.
     let explained = format!("EXPLAIN (COSTS true, FORMAT TEXT) {sql}");
     // `bind` is `Option<String>` for both arms on purpose: the list
     // query's cursor slot is genuinely NULL on the first page, and the
     // SQL casts it (`$1::text`) so Postgres can infer the type either
     // way.
-    let rows: Vec<PgRow> = sqlx_core::query::query(&explained)
+    let rows: Vec<PgRow> = sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(explained))
         .bind(bind)
         .fetch_all(pool)
         .await?;

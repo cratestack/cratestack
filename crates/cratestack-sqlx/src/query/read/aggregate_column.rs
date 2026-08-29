@@ -61,7 +61,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
         self
     }
 
-    fn build_query<'q>(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+    fn build_query(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
         query
             .push(self.op.function_name())

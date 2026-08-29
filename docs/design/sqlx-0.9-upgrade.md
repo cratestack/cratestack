@@ -1,5 +1,26 @@
 # Upgrading sqlx 0.8.6 → 0.9 — investigation
 
+> **SUPERSEDED — the upgrade was carried out, and this document's estimate
+> was measurably wrong. Read this box before relying on any figure below.**
+>
+> The verdict ("upgrade when ready, not blocked") held, and the pgvector
+> analysis in §2 was correct and load-bearing. The *sizing* was not:
+>
+> | Claim below | Actual |
+> |---|---|
+> | "12 call sites across 4 files" need `AssertSqlSafe` (§4, §6) | **17 sites.** The doc missed the `cratestack-studio` test fixtures, `cratestack-pg/tests/total_count_aggregate.rs`, and two `Executor::execute(&str)` sites now needing `&'static str` |
+> | "**0 public-signature rewrites**" (§6) | **32 signature edits.** `QueryBuilder` lost its lifetime parameter — `QueryBuilder<'_, Postgres>` → `QueryBuilder<Postgres>` — plus three `fn build_query<'q>` lifetimes that then became unused |
+> | (not mentioned) | `QueryBuilder::sql()` now returns an owned `SqlStr` with no `Deref`/`Display`, so `.sql().to_owned()` / `sql.contains(..)` became `.into_string()` |
+>
+> `cratestack-sqlx` alone produced **35 compile errors**, not the handful
+> implied here. The `QueryBuilder` lifetime cascade was the miss: this
+> document flagged the underlying `Arguments` lifetime removal as
+> low-risk, and it was the single largest source of edits.
+>
+> Recorded rather than quietly fixed, per this repo's own doctrine on
+> owning errors in the place they were made. The rest of the document is
+> left as the dated investigation record it is.
+
 Status: **investigation only, no maintainer decision made**. This document
 is the deliverable of a research spike; it does not implement anything, and
 nothing in the workspace `Cargo.toml`/`Cargo.lock` changed to produce it.

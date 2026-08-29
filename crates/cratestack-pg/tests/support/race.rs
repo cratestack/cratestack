@@ -41,7 +41,11 @@ pub struct ConflictWinner {
 pub async fn hold_uncommitted_conflict(
     url: &str,
     table: &'static str,
-    insert_sql: &str,
+    // `&'static str`, not `&str`: sqlx 0.9's `Execute`/`SqlSafeStr` bound only
+    // accepts `&'static str` (or an `AssertSqlSafe` wrapper). Both callers
+    // already pass a `const`, so tightening here is free and keeps the
+    // "audited SQL" property the new bound is there to express.
+    insert_sql: &'static str,
 ) -> ConflictWinner {
     let mut winner = PgConnection::connect(url)
         .await

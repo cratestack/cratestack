@@ -67,7 +67,9 @@ async fn fixture(pool: &PgPool) -> PostgresSource {
                ('p2', 'subj-bob', 'thumb-bob', 'revoked')"
         ),
     ] {
-        sqlx_core::query::query(&sql)
+        // `AssertSqlSafe`: test-only fixture DDL built from consts in this
+        // file (sqlx 0.9's `SqlSafeStr` bound).
+        sqlx_core::query::query(sqlx_core::sql_str::AssertSqlSafe(sql))
             .execute(pool)
             .await
             .expect("fixture ddl");

@@ -72,7 +72,7 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
         self
     }
 
-    fn build_query<'q>(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<'q, sqlx::Postgres> {
+    fn build_query(&self, ctx: &CratestackContext) -> sqlx::QueryBuilder<sqlx::Postgres> {
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT COUNT(*) FROM ");
         query.push(self.descriptor.table_name());
         push_scoped_conditions(
@@ -93,7 +93,7 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
     /// required: `QueryBuilder` assembly is pure string/bind-slot
     /// bookkeeping.
     pub fn preview_scoped_sql(&self, ctx: &CratestackContext) -> String {
-        self.build_query(ctx).sql().to_owned()
+        self.build_query(ctx).into_string()
     }
 
     pub async fn run(self, ctx: &CratestackContext) -> Result<i64, CratestackError> {

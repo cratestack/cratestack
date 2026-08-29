@@ -1,0 +1,96 @@
+# Dependabot configuration.
+#
+# Why this file exists: before it, nothing in this repo refreshed any
+# dependency manifest on a schedule. The npm side is the sharp edge —
+# there are NINE independent `pnpm-lock.yaml` files here, and the root
+# `pnpm-workspace.yaml` only covers `packages/*`. Every `examples/*` root
+# is deliberately its own disjoint pnpm workspace (see the header comment
+# in `examples/react-vite-swr/pnpm-workspace.yaml` for the rationale), so
+# a single npm entry pointed at `/` would monitor the root workspace and
+# silently leave the eight example lockfiles untouched forever. That is
+# not hypothetical: it is the direct cause of the HIGH-severity advisory
+# backlog that accumulated in the example apps. Hence the explicit
+# per-directory enumeration below — if you add a new `pnpm-lock.yaml`
+# anywhere, you MUST add its directory here or it is unmonitored.
+#
+# Keep this list in sync with:
+#   find . -name pnpm-lock.yaml -not -path '*/node_modules/*'
+#
+# Note on `examples/react-vite-swr`: its lockfile sits at the example
+# root, but that root has NO `package.json` — it is a bare pnpm workspace
+# root whose only members are `client/` and `web/`. Dependabot's npm
+# ecosystem keys off a manifest, so the two members are listed instead of
+# the workspace root; they share, and therefore refresh, the same
+# `examples/react-vite-swr/pnpm-lock.yaml`.
+
+version: 2
+
+updates:
+  # ---- GitHub Actions -------------------------------------------------
+  # Catches runtime-deprecation churn (the node20 -> node24 migration that
+  # prompted this file) without anyone having to notice a deprecation blog
+  # post. Covers every `uses:` in `.github/workflows/` AND the composite
+  # actions under `.github/actions/`.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(actions)"
+
+  # ---- Cargo ----------------------------------------------------------
+  # The root workspace. Note this does NOT reach the standalone workspaces
+  # deliberately kept out of the root `[workspace] members` list
+  # (`crates/cratestack-studio-ui`, `examples/no-database-verification`,
+  # `examples/no-database-verification-api`, `examples/client-only-verification`,
+  # `examples/db-transaction-verification`) — those are excluded precisely
+  # so their dependency graphs stay disjoint, and each carries its own
+  # `Cargo.lock`. They are intentionally left unmanaged here: a Dependabot
+  # bump to one of them could quietly invalidate the very absence-proof
+  # (`cargo tree` showing no `sqlx`/`axum`) that the crate exists to make.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(cargo)"
+
+  # ---- npm / pnpm -----------------------------------------------------
+  # All nine lockfiles. Grouped so a routine week is a handful of PRs
+  # rather than dozens; majors still come through individually, because
+  # those are the ones that need a human to read a changelog.
+  - package-ecosystem: npm
+    directories:
+      # Root pnpm workspace (covers `packages/*` only).
+      - /
+      # Standalone example workspaces — each has its own pnpm-lock.yaml.
+      - /examples/embedded-browser-vite/web
+      - /examples/embedded-browser-vite-pwa/web
+      - /examples/embedded-browser-webpack/web
+      - /examples/react-vite-daisyui/web
+      - /examples/react-vite-refine/web
+      - /examples/tauri-native
+      - /examples/tauri-web
+      # examples/react-vite-swr: members of a root-level pnpm workspace
+      # that has no package.json of its own — see this file's header.
+      - /examples/react-vite-swr/client
+      - /examples/react-vite-swr/web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore(npm)"

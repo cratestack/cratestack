@@ -89,7 +89,7 @@ fn evaluate_create_predicate<'a>(
 }
 
 fn push_relation_exists(
-    query: &mut sqlx::QueryBuilder<'_, sqlx::Postgres>,
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     quantifier: RelationQuantifier,
     related_table: &'static str,
     related_column: &'static str,
