@@ -109,6 +109,143 @@ jobs:
             crates/cratestack-studio/embedded-ui-dist.tar.gz
           retention-days: 1
 
+  # ---- THE PUBLISH GATE (cratestack#651) ----------------------------------
+  #
+  # RELEASE PUBLISH POLICY, decided by the maintainer on cratestack#651
+  # (2026-08-29) and recorded here so the next person does not re-derive it:
+  # options (b) AND (c) combined.
+  #
+  #   (b) Every channel's credentials and artifacts are validated in this
+  #       one pre-flight, and NO channel publishes until it passes. Every
+  #       `publish-*` job below carries `preflight` in its `needs`.
+  #   (c) Whatever happens, `release-manifest` at the end of this file
+  #       states which channels are live at which version.
+  #
+  # WHY, in one paragraph. During v0.8.1-v0.8.3 the pub.dev leg failed
+  # repeatedly (hang, then a false green, then an OIDC timestamp error)
+  # while crates.io and every npm publish had ALREADY succeeded
+  # irreversibly. Three version numbers were burned recovering from a
+  # failure in the least-established channel. (c) alone makes recovery a
+  # known procedure but does not prevent that; (b) is what prevents it.
+  # (c) is kept alongside because (b) cannot cover a mid-publish failure,
+  # and when one happens the run must still say unambiguously what went
+  # out. Option (a) — order by recoverability — was NOT chosen: it
+  # lengthens the release and still publishes eight channels before
+  # discovering the ninth is broken.
+  #
+  # WHAT THIS CANNOT COVER, stated rather than implied. A pre-flight that
+  # quietly green-lights an unverifiable credential recreates the exact
+  # false-green this came from, so:
+  #   - pub.dev's OIDC trust is configured per-tag-pattern, so a
+  #     `workflow_dispatch` run cannot mint an accepted token at all (see
+  #     cratestack#641, which reverted an attempt built on the wrong
+  #     assumption). On that trigger this job reports pub.dev as NOT
+  #     COVERED — never as passed. On a real tag push it IS checked.
+  #   - `publish-pubdev-cbor` vendors its Linux/web/Android artifacts
+  #     INSIDE the publish job, so those specific artifacts are not behind
+  #     this barrier. Everything built by a separate `build-*` job is,
+  #     because this job waits on all of them.
+  #   - Nothing here proves a publish will succeed. It proves the
+  #     credential authenticates and the artifacts exist. The last step of
+  #     each publish remains untestable without doing it.
+  #
+  # The per-channel gates downstream (the pub.dev archive-contents check,
+  # the post-publish "did pub.dev actually receive this version" poll) are
+  # UNTOUCHED. This job is additive; it does not replace or weaken them.
+  preflight:
+    name: publish pre-flight (credentials + artifacts)
+    # Deliberately runs on BOTH triggers, unlike the publish jobs. On a
+    # `workflow_dispatch` rebuild nothing publishes, but running the
+    # pre-flight anyway is how the credential checks get exercised outside
+    # a release — with pub.dev honestly reported as uncovered.
+    needs:
+      - prepare
+      - studio-ui
+      - build
+      - build-cbor-node
+      - build-cbor-glue
+      - build-cbor-macos
+      - build-cbor-ios
+      - build-cbor-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # Minting a token here is the check — see the two OIDC steps below.
+      id-token: write
+    steps:
+      # crates.io is the one channel with a classic secret rather than
+      # OIDC. Presence is not enough: an EXPIRED token is present and
+      # non-empty, and would sail through a `-z` check straight into an
+      # irreversible-for-every-other-channel release. So ask crates.io
+      # whether it accepts it.
+      - name: crates.io credential
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set. publish-crates would fail after other channels had already published." >&2
+            exit 1
+          fi
+          code="$(curl -sS -o /tmp/crates_me.json -w '%{http_code}' \
+            -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
+            https://crates.io/api/v1/me || echo 000)"
+          if [ "$code" != "200" ]; then
+            echo "::error::crates.io rejected CARGO_REGISTRY_TOKEN (HTTP ${code}). The token is set but not valid — rotate it in Settings -> Secrets before re-running." >&2
+            head -c 400 /tmp/crates_me.json >&2 || true
+            exit 1
+          fi
+          echo "✓ crates.io accepts the token"
+
+      # npm trusted publishing is OIDC, so there is no secret to check.
+      # What CAN fail — and has, on pub.dev, which is the same mechanism —
+      # is the job lacking `id-token: write`, leaving the publish to fall
+      # back to an interactive flow. Minting a token proves the permission
+      # is actually granted, not merely written in the YAML.
+      - name: npm OIDC token is mintable
+        run: |
+          set -uo pipefail
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::No OIDC token endpoint in this job's environment — 'permissions: id-token: write' is missing. Every npm publish job would fall back to an interactive flow." >&2
+            exit 1
+          fi
+          token="$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("value",""))' 2>/dev/null || true)"
+          if [ -z "$token" ]; then
+            echo "::error::OIDC token endpoint returned no token for the npm audience. The npm publish jobs cannot authenticate." >&2
+            exit 1
+          fi
+          echo "✓ OIDC token minted for npm (length ${#token})"
+
+      # THE HONEST ONE. Read cratestack#641 before changing this.
+      - name: pub.dev OIDC token is mintable (tag push only)
+        run: |
+          set -uo pipefail
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "::warning::pub.dev: NOT COVERED by this pre-flight. Its OIDC trust is configured per-tag-pattern, so a '${{ github.event_name }}' run cannot mint a token pub.dev would accept (cratestack#641). This is reported as uncovered, NOT as passed."
+            exit 0
+          fi
+          token="$(curl -sS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://pub.dev" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("value",""))' 2>/dev/null || true)"
+          if [ -z "$token" ]; then
+            echo "::error::Could not mint an OIDC token for the pub.dev audience on a tag push. All three pub.dev publishes would fall back to interactive OAuth and hang." >&2
+            exit 1
+          fi
+          echo "✓ OIDC token minted for pub.dev (length ${#token})"
+
+      # The artifact half of the gate is the `needs:` list above, not a
+      # step: every cross-host `build-*` job must have SUCCEEDED for this
+      # job to start, and every publish job waits on this one. A missing
+      # or failed artifact in ANY channel therefore blocks EVERY publish,
+      # which is the property cratestack#651 asks for and which the
+      # previous fan-out could not provide.
+      - name: Gate summary
+        run: |
+          echo "✓ pre-flight passed for ${{ needs.prepare.outputs.tag }} — all build artifacts present, credentials accepted"
+
   # Publishes every workspace crate to crates.io in dependency order via the
   # same `just release-publish real` a human would otherwise run locally.
   # Idempotent (the recipe skips already-published versions), so a re-run
@@ -123,7 +260,7 @@ jobs:
   publish-crates:
     name: publish crates.io
     if: github.event_name == 'push'
-    needs: prepare
+    needs: [prepare, preflight]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -246,7 +383,7 @@ jobs:
   publish-npm:
     name: publish npm package (@cratestack/cli)
     if: github.event_name == 'push'
-    needs: [prepare, build]
+    needs: [prepare, build, preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -294,7 +431,7 @@ jobs:
   publish-npm-api-family:
     name: publish npm packages (@cratestack/api family)
     if: github.event_name == 'push'
-    needs: [prepare]
+    needs: [prepare, preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -478,7 +615,7 @@ jobs:
   publish-npm-cbor-node:
     name: publish npm package (@cratestack/cbor-node)
     if: github.event_name == 'push'
-    needs: [prepare, build-cbor-node]
+    needs: [prepare, build-cbor-node, preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -566,7 +703,7 @@ jobs:
   publish-npm-cbor-web:
     name: publish npm package (@cratestack/cbor-web)
     if: github.event_name == 'push'
-    needs: [prepare]
+    needs: [prepare, preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -648,7 +785,7 @@ jobs:
   publish-npm-cbor:
     name: publish npm package (@cratestack/cbor)
     if: github.event_name == 'push'
-    needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web]
+    needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web, preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -695,7 +832,7 @@ jobs:
   publish-npm-refine:
     name: publish npm package (@cratestack/refine)
     if: github.event_name == 'push'
-    needs: [prepare]
+    needs: [prepare, preflight]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -748,7 +885,7 @@ jobs:
   publish-pubdev-annotations:
     name: publish pub.dev package (cratestack_annotations)
     if: github.event_name == 'push'
-    needs: [prepare]
+    needs: [prepare, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -812,7 +949,7 @@ jobs:
     if: github.event_name == 'push'
     # Depends on the annotations publish, not just `prepare` — see the block
     # comment above for why the order matters on a version-bumping release.
-    needs: [prepare, publish-pubdev-annotations]
+    needs: [prepare, publish-pubdev-annotations, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -1234,7 +1371,7 @@ jobs:
   publish-pubdev-cbor:
     name: publish pub.dev package (cratestack_cbor)
     if: github.event_name == 'push'
-    needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows]
+    needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows, preflight]
     runs-on: ubuntu-latest
     # No job in this workflow set a timeout, so GitHub's 6-hour default
     # applied. On v0.8.1 that meant a publish blocked on an interactive OAuth
@@ -1664,3 +1801,100 @@ jobs:
           done
           echo "::error::pub.dev does not serve cratestack_cbor ${want} after 10 minutes. The publish step exited 0, but that proves nothing — dart pub publish exits 0 even when authentication fails (observed on v0.8.2). Read the publish step's output for 'Authentication failed!' or 'Invalid JWT token'." >&2
           exit 1
+
+  # ---- THE OUTCOME MANIFEST (cratestack#651, option (c)) -------------------
+  #
+  # `if: always()` and `needs:` EVERY publish job, so this runs whether the
+  # release succeeded, failed, or was skipped. Its whole job is to answer the
+  # question a red release used to leave open: the run is marked failed, but
+  # WHICH channels are live?
+  #
+  # That question was not academic. On v0.8.2 the run went red with
+  # crates.io and all seven npm packages already published irreversibly and
+  # pub.dev not — and the failure notification could not distinguish that
+  # from "nothing shipped". Recovery was an investigation. With this it is a
+  # table.
+  #
+  # `needs.<job>.result` is one of success / failure / cancelled / skipped.
+  # `skipped` is the normal state for every publish job on a
+  # `workflow_dispatch` rebuild (they carry `if: github.event_name ==
+  # 'push'`), and it is reported as "not attempted" rather than folded in
+  # with a failure — conflating the two is how a green-looking summary lies.
+  release-manifest:
+    name: release manifest (what actually published)
+    if: always()
+    needs:
+      - prepare
+      - preflight
+      - publish-crates
+      - publish-npm
+      - publish-npm-api-family
+      - publish-npm-cbor-node
+      - publish-npm-cbor-web
+      - publish-npm-cbor
+      - publish-npm-refine
+      - publish-pubdev-annotations
+      - publish-pubdev-builder
+      - publish-pubdev-cbor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write the channel manifest
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          PREFLIGHT: ${{ needs.preflight.result }}
+          R_CRATES: ${{ needs.publish-crates.result }}
+          R_NPM: ${{ needs.publish-npm.result }}
+          R_NPM_API: ${{ needs.publish-npm-api-family.result }}
+          R_NPM_CBOR_NODE: ${{ needs.publish-npm-cbor-node.result }}
+          R_NPM_CBOR_WEB: ${{ needs.publish-npm-cbor-web.result }}
+          R_NPM_CBOR: ${{ needs.publish-npm-cbor.result }}
+          R_NPM_REFINE: ${{ needs.publish-npm-refine.result }}
+          R_PUBDEV_ANNOTATIONS: ${{ needs.publish-pubdev-annotations.result }}
+          R_PUBDEV_BUILDER: ${{ needs.publish-pubdev-builder.result }}
+          R_PUBDEV_CBOR: ${{ needs.publish-pubdev-cbor.result }}
+        run: |
+          set -uo pipefail
+          # success -> LIVE (irreversible), failure -> FAILED, skipped ->
+          # not attempted, cancelled -> cancelled. The LIVE wording is
+          # deliberate: it is what tells a reader at a glance that this
+          # version number is spent on that registry.
+          render() {
+            case "$1" in
+              success)   echo "🟢 **LIVE** (irreversible)" ;;
+              failure)   echo "🔴 FAILED — nothing published" ;;
+              skipped)   echo "⚪ not attempted" ;;
+              cancelled) echo "🟡 cancelled" ;;
+              *)         echo "❔ $1" ;;
+            esac
+          }
+          {
+            echo "## Release channel manifest — \`${TAG}\`"
+            echo
+            echo "Pre-flight (cratestack#651): \`${PREFLIGHT}\`"
+            if [ "${{ github.event_name }}" != "push" ]; then
+              echo
+              echo "> pub.dev credentials were **NOT COVERED** by the pre-flight on this trigger."
+              echo "> Its OIDC trust is per-tag-pattern, so only a tag push can mint an accepted"
+              echo "> token (cratestack#641). Uncovered is not the same as passed."
+            fi
+            echo
+            echo "| Channel | Package | Outcome |"
+            echo "| --- | --- | --- |"
+            echo "| crates.io | (whole workspace) | $(render "$R_CRATES") |"
+            echo "| npm | @cratestack/cli | $(render "$R_NPM") |"
+            echo "| npm | api family | $(render "$R_NPM_API") |"
+            echo "| npm | @cratestack/cbor-node | $(render "$R_NPM_CBOR_NODE") |"
+            echo "| npm | @cratestack/cbor-web | $(render "$R_NPM_CBOR_WEB") |"
+            echo "| npm | @cratestack/cbor | $(render "$R_NPM_CBOR") |"
+            echo "| npm | @cratestack/refine | $(render "$R_NPM_REFINE") |"
+            echo "| pub.dev | cratestack_annotations | $(render "$R_PUBDEV_ANNOTATIONS") |"
+            echo "| pub.dev | cratestack_builder | $(render "$R_PUBDEV_BUILDER") |"
+            echo "| pub.dev | cratestack_cbor | $(render "$R_PUBDEV_CBOR") |"
+            echo
+            echo "**Recovery.** A channel marked LIVE cannot be republished at this version —"
+            echo "crates.io versions are immutable, npm unpublish is time-limited and"
+            echo "discouraged, pub.dev versions are permanent. If any channel above is FAILED"
+            echo "while others are LIVE, the fix is a NEW version number, not a re-run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
