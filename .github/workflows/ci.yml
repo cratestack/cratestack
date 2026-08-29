@@ -474,6 +474,27 @@ jobs:
       - name: '```ignore-fence convention check'
         run: ./.ci/ignore-doctest-fence-check.sh
 
+  # Release-rehearsal guard check (cratestack#652). The rehearsal's own
+  # acceptance criterion is structural — "the rehearsal cannot publish
+  # under any input combination, verified by inspection of every publish
+  # step's guard, not by trusting a flag" — so the inspection is a script
+  # and this job is what runs it.
+  #
+  # It matters more than a normal lint because `release-cli.yml` CANNOT be
+  # exercised on a PR: its first execution against any change is a
+  # production release. This job is the only thing standing between an
+  # unguarded publish step and a burned version number.
+  release-rehearsal-guard:
+    timeout-minutes: 10
+    name: release rehearsal cannot publish (cratestack#652)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+      - name: Every irreversible publish step is guarded
+        run: python3 .ci/release-rehearsal-guard-check.py
+
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
   # (worse than an honest gap, because it looks maintained but isn't), AND

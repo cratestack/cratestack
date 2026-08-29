@@ -32,8 +32,25 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)build and attach binaries to, e.g. v0.4.13"
-        required: true
+        description: "Existing tag to (re)build and attach binaries to, e.g. v0.4.13. Leave EMPTY for a rehearsal on the current branch."
+        required: false
+        default: ""
+      # cratestack#652. Every pipeline defect between v0.8.0 and v0.8.3 was
+      # found by cutting a real release and watching it fail — or watching
+      # it SUCCEED while shipping nothing. Eleven PRs, not one of them
+      # found by CI, because this workflow's first execution against any
+      # change to it *is* a production release.
+      #
+      # A rehearsal runs the same jobs, the same builds and the same
+      # content gates, and stops immediately before each irreversible
+      # write. It is a FLAG ON THE REAL PIPELINE, never a second copy —
+      # that is #652's Risk 1, and a diverging copy would stop
+      # representing reality within one release.
+      rehearsal:
+        description: "Rehearse: build everything, run every gate, publish NOTHING. Safe on any branch; consumes no version number."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -54,14 +71,26 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
+      rehearsal: ${{ steps.resolve.outputs.rehearsal }}
     steps:
       - name: Resolve release tag
         id: resolve
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          set -euo pipefail
+          # A rehearsal (cratestack#652) needs NO tag — that is the whole
+          # point, since the thing being avoided is spending a version
+          # number. With the input empty it builds whatever ref triggered
+          # the run, which is normally a branch.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
             echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.rehearsal }}" = "true" ]; then
+            echo "rehearsal=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::REHEARSAL — every build and gate runs; nothing is published."
+          else
+            echo "rehearsal=false" >> "$GITHUB_OUTPUT"
           fi
       # A manual dispatch against a tag that doesn't exist yet used to fail
       # deep inside `actions/checkout` with an opaque `git fetch` error (no
@@ -69,8 +98,10 @@ jobs:
       # dispatch path only rebuilds/re-attaches binaries for an EXISTING
       # tag; cutting a NEW release goes through the "Prepare Release"
       # workflow (bump → PR → merge → auto-tag), not this input.
+      # Skipped for a rehearsal with no tag — there is nothing to validate,
+      # and requiring one would defeat the purpose.
       - name: Validate tag exists
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
         run: |
           set -euo pipefail
           tag="${{ steps.resolve.outputs.tag }}"
@@ -259,7 +290,7 @@ jobs:
   # overwritten, so there's nothing to gain from depending on studio-ui here.
   publish-crates:
     name: publish crates.io
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, preflight]
     runs-on: ubuntu-latest
     steps:
@@ -272,7 +303,11 @@ jobs:
       # Trunk resolves it from PATH instead of downloading it mid-build.
       # See the action's header for the incident and the verification.
       - uses: ./.github/actions/install-trunk-toolchain
+      # THE IRREVERSIBLE ONE. crates.io versions are immutable; there is
+      # no undo, only `yank`. Guarded on `push` so a rehearsal
+      # (cratestack#652) can never reach it under any input combination.
       - name: Publish crates (just release-publish real)
+        if: github.event_name == 'push'
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -284,6 +319,13 @@ jobs:
           fi
           just release-publish real
 
+      # The rehearsal's substitute: `just release-publish dry` runs
+      # `cargo publish --dry-run`, which packages AND verifies every crate
+      # in the same topological order the real publish uses, and uploads
+      # nothing. Same recipe, different mode — not a second transcription.
+      - name: Rehearse crates.io publish (just release-publish dry — uploads nothing)
+        if: needs.prepare.outputs.rehearsal == 'true'
+        run: just release-publish dry
   build:
     name: build (${{ matrix.target }})
     needs: [prepare, studio-ui]
@@ -359,7 +401,12 @@ jobs:
           merge-multiple: true
       - name: List assets
         run: ls -la dist
+      # Guarded for rehearsals (cratestack#652). A GitHub Release is the
+      # one outward-facing write here that IS reversible — but publishing
+      # release notes for a branch that is not a release would still be
+      # visible to users, so a rehearsal does not create one.
       - uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push'
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           files: dist/*
@@ -382,7 +429,7 @@ jobs:
   # this is — and is what the trusted-publish token exchange itself uses.
   publish-npm:
     name: publish npm package (@cratestack/cli)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, build, preflight]
     runs-on: ubuntu-latest
     permissions:
@@ -409,6 +456,12 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/cli
+        env:
+          # cratestack#652: the shared wrapper switches to
+          # `npm publish --dry-run` when this is 1. Wiring it here rather
+          # than adding a second rehearsal-only step keeps ONE code path
+          # per package — a duplicated step is what drifts.
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
         run: .github/scripts/npm-publish.sh packages/cratestack-cli-npm --access public --provenance
 
   # @cratestack/api and its split family (ts-types, link-*, runtime-*,
@@ -430,7 +483,7 @@ jobs:
   # would show an unresolvable dependency.
   publish-npm-api-family:
     name: publish npm packages (@cratestack/api family)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, preflight]
     runs-on: ubuntu-latest
     permissions:
@@ -483,6 +536,12 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/api family
+        env:
+          # cratestack#652: the shared wrapper switches to
+          # `npm publish --dry-run` when this is 1. Wiring it here rather
+          # than adding a second rehearsal-only step keeps ONE code path
+          # per package — a duplicated step is what drifts.
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
         run: |
           set -euo pipefail
           for pkg in \
@@ -614,7 +673,7 @@ jobs:
   # one-time manual bootstrap yet, even once all 5 binaries build cleanly.
   publish-npm-cbor-node:
     name: publish npm package (@cratestack/cbor-node)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, build-cbor-node, preflight]
     runs-on: ubuntu-latest
     permissions:
@@ -690,6 +749,12 @@ jobs:
       # default, so it applies regardless of which directory it runs
       # from — the wrapper below cd's into the package itself.
       - name: Publish @cratestack/cbor-node (+ per-platform subpackages)
+        env:
+          # cratestack#652: the shared wrapper switches to
+          # `npm publish --dry-run` when this is 1. Wiring it here rather
+          # than adding a second rehearsal-only step keeps ONE code path
+          # per package — a duplicated step is what drifts.
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
         run: |
           npm config set provenance true
           .github/scripts/npm-publish.sh packages/cratestack-cbor-node --access public
@@ -702,7 +767,7 @@ jobs:
   # compiled wasm bundle in the tarball, same as the API family.
   publish-npm-cbor-web:
     name: publish npm package (@cratestack/cbor-web)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, preflight]
     runs-on: ubuntu-latest
     permissions:
@@ -770,6 +835,12 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/cbor-web
+        env:
+          # cratestack#652: the shared wrapper switches to
+          # `npm publish --dry-run` when this is 1. Wiring it here rather
+          # than adding a second rehearsal-only step keeps ONE code path
+          # per package — a duplicated step is what drifts.
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
         run: .github/scripts/npm-publish.sh packages/cratestack-cbor-web --access public --provenance
 
   # The umbrella package (issue #288) — pure TS, conditional node/browser
@@ -784,7 +855,7 @@ jobs:
   # this build doesn't actually need cbor-node/cbor-web's dist/ on disk.
   publish-npm-cbor:
     name: publish npm package (@cratestack/cbor)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, publish-npm-cbor-node, publish-npm-cbor-web, preflight]
     runs-on: ubuntu-latest
     permissions:
@@ -814,6 +885,12 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/cbor
+        env:
+          # cratestack#652: the shared wrapper switches to
+          # `npm publish --dry-run` when this is 1. Wiring it here rather
+          # than adding a second rehearsal-only step keeps ONE code path
+          # per package — a duplicated step is what drifts.
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
         run: .github/scripts/npm-publish.sh packages/cratestack-cbor --access public --provenance
 
   # @cratestack/refine (issue #571) — a refine.dev dataProvider over the
@@ -831,7 +908,7 @@ jobs:
   # here; a release tag publishes what CI already proved.
   publish-npm-refine:
     name: publish npm package (@cratestack/refine)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, preflight]
     runs-on: ubuntu-latest
     permissions:
@@ -858,6 +935,12 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       - name: Publish @cratestack/refine
+        env:
+          # cratestack#652: the shared wrapper switches to
+          # `npm publish --dry-run` when this is 1. Wiring it here rather
+          # than adding a second rehearsal-only step keeps ONE code path
+          # per package — a duplicated step is what drifts.
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
         run: .github/scripts/npm-publish.sh packages/cratestack-refine --access public --provenance
 
   # ---- dart-packages/{cratestack_annotations,cratestack_builder} ---------
@@ -884,7 +967,7 @@ jobs:
   # pattern `v{{version}}`).
   publish-pubdev-annotations:
     name: publish pub.dev package (cratestack_annotations)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -896,6 +979,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - name: Assert the OIDC token endpoint is available
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
@@ -908,7 +992,14 @@ jobs:
       # between and pub.dev rejected the expired credential. Nothing slow
       # belongs between these two steps.
       - uses: dart-lang/setup-dart@v1
+      # THE IRREVERSIBLE ONE. pub.dev versions are permanent — they cannot
+      # be replaced or removed. Guarded on `push` so a rehearsal
+      # (cratestack#652) can never reach it. Everything ABOVE this step —
+      # the vendoring, the cross-host artifact downloads and the
+      # archive-contents gate — still runs in a rehearsal, which is the
+      # coverage the rehearsal exists to provide.
       - name: Publish cratestack_annotations to pub.dev
+        if: github.event_name == 'push'
         working-directory: dart-packages/cratestack_annotations
         # `timeout`, not stdin redirection: pub's OAuth fallback waits on a
         # local HTTP redirect, not stdin, so closing stdin would not unblock
@@ -926,7 +1017,11 @@ jobs:
       # v0.8.2, where it printed "Authentication failed!", published nothing,
       # and reported success. Ask pub.dev what it serves instead of trusting
       # the exit code.
+      # Guarded with its publish: polling pub.dev for a version nothing
+      # just uploaded would fail for the wrong reason and read as a
+      # rehearsal defect.
       - name: Verify pub.dev actually received the version
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           want="$(grep -m1 '^version:' dart-packages/cratestack_annotations/pubspec.yaml | awk '{print $2}')"
@@ -946,7 +1041,7 @@ jobs:
 
   publish-pubdev-builder:
     name: publish pub.dev package (cratestack_builder)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     # Depends on the annotations publish, not just `prepare` — see the block
     # comment above for why the order matters on a version-bumping release.
     needs: [prepare, publish-pubdev-annotations, preflight]
@@ -960,6 +1055,7 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
       - name: Assert the OIDC token endpoint is available
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
@@ -968,7 +1064,14 @@ jobs:
           fi
           echo "✓ OIDC token endpoint present"
       - uses: dart-lang/setup-dart@v1
+      # THE IRREVERSIBLE ONE. pub.dev versions are permanent — they cannot
+      # be replaced or removed. Guarded on `push` so a rehearsal
+      # (cratestack#652) can never reach it. Everything ABOVE this step —
+      # the vendoring, the cross-host artifact downloads and the
+      # archive-contents gate — still runs in a rehearsal, which is the
+      # coverage the rehearsal exists to provide.
       - name: Publish cratestack_builder to pub.dev
+        if: github.event_name == 'push'
         working-directory: dart-packages/cratestack_builder
         run: |
           set -euo pipefail
@@ -979,7 +1082,11 @@ jobs:
             fi
             exit "$status"
           fi
+      # Guarded with its publish: polling pub.dev for a version nothing
+      # just uploaded would fail for the wrong reason and read as a
+      # rehearsal defect.
       - name: Verify pub.dev actually received the version
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           want="$(grep -m1 '^version:' dart-packages/cratestack_builder/pubspec.yaml | awk '{print $2}')"
@@ -1370,7 +1477,7 @@ jobs:
   # authentication fails. That is what proved v0.8.3 genuinely published.
   publish-pubdev-cbor:
     name: publish pub.dev package (cratestack_cbor)
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows, preflight]
     runs-on: ubuntu-latest
     # No job in this workflow set a timeout, so GitHub's 6-hour default
@@ -1719,6 +1826,7 @@ jobs:
       # pub.dev-side (automated publishing not active for the package), which
       # this job cannot fix — but it can refuse to hang while finding out.
       - name: Assert the OIDC token endpoint is available
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
@@ -1741,7 +1849,14 @@ jobs:
       # between them. Keep it adjacent — moving it back up with the other
       # `uses:` steps reintroduces the expiry window.
       - uses: dart-lang/setup-dart@v1
+      # THE IRREVERSIBLE ONE. pub.dev versions are permanent — they cannot
+      # be replaced or removed. Guarded on `push` so a rehearsal
+      # (cratestack#652) can never reach it. Everything ABOVE this step —
+      # the vendoring, the cross-host artifact downloads and the
+      # archive-contents gate — still runs in a rehearsal, which is the
+      # coverage the rehearsal exists to provide.
       - name: Publish cratestack_cbor to pub.dev
+        if: github.event_name == 'push'
         working-directory: dart-packages/cratestack_cbor
         env:
           # Publish with FLUTTER'S dart, explicitly, not whatever `dart`
@@ -1782,7 +1897,11 @@ jobs:
       # above cannot trust `--dry-run`'s exit code. Ask pub.dev what it
       # actually has. This check is cause-independent: expired token, rejected
       # credential, silent upload failure — all of them land here.
+      # Guarded with its publish: polling pub.dev for a version nothing
+      # just uploaded would fail for the wrong reason and read as a
+      # rehearsal defect.
       - name: Verify pub.dev actually received the version
+        if: github.event_name == 'push'
         run: |
           set -euo pipefail
           want="$(grep -m1 '^version:' dart-packages/cratestack_cbor/pubspec.yaml | awk '{print $2}')"
@@ -1843,6 +1962,7 @@ jobs:
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
           PREFLIGHT: ${{ needs.preflight.result }}
+          REHEARSAL: ${{ needs.prepare.outputs.rehearsal }}
           R_CRATES: ${{ needs.publish-crates.result }}
           R_NPM: ${{ needs.publish-npm.result }}
           R_NPM_API: ${{ needs.publish-npm-api-family.result }}
@@ -1860,6 +1980,14 @@ jobs:
           # deliberate: it is what tells a reader at a glance that this
           # version number is spent on that registry.
           render() {
+            # In a rehearsal a green publish job means "the gates passed and
+            # the write was skipped" — emphatically NOT that anything is
+            # live. Rendering it as LIVE would be the exact false-green
+            # cratestack#651 and #652 both exist to kill, one level up.
+            if [ "${REHEARSAL}" = "true" ] && [ "$1" = "success" ]; then
+              echo "🧪 rehearsed — gates passed, nothing published"
+              return
+            fi
             case "$1" in
               success)   echo "🟢 **LIVE** (irreversible)" ;;
               failure)   echo "🔴 FAILED — nothing published" ;;
@@ -1869,7 +1997,19 @@ jobs:
             esac
           }
           {
-            echo "## Release channel manifest — \`${TAG}\`"
+            if [ "${REHEARSAL}" = "true" ]; then
+              echo "## REHEARSAL — nothing was published (cratestack#652)"
+              echo
+              echo "Ref built: \`${TAG}\`. Every artifact was built and every content"
+              echo "gate ran; every irreversible write was skipped. No version number"
+              echo "was consumed. The guard that makes that structural rather than"
+              echo "hopeful is \`.ci/release-rehearsal-guard-check.py\`, enforced on"
+              echo "every PR."
+              echo
+              echo "**Channels below show what a real release WOULD have attempted.**"
+            else
+              echo "## Release channel manifest — \`${TAG}\`"
+            fi
             echo
             echo "Pre-flight (cratestack#651): \`${PREFLIGHT}\`"
             if [ "${{ github.event_name }}" != "push" ]; then
@@ -1892,9 +2032,13 @@ jobs:
             echo "| pub.dev | cratestack_builder | $(render "$R_PUBDEV_BUILDER") |"
             echo "| pub.dev | cratestack_cbor | $(render "$R_PUBDEV_CBOR") |"
             echo
+            if [ "${REHEARSAL}" = "true" ]; then
+              echo "**No recovery needed — this was a rehearsal.** Re-run it as often as you like."
+            else
             echo "**Recovery.** A channel marked LIVE cannot be republished at this version —"
             echo "crates.io versions are immutable, npm unpublish is time-limited and"
             echo "discouraged, pub.dev versions are permanent. If any channel above is FAILED"
             echo "while others are LIVE, the fix is a NEW version number, not a re-run."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"
