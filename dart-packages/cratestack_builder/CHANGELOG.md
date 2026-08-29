@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.8.15 (2026-08-28)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.8.14 (2026-08-27)
 
 ### The `cratestack_annotations` floor names a version that exists

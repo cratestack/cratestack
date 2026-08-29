@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.8.15 (2026-08-28)
+
 - **`createCborCodec()` is idempotent, and resolves its vendored library under
   `flutter test`** (cratestack#794). Three related fixes; the first is the one
   that turns a footgun into a non-issue.
