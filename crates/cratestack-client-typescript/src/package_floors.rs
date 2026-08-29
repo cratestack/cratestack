@@ -94,32 +94,44 @@ pub(crate) const CRATESTACK_REFINE_FLOOR: &str = "^0.8.0";
 /// schema is `transport rpc`. A REST client never gets this dependency
 /// at all; `rest-runtime.ts.j2` has no codec seam.
 ///
-/// `0.8.0` is the earliest release in the current `0.8.x` line. The one
-/// import `rpc-runtime.ts.j2` makes — `createCborCodec()` returning a
-/// `Promise<CratestackRpcCodec>`, which `resolveCodec()`'s memoize-and-
-/// retry depends on being a promise — is present in every published
-/// tarball checked back to `0.7.10`, so the floor is bounded by the
-/// release line, not by the API.
+/// **`0.8.15`, not `0.8.0`, and the reason is a wire-format fix rather
+/// than an API addition** (cratestack#806).
 ///
-/// **Known gap, stated rather than hidden.** No *published*
-/// `@cratestack/cbor` encodes a `Uint8Array` as a CBOR byte string. As
-/// of `0.8.14` it still walks it as a plain object, so a `Bytes` field
-/// reaches the wire as a CBOR map (`{"0":1,"1":2,"2":3}`) that no
-/// server-side `Vec<u8>` can decode — measured directly against
-/// `npm i @cratestack/cbor@0.8.14`, not inferred. cratestack#783/#787
-/// fixed that, but the fix has not shipped: `0.8.14` published on
-/// 2026-08-27 and #787 merged on 2026-08-28.
+/// The one import `rpc-runtime.ts.j2` makes — `createCborCodec()`
+/// returning a `Promise<CratestackRpcCodec>`, which `resolveCodec()`'s
+/// memoize-and-retry depends on being a promise — is present in every
+/// published tarball back to `0.7.10`. So on *API* grounds this floor
+/// would be `^0.8.0`, bounded only by the release line.
 ///
-/// The honest floor for a `Bytes`-carrying schema is therefore the first
-/// release containing #787, and this constant must be raised to it once
-/// that release publishes. It is **not** raised pre-emptively: naming an
-/// unpublished version is the exact defect #754 and this ticket exist to
-/// remove, and it would break every `npm install` today — including this
-/// crate's own `native_cbor_decimal_encode` test, which installs the real
-/// package from the registry. Tracked as a follow-up rather than
-/// silently absorbed here; note this gap is unchanged by #779, since the
-/// `^{major}.{minor}.0` this replaced already emitted `^0.8.0`.
-pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+/// It is higher because API compatibility is not the only thing a floor
+/// has to guarantee. Up to and including `0.8.14`, the published codec
+/// walked a `Uint8Array` as a plain object, so a `Bytes` field reached
+/// the wire as a CBOR **map** that no server-side `Vec<u8>` can decode.
+/// cratestack#783/#787 fixed it and `0.8.15` is the first release that
+/// carries the fix. Measured against the registry rather than a
+/// changelog, which is the standard #754 established:
+///
+/// ```text
+/// npm i @cratestack/cbor@0.8.15
+/// encode({ b: new Uint8Array([1, 2, 3] ) })  ->  a1 6162 43 010203
+///                                                        ^^ major type 2, byte string
+/// npm i @cratestack/cbor@0.8.14
+/// encode({ b: new Uint8Array([1, 2, 3] ) })  ->  a1 6162 a3 613001 613102 613203
+///                                                        ^^ major type 5, a map — broken
+/// ```
+///
+/// **Why this is worth a floor bump rather than a note.** The defect is
+/// invisible at the type level: `Uint8Array` typechecks identically
+/// against the broken and fixed codecs, so nothing in a consumer's build
+/// catches it. It fails at the wire boundary, at runtime, on a field
+/// that looked fine in review. A floor is the only mechanism that
+/// prevents it.
+///
+/// Note this floor currently EQUALS the workspace version, which
+/// `package_floors_tests` normally rejects — see `PUBLISHED_EQUAL_FLOORS`
+/// there for why that is allowed here and how the exemption is kept from
+/// widening. It stops being a special case at the next `just bump`.
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.15";
 
 #[cfg(test)]
 #[path = "package_floors_tests.rs"]

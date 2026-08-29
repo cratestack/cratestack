@@ -1,0 +1,28 @@
+// Fixture for cratestack#806's floor raise: a `Bytes`-carrying model on
+// `transport rpc`, which is the one configuration where a generated
+// client actually depends on `@cratestack/cbor` (REST has no codec seam,
+// so `rest-runtime.ts.j2` never imports it).
+//
+// Deliberately separate from `bytes_round_trip.cstack`, which
+// `tests/bytes_round_trip.rs` uses: that fixture is REST-transport and
+// asserts through `vitest` against `JSON.stringify`-based bodies, so it
+// never touches the native codec at all — which is exactly why the
+// byte-string defect #806 describes could ship without any test in this
+// crate noticing.
+//
+// `Int[]` is included alongside `Bytes` on purpose. The two are
+// indistinguishable at the TypeScript type level and were historically
+// confusable on the wire, so a test that only looked at `Bytes` could not
+// prove the codec was discriminating rather than coincidentally right.
+
+transport rpc
+
+model Attachment {
+  id Cuid @id @default(cs_cuid())
+  label String
+  payload Bytes
+  checksums Int[]
+
+  @@allow("create", true)
+  @@allow("list", true)
+}
