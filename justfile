@@ -3305,16 +3305,110 @@ cbor-example-verify-ios:
 	# comfortably slower than the desktop jobs this timeout was copied from,
 	# and a too-short window is indistinguishable from a real failure.
 	found=0
+	store_queried=0
 	poll_budget=90
+	# DETECT FROM THE LOG STORE, NOT THE LIVE SUBSCRIPTION
+	# (cratestack#723, maintainer decision 2026-08-29).
+	#
+	# This loop used to grep only `$stream_log`, so pass/fail depended on a
+	# live `log stream` subscription having been listening at the moment the
+	# app printed. The watch on #723 ran for weeks and measured that
+	# assumption failing: in job 97444502262 the live capture delivered
+	# **0 Runner-attributed lines / 95 bytes** while the log store held the
+	# marker — against a healthy baseline of ~1050 lines / 270,521 bytes.
+	# Not a slow subscription. Nothing at all.
+	#
+	# `log show` reads the STORE. It does not care whether anything was
+	# subscribed at the time, so it answers the question the stream cannot:
+	# did the app print the marker? That is the question pass/fail should
+	# turn on, so it is now asked *inside* the loop rather than only after
+	# the budget expires. The previous shape recovered the same marker but
+	# only after burning the full 90s — job 97444502262 reported the marker
+	# "103s after launch, -13s of margin", which is the recovery timestamp,
+	# not the app's.
+	#
+	# The live stream keeps running, and is still captured, counted and
+	# dumped on failure — it is just no longer load-bearing. Demoting it
+	# rather than removing it keeps every diagnostic #704/#705 added, and
+	# keeps the capture-health signal below measurable on every run.
+	#
+	# `store_interval` bounds the cost: `log show` is a simctl round trip,
+	# unlike grepping a local file. Every 2s means a healthy run (marker at
+	# 3-13s across observed jobs) pays 2-7 queries, and only a genuine
+	# failure pays the full ~45.
+	store_interval=2
+	stream_saw_marker=0
 	poll_started="$(date +%s)"
-	for _ in $(seq 1 "$poll_budget"); do
-	  if grep -qs "$marker" "$stream_log"; then
-	    found=1
-	    break
+	for iteration in $(seq 1 "$poll_budget"); do
+	  # Diagnostic only — never breaks the loop. Recorded on the FIRST
+	  # iteration that sees it so the summary can say whether the live
+	  # capture was healthy, which is the number #723 spent weeks
+	  # collecting by hand.
+	  if [ "$stream_saw_marker" -eq 0 ] && grep -qs "$marker" "$stream_log"; then
+	    stream_saw_marker=1
+	  fi
+	  if [ $(( (iteration - 1) % store_interval )) -eq 0 ]; then
+	    store_queried=1
+	    # `AND process != "log"` IS LOAD-BEARING, and this was caught by
+	    # running it rather than reasoning about it. `log show` logs its own
+	    # invocation, command line included — and the command line contains
+	    # the marker, because the marker is in the predicate. So the query
+	    # MATCHES ITSELF: asked for a string no app has ever printed, it
+	    # still returns one row,
+	    #
+	    #   Df log[39627:0] [com.apple.log:] log run noninteractively, …
+	    #     args: 'log' 'show' … 'eventMessage CONTAINS "<marker>"'
+	    #
+	    # which `grep -qs "$marker"` below would accept as a recovered
+	    # marker. `found` would flip to 1, the payload check would then
+	    # fail, and the recipe would report "the marker WAS captured, but
+	    # its payload did not match — a genuine round-trip failure" about an
+	    # app that printed nothing at all. Excluding the `log` process
+	    # removes the self-match and still finds the real line (verified
+	    # both ways on a real simulator).
+	    xcrun simctl spawn "$udid" log show --style=compact --last 5m \
+	      --predicate "eventMessage CONTAINS \"$marker\" AND process != \"log\"" > "$store_log" 2>&1 || true
+	    if grep -qs "$marker" "$store_log"; then
+	      found=1
+	      break
+	    fi
 	  fi
 	  sleep 1
 	done
 	poll_waited=$(( $(date +%s) - poll_started ))
+
+	# One last look at the live capture, for the DIAGNOSTIC only. The stream
+	# can legitimately deliver a moment after the store has it, and calling
+	# that a capture defect would cry wolf on every fast run.
+	if [ "$stream_saw_marker" -eq 0 ] && grep -qs "$marker" "$stream_log"; then
+	  stream_saw_marker=1
+	fi
+	stream_missed=0
+	if [ "$found" -eq 1 ] && [ "$stream_saw_marker" -eq 0 ]; then
+	  stream_missed=1
+	fi
+
+	# THE INVERSE ANOMALY, and why the stream is still allowed to confirm.
+	#
+	# "Detect from the store" (cratestack#723) means detection must not
+	# DEPEND on the live stream — it does not mean discarding positive
+	# evidence from it. If the store somehow lacks the marker but the live
+	# capture has it, the app demonstrably printed it and the round trip is
+	# proven; failing there would be a false red produced by a technicality
+	# about which channel won the race.
+	#
+	# Expected to be unreachable in practice — `log stream` and `log show`
+	# read the same unified log, and the query window (`--last 5m`)
+	# comfortably covers the poll budget. It is handled anyway because
+	# "essentially impossible" is the assumption that produced #704 and
+	# #723 in the first place, and because the failure branch below would
+	# otherwise print "the marker never arrived" about a run where it
+	# demonstrably did.
+	store_missed=0
+	if [ "$found" -ne 1 ] && [ "$stream_saw_marker" -eq 1 ]; then
+	  found=1
+	  store_missed=1
+	fi
 
 	# HOW MUCH THE APP LOGGED, ON BOTH PATHS (cratestack#704). The failure
 	# branch below already dumps the captures, but a green run reported
@@ -3366,22 +3460,21 @@ cbor-example-verify-ios:
 	kill "$launch_pid" "$stream_pid" 2>/dev/null || true
 	xcrun simctl terminate "$udid" "$appId" >/dev/null 2>&1 || true
 
-	# RETROSPECTIVE FALLBACK: ASK THE LOG STORE, NOT THE SUBSCRIPTION.
+	# WHY THE LIVE STREAM IS STILL SUBSCRIBED AT ALL (cratestack#723).
 	#
-	# Everything above depends on a LIVE `log stream` subscription having
-	# been listening at the moment the app printed. cratestack#704 produced
-	# a run where that assumption failed: job 97199199670 captured 13
-	# Runner-attributed lines, and every one of them maps to the last ~15%
-	# of a normal launch (`nw_activity` at line 899 of 1069 in a healthy
-	# capture, `BSBlockSentinel:FBSScene` at 911, `KeyboardArbiter` at 927,
-	# `UIKit:KeyboardArbiterClientLog` at 1039). It captured the TAIL of a
-	# launch and none of the ~900 lines before it — the shape of a
-	# subscription that started delivering late, not of an app that failed
-	# to start, which would have produced the EARLY lines and stopped.
+	# It no longer decides pass/fail — the poll loop above asks the log
+	# store — but it is kept for two reasons worth stating so nobody
+	# removes it as dead weight:
 	#
-	# `log show` reads the log STORE. It does not care whether anything was
-	# subscribed at the time, so it answers the question the stream cannot:
-	# did the app print the marker at all?
+	# 1. It is the capture-health measurement. `stream_missed` below, and
+	#    the byte/line counts in `capture_summary`, are how a future
+	#    regression in the subscription itself stays visible instead of
+	#    being silently routed around. #723 existed precisely because that
+	#    signal had to be gathered by a bespoke watch workflow; now every
+	#    run reports it.
+	# 2. It is a far richer failure dump than the store query, which is
+	#    filtered to the marker. When the app genuinely never prints, the
+	#    stream's tail is what shows why.
 	#
 	# The other channel cannot help here and never could. `--console-pty`
 	# carries the process's stdout/stderr, and Flutter's `print` never
@@ -3394,33 +3487,6 @@ cbor-example-verify-ios:
 	# write to the file descriptor. Verified on a real simulator with a probe
 	# app printing the same string four ways: `print` reached the unified log
 	# only, `stdout.writeln`/`stderr.writeln` reached the pty only.
-	stream_missed=0
-	store_queried=0
-	if [ "$found" -ne 1 ]; then
-	  store_queried=1
-	  echo "poll: the live capture never delivered the marker — asking the log store directly before calling this a failure" >&2
-	  # `AND process != "log"` IS LOAD-BEARING, and this was caught by running
-	  # it rather than reasoning about it. `log show` logs its own invocation,
-	  # command line included — and the command line contains the marker,
-	  # because the marker is in the predicate. So the query MATCHES ITSELF:
-	  # asked for a string no app has ever printed, it still returns one row,
-	  #
-	  #   Df log[39627:0] [com.apple.log:] log run noninteractively, …
-	  #     args: 'log' 'show' … 'eventMessage CONTAINS "<marker>"'
-	  #
-	  # which `grep -qs "$marker"` below would accept as a recovered marker.
-	  # `found` would flip to 1, the payload check would then fail, and the
-	  # recipe would report "the marker WAS captured, but its payload did not
-	  # match — a genuine round-trip failure" about an app that printed
-	  # nothing at all. Excluding the `log` process removes the self-match and
-	  # still finds the real line (verified both ways on a real simulator).
-	  xcrun simctl spawn "$udid" log show --style=compact --last 5m \
-	    --predicate "eventMessage CONTAINS \"$marker\" AND process != \"log\"" > "$store_log" 2>&1 || true
-	  if grep -qs "$marker" "$store_log"; then
-	    found=1
-	    stream_missed=1
-	  fi
-	fi
 
 	if [ "$found" -ne 1 ] || ! grep -qs "$marker OK $expected_hex" "$stream_log" "$store_log"; then
 	  echo "FAIL: built iOS simulator app did not print the expected round-trip marker." >&2
@@ -3510,14 +3576,24 @@ cbor-example-verify-ios:
 	echo "$timing_summary"
 	echo "$stream_summary"
 	echo "$capture_summary"
-	# PASSING BECAUSE THE APP WAS RIGHT, NOT BECAUSE THE HARNESS GAVE UP.
-	# A recovered marker means the round trip succeeded and the live capture
-	# missed it. That is a green build and a real defect at the same time,
-	# so it is stated at the top of the output rather than folded silently
-	# into the tick — a flake that stops failing but is never counted is
-	# indistinguishable from one that was fixed.
+	# CAPTURE HEALTH, REPORTED ON EVERY GREEN RUN (cratestack#723).
+	#
+	# Since the store is now the detection channel, a live capture that
+	# misses the marker no longer threatens the build — which is exactly why
+	# it has to be SAID. An unreported signal that no longer causes failures
+	# is indistinguishable from one that was fixed, and #723 exists because
+	# this particular signal had to be gathered by a bespoke watch workflow
+	# for weeks before anyone could read it.
+	#
+	# This is now a pure observation, not a near-miss warning: the round trip
+	# is proven either way. If it starts appearing on most runs, the `log
+	# stream` subscription is degrading and the diagnostics that depend on it
+	# are quietly getting worse.
 	if [ "$stream_missed" -eq 1 ]; then
-	  echo "WARNING: the live log capture never delivered the marker; it was recovered from the log store (cratestack#704 capture defect — the round trip itself is fine)"
+	  echo "NOTE: the live log capture never delivered the marker; the log store did (cratestack#723 — detection does not depend on the live stream, so this is a capture-health observation, not a failure)"
+	fi
+	if [ "$store_missed" -eq 1 ]; then
+	  echo "NOTE: the LOG STORE did not return the marker but the live capture did — the inverse of the cratestack#723 defect, and not expected to be reachable (both read the same unified log). Worth investigating if it recurs; the round trip itself is proven either way."
 	fi
 	echo "✓ iOS simulator app round-tripped CBOR: $(grep -hs "$marker" "$stream_log" "$store_log" | head -1)"
 	rm -f "$ios_log" "$stream_log" "$store_log"
