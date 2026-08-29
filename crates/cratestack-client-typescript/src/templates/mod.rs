@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use minijinja::Environment;
+use minijinja::{Environment, UndefinedBehavior};
 
 use crate::error::TypeScriptGeneratorError;
 
@@ -60,6 +60,30 @@ pub(crate) fn build_environment(
     let mut environment = Environment::new();
     environment.set_trim_blocks(true);
     environment.set_lstrip_blocks(true);
+    // Undefined is an ERROR, not a falsy value (issue #774, maintainer
+    // decision recorded 2026-08-29: option 1 of three).
+    //
+    // minijinja's default is `Lenient`, under which `{% if missing %}`
+    // silently takes the else-branch. Two shipped defects came from
+    // exactly that within one week — `native_cbor` (#765) and
+    // `models_import_path` (#764) — each a field present on
+    // `TemplateContext` and absent from `SwrSchemaContext` while both
+    // render the same template. The generator emitted plausible,
+    // compiling, wrong TypeScript instead of failing.
+    //
+    // `SemiStrict` is not a middle ground here: per minijinja's own doc
+    // comment (`utils.rs:209-216`) it still treats undefined as false in
+    // a boolean context, which is the case that bit us. Only full
+    // `Strict` closes the class.
+    //
+    // Blast radius, accepted deliberately: `--template-dir` overrides
+    // (see `load_template_source` below) are user-authored templates
+    // this project has never seen. One referencing a field the contexts
+    // do not provide now fails generation instead of rendering the
+    // else-branch. That failure surfaces through the existing
+    // `TypeScriptGeneratorError::TemplateRender` path — no new error
+    // plumbing — and is changelogged as a behaviour change.
+    environment.set_undefined_behavior(UndefinedBehavior::Strict);
 
     for spec in specs {
         let source = load_template_source(template_dir, spec)?;

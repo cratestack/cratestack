@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### BREAKING (`--template-dir` only): TypeScript templates render under `UndefinedBehavior::Strict` (#774)
+
+The TypeScript generator's minijinja environment no longer treats an undefined name as falsy. A
+template that branches on — or interpolates — a field the render context does not provide now fails
+generation with `failed to render template '<name>'` instead of quietly taking the else-branch.
+
+**Why.** minijinja's default is `Lenient`, and two shipped defects came from it within one week:
+`native_cbor` (#765) and `models_import_path` (#764), each a field present on `TemplateContext` and
+absent from `SwrSchemaContext` while both render the same template. In both cases the generator
+emitted TypeScript that compiled, looked right, and was wrong — one spoke `application/json` where
+the rest of the same package spoke `application/cbor`. A build failure would have been strictly
+better than either.
+
+**Who this affects.** Only `--template-dir` users. Every template this project ships already renders
+clean under Strict — the full `cratestack-client-typescript` suite and `just regen-examples --check`
+both pass unchanged. If you override a template and it references a name the contexts do not define,
+generation now stops and names the template. Delete the reference, or guard it with
+`{% if name is defined %}`.
+
+`SemiStrict` was not chosen, and not on the ticket's say-so — measured. Under `SemiStrict` an
+undefined `{{ interpolation }}` does fail, but an undefined `{% if %}` condition is still silently
+false, which is exactly the case that produced #765 and #764. Only full `Strict` closes it.
+
+Not extended to the Dart generator: its two pipelines share zero template files, so the
+one-template-two-contexts class this fixes cannot arise there.
+
 ### Read policies gained `in` / `not in` against a set of literals (#666)
 
 `@@allow`/`@@deny` read-policy comparisons now accept set membership:
