@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### The release pre-flight failed a valid crates.io token because it sent no User-Agent (#651)
+
+The publish pre-flight added by #651 ran for the first time on v0.9.0 and blocked the release,
+reporting `crates.io rejected CARGO_REGISTRY_TOKEN (HTTP 403) — the token is set but not valid`
+and advising a rotation. The token was fine: it had published successfully hours earlier, and it
+was never evaluated.
+
+crates.io rejects curl's default `curl/X.Y.Z` User-Agent at the edge, **before** reading the
+`Authorization` header, and answers `403` with a **zero-byte body**. The check sent no
+`--user-agent`, so it hit that path every time. Reproduced directly:
+
+```
+curl -o /dev/null -w '%{http_code}' -H 'Authorization: <anything>' https://crates.io/api/v1/me
+  -> 403, body 0 bytes                       # no UA: token never read
+curl ... --user-agent 'x' -H 'Authorization: <bad>' ...
+  -> 403, {"errors":[{"detail":"authentication failed"}]}
+```
+
+crates.io does not use `401` for any of these, so the status code alone cannot separate "blocked
+before auth" from "bad credential" — only the body can, which is exactly why the check's own
+`head -c 400` diagnostic printed nothing and the failure looked like a dead token.
+
+Fixed by sending a real User-Agent, and by splitting the error message on the body: an empty body
+now says explicitly *do not rotate on this signal*, and names the reproduction command; a body
+containing `authentication failed` is the only case that advises rotating. The gate's behaviour is
+otherwise unchanged — it still refuses to let any channel publish, which is what kept v0.9.0 from
+going out half-published across ten registries.
+
+
 ### Dependency and toolchain audit — 2026-08
 
 A full sweep of GitHub Actions, Cargo, container images, npm and pub.dev. Every "latest"

@@ -219,12 +219,32 @@ jobs:
             echo "::error::CARGO_REGISTRY_TOKEN is not set. publish-crates would fail after other channels had already published." >&2
             exit 1
           fi
+          # `--user-agent` is REQUIRED, not politeness. crates.io rejects
+          # curl's default `curl/X.Y.Z` User-Agent at the edge, BEFORE it
+          # looks at the Authorization header, and answers `403` with a
+          # ZERO-BYTE body. That is indistinguishable by status code from a
+          # genuinely bad token, and it is what this check did on its first
+          # ever real run (v0.9.0): it failed a token that had published
+          # successfully hours earlier, and told the maintainer to rotate a
+          # credential that was never evaluated.
+          #
+          # The two cases are only separable by the body:
+          #   no/instant-rejected UA -> 403, body is empty
+          #   bad token, real UA     -> 403, {"errors":[{"detail":"authentication failed"}]}
+          # crates.io does not use 401 for any of these, so the status code
+          # alone can never tell them apart.
           code="$(curl -sS -o /tmp/crates_me.json -w '%{http_code}' \
+            --user-agent "cratestack-release-preflight (https://github.com/cratestack/cratestack)" \
             -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
             https://crates.io/api/v1/me || echo 000)"
           if [ "$code" != "200" ]; then
-            echo "::error::crates.io rejected CARGO_REGISTRY_TOKEN (HTTP ${code}). The token is set but not valid — rotate it in Settings -> Secrets before re-running." >&2
-            head -c 400 /tmp/crates_me.json >&2 || true
+            body="$(head -c 400 /tmp/crates_me.json 2>/dev/null || true)"
+            if [ -z "$body" ]; then
+              echo "::error::crates.io returned HTTP ${code} with an EMPTY body. That is the signature of the request being rejected before the token was read (historically: a missing or blocked User-Agent), NOT of a bad credential. Do not rotate the token on this signal alone — reproduce with 'curl -sS -o /dev/null -w %{http_code} --user-agent ... https://crates.io/api/v1/me' first." >&2
+            else
+              echo "::error::crates.io rejected CARGO_REGISTRY_TOKEN (HTTP ${code}). Response body follows; 'authentication failed' means the token really is invalid or revoked and should be rotated in Settings -> Secrets." >&2
+              printf '%s\n' "$body" >&2
+            fi
             exit 1
           fi
           echo "✓ crates.io accepts the token"
