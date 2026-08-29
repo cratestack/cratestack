@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Release rehearsal was broken on any branch with a slash in its name (#652)
+
+`rehearsal: true` is documented as "safe on any branch", but it could not complete on the branches
+this repo actually creates. With no `tag` input the resolver falls back to `GITHUB_REF_NAME` — a
+**branch** name — and that value was interpolated straight into the CLI asset filename. On
+`claude/release-0.9.1` the slash is a path separator, so `tar` was asked to write
+`cratestack-cli-x86_64-unknown-linux-gnu-claude/release-0.9.1.tar.gz` into a directory that does not
+exist. All five `build` jobs failed there, *after compiling successfully*.
+
+The consequence was worse than a broken filename: `preflight` needs every `build` job, so a
+rehearsal could never reach the pre-flight — the single thing it exists to exercise, and the thing
+that had just blocked a release. Found by rehearsing rather than by reading.
+
+`prepare` now emits `asset_slug` alongside `tag`, with `/` replaced by `-`, and only the asset
+filename uses it. For a real release tag the two are identical (`v0.9.1`), so nothing about a tagged
+run changes; `ref:` checkouts and the GitHub Release `tag_name` keep using `tag` unchanged.
+
 ### crates.io now publishes before the other registries, because no probe can prove publish scope (#651)
 
 The pre-flight's stated purpose is that "publish-crates would fail after other channels had already

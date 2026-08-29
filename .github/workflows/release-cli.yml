@@ -71,6 +71,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
+      # Filename-safe form of `tag`. On a real release these are identical
+      # (`v0.9.1`), so nothing about a tagged run changes. They differ only
+      # in a rehearsal, where `tag` falls back to `GITHUB_REF_NAME` — a
+      # BRANCH name, which in this repo routinely contains a slash
+      # (`claude/release-0.9.1`). Interpolated into an asset filename, that
+      # slash is a path separator: `tar` was asked to write
+      # `cratestack-cli-x86_64-unknown-linux-gnu-claude/release-0.9.1.tar.gz`
+      # into a directory that does not exist, and every one of the five
+      # `build` jobs died there — after compiling successfully. That made
+      # rehearsal unusable on exactly the branches this repo creates, and
+      # meant a rehearsal could never reach the pre-flight it exists to
+      # exercise. Use `tag` for refs and release names; use this for paths.
+      asset_slug: ${{ steps.resolve.outputs.asset_slug }}
       rehearsal: ${{ steps.resolve.outputs.rehearsal }}
     steps:
       - name: Resolve release tag
@@ -82,10 +95,14 @@ jobs:
           # number. With the input empty it builds whatever ref triggered
           # the run, which is normally a branch.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            resolved="${{ inputs.tag }}"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            resolved="${GITHUB_REF_NAME}"
           fi
+          echo "tag=${resolved}" >> "$GITHUB_OUTPUT"
+          # Slashes are legal in a branch name and illegal in a flat
+          # filename. Identical to `tag` for any real release tag.
+          echo "asset_slug=${resolved//\//-}" >> "$GITHUB_OUTPUT"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.rehearsal }}" = "true" ]; then
             echo "rehearsal=true" >> "$GITHUB_OUTPUT"
             echo "::notice::REHEARSAL — every build and gate runs; nothing is published."
@@ -415,7 +432,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ needs.prepare.outputs.tag }}"
+          # asset_slug, not tag — see the `prepare` job's output comment.
+          tag="${{ needs.prepare.outputs.asset_slug }}"
           target="${{ matrix.target }}"
           bin_dir="target/${target}/dist"
           if [ "${{ runner.os }}" = "Windows" ]; then
