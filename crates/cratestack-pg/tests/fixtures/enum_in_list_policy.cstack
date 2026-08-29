@@ -1,0 +1,29 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// Regression fixture for cratestack#666's second half: `in` against a
+// set of enum variants. Deliberately the same shape as
+// `enum_literal_policy.cstack` (which spells the same policy as
+// `purpose == A || purpose == B`) so the two tests can assert the
+// membership form filters identically while rendering as one flat
+// `IN (...)` rather than a nested `Or` tree.
+enum AssetPurpose {
+  product_image
+  product_thumbnail
+  kyc_document_front
+  kyc_selfie
+}
+
+model EnumInListAsset {
+  id Int @id
+  purpose AssetPurpose
+  label String
+
+  // `in` on the allow side; `not in` on the deny side, so one fixture
+  // covers both `ReadPredicate::FieldInLiterals` and
+  // `ReadPredicate::FieldNotInLiterals` against a real database.
+  @@allow("read", purpose in [product_image, product_thumbnail, kyc_selfie])
+  @@deny("read", purpose not in [product_image, product_thumbnail])
+}

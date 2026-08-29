@@ -15,12 +15,14 @@ use quote::quote;
 /// separate SQL-pushing path needed; equality/inequality reuse
 /// `FieldEqLiteral`/`FieldNeLiteral` exactly as the String case does.
 ///
-/// Deliberately equality/inequality only (no `in`-against-a-set): that
-/// would need a new multi-value `ReadPredicate` shape and SQL pusher
-/// (`column = ANY($1)`), not just a new literal arm — left out of scope
-/// per issue #666's "if `in` is a materially larger change, leave it
-/// out" guidance. `field == A || field == B` already expresses the same
-/// policy through the existing `Or` combinator.
+/// This arm is equality/inequality only. Set membership
+/// (`purpose in [product_image, product_thumbnail]`) is a separate
+/// *shape*, not a separate literal kind, and lives in [`super::in_list`]
+/// — it needed the new multi-value `ReadPredicate::FieldInLiterals`
+/// variant and its own SQL emitters, which is why it was deferred out
+/// of the equality work and closed afterwards. Every element of an `in`
+/// list still lands here one at a time, so variant validation and the
+/// required-arity rule below apply identically to both shapes.
 pub(super) fn parse_enum_policy_literal(
     rhs: &str,
     field: &Field,

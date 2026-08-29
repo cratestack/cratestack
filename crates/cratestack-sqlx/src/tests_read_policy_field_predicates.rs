@@ -107,3 +107,64 @@ fn every_relation_quantifier_variant_renders_its_own_sql_shape() {
         "(NOT EXISTS (SELECT 1 FROM sessions WHERE sessions.user_id = users.id AND NOT (active = TRUE)))"
     );
 }
+
+/// `FieldInLiterals`/`FieldNotInLiterals` (issue #666) render one flat
+/// `IN (...)` with a bind slot per element — not a nested `Or` of
+/// equalities, which is what the `field == A || field == B` workaround
+/// this replaced produced.
+#[test]
+fn field_in_literals_renders_a_flat_in_list() {
+    let ctx = CratestackContext::anonymous();
+    let allow = [ReadPolicy {
+        expr: PolicyExpr::Predicate(ReadPredicate::FieldInLiterals {
+            column: "purpose",
+            values: &[
+                PolicyLiteral::String("product_image"),
+                PolicyLiteral::String("product_thumbnail"),
+            ],
+        }),
+    }];
+    assert_eq!(render(&allow, &[], &ctx).unwrap(), "(purpose IN ($1, $2))");
+
+    let deny_shape = [ReadPolicy {
+        expr: PolicyExpr::Predicate(ReadPredicate::FieldNotInLiterals {
+            column: "purpose",
+            values: &[PolicyLiteral::String("kyc_selfie")],
+        }),
+    }];
+    assert_eq!(
+        render(&deny_shape, &[], &ctx).unwrap(),
+        "(purpose NOT IN ($1))"
+    );
+}
+
+/// Decisive test: the bind counter must advance by exactly one slot per
+/// element. If it did not, every `$n` after an `IN` list would be
+/// off-by-k and `preview_scoped_sql` would misreport the executed
+/// query's parameter numbering. Asserted by rendering a second
+/// predicate *after* the list and reading the number it was given.
+#[test]
+fn an_in_list_consumes_one_bind_slot_per_element() {
+    let ctx = CratestackContext::anonymous();
+    let allow = [ReadPolicy {
+        expr: PolicyExpr::And(&[
+            PolicyExpr::Predicate(ReadPredicate::FieldInLiterals {
+                column: "purpose",
+                values: &[
+                    PolicyLiteral::String("a"),
+                    PolicyLiteral::String("b"),
+                    PolicyLiteral::String("c"),
+                ],
+            }),
+            PolicyExpr::Predicate(ReadPredicate::FieldEqLiteral {
+                column: "status",
+                value: PolicyLiteral::String("live"),
+            }),
+        ]),
+    }];
+    assert_eq!(
+        render(&allow, &[], &ctx).unwrap(),
+        "((purpose IN ($1, $2, $3) AND status = $4))",
+        "the trailing predicate must be $4 — three elements consumed $1..$3"
+    );
+}

@@ -44,6 +44,31 @@ pub(super) fn generate_scalar_literal_predicate(
     }
 }
 
+/// `column IN (...)` / `column NOT IN (...)` (issue #666). `values` is
+/// the already-lowered `&[PolicyLiteral, ...]` token stream from
+/// [`super::in_list`], which guarantees it is non-empty.
+pub(super) fn generate_scalar_in_predicate(
+    column: &str,
+    values: proc_macro2::TokenStream,
+    negate: bool,
+) -> proc_macro2::TokenStream {
+    if negate {
+        quote! {
+            ::cratestack::ReadPredicate::FieldNotInLiterals {
+                column: #column,
+                values: #values,
+            }
+        }
+    } else {
+        quote! {
+            ::cratestack::ReadPredicate::FieldInLiterals {
+                column: #column,
+                values: #values,
+            }
+        }
+    }
+}
+
 pub(super) fn generate_scalar_auth_predicate(
     column: &str,
     auth_field: &str,

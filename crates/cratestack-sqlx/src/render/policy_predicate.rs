@@ -12,6 +12,35 @@ use crate::query::{auth_value_to_sql, value_matches_auth_literal};
 
 use super::policy::render_relation_policy_sql;
 
+/// `column IN ($n, $n+1, ...)` — one bind slot per element, so the
+/// caller's `bind_index` stays aligned with what
+/// `push_policy_predicate` will actually bind (issue #666).
+///
+/// `arity == 0` cannot arise from a compiled schema (the macro rejects
+/// `field in []`), but it is handled as the constant it means rather
+/// than emitting the syntactically invalid `IN ()`.
+fn render_in_list(
+    sql: &mut String,
+    column: &str,
+    arity: usize,
+    negate: bool,
+    bind_index: &mut usize,
+) {
+    if arity == 0 {
+        sql.push_str(if negate { "TRUE" } else { "FALSE" });
+        return;
+    }
+    let _ = write!(sql, "{column}{} IN (", if negate { " NOT" } else { "" });
+    for slot in 0..arity {
+        if slot > 0 {
+            sql.push_str(", ");
+        }
+        let _ = write!(sql, "${bind_index}");
+        *bind_index += 1;
+    }
+    sql.push(')');
+}
+
 pub(super) fn render_policy_predicate(
     predicate: ReadPredicate,
     ctx: &CratestackContext,
@@ -84,6 +113,12 @@ pub(super) fn render_policy_predicate(
         ReadPredicate::FieldNeLiteral { column, .. } => {
             let _ = write!(sql, "{column} != ${bind_index}");
             *bind_index += 1;
+        }
+        ReadPredicate::FieldInLiterals { column, values } => {
+            render_in_list(sql, column, values.len(), false, bind_index);
+        }
+        ReadPredicate::FieldNotInLiterals { column, values } => {
+            render_in_list(sql, column, values.len(), true, bind_index);
         }
         ReadPredicate::FieldEqAuth { column, auth_field } => {
             if auth_value_to_sql(ctx, auth_field).is_some() {
