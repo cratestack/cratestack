@@ -59,6 +59,10 @@
         "extensions": [
           ".cstack"
         ],
+        "icon": {
+          "light": "./icons/cstack-light.svg",
+          "dark": "./icons/cstack-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],

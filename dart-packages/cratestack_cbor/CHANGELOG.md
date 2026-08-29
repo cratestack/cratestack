@@ -6,6 +6,38 @@
   bare checkout, since it needs flutter_rust_bridge-generated glue that is not committed, so the
   analyzer's findings here are all missing-file errors rather than lint results.
 
+- **Linux arm64 is blocked upstream in both halves, not just the Flutter
+  one** (cratestack#823). The README's "Scope of this release", the library
+  doc comment, this package's `UnsupportedError` message and
+  `native_cbor_codec.dart`'s header all said that plain `dart test`/`dart
+  run` "needs no Flutter bundling at all" and was therefore separately
+  reachable on arm64 Linux. Measured, and it is not: this package declares
+  `flutter.plugin.platforms`, which obliges `environment.flutter`, so a
+  standalone Dart SDK fails with `Because cratestack_cbor requires the
+  Flutter SDK, version solving failed` — for a pub.dev dependency, a
+  `path:` dependency, and the package in place alike, and on x86_64 too.
+
+  The standalone Dart SDK does ship arm64 Linux; that was the true half of
+  the claim and it is not sufficient. Since Flutter publishes no arm64 Linux
+  SDK on any channel, an arm64 user fails at `pub get` before
+  `createCborCodec()` is called. Use `--no-native-cbor` for that target.
+  Text only — no behaviour change.
+
+- **The Linux arm64 `dart test`/`dart run` gap is now tracked on
+  cratestack#823, not cratestack#563.** cratestack#563 — the ticket that built
+  and published this package — was closed as completed on 2026-08-29, so the
+  three places naming it as that gap's *open* home were pointing readers at a
+  closed issue: `lib/cratestack_cbor.dart`'s library doc,
+  `lib/src/native/native_cbor_codec.dart`'s header comment, and the
+  `UnsupportedError` message a user actually sees on an unsupported host.
+
+  Nothing about the gap itself changed. The Dart SDK does ship arm64 Linux, so
+  the dev-mode `Isolate.resolvePackageUri` path is reachable there and throws;
+  Flutter on arm64 Linux remains blocked upstream (no arm64 Linux SDK on any
+  channel) rather than deferred. Text-only — no behaviour change, and every
+  other cratestack#563 reference in this package is historical provenance and
+  stays as it is.
+
 ## 0.8.15 (2026-08-28)
 
 - **`createCborCodec()` is idempotent, and resolves its vendored library under

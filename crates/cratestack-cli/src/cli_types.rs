@@ -81,10 +81,13 @@ pub(crate) enum Command {
         /// — or for any consumer that just wants the dependency-free
         /// pure-Dart codec.
         ///
-        /// That gap is only reachable under plain `dart test`/`dart run`:
-        /// the Dart SDK ships arm64 Linux, Flutter does not, so a Flutter
-        /// app cannot be built for that host at all. Not pending work on
-        /// the Flutter side — blocked upstream; see the package README.
+        /// That gap is blocked upstream, not pending work: Flutter
+        /// publishes no arm64 Linux SDK on any channel, and `cratestack_
+        /// cbor` requires the Flutter SDK to resolve at all (it declares
+        /// `flutter.plugin.platforms`, which obliges `environment.flutter`)
+        /// — so plain `dart test`/`dart run` is not a way around it either,
+        /// contrary to what this comment claimed before cratestack#823
+        /// measured it. See the package README.
         ///
         /// Purely additive: every other emitted file is byte-identical
         /// with and without it.

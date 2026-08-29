@@ -82,6 +82,77 @@ its public API proven unchanged.
 Two now-stale `deny.toml` ignores (RUSTSEC-2026-0194/0195) were deleted — their own recorded
 revisit condition, "when tauri ships a plist >=1.10", is met, and `cargo-deny` reports both as
 not-detected.
+### Linux arm64: corrected from "half open" to blocked upstream, both halves (#823)
+
+Every doc that described this gap drew a distinction that does not exist. The claim — inherited from
+#563 and repeated in the package README, the library doc, `native_cbor_codec.dart`'s header and its
+`UnsupportedError` message, `cratestack-cli`'s `--no-native-cbor` help, and
+`docs/tooling/cratestack-cbor-development.md` — was that *Flutter* on arm64 Linux is blocked upstream
+but plain `dart test`/`dart run` "needs no Flutter bundling at all" and so remained separately
+reachable and separately fixable.
+
+Measured on a clean `dart:stable` container with no Flutter on `PATH`, and it fails identically for a
+pub.dev dependency, a `path:` dependency, and the package in place:
+
+```text
+Because cratestack_cbor requires the Flutter SDK, version solving failed.
+```
+
+`dart-packages/cratestack_cbor/pubspec.yaml` declares `flutter.plugin.platforms`, which obliges
+`environment.flutter` — pub validates the one against the other — so the Flutter SDK is required to
+**resolve** the package, not merely to bundle it. That reproduces on x86_64, so it was never an
+architecture question. With no published Flutter SDK for arm64 Linux (re-verified: 734 entries in
+`releases_linux.json`, zero containing `arm` or `aarch`), an arm64 Linux user fails at `pub get`
+before `createCborCodec()` runs, and a vendored `blobs/linux-arm64/` would be unreachable.
+
+#823 was filed to add that blob and is closed unimplemented on this evidence. `--no-native-cbor`
+remains the answer for that target. Docs only — no behaviour change.
+
+### The generated Dart `pubspec.yaml` no longer claims `cratestack_cbor` is version-locked (#563, #823)
+
+`crates/cratestack-client-dart/templates/pubspec.yaml.j2`'s comment above the `cratestack_cbor`
+dependency said the constraint was "version-locked to this generator's own crate version, the same
+lockstep convention `just bump` already applies". That stopped being true with #779, which moved
+every generated dependency constraint to a constant API floor: `context.rs` emits
+`CRATESTACK_CBOR_FLOOR`, and it deliberately does *not* move with `just bump` — which is the whole
+point, since deriving it from the release version is what broke `Prepare Release` for 0.8.14 (#754).
+The correct account was three lines below in the same file, for the sibling constraints. The comment
+now points at `package_floors.rs` instead, and at #823 for the Linux arm64 gap it mentions (#563,
+which used to track that gap, closed on 2026-08-29).
+
+Comment-only. The emitted `cratestack_cbor:` constraint is byte-identical.
+### `.cstack` files carry the CrateStack mark in the VS Code explorer
+
+`.cstack` files rendered with whatever generic glyph the active icon theme falls back to, so a
+schema was visually indistinguishable from any unrecognised file in the tree. The extension now
+contributes `icons/cstack-light.svg` and `icons/cstack-dark.svg` through
+`contributes.languages[].icon`.
+
+Worth being precise about what this does, because the mechanism is a fallback rather than an
+override: VS Code shows a language icon only when the active file icon theme has no icon of its own
+for that language or extension, and does not set `"showLanguageModeIcons": false`. Under Seti (the
+default) `.cstack` matches nothing, so the mark renders; a theme that already ships a `.cstack` glyph
+still wins, and one that opts out still shows nothing. An extension cannot force an icon into a theme
+the user chose — the only alternative is shipping an entire icon theme, which would make users
+abandon Seti or Material Icon Theme to see one file type.
+
+The artwork is the approved extension mark redrawn as geometry rather than traced, so it stays crisp
+at the 16x16 the explorer actually renders, with the palette sampled exact from `icon.png`
+(`#F7B270`/`#E88A3A`/`#BF6A26`). The gallery tile's `#1E222E` background is deliberately dropped: a
+file icon sits on the explorer's own background, where an opaque plate would render as a dark box on
+every theme that isn't that navy. The light variant deepens the palette one step for legibility
+against a near-white tree; the hue is unchanged.
+
+Requires VS Code 1.64+ (microsoft/vscode#14662, implemented January 2022). `engines.vscode` is
+already `^1.91.0`, so no floor change — but `test/language-icon.test.js` now asserts that floor stays
+above 1.64, because below it the contribution is parsed and silently ignored, and lowering the floor
+would un-ship the icon for exactly the users a lower floor was meant to reach. The same test guards
+that both variants are declared, resolve to real files, and are SVG. All four assertions were proven
+by breaking them independently.
+
+Both SVGs were confirmed inside a built `.vsix` by sha256 against the working tree, not inferred from
+`.vscodeignore` being a denylist. What no automated check here covers is whether the icon *looks*
+right at 16x16 in a real explorer.
 
 ### `Bytes` now survives `transport rpc` — two independent defects, one symptom (#820, #806)
 

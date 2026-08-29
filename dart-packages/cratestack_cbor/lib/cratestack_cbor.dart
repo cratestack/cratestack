@@ -9,11 +9,13 @@
 ///   (arm64-v8a, x86_64, armeabi-v7a), Windows x86_64, macOS (arm64 +
 ///   x86_64, as one universal xcframework), and iOS (device arm64 +
 ///   universal simulator arm64/x86_64, as one xcframework). Linux arm64 is
-///   the one gap, and for Flutter it is blocked upstream rather than
-///   deferred — Flutter publishes no arm64 Linux SDK on any channel, so
-///   `flutter build linux` cannot run on such a host at all. Plain `dart`
-///   on arm64 Linux is a separate, still-open case (cratestack#563): the
-///   Dart SDK *does* ship there.
+///   the one gap, and it is blocked upstream rather than deferred — Flutter
+///   publishes no arm64 Linux SDK on any channel. Plain `dart test`/`dart
+///   run` is not a way around that (cratestack#823): this package declares
+///   `flutter.plugin.platforms`, which obliges `environment.flutter`, so a
+///   standalone Dart SDK cannot even resolve it — `Because cratestack_cbor
+///   requires the Flutter SDK, version solving failed`. The Dart SDK does
+///   ship arm64 Linux; that is true and not sufficient.
 /// - **Web** (`dart.library.js_interop`): the existing
 ///   `cratestack-cbor-wasm` wasm-bindgen artifact (already shipped to npm
 ///   as `@cratestack/cbor-web`), vendored and loaded via `dart:js_interop`
