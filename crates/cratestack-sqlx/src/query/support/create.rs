@@ -179,6 +179,27 @@ pub(crate) fn evaluate_input_predicate(
             .is_some_and(|candidate| sql_value_matches_literal(candidate, value)),
         ReadPredicate::FieldNeLiteral { column, value } => find_column_value(values, column)
             .is_some_and(|candidate| !sql_value_matches_literal(candidate, value)),
+        // `in` / `not in` (issue #666). A column absent from the input
+        // fails BOTH, matching how `FieldEqLiteral`/`FieldNeLiteral`
+        // treat absence — `is_some_and` returns false either way. That
+        // is the fail-closed reading: an unstated column cannot be
+        // asserted to be outside a set any more than inside one.
+        ReadPredicate::FieldInLiterals {
+            column,
+            values: literals,
+        } => find_column_value(values, column).is_some_and(|candidate| {
+            literals
+                .iter()
+                .any(|literal| sql_value_matches_literal(candidate, *literal))
+        }),
+        ReadPredicate::FieldNotInLiterals {
+            column,
+            values: literals,
+        } => find_column_value(values, column).is_some_and(|candidate| {
+            !literals
+                .iter()
+                .any(|literal| sql_value_matches_literal(candidate, *literal))
+        }),
         ReadPredicate::FieldEqAuth { column, auth_field } => match (
             find_column_value(values, column),
             auth_value_to_sql(ctx, auth_field),

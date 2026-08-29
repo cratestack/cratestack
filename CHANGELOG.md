@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+### Read policies gained `in` / `not in` against a set of literals (#666)
+
+`@@allow`/`@@deny` read-policy comparisons now accept set membership:
+
+```
+model Asset {
+  id Int @id
+  purpose AssetPurpose
+
+  @@allow("read", purpose in [product_image, product_thumbnail])
+  @@deny("read", purpose not in [product_image, product_thumbnail, product_video])
+}
+```
+
+This is the second half of #666. The first half — comparing a required enum field against a single
+variant — shipped earlier; `in` was scoped out then because it needed a genuinely new multi-value
+predicate shape rather than another literal arm, and this closes it.
+
+`in` is not enum-only. It reuses the same literal parser as `==`, so it accepts every type that arm
+already accepted: required `Boolean`, `Int`, `String`, and enum fields. Optional and list fields stay
+rejected, for the same reason as before — `column IN (...)` and `column NOT IN (...)` both evaluate to
+NULL when the column is NULL, so a nullable column would silently fall out of *both* branches.
+
+**It is not a desugaring.** `purpose == a || purpose == b` still works and still lowers to an `Or`
+tree of single comparisons; `purpose in [a, b]` lowers to one flat `ReadPredicate::FieldInLiterals`
+and renders as a single `purpose IN ($1, $2)`, one bind slot per element.
+
+Rejected at compile time rather than accepted quietly:
+
+- `field in []` — an empty set is a constant `FALSE` wearing a policy's clothes, and SQL has no valid
+  `IN ()` form to render it to.
+- A trailing or doubled comma, naming the position.
+- An unknown enum variant *anywhere* in the list, naming the offending variant — a typo among
+  otherwise-valid variants silently narrows a policy, which is the failure this whole issue is about.
+- A bracketed term with no `in` keyword (`join [...]`). Without this guard the trailing `in` is
+  stripped off the *field name*, and if the shortened name is also a real column the malformed term
+  compiles into a working policy that gates on the wrong data.
+
+Commas inside a quoted string literal do not split the list, so `status in ["a,b", "c"]` is two
+elements.
+
 ## 0.8.15 (2026-08-28)
 
 ### A misspelled field attribute is now a parse error, not a silent no-op (#679)

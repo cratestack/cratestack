@@ -9,6 +9,9 @@
 //! - [`enum_literal`]: the required-enum-field arm of
 //!   [`predicates::parse_policy_literal`] (issue #666), split out to
 //!   keep `predicates.rs` under this crate's 200-LoC file convention.
+//! - [`in_list`]: `field in [A, B, C]` / `field not in [...]` set
+//!   membership (issue #666), lowering to a flat `column IN (...)`
+//!   rather than a nested `Or` of equalities.
 //! - [`relation_path`]: `a.b.c` path resolution through relations,
 //!   producing the segments [`predicates::wrap_relation_predicate`]
 //!   later folds into nested `ReadPredicate::Relation`.
@@ -19,12 +22,15 @@
 
 mod comparison;
 mod enum_literal;
+mod in_list;
 mod predicates;
 mod relation_path;
 mod term;
 
 #[cfg(test)]
 mod tests_enum_literal;
+#[cfg(test)]
+mod tests_in_list;
 #[cfg(test)]
 mod tests_system_principal;
 

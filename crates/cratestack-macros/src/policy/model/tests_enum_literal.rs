@@ -103,9 +103,10 @@ fn required_enum_field_inequality_lowers_to_field_ne_literal() {
     );
 }
 
-/// `field == A || field == B` — the supported substitute for `in`
-/// against a set of variants (issue #666 explicitly scopes `in` out;
-/// this is the existing `Or` combinator doing the same job).
+/// `field == A || field == B` — composing equality through the `Or`
+/// combinator. This was the only way to express "one of these variants"
+/// until `in` landed (see `tests_in_list`); it still works and still
+/// lowers to an `Or` tree, which is the difference `in` removes.
 #[test]
 fn enum_equality_composes_with_or_for_multiple_variants() {
     let lowered = lower(&asset_schema(

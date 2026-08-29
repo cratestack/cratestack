@@ -11,6 +11,7 @@ use crate::relation::parse_relation_attribute;
 use crate::shared::to_snake_case;
 
 use super::comparison::parse_model_comparison;
+use super::in_list::{parse_model_in_comparison, split_in_term};
 use super::predicates::{
     ensure_auth_field, find_model_field, generate_scalar_bool_predicate, wrap_relation_predicate,
 };
@@ -54,6 +55,14 @@ pub(super) fn parse_policy_term(
 
     if let Some(relation_field) = term.strip_suffix("== auth()") {
         return parse_auth_relation_equality(model, auth, types, relation_field.trim());
+    }
+
+    // Before the `==`/`!=` splits: an `in` term contains neither
+    // operator, so ordering is not load-bearing for correctness — but
+    // keeping set membership adjacent to the comparison arms is how a
+    // reader finds it.
+    if let Some((lhs, list, negate)) = split_in_term(term) {
+        return parse_model_in_comparison(lhs, list, model, models, enums, negate);
     }
 
     if let Some((field, rhs)) = term.split_once("==") {
