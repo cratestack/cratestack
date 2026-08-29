@@ -1,0 +1,840 @@
+# Narrow, dated allowlist for the file-length check
+# (`.ci/file-length-check.sh`, CLAUDE.md "200-LoC file ceiling").
+#
+# Every entry names exactly ONE file. There is no directory or glob form,
+# deliberately: a directory-wide entry would hide any *other* file in that
+# directory that grows past the ceiling later, which is exactly how a
+# convention rots into a formality.
+#
+# The checker treats an unmatched entry — a file that has since been split,
+# or that no longer exists — as a HARD FAILURE, the same way
+# `.ci/layer-direction-allowlist.toml` does. Remove the entry in the same PR
+# that splits the file.
+#
+# Seeded 2026-08-29 from the backlog that existed when the check was added:
+# 116 files, largest 553 lines. This is a paydown list, not a permanent
+# exemption — the point of enforcing the ceiling now is that the backlog can
+# only shrink.
+#
+# `crates/cratestack-auth` is deliberately ABSENT: it was the worst offender
+# (4 files, 549-904 lines of code each) and was split in the same change that
+# added this check, from 6 files/max 1381 to 65 files/max 193.
+#
+# Each entry:
+#   path   = repo-relative path
+#   lines  = line count when the entry was added (context, not a threshold)
+#   issue  = "#NNN" - the tracking issue for the paydown (required)
+#   added  = "YYYY-MM-DD"
+#   reason = one line of context (required)
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_field_attrs.rs"
+lines = 553
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cli/src/drift.rs"
+lines = 505
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_procedures.rs"
+lines = 474
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_type_declaration_collisions.rs"
+lines = 457
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cli/src/schema_diff/tests_attributes.rs"
+lines = 446
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_model_attrs.rs"
+lines = 446
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-migrate/src/emit/sqlite/tests.rs"
+lines = 406
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cli/src/cli_handlers/tests_generate.rs"
+lines = 403
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cli/src/main.rs"
+lines = 403
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_types.rs"
+lines = 391
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cli/src/cli_types.rs"
+lines = 389
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_computed.rs"
+lines = 378
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_builder_collisions.rs"
+lines = 371
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/context.rs"
+lines = 370
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-migrate/src/emit/postgres/tests/create.rs"
+lines = 370
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cli/src/cli_handlers.rs"
+lines = 356
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/procedures.rs"
+lines = 351
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_attribute_spacing.rs"
+lines = 347
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/type_names.rs"
+lines = 342
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/swr/context.rs"
+lines = 335
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-studio/src/data/postgres/tests.rs"
+lines = 334
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/views.rs"
+lines = 332
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/context.rs"
+lines = 319
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_reserved_keywords.rs"
+lines = 318
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-lsp/src/completion.rs"
+lines = 315
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/riverpod/build_model.rs"
+lines = 311
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/include/server/collect.rs"
+lines = 308
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/wire_shapes_tests.rs"
+lines = 298
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-service/src/health.rs"
+lines = 295
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/mod.rs"
+lines = 291
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/include/server.rs"
+lines = 289
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-axum/src/transport/media_type.rs"
+lines = 288
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/riverpod/build_procedures.rs"
+lines = 288
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-migrate/src/emit/postgres/tests/enums.rs"
+lines = 287
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-core/src/error.rs"
+lines = 283
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/events/bus.rs"
+lines = 283
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/axum/procedure/tests.rs"
+lines = 283
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-studio/src/data/sqlite/tests.rs"
+lines = 282
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-sqlx/src/isolation.rs"
+lines = 281
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-migrate/src/emit/postgres/tests/columns.rs"
+lines = 280
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/wire_shapes.rs"
+lines = 273
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_model_index.rs"
+lines = 271
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/riverpod/views.rs"
+lines = 267
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/include/embedded.rs"
+lines = 267
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-axum/src/ratelimit/rest_ops_filter.rs"
+lines = 261
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/context.rs"
+lines = 261
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/types.rs"
+lines = 259
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_snake_case_collisions.rs"
+lines = 256
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/builder_collisions.rs"
+lines = 250
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_model_unique.rs"
+lines = 247
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-axum/src/ratelimit/tests.rs"
+lines = 245
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-rust/src/streaming.rs"
+lines = 245
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-service/src/config.rs"
+lines = 245
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/mixins_types.rs"
+lines = 243
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-cli/src/schema_diff/models.rs"
+lines = 242
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-pg/src/lib.rs"
+lines = 242
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-sqlx/src/tests_upsert_conflict_predicate.rs"
+lines = 242
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/misspelled_attributes.rs"
+lines = 237
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/parse/mod.rs"
+lines = 236
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_computed_params.rs"
+lines = 236
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cbor-wasm/src/wasm.rs"
+lines = 235
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_views.rs"
+lines = 235
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-flutter/src/cbor/mod.rs"
+lines = 233
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/schema.rs"
+lines = 232
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/procedure/tests.rs"
+lines = 231
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/riverpod/partition_tests.rs"
+lines = 230
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-macros/src/model/struct_only/field_definition.rs"
+lines = 230
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/riverpod/partition.rs"
+lines = 229
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/parse/views.rs"
+lines = 229
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/route_naming.rs"
+lines = 228
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/relation/flat.rs"
+lines = 228
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-mock-wiremock/src/values.rs"
+lines = 228
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/model_attributes.rs"
+lines = 228
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-axum/src/ratelimit/layer.rs"
+lines = 227
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-axum/src/transport/media_type/tests.rs"
+lines = 226
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-macros/src/model/row_pg.rs"
+lines = 226
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-studio/src/eject.rs"
+lines = 226
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/model/inputs.rs"
+lines = 225
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-cbor-napi/src/lib.rs"
+lines = 224
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/riverpod/mod.rs"
+lines = 224
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_basic.rs"
+lines = 224
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-sqlx/src/query/write/delete.rs"
+lines = 224
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/client/computed_params/tests.rs"
+lines = 223
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/find_many_views.rs"
+lines = 222
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/value/codec_tests.rs"
+lines = 222
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-migrate/src/diff/tests/views.rs"
+lines = 221
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cbor-wasm/src/value_bridge.rs"
+lines = 219
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-sqlx/src/query/support/create.rs"
+lines = 219
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-axum/src/headers/tests_trusted_proxy.rs"
+lines = 218
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-cbor-napi/src/js_value/napi_conversions.rs"
+lines = 217
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-dart/src/builders_model.rs"
+lines = 217
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-cli/src/migrate/drift_report.rs"
+lines = 216
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-migrate/src/convert.rs"
+lines = 214
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/schema/computed_attribute.rs"
+lines = 213
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/transport/rest.rs"
+lines = 213
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/model/row_sqlite.rs"
+lines = 211
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-cli/src/migrate/tests_baseline.rs"
+lines = 210
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-macros/src/shared/bytes_serde/tests.rs"
+lines = 210
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-migrate/src/emit/postgres/tests/indexes.rs"
+lines = 210
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-migrate/src/diff/tests/primary_key.rs"
+lines = 207
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-migrate/src/emit/postgres/columns.rs"
+lines = 207
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-studio/src/audit/store.rs"
+lines = 207
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-core/src/lenient_bytes/tests.rs"
+lines = 205
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-macros/src/procedure.rs"
+lines = 205
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/snake_case_collisions.rs"
+lines = 205
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-client-typescript/src/naming.rs"
+lines = 204
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/validate/views.rs"
+lines = 204
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-studio/src/data/relations.rs"
+lines = 204
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-macros/src/axum/model/handlers_list.rs"
+lines = 203
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-mock-wiremock/src/model_state.rs"
+lines = 203
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-sql/src/relation_path.rs"
+lines = 203
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-migrate/src/diff/views.rs"
+lines = 202
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-sql/src/descriptor/mod.rs"
+lines = 202
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-sqlx/src/query/write/upsert.rs"
+lines = 202
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
+
+[[file]]
+path = "crates/cratestack-parser/src/tests_transport.rs"
+lines = 201
+issue = "#TBD"
+added = "2026-08-29"
+reason = "test module; split by concern when the module it covers is next touched"
+
+[[file]]
+path = "crates/cratestack-sql/src/order_catalog.rs"
+lines = 201
+issue = "#TBD"
+added = "2026-08-29"
+reason = "pre-existing; split by concern (extract inline tests first)"
