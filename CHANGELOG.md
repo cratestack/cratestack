@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Linux arm64: corrected from "half open" to blocked upstream, both halves (#823)
+
+Every doc that described this gap drew a distinction that does not exist. The claim — inherited from
+#563 and repeated in the package README, the library doc, `native_cbor_codec.dart`'s header and its
+`UnsupportedError` message, `cratestack-cli`'s `--no-native-cbor` help, and
+`docs/tooling/cratestack-cbor-development.md` — was that *Flutter* on arm64 Linux is blocked upstream
+but plain `dart test`/`dart run` "needs no Flutter bundling at all" and so remained separately
+reachable and separately fixable.
+
+Measured on a clean `dart:stable` container with no Flutter on `PATH`, and it fails identically for a
+pub.dev dependency, a `path:` dependency, and the package in place:
+
+```text
+Because cratestack_cbor requires the Flutter SDK, version solving failed.
+```
+
+`dart-packages/cratestack_cbor/pubspec.yaml` declares `flutter.plugin.platforms`, which obliges
+`environment.flutter` — pub validates the one against the other — so the Flutter SDK is required to
+**resolve** the package, not merely to bundle it. That reproduces on x86_64, so it was never an
+architecture question. With no published Flutter SDK for arm64 Linux (re-verified: 734 entries in
+`releases_linux.json`, zero containing `arm` or `aarch`), an arm64 Linux user fails at `pub get`
+before `createCborCodec()` runs, and a vendored `blobs/linux-arm64/` would be unreachable.
+
+#823 was filed to add that blob and is closed unimplemented on this evidence. `--no-native-cbor`
+remains the answer for that target. Docs only — no behaviour change.
+
 ### The generated Dart `pubspec.yaml` no longer claims `cratestack_cbor` is version-locked (#563, #823)
 
 `crates/cratestack-client-dart/templates/pubspec.yaml.j2`'s comment above the `cratestack_cbor`

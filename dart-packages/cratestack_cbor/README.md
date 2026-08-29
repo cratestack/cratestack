@@ -146,14 +146,15 @@ follow-up work — it is blocked upstream:
   armeabi-v7a), Windows x86_64, macOS (arm64 + x86_64, universal), and iOS
   (device arm64 + universal simulator arm64/x86_64).
   `resolveVendoredLibraryPath()` throws a clear `UnsupportedError` on Linux
-  arm64 rather than silently failing.
-- **Linux arm64 (Flutter): blocked upstream, not deferred.** Flutter
+  arm64 rather than silently failing — though see below for why almost
+  nobody can reach that throw.
+- **Linux arm64: blocked upstream, not deferred.** Flutter
   publishes **no arm64 Linux SDK on any channel**. Checked directly against
-  the release manifest — of 732 entries in
+  the release manifest — of 734 entries in
   `https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json`,
-  301 are tagged `dart_sdk_arch: x64` (through 2026-08-19) and the other 431
-  predate that field entirely (all dated 2018-02-27 → 2022-01-27, all x64
-  tarballs); **zero** archive paths contain `arm` or `aarch`. A throwaway
+  every entry is either tagged `dart_sdk_arch: x64` or predates that field
+  entirely (those all dated 2018-02-27 → 2022-01-27, all x64 tarballs);
+  **zero** archive paths contain `arm` or `aarch`. A throwaway
   spike on a real `ubuntu-24.04-arm` runner confirmed the practical effect:
   the host itself is fine (native `aarch64-unknown-linux-gnu` rustc, and
   clang/cmake/ninja/GTK3/xvfb all install cleanly), but
@@ -162,13 +163,26 @@ follow-up work — it is blocked upstream:
   linux` never runs. A user cannot reach this package's missing `.so` on
   arm64 Linux without first running a Flutter SDK that does not exist for
   their host. Revisit if Flutter ever publishes arm64 Linux archives.
-- **Linux arm64 (plain `dart`): open, and narrower than the above.** The
-  **Dart** SDK *does* ship `dartsdk-linux-arm64-release.zip`, so the
-  dev-mode `Isolate.resolvePackageUri` path — the one `dart test`/`dart run`
-  use, which needs no Flutter bundling at all — is genuinely reachable on
-  arm64 Linux today, and throws. Supporting just that case needs only a
-  vendored `blobs/linux-arm64/` library; it is tracked separately on
-  cratestack#823 and is not what the Flutter block above rules out.
+- **Plain `dart test`/`dart run` is not an escape hatch from that.** An
+  earlier version of this section said it was — that plain `dart` "needs no
+  Flutter bundling at all" and so was separately reachable on arm64 Linux.
+  Wrong, and corrected in cratestack#823. This package declares
+  `flutter.plugin.platforms`, which obliges `environment.flutter` (pub
+  validates the one against the other), so the Flutter SDK is required to
+  **resolve** this package, not merely to bundle it. Measured on a clean
+  `dart:stable` container with no Flutter on `PATH` — identically for a
+  pub.dev dependency, a `path:` dependency, and the package in place:
+
+  ```text
+  Because cratestack_cbor requires the Flutter SDK, version solving failed.
+  ```
+
+  That reproduces on **x86_64**, so it is not an architecture problem at
+  all. The standalone Dart SDK *does* ship arm64 Linux
+  (`dartsdk-linux-arm64-release.zip`, 236 MB at 3.13.2) — true, and not
+  sufficient. An arm64 Linux user fails at `pub get`, before
+  `createCborCodec()` is ever called. Use `--no-native-cbor` (pure-Dart
+  `package:cbor`, works everywhere) for that target.
 
 ## Flutter app integration — proven, not just `dart test`
 

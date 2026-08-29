@@ -1,5 +1,22 @@
 ## Unreleased
 
+- **Linux arm64 is blocked upstream in both halves, not just the Flutter
+  one** (cratestack#823). The README's "Scope of this release", the library
+  doc comment, this package's `UnsupportedError` message and
+  `native_cbor_codec.dart`'s header all said that plain `dart test`/`dart
+  run` "needs no Flutter bundling at all" and was therefore separately
+  reachable on arm64 Linux. Measured, and it is not: this package declares
+  `flutter.plugin.platforms`, which obliges `environment.flutter`, so a
+  standalone Dart SDK fails with `Because cratestack_cbor requires the
+  Flutter SDK, version solving failed` — for a pub.dev dependency, a
+  `path:` dependency, and the package in place alike, and on x86_64 too.
+
+  The standalone Dart SDK does ship arm64 Linux; that was the true half of
+  the claim and it is not sufficient. Since Flutter publishes no arm64 Linux
+  SDK on any channel, an arm64 user fails at `pub get` before
+  `createCborCodec()` is called. Use `--no-native-cbor` for that target.
+  Text only — no behaviour change.
+
 - **The Linux arm64 `dart test`/`dart run` gap is now tracked on
   cratestack#823, not cratestack#563.** cratestack#563 — the ticket that built
   and published this package — was closed as completed on 2026-08-29, so the
