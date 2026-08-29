@@ -237,16 +237,46 @@ jobs:
             --user-agent "cratestack-release-preflight (https://github.com/cratestack/cratestack)" \
             -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
             https://crates.io/api/v1/me || echo 000)"
-          if [ "$code" != "200" ]; then
-            body="$(head -c 400 /tmp/crates_me.json 2>/dev/null || true)"
-            if [ -z "$body" ]; then
-              echo "::error::crates.io returned HTTP ${code} with an EMPTY body. That is the signature of the request being rejected before the token was read (historically: a missing or blocked User-Agent), NOT of a bad credential. Do not rotate the token on this signal alone — reproduce with 'curl -sS -o /dev/null -w %{http_code} --user-agent ... https://crates.io/api/v1/me' first." >&2
-            else
-              echo "::error::crates.io rejected CARGO_REGISTRY_TOKEN (HTTP ${code}). Response body follows; 'authentication failed' means the token really is invalid or revoked and should be rotated in Settings -> Secrets." >&2
+          # `/api/v1/me` is a WEBSITE-SESSION endpoint: no API token can ever
+          # complete it, so `200` is not a reachable success here. What the
+          # response distinguishes is whether the token AUTHENTICATED, which
+          # is the thing worth proving before ten channels start publishing.
+          # crates.io evaluates auth first, then the endpoint's session
+          # requirement, so the two failures are ordered and separable:
+          #
+          #   bad/unknown token -> {"errors":[{"detail":"authentication failed"}]}
+          #   VALID token       -> {"errors":[{"detail":"this action can only be
+          #                          performed on the crates.io website"}]}
+          #
+          # The second message is only ever emitted AFTER authentication
+          # succeeds — reaching it is positive proof the credential is good.
+          # An empty body means the request was rejected at the edge before
+          # the token was read at all (a missing or blocked User-Agent),
+          # which says nothing about the credential either way.
+          body="$(head -c 400 /tmp/crates_me.json 2>/dev/null || true)"
+          case "$body" in
+            *"authentication failed"*)
+              echo "::error::crates.io REJECTED CARGO_REGISTRY_TOKEN (HTTP ${code}): authentication failed. This one really is a bad or revoked credential — rotate it in Settings -> Secrets." >&2
               printf '%s\n' "$body" >&2
-            fi
-            exit 1
-          fi
+              exit 1
+              ;;
+            *"can only be performed on the crates.io website"*)
+              echo "✓ crates.io authenticated the token (the endpoint itself is website-only, which is expected and is what proves auth succeeded)"
+              ;;
+            "")
+              echo "::error::crates.io returned HTTP ${code} with an EMPTY body — the request was rejected before the token was read (historically: a missing or blocked User-Agent). This is NOT a credential signal; do not rotate on it." >&2
+              exit 1
+              ;;
+            *)
+              if [ "$code" = "200" ]; then
+                echo "✓ crates.io accepts the token"
+              else
+                echo "::error::crates.io returned an unrecognised HTTP ${code} response. Body follows — check it against the two known cases before assuming the credential is at fault." >&2
+                printf '%s\n' "$body" >&2
+                exit 1
+              fi
+              ;;
+          esac
           echo "✓ crates.io accepts the token"
 
       # npm trusted publishing is OIDC, so there is no secret to check.

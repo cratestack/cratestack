@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### The crates.io pre-flight probed a website-only endpoint, so it could never pass (#651)
+
+Follow-up to #835, which fixed the missing `User-Agent` on this check. That fix was necessary and
+revealed the real defect underneath: **`/api/v1/me` is a website-session endpoint that no API token
+can complete**, so the check's `HTTP 200` success condition was unreachable by construction. It had
+never passed, which matches the record — every `release-cli` run before v0.9.0 had no pre-flight
+job at all, so v0.9.0 was its first execution.
+
+crates.io evaluates authentication first and the endpoint's session requirement second, which makes
+the two failures ordered and separable:
+
+```
+bad/unknown token -> {"errors":[{"detail":"authentication failed"}]}
+VALID token       -> {"errors":[{"detail":"this action can only be performed on the crates.io website"}]}
+```
+
+The second message is only ever emitted **after** authentication succeeds, so reaching it is
+positive proof the credential is good — which is how the v0.9.0 token was cleared without rotating
+it. The check now treats that response as success, `authentication failed` as the only
+rotate-worthy outcome, and an empty body as an edge rejection that says nothing about the
+credential.
+
+### Released as 0.9.1, not 0.9.0
+
+v0.9.0 was tagged and its GitHub Release cut, but **nothing reached any registry**: the publish
+pre-flight (#651) failed on its first ever real run and gated all ten channels before any of them
+executed. crates.io, npm and pub.dev all remained on 0.8.15 throughout, so no version was
+half-published — which is precisely what that gate exists to prevent.
+
+The pre-flight failure itself was a bug in the check, not a bad credential (see the entry below),
+and is fixed. The version number moves to 0.9.1 as a maintainer decision: `v0.9.0` remains as a tag
+and a GitHub Release that shipped nothing to any package registry, and should not be mistaken for a
+real release.
+
+
 ### The release pre-flight failed a valid crates.io token because it sent no User-Agent (#651)
 
 The publish pre-flight added by #651 ran for the first time on v0.9.0 and blocked the release,
