@@ -17,9 +17,12 @@ dependencies:
   # native-cbor follow-up landed. Linux arm64 is the only target still
   # unsupported (regenerate with `--no-native-cbor` for that target) — see
   # dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart's
-  # `Abi.current()` checks. Version-locked to this generator's own crate
-  # version, the same lockstep convention `just bump` already applies to
-  # dart-packages/*/pubspec.yaml.
+  # `Abi.current()` checks, and cratestack#823 for the narrower plain-`dart`
+  # half of that gap. An API-compatibility FLOOR, not this generator's own
+  # crate version: cratestack#779 stopped it moving with `just bump` (which
+  # still rewrites dart-packages/*/pubspec.yaml itself) — the value is
+  # crates/cratestack-client-dart/src/package_floors.rs's
+  # `CRATESTACK_CBOR_FLOOR`.
   cratestack_cbor: {{ cratestack_cbor_version_requirement }}
 {% else %}
   cbor: ^6.5.1

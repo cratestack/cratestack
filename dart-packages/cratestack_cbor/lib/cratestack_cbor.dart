@@ -12,7 +12,7 @@
 ///   the one gap, and for Flutter it is blocked upstream rather than
 ///   deferred — Flutter publishes no arm64 Linux SDK on any channel, so
 ///   `flutter build linux` cannot run on such a host at all. Plain `dart`
-///   on arm64 Linux is a separate, still-open case (cratestack#563): the
+///   on arm64 Linux is a separate, still-open case (cratestack#823): the
 ///   Dart SDK *does* ship there.
 /// - **Web** (`dart.library.js_interop`): the existing
 ///   `cratestack-cbor-wasm` wasm-bindgen artifact (already shipped to npm
