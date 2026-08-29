@@ -289,6 +289,27 @@ export function encodeWireFields(value: unknown): unknown {
   if (value instanceof Decimal) {
     return value.toString();
   }
+  // Pass a `Bytes` value through UNTOUCHED (cratestack#820). Load-bearing
+  // and easy to delete by accident, because it looks like a no-op.
+  //
+  // A `Uint8Array` is not `Array.isArray`, so without this it falls into
+  // the generic object branch below and is rebuilt through
+  // `Object.entries` into `{"0":1,"1":2,"2":3}`. That happens before
+  // EITHER codec runs — `terminalLink` calls this function
+  // unconditionally — so it broke both of them at once: the native codec
+  // emitted a CBOR map where a byte string belongs, and on the JSON path
+  // `encodeBinaryAsJson` never saw a real `Uint8Array` to convert, so its
+  // `Array.from` never fired either. Measured on a real generated client,
+  // not theorized.
+  //
+  // Returning it as-is is correct for both paths rather than a
+  // native-only carve-out: the native codec wants the real typed array
+  // (RFC 8949 major type 2, cratestack#783), and the JSON path wants
+  // `encodeBinaryAsJson` to receive one so it can produce the integer
+  // array — which is exactly what this restores.
+  if (value instanceof Uint8Array) {
+    return value;
+  }
   if (Array.isArray(value)) {
     return value.map((item) => encodeWireFields(item));
   }

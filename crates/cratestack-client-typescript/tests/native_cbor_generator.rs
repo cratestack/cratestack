@@ -63,14 +63,24 @@ const RPC_FIXTURE: &str = "tiny_rpc";
 /// on a bump and the test stayed green while the emitted range walked off
 /// the published registry.
 ///
-/// A literal is the tripwire. At the next version this still expects
-/// `^0.8.0`; a generator that has gone back to deriving emits `^0.9.0`
-/// and fails here — on the bump PR, which is where #779's damage lands.
+/// A literal is the tripwire. At the next version this still expects the
+/// value below; a generator that has gone back to deriving emits
+/// `^0.9.0` and fails here — on the bump PR, which is where #779's
+/// damage lands.
 ///
 /// Kept in sync by hand with
 /// `cratestack_client_typescript::package_floors::CRATESTACK_CBOR_FLOOR`
 /// (`pub(crate)`, so not callable from an integration test).
-const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+///
+/// **Moved `^0.8.0` -> `^0.8.15` for cratestack#806**, and the way that
+/// happened is the tripwire working rather than an inconvenience: raising
+/// the real constant turned this test red, forcing the second edit to be
+/// a deliberate act with a reason attached. A derived value would have
+/// followed silently — which is the whole failure #779 removed. If you
+/// are here because this assertion failed, do not "fix" it by deriving;
+/// check that the new floor names a version npm actually serves, then
+/// update this literal too.
+const CRATESTACK_CBOR_FLOOR: &str = "^0.8.15";
 
 #[test]
 fn default_config_uses_native_cbor() {

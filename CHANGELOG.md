@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### `Bytes` now survives `transport rpc` — two independent defects, one symptom (#820, #806)
+
+A `Bytes` field on an RPC schema did not reach the wire in any shape a server-side `Vec<u8>` could
+decode, on **either** codec. Two separate causes had to be fixed for it to work, and each was
+invisible while the other was present:
+
+**#820 — the generated client destroyed the value before any codec ran.** `encodeWireFields` had no
+`Uint8Array` branch. A typed array is not `Array.isArray`, so it fell into the generic object case and
+was rebuilt through `Object.entries` into `{"0":1,"1":2,"2":3}`. `terminalLink` calls that function
+unconditionally, so it broke both codecs at once: the native codec emitted a CBOR map where a byte
+string belongs, and on the JSON path `encodeBinaryAsJson` never saw a real `Uint8Array`, so its
+`Array.from` never fired. Fixed by passing `Uint8Array` through untouched — which is what
+`encodeBinaryAsJson`'s own doc comment already said the native codec required.
+
+**#806 — no published codec encoded it correctly either.** `CRATESTACK_CBOR_FLOOR` is raised from
+`^0.8.0` to `^0.8.15`, the first published `@cratestack/cbor` whose codec encodes a `Uint8Array` as a
+CBOR byte string (major type 2). Verified against the registry rather than a changelog, which is the
+standard #754 established.
+
+Both were needed. With only the floor raised, the client still shipped map-encoded bytes; with only
+the client fixed, any consumer resolving `^0.8.0` still got the broken codec.
+
+**REST was never affected** and needs no change — `rest-runtime.ts.j2` calls `encodeBinaryAsJson`
+directly without `encodeWireFields`, which is why `tests/bytes_round_trip.rs` passed throughout. The
+asymmetry is the defect's shape, not an omission.
+
+The new test asserts **wire bytes**, deliberately. The defect is invisible at the type level
+(`Uint8Array` typechecks against both) and invisible to a decode-side round trip, because the same
+broken walk reads its own output back. Only the encoded bytes distinguish them.
+
+Also in `package_floors_tests.rs`: a floor may now **equal** the workspace version when its release
+has already published, listed in `PUBLISHED_EQUAL_FLOORS` with the evidence. The previous strict `<`
+was a conservative proxy for "the floor names a shipped release", correct on a bump PR and
+over-strict in the window between a release publishing and the next bump — which is exactly the
+window #806 landed in. A second test deletes the exemption once it is no longer needed, so it cannot
+rot into a blanket hole.
+
 ### Releases can be rehearsed without consuming a version number (#652)
 
 `release-cli.yml` gained a `rehearsal` input. Trigger it from the Actions tab, on any branch, with the
