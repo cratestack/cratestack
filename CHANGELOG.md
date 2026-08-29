@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.8.15 (2026-08-28)
+
 ### A misspelled field attribute is now a parse error, not a silent no-op (#679)
 
 `.cstack` attributes parse generically and an unrecognised one is simply inert, so a typo'd
