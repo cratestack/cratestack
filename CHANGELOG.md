@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Revert #845: the floor literal was a tripwire, and removing it was the wrong fix
+
+#845 replaced `native_cbor_generator.rs`'s hand-written `CRATESTACK_CBOR_FLOOR` literal with a value
+derived from `src/package_floors.rs`, on the grounds that the copy had drifted. Reverted, because the
+drift *was the guard working*: it had caught an incomplete revert of the real constant during the
+0.9.3 floor work. Removing it traded a working guard for a quieter test run.
+
+The literal is deliberate on two counts, only one of which #845 accounted for. It is a regression
+guard — a derived expectation would agree with the generator by construction and could not observe a
+floor that wrongly tracks the release version (#779). It is also a **process** guard: raising the
+real floor turns this test red, forcing the second edit to be a deliberate act with a reason
+attached. The TypeScript twin says so outright — *"do not 'fix' it by deriving"* — and records the
+tripwire working for #806. That instruction was there before #845 and should have settled it.
+
+The real defect was legibility, and that is what is fixed instead. A disagreement used to surface as
+three unrelated "pubspec must depend on cratestack_cbor" assertions dumping whole generated files,
+which is what made it read as noise. Both crates now carry a `literal_matches_the_real_floor` test
+that states it in one line and says what to do:
+
+```
+this file's CRATESTACK_CBOR_FLOOR literal (^0.9.3) disagrees with src/package_floors.rs (^9.9.9).
+This is the tripwire, not a bug: raising the real floor is meant to force a deliberate second
+edit here. Confirm ^9.9.9 names a version pub.dev actually serves, then update the literal.
+```
+
+Verified by forcing the real constant to `^9.9.9` in each crate and confirming the new test fails
+with that message — and that the expectation itself is still the hand-written literal, so the
+tripwire is intact rather than automated away.
+
+A sweep for the same pattern found no other copies: the Dart `ANNOTATIONS`/`BUILDER` floors and the
+TypeScript `REFINE` floor have no duplicates, as constants or bare literals. `CRATESTACK_CBOR_FLOOR`
+is duplicated in both crates by design, and both are now guarded.
+
+
 ### The duplicated `CRATESTACK_CBOR_FLOOR` is now derived, not hand-synced
 
 `tests/native_cbor_generator.rs` kept its own literal copy of the floor, hand-synced with

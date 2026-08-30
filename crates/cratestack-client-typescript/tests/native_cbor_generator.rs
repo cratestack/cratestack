@@ -82,6 +82,57 @@ const RPC_FIXTURE: &str = "tiny_rpc";
 /// update this literal too.
 const CRATESTACK_CBOR_FLOOR: &str = "^0.8.15";
 
+/// Reads `CRATESTACK_CBOR_FLOOR` out of `src/package_floors.rs`.
+///
+/// Used ONLY by [`literal_matches_the_real_floor`], never to build an
+/// expectation — deriving the expectation is precisely what the constant
+/// above forbids. A line scan rather than a Rust parse, matching
+/// `package_floors_tests.rs`'s own pubspec reader: one constant, known
+/// shape, and pulling in a parser to read it would be the larger risk.
+fn real_cbor_floor() -> String {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/package_floors.rs");
+    let source = std::fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("reading {path} for CRATESTACK_CBOR_FLOOR: {error}"));
+    source
+        .lines()
+        .find_map(|line| {
+            let rest = line
+                .trim()
+                .strip_prefix("pub(crate) const CRATESTACK_CBOR_FLOOR: &str = \"")?;
+            rest.strip_suffix("\";").map(str::to_owned)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "could not find `pub(crate) const CRATESTACK_CBOR_FLOOR: &str = \"...\";` in \
+                 {path} — was it renamed or reformatted? This drift check is meaningless until \
+                 it can read the real floor."
+            )
+        })
+}
+
+/// States the tripwire as its own assertion, so a disagreement reads as one
+/// clear line rather than as unrelated "package.json must depend on
+/// @cratestack/cbor" failures dumping whole generated files.
+///
+/// This does NOT weaken the literal above — the expectation stays hand-
+/// written, and raising the real floor still turns this red and still
+/// demands a deliberate second edit. It only makes the reason legible. The
+/// Dart crate carries the identical pair; adding it there was prompted by
+/// that failure mode being misread as noise and "fixed" by deriving (#845),
+/// which was reverted.
+#[test]
+fn literal_matches_the_real_floor() {
+    let real = real_cbor_floor();
+    assert_eq!(
+        CRATESTACK_CBOR_FLOOR, real,
+        "this file's CRATESTACK_CBOR_FLOOR literal ({CRATESTACK_CBOR_FLOOR}) disagrees with \
+         src/package_floors.rs ({real}).\n\nThis is the tripwire, not a bug: raising the real \
+         floor is meant to force a deliberate second edit here. Confirm {real} names a version \
+         npm actually serves, then update the literal in this file to match. Do NOT derive it — \
+         see the constant's doc comment for why."
+    );
+}
+
 #[test]
 fn default_config_uses_native_cbor() {
     let config = TypeScriptGeneratorConfig::default();
