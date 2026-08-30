@@ -61,7 +61,7 @@
 # binary).
 Pod::Spec.new do |s|
   s.name             = 'cratestack_cbor'
-  s.version          = '0.9.3'
+  s.version          = '0.9.4'
   s.summary          = 'Native CBOR codec for CrateStack Dart/Flutter clients (macOS).'
   s.description      = <<-DESC
 Vendors a prebuilt universal (arm64 + x86_64) xcframework wrapping

@@ -2,7 +2,7 @@
   "name": "cratestack-vscode",
   "displayName": "CrateStack",
   "description": "VS Code support for CrateStack .cstack schemas",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "publisher": "cratestack",
   "license": "MIT",
   "icon": "icon.png",
