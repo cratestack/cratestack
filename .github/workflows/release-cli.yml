@@ -421,7 +421,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release-${{ matrix.target }}
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: studio-ui-bundle
           path: crates/cratestack-studio
@@ -462,7 +462,7 @@ jobs:
     needs: [prepare, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: release-asset-*
           path: dist
@@ -761,7 +761,7 @@ jobs:
         env:
           CRATESTACK_CLI_SKIP_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: cbor-node-binary-*
           path: cbor-node-artifacts
@@ -1319,7 +1319,7 @@ jobs:
       # drops a multi-minute `cargo install` and guarantees macOS and Windows
       # consume byte-identical glue. See `build-cbor-glue` above.
       - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-frb-glue-release
           path: .
@@ -1391,7 +1391,7 @@ jobs:
       # Takes the shared artifact rather than running codegen locally — same
       # reason as `build-cbor-macos`'s identical step.
       - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-frb-glue-release
           path: .
@@ -1446,7 +1446,7 @@ jobs:
       # No frb codegen on this runner — it cannot work here. See
       # `build-cbor-glue`'s header for the upstream Windows path bug.
       - name: Restore frb glue (generated once on Linux by `build-cbor-glue`)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-frb-glue-release
           path: .
@@ -1665,7 +1665,7 @@ jobs:
       # writes the assembled xcframework under `macos/Frameworks/` instead,
       # sibling of `macos/cratestack_cbor.podspec`.
       - name: Download macOS xcframework (built on macos-latest — cannot cross-compile from this host)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-native-macos
           path: dart-packages/cratestack_cbor/macos/Frameworks
@@ -1680,12 +1680,12 @@ jobs:
       # `cbor-native-windows-x64`'s single-`.dll` download already uses for
       # a directory-shaped artifact, just with more files inside.
       - name: Download iOS xcframework (built on macos-latest — cannot cross-compile from this host)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-native-ios
           path: dart-packages/cratestack_cbor/ios/Frameworks/CratestackCborNative.xcframework
       - name: Download Windows native library (built on windows-latest — cannot cross-compile from this host)
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: cbor-native-windows-x64
           path: dart-packages/cratestack_cbor/blobs/windows-x64
