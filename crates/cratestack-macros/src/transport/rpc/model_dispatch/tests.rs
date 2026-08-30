@@ -132,6 +132,7 @@ fn internal_filters_the_no_primary_key_fallback_too() {
                 arity: TypeArity::Required,
                 generic_args: Vec::new(),
                 int_args: Vec::new(),
+                ident_args: Vec::new(),
             },
             attributes: Vec::new(),
             span: span(),

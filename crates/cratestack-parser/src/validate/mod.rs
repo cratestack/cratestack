@@ -22,6 +22,7 @@ mod removed_attributes;
 mod reserved_idents;
 mod route_collisions;
 mod snake_case_collisions;
+mod spatial_type;
 mod stream_attribute;
 mod type_names;
 mod validator_args;

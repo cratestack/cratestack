@@ -95,6 +95,18 @@ pub(super) fn build_partial_select<M, PK>(
                          are server-only",
                     );
                 }
+                #[cfg(feature = "postgis")]
+                OrderTarget::SpatialDistance { .. } => {
+                    // PostGIS is server-only for the same reason as
+                    // pgvector above — fail loud rather than silently
+                    // drop a nearest-first ordering the caller asked
+                    // for, mirroring `render/order.rs`.
+                    panic!(
+                        "PostGIS distance ordering is not supported on the embedded \
+                         rusqlite backend; schemas that use FieldRef::order_by_distance_to \
+                         are server-only",
+                    );
+                }
             }
         }
     }

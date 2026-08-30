@@ -1,0 +1,5 @@
+error: schema declares `extension postgis { }`, but `include_embedded_schema!` can never support it, no matter which Cargo features are enabled — postgis is a Postgres extension and the embedded backend is rusqlite-only, so there is no `geography`/`geometry` column type or `CREATE EXTENSION` for it to map onto. Use `include_server_schema!` instead (with its `postgis` Cargo feature enabled) for schemas that need `Geography(...)`/`Geometry(...)` fields, or drop the `extension postgis { }` block from schemas meant for the embedded backend. See docs/design/extensions.md §6b.
+ --> tests/ui/generated/postgis_rejected_on_embedded.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-161/postgis_extension_embedded.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

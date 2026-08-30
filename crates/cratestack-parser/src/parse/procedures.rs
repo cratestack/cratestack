@@ -4,6 +4,7 @@ use cratestack_core::{Attribute, Procedure, ProcedureArg, ProcedureKind, SourceS
 
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, name_span_in_line, trimmed_span};
+use crate::parse::arg_split::split_top_level_commas;
 use crate::parse::procedure_docs::split_procedure_docs;
 use crate::parse::types::parse_type_ref;
 
@@ -130,7 +131,7 @@ fn parse_procedure_args(
 
     let mut args = Vec::new();
     let mut segment_start = 0usize;
-    for segment in args_src.split(',') {
+    for segment in split_top_level_commas(args_src) {
         let arg = segment.trim();
         if arg.is_empty() {
             segment_start += segment.len() + 1;

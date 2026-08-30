@@ -93,9 +93,10 @@ pub use schema::{
     EnumVariant, ExtensionKind, Field, INTERNAL_ACTIONS, MixinDecl, Model, OwnedSchemaSummary,
     ParsedCompositeUnique, ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind, Schema,
     SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View,
-    ViewSource, computed_params_type_name, is_computed_attribute, is_computed_field,
-    model_internal_actions, parse_composite_id_attribute, parse_composite_unique_attribute,
-    parse_computed_params_arg, parse_index_attribute, parse_internal_attribute,
+    ViewSource, canonical_geometry_subtype, computed_params_type_name, geometry_subtype_names,
+    is_computed_attribute, is_computed_field, model_internal_actions, parse_composite_id_attribute,
+    parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
+    parse_internal_attribute,
 };
 pub use store::{
     ClientStateStore, IdempotencyStore, InMemoryStateStore, JsonFileStateStore,

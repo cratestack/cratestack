@@ -59,6 +59,7 @@ fn scalar_type_tokens(field: &Field) -> proc_macro2::TokenStream {
         arity: TypeArity::Required,
         generic_args: Vec::new(),
         int_args: Vec::new(),
+        ident_args: Vec::new(),
     };
     rust_type_tokens(&scalar_ty)
 }

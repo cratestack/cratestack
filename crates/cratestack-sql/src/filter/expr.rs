@@ -3,6 +3,7 @@ pub use cratestack_policy::RelationQuantifier;
 use super::coalesce::CoalesceFilter;
 use super::filter::Filter;
 use super::json::JsonFilter;
+#[cfg(feature = "postgis")]
 use super::spatial::SpatialFilter;
 use super::vector::VectorDistanceFilter;
 
@@ -35,6 +36,8 @@ pub enum FilterExpr {
     /// `FieldRef::dwithin_geography(...)`. PG-only; the embedded
     /// rusqlite backend doesn't ship SpatiaLite by default, so its
     /// renderer fails loud at codegen time.
+    #[cfg(feature = "postgis")]
+    #[cfg(feature = "postgis")]
     Spatial(SpatialFilter),
     /// `Vector(n)` distance-to-a-query-vector threshold predicates (see
     /// `docs/design/extensions.md` §6/§7, cratestack#163) — see
@@ -126,73 +129,5 @@ impl FilterExpr {
             }
             (left, right) => Self::Any(vec![left, right]),
         }
-    }
-
-    pub fn relation(
-        parent_table: &'static str,
-        parent_column: &'static str,
-        related_table: &'static str,
-        related_column: &'static str,
-        filter: FilterExpr,
-    ) -> Self {
-        Self::Relation(RelationFilter::new(
-            RelationQuantifier::ToOne,
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            filter,
-        ))
-    }
-
-    pub fn relation_some(
-        parent_table: &'static str,
-        parent_column: &'static str,
-        related_table: &'static str,
-        related_column: &'static str,
-        filter: FilterExpr,
-    ) -> Self {
-        Self::Relation(RelationFilter::new(
-            RelationQuantifier::Some,
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            filter,
-        ))
-    }
-
-    pub fn relation_every(
-        parent_table: &'static str,
-        parent_column: &'static str,
-        related_table: &'static str,
-        related_column: &'static str,
-        filter: FilterExpr,
-    ) -> Self {
-        Self::Relation(RelationFilter::new(
-            RelationQuantifier::Every,
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            filter,
-        ))
-    }
-
-    pub fn relation_none(
-        parent_table: &'static str,
-        parent_column: &'static str,
-        related_table: &'static str,
-        related_column: &'static str,
-        filter: FilterExpr,
-    ) -> Self {
-        Self::Relation(RelationFilter::new(
-            RelationQuantifier::None,
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            filter,
-        ))
     }
 }

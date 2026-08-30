@@ -129,6 +129,21 @@ fn extension_feature_gate_compile_fail() {
     );
     t.compile_fail(generated_dir.join("pgvector_rejected_on_embedded.rs"));
 
+    // Same guard, second Postgres-only extension (cratestack#842). Worth
+    // its own case rather than trusting the pgvector one: the embedded
+    // guard was generalised from a `pgvector` special case to an
+    // `is_postgres_only` predicate, and this is what proves the new arm
+    // actually fires instead of falling through to the ordinary
+    // "feature not enabled" message.
+    write_embedded_pgvector_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "postgis_rejected_on_embedded.rs",
+        "tests/fixtures/postgis_extension_embedded.cstack",
+    );
+    t.compile_fail(generated_dir.join("postgis_rejected_on_embedded.rs"));
+
     // Distinct scenario again (cratestack computed-fields feature,
     // docs/design/computed-fields.md decision 3): `@computed` fields are
     // response-composition resolvers, and `include_embedded_schema!` has

@@ -85,6 +85,8 @@ mod migrations;
 mod partial_row;
 mod query;
 mod render;
+#[cfg(feature = "postgis")]
+mod spatial;
 #[cfg(test)]
 mod tests_coalesce;
 #[cfg(test)]
@@ -133,6 +135,12 @@ pub use json::Json;
 #[cfg(feature = "pgvector")]
 pub use pgvector;
 
+/// Row-decode adapter for PostGIS `geography`/`geometry` columns
+/// (cratestack#842) — re-exported so generated code can name
+/// `::cratestack::Ewkb` without depending on this crate's internals.
+#[cfg(feature = "postgis")]
+pub use spatial::Ewkb;
+
 pub use audit::{
     AUDIT_TABLE_DDL, RunInTxOutcome, dispatch_audit_sink, primary_key_from_snapshot, snapshot_model,
 };
@@ -151,10 +159,14 @@ pub use cratestack_sql::{
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
-    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
-    Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter,
-    VectorMetric, coalesce, is_orderable, order_value_sql, point, wrap_filter,
+    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
+    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce,
+    is_orderable, order_value_sql, wrap_filter,
 };
+/// PostGIS query surface (cratestack#842), gated in `cratestack-sql`
+/// and forwarded through this crate's own `postgis` feature.
+#[cfg(feature = "postgis")]
+pub use cratestack_sql::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
     ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate, ScopedBatchUpsert, ScopedCreateRecord,

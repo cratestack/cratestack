@@ -18,6 +18,14 @@ workspace = true
 
 [features]
 default = ["decimal-rust-decimal"]
+# Mirrors `cratestack-sql`'s own `postgis` gate (cratestack#842). The
+# embedded backend can never *execute* a spatial op — PostGIS is
+# Postgres-only and `include_embedded_schema!` rejects
+# `extension postgis { }` outright — so this feature exists only so the
+# fail-loud arms below still compile when a workspace enables `postgis`
+# somewhere and Cargo unifies the feature onto this crate's
+# `cratestack-sql` edge.
+postgis = ["cratestack-sql/postgis"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",

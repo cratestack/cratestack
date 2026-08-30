@@ -81,6 +81,7 @@ fn required_ref(name: &str) -> cratestack_core::TypeRef {
         arity: TypeArity::Required,
         generic_args: Vec::new(),
         int_args: Vec::new(),
+        ident_args: Vec::new(),
     }
 }
 

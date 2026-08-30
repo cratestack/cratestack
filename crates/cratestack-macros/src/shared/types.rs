@@ -46,6 +46,15 @@ pub(crate) fn rust_type_tokens_with_scope(
         // (`model::row_pg`, `cratestack-sqlx`'s `push_bind_value`),
         // which is server-only.
         "Vector" => quote! { Vec<f32> },
+        // `Geography`/`Geometry` (see `docs/design/extensions.md`
+        // §6b, cratestack#842) — EWKB bytes, so the public Rust type is
+        // the same `Vec<u8>` a `Bytes` field gets. Keeping it a plain
+        // `Vec<u8>` rather than a spatial newtype means the client
+        // codegen, wire encoding and serde treatment all reuse the
+        // existing bytes path unchanged; the PostGIS-specific typing
+        // only enters at the sqlx row-decode boundary
+        // (`cratestack-sqlx`'s `Ewkb`), which is server-only.
+        "Geography" | "Geometry" => quote! { Vec<u8> },
         other => {
             let ident = ident(other);
             if custom_in_super {

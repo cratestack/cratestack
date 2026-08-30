@@ -26,6 +26,7 @@ fn type_ref(name: &str, arity: TypeArity) -> TypeRef {
         arity,
         generic_args: Vec::new(),
         int_args: Vec::new(),
+        ident_args: Vec::new(),
     }
 }
 

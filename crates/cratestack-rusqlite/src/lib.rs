@@ -23,11 +23,15 @@ pub use cratestack_sql::{
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
-    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
-    SqliteDialect, Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr,
-    VectorDistanceFilter, VectorMetric, coalesce, is_orderable, order_value_sql, point,
-    wrap_filter,
+    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect, Unorderable,
+    UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric,
+    coalesce, is_orderable, order_value_sql, wrap_filter,
 };
+// Re-exported only so a workspace that enables `postgis` elsewhere still
+// resolves these paths through this facade; the embedded backend fails
+// loud on any actual spatial op (see `render::filter`).
+#[cfg(feature = "postgis")]
+pub use cratestack_sql::{SpatialFilter, SpatialPoint, point};
 
 pub use batch::{BatchCreate, BatchDelete, BatchGet, BatchUpdate, BatchUpdateItem, BatchUpsert};
 pub use delegate::{

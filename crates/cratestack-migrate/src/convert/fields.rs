@@ -23,6 +23,20 @@ pub(super) fn field_to_column(
     let ty_name = field.ty.name.as_str();
     let ty = if let Some(dimension) = field.ty.vector_dim() {
         ColumnType::Vector(dimension)
+    } else if field.ty.is_spatial() {
+        ColumnType::Spatial {
+            geography: field.ty.is_geography(),
+            // Canonicalise here rather than at parse time so the
+            // snapshot records one spelling regardless of how the field
+            // was cased in `.cstack` — otherwise re-casing a subtype
+            // would show up as a spurious column-type change.
+            subtype: field
+                .ty
+                .spatial_subtype()
+                .and_then(cratestack_core::canonical_geometry_subtype)
+                .map(str::to_owned),
+            srid: field.ty.spatial_srid(),
+        }
     } else if known_enums.contains(ty_name) {
         ColumnType::Enum(ty_name.to_owned())
     } else if known_types.contains(ty_name) {

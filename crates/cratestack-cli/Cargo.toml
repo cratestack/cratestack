@@ -85,7 +85,24 @@ cratestack-core.workspace = true
 # (issue #205) is a normal subcommand of the shipped binary, not a
 # cargo-feature-gated build variant — every `cratestack` binary needs
 # `introspect::postgres` available at runtime.
-cratestack-migrate = { workspace = true, features = ["postgres-introspect"] }
+#
+# `postgis` is unconditional for the same reason (cratestack#842): DDL
+# emission for a schema-declared extension is a runtime capability of
+# the shipped binary, not a build variant. Without it, `migrate diff`
+# on a schema declaring `extension postgis { }` hits the deliberate
+# `unreachable!` in `emit::postgres::extensions` and panics — the
+# emitter's gate assumes any crate that can be handed such a schema was
+# built with the feature on.
+# `pgvector` is unconditional for the same reason as `postgis` below:
+# without it, `migrate diff` on a schema declaring `extension pgvector
+# { }` panics on the same `unreachable!`. The emitter's gate assumes any
+# crate that can be handed such a schema was built with the feature on,
+# and the shipped binary can be handed any schema.
+cratestack-migrate = { workspace = true, features = [
+    "postgres-introspect",
+    "pgvector",
+    "postgis",
+] }
 # `default-features = false` + explicit forward above — same as
 # `cratestack-client-dart`/`-typescript`.
 cratestack-mock-wiremock = { workspace = true, default-features = false }

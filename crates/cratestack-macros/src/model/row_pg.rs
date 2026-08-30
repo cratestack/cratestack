@@ -80,6 +80,9 @@ fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_mac
     if field.ty.is_vector() {
         return vector_decode_expr(field_name, field.ty.arity);
     }
+    if field.ty.is_spatial() {
+        return spatial_decode_expr(field_name, field.ty.arity);
+    }
     if !enum_names.contains(field.ty.name.as_str()) {
         return quote! { row.try_get(#field_name)? };
     }
@@ -142,6 +145,12 @@ fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::
     let field_name = &field.name;
     if field.ty.is_vector() {
         let decode_expr = vector_decode_expr(field_name, field.ty.arity);
+        return quote! {
+            #field_ident: #decode_expr,
+        };
+    }
+    if field.ty.is_spatial() {
+        let decode_expr = spatial_decode_expr(field_name, field.ty.arity);
         return quote! {
             #field_ident: #decode_expr,
         };
@@ -220,6 +229,35 @@ fn vector_decode_expr(field_name: &str, arity: TypeArity) -> proc_macro2::TokenS
             {
                 let raw: ::cratestack::pgvector::Vector = row.try_get(#field_name)?;
                 raw.to_vec()
+            }
+        },
+    }
+}
+
+/// Decode a `Geography`/`Geometry` field (cratestack#842).
+///
+/// Goes through `::cratestack::Ewkb` rather than reading `Vec<u8>`
+/// directly: on the way out the column's type OID is `geography`'s, and
+/// sqlx type-checks that OID against the Rust type before handing over
+/// the payload, so a bare `Vec<u8>` fails with a mismatched-types
+/// error even though the bytes are exactly what we want. `Ewkb`
+/// declares itself compatible with both spatial type names and yields
+/// the raw EWKB — the same "decode DB-native shape, convert to the
+/// public Rust type" pattern `vector_decode_expr` uses. List arity is
+/// rejected by `cratestack-parser` validation, so only
+/// `Required`/`Optional` apply.
+fn spatial_decode_expr(field_name: &str, arity: TypeArity) -> proc_macro2::TokenStream {
+    match arity {
+        TypeArity::Optional => quote! {
+            {
+                let raw: Option<::cratestack::Ewkb> = row.try_get(#field_name)?;
+                raw.map(|value| value.into_vec())
+            }
+        },
+        TypeArity::Required | TypeArity::List => quote! {
+            {
+                let raw: ::cratestack::Ewkb = row.try_get(#field_name)?;
+                raw.into_vec()
             }
         },
     }

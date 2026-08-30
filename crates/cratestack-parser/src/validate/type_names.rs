@@ -19,6 +19,8 @@ pub(super) const BUILTIN_TYPES: &[&str] = &[
     "PageInput",
     "FindMany",
     "Vector",
+    "Geography",
+    "Geometry",
 ];
 
 pub(super) fn collect_type_names(schema: &Schema) -> Result<BTreeSet<String>, SchemaError> {
@@ -89,6 +91,7 @@ pub(super) struct TypeRefAllow {
     pub(super) page_input: bool,
     pub(super) find_many: bool,
     pub(super) vector: bool,
+    pub(super) spatial: bool,
 }
 
 pub(super) fn validate_type_ref(
@@ -245,7 +248,25 @@ pub(super) fn validate_type_ref(
         return validate_vector_type_ref(declared_extensions, type_ref, span);
     }
 
-    if !type_ref.int_args.is_empty() {
+    if type_ref.is_spatial() {
+        if !allow.spatial {
+            return Err(span_error(
+                format!(
+                    "`{}` is only supported on model/mixin/type/auth fields in this release, \
+                     not here (e.g. procedure signatures) — see docs/design/extensions.md §6b",
+                    type_ref.name
+                ),
+                span,
+            ));
+        }
+        return crate::validate::spatial_type::validate_spatial_type_ref(
+            declared_extensions,
+            type_ref,
+            span,
+        );
+    }
+
+    if !type_ref.int_args.is_empty() || !type_ref.ident_args.is_empty() {
         return Err(span_error(
             format!(
                 "type `{}` does not accept a parametric argument",

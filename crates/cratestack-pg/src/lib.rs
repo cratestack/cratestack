@@ -86,12 +86,17 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderCatalog, OrderClause, OrderRelationEdge, Orderable, Projection, ReadSource,
+    OrderCatalog, OrderClause, OrderRelationEdge, OrderTarget, Orderable, Projection, ReadSource,
     RelationFilter, RelationHop, RelationInclude, ResolvedOrderTarget, SortDirection,
-    SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
-    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor,
-    WriteSource, coalesce, is_orderable, order_value_sql, point, resolve_order_target, wrap_filter,
+    SqlColumnValue, SqlValue, Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr,
+    VectorDistanceFilter, VectorMetric, ViewDescriptor, WriteSource, coalesce, is_orderable,
+    order_value_sql, resolve_order_target, wrap_filter,
 };
+/// PostGIS query surface (cratestack#842) — gated in
+/// `cratestack-sql` and forwarded through this crate's own
+/// `postgis` feature.
+#[cfg(feature = "postgis")]
+pub use cratestack_sql::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 
 pub use regex;
 pub use serde;
@@ -125,6 +130,15 @@ pub use cratestack_sqlx::Json;
 // and `cratestack-sqlx/pgvector` (the real column codec) in lockstep.
 #[cfg(feature = "pgvector")]
 pub use cratestack_sqlx::pgvector;
+
+// `Geography`/`Geometry` model fields decode through
+// `cratestack_sqlx::Ewkb` at the sqlx row boundary, so the generated
+// `::cratestack::Ewkb` path has to resolve here (cratestack#842).
+// Requires this facade's own `postgis` feature, which forwards to both
+// `cratestack-macros/postgis` (the compile-time declaration gate) and
+// `cratestack-sqlx/postgis` (the column codec) in lockstep.
+#[cfg(feature = "postgis")]
+pub use cratestack_sqlx::Ewkb;
 
 // -----------------------------------------------------------------------------
 // Server surface — axum, audit/idempotency/migrations/isolation.

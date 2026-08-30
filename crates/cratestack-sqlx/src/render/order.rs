@@ -57,6 +57,24 @@ pub(crate) fn render_order_clause_sql(
             );
             *bind_index += 1;
         }
+        #[cfg(feature = "postgis")]
+        OrderTarget::SpatialDistance { column, .. } => {
+            // `ST_Distance(col::geography, ST_MakePoint($lng, $lat)::geography)`
+            // — two bind slots, lng then lat, matching the argument
+            // order `render_spatial_filter_sql` uses for the
+            // `Covers`/`DWithin` filters so the bind sequence stays
+            // consistent across the spatial surface.
+            let _ = write!(
+                sql,
+                "ST_Distance({column}::geography, ST_MakePoint(${lng}, ${lat})::geography) {dir} \
+                 {nulls}",
+                lng = *bind_index,
+                lat = *bind_index + 1,
+                dir = sort_direction_sql(clause.direction),
+                nulls = null_order_sql(clause.null_order),
+            );
+            *bind_index += 2;
+        }
     }
 }
 

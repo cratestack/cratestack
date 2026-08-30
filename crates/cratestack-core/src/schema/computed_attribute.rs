@@ -137,6 +137,7 @@ mod tests {
                 arity: crate::schema::model::TypeArity::Required,
                 generic_args: Vec::new(),
                 int_args: Vec::new(),
+                ident_args: Vec::new(),
             },
             attributes: raws
                 .iter()

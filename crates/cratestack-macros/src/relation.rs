@@ -68,6 +68,7 @@ mod tests {
                 arity: cratestack_core::TypeArity::Required,
                 generic_args: Vec::new(),
                 int_args: Vec::new(),
+                ident_args: Vec::new(),
             },
             attributes: vec![Attribute {
                 raw: raw.to_owned(),

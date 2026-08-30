@@ -9,6 +9,7 @@ mod extensions;
 mod indexes;
 mod partial_index;
 mod pluralization_rename;
+mod postgis;
 mod relation_actions;
 mod relations;
 mod renames;

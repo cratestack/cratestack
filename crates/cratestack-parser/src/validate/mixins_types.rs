@@ -86,6 +86,7 @@ pub(super) fn validate_mixins_collecting(
                     field.span,
                     crate::validate::type_names::TypeRefAllow {
                         vector: true,
+                        spatial: true,
                         ..Default::default()
                     },
                 )?;
@@ -153,6 +154,7 @@ pub(super) fn validate_types_collecting(
                     field.span,
                     crate::validate::type_names::TypeRefAllow {
                         vector: true,
+                        spatial: true,
                         ..Default::default()
                     },
                 )?;
@@ -232,6 +234,7 @@ pub(super) fn validate_auth(
                 field.span,
                 crate::validate::type_names::TypeRefAllow {
                     vector: true,
+                    spatial: true,
                     ..Default::default()
                 },
             )?;

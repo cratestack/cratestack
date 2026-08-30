@@ -147,6 +147,11 @@ fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
         // Postgres's unquoted-lowercase rule.
         ColumnType::UserDefined(name) => quote_ident(&naming::column_name(name)),
         ColumnType::Vector(dimension) => render_vector_type(*dimension),
+        ColumnType::Spatial {
+            geography,
+            subtype,
+            srid,
+        } => render_spatial_type(*geography, subtype.as_deref(), *srid),
     };
     match arity {
         ColumnArity::List => format!("{base}[]"),
@@ -178,6 +183,39 @@ fn render_vector_type(dimension: u32) -> String {
     );
 }
 
+/// Renders a `Geography`/`Geometry` field as its PostGIS column type
+/// (cratestack#842). Gated behind the `postgis` Cargo feature for the
+/// same reason as [`render_vector_type`]: reaching this without the
+/// feature means a `ColumnType::Spatial` was constructed without going
+/// through the parser's own `extension postgis { }` gate.
+///
+/// The modifier is positional and rendered without a space
+/// (`geography(Polygon,4326)`), matching how PostGIS itself formats the
+/// type in `information_schema` — so a later introspection diff of the
+/// same column compares equal instead of reporting a phantom change.
+#[cfg(feature = "postgis")]
+fn render_spatial_type(geography: bool, subtype: Option<&str>, srid: Option<u32>) -> String {
+    let base = if geography { "geography" } else { "geometry" };
+    match (subtype, srid) {
+        (Some(subtype), Some(srid)) => format!("{base}({subtype},{srid})"),
+        (Some(subtype), None) => format!("{base}({subtype})"),
+        // An SRID with no subtype is rejected at parse time (PostGIS's
+        // modifier is positional), so this collapses to the bare type.
+        (None, _) => base.to_owned(),
+    }
+}
+
+#[cfg(not(feature = "postgis"))]
+fn render_spatial_type(geography: bool, _subtype: Option<&str>, _srid: Option<u32>) -> String {
+    let written = if geography { "Geography" } else { "Geometry" };
+    unreachable!(
+        "ColumnType::Spatial reached the Postgres emitter without the `postgis` Cargo feature \
+         enabled on cratestack-migrate — this should be unreachable because only a schema \
+         declaring `extension postgis {{ }}` produces a `{written}` column, and cratestack-parser \
+         requires that declaration up front"
+    );
+}
+
 /// Maps a `.cstack` builtin scalar name to its Postgres column type.
 ///
 /// `name` is only ever one of `cratestack_parser::builtin_type_names()`
@@ -199,9 +237,24 @@ fn scalar_to_postgres(name: &str) -> &'static str {
         "Json" => "JSONB",
         "Bytes" => "BYTEA",
         "Uuid" => "UUID",
-        // Unknown scalars are passed through unquoted — the developer
-        // is responsible for ensuring the name resolves to a Postgres
-        // type. New built-ins should be added above.
+        // Unknown scalars fall back to TEXT. Note this arm discards
+        // `name` rather than passing it through — an earlier version of
+        // this comment claimed the opposite ("passed through unquoted —
+        // the developer is responsible"), which is not what the code
+        // does and cannot be: `-> &'static str` can't return a borrowed
+        // `name`. That wrong comment was read as documenting a real
+        // escape hatch and led to cratestack#842 being filed against
+        // behaviour this function doesn't have.
+        //
+        // The fallback is *not* reachable from a `.cstack` file: every
+        // entry point that parses one (`parse_schema`,
+        // `parse_schema_file`, and therefore `cratestack migrate diff`)
+        // runs `validate_type_ref`, which rejects any name outside
+        // `cratestack_parser::builtin_type_names()` with "unknown type
+        // `X`". It survives only for `Schema` values this crate doesn't
+        // validate — a hand-edited or older `schema.snapshot.json`
+        // deserialized by `read_snapshot` — where a deterministic TEXT
+        // column beats a panic. New built-ins need an arm added above.
         _ => "TEXT",
     }
 }

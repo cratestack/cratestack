@@ -15,7 +15,7 @@
 
 use cratestack_core::ExtensionKind;
 
-#[cfg(any(feature = "rate_limit", feature = "pgvector"))]
+#[cfg(any(feature = "rate_limit", feature = "pgvector", feature = "postgis"))]
 use super::feature_enabled;
 use super::{first_missing_extension, required_feature};
 
@@ -37,7 +37,7 @@ model Widget {
 }
 
 #[test]
-#[cfg(not(any(feature = "rate_limit", feature = "pgvector")))]
+#[cfg(not(any(feature = "rate_limit", feature = "pgvector", feature = "postgis")))]
 fn declared_extension_without_its_feature_is_flagged() {
     // Only meaningful with neither feature enabled — this crate's own
     // default-feature test run — so both are reported missing,
@@ -79,7 +79,7 @@ model Widget {
 }
 
 #[test]
-#[cfg(not(any(feature = "rate_limit", feature = "pgvector")))]
+#[cfg(not(any(feature = "rate_limit", feature = "pgvector", feature = "postgis")))]
 fn missing_extension_is_reported_in_declared_extensions_stable_order() {
     // `declared_extensions` is a `BTreeSet<ExtensionKind>`, so
     // iteration order follows `ExtensionKind`'s derived `Ord` (variant
@@ -153,4 +153,33 @@ model Widget {
 "#,
     );
     assert_eq!(first_missing_extension(&schema), None);
+}
+
+#[test]
+#[cfg(feature = "postgis")]
+fn postgis_feature_enabled_is_reflected() {
+    assert!(feature_enabled(ExtensionKind::Postgis));
+    let schema = parse(
+        r#"
+extension postgis {
+}
+
+model DeliveryZone {
+  id Int @id
+  serviceArea Geography(Polygon, 4326)
+}
+"#,
+    );
+    assert_eq!(first_missing_extension(&schema), None);
+}
+
+/// PostGIS is Postgres-only in the same sense pgvector is, so the
+/// embedded guard must reject it whether or not the Cargo feature is
+/// on. Guards the generalisation of that guard from a `pgvector`
+/// special case to `is_postgres_only`.
+#[test]
+fn postgis_is_postgres_only() {
+    assert!(super::is_postgres_only(ExtensionKind::Postgis));
+    assert!(super::is_postgres_only(ExtensionKind::Pgvector));
+    assert!(!super::is_postgres_only(ExtensionKind::RateLimit));
 }

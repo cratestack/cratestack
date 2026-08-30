@@ -62,6 +62,15 @@ decimal-bigdecimal = [
 # `default-features = false, features = ["postgres"]` only, so
 # `sqlx-sqlite` never enters the resolved graph.
 pgvector = ["dep:pgvector", "dep:sqlx"]
+# Column-type support for `Geography`/`Geometry` fields (PostGIS — see
+# `docs/design/extensions.md` §6b and cratestack#842). Unlike
+# `pgvector` above this pulls in **no** extra crate: PostGIS's wire
+# format is EWKB, which is just bytes, so binding reuses `bytea` (via
+# PostGIS's implicit cast) and decoding needs only the small
+# `spatial::Ewkb` type-compatibility shim in this crate. The feature
+# exists to gate that shim and to keep `SqlValue::Spatial` from being
+# bindable in a build that never opted into PostGIS.
+postgis = ["cratestack-sql/postgis"]
 
 [dependencies]
 async-trait.workspace = true

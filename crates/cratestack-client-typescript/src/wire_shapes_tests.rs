@@ -41,6 +41,7 @@ fn field(name: &str, ty_name: &str, arity: TypeArity) -> cratestack_core::Field 
             arity,
             generic_args: Vec::new(),
             int_args: Vec::new(),
+            ident_args: Vec::new(),
         },
         attributes: Vec::new(),
         span: span(),
@@ -266,6 +267,7 @@ fn procedure_scalar_returns_are_classified_by_type_and_arity() {
             arity,
             generic_args: Vec::new(),
             int_args: Vec::new(),
+            ident_args: Vec::new(),
         };
         match procedure_revival(&return_type) {
             ProcedureRevival::Scalar(scalar) => scalar.as_str().to_owned(),

@@ -144,6 +144,15 @@ pub(crate) fn sql_value_tokens(
                 None => ::cratestack::SqlValue::NullVector,
             }
         },
+        ("Geography" | "Geometry", TypeArity::Required) => {
+            quote! { ::cratestack::SqlValue::Spatial(#value) }
+        }
+        ("Geography" | "Geometry", TypeArity::Optional) => quote! {
+            match #value {
+                Some(value) => ::cratestack::SqlValue::Spatial(value),
+                None => ::cratestack::SqlValue::NullSpatial,
+            }
+        },
         _ => panic!("unsupported SQLx value type for this slice"),
     }
 }

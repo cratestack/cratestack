@@ -127,6 +127,7 @@ pub(crate) fn render_filter_expr(
         FilterExpr::Json(json) => {
             render_json(dialect, json, sql, binds, bind_index);
         }
+        #[cfg(feature = "postgis")]
         FilterExpr::Spatial(_) => {
             // PostGIS-style spatial predicates require server-side
             // extensions (PostGIS on Postgres, SpatiaLite on SQLite)

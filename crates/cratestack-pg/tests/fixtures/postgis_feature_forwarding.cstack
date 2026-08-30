@@ -1,0 +1,26 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+extension postgis {
+}
+
+auth Operator {
+  id Int
+}
+
+model DeliveryZone {
+  id Int @id
+  label String
+  service_area Geography(Polygon, 4326)
+  pickup_point Geography(Point, 4326)?
+
+  @@index([service_area], using: gist)
+
+  // Without a read policy the generated reader denies every row, so
+  // `find_unique` returns `None` and a decode test would silently
+  // assert nothing. Mirrors `builder_extensions_tier7.cstack`.
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

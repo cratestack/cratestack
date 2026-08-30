@@ -12,6 +12,7 @@ pub mod internal_attribute;
 pub mod model;
 pub mod procedure;
 pub mod selection;
+pub mod spatial;
 pub mod view;
 
 use std::collections::BTreeSet;
@@ -31,6 +32,7 @@ pub use model::{
 };
 pub use procedure::{Procedure, ProcedureArg, ProcedureKind};
 pub use selection::SelectionQuery;
+pub use spatial::{canonical_geometry_subtype, geometry_subtype_names};
 pub use view::{View, ViewSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,17 +76,23 @@ impl TransportStyle {
 pub enum ExtensionKind {
     RateLimit,
     Pgvector,
+    Postgis,
 }
 
 impl ExtensionKind {
     /// Every recognized extension name, in a stable order — used to build
     /// clear "expected one of: ..." error messages.
-    pub const ALL: [ExtensionKind; 2] = [ExtensionKind::RateLimit, ExtensionKind::Pgvector];
+    pub const ALL: [ExtensionKind; 3] = [
+        ExtensionKind::RateLimit,
+        ExtensionKind::Pgvector,
+        ExtensionKind::Postgis,
+    ];
 
     pub const fn as_str(&self) -> &'static str {
         match self {
             ExtensionKind::RateLimit => "rate_limit",
             ExtensionKind::Pgvector => "pgvector",
+            ExtensionKind::Postgis => "postgis",
         }
     }
 
@@ -199,6 +207,7 @@ mod tests {
     fn extension_kind_as_str() {
         assert_eq!(ExtensionKind::RateLimit.as_str(), "rate_limit");
         assert_eq!(ExtensionKind::Pgvector.as_str(), "pgvector");
+        assert_eq!(ExtensionKind::Postgis.as_str(), "postgis");
     }
 
     #[test]
@@ -211,14 +220,19 @@ mod tests {
             ExtensionKind::parse_name("pgvector"),
             Some(ExtensionKind::Pgvector)
         );
+        assert_eq!(
+            ExtensionKind::parse_name("postgis"),
+            Some(ExtensionKind::Postgis)
+        );
         assert_eq!(ExtensionKind::parse_name("unknown"), None);
     }
 
     #[test]
     fn extension_kind_all_constant() {
-        assert_eq!(ExtensionKind::ALL.len(), 2);
+        assert_eq!(ExtensionKind::ALL.len(), 3);
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::RateLimit));
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::Pgvector));
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::Postgis));
     }
 
     #[test]

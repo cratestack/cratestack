@@ -1,3 +1,6 @@
+use crate::order::{OrderClause, OrderTarget};
+use crate::{NullOrder, SortDirection};
+
 /// PostGIS spatial filter primitives. v1 ships two ops that cover the
 /// "is point inside this zone" / "is this point within radius of that
 /// zone" cases — the rest of the ST_* surface can land on demand.
@@ -47,4 +50,42 @@ pub struct SpatialPoint {
 /// match points across the world.
 pub const fn point(lng: f64, lat: f64) -> SpatialPoint {
     SpatialPoint { lng, lat }
+}
+
+/// Builder returned by `FieldRef::distance_to_point` — chain `.asc()`
+/// or `.desc()` to turn great-circle distance into an `ORDER BY`
+/// target (cratestack#842 item 5). Mirrors
+/// [`crate::VectorDistanceExpr`]'s ordering half.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpatialDistanceExpr {
+    column: &'static str,
+    point: SpatialPoint,
+}
+
+impl SpatialDistanceExpr {
+    pub(super) const fn new(column: &'static str, point: SpatialPoint) -> Self {
+        Self { column, point }
+    }
+
+    /// Nearest first — the common "closest depot to this address" shape.
+    pub fn asc(self) -> OrderClause {
+        self.order(SortDirection::Asc)
+    }
+
+    /// Farthest first.
+    pub fn desc(self) -> OrderClause {
+        self.order(SortDirection::Desc)
+    }
+
+    fn order(self, direction: SortDirection) -> OrderClause {
+        OrderClause {
+            target: OrderTarget::SpatialDistance {
+                column: self.column,
+                lng: self.point.lng,
+                lat: self.point.lat,
+            },
+            direction,
+            null_order: NullOrder::Last,
+        }
+    }
 }

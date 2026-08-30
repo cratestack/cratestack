@@ -68,6 +68,27 @@ pub enum ColumnType {
     /// SQLite emitter needs no dialect-specific info at all (every
     /// column there is `BLOB` regardless of scalar).
     Vector(u32),
+    /// `Geography` / `Geometry` — a PostGIS spatial column (see
+    /// `docs/design/extensions.md` §6b and cratestack#842). A dedicated
+    /// variant for the same reason as [`ColumnType::Vector`]: the
+    /// Postgres emitter needs the subtype and SRID to render the type
+    /// modifier, and folding them into `Scalar`'s string would make the
+    /// snapshot's column type unparseable without re-deriving the
+    /// grammar here.
+    Spatial {
+        /// `true` for `Geography` (spheroidal), `false` for `Geometry`
+        /// (planar). The two are distinct Postgres types, not a
+        /// modifier on one type, so a change between them is a real
+        /// column-type change the diff must see.
+        geography: bool,
+        /// The canonicalised geometry subtype — `Polygon` in
+        /// `Geography(Polygon, 4326)`. `None` for the unmodified form,
+        /// which PostGIS accepts as "any subtype".
+        subtype: Option<String>,
+        /// The SRID. `None` when the schema didn't write one, deferring
+        /// to PostGIS's own default rather than inventing one here.
+        srid: Option<u32>,
+    },
 }
 
 /// Column default value, captured as the developer wrote it. The

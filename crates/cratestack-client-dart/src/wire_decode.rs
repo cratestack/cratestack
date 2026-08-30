@@ -31,6 +31,7 @@ pub(crate) fn decode_value_expr(
                         arity: TypeArity::Required,
                         generic_args: ty.generic_args.clone(),
                         int_args: ty.int_args.clone(),
+                        ident_args: Vec::new(),
                     },
                     enum_names,
                 );
@@ -46,6 +47,7 @@ pub(crate) fn decode_value_expr(
                         arity: TypeArity::Required,
                         generic_args: ty.generic_args.clone(),
                         int_args: ty.int_args.clone(),
+                        ident_args: Vec::new(),
                     },
                     enum_names,
                 );
@@ -67,6 +69,7 @@ pub(crate) fn decode_value_expr(
                         arity: TypeArity::Optional,
                         generic_args: ty.generic_args.clone(),
                         int_args: ty.int_args.clone(),
+                        ident_args: Vec::new(),
                     },
                     enum_names,
                 )
@@ -112,7 +115,9 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "Boolean" => format!("{expr} as bool"),
         "DateTime" => format!("DateTime.parse({expr} as String)"),
         "Json" => expr.to_owned(),
-        "Bytes" => format!("Uint8List.fromList(List<int>.from(cratestackAsValueList({expr})))"),
+        "Bytes" | "Geography" | "Geometry" => {
+            format!("Uint8List.fromList(List<int>.from(cratestackAsValueList({expr})))")
+        }
         // cratestack#498: `Decimal.parse` (unlike `double.parse`) accepts
         // both the plain positional notation `rust_decimal` always emits
         // and the scientific notation `bigdecimal` switches to past a
@@ -137,6 +142,7 @@ fn decode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
             arity: TypeArity::Required,
             generic_args: ty.generic_args.clone(),
             int_args: ty.int_args.clone(),
+            ident_args: Vec::new(),
         },
         enum_names,
     );

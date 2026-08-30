@@ -30,9 +30,13 @@ pub use descriptor::{
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{
     CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
-    JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, SpatialFilter, SpatialPoint,
-    VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce, point,
+    JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, VectorDistanceExpr,
+    VectorDistanceFilter, VectorMetric, coalesce,
 };
+/// PostGIS query surface (cratestack#842) — gated behind this crate's
+/// `postgis` feature, which the backend facades forward from their own.
+#[cfg(feature = "postgis")]
+pub use filter::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 pub use idempotency::IDEMPOTENCY_TABLE_DDL;
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use order_catalog::{

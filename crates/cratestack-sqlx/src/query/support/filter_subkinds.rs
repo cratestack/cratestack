@@ -7,6 +7,7 @@ use crate::sqlx;
 
 use super::values::push_bind_value;
 
+#[cfg(feature = "postgis")]
 pub(super) fn push_spatial_filter_query(
     query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &cratestack_sql::SpatialFilter,

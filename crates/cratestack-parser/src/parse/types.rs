@@ -4,22 +4,50 @@ use cratestack_core::{SourceSpan, TypeArity, TypeRef};
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::Line;
 
+/// One entry in a parametric type's parenthesized argument list —
+/// either a compile-time integer (`Vector(1536)`'s dimension,
+/// `Geography(Polygon, 4326)`'s SRID) or a bare identifier
+/// (`Geography(Polygon, …)`'s geometry subtype).
+#[derive(Clone, Copy)]
+enum ParametricArg<'a> {
+    Int(&'a str),
+    Ident(&'a str),
+}
+
 pub(super) fn parse_type_ref(
     raw: &str,
     line: &Line<'_>,
     raw_offset: usize,
 ) -> Result<TypeRef, SchemaError> {
-    // `Vector(1536)` is the only parametric scalar today (see
-    // `docs/design/extensions.md` §6): an identifier optionally
-    // followed by one compile-time integer literal in parens, then
-    // the usual arity suffix. The parenthesized argument is generic
-    // in the grammar (any ident may carry one) — `validate_type_ref`
-    // in `cratestack-parser::validate` is what actually restricts
-    // parametric arguments to `Vector`.
+    // Parametric scalars (see `docs/design/extensions.md` §6/§6b): an
+    // identifier optionally followed by a parenthesized, comma-separated
+    // argument list, then the usual arity suffix. Two shapes use this
+    // today — `Vector(1536)` (one integer) and `Geography(Polygon, 4326)`
+    // (one bare identifier plus an optional integer SRID, cratestack#842).
+    //
+    // The argument list is deliberately generic in the grammar: any
+    // identifier may carry any mix of int/ident arguments here, and
+    // `validate_type_ref` in `cratestack-parser::validate` is what
+    // actually restricts which types accept which arguments. Keeping the
+    // restriction in validation rather than the grammar is what lets an
+    // unrecognised parametric type produce a precise "type `X` does not
+    // accept a parametric argument" diagnostic instead of a generic
+    // "invalid type reference".
+    let argument = choice((
+        text::int::<_, extra::Err<Simple<char>>>(10).map(ParametricArg::Int),
+        text::ident::<_, extra::Err<Simple<char>>>().map(ParametricArg::Ident),
+    ))
+    .padded();
+
     let parser = text::ident::<_, extra::Err<Simple<char>>>()
         .then(
             just('(')
-                .ignore_then(text::int::<_, extra::Err<Simple<char>>>(10))
+                .ignore_then(
+                    argument
+                        .separated_by(just(','))
+                        .at_least(1)
+                        .collect::<Vec<_>>(),
+                )
                 .then_ignore(just(')'))
                 .or_not(),
         )
@@ -34,11 +62,15 @@ pub(super) fn parse_type_ref(
         .parse(raw)
         .into_result()
         .ok()
-        .and_then(|((name, dimension), arity)| {
-            let int_args = match dimension {
-                Some(digits) => vec![digits.parse::<u32>().ok()?],
-                None => Vec::new(),
-            };
+        .and_then(|((name, args), arity)| {
+            let mut int_args = Vec::new();
+            let mut ident_args = Vec::new();
+            for arg in args.unwrap_or_default() {
+                match arg {
+                    ParametricArg::Int(digits) => int_args.push(digits.parse::<u32>().ok()?),
+                    ParametricArg::Ident(ident) => ident_args.push(ident.to_owned()),
+                }
+            }
             Some(TypeRef {
                 name: name.to_owned(),
                 name_span: SourceSpan {
@@ -49,6 +81,7 @@ pub(super) fn parse_type_ref(
                 arity,
                 generic_args: Vec::new(),
                 int_args,
+                ident_args,
             })
         })
         .ok_or(())
@@ -106,5 +139,6 @@ fn parse_builtin_generic_type_ref(
         arity,
         generic_args: vec![inner_ref],
         int_args: Vec::new(),
+        ident_args: Vec::new(),
     })
 }

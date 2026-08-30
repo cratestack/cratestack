@@ -127,19 +127,42 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
     // with the `vector` extension available — round-trip coverage for
     // it lives in `emit::postgres::tests::extensions` (DDL) and
     // `pgvector_feature_forwarding.rs` (macro codegen) instead.
+    //
+    // `Geography`/`Geometry` (cratestack#842) are excluded on exactly
+    // the same grounds, not as a way to quiet this guard: both are real
+    // storable model-field scalars, but reaching them needs the
+    // `postgis` Cargo feature *and* a Postgres with the `postgis`
+    // extension installed — neither of which this always-on fixture
+    // has. Their round-trip coverage lives in
+    // `emit::postgres::tests::postgis` (DDL, both feature arms) and
+    // `postgis_feature_forwarding.rs` (macro codegen), and the emitted
+    // DDL was additionally applied against a real
+    // `postgis/postgis:16-3.4` to confirm Postgres reports the columns
+    // back as `geography(Polygon,4326)`.
+    const EXTENSION_GATED_OR_NON_STORABLE: &[&str] = &[
+        // Not model-field-storable scalars at all.
+        "Page",
+        "PageInput",
+        "FindMany",
+        // Storable, but gated on a Cargo feature + a Postgres extension.
+        "Vector",
+        "Geography",
+        "Geometry",
+    ];
     let builtin: BTreeSet<&str> = cratestack_parser::builtin_type_names()
         .iter()
         .copied()
-        .filter(|name| {
-            *name != "Page" && *name != "PageInput" && *name != "FindMany" && *name != "Vector"
-        })
+        .filter(|name| !EXTENSION_GATED_OR_NON_STORABLE.contains(name))
         .collect();
     let covered: BTreeSet<&str> = COVERED_SCALAR_TYPES.iter().copied().collect();
     assert_eq!(
         builtin, covered,
-        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`/`FindMany`/`Vector`) and \
-         this test's COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage \
-         above for the new/removed type. See cratestack#232.",
+        "cratestack_parser::builtin_type_names() (minus EXTENSION_GATED_OR_NON_STORABLE) and this \
+         test's COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage above \
+         for the new/removed type. Only add a name to EXTENSION_GATED_OR_NON_STORABLE if it \
+         genuinely can't round-trip here (not model-field-storable, or gated on a Cargo feature \
+         plus a Postgres extension this fixture doesn't have) — and then cover it elsewhere. See \
+         cratestack#232.",
     );
 }
 
