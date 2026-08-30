@@ -2,8 +2,7 @@ use include_dir::{Dir, include_dir};
 
 use super::{Migration, is_effectively_blank, migrations_from_dir};
 
-static FIXTURE_MIGRATIONS: Dir<'_> =
-    include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/migrations");
+static FIXTURE_MIGRATIONS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/migrations");
 
 fn migration<'a>(migrations: &'a [Migration], id: &str) -> &'a Migration {
     migrations
