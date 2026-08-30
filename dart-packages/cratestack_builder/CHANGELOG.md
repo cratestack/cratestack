@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **`analyzer` widened to `>=12.0.0 <14.0.0`** — this package now supports both majors at once.
+  The old `<13.0.0` ceiling was documented as protecting `riverpod_generator`, which no longer
+  holds (4.0.6 moved to `^13.0.0`), so the ceiling had become the cause of the incompatibility it
+  was written to prevent.
+
+  It is a range rather than a flip to `>=13` because two CI gates resolve this package from
+  opposite sources — `just verify-dart` from the working tree, the flutter example job from
+  pub.dev at the published floor. While those sat on different majors they were mutually
+  exclusive. A range satisfies both, so the templates and `CRATESTACK_BUILDER_FLOOR` can move to
+  analyzer 13 in a later release against a published builder that already accepts it.
+
+  **`sdk:` stays `^3.5.0`** — no narrowing of the published compatibility promise. On an older SDK
+  pub resolves analyzer 12 from the range; analyzer 13 needs Dart `^3.9`/`^3.11` and is selected
+  only where available.
+
+- **`param.isInitializingFormal` → `param is FieldFormalParameterElement`.** Analyzer 13 deprecates
+  the getter and this package analyzes with `--fatal-infos`, so the old form fails the build there.
+  Semantically identical, and valid on both majors — verified with `dart analyze --fatal-infos`
+  plus a full `dart test` run against coherently-resolved analyzer 12.1.0 and 13.3.0 graphs.
+
 ## 0.8.15 (2026-08-28)
 
 - No functional changes. Version kept in lockstep with the CrateStack

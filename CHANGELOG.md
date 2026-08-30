@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### `cratestack_builder` now supports analyzer 12 AND 13, which unblocks the migration (#828)
+
+The `analyzer <13.0.0` ceiling was stale — `riverpod_generator` moved to `^13.0.0` in 4.0.6 and
+4.0.8 requires it, so the ceiling had become the *cause* of the incompatibility it was written to
+prevent. It could not be fixed by flipping to `>=13 <14`, and v0.9.0 proved that the hard way.
+
+Two CI gates constrain this package from opposite directions:
+
+* `just verify-dart` resolves `cratestack_builder` from the **working tree**, so the generated-client
+  templates must match the in-tree constraint.
+* the `flutter (flutter-riverpod example)` job pins the floors from `package_floors.rs` and resolves
+  from **pub.dev**, so those same templates must match the *published* builder.
+
+While in-tree and published sat on different majors those were mutually exclusive — no single
+release satisfied both, and the floor gate correctly refused a generated client no user could have
+resolved.
+
+A range spanning both majors dissolves the deadlock with **no gate disabled and no compatibility
+promise narrowed**: `analyzer: '>=12.0.0 <14.0.0'`. This release publishes a builder that satisfies
+analyzer 12 and 13 while the templates stay on their analyzer-12 pins, so both gates stay green.
+Only then can the templates and `CRATESTACK_BUILDER_FLOOR` move to analyzer 13, against a published
+builder that already accepts it — that is the follow-up, not this release.
+
+`sdk:` deliberately stays `^3.5.0`. analyzer 13.0.0 needs `^3.9.0` and 13.1+ needs `^3.11.0`, so on
+an older SDK pub simply resolves analyzer 12 from the range. The earlier attempt at this migration
+forced `^3.11.0` and narrowed a published package's compatibility promise; this one does not.
+
+One source change makes the range possible: `param.isInitializingFormal` becomes
+`param is FieldFormalParameterElement`. Analyzer 13 deprecates the getter, and this package analyzes
+with `--fatal-infos`, so the old form was a build failure there. The type test is semantically
+identical and valid on both majors — measured, not assumed: `dart analyze --fatal-infos` reports
+"No issues found!" and `dart test` passes 12/12 against a coherently-resolved analyzer 12.1.0 graph
+(test_core 0.6.18) and against 13.3.0 alike.
+
+### Dependabot no longer proposes TypeScript 7 for the webpack example
+
+`examples/embedded-browser-webpack/web` is held at TypeScript `^6` because TS 7 is the Go-native
+compiler and no longer exports the classic API (`ts.sys`, `ts.findConfigFile`, `ts.createProgram` are
+undefined at runtime), which `ts-loader@9` is built on — `tsc --noEmit` passes while `webpack` dies.
+
+The ignore needed its own update entry rather than a line in the shared npm one: `ignore` applies to
+a whole entry, and the shared entry spans ten directories, so scoping it there would have silently
+stopped TypeScript updates for the 28 manifests that are correctly on `^7`.
+
+
 ### Release rehearsal was broken on any branch with a slash in its name (#652)
 
 `rehearsal: true` is documented as "safe on any branch", but it could not complete on the branches
