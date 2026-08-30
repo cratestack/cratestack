@@ -252,6 +252,14 @@ name = "banking_builder_extensions_tier7"
 path = "tests/banking_builder_extensions_tier7.rs"
 required-features = ["postgis"]
 
+# Live decode round-trip for a real `geography` column (cratestack#842).
+# `postgis`-gated like the two above; skips cleanly when the database
+# has no PostGIS.
+[[test]]
+name = "postgis_round_trip"
+path = "tests/postgis_round_trip.rs"
+required-features = ["postgis"]
+
 # Live nearest-neighbor verification of the cratestack#163 query-builder
 # distance operators — needs a real `pgvector/pgvector` Postgres (not
 # the default `compose.yml` one), so it's not part of `just test-pg`'s
