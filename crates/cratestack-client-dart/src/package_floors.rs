@@ -82,7 +82,7 @@
 /// generator emits on `@CratestackBuilder(...)`. Verified against the
 /// published archives, not the changelog: 0.8.5/0.8.6/0.8.7 do not
 /// contain either identifier, and 0.8.8/0.8.9 do not exist on pub.dev.
-pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.8.10";
+pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.9.3";
 
 /// `cratestack_builder` — the `source_gen` builder a generated client
 /// lists under `dev_dependencies:`, run by `build_runner` to expand
@@ -93,7 +93,7 @@ pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.8.10";
 /// `cratestack_annotations: ^0.8.5`. A generated client resolving an
 /// older builder would silently produce builders that disagree with the
 /// schema rather than failing at `pub get`.
-pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.8.10";
+pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.9.3";
 
 /// `cratestack_cbor` — the native CBOR codec a generated client lists
 /// under `dependencies:` when `native_cbor` is on (the default;
@@ -121,7 +121,7 @@ pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.8.10";
 /// generated runtime itself (`rest-runtime.dart.j2` /
 /// `rpc_runtime/types.dart.j2`), which clears its own cache on failure
 /// and therefore needs nothing from this package's version.
-pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.9.3";
 
 #[cfg(test)]
 #[path = "package_floors_tests.rs"]

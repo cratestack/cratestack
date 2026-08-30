@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### The generated Dart client floors move to `^0.9.3` (#838)
+
+Step 2, and the last one. A generated client emitted `cratestack_cbor: ^0.8.0` — `>=0.8.0 <0.9.0` —
+so an app depending on `cratestack_cbor` **directly** at any 0.9.x could not resolve alongside it:
+
+```
+So, because <app> depends on cratestack_cbor ^0.9.1, version solving failed.
+```
+
+That is the user-facing bug #838 opened for, and this closes it. All three floors
+(`cratestack_annotations`, `cratestack_builder`, `cratestack_cbor`) now emit `^0.9.3`.
+
+It took two releases because the floors could not move until a *published* `cratestack_builder`
+accepted `cratestack_annotations` 0.9.x — 0.9.1 and 0.9.2 both declared `^0.8.10`, which excludes it.
+0.9.3 published the range `>=0.8.10 <0.10.0`, so pinning the floors at `^0.9.3` now resolves. Verified
+by running the gate that blocked it twice: `flutter pub get` on the committed example client with all
+three pinned to the published 0.9.3 releases.
+
+Every floor names a release that is live on pub.dev, checked against the registry rather than
+assumed — which is the rule `package_floors.rs` exists to enforce, and why this could not simply
+follow `just bump`.
+
+
 ### `cratestack_builder` accepts `cratestack_annotations` 0.8.x AND 0.9.x (#838)
 
 Step 1 of moving the generated-client Dart floors off `^0.8.10`. The floors do **not** move in this
