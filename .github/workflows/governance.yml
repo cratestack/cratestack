@@ -18,6 +18,20 @@ on:
 
 jobs:
   governance:
+    # Skipped for Dependabot, which cannot satisfy this check by construction:
+    # the gate requires an AI Usage Declaration and a source-of-truth reference
+    # in the PR body, and Dependabot writes its own body from a template no one
+    # can edit before the check runs. Without this, EVERY Dependabot PR is
+    # permanently red on governance — which is not a governance signal, it is
+    # noise that trains reviewers to ignore a red check.
+    #
+    # This became load-bearing the moment `.github/dependabot.yml` was added
+    # (2026-08 audit, cratestack#828): before that there were no bot PRs to
+    # exempt. Human PRs are unaffected and still gated.
+    #
+    # Deliberately keyed on the bot actor rather than a label, so it cannot be
+    # switched on for a human PR by adding one.
+    if: github.actor != 'dependabot[bot]'
     uses: ADORSYS-GIS/ai-governance/.github/workflows/governance-check.yml@v1.0.0
     permissions:
       pull-requests: write
