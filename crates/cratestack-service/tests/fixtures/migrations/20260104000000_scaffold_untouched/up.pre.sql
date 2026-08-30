@@ -1,0 +1,7 @@
+-- up.pre.sql — preparatory SQL for the migration in this directory.
+--
+-- Scaffolded by `cratestack migrate diff` and never filled in. This is
+-- the common case, and must read as "no pre-script".
+--
+--   - widgets.colour: column becomes NOT NULL; existing NULL rows would violate it
+--     UPDATE widgets SET colour = <value> WHERE colour IS NULL;

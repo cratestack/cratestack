@@ -73,6 +73,7 @@ async fn composite_unique_reaches_postgres_and_serves_on_conflict() {
         &[Migration {
             id: "20260802000000_unique_probe".to_owned(),
             description: "unique probe".to_owned(),
+            up_pre: None,
             up: migration.up.clone(),
             down: None,
         }],

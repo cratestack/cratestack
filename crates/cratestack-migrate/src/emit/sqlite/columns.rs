@@ -56,7 +56,7 @@ pub(super) fn emit_alter_column_type(sql: &mut String, alter: &AlterColumnType) 
         "-- SQLite: column {}.{} type changes from {:?} to {:?}. \
          All scalars share BLOB affinity, so this is a no-op at the\n\
          -- storage layer. If the shape changed (scalar ↔ list), \
-         hand-write the rebuild in up.pre.sql.",
+         hand-write the rebuild below, in this file.",
         alter.table, alter.column, alter.from, alter.to
     )
     .unwrap();
@@ -67,7 +67,7 @@ pub(super) fn emit_alter_column_nullability(sql: &mut String, alter: &AlterColum
         sql,
         "-- SQLite has no ALTER COLUMN for nullability. Changing\n\
          -- {}.{} from {:?} to {:?} requires a table rebuild — \
-         hand-write the migration in up.pre.sql / up.sql.",
+         hand-write the rebuild below, in this file.",
         alter.table, alter.column, alter.from, alter.to
     )
     .unwrap();
@@ -77,7 +77,7 @@ pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDef
     writeln!(
         sql,
         "-- SQLite has no ALTER COLUMN for defaults. To change the\n\
-         -- default on {}.{} to {:?}, rebuild the table in up.pre.sql.",
+         -- default on {}.{} to {:?}, rebuild the table below, in this file.",
         alter.table, alter.column, alter.to
     )
     .unwrap();

@@ -1,6 +1,7 @@
 //! `cratestack migrate diff` handler.
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -87,6 +88,19 @@ pub(crate) fn handle_diff(
         write_migration(&migration_dir, &migration)
             .with_context(|| format!("writing migration to {}", migration_dir.display()))?;
 
+        if migration.up_pre.is_some() {
+            // Loud, because the failure it prevents is invisible until
+            // production: a blocking migration passes against the empty
+            // database CI migrates and fails against the one with rows.
+            eprintln!(
+                "migrate diff [{}]: this migration blocks on existing data. Scaffolded \
+                 {}/up.pre.sql — fill in the backfill before deploying anywhere with \
+                 rows. It runs immediately before up.sql in the same transaction.",
+                backend.slug(),
+                migration_dir.display()
+            );
+        }
+
         let next_snapshot = Snapshot::from_projections(next_projections.clone());
         write_snapshot(&next_snapshot, &snapshot_path)
             .with_context(|| format!("updating snapshot at {}", snapshot_path.display()))?;
@@ -129,5 +143,31 @@ fn write_migration(directory: &Path, migration: &EmittedMigration) -> Result<()>
     fs::write(&up_path, &migration.up).with_context(|| format!("writing {}", up_path.display()))?;
     fs::write(&down_path, &migration.down)
         .with_context(|| format!("writing {}", down_path.display()))?;
+    if let Some(up_pre) = &migration.up_pre {
+        let up_pre_path = directory.join("up.pre.sql");
+        // Create-new, never truncate. `migrate diff` writes a fresh
+        // timestamped directory every run, so a collision here means
+        // something already put a file at this path — and that file is
+        // hand-authored backfill SQL by definition. Losing it silently
+        // to a scaffold full of TODO comments is the one failure mode
+        // this file must not have.
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&up_pre_path)
+        {
+            Ok(mut file) => io::Write::write_all(&mut file, up_pre.as_bytes())
+                .with_context(|| format!("writing {}", up_pre_path.display()))?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                eprintln!(
+                    "migrate diff: {} already exists — keeping it, scaffold not written",
+                    up_pre_path.display()
+                );
+            }
+            Err(error) => {
+                return Err(error).with_context(|| format!("creating {}", up_pre_path.display()));
+            }
+        }
+    }
     Ok(())
 }

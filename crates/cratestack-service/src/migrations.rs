@@ -17,10 +17,16 @@ use include_dir::Dir;
 /// `include_dir!`-embedded `migrations/postgres` tree, in directory-name
 /// (i.e. timestamp) order.
 ///
-/// Each migration lives at `<dir>/<timestamp>_<name>/{up.sql,down.sql}` —
-/// `down.sql` is read if present (recorded for operator reference; never
-/// executed automatically, matching `apply_pending`'s forward-only-by-
-/// design behaviour: see that function's own docs in `cratestack-sqlx`).
+/// Each migration lives at
+/// `<dir>/<timestamp>_<name>/{up.pre.sql,up.sql,down.sql}`.
+///
+/// `up.pre.sql` is read if present and runs before `up.sql` in the same
+/// transaction — `cratestack migrate diff` scaffolds it whenever it
+/// emits a blocking operation, for the operator to fill in with the
+/// backfill that makes the blocking statement succeed. `down.sql` is
+/// read if present (recorded for operator reference; never executed
+/// automatically, matching `apply_pending`'s forward-only-by-design
+/// behaviour: see that function's own docs in `cratestack-sqlx`).
 /// Panics on a malformed embedded tree (missing `up.sql`, non-UTF8
 /// content) rather than returning a runtime error: this only ever runs
 /// against `include_dir!`'s own compile-time-verified output, so a
@@ -45,6 +51,15 @@ pub fn migrations_from_dir(dir: &Dir<'_>) -> Vec<Migration> {
                 .contents_utf8()
                 .unwrap_or_else(|| panic!("migration `{id}`'s up.sql is not valid UTF-8"))
                 .to_owned();
+            // Absent is the common case and means "no preparatory SQL";
+            // present-but-blank is what a scaffolded-then-ignored file
+            // looks like, and is normalised to `None` so it neither
+            // costs a round-trip nor perturbs the checksum.
+            let up_pre = migration_dir
+                .get_file(migration_dir.path().join("up.pre.sql"))
+                .and_then(|file| file.contents_utf8())
+                .filter(|contents| !is_effectively_blank(contents))
+                .map(str::to_owned);
             let down = migration_dir
                 .get_file(migration_dir.path().join("down.sql"))
                 .and_then(|file| file.contents_utf8())
@@ -52,11 +67,33 @@ pub fn migrations_from_dir(dir: &Dir<'_>) -> Vec<Migration> {
             Migration {
                 id: id.clone(),
                 description: id,
+                up_pre,
                 up,
                 down,
             }
         })
         .collect()
+}
+
+/// True when a file carries no executable SQL — only blank lines and
+/// `--` line comments.
+///
+/// `migrate diff` scaffolds `up.pre.sql` as a comment-only TODO block,
+/// so the overwhelmingly common state of that file is "generated and
+/// never filled in". Treating that as `None` keeps it out of the
+/// migration's checksum, which means scaffolding the file for an
+/// existing blocking migration does not retroactively invalidate it.
+///
+/// Deliberately line-oriented: it only has to recognise the shape this
+/// crate's own scaffold emits. A file whose only content is a `/* … */`
+/// block comment reads as non-blank and is simply sent to the server,
+/// which is harmless — the failure mode is one redundant round-trip,
+/// not a wrong result.
+fn is_effectively_blank(contents: &str) -> bool {
+    contents
+        .lines()
+        .map(str::trim)
+        .all(|line| line.is_empty() || line.starts_with("--"))
 }
 
 /// Connect a single, non-pooled connection (migrations run once at
@@ -76,45 +113,4 @@ pub async fn run_migrations(
 }
 
 #[cfg(test)]
-mod tests {
-    use include_dir::{Dir, include_dir};
-
-    use super::migrations_from_dir;
-
-    static FIXTURE_MIGRATIONS: Dir<'_> =
-        include_dir!("$CARGO_MANIFEST_DIR/tests/fixtures/migrations");
-
-    #[test]
-    fn loads_migrations_in_timestamp_order() {
-        let migrations = migrations_from_dir(&FIXTURE_MIGRATIONS);
-        let ids: Vec<_> = migrations.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["20260101000000_init", "20260102000000_add_index"]);
-    }
-
-    #[test]
-    fn reads_down_sql_when_present_and_none_when_absent() {
-        let migrations = migrations_from_dir(&FIXTURE_MIGRATIONS);
-
-        let init = migrations
-            .iter()
-            .find(|m| m.id == "20260101000000_init")
-            .expect("fixture has an init migration");
-        assert!(init.up.contains("CREATE TABLE widgets"));
-        assert_eq!(init.down.as_deref(), Some("DROP TABLE widgets;\n"));
-
-        let add_index = migrations
-            .iter()
-            .find(|m| m.id == "20260102000000_add_index")
-            .expect("fixture has an add_index migration");
-        assert!(add_index.up.contains("CREATE INDEX"));
-        assert_eq!(add_index.down, None);
-    }
-
-    #[test]
-    fn description_defaults_to_the_id() {
-        let migrations = migrations_from_dir(&FIXTURE_MIGRATIONS);
-        for migration in &migrations {
-            assert_eq!(migration.description, migration.id);
-        }
-    }
-}
+mod tests;

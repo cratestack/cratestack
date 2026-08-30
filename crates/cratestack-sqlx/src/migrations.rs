@@ -18,11 +18,20 @@ CREATE TABLE IF NOT EXISTS cratestack_migrations (
 /// A single migration step. The runner applies any rows not yet
 /// present in `cratestack_migrations`. `down` is recorded but never
 /// called — irreversible-by-default is the safe banking posture.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Migration {
     /// Sortable id, conventionally `YYYYMMDDHHMMSS_<slug>`.
     pub id: String,
     pub description: String,
+    /// Preparatory SQL run immediately before [`Self::up`], in the
+    /// *same* transaction — the `up.pre.sql` half of a migration
+    /// directory, scaffolded by `cratestack migrate diff` whenever it
+    /// emits a blocking op and filled in by the operator.
+    ///
+    /// A separate field rather than text prepended to `up` so ownership
+    /// stays clean: `up.sql` is wholly generated, `up.pre.sql` wholly
+    /// hand-authored.
+    pub up_pre: Option<String>,
     pub up: String,
     pub down: Option<String>,
 }
@@ -35,6 +44,17 @@ impl Migration {
         hasher.update(self.description.as_bytes());
         hasher.update(b"\0");
         hasher.update(self.up.as_bytes());
+        // Mixed in only when present, so a migration without an
+        // `up.pre.sql` hashes byte-identically to how it did before
+        // `up_pre` existed. Hashing `None` as (say) an empty string
+        // plus a separator would change every checksum already
+        // recorded in `cratestack_migrations`, and every deployment
+        // upgrading to this version would see its entire applied
+        // history as `ChecksumMismatch` — drift where nothing drifted.
+        if let Some(up_pre) = &self.up_pre {
+            hasher.update(b"\0");
+            hasher.update(up_pre.as_bytes());
+        }
         hasher.finalize().into()
     }
 }
@@ -106,9 +126,10 @@ pub async fn status(
 }
 
 /// Apply every pending migration in the input slice in order. Each
-/// runs in its own transaction; checksum drift aborts the whole apply
-/// (banks treat drift as a release-process failure for humans, not a
-/// silent overwrite).
+/// runs in its own transaction — [`Migration::up_pre`] then
+/// [`Migration::up`], both inside it — and checksum drift aborts the
+/// whole apply (banks treat drift as a release-process failure for
+/// humans, not a silent overwrite).
 pub async fn apply_pending(
     pool: &sqlx::PgPool,
     migrations: &[Migration],
@@ -133,6 +154,17 @@ pub async fn apply_pending(
             .begin()
             .await
             .map_err(|error| CratestackError::Database(error.to_string()))?;
+        // `up.pre.sql` first, in this same transaction. Its purpose is to
+        // make `up`'s blocking statement succeed, so a commit boundary
+        // between them would defeat it: that window is exactly when a
+        // concurrent INSERT could reintroduce the NULL a backfill just
+        // removed. Both halves land or neither does.
+        if let Some(up_pre) = &migration.up_pre {
+            sqlx::raw_sql(sqlx::AssertSqlSafe(up_pre.clone()))
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| CratestackError::Database(error.to_string()))?;
+        }
         // `raw_sql` sends the whole `up` script as one batch over PG's
         // simple-query protocol inside this transaction, so a mid-script
         // failure can't leave partial state (and dollar-quoted PL/pgSQL
@@ -164,30 +196,4 @@ pub async fn apply_pending(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn migration(id: &str, up: &str) -> Migration {
-        Migration {
-            id: id.to_owned(),
-            description: format!("migration {id}"),
-            up: up.to_owned(),
-            down: None,
-        }
-    }
-
-    #[test]
-    fn checksum_changes_when_up_sql_changes() {
-        let a = migration("20260101000000_init", "CREATE TABLE a (id INT);");
-        let mut b = a.clone();
-        b.up = "CREATE TABLE a (id BIGINT);".to_owned();
-        assert_ne!(a.checksum(), b.checksum());
-    }
-
-    #[test]
-    fn checksum_is_stable_for_same_inputs() {
-        let a = migration("20260101000000_init", "CREATE TABLE a (id INT);");
-        let b = a.clone();
-        assert_eq!(a.checksum(), b.checksum());
-    }
-}
+mod tests;

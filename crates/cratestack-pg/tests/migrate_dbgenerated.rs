@@ -71,6 +71,7 @@ async fn dbgenerated_probe_migration_and_insert_behavior() {
         &[Migration {
             id: "20260722000000_dbgenerated_probe".to_owned(),
             description: "dbgenerated probe".to_owned(),
+            up_pre: None,
             up: migration.up.clone(),
             down: None,
         }],

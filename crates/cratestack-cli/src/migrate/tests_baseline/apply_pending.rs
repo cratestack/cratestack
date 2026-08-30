@@ -65,6 +65,7 @@ fn apply_pending_after_baseline_skips_pre_baseline_ddl_and_row_is_recorded() {
         let post_baseline = Migration {
             id: "20990101000000_add_gadgets".to_owned(),
             description: "add gadgets table".to_owned(),
+            up_pre: None,
             up: "CREATE TABLE gadgets (id BIGINT NOT NULL PRIMARY KEY)".to_owned(),
             down: None,
         };

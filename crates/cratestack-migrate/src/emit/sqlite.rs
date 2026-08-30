@@ -37,7 +37,9 @@ mod tests;
 use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
-use crate::ir::{Destructiveness, Op, unverified_dbgenerated_columns};
+use crate::ir::{
+    BlockingReason, Destructiveness, Op, blocking_reasons, unverified_dbgenerated_columns,
+};
 
 use checks::{emit_add_check, emit_drop_check};
 use columns::{
@@ -53,33 +55,55 @@ use views::{emit_create_view, emit_drop_view, emit_replace_view};
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
-    let mut has_blocking = false;
     for op in ops {
         match op.destructiveness() {
-            Destructiveness::Safe => {}
+            Destructiveness::Safe | Destructiveness::Blocking => {}
             Destructiveness::Lossy => has_lossy = true,
-            Destructiveness::Blocking => has_blocking = true,
         }
     }
 
+    let blocking = blocking_reasons(ops);
     let unverified_dbgenerated = unverified_dbgenerated_columns(ops);
 
     EmittedMigration {
-        up: emit_up(ops, has_blocking, &unverified_dbgenerated),
+        // Deliberately never `Some` on SQLite. `up.pre.sql` is executed
+        // by `cratestack_sqlx::apply_pending`, which is Postgres-only —
+        // cratestack ships no migration runner for the embedded backend
+        // at all, so a scaffold here would be a file nothing reads,
+        // which is precisely the defect this mechanism was added to fix
+        // (cratestack#843). SQLite's guidance goes in `up.sql`, where
+        // whatever runner the operator does use will at least show it.
+        up_pre: None,
+        up: emit_up(ops, &blocking, &unverified_dbgenerated),
         down: emit_down(ops, has_lossy),
         has_lossy,
-        has_blocking,
+        has_blocking: !blocking.is_empty(),
         unverified_dbgenerated,
     }
 }
 
-fn emit_up(ops: &[Op], has_blocking: bool, unverified_dbgenerated: &[(String, String)]) -> String {
+fn emit_up(
+    ops: &[Op],
+    blocking: &[BlockingReason],
+    unverified_dbgenerated: &[(String, String)],
+) -> String {
     let mut sql = String::new();
-    if has_blocking {
-        sql.push_str("-- WARNING: this migration contains blocking operations.\n");
-        sql.push_str("-- A required column was added without a default. SQLite will\n");
-        sql.push_str("-- reject the ALTER TABLE … ADD COLUMN if the table is non-empty\n");
-        sql.push_str("-- — supply a default in the schema or backfill via up.pre.sql.\n\n");
+    if !blocking.is_empty() {
+        sql.push_str("-- WARNING: this migration contains blocking operations. It cannot\n");
+        sql.push_str("-- succeed against a table that already has rows:\n");
+        sql.push_str("--\n");
+        for reason in blocking {
+            writeln!(sql, "--   - {}: {}", reason.target(), reason.cause).ok();
+        }
+        sql.push_str("--\n");
+        sql.push_str("-- Resolve it in the schema (give the column an `@default`), or\n");
+        sql.push_str("-- hand-write the fix at the top of THIS file. SQLite has no\n");
+        sql.push_str("-- ALTER COLUMN, so a NOT NULL promotion means the 12-step table\n");
+        sql.push_str("-- rebuild: create the new table, copy the rows, drop, rename.\n");
+        sql.push_str("--\n");
+        sql.push_str("-- Note there is no `up.pre.sql` on this backend: that file is run\n");
+        sql.push_str("-- by cratestack's Postgres migration runner, and cratestack ships\n");
+        sql.push_str("-- no runner for the embedded backend. Everything goes here.\n\n");
     }
     if !unverified_dbgenerated.is_empty() {
         sql.push_str("-- NOTE: the following column(s) use `@default(dbgenerated())`, a\n");

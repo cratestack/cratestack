@@ -118,6 +118,7 @@ async fn run_baseline(
     let baseline = Migration {
         id: format!("{timestamp}_baseline"),
         description: format!("baseline: adopted {table_count} existing table(s)"),
+        up_pre: None,
         up: baseline_marker_sql(table_count, &checksum),
         down: None,
     };

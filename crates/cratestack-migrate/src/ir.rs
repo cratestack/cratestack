@@ -10,6 +10,7 @@
 //! `Blocking` case, a sentinel value that proves the operation can be
 //! resolved — for example a `NOT NULL` column with a default).
 
+mod blocking;
 mod checks;
 mod columns;
 mod extensions;
@@ -19,6 +20,7 @@ mod views;
 
 use serde::{Deserialize, Serialize};
 
+pub use blocking::{BlockingReason, blocking_reasons};
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
 pub use extensions::EnsureExtension;
@@ -66,6 +68,14 @@ pub enum Op {
     CreateMaterializedView(CreateMaterializedView),
     DropMaterializedView(DropMaterializedView),
     EnsureExtension(EnsureExtension),
+}
+
+impl Destructiveness {
+    /// Whether this class cannot succeed against existing data until
+    /// the operator resolves a precondition.
+    pub fn is_blocking(self) -> bool {
+        matches!(self, Destructiveness::Blocking)
+    }
 }
 
 impl Op {
