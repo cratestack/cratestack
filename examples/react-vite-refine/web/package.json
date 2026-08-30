@@ -16,7 +16,7 @@
   "dependencies": {
     "@cratestack/refine": "^0.8.13",
     "@refinedev/core": "^5.0.0",
-    "@tanstack/react-query": "^5.81.5",
+    "@tanstack/react-query": "^5.102.7",
     "decimal.js": "^10.6.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
