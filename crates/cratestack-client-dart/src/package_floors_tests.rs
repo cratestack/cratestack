@@ -7,15 +7,36 @@
 //! existing `*_tests.rs` convention, so the constants stay `pub(crate)`
 //! instead of being widened into the public API just to be asserted on.
 
-use super::CRATESTACK_ANNOTATIONS_FLOOR;
+use super::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR};
 
-/// `^X.Y.Z` -> `(X, Y, Z)`. Panics rather than returning an `Option`:
+/// `^X.Y.Z` -> `(X, Y, Z)`, and also the LOWER BOUND of a two-sided range
+/// such as `'>=0.8.10 <0.10.0'`. Panics rather than returning an `Option`:
 /// every caller here is a test whose failure message is more useful than
 /// a `None`.
+///
+/// Ranges are accepted because `cratestack_builder`'s own
+/// `cratestack_annotations` constraint is one. It has to be: `^0.8.10`
+/// (`>=0.8.10 <0.9.0`) forbids the 0.9.x annotations release a generated
+/// client now wants, while `^0.9.1` has an empty intersection with the
+/// `^0.8.10` floor every already-generated client still declares — so only
+/// a range satisfies both. See that pubspec's own comment.
+///
+/// The lower bound is the right thing to compare against here: this
+/// module's assertion is that the generator never emits a floor BELOW what
+/// the builder requires, and for a range that requirement is its floor.
+/// Quotes are stripped first — the pubspec quotes a range but not a caret.
 fn parse_caret(requirement: &str) -> (u64, u64, u64) {
-    let digits = requirement
-        .strip_prefix('^')
-        .unwrap_or_else(|| panic!("expected a caret requirement, got {requirement:?}"));
+    let requirement = requirement.trim().trim_matches('\'').trim_matches('"');
+    let digits = match requirement.strip_prefix('^') {
+        Some(rest) => rest,
+        None => requirement
+            .split_whitespace()
+            .next()
+            .and_then(|first| first.strip_prefix(">="))
+            .unwrap_or_else(|| {
+                panic!("expected a caret or `>=X.Y.Z <A.B.C` requirement, got {requirement:?}")
+            }),
+    };
     let mut parts = digits.split('.');
     let mut next = |which: &str| -> u64 {
         parts
@@ -78,5 +99,53 @@ fn emitted_annotations_floor_is_at_least_what_the_builder_requires() {
     );
 }
 
-#[path = "package_floors_tests/version_guards.rs"]
-mod version_guards;
+/// A floor at or above the *current* workspace version is unresolvable
+/// for exactly the reason #754 exists: `just bump` moves
+/// `dart-packages/*/pubspec.yaml` (and this crate's `CARGO_PKG_VERSION`)
+/// before the tag that publishes them, so the current version is by
+/// definition not on pub.dev yet on a bump PR. Requiring the floor to be
+/// **strictly below** it therefore encodes two things at once —
+///
+/// 1. the floor names a release that has already shipped, and
+/// 2. the floor is not tracking the release version,
+///
+/// — the second being the property that *is* the fix, and the one a
+/// well-meaning "keep it in sync with the bump" change would quietly
+/// undo.
+///
+/// Deliberately not a claim that the floor was actually published:
+/// pub.dev is the only authority for that, and the previous `^0.8.8`
+/// floor named a version that never existed while satisfying every
+/// offline check available. CI's `flutter (flutter-riverpod example)`
+/// job, resolving at the exact floor, is what catches that class (guard
+/// #2 — see [`super`]'s module doc).
+///
+/// **Known limitation, stated rather than hidden:** if the annotation
+/// surface ever changes *within* the release being cut, the honest floor
+/// would be that unpublished release and this test would fail. That is a
+/// real chicken-and-egg in the lockstep publishing model, not a flaw in
+/// the assertion — the fix is to publish the annotation package first,
+/// which is what the un-lockstepping follow-up on #754 is about.
+#[test]
+fn floors_are_below_the_current_unpublished_workspace_version() {
+    for (package, floor) in [
+        ("cratestack_annotations", CRATESTACK_ANNOTATIONS_FLOOR),
+        ("cratestack_builder", CRATESTACK_BUILDER_FLOOR),
+        // cratestack#779: `cratestack_cbor` joins the same guard now that
+        // it emits a floor rather than `^{CARGO_PKG_VERSION}`. Before
+        // that it would have failed this test by construction, which is
+        // the whole point of it being here.
+        ("cratestack_cbor", CRATESTACK_CBOR_FLOOR),
+    ] {
+        let floor_parts = parse_caret(floor);
+        let current = parse_caret(&format!("^{}", pubspec_value(package, "version")));
+        assert!(
+            floor_parts < current,
+            "generated clients ask for {package} {floor}, but this repo's \
+             dart-packages/{package}/pubspec.yaml is at {current:?} — a floor at or above the \
+             current version names something pub.dev cannot serve until the release tag is \
+             pushed, which is cratestack#754 itself. Floors are API-compatibility constants; they \
+             must not follow `just bump`."
+        );
+    }
+}
