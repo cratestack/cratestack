@@ -142,11 +142,28 @@ fn override_cratestack_cbor(package_dir: &Path, stub_dir: &Path) {
     let stub_path = stub_dir
         .canonicalize()
         .expect("stub dir should exist by now");
+    // `cratestack_builder`/`cratestack_annotations` are overridden to this
+    // repo's own `dart-packages/` in the SAME file, because pub allows only
+    // one `pubspec_overrides.yaml` per package. Without them, a commit that
+    // raises the generator's annotations floor and the builder's own
+    // `cratestack_annotations` constraint together cannot resolve here: the
+    // builder pub.dev still serves forbids the annotations release the
+    // generator now asks for. See `package_floors.rs`'s module doc on the
+    // chicken-and-egg in the lockstep publishing model.
+    let dart_packages = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../dart-packages")
+        .canonicalize()
+        .expect("dart-packages/ should exist in this repo");
     fs::write(
         package_dir.join("pubspec_overrides.yaml"),
         format!(
-            "dependency_overrides:\n  cratestack_cbor:\n    path: {}\n",
-            stub_path.display()
+            "dependency_overrides:\n  \
+             cratestack_cbor:\n    path: {}\n  \
+             cratestack_annotations:\n    path: {}/cratestack_annotations\n  \
+             cratestack_builder:\n    path: {}/cratestack_builder\n",
+            stub_path.display(),
+            dart_packages.display(),
+            dart_packages.display()
         ),
     )
     .expect("write pubspec_overrides.yaml");

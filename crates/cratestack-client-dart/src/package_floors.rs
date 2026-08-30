@@ -82,7 +82,15 @@
 /// generator emits on `@CratestackBuilder(...)`. Verified against the
 /// published archives, not the changelog: 0.8.5/0.8.6/0.8.7 do not
 /// contain either identifier, and 0.8.8/0.8.9 do not exist on pub.dev.
-pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.8.10";
+///
+/// Raised `^0.8.10` -> `^0.9.1` on 2026-08-30. **Not** because the
+/// generator started emitting a newer annotation argument — it did not —
+/// but because the caret ceiling had begun excluding published releases.
+/// `^0.8.10` is `>=0.8.10 <0.9.0`, and every `cratestack_*` Dart package
+/// is on pub.dev at 0.9.1, so a generated client could no longer resolve
+/// the current release at all. This is the "deliberately raised" act this
+/// module's doc prescribes for exactly that situation.
+pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.9.1";
 
 /// `cratestack_builder` — the `source_gen` builder a generated client
 /// lists under `dev_dependencies:`, run by `build_runner` to expand
@@ -93,7 +101,26 @@ pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.8.10";
 /// `cratestack_annotations: ^0.8.5`. A generated client resolving an
 /// older builder would silently produce builders that disagree with the
 /// schema rather than failing at `pub get`.
-pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.8.10";
+///
+/// Raised `^0.8.10` -> `^0.9.1` on 2026-08-30, with
+/// `CRATESTACK_ANNOTATIONS_FLOOR` and for the same reason.
+///
+/// These two cannot move independently, and the third piece is NOT in this
+/// file: `dart-packages/cratestack_builder/pubspec.yaml` declares its own
+/// `cratestack_annotations` constraint, which was also `^0.8.10`. Raising
+/// only the generator's floors leaves the published builder forbidding the
+/// annotations release the generator now asks for —
+///
+/// ```text
+/// Because cratestack_builder >=0.8.14 depends on cratestack_annotations
+/// ^0.8.10 and <client> depends on cratestack_annotations ^0.9.1,
+/// cratestack_builder >=0.8.14 is forbidden.
+/// ```
+///
+/// — which `computed_params_wire_equality` catches by running a real
+/// `flutter pub get`. That test is the reason this change is complete
+/// rather than half-applied.
+pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.9.1";
 
 /// `cratestack_cbor` — the native CBOR codec a generated client lists
 /// under `dependencies:` when `native_cbor` is on (the default;
@@ -109,19 +136,40 @@ pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.8.10";
 /// the method #754 established after the hand-written `^0.8.8` floor
 /// turned out to name a version pub.dev never had.
 ///
-/// So this floor is bounded by what exists, not by what the generator
-/// needs: there is no published `cratestack_cbor` a generated client
-/// could resolve and fail against. The caret ceiling is what makes it
-/// useful anyway — `^0.8.0` is `>=0.8.0 <0.9.0`, so it resolves the
-/// newest 0.8.x on the day the user runs `pub get`, which is how a
-/// generated client picks up #794's idempotent `createCborCodec()`
-/// without this constant moving.
+/// So this floor was bounded by what exists, not by what the generator
+/// needs. The caret ceiling is what made it useful anyway — `^0.8.0` is
+/// `>=0.8.0 <0.9.0`, so it resolved the newest 0.8.x on the day the user
+/// ran `pub get`, which is how a generated client picked up #794's
+/// idempotent `createCborCodec()` without this constant moving.
+///
+/// **That stopped working the day 0.9.1 published**, which is why this is
+/// now `^0.9.1`. "Resolves the newest on the day you run `pub get`"
+/// quietly became "resolves the newest 0.8.x, forever". It surfaced from a
+/// consumer (`vaam-store/mobile`, cratestack#838) as a hard resolution
+/// failure rather than as staleness, because a workspace depending on both
+/// a generated client and `cratestack_cbor` directly cannot ask for 0.9.1
+/// at all:
+///
+/// ```text
+/// Because vymalo depends on vendor_client from path which depends on
+/// cratestack_cbor ^0.8.0, cratestack_cbor ^0.8.0 is required.
+/// So, because vymalo depends on cratestack_cbor ^0.9.1, version solving
+/// failed.
+/// ```
+///
+/// That generated client came from cratestack-cli 0.9.1 itself — a 0.9.1
+/// generator emitting a constraint excluding its own release's packages.
+///
+/// The raise costs callers nothing beyond requiring a currently-published
+/// release: 0.9.1 is API-identical to 0.8.15 for consumers. The diff across
+/// `dart-packages/cratestack_cbor/lib/` between those two tags is doc
+/// comments, a `lints` dev-dependency and podspec versions.
 ///
 /// **Not** the fix for #798's retry behaviour: that lives in the
 /// generated runtime itself (`rest-runtime.dart.j2` /
 /// `rpc_runtime/types.dart.j2`), which clears its own cache on failure
 /// and therefore needs nothing from this package's version.
-pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.9.1";
 
 #[cfg(test)]
 #[path = "package_floors_tests.rs"]

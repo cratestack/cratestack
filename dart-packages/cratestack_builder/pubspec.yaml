@@ -84,7 +84,18 @@ dependencies:
   # Raise this ONLY when this builder starts reading a newly-added
   # annotation field — never as part of a routine version bump. See
   # `docs/tooling/dart-publishing.md`.
-  cratestack_annotations: ^0.8.10
+  # Raised `^0.8.10` -> `^0.9.1` on 2026-08-30. This is the one exception to
+  # the "never as part of a routine version bump" rule directly above, and it
+  # is not a routine bump: `^0.8.10` means `>=0.8.10 <0.9.0`, so once
+  # `cratestack_annotations` published at 0.9.1 this constraint FORBADE the
+  # only release a generated client can now ask for. Leaving it produces
+  #
+  #   Because cratestack_builder >=0.8.14 depends on cratestack_annotations
+  #   ^0.8.10 and <client> depends on cratestack_annotations ^0.9.1,
+  #   cratestack_builder >=0.8.14 is forbidden.
+  #
+  # See cratestack#838 and `cratestack-client-dart/src/package_floors.rs`.
+  cratestack_annotations: ^0.9.1
   source_gen: ^4.0.0
 
 dev_dependencies:

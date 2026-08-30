@@ -57,7 +57,7 @@ const RPC_FIXTURE: &str = "tiny_rpc";
 /// `cratestack_client_dart::package_floors::CRATESTACK_CBOR_FLOOR`
 /// (`pub(crate)`, so not callable from an integration test). Raising the
 /// floor there is supposed to require touching this line too.
-const CRATESTACK_CBOR_FLOOR: &str = "^0.8.0";
+const CRATESTACK_CBOR_FLOOR: &str = "^0.9.1";
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
 
 /// The check this replaces (`without_the_flag_output_matches_the_default_config_exactly`)

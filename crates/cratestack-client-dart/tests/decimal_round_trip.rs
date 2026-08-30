@@ -184,6 +184,7 @@ fn decimal_round_trips_through_the_generated_dart_client() {
     fs::create_dir_all(test_path.parent().expect("test/ parent")).expect("create test dir");
     fs::write(&test_path, CHECK_TEST).expect("write check test");
 
+    override_in_repo_dart_packages(&dir);
     let pub_get = Command::new("flutter")
         .args(["pub", "get"])
         .current_dir(&dir)
@@ -327,4 +328,43 @@ fn project_tmp_path(label: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp/client-dart-tests")
         .join(format!("{label}-{suffix}"))
+}
+
+/// Points `cratestack_builder` and `cratestack_annotations` at this repo's
+/// own `dart-packages/`, so `pub get` resolves the constraints in the
+/// WORKING TREE rather than the ones the last release published.
+///
+/// Without it this test checks history, not the change in front of it, and
+/// it fails in exactly one situation: a commit that raises the generator's
+/// annotations floor and `cratestack_builder`'s own `cratestack_annotations`
+/// constraint together. pub.dev still serves the previous builder, which
+/// forbids the annotations release the generator now asks for —
+///
+/// ```text
+/// Because cratestack_builder >=0.8.14 depends on cratestack_annotations
+/// ^0.8.10 and <client> depends on cratestack_annotations ^0.9.1,
+/// cratestack_builder >=0.8.14 is forbidden.
+/// ```
+///
+/// — the chicken-and-egg `package_floors.rs`'s module doc names. A
+/// `pubspec_overrides.yaml` rather than an edit to the generated
+/// `pubspec.yaml`, so the generated file stays byte-for-byte what the
+/// generator emitted. `cratestack_cbor` is deliberately NOT overridden: it
+/// resolves from pub.dev, which is what proves the emitted floor names a
+/// really published release.
+fn override_in_repo_dart_packages(dir: &std::path::Path) {
+    let dart_packages = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../dart-packages")
+        .canonicalize()
+        .expect("dart-packages/ should exist in this repo");
+    fs::write(
+        dir.join("pubspec_overrides.yaml"),
+        format!(
+            "dependency_overrides:\n  \
+             cratestack_annotations:\n    path: {0}/cratestack_annotations\n  \
+             cratestack_builder:\n    path: {0}/cratestack_builder\n",
+            dart_packages.display()
+        ),
+    )
+    .expect("write pubspec_overrides.yaml");
 }
