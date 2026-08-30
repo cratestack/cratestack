@@ -63,17 +63,28 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
     // feature (cratestack#161's `guard_embedded_declared_extensions`) — a
     // `Vector(n)` field can never exist on this rusqlite backend at all,
     // so there is no DDL/round-trip coverage to add here, ever.
+    // `Geography`/`Geometry` (cratestack#842) are excluded for exactly
+    // that same stronger reason: PostGIS is Postgres-only, and the same
+    // embedded guard rejects `extension postgis { }` unconditionally
+    // (it is now expressed as an `is_postgres_only` predicate covering
+    // both extensions), so a spatial field can never exist on this
+    // backend either. Proven by the `postgis_rejected_on_embedded`
+    // trybuild case in `cratestack-macros`.
     let builtin: BTreeSet<&str> = cratestack_parser::builtin_type_names()
         .iter()
         .copied()
         .filter(|name| {
-            *name != "Page" && *name != "PageInput" && *name != "FindMany" && *name != "Vector"
+            !matches!(
+                *name,
+                "Page" | "PageInput" | "FindMany" | "Vector" | "Geography" | "Geometry"
+            )
         })
         .collect();
     let covered: BTreeSet<&str> = COVERED_SCALAR_TYPES.iter().copied().collect();
     assert_eq!(
         builtin, covered,
-        "cratestack_parser::builtin_type_names() (minus `Page`/`PageInput`/`FindMany`/`Vector`) and \
+        "cratestack_parser::builtin_type_names() (minus the non-storable and Postgres-only \
+         names above) and \
          this test's COVERED_SCALAR_TYPES have drifted — add a field plus write/assert coverage \
          above for the new/removed type. See cratestack#232.",
     );
