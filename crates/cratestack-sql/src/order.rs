@@ -65,6 +65,7 @@ pub enum OrderTarget {
     /// PG-only (PostGIS) — the embedded rusqlite backend doesn't ship
     /// SpatiaLite, so its renderer fails loud, exactly as it does for
     /// `FilterExpr::Spatial`.
+    #[cfg(feature = "postgis")]
     SpatialDistance {
         column: &'static str,
         lng: f64,

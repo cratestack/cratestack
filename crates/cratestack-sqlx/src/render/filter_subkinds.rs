@@ -7,6 +7,7 @@ use std::fmt::Write;
 
 use cratestack_sql::FilterOp;
 
+#[cfg(feature = "postgis")]
 pub(super) fn render_spatial_filter_sql(
     filter: &cratestack_sql::SpatialFilter,
     sql: &mut String,

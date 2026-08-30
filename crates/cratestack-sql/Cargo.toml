@@ -25,6 +25,17 @@ workspace = true
 # `into_sql.rs`'s per-backend `impl IntoSqlValue for rust_decimal::Decimal`
 # / `for bigdecimal::BigDecimal` have something to name.
 default = ["decimal-rust-decimal"]
+# PostGIS query surface: `SpatialFilter` (`ST_Covers`/`ST_DWithin`),
+# `SpatialDistanceExpr` (`ST_Distance` ordering), the `SqlValue::Spatial`
+# EWKB payload and the `FieldRef` accessors that build them
+# (cratestack#842).
+#
+# Pulls no extra dependency — PostGIS's wire format is EWKB, i.e. bytes —
+# so this gate is about public API surface rather than dependency weight.
+# Off by default: a schema with no spatial columns has no use for it, and
+# the facades forward their own `postgis` feature down to this one so
+# enabling it in one place is enough.
+postgis = []
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-policy/decimal-rust-decimal",

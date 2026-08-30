@@ -355,7 +355,18 @@ framework-maintained entry, not a step toward third-party extensions.
   *in*, PostGIS's implicit `bytea` cast means a plain byte bind works.
 - **Query builder:** `covers_geography`/`dwithin_geography` become
   reachable through a generated `FieldRef` rather than a hand-built one,
-  and `order_by_distance_to(point)` adds `ST_Distance` ordering.
+  and `order_by_distance_to(point)` adds `ST_Distance` ordering. This
+  surface is itself gated on `cratestack-sql`'s `postgis` feature —
+  a **deliberate divergence from `pgvector`**, whose `VectorDistanceExpr`
+  and `SqlValue::Vector` are unconditional in `cratestack-sql` on the
+  reasoning that IR types carrying no extra dependency cost nothing to
+  keep. That reasoning holds for dependency weight, and PostGIS costs
+  nothing there either (EWKB is bytes). It was overridden here on the
+  grounds that not every consumer wants the geospatial API surface at
+  all. Gating pre-existing public API is a breaking change, taken
+  knowingly and changelogged; the pre-1.0 window is the time to take it.
+  If the `pgvector` surface is ever gated to match, that is a second
+  breaking change and belongs in its own PR.
 - **Explicitly not included:** trigger generation (deriving a geography
   from lat/lng columns is application policy, and cratestack#842
   explicitly did not ask for it), and geometry-valued procedure

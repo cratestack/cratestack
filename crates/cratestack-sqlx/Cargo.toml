@@ -70,7 +70,7 @@ pgvector = ["dep:pgvector", "dep:sqlx"]
 # `spatial::Ewkb` type-compatibility shim in this crate. The feature
 # exists to gate that shim and to keep `SqlValue::Spatial` from being
 # bindable in a build that never opted into PostGIS.
-postgis = []
+postgis = ["cratestack-sql/postgis"]
 
 [dependencies]
 async-trait.workspace = true

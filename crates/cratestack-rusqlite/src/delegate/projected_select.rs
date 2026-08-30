@@ -95,6 +95,7 @@ pub(super) fn build_partial_select<M, PK>(
                          are server-only",
                     );
                 }
+                #[cfg(feature = "postgis")]
                 OrderTarget::SpatialDistance { .. } => {
                     // PostGIS is server-only for the same reason as
                     // pgvector above — fail loud rather than silently

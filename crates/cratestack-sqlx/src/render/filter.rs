@@ -10,8 +10,7 @@ use cratestack_sql::{FilterOp, FilterValue};
 use crate::{FilterExpr, RelationFilter, RelationQuantifier};
 
 use super::filter_subkinds::{
-    render_coalesce_filter_sql, render_json_filter_sql, render_spatial_filter_sql,
-    render_vector_distance_filter_sql,
+    render_coalesce_filter_sql, render_json_filter_sql, render_vector_distance_filter_sql,
 };
 
 pub(crate) fn render_filter_sql(filters: &[FilterExpr], bind_index: &mut usize) -> Option<String> {
@@ -93,8 +92,9 @@ pub(crate) fn render_filter_expr_sql(
         FilterExpr::Json(json) => {
             render_json_filter_sql(json, sql, bind_index);
         }
+        #[cfg(feature = "postgis")]
         FilterExpr::Spatial(spatial) => {
-            render_spatial_filter_sql(spatial, sql, bind_index);
+            super::filter_subkinds::render_spatial_filter_sql(spatial, sql, bind_index);
         }
         FilterExpr::VectorDistance(vector) => {
             render_vector_distance_filter_sql(vector, sql, bind_index);

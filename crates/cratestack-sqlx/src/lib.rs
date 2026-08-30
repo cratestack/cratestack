@@ -159,10 +159,14 @@ pub use cratestack_sql::{
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
-    RelationQuantifier, SortDirection, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue,
-    Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter,
-    VectorMetric, coalesce, is_orderable, order_value_sql, point, wrap_filter,
+    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
+    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce,
+    is_orderable, order_value_sql, wrap_filter,
 };
+/// PostGIS query surface (cratestack#842), gated in `cratestack-sql`
+/// and forwarded through this crate's own `postgis` feature.
+#[cfg(feature = "postgis")]
+pub use cratestack_sql::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 pub use delegate::{
     ModelDelegate, ScopedAggregate, ScopedAggregateColumn, ScopedAggregateCount, ScopedBatchCreate,
     ScopedBatchDelete, ScopedBatchGet, ScopedBatchUpdate, ScopedBatchUpsert, ScopedCreateRecord,

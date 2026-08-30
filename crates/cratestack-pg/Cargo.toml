@@ -242,6 +242,16 @@ name = "postgis_feature_forwarding"
 path = "tests/postgis_feature_forwarding.rs"
 required-features = ["postgis"]
 
+# Also `postgis`-gated (cratestack#842): this test drives
+# `covers_geography`/`dwithin_geography`, which now live behind
+# `cratestack-sql`'s `postgis` feature. It was auto-discovered before
+# that surface was gated; declaring it explicitly is what keeps a
+# default-feature `cargo test` compiling.
+[[test]]
+name = "banking_builder_extensions_tier7"
+path = "tests/banking_builder_extensions_tier7.rs"
+required-features = ["postgis"]
+
 # Live nearest-neighbor verification of the cratestack#163 query-builder
 # distance operators — needs a real `pgvector/pgvector` Postgres (not
 # the default `compose.yml` one), so it's not part of `just test-pg`'s

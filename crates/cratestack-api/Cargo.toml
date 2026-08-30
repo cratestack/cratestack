@@ -28,6 +28,12 @@ path = "src/lib.rs"
 
 [features]
 default = ["decimal-rust-decimal", "codec-json"]
+# PostGIS query surface (cratestack#842). Forwards only to
+# `cratestack-sql` — a `db = None` schema has no models and so can't
+# declare a spatial column, but this facade still re-exports the query
+# types so a procedures-only service can build filters against another
+# service's contract. Off by default.
+postgis = ["cratestack-sql/postgis"]
 # Unlike `cratestack-pg`, there is no `postgres` feature here to gate: this
 # crate structurally never depends on `cratestack-sqlx` (see `Cargo.toml`'s
 # `[dependencies]` below and `src/lib.rs`'s doc comment), so these two

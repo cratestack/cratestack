@@ -1,4 +1,4 @@
-#![cfg(test)]
+#![cfg(all(test, feature = "postgis"))]
 
 use crate::{FieldRef, render::render_filter_expr_sql};
 

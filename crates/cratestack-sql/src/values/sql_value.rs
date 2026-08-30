@@ -39,6 +39,7 @@ pub enum SqlValue {
     /// the encode boundary can tell "these bytes are a geometry" from
     /// "these bytes are a bytea column", which matters for the
     /// `NULL` arm's type annotation.
+    #[cfg(feature = "postgis")]
     Spatial(Vec<u8>),
     NullBool,
     NullInt,
@@ -50,6 +51,7 @@ pub enum SqlValue {
     NullJson,
     NullDecimal,
     NullVector,
+    #[cfg(feature = "postgis")]
     NullSpatial,
 }
 

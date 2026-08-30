@@ -88,6 +88,39 @@ Also fixed, both surfaced by the new grammar: the field-line tokenizer split a t
 whitespace, and the procedure-argument splitter split on every comma — so any parametric type
 containing a space or comma was silently truncated before reaching the type parser.
 
+#### Breaking: the geospatial query surface is now behind the `postgis` feature
+
+`SpatialFilter`, `SpatialPoint`, `point()`, `FilterExpr::Spatial` and the
+`FieldRef::covers_geography` / `dwithin_geography` accessors have shipped unconditionally since
+0.6. They now live behind `cratestack-sql`'s `postgis` feature, forwarded from each facade's own
+`postgis` feature, so a build with no spatial columns doesn't carry the surface. Enabling it is one
+line:
+
+```toml
+cratestack = { package = "cratestack-pg", features = ["postgis"] }
+```
+
+Off by default, matching every other extension feature. Note this is an API-surface gate, not a
+dependency-weight one — PostGIS's wire format is EWKB, i.e. bytes, so the feature pulls in no
+third-party crate at all.
+
+### `cratestack migrate diff` no longer panics on a `pgvector` schema
+
+Independent of the above, and a real bug found while wiring #842: `cratestack-cli` enabled neither
+`pgvector` nor `postgis` on its `cratestack-migrate` dependency, but the emitter's gate assumes any
+crate that can be handed such a schema was built with the feature on. The shipped binary can be
+handed any schema, so `migrate diff` on a schema declaring `extension pgvector { }` hit a deliberate
+`unreachable!`:
+
+```text
+internal error: entered unreachable code: ColumnType::Vector(3) reached the Postgres emitter
+without the `pgvector` Cargo feature enabled on cratestack-migrate
+```
+
+Both features are now enabled unconditionally on that edge, for the same reason
+`postgres-introspect` already was: DDL emission is a runtime capability of the shipped binary, not a
+build variant.
+
 ### The generated Dart client floors move to `^0.9.3` (#838)
 
 Step 2, and the last one. A generated client emitted `cratestack_cbor: ^0.8.0` — `>=0.8.0 <0.9.0` —

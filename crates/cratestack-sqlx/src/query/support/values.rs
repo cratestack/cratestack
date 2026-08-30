@@ -109,15 +109,11 @@ pub(crate) fn push_bind_value(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, va
         #[cfg(feature = "postgis")]
         SqlValue::NullSpatial => {
             query.push_bind(Option::<Vec<u8>>::None);
-        }
-        // Same invariant as the `Vector` arm above: reaching here means
-        // an `SqlValue::Spatial` was constructed outside generated code
-        // that can't exist without the feature enabled end-to-end.
-        #[cfg(not(feature = "postgis"))]
-        SqlValue::Spatial(_) | SqlValue::NullSpatial => unreachable!(
-            "SqlValue::Spatial/NullSpatial requires the `postgis` Cargo feature on \
-             cratestack-sqlx"
-        ),
+        } // No `#[cfg(not(feature = "postgis"))]` counterpart to the
+          // `Vector` arm above: `SqlValue::Spatial`/`NullSpatial` are
+          // themselves gated on `postgis` in `cratestack-sql`
+          // (cratestack#842), so without the feature the variants don't
+          // exist and there is nothing left to match.
     }
 }
 

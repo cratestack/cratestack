@@ -52,6 +52,7 @@ impl<'a> ToSql for SqlValueParam<'a> {
             // `include_embedded_schema!` rejects `extension postgis
             // { }` unconditionally, so generated rusqlite code can
             // never produce one of these.
+            #[cfg(feature = "postgis")]
             SqlValue::Spatial(_) | SqlValue::NullSpatial => {
                 return Err(rusqlite::Error::ToSqlConversionFailure(
                     "Geography/Geometry fields are not supported by the embedded (rusqlite) \

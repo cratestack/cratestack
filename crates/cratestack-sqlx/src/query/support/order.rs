@@ -92,6 +92,7 @@ fn push_order_clause_query(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, claus
                 .push(" ")
                 .push(null_order_sql(clause.null_order));
         }
+        #[cfg(feature = "postgis")]
         OrderTarget::SpatialDistance { column, lng, lat } => {
             query
                 .push("ST_Distance(")

@@ -27,6 +27,12 @@ path = "src/lib.rs"
 
 [features]
 default = ["decimal-rust-decimal", "codec-json"]
+# PostGIS query surface (cratestack#842). The embedded backend can never
+# execute a spatial op — `include_embedded_schema!` rejects
+# `extension postgis { }` outright — so this exists only to keep the
+# re-exports resolvable when a workspace enables `postgis` elsewhere and
+# Cargo unifies the feature onto this crate's edges. Off by default.
+postgis = ["cratestack-rusqlite/postgis", "cratestack-sql/postgis"]
 # `cratestack-client-rust/...` (plain, not weak `?`): that dependency is
 # mandatory-but-target-gated (see `[target.'cfg(not(target_arch =
 # "wasm32"))'.dependencies]` below), not `optional = true`, so weak-dep

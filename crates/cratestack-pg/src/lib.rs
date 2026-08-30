@@ -88,11 +88,15 @@ pub use cratestack_sql::{
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
     OrderCatalog, OrderClause, OrderRelationEdge, OrderTarget, Orderable, Projection, ReadSource,
     RelationFilter, RelationHop, RelationInclude, ResolvedOrderTarget, SortDirection,
-    SpatialDistanceExpr, SpatialFilter, SpatialPoint, SqlColumnValue, SqlValue, Unorderable,
-    UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric,
-    ViewDescriptor, WriteSource, coalesce, is_orderable, order_value_sql, point,
-    resolve_order_target, wrap_filter,
+    SqlColumnValue, SqlValue, Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr,
+    VectorDistanceFilter, VectorMetric, ViewDescriptor, WriteSource, coalesce, is_orderable,
+    order_value_sql, resolve_order_target, wrap_filter,
 };
+/// PostGIS query surface (cratestack#842) — gated in
+/// `cratestack-sql` and forwarded through this crate's own
+/// `postgis` feature.
+#[cfg(feature = "postgis")]
+pub use cratestack_sql::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 
 pub use regex;
 pub use serde;

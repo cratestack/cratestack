@@ -57,6 +57,7 @@ pub(crate) fn render_order_clause_sql(
             );
             *bind_index += 1;
         }
+        #[cfg(feature = "postgis")]
         OrderTarget::SpatialDistance { column, .. } => {
             // `ST_Distance(col::geography, ST_MakePoint($lng, $lat)::geography)`
             // — two bind slots, lng then lat, matching the argument

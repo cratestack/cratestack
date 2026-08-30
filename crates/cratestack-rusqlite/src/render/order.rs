@@ -40,6 +40,7 @@ pub(super) fn render_order_clause(clause: &OrderClause, sql: &mut String) {
                  schemas that use FieldRef::order_by_distance are server-only",
             );
         }
+        #[cfg(feature = "postgis")]
         OrderTarget::SpatialDistance { .. } => {
             // ST_Distance ordering requires PostGIS (or SpatiaLite,
             // which the embedded runtime doesn't ship) — same
