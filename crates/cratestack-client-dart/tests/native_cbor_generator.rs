@@ -41,23 +41,63 @@ const REST_FIXTURE: &str = "tiny_rest";
 const RPC_FIXTURE: &str = "tiny_rpc";
 
 /// cratestack#779: the `cratestack_cbor` API floor a generated pubspec
-/// declares, restated here as a **literal** rather than recomputed from
-/// `env!("CARGO_PKG_VERSION")` the way this file did before.
+/// declares, read from `src/package_floors.rs`.
 ///
-/// That is the entire point, not an oversight. The old assertion derived
-/// its expected value from the same input the generator derived *its*
-/// value from, so it agreed with the generator by construction and could
-/// not observe the defect #779 is about — it passed just as happily when
-/// the emitted pin tracked the release version. A literal disagrees the
-/// moment the generator starts moving with `just bump` again: at the next
-/// version this test still expects `^0.8.0`, and a regressed generator
-/// emitting `^0.9.0` fails here rather than at a user's `pub get`.
-///
-/// Kept deliberately in sync by hand with
+/// It *was* a literal, hand-synced with
 /// `cratestack_client_dart::package_floors::CRATESTACK_CBOR_FLOOR`
-/// (`pub(crate)`, so not callable from an integration test). Raising the
-/// floor there is supposed to require touching this line too.
-const CRATESTACK_CBOR_FLOOR: &str = "^0.9.3";
+/// (`pub(crate)`, so not callable from an integration test), on the
+/// reasoning that "raising the floor there is supposed to require touching
+/// this line too". Nothing enforced that, and it drifted: a change raised
+/// the real floor and this copy together, a later change reverted the real
+/// one, and the copy stayed behind — three tests here then failed asserting
+/// a floor nothing emitted any more. That is the same class of rot
+/// `package_floors.rs`'s own module doc records for the `^0.8.8` floor, and
+/// its guards could not catch this one because they read the *pubspecs*,
+/// never this file.
+///
+/// **Deriving is safe here, and the paragraph above explains why the
+/// derivation has to be from this specific source.** The danger #779 named
+/// is deriving the expectation from *the same input the generator uses* —
+/// this file previously computed it from `env!("CARGO_PKG_VERSION")`, so it
+/// agreed with the generator by construction and could not observe a floor
+/// that wrongly tracked the release version. `CRATESTACK_CBOR_FLOOR` is not
+/// that input: it is an API-compatibility constant that deliberately does
+/// NOT follow `just bump`, and a separate test
+/// (`floors_are_below_the_current_unpublished_workspace_version`) exists to
+/// keep it that way. So a regressed generator emitting the workspace
+/// version still disagrees with this value and still fails here — the guard
+/// survives, and the hand-sync requirement does not.
+///
+/// A line scan rather than a parse, matching `package_floors_tests.rs`'s
+/// own `pubspec_value`: one constant, known shape, and pulling in a Rust
+/// parser to read it would be the larger risk. Panics loudly if the
+/// constant is renamed or reformatted — this assertion is meaningless if it
+/// cannot find the real value, and silently falling back to a default would
+/// reintroduce exactly the drift it exists to prevent.
+fn cbor_floor() -> &'static str {
+    static FLOOR: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/package_floors.rs");
+        let source = std::fs::read_to_string(path)
+            .unwrap_or_else(|error| panic!("reading {path} for CRATESTACK_CBOR_FLOOR: {error}"));
+        source
+            .lines()
+            .find_map(|line| {
+                let rest = line
+                    .trim()
+                    .strip_prefix("pub(crate) const CRATESTACK_CBOR_FLOOR: &str = \"")?;
+                rest.strip_suffix("\";").map(str::to_owned)
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "could not find `pub(crate) const CRATESTACK_CBOR_FLOOR: &str = \"...\";` in \
+                     {path} — was it renamed or reformatted? This test is meaningless until it \
+                     can read the real floor."
+                )
+            })
+    });
+    &FLOOR
+}
+
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
 
 /// The check this replaces (`without_the_flag_output_matches_the_default_config_exactly`)
@@ -88,7 +128,7 @@ fn default_config_uses_native_cbor() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")),
+            pubspec.contains(&format!("cratestack_cbor: {}", cbor_floor())),
             "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must depend on \
              cratestack_cbor by default:\n{pubspec}"
         );
@@ -148,7 +188,7 @@ fn the_flag_swaps_the_pubspec_dependency_and_the_runtime_import() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")),
+            pubspec.contains(&format!("cratestack_cbor: {}", cbor_floor())),
             "{fixture}: pubspec.yaml should depend on cratestack_cbor, pinned to this crate's \
              version (lockstep with dart-packages/cratestack_cbor's own version):\n{pubspec}"
         );
@@ -277,7 +317,7 @@ fn riverpod_preset_pubspec_gates_the_same_way_as_the_default_preset() {
         assert!(!plain_pubspec.contains("cratestack_cbor"));
 
         let native_pubspec = file(&native, "pubspec.yaml");
-        assert!(native_pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")));
+        assert!(native_pubspec.contains(&format!("cratestack_cbor: {}", cbor_floor())));
         assert!(!native_pubspec.contains("cbor: ^6.5.1"));
 
         // The riverpod preset reuses `lib/src/runtime.dart` verbatim from

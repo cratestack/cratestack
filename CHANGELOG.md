@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### The duplicated `CRATESTACK_CBOR_FLOOR` is now derived, not hand-synced
+
+`tests/native_cbor_generator.rs` kept its own literal copy of the floor, hand-synced with
+`src/package_floors.rs` on the reasoning that raising one "is supposed to require touching this line
+too". Nothing enforced that, and it drifted during the 0.9.3 work: a change raised the real floor and
+the copy together, a later change reverted the real one, and the copy stayed behind — three tests
+then failed asserting a floor nothing emitted any more. `package_floors.rs`'s own guards could not
+catch it, because they read the *pubspecs* and never that file.
+
+It now reads the constant out of `src/package_floors.rs` directly.
+
+**The #779 guard survives, and that is the whole question.** The danger #779 named is deriving the
+expectation from *the same input the generator uses* — this file previously computed it from
+`env!("CARGO_PKG_VERSION")`, so it agreed with the generator by construction and could not observe a
+floor that wrongly tracked the release version. `CRATESTACK_CBOR_FLOOR` is not that input: it is an
+API-compatibility constant that deliberately does not follow `just bump`, with a separate test
+(`floors_are_below_the_current_unpublished_workspace_version`) keeping it that way. A regressed
+generator emitting the workspace version still disagrees with this value and still fails here.
+
+Both properties were proven rather than argued: changing the real constant to `^0.9.1` makes the
+test follow it and pass (where the literal would have failed), and reformatting the constant onto two
+lines makes it panic by name rather than silently falling back to a default.
+
+
 ### The generated Dart client floors move to `^0.9.3` (#838)
 
 Step 2, and the last one. A generated client emitted `cratestack_cbor: ^0.8.0` — `>=0.8.0 <0.9.0` —
