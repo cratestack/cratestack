@@ -55,6 +55,9 @@ pub(crate) fn rust_type_tokens_with_wire_scope(
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
         "Vector" => quote! { Vec<f32> },
+        // EWKB bytes on the wire, same as `Bytes` — see
+        // `shared::types` for why spatial fields stay `Vec<u8>`.
+        "Geography" | "Geometry" => quote! { Vec<u8> },
         other if bearing.contains(other) => {
             let wire_ident = ident(other);
             quote! { super::wire::#wire_ident }

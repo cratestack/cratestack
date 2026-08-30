@@ -67,7 +67,8 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         // position, or both (`procedure seal(env: Envelope): Envelope`),
         // so there is no input-only place to widen it. One type in both
         // directions has no such ambiguity.
-        "Bytes" => "Uint8Array".to_owned(),
+        // EWKB bytes (cratestack#842) — same wire shape as `Bytes`.
+        "Bytes" | "Geography" | "Geometry" => "Uint8Array".to_owned(),
         other if enum_names.contains(other) => other.to_owned(),
         other => other.to_owned(),
     };
@@ -226,6 +227,7 @@ mod tests {
             arity,
             generic_args: Vec::new(),
             int_args: Vec::new(),
+            ident_args: Vec::new(),
         }
     }
 

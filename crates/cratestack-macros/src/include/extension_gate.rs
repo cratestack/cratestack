@@ -64,6 +64,18 @@ fn required_feature(kind: ExtensionKind) -> (&'static str, u32) {
     match kind {
         ExtensionKind::RateLimit => ("rate_limit", 154),
         ExtensionKind::Pgvector => ("pgvector", 155),
+        ExtensionKind::Postgis => ("postgis", 842),
+    }
+}
+
+/// Whether `kind` is inherently a Postgres-server capability, and so can
+/// never be valid under `include_embedded_schema!` regardless of Cargo
+/// features — the rusqlite backend has no `CREATE EXTENSION` and no
+/// matching column types to map onto.
+fn is_postgres_only(kind: ExtensionKind) -> bool {
+    match kind {
+        ExtensionKind::Pgvector | ExtensionKind::Postgis => true,
+        ExtensionKind::RateLimit => false,
     }
 }
 
@@ -76,6 +88,7 @@ fn feature_enabled(kind: ExtensionKind) -> bool {
     match kind {
         ExtensionKind::RateLimit => cfg!(feature = "rate_limit"),
         ExtensionKind::Pgvector => cfg!(feature = "pgvector"),
+        ExtensionKind::Postgis => cfg!(feature = "postgis"),
     }
 }
 
@@ -125,21 +138,23 @@ pub(super) fn guard_client_declared_extensions(
     guard_declared_extensions(schema_path, schema)
 }
 
-/// `include_embedded_schema!` only. `pgvector` is unconditionally invalid
-/// here, feature or no feature: it's inherently a Postgres extension and
-/// the embedded backend is rusqlite-only, so no Cargo feature could ever
-/// make `Vector(n)` valid against it — see `docs/design/extensions.md` §6.
-/// Every other declared extension falls through to the ordinary feature
-/// check.
+/// `include_embedded_schema!` only. A Postgres-only extension
+/// (`pgvector`, `postgis`) is unconditionally invalid here, feature or
+/// no feature: the embedded backend is rusqlite-only, so no Cargo
+/// feature could ever make `Vector(n)` or `Geography(...)` valid
+/// against it — see `docs/design/extensions.md` §6/§6b. Every other
+/// declared extension falls through to the ordinary feature check.
 pub(super) fn guard_embedded_declared_extensions(
     schema_path: &LitStr,
     schema: &Schema,
 ) -> Result<(), TokenStream> {
-    if schema
+    if let Some(kind) = schema
         .declared_extensions
-        .contains(&ExtensionKind::Pgvector)
+        .iter()
+        .copied()
+        .find(|kind| is_postgres_only(*kind))
     {
-        return Err(embedded_pgvector_error(schema_path));
+        return Err(embedded_postgres_only_error(schema_path, kind));
     }
     guard_declared_extensions(schema_path, schema)
 }
@@ -166,17 +181,34 @@ fn missing_feature_error(schema_path: &LitStr, kind: ExtensionKind) -> TokenStre
     )
 }
 
-fn embedded_pgvector_error(schema_path: &LitStr) -> TokenStream {
+fn embedded_postgres_only_error(schema_path: &LitStr, kind: ExtensionKind) -> TokenStream {
+    let name = kind.as_str();
+    let (scalar, column_type, section) = match kind {
+        ExtensionKind::Pgvector => ("`Vector(n)`", "`vector(n)`", "§6"),
+        ExtensionKind::Postgis => (
+            "`Geography(...)`/`Geometry(...)`",
+            "`geography`/`geometry`",
+            "§6b",
+        ),
+        // `is_postgres_only` gates every caller, so no other kind
+        // reaches here.
+        ExtensionKind::RateLimit => {
+            unreachable!("rate_limit is not a Postgres-only extension and never reaches this error")
+        }
+    };
     TokenStream::from(
         syn::Error::new(
             schema_path.span(),
-            "schema declares `extension pgvector { }`, but `include_embedded_schema!` can never \
-             support it, no matter which Cargo features are enabled — pgvector is a Postgres \
-             extension and the embedded backend is rusqlite-only, so there is no `vector(n)` \
-             column type or `CREATE EXTENSION` for it to map onto. Use `include_server_schema!` \
-             instead (with its `pgvector` Cargo feature enabled once cratestack#155 lands) for \
-             schemas that need `Vector(n)` fields, or drop the `extension pgvector { }` block \
-             from schemas meant for the embedded backend. See docs/design/extensions.md §6.",
+            format!(
+                "schema declares `extension {name} {{ }}`, but `include_embedded_schema!` can \
+                 never support it, no matter which Cargo features are enabled — {name} is a \
+                 Postgres extension and the embedded backend is rusqlite-only, so there is no \
+                 {column_type} column type or `CREATE EXTENSION` for it to map onto. Use \
+                 `include_server_schema!` instead (with its `{name}` Cargo feature enabled) for \
+                 schemas that need {scalar} fields, or drop the `extension {name} {{ }}` block \
+                 from schemas meant for the embedded backend. See \
+                 docs/design/extensions.md {section}."
+            ),
         )
         .to_compile_error(),
     )

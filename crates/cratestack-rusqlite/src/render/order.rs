@@ -40,6 +40,16 @@ pub(super) fn render_order_clause(clause: &OrderClause, sql: &mut String) {
                  schemas that use FieldRef::order_by_distance are server-only",
             );
         }
+        OrderTarget::SpatialDistance { .. } => {
+            // ST_Distance ordering requires PostGIS (or SpatiaLite,
+            // which the embedded runtime doesn't ship) — same
+            // reasoning as the `FilterExpr::Spatial` panic in
+            // `render/filter.rs`.
+            panic!(
+                "PostGIS distance ordering is not supported on the embedded rusqlite backend; \
+                 schemas that use FieldRef::order_by_distance_to are server-only",
+            );
+        }
     }
 }
 

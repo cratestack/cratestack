@@ -3,7 +3,7 @@ use crate::OrderClause;
 use super::expr::FilterExpr;
 use super::field_ref::FieldRef;
 use super::json::{JsonFilter, JsonTextPath};
-use super::spatial::{SpatialFilter, SpatialPoint};
+use super::spatial::{SpatialDistanceExpr, SpatialFilter, SpatialPoint};
 use super::vector::{VectorDistanceExpr, VectorMetric};
 
 impl<M, T> FieldRef<M, T> {
@@ -63,6 +63,25 @@ impl<M, T> FieldRef<M, T> {
             lat: point.lat,
             radius_meters,
         })
+    }
+
+    /// PG-only: `ORDER BY ST_Distance(col::geography, point::geography)`
+    /// — nearest first (cratestack#842 item 5). Pairs with
+    /// [`Self::dwithin_geography`]: filter to a radius, then sort by
+    /// true great-circle distance inside it, rather than re-deriving
+    /// the distance in application code after the rows come back.
+    ///
+    /// `NULL` geographies compare as `NULL` distance, which sorts last
+    /// under the framework's default [`crate::NullOrder::Last`].
+    pub fn order_by_distance_to(self, point: SpatialPoint) -> OrderClause {
+        self.distance_to_point(point).asc()
+    }
+
+    /// Distance-to-a-point as an orderable target — chain `.asc()`
+    /// (nearest first) or `.desc()` (farthest first). Use
+    /// [`Self::order_by_distance_to`] for the common nearest-first case.
+    pub fn distance_to_point(self, point: SpatialPoint) -> SpatialDistanceExpr {
+        SpatialDistanceExpr::new(self.column, point)
     }
 }
 

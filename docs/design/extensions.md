@@ -305,6 +305,62 @@ doesn't know what Cargo features the consuming crate has.
   `<#>`) and similarity-search query methods are explicitly out of scope
   for phase 1 — see §7.
 
+## 6b. Extension: `postgis` (added by cratestack#842)
+
+Added after this document was originally accepted. §7 reserved
+"extending the closed list" as a new design question rather than an
+implicit consequence of the original doc; this section records the
+answer for `postgis`, decided on cratestack#842. The closed-list
+principle itself is unchanged — `postgis` is a third
+framework-maintained entry, not a step toward third-party extensions.
+
+- **`.cstack` declares:** that this schema uses Postgres's `postgis`
+  extension. Unlocks the `Geography`/`Geometry` scalar field types for
+  use in `model`/`mixin`/`type`/`auth` blocks (not in procedure
+  signatures, mirroring `Vector(n)`'s restriction).
+- **Grammar:** the parenthesized argument list generalised from
+  "one integer" to "a comma-separated list of integers and bare
+  identifiers", so `Geography(Polygon, 4326)` parses alongside
+  `Vector(1536)`. Accepted shapes are `Geography`,
+  `Geography(<subtype>)` and `Geography(<subtype>, <srid>)`; an SRID
+  with no subtype is rejected, because PostGIS's type modifier is
+  positional. Subtypes are validated against a closed vocabulary
+  (`cratestack_core::canonical_geometry_subtype`) covering the 16
+  PostGIS base subtypes × the `Z`/`M`/`ZM` dimensionality suffixes,
+  case-insensitively, and canonicalised into the migration snapshot so
+  re-casing a subtype is not a column change.
+- **Cargo feature:** `postgis`, declared on `cratestack-macros`,
+  forwarded from `cratestack-pg`/`cratestack-client` and enabled
+  unconditionally on `cratestack-cli`'s `cratestack-migrate` edge (DDL
+  emission is a runtime capability of the shipped binary, like
+  `postgres-introspect`). Unlike `pgvector` it pulls in **no** new
+  third-party crate: PostGIS's wire format is EWKB, i.e. bytes.
+- **`include_embedded_schema!` rejects it unconditionally**, for exactly
+  the reason `pgvector` is rejected — the embedded backend is
+  rusqlite-only and ships no SpatiaLite. The guard is now expressed as a
+  general `is_postgres_only(kind)` predicate rather than a `pgvector`
+  special case.
+- **DDL surface:** `CREATE EXTENSION IF NOT EXISTS postgis;` once per
+  schema that declares it, before any DDL referencing a spatial column;
+  columns render as `geography(Polygon,4326)` / `geometry(Point,3857)`
+  — no space after the comma, matching how PostGIS itself reports the
+  type via `format_type`, so a later introspection diff compares equal
+  instead of reporting a phantom change.
+- **Rust surface:** `Vec<u8>` holding EWKB — the same public type a
+  `Bytes` field gets, so wire encoding, serde (base64) and the Dart/TS
+  client mappings all reuse the existing bytes path. The PostGIS-specific
+  typing enters only at the sqlx row-decode boundary
+  (`cratestack_sqlx::Ewkb`), which exists because on the way *out* the
+  column's type OID is `geography`'s and sqlx type-checks it; on the way
+  *in*, PostGIS's implicit `bytea` cast means a plain byte bind works.
+- **Query builder:** `covers_geography`/`dwithin_geography` become
+  reachable through a generated `FieldRef` rather than a hand-built one,
+  and `order_by_distance_to(point)` adds `ST_Distance` ordering.
+- **Explicitly not included:** trigger generation (deriving a geography
+  from lat/lng columns is application policy, and cratestack#842
+  explicitly did not ask for it), and geometry-valued procedure
+  arguments/return types.
+
 ## 7. Explicitly not proposed here
 
 - Any numeric or environment-tuned configuration inside an `extension { }`

@@ -92,6 +92,20 @@ fn push_order_clause_query(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, claus
                 .push(" ")
                 .push(null_order_sql(clause.null_order));
         }
+        OrderTarget::SpatialDistance { column, lng, lat } => {
+            query
+                .push("ST_Distance(")
+                .push(*column)
+                .push("::geography, ST_MakePoint(");
+            push_bind_value(query, &SqlValue::Float(*lng));
+            query.push(", ");
+            push_bind_value(query, &SqlValue::Float(*lat));
+            query
+                .push(")::geography) ")
+                .push(sort_direction_sql(clause.direction))
+                .push(" ")
+                .push(null_order_sql(clause.null_order));
+        }
     }
 }
 

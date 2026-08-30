@@ -27,6 +27,7 @@ pub(super) fn diff_extensions(prev: &Projections, next: &Projections) -> Vec<Op>
 fn postgres_extension_name(kind: ExtensionKind) -> Option<&'static str> {
     match kind {
         ExtensionKind::Pgvector => Some("vector"),
+        ExtensionKind::Postgis => Some("postgis"),
         ExtensionKind::RateLimit => None,
     }
 }

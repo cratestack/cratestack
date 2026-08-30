@@ -47,6 +47,18 @@ impl<'a> ToSql for SqlValueParam<'a> {
                     "Vector(n) fields are not supported by the embedded (rusqlite) backend".into(),
                 ));
             }
+            // `Geography`/`Geometry` are Postgres-only (PostGIS) for
+            // exactly the same reason as `Vector(n)` above —
+            // `include_embedded_schema!` rejects `extension postgis
+            // { }` unconditionally, so generated rusqlite code can
+            // never produce one of these.
+            SqlValue::Spatial(_) | SqlValue::NullSpatial => {
+                return Err(rusqlite::Error::ToSqlConversionFailure(
+                    "Geography/Geometry fields are not supported by the embedded (rusqlite) \
+                     backend"
+                        .into(),
+                ));
+            }
         };
         Ok(value)
     }

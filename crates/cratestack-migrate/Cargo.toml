@@ -44,6 +44,14 @@ postgres-introspect = ["dep:sqlx-core", "dep:sqlx-postgres"]
 # parser only ever produces for a schema that declares `extension
 # pgvector { }`) is a hard panic, not silently-wrong SQL.
 pgvector = []
+# Gate for PostGIS DDL emission (`CREATE EXTENSION IF NOT EXISTS
+# postgis;` + `geography(Polygon,4326)` column rendering — see
+# `docs/design/extensions.md` §6b and cratestack#842). Exactly the same
+# shape as the `pgvector` gate above: no extra dependency to hide, so
+# the gate exists so that building without it and then feeding in a
+# schema-derived spatial column is a hard panic rather than
+# silently-wrong SQL.
+postgis = []
 
 [dependencies]
 cratestack-core.workspace = true

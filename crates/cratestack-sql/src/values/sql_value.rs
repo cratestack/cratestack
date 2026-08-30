@@ -28,6 +28,18 @@ pub enum SqlValue {
     /// compile-time check), and only ever bound to a real column by
     /// `cratestack-sqlx`'s own `pgvector`-gated encode path.
     Vector(Vec<f32>),
+    /// A `Geography`/`Geometry` field's value as EWKB bytes (see
+    /// `docs/design/extensions.md` §6b and cratestack#842). Defined
+    /// unconditionally — no PostGIS dependency is needed to hold a
+    /// `Vec<u8>` — but only ever constructed by generated code gated on
+    /// the `postgis` Cargo feature, and bound to a real column by
+    /// `cratestack-sqlx`'s own `postgis`-gated encode path.
+    ///
+    /// A distinct variant rather than reusing [`SqlValue::Bytes`] so
+    /// the encode boundary can tell "these bytes are a geometry" from
+    /// "these bytes are a bytea column", which matters for the
+    /// `NULL` arm's type annotation.
+    Spatial(Vec<u8>),
     NullBool,
     NullInt,
     NullFloat,
@@ -38,6 +50,7 @@ pub enum SqlValue {
     NullJson,
     NullDecimal,
     NullVector,
+    NullSpatial,
 }
 
 #[derive(Debug, Clone, PartialEq)]

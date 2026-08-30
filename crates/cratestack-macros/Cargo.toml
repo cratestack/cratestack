@@ -89,6 +89,15 @@ rate_limit = []
 # extension, so no Cargo feature can make it valid there (see
 # `extension_gate.rs`, `docs/design/extensions.md` §6). Off by default.
 pgvector = []
+# Gates codegen for the `postgis` extension, declared in `.cstack` via
+# `extension postgis { }` (cratestack#842). Same mechanism as
+# `pgvector` above — see `extension_gate.rs`. Forwarded from
+# `cratestack-pg`/`cratestack-client`'s own `postgis` feature. Note:
+# `include_embedded_schema!` rejects `extension postgis { }`
+# unconditionally regardless of this feature — rusqlite ships no
+# SpatiaLite, so no Cargo feature can make it valid there (see
+# `extension_gate.rs`, `docs/design/extensions.md` §6b). Off by default.
+postgis = []
 
 [dependencies]
 cratestack-core.workspace = true

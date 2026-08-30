@@ -1,0 +1,16 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+extension postgis {
+}
+
+model DeliveryZone {
+  id Int @id
+  label String
+  service_area Geography(Polygon, 4326)
+  pickup_point Geography(Point, 4326)?
+
+  @@index([service_area], using: gist)
+}

@@ -52,6 +52,24 @@ pub enum OrderTarget {
         metric: VectorMetric,
         query_vector: Vec<f32>,
     },
+    /// Order by `ST_Distance(col::geography, point::geography)` — great-
+    /// circle metres to a reference point (cratestack#842 item 5).
+    /// Built via `FieldRef::order_by_distance_to(point)`.
+    ///
+    /// This is the ordering half of the pair whose filtering half is
+    /// [`crate::SpatialFilter::DWithinGeographyPoint`]: `DWithin` picks
+    /// the rows inside a radius, this sorts them nearest-first, so
+    /// "closest N within X metres" no longer needs the distance
+    /// recomputed in application code after the radius filter returns.
+    ///
+    /// PG-only (PostGIS) — the embedded rusqlite backend doesn't ship
+    /// SpatiaLite, so its renderer fails loud, exactly as it does for
+    /// `FilterExpr::Spatial`.
+    SpatialDistance {
+        column: &'static str,
+        lng: f64,
+        lat: f64,
+    },
 }
 
 impl OrderClause {

@@ -85,6 +85,8 @@ mod migrations;
 mod partial_row;
 mod query;
 mod render;
+#[cfg(feature = "postgis")]
+mod spatial;
 #[cfg(test)]
 mod tests_coalesce;
 #[cfg(test)]
@@ -132,6 +134,12 @@ pub use json::Json;
 /// as a shim rather than depended on separately by every consumer.
 #[cfg(feature = "pgvector")]
 pub use pgvector;
+
+/// Row-decode adapter for PostGIS `geography`/`geometry` columns
+/// (cratestack#842) — re-exported so generated code can name
+/// `::cratestack::Ewkb` without depending on this crate's internals.
+#[cfg(feature = "postgis")]
+pub use spatial::Ewkb;
 
 pub use audit::{
     AUDIT_TABLE_DDL, RunInTxOutcome, dispatch_audit_sink, primary_key_from_snapshot, snapshot_model,

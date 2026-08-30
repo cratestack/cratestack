@@ -58,8 +58,30 @@ pub(super) fn parse_enum_variants(lines: &[Line<'_>]) -> Result<Vec<EnumVariant>
     Ok(variants)
 }
 
+/// Length of the type token at the start of `rest`, treating whitespace
+/// inside a parenthesized argument list as part of the type rather than
+/// a token boundary.
+///
+/// `String` and `Vector(1536)` are unaffected (no spaces to protect);
+/// `Geography(Polygon, 4326)` is the case this exists for. An unclosed
+/// paren consumes to end-of-line, which then fails in `parse_type_ref`
+/// with the usual "invalid type reference" diagnostic rather than
+/// silently truncating at the space.
+fn type_token_len(rest: &str) -> usize {
+    let mut depth = 0usize;
+    for (index, ch) in rest.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ if ch.is_whitespace() && depth == 0 => return index,
+            _ => {}
+        }
+    }
+    rest.len()
+}
+
 pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, SchemaError> {
-    let mut parts = line.trimmed.splitn(3, char::is_whitespace);
+    let mut parts = line.trimmed.splitn(2, char::is_whitespace);
     let name = parts.next().ok_or_else(|| {
         SchemaError::new(
             "expected field name",
@@ -67,20 +89,29 @@ pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, S
             line.number,
         )
     })?;
-    let ty = parts.next().ok_or_else(|| {
-        SchemaError::new(
-            "expected field type",
-            line.start..line.start + line.raw.len(),
-            line.number,
-        )
-    })?;
-    let attrs = parts.next().unwrap_or_default();
 
     let trimmed_start = line.raw.find(line.trimmed).unwrap_or_default();
     let name_offset_in_trimmed = line.trimmed.find(name).unwrap_or_default();
     let after_name = &line.trimmed[name_offset_in_trimmed + name.len()..];
     let whitespace_after_name = after_name.len() - after_name.trim_start().len();
     let ty_offset_in_trimmed = name_offset_in_trimmed + name.len() + whitespace_after_name;
+
+    // The type is *not* simply the next whitespace-delimited token: a
+    // parametric scalar's argument list may contain spaces, as in
+    // `Geography(Polygon, 4326)` (cratestack#842). Scan to the first
+    // whitespace at paren-depth zero so the whole type — arguments
+    // included — stays together, and whatever follows is attributes.
+    let rest = &line.trimmed[ty_offset_in_trimmed..];
+    let ty_len = type_token_len(rest);
+    let ty = &rest[..ty_len];
+    if ty.is_empty() {
+        return Err(SchemaError::new(
+            "expected field type",
+            line.start..line.start + line.raw.len(),
+            line.number,
+        ));
+    }
+    let attrs = rest[ty_len..].trim_start();
     let name_span = SourceSpan {
         start: line.start + trimmed_start + name_offset_in_trimmed,
         end: line.start + trimmed_start + name_offset_in_trimmed + name.len(),

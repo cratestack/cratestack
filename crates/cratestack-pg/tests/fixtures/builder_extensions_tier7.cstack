@@ -7,12 +7,19 @@ auth Operator {
   id Int
 }
 
-// Delivery-zone-shaped row driving the spatial filter test. The
-// schema has no native `Geography` type yet, so the column lands as
-// `Bytes` here (we'll create the actual `geography(Polygon, 4326)`
-// column via raw DDL in the test). The typed `.covers_geography(...)`
-// builder method only cares about the column NAME at the AST level,
-// so the schema field type is incidental.
+// Delivery-zone-shaped row driving the spatial filter test.
+//
+// The column is declared `Bytes` and the real `geography(Polygon, 4326)`
+// column is created via raw DDL in the test. As of cratestack#842 the
+// schema *does* have a native `Geography(Polygon, 4326)` type — but
+// using it here would require declaring `extension postgis { }`, which
+// is a `compile_error!` unless this crate is built with the `postgis`
+// feature, and this test deliberately runs in the default feature set.
+// The feature-on path is covered by `postgis_feature_forwarding`.
+//
+// The typed `.covers_geography(...)` builder method only cares about
+// the column NAME at the AST level, so the schema field type is
+// incidental to what this test exercises.
 model DeliveryZone {
   id Int @id
   label String

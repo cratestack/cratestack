@@ -93,6 +93,31 @@ pub(crate) fn push_bind_value(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, va
             "SqlValue::Vector/NullVector requires the `pgvector` Cargo feature on \
              cratestack-sqlx"
         ),
+        // EWKB bytes bound as `bytea`. PostGIS registers an *implicit*
+        // cast from `bytea` to both `geography` and `geometry`, so a
+        // bytea-typed parameter binds straight into a spatial column
+        // with no `::geography` in the generated SQL — verified against
+        // postgis/postgis:16-3.4, where
+        // `PREPARE ins(bytea) AS INSERT INTO t(geog_col) VALUES ($1)`
+        // prepares cleanly. Decoding is the asymmetric half and goes
+        // through `crate::spatial::Ewkb`, because on the way *out* the
+        // column's type OID is geography's, not bytea's.
+        #[cfg(feature = "postgis")]
+        SqlValue::Spatial(value) => {
+            query.push_bind(value.clone());
+        }
+        #[cfg(feature = "postgis")]
+        SqlValue::NullSpatial => {
+            query.push_bind(Option::<Vec<u8>>::None);
+        }
+        // Same invariant as the `Vector` arm above: reaching here means
+        // an `SqlValue::Spatial` was constructed outside generated code
+        // that can't exist without the feature enabled end-to-end.
+        #[cfg(not(feature = "postgis"))]
+        SqlValue::Spatial(_) | SqlValue::NullSpatial => unreachable!(
+            "SqlValue::Spatial/NullSpatial requires the `postgis` Cargo feature on \
+             cratestack-sqlx"
+        ),
     }
 }
 

@@ -15,5 +15,5 @@ pub use field_ref::FieldRef;
 pub use filter::Filter;
 pub use json::{JsonFilter, JsonTextPath};
 pub use op::FilterOp;
-pub use spatial::{SpatialFilter, SpatialPoint, point};
+pub use spatial::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 pub use vector::{VectorDistanceExpr, VectorDistanceFilter, VectorMetric};

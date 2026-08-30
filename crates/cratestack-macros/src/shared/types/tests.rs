@@ -17,6 +17,7 @@ fn vector_type_ref(arity: TypeArity, dimension: u32) -> TypeRef {
         arity,
         generic_args: Vec::new(),
         int_args: vec![dimension],
+        ident_args: Vec::new(),
     }
 }
 

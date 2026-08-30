@@ -80,6 +80,7 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # Off by default, matching every other facade — a schema that doesn't
 # declare the extension never needs them.
 pgvector = ["cratestack-macros/pgvector"]
+postgis = ["cratestack-macros/postgis"]
 rate_limit = ["cratestack-macros/rate_limit"]
 
 [dependencies]

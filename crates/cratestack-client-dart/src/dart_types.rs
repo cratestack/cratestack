@@ -40,7 +40,9 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
         "Boolean" => "bool".to_owned(),
         "DateTime" => "DateTime".to_owned(),
         "Json" => "Object?".to_owned(),
-        "Bytes" => "Uint8List".to_owned(),
+        // `Geography`/`Geometry` are EWKB bytes (cratestack#842), so
+        // they ride the existing `Bytes` path on every client surface.
+        "Bytes" | "Geography" | "Geometry" => "Uint8List".to_owned(),
         // cratestack#498: a real arbitrary-precision `package:decimal`
         // value, not a wire-format-dependent opaque `String` — closes the
         // gap #495/#496 opened (a `decimal-bigdecimal`-backed server emits
@@ -101,7 +103,7 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
 pub(crate) fn dart_scalar_import(type_name: &str) -> Option<&'static str> {
     match type_name {
         // `Uint8List` — `dart_type`'s `"Bytes"` arm above.
-        "Bytes" => Some("import 'dart:typed_data';"),
+        "Bytes" | "Geography" | "Geometry" => Some("import 'dart:typed_data';"),
         // `Decimal` — `dart_type`'s `"Decimal"` arm above (cratestack#498).
         "Decimal" => Some("import 'package:decimal/decimal.dart';"),
         _ => None,

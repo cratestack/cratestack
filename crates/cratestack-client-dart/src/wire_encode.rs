@@ -26,6 +26,7 @@ pub(crate) fn encode_value_expr(
                     arity: TypeArity::Required,
                     generic_args: ty.generic_args.clone(),
                     int_args: ty.int_args.clone(),
+                    ident_args: Vec::new(),
                 },
                 enum_names,
             );
@@ -46,6 +47,7 @@ pub(crate) fn encode_value_expr(
                         arity: TypeArity::Optional,
                         generic_args: ty.generic_args.clone(),
                         int_args: ty.int_args.clone(),
+                        ident_args: Vec::new(),
                     },
                     enum_names,
                 )
@@ -67,7 +69,7 @@ fn encode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
 
     match ty.name.as_str() {
         "DateTime" => format!("{expr}.toUtc().toIso8601String()"),
-        "Bytes" => format!("{expr}.toList(growable: false)"),
+        "Bytes" | "Geography" | "Geometry" => format!("{expr}.toList(growable: false)"),
         "Json" | "String" | "Cuid" | "Uuid" | "Int" | "Float" | "Boolean" => expr.to_owned(),
         // cratestack#498: `Decimal.toString()` (unlike `bigdecimal`'s
         // `Display`) never switches to scientific notation, so a value
@@ -91,7 +93,7 @@ fn encode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
 
     match ty.name.as_str() {
         "DateTime" => format!("{expr}?.toUtc().toIso8601String()"),
-        "Bytes" => format!("{expr}?.toList(growable: false)"),
+        "Bytes" | "Geography" | "Geometry" => format!("{expr}?.toList(growable: false)"),
         "Json" | "String" | "Cuid" | "Uuid" | "Int" | "Float" | "Boolean" => expr.to_owned(),
         "Decimal" => format!("{expr}?.toString()"),
         _ => format!("{expr}?.toWire()"),

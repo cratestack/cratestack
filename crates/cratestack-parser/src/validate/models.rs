@@ -154,6 +154,7 @@ pub(super) fn validate_models_collecting(
                     field.span,
                     crate::validate::type_names::TypeRefAllow {
                         vector: true,
+                        spatial: true,
                         ..Default::default()
                     },
                 )?;

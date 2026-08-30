@@ -163,6 +163,14 @@ rate_limit = ["cratestack-macros/rate_limit"]
 # `pgvector` feature (real Postgres `vector` column encode/decode via
 # the `pgvector` crate).
 pgvector = ["cratestack-macros/pgvector", "cratestack-sqlx/pgvector"]
+# End-to-end PostGIS support (see `docs/design/extensions.md` §6b and
+# cratestack#842): unlocks `Geography(...)`/`Geometry(...)` model
+# fields for schemas that declare `extension postgis { }`. Forwards to
+# `cratestack-macros`' gate-only `postgis` feature (the
+# `compile_error!` check) and to `cratestack-sqlx`'s `postgis` feature
+# (spatial column bind/decode). Adds no new third-party dependency —
+# PostGIS's wire format is EWKB, i.e. bytes.
+postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
 
 [dependencies]
 async-stream.workspace = true
@@ -225,6 +233,14 @@ url.workspace = true
 name = "pgvector_feature_forwarding"
 path = "tests/pgvector_feature_forwarding.rs"
 required-features = ["pgvector"]
+
+# Only compiled/run under `--features postgis` — the fixture schema
+# declares `extension postgis { }`, which is a `compile_error!`
+# without the feature (see the `postgis` feature doc comment above).
+[[test]]
+name = "postgis_feature_forwarding"
+path = "tests/postgis_feature_forwarding.rs"
+required-features = ["postgis"]
 
 # Live nearest-neighbor verification of the cratestack#163 query-builder
 # distance operators — needs a real `pgvector/pgvector` Postgres (not

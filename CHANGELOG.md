@@ -25,6 +25,68 @@ Both properties were proven rather than argued: changing the real constant to `^
 test follow it and pass (where the literal would have failed), and reformatting the constant onto two
 lines makes it panic by name rather than silently falling back to a default.
 
+### PostGIS spatial columns are declarable (#842)
+
+`cratestack-sql` has shipped `ST_Covers`/`ST_DWithin` filters since 0.6, and `cratestack-migrate`
+has emitted `USING gist` indexes — but there was no way to *declare* the column they operate on.
+`BUILTIN_TYPES` had no geospatial entry, so every PostGIS-backed model needed a hand-authored
+migration stacked on the generated one, plus a duplicate "input" column in the `.cstack` to carry
+the value a trigger derived from. `migrate diff` then reported `no changes` forever, so the
+committed snapshot and the real table permanently disagreed about the table's columns.
+
+A schema can now say what it means:
+
+```cstack
+extension postgis {
+}
+
+model DeliveryZone {
+  id          Int    @id
+  serviceArea Geography(Polygon, 4326)
+  pickupPoint Geography(Point, 4326)?
+  @@index([serviceArea], using: gist)
+}
+```
+
+which emits `CREATE EXTENSION IF NOT EXISTS postgis;` and a real
+`service_area geography(Polygon,4326) NOT NULL` column. `Geometry(...)` is accepted alongside
+`Geography(...)`, the SRID is optional (`Geography(Point)` defers to PostGIS's own default), and a
+bare `Geography` is a legal unmodified column. Subtype names are validated against PostGIS's
+vocabulary — including the `Z`/`M`/`ZM` dimensionality suffixes — so `Geography(Polygone, 4326)` is
+now a schema error rather than a runtime SQL error. Casing is normalised into the snapshot, so
+re-casing a subtype doesn't read as a column change.
+
+Alongside the column type:
+
+- **`extension postgis { }`** joins the closed extension list, gated by a `postgis` Cargo feature
+  forwarded from `cratestack-pg`/`cratestack-client` down to `cratestack-macros`/`cratestack-sqlx`,
+  exactly like `pgvector`. `include_embedded_schema!` rejects it unconditionally — rusqlite ships no
+  SpatiaLite, so no feature could make it valid there.
+- **Generated `FieldRef`s** mean `covers_geography`/`dwithin_geography` stop being string-keyed. A
+  typo in a column name is a compile error instead of a runtime failure.
+- **`ST_Distance` ordering** via `FieldRef::order_by_distance_to(point)` — the ordering half of the
+  pair whose filtering half is `dwithin_geography`, so "closest N within X metres" no longer needs
+  the distance recomputed in application code after the radius filter returns.
+
+Verified end-to-end against `postgis/postgis:16-3.4`: the DDL `cratestack migrate diff` generates
+applies cleanly and produces columns Postgres reports as `geography(Polygon,4326)`, with a real
+GIST index.
+
+Two things #842 reported that turned out not to be bugs, recorded so they aren't re-filed:
+
+- **An unrecognised scalar was already a parse error.** `validate_type_ref` has rejected unknown
+  type names with ``unknown type `X` `` since #69, including in the 0.9.1 release the issue was
+  measured against, and `migrate diff` goes through the validating parse path. `Geography` did not
+  silently become `TEXT` — it failed to parse.
+- **`scalar_to_postgres`'s fallback comment was wrong**, which is what made the above look like a
+  bug. It claimed unknown scalars were "passed through unquoted — the developer is responsible",
+  while the arm returns a literal `"TEXT"` and discards the name (it returns `&'static str`; it
+  *cannot* pass the name through). The comment now describes what the code does and why the arm is
+  unreachable from a `.cstack` file.
+
+Also fixed, both surfaced by the new grammar: the field-line tokenizer split a type on the first
+whitespace, and the procedure-argument splitter split on every comma — so any parametric type
+containing a space or comma was silently truncated before reaching the type parser.
 
 ### The generated Dart client floors move to `^0.9.3` (#838)
 
