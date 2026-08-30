@@ -4,6 +4,7 @@ use cratestack_core::{Attribute, Procedure, ProcedureArg, ProcedureKind, SourceS
 
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, name_span_in_line, trimmed_span};
+use crate::parse::arg_split::split_top_level_commas;
 use crate::parse::procedure_docs::split_procedure_docs;
 use crate::parse::types::parse_type_ref;
 
@@ -118,31 +119,6 @@ fn parse_procedure_args(
 ) -> Result<Vec<ProcedureArg>, SchemaError> {
     if args_src.is_empty() {
         return Ok(Vec::new());
-    }
-
-    /// Splits an argument list on top-level commas only, so a
-    /// parametric type's own argument list (`Geography(Polygon, 4326)`,
-    /// cratestack#842) stays within a single segment instead of being
-    /// torn in half. Segments are returned with separators removed and
-    /// in source order, so the caller's `segment.len() + 1` offset walk
-    /// is unchanged.
-    fn split_top_level_commas(args_src: &str) -> Vec<&str> {
-        let mut segments = Vec::new();
-        let mut depth = 0usize;
-        let mut start = 0usize;
-        for (index, ch) in args_src.char_indices() {
-            match ch {
-                '(' => depth += 1,
-                ')' => depth = depth.saturating_sub(1),
-                ',' if depth == 0 => {
-                    segments.push(&args_src[start..index]);
-                    start = index + 1;
-                }
-                _ => {}
-            }
-        }
-        segments.push(&args_src[start..]);
-        segments
     }
 
     let Some(args_offset_in_line) = line.raw.find(args_src) else {

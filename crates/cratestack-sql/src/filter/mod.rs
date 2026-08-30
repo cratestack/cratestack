@@ -1,5 +1,6 @@
 mod coalesce;
 mod expr;
+mod expr_relations;
 mod field_ref;
 mod field_ref_ext;
 #[allow(clippy::module_inception)]
