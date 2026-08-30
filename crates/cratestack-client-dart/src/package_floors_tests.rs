@@ -9,13 +9,34 @@
 
 use super::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR};
 
-/// `^X.Y.Z` -> `(X, Y, Z)`. Panics rather than returning an `Option`:
+/// `^X.Y.Z` -> `(X, Y, Z)`, and also the LOWER BOUND of a two-sided range
+/// such as `'>=0.8.10 <0.10.0'`. Panics rather than returning an `Option`:
 /// every caller here is a test whose failure message is more useful than
 /// a `None`.
+///
+/// Ranges are accepted because `cratestack_builder`'s own
+/// `cratestack_annotations` constraint is one. It has to be: `^0.8.10`
+/// (`>=0.8.10 <0.9.0`) forbids the 0.9.x annotations release a generated
+/// client now wants, while `^0.9.1` has an empty intersection with the
+/// `^0.8.10` floor every already-generated client still declares — so only
+/// a range satisfies both. See that pubspec's own comment.
+///
+/// The lower bound is the right thing to compare against here: this
+/// module's assertion is that the generator never emits a floor BELOW what
+/// the builder requires, and for a range that requirement is its floor.
+/// Quotes are stripped first — the pubspec quotes a range but not a caret.
 fn parse_caret(requirement: &str) -> (u64, u64, u64) {
-    let digits = requirement
-        .strip_prefix('^')
-        .unwrap_or_else(|| panic!("expected a caret requirement, got {requirement:?}"));
+    let requirement = requirement.trim().trim_matches('\'').trim_matches('"');
+    let digits = match requirement.strip_prefix('^') {
+        Some(rest) => rest,
+        None => requirement
+            .split_whitespace()
+            .next()
+            .and_then(|first| first.strip_prefix(">="))
+            .unwrap_or_else(|| {
+                panic!("expected a caret or `>=X.Y.Z <A.B.C` requirement, got {requirement:?}")
+            }),
+    };
     let mut parts = digits.split('.');
     let mut next = |which: &str| -> u64 {
         parts

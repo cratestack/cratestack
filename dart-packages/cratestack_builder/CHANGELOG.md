@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`cratestack_annotations` widened to `>=0.8.10 <0.10.0`** — a range, not a raise, and the
+  distinction is load-bearing. `^0.8.10` forbade the 0.9.x annotations release a generated client
+  now wants; `^0.9.1` would have had an empty intersection with the `^0.8.10` floor every existing
+  generated client still declares. Only a range satisfies both, which is what allows this to
+  publish before the client floors move.
+
 - **`analyzer` widened to `>=12.0.0 <14.0.0`** — this package now supports both majors at once.
   The old `<13.0.0` ceiling was documented as protecting `riverpod_generator`, which no longer
   holds (4.0.6 moved to `^13.0.0`), so the ceiling had become the cause of the incompatibility it

@@ -132,7 +132,55 @@ fn write_package(package: &cratestack_client_dart::GeneratedDartPackage, dir: &s
     }
 }
 
+/// Points `cratestack_builder` and `cratestack_annotations` at this repo's
+/// own `dart-packages/`, so `pub get` resolves the constraints in the
+/// WORKING TREE rather than the ones the last release published.
+///
+/// Without this the test is a check on history, not on the change in front
+/// of it, and it fails in exactly one situation: when this repo raises the
+/// generator's annotations floor and `cratestack_builder`'s own
+/// `cratestack_annotations` constraint in the same commit. pub.dev still
+/// serves the previous builder, which forbids the annotations release the
+/// generator now asks for —
+///
+/// ```text
+/// Because cratestack_builder >=0.8.14 depends on cratestack_annotations
+/// ^0.8.10 and <client> depends on cratestack_annotations ^0.9.1,
+/// cratestack_builder >=0.8.14 is forbidden.
+/// ```
+///
+/// — which is the chicken-and-egg `package_floors.rs`'s module doc names
+/// ("the fix is to publish the annotation package first"). Overriding to
+/// the working tree resolves it the same way `just verify-dart` and
+/// `native_cbor_codec_memoization.rs` already do, and for the same reason:
+/// a lockstep-published workspace has to be able to verify a constraint
+/// change before the publish that would make it true.
+///
+/// A `pubspec_overrides.yaml` rather than an edit to the generated
+/// `pubspec.yaml`, so the generated file stays byte-for-byte what the
+/// generator emitted and nothing here can mask a regression in what it
+/// emits. `cratestack_cbor` is deliberately NOT overridden: it resolves
+/// from pub.dev, which is what proves the emitted floor names a really
+/// published release.
+fn override_in_repo_dart_packages(dir: &std::path::Path) {
+    let dart_packages = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../dart-packages")
+        .canonicalize()
+        .expect("dart-packages/ should exist in this repo");
+    fs::write(
+        dir.join("pubspec_overrides.yaml"),
+        format!(
+            "dependency_overrides:\n  \
+             cratestack_annotations:\n    path: {0}/cratestack_annotations\n  \
+             cratestack_builder:\n    path: {0}/cratestack_builder\n",
+            dart_packages.display()
+        ),
+    )
+    .expect("write pubspec_overrides.yaml");
+}
+
 fn run_flutter_pub_get(dir: &std::path::Path) {
+    override_in_repo_dart_packages(dir);
     let pub_get = Command::new("flutter")
         .args(["pub", "get"])
         .current_dir(dir)

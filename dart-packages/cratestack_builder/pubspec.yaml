@@ -5,7 +5,7 @@ description: >-
   build_runner generator producing fluent builders for classes annotated
   with CrateStack's @CratestackBuilder. A dev dependency — the annotation
   itself lives in cratestack_annotations.
-version: 0.9.2
+version: 0.9.3
 homepage: https://cratestack.dev
 repository: https://github.com/cratestack/cratestack
 issue_tracker: https://github.com/cratestack/cratestack/issues
@@ -84,7 +84,26 @@ dependencies:
   # Raise this ONLY when this builder starts reading a newly-added
   # annotation field — never as part of a routine version bump. See
   # `docs/tooling/dart-publishing.md`.
-  cratestack_annotations: ^0.8.10
+  # Raised `^0.8.10` -> `^0.9.1` on 2026-08-30. This is the one exception to
+  # the "never as part of a routine version bump" rule directly above, and it
+  # is not a routine bump: `^0.8.10` means `>=0.8.10 <0.9.0`, so once
+  # `cratestack_annotations` published at 0.9.1 this constraint FORBADE the
+  # only release a generated client can now ask for. Leaving it produces
+  #
+  #   Because cratestack_builder >=0.8.14 depends on cratestack_annotations
+  #   ^0.8.10 and <client> depends on cratestack_annotations ^0.9.1,
+  #   cratestack_builder >=0.8.14 is forbidden.
+  #
+  # See cratestack#838 and `cratestack-client-dart/src/package_floors.rs`.
+  # WIDENED to a range, not raised. `^0.9.1` (>=0.9.1 <0.10.0) has an EMPTY
+  # intersection with the `^0.8.10` floor every already-generated client
+  # declares, so a raise breaks them all; `^0.8.10` in turn FORBIDS the
+  # 0.9.x annotations release a client now wants. Only a range satisfies
+  # both, which is what lets this publish BEFORE the client floors move —
+  # they cannot move in the same release, because the flutter example job
+  # pins the PUBLISHED builder and neither 0.9.1 nor 0.9.2 accepts 0.9.x.
+  # Same shape as the analyzer 12/13 range above, one layer down.
+  cratestack_annotations: '>=0.8.10 <0.10.0'
   source_gen: ^4.0.0
 
 dev_dependencies:

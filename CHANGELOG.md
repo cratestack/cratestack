@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### `cratestack_builder` accepts `cratestack_annotations` 0.8.x AND 0.9.x (#838)
+
+Step 1 of moving the generated-client Dart floors off `^0.8.10`. The floors do **not** move in this
+release, and that is the finding rather than an omission.
+
+`cratestack_builder` declared `cratestack_annotations: ^0.8.10` — `>=0.8.10 <0.9.0` — so once
+annotations published at 0.9.x the builder *forbade* it:
+
+```
+Because cratestack_builder >=0.8.14 depends on cratestack_annotations ^0.8.10
+and <client> depends on cratestack_annotations ^0.9.1,
+cratestack_builder >=0.8.14 is forbidden.
+```
+
+Raising it to `^0.9.1` breaks the mirror case: `>=0.9.1 <0.10.0` has an **empty** intersection with
+the `^0.8.10` floor every already-generated client declares, so a raise breaks all of them. Both
+directions were measured against the published packages, not reasoned about.
+
+So the constraint becomes a **range**, `>=0.8.10 <0.10.0`, and the floors wait. They cannot move in
+the same release: the `flutter (flutter-riverpod example)` job pins the *published* builder, and
+neither 0.9.1 nor 0.9.2 accepts annotations 0.9.x. This publishes one that accepts both; the floors
+move next release against it. Same shape as the analyzer 12/13 range in 0.9.2, one layer down.
+
+`package_floors_tests.rs`'s requirement parser now understands a two-sided range and compares its
+lower bound. The assertion is unchanged and still bites — verified by raising the builder's
+requirement above the emitted floor and confirming the test fails.
+
+Four Dart test harnesses also gain a `pubspec_overrides.yaml` pointing at this repo's own
+`dart-packages/`, so they verify working-tree constraints rather than the last release's.
+`cratestack_cbor` is deliberately **not** overridden — it still resolves from pub.dev, which keeps
+proving the emitted floor names a really-published release.
+
+
 ### `cratestack_builder` now supports analyzer 12 AND 13, which unblocks the migration (#828)
 
 The `analyzer <13.0.0` ceiling was stale — `riverpod_generator` moved to `^13.0.0` in 4.0.6 and
