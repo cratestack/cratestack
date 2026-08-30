@@ -42,6 +42,20 @@ updates:
         update-types: ["minor", "patch"]
     commit-message:
       prefix: "chore(actions)"
+    ignore:
+      # `dtolnay/rust-toolchain@<version>` is NOT an ordinary action pin — the
+      # ref IS the Rust version it installs, and `ci.yml` asserts a three-way
+      # equality between the resolved `rustc`, `rust-toolchain.toml`'s
+      # `channel`, and `Cargo.toml`'s `rust-version` (cratestack#422).
+      # Dependabot can see only the action ref, so a lone bump to it breaks
+      # that assertion by construction — PR #829 (1.98.0 -> 1.100.0) is
+      # exactly that, and cannot pass.
+      #
+      # A Rust upgrade here is a deliberate three-file change plus absorbing
+      # whatever new rustfmt/clippy output the release brings, and it raises
+      # the PUBLISHED MSRV in lockstep. That is a maintainer decision, not a
+      # dependency bump. Do it by hand; see the `rust-toolchain.toml` header.
+      - dependency-name: dtolnay/rust-toolchain
 
   # ---- Cargo ----------------------------------------------------------
   # The root workspace. Note this does NOT reach the standalone workspaces
@@ -116,3 +130,42 @@ updates:
       # `peerDependencies.typescript: "*"`, so pnpm warns about nothing.
       # Lift only when ts-loader supports TS 7, or that example moves off it.
       - dependency-name: typescript
+      # Pinned to the Node **24** types line, matching `engines.node >= 24`.
+      # Typing against the Node 26 surface while running 24 admits APIs that
+      # do not exist at runtime — the mismatch this was aligned to close
+      # during the 2026-08 audit. Move it when the Node floor moves, not before.
+      - dependency-name: "@types/node"
+
+  # `examples/react-nextjs-daisyui/web` — its own entry for the same reason as
+  # the webpack example above: a scoped `@types/node` pin. NOTE this example
+  # was missing from the shared list entirely; its `pnpm-lock.yaml` was
+  # generated during the 2026-08 audit, after this file was first written, so
+  # nothing was refreshing it. The lockfile sits at the example root while the
+  # manifest is in `web/`, so the manifest directory is what is listed here.
+  - package-ecosystem: npm
+    directory: /examples/react-nextjs-daisyui/web
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "@types/node"
+
+  # `examples/embedded-expo/app` — its own entry so `react-native` can be
+  # pinned. This example was invisible to Dependabot until now for a
+  # different reason from the nextjs one: its `pnpm-lock.yaml` was
+  # *gitignored*, grouped in with "Expo + RN build outputs", so there was no
+  # lockfile to monitor at all. That ignore was removed during the 2026-08
+  # audit; this entry is the other half of that fix.
+  - package-ecosystem: npm
+    directory: /examples/embedded-expo/app
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      # Exact-pinned to the Expo SDK, by Expo's own convention — the RN
+      # version is chosen by the SDK release, not independently. RN 0.87
+      # requires Expo 58 and also raises the Node floor to ^22.13, so a lone
+      # bump here would be wrong in two directions. Move it with the Expo SDK.
+      - dependency-name: react-native
