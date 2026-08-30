@@ -101,6 +101,7 @@ async fn apply_emitted_migration(pool: &cratestack::sqlx::PgPool) {
         &[cratestack::Migration {
             id: "20260729000000_round_trip_types".to_owned(),
             description: "round-trip type coverage fixture (cratestack#232)".to_owned(),
+            up_pre: None,
             up,
             down: None,
         }],

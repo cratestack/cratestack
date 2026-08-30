@@ -83,16 +83,54 @@ pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDef
     match &alter.to {
         Some(ColumnDefault::Literal(value)) => emit_set_default(sql, alter, value),
         Some(ColumnDefault::Function(call)) => emit_set_default(sql, alter, call),
-        // `dbgenerated()` never has DDL to set — dropping any
-        // previously-managed default hands the column back to
-        // whatever external mechanism is expected to supply it.
-        Some(ColumnDefault::DbGenerated) | None => writeln!(
+        // `@default(dbgenerated())` asserts that a real database-level
+        // default *exists*, supplied some way cratestack cannot see: a
+        // trigger, `GENERATED ... AS IDENTITY`, hand-authored DDL. See
+        // `ColumnDefault::DbGenerated`.
+        //
+        // So there is nothing to emit — and emitting `DROP DEFAULT`
+        // would be worse than nothing: it destroys the very default the
+        // marker says is there. On a `@version` column promoted from
+        // optional (cratestack#843) that means a hand-written `INSERT`
+        // omitting the column starts failing with a NOT NULL violation
+        // the moment the migration lands, against a schema that
+        // declares the column has a default. A comment records the
+        // transition for the reader instead.
+        //
+        Some(ColumnDefault::DbGenerated) => writeln!(
             sql,
-            "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT;",
-            quote_ident(&alter.table),
-            quote_ident(&alter.column)
+            "-- {}.{} switches to `@default(dbgenerated())`: no DDL emitted. \
+             cratestack does not manage this column's default and will not drop \
+             the existing one — the schema asserts a database-level default is \
+             supplied some other way (trigger, IDENTITY, hand-authored DDL).",
+            alter.table, alter.column
         )
         .unwrap(),
+        // Removing a default cratestack set is cratestack's to do.
+        // Removing one it never set is not — and `down.rs` reverses
+        // this op by swapping `from`/`to`, so if this arm dropped
+        // unconditionally, the reversal of the no-op above would
+        // destroy the external default that the forward direction was
+        // careful to leave alone. Symmetry here is what makes
+        // `up`-then-`down` a round trip.
+        None => match &alter.from {
+            Some(ColumnDefault::DbGenerated) => writeln!(
+                sql,
+                "-- {}.{} drops `@default(dbgenerated())`: no DDL emitted. \
+                 cratestack never set this column's default, so it does not \
+                 remove it — drop it by hand if the external mechanism \
+                 supplying it is also going away.",
+                alter.table, alter.column
+            )
+            .unwrap(),
+            Some(ColumnDefault::Literal(_)) | Some(ColumnDefault::Function(_)) | None => writeln!(
+                sql,
+                "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT;",
+                quote_ident(&alter.table),
+                quote_ident(&alter.column)
+            )
+            .unwrap(),
+        },
     }
 }
 

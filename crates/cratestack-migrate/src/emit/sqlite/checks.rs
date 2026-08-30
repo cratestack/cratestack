@@ -2,8 +2,9 @@
 //!
 //! SQLite has no `ALTER TABLE ADD CONSTRAINT`; both ADD and DROP
 //! require a full table rebuild. The emitter writes a marker comment
-//! so the developer notices and hand-writes the rebuild in
-//! `up.pre.sql`.
+//! so the developer notices and hand-writes the rebuild directly in
+//! `up.sql` (there is no `up.pre.sql` on this backend — see the note in
+//! `emit::sqlite::emit_up`).
 
 use std::fmt::Write as _;
 
@@ -18,7 +19,7 @@ pub(super) fn emit_add_check(sql: &mut String, check: &AddCheck) {
     writeln!(
         sql,
         "-- SQLite: ADD CONSTRAINT {} CHECK ({}) — \
-         requires table rebuild on SQLite. Hand-write up.pre.sql.",
+         requires table rebuild on SQLite. Hand-write it in up.sql.",
         check.name,
         render_check_predicate_sqlite(&check.column, &check.kind)
     )

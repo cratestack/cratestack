@@ -151,12 +151,14 @@ async fn enum_columns_round_trip_through_the_generated_decoder() {
             Migration {
                 id: "20260730000001_principals_init".to_owned(),
                 description: "principals with enum columns".to_owned(),
+                up_pre: None,
                 up: initial.up.clone(),
                 down: None,
             },
             Migration {
                 id: "20260730000002_principals_add_service".to_owned(),
                 description: "add the Service variant".to_owned(),
+                up_pre: None,
                 up: add_variant.up.clone(),
                 down: None,
             },
@@ -238,6 +240,7 @@ async fn membership_check_rejects_values_outside_the_variant_set() {
         &[Migration {
             id: "20260730000001_principals_init".to_owned(),
             description: "principals with enum columns".to_owned(),
+            up_pre: None,
             up: migration.up.clone(),
             down: None,
         }],

@@ -25,6 +25,7 @@ mod foreign_keys;
 mod idents;
 mod indexes;
 mod tables;
+mod up_pre;
 mod views;
 
 #[cfg(test)]
@@ -33,7 +34,9 @@ mod tests;
 use std::fmt::Write as _;
 
 use crate::emit::EmittedMigration;
-use crate::ir::{Destructiveness, Op, unverified_dbgenerated_columns};
+use crate::ir::{
+    BlockingReason, Destructiveness, Op, blocking_reasons, unverified_dbgenerated_columns,
+};
 
 use checks::{emit_add_check, emit_drop_check};
 use columns::{
@@ -53,33 +56,38 @@ use views::{
 
 pub fn emit(ops: &[Op]) -> EmittedMigration {
     let mut has_lossy = false;
-    let mut has_blocking = false;
     for op in ops {
         match op.destructiveness() {
-            Destructiveness::Safe => {}
+            Destructiveness::Safe | Destructiveness::Blocking => {}
             Destructiveness::Lossy => has_lossy = true,
-            Destructiveness::Blocking => has_blocking = true,
         }
     }
 
+    // The reason list *is* the blocking bit — deriving `has_blocking`
+    // from it rather than from a second pass means the warning text and
+    // the flag the CLI prints can never disagree about whether this
+    // migration blocks.
+    let blocking = blocking_reasons(ops);
     let unverified_dbgenerated = unverified_dbgenerated_columns(ops);
 
     EmittedMigration {
-        up: emit_up(ops, has_blocking, &unverified_dbgenerated),
+        up_pre: (!blocking.is_empty()).then(|| up_pre::scaffold(&blocking)),
+        up: emit_up(ops, &blocking, &unverified_dbgenerated),
         down: emit_down(ops, has_lossy),
         has_lossy,
-        has_blocking,
+        has_blocking: !blocking.is_empty(),
         unverified_dbgenerated,
     }
 }
 
-fn emit_up(ops: &[Op], has_blocking: bool, unverified_dbgenerated: &[(String, String)]) -> String {
+fn emit_up(
+    ops: &[Op],
+    blocking: &[BlockingReason],
+    unverified_dbgenerated: &[(String, String)],
+) -> String {
     let mut sql = String::new();
-    if has_blocking {
-        sql.push_str("-- WARNING: this migration contains blocking operations.\n");
-        sql.push_str("-- A required column was added without a default. The migration\n");
-        sql.push_str("-- will fail on a non-empty table unless an `up.pre.sql` backfills\n");
-        sql.push_str("-- the affected columns before this statement runs.\n\n");
+    if !blocking.is_empty() {
+        sql.push_str(&up_pre::up_warning(blocking));
     }
     if !unverified_dbgenerated.is_empty() {
         sql.push_str("-- NOTE: the following column(s) use `@default(dbgenerated())`, a\n");

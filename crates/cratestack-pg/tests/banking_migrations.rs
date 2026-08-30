@@ -25,6 +25,7 @@ fn migration(id: &str, sql: &str) -> Migration {
     Migration {
         id: id.to_owned(),
         description: format!("test migration {id}"),
+        up_pre: None,
         up: sql.to_owned(),
         down: None,
     }
@@ -437,5 +438,151 @@ async fn apply_pending_rolls_back_when_a_later_statement_in_a_multi_stmt_fails()
     assert_eq!(
         recorded.0, 0,
         "a failed multi-statement migration must NOT be recorded as applied",
+    );
+}
+
+/// The end-to-end claim of cratestack#843: an operator's `up.pre.sql`
+/// actually runs, and runs *before* `up.sql`.
+///
+/// Deliberately shaped as the issue's own reproduction — promote a
+/// nullable column to NOT NULL against a table that already has a NULL
+/// row — because the whole defect was that this passed on an empty
+/// table and failed on a real one. The precondition assert is the test:
+/// without the pre-script the migration must fail, or the success below
+/// proves nothing.
+#[tokio::test]
+async fn up_pre_sql_runs_before_up_sql_in_the_same_transaction() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+
+    async fn seed_table_with_a_null_row(pool: &cratestack::sqlx::PgPool) {
+        query("DROP TABLE IF EXISTS cratestack_migrations, migration_up_pre")
+            .execute(pool)
+            .await
+            .expect("drop");
+        query("CREATE TABLE migration_up_pre (id INT PRIMARY KEY, version BIGINT)")
+            .execute(pool)
+            .await
+            .expect("create");
+        query("INSERT INTO migration_up_pre (id, version) VALUES (1, NULL)")
+            .execute(pool)
+            .await
+            .expect("seed");
+    }
+
+    let promote = "ALTER TABLE migration_up_pre ALTER COLUMN version SET NOT NULL;";
+    let backfill = "UPDATE migration_up_pre SET version = 0 WHERE version IS NULL;";
+
+    // Precondition: the migration genuinely blocks without the
+    // pre-script. If this ever starts passing, the case below is
+    // vacuous and this test is guarding nothing.
+    seed_table_with_a_null_row(pool).await;
+    let without_pre = migration("20260201000000_promote", promote);
+    let error = cratestack::apply_pending(pool, &[without_pre])
+        .await
+        .expect_err("NOT NULL promotion must fail while a NULL row exists");
+    assert!(
+        error.to_string().contains("contains null values"),
+        "expected a NOT NULL violation, got: {error}"
+    );
+
+    // With the pre-script, the same migration succeeds — which is only
+    // possible if `up_pre` ran, and ran first.
+    seed_table_with_a_null_row(pool).await;
+    let mut with_pre = migration("20260201000000_promote", promote);
+    with_pre.up_pre = Some(backfill.to_owned());
+    let applied = cratestack::apply_pending(pool, &[with_pre])
+        .await
+        .expect("backfill should unblock the promotion");
+    assert_eq!(applied, vec!["20260201000000_promote".to_owned()]);
+
+    let (version,): (i64,) = cratestack::sqlx::query_as("SELECT version FROM migration_up_pre")
+        .fetch_one(pool)
+        .await
+        .expect("row survives");
+    assert_eq!(version, 0, "the backfill's value should be what landed");
+}
+
+/// A failure in `up.sql` must roll back `up.pre.sql` too — they are one
+/// transaction, so a half-applied backfill must not survive.
+#[tokio::test]
+async fn a_failing_up_sql_rolls_back_the_pre_script() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+
+    query("DROP TABLE IF EXISTS cratestack_migrations, migration_up_pre_rollback")
+        .execute(pool)
+        .await
+        .expect("drop");
+    query("CREATE TABLE migration_up_pre_rollback (id INT PRIMARY KEY, note TEXT)")
+        .execute(pool)
+        .await
+        .expect("create");
+    query("INSERT INTO migration_up_pre_rollback (id, note) VALUES (1, 'original')")
+        .execute(pool)
+        .await
+        .expect("seed");
+
+    let mut doomed = migration(
+        "20260202000000_doomed",
+        "ALTER TABLE migration_up_pre_rollback ADD COLUMN note TEXT;",
+    );
+    doomed.up_pre =
+        Some("UPDATE migration_up_pre_rollback SET note = 'rewritten by pre-script';".to_owned());
+
+    cratestack::apply_pending(pool, &[doomed])
+        .await
+        .expect_err("adding a duplicate column must fail");
+
+    let (note,): (String,) =
+        cratestack::sqlx::query_as("SELECT note FROM migration_up_pre_rollback")
+            .fetch_one(pool)
+            .await
+            .expect("row survives");
+    assert_eq!(
+        note, "original",
+        "the pre-script's write must have rolled back with the failed up.sql"
+    );
+}
+
+/// Editing a pre-script after it has been applied is drift, exactly as
+/// editing `up.sql` is. Before `up_pre` existed, a hand-written
+/// pre-script was invisible to this check.
+#[tokio::test]
+async fn editing_an_applied_up_pre_sql_is_detected_as_drift() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+
+    query("DROP TABLE IF EXISTS cratestack_migrations, migration_up_pre_drift")
+        .execute(pool)
+        .await
+        .expect("drop");
+
+    let mut applied = migration(
+        "20260203000000_drift",
+        "CREATE TABLE migration_up_pre_drift (id INT PRIMARY KEY);",
+    );
+    applied.up_pre = Some("SELECT 1;".to_owned());
+    cratestack::apply_pending(pool, std::slice::from_ref(&applied))
+        .await
+        .expect("first apply");
+
+    let mut edited = applied.clone();
+    edited.up_pre = Some("SELECT 2;".to_owned());
+    let error = cratestack::apply_pending(pool, &[edited])
+        .await
+        .expect_err("an edited pre-script must be reported as drift");
+    assert!(
+        error.to_string().contains("its SQL has changed"),
+        "expected a drift error, got: {error}"
     );
 }

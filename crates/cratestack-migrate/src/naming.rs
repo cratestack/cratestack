@@ -41,8 +41,8 @@ pub fn index_name(table: &str, columns: &[&str], using: Option<&str>) -> String 
 
 /// `<table>_<column>_<validator>_check` — stable, predictable name
 /// for CHECK constraints emitted via `@db_enforce`. Predictability
-/// matters because hand-written `up.pre.sql` halves may reference
-/// these by name.
+/// matters because hand-written migration SQL (`up.pre.sql` on
+/// Postgres, `up.sql` on either backend) may reference these by name.
 pub fn check_name(table: &str, column: &str, validator: &str) -> String {
     format!("{table}_{column}_{validator}_check")
 }

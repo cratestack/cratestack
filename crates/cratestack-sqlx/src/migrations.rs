@@ -18,11 +18,27 @@ CREATE TABLE IF NOT EXISTS cratestack_migrations (
 /// A single migration step. The runner applies any rows not yet
 /// present in `cratestack_migrations`. `down` is recorded but never
 /// called — irreversible-by-default is the safe banking posture.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Migration {
     /// Sortable id, conventionally `YYYYMMDDHHMMSS_<slug>`.
     pub id: String,
     pub description: String,
+    /// Preparatory SQL run immediately before [`Self::up`], in the
+    /// *same* transaction — the `up.pre.sql` half of a migration
+    /// directory.
+    ///
+    /// This exists for the one case `up.sql` alone cannot express: a
+    /// blocking op whose remedy has to run first but cannot simply be
+    /// pasted above the DDL, because the operator's backfill is
+    /// hand-authored and would otherwise be clobbered every time
+    /// `cratestack migrate diff` regenerates `up.sql`. `migrate diff`
+    /// scaffolds the file (with a TODO) whenever it emits a blocking
+    /// operation; the operator fills it in.
+    ///
+    /// Keeping it a separate field rather than prepending to `up` is
+    /// what makes that regeneration safe: `up.sql` stays wholly
+    /// machine-owned and `up.pre.sql` stays wholly human-owned.
+    pub up_pre: Option<String>,
     pub up: String,
     pub down: Option<String>,
 }
@@ -35,6 +51,17 @@ impl Migration {
         hasher.update(self.description.as_bytes());
         hasher.update(b"\0");
         hasher.update(self.up.as_bytes());
+        // Mixed in only when present, so a migration without an
+        // `up.pre.sql` hashes byte-identically to how it did before
+        // `up_pre` existed. Hashing `None` as (say) an empty string
+        // plus a separator would change every checksum already
+        // recorded in `cratestack_migrations`, and every deployment
+        // upgrading to this version would see its entire applied
+        // history as `ChecksumMismatch` — drift where nothing drifted.
+        if let Some(up_pre) = &self.up_pre {
+            hasher.update(b"\0");
+            hasher.update(up_pre.as_bytes());
+        }
         hasher.finalize().into()
     }
 }
@@ -106,9 +133,10 @@ pub async fn status(
 }
 
 /// Apply every pending migration in the input slice in order. Each
-/// runs in its own transaction; checksum drift aborts the whole apply
-/// (banks treat drift as a release-process failure for humans, not a
-/// silent overwrite).
+/// runs in its own transaction — [`Migration::up_pre`] then
+/// [`Migration::up`], both inside it — and checksum drift aborts the
+/// whole apply (banks treat drift as a release-process failure for
+/// humans, not a silent overwrite).
 pub async fn apply_pending(
     pool: &sqlx::PgPool,
     migrations: &[Migration],
@@ -133,6 +161,19 @@ pub async fn apply_pending(
             .begin()
             .await
             .map_err(|error| CratestackError::Database(error.to_string()))?;
+        // `up.pre.sql` first, in this same transaction: its whole
+        // purpose is to make `up`'s blocking statement succeed (backfill
+        // a column that is about to go NOT NULL, say), so a commit
+        // boundary between the two would defeat it — the window between
+        // them is exactly when a concurrent INSERT could reintroduce the
+        // NULL the backfill just removed. Both halves land or neither
+        // does.
+        if let Some(up_pre) = &migration.up_pre {
+            sqlx::raw_sql(sqlx::AssertSqlSafe(up_pre.clone()))
+                .execute(&mut *tx)
+                .await
+                .map_err(|error| CratestackError::Database(error.to_string()))?;
+        }
         // `raw_sql` sends the whole `up` script as one batch over PG's
         // simple-query protocol inside this transaction, so a mid-script
         // failure can't leave partial state (and dollar-quoted PL/pgSQL
@@ -171,6 +212,7 @@ mod tests {
         Migration {
             id: id.to_owned(),
             description: format!("migration {id}"),
+            up_pre: None,
             up: up.to_owned(),
             down: None,
         }
@@ -189,5 +231,54 @@ mod tests {
         let a = migration("20260101000000_init", "CREATE TABLE a (id INT);");
         let b = a.clone();
         assert_eq!(a.checksum(), b.checksum());
+    }
+
+    /// The whole point of putting `up_pre` in the hash: an operator who
+    /// edits their hand-written backfill after the migration has been
+    /// applied must get the same drift error they would get for editing
+    /// `up.sql`. Before this field existed, a pre-script was invisible
+    /// to drift detection.
+    #[test]
+    fn checksum_changes_when_up_pre_sql_changes() {
+        let mut a = migration(
+            "20260101000000_init",
+            "ALTER TABLE a ALTER COLUMN c SET NOT NULL;",
+        );
+        a.up_pre = Some("UPDATE a SET c = 0 WHERE c IS NULL;".to_owned());
+        let mut b = a.clone();
+        b.up_pre = Some("UPDATE a SET c = 1 WHERE c IS NULL;".to_owned());
+        assert_ne!(a.checksum(), b.checksum());
+    }
+
+    #[test]
+    fn checksum_changes_when_up_pre_sql_is_added() {
+        let a = migration(
+            "20260101000000_init",
+            "ALTER TABLE a ALTER COLUMN c SET NOT NULL;",
+        );
+        let mut b = a.clone();
+        b.up_pre = Some("UPDATE a SET c = 0 WHERE c IS NULL;".to_owned());
+        assert_ne!(a.checksum(), b.checksum());
+    }
+
+    /// Pins the compatibility promise in `checksum`: for a migration
+    /// with no `up.pre.sql` — i.e. every migration that exists in any
+    /// deployment predating this field — the digest is exactly
+    /// `sha256(id \0 description \0 up)`, byte for byte. If this test
+    /// fails, upgrading cratestack turns every applied migration into a
+    /// `ChecksumMismatch` and every deployment refuses to boot.
+    #[test]
+    fn checksum_without_up_pre_matches_the_pre_up_pre_digest() {
+        let migration = migration("20260101000000_init", "CREATE TABLE a (id INT);");
+
+        let mut legacy = Sha256::new();
+        legacy.update(migration.id.as_bytes());
+        legacy.update(b"\0");
+        legacy.update(migration.description.as_bytes());
+        legacy.update(b"\0");
+        legacy.update(migration.up.as_bytes());
+        let legacy: [u8; 32] = legacy.finalize().into();
+
+        assert_eq!(migration.checksum(), legacy);
     }
 }

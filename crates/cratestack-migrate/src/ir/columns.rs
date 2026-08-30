@@ -121,8 +121,10 @@ impl Column {
     ///   SQLite both backfill the default into every existing row.
     /// * Required columns without a default are **blocking** — the
     ///   migration cannot succeed on a non-empty table; the user must
-    ///   either set a default in the schema or supply backfill SQL in
-    ///   `up.pre.sql`.
+    ///   either set a default in the schema or split the change in two
+    ///   (add optional, backfill, promote) — note a pre-script cannot
+    ///   help here, since the column does not exist when it runs. See
+    ///   [`crate::ir::blocking_reasons`].
     pub(crate) fn destructiveness_on_add(&self) -> Destructiveness {
         match self.arity {
             ColumnArity::Optional | ColumnArity::List => Destructiveness::Safe,
