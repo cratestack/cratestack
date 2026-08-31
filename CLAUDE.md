@@ -66,6 +66,23 @@ return a false green. Always target `-p cratestack-pg` (server facade) or `-p cr
 (embedded facade) explicitly. Likewise `embedded_flutter_native` is excluded from workspace test runs
 (`--exclude embedded_flutter_native`) because of flutter_rust_bridge toolchain requirements.
 
+**On rootless Docker, every testcontainers-backed suite skips and still prints `ok`.**
+`testcontainers-rs`/`bollard` don't read `docker context` — they default to
+`unix:///var/run/docker.sock` — so the container never starts, `connect_or_skip()` reads that as "no
+database", and the skip reports as a pass. `docker info` succeeding proves nothing: that's the CLI,
+which *does* read the context. Export the endpoint (derived, not hardcoded — the value encodes a uid)
+and make a skip fail loudly:
+
+```bash
+export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+export CRATESTACK_REQUIRE_DB=1      # or CRATESTACK_REQUIRE_REDIS=1
+```
+
+To tell a skip from a pass after the fact, read `finished in` rather than the summary line — both say
+`ok`, but a real PG binary takes seconds and a skipped one reports `0.00s`. Prefer `--test-threads=1`
+for PG binaries; parallel testcontainers hit a rootless port-bind race that mimics a test failure.
+Full write-up in `CONTRIBUTING.md`, "Rootless Docker: `DOCKER_HOST` and the false green".
+
 ## Architecture
 
 ### The three-macro / role model (the central idea)
