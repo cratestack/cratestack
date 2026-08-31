@@ -158,6 +158,40 @@ jobs:
       - name: Seed changelog sections
         run: just changelog-seed ${{ inputs.version }}
 
+      # MUST sit between `just bump` and `just release-check`.
+      #
+      # Since cratestack#857 a generated client's dependency CEILING is
+      # derived from the release line — `>=0.9.3 <0.10.0` at 0.9.x becomes
+      # `>=0.9.3 <0.11.0` at 0.10.0 — so a MINOR bump changes generated
+      # output and the committed snapshots stop matching. `just bump` does
+      # not regenerate, and `release-check` runs the tests that compare
+      # them, so without this step a minor bump fails validation with
+      # `snapshot mismatch for pubspec.yaml` and no release PR is opened.
+      #
+      # Measured on a scratch bump to 0.10.0 before this step existed:
+      # `cargo test -p cratestack-client-dart --test snapshot` exited 101,
+      # and five generated files needed refreshing (2 Dart snapshots, 2
+      # TypeScript snapshots, the committed Flutter example client). With
+      # this step in place the same command exits 0.
+      #
+      # A PATCH bump leaves all of it byte-identical, which is why every
+      # release up to 0.9.4 was fine without this and why the gap was not
+      # visible until the first minor bump after #857. Running it
+      # unconditionally is deliberate: it is a no-op on a patch bump, and a
+      # conditional would be one more thing to get wrong at the exact
+      # moment it matters.
+      #
+      # The `git add` further down stages these paths explicitly, and its
+      # "nothing may remain unstaged" assertion is what catches this
+      # drifting again.
+      - name: Regenerate version-derived generated output
+        run: |
+          set -euo pipefail
+          CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-dart \
+            --test snapshot --test riverpod_snapshot --test riverpod_providers
+          CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-typescript --test snapshot
+          just regen-examples
+
       - name: Validate (cargo check + tests)
         run: just release-check
 
@@ -308,7 +342,9 @@ jobs:
           fi
           git add "${CHANGELOG_FILES_DEFAULT[@]}" ':(glob)**/Cargo.toml' ':(glob)**/Cargo.lock' pnpm-lock.yaml \
             ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml' \
-            ':(glob)dart-packages/*/*/*.podspec'
+            ':(glob)dart-packages/*/*/*.podspec' \
+            ':(glob)crates/cratestack-client-*/tests/snapshots/**' \
+            examples/flutter-riverpod/client examples/react-vite-swr/client
           # THE GUARD (cratestack#563 follow-up). Every pathspec above was
           # added reactively, after a release shipped something stale:
           #
