@@ -82,7 +82,38 @@
 /// generator emits on `@CratestackBuilder(...)`. Verified against the
 /// published archives, not the changelog: 0.8.5/0.8.6/0.8.7 do not
 /// contain either identifier, and 0.8.8/0.8.9 do not exist on pub.dev.
-pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "^0.9.3";
+///
+/// # A range, not a caret — and why this one is not `^0.9.3`
+///
+/// This read `^0.9.3` between 0.9.4 and now, raised there by the
+/// lockstep 0.9.3 release rather than by anything this generator
+/// started emitting. That made the constant disagree with the paragraph
+/// directly above it: the justification said 0.8.10, the value said
+/// 0.9.3. Nothing new is read off this package, so by the rule at the
+/// top of this module — raise a floor only when the generator starts
+/// emitting an annotation argument the floor release does not have —
+/// 0.8.10 is still the honest lower bound.
+///
+/// `^0.8.10` cannot be written instead, because it means
+/// `>=0.8.10 <0.9.0` and so forbids the 0.9.x release a generated
+/// client resolves today. `^0.9.3` has the opposite defect: it has an
+/// **empty intersection** with the `^0.8.10` that every
+/// already-generated client still declares. Only a range satisfies
+/// both — the same shape, one layer down, as
+/// `dart-packages/cratestack_builder/pubspec.yaml`'s own
+/// `cratestack_annotations: '>=0.8.10 <0.10.0'`, and now literally the
+/// same string.
+///
+/// `<0.10.0` keeps the pre-1.0 ceiling a caret would have given. It is
+/// deliberately not open-ended: `>0.9.0` would let pub resolve 1.0.0,
+/// which is a forward-compatibility promise across a major that nothing
+/// here backs (see the module doc's note on the caret ceiling).
+///
+/// **This value is why `pubspec.yaml.j2` quotes the interpolation.**
+/// Unquoted, a leading `>` is YAML's folded-block-scalar indicator and
+/// `>=` is not a valid header, so emitting this bare is a hard
+/// `ScannerError` at every consumer's `pub get` — not a mis-parse.
+pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = ">=0.8.10 <0.10.0";
 
 /// `cratestack_builder` — the `source_gen` builder a generated client
 /// lists under `dev_dependencies:`, run by `build_runner` to expand

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### The generated Dart annotations floor is a range, and every emitted floor is now quoted
+
+`CRATESTACK_ANNOTATIONS_FLOOR` moves from `^0.9.3` to `>=0.8.10 <0.10.0`.
+
+`^0.9.3` was not an API-compatibility statement. It arrived with the lockstep 0.9.3 release rather
+than because the generator started reading anything new off `cratestack_annotations`, which left the
+constant contradicting its own doc comment — the justification said 0.8.10, the value said 0.9.3. By
+this module's stated rule (raise a floor only when the generator emits an annotation argument the
+floor release lacks) 0.8.10 is still the honest lower bound.
+
+It has to be a range rather than a caret, for the same reason `cratestack_builder`'s own constraint
+is one: `^0.8.10` means `>=0.8.10 <0.9.0` and forbids the 0.9.x release a generated client resolves
+today, while `^0.9.3` has an **empty intersection** with the `^0.8.10` that every already-generated
+client still declares. Only a range satisfies both. `<0.10.0` keeps the pre-1.0 ceiling a caret would
+have given — deliberately bounded, since an open-ended `>0.9.0` would let pub resolve 1.0.0, a
+forward-compatibility promise across a major that nothing here backs.
+
+**All three emitted floors are now quoted in both pubspec templates**, not just the one that needs it
+today. Unquoted, a leading `>` is YAML's folded-block-scalar indicator and `>=` is not a valid
+header, so a bare range is a hard `ScannerError` at the consumer's `pub get` rather than a value that
+parses wrongly. Quoting a caret is a no-op, so the next floor to become a range does not have to
+rediscover this. Verified by unquoting the committed example client on purpose and confirming
+`flutter pub get` fails in `Scanner._scanBlockScalar`, then confirming it resolves
+(`cratestack_annotations 0.9.3`) once quoted.
+
+The quoting rationale lives in non-rendering `{#` template comments rather than YAML ones, so it is
+not shipped into every user's generated pubspec.
+
 ### Revert #845: the floor literal was a tripwire, and removing it was the wrong fix
 
 #845 replaced `native_cbor_generator.rs`'s hand-written `CRATESTACK_CBOR_FLOOR` literal with a value
