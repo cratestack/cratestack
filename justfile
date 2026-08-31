@@ -236,6 +236,22 @@ test-pg-only *args='':
 
 # Run the workspace test suite via testcontainers (per-binary ephemeral PG, recommended for CI).
 #
+# ROOTLESS DOCKER: export DOCKER_HOST first or this passes without touching a
+# database. `testcontainers-rs`/`bollard` don't read `docker context` — they
+# default to `unix:///var/run/docker.sock`, which a rootless host either lacks
+# or owns as root:docker. The container fails to start, `connect_or_skip()`
+# reads that as "no database", and a skipped test still prints `ok`. Note
+# `docker info` succeeding proves nothing here: that's the CLI, which *does*
+# read the context. Derive the endpoint rather than hardcoding it:
+#
+#   export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+#   export CRATESTACK_REQUIRE_DB=1   # turns a silent skip into a panic
+#
+# Not set by the recipe on purpose: the value encodes a uid, and CI's runner
+# uses the default socket, so baking one in fixes one machine and breaks the
+# other. Full write-up in CONTRIBUTING.md, "Rootless Docker: DOCKER_HOST and
+# the false green".
+#
 # `--no-fail-fast` is load-bearing here and in every sibling recipe that runs
 # more than one test binary (cratestack#851). Without it `cargo test` stops
 # scheduling remaining targets after the first binary fails, so one unrelated

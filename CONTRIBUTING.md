@@ -9,7 +9,55 @@ Before opening a pull request:
 3. Run `cargo test --workspace --exclude embedded_flutter_native`. PG-backed integration tests (`banking_*`, `policy_db_*`, `generated_client_rust`) skip cleanly when `CRATESTACK_TEST_DATABASE_URL` isn't set, so you only see partial coverage on this command.
 4. Run `just test-pg` to exercise the PG-backed paths. The recipe brings the Postgres container in `compose.yml` up before tests and tears it down on exit — even if tests fail — so you never leave a container behind. Use `just test-pg-only` for the faster `cratestack`-crate-only inner loop.
    - **Alternative — testcontainers**: `just test-pg-tc` runs the same suite but with `CRATESTACK_USE_TESTCONTAINERS=1`, which makes each test binary spawn its own ephemeral PG via `testcontainers`. Cleanup is automatic via `Drop`; you'll see a per-binary spin-up cost of a few seconds. Use this when you want stronger isolation guarantees (CI does), accept that you can't `psql` into a mid-test container easily.
+   - **On rootless Docker, set `DOCKER_HOST` first** — otherwise every DB-backed test skips and still prints `ok`. See below.
 5. Run package-specific checks for editor or generated-client changes when applicable.
+
+### Rootless Docker: `DOCKER_HOST` and the false green
+
+If you run Docker rootless, `just test-pg-tc` (and any other `CRATESTACK_USE_TESTCONTAINERS=1` recipe)
+will appear to pass while touching no database at all.
+
+The `docker` CLI reads `docker context`, so it finds your rootless socket and every `docker` command
+works. `testcontainers-rs`/`bollard` do **not** read `docker context` — they default to
+`unix:///var/run/docker.sock`, which on a rootless host is either absent or `root:docker` and
+unreadable by you. The container then fails to start, our `connect_or_skip()` helpers treat that as
+"no database available", and the tests skip. A skipped test still reports `test result: ok`.
+
+`docker info` succeeding is **not** evidence the Rust client can connect — it goes through the CLI.
+
+Export the endpoint your context actually points at, derived rather than hardcoded:
+
+```bash
+export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+```
+
+The recipes deliberately don't set this for you: the value encodes your uid
+(`unix:///run/user/1000/docker.sock`), and CI's runner uses the default socket, so baking one in would
+fix one machine and break the other.
+
+**Make a skip fail loudly instead of passing quietly.** `CRATESTACK_REQUIRE_DB=1` turns a failed
+connection into a panic (`CRATESTACK_REQUIRE_REDIS=1` for the Redis suites). CI sets it on the DB
+shard for exactly this reason, and it's worth setting locally whenever you're relying on a green run
+as evidence:
+
+```bash
+export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}}')"
+export CRATESTACK_REQUIRE_DB=1
+just test-pg-tc
+```
+
+**Telling a skip from a pass after the fact:** compare elapsed time, not the summary line. Both print
+`ok`, and the skip notice goes to stderr, which cargo captures for passing tests. A real PG-backed
+binary takes seconds; a skipped one reports `finished in 0.00s`.
+
+Two more things worth knowing when running these locally:
+
+- Prefer `--test-threads=1` for PG binaries. Each `connect_or_skip()` starts its own container, so a
+  parallel run can hit a rootless-Docker port-bind race that looks like a test failure but is
+  infrastructure flakiness — re-run the single binary in isolation to tell them apart.
+- `just test-pg`/`test-pg-only` use `compose.yml`, which pins a specific Postgres image. If that image
+  isn't cached, `just pg-up` waits on the pull with its output suppressed, which looks like a hang.
+  `just test-pg-tc` avoids that path entirely.
 
 Do not commit generated build output, local database state, or registry tokens.
 
