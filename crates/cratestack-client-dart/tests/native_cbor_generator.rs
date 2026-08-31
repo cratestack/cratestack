@@ -148,7 +148,7 @@ fn default_config_uses_native_cbor() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")),
+            pubspec.contains(&format!("cratestack_cbor: '{CRATESTACK_CBOR_FLOOR}'")),
             "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must depend on \
              cratestack_cbor by default:\n{pubspec}"
         );
@@ -208,7 +208,7 @@ fn the_flag_swaps_the_pubspec_dependency_and_the_runtime_import() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")),
+            pubspec.contains(&format!("cratestack_cbor: '{CRATESTACK_CBOR_FLOOR}'")),
             "{fixture}: pubspec.yaml should depend on cratestack_cbor, pinned to this crate's \
              version (lockstep with dart-packages/cratestack_cbor's own version):\n{pubspec}"
         );
@@ -337,7 +337,7 @@ fn riverpod_preset_pubspec_gates_the_same_way_as_the_default_preset() {
         assert!(!plain_pubspec.contains("cratestack_cbor"));
 
         let native_pubspec = file(&native, "pubspec.yaml");
-        assert!(native_pubspec.contains(&format!("cratestack_cbor: {CRATESTACK_CBOR_FLOOR}")));
+        assert!(native_pubspec.contains(&format!("cratestack_cbor: '{CRATESTACK_CBOR_FLOOR}'")));
         assert!(!native_pubspec.contains("cbor: ^6.5.1"));
 
         // The riverpod preset reuses `lib/src/runtime.dart` verbatim from

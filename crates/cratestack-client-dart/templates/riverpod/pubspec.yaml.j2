@@ -22,7 +22,10 @@ dependencies:
   # full comment — identical reasoning, this preset just carries its own
   # copy of the dependency list (see this file's own header comment for
   # why).
-  cratestack_cbor: {{ cratestack_cbor_version_requirement }}
+{# All three floors here are QUOTED — see the `default` preset's
+    pubspec.yaml.j2 for why (a floor may be a range, and an unquoted
+    leading `>` is a YAML block-scalar indicator, not a string). #}
+  cratestack_cbor: '{{ cratestack_cbor_version_requirement }}'
 {% else %}
   cbor: ^6.5.1
 {% endif %}
@@ -47,7 +50,7 @@ dependencies:
   # issue #668 phase 2: see `pubspec.yaml.j2`'s identical dependency
   # comment — same annotation, same reasoning, every per-model file and
   # `procedures.dart` carries `@CratestackBuilder()` here too.
-  cratestack_annotations: {{ cratestack_annotations_version_requirement }}
+  cratestack_annotations: '{{ cratestack_annotations_version_requirement }}'
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -129,4 +132,4 @@ dev_dependencies:
   # `analyzer` version either. A version range (not a pin) is fine here,
   # unlike the trio: `cratestack_builder` isn't the thing whose own release
   # cadence forced this wall, it just has to tolerate it.
-  cratestack_builder: {{ cratestack_builder_version_requirement }}
+  cratestack_builder: '{{ cratestack_builder_version_requirement }}'

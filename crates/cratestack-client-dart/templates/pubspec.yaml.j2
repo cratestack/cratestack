@@ -31,7 +31,18 @@ dependencies:
   # still rewrites dart-packages/*/pubspec.yaml itself) — the value is
   # crates/cratestack-client-dart/src/package_floors.rs's
   # `CRATESTACK_CBOR_FLOOR`.
-  cratestack_cbor: {{ cratestack_cbor_version_requirement }}
+{# Every floor this template emits is QUOTED. A floor may be a range
+    (`CRATESTACK_ANNOTATIONS_FLOOR` is one today), and unquoted YAML reads
+    a leading `>` as the folded-block-scalar indicator — `>=` is not a
+    valid header, so a bare range is a hard ScannerError at the consumer's
+    `pub get` rather than a value that parses wrongly. Quoting a caret is
+    a no-op, so all three are quoted rather than only the one that needs
+    it today: the next floor to become a range must not rediscover this.
+    Deliberately a non-rendering template comment rather than a YAML one:
+    this is our concern, not something to ship into every user's pubspec.
+    Do not write a closing comment marker in this text — minijinja ends
+    the comment at the first one and renders the remainder as YAML. #}
+  cratestack_cbor: '{{ cratestack_cbor_version_requirement }}'
 {% else %}
   cbor: ^6.5.1
 {% endif %}
@@ -48,7 +59,13 @@ dependencies:
   # — see `dart-packages/cratestack_annotations/pubspec.yaml`'s own header
   # comment for why merging them would leak `analyzer`/`build`/`source_gen`
   # into this package's runtime dependency graph.
-  cratestack_annotations: {{ cratestack_annotations_version_requirement }}
+{# The floor that is actually a range, hence the quotes — see the note
+    at the codec dependency above. Keeping this non-rendering matters
+    twice over here: that note sits inside the `native_cbor` branch, so a
+    rendered YAML comment naming that package would leak the string into
+    `--no-native-cbor` output that
+    `no_native_cbor_falls_back_to_package_cbor` asserts is free of it. #}
+  cratestack_annotations: '{{ cratestack_annotations_version_requirement }}'
 
 dev_dependencies:
   flutter_lints: ^6.0.0
@@ -58,4 +75,4 @@ dev_dependencies:
   # into the `{Class}Builder` classes this package used to generate inline
   # — see `dart-packages/cratestack_builder`'s own README for what it does.
   build_runner: ^2.15.0
-  cratestack_builder: {{ cratestack_builder_version_requirement }}
+  cratestack_builder: '{{ cratestack_builder_version_requirement }}'

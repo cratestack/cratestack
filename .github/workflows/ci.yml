@@ -1703,7 +1703,14 @@ jobs:
         run: |
           set -euo pipefail
           floor() {
-            grep -oP "${1}: &str = \"\\^\\K[0-9.]+" \
+            # Accepts `^X.Y.Z` and `>=X.Y.Z <A.B.C` alike — a floor may be
+            # a range (`CRATESTACK_ANNOTATIONS_FLOOR` is one), and the
+            # lower bound is what gets pinned either way. Mirrors
+            # `package_floors_tests.rs`'s own `parse_caret`, which was
+            # taught ranges for the same reason. Caret-only, this returned
+            # empty for a range and tripped the guard below — correctly,
+            # but for the wrong reason.
+            grep -oP "${1}: &str = \"(\\^|>=)\\K[0-9.]+" \
               crates/cratestack-client-dart/src/package_floors.rs
           }
           annotations="$(floor CRATESTACK_ANNOTATIONS_FLOOR)"

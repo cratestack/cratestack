@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### The generated Dart annotations floor is a range, and every emitted floor is now quoted
+
+`CRATESTACK_ANNOTATIONS_FLOOR` moves from `^0.9.3` to `>=0.8.10 <0.10.0`.
+
+`^0.9.3` was not an API-compatibility statement. It arrived with the lockstep 0.9.3 release rather
+than because the generator started reading anything new off `cratestack_annotations`, which left the
+constant contradicting its own doc comment — the justification said 0.8.10, the value said 0.9.3. By
+this module's stated rule (raise a floor only when the generator emits an annotation argument the
+floor release lacks) 0.8.10 is still the honest lower bound.
+
+It has to be a range rather than a caret, for the same reason `cratestack_builder`'s own constraint
+is one: `^0.8.10` means `>=0.8.10 <0.9.0` and forbids the 0.9.x release a generated client resolves
+today, while `^0.9.3` has an **empty intersection** with the `^0.8.10` that every already-generated
+client still declares. Only a range satisfies both. `<0.10.0` keeps the pre-1.0 ceiling a caret would
+have given — deliberately bounded, since an open-ended `>0.9.0` would let pub resolve 1.0.0, a
+forward-compatibility promise across a major that nothing here backs.
+
+**All three emitted floors are now quoted in both pubspec templates**, not just the one that needs it
+today. Unquoted, a leading `>` is YAML's folded-block-scalar indicator and `>=` is not a valid
+header, so a bare range is a hard `ScannerError` at the consumer's `pub get` rather than a value that
+parses wrongly. Quoting a caret is a no-op, so the next floor to become a range does not have to
+rediscover this. Verified by unquoting the committed example client on purpose and confirming
+`flutter pub get` fails in `Scanner._scanBlockScalar`, then confirming it resolves
+(`cratestack_annotations 0.9.3`) once quoted.
+
+The quoting rationale lives in non-rendering `{#` template comments rather than YAML ones, so it is
+not shipped into every user's generated pubspec.
+
 ### Revert #845: the floor literal was a tripwire, and removing it was the wrong fix
 
 #845 replaced `native_cbor_generator.rs`'s hand-written `CRATESTACK_CBOR_FLOOR` literal with a value
@@ -35,29 +63,10 @@ A sweep for the same pattern found no other copies: the Dart `ANNOTATIONS`/`BUIL
 TypeScript `REFINE` floor have no duplicates, as constants or bare literals. `CRATESTACK_CBOR_FLOOR`
 is duplicated in both crates by design, and both are now guarded.
 
-
-### The duplicated `CRATESTACK_CBOR_FLOOR` is now derived, not hand-synced
-
-`tests/native_cbor_generator.rs` kept its own literal copy of the floor, hand-synced with
-`src/package_floors.rs` on the reasoning that raising one "is supposed to require touching this line
-too". Nothing enforced that, and it drifted during the 0.9.3 work: a change raised the real floor and
-the copy together, a later change reverted the real one, and the copy stayed behind — three tests
-then failed asserting a floor nothing emitted any more. `package_floors.rs`'s own guards could not
-catch it, because they read the *pubspecs* and never that file.
-
-It now reads the constant out of `src/package_floors.rs` directly.
-
-**The #779 guard survives, and that is the whole question.** The danger #779 named is deriving the
-expectation from *the same input the generator uses* — this file previously computed it from
-`env!("CARGO_PKG_VERSION")`, so it agreed with the generator by construction and could not observe a
-floor that wrongly tracked the release version. `CRATESTACK_CBOR_FLOOR` is not that input: it is an
-API-compatibility constant that deliberately does not follow `just bump`, with a separate test
-(`floors_are_below_the_current_unpublished_workspace_version`) keeping it that way. A regressed
-generator emitting the workspace version still disagrees with this value and still fails here.
-
-Both properties were proven rather than argued: changing the real constant to `^0.9.1` makes the
-test follow it and pass (where the literal would have failed), and reformatting the constant onto two
-lines makes it panic by name rather than silently falling back to a default.
+#845's own entry has been removed from this section rather than left standing. It described the
+floor as "now derived, not hand-synced", which stopped being true in the same unreleased window —
+both landed after 0.9.4, so nothing shipped either state. Leaving it would have made these notes
+announce a change and its reversal as two independent features.
 
 ### PostGIS spatial columns are declarable (#842)
 
@@ -218,8 +227,11 @@ so an app depending on `cratestack_cbor` **directly** at any 0.9.x could not res
 So, because <app> depends on cratestack_cbor ^0.9.1, version solving failed.
 ```
 
-That is the user-facing bug #838 opened for, and this closes it. All three floors
-(`cratestack_annotations`, `cratestack_builder`, `cratestack_cbor`) now emit `^0.9.3`.
+That is the user-facing bug #838 opened for, and this closes it. `cratestack_builder` and
+`cratestack_cbor` now emit `^0.9.3`. `cratestack_annotations` moved to `^0.9.3` here as well, and
+then to the range `>=0.8.10 <0.10.0` later in this same unreleased window — see the annotations-floor
+entry above for why a caret cannot express that one. The net state for this release is two carets and
+one range.
 
 It took two releases because the floors could not move until a *published* `cratestack_builder`
 accepted `cratestack_annotations` 0.9.x — 0.9.1 and 0.9.2 both declared `^0.8.10`, which excludes it.
