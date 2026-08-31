@@ -22,7 +22,7 @@ include_server_schema!(
 
 #[test]
 fn spatial_fields_compile_as_ewkb_bytes() {
-    let zone = cratestack_schema::DeliveryZone {
+    let zone = cratestack_schema::CoverageArea {
         id: 1,
         label: "central".to_owned(),
         // EWKB bytes — the same `Vec<u8>` shape a `Bytes` field gets.
@@ -44,9 +44,9 @@ fn spatial_fields_compile_as_ewkb_bytes() {
 fn generated_field_ref_drives_spatial_filters() {
     use cratestack::point;
 
-    let covers = cratestack_schema::delivery_zone::service_area().covers_geography(point(1.0, 2.0));
+    let covers = cratestack_schema::coverage_area::service_area().covers_geography(point(1.0, 2.0));
     let within =
-        cratestack_schema::delivery_zone::service_area().dwithin_geography(point(1.0, 2.0), 500.0);
+        cratestack_schema::coverage_area::service_area().dwithin_geography(point(1.0, 2.0), 500.0);
 
     // Distinct filter shapes, both built without naming a column string.
     assert_ne!(format!("{covers:?}"), format!("{within:?}"));
@@ -58,7 +58,7 @@ fn generated_field_ref_drives_distance_ordering() {
     use cratestack::point;
 
     let nearest =
-        cratestack_schema::delivery_zone::service_area().order_by_distance_to(point(1.0, 2.0));
+        cratestack_schema::coverage_area::service_area().order_by_distance_to(point(1.0, 2.0));
 
     assert!(matches!(
         nearest.target,

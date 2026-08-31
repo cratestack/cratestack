@@ -10,7 +10,7 @@ auth Operator {
   id Int
 }
 
-model DeliveryZone {
+model CoverageArea {
   id Int @id
   label String
   service_area Geography(Polygon, 4326)
