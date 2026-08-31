@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 (2026-08-31)
+
 ### Generated client version ceilings follow the release line automatically
 
 All five emitted floors — Dart's `cratestack_annotations`/`cratestack_builder`/`cratestack_cbor` and

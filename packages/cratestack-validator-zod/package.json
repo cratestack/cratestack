@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/validator-zod",
-  "version": "0.9.4",
+  "version": "0.10.0",
   "description": "An RpcLink for CrateStack's generated TypeScript RPC client that validates request input against per-op zod schemas.",
   "license": "MIT",
   "repository": {
@@ -40,7 +40,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@cratestack/ts-types": "0.9.4"
+    "@cratestack/ts-types": "0.10.0"
   },
   "peerDependencies": {
     "zod": "^3.23.0 || ^4.0.0"
