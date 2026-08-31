@@ -1,5 +1,25 @@
 ## Unreleased
 
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
+## 0.9.4 (2026-08-30)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
+## 0.9.3 (2026-08-30)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
+## 0.9.2 (2026-08-30)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
+## 0.9.1 (2026-08-29)
+
 - **`lints` dev-dependency raised `^5.0.0` → `^6.0.0`**, matching every other package in this
   repo — this was the sole straggler. No lint violations surfaced in analyzable code. Stated
   precisely because it is weaker than a clean run: this package cannot be fully analyzed in a
