@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0 (2026-08-31)
+
 - **`cratestack_annotations` widened to `>=0.8.10 <0.10.0`** — a range, not a raise, and the
   distinction is load-bearing. `^0.8.10` forbade the 0.9.x annotations release a generated client
   now wants; `^0.9.1` would have had an empty intersection with the `^0.8.10` floor every existing
