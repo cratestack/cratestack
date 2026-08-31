@@ -70,7 +70,7 @@ const RPC_FIXTURE: &str = "tiny_rpc";
 /// actually serves. The matching TypeScript literal
 /// (`cratestack-client-typescript/tests/native_cbor_generator.rs`) carries
 /// the same instruction and the same guard.
-const CRATESTACK_CBOR_FLOOR: &str = "^0.9.3";
+const CRATESTACK_CBOR_FLOOR: &str = "0.9.3";
 
 /// Reads `CRATESTACK_CBOR_FLOOR` out of `src/package_floors.rs`.
 ///
@@ -105,6 +105,36 @@ fn real_cbor_floor() -> String {
 /// failures dumping whole generated files — which is how this drift was
 /// actually experienced during the 0.9.3 work, and why it got misread as
 /// noise and "fixed" by deriving (#845, reverted).
+/// The full requirement the generator emits for this floor: the
+/// hand-written literal above, plus the ceiling derived from the release
+/// line.
+///
+/// Composing the ceiling here rather than hardcoding it is deliberate and
+/// does NOT weaken the tripwire. The two halves have opposite rules — the
+/// floor is a hand-verified fact about published archives, the ceiling is
+/// mechanical and by design names a version that does not exist yet.
+/// Hardcoding the ceiling would turn this test red at every minor bump for
+/// no defect, which is exactly the noise that got the tripwire misread and
+/// deleted once already (#845, reverted by #849). The arithmetic it relies
+/// on is pinned separately against a hand-written table in
+/// `src/release_line_tests.rs`, so it is not agreeing with itself.
+fn expected_requirement() -> String {
+    let mut parts = env!("CARGO_PKG_VERSION").split('.');
+    let mut component = |which: &str| -> u64 {
+        parts
+            .next()
+            .unwrap_or_else(|| panic!("CARGO_PKG_VERSION has no {which} component"))
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .unwrap_or_else(|error| panic!("CARGO_PKG_VERSION's {which} component: {error}"))
+    };
+    let major = component("major");
+    let minor = component("minor");
+    format!(">={CRATESTACK_CBOR_FLOOR} <{major}.{}.0", minor + 1)
+}
+
 #[test]
 fn literal_matches_the_real_floor() {
     let real = real_cbor_floor();
@@ -148,7 +178,7 @@ fn default_config_uses_native_cbor() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: '{CRATESTACK_CBOR_FLOOR}'")),
+            pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())),
             "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must depend on \
              cratestack_cbor by default:\n{pubspec}"
         );
@@ -208,7 +238,7 @@ fn the_flag_swaps_the_pubspec_dependency_and_the_runtime_import() {
 
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
-            pubspec.contains(&format!("cratestack_cbor: '{CRATESTACK_CBOR_FLOOR}'")),
+            pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())),
             "{fixture}: pubspec.yaml should depend on cratestack_cbor, pinned to this crate's \
              version (lockstep with dart-packages/cratestack_cbor's own version):\n{pubspec}"
         );
@@ -337,7 +367,7 @@ fn riverpod_preset_pubspec_gates_the_same_way_as_the_default_preset() {
         assert!(!plain_pubspec.contains("cratestack_cbor"));
 
         let native_pubspec = file(&native, "pubspec.yaml");
-        assert!(native_pubspec.contains(&format!("cratestack_cbor: '{CRATESTACK_CBOR_FLOOR}'")));
+        assert!(native_pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())));
         assert!(!native_pubspec.contains("cbor: ^6.5.1"));
 
         // The riverpod preset reuses `lib/src/runtime.dart` verbatim from

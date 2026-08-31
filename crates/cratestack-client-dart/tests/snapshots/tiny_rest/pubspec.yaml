@@ -40,4 +40,4 @@ dev_dependencies:
   # into the `{Class}Builder` classes this package used to generate inline
   # — see `dart-packages/cratestack_builder`'s own README for what it does.
   build_runner: ^2.15.0
-  cratestack_builder: '^0.9.3'
+  cratestack_builder: '>=0.9.3 <0.10.0'

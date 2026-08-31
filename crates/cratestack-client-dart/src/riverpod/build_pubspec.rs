@@ -13,7 +13,7 @@
 //! a redesign.
 use crate::config::DartGeneratorConfig;
 use crate::package_floors::{
-    CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR,
+    CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR, requirement,
 };
 use serde::Serialize;
 
@@ -38,7 +38,7 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
     // constant this preset's `default` sibling emits
     // (`crate::context::build_template_context`), for the same reason.
     let cratestack_cbor_version_requirement = if config.native_cbor {
-        CRATESTACK_CBOR_FLOOR.to_owned()
+        requirement(CRATESTACK_CBOR_FLOOR)
     } else {
         String::new()
     };
@@ -48,7 +48,7 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
         cratestack_cbor_version_requirement,
         // cratestack#754: API-compatibility floors, deliberately not
         // `^{CARGO_PKG_VERSION}` — see `crate::package_floors`.
-        cratestack_annotations_version_requirement: CRATESTACK_ANNOTATIONS_FLOOR.to_owned(),
-        cratestack_builder_version_requirement: CRATESTACK_BUILDER_FLOOR.to_owned(),
+        cratestack_annotations_version_requirement: requirement(CRATESTACK_ANNOTATIONS_FLOOR),
+        cratestack_builder_version_requirement: requirement(CRATESTACK_BUILDER_FLOOR),
     }
 }

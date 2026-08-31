@@ -104,16 +104,11 @@
 /// `cratestack_annotations: '>=0.8.10 <0.10.0'`, and now literally the
 /// same string.
 ///
-/// `<0.10.0` keeps the pre-1.0 ceiling a caret would have given. It is
-/// deliberately not open-ended: `>0.9.0` would let pub resolve 1.0.0,
-/// which is a forward-compatibility promise across a major that nothing
-/// here backs (see the module doc's note on the caret ceiling).
-///
-/// **This value is why `pubspec.yaml.j2` quotes the interpolation.**
-/// Unquoted, a leading `>` is YAML's folded-block-scalar indicator and
-/// `>=` is not a valid header, so emitting this bare is a hard
-/// `ScannerError` at every consumer's `pub get` — not a mis-parse.
-pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = ">=0.8.10 <0.10.0";
+/// The ceiling is no longer written here — [`requirement`] derives it
+/// from the release line. This is the one floor whose lower and upper
+/// bounds sit on different minors, which is why it had to be a range
+/// before the others were.
+pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "0.8.10";
 
 /// `cratestack_builder` — the `source_gen` builder a generated client
 /// lists under `dev_dependencies:`, run by `build_runner` to expand
@@ -124,7 +119,12 @@ pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = ">=0.8.10 <0.10.0";
 /// `cratestack_annotations: ^0.8.5`. A generated client resolving an
 /// older builder would silently produce builders that disagree with the
 /// schema rather than failing at `pub get`.
-pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.9.3";
+/// `0.9.3` specifically, and not the 0.8.10 the paragraph above
+/// justifies: 0.9.1 and 0.9.2 declare `cratestack_annotations: ^0.8.10`,
+/// which excludes the 0.9.x annotations release a generated client now
+/// resolves, so those two cannot satisfy a client at all. 0.9.3 is the
+/// first that publishes the `>=0.8.10 <0.10.0` range.
+pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "0.9.3";
 
 /// `cratestack_cbor` — the native CBOR codec a generated client lists
 /// under `dependencies:` when `native_cbor` is on (the default;
@@ -142,17 +142,27 @@ pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "^0.9.3";
 ///
 /// So this floor is bounded by what exists, not by what the generator
 /// needs: there is no published `cratestack_cbor` a generated client
-/// could resolve and fail against. The caret ceiling is what makes it
-/// useful anyway — `^0.8.0` is `>=0.8.0 <0.9.0`, so it resolves the
-/// newest 0.8.x on the day the user runs `pub get`, which is how a
-/// generated client picks up #794's idempotent `createCborCodec()`
-/// without this constant moving.
+/// could resolve and fail against. The derived ceiling is what makes it
+/// useful anyway — it resolves the newest release on the day the user
+/// runs `pub get`, which is how a generated client picks up #794's
+/// idempotent `createCborCodec()` without this constant moving.
 ///
 /// **Not** the fix for #798's retry behaviour: that lives in the
 /// generated runtime itself (`rest-runtime.dart.j2` /
 /// `rpc_runtime/types.dart.j2`), which clears its own cache on failure
 /// and therefore needs nothing from this package's version.
-pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.9.3";
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "0.9.3";
+
+/// Pairs a floor above with the ceiling derived from **this crate's own
+/// version**, which is the workspace version under lockstep publishing.
+///
+/// Passing the version in rather than reading `CARGO_PKG_VERSION` inside
+/// `release_line` keeps the "which version" decision visible at the one
+/// place it is made, and lets the derivation be unit-tested against a
+/// hand-written table instead of whatever the workspace happens to be at.
+pub(crate) fn requirement(floor: &str) -> String {
+    crate::release_line::requirement(floor, env!("CARGO_PKG_VERSION"))
+}
 
 #[cfg(test)]
 #[path = "package_floors_tests.rs"]

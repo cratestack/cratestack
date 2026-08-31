@@ -87,7 +87,7 @@
 /// surface actually first appears — `0.7.14` has neither `ResourceMap`
 /// nor `RpcResourceMap` — but see the module doc for why the floor does
 /// not go there.)
-pub(crate) const CRATESTACK_REFINE_FLOOR: &str = "^0.8.0";
+pub(crate) const CRATESTACK_REFINE_FLOOR: &str = "0.8.0";
 
 /// `@cratestack/cbor` — the native RPC codec a generated client lists
 /// under `dependencies` when `native_cbor` is on (the default) *and* the
@@ -132,7 +132,18 @@ pub(crate) const CRATESTACK_REFINE_FLOOR: &str = "^0.8.0";
 /// `package_floors_tests`. The 0.9.0 bump ended that special case exactly
 /// as predicted: the floor is strictly below the workspace version again,
 /// the exemption has been deleted, and the ordinary rule covers it.
-pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "^0.8.15";
+pub(crate) const CRATESTACK_CBOR_FLOOR: &str = "0.8.15";
+
+/// Pairs a floor above with the ceiling derived from **this crate's own
+/// version**, which is the workspace version under lockstep publishing.
+///
+/// Passing the version in rather than reading `CARGO_PKG_VERSION` inside
+/// `release_line` keeps the "which version" decision visible where it is
+/// made, and lets the derivation be unit-tested against a hand-written
+/// table instead of whatever the workspace happens to be at.
+pub(crate) fn requirement(floor: &str) -> String {
+    crate::release_line::requirement(floor, env!("CARGO_PKG_VERSION"))
+}
 
 #[cfg(test)]
 #[path = "package_floors_tests.rs"]

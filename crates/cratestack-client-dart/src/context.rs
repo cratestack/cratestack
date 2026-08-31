@@ -18,7 +18,7 @@ use crate::naming::{
     model_name_set, occupied_type_names, procedure_wrapper_name, scalar_model_fields,
 };
 use crate::package_floors::{
-    CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR,
+    CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR, requirement,
 };
 use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
 
@@ -221,7 +221,7 @@ pub(crate) fn build_template_context(
     // floor rather than `^{CARGO_PKG_VERSION}`, so it no longer moves
     // with `just bump` — see `crate::package_floors`.
     let cratestack_cbor_version_requirement = if config.native_cbor {
-        CRATESTACK_CBOR_FLOOR.to_owned()
+        requirement(CRATESTACK_CBOR_FLOOR)
     } else {
         String::new()
     };
@@ -232,8 +232,8 @@ pub(crate) fn build_template_context(
     // compatibility *floors*, not `^{CARGO_PKG_VERSION}` — see
     // `crate::package_floors` for why deriving them from the release
     // version is what broke `Prepare Release` for 0.8.14.
-    let cratestack_annotations_version_requirement = CRATESTACK_ANNOTATIONS_FLOOR.to_owned();
-    let cratestack_builder_version_requirement = CRATESTACK_BUILDER_FLOOR.to_owned();
+    let cratestack_annotations_version_requirement = requirement(CRATESTACK_ANNOTATIONS_FLOOR);
+    let cratestack_builder_version_requirement = requirement(CRATESTACK_BUILDER_FLOOR);
 
     Ok(TemplateContext {
         package_name: config.library_name.clone(),

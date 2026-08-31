@@ -80,7 +80,7 @@ const RPC_FIXTURE: &str = "tiny_rpc";
 /// are here because this assertion failed, do not "fix" it by deriving;
 /// check that the new floor names a version npm actually serves, then
 /// update this literal too.
-const CRATESTACK_CBOR_FLOOR: &str = "^0.8.15";
+const CRATESTACK_CBOR_FLOOR: &str = "0.8.15";
 
 /// Reads `CRATESTACK_CBOR_FLOOR` out of `src/package_floors.rs`.
 ///
@@ -120,6 +120,36 @@ fn real_cbor_floor() -> String {
 /// Dart crate carries the identical pair; adding it there was prompted by
 /// that failure mode being misread as noise and "fixed" by deriving (#845),
 /// which was reverted.
+/// The full requirement the generator emits for this floor: the
+/// hand-written literal above, plus the ceiling derived from the release
+/// line.
+///
+/// Composing the ceiling here rather than hardcoding it is deliberate and
+/// does NOT weaken the tripwire. The two halves have opposite rules — the
+/// floor is a hand-verified fact about published archives, the ceiling is
+/// mechanical and by design names a version that does not exist yet.
+/// Hardcoding the ceiling would turn this test red at every minor bump for
+/// no defect, which is exactly the noise that got the tripwire misread and
+/// deleted once already (#845, reverted by #849). The arithmetic it relies
+/// on is pinned separately against a hand-written table in
+/// `src/release_line_tests.rs`, so it is not agreeing with itself.
+fn expected_requirement() -> String {
+    let mut parts = env!("CARGO_PKG_VERSION").split('.');
+    let mut component = |which: &str| -> u64 {
+        parts
+            .next()
+            .unwrap_or_else(|| panic!("CARGO_PKG_VERSION has no {which} component"))
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .unwrap_or_else(|error| panic!("CARGO_PKG_VERSION's {which} component: {error}"))
+    };
+    let major = component("major");
+    let minor = component("minor");
+    format!(">={CRATESTACK_CBOR_FLOOR} <{major}.{}.0", minor + 1)
+}
+
 #[test]
 fn literal_matches_the_real_floor() {
     let real = real_cbor_floor();
@@ -147,7 +177,7 @@ fn default_config_uses_native_cbor() {
     assert!(
         package_json.contains(&format!(
             "\"@cratestack/cbor\": \"{}\"",
-            CRATESTACK_CBOR_FLOOR
+            expected_requirement()
         )),
         "RPC: default config's package.json must depend on @cratestack/cbor, pinned to this \
          crate's API floor (a constant, not anything derived from CARGO_PKG_VERSION — see \
@@ -212,7 +242,7 @@ fn the_flag_swaps_the_package_json_dependency_and_the_runtime_codec_resolution()
     assert!(
         package_json.contains(&format!(
             "\"@cratestack/cbor\": \"{}\"",
-            CRATESTACK_CBOR_FLOOR
+            expected_requirement()
         )),
         "package.json should depend on @cratestack/cbor, pinned to the API floor constant \
          (cratestack#779 — not derived from CARGO_PKG_VERSION at any precision, including the \

@@ -9,34 +9,31 @@
 
 use super::{CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR};
 
-/// `^X.Y.Z` -> `(X, Y, Z)`, and also the LOWER BOUND of a two-sided range
-/// such as `'>=0.8.10 <0.10.0'`. Panics rather than returning an `Option`:
-/// every caller here is a test whose failure message is more useful than
-/// a `None`.
+/// The LOWER BOUND of any shape a floor is written in, as `(X, Y, Z)`:
+/// a bare `0.8.10` (how the constants in [`super`] are now written), a
+/// caret `^0.8.10`, or a two-sided range `'>=0.8.10 <0.10.0'` (how
+/// `cratestack_builder`'s own pubspec declares it, and what the generator
+/// emits after [`super::requirement`] composes the derived ceiling on).
 ///
-/// Ranges are accepted because `cratestack_builder`'s own
-/// `cratestack_annotations` constraint is one. It has to be: `^0.8.10`
-/// (`>=0.8.10 <0.9.0`) forbids the 0.9.x annotations release a generated
-/// client now wants, while `^0.9.1` has an empty intersection with the
-/// `^0.8.10` floor every already-generated client still declares — so only
-/// a range satisfies both. See that pubspec's own comment.
+/// Panics rather than returning an `Option`: every caller here is a test
+/// whose failure message is more useful than a `None`.
 ///
-/// The lower bound is the right thing to compare against here: this
-/// module's assertion is that the generator never emits a floor BELOW what
-/// the builder requires, and for a range that requirement is its floor.
-/// Quotes are stripped first — the pubspec quotes a range but not a caret.
+/// The lower bound is the right thing to compare against throughout this
+/// module. Every assertion here is about whether the floor names a
+/// release that exists and is new enough — questions the ceiling cannot
+/// answer, since it is derived and intentionally names a version that
+/// does not exist yet. Quotes are stripped first: the pubspec quotes a
+/// range but not a caret.
 fn parse_caret(requirement: &str) -> (u64, u64, u64) {
     let requirement = requirement.trim().trim_matches('\'').trim_matches('"');
-    let digits = match requirement.strip_prefix('^') {
-        Some(rest) => rest,
-        None => requirement
-            .split_whitespace()
-            .next()
-            .and_then(|first| first.strip_prefix(">="))
-            .unwrap_or_else(|| {
-                panic!("expected a caret or `>=X.Y.Z <A.B.C` requirement, got {requirement:?}")
-            }),
-    };
+    let first = requirement
+        .split_whitespace()
+        .next()
+        .unwrap_or_else(|| panic!("empty version requirement {requirement:?}"));
+    let digits = first
+        .strip_prefix(">=")
+        .or_else(|| first.strip_prefix('^'))
+        .unwrap_or(first);
     let mut parts = digits.split('.');
     let mut next = |which: &str| -> u64 {
         parts
