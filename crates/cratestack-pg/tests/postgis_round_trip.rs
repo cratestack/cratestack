@@ -54,12 +54,12 @@ async fn ensure_postgis_or_skip(pool: &cratestack::sqlx::PgPool) -> bool {
 /// `geography(Polygon,4326)`, not a `BYTEA` stand-in. Decoding a bytea
 /// column would pass trivially and prove nothing about `Ewkb`.
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
-    query("DROP TABLE IF EXISTS delivery_zones")
+    query("DROP TABLE IF EXISTS coverage_areas")
         .execute(pool)
         .await
         .expect("drop table");
     query(
-        "CREATE TABLE delivery_zones (
+        "CREATE TABLE coverage_areas (
             id BIGINT PRIMARY KEY,
             label TEXT NOT NULL,
             service_area geography(Polygon,4326) NOT NULL,
@@ -71,7 +71,7 @@ async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     .expect("create table");
     // Static SQL — no interpolation, so no `AssertSqlSafe` needed.
     query(
-        "INSERT INTO delivery_zones (id, label, service_area)
+        "INSERT INTO coverage_areas (id, label, service_area)
          VALUES (1, 'central', ST_GeogFromText('SRID=4326;POLYGON((0 0,2 0,2 2,0 2,0 0))'))",
     )
     .execute(pool)
@@ -101,7 +101,7 @@ async fn geography_column_decodes_through_the_generated_model() {
 
     let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let zone = db
-        .delivery_zone()
+        .coverage_area()
         .bind(operator())
         .find_unique(1)
         .run()
@@ -117,7 +117,7 @@ async fn geography_column_decodes_through_the_generated_model() {
 
     // Compare against PostGIS's own EWKB for the same row, so this
     // asserts the real wire format rather than "some bytes came back".
-    let expected: Vec<u8> = query("SELECT ST_AsEWKB(service_area::geometry) FROM delivery_zones")
+    let expected: Vec<u8> = query("SELECT ST_AsEWKB(service_area::geometry) FROM coverage_areas")
         .fetch_one(pool)
         .await
         .expect("fetch expected ewkb")
