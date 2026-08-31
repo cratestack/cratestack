@@ -1103,7 +1103,14 @@ verify-typescript-floors:
 	set -euo pipefail
 	floors=crates/cratestack-client-typescript/src/package_floors.rs
 	floor() {
-	  grep -oP "${1}: &str = \"\\^\\K[0-9.]+" "$floors"
+	  # Bare lower bounds now (`"0.8.15"`); the ceiling is derived by
+	  # `release_line::requirement` and is not in the file to read. An
+	  # optional `^`/`>=` prefix is still accepted so this keeps working
+	  # against an older checkout. The emptiness guard below is what makes
+	  # that leniency safe — a third shape fails loudly rather than
+	  # pinning nothing. Mirrors the identical helper in CI's
+	  # `Resolve + analyze at the declared API floor` step.
+	  grep -oP "${1}: &str = \"(\\^|>=)?\\K[0-9]+(\\.[0-9]+)*" "$floors"
 	}
 	refine="$(floor CRATESTACK_REFINE_FLOOR)"
 	cbor="$(floor CRATESTACK_CBOR_FLOOR)"

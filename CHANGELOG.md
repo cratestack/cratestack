@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+### Generated client version ceilings follow the release line automatically
+
+All five emitted floors — Dart's `cratestack_annotations`/`cratestack_builder`/`cratestack_cbor` and
+npm's `@cratestack/refine`/`@cratestack/cbor` — are now ranges whose **upper** bound is derived from
+the release line, while the **lower** bound stays a hand-verified constant.
+
+The two halves answer different questions and only one of them is mechanical. A floor says "this
+release is the first that carries what the generator emits" — a fact about published archives that no
+arithmetic can derive. A ceiling exists to stop a client resolving across a pre-1.0 minor, and the
+boundary it wants is always "the line after the one this generator was built from". A caret conflated
+them: `^0.8.15` means `>=0.8.15 <0.9.0`, so the moment 0.9.0 shipped every generated client refused
+the only releases a user could still install. That is #838, and closing it by hand means editing five
+constants across two crates at every minor bump forever — a step #838 proves gets missed.
+
+What changes today, at workspace 0.9.4:
+
+| Package | Before | After |
+|---|---|---|
+| `cratestack_annotations` | `>=0.8.10 <0.10.0` | unchanged |
+| `cratestack_builder` | `^0.9.3` | `>=0.9.3 <0.10.0` |
+| `cratestack_cbor` | `^0.9.3` | `>=0.9.3 <0.10.0` |
+| `@cratestack/refine` | `^0.8.0` | `>=0.8.0 <0.10.0` |
+| `@cratestack/cbor` | `^0.8.15` | `>=0.8.15 <0.10.0` |
+
+The two npm ones genuinely widen — they were capped below `0.9.0` and can now resolve the 0.9.x
+releases the registry has carried since the 0.9.0 bump. Checked against npm rather than assumed: both
+publish 0.9.1 through 0.9.4.
+
+**A fully version-derived floor was considered and rejected on measurement, not principle.** Deriving
+*both* bounds (at 0.9 → `>=0.8.0 <0.10.0`) fails twice. `0.8.0` was never published for
+`cratestack_annotations` or `cratestack_builder` — pub.dev's 0.8.x line starts at 0.8.5 — so the floor
+would name a version that does not exist. And pinned to 0.8.5, the generated client does not compile:
+
+```text
+error • The named parameter 'nonDefaultingListFields' isn't defined
+        lib/src/models/board.dart:282:20 • undefined_named_parameter
+```
+
+Worth noting how that surfaced: `dart run build_runner build` exited 0 and wrote 13 outputs. Only
+`flutter analyze` caught it. Codegen succeeding is not floor validation.
+
+**What this costs.** Generator output is a function of the release version again in one component, so
+`just bump` no longer leaves the committed snapshots and `examples/flutter-riverpod/client`
+byte-identical across a **minor** bump (it still does across a patch bump). #754 decoupled these
+deliberately, so this is a partial reversal of that decision rather than an oversight. The failure
+#754 cared about does not return: that was a *floor* naming an unservable version, whereas a ceiling
+is an exclusive upper bound that is supposed not to exist yet.
+
+The arithmetic lives in a new `release_line` module per client crate, unit-tested against a
+hand-written table (two-digit minors, tens boundaries, the 0.0.x line, pre-release suffixes). It is
+duplicated rather than shared because the only crate both generators depend on is `cratestack-core`,
+which holds runtime metadata, not codegen concerns — ADR 0014's layer direction is CI-enforced.
+
+The #779/#849 tripwire literals survive unchanged in spirit: `native_cbor_generator.rs` still
+hand-writes the **floor** and still turns red when the real constant moves, but composes the ceiling,
+which by design names a version that does not exist yet and would otherwise redden every minor bump
+for no defect.
+
 ### The generated Dart annotations floor is a range, and every emitted floor is now quoted
 
 `CRATESTACK_ANNOTATIONS_FLOOR` moves from `^0.9.3` to `>=0.8.10 <0.10.0`.

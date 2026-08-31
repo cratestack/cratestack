@@ -18,13 +18,28 @@ const FLOORS: [(&str, &str); 2] = [
     ("CRATESTACK_CBOR_FLOOR", CRATESTACK_CBOR_FLOOR),
 ];
 
-/// `^X.Y.Z` -> `(X, Y, Z)`. Panics rather than returning an `Option`:
-/// every caller here is a test whose failure message is more useful than
-/// a `None`.
+/// The LOWER BOUND of any shape a floor is written in, as `(X, Y, Z)`: a
+/// bare `0.8.15` (how the constants in [`super`] are now written), a caret
+/// `^0.8.15`, or the two-sided range [`super::requirement`] composes once
+/// the derived ceiling is attached.
+///
+/// Panics rather than returning an `Option`: every caller here is a test
+/// whose failure message is more useful than a `None`.
+///
+/// Only the lower bound is ever compared in this module, and that is the
+/// point rather than a limitation. Every assertion here asks whether the
+/// floor names a release that exists and is not ahead of the workspace —
+/// questions the ceiling cannot answer, because it is derived and names a
+/// version that deliberately does not exist yet.
 fn parse_caret(requirement: &str) -> (u64, u64, u64) {
-    let digits = requirement
-        .strip_prefix('^')
-        .unwrap_or_else(|| panic!("expected a caret requirement, got {requirement:?}"));
+    let first = requirement
+        .split_whitespace()
+        .next()
+        .unwrap_or_else(|| panic!("empty version requirement {requirement:?}"));
+    let digits = first
+        .strip_prefix(">=")
+        .or_else(|| first.strip_prefix('^'))
+        .unwrap_or(first);
     let mut parts = digits.split('.');
     let mut next = |which: &str| -> u64 {
         parts

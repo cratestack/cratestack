@@ -12,6 +12,7 @@ mod idents;
 mod naming;
 mod package_floors;
 mod patch_touch;
+mod release_line;
 mod riverpod;
 mod templates;
 mod templates_fragments;

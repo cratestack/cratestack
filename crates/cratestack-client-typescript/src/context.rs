@@ -11,7 +11,7 @@ use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::package_deps::{
     DependencyEntry, dependencies_for, dev_dependencies_for, peer_dependencies_for,
 };
-use crate::package_floors::{CRATESTACK_CBOR_FLOOR, CRATESTACK_REFINE_FLOOR};
+use crate::package_floors::{CRATESTACK_CBOR_FLOOR, CRATESTACK_REFINE_FLOOR, requirement};
 use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::tanstack_collisions::reject_tanstack_hook_name_collisions;
@@ -303,13 +303,13 @@ pub(crate) fn build_template_context(
     // values derived from this crate's own version at any precision —
     // see `crate::package_floors`.
     let refine_version_requirement = if config.refine {
-        CRATESTACK_REFINE_FLOOR.to_owned()
+        requirement(CRATESTACK_REFINE_FLOOR)
     } else {
         String::new()
     };
     let is_rpc_transport = schema.transport == cratestack_core::TransportStyle::Rpc;
     let native_cbor_version_requirement = if config.native_cbor && is_rpc_transport {
-        CRATESTACK_CBOR_FLOOR.to_owned()
+        requirement(CRATESTACK_CBOR_FLOOR)
     } else {
         String::new()
     };
