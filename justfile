@@ -219,7 +219,7 @@ test-pg *args='':
 	cleanup() { docker compose down >/dev/null 2>&1 || true; echo "postgres stopped"; }
 	trap cleanup EXIT
 	just pg-up
-	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native --features cratestack-migrate/postgres-introspect {{args}}
+	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test --workspace --exclude embedded_flutter_native --features cratestack-migrate/postgres-introspect --no-fail-fast {{args}}
 
 # Run only the cratestack-pg integration tests against PG (faster inner loop).
 # Targets the server-facade package explicitly — the workspace also
@@ -232,11 +232,31 @@ test-pg-only *args='':
 	cleanup() { docker compose down >/dev/null 2>&1 || true; echo "postgres stopped"; }
 	trap cleanup EXIT
 	just pg-up
-	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test -p cratestack-pg {{args}}
+	CRATESTACK_TEST_DATABASE_URL='{{PG_URL}}' cargo test -p cratestack-pg --no-fail-fast {{args}}
 
 # Run the workspace test suite via testcontainers (per-binary ephemeral PG, recommended for CI).
+#
+# `--no-fail-fast` is load-bearing here and in every sibling recipe that runs
+# more than one test binary (cratestack#851). Without it `cargo test` stops
+# scheduling remaining targets after the first binary fails, so one unrelated
+# failure silently removes an unknown number of suites from the run — and CI
+# reports that as a single red job, not as lost coverage. Measured on the
+# branch for cratestack#843: this recipe stopped at 218 suites where
+# `--no-fail-fast` reached 314, the difference being ~96 suites that never
+# executed. Unlike a silent skip this does *not* print `ok`, which makes it
+# worse: red reads as "CI tested my change and rejected it" when CI may never
+# have reached it.
+#
+# It does not weaken the gate — cargo still exits non-zero if any test failed.
+#
+# Audited across the file: applied to every recipe that can run >1 binary.
+# Deliberately absent from the shards pinned to a single `--test <name>`
+# (`test-ci-db-decimal-bigdecimal`, `test-ci-db-outbox`,
+# `test-ci-db-migrate-introspect`, and the three `--features`-forwarding lines
+# in `test-ci-host`), where it would be a no-op. `test-ci-host` needed a second
+# fix for the same bug class at the shell level — see its comment.
 test-pg-tc *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native {{args}}
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test --workspace --exclude embedded_flutter_native --no-fail-fast {{args}}
 
 # --- CI test shards -------------------------------------------------------
 # CI runs the suite as four parallel shards (see .github/workflows/ci.yml)
@@ -248,7 +268,7 @@ test-pg-tc *args='':
 # (cratestack-redis no longer rides along here: it has its own blocking
 # `tests-redis` job backed by the `test-ci-redis` recipe below.)
 test-ci-db *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}}
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-fail-fast {{args}}
 
 # Shard addendum: the `decimal-bigdecimal` backend's own live-Postgres
 # round-trip test (cratestack#421 AC3, cratestack#495/#496). This file is
@@ -306,7 +326,7 @@ test-ci-db-migrate-introspect *args='':
 # `cratestack-cli` unit-test suite a second time (`test-ci-host` already
 # does, with no DB, where the DB-touching subset just skips).
 test-ci-db-cli-baseline *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-cli migrate::tests_baseline:: {{args}}
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-cli migrate::tests_baseline:: --no-fail-fast {{args}}
 
 # Shard: the Redis-backed crate via testcontainers (issue #418). Idempotency
 # and rate-limit stores are the primitives the `banking_*` fixtures lean on
@@ -314,12 +334,12 @@ test-ci-db-cli-baseline *args='':
 # testcontainers pattern one-for-one rather than riding along in the host
 # shard, where the tests used to skip silently for lack of a Redis.
 test-ci-redis *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis {{args}}
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis --no-fail-fast {{args}}
 
 # Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
 # is embedded. CI runs `trunk build` first; no database needed.
 test-ci-studio *args='':
-	cargo test -p cratestack-studio {{args}}
+	cargo test -p cratestack-studio --no-fail-fast {{args}}
 
 # Shard addendum: cratestack-studio's four `tests/postgres_*.rs` files
 # (postgres_explain, postgres_routed_writes, postgres_row_keys,
@@ -337,6 +357,7 @@ test-ci-studio-db *args='':
 		--test postgres_routed_writes \
 		--test postgres_row_keys \
 		--test postgres_unsafe_writes \
+		--no-fail-fast \
 		{{args}}
 
 # Shard: everything else — the remaining framework crates + light example
@@ -375,7 +396,14 @@ test-ci-studio-db *args='':
 # — this shard is what actually *runs* their tests.)
 test-ci-host *args='':
 	#!/usr/bin/env bash
-	set -euo pipefail
+	# Deliberately NOT `set -e`: this recipe runs four independent cargo
+	# invocations, and under `-e` a failure in any one cancels the rest —
+	# the same "one failure hides the remaining coverage" bug that
+	# `--no-fail-fast` fixes *within* a single cargo run (cratestack#851).
+	# Status is accumulated and re-raised at the end instead, so the job
+	# still goes red but every invocation reports first.
+	set -uo pipefail
+	status=0
 	cargo test --workspace \
 		--exclude embedded_flutter_native \
 		--exclude cratestack-pg \
@@ -383,7 +411,7 @@ test-ci-host *args='':
 		--exclude cratestack-studio \
 		--exclude tauri-web-shell-example \
 		--exclude tauri-native-shell-example \
-		--exclude react-nextjs-daisyui-napi {{args}}
+		--exclude react-nextjs-daisyui-napi --no-fail-fast {{args}} || status=1
 	# The three lines below close a `--features`-forwarding gap (a 2026-08
 	# CI-coverage audit found these three were missed): each test file is
 	# gated `#![cfg(feature = "...")]` or a
@@ -392,9 +420,10 @@ test-ci-host *args='':
 	# database. `pgvector_distance_query.rs` is deliberately NOT included
 	# here — it's self-documented as needing the `pgvector/pgvector`
 	# Postgres image, not the stock one this shard (or any shard) runs.
-	cargo test -p cratestack-pg --features rate_limit --test rate_limit_extension {{args}}
-	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}}
-	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}}
+	cargo test -p cratestack-pg --features rate_limit --test rate_limit_extension {{args}} || status=1
+	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
+	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}} || status=1
+	exit "$status"
 
 # Report-only: surfaces the current pass/fail state of every `#[ignore]`d
 # test without blocking CI (2026-08 policy-layer coverage audit, Phase 3 —
@@ -416,7 +445,7 @@ test-ci-ignored-report *args='':
 	#!/usr/bin/env bash
 	set -uo pipefail
 	echo "=== Ignored tests: cratestack-pg (testcontainers Postgres) ==="
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg {{args}} -- --ignored --nocapture
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-fail-fast {{args}} -- --ignored --nocapture
 	pg_status=$?
 	echo ""
 	echo "=== Ignored tests: workspace host shard (no DB, no wasm/desktop toolchain) ==="
@@ -428,7 +457,7 @@ test-ci-ignored-report *args='':
 		--exclude cratestack-studio \
 		--exclude tauri-web-shell-example \
 		--exclude tauri-native-shell-example \
-		--exclude react-nextjs-daisyui-napi {{args}} -- --ignored --nocapture
+		--exclude react-nextjs-daisyui-napi --no-fail-fast {{args}} -- --ignored --nocapture
 	host_status=$?
 	echo ""
 	echo "=== Ignored-test report summary ==="
@@ -4010,7 +4039,7 @@ release-check:
 	  echo "release-check: SKIP_TESTS=1 — bypassing workspace tests." >&2
 	  exit 0
 	fi
-	cargo test --workspace --exclude embedded_flutter_native
+	cargo test --workspace --exclude embedded_flutter_native --no-fail-fast
 
 # Publish every workspace crate to crates.io in dependency order.
 #
