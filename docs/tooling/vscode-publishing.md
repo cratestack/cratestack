@@ -27,9 +27,9 @@ for what to tell someone who wants the extension right now.
   **This changes the failure mode of a release.** While the secrets were absent the job exited 0
   and a release stayed green regardless. It will now fail the run if the setup is incomplete, and
   the step most likely to be incomplete is authorizing the managed identity **on the Marketplace
-  publisher** (step 5 of [Marketplace setup](#vs-code-marketplace-one-time-setup)) — the only step
-  that succeeds silently when skipped and surfaces at publish time as
-  `InvalidAccessException: The requested operation is not allowed`.
+  publisher** (steps 6-7 of [Marketplace setup](#vs-code-marketplace-one-time-setup)), which is
+  **not yet done** — the only part that succeeds silently when skipped and surfaces at publish time
+  as `InvalidAccessException: The requested operation is not allowed`.
 
 **Open VSX does not cover VS Code, and this is the most common thing to get wrong here.** Open VSX
 is the Eclipse Foundation's registry — a separate account system from the Microsoft Marketplace.
@@ -86,11 +86,13 @@ existing version replaces it, no uninstall needed first.
 
 ## VS Code Marketplace one-time setup
 
-> **Complete as of 2026-09-01 — retained as reference.** Every step below has been carried out.
-> Kept as the procedure for rotating the identity, onboarding another publisher, or re-deriving why
-> each piece exists. Because `AZURE_CLIENT_ID` is now set, `publish-marketplace` no longer
-> soft-skips: an incomplete or later-broken setup fails the release run rather than passing quietly.
-> Step 5 is the one that fails at publish time rather than setup time.
+> **Steps 1-5 done (2026-09-01); steps 6-7 outstanding.** The identity, its federated credential,
+> the environment, the publisher and the secrets all exist. What remains is registering the identity
+> with Azure DevOps and adding it to the publisher — the part that grants publish rights.
+>
+> This matters now rather than later: because `AZURE_CLIENT_ID` is set, `publish-marketplace` no
+> longer soft-skips. It will run for real on the next tag and **fail the release** until step 7 is
+> done, where previously it exited 0 and a release stayed green regardless.
 
 The publisher ID is `cratestack` (`packages/cratestack-vscode/package.json`'s `publisher` field —
 this can't be changed after the publisher is created, so it has to match exactly).
@@ -166,13 +168,9 @@ current, confirmed-working real-world setups.
    if it doesn't already exist. **ID** must be `cratestack`; **Name** can be anything (e.g.
    "CrateStack").
 
-5. **Authorize the managed identity on the publisher** — this is the step that actually grants
-   publish rights (the federated credential above only proves identity to Azure, not to the
-   Marketplace). On the publisher's management page, add the managed identity as a member using the
-   `id` (full ARM resource ID) recorded in step 1, and assign it the **Contributor** role.
-
-6. In the GitHub repo → Settings → Environments → `vscode-marketplace` → **Environment secrets**,
-   add:
+5. **Add the GitHub secrets** (moved ahead of the publisher authorization below, which now needs
+   them). In the GitHub repo → Settings → Environments → `vscode-marketplace` → **Environment
+   secrets**, add:
    * `AZURE_CLIENT_ID` — the `clientId` from step 1
    * `AZURE_TENANT_ID` — your tenant ID
    * `AZURE_SUBSCRIPTION_ID` — your subscription ID
@@ -185,10 +183,51 @@ current, confirmed-working real-world setups.
    only a job targeting `vscode-marketplace` can obtain one with the subject the federated
    credential accepts.
 
-Once these exist, the next tag push publishes the extension to the Marketplace — no other change
-needed. No client secret is stored anywhere; `azure/login`'s OIDC exchange (gated by the job's
+6. **Get the managed identity's Azure DevOps profile ID.** This is the value the Marketplace member
+   field wants, and it does not exist until you ask for it. Run the `Marketplace Identity ID`
+   workflow:
+
+   ```bash
+   gh workflow run "Marketplace Identity ID" --repo cratestack/cratestack
+   ```
+
+   It prints the ID to the run summary. **This cannot be done from a laptop**, and the reason is
+   worth understanding rather than working around: the endpoint is
+   `/profile/profiles/me`, which returns the profile of *whoever is authenticated*. The value needed
+   is the managed identity's profile, and a user-assigned managed identity can only be assumed from
+   inside an Azure resource or through workload identity federation — here, scoped to the exact
+   subject `repo:cratestack/cratestack:environment:vscode-marketplace`. A job in that environment is
+   the only caller that can authenticate as it.
+
+   Running `az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource
+   499b84ac-1321-427f-aa17-267ca6975798` locally does not fail — it returns *your own* profile ID.
+   That ID is real, the Marketplace accepts it as a member, and publishing then fails as the
+   identity anyway, with the same `InvalidAccessException` as adding no member at all. There is no
+   error message anywhere that points at the mix-up.
+
+   The call also registers the identity with Azure DevOps as a side effect on first invocation,
+   which is why it has to happen before step 7 rather than being a read-only lookup.
+
+7. **Authorize the managed identity on the publisher** — this is the step that actually grants
+   publish rights; the federated credential above only proves identity to Azure, not to the
+   Marketplace. At
+   [the publisher's management page](https://marketplace.visualstudio.com/manage/publishers/cratestack)
+   → **Members** → **Add**, paste the profile ID from step 6 and assign the **Contributor** role.
+
+   Use that value specifically. The managed identity's `clientId`, `principalId`, `tenantId`, and
+   full ARM resource ID are all rejected or silently wrong here — none of them is what Azure DevOps
+   keys membership on. (This document previously said to use the ARM resource ID. That was wrong;
+   see [the writeup](https://www.emrecodes.net/posts/2026/07/10/vscode-marketplace-managed-identity.html)
+   this setup is based on.)
+
+Once all seven are done, the next tag push publishes the extension to the Marketplace — no other
+change needed. No client secret is stored anywhere; `azure/login`'s OIDC exchange (gated by the job's
 `id-token: write` permission) is what proves the workflow run is genuinely this repo's
 `vscode-marketplace` environment.
+
+Step 7 is the only one that gives no signal when skipped: steps 1-6 all succeed without it, and the
+omission surfaces only at publish time as
+`InvalidAccessException: The requested operation is not allowed`.
 
 ## Open VSX one-time setup
 
