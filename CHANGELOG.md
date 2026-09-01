@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### The Marketplace item page lags a successful publish
+
+After `publish (Marketplace)` succeeded for v0.10.1, the listing page returned 404 for several
+minutes — in both publisher casings — while the extension was already fully published with all five
+target platforms. That is the same write-path/read-path split that makes `npm view` unreliable
+immediately after publishing, and it reads exactly like a failed publish.
+
+The verification section now says so, and gives the `extensionquery` gallery API call to use instead:
+it is consistent with the write path and returns `targetPlatform` per version, so it also confirms all
+five targets landed, which the item page does not show directly.
+
+Also recorded: `itemName` is case-insensitive. Both `cratestack.` and `Cratestack.` resolve, which
+matters because the gallery API reports the publisher as `Cratestack` while `package.json` declares
+`cratestack` — enough of a mismatch to look like a problem when it isn't.
+
+
 ### The extension's display name is `CrateStack Schema`
 
 `displayName` moves from `CrateStack`, which the Marketplace rejects as already taken. This is
