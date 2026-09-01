@@ -325,6 +325,34 @@ Two things make this expensive to hit, both worth knowing before changing the va
 Open VSX has no such constraint and published `CrateStack` without complaint at v0.10.1, so the two
 registries can disagree about whether a given name is available.
 
+## Probing a Marketplace publish without cutting a release
+
+`release-vscode.yml` accepts a `workflow_dispatch`. Dispatching it builds all five targets and
+publishes **only** to the Marketplace — `attach-github-release` and `publish-openvsx` are both gated
+`if: github.event_name == 'push'`, so a manual run cannot create a Release or reach Open VSX.
+
+```bash
+gh workflow run "Release VS Code Extension" --repo cratestack/cratestack
+```
+
+This is a deliberate exception to the tag-push-only rule that still governs Open VSX, and it exists
+for one reason: several Marketplace rejections are only discoverable at publish time, and some cost a
+version to retry. A `displayName` collision is the worst of them — the field is baked into the vsix
+at package time, and a failed release is bumped past rather than re-run, so each candidate name would
+otherwise cost a release. Publishing by hand costs nothing when it fails.
+
+**A failed Marketplace publish consumes nothing.** The version is only taken on success, which is why
+probing the same version repeatedly is safe.
+
+Two things to keep straight when using it:
+
+* **A successful probe is a real publish**, not a rehearsal. If the name is accepted, the listing goes
+  live immediately at whatever version `package.json` currently declares.
+* **It can therefore publish a version whose artifact differs from the one on the GitHub Release** —
+  if `package.json` changed since that tag, as it does whenever the probe is fixing something. That
+  divergence is cosmetic and resolves at the next real tag, when every channel gets an identical
+  build, but it is worth knowing rather than discovering.
+
 ## Extension icon
 
 `packages/cratestack-vscode/icon.png` — a 256x256 PNG, referenced by `package.json`'s `icon` field
