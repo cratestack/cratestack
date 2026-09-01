@@ -1,31 +1,39 @@
 # VS Code extension publishing setup
 
-## Current status: GitHub Releases only
+## Current status
+
+| Channel | State | Reaches |
+|---|---|---|
+| GitHub Releases | **live** — has shipped every release to date | everyone, by manual download |
+| Open VSX | **armed** — publishes on the next `vX.Y.Z` tag | Cursor, Windsurf, VSCodium |
+| Marketplace | **pending Azure setup** — job still soft-skips | VS Code |
 
 `.github/workflows/release-vscode.yml` builds `packages/cratestack-vscode` on every `vX.Y.Z` tag
-push and attaches a platform-specific `.vsix` to the same GitHub Release
-`release-cli.yml` creates for that tag — **this is the only channel that actually ships the
-extension today.** There is no Marketplace or Open VSX listing yet. See
-[Manual install for users](#manual-install-for-users) below for what to tell someone who wants the
-extension right now.
+push and attaches a platform-specific `.vsix` to the same GitHub Release `release-cli.yml` creates
+for that tag. That remains the only channel that has actually shipped anything: **no version has
+been published to either registry yet.** See [Manual install for users](#manual-install-for-users)
+for what to tell someone who wants the extension right now.
 
-The Marketplace and Open VSX publish jobs described in the rest of this document exist in the
-workflow and are fully implemented, but are currently **dormant**: each checks for its own
-credential/secret and soft-skips (logs why, doesn't fail the run) when it isn't set. Re-enabling
-either is a matter of adding the credential described in its section below — no workflow rewrite
-needed.
+* **Open VSX: configured, not yet exercised.** The `OVSX_PAT` repo secret is set and the
+  `cratestack` namespace exists (both done 2026-09-01), so `publish-openvsx` will attempt a real
+  publish on the next tag instead of soft-skipping. Nothing has gone through it yet — confirm the
+  first one actually lands rather than assuming, per
+  [Verifying a publish actually shipped](#verifying-a-publish-actually-shipped).
+* **Marketplace: publisher created, credentials outstanding.** The `cratestack` publisher now
+  exists, so the Microsoft-account sign-in that previously blocked this path is no longer in the
+  way. What remains is the Azure managed-identity work in
+  [Marketplace setup](#vs-code-marketplace-one-time-setup); until `AZURE_CLIENT_ID` is set,
+  `publish-marketplace` soft-skips.
 
-* **Marketplace: blocked indefinitely.** The maintainer's Microsoft account is stuck in a 2FA
-  block/unblock loop, so the Entra ID managed-identity setup this depends on (needs a working
-  Azure sign-in) cannot currently be completed. See [Marketplace setup](#vs-code-marketplace-one-time-setup)
-  below for what would need to happen if that unblocks.
-* **Open VSX: not blocked at all, and worth doing.** Open VSX is run by the **Eclipse
-  Foundation** — a separate, independent registry from the Microsoft Marketplace, with its own
-  account system (an Eclipse account, not a Microsoft one). It's the registry
-  [VSCodium](https://vscodium.com/), [Cursor](https://www.cursor.com/), and
-  [Windsurf](https://windsurf.com/) use for extensions, since none of them can point at the
-  Microsoft-licensed Marketplace. Nothing about the Microsoft 2FA problem affects this path — see
-  [Open VSX one-time setup](#open-vsx-one-time-setup) below.
+**Open VSX does not cover VS Code, and this is the most common thing to get wrong here.** Open VSX
+is the Eclipse Foundation's registry — a separate account system from the Microsoft Marketplace.
+Microsoft's VS Code build is hardwired to the Marketplace and has no way to see Open VSX, so the
+Open VSX listing serves [Cursor](https://www.cursor.com/), [Windsurf](https://windsurf.com/), and
+[VSCodium](https://vscodium.com/) only. VS Code users stay on the manual `.vsix` download — and so
+get **no auto-updates** — until the Marketplace path is finished. Overriding `product.json`'s
+`extensionsGallery` to point VS Code at Open VSX is a per-user hack that no publisher can ship: it
+is reverted by every VS Code update and invalidates the app's code signature on macOS. It is not a
+distribution strategy.
 
 ---
 
@@ -48,19 +56,20 @@ configured.
 
 ## Manual install for users
 
-Since there's no Marketplace or Open VSX listing yet, this is what to tell someone who wants the
+No registry listing exists yet, and VS Code users will still need this after the first Open VSX
+publish lands (see [Current status](#current-status)). This is what to tell someone who wants the
 extension:
 
 1. Go to the [Releases page](https://github.com/cratestack/cratestack/releases) and open the
    latest `vX.Y.Z` release.
 2. Download the `.vsix` matching your platform:
-   * macOS Apple Silicon: `cratestack-vscode-darwin-arm64-*.vsix`
-   * macOS Intel: `cratestack-vscode-darwin-x64-*.vsix`
-   * Linux x86_64: `cratestack-vscode-linux-x64-*.vsix`
-   * Linux ARM64: `cratestack-vscode-linux-arm64-*.vsix`
-   * Windows x86_64: `cratestack-vscode-win32-x64-*.vsix`
+   * macOS Apple Silicon: `cratestack-vscode-plugin-darwin-arm64-*.vsix`
+   * macOS Intel: `cratestack-vscode-plugin-darwin-x64-*.vsix`
+   * Linux x86_64: `cratestack-vscode-plugin-linux-x64-*.vsix`
+   * Linux ARM64: `cratestack-vscode-plugin-linux-arm64-*.vsix`
+   * Windows x86_64: `cratestack-vscode-plugin-win32-x64-*.vsix`
 3. Install it. Either:
-   * Command line: `code --install-extension /path/to/cratestack-vscode-<platform>-<version>.vsix`
+   * Command line: `code --install-extension /path/to/cratestack-vscode-plugin-<platform>-<version>.vsix`
    * VS Code UI: Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`) → **···** menu (top-right) →
      **Install from VSIX...** → pick the downloaded file.
 4. Reload the window if VS Code doesn't prompt automatically. Opening a `.cstack` file should now
@@ -71,9 +80,11 @@ existing version replaces it, no uninstall needed first.
 
 ## VS Code Marketplace one-time setup
 
-> **Currently blocked.** The maintainer's Microsoft account is stuck in a 2FA block/unblock loop,
-> which blocks the Azure sign-in step 1 below needs. This section is left in place, accurate and
-> ready to follow, for whenever that unblocks — nothing about the setup itself has changed.
+> **Partially complete — this is the remaining work for VS Code support.** Step 4 below is done:
+> the `cratestack` publisher exists, and the Microsoft-account problem that used to block this is
+> resolved. Steps 1-3, 5 and 6 — the managed identity, its federated credential, authorizing it on
+> the publisher, and the three `AZURE_*` secrets — are still outstanding, and `publish-marketplace`
+> soft-skips until `AZURE_CLIENT_ID` is set.
 
 The publisher ID is `cratestack` (`packages/cratestack-vscode/package.json`'s `publisher` field —
 this can't be changed after the publisher is created, so it has to match exactly).
@@ -92,13 +103,24 @@ writing there's no confirmed report of it actually working against the live Mark
 request — it may not be reliably live yet. `--azure-credential` (used below) is the version with
 current, confirmed-working real-world setups.
 
-1. **Create a user-assigned managed identity** (needs the Azure CLI and an existing resource
-   group — reuse one or `az group create --name cratestack-release --location <region>`):
+1. **Create a user-assigned managed identity** (needs the Azure CLI). Create the resource group
+   first if it doesn't exist — `az identity create` will not create one for you, and fails with
+   `(ResourceGroupNotFound)`:
    ```bash
-   az identity create --name cratestack-vsce-publish --resource-group cratestack-release
+   az group create --name cratestack-release --location <region>
+   az identity create --name cratestack-vsce-publish --resource-group cratestack-release \
+     --location <region>
    az identity show --name cratestack-vsce-publish --resource-group cratestack-release \
      --query "{clientId:clientId, principalId:principalId, id:id}" -o json
    ```
+   **`--location` is required on `az identity create`**, even though the resource group already has
+   one — omitting it fails with `InvalidArgumentValue: Missing required field: --location`. Use the
+   same region as the group.
+
+   If this is the subscription's first managed identity, the CLI registers the
+   `Microsoft.ManagedIdentity` resource provider automatically and says so; that's expected, not an
+   error.
+
    Record `clientId` and `id` (the full ARM resource ID) — both are needed below. Also record your
    tenant ID (`az account show --query tenantId -o tsv`) and subscription ID (`az account show
    --query id -o tsv`).
@@ -156,12 +178,10 @@ needed. No client secret is stored anywhere; `azure/login`'s OIDC exchange (gate
 
 ## Open VSX one-time setup
 
-> **Not blocked by anything above.** Open VSX is the Eclipse Foundation's registry — a completely
-> separate account system from the Microsoft Marketplace (an Eclipse account, not a Microsoft
-> one), so the 2FA issue blocking the Marketplace section above has no bearing here. This is a
-> genuinely available path to a real, install-from-the-editor registry today, not just the manual
-> `.vsix` download above — worth doing independently of when (or whether) the Marketplace path
-> unblocks.
+> **Done — kept as reference.** Every step below has been completed: the `cratestack` namespace
+> exists and `OVSX_PAT` is set, so the next tag publishes for real. Retained as the procedure for
+> re-issuing a revoked token or onboarding another publisher. Remember this channel reaches
+> Cursor/Windsurf/VSCodium but **not** VS Code — see [Current status](#current-status).
 
 The namespace is `cratestack`, matching the same `publisher` field.
 
@@ -193,12 +213,18 @@ A green `release-vscode.yml` run only proves the CLI exited 0 — for the same r
 independently verifies crates.io/npm rather than trusting the checkmark, confirm directly:
 
 * GitHub Release (the primary path — check this one first): `gh release view vX.Y.Z` should list
-  five `cratestack-vscode-*.vsix` assets alongside the CLI binaries.
-* Marketplace (dormant until configured, see above):
-  `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode` shows the new
-  version.
-* Open VSX (dormant until configured, see above):
-  `https://open-vsx.org/extension/cratestack/cratestack-vscode` shows the new version.
+  five `cratestack-vscode-plugin-*.vsix` assets alongside the CLI binaries.
+* Open VSX (armed — **check this after the next tag; no publish has landed here yet**):
+  `https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin` shows the new version. The
+  API is scriptable, and a 404 means nothing shipped:
+  ```bash
+  curl -s -o /dev/null -w '%{http_code}\n' https://open-vsx.org/api/cratestack/cratestack-vscode-plugin
+  ```
+  This matters more than usual here: `publish-openvsx` exits 0 when `OVSX_PAT` is missing, so a
+  green job is not evidence of a publish.
+* Marketplace (soft-skips until `AZURE_CLIENT_ID` is set, see above):
+  `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin` shows
+  the new version.
 
 ## Extension icon
 

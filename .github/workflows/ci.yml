@@ -1745,9 +1745,10 @@ jobs:
   # Blocking. Covers the hand-written npm packages — @cratestack/api's
   # split family (ts-types, link-batch, link-logger, runtime-fetch,
   # runtime-axios, validator-zod, validator-yup, adapter-tanstack-query,
-  # adapter-rtk, and the api compat shim itself); @cratestack/cli and
-  # cratestack-vscode have no build/test/lint scripts, so turbo simply
-  # skips them. `examples/*` is NOT part of this pnpm workspace — those
+  # adapter-rtk, and the api compat shim itself), plus
+  # cratestack-vscode-plugin (the VS Code extension, which does define
+  # build/test/lint and participates here). @cratestack/cli declares only
+  # a postinstall script, so turbo simply skips it. `examples/*` is NOT part of this pnpm workspace — those
   # are self-contained consumer projects with their own toolchains
   # (napi/wasm/tauri), scoped out via `pnpm-workspace.yaml`'s
   # `packages/*` glob.

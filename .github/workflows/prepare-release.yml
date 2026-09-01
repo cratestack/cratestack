@@ -405,7 +405,7 @@ jobs:
 
           This PR changes:
 
-          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, every \`packages/*/package.json\` (\`@cratestack/cli\`; the split \`@cratestack/api\` family: \`api\`, \`ts-types\`, \`link-batch\`, \`link-logger\`, \`runtime-fetch\`, \`runtime-axios\`, \`validator-zod\`, \`validator-yup\`, \`adapter-tanstack-query\`, \`adapter-rtk\`; the \`@cratestack/cbor\` family: \`cbor\`, \`cbor-node\`, \`cbor-web\`; \`@cratestack/refine\`; and the \`cratestack-vscode\` extension), and \`dart-packages/cratestack_cbor/pubspec.yaml\` (the \`cratestack_cbor\` pub.dev package), refreshing \`pnpm-lock.yaml\` to match. Both package lists are globs, not enumerations — a new package under \`packages/\` or \`dart-packages/\` is picked up automatically.
+          - Bumps the workspace version to \`${version}\` across every crate's \`Cargo.toml\`, \`Cargo.lock\`, every \`packages/*/package.json\` (\`@cratestack/cli\`; the split \`@cratestack/api\` family: \`api\`, \`ts-types\`, \`link-batch\`, \`link-logger\`, \`runtime-fetch\`, \`runtime-axios\`, \`validator-zod\`, \`validator-yup\`, \`adapter-tanstack-query\`, \`adapter-rtk\`; the \`@cratestack/cbor\` family: \`cbor\`, \`cbor-node\`, \`cbor-web\`; \`@cratestack/refine\`; and the \`cratestack-vscode-plugin\` extension), and \`dart-packages/cratestack_cbor/pubspec.yaml\` (the \`cratestack_cbor\` pub.dev package), refreshing \`pnpm-lock.yaml\` to match. Both package lists are globs, not enumerations — a new package under \`packages/\` or \`dart-packages/\` is picked up automatically.
 
           It solves:
 

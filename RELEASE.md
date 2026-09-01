@@ -4,8 +4,9 @@ CrateStack publishes through the common public Rust and editor channels:
 
 * Rust crates: crates.io and docs.rs
 * CLI binaries and release notes: GitHub Releases
-* VS Code extension: `.vsix` files attached to GitHub Releases (Marketplace and Open VSX
-  publishing exist in CI but are dormant — see below)
+* VS Code extension: `.vsix` files attached to GitHub Releases. Open VSX publishing is
+  configured and fires on the next tag; Marketplace is still pending its Azure credentials — see
+  below
 * Documentation site: Mintlify or equivalent static docs hosting from `docs-site/`
 
 ## Quickstart (CI-driven — preferred)
@@ -75,12 +76,13 @@ else happens on its own:
    **primary distribution path** today. Marketplace (Entra ID workload
    identity — `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/`AZURE_SUBSCRIPTION_ID` on
    a `vscode-marketplace` GitHub Environment) and Open VSX (`OVSX_PAT`)
-   publish jobs also exist in this workflow, but are currently **dormant**:
-   the maintainer's Microsoft account is stuck in a 2FA block/unblock loop
-   that blocks the Azure federated-credential setup the Marketplace path
-   needs, so that job soft-skips indefinitely for now. Open VSX has no such
-   blocker (it's an Eclipse Foundation registry, not a Microsoft one) and
-   could be turned on independently by adding `OVSX_PAT`. See
+   publish jobs also exist in this workflow. **Open VSX is now configured**
+   (`OVSX_PAT` set, `cratestack` namespace created) and publishes for real on
+   the next tag — nothing has gone through it yet, so verify the first one.
+   **Marketplace is still pending**: the `cratestack` publisher exists, but
+   the Azure managed identity and the three `AZURE_*` secrets do not, so that
+   job still soft-skips. Note Open VSX reaches Cursor/Windsurf/VSCodium but
+   **not** VS Code, which can only see the Microsoft Marketplace. See
    [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
    for the manual-install instructions users need today, plus the one-time
    publisher/namespace + identity setup for re-enabling either registry
@@ -116,15 +118,14 @@ configured per package on npmjs.com (see
 secret to check for absence, so **until that's configured, both jobs fail** rather than
 soft-skipping — a deliberate hard cutover, not yet re-verified end-to-end against a real tag push.
 
-**`release-vscode.yml` is newer, and its Marketplace/Open VSX jobs are dormant by design.** The
+**`release-vscode.yml` is newer, and its Open VSX job has never actually run a publish.** The
 `build` job (per-platform `.vsix` packaging) and the GitHub-Release attach step are the real,
-currently-shipping path and have run clean. Neither the Marketplace Entra ID identity, the
-`vscode-marketplace` Environment, nor `OVSX_PAT` exist yet — both publish jobs soft-skip on every
-tag push until that's configured (Marketplace is blocked on an unrelated Microsoft-account 2FA
-issue; Open VSX has no such blocker and is unblocked whenever someone wants to set up the
-Eclipse-Foundation-side token). See
-[`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for the one-time
-publisher/namespace/identity setup that unblocks either.
+currently-shipping path and have run clean. `OVSX_PAT` and the `cratestack` Open VSX namespace now
+exist, so `publish-openvsx` will attempt a genuine publish on the next tag — treat that first run as
+unproven and check the registry, not the checkmark. The Marketplace Entra ID identity and the
+`vscode-marketplace` Environment still don't exist, so `publish-marketplace` continues to soft-skip.
+See [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for the remaining
+one-time identity setup.
 
 ### Why `RELEASE_PAT` exists, and why the bump goes through a PR at all
 
@@ -341,9 +342,9 @@ Required credentials are intentionally read from the environment:
   instead (see [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
 * No credential is required for the VS Code extension's primary path — its `.vsix` files attach to
   the GitHub Release like the CLI binaries do. `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` /
-  `AZURE_SUBSCRIPTION_ID` (Entra ID workload identity federation) and `OVSX_PAT` remain as
-  currently-dormant, optional credentials for the Marketplace and Open VSX publish jobs
-  respectively — see [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
+  `AZURE_SUBSCRIPTION_ID` (Entra ID workload identity federation) are still outstanding, so the
+  Marketplace job soft-skips. `OVSX_PAT` **is** configured — see
+  [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
 * GitHub permissions to push tags and create releases
 
 See [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) and
@@ -423,9 +424,9 @@ manual step needed for the primary path. Users install with
 `code --install-extension <file>.vsix` (see
 [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md#manual-install-for-users)).
 
-The Marketplace and Open VSX publish jobs in the same workflow are dormant until their credentials
-are configured (see [Prerequisites](#prerequisites) above). To publish manually from a local
-machine once you have your own credentials:
+Open VSX publishes automatically on the next tag; the Marketplace job soft-skips until its Azure
+credentials exist (see [Prerequisites](#prerequisites) above). To publish manually from a local
+machine with your own credentials:
 
 ```sh
 cargo build --release -p cratestack-lsp

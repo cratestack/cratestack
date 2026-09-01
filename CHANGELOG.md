@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+### The VS Code extension is renamed `cratestack-vscode-plugin`
+
+`packages/cratestack-vscode/package.json`'s `name` moves from `cratestack-vscode` to
+`cratestack-vscode-plugin`. The `publisher` (`cratestack`) is unchanged, so the published extension
+ID becomes `cratestack.cratestack-vscode-plugin` and the release assets become
+`cratestack-vscode-plugin-<target>-<version>.vsix`.
+
+Done now specifically because **nothing has been published to either registry yet** — Open VSX's
+`cratestack` namespace reports `{"extensions":{}}` and there is no Marketplace item. An extension ID
+is immutable once published: renaming afterwards orphans the old listing permanently, with no
+redirect and no carry-over of install counts or reviews. This was the last moment the rename was
+free.
+
+Deliberately scoped to the manifest name. The directory stays `packages/cratestack-vscode`, so every
+`working-directory:`, the `pnpm-workspace.yaml` glob, `repository.directory`, and `homepage` are
+untouched. Two consequences worth recording, both verified rather than assumed:
+
+* Every `turbo` filter in CI is path-based (`--filter='./packages/...'`), not name-based, so no
+  workflow needed editing to keep matching the package.
+* `pnpm-lock.yaml` keys workspace importers by path (`packages/cratestack-vscode:`), not by name, so
+  no lockfile refresh was required — confirmed by a passing `pnpm install --frozen-lockfile`, which
+  is what CI runs.
+
+`test/vscode-suite.js` needed no change either: it derives the extension ID as
+`${pkg.publisher}.${pkg.name}`, which is exactly the fix made after the earlier `vaam-store` →
+`cratestack` publisher rename left a hardcoded ID that silently resolved to `undefined`. That
+mechanism paid for itself here.
+
+Historical CHANGELOG entries, the two path references in `release-vscode.yml`'s comments, and the
+v0.7.16 `Invalid pattern` error quoted verbatim in that workflow all keep the old name on purpose —
+they describe what things were called at the time, and rewriting quoted evidence would falsify it.
+
+Also corrected in passing: `ci.yml`'s `js` job comment claimed the extension "has no
+build/test/lint scripts, so turbo simply skips" it. That stopped being true when the package was
+brought into CI; it defines all three and participates in that job. Only `@cratestack/cli` (a
+`postinstall`-only package) is actually skipped.
+
+### Publishing status docs match reality again
+
+`OVSX_PAT` is set and the Open VSX `cratestack` namespace exists, so `publish-openvsx` now attempts
+a real publish on the next tag instead of soft-skipping. The `cratestack` Marketplace publisher also
+exists, though its Azure managed identity and `AZURE_*` secrets do not, so `publish-marketplace`
+still soft-skips.
+
+`docs/tooling/vscode-publishing.md`, `RELEASE.md`, and `release-vscode.yml`'s header all described
+both registries as "dormant" and the Marketplace as blocked on a Microsoft-account 2FA loop. All
+three carried that same claim, so fixing one would have left two contradicting it. Each now states
+the per-registry status, and the doc leads with a channel table.
+
+Two things the old text never said, both of which are the actual source of confusion here:
+
+* **Open VSX does not reach VS Code.** It serves Cursor, Windsurf, and VSCodium; Microsoft's VS Code
+  build can only see the Marketplace. VS Code users stay on the manual `.vsix` download, without
+  auto-updates, until the Marketplace path is finished — so the Open VSX work does not close that
+  gap, and `product.json` `extensionsGallery` overrides are a per-user hack no publisher can ship.
+* **A green `publish-openvsx` is not evidence of a publish**, because the job exits 0 when the
+  secret is absent. The verification section now gives a `curl` against the Open VSX API, and flags
+  that no publish has landed there yet.
+
+The Marketplace setup's step 1 is also corrected: `az identity create` needs an explicit
+`--location` (it fails `InvalidArgumentValue: Missing required field: --location` without one, even
+though the resource group already has a region), and it does not create the resource group, so
+`az group create` is now a real command in the block rather than an aside. Both were hit in order
+while following the doc as written.
+
 ## 0.10.0 (2026-08-31)
 
 ### Generated client version ceilings follow the release line automatically
