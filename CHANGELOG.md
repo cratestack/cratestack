@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### `azure/login` needs `allow-no-subscriptions` for Marketplace publishing
+
+The `cratestack-vsce-publish` managed identity holds no RBAC role on the subscription, and needs
+none: publishing authenticates to Azure DevOps, not to ARM. `azure/login` nonetheless enumerates
+subscriptions by default, finds zero, and aborts with `No subscriptions found for ***` — *after* a
+successful OIDC exchange, so it reads like an authentication failure while the federation is in fact
+working correctly.
+
+Found by the first real run of the `Marketplace Identity ID` workflow, which failed exactly here.
+`publish-marketplace` in `release-vscode.yml` made the identical call, so the first genuine
+Marketplace publish would have failed the same way on a release tag rather than on a throwaway
+dispatch. Both now pass `allow-no-subscriptions: true`.
+
+Fixed with the flag rather than by granting the identity a subscription role, which would also work
+and would leave a standing permission nothing in this pipeline uses.
+
+
 ### The VS Code extension is renamed `cratestack-vscode-plugin`
 
 `packages/cratestack-vscode/package.json`'s `name` moves from `cratestack-vscode` to

@@ -271,6 +271,14 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # The managed identity holds no RBAC role on the subscription, and
+          # needs none — publishing authenticates to Azure DevOps, not to ARM.
+          # Without this, azure/login enumerates subscriptions, finds zero, and
+          # aborts with `No subscriptions found for ***` AFTER a successful OIDC
+          # exchange, which reads like an auth failure and is not one. Granting
+          # the identity a subscription role would also silence it, at the cost
+          # of a standing permission nothing here uses.
+          allow-no-subscriptions: true
       - name: Publish to VS Code Marketplace
         if: steps.creds.outputs.configured == 'true'
         shell: bash
