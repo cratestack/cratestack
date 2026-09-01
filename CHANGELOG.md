@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.1 (2026-09-01)
+
 ### `azure/login` needs `allow-no-subscriptions` for Marketplace publishing
 
 The `cratestack-vsce-publish` managed identity holds no RBAC role on the subscription, and needs

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.10.1 (2026-09-01)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.10.0 (2026-08-31)
 
 - **`cratestack_annotations` widened to `>=0.8.10 <0.10.0`** — a range, not a raise, and the
