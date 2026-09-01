@@ -1,0 +1,76 @@
+# One-off operational utility, run by hand (`workflow_dispatch`). Prints the
+# Azure DevOps *profile ID* of the `cratestack-vsce-publish` managed identity —
+# the value that must be added as a member on the VS Code Marketplace publisher
+# to grant it publish rights. See docs/tooling/vscode-publishing.md step 6.
+#
+# Why this needs to be a workflow at all, rather than a local `az` command:
+# `/profile/profiles/me` returns the profile of whoever is authenticated, and
+# the value we need is the *managed identity's* profile, not a human's. A
+# user-assigned managed identity can only be assumed from inside an Azure
+# resource or via workload identity federation — and this one's federated
+# credential is scoped to the exact subject
+# `repo:cratestack/cratestack:environment:vscode-marketplace`. So a job in that
+# environment is the only thing on earth that can make this call as the
+# identity. Running the same command from a laptop returns the developer's own
+# profile ID, which is silently wrong: it is a real ID, the Marketplace accepts
+# it as a member, and publishing then fails as the identity anyway.
+#
+# The call is also not read-only — it registers the identity with Azure DevOps
+# on first invocation, which is why it must happen before the member is added.
+#
+# Re-run this whenever the managed identity is rotated or recreated. The output
+# is an identifier, not a credential, so it is safe in public run logs.
+name: Marketplace Identity ID
+
+on:
+  workflow_dispatch:
+
+jobs:
+  profile-id:
+    name: print Azure DevOps profile ID
+    runs-on: ubuntu-latest
+    # MUST match the federated credential's subject, or azure/login fails with
+    # AADSTS70021 (no matching federated identity record).
+    environment: vscode-marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Fetch Azure DevOps profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 499b84ac-1321-427f-aa17-267ca6975798 is Azure DevOps's well-known
+          # application ID in Microsoft Entra. It is the same in every tenant
+          # and every organization — not a value specific to this setup.
+          profile="$(az rest \
+            -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me \
+            --resource 499b84ac-1321-427f-aa17-267ca6975798)"
+          id="$(echo "$profile" | jq -r '.id')"
+          display="$(echo "$profile" | jq -r '.displayName')"
+          if [ -z "$id" ] || [ "$id" = "null" ]; then
+            echo "::error::no id in profile response: $profile" >&2
+            exit 1
+          fi
+          echo "displayName: $display"
+          echo "profile id:  $id"
+          {
+            echo "### Marketplace publisher member ID"
+            echo
+            echo '```'
+            echo "$id"
+            echo '```'
+            echo
+            echo "Add this at <https://marketplace.visualstudio.com/manage/publishers/cratestack>"
+            echo "→ Members → Add, with role **Contributor**."
+            echo
+            echo "Do NOT use the managed identity's clientId, principalId, tenantId, or ARM"
+            echo "resource ID — the Marketplace does not recognize any of them here."
+            echo
+            echo "_displayName reported by Azure DevOps: \`${display}\`_"
+          } >> "$GITHUB_STEP_SUMMARY"

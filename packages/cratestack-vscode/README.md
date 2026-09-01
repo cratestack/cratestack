@@ -1,4 +1,4 @@
-# cratestack-vscode
+# cratestack-vscode-plugin
 
 This extension registers the `.cstack` language in VS Code and starts the standalone `cratestack-lsp` binary.
 

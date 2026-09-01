@@ -1,4 +1,4 @@
-# Builds the `cratestack-vscode` extension (packages/cratestack-vscode) on every
+# Builds the `cratestack-vscode-plugin` extension (packages/cratestack-vscode) on every
 # `vX.Y.Z` tag push and attaches a platform-specific `.vsix` per target to the same
 # GitHub Release release-cli.yml creates for that tag — the PRIMARY distribution
 # path today. Users install manually: download the `.vsix` for their platform and
@@ -10,16 +10,25 @@
 # vsix via `vsce package --target <target>` — the same way the Marketplace itself
 # would distribute per-platform extensions.
 #
-# Marketplace and Open VSX publish jobs also exist below, but are currently DORMANT
-# by design: each gates on its own credential/secret actually being present and
-# soft-skips (logs why, exits 0) otherwise, so this workflow succeeds end-to-end
-# whether or not either is configured. Marketplace publishing is blocked
-# indefinitely — the maintainer's Microsoft account is stuck in a 2FA block/unblock
-# loop, so the Entra ID federated-credential setup below can't be completed — see
-# docs/tooling/vscode-publishing.md. Open VSX has NO such blocker: it's an Eclipse
-# Foundation registry (not a Microsoft one, no Microsoft account needed at all) used
-# by VSCodium/Cursor/Windsurf, and can be turned on independently just by adding
-# `OVSX_PAT` — no code change required, the job is ready and waiting.
+# Marketplace and Open VSX publish jobs also exist below. Each gates on its own
+# credential/secret actually being present and soft-skips (logs why, exits 0)
+# otherwise, so this workflow succeeds end-to-end whether or not either is
+# configured — which also means a green run is NOT evidence that a publish
+# happened. Verify against the registry (docs/tooling/vscode-publishing.md).
+#
+# Open VSX is ARMED as of 2026-09-01: `OVSX_PAT` is set and the `cratestack`
+# namespace exists, so publish-openvsx attempts a real publish on the next tag.
+# It has never actually run one — treat the first as unproven. Note this reaches
+# VSCodium/Cursor/Windsurf but NOT VS Code, which can only see the Microsoft
+# Marketplace.
+#
+# Marketplace is ARMED as of 2026-09-01 as well: publisher, managed identity,
+# federated credential, vscode-marketplace environment and the AZURE_* secrets all
+# exist, so publish-marketplace attempts a real publish on the next tag. Also never
+# yet exercised. Note the consequence — while AZURE_CLIENT_ID was absent this job
+# exited 0 and a release stayed green regardless; it can now fail the run. The step
+# that fails at publish rather than setup time is authorizing the managed identity
+# on the Marketplace publisher — see docs/tooling/vscode-publishing.md.
 #
 # Both publish jobs stay tag-push-only (same as release-cli.yml's npm jobs): a
 # Marketplace/Open VSX publish can't be cleanly deleted and retried, so a throwaway
@@ -182,7 +191,7 @@ jobs:
   # tag; the other one (this job, or release-cli.yml's) finds it already
   # exists and appends its own files to it instead of failing — the two
   # workflows race harmlessly since their asset filenames never collide
-  # (`cratestack-cli-*` vs `cratestack-vscode-*.vsix`). Deliberately does not
+  # (`cratestack-cli-*` vs `cratestack-vscode-plugin-*.vsix`). Deliberately does not
   # pass `generate_release_notes` here — release-cli.yml's `release` job
   # already does that once; doing it again from this job would re-run notes
   # generation against whatever the release looks like at that moment,

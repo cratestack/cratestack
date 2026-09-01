@@ -3803,7 +3803,7 @@ bump NEW:
 	# release asset tag it downloads), the split @cratestack/api family
 	# (ts-types, link-*, runtime-*, validator-*, adapter-*, and the api
 	# compat shim), the @cratestack/cbor family (cbor, cbor-node,
-	# cbor-web), @cratestack/refine, and the cratestack-vscode extension.
+	# cbor-web), @cratestack/refine, and the cratestack-vscode-plugin extension.
 	# vscode's vsix is built and versioned per release tag
 	# (release-vscode.yml attaches it to the same GitHub Release as the CLI
 	# binaries), so it moves in lockstep like the rest rather than staying
