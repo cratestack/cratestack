@@ -210,6 +210,24 @@ current, confirmed-working real-world setups.
    The call also registers the identity with Azure DevOps as a side effect on first invocation,
    which is why it has to happen before step 7 rather than being a read-only lookup.
 
+   **The identity deliberately holds no role on the subscription**, because publishing
+   authenticates to Azure DevOps rather than to ARM. Both this workflow and `publish-marketplace`
+   therefore pass `allow-no-subscriptions: true` to `azure/login` **and omit `subscription-id`**.
+   Getting only half of that produces a second, different failure:
+
+   | login inputs | result |
+   |---|---|
+   | no flag | `No subscriptions found for ***` (enumeration) |
+   | flag + `subscription-id` | `The subscription of '***' doesn't exist in cloud 'AzureCloud'` (selection) |
+   | flag, no `subscription-id` | works |
+
+   Both failures land *after* a successful OIDC exchange and both advise `Double check if the
+   'auth-type' is correct` — the one thing that was never wrong. Granting the identity a subscription
+   role would also work, at the cost of a standing ARM permission nothing here uses.
+
+   `AZURE_SUBSCRIPTION_ID` is consequently no longer read by any workflow. It is kept as a secret
+   only because it costs nothing and a future ARM-touching job would want it.
+
 7. **Authorize the managed identity on the publisher** — this is the step that actually grants
    publish rights; the federated credential above only proves identity to Azure, not to the
    Marketplace. At

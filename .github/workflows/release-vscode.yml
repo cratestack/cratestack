@@ -270,7 +270,21 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # No subscription-id, deliberately. The managed identity holds no RBAC
+          # role on the subscription and needs none — publishing authenticates to
+          # Azure DevOps, not to ARM. Two separate failures come from pretending
+          # otherwise, and they must both be avoided:
+          #
+          #   * without `allow-no-subscriptions`, azure/login enumerates
+          #     subscriptions, finds zero, and fails `No subscriptions found`;
+          #   * with the flag but still passing `subscription-id`, it tries to
+          #     select that subscription and fails `The subscription of '***'
+          #     doesn't exist in cloud 'AzureCloud'`.
+          #
+          # Both land AFTER a successful OIDC exchange and both report `Double
+          # check if the 'auth-type' is correct`, which is the one thing that was
+          # never wrong. Measured in runs 33468493272 and 33468633078.
+          allow-no-subscriptions: true
       - name: Publish to VS Code Marketplace
         if: steps.creds.outputs.configured == 'true'
         shell: bash
