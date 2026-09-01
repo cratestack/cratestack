@@ -6,7 +6,7 @@
 |---|---|---|
 | GitHub Releases | **live** — has shipped every release to date | everyone, by manual download |
 | Open VSX | **armed** — publishes on the next `vX.Y.Z` tag | Cursor, Windsurf, VSCodium |
-| Marketplace | **pending Azure setup** — job still soft-skips | VS Code |
+| Marketplace | **armed** — publishes on the next `vX.Y.Z` tag | VS Code |
 
 `.github/workflows/release-vscode.yml` builds `packages/cratestack-vscode` on every `vX.Y.Z` tag
 push and attaches a platform-specific `.vsix` to the same GitHub Release `release-cli.yml` creates
@@ -19,11 +19,17 @@ for what to tell someone who wants the extension right now.
   publish on the next tag instead of soft-skipping. Nothing has gone through it yet — confirm the
   first one actually lands rather than assuming, per
   [Verifying a publish actually shipped](#verifying-a-publish-actually-shipped).
-* **Marketplace: publisher created, credentials outstanding.** The `cratestack` publisher now
-  exists, so the Microsoft-account sign-in that previously blocked this path is no longer in the
-  way. What remains is the Azure managed-identity work in
-  [Marketplace setup](#vs-code-marketplace-one-time-setup); until `AZURE_CLIENT_ID` is set,
-  `publish-marketplace` soft-skips.
+* **Marketplace: credentials configured, also not yet exercised.** The `cratestack` publisher, the
+  `cratestack-vsce-publish` managed identity, its federated credential, the `vscode-marketplace`
+  environment, and the three `AZURE_*` secrets all exist (2026-09-01). `publish-marketplace` no
+  longer soft-skips — it attempts a real publish on the next tag.
+
+  **This changes the failure mode of a release.** While the secrets were absent the job exited 0
+  and a release stayed green regardless. It will now fail the run if the setup is incomplete, and
+  the step most likely to be incomplete is authorizing the managed identity **on the Marketplace
+  publisher** (step 5 of [Marketplace setup](#vs-code-marketplace-one-time-setup)) — the only step
+  that succeeds silently when skipped and surfaces at publish time as
+  `InvalidAccessException: The requested operation is not allowed`.
 
 **Open VSX does not cover VS Code, and this is the most common thing to get wrong here.** Open VSX
 is the Eclipse Foundation's registry — a separate account system from the Microsoft Marketplace.
@@ -80,11 +86,11 @@ existing version replaces it, no uninstall needed first.
 
 ## VS Code Marketplace one-time setup
 
-> **Partially complete — this is the remaining work for VS Code support.** Step 4 below is done:
-> the `cratestack` publisher exists, and the Microsoft-account problem that used to block this is
-> resolved. Steps 1-3, 5 and 6 — the managed identity, its federated credential, authorizing it on
-> the publisher, and the three `AZURE_*` secrets — are still outstanding, and `publish-marketplace`
-> soft-skips until `AZURE_CLIENT_ID` is set.
+> **Complete as of 2026-09-01 — retained as reference.** Every step below has been carried out.
+> Kept as the procedure for rotating the identity, onboarding another publisher, or re-deriving why
+> each piece exists. Because `AZURE_CLIENT_ID` is now set, `publish-marketplace` no longer
+> soft-skips: an incomplete or later-broken setup fails the release run rather than passing quietly.
+> Step 5 is the one that fails at publish time rather than setup time.
 
 The publisher ID is `cratestack` (`packages/cratestack-vscode/package.json`'s `publisher` field —
 this can't be changed after the publisher is created, so it has to match exactly).
@@ -171,6 +177,14 @@ current, confirmed-working real-world setups.
    * `AZURE_TENANT_ID` — your tenant ID
    * `AZURE_SUBSCRIPTION_ID` — your subscription ID
 
+   These are currently set as **repository** secrets rather than environment secrets, which works:
+   `secrets.X` in a job declaring `environment:` resolves environment secrets first and falls
+   through to repository secrets. Environment scoping is still the tighter default — it keeps the
+   values off every other workflow — and is where a reader will look for them first. None of this
+   affects security here: the credential that actually grants publish rights is the OIDC token, and
+   only a job targeting `vscode-marketplace` can obtain one with the subject the federated
+   credential accepts.
+
 Once these exist, the next tag push publishes the extension to the Marketplace — no other change
 needed. No client secret is stored anywhere; `azure/login`'s OIDC exchange (gated by the job's
 `id-token: write` permission) is what proves the workflow run is genuinely this repo's
@@ -222,9 +236,10 @@ independently verifies crates.io/npm rather than trusting the checkmark, confirm
   ```
   This matters more than usual here: `publish-openvsx` exits 0 when `OVSX_PAT` is missing, so a
   green job is not evidence of a publish.
-* Marketplace (soft-skips until `AZURE_CLIENT_ID` is set, see above):
+* Marketplace (armed — **check this after the next tag; no publish has landed here yet**):
   `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin` shows
-  the new version.
+  the new version. Unlike Open VSX, a failure here is loud: with `AZURE_CLIENT_ID` set the job runs
+  for real, so a broken setup shows up as a red `publish (Marketplace)` job, not a silent skip.
 
 ## Extension icon
 

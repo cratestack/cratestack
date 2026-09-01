@@ -79,9 +79,10 @@ else happens on its own:
    publish jobs also exist in this workflow. **Open VSX is now configured**
    (`OVSX_PAT` set, `cratestack` namespace created) and publishes for real on
    the next tag — nothing has gone through it yet, so verify the first one.
-   **Marketplace is still pending**: the `cratestack` publisher exists, but
-   the Azure managed identity and the three `AZURE_*` secrets do not, so that
-   job still soft-skips. Note Open VSX reaches Cursor/Windsurf/VSCodium but
+   **Marketplace is now configured too** (publisher, managed identity,
+   federated credential, `vscode-marketplace` environment, `AZURE_*` secrets),
+   so publish-marketplace no longer soft-skips — an incomplete setup now fails
+   the release run instead of passing quietly. Note Open VSX reaches Cursor/Windsurf/VSCodium but
    **not** VS Code, which can only see the Microsoft Marketplace. See
    [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
    for the manual-install instructions users need today, plus the one-time
@@ -122,10 +123,10 @@ soft-skipping — a deliberate hard cutover, not yet re-verified end-to-end agai
 `build` job (per-platform `.vsix` packaging) and the GitHub-Release attach step are the real,
 currently-shipping path and have run clean. `OVSX_PAT` and the `cratestack` Open VSX namespace now
 exist, so `publish-openvsx` will attempt a genuine publish on the next tag — treat that first run as
-unproven and check the registry, not the checkmark. The Marketplace Entra ID identity and the
-`vscode-marketplace` Environment still don't exist, so `publish-marketplace` continues to soft-skip.
-See [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md) for the remaining
-one-time identity setup.
+unproven and check the registry, not the checkmark. The Marketplace Entra ID identity, the `vscode-marketplace`
+Environment and the `AZURE_*` secrets now all exist as well, so `publish-marketplace` is armed on
+the same terms — also never exercised, and now able to turn a release red where it previously
+exited 0. See [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md).
 
 ### Why `RELEASE_PAT` exists, and why the bump goes through a PR at all
 
@@ -342,8 +343,8 @@ Required credentials are intentionally read from the environment:
   instead (see [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
 * No credential is required for the VS Code extension's primary path — its `.vsix` files attach to
   the GitHub Release like the CLI binaries do. `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` /
-  `AZURE_SUBSCRIPTION_ID` (Entra ID workload identity federation) are still outstanding, so the
-  Marketplace job soft-skips. `OVSX_PAT` **is** configured — see
+  `AZURE_SUBSCRIPTION_ID` (Entra ID workload identity federation) and `OVSX_PAT` are all
+  configured, so both publish jobs are live — see
   [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md)
 * GitHub permissions to push tags and create releases
 
@@ -424,9 +425,9 @@ manual step needed for the primary path. Users install with
 `code --install-extension <file>.vsix` (see
 [`docs/tooling/vscode-publishing.md`](docs/tooling/vscode-publishing.md#manual-install-for-users)).
 
-Open VSX publishes automatically on the next tag; the Marketplace job soft-skips until its Azure
-credentials exist (see [Prerequisites](#prerequisites) above). To publish manually from a local
-machine with your own credentials:
+Both registry jobs publish automatically on the next tag (see [Prerequisites](#prerequisites)
+above); neither has been exercised yet. To publish manually from a local machine with your own
+credentials:
 
 ```sh
 cargo build --release -p cratestack-lsp

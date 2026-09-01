@@ -41,10 +41,16 @@ brought into CI; it defines all three and participates in that job. Only `@crate
 
 ### Publishing status docs match reality again
 
-`OVSX_PAT` is set and the Open VSX `cratestack` namespace exists, so `publish-openvsx` now attempts
-a real publish on the next tag instead of soft-skipping. The `cratestack` Marketplace publisher also
-exists, though its Azure managed identity and `AZURE_*` secrets do not, so `publish-marketplace`
-still soft-skips.
+Both registry publish jobs are now configured and fire on the next tag. Open VSX has `OVSX_PAT` and
+the `cratestack` namespace; the Marketplace has its publisher, the `cratestack-vsce-publish` managed
+identity, a federated credential scoped to the `vscode-marketplace` environment, and the three
+`AZURE_*` secrets. Neither has ever actually run a publish.
+
+That second one changes the failure mode of a release. While `AZURE_CLIENT_ID` was absent,
+`publish-marketplace` exited 0 and a tag stayed green no matter what; it can now turn a release red.
+The step most likely to be missing is authorizing the managed identity **on the Marketplace
+publisher**, which is the only one that succeeds silently at setup and fails at publish time with
+`InvalidAccessException`. Both the doc and the workflow header now say so at the point of use.
 
 `docs/tooling/vscode-publishing.md`, `RELEASE.md`, and `release-vscode.yml`'s header all described
 both registries as "dormant" and the Marketplace as blocked on a Microsoft-account 2FA loop. All

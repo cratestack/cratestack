@@ -22,9 +22,13 @@
 # VSCodium/Cursor/Windsurf but NOT VS Code, which can only see the Microsoft
 # Marketplace.
 #
-# Marketplace is still PENDING: the `cratestack` publisher exists, but the Entra
-# ID managed identity and the AZURE_* secrets below do not, so publish-marketplace
-# continues to soft-skip — see docs/tooling/vscode-publishing.md.
+# Marketplace is ARMED as of 2026-09-01 as well: publisher, managed identity,
+# federated credential, vscode-marketplace environment and the AZURE_* secrets all
+# exist, so publish-marketplace attempts a real publish on the next tag. Also never
+# yet exercised. Note the consequence — while AZURE_CLIENT_ID was absent this job
+# exited 0 and a release stayed green regardless; it can now fail the run. The step
+# that fails at publish rather than setup time is authorizing the managed identity
+# on the Marketplace publisher — see docs/tooling/vscode-publishing.md.
 #
 # Both publish jobs stay tag-push-only (same as release-cli.yml's npm jobs): a
 # Marketplace/Open VSX publish can't be cleanly deleted and retried, so a throwaway
