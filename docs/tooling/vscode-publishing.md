@@ -300,6 +300,59 @@ independently verifies crates.io/npm rather than trusting the checkmark, confirm
   the new version. Unlike Open VSX, a failure here is loud: with `AZURE_CLIENT_ID` set the job runs
   for real, so a broken setup shows up as a red `publish (Marketplace)` job, not a silent skip.
 
+## Display name collisions
+
+`package.json`'s `displayName` must be unique across the **entire** Marketplace, independently of the
+extension ID. `cratestack.cratestack-vscode-plugin` was accepted at v0.10.1 and the publish still
+failed:
+
+```
+Publishing 'cratestack.cratestack-vscode-plugin (darwin-arm64) v0.10.1'...
+##[error]This extension display name is taken. Please try a different one.
+```
+
+The name was `CrateStack`; it is now `CrateStack Schema`.
+
+Two things make this expensive to hit, both worth knowing before changing the value again:
+
+* **The gallery search is not a valid pre-check.** Querying `extensionquery` for `CrateStack` across
+  the whole gallery — not just `Microsoft.VisualStudio.Code` — returned zero results while the name
+  was demonstrably taken. Whatever holds it is unlisted, removed, or reserved internally. The only
+  reliable signal is an actual publish attempt.
+* **`displayName` is baked into the `.vsix` at package time**, so a change needs a rebuild, and a
+  failed release is bumped past rather than re-run. Each attempt therefore costs a version.
+
+Open VSX has no such constraint and published `CrateStack` without complaint at v0.10.1, so the two
+registries can disagree about whether a given name is available.
+
+## Probing a Marketplace publish without cutting a release
+
+`release-vscode.yml` accepts a `workflow_dispatch`. Dispatching it builds all five targets and
+publishes **only** to the Marketplace — `attach-github-release` and `publish-openvsx` are both gated
+`if: github.event_name == 'push'`, so a manual run cannot create a Release or reach Open VSX.
+
+```bash
+gh workflow run "Release VS Code Extension" --repo cratestack/cratestack
+```
+
+This is a deliberate exception to the tag-push-only rule that still governs Open VSX, and it exists
+for one reason: several Marketplace rejections are only discoverable at publish time, and some cost a
+version to retry. A `displayName` collision is the worst of them — the field is baked into the vsix
+at package time, and a failed release is bumped past rather than re-run, so each candidate name would
+otherwise cost a release. Publishing by hand costs nothing when it fails.
+
+**A failed Marketplace publish consumes nothing.** The version is only taken on success, which is why
+probing the same version repeatedly is safe.
+
+Two things to keep straight when using it:
+
+* **A successful probe is a real publish**, not a rehearsal. If the name is accepted, the listing goes
+  live immediately at whatever version `package.json` currently declares.
+* **It can therefore publish a version whose artifact differs from the one on the GitHub Release** —
+  if `package.json` changed since that tag, as it does whenever the probe is fixing something. That
+  divergence is cosmetic and resolves at the next real tag, when every channel gets an identical
+  build, but it is worth knowing rather than discovering.
+
 ## Extension icon
 
 `packages/cratestack-vscode/icon.png` — a 256x256 PNG, referenced by `package.json`'s `icon` field

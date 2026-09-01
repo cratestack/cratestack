@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### The extension's display name is `CrateStack Schema`
+
+`displayName` moves from `CrateStack`, which the Marketplace rejects as already taken. This is
+independent of the extension ID: `cratestack.cratestack-vscode-plugin` was accepted at v0.10.1 and
+the publish failed anyway, on the display name alone, after auth and package validation had both
+passed.
+
+Nothing public holds the old name — an `extensionquery` for `CrateStack` across the entire gallery,
+not just VS Code extensions, returns zero results. Whatever reserves it is unlisted, removed, or
+internal, which means gallery search cannot be used to check a candidate name in advance. Only a real
+publish attempt answers the question.
+
+Open VSX published `CrateStack` at v0.10.1 without objection, so the two registries genuinely
+disagree about this name's availability; v0.10.1 is live there under the old display name.
+
+### `release-vscode.yml` accepts a Marketplace-only manual dispatch
+
+Dispatching the workflow builds all five targets and publishes to the Marketplace alone;
+`attach-github-release` and `publish-openvsx` are gated `if: github.event_name == 'push'`, so a manual
+run can neither create a Release nor reach Open VSX.
+
+This amends the rule stated in that workflow's own header — *"a throwaway `workflow_dispatch` test run
+must never reach either registry"* — and narrows it to Open VSX, which keeps the guarantee absolutely.
+The rule was written to stop accidental publishes of throwaway artifacts. The `displayName` collision
+above is the case it did not anticipate: a rejection discoverable only at publish time, on a field
+baked into the vsix at package time, where a failed release is bumped past rather than re-run. Under
+the old rule every candidate name costs a version. A failed manual publish costs nothing, because the
+Marketplace only consumes a version on success.
+
+The trade is that a successful probe is a real publish, and can put a version on the Marketplace whose
+artifact differs from the one attached to that tag's GitHub Release — which is exactly what happens
+when the probe is what fixed the artifact. Cosmetic, resolved at the next real tag, and documented at
+the point of use rather than left to be discovered.
+
+
 ## 0.10.1 (2026-09-01)
 
 ### `azure/login` needs `allow-no-subscriptions` for Marketplace publishing

@@ -30,9 +30,20 @@
 # that fails at publish rather than setup time is authorizing the managed identity
 # on the Marketplace publisher — see docs/tooling/vscode-publishing.md.
 #
-# Both publish jobs stay tag-push-only (same as release-cli.yml's npm jobs): a
-# Marketplace/Open VSX publish can't be cleanly deleted and retried, so a throwaway
-# workflow_dispatch test run must never reach either registry. The GitHub-Release
+# Open VSX publishing stays tag-push-only (same as release-cli.yml's npm jobs): a
+# publish can't be cleanly deleted and retried, so a throwaway workflow_dispatch run
+# must never reach that registry. publish-openvsx is gated on github.event_name ==
+# 'push' to enforce that mechanically, not just by the absence of a trigger.
+#
+# The Marketplace job is the ONE deliberate exception, added after v0.10.1. Its
+# rejections are only discoverable at publish time and some cost a version number to
+# retry — `displayName` collisions in particular, since that field is baked into the
+# vsix at package time and a failed release is bumped past rather than re-run. The
+# original rule existed to stop ACCIDENTAL publishes of throwaway artifacts; a
+# hand-triggered publish of the real, fully-built five-target artifact set is a
+# different act, and the alternative is spending a release on each guess. Dispatching
+# this workflow therefore builds all five targets and publishes ONLY to the
+# Marketplace — it never attaches to a Release and never touches Open VSX. The GitHub-Release
 # attach job has no such constraint — like release-cli.yml's binary attach, deleting
 # and re-uploading a release asset is safe, so it isn't gated the same way (though
 # this workflow only triggers on tag push regardless, so the distinction is moot
@@ -51,6 +62,9 @@ on:
   push:
     tags:
       - "v*"
+  # Marketplace-only manual publish. See the header: this is a scoped exception to
+  # the tag-push-only rule, and the job gating below is what keeps it scoped.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -201,6 +215,9 @@ jobs:
   attach-github-release:
     name: attach vsix to GitHub Release
     needs: build
+    # Tag pushes only. On a dispatch there is no Release to attach to, and
+    # inventing one would fabricate a release that was never cut.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -302,6 +319,11 @@ jobs:
   publish-openvsx:
     name: publish (Open VSX)
     needs: build
+    # Tag pushes only, enforced rather than assumed. The Marketplace exception in
+    # this workflow's header is deliberately NOT extended to Open VSX: nothing about
+    # that registry requires probing, so it keeps the original guarantee that no
+    # manual run can ever reach it.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

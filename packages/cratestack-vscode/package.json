@@ -1,6 +1,6 @@
 {
   "name": "cratestack-vscode-plugin",
-  "displayName": "CrateStack",
+  "displayName": "CrateStack Schema",
   "description": "VS Code support for CrateStack .cstack schemas",
   "version": "0.10.1",
   "publisher": "cratestack",
