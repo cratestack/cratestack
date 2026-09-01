@@ -175,13 +175,15 @@ current, confirmed-working real-world setups.
    * `AZURE_TENANT_ID` — your tenant ID
    * `AZURE_SUBSCRIPTION_ID` — your subscription ID
 
-   These are currently set as **repository** secrets rather than environment secrets, which works:
-   `secrets.X` in a job declaring `environment:` resolves environment secrets first and falls
-   through to repository secrets. Environment scoping is still the tighter default — it keeps the
-   values off every other workflow — and is where a reader will look for them first. None of this
-   affects security here: the credential that actually grants publish rights is the OIDC token, and
-   only a job targeting `vscode-marketplace` can obtain one with the subject the federated
-   credential accepts.
+   These are **environment** secrets, scoped to `vscode-marketplace` — visible only to a job
+   declaring that environment, which is exactly the set of jobs entitled to them. (Repository
+   secrets would also resolve, since `secrets.X` falls through to repo scope, but they would then be
+   readable by every other workflow for no benefit.)
+
+   **`OVSX_PAT` must stay a repository secret and must not be moved here.** `publish-openvsx`
+   declares no `environment:`, so it cannot see environment secrets at all. Moving it would not
+   raise an error — the job's `if [ -z "${OVSX_PAT:-}" ]` guard would find nothing, log a skip and
+   exit 0, and Open VSX publishing would silently stop working while every release stayed green.
 
 6. **Get the managed identity's Azure DevOps profile ID.** This is the value the Marketplace member
    field wants, and it does not exist until you ask for it. Run the `Marketplace Identity ID`
