@@ -15,8 +15,16 @@ Found by the first real run of the `Marketplace Identity ID` workflow, which fai
 Marketplace publish would have failed the same way on a release tag rather than on a throwaway
 dispatch. Both now pass `allow-no-subscriptions: true`.
 
-Fixed with the flag rather than by granting the identity a subscription role, which would also work
-and would leave a standing permission nothing in this pipeline uses.
+The flag alone is not enough: with `subscription-id` still passed, `azure/login` stops enumerating
+and starts *selecting*, failing `The subscription of '***' doesn't exist in cloud 'AzureCloud'`
+instead. Both call sites now omit it too, so `AZURE_SUBSCRIPTION_ID` is no longer read by any
+workflow — kept as a secret only because a future ARM-touching job would want it.
+
+Both failures land after a successful OIDC exchange, and both advise `Double check if the
+'auth-type' is correct`, which is the one thing that was never wrong in either case.
+
+Fixed this way rather than by granting the identity a subscription role, which would also work and
+would leave a standing ARM permission nothing in this pipeline uses.
 
 
 ### The VS Code extension is renamed `cratestack-vscode-plugin`
