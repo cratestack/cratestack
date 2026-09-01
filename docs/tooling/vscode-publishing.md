@@ -300,6 +300,31 @@ independently verifies crates.io/npm rather than trusting the checkmark, confirm
   the new version. Unlike Open VSX, a failure here is loud: with `AZURE_CLIENT_ID` set the job runs
   for real, so a broken setup shows up as a red `publish (Marketplace)` job, not a silent skip.
 
+## Display name collisions
+
+`package.json`'s `displayName` must be unique across the **entire** Marketplace, independently of the
+extension ID. `cratestack.cratestack-vscode-plugin` was accepted at v0.10.1 and the publish still
+failed:
+
+```
+Publishing 'cratestack.cratestack-vscode-plugin (darwin-arm64) v0.10.1'...
+##[error]This extension display name is taken. Please try a different one.
+```
+
+The name was `CrateStack`; it is now `CrateStack Schema`.
+
+Two things make this expensive to hit, both worth knowing before changing the value again:
+
+* **The gallery search is not a valid pre-check.** Querying `extensionquery` for `CrateStack` across
+  the whole gallery — not just `Microsoft.VisualStudio.Code` — returned zero results while the name
+  was demonstrably taken. Whatever holds it is unlisted, removed, or reserved internally. The only
+  reliable signal is an actual publish attempt.
+* **`displayName` is baked into the `.vsix` at package time**, so a change needs a rebuild, and a
+  failed release is bumped past rather than re-run. Each attempt therefore costs a version.
+
+Open VSX has no such constraint and published `CrateStack` without complaint at v0.10.1, so the two
+registries can disagree about whether a given name is available.
+
 ## Extension icon
 
 `packages/cratestack-vscode/icon.png` — a 256x256 PNG, referenced by `package.json`'s `icon` field

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### The extension's display name is `CrateStack Schema`
+
+`displayName` moves from `CrateStack`, which the Marketplace rejects as already taken. This is
+independent of the extension ID: `cratestack.cratestack-vscode-plugin` was accepted at v0.10.1 and
+the publish failed anyway, on the display name alone, after auth and package validation had both
+passed.
+
+Nothing public holds the old name — an `extensionquery` for `CrateStack` across the entire gallery,
+not just VS Code extensions, returns zero results. Whatever reserves it is unlisted, removed, or
+internal, which means gallery search cannot be used to check a candidate name in advance. Only a real
+publish attempt answers the question.
+
+Open VSX published `CrateStack` at v0.10.1 without objection, so the two registries genuinely
+disagree about this name's availability; v0.10.1 is live there under the old display name.
+
+
 ## 0.10.1 (2026-09-01)
 
 ### `azure/login` needs `allow-no-subscriptions` for Marketplace publishing
