@@ -66,9 +66,20 @@ generated clients are unaffected either way: the REST runtime has no codec seam 
 | Linux arm64 (musl / Alpine) | `aarch64-unknown-linux-musl` | `@cratestack/cbor-node-linux-arm64-musl` |
 | Windows x64 | `x86_64-pc-windows-msvc` | `@cratestack/cbor-node-win32-x64-msvc` |
 
+Both musl binaries are load-tested in CI, not just built: each `build-cbor-node` musl leg runs on
+the runner architecture it targets and, before uploading anything, loads the `.node` it just
+produced under `node:22-alpine` and asserts a fixed encode/decode vector through this package's own
+`native.mjs`. So "works on Alpine" is checked on x64 **and** arm64, on real hardware rather than
+emulation, on every release build.
+
 Still **not** covered: `win32-arm64`. There is also no wasm/wasi fallback — the generated
 `native.mjs` loader contains a `wasm32-wasi` branch, but nothing publishes a `.wasi.cjs` or a
 `@cratestack/cbor-node-wasm32-wasi` package, so that branch can only ever add another
 `Cannot find module` to the error chain. On an unsupported platform the loader raises the generic
 *"Cannot find native binding. npm has a bug related to optional dependencies…"* error, which
 blames npm rather than naming the real cause; `--no-native-cbor` is the escape hatch.
+
+The per-platform packages above are an optimisation, not a requirement: this package's own tarball
+bundles every `.node` binary (`files: ["*.node"]`), and the loader tries the bundled
+`./cratestack-cbor-node.<platform>.node` before the `@cratestack/cbor-node-<platform>` dependency.
+A platform whose subpackage has not been published yet still resolves a working binding.

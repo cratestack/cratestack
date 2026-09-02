@@ -60,11 +60,11 @@ else happens on its own:
    (`.github/workflows/release-cli.yml`): publishes every crate to
    crates.io (`CARGO_REGISTRY_TOKEN`), builds and attaches cross-platform
    `cratestack-cli` binaries to a GitHub Release, and publishes every npm
-   package — 20 in total: `@cratestack/cli`; the 10-package `@cratestack/api`
+   package — 22 in total: `@cratestack/cli`; the 10-package `@cratestack/api`
    family (`api`, `ts-types`, `link-batch`, `link-logger`,
    `runtime-fetch`, `runtime-axios`, `validator-zod`, `validator-yup`,
    `adapter-tanstack-query`, `adapter-rtk`); the `@cratestack/cbor` family
-   (`cbor`, `cbor-web`, `cbor-node` plus its 5 auto-generated platform
+   (`cbor`, `cbor-web`, `cbor-node` plus its 7 auto-generated platform
    subpackages); and `@cratestack/refine` — with provenance via npm's
    OIDC Trusted Publishing (no token at all). See
    [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) for

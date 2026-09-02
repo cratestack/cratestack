@@ -57,7 +57,7 @@
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "test": "pnpm run typecheck && vitest run",
     "lint": "biome check .",
-    "prepublishOnly": "napi prepublish -t npm"
+    "prepublishOnly": "napi prepublish -t npm --skip-optional-publish"
   },
   "devDependencies": {
     "@cratestack/ts-types": "0.10.1",

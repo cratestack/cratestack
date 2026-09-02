@@ -1383,6 +1383,31 @@ verify-lints-optin:
 verify-file-length:
 	./.ci/file-length-check.sh
 
+# napi target drift check (cratestack#850) — asserts that
+# `@cratestack/cbor-node`'s `napi.targets` and the `build-cbor-node` matrix in
+# `.github/workflows/release-cli.yml` list exactly the same target triples,
+# in both directions.
+#
+# The list is duplicated across those two files and nothing else compares them.
+# `release-cli.yml` cannot be exercised on an ordinary PR — its first execution
+# against any change is a production release — so a mismatch produces no signal
+# until a `v*` tag is already pushed, and then it is not a small failure:
+# a target with no matrix leg aborts `publish-npm-cbor-node` (`napi artifacts`:
+# "Missing artifacts for configured targets: <triple>"; `napi prepublish`:
+# "Release package directory does not exist", each validating ALL configured
+# targets before touching any), while a matrix leg with no target builds a
+# binary that is then silently dropped and never reaches npm — the exact shape
+# of the defect #850 reports.
+#
+# Fails loudly rather than vacuously if either list cannot be found (renamed
+# job, restructured matrix, moved field). See `.ci/napi-targets-check.sh`.
+#
+# Blocking CI gate — run as the `napi-targets` job in
+# `.github/workflows/ci.yml`, which invokes THIS recipe so the two cannot
+# diverge.
+verify-napi-targets:
+	./.ci/napi-targets-check.sh
+
 # Changelog verification: detect unedited seeds, and (cratestack#739) any
 # entry a PR adds that landed under a dated release section instead of
 # under "## Unreleased".

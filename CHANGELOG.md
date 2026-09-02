@@ -56,9 +56,12 @@ the point of use rather than left to be discovered.
 ### `@cratestack/cbor-node` ships musl (Alpine) platform packages
 
 `napi.targets` gains `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, so
-`@cratestack/cbor-node` now publishes `@cratestack/cbor-node-linux-x64-musl` and
+`@cratestack/cbor-node` builds a binary for Alpine on both architectures and — once the one-time npm
+bootstrap described below is done — publishes `@cratestack/cbor-node-linux-x64-musl` and
 `@cratestack/cbor-node-linux-arm64-musl` alongside the five existing platform packages
-(cratestack#850). An Alpine-based Node image no longer fails at codec initialization.
+(cratestack#850). Alpine consumers are not gated on that bootstrap: the main package's tarball
+bundles every `.node` binary and the loader prefers the bundled file over the subpackage, so a
+released `@cratestack/cbor-node` initializes on Alpine either way.
 
 The failure it fixes was not a *fallback* to something slower — it was fatal. The generated
 `native.mjs` detects musl and looks only at the `-musl` names; the `-gnu` binary sitting next to it
@@ -71,17 +74,54 @@ The `wasm32-wasi` branch further down that loader is dead: nothing publishes a `
 `@cratestack/cbor-node-wasm32-wasi` package, so it only appends another `Cannot find module` to the
 error chain. Left alone deliberately — it is generated output, and the fix for musl is musl binaries.
 
-`build-cbor-node` grows two legs for these targets. They cross-compile with zig + `napi build -x` on
-an ordinary `ubuntu-latest` runner, which is what napi-rs documents today; the
-`nodejs-rust:lts-alpine` image it used to recommend is deprecated. The arm64-musl leg therefore does
-*not* get an arm runner, unlike its glibc counterpart.
+`build-cbor-node` grows two legs. They cross-compile glibc→musl with zig + `napi build -x`, which is
+what napi-rs documents today; the `nodejs-rust:lts-alpine` image it used to recommend is deprecated.
+Each leg runs on the runner architecture it targets, so each one then **loads what it just built
+under `node:22-alpine`** and asserts a fixed encode/decode vector through the package's own
+`native.mjs`. That step is the point: cratestack#850 was a load failure that a build-only pipeline
+reported as green for an entire release line, and it is now checked on the arm64 leg as well as x64,
+on real hardware rather than emulation.
 
-**This needs a manual step before the next tag.** The two new subpackage names have never been
-published, and npm Trusted Publishing cannot bootstrap a name that does not exist yet — so
-`publish-npm-cbor-node` will fail for the *whole* package until a maintainer publishes both by hand
-(procedure in `docs/tooling/npm-publishing.md`). `napi artifacts` and `napi prepublish` each verify
-every configured target before touching any of them, and this job is a single `npm publish`, not a
-tolerant loop, so there is no partial-success mode.
+### `publish-npm-cbor-node` no longer stakes the release on one platform name
+
+Adding a napi target adds an npm package name that has never been published, and npm's Trusted
+Publishing categorically cannot create a name (npm/cli#8544) — the first publish of any name is
+manual. The old shape turned that into a release-wide failure: `prepublishOnly` ran
+`napi prepublish -t npm`, which published each platform subpackage *sequentially from inside* the
+root `npm publish`, so the first 404 aborted the hook — earlier platform packages live, later ones
+skipped, the main package never published, and the tag's version number spent.
+
+`prepublishOnly` now runs with `--skip-optional-publish` and the job publishes each
+`npm/<platform>` package itself, through the same `npm-publish.sh` wrapper every other package here
+uses. The loop attempts **every** name, publishes the main package whether or not the loop
+succeeded, and only then exits non-zero listing what failed. An un-bootstrapped platform name costs
+a red job, not a release.
+
+The same change closes a pre-existing hole that adding targets had made reachable: in rehearsal mode
+the root `npm publish --dry-run` does not propagate `--dry-run` into the `prepublishOnly` hook, so
+`napi prepublish` was attempting real subpackage publishes during a run whose contract is "writes to
+no registry". Each name now goes through the wrapper, which honours `NPM_PUBLISH_REHEARSAL`.
+
+**Still requires a manual step before the next tag.** Neither musl name has been published, so
+`publish-npm-cbor-node` ends red until a maintainer bootstraps both by hand — procedure in
+`docs/tooling/npm-publishing.md`.
+
+### `napi.targets` and the `build-cbor-node` matrix are checked against each other
+
+`.ci/napi-targets-check.sh` (`just verify-napi-targets`), wired as its own CI job that invokes
+that same recipe. The platform list is duplicated between
+`packages/cratestack-cbor-node/package.json` and `release-cli.yml`, and `release-cli.yml` cannot be
+exercised on a PR — its first execution against any change is a production release. So a mismatch
+produced no signal until a tag was already pushed. Both directions are errors: a target with no
+matrix leg aborts the publish job, and a matrix leg with no target builds a binary that is silently
+dropped, which is the shape of #850 itself — a platform users needed, absent, with CI green.
+
+The `build-cbor-node` legs also now add their cross-target to the *pinned* toolchain rather than to
+`stable`. A release rehearsal on the first version of this change failed both musl legs with
+`error[E0463]: can't find crate for 'core' … the x86_64-unknown-linux-musl target may not be
+installed`: `dtolnay/rust-toolchain@stable`'s `targets:` input installs std for `stable`, while
+`rust-toolchain.toml` pins 1.98.0 and cargo selects that inside the checkout. `build-cbor-macos` and
+`build-cbor-ios` already carried the same workaround.
 
 Still uncovered: `win32-arm64`. `--no-native-cbor` remains the escape hatch there.
 
