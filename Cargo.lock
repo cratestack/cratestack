@@ -5721,6 +5721,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpc-client-example"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "cratestack-client",
+ "cratestack-client-rust",
+ "cratestack-codec-cbor",
+ "rpc-procedures-example",
+ "serde",
+ "tokio",
+ "tower",
+ "url",
+]
+
+[[package]]
 name = "rpc-procedures-example"
 version = "0.1.0"
 dependencies = [

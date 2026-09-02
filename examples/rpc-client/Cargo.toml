@@ -1,0 +1,49 @@
+[package]
+name = "rpc-client-example"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Pure RPC HTTP client consuming a `transport rpc` server. Demonstrates the typed unary call (BatchableCall->await) and a batched round-trip (BatchBuilder/queue/send/take) against `rpc-procedures-example`. The first committed client example to use the `cratestack-client` facade."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rpc-client"
+path = "src/main.rs"
+
+[dependencies]
+# The `cratestack-client` facade is the pure HTTP-client SDK — it re-exports
+# only `include_client_schema!` plus the generated Rust client runtime and
+# the handful of shared types codegen references. `cratestack-axum` (and
+# therefore axum/tower/hyper/tower-http) is structurally absent from its
+# dependency graph. This example intentionally uses it rather than the
+# `cratestack-pg` facade that the older client-stub-rust / client-multi-service
+# examples drifted onto — `cratestack-client` is the documented facade for a
+# pure HTTP client that never runs a server (see `crates/cratestack-client`
+# and the facade table in `AGENTS.md`).
+cratestack = { package = "cratestack-client", path = "../../crates/cratestack-client" }
+# Direct deps for the pieces `include_client_schema!`'s output needs but the
+# facade does not re-export by name: the `RequestAuthorizer` trait and the
+# runtime types (`CratestackClient`, `ClientConfig`, `BatchableCall`, ...).
+# Cargo unifies this with the facade's own `cratestack-client-rust`, so the
+# types are identical.
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust" }
+async-trait = { workspace = true }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
+serde = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+# `tests/smoke.rs` exercises the end-to-end path against the REAL
+# `rpc-procedures-example` server router, spawned in-process (as
+# `rpc-streaming-client-rust` does with `rpc-streaming-example`), so the
+# demo runs in CI without a second server binary running. `axum` is only
+# a dev-dependency here (to serve the in-process router on an ephemeral
+# port) — it must NOT appear in the `[dependencies]`: the whole point of
+# the example is that the shipped client is axum-free.
+axum = { workspace = true }
+rpc-procedures-example = { path = "../rpc-procedures" }
+tower = { workspace = true }
