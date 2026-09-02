@@ -72,8 +72,10 @@ premise is false: the default key function hashes an **unvalidated** `Authorizat
 layer runs before authentication), so an unauthenticated caller mints one Redis key per request just
 by rotating that header. Driven to `maxmemory`, every write then fails with `OOM` — and a blanket
 fail-open would serve *every* request through, including from buckets already exhausted. That is a
-global limiter bypass reachable by anyone. An `OOM`, a `NOPERM`, a poisoned mutex or a malformed
-reply are all reachable-and-refusing, do not self-heal, and stay closed. A broken pipe is caused by
+global limiter bypass reachable by anyone. This change closes the bypass but not the primitive
+underneath it — an unauthenticated caller can still mint one Redis key per request, which is tracked
+separately as #871. An `OOM`, a `NOPERM`, a poisoned mutex or a malformed reply are all
+reachable-and-refusing, do not self-heal, and stay closed. A broken pipe is caused by
 nobody, fixable by nobody in the request path, and self-heals — refusing there would convert a
 limiter hiccup into a simultaneous outage of every rate-limited route, which is why it is the one
 class that degrades to unlimited. Key derivation itself remains fail-closed under both policies
