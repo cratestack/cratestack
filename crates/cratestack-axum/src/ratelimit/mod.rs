@@ -39,20 +39,44 @@
 //! than an `Authorization` header — and who cannot serve through
 //! `into_make_service_with_connect_info` — must supply
 //! [`RateLimitLayer::with_key_fn`] explicitly.
+//!
+//! ## Store failures fail OPEN by default (cratestack#846)
+//!
+//! Identity derivation above is fail-closed because its inputs are
+//! caller-controlled. A failure of the *store* is not: when Redis drops a
+//! connection, no caller caused it and no caller can fix it, and refusing
+//! would turn a limiter hiccup into a simultaneous outage of every
+//! rate-limited route. The layer therefore logs a `WARN` and lets the
+//! request through — the limiter protects capacity, so a broken limiter
+//! degrades to unlimited. Deployments using the limiter as a security
+//! control (a paywall, a brute-force guard) opt into the opposite with
+//! [`RateLimitLayer::with_store_error_policy`]/[`StoreErrorPolicy::Deny`].
+//!
+//! Every response the layer emits itself — the throttled `429`, an
+//! identity refusal, a `Deny`d store failure — carries the framework's
+//! own codec-negotiated error envelope, so a generated client decodes a
+//! typed code rather than an opaque body.
 
 mod config;
+mod key_fn;
 mod layer;
+mod policy;
 mod rest_ops_filter;
 mod rpc_ops_filter;
 mod store;
 
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
 pub use layer::{RateLimitLayer, RateLimitService};
+pub use policy::StoreErrorPolicy;
 pub use rest_ops_filter::build_rest_ops_filter;
 pub use rpc_ops_filter::build_rpc_ops_filter;
 pub use store::{InMemoryRateLimitStore, RateLimitStore};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_store_error;
+#[cfg(test)]
+mod tests_support;
 #[cfg(test)]
 mod tests_key_fn;

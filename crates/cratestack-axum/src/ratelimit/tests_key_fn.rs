@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use axum::extract::{ConnectInfo, Request};
 use http::Request as HttpRequest;
 
-use super::layer::default_key_fn;
+use super::key_fn::default_key_fn;
 
 fn with_connect_info(mut req: Request, addr: &str) -> Request {
     let socket_addr: SocketAddr = addr.parse().unwrap();
