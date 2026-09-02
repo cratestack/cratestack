@@ -51,6 +51,8 @@ mod store;
 mod stream_bypass;
 
 #[cfg(test)]
+mod tests_error_body;
+#[cfg(test)]
 mod tests_fingerprint;
 #[cfg(test)]
 mod tests_hash;

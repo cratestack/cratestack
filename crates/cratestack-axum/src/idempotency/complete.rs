@@ -9,18 +9,25 @@
 use axum::body::Body;
 use axum::response::Response;
 use cratestack_core::CratestackError;
-use http::StatusCode;
+use http::HeaderMap;
+
+use crate::middleware_error::middleware_error_response;
 
 use super::headers::encode_headers;
-use super::responses::error_response;
 use super::store::{IdempotencyStore, MAX_BODY_BYTES};
 
+/// `request_headers`/`request_path` describe the *request*, not the
+/// response being buffered: they exist only so the one error exit below
+/// can negotiate its content type the same way every other error in the
+/// stack does (cratestack#846).
 pub(super) async fn buffer_and_persist_response(
     store: &dyn IdempotencyStore,
     principal: &str,
     key: &str,
     token: uuid::Uuid,
     response: Response,
+    request_headers: &HeaderMap,
+    request_path: &str,
 ) -> Response {
     let (rparts, rbody) = response.into_parts();
     let rbytes = match axum::body::to_bytes(rbody, MAX_BODY_BYTES).await {
@@ -29,11 +36,16 @@ pub(super) async fn buffer_and_persist_response(
             // Drop the reservation so retries can attempt again — but
             // only if our token still holds.
             let _ = store.release(principal, key, token).await;
-            let mut error_response = error_response(CratestackError::Internal(
-                "response body exceeded idempotency buffer".to_owned(),
-            ));
-            *error_response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            return error_response;
+            // `Internal` already maps to 500, so no status override is
+            // needed here — the pre-cratestack#846 code set it explicitly
+            // because it built the response by hand.
+            return middleware_error_response(
+                request_headers,
+                request_path,
+                CratestackError::Internal(
+                    "response body exceeded idempotency buffer".to_owned(),
+                ),
+            );
         }
     };
     // Capture the full header set so the replay reproduces the original
