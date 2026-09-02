@@ -15,7 +15,8 @@ use crate::shared::{bytes_serde_attr, doc_attrs, ident, value_tokens};
 use super::type_tokens::procedure_type_tokens;
 
 pub(crate) use super::type_tokens::procedure_client_output_item_tokens;
-pub(super) use super::type_tokens::{procedure_output_tokens, procedure_stream_item_tokens};
+pub(crate) use super::type_tokens::procedure_output_tokens;
+pub(super) use super::type_tokens::procedure_stream_item_tokens;
 
 /// `Args` field specs for a procedure's argument list, on both the server
 /// and client sides — they emit the identical field set, so one builder
@@ -71,7 +72,7 @@ fn procedure_arg_builder_fields(
         .collect()
 }
 
-pub(super) fn generate_procedure_args_struct(
+pub(crate) fn generate_procedure_args_struct(
     procedure: &Procedure,
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,

@@ -25,12 +25,16 @@ use instrument::{
     authorize_fn_tokens, authorize_with_db_fn_tokens, authorized_type_tokens, invoke_fn_tokens,
     invoke_with_db_fn_tokens,
 };
-use types::{
-    generate_client_procedure_args_struct, generate_procedure_args_struct, procedure_output_tokens,
-    procedure_stream_item_tokens,
-};
+use types::{generate_client_procedure_args_struct, procedure_stream_item_tokens};
 
 pub(crate) use types::procedure_client_output_item_tokens;
+/// Re-exported for `crate::query` (cratestack#867): a `query`'s `Args`
+/// struct and result-type tokens are a procedure's, resolved against the
+/// same `type`/`enum` declarations at the same module depth. Sharing the
+/// generator is what makes the policy resolver — which reads `Args`
+/// through the `ProcedureArgs` impl emitted here — work for a `query`
+/// with no new machinery (design §6).
+pub(crate) use types::{generate_procedure_args_struct, procedure_output_tokens};
 
 pub(crate) fn generate_procedure_module(
     procedure: &Procedure,

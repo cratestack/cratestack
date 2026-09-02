@@ -1,0 +1,85 @@
+// cratestack#867 fixture: the design's motivating two-aggregate
+// `FILTER (WHERE …)` query, which no other `.cstack` construct can
+// express — plus a policy-less twin and a list-returning twin so the
+// deny-by-default rule and `fetch_all` path are exercised too.
+//
+// The `LoyaltyFeeEvent` model exists to prove co-existence, not because
+// a `query` needs one: the SQL below names the table directly. Note the
+// quoted `AS "thisMonth"` aliases — a query's SELECT is the author's, so
+// nothing inserts an alias for it, and Postgres folds unquoted
+// identifiers to lower case.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  subjectId String
+}
+
+model LoyaltyFeeEvent {
+  id Int @id
+  userId String
+  discount Int
+  createdAt DateTime
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type LoyaltyFeeSummary {
+  total Int
+  thisMonth Int
+}
+
+type LoyaltyFeeRow {
+  userId String
+  total Int
+}
+
+/// Two aggregates in one round trip, one of them `FILTER`ed — the exact
+/// shape epic #488 opened against.
+query loyaltyFeeSummary(userId: String, cutoff: DateTime): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      COALESCE(SUM(discount) FILTER (WHERE created_at >= $2), 0)::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+  @allow(auth() != null && auth().subjectId == userId)
+
+/// Deliberately has no `@allow` at all: deny-by-default must reject every
+/// caller, including an authenticated one.
+query unreachableSummary(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+
+/// `T[]` result: the same construct through `fetch_all` instead of
+/// `fetch_one`, with a `GROUP BY` that the aggregate builder cannot express.
+query loyaltyLeaderboard(minTotal: Int): LoyaltyFeeRow[]
+  @@sql("""
+    SELECT user_id AS "userId", SUM(discount)::bigint AS "total"
+    FROM loyalty_fee_events
+    GROUP BY user_id
+    HAVING SUM(discount) >= $1
+    ORDER BY 2 DESC, 1 ASC
+  """)
+  @allow(auth() != null)
+
+/// Zero parameters — design §8's self-test case, where the `$N` range
+/// check is vacuously satisfied and no special case should be needed.
+query loyaltyEventCount(): LoyaltyFeeSummary
+  @@sql("""
+    SELECT COUNT(*)::bigint AS "total", 0::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+  """)
+  @allow(auth() != null)

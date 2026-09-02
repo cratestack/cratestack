@@ -11,6 +11,7 @@ pub(super) fn build_runtime_block(
     model_accessors: &[proc_macro2::TokenStream],
     bound_model_accessors: &[proc_macro2::TokenStream],
     view_accessors: &[proc_macro2::TokenStream],
+    query_accessors: &[proc_macro2::TokenStream],
 ) -> proc_macro2::TokenStream {
     let views_module = quote! {
         pub mod views {
@@ -27,6 +28,23 @@ pub(super) fn build_runtime_block(
                 }
 
                 #(#view_accessors)*
+            }
+        }
+    };
+
+    // `queries()` only exists for a schema that declares at least one
+    // `query` block — the `pub mod queries` it returns into is emitted
+    // under the same condition (see `include/server.rs`), so emitting the
+    // accessor unconditionally would name a module that isn't there.
+    let queries_accessor = if query_accessors.is_empty() {
+        proc_macro2::TokenStream::new()
+    } else {
+        quote! {
+            /// Declarative custom-SQL reads (`query` blocks). Each method
+            /// forwards to that query's generated `run`, which checks its
+            /// `@allow`/`@deny` policy before executing anything.
+            pub fn queries(&self) -> queries::Queries<'_> {
+                queries::Queries::new(self)
             }
         }
     };
@@ -141,6 +159,8 @@ pub(super) fn build_runtime_block(
             pub fn views(&self) -> views::Views<'_> {
                 views::Views::new(&self.runtime)
             }
+
+            #queries_accessor
         }
 
         impl<'a> BoundCratestack<'a> {
