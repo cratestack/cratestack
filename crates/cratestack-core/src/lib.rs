@@ -22,6 +22,7 @@ pub mod events;
 pub mod find_many;
 pub mod idempotency_record;
 pub mod json;
+pub mod log_throttle;
 pub mod lenient_bytes;
 pub mod limits;
 pub mod page;

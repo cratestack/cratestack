@@ -46,6 +46,7 @@ impl RateLimitStore for RedisRateLimitStore {
                         .await
                 }
             },
+            &self.retry_warning,
         )
         .await?;
 

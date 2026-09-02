@@ -16,7 +16,7 @@ use cratestack_core::{CratestackCodec, CratestackError, CratestackErrorResponse}
 
 use super::middleware_error_response;
 
-fn headers_with_accept(accept: Option<&str>) -> HeaderMap {
+pub(super) fn headers_with_accept(accept: Option<&str>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(accept) = accept {
         headers.insert(header::ACCEPT, HeaderValue::from_str(accept).unwrap());
@@ -24,7 +24,7 @@ fn headers_with_accept(accept: Option<&str>) -> HeaderMap {
     headers
 }
 
-async fn parts(response: Response) -> (StatusCode, String, Vec<u8>) {
+pub(super) async fn parts(response: Response) -> (StatusCode, String, Vec<u8>) {
     let status = response.status();
     let content_type = response
         .headers()
@@ -117,6 +117,56 @@ async fn rest_path_mentioning_rpc_without_a_segment_stays_rest() {
     let response = middleware_error_response(
         &headers_with_accept(None),
         "/rpcs/transfer",
+        CratestackError::Internal("boom".to_owned()),
+    );
+    let (_, _, body) = parts(response).await;
+    let decoded: CratestackErrorResponse = CborCodec.decode(&body).expect("rest envelope");
+    assert_eq!(decoded.code, "INTERNAL_ERROR");
+}
+
+/// The security review's counterexample: a REST collection legitimately
+/// named `rpc`. A whole-segment scan alone does NOT separate this from
+/// `/api/rpc/model.User.list` — `rpc` is second-to-last in both — which is
+/// why the probe also requires the following segment to look like an op
+/// id (dotted, or the literal `batch`/`subscribe`).
+#[tokio::test]
+async fn a_rest_collection_named_rpc_keeps_the_rest_vocabulary() {
+    let response = middleware_error_response(
+        &headers_with_accept(None),
+        "/accounts/rpc/transactions",
+        CratestackError::TooManyRequests("rate limit exceeded".to_owned()),
+    );
+    let (_, _, body) = parts(response).await;
+    let decoded: CratestackErrorResponse = CborCodec.decode(&body).expect("rest envelope");
+    assert_eq!(
+        decoded.code, "TOO_MANY_REQUESTS",
+        "`transactions` is not an op id, so this is a REST route with a resource named rpc"
+    );
+}
+
+/// The other two RPC mount shapes must be recognised as well.
+#[tokio::test]
+async fn rpc_batch_and_subscribe_mounts_are_recognised() {
+    for path in ["/rpc/batch", "/rpc/subscribe/model.User.subscribe"] {
+        let response = middleware_error_response(
+            &headers_with_accept(None),
+            path,
+            CratestackError::TooManyRequests("rate limit exceeded".to_owned()),
+        );
+        let (_, _, body) = parts(response).await;
+        let decoded: RpcErrorBody = CborCodec
+            .decode(&body)
+            .unwrap_or_else(|error| panic!("{path} should use the RPC envelope: {error}"));
+        assert_eq!(decoded.code, "resource_exhausted", "{path}");
+    }
+}
+
+/// `/rpc` addressing no op at all is not an RPC call.
+#[tokio::test]
+async fn a_bare_rpc_segment_with_no_op_is_not_an_rpc_call() {
+    let response = middleware_error_response(
+        &headers_with_accept(None),
+        "/rpc",
         CratestackError::Internal("boom".to_owned()),
     );
     let (_, _, body) = parts(response).await;

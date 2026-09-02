@@ -58,16 +58,18 @@
 //! typed code rather than an opaque body.
 
 mod config;
+mod decision;
 mod key_fn;
 mod layer;
 mod policy;
 mod rest_ops_filter;
 mod rpc_ops_filter;
 mod store;
+mod store_error;
 
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
 pub use layer::{RateLimitLayer, RateLimitService};
-pub use policy::StoreErrorPolicy;
+pub use policy::{DEFAULT_STORE_TIMEOUT, StoreErrorPolicy};
 pub use rest_ops_filter::build_rest_ops_filter;
 pub use rpc_ops_filter::build_rpc_ops_filter;
 pub use store::{InMemoryRateLimitStore, RateLimitStore};

@@ -52,6 +52,7 @@ pub use validate::{
 pub(crate) use http_transport::CborCodecMarker;
 pub(crate) use internal::{encode_cbor_sequence_response, fallback_error_response};
 pub(crate) use media_type::{
-    validate_transport_accept_header, validate_transport_content_type_header,
+    select_transport_response_content_type, validate_transport_accept_header,
+    validate_transport_content_type_header,
 };
 pub(crate) use stream_sequence::encode_cbor_sequence_stream_response;

@@ -46,6 +46,8 @@ mod tests_randomized_keys;
 #[cfg(test)]
 mod tests_randomized_parse;
 #[cfg(test)]
+mod tests_error_class;
+#[cfg(test)]
 mod tests_retry;
 #[cfg(test)]
 mod tests_store;

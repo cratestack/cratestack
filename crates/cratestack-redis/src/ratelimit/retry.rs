@@ -1,4 +1,4 @@
-//! Retry-once on a connection-class failure (cratestack#846).
+//! Retry-once on a transport-class failure (cratestack#846).
 //!
 //! `docs/design/redis-store-connection-reuse.md` (cratestack#174) made
 //! both stores share one lazily-established
@@ -12,20 +12,39 @@
 //! So a Redis idle-timeout or a restart costs exactly one user-visible
 //! request, which is what cratestack#846 reported from production
 //! (`redis rate limit: broken pipe`). Re-issuing the command once
-//! absorbs it: the second attempt awaits the manager's replacement
-//! connection rather than the dead one.
+//! absorbs it.
 //!
-//! ## Two deliberate limits
+//! ## What "a fresh connection" actually means here
+//!
+//! Calling `connection()` a second time does **not** dial a new socket:
+//! the `OnceCell` is already populated, so it returns another clone of
+//! the same `ConnectionManager`. The retry works for a different reason
+//! than the obvious one — the manager has, on observing the first
+//! failure, atomically swapped its *inner* connection future for a
+//! reconnecting one, and the second attempt awaits that. The second call
+//! to `connection()` is still worth making rather than reusing the first
+//! handle: when the very first connection attempt failed, the cell holds
+//! nothing (cratestack#174 deliberately caches no `Err`), and only a
+//! second call will try to establish one at all.
+//!
+//! ## Three deliberate limits
 //!
 //! **Exactly once, never a loop.** A retry budget larger than one turns a
 //! Redis outage into an amplifier: every request would multiply its load
-//! on an already-struggling server. One retry covers the stale-pooled-
-//! connection case this exists for; anything worse is the store-error
-//! policy's problem (`cratestack_axum::ratelimit::StoreErrorPolicy`).
+//! on an already-struggling server.
 //!
-//! **Only connection-class errors.** A `NOSCRIPT`, a wrong-type error or
-//! a malformed reply is deterministic — retrying it just doubles the
-//! latency before the same failure. See [`is_connection_class`].
+//! **Only transport-class errors** ([`super::util::is_transport_class`],
+//! i.e. `RedisError::is_unrecoverable_error`). A `NOSCRIPT`, a `NOPERM`,
+//! an `OOM` or a wrong-type reply is deterministic — retrying it just
+//! doubles the latency before the same failure.
+//!
+//! **Bounded in wall-clock by the caller, not here.** Neither attempt has
+//! a timeout of its own; `ConnectionManager` is configured with explicit
+//! connection/response timeouts (`super::store`), and
+//! `cratestack_axum::ratelimit::RateLimitLayer` additionally wraps the
+//! whole `consume` — first attempt *and* retry — in one shared budget.
+//! That layer-side budget is what makes "degrade to unlimited" mean
+//! "degrade promptly" rather than "hang for the reconnect cycle, twice".
 //!
 //! ## Not idempotent, and that is fine here
 //!
@@ -41,32 +60,22 @@
 use std::future::Future;
 
 use cratestack_core::CratestackError;
+use cratestack_core::log_throttle::{LogThrottle, ThrottleDecision};
 
-use super::util::redis_error;
+use super::util::{is_transport_class, redis_error};
 
-/// Is this the kind of failure a fresh connection can absorb?
-///
-/// [`redis::RedisError::is_connection_dropped`] already covers the whole
-/// set that matters — `BrokenPipe`, `ConnectionReset`, `ConnectionAborted`,
-/// `UnexpectedEof`, `NotConnected`, plus any error whose kind is
-/// `ErrorKind::Io`. Deliberately *not* `is_timeout`: a timeout means the
-/// server may still be executing the script, and re-issuing a
-/// non-idempotent token consume against a server that is merely slow is
-/// how a struggling Redis gets pushed over.
-pub(super) fn is_connection_class(error: &redis::RedisError) -> bool {
-    error.is_connection_dropped()
-}
-
-/// Runs `run` against a connection from `connect`. On a connection-class
+/// Runs `run` against a connection from `connect`. On a transport-class
 /// failure, acquires a connection again and runs it exactly once more.
 ///
-/// `connect` is called a second time rather than reusing the first
-/// handle so that a store whose very first connection attempt failed
-/// (the `OnceCell` caches no `Err`, by cratestack#174's design) gets a
-/// real second chance to establish one.
+/// `warning` is owned by the store rather than being a `static` here: a
+/// Redis outage drives one retry per request at whatever rate the caller
+/// chooses, so the line below is throttled — and a process-global budget
+/// would make one store's outage silence another's, and make any test
+/// asserting on this line order-dependent.
 pub(super) async fn invoke_with_retry<C, Connect, ConnFut, Run, RunFut, T>(
     connect: Connect,
     run: Run,
+    warning: &LogThrottle,
 ) -> Result<T, CratestackError>
 where
     Connect: Fn() -> ConnFut,
@@ -77,16 +86,23 @@ where
     let first = run(connect().await?).await;
     let error = match first {
         Ok(value) => return Ok(value),
-        Err(error) if is_connection_class(&error) => error,
+        Err(error) if is_transport_class(&error) => error,
         Err(error) => return Err(redis_error(error)),
     };
 
-    tracing::warn!(
-        target: "cratestack",
-        cratestack_operation = "rate_limit",
-        error = %error,
-        "redis rate limit: connection-class failure, retrying once on a fresh connection \
-         (cratestack#846)",
-    );
+    if let ThrottleDecision::Emit {
+        suppressed_since_last,
+    } = warning.check()
+    {
+        tracing::warn!(
+            target: "cratestack",
+            cratestack_operation = "rate_limit",
+            error = %error,
+            suppressed_since_last,
+            "redis rate limit: transport-class failure, retrying once (cratestack#846). This \
+             line is throttled to one per 10s; suppressed_since_last counts the retries not \
+             logged since the previous one.",
+        );
+    }
     run(connect().await?).await.map_err(redis_error)
 }

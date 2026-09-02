@@ -1,54 +1,23 @@
-//! cratestack#846: a stale pooled connection (Redis idle-timeout,
-//! restart, network blip) must cost zero user-visible requests, not one.
+//! The retry itself: exactly once, only for transport-class failures,
+//! and never for a deterministic refusal (cratestack#846).
 //!
 //! A real broken pipe cannot be induced deterministically against a
 //! testcontainer — `CLIENT KILL` races the manager's background
 //! reconnect, so the test would be flaky in exactly the way that teaches
 //! people to ignore it. These drive the *shipped* retry function
-//! (`super::retry::invoke_with_retry`, the same one `consume` calls)
-//! with an injected connection that fails once, which is what the
-//! production incident actually looked like from this code's side.
+//! (`super::retry::invoke_with_retry`, the same one `consume` calls) with
+//! an injected connection that fails once, which is what the production
+//! incident actually looked like from this code's side.
 
 #![cfg(test)]
 
-use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cratestack_core::CratestackError;
 
-use super::retry::{invoke_with_retry, is_connection_class};
-
-fn broken_pipe() -> redis::RedisError {
-    io::Error::new(io::ErrorKind::BrokenPipe, "Broken pipe (os error 32)").into()
-}
-
-fn connection_reset() -> redis::RedisError {
-    io::Error::new(io::ErrorKind::ConnectionReset, "Connection reset by peer").into()
-}
-
-/// A deterministic non-connection failure: the server answered, it just
-/// answered with an error.
-fn script_error() -> redis::RedisError {
-    redis::RedisError::from((
-        redis::ErrorKind::Server(redis::ServerErrorKind::NoScript),
-        "No matching script",
-    ))
-}
-
-#[test]
-fn connection_class_covers_the_errors_a_fresh_socket_fixes() {
-    assert!(is_connection_class(&broken_pipe()));
-    assert!(is_connection_class(&connection_reset()));
-}
-
-#[test]
-fn connection_class_excludes_deterministic_server_errors() {
-    assert!(
-        !is_connection_class(&script_error()),
-        "retrying a deterministic server error just doubles the latency before the same failure"
-    );
-}
+use super::retry::invoke_with_retry;
+use super::tests_error_class::{always_warn, broken_pipe, oom_error};
 
 #[tokio::test]
 async fn a_broken_pipe_is_absorbed_by_exactly_one_retry() {
@@ -75,6 +44,7 @@ async fn a_broken_pipe_is_absorbed_by_exactly_one_retry() {
                 }
             }
         },
+        &always_warn(),
     )
     .await;
 
@@ -86,7 +56,8 @@ async fn a_broken_pipe_is_absorbed_by_exactly_one_retry() {
     assert_eq!(
         connects.load(Ordering::SeqCst),
         2,
-        "the retry must re-acquire the connection, not reuse the handle that just died"
+        "the retry must re-enter connection(), so that a store whose FIRST connect failed (the \
+         OnceCell caches no Err) gets a second chance to establish one at all"
     );
 }
 
@@ -104,13 +75,14 @@ async fn a_second_broken_pipe_is_surfaced_rather_than_retried_again() {
                 Err(broken_pipe())
             }
         },
+        &always_warn(),
     )
     .await;
 
     let error = result.expect_err("a store that is genuinely down must still fail");
     assert!(
-        error.to_string().contains("redis rate limit"),
-        "the surfaced error keeps this store's prefix: {error}"
+        matches!(error, CratestackError::Unavailable(_)),
+        "a store that never answered is transport-class: {error}"
     );
     assert_eq!(
         attempts.load(Ordering::SeqCst),
@@ -131,17 +103,22 @@ async fn a_deterministic_error_is_not_retried_at_all() {
             let attempts = attempts_probe.clone();
             async move {
                 attempts.fetch_add(1, Ordering::SeqCst);
-                Err(script_error())
+                Err(oom_error())
             }
         },
+        &always_warn(),
     )
     .await;
 
-    assert!(result.is_err());
+    let error = result.expect_err("an OOM must fail the call");
+    assert!(
+        matches!(error, CratestackError::Internal(_)),
+        "an OOM must stay Internal so the layer refuses it even under Allow: {error}"
+    );
     assert_eq!(
         attempts.load(Ordering::SeqCst),
         1,
-        "a NOSCRIPT/wrong-type reply is deterministic; retrying it only doubles the latency"
+        "an OOM/NOSCRIPT reply is deterministic; retrying it only doubles the latency"
     );
 }
 
@@ -161,6 +138,7 @@ async fn a_successful_call_runs_exactly_once() {
                 Ok("allowed")
             }
         },
+        &always_warn(),
     )
     .await;
 

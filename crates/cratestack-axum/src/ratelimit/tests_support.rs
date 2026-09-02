@@ -8,6 +8,7 @@
 #![cfg(test)]
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::body::to_bytes;
@@ -17,21 +18,60 @@ use http::header;
 
 use super::store::RateLimitStore;
 
-/// A store that always fails, standing in for e.g. an unreachable Redis
-/// backend behind `RedisRateLimitStore`. The message is the one from the
-/// production incident in cratestack#846.
-pub(super) struct FailingStore;
+/// A store that is UNREACHABLE — the transport-class case. This is what
+/// `cratestack-redis` reports (as `Unavailable`) for a broken pipe or a
+/// refused connection, and the only class `StoreErrorPolicy::Allow`
+/// serves through.
+pub(super) struct UnreachableStore;
 
 #[async_trait]
-impl RateLimitStore for FailingStore {
+impl RateLimitStore for UnreachableStore {
+    async fn consume(
+        &self,
+        _key: &str,
+        _config: RateLimitConfig,
+    ) -> Result<RateLimitDecision, CratestackError> {
+        Err(CratestackError::Unavailable(
+            "rate limit store temporarily unavailable".to_owned(),
+        ))
+    }
+}
+
+/// A store that is REACHABLE and refusing — the logical-failure case, and
+/// the one the security review showed an unauthenticated caller can
+/// induce by rotating `Authorization` until Redis hits `maxmemory`. Must
+/// never be served through, under any policy.
+pub(super) struct RefusingStore;
+
+#[async_trait]
+impl RateLimitStore for RefusingStore {
     async fn consume(
         &self,
         _key: &str,
         _config: RateLimitConfig,
     ) -> Result<RateLimitDecision, CratestackError> {
         Err(CratestackError::Internal(
-            "redis rate limit: connection refused".to_owned(),
+            "redis rate limit: OOM command not allowed when used memory > 'maxmemory'".to_owned(),
         ))
+    }
+}
+
+/// A store that answers, eventually — standing in for the driver's
+/// unbounded reconnect cycle (measured at 9.46s per attempt during a real
+/// outage, 18.92s with the retry).
+pub(super) struct SlowStore {
+    pub(super) delay: Duration,
+}
+
+#[async_trait]
+impl RateLimitStore for SlowStore {
+    async fn consume(
+        &self,
+        _key: &str,
+        _config: RateLimitConfig,
+    ) -> Result<RateLimitDecision, CratestackError> {
+        tokio::time::sleep(self.delay).await;
+        Ok(RateLimitDecision::Allowed { remaining: 0 })
     }
 }
 
