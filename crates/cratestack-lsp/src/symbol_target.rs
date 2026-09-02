@@ -89,6 +89,17 @@ fn type_reference_target(schema: &Schema, offset: usize) -> Option<SymbolTarget>
             }
         }
     }
+    // cratestack#867 — see `references::type_references`' matching note.
+    for query in &schema.queries {
+        if let Some(name) = nested_type_reference_name_at_offset(&query.result_type, offset) {
+            return Some(SymbolTarget::Declaration(name.to_owned()));
+        }
+        for arg in &query.args {
+            if let Some(name) = nested_type_reference_name_at_offset(&arg.ty, offset) {
+                return Some(SymbolTarget::Declaration(name.to_owned()));
+            }
+        }
+    }
     None
 }
 
@@ -147,11 +158,19 @@ fn declaration_target(schema: &Schema, offset: usize) -> Option<SymbolTarget> {
         }
     }
 
-    schema
+    if let Some(procedure) = schema
         .procedures
         .iter()
         .find(|procedure| span_contains(procedure.name_span, offset))
-        .map(|procedure| SymbolTarget::Declaration(procedure.name.clone()))
+    {
+        return Some(SymbolTarget::Declaration(procedure.name.clone()));
+    }
+
+    schema
+        .queries
+        .iter()
+        .find(|query| span_contains(query.name_span, offset))
+        .map(|query| SymbolTarget::Declaration(query.name.clone()))
 }
 
 /// Last resort for positions no span covers: treat the bare word as a global
@@ -166,6 +185,7 @@ fn word_target(text: &str, schema: &Schema, offset: usize) -> Option<SymbolTarge
         || schema
             .procedures
             .iter()
-            .any(|procedure| procedure.name == word);
+            .any(|procedure| procedure.name == word)
+        || schema.queries.iter().any(|query| query.name == word);
     declared.then(|| SymbolTarget::Declaration(word.to_owned()))
 }

@@ -79,6 +79,17 @@ pub(crate) fn declaration_span(schema: &Schema, word: &str) -> Option<SourceSpan
             return Some(arg.name_span);
         }
     }
+    // `query` blocks (cratestack#867) declare names the same way — the
+    // query itself and its parameters, the latter being what an
+    // `@allow(... == userId)` predicate refers to.
+    for query in &schema.queries {
+        if query.name == word {
+            return Some(query.name_span);
+        }
+        if let Some(arg) = query.args.iter().find(|arg| arg.name == word) {
+            return Some(arg.name_span);
+        }
+    }
     None
 }
 
@@ -125,6 +136,18 @@ pub(crate) fn type_reference_target_span(schema: &Schema, offset: usize) -> Opti
             return declaration_span(schema, target);
         }
         for arg in &procedure.args {
+            if let Some(target) = nested_type_reference_name_at_offset(&arg.ty, offset) {
+                return declaration_span(schema, target);
+            }
+        }
+    }
+    // A query's result type is a reference to a `type` declaration, so
+    // go-to-definition on it must land on that block (cratestack#867).
+    for query in &schema.queries {
+        if let Some(target) = nested_type_reference_name_at_offset(&query.result_type, offset) {
+            return declaration_span(schema, target);
+        }
+        for arg in &query.args {
             if let Some(target) = nested_type_reference_name_at_offset(&arg.ty, offset) {
                 return declaration_span(schema, target);
             }

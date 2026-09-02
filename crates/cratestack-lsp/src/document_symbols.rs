@@ -102,6 +102,38 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
         )
     }));
 
+    // `query` blocks (cratestack#867) outline like procedures: a FUNCTION
+    // with its parameters as children. The result type goes in `detail`
+    // rather than becoming a child, matching how a procedure's return type
+    // is rendered — the outline lists what a declaration *contains*, and a
+    // query contains its parameters, not its result.
+    symbols.extend(schema.queries.iter().map(|query| {
+        let mut children = query
+            .args
+            .iter()
+            .map(|arg| {
+                document_symbol_leaf(
+                    text,
+                    arg.name.clone(),
+                    SymbolKind::VARIABLE,
+                    Some(render_type_ref(&arg.ty)),
+                    arg.span,
+                    arg.name_span,
+                )
+            })
+            .collect::<Vec<_>>();
+        children.sort_by_key(|symbol| (symbol.range.start.line, symbol.range.start.character));
+        document_symbol_with_children(
+            text,
+            query.name.clone(),
+            SymbolKind::FUNCTION,
+            Some(format!("query -> {}", render_type_ref(&query.result_type))),
+            query.span,
+            query.name_span,
+            children,
+        )
+    }));
+
     symbols
 }
 

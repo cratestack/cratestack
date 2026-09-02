@@ -72,6 +72,15 @@ fn declaration_references(text: &str, schema: &Schema, name: &str) -> Vec<Source
             collect_type_ref_spans(&arg.ty, name, &mut spans);
         }
     }
+    // A query's signature references types exactly as a procedure's does
+    // (cratestack#867) — omitting it would mean renaming a `type` silently
+    // skipped the query that returns it, leaving the schema uncompilable.
+    for query in &schema.queries {
+        collect_type_ref_spans(&query.result_type, name, &mut spans);
+        for arg in &query.args {
+            collect_type_ref_spans(&arg.ty, name, &mut spans);
+        }
+    }
 
     // `@use(Timestamps)` is a reference to the mixin just as much as a field
     // type is a reference to a model.
@@ -156,6 +165,13 @@ fn declaration_name_span(schema: &Schema, name: &str) -> Option<SourceSpan> {
                 .iter()
                 .find(|procedure| procedure.name == name)
                 .map(|procedure| procedure.name_span)
+        })
+        .or_else(|| {
+            schema
+                .queries
+                .iter()
+                .find(|query| query.name == name)
+                .map(|query| query.name_span)
         })
 }
 

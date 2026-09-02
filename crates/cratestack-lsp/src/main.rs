@@ -24,6 +24,8 @@ mod tests_last_known_good;
 #[cfg(test)]
 mod tests_navigation;
 #[cfg(test)]
+mod tests_queries;
+#[cfg(test)]
 mod tests_rename;
 #[cfg(test)]
 mod tests_semantic_tokens;

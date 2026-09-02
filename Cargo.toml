@@ -94,6 +94,14 @@ exclude = [
     # `Cargo.toml` never lists it, and `db.transaction(...)` still works
     # without ever naming a `sqlx` type.
     "examples/db-transaction-verification",
+    # cratestack#867: the other half of the same claim for epic #488's
+    # remaining gap. `sqlx` is present transitively here too (this is a
+    # `db = Postgres` schema); what this crate proves is that a service can
+    # run a hand-written `FILTER (WHERE ...)` aggregate query without
+    # naming `sqlx` in its manifest *and* without a SQL string in its Rust
+    # source at all — the SQL lives in `schema.cstack`, where its `$N`
+    # references are compile-time checked and an `@allow` is attached to it.
+    "examples/declarative-query-verification",
 ]
 
 [workspace.package]

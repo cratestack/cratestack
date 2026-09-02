@@ -76,6 +76,19 @@ pub(crate) fn semantic_tokens(text: &str, schema: &Schema) -> Vec<SemanticToken>
             collect_type_ref(schema, &arg.ty, &mut entries);
         }
     }
+    // `query` blocks (cratestack#867) colour exactly like procedures:
+    // name as FUNCTION, parameters as PARAMETER, result type resolved.
+    // The SQL body is deliberately left uncoloured — it is opaque text to
+    // this language server, and pretending otherwise would mean embedding
+    // a SQL highlighter for a dialect the framework never parses.
+    for query in &schema.queries {
+        entries.push((query.name_span, FUNCTION));
+        collect_type_ref(schema, &query.result_type, &mut entries);
+        for arg in &query.args {
+            entries.push((arg.name_span, PARAMETER));
+            collect_type_ref(schema, &arg.ty, &mut entries);
+        }
+    }
 
     // `@use(...)` is erased from the IR by `expand_model_mixins`, so its span
     // comes from source text — see `mixin_use::mixin_use_names`.

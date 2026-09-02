@@ -1,0 +1,35 @@
+[workspace]
+# Deliberately its own workspace root — see the description below and this
+# crate's entry in the parent repo's `[workspace] exclude` list.
+
+# Declared locally because a standalone workspace root cannot inherit the
+# parent repo's `[workspace.lints]` — the same guarantee, declared twice,
+# because the two workspaces are genuinely disjoint (cratestack#523).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[package]
+name = "declarative-query-verification"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Standalone crate (cratestack#867) that proves, with a real Cargo.toml and cargo test run you can point at, that a service can run the two-aggregate `FILTER (WHERE ...)` query epic #488 was opened against — declared in `.cstack`, policy-checked, typed — with no `sqlx` entry in [dependencies] anywhere in this file and no `sqlx::` path in src/. See README.md for why this needs to be a standalone crate rather than a workspace member, and examples/db-transaction-verification's Cargo.toml doc comment (cratestack#513) for the same reasoning applied to the other half of epic #488."
+
+[lints]
+workspace = true
+
+[dependencies]
+# No `sqlx` line, on purpose — that's the whole point of this crate. The
+# facade's own `postgres` Cargo feature is on by default, so the generated
+# `queries()` surface is available without naming `sqlx` here at all.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg" }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+# Real Postgres for the query proof, the same testcontainers backend
+# `crates/cratestack-pg/tests/support/pg.rs` uses — reimplemented minimally
+# here since a standalone workspace root can't `mod support;` into the
+# parent workspace's test tree.
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }

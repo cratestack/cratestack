@@ -16,6 +16,11 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "type",
         "procedure",
         "mutation procedure",
+        // cratestack#867 — a declarative custom-SQL read. Offered
+        // alongside `procedure` because that is the construct authors
+        // compare it against; `@@sql` is the attribute it carries.
+        "query",
+        "@@sql",
         "mcp",
         "@use",
         "@id",
@@ -197,6 +202,44 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
                 });
             }
             for arg in &procedure.args {
+                if seen.insert(arg.name.clone()) {
+                    items.push(CompletionItem {
+                        label: arg.name.clone(),
+                        kind: Some(CompletionItemKind::VARIABLE),
+                        detail: Some(render_type_ref(&arg.ty)),
+                        documentation: (!arg.docs.is_empty()).then(|| {
+                            Documentation::MarkupContent(MarkupContent {
+                                kind: MarkupKind::Markdown,
+                                value: arg.docs.join("\n"),
+                            })
+                        }),
+                        ..CompletionItem::default()
+                    });
+                }
+            }
+        }
+
+        // `query` blocks (cratestack#867). Completed the same way
+        // procedures are — a query is not wire surface, but it *is*
+        // callable Rust the schema author reads and writes here, so
+        // leaving it out of completion would make the construct
+        // second-class in the editor for no reason.
+        for query in &schema.queries {
+            if seen.insert(query.name.clone()) {
+                items.push(CompletionItem {
+                    label: query.name.clone(),
+                    kind: Some(CompletionItemKind::FUNCTION),
+                    detail: Some("query".to_owned()),
+                    documentation: (!query.docs.is_empty()).then(|| {
+                        Documentation::MarkupContent(MarkupContent {
+                            kind: MarkupKind::Markdown,
+                            value: query.docs.join("\n"),
+                        })
+                    }),
+                    ..CompletionItem::default()
+                });
+            }
+            for arg in &query.args {
                 if seen.insert(arg.name.clone()) {
                     items.push(CompletionItem {
                         label: arg.name.clone(),

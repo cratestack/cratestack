@@ -85,6 +85,11 @@ const KEYWORDS: &[&str] = &[
     "from",
     "procedure",
     "mutation",
+    // cratestack#867. Belongs here for the same reason `view` does: a
+    // line starting `query ` parses as a different construct, so offering
+    // to rename the keyword itself would silently change what the file
+    // means rather than what something is called.
+    "query",
 ];
 
 /// The range of the identifier under the cursor, if it can be renamed.

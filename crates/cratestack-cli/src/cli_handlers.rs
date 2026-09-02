@@ -12,6 +12,7 @@ use crate::drift::check_drift;
 
 #[cfg(test)]
 mod tests_generate;
+mod tests_query;
 
 pub(crate) fn run(cli: Cli) -> Result<()> {
     match cli.command {

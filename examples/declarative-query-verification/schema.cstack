@@ -1,0 +1,47 @@
+// cratestack#867 verification fixture: the exact query epic #488 was
+// opened against — two aggregates in one round trip, one of them
+// `FILTER (WHERE ...)`-qualified, with a caller-supplied cutoff.
+//
+// Note the quoted `AS "thisMonth"`: a query's SELECT list is the author's,
+// so nothing inserts an alias for you, and Postgres folds unquoted
+// identifiers to lower case. The declared field name is what the row
+// decoder looks up.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  subjectId String
+}
+
+model LoyaltyFeeEvent {
+  id Int @id
+  userId String
+  discount Int
+  createdAt DateTime
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type LoyaltyFeeSummary {
+  total Int
+  thisMonth Int
+}
+
+/// The motivating query. `@allow` gates *whether this call is permitted*;
+/// it does not filter which rows the SQL matches — every predicate here is
+/// the author's own (docs/design/declarative-custom-query.md §6).
+query loyaltyFeeSummary(userId: String, cutoff: DateTime): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      COALESCE(SUM(discount) FILTER (WHERE created_at >= $2), 0)::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+  @allow(auth() != null && auth().subjectId == userId)
