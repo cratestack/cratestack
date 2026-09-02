@@ -119,6 +119,13 @@ pub(super) fn generate_query_entry(
         /// commits. Composing the two is not supported in v1 and would be
         /// contradictory anyway: this transaction is `READ ONLY` and the
         /// enclosing one is not.
+        ///
+        /// It also **takes a second connection** for the duration. On a
+        /// pool with no free slot that is not a stale read but a stall:
+        /// the acquire blocks for `acquire_timeout` and then fails with
+        /// "pool timed out while waiting for an open connection". Calling
+        /// a query from inside a transaction on a small pool is therefore
+        /// a deadlock risk, not just an isolation surprise.
         pub async fn run(
             db: &super::super::Cratestack,
             args: &Args,

@@ -1,4 +1,11 @@
-//! Editor coverage for the `query` block (cratestack#867).
+//! Editor coverage for the `query` block (cratestack#867): tokens,
+//! outline, hover, completion and navigation.
+//!
+//! Rename lives in the sibling
+//! [`tests_queries_rename`](crate::tests_queries_rename) — split for the
+//! workspace's 200-line ceiling, and a reasonable seam anyway: rename is
+//! the one request here that *writes*, so it is held to a stricter
+//! standard than the read-only surfaces below.
 //!
 //! Every surface below already handled `procedure`; a `query` reaching
 //! none of them would make the construct second-class in the editor —
@@ -21,7 +28,7 @@ use crate::rename::prepare_rename;
 use crate::semantic_tokens::{LEGEND, semantic_tokens};
 use crate::state::next_document_state;
 
-const SCHEMA: &str = r#"datasource db {
+pub(crate) const SCHEMA: &str = r#"datasource db {
   provider = "postgresql"
 }
 
@@ -36,7 +43,7 @@ query loyaltyFeeSummary(userId: String, cutoff: DateTime): LoyaltyFeeSummary
   @allow(auth() != null)
 "#;
 
-fn parse() -> Schema {
+pub(crate) fn parse() -> Schema {
     let uri = Uri::from_str("file:///schema.cstack").expect("uri should parse");
     let (schema, diagnostics) = analyze_document(&uri, SCHEMA);
     assert!(
@@ -47,7 +54,7 @@ fn parse() -> Schema {
 }
 
 /// Start offset of the `occurrence`-th (1-based) appearance of `needle`.
-fn offset_of(needle: &str, occurrence: usize) -> usize {
+pub(crate) fn offset_of(needle: &str, occurrence: usize) -> usize {
     let mut search_from = 0usize;
     let mut found = 0usize;
     for _ in 0..occurrence {

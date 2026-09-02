@@ -121,3 +121,29 @@ fn rejects_a_header_with_no_result_type() {
     ));
     assert!(message.contains("must include a result type"), "{message}");
 }
+
+/// The end-to-end half of the scanner's `E'…'` fix (cratestack#870 review
+/// round 2). Measured before the fix: this schema **compiled**, because
+/// the escape-string's `\'` was read as closing the literal and the `'`
+/// after it as opening a new one, swallowing the `$5` that should have
+/// been rejected.
+///
+/// Worth having at this level and not only in `cratestack-core`'s scanner
+/// unit tests: the scanner returning the right set is a means, whereas
+/// "the schema does not build" is the guarantee an author relies on.
+#[test]
+fn rejects_an_out_of_range_placeholder_hidden_after_an_escape_string() {
+    let declaration = concat!(
+        "query totals(userId: String): Totals\n",
+        "  @@sql(\"\"\"\n",
+        "    SELECT 1 AS total FROM t WHERE a = $1 AND note = E'\\'' AND x = $5\n",
+        "  \"\"\")\n",
+        "  @allow(auth() != null)",
+    );
+    let message = error_for(&with_query(declaration));
+    assert!(message.contains("references parameter `$5`"), "{message}");
+    assert!(
+        message.contains("only 1 parameter(s) are declared"),
+        "{message}"
+    );
+}

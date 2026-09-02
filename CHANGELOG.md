@@ -103,8 +103,11 @@ Deliberate limits, so none is discovered as a surprise:
   A write reaching the database this way would bypass `@@audit`, the `@@emit` outbox,
   `@version`, soft-delete, `@@internal` and the target model's own write `@@allow`. Use a
   `procedure` or a model write builder to change data.
-- **A query runs on its own pooled connection.** It does not observe uncommitted writes made
-  by an enclosing `db.transaction(...)`; read after that transaction commits.
+- **A query runs on its own pooled connection**, and takes a *second* one while it does. It
+  does not observe uncommitted writes made by an enclosing `db.transaction(...)` — read after
+  that transaction commits. And on a pool with no free slot, calling a query from inside a
+  transaction blocks for `acquire_timeout` and then fails with "pool timed out while waiting
+  for an open connection": a deadlock on a small pool, not just a stale read.
 - **The policy gates whether the call is permitted, not which rows match.** Nothing injects a
   `deleted_at IS NULL` predicate or a row-level `@allow` filter into a `query` body the way
   every generated read gets one. Query a soft-delete-enabled model's table and deleted rows
@@ -128,6 +131,13 @@ has been available on the model read path since #486, but the procedure policy d
 got an arm for it, so `@allow(auth().isSystem())` failed to compile with a message about
 string literal arguments. A system-caller reconciliation read is the case this whole feature
 exists for, so it could hardly stay unsupported.
+
+**Breaking, for anyone matching `ProcedurePredicate` exhaustively:** that enum gained an
+`AuthIsSystem` variant, and is now `#[non_exhaustive]` — the convention
+`cratestack_core::CratestackError` and `TransportStyle` already follow. Adding the attribute in
+the same release as the variant costs nothing extra (the variant already breaks such a match)
+and stops the next variant doing it again. Add a `_ => …` arm. Constructing variants is
+unaffected, which is what generated code in every consumer crate does.
 
 Two shared fixes fall out of the same work and apply to `view` as well as `query`, since both
 read their SQL through one extractor: a `@@sql`/`@@server_sql` argument that is not a quoted

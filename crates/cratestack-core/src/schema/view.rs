@@ -96,11 +96,19 @@ impl View {
         })
     }
 
+    /// Trims leading whitespace exactly as [`has_sql_attribute`] does.
+    /// The two disagreeing is how an indented `@@server_sql` would be
+    /// reported as "declared but malformed" while yielding no body at all
+    /// — `starts_with` would miss it here, `trim_start` would find it
+    /// there (cratestack#870 review nit 5).
+    ///
+    /// [`has_sql_attribute`]: Self::has_sql_attribute
     fn body_attribute(&self, prefix: &str) -> Option<String> {
         self.attributes
             .iter()
-            .filter(|attr| attr.raw.starts_with(prefix))
-            .find_map(|attr| extract_sql_body(&attr.raw, prefix))
+            .map(|attr| attr.raw.trim_start())
+            .filter(|raw| raw.starts_with(prefix))
+            .find_map(|raw| extract_sql_body(raw, prefix))
     }
 
     fn has_bare_attribute(&self, name: &str) -> bool {

@@ -83,6 +83,14 @@ the follow-up ticket that carried it, and shipped it.
 > transaction is `READ ONLY`. Documented on the generated `run` and pinned
 > by a test that measures both halves — invisible before commit, visible
 > after — so a future change here fails loudly instead of drifting.
+>
+> The sharper edge, measured in the same review: it takes a **second**
+> connection for the duration. On a pool with no free slot the result is
+> not a stale read but a stall — the acquire blocks for `acquire_timeout`
+> and then fails with "pool timed out while waiting for an open
+> connection" (5 s on a one-slot pool). Calling a query from inside a
+> transaction is therefore a deadlock risk on a small pool, which is a
+> different and worse failure than reading the wrong snapshot.
 
 Scope: `cratestack-parser` grammar, `cratestack-core` IR, `cratestack-macros`
 codegen, and (for the "does it need one" question) the three client

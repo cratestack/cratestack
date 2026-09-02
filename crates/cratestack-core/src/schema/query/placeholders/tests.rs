@@ -127,3 +127,43 @@ fn the_motivating_query_still_scans_to_one_and_two() {
     "#;
     assert_eq!(scan(sql), vec![1, 2]);
 }
+
+#[test]
+fn skips_an_escape_string_whose_quote_is_backslash_escaped() {
+    // cratestack#870 review round 2, measured end-to-end: this was
+    // ACCEPTED with one declared parameter, because `\'` read as "literal
+    // closed" and the following `'` reopened one, swallowing `$5`. A false
+    // ACCEPT — the out-of-range reference reaches Postgres instead of
+    // being refused at build time.
+    assert_eq!(scan(r"SELECT 1 WHERE note = E'\'' AND x = $5"), vec![5]);
+}
+
+#[test]
+fn an_escape_string_ending_in_an_escaped_backslash_closes_where_it_should() {
+    // `E'a\\'` is a complete literal containing one backslash. Treating
+    // the second `\` as escaping the closing quote would swallow `$1`.
+    assert_eq!(scan(r"SELECT E'a\\', $1"), vec![1]);
+}
+
+#[test]
+fn a_plain_string_literal_does_not_honour_backslash_escapes() {
+    // `standard_conforming_strings` has been on by default since Postgres
+    // 9.1, so `'a\'` is a complete literal and the `$1` after it is live
+    // SQL. Unchanged by the E-string handling — pinned so it stays that
+    // way.
+    assert_eq!(scan(r"SELECT 'a\', $1"), vec![1]);
+}
+
+#[test]
+fn doubled_quotes_still_escape_inside_an_escape_string() {
+    // `E'…'` honours BOTH `\'` and `''`; handling only the new rule would
+    // regress the old one for E-strings specifically.
+    assert_eq!(scan(r"SELECT E'it''s $9', $1"), vec![1]);
+}
+
+#[test]
+fn an_identifier_ending_in_e_does_not_open_an_escape_string() {
+    // The lookbehind that stops `some_e'…'` being read as an E-string —
+    // if it were, the literal's closing rules would change under it.
+    assert_eq!(scan(r"SELECT some_e'\', $1"), vec![1]);
+}

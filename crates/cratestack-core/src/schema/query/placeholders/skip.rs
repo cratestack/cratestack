@@ -12,6 +12,14 @@
 //! reports "references parameter `$99`, but only 1 parameter(s) are
 //! declared" and refuses to compile a schema that is entirely correct.
 //!
+//! A second round of the same review found the mirror-image bug in the
+//! fix: `E'…'` constants honour backslash escapes, so `E'\''` is one
+//! literal containing a quote — but the scanner read it as closed-then-
+//! reopened and swallowed the rest of the body. `… note = E'\'' AND x =
+//! $5` with one declared parameter was **accepted**. That direction is
+//! worse than the first: a false reject refuses valid SQL loudly, a false
+//! accept lets a genuinely out-of-range `$N` reach Postgres.
+//!
 //! Recognising where a literal starts and ends is lexing, not parsing: it
 //! needs no grammar, no expression tree and no catalogue. That is the same
 //! line design §2/§3 draws when it rejects extracting *types* from the SQL
@@ -26,12 +34,22 @@
 /// must *not* be mistaken for a dollar-quote opener.
 pub(super) fn text_span_end(bytes: &[u8], index: usize) -> Option<usize> {
     match bytes[index] {
+        // Escape-string constant, `E'…'`. Must be matched before the bare
+        // `'` arm below, and starting at the `E` rather than at the quote,
+        // because the whole point is that this literal follows different
+        // rules from a standard one.
+        b'E' | b'e' if opens_escape_string(bytes, index) => {
+            Some(closing_quote(bytes, index + 1, b'\'', true))
+        }
         // Standard string literal. `''` is an escaped quote, not a
-        // terminator — `'it''s $1'` is one literal, not two.
-        b'\'' => Some(closing_quote(bytes, index, b'\'')),
+        // terminator — `'it''s $1'` is one literal, not two. A backslash
+        // is *not* an escape here: `standard_conforming_strings` has been
+        // on by default since Postgres 9.1, so `'a\'` is a complete
+        // literal containing a backslash.
+        b'\'' => Some(closing_quote(bytes, index, b'\'', false)),
         // Quoted identifier. Same doubling rule, and it can contain `$`:
         // `SELECT x AS "cost $1"`.
-        b'"' => Some(closing_quote(bytes, index, b'"')),
+        b'"' => Some(closing_quote(bytes, index, b'"', false)),
         b'$' => dollar_quote_end(bytes, index),
         b'-' if bytes.get(index + 1) == Some(&b'-') => Some(line_comment_end(bytes, index)),
         b'/' if bytes.get(index + 1) == Some(&b'*') => Some(block_comment_end(bytes, index)),
@@ -39,17 +57,52 @@ pub(super) fn text_span_end(bytes: &[u8], index: usize) -> Option<usize> {
     }
 }
 
+/// Whether `bytes[index]` is the `E` of an `E'…'` escape-string constant,
+/// rather than the last character of an identifier that happens to be
+/// followed by a quote.
+///
+/// The lookbehind is what makes the difference: in `note = E'x'` the `E`
+/// opens a literal, but in `SELECT some_e'x'` — not valid SQL, though the
+/// scanner must not assume its input is — the `e` is part of a name. A
+/// wrong answer here is not cosmetic: treating an ordinary quote as an
+/// E-string changes which characters close it.
+fn opens_escape_string(bytes: &[u8], index: usize) -> bool {
+    if bytes.get(index + 1) != Some(&b'\'') {
+        return false;
+    }
+    match index.checked_sub(1).map(|previous| bytes[previous]) {
+        None => true,
+        Some(previous) => !previous.is_ascii_alphanumeric() && previous != b'_' && previous != b'$',
+    }
+}
+
 /// End of a `'…'` / `"…"` span, treating a doubled quote as an escape.
-/// An unterminated literal consumes the rest of the body — which is the
-/// fail-closed choice: a malformed body is Postgres's error to report,
-/// and scanning its tail for `$N` could only invent an error of our own.
-fn closing_quote(bytes: &[u8], start: usize, quote: u8) -> usize {
+///
+/// `backslash_escapes` is true only for an `E'…'` constant, where `\`
+/// escapes the following character as well. Getting this wrong is a
+/// **false accept**, not a false reject, which is the worse direction:
+/// cratestack#870's review measured `… note = E'\'' AND x = $5` with one
+/// declared parameter being accepted, because the scanner read `\'` as
+/// "literal closed" followed by `'` reopening one, and swallowed the rest
+/// of the body — including the out-of-range `$5` it should have rejected.
+///
+/// An unterminated literal consumes the rest of the body — the fail-closed
+/// choice: a malformed body is Postgres's error to report, and scanning
+/// its tail for `$N` could only invent an error of our own.
+fn closing_quote(bytes: &[u8], start: usize, quote: u8, backslash_escapes: bool) -> usize {
     let mut cursor = start + 1;
     while cursor < bytes.len() {
+        if backslash_escapes && bytes[cursor] == b'\\' {
+            // Skips the escaped character whatever it is, so `\'` does not
+            // close and `\\` does not escape the quote after it.
+            cursor += 2;
+            continue;
+        }
         if bytes[cursor] != quote {
             cursor += 1;
             continue;
         }
+        // `''` doubling applies inside an E-string too, alongside `\'`.
         if bytes.get(cursor + 1) == Some(&quote) {
             cursor += 2;
             continue;

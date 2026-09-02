@@ -81,10 +81,13 @@ impl Query {
     /// `@@sql(SELECT 1)` compiled to `SQL = ""` with every `$N` check
     /// skipped.
     pub fn sql(&self) -> Option<String> {
+        // `trim_start` matches `has_sql_attribute` exactly; see `View`'s
+        // `body_attribute` for why the two must agree.
         self.attributes
             .iter()
-            .filter(|attr| attr.raw.starts_with(QUERY_SQL_ATTRIBUTE))
-            .find_map(|attr| extract_sql_body(&attr.raw, QUERY_SQL_ATTRIBUTE))
+            .map(|attr| attr.raw.trim_start())
+            .filter(|raw| raw.starts_with(QUERY_SQL_ATTRIBUTE))
+            .find_map(|raw| extract_sql_body(raw, QUERY_SQL_ATTRIBUTE))
     }
 
     /// Whether a `@@sql` attribute is written at all, however malformed.

@@ -28,6 +28,8 @@ mod tests_navigation;
 #[cfg(test)]
 mod tests_queries;
 #[cfg(test)]
+mod tests_queries_rename;
+#[cfg(test)]
 mod tests_rename;
 #[cfg(test)]
 mod tests_semantic_tokens;

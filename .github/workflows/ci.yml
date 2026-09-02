@@ -210,6 +210,12 @@ jobs:
       - name: cargo test (client-only-verification)
         working-directory: examples/client-only-verification
         run: cargo test --locked
+      # `--test-threads=1` on both: each test in these crates starts its
+      # own testcontainer, and concurrent starts hit a port-bind race that
+      # fails as `RootlessKit PortManager.AddPort(): address already in
+      # use` — indistinguishable from a real failure in the log. Observed
+      # twice locally on rootless Docker. Serializing costs a few seconds
+      # and removes the flake; see CONTRIBUTING.md's rootless-Docker note.
       - name: cargo test against real Postgres (db-transaction-verification)
         working-directory: examples/db-transaction-verification
         env:
@@ -217,15 +223,15 @@ jobs:
           # error rather than a silent per-test skip — same rationale as
           # the `tests-db` job's own `CRATESTACK_REQUIRE_DB`.
           CRATESTACK_REQUIRE_DB: "1"
-        run: cargo test --locked
+        run: cargo test --locked -- --test-threads=1
       - name: cargo test against real Postgres (declarative-query-verification)
         working-directory: examples/declarative-query-verification
         env:
           # Same reason as the step above: without this, a runner whose
-          # Docker can't start the container would skip both tests and
+          # Docker can't start the container would skip every test and
           # still print `ok`.
           CRATESTACK_REQUIRE_DB: "1"
-        run: cargo test --locked
+        run: cargo test --locked -- --test-threads=1
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to

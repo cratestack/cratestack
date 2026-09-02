@@ -10,6 +10,14 @@ pub enum ProcedurePolicyLiteral {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Added with the `AuthIsSystem` variant (cratestack#867). This release
+// already breaks any downstream that matches this enum exhaustively, so it
+// is the one release where adding the attribute costs nothing extra — and
+// it stops the next variant doing the same thing again. Matches the
+// convention `cratestack_core::CratestackError` and `TransportStyle`
+// already follow. Construction of variants is unaffected, which matters
+// because generated code in every consumer crate builds these.
+#[non_exhaustive]
 pub enum ProcedurePredicate {
     /// A bare boolean literal used as a whole `@allow`/`@deny` clause, e.g.
     /// `@allow(true)`. Unlike every other variant, this reads nothing off

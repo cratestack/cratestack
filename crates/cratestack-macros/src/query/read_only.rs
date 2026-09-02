@@ -85,18 +85,33 @@ pub(super) fn query_error_fn() -> proc_macro2::TokenStream {
         /// `CratestackError`'s 5xx variants carry operator-only detail
         /// that is never returned to a client, so the message can name
         /// the query without any risk of the schema's SQL reaching a
-        /// response body. The `tracing::warn!` in `run` records the
-        /// driver's own error alongside it.
+        /// response body.
+        ///
+        /// The driver's own error is logged here, before mapping,
+        /// precisely because the mapping discards it: `run`'s
+        /// `tracing::warn!` sees only the `CratestackError` and can report
+        /// nothing but its code. Without this line an operator debugging a
+        /// refused query would have the framework's explanation and no
+        /// SQLSTATE — which is the half that says *which* statement
+        /// Postgres objected to.
         fn __query_error(error: ::cratestack::sqlx::Error) -> ::cratestack::CratestackError {
-            if let ::cratestack::sqlx::Error::Database(database_error) = &error
-                && database_error.code().as_deref() == Some("25006")
-            {
-                return ::cratestack::CratestackError::Internal(format!(
-                    "query `{}` attempted to modify data; a `query` block runs in a read-only \
-                     transaction and may only read. Use a procedure or a model write builder \
-                     instead.",
-                    NAME,
-                ));
+            if let ::cratestack::sqlx::Error::Database(database_error) = &error {
+                ::cratestack::tracing::warn!(
+                    target: "cratestack",
+                    cratestack_query = NAME,
+                    cratestack_operation = "query",
+                    cratestack_sqlstate = database_error.code().as_deref().unwrap_or("unknown"),
+                    cratestack_db_message = database_error.message(),
+                    "cratestack query database error",
+                );
+                if database_error.code().as_deref() == Some("25006") {
+                    return ::cratestack::CratestackError::Internal(format!(
+                        "query `{}` attempted to modify data; a `query` block runs in a \
+                         read-only transaction and may only read. Use a procedure or a model \
+                         write builder instead.",
+                        NAME,
+                    ));
+                }
             }
             ::cratestack::cratestack_error_from_sqlx(error)
         }

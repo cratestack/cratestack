@@ -321,6 +321,17 @@ async fn a_data_modifying_cte_is_refused_by_the_database() {
         )
         .await;
 
+    // The decisive assertion goes FIRST: nothing was written. An error
+    // alone would also be produced by a statement that inserted and *then*
+    // failed, so if both assertions are going to fail this is the one
+    // whose message should be read.
+    let count: i64 =
+        cratestack::sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM loyalty_fee_events")
+            .fetch_one(&test_pg.pool)
+            .await
+            .expect("count rows");
+    assert_eq!(count, 4, "the seeded row count must be unchanged");
+
     assert!(
         matches!(outcome, Err(CratestackError::Internal(_))),
         "a data-modifying CTE must be refused, got {outcome:?}",
@@ -334,15 +345,6 @@ async fn a_data_modifying_cte_is_refused_by_the_database() {
         !message.contains("INSERT INTO"),
         "the public message must not echo the schema's SQL, got: {message}",
     );
-
-    // The decisive half: nothing was written. An error alone would also
-    // be produced by a statement that inserted and then failed.
-    let count: i64 =
-        cratestack::sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM loyalty_fee_events")
-            .fetch_one(&test_pg.pool)
-            .await
-            .expect("count rows");
-    assert_eq!(count, 4, "the seeded row count must be unchanged");
 }
 
 #[tokio::test]
@@ -367,6 +369,39 @@ async fn an_ordinary_select_still_works_under_the_read_only_transaction() {
         .expect("a plain SELECT must still run inside the read-only transaction");
 
     assert_eq!(summary.total, 4);
+}
+
+/// #867 acceptance criterion 3, the half that is easy to assert
+/// vacuously: a denied caller must get `Forbidden` **without the SQL
+/// running**.
+///
+/// Asserting only "returns Forbidden" would pass even if the statement
+/// executed first, so this query's body is deliberately invalid SQL. A
+/// policy check that happened after execution would surface Postgres's
+/// syntax error instead, and the test would fail.
+#[tokio::test]
+async fn a_denied_caller_is_refused_before_the_sql_runs() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let outcome = db
+        .queries()
+        .denied_before_execution(
+            &cratestack_schema::queries::denied_before_execution::Args {
+                userId: "user-7".to_owned(),
+            },
+            &operator("user-7"),
+        )
+        .await;
+
+    assert!(
+        matches!(outcome, Err(CratestackError::Forbidden(_))),
+        "expected a policy refusal, not a database error — got {outcome:?}",
+    );
 }
 
 #[tokio::test]

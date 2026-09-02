@@ -104,6 +104,16 @@ query sneakyWrite(userId: String): LoyaltyFeeSummary
   """)
   @allow(auth() != null)
 
+/// Pins #867's acceptance criterion "returns Forbidden **and no SQL is
+/// executed**". The body is deliberately not valid SQL, so a caller the
+/// policy denies must see a policy error — if the statement ran at all,
+/// Postgres would report a syntax error instead, and the criterion would
+/// be silently unmet. Only reachable by a system principal, which this
+/// test never uses.
+query deniedBeforeExecution(userId: String): LoyaltyFeeSummary
+  @@sql("SELECT this is not valid sql at all $1")
+  @allow(auth().isSystem())
+
 /// cratestack#867 review finding 4: `auth().isSystem()` had no arm on the
 /// procedure policy dialect at all, so this — the reconciliation shape the
 /// whole construct exists for (epic #488, webank ADR 0038) — failed to

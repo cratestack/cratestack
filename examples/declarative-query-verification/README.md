@@ -75,6 +75,12 @@ A query takes a connection from the pool, so it does **not** observe
 uncommitted writes made by an enclosing `db.transaction(...)`. Read after
 that transaction commits.
 
+That connection is a *second* one for as long as the query runs. Calling a
+query from inside a transaction on a pool with no free slot does not
+return a stale row — it blocks for `acquire_timeout` and then fails with
+"pool timed out while waiting for an open connection". On a small pool
+that is a deadlock, not a surprise about isolation.
+
 ### What it does *not* buy
 
 `@allow` gates **whether the call is permitted**, not **which rows the SQL
