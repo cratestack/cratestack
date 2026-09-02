@@ -64,6 +64,19 @@ fn unavailable_maps_to_503_and_passes_message_through() {
     assert_eq!(response.message, "subscription lagged");
 }
 
+/// cratestack#846: `RateLimitLayer`'s throttled response is expressed as
+/// this variant so it flows through the same encode path as every other
+/// error. A 4xx variant, so the caller-supplied message stays public.
+#[test]
+fn too_many_requests_maps_to_429_and_passes_message_through() {
+    let err = CratestackError::TooManyRequests("rate limit exceeded".to_owned());
+    assert_eq!(err.status_code(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(err.code(), "TOO_MANY_REQUESTS");
+    assert_eq!(err.detail(), Some("rate limit exceeded"));
+    let response = err.into_response();
+    assert_eq!(response.message, "rate limit exceeded");
+}
+
 #[test]
 fn detail_is_none_for_empty_string() {
     let err = CratestackError::Internal(String::new());

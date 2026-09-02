@@ -102,6 +102,18 @@ pub enum CratestackError {
     /// binding's already-reserved `"unavailable"` code.
     #[error("unavailable: {0}")]
     Unavailable(String),
+    /// 429 — the caller exceeded a rate limit. `String` is the public,
+    /// safe-to-expose message, same treatment as the 4xx variants above.
+    ///
+    /// Introduced for `cratestack-axum`'s `RateLimitLayer` (cratestack#846):
+    /// the throttled response used to be a hand-built `text/plain` 429 with
+    /// no error envelope at all, so a generated client decoded it as
+    /// "unrecognized error body" instead of a typed code. Expressing the
+    /// throttle as a `CratestackError` lets that response go through the
+    /// exact same encode path every other error in the stack takes, rather
+    /// than the layer inventing a second body shape.
+    #[error("too many requests: {0}")]
+    TooManyRequests(String),
 }
 
 impl CratestackError {
@@ -120,6 +132,7 @@ impl CratestackError {
             Self::Database(_) | Self::DatabaseTyped(_) => "DATABASE_ERROR",
             Self::Internal(_) => "INTERNAL_ERROR",
             Self::Unavailable(_) => "UNAVAILABLE",
+            Self::TooManyRequests(_) => "TOO_MANY_REQUESTS",
         }
     }
 
@@ -138,6 +151,7 @@ impl CratestackError {
             Self::Database(_) | Self::DatabaseTyped(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 
@@ -157,7 +171,8 @@ impl CratestackError {
             | Self::Conflict(s)
             | Self::Validation(s)
             | Self::PreconditionFailed(s)
-            | Self::Unavailable(s) => Cow::Borrowed(s.as_str()),
+            | Self::Unavailable(s)
+            | Self::TooManyRequests(s) => Cow::Borrowed(s.as_str()),
             Self::Codec(_) => Cow::Borrowed("invalid request payload"),
             Self::Database(_) | Self::DatabaseTyped(_) => Cow::Borrowed("internal error"),
             Self::Internal(_) => Cow::Borrowed("internal error"),
@@ -187,7 +202,8 @@ impl CratestackError {
             | Self::Codec(s)
             | Self::Database(s)
             | Self::Internal(s)
-            | Self::Unavailable(s) => {
+            | Self::Unavailable(s)
+            | Self::TooManyRequests(s) => {
                 if s.is_empty() {
                     None
                 } else {

@@ -153,6 +153,10 @@ pub const fn rpc_code(error: &CratestackError) -> &'static str {
         | CratestackError::DatabaseTyped(_)
         | CratestackError::Internal(_) => "internal",
         CratestackError::Unavailable(_) => "unavailable",
+        // gRPC's canonical code for "the caller exhausted a quota/rate
+        // limit" (google.rpc.Code.RESOURCE_EXHAUSTED = 8). New with
+        // cratestack#846's `TooManyRequests`; no prior variant mapped here.
+        CratestackError::TooManyRequests(_) => "resource_exhausted",
     }
 }
 
@@ -173,6 +177,7 @@ pub fn cratestack_error_code_to_rpc_code(code: &str) -> &'static str {
         "PRECONDITION_FAILED" => "failed_precondition",
         "DATABASE_ERROR" | "INTERNAL_ERROR" => "internal",
         "UNAVAILABLE" => "unavailable",
+        "TOO_MANY_REQUESTS" => "resource_exhausted",
         _ => "internal",
     }
 }

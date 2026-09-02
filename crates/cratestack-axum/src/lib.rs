@@ -10,6 +10,8 @@
 //! - [`rpc`]: the RPC binding (`POST /rpc/{op_id}` and
 //!   `POST /rpc/batch`).
 //! - [`idempotency`]: idempotency-key middleware and storage trait.
+//! - `middleware_error` (private): the shared, codec-negotiated error
+//!   envelope both middleware layers emit (cratestack#846).
 //! - [`ratelimit`]: token-bucket rate-limit middleware and storage trait.
 //! - [`schema_fingerprint`]: warn-only client/server schema drift
 //!   detection via the `x-cratestack-schema-sha` header.
@@ -22,6 +24,7 @@ pub use axum;
 pub mod codec;
 pub mod headers;
 pub mod idempotency;
+mod middleware_error;
 pub mod projection;
 pub mod query;
 pub mod ratelimit;

@@ -26,12 +26,11 @@ workspace = true
 # `cratestack-core` consumer (same `default-features = false` treatment,
 # see root `Cargo.toml`), so the two stay in lockstep.
 default = ["decimal-rust-decimal"]
-# Also forwards to `cratestack-codec-cbor`/`cratestack-codec-json`, this
-# crate's dev-dependency-only codec test fixtures — Cargo's feature
-# resolver unifies dev-dependency feature requests with the rest of the
-# graph for the same workspace member, so leaving those on a hardcoded
-# backend would conflict with `--features decimal-bigdecimal` under
-# `cargo test`/`cargo check --all-targets`.
+# Also forwards to `cratestack-codec-cbor`/`cratestack-codec-json` — Cargo's
+# feature resolver unifies feature requests across the whole graph for the
+# same workspace member, so leaving those on a hardcoded backend would
+# conflict with `--features decimal-bigdecimal` under `cargo test`/`cargo
+# check --all-targets`.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
@@ -50,6 +49,16 @@ async-trait.workspace = true
 axum.workspace = true
 bytes.workspace = true
 cratestack-core.workspace = true
+# Normal (not dev-only) dependencies since cratestack#846: the middleware
+# layers in this crate (`ratelimit`, `idempotency`) run *outside* the
+# generated router, so unlike every handler they have no `C: HttpTransport`
+# type parameter to encode their error bodies with — they have to name a
+# concrete codec pair themselves (`middleware_error::middleware_codec`).
+# Blast radius is nil for the facades: `cratestack-pg` and `cratestack-api`,
+# the only two that pull `cratestack-axum`, already depend on both codec
+# crates unconditionally. Layering-legal both ways (L2 -> L4, ADR 0014).
+cratestack-codec-cbor.workspace = true
+cratestack-codec-json.workspace = true
 cratestack-sql.workspace = true
 erased-serde.workspace = true
 futures-util.workspace = true
@@ -71,10 +80,6 @@ url.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-# Plain edges: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
-# forwards above.
-cratestack-codec-cbor.workspace = true
-cratestack-codec-json.workspace = true
 minicbor-serde.workspace = true
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
 tracing-subscriber.workspace = true
