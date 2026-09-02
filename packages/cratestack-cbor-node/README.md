@@ -49,5 +49,26 @@ epic #285). Since issue #746, `@cratestack/cbor` (this package's Node half, via 
 `@cratestack/cbor` re-export) **is** the default codec for a generated TypeScript RPC client —
 `--no-native-cbor` (`TypeScriptGeneratorConfig::native_cbor: false`) falls back to the
 pure-TypeScript `jsonRpcCodec`, needed on platforms this package doesn't ship a napi binary for
-(musl/Alpine Linux and `win32-arm64` — see `napi.targets` in `package.json`). REST-transport
+(`win32-arm64` — see `napi.targets` in `package.json`). REST-transport
 generated clients are unaffected either way: the REST runtime has no codec seam at all.
+
+## Supported platforms
+
+`napi.targets` in `package.json` is the source of truth; as of cratestack#850 it is:
+
+| Platform | Target triple | npm platform package |
+| --- | --- | --- |
+| macOS x64 | `x86_64-apple-darwin` | `@cratestack/cbor-node-darwin-x64` |
+| macOS arm64 | `aarch64-apple-darwin` | `@cratestack/cbor-node-darwin-arm64` |
+| Linux x64 (glibc) | `x86_64-unknown-linux-gnu` | `@cratestack/cbor-node-linux-x64-gnu` |
+| Linux arm64 (glibc) | `aarch64-unknown-linux-gnu` | `@cratestack/cbor-node-linux-arm64-gnu` |
+| Linux x64 (musl / Alpine) | `x86_64-unknown-linux-musl` | `@cratestack/cbor-node-linux-x64-musl` |
+| Linux arm64 (musl / Alpine) | `aarch64-unknown-linux-musl` | `@cratestack/cbor-node-linux-arm64-musl` |
+| Windows x64 | `x86_64-pc-windows-msvc` | `@cratestack/cbor-node-win32-x64-msvc` |
+
+Still **not** covered: `win32-arm64`. There is also no wasm/wasi fallback — the generated
+`native.mjs` loader contains a `wasm32-wasi` branch, but nothing publishes a `.wasi.cjs` or a
+`@cratestack/cbor-node-wasm32-wasi` package, so that branch can only ever add another
+`Cannot find module` to the error chain. On an unsupported platform the loader raises the generic
+*"Cannot find native binding. npm has a bug related to optional dependencies…"* error, which
+blames npm rather than naming the real cause; `--no-native-cbor` is the escape hatch.

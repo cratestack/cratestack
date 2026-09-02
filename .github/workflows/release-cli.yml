@@ -641,8 +641,11 @@ jobs:
   # ---- @cratestack/cbor family (issue #285) ------------------------------
   # Unlike the API family above, @cratestack/cbor-node is a real napi-rs
   # native addon (crates/cratestack-cbor-napi) — it needs a per-platform
-  # release binary for each of `napi.targets` in its package.json, matching
-  # the same 5 platforms `build` builds `cratestack-cli` for above. CI's
+  # release binary for each of `napi.targets` in its package.json: the same
+  # 5 platforms `build` builds `cratestack-cli` for above, PLUS the two musl
+  # (Alpine) targets `cratestack-cli` has no equivalent of — see the matrix
+  # comment below and cratestack#850, which is the Alpine load failure the
+  # missing `-musl` platform packages caused in production. CI's
   # own `js-cbor-napi` job (ci.yml) deliberately only proves a single-host
   # sanity build; this is the real release matrix that job's own comment
   # said was deferred (issue #286's explicit scope note).
@@ -661,6 +664,21 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+          # musl (Alpine) — cratestack#850. Unlike every other leg here
+          # these CROSS-compile: napi-rs's current guidance for musl is
+          # zig + `--cross-compile`/`-x` on an ordinary glibc runner (the
+          # `ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine` image it used
+          # to document is deprecated), and the CLI appends
+          # `-C target-feature=-crt-static` to RUSTFLAGS for musl itself.
+          # So both musl legs sit on x86_64 `ubuntu-latest` — the arm64
+          # one too, which is why there is no `ubuntu-24.04-arm` here
+          # mirroring the -gnu leg above.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: "-x"
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: "-x"
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     runs-on: ${{ matrix.os }}
@@ -674,6 +692,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release-cbor-node-${{ matrix.target }}
+      # musl legs only (cratestack#850). `napi build -x` shells out to
+      # `cargo zigbuild`, which needs BOTH cargo-zigbuild and a real `zig`
+      # on PATH. @napi-rs/cli will `cargo install` cargo-zigbuild itself if
+      # it's missing; taiki-e/install-action fetches the prebuilt release
+      # binary instead, which is the same tool minutes faster.
+      #
+      # zig itself is a pinned curl download rather than a setup-zig
+      # action: taiki-e/install-action has no zig manifest (checked), and
+      # this is exactly the precedent `publish-npm-cbor-web` already sets
+      # for binaryen a few jobs below — pin the version, verify the
+      # checksum, add one directory to PATH, add no new third-party action
+      # to the release pipeline's trust surface. 0.14.1 is the version the
+      # musl cross-build was verified against locally (see cratestack#850).
+      - uses: taiki-e/install-action@v2
+        if: contains(matrix.target, 'musl')
+        with:
+          tool: cargo-zigbuild
+      - name: Install zig (pinned) for the musl cross-build
+        if: contains(matrix.target, 'musl')
+        # Unpacked into RUNNER_TEMP, not the checkout: a `zig-*/` tree
+        # inside the repo would show up in the working directory the build
+        # step below runs from.
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o zig.tar.xz \
+            "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz"
+          echo "24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c  zig.tar.xz" \
+            | sha256sum -c -
+          tar xf zig.tar.xz
+          rm zig.tar.xz
+          echo "$RUNNER_TEMP/zig-x86_64-linux-0.14.1" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/zig-x86_64-linux-0.14.1/zig" version
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -689,6 +740,11 @@ jobs:
       # dispatch JS/TS loader `napi build --platform` generates) come out
       # identical on every leg — uploaded from each anyway so the publish
       # job below doesn't need to special-case which leg "owns" them.
+      #
+      # `${{ matrix.cross }}` is `-x` on the two musl legs and EMPTY
+      # everywhere else (the key is simply absent from those matrix
+      # entries) — `-x` swaps `cargo build` for `cargo zigbuild`, which is
+      # only correct where a zig toolchain was installed above.
       - name: Build native addon (napi build)
         working-directory: packages/cratestack-cbor-node
         # Explicit bash — the default shell on the windows-msvc leg is
@@ -702,7 +758,7 @@ jobs:
             --platform --release --esm \
             --js native.mjs --dts native.d.mts \
             --output-dir . \
-            --target ${{ matrix.target }}
+            --target ${{ matrix.target }} ${{ matrix.cross }}
       - uses: actions/upload-artifact@v7
         with:
           name: cbor-node-binary-${{ matrix.target }}
@@ -731,14 +787,24 @@ jobs:
   # `@cratestack/cbor-node-darwin-arm64`) BEFORE npm packs and publishes
   # this main package with `optionalDependencies` pointing at them. Same
   # tag-push-only gate and OIDC Trusted Publishing hard-cutover as the
-  # other publish-npm* jobs, except EACH of the 5 auto-generated platform
+  # other publish-npm* jobs, except EACH of the 7 auto-generated platform
   # subpackages ALSO needs its own separate Trusted Publisher entry on
   # npmjs.com, on top of `@cratestack/cbor-node` itself — see
   # docs/tooling/npm-publishing.md, including the bootstrap note there:
   # a brand-new package name can't have Trusted Publishing configured
   # until it's been published manually at least once, so this job will
   # keep failing for any platform subpackage that hasn't gone through that
-  # one-time manual bootstrap yet, even once all 5 binaries build cleanly.
+  # one-time manual bootstrap yet, even once all 7 binaries build cleanly.
+  #
+  # THAT APPLIES RIGHT NOW to the two names cratestack#850 added:
+  # `@cratestack/cbor-node-linux-x64-musl` and
+  # `@cratestack/cbor-node-linux-arm64-musl` have never been published, so
+  # this job fails on the next tag until a maintainer runs the manual
+  # bootstrap in docs/tooling/npm-publishing.md for both. There is no
+  # partial mode: `napi artifacts` and `napi prepublish` each validate that
+  # EVERY target in `napi.targets` is present before touching any of them
+  # (verified by hand — deleting one musl artifact fails the whole step),
+  # and this job is one `npm publish`, not a tolerant per-package loop.
   publish-npm-cbor-node:
     name: publish npm package (@cratestack/cbor-node)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'

@@ -155,7 +155,11 @@ for real.
 
 ## See Also
 
-- `@cratestack/cbor-node` — the Node/native implementation (napi-rs).
+- `@cratestack/cbor-node` — the Node/native implementation (napi-rs). Its
+  README lists the prebuilt platforms; glibc **and musl** (Alpine) Linux
+  x64/arm64 are both covered since cratestack#850, so `createCborCodec()`
+  under the `"node"` condition no longer fails to initialize on an Alpine
+  base image. `win32-arm64` remains uncovered.
 - `@cratestack/cbor-web` — the browser/WASM implementation (wasm-bindgen).
 - `crates/cratestack-codec-cbor` — the underlying, unchanged Rust codec
   both implementations wrap.

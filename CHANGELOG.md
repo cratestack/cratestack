@@ -53,6 +53,39 @@ when the probe is what fixed the artifact. Cosmetic, resolved at the next real t
 the point of use rather than left to be discovered.
 
 
+### `@cratestack/cbor-node` ships musl (Alpine) platform packages
+
+`napi.targets` gains `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, so
+`@cratestack/cbor-node` now publishes `@cratestack/cbor-node-linux-x64-musl` and
+`@cratestack/cbor-node-linux-arm64-musl` alongside the five existing platform packages
+(cratestack#850). An Alpine-based Node image no longer fails at codec initialization.
+
+The failure it fixes was not a *fallback* to something slower — it was fatal. The generated
+`native.mjs` detects musl and looks only at the `-musl` names; the `-gnu` binary sitting next to it
+is never attempted, and the loader ends at *"Cannot find native binding. npm has a bug related to
+optional dependencies…"*, which points at npm rather than at the missing platform. Reproduced by
+loading the glibc `.node` under `node:22-alpine` before the change, and fixed under the same image
+after it.
+
+The `wasm32-wasi` branch further down that loader is dead: nothing publishes a `.wasi.cjs` or a
+`@cratestack/cbor-node-wasm32-wasi` package, so it only appends another `Cannot find module` to the
+error chain. Left alone deliberately — it is generated output, and the fix for musl is musl binaries.
+
+`build-cbor-node` grows two legs for these targets. They cross-compile with zig + `napi build -x` on
+an ordinary `ubuntu-latest` runner, which is what napi-rs documents today; the
+`nodejs-rust:lts-alpine` image it used to recommend is deprecated. The arm64-musl leg therefore does
+*not* get an arm runner, unlike its glibc counterpart.
+
+**This needs a manual step before the next tag.** The two new subpackage names have never been
+published, and npm Trusted Publishing cannot bootstrap a name that does not exist yet — so
+`publish-npm-cbor-node` will fail for the *whole* package until a maintainer publishes both by hand
+(procedure in `docs/tooling/npm-publishing.md`). `napi artifacts` and `napi prepublish` each verify
+every configured target before touching any of them, and this job is a single `npm publish`, not a
+tolerant loop, so there is no partial-success mode.
+
+Still uncovered: `win32-arm64`. `--no-native-cbor` remains the escape hatch there.
+
+
 ## 0.10.1 (2026-09-01)
 
 ### `azure/login` needs `allow-no-subscriptions` for Marketplace publishing
