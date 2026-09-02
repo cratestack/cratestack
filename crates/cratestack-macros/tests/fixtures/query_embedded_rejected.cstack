@@ -1,0 +1,12 @@
+// cratestack#867: a `query` block is Postgres-only, so this schema must
+// be a hard compile error under `include_embedded_schema!` rather than
+// silently losing the query (which is what would happen otherwise — the
+// embedded composer never iterates `schema.queries`).
+
+type Totals {
+  total Int
+}
+
+query totals(userId: String): Totals
+  @@sql("SELECT COUNT(*)::bigint AS total FROM events WHERE user_id = $1")
+  @allow(auth() != null)

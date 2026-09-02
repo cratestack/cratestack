@@ -28,7 +28,7 @@
 //! `CRATESTACK_REQUIRE_DB=1` to make that a hard failure instead. Read
 //! `finished in` rather than the summary line to tell a skip from a pass.
 
-use cratestack::include_server_schema;
+use cratestack::{include_client_schema, include_server_schema};
 use cratestack::sqlx::{PgPool, query};
 use cratestack::{CratestackContext, CratestackError, Value};
 
@@ -247,5 +247,45 @@ fn the_generated_sql_is_the_schema_text_verbatim() {
     assert!(
         !sql.contains("user-7"),
         "no argument value may ever appear in the statement text",
+    );
+}
+
+/// The Rust client's half of "a `query` generates no client surface"
+/// (design §5). The Dart and TypeScript halves are proved by byte-equality
+/// against a query-free twin schema in
+/// `cratestack-client-{dart,typescript}/tests/declarative_query_absent.rs`;
+/// the Rust client generator emits into a macro expansion, so the
+/// equivalent assertion is made on the surface it publishes.
+///
+/// Two things are being pinned, and the second is the one that matters:
+///
+/// 1. `include_client_schema!` **accepts** a query-bearing schema. A query
+///    is invisible to a client, not an error for one — a shared schema
+///    file has to stay usable from a client crate after someone adds a
+///    query to it. This module merely compiling is that assertion.
+/// 2. None of the four queries became client surface. `PROCEDURES` is
+///    where a procedure-shaped construct would land, and it is empty; the
+///    result `type`s are still present because a declared `type` is
+///    ordinary client surface whether or not a query returns one.
+mod generated_client {
+    use super::include_client_schema;
+
+    include_client_schema!("tests/fixtures/declarative_query.cstack");
+}
+
+#[test]
+fn the_rust_client_generates_no_surface_for_a_query() {
+    assert!(
+        generated_client::cratestack_schema::PROCEDURES.is_empty(),
+        "a query must not become a client procedure stub: {:?}",
+        generated_client::cratestack_schema::PROCEDURES,
+    );
+    assert_eq!(
+        generated_client::cratestack_schema::MODELS,
+        ["LoyaltyFeeEvent"],
+    );
+    assert!(
+        generated_client::cratestack_schema::TYPES.contains(&"LoyaltyFeeSummary"),
+        "a declared `type` stays client surface even when a query returns it",
     );
 }

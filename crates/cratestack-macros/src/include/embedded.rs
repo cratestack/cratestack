@@ -2,6 +2,7 @@
 //! surface backed by rusqlite. No sqlx, no axum, no procedures.
 
 mod computed_guard;
+mod query_guard;
 
 use std::collections::BTreeSet;
 
@@ -22,6 +23,7 @@ use super::decimal_arg::resolve_decimal_backend;
 use super::parse::parse_schema_literal;
 
 use computed_guard::guard_embedded_no_computed_fields;
+use query_guard::guard_embedded_no_queries;
 
 pub(super) fn compose_embedded_schema(
     schema_path: &LitStr,
@@ -33,6 +35,9 @@ pub(super) fn compose_embedded_schema(
         Err(error) => return error,
     };
     if let Err(error) = guard_embedded_no_computed_fields(schema_path, &schema) {
+        return error;
+    }
+    if let Err(error) = guard_embedded_no_queries(schema_path, &schema) {
         return error;
     }
     if let Err(error) =

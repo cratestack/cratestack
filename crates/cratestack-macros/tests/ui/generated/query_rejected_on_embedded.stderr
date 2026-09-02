@@ -1,0 +1,5 @@
+error: schema declares `query` block(s) (totals), which are Postgres-only raw SQL; include_embedded_schema! has no Postgres backend and there is no `@@embedded_sql` twin for a query — remove the query blocks, or consume this schema through include_server_schema!(..., db = Postgres). See docs/design/declarative-custom-query.md §4.
+ --> tests/ui/generated/query_rejected_on_embedded.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-query-867/query_embedded_rejected.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
