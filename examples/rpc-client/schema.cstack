@@ -1,0 +1,44 @@
+// Client-side contract for the `rpc-procedures-example` server.
+//
+// This is deliberately the SAME schema the server compiles against
+// (`../rpc-procedures/schema.cstack`) — `include_client_schema!` treats a
+// `.cstack` file as a contract, so the generated `client::Client` types
+// line up 1:1 with the op-ids the server dispatches (`procedure.greet`,
+// `procedure.increment`). In a real deployment each side might hold its
+// own copy of a published contract rather than sharing one file.
+//
+// `transport rpc` flips the generated client surface from REST methods to
+// the RPC surface: every procedure accessor returns a `BatchableCall`, and
+// `client.batch()` exposes the `POST /rpc/batch` frame pipeline.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+auth Caller {
+  id Int
+}
+
+type GreetArgs {
+  name String
+}
+
+type GreetReply {
+  message String
+}
+
+type CounterDelta {
+  by Int
+}
+
+type CounterValue {
+  total Int
+}
+
+procedure greet(args: GreetArgs): GreetReply
+  @allow(auth() != null)
+
+mutation procedure increment(args: CounterDelta): CounterValue
+  @allow(auth() != null)

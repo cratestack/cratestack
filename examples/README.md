@@ -162,6 +162,7 @@ build_runner → run path.
 | [`rpc-batch-debounce/`](rpc-batch-debounce) | `include_server_schema!` (`transport rpc`, `db = None`) | Client-side `BatchDebouncer` that coalesces independent RPC calls into a single `POST /rpc/batch`, wrapping the in-process `rpc-batch` router |
 | [`rpc-streaming/`](rpc-streaming) | `include_server_schema!` (`transport rpc`, `db = None`) | RPC server streaming a list-return procedure via `Accept: application/cbor-seq` — the same route serves a single CBOR `Vec` or a stream of CBOR chunks depending on content negotiation |
 | [`rpc-streaming-client-rust/`](rpc-streaming-client-rust) | `include_client_schema!` | Rust client consuming the `rpc-streaming` server's cbor-seq stream through a typed, generated streaming method (`RpcStream<Tick>`) — companion to `rpc-streaming` |
+| [`rpc-client/`](rpc-client) | `include_client_schema!` (`cratestack-client` facade) | Pure RPC HTTP client consuming a `transport rpc` server — unary `BatchableCall` `.await` **and** a batched `POST /rpc/batch` round-trip via `BatchBuilder`/`queue`/`take`. Companion to `rpc-procedures`. First client example to use the pure `cratestack-client` facade |
 
 ```bash
 cargo run -p rpc-procedures-example
@@ -171,6 +172,9 @@ cargo run -p rpc-streaming-example
 
 # rpc-streaming-client-rust needs rpc-streaming running in another terminal:
 REMOTE_URL=http://localhost:3001 cargo run -p rpc-streaming-client-rust-example
+
+# rpc-client needs rpc-procedures running in another terminal:
+REMOTE_URL=http://localhost:3000 cargo run -p rpc-client-example
 ```
 
 ## Standalone verification crates (not workspace members)
