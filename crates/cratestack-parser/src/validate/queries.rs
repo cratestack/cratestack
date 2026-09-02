@@ -136,23 +136,48 @@ fn validate_query_attributes(query: &Query) -> Result<(), SchemaError> {
     }
 
     match sql_bodies {
-        1 => Ok(()),
-        0 => Err(span_error(
-            format!(
-                "query `{}` has no SQL body — add `@@sql(\"…\")` (or a `\"\"\"…\"\"\"` block for \
-                 multiple lines)",
-                query.name
-            ),
-            query.span,
-        )),
-        found => Err(span_error(
-            format!(
-                "query `{}` declares {found} `@@sql` bodies; exactly one is allowed",
-                query.name
-            ),
-            query.span,
-        )),
+        1 => {}
+        0 => {
+            return Err(span_error(
+                format!(
+                    "query `{}` has no SQL body — add `@@sql(\"…\")` (or a `\"\"\"…\"\"\"` block for \
+                     multiple lines)",
+                    query.name
+                ),
+                query.span,
+            ));
+        }
+        found => {
+            return Err(span_error(
+                format!(
+                    "query `{}` declares {found} `@@sql` bodies; exactly one is allowed",
+                    query.name
+                ),
+                query.span,
+            ));
+        }
     }
+
+    // Counting the attribute is not enough: `@@sql(SELECT 1)` (unquoted),
+    // a bare `@@sql`, and `@@sql(\"…\") @allow(…)` on one physical line
+    // all *count* as one body while `Query::sql()` returns `None` for
+    // each. Before cratestack#867's review that combination compiled a
+    // query whose `SQL` const was the empty string, with every `$N` check
+    // skipped — a schema that looked fine and could never work.
+    if query.sql().is_none() {
+        return Err(span_error(
+            format!(
+                "query `{}` has a `@@sql` attribute whose argument is not a quoted string. Write \
+                 `@@sql(\"SELECT …\")` for one line, or `@@sql(\"\"\"` … `\"\"\")` for several — and keep \
+                 any other attribute (`@allow`, `@deny`) on its own line, since everything up to \
+                 the last `)` on the line is read as the SQL argument",
+                query.name
+            ),
+            query.span,
+        ));
+    }
+
+    Ok(())
 }
 
 /// The attribute's name, i.e. everything before its argument list.

@@ -20,6 +20,18 @@ pub enum ProcedurePredicate {
     Literal(bool),
     AuthNotNull,
     AuthIsNull,
+    /// Lowered from `auth().isSystem()` (issue cratestack#486). Satisfied
+    /// only by a `CratestackContext` minted through
+    /// `cratestack_core::SystemContext`.
+    ///
+    /// The read-path twin (`ReadPredicate::AuthIsSystem`) shipped with
+    /// cratestack#486; this one did not, and its absence was only found
+    /// when cratestack#867 tried to write the reconciliation query that
+    /// motivated the whole feature. Same fail-closed property: it can
+    /// only make a policy `TRUE` where a clause names it, so a procedure
+    /// or query whose policies never mention it is entirely unaffected by
+    /// system callers.
+    AuthIsSystem,
     HasRole {
         role: &'static str,
     },

@@ -23,13 +23,27 @@
 //!    `GROUP BY … HAVING` the builder also cannot express.
 //! 5. `runs_a_parameterless_query` — design §8's self-test: no `$N`, no
 //!    special case.
+//! 6. `a_data_modifying_cte_is_refused_by_the_database` — the review
+//!    finding that a `query` body could WRITE. A data-modifying CTE is an
+//!    ordinary `SELECT` to the driver, so the guarantee cannot come from
+//!    the statement; it comes from the `READ ONLY` transaction the
+//!    generated `run` opens. The assertion is on the row count as well as
+//!    the error, because "it returned Err" would also be true of a
+//!    statement that wrote and *then* failed.
+//! 7. `a_system_principal_satisfies_auth_is_system` — `@allow(auth()
+//!    .isSystem())` had no arm on this policy dialect and failed to
+//!    compile at all. The reconciliation query that motivated the whole
+//!    feature needs it.
+//! 8. `a_query_does_not_observe_an_enclosing_transaction` — pins the
+//!    documented limitation rather than leaving it to be discovered: a
+//!    query runs on its own pooled connection.
 //!
 //! Skips (prints `ok` in ~0.00s) without a database — set
 //! `CRATESTACK_REQUIRE_DB=1` to make that a hard failure instead. Read
 //! `finished in` rather than the summary line to tell a skip from a pass.
 
 use cratestack::sqlx::{PgPool, query};
-use cratestack::{CratestackContext, CratestackError, Value};
+use cratestack::{CratestackContext, CratestackError, SystemContext, Value};
 use cratestack::{include_client_schema, include_server_schema};
 
 include_server_schema!("tests/fixtures/declarative_query.cstack", db = Postgres);
@@ -283,4 +297,198 @@ fn the_rust_client_generates_no_surface_for_a_query() {
         generated_client::cratestack_schema::TYPES.contains(&"LoyaltyFeeSummary"),
         "a declared `type` stays client surface even when a query returns it",
     );
+}
+
+#[tokio::test]
+async fn a_data_modifying_cte_is_refused_by_the_database() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let outcome = db
+        .queries()
+        .sneaky_write(
+            &cratestack_schema::queries::sneaky_write::Args {
+                userId: "user-7".to_owned(),
+            },
+            // Deliberately a principal the `@allow` ADMITS. The point is
+            // that policy is not what stops this — the read-only
+            // transaction is.
+            &operator("user-7"),
+        )
+        .await;
+
+    assert!(
+        matches!(outcome, Err(CratestackError::Internal(_))),
+        "a data-modifying CTE must be refused, got {outcome:?}",
+    );
+    let message = outcome.unwrap_err().to_string();
+    assert!(
+        message.contains("read-only transaction"),
+        "the error should say why, got: {message}",
+    );
+    assert!(
+        !message.contains("INSERT INTO"),
+        "the public message must not echo the schema's SQL, got: {message}",
+    );
+
+    // The decisive half: nothing was written. An error alone would also
+    // be produced by a statement that inserted and then failed.
+    let count: i64 =
+        cratestack::sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM loyalty_fee_events")
+            .fetch_one(&test_pg.pool)
+            .await
+            .expect("count rows");
+    assert_eq!(count, 4, "the seeded row count must be unchanged");
+}
+
+#[tokio::test]
+async fn an_ordinary_select_still_works_under_the_read_only_transaction() {
+    // Guards the test above against passing for the wrong reason: if the
+    // read-only transaction broke *every* query, `sneakyWrite` would
+    // still fail and prove nothing.
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let summary = db
+        .queries()
+        .loyalty_event_count(
+            &cratestack_schema::queries::loyalty_event_count::Args::default(),
+            &operator("user-7"),
+        )
+        .await
+        .expect("a plain SELECT must still run inside the read-only transaction");
+
+    assert_eq!(summary.total, 4);
+}
+
+#[tokio::test]
+async fn a_system_principal_satisfies_auth_is_system() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let args = cratestack_schema::queries::system_only_totals::Args {
+        userId: "user-7".to_owned(),
+    };
+
+    let allowed = db
+        .queries()
+        .system_only_totals(
+            &args,
+            &SystemContext::for_service("ledger-worker").into_context(),
+        )
+        .await
+        .expect("a system principal should satisfy auth().isSystem()");
+    assert_eq!(allowed.total, 380);
+
+    // Fail-closed: an ordinary authenticated caller is not a system one,
+    // and `isSystem()` must not be satisfiable by asserting a claim.
+    let denied = db
+        .queries()
+        .system_only_totals(&args, &operator("user-7"))
+        .await;
+    assert!(
+        matches!(denied, Err(CratestackError::Forbidden(_))),
+        "an ordinary principal must not satisfy isSystem(), got {denied:?}",
+    );
+}
+
+#[tokio::test]
+async fn the_denial_message_names_the_query_not_a_procedure() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let error = db
+        .queries()
+        .unreachable_summary(
+            &cratestack_schema::queries::unreachable_summary::Args {
+                userId: "user-7".to_owned(),
+            },
+            &operator("user-7"),
+        )
+        .await
+        .expect_err("a policy-less query denies everyone");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("query policy denied"),
+        "a denied query should not report a procedure, got: {message}",
+    );
+}
+
+/// A `query` runs on its own pooled connection, so it does **not** observe
+/// uncommitted writes made by an enclosing `Cratestack::transaction(...)`.
+///
+/// This pins a documented limitation rather than a desired behaviour. It
+/// is here so the limitation is measured and stays measured: if a future
+/// change makes a query join the ambient transaction, this test fails and
+/// forces the doc comment, the design doc and the changelog to be updated
+/// with it — which is exactly what did not happen when the gap was
+/// introduced.
+#[tokio::test]
+async fn a_query_does_not_observe_an_enclosing_transaction() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    reset_schema(&test_pg.pool).await;
+
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let ctx = operator("user-7");
+
+    let seen_inside = db
+        .transaction(async |tx| {
+            cratestack::sqlx::query(
+                "INSERT INTO loyalty_fee_events (id, user_id, discount, created_at) \
+                 VALUES (99, 'user-7', 5000, NOW())",
+            )
+            .execute(&mut ***tx)
+            .await
+            .expect("write inside the transaction");
+
+            let inside = db
+                .queries()
+                .loyalty_event_count(
+                    &cratestack_schema::queries::loyalty_event_count::Args::default(),
+                    &ctx,
+                )
+                .await
+                .expect("the query itself should succeed");
+            Ok(inside.total)
+        })
+        .await
+        .expect("transaction should commit");
+
+    // 4, not 5: the uncommitted insert is invisible to the query.
+    assert_eq!(
+        seen_inside, 4,
+        "a query must not observe an enclosing transaction's uncommitted writes",
+    );
+
+    // And after commit it is visible, which is what makes the assertion
+    // above a statement about isolation rather than about a broken query.
+    let after = db
+        .queries()
+        .loyalty_event_count(
+            &cratestack_schema::queries::loyalty_event_count::Args::default(),
+            &ctx,
+        )
+        .await
+        .expect("query after commit");
+    assert_eq!(after.total, 5);
 }

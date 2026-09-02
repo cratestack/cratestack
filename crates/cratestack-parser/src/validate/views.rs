@@ -113,8 +113,27 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
         ));
     }
 
-    // Rule 3: at least one SQL body.
+    // Rule 3: at least one SQL body — and, when one is written, it has to
+    // parse. `View::server_sql()`/`embedded_sql()` return `None` both for
+    // "not declared" and for "declared but not a quoted string"
+    // (`@@server_sql(SELECT 1)`), so distinguishing them is what turns a
+    // typo into a diagnostic instead of a view that silently reads as
+    // embedded-only and is skipped by the server composer. Shared finding
+    // with the `query` block, whose `@@sql` uses the same extractor
+    // (cratestack#867 review finding 2).
     if view.server_sql().is_none() && view.embedded_sql().is_none() {
+        if view.has_sql_attribute() {
+            return Err(span_error(
+                format!(
+                    "view `{}` has a SQL attribute whose argument is not a quoted string. Write \
+                     `@@server_sql(\"SELECT …\")` for one line, or `@@server_sql(\"\"\"` … `\"\"\")` for \
+                     several — and keep any other attribute on its own line, since everything up \
+                     to the last `)` on the line is read as the SQL argument",
+                    view.name
+                ),
+                view.span,
+            ));
+        }
         return Err(span_error(
             format!(
                 "view `{}` must declare a SQL body via `@@server_sql`, `@@embedded_sql`, or `@@sql`",

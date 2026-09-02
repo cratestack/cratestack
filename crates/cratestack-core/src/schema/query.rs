@@ -64,16 +64,34 @@ pub struct Query {
 }
 
 impl Query {
-    /// The raw SQL text declared via `@@sql("…")` / `@@sql("""…""")`.
+    /// The SQL text declared via `@@sql("…")` / `@@sql("""…""")`.
     ///
-    /// Returned verbatim and never rewritten anywhere in the pipeline —
-    /// the `$N` validator only *scans* this text. That is the property
-    /// that makes the construct safe: there is no substitution step that
-    /// could splice a caller-supplied value into it (design §2/§7).
-    pub fn sql(&self) -> Option<&str> {
+    /// Never *rewritten* anywhere in the pipeline — the `$N` validator
+    /// only scans it, and no code path substitutes a caller-supplied
+    /// value into it. That is the property that makes the construct safe
+    /// (design §2/§7). The single-line form's `\"`/`\\` unescaping
+    /// (see [`extract_sql_body`]) is a *decoding* step applied to the
+    /// schema text at parse time, before any argument exists.
+    ///
+    /// `None` covers two different situations, which
+    /// [`has_sql_attribute`](Self::has_sql_attribute) distinguishes: no
+    /// `@@sql` at all, or one whose argument is not a quoted string.
+    /// Callers must not treat the second as an empty body — that is
+    /// exactly the bug cratestack#867's review found, where
+    /// `@@sql(SELECT 1)` compiled to `SQL = ""` with every `$N` check
+    /// skipped.
+    pub fn sql(&self) -> Option<String> {
         self.attributes
             .iter()
             .filter(|attr| attr.raw.starts_with(QUERY_SQL_ATTRIBUTE))
             .find_map(|attr| extract_sql_body(&attr.raw, QUERY_SQL_ATTRIBUTE))
+    }
+
+    /// Whether a `@@sql` attribute is written at all, however malformed.
+    /// See [`sql`](Self::sql) for why the distinction matters.
+    pub fn has_sql_attribute(&self) -> bool {
+        self.attributes
+            .iter()
+            .any(|attr| attr.raw.trim_start().starts_with(QUERY_SQL_ATTRIBUTE))
     }
 }

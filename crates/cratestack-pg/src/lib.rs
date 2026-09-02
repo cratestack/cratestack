@@ -77,6 +77,7 @@ pub use cratestack_policy::{
     PolicyExpr, PolicyLiteral, ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr,
     ProcedurePolicyLiteral, ProcedurePredicate, ReadPolicy, ReadPredicate, RelationQuantifier,
     authorize_procedure,
+    authorize_query,
 };
 pub use futures_util as futures;
 

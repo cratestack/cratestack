@@ -72,10 +72,16 @@ fn procedure_arg_builder_fields(
         .collect()
 }
 
+/// `construct` is the schema-author-facing noun for the declaration
+/// these args belong to — `"procedure"` or `"query"`. It reaches the
+/// generated struct's doc comment only; a `query`'s `Args` describing
+/// itself as a procedure's is the kind of small wrongness that makes a
+/// reader distrust the rest of the generated docs.
 pub(crate) fn generate_procedure_args_struct(
     procedure: &Procedure,
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,
+    construct: &str,
 ) -> proc_macro2::TokenStream {
     let args_ident = ident("Args");
     let definitions = procedure.args.iter().map(|arg| {
@@ -128,8 +134,10 @@ pub(crate) fn generate_procedure_args_struct(
         quote! {}
     };
 
+    let struct_doc = format!("Generated argument payload for this {construct}.");
+
     quote! {
-        #[doc = "Generated argument payload for this procedure."]
+        #[doc = #struct_doc]
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize #default_derive)]
         pub struct #args_ident {
             #(#definitions)*

@@ -13,7 +13,8 @@ use cratestack_core::{Query, TypeArity, TypeDecl};
 use quote::quote;
 
 use crate::policy::{
-    generate_procedure_policy, parse_procedure_allow_expression, parse_procedure_deny_expression,
+    PolicySubject, generate_procedure_policy, parse_procedure_allow_expression,
+    parse_procedure_deny_expression,
 };
 use crate::procedure::{generate_procedure_args_struct, procedure_output_tokens};
 use crate::shared::{doc_attrs, ident, to_snake_case};
@@ -31,9 +32,13 @@ pub(crate) fn generate_query_module(
     let docs = doc_attrs(&query.docs);
     let query_name = &query.name;
 
-    // The policy resolver is the procedure one, reached through the shim —
-    // see `super::shim`'s doc comment for why this is a conversion rather
-    // than a generalization.
+    // The policy resolver is the procedure-dialect one, reached directly:
+    // since cratestack#867's review it takes a `PolicySubject` (a name, an
+    // argument list and the construct's own noun) rather than a
+    // `Procedure`, so a query needs no stand-in value here and its
+    // diagnostics say "query" instead of "procedure". The shim below is
+    // still needed for the `Args` struct, which does read a `Procedure`.
+    let subject = PolicySubject::query(query);
     let procedure = as_procedure(query);
     let mut allow_expressions = Vec::new();
     let mut deny_expressions = Vec::new();
@@ -47,14 +52,14 @@ pub(crate) fn generate_query_module(
     }
     let allow_policies = allow_expressions
         .into_iter()
-        .map(|expression| generate_procedure_policy(expression, &procedure, types, auth))
+        .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
     let deny_policies = deny_expressions
         .into_iter()
-        .map(|expression| generate_procedure_policy(expression, &procedure, types, auth))
+        .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let args_struct = generate_procedure_args_struct(&procedure, types, enum_names);
+    let args_struct = generate_procedure_args_struct(&procedure, types, enum_names, "query");
     let output_type = procedure_output_tokens(&query.result_type, types, enum_names);
     // `query_as::<_, T>` decodes one row at a time, so it always wants the
     // element type — `Vec<T>` for a `T[]` query is what `fetch_all`

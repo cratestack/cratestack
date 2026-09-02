@@ -6,25 +6,56 @@ use crate::procedure_types::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral, ProcedurePredicate,
 };
 
+/// Evaluate a procedure-dialect policy. Deny-by-default: an empty
+/// `allow_policies` refuses everyone.
 pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(
     allow_policies: &[ProcedurePolicy],
     deny_policies: &[ProcedurePolicy],
     args: &A,
     ctx: &CratestackContext,
 ) -> Result<(), CratestackError> {
+    authorize_with_construct("procedure", allow_policies, deny_policies, args, ctx)
+}
+
+/// [`authorize_procedure`] for a `query` block (cratestack#867).
+///
+/// Identical evaluation — the dialect is shared, deliberately (design §6)
+/// — with one difference that is not cosmetic: the refusal says "query
+/// policy denied this operation". A schema author debugging a denied
+/// `query` was previously told a *procedure* had refused them, which
+/// sends them looking through a construct they may not have written.
+pub fn authorize_query<A: ProcedureArgs + ?Sized>(
+    allow_policies: &[ProcedurePolicy],
+    deny_policies: &[ProcedurePolicy],
+    args: &A,
+    ctx: &CratestackContext,
+) -> Result<(), CratestackError> {
+    authorize_with_construct("query", allow_policies, deny_policies, args, ctx)
+}
+
+/// The single evaluator both entry points delegate to.
+///
+/// `construct` reaches the message only; it never affects the decision,
+/// which is what keeps "a query and a procedure with the same policy
+/// behave identically" true by construction rather than by review.
+fn authorize_with_construct<A: ProcedureArgs + ?Sized>(
+    construct: &str,
+    allow_policies: &[ProcedurePolicy],
+    deny_policies: &[ProcedurePolicy],
+    args: &A,
+    ctx: &CratestackContext,
+) -> Result<(), CratestackError> {
+    let denied = || CratestackError::Forbidden(format!("{construct} policy denied this operation"));
+
     if allow_policies.is_empty() {
-        return Err(CratestackError::Forbidden(
-            "procedure policy denied this operation".to_owned(),
-        ));
+        return Err(denied());
     }
 
     if deny_policies
         .iter()
         .any(|policy| procedure_policy_expr_matches(policy.expr, args, ctx))
     {
-        return Err(CratestackError::Forbidden(
-            "procedure policy denied this operation".to_owned(),
-        ));
+        return Err(denied());
     }
 
     if allow_policies
@@ -33,9 +64,7 @@ pub fn authorize_procedure<A: ProcedureArgs + ?Sized>(
     {
         Ok(())
     } else {
-        Err(CratestackError::Forbidden(
-            "procedure policy denied this operation".to_owned(),
-        ))
+        Err(denied())
     }
 }
 
@@ -79,6 +108,7 @@ fn procedure_predicate_matches<A: ProcedureArgs + ?Sized>(
         ProcedurePredicate::Literal(value) => value,
         ProcedurePredicate::AuthNotNull => ctx.is_authenticated(),
         ProcedurePredicate::AuthIsNull => !ctx.is_authenticated(),
+        ProcedurePredicate::AuthIsSystem => ctx.is_system(),
         ProcedurePredicate::HasRole { role } => context_has_role(ctx, role),
         ProcedurePredicate::InTenant { tenant_id } => context_in_tenant(ctx, tenant_id),
         ProcedurePredicate::AuthFieldEqLiteral { auth_field, value } => ctx

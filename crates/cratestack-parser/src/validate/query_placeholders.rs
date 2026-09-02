@@ -29,7 +29,7 @@ pub(super) fn validate_query_placeholders(query: &Query) -> Result<(), SchemaErr
         return Ok(());
     };
 
-    let referenced = scan_sql_placeholders(sql);
+    let referenced = scan_sql_placeholders(&sql);
     let declared = u32::try_from(query.args.len()).unwrap_or(u32::MAX);
 
     if let Some(&out_of_range) = referenced

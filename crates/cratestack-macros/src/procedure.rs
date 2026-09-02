@@ -16,7 +16,8 @@ use cratestack_core::{Model, Procedure, TypeDecl};
 use quote::quote;
 
 use crate::policy::{
-    generate_procedure_policy, parse_procedure_allow_expression, parse_procedure_deny_expression,
+    PolicySubject, generate_procedure_policy, parse_procedure_allow_expression,
+    parse_procedure_deny_expression,
 };
 use crate::shared::{doc_attrs, ident, is_stream_procedure, to_snake_case};
 
@@ -64,16 +65,17 @@ pub(crate) fn generate_procedure_module(
             )?);
         }
     }
+    let subject = PolicySubject::procedure(procedure);
     let allow_policies = allow_expressions
         .into_iter()
-        .map(|expression| generate_procedure_policy(expression, procedure, types, auth))
+        .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
     let deny_policies = deny_expressions
         .into_iter()
-        .map(|expression| generate_procedure_policy(expression, procedure, types, auth))
+        .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
     let procedure_name = &procedure.name;
-    let args_struct = generate_procedure_args_struct(procedure, types, enum_names);
+    let args_struct = generate_procedure_args_struct(procedure, types, enum_names, "procedure");
     let output_type = procedure_output_tokens(&procedure.return_type, types, enum_names);
     // `@stream` procedures additionally get a `pub type Item = T;` alias
     // (the list's element type, not `Vec<T>`) alongside `Output` — the

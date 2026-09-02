@@ -88,8 +88,8 @@ fn project_view(view: &View, dialect: Dialect) -> Option<ViewProjection> {
         return None;
     }
     let sql = match dialect {
-        Dialect::Postgres => view.server_sql()?.to_owned(),
-        Dialect::Sqlite => view.embedded_sql()?.to_owned(),
+        Dialect::Postgres => view.server_sql()?,
+        Dialect::Sqlite => view.embedded_sql()?,
     };
     let source_tables = view
         .sources

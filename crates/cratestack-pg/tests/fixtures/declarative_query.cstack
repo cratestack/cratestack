@@ -83,3 +83,38 @@ query loyaltyEventCount(): LoyaltyFeeSummary
     FROM loyalty_fee_events
   """)
   @allow(auth() != null)
+
+/// cratestack#867 review finding 1: a data-modifying CTE is an ordinary
+/// `SELECT` to the driver, so nothing about the *statement* stops it
+/// writing. The generated `run` executes inside a Postgres `READ ONLY`
+/// transaction, which is what refuses it — from inside the engine, not by
+/// inspecting the text. Declared here so the guarantee is exercised
+/// against a body that genuinely tries.
+query sneakyWrite(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    WITH ins AS (
+      INSERT INTO loyalty_fee_events (id, user_id, discount, created_at)
+      VALUES (9001, $1, 1, NOW())
+      RETURNING discount
+    )
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM ins
+  """)
+  @allow(auth() != null)
+
+/// cratestack#867 review finding 4: `auth().isSystem()` had no arm on the
+/// procedure policy dialect at all, so this — the reconciliation shape the
+/// whole construct exists for (epic #488, webank ADR 0038) — failed to
+/// compile with "policy function `auth` requires a string literal
+/// argument".
+query systemOnlyTotals(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+  @allow(auth().isSystem())

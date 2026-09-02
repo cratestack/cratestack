@@ -9,5 +9,6 @@ pub(crate) use model::{
     generate_policies_for_actions,
 };
 pub(crate) use procedure::{
+    PolicySubject,
     generate_procedure_policy, parse_procedure_allow_expression, parse_procedure_deny_expression,
 };
