@@ -515,6 +515,8 @@ dependencies = [
  "async-trait",
  "axum",
  "bytes",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
  "cratestack-core",
  "cratestack-sql",
  "erased-serde",
