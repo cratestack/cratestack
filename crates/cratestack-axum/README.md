@@ -92,14 +92,28 @@ let app = axum::Router::new()
 
 ### When the store itself fails
 
-A failure of the backing store — Redis unreachable, a dropped connection — is **not** treated like a
-caller who is over budget. The layer logs a `WARN` and lets the request through unthrottled
-(`StoreErrorPolicy::Allow`, the default since #846): the limiter protects capacity, so a broken
-limiter degrades to unlimited rather than taking every rate-limited route down at once. Key
-derivation stays fail-closed, because unlike a store outage its inputs are caller-controlled.
+A failure of the backing store is not treated like a caller who is over budget — but *which* failure
+matters, and the split is deliberate:
 
-Deployments where the limiter is a security control (a paywall, a brute-force guard) want the
-opposite, and must say so:
+- **Transport-class** (the socket broke, Redis is unreachable, the lookup timed out): the layer logs
+  a `WARN` and lets the request through unthrottled. Nothing a caller sent caused it, nobody in the
+  request path can fix it, and it self-heals — so the limiter degrades to unlimited rather than
+  taking every rate-limited route down at once.
+- **Everything else** (`OOM`, `NOPERM`, a poisoned mutex, a malformed reply): refused, under every
+  policy. These are reachable-and-refusing, do not self-heal, and can be *caller-induced* — the
+  default key function hashes an unvalidated `Authorization` header, so rotating it mints one Redis
+  key per request until the instance reaches `maxmemory`. Serving through that would be a global
+  limiter bypass available to anyone.
+
+Key derivation itself stays fail-closed for the same reason: its inputs are caller-controlled.
+
+One `consume` is also bounded in wall-clock — `with_store_timeout(Duration)`, default 500ms, covering
+the first attempt and any backend-internal retry as a single budget. Without it, "degrade to
+unlimited" means "wait out the driver's reconnect cycle first", which was measured at nineteen
+seconds per request.
+
+Deployments where the limiter is a security control (a paywall, a brute-force guard) want even
+transport failures to refuse, and must say so:
 
 ```rust
 use cratestack_axum::ratelimit::StoreErrorPolicy;

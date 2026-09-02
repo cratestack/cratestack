@@ -40,17 +40,25 @@
 //! `into_make_service_with_connect_info` — must supply
 //! [`RateLimitLayer::with_key_fn`] explicitly.
 //!
-//! ## Store failures fail OPEN by default (cratestack#846)
+//! ## Store failures fail open ONLY when they are transport-class (cratestack#846)
 //!
 //! Identity derivation above is fail-closed because its inputs are
-//! caller-controlled. A failure of the *store* is not: when Redis drops a
-//! connection, no caller caused it and no caller can fix it, and refusing
-//! would turn a limiter hiccup into a simultaneous outage of every
-//! rate-limited route. The layer therefore logs a `WARN` and lets the
-//! request through — the limiter protects capacity, so a broken limiter
-//! degrades to unlimited. Deployments using the limiter as a security
-//! control (a paywall, a brute-force guard) opt into the opposite with
-//! [`RateLimitLayer::with_store_error_policy`]/[`StoreErrorPolicy::Deny`].
+//! caller-controlled. A *transport* failure of the store is not: when
+//! Redis drops a connection, no caller caused it, no caller can fix it,
+//! and it self-heals — so refusing would turn a limiter hiccup into a
+//! simultaneous outage of every rate-limited route. The layer logs a
+//! `WARN` and lets those through.
+//!
+//! A store that is *reachable and refusing* is a different animal, and
+//! the reason this is not a blanket fail-open: an `OOM` is inducible by
+//! any unauthenticated caller, because the default key function above
+//! hashes an unvalidated `Authorization` header. Those failures stay
+//! closed under every policy. See [`StoreErrorPolicy`] for the full
+//! argument. Deployments using the limiter as a security control opt into
+//! refusing even transport failures with
+//! [`RateLimitLayer::with_store_error_policy`]/[`StoreErrorPolicy::Deny`],
+//! and [`RateLimitLayer::with_store_timeout`] bounds how long a lookup
+//! may block before the policy applies at all.
 //!
 //! Every response the layer emits itself — the throttled `429`, an
 //! identity refusal, a `Deny`d store failure — carries the framework's

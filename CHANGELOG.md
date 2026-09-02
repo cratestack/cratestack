@@ -52,58 +52,88 @@ artifact differs from the one attached to that tag's GitHub Release — which is
 when the probe is what fixed the artifact. Cosmetic, resolved at the next real tag, and documented at
 the point of use rather than left to be discovered.
 
-### Rate-limit store failures fail open by default, and every middleware error body is typed — breaking (#846)
+### Rate-limit store failures fail open only for transport errors, and every middleware error body is typed — breaking (#846)
 
 A single dropped Redis connection in `RateLimitLayer` took a production RPC call down twice over: the
 layer turned the store error into a 500, and the 500's body was a bare `text/plain` string, so the
 generated client reported `RPC call returned status 500 with an unrecognized error body` rather than
 a code it could branch on.
 
-**`StoreErrorPolicy` — the breaking part.** `RateLimitLayer` now defaults to
-`StoreErrorPolicy::Allow`: a store failure is logged at `WARN` (with a once-per-process explanation of
-what that means) and the request is served *unthrottled*. Set
-`.with_store_error_policy(StoreErrorPolicy::Deny)` to keep the previous refuse-on-store-error
-behaviour. The asymmetry with key derivation, which stays fail-closed (#416), is deliberate and is the
-whole argument: the key function's inputs are caller-controlled, so refusing is the only way to stop
-one caller sharing or minting another's bucket, whereas a store outage is caused by nobody and fixable
-by nobody in the request path. Failing closed there converts a limiter hiccup into a simultaneous
-outage of every rate-limited route. The limiter protects capacity, so a broken limiter degrades to
-unlimited. Deployments using the limiter as a *security* control — a paywall, a brute-force guard —
-are the ones that want `Deny`, and now have to say so.
+**`StoreErrorPolicy` — the breaking part.** `RateLimitLayer` gains
+`with_store_error_policy(...)`, defaulting to `StoreErrorPolicy::Allow`. `Allow` is
+**class-conditional**, not a blanket fail-open: it serves a request unthrottled only when the store
+failure is *transport-class* — the socket broke, the server is unreachable — and refuses every other
+store failure exactly as `StoreErrorPolicy::Deny` does. Backends signal the transport class with
+`CratestackError::Unavailable`; anything else they return stays closed.
 
-`RateLimitConfig` has no env-driven surface, so this is a builder-only knob; there is no environment
-variable to set.
+That distinction is the whole design, and it is not the one this change originally shipped with. A
+blanket fail-open rests on the premise that a store failure is never caller-controlled, and that
+premise is false: the default key function hashes an **unvalidated** `Authorization` header (the
+layer runs before authentication), so an unauthenticated caller mints one Redis key per request just
+by rotating that header. Driven to `maxmemory`, every write then fails with `OOM` — and a blanket
+fail-open would serve *every* request through, including from buckets already exhausted. That is a
+global limiter bypass reachable by anyone. An `OOM`, a `NOPERM`, a poisoned mutex or a malformed
+reply are all reachable-and-refusing, do not self-heal, and stay closed. A broken pipe is caused by
+nobody, fixable by nobody in the request path, and self-heals — refusing there would convert a
+limiter hiccup into a simultaneous outage of every rate-limited route, which is why it is the one
+class that degrades to unlimited. Key derivation itself remains fail-closed under both policies
+(#416) for exactly the reason the `OOM` case does.
+
+Set `Deny` when the limiter is a security control (a paywall, a brute-force guard) rather than a
+capacity control, and even transport failures should refuse. `RateLimitConfig` has no env-driven
+surface, so this is a builder-only knob; there is no environment variable to set.
+
+**A bounded store lookup, also new.** `with_store_timeout(Duration)` (default 500ms) caps one
+`consume` — first attempt *and* any backend-internal retry — as a single budget, and reports an
+elapse as a transport-class failure. Without it, "degrade to unlimited" silently meant "hang, then
+allow": `redis`'s `ConnectionManager` defaults both its connection and response timeouts to `None`,
+so each attempt awaited an unbounded reconnect cycle, measured at 9.46s and doubled to 18.92s by the
+retry. Nineteen seconds of blocking is worse for the caller than the refusal it replaced, and is
+itself a denial-of-service lever. `RedisRateLimitStore` now also configures explicit
+connection/response timeouts on the manager, so a store used outside this layer is bounded too.
 
 **Typed error bodies, both middleware layers, both transports.** Every response the two tower layers
 emit themselves now carries the framework's own codec-negotiated error envelope, encoded through the
 same `Accept` negotiation and the same two wire shapes the generated handlers use — the REST
-`CratestackErrorResponse` for ordinary paths, `RpcErrorBody` for `/rpc/…` ones. That covers the
-rate-limit layer's throttled `429`, its identity refusal and its `Deny`d store error, and — a
-deliberate scope extension, same crate and same bug class — the idempotency layer's key conflict,
-in-flight `409`, fingerprint refusal and buffer-limit errors. The idempotency layer gets **no**
-fail-open policy: a failed idempotency store must keep failing the request, which is the entire point
-of having one.
+`CratestackErrorResponse` for ordinary paths, `RpcErrorBody` for RPC ones. That covers the rate-limit
+layer's throttled `429`, its identity refusal and its refused store error, and — a deliberate scope
+extension, same crate and same bug class — the idempotency layer's key conflict, in-flight `409`,
+fingerprint refusal and buffer-limit errors. The idempotency layer gets **no** fail-open policy: a
+failed idempotency store must keep failing the request, which is the entire point of having one.
+
+Content negotiation never rewrites the status of these responses. `Accept` is caller-controlled, so
+passing a negotiation failure through would let any caller downgrade its own throttle — `Accept:
+text/html` turned a `429` into a `406`, and a malformed `Accept` into a `400`. An unsatisfiable or
+malformed `Accept` now falls back to the default codec and keeps the original status, which RFC 9110
+§12.5.1 explicitly permits for a server-originated response.
 
 The `429` needed a code of its own, so `CratestackError` gains `TooManyRequests` (additive, the enum
 is `#[non_exhaustive]`) mapping to `TOO_MANY_REQUESTS` over REST and gRPC-style `resource_exhausted`
-over RPC; the Rust client maps that code back to a 429 for batch frames, where the wire frame carries
-no status of its own.
+over RPC. Every client that maps codes back to statuses carries an arm for it: the Rust client, the
+TypeScript and Dart RPC runtimes, and `@cratestack/link-batch`'s `errorStatus` — that last one
+matters most, because a `/rpc/batch` response is always HTTP 200 and the per-frame status is
+synthesized from the code, so a missing arm turned a throttle into a synthetic 500.
 
 Consumers who assert on these bodies as text will see the change: a throttled response is now a CBOR
 (or JSON, per `Accept`) `{code, message, details}` map rather than the string `rate limit exceeded`.
 `Retry-After` and the `X-RateLimit-*` headers are unchanged.
 
-**Retry-once in the Redis rate-limit store.** `RedisRateLimitStore::consume` now re-issues its script
-exactly once when the first attempt fails with a connection-class error (broken pipe, connection
-reset, unexpected EOF — `RedisError::is_connection_dropped`). Per `ConnectionManager`'s own contract
-(see `docs/design/redis-store-connection-reuse.md`, #174) the command that observes a dropped
-connection still fails while the manager reconnects in the background, so a Redis idle-timeout used to
-cost exactly one user-visible request; the retry awaits the replacement connection instead. Deliberately
-bounded: exactly one retry, never a loop — a larger budget amplifies load on an already-struggling
-server — and only for connection-class errors, since a `NOSCRIPT` or a malformed reply is
-deterministic. `consume` is not idempotent, so a retry after a mid-flight drop can spend a second
-token; that is one token out of a bucket that exists for approximate capacity protection, against a
-failed user request. The idempotency store gets no such retry, for the opposite reason.
+**Retry-once in the Redis rate-limit store.** `RedisRateLimitStore::consume` re-issues its script
+exactly once when the first attempt fails with a transport-class error, keyed on
+`RedisError::is_unrecoverable_error` — precisely the set `ConnectionManager` itself reconnects on, so
+"the driver considers this connection finished" and "we treat it as transport-class" cannot drift
+apart. That set also covers `ErrorKind::Parse`, a half-read reply from a dying socket, which a
+narrower connection-dropped test misses. Per `ConnectionManager`'s own contract (see
+`docs/design/redis-store-connection-reuse.md`, #174) the command that observes a dropped connection
+still fails while the manager reconnects in the background, so a Redis idle-timeout used to cost
+exactly one user-visible request; the retry awaits the replacement connection instead. Deliberately
+bounded: exactly one retry, never a loop, and never for a deterministic refusal such as `OOM` or
+`NOSCRIPT`. `consume` is not idempotent, so a retry after a mid-flight drop can spend a second token;
+that is one token out of a bucket that exists for approximate capacity protection, against a failed
+user request. The idempotency store gets no such retry, for the opposite reason.
+
+Both store-error `WARN`s are rate-limited (10s and 60s budgets, carrying the count they suppressed),
+since an attacker-induced outage must not double as a log-volume amplifier.
 
 
 ## 0.10.1 (2026-09-01)
