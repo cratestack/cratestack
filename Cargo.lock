@@ -1552,6 +1552,7 @@ dependencies = [
  "testcontainers-modules",
  "tokio",
  "tower",
+ "tracing",
  "uuid",
 ]
 
