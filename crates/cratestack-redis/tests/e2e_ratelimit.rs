@@ -21,7 +21,8 @@ use axum::http::{Request, Response, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::post;
 use cratestack_axum::ratelimit::RateLimitLayer;
-use cratestack_core::RateLimitConfig;
+use cratestack_codec_cbor::CborCodec;
+use cratestack_core::{CratestackCodec, CratestackErrorResponse, RateLimitConfig};
 use cratestack_redis::RedisRateLimitStore;
 use tower::util::ServiceExt;
 use uuid::Uuid;
@@ -55,11 +56,19 @@ where
         .layer(RateLimitLayer::new(store, config))
 }
 
-async fn body_string(response: Response<Body>) -> (StatusCode, axum::http::HeaderMap, String) {
+/// Buffers a response and decodes its body as the framework error
+/// envelope with the same `CborCodec` a generated client uses
+/// (cratestack#846 — the throttled body used to be bare `text/plain`,
+/// which no generated client could decode).
+async fn error_body(
+    response: Response<Body>,
+) -> (StatusCode, axum::http::HeaderMap, CratestackErrorResponse) {
     let (parts, body) = response.into_parts();
     let bytes = to_bytes(body, 4 * 1024 * 1024).await.expect("read body");
-    let text = String::from_utf8(bytes.to_vec()).expect("utf8 body");
-    (parts.status, parts.headers, text)
+    let decoded = CborCodec
+        .decode(&bytes)
+        .expect("the layer's error body must decode as the framework error envelope");
+    (parts.status, parts.headers, decoded)
 }
 
 fn post_request(auth: &str) -> Request<Body> {
@@ -120,7 +129,7 @@ async fn allows_up_to_burst_then_returns_429_with_retry_after() {
         .oneshot(post_request(TEST_AUTH))
         .await
         .expect("throttled");
-    let (status, headers, body) = body_string(throttled).await;
+    let (status, headers, body) = error_body(throttled).await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
     let retry_after = headers
         .get(header::RETRY_AFTER)
@@ -131,10 +140,11 @@ async fn allows_up_to_burst_then_returns_429_with_retry_after() {
         .parse()
         .expect("integer Retry-After");
     assert!(parsed >= 1, "Retry-After must be at least 1 second");
-    assert!(
-        body.contains("rate limit"),
-        "response body should describe the throttle, got {body:?}",
+    assert_eq!(
+        body.code, "TOO_MANY_REQUESTS",
+        "the throttled body must carry a typed code a generated client can branch on",
     );
+    assert_eq!(body.message, "rate limit exceeded");
     assert_eq!(
         counter.load(Ordering::SeqCst),
         3,

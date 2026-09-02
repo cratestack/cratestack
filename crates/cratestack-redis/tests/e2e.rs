@@ -20,6 +20,8 @@ use axum::http::{HeaderValue, Request, Response, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use cratestack_axum::idempotency::IdempotencyLayer;
+use cratestack_codec_cbor::CborCodec;
+use cratestack_core::{CratestackCodec, CratestackErrorResponse};
 use cratestack_redis::RedisIdempotencyStore;
 use tower::util::ServiceExt;
 use uuid::Uuid;
@@ -62,6 +64,20 @@ async fn body_string(response: Response<Body>) -> (StatusCode, axum::http::Heade
     let bytes = to_bytes(body, 4 * 1024 * 1024).await.expect("read body");
     let text = String::from_utf8(bytes.to_vec()).expect("utf8 body");
     (parts.status, parts.headers, text)
+}
+
+/// Same as [`body_string`], but decodes the *error* envelope the
+/// middleware emits with the codec a generated client uses
+/// (cratestack#846 — these bodies used to be bare `text/plain`).
+async fn error_body(
+    response: Response<Body>,
+) -> (StatusCode, axum::http::HeaderMap, CratestackErrorResponse) {
+    let (parts, body) = response.into_parts();
+    let bytes = to_bytes(body, 4 * 1024 * 1024).await.expect("read body");
+    let decoded = CborCodec
+        .decode(&bytes)
+        .expect("the middleware's error body must decode as the framework error envelope");
+    (parts.status, parts.headers, decoded)
 }
 
 fn post_request(body: &'static str, idempotency_key: &str) -> Request<Body> {
@@ -145,11 +161,15 @@ async fn same_key_different_body_returns_422_conflict() {
         .oneshot(post_request(r#"{"amount":999}"#, "txn-conflict"))
         .await
         .expect("second");
-    let (status, headers, _body) = body_string(second).await;
+    let (status, headers, body) = error_body(second).await;
     assert_eq!(
         status,
         StatusCode::UNPROCESSABLE_ENTITY,
         "different body under same key must conflict",
+    );
+    assert_eq!(
+        body.code, "VALIDATION_ERROR",
+        "the conflict must carry a typed code a generated client can branch on",
     );
     assert!(
         headers.get("idempotency-replayed").is_none(),

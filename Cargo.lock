@@ -1544,6 +1544,7 @@ dependencies = [
  "async-trait",
  "axum",
  "cratestack-axum",
+ "cratestack-codec-cbor",
  "cratestack-core",
  "http",
  "redis",
