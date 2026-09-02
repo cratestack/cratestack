@@ -79,9 +79,11 @@ limiter hiccup into a simultaneous outage of every rate-limited route, which is 
 class that degrades to unlimited. Key derivation itself remains fail-closed under both policies
 (#416) for exactly the reason the `OOM` case does.
 
-Set `Deny` when the limiter is a security control (a paywall, a brute-force guard) rather than a
-capacity control, and even transport failures should refuse. `RateLimitConfig` has no env-driven
-surface, so this is a builder-only knob; there is no environment variable to set.
+**Set `StoreErrorPolicy::Deny` to keep the previous behaviour** — every store failure, transport
+included, refuses the request exactly as before this change. That is what deployments using the
+limiter as a security control (a paywall, a brute-force guard) rather than a capacity control want.
+`RateLimitConfig` has no env-driven surface, so this is a builder-only knob; there is no environment
+variable to set.
 
 **A bounded store lookup, also new.** `with_store_timeout(Duration)` (default 500ms) caps one
 `consume` — first attempt *and* any backend-internal retry — as a single budget, and reports an
@@ -89,8 +91,17 @@ elapse as a transport-class failure. Without it, "degrade to unlimited" silently
 allow": `redis`'s `ConnectionManager` defaults both its connection and response timeouts to `None`,
 so each attempt awaited an unbounded reconnect cycle, measured at 9.46s and doubled to 18.92s by the
 retry. Nineteen seconds of blocking is worse for the caller than the refusal it replaced, and is
-itself a denial-of-service lever. `RedisRateLimitStore` now also configures explicit
-connection/response timeouts on the manager, so a store used outside this layer is bounded too.
+itself a denial-of-service lever. Both Redis stores now also configure explicit connection/response
+timeouts on the `ConnectionManager` (2s each), so a store used outside this layer is bounded too —
+including `RedisIdempotencyStore`, which stays fail-closed but now fails promptly.
+
+**Check the 500ms default against your Redis latency.** A store whose p99 `consume` exceeds the
+budget is classified transport-unavailable and, under the default `Allow`, served **unthrottled** —
+so an under-provisioned or cross-region Redis turns into a silent partial limiter bypass rather than
+a slow one. Deployments with a Redis in another region, or a heavily loaded one, should raise the
+budget with `with_store_timeout` (or set `Deny`) rather than take the default on faith. The
+per-10s `WARN` names the elapse, so the condition is visible, but it is visible only if someone is
+reading.
 
 **Typed error bodies, both middleware layers, both transports.** Every response the two tower layers
 emit themselves now carries the framework's own codec-negotiated error envelope, encoded through the
@@ -133,7 +144,10 @@ that is one token out of a bucket that exists for approximate capacity protectio
 user request. The idempotency store gets no such retry, for the opposite reason.
 
 Both store-error `WARN`s are rate-limited (10s and 60s budgets, carrying the count they suppressed),
-since an attacker-induced outage must not double as a log-volume amplifier.
+since an attacker-induced outage must not double as a log-volume amplifier. The mechanism is a new
+public module, `cratestack_core::log_throttle` (`LogThrottle`/`ThrottleDecision`) — additive API,
+usable by any crate with the same problem, and deliberately not a general-purpose rate limiter: no
+token bucket, no configuration, no allocation.
 
 
 ## 0.10.1 (2026-09-01)

@@ -39,10 +39,18 @@ pub(super) const STORE_UNAVAILABLE_MESSAGE: &str = "rate limit store temporarily
 /// driver considers this connection finished" and "we treat it as
 /// transport-class" cannot drift apart. It covers `ErrorKind::Parse` (a
 /// half-read reply from a dying socket), which `is_connection_dropped()`
-/// misses. It also covers `AuthenticationFailed`, which is a deployment
-/// misconfiguration rather than a transport fault; included because the
-/// driver classifies it as reconnect-worthy and because it is equally not
-/// caller-reachable. Timeouts are excluded
+/// misses.
+///
+/// It also covers `AuthenticationFailed`, which is a deployment
+/// misconfiguration rather than a transport fault. Kept in deliberately:
+/// the test that matters for this predicate is *not caller-inducible*,
+/// and a wrong Redis password is not something a request can provoke —
+/// so treating it as fail-open does not hand anyone a bypass, and the
+/// alternative (refusing every rate-limited route because a credential
+/// rotated) is the outage this policy exists to avoid. It is not silent:
+/// the per-10s `WARN` in `super::retry` carries the driver's message, so
+/// a misconfigured deployment says `AuthenticationFailed` in the log from
+/// the first request onward. Timeouts are excluded
 /// (`RetryMethod::RetryImmediately`) — see `super::retry` for why
 /// re-issuing a non-idempotent consume against a merely-slow server is
 /// the wrong move.

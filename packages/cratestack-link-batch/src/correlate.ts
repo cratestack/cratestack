@@ -89,6 +89,13 @@ export function errorStatus(code: string): number {
       return 429;
     case "unavailable":
       return 503;
+    case "deadline_exceeded":
+      return 504;
+    // `canceled` is deliberately absent: gRPC CANCELED has no agreed HTTP
+    // equivalent (499 is an nginx extension, not a standard status), and
+    // inventing one here would put a number on the wire that no other
+    // part of the stack maps back. It falls through to 500 with the code
+    // string intact, which is what a caller should switch on anyway.
     default:
       return 500;
   }

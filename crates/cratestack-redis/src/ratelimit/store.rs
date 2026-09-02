@@ -3,39 +3,19 @@ use std::time::Duration;
 
 use cratestack_core::CratestackError;
 use cratestack_core::log_throttle::LogThrottle;
-use redis::aio::{ConnectionManager, ConnectionManagerConfig};
+use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
+
+use crate::connection_config::manager_config;
 
 use super::config::RedisRateLimitStoreConfig;
 use super::util::{nibble_hex, redis_error};
 
-/// Ceiling on a single connect attempt, and on waiting for one command's
-/// reply (cratestack#846 security review). `redis`'s own defaults for
-/// both are `None` — unbounded — so during a real outage every `consume`
-/// awaited a full reconnect cycle with no ceiling at all: measured at
-/// 9.46s for one attempt, 18.92s once the retry doubled it. A rate
-/// limiter that blocks the request path for nineteen seconds has stopped
-/// protecting capacity and started consuming it.
-///
-/// These bound the *driver*, and are deliberately looser than the
-/// layer-side budget (`RateLimitLayer::with_store_timeout`, default
-/// 500ms) that bounds first-attempt-plus-retry as a unit. Both exist so
-/// that neither component has to trust the other to be bounded: a store
-/// used outside that layer still gets a ceiling.
 /// How often the retry WARN may fire per store. Long enough that a
 /// sustained outage cannot flood the log, short enough that an operator
 /// watching a live incident still sees movement.
 const RETRY_WARNING_INTERVAL: Duration = Duration::from_secs(10);
-
-const CONNECTION_TIMEOUT: Duration = Duration::from_secs(2);
-const RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
-
-fn manager_config() -> ConnectionManagerConfig {
-    ConnectionManagerConfig::new()
-        .set_connection_timeout(Some(CONNECTION_TIMEOUT))
-        .set_response_timeout(Some(RESPONSE_TIMEOUT))
-}
 
 #[derive(Clone)]
 pub struct RedisRateLimitStore {

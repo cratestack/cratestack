@@ -105,6 +105,8 @@ class CratestackRpcErrorCodes {
   static const String failedPrecondition = 'failed_precondition';
   static const String resourceExhausted = 'resource_exhausted';
   static const String unavailable = 'unavailable';
+  static const String deadlineExceeded = 'deadline_exceeded';
+  static const String canceled = 'canceled';
   static const String internal = 'internal';
 }
 

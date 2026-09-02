@@ -5,6 +5,8 @@
 use cratestack_core::CratestackError;
 use cratestack_core::rpc::{RpcErrorBody, cratestack_error_code_to_rpc_code, rpc_code};
 
+use super::util::synthesize_error_for_status;
+
 #[test]
 fn cratestack_error_code_to_rpc_code_covers_every_cratestack_error_variant() {
     // Mirror image of `rpc_code_maps_each_cratestack_error_variant` — for
@@ -140,4 +142,29 @@ fn error_body_uses_caller_supplied_message_for_4xx() {
     let body = RpcErrorBody::from_cratestack(&CratestackError::NotFound("widget 42".into()));
     assert_eq!(body.code, "not_found");
     assert_eq!(body.message, "widget 42");
+}
+
+/// cratestack#846: the dispatcher synthesises an error from a bare status
+/// when a non-2xx body is not the framework's error shape — which is what
+/// a middleware response looks like if it reaches the RPC path
+/// un-decoded. Without these arms a throttle became `internal` while
+/// keeping status 429, so the two halves of the frame disagreed about
+/// what had happened.
+#[test]
+fn synthesized_errors_cover_the_statuses_middleware_emits() {
+    let throttled = synthesize_error_for_status(axum::http::StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(throttled.code(), "TOO_MANY_REQUESTS");
+    assert_eq!(rpc_code(&throttled), "resource_exhausted");
+
+    let unavailable = synthesize_error_for_status(axum::http::StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(unavailable.code(), "UNAVAILABLE");
+    assert_eq!(rpc_code(&unavailable), "unavailable");
+}
+
+/// The fallback stays `internal` for anything unmapped, so adding the two
+/// arms above did not widen the synthesiser's behaviour elsewhere.
+#[test]
+fn an_unmapped_status_still_synthesizes_internal() {
+    let teapot = synthesize_error_for_status(axum::http::StatusCode::IM_A_TEAPOT);
+    assert_eq!(teapot.code(), "INTERNAL_ERROR");
 }

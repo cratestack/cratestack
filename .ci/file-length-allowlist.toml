@@ -377,7 +377,6 @@ issue = "#TBD"
 added = "2026-08-29"
 reason = "test module; split by concern when the module it covers is next touched"
 
-
 [[file]]
 path = "crates/cratestack-client-rust/src/streaming.rs"
 lines = 245
@@ -531,7 +530,6 @@ lines = 228
 issue = "#TBD"
 added = "2026-08-29"
 reason = "pre-existing; split by concern (extract inline tests first)"
-
 
 [[file]]
 path = "crates/cratestack-axum/src/transport/media_type/tests.rs"

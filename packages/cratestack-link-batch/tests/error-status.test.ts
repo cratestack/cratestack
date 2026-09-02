@@ -15,6 +15,17 @@ describe("errorStatus", () => {
     expect(errorStatus("unavailable")).toBe(503);
   });
 
+  it("maps a deadline overrun to 504", () => {
+    expect(errorStatus("deadline_exceeded")).toBe(504);
+  });
+
+  // `canceled` has no agreed HTTP status; it falls through to 500 with
+  // the code string intact rather than inventing a number. Asserted so
+  // the omission stays deliberate rather than looking like an oversight.
+  it("leaves canceled on the 500 fallback, by design", () => {
+    expect(errorStatus("canceled")).toBe(500);
+  });
+
   it("still maps the codes the dispatcher emits", () => {
     expect(errorStatus("invalid_argument")).toBe(400);
     expect(errorStatus("failed_precondition")).toBe(400);

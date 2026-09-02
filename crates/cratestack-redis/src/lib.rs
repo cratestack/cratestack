@@ -18,6 +18,7 @@
 //! generated Rust client's request journal) is a separate concern and
 //! lives in `cratestack-client-store-redis`.
 
+mod connection_config;
 pub mod idempotency;
 pub mod ratelimit;
 #[cfg(test)]

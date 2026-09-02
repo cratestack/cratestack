@@ -26,7 +26,8 @@ async fn an_unsatisfiable_accept_keeps_the_status_and_falls_back_to_the_default_
     assert_eq!(
         status,
         StatusCode::TOO_MANY_REQUESTS,
-        "negotiation must not rewrite a 429 into a 406 — that is caller-triggerable and          loses the throttle"
+        "negotiation must not rewrite a 429 into a 406 — that is caller-triggerable and loses \
+         the throttle"
     );
     assert_eq!(content_type, "application/cbor");
     let decoded: CratestackErrorResponse = CborCodec.decode(&body).expect("typed envelope");
