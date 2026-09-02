@@ -129,6 +129,8 @@ export type RpcErrorCode =
   | "not_found"
   | "conflict"
   | "failed_precondition"
+  | "resource_exhausted"
+  | "unavailable"
   | "internal";
 
 /** Thrown by `CratestackRpcRuntime` when a remote call fails. Carries
