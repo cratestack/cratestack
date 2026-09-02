@@ -32,11 +32,18 @@ pub(super) fn resolve_procedure_field(
         return resolve_type_field_path(types, &arg.ty.name, rest, subject, field);
     }
 
-    if let Some(arg) = subject.args.iter().find(|candidate| candidate.name == field) {
+    if let Some(arg) = subject
+        .args
+        .iter()
+        .find(|candidate| candidate.name == field)
+    {
         return Ok(ProcedurePolicyField { ty: arg.ty.clone() });
     }
 
-    if let Some(arg) = subject.args.iter().find(|candidate| candidate.name == "args")
+    if let Some(arg) = subject
+        .args
+        .iter()
+        .find(|candidate| candidate.name == "args")
         && let Ok(field_decl) = resolve_type_field_path(types, &arg.ty.name, field, subject, field)
     {
         return Ok(field_decl);

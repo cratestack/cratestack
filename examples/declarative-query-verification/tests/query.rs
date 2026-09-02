@@ -21,7 +21,7 @@
 //! from a pass: a real run takes seconds, a skipped one reports `0.00s`.
 
 use cratestack::CratestackError;
-use declarative_query_verification::{monthly_loyalty_fees, schema};
+use declarative_query_verification::{attempt_write, monthly_loyalty_fees, schema};
 use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
 use testcontainers_modules::postgres::Postgres;
@@ -148,4 +148,32 @@ async fn the_policy_gates_the_call_before_any_sql_runs() {
         matches!(outcome, Err(CratestackError::Forbidden(_))),
         "expected Forbidden, got {outcome:?}",
     );
+}
+
+#[tokio::test]
+async fn a_query_cannot_write_even_when_the_policy_admits_the_caller() {
+    let Some(pool) = connect_or_skip().await else {
+        return;
+    };
+    seed(&pool).await;
+
+    let db = schema::Cratestack::builder(pool.clone()).build();
+    // Note the principal: one the `@allow` ADMITS. Policy is not what
+    // stops this — the read-only transaction is.
+    let outcome = attempt_write(&db, &operator("user-7"), "user-7".to_owned()).await;
+
+    assert!(
+        outcome.is_err(),
+        "a query body must not be able to write, got {outcome:?}",
+    );
+
+    // The decisive half. An error alone would also be produced by a
+    // statement that inserted and *then* failed, so the row count is what
+    // actually proves nothing landed.
+    let count: i64 =
+        cratestack::sqlx::query_scalar("SELECT COUNT(*)::BIGINT FROM loyalty_fee_events")
+            .fetch_one(&pool)
+            .await
+            .expect("count rows");
+    assert_eq!(count, 4, "the seeded row count must be unchanged");
 }

@@ -18,6 +18,12 @@
 //!    denies everyone.
 //! 2. The result is a declared `.cstack` type with real Rust field types,
 //!    not a `PgRow` the caller has to `try_get` out of by hand.
+//! 3. It cannot write. [`attempt_write`] below exists to be refused: the
+//!    generated entry point runs inside a Postgres `READ ONLY`
+//!    transaction, so a data-modifying CTE — which is an ordinary
+//!    `SELECT` as far as the driver is concerned — is rejected by the
+//!    engine rather than quietly bypassing `@@audit`, the `@@emit`
+//!    outbox, `@version`, soft-delete and the model's own write `@@allow`.
 
 use cratestack::{CratestackContext, CratestackError};
 
@@ -45,6 +51,25 @@ pub async fn monthly_loyalty_fees(
                 userId: user_id,
                 cutoff,
             },
+            ctx,
+        )
+        .await
+}
+
+/// Runs a `query` whose body tries to `INSERT` through a CTE.
+///
+/// Always fails, and that is the point — this is the acceptance-bar proof
+/// for cratestack#870's review finding 1, kept in the example rather than
+/// only in the framework's own tests so an adopter can run it against
+/// their own Postgres and see the refusal for themselves.
+pub async fn attempt_write(
+    db: &schema::Cratestack,
+    ctx: &CratestackContext,
+    user_id: String,
+) -> Result<schema::LoyaltyFeeSummary, CratestackError> {
+    db.queries()
+        .attempted_write(
+            &schema::queries::attempted_write::Args { userId: user_id },
             ctx,
         )
         .await

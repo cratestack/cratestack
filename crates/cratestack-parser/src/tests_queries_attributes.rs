@@ -1,38 +1,19 @@
-//! Bad `query` **attributes and names** (cratestack#867): a missing or
-//! duplicated `@@sql` body, the per-backend SQL split a `view` allows but a
-//! query does not, unrecognised attributes, colliding names, and a query in
-//! a schema that configures no database.
+//! Bad `query` **attributes and names** (cratestack#867): unrecognised
+//! attributes, colliding names, and a query in a schema that configures no
+//! database.
 //!
 //! The unrecognised-attribute case is the one worth not dropping: without
 //! it, a misspelled `@alow` would parse silently and leave the query
 //! deny-by-default with nothing to explain why.
 //!
-//! Signature-level rejections live in the sibling
+//! Everything about the *SQL body itself* — missing, duplicated,
+//! malformed, or needing escapes — lives in
+//! [`tests_queries_sql_body`](crate::tests_queries_sql_body), which is
+//! also where the `view` half of those shared rules is checked.
+//! Signature-level rejections live in
 //! [`tests_queries_rejections`](crate::tests_queries_rejections).
 
 use crate::tests_queries_support::{error_for, with_query};
-
-#[test]
-fn rejects_a_query_with_no_sql_body() {
-    let message = error_for(&with_query(
-        r#"query totals(userId: String): Totals
-  @allow(auth() != null)"#,
-    ));
-    assert!(message.contains("has no SQL body"), "{message}");
-}
-
-#[test]
-fn rejects_the_per_backend_sql_split_a_view_allows() {
-    // `query` is Postgres-only (design §4). Accepting `@@embedded_sql`'s
-    // spelling would advertise a backend that does not exist.
-    let message = error_for(&with_query(
-        r#"query totals(userId: String): Totals
-  @@embedded_sql("SELECT 1 AS total WHERE a = $1")
-  @allow(auth() != null)"#,
-    ));
-    assert!(message.contains("Postgres-only"), "{message}");
-    assert!(message.contains("@@embedded_sql"), "{message}");
-}
 
 #[test]
 fn rejects_an_unsupported_attribute() {
@@ -102,102 +83,5 @@ query totals(userId: String): Totals
     assert!(
         message.contains("configures no database for a `query` to run against"),
         "{message}"
-    );
-}
-
-
-/// A `@@sql` attribute whose argument is not a quoted string used to
-/// *count* as a body while `Query::sql()` returned `None`, so the query
-/// compiled with `SQL = ""` and every `$N` check skipped
-/// (cratestack#867 review finding 2). Three spellings reach that state,
-/// and all three must be rejected — a schema that looks fine and can
-/// never work is worse than one that fails to build.
-#[test]
-fn rejects_an_unquoted_sql_argument() {
-    let message = error_for(&with_query(
-        r#"query totals(userId: String): Totals
-  @@sql(SELECT 1 AS total WHERE a = $1)
-  @allow(auth() != null)"#,
-    ));
-    assert!(
-        message.contains("argument is not a quoted string"),
-        "{message}"
-    );
-}
-
-#[test]
-fn rejects_a_bare_sql_attribute_with_no_parentheses() {
-    let message = error_for(&with_query(
-        r#"query totals(userId: String): Totals
-  @@sql
-  @allow(auth() != null)"#,
-    ));
-    assert!(
-        message.contains("argument is not a quoted string"),
-        "{message}"
-    );
-}
-
-#[test]
-fn rejects_a_second_attribute_sharing_the_sql_line() {
-    // Everything up to the LAST `)` on the line is read as the SQL
-    // argument, so this parses as one attribute with a body that does not
-    // end in a quote. The message says so rather than leaving the author
-    // to work out why an apparently well-formed line was refused.
-    let message = error_for(&with_query(
-        r#"query totals(userId: String): Totals
-  @@sql("SELECT 1 AS total WHERE a = $1") @allow(auth() != null)"#,
-    ));
-    assert!(
-        message.contains("argument is not a quoted string"),
-        "{message}"
-    );
-    assert!(message.contains("on its own line"), "{message}");
-}
-
-/// The same extractor backs `view`'s `@@server_sql`, where the silent
-/// failure mode is different but no better: the view reads as
-/// embedded-only and the server composer skips it without a word.
-#[test]
-fn rejects_an_unquoted_sql_argument_on_a_view_too() {
-    let message = error_for(
-        r#"
-model Customer {
-  id Int @id
-  email String
-}
-
-view CustomerSummary from Customer {
-  id Int @id
-  email String
-
-  @@server_sql(SELECT id, email FROM customers)
-  @@allow("read", auth() != null)
-}
-"#,
-    );
-    assert!(
-        message.contains("argument is not a quoted string"),
-        "{message}"
-    );
-}
-
-/// A single-line body may need `\"` to alias a result column, and those
-/// escapes must reach Postgres as plain quotes — passing the backslashes
-/// through produced a syntax error at first execution
-/// (cratestack#867 review finding 6).
-#[test]
-fn unescapes_quotes_in_a_single_line_sql_body() {
-    let declaration = concat!(
-        "query totals(userId: String): Totals\n",
-        "  @@sql(\"SELECT 1 AS \\\"total\\\" WHERE a = $1\")\n",
-        "  @allow(auth() != null)",
-    );
-    let schema = crate::parse_schema(&with_query(declaration))
-        .expect("a single-line body with escaped quotes should parse");
-
-    assert_eq!(
-        schema.queries[0].sql().as_deref(),
-        Some("SELECT 1 AS \"total\" WHERE a = $1"),
     );
 }

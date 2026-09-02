@@ -65,10 +65,7 @@ fn skips_a_dollar_quoted_body_with_a_named_tag() {
 #[test]
 fn still_finds_parameters_around_a_dollar_quoted_body() {
     // The skip must be a span, not a bail-out.
-    assert_eq!(
-        scan("SELECT $1, $tag$ inner $9 $tag$, $2"),
-        vec![1, 2]
-    );
+    assert_eq!(scan("SELECT $1, $tag$ inner $9 $tag$, $2"), vec![1, 2]);
 }
 
 #[test]

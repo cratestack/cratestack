@@ -11,24 +11,12 @@
 //! added next to it** (design §7 lists that as an explicit exclusion, not
 //! an oversight).
 //!
-//! **The second half of that argument is the `READ ONLY` transaction**,
-//! added after cratestack#867's review measured a `query` body *writing*:
-//! `WITH ins AS (INSERT … RETURNING …) SELECT …` is a perfectly ordinary
-//! `SELECT` statement to sqlx, and it ran. The `@allow` gated the call,
-//! but a write reaching the database this way bypasses everything the
-//! framework layers on its own write path — `@@audit` rows, the `@@emit`
-//! outbox, `@version` optimistic locking, soft-delete, `@@internal`
-//! suppression and the model's own write `@@allow`. None of those are
-//! things a policy expression can compensate for.
-//!
-//! Rejecting DML by inspecting the SQL text was not an option worth
-//! having: it means classifying arbitrary SQL, which is the parser design
-//! §3 prices out and rejects, and a keyword blocklist is exactly the kind
-//! of check that looks right and is bypassable. Postgres already has the
-//! authority — `SET TRANSACTION READ ONLY` refuses `INSERT`/`UPDATE`/
-//! `DELETE`/`TRUNCATE` and DDL with SQLSTATE `25006`, from inside the
-//! engine, whatever the statement looks like. That is enforcement, not
-//! detection.
+//! **The second half of that argument is the `READ ONLY` transaction**
+//! ([`super::read_only`]), added after cratestack#870's review measured a
+//! `query` body *writing*. That module's doc has the reasoning; the short
+//! version is that `@allow` gates the call while the write bypasses every
+//! guarantee the framework's own write path provides, and that Postgres —
+//! not a SQL-text check — is what refuses it.
 //!
 //! Forward requirement, recorded here because this is where it would be
 //! violated: if a future revision ever splits execution the way
@@ -50,16 +38,22 @@ use quote::quote;
 
 use crate::shared::ident;
 
+use super::read_only::{query_error_fn, read_only_execution};
+
 /// `run`, plus the `SQL` const it executes.
 pub(super) fn generate_query_entry(
     query: &Query,
     element_type: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let sql = query.sql().unwrap_or_default();
-    let binds = query.args.iter().map(|arg| {
-        let field_ident = ident(&arg.name);
-        quote! { .bind(args.#field_ident.clone()) }
-    });
+    let binds = query
+        .args
+        .iter()
+        .map(|arg| {
+            let field_ident = ident(&arg.name);
+            quote! { .bind(args.#field_ident.clone()) }
+        })
+        .collect::<Vec<_>>();
     let fetch = match query.result_type.arity {
         TypeArity::List => quote! { fetch_all },
         // `Optional` is rejected by the parser, so `Required` is the only
@@ -67,6 +61,9 @@ pub(super) fn generate_query_entry(
         // `CratestackError::NotFound` through `cratestack_error_from_sqlx`.
         _ => quote! { fetch_one },
     };
+
+    let execution = read_only_execution(element_type, &fetch, &binds);
+    let query_error_fn = query_error_fn();
 
     quote! {
         /// The SQL body exactly as written in the schema. Executed
@@ -143,40 +140,7 @@ pub(super) fn generate_query_entry(
                     );
                 })?;
 
-            let result = async {
-                let mut connection = db
-                    .pool()
-                    .acquire()
-                    .await
-                    .map_err(::cratestack::cratestack_error_from_sqlx)?;
-                let mut transaction = connection
-                    .begin()
-                    .await
-                    .map_err(::cratestack::cratestack_error_from_sqlx)?;
-                // Must be the first statement in the transaction:
-                // Postgres refuses `SET TRANSACTION READ ONLY` once any
-                // query has run inside it, so issuing it here (rather
-                // than alongside the query) is what makes the guarantee
-                // hold rather than silently no-op.
-                ::cratestack::sqlx::query("SET TRANSACTION READ ONLY")
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(::cratestack::cratestack_error_from_sqlx)?;
-
-                let rows = ::cratestack::sqlx::query_as::<_, #element_type>(SQL)
-                    #(#binds)*
-                    .#fetch(&mut *transaction)
-                    .await
-                    .map_err(__query_error);
-
-                // Committing a read-only transaction releases the
-                // snapshot; rolling back would do the same, but commit
-                // keeps the "nothing unusual happened" path indistinct
-                // from any other successful read in the server's logs.
-                let _ = transaction.commit().await;
-                rows
-            }
-            .await;
+            let result = #execution.await;
 
             match &result {
                 Ok(_) => ::cratestack::tracing::debug!(
@@ -201,33 +165,6 @@ pub(super) fn generate_query_entry(
             result
         }
 
-        /// Maps a failure of the query statement itself.
-        ///
-        /// Everything reaches `cratestack_error_from_sqlx` unchanged
-        /// except SQLSTATE `25006` — "cannot execute INSERT in a read-only
-        /// transaction" — which becomes a fixed message naming the query
-        /// and saying what to do instead.
-        ///
-        /// `Internal` rather than a 4xx on purpose. A `query` that writes
-        /// is a *schema* bug, not a caller mistake — no argument the
-        /// caller could have passed would have made it legal — and
-        /// `CratestackError`'s 5xx variants carry operator-only detail
-        /// that is never returned to a client, so the message can name the
-        /// query without any risk of the schema's SQL reaching a response
-        /// body. The `tracing::warn!` above records the driver's own error
-        /// alongside it.
-        fn __query_error(error: ::cratestack::sqlx::Error) -> ::cratestack::CratestackError {
-            if let ::cratestack::sqlx::Error::Database(database_error) = &error
-                && database_error.code().as_deref() == Some("25006")
-            {
-                return ::cratestack::CratestackError::Internal(format!(
-                    "query `{}` attempted to modify data; a `query` block runs in a read-only \
-                     transaction and may only read. Use a procedure or a model write builder \
-                     instead.",
-                    NAME,
-                ));
-            }
-            ::cratestack::cratestack_error_from_sqlx(error)
-        }
+        #query_error_fn
     }
 }

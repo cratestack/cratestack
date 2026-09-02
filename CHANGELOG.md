@@ -96,6 +96,15 @@ What the framework checks that hand-written `sqlx` cannot:
 
 Deliberate limits, so none is discovered as a surprise:
 
+- **A query reads only, and the database enforces it.** The statement runs inside a Postgres
+  `READ ONLY` transaction, so `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` and DDL are refused with
+  SQLSTATE `25006` — including inside a data-modifying CTE like
+  `WITH ins AS (INSERT … RETURNING …) SELECT …`, which is an ordinary `SELECT` to the driver.
+  A write reaching the database this way would bypass `@@audit`, the `@@emit` outbox,
+  `@version`, soft-delete, `@@internal` and the target model's own write `@@allow`. Use a
+  `procedure` or a model write builder to change data.
+- **A query runs on its own pooled connection.** It does not observe uncommitted writes made
+  by an enclosing `db.transaction(...)`; read after that transaction commits.
 - **The policy gates whether the call is permitted, not which rows match.** Nothing injects a
   `deleted_at IS NULL` predicate or a row-level `@allow` filter into a `query` body the way
   every generated read gets one. Query a soft-delete-enabled model's table and deleted rows
@@ -113,6 +122,19 @@ Deliberate limits, so none is discovered as a surprise:
   `Bytes`, required arity. `Decimal` is excluded for now because its Rust type depends on the
   schema's `decimal =` backend; a `Decimal` *result* column is unaffected. Widening the list
   later is additive.
+
+`auth().isSystem()` now works in a `procedure` or `query` `@allow` as well as a model's. It
+has been available on the model read path since #486, but the procedure policy dialect never
+got an arm for it, so `@allow(auth().isSystem())` failed to compile with a message about
+string literal arguments. A system-caller reconciliation read is the case this whole feature
+exists for, so it could hardly stay unsupported.
+
+Two shared fixes fall out of the same work and apply to `view` as well as `query`, since both
+read their SQL through one extractor: a `@@sql`/`@@server_sql` argument that is not a quoted
+string is now a schema error naming the accepted forms (it used to yield an empty body — for a
+query that meant `SQL = ""` with every `$N` check skipped; for a view, silent treatment as
+embedded-only), and `\"` inside a single-line body is now unescaped rather than passed to
+Postgres literally.
 
 Purely additive: no existing schema changes behaviour, and `query` was not previously a valid
 top-level keyword.

@@ -45,3 +45,22 @@ query loyaltyFeeSummary(userId: String, cutoff: DateTime): LoyaltyFeeSummary
     WHERE user_id = $1
   """)
   @allow(auth() != null && auth().subjectId == userId)
+
+/// Deliberately tries to write, so the read-only guarantee is proved by a
+/// crate an external consumer could actually copy — not only by the
+/// framework's own test suite. A data-modifying CTE is an ordinary
+/// `SELECT` to the driver; Postgres refuses it because the generated
+/// entry point runs inside a `READ ONLY` transaction.
+query attemptedWrite(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    WITH ins AS (
+      INSERT INTO loyalty_fee_events (id, user_id, discount, created_at)
+      VALUES (9001, $1, 1, NOW())
+      RETURNING discount
+    )
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM ins
+  """)
+  @allow(auth() != null)

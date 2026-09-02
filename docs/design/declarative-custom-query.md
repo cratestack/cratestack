@@ -50,6 +50,40 @@ the follow-up ticket that carried it, and shipped it.
 >
 > Everything in the recommendation table shipped as written.
 
+> **Two things the spike missed entirely, found by cratestack#870's
+> security review and fixed before merge.** Recorded here because both
+> change what the construct *is*, not just how it is spelled.
+>
+> **A `query` body could write, and §6 did not notice.** This document's
+> §6 reasons carefully about whether `@allow` can be bypassed and about
+> which *rows* a read returns, and concludes the single-entry-point shape
+> is safe. It never asks whether the body is a read at all. It is not:
+> `WITH ins AS (INSERT … RETURNING …) SELECT …` is an ordinary `SELECT`
+> to the driver, and it ran. The `@allow` gated the call, but the write
+> bypassed `@@audit`, the `@@emit` outbox, `@version` optimistic locking,
+> soft-delete, `@@internal` suppression and the target model's own write
+> `@@allow` — an escape hatch around every guarantee the framework's own
+> write path provides, reachable from a construct whose whole premise is
+> that it only reads.
+>
+> The fix is not a SQL-text check. Classifying arbitrary SQL is the
+> parsing §3 prices out and rejects, and a DML keyword blocklist is
+> exactly the kind of check that looks right and is bypassable. Instead
+> the generated `run` executes inside a Postgres `READ ONLY` transaction,
+> so the engine refuses DML and DDL with SQLSTATE `25006` from the inside,
+> whatever the statement looks like. Enforcement, not detection. **"A
+> `query` reads only" is now a guarantee this document makes**, alongside
+> the ones in §7.
+>
+> **A `query` does not observe an enclosing `db.transaction(...)`.** It
+> runs on its own pooled connection, so a query called from inside that
+> closure sees the pre-transaction state and, for a single-row query, can
+> return `NotFound` for a row the closure just wrote. Composing the two is
+> out of scope for v1 and is contradictory anyway now that the query's own
+> transaction is `READ ONLY`. Documented on the generated `run` and pinned
+> by a test that measures both halves — invisible before commit, visible
+> after — so a future change here fails loudly instead of drifting.
+
 Scope: `cratestack-parser` grammar, `cratestack-core` IR, `cratestack-macros`
 codegen, and (for the "does it need one" question) the three client
 generators, for a schema construct that lets `.cstack` express a
@@ -411,14 +445,27 @@ with a possible compile-time lint suggested as future work, not required.
   `db.pool()`-style deliberate escape hatch for `query` specifically;
   `db.pool()` itself remains available and unaffected, but a `query`
   block's own generated entry point always checks its policy.
+- **No writes.** A `query` body executes inside a Postgres `READ ONLY`
+  transaction, so `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` and DDL are
+  refused by the engine — including inside a data-modifying CTE. Use a
+  `procedure` or a model write builder for anything that changes data.
+  Added after cratestack#870's review; see the header note for why this
+  is enforced by the database rather than by inspecting the SQL.
 - **No query-builder/composable-filter surface** — a `query` block's body
   is opaque raw SQL text end to end; nothing about `.cstack`'s `Filter`/
   `OrderClause` AST (`cratestack-sql`) applies to it. This is the epic's
   own Out-of-Scope framing restated for this construct: an escape hatch
   to real SQL, not a reimplementation of SQL in `.cstack`.
-- **No `db.transaction()` combinator, no `ProcedureRegistry`-bypass fix
-  beyond what #512/#540 already shipped, no route-suppression work** —
-  each is a separate epic cratestack#488 child story with its own ticket.
+- **No composition with `db.transaction()`.** *(Corrected 2026-09-02:
+  when this spike was written it said "no `db.transaction()` combinator",
+  which was already false — cratestack#513 shipped it in PR #539, and
+  cratestack#488's own 2026-09-02 comment retracts the same stale claim.
+  The combinator exists; what is out of scope is a `query` participating
+  in one.)* A query runs on its own pooled connection and cannot see an
+  enclosing transaction's uncommitted writes. Read after it commits.
+- **No `ProcedureRegistry`-bypass fix beyond what #512/#540 already
+  shipped, and no route-suppression work** — the latter shipped
+  separately as cratestack#743.
 - **No migration/DDL involvement** — a `query` block never appears in any
   `cratestack-migrate` output; unlike `view`, there is no persistent
   database object to create, replace, or drop.

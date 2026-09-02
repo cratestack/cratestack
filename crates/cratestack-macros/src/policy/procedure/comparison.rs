@@ -2,7 +2,7 @@
 //! cross-product of (auth field | input field | literal) on either
 //! side, defers to [`resolver`] for type lookups + literal parsing.
 
-use cratestack_core::{TypeDecl};
+use cratestack_core::TypeDecl;
 use quote::quote;
 
 use super::resolver::{

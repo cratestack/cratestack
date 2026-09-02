@@ -4,6 +4,7 @@
 //! client-side equivalent.
 
 mod authorizer;
+mod client_types;
 mod instrument;
 #[cfg(test)]
 mod tests;
@@ -22,11 +23,12 @@ use crate::policy::{
 use crate::shared::{doc_attrs, ident, is_stream_procedure, to_snake_case};
 
 use authorizer::{generate_procedure_model_authorizer, parse_procedure_model_authorizer};
+use client_types::generate_client_procedure_args_struct;
 use instrument::{
     authorize_fn_tokens, authorize_with_db_fn_tokens, authorized_type_tokens, invoke_fn_tokens,
     invoke_with_db_fn_tokens,
 };
-use types::{generate_client_procedure_args_struct, procedure_stream_item_tokens};
+use types::procedure_stream_item_tokens;
 
 pub(crate) use types::procedure_client_output_item_tokens;
 /// Re-exported for `crate::query` (cratestack#867): a `query`'s `Args`

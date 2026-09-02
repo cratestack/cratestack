@@ -56,6 +56,25 @@ Three things this buys over `db.pool()` + `sqlx::query_as`:
 3. **The result is a declared type**, decoded into real Rust fields rather
    than a `PgRow` the caller `try_get`s out of by hand.
 
+### It reads only
+
+The generated entry point runs the statement inside a Postgres `READ ONLY`
+transaction, so `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` and DDL are refused
+by the engine (SQLSTATE `25006`) — including when hidden inside a
+data-modifying CTE like `WITH ins AS (INSERT … RETURNING …) SELECT …`,
+which is an ordinary `SELECT` as far as the driver is concerned.
+
+That matters because a write reaching the database this way would bypass
+`@@audit` rows, the `@@emit` outbox, `@version` optimistic locking,
+soft-delete, `@@internal` suppression and the target model's own write
+`@@allow`. Use a `procedure` or a model write builder to change data.
+
+### It runs on its own connection
+
+A query takes a connection from the pool, so it does **not** observe
+uncommitted writes made by an enclosing `db.transaction(...)`. Read after
+that transaction commits.
+
 ### What it does *not* buy
 
 `@allow` gates **whether the call is permitted**, not **which rows the SQL

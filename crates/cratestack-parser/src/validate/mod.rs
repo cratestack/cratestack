@@ -19,6 +19,7 @@ mod procedure_handler_collisions;
 mod procedure_idents;
 mod procedures;
 mod queries;
+mod query_attributes;
 mod query_placeholders;
 mod query_signature;
 mod removed_attributes;

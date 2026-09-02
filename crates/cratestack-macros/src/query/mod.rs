@@ -22,12 +22,15 @@
 //!   model-agnostic policy resolver and `Args` generator be reused.
 //! - [`row_pg`] — `impl sqlx::FromRow` for each result `type`.
 //! - [`entry`] — the `SQL` const, the bind chain and `run`.
+//! - [`read_only`] — the `READ ONLY` transaction `run` executes inside,
+//!   and the SQLSTATE `25006` mapping that explains a refused write.
 //! - [`module`] — the per-query `pub mod <query_snake>` assembly.
 //! - [`accessor`] — the `Cratestack::queries().<query_snake>()` method.
 
 pub(crate) mod accessor;
 pub(crate) mod entry;
 pub(crate) mod module;
+pub(crate) mod read_only;
 pub(crate) mod row_pg;
 pub(crate) mod shim;
 
