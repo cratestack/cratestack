@@ -47,6 +47,8 @@ mod tests_procedure_handler_collisions;
 #[cfg(test)]
 mod tests_procedures;
 #[cfg(test)]
+mod tests_queries;
+#[cfg(test)]
 mod tests_relation_actions;
 #[cfg(test)]
 mod tests_relations;

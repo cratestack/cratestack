@@ -18,6 +18,9 @@ mod patch_touch_flag_collisions;
 mod procedure_handler_collisions;
 mod procedure_idents;
 mod procedures;
+mod queries;
+mod query_placeholders;
+mod query_signature;
 mod removed_attributes;
 mod reserved_idents;
 mod route_collisions;
@@ -173,6 +176,7 @@ pub(crate) fn validate_schema_collecting(
         validate_procedures(schema, &type_names, &page_item_type_names, &model_names)
     });
     self::views::validate_views_collecting(schema, &mut errors);
+    self::queries::validate_queries_collecting(schema, &type_names, &mut errors);
     if !errors.is_empty() {
         return errors;
     }

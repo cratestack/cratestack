@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::sql_body::extract_sql_body;
 use super::{Attribute, Field, SourceSpan};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,25 +77,5 @@ impl View {
             let trimmed = attr.raw.trim();
             trimmed == name || trimmed.starts_with(&format!("{name}("))
         })
-    }
-}
-
-/// Extract the SQL body from an attribute like `@@server_sql("…")`.
-/// Accepts both `"single-line"` and `"""multi-line"""` strings. The
-/// outer quotes are stripped; embedded newlines and quotes are
-/// preserved verbatim.
-fn extract_sql_body<'a>(raw: &'a str, prefix: &str) -> Option<&'a str> {
-    let after_prefix = raw.strip_prefix(prefix)?.trim_start();
-    let inside_parens = after_prefix
-        .strip_prefix('(')?
-        .rsplit_once(')')
-        .map(|(body, _tail)| body)?
-        .trim();
-    if let Some(rest) = inside_parens.strip_prefix("\"\"\"") {
-        rest.strip_suffix("\"\"\"")
-    } else if let Some(rest) = inside_parens.strip_prefix('"') {
-        rest.strip_suffix('"')
-    } else {
-        None
     }
 }
