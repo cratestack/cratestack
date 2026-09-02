@@ -107,6 +107,18 @@ fn rpc_code_maps_each_cratestack_error_variant() {
         rpc_code(&CratestackError::Unavailable("x".into())),
         "unavailable"
     );
+    // cratestack#846: `RateLimitLayer`'s throttle. gRPC's canonical code
+    // for an exhausted quota, and the code the REST screaming-snake
+    // `TOO_MANY_REQUESTS` translates to — the two vocabularies must not
+    // drift, or a throttle would decode differently per transport.
+    assert_eq!(
+        rpc_code(&CratestackError::TooManyRequests("x".into())),
+        "resource_exhausted"
+    );
+    assert_eq!(
+        cratestack_core::rpc::cratestack_error_code_to_rpc_code("TOO_MANY_REQUESTS"),
+        "resource_exhausted"
+    );
 }
 
 #[test]
