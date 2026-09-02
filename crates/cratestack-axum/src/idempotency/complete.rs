@@ -42,9 +42,7 @@ pub(super) async fn buffer_and_persist_response(
             return middleware_error_response(
                 request_headers,
                 request_path,
-                CratestackError::Internal(
-                    "response body exceeded idempotency buffer".to_owned(),
-                ),
+                CratestackError::Internal("response body exceeded idempotency buffer".to_owned()),
             );
         }
     };

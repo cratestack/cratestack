@@ -51,8 +51,9 @@ fn authed_request() -> Request {
 /// `#[tokio::test]` drives a current-thread runtime, so the thread-local
 /// default subscriber this guard installs stays in effect across the
 /// `.await` points below — no separate runtime needed.
-fn capture_logs() -> (tracing::subscriber::DefaultGuard, Arc<std::sync::Mutex<Vec<(tracing::Level, String)>>>)
-{
+type CapturedEvents = Arc<std::sync::Mutex<Vec<(tracing::Level, String)>>>;
+
+fn capture_logs() -> (tracing::subscriber::DefaultGuard, CapturedEvents) {
     let capture = CapturingLayer::default();
     let events = capture.events.clone();
     let guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(capture));
@@ -88,9 +89,7 @@ async fn store_error_under_the_default_policy_reaches_the_inner_service_and_warn
         "expected a WARN carrying the underlying store error text, got: {captured:?}"
     );
     assert!(
-        captured
-            .iter()
-            .any(|(_, msg)| msg.contains("policy=Allow")),
+        captured.iter().any(|(_, msg)| msg.contains("policy=Allow")),
         "the WARN must record which policy was in effect, got: {captured:?}"
     );
 }

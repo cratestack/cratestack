@@ -16,8 +16,8 @@ use crate::middleware_error::middleware_error_response;
 use super::complete::buffer_and_persist_response;
 use super::hash::{hash_request, is_idempotent_target_method};
 use super::parse::parse_idempotency_key;
+use super::reserve::{Reservation, token_or_response};
 use super::store::{IdempotencyStore, MAX_BODY_BYTES};
-use super::reserve::token_or_response;
 use super::stream_bypass::{is_streamed_response, release_streamed_reservation};
 
 #[derive(Clone)]
@@ -147,8 +147,8 @@ where
             };
 
             let token = match token_or_response(outcome, &error_headers, &error_path) {
-                Ok(token) => token,
-                Err(response) => return Ok(response),
+                Reservation::Held(token) => token,
+                Reservation::Finished(response) => return Ok(response),
             };
 
             // We hold the reservation. Run the handler.

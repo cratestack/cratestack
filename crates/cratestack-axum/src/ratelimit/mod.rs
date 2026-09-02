@@ -75,8 +75,8 @@ pub use store::{InMemoryRateLimitStore, RateLimitStore};
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_key_fn;
+#[cfg(test)]
 mod tests_store_error;
 #[cfg(test)]
 mod tests_support;
-#[cfg(test)]
-mod tests_key_fn;
