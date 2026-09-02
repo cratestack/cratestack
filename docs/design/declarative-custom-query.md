@@ -1,10 +1,55 @@
 # Declarative, parameterized custom query in `.cstack` — spike
 
-Status: **proposal, not a decision.** This is the deliverable of a spike
-(cratestack#515), written so the accountable owner (@stephane-segning) can
-accept or reject the recommendation. **No implementation is proposed or
-merged by this document or this ticket** — cratestack#515's own acceptance
-criteria require maintainer sign-off before any follow-up ticket opens.
+Status: **accepted** (2026-09-02) and **implemented** (cratestack#867).
+
+The recommendation table below was accepted as written by the accountable
+owner (@stephane-segning) in [epic cratestack#488's decision
+comment](https://github.com/cratestack/cratestack/issues/488#issuecomment-5514756770),
+which also answered the epic's open questions 1-4 in its terms. The spike
+(cratestack#515) forbade implementation under itself; cratestack#867 is
+the follow-up ticket that carried it, and shipped it.
+
+> **Where the implementation deviated from this document, and why.** The
+> spike deliberately left "exact keyword/attribute spelling" and the
+> generated function shape as implementation-ticket decisions (§8). What
+> cratestack#867 settled, recorded here rather than only in a PR body:
+>
+> - **Header spelling** follows `procedure`'s exactly —
+>   `query <name>(<arg>: <Type>, ...): <ResultType>`, or `: <ResultType>[]`
+>   for many rows — reusing the same argument parser. `T?` is rejected:
+>   use `T` for one row or `T[]` for zero or more.
+> - **The result type must be a `type` declaration.** A `model` is
+>   rejected. §3 assumed a `type`; §6's soft-delete hazard is why it has to
+>   be enforced rather than merely assumed — handing back a `Model` would
+>   make a raw, unfiltered read look like the policy-filtered model read it
+>   is not.
+> - **Column names are the declared field names, verbatim**, which §3 left
+>   open ("`AS this_month`, or `AS \"this_month\"` — resolved
+>   per-implementation"). A `type` field `thisMonth` decodes from a column
+>   named `thisMonth`, so the author's SQL must write `AS "thisMonth"`,
+>   quoted, since Postgres folds unquoted identifiers to lower case. No
+>   snake_case fallback: a decode that tries two names has a failure mode
+>   that depends on which spelling the author happened to pick, which is
+>   the opposite of §3's "fail loudly" position.
+> - **Parameter types are restricted** to `String`, `Cuid`, `Int`,
+>   `Float`, `Boolean`, `DateTime`, `Uuid` and `Bytes`, at required arity.
+>   The spike did not scope this. `Decimal` is excluded because its Rust
+>   type depends on the schema's `decimal =` backend (cratestack#505) and
+>   whether that type implements `sqlx::Encode` depends on the backend
+>   crate's feature set — a matrix that needs pinning down first. A money
+>   *result* column is unaffected. Widening the list later is additive.
+> - **Both an accessor and a free function.** §5 left the naming open;
+>   §8 sketched a free `run`. Both exist: `db.queries().<name>(args, ctx)`
+>   forwards to the module's own `run`, which is where the policy check
+>   lives. That is a forwarder, not a second entry point — the §6 property
+>   that matters is that no call shape *skips* the check, and none does.
+> - **`db = None` gets its own guard**, which the spike did not anticipate:
+>   a schema with no `datasource` block at all is legal and passes the
+>   existing datasource guard, so `db = None` plus no datasource block
+>   would otherwise reach codegen with queries intact.
+>
+> Everything in the recommendation table shipped as written.
+
 Scope: `cratestack-parser` grammar, `cratestack-core` IR, `cratestack-macros`
 codegen, and (for the "does it need one" question) the three client
 generators, for a schema construct that lets `.cstack` express a
@@ -322,6 +367,12 @@ this document is where that requirement is now recorded so it isn't
 missed. Recording this now, even though it doesn't bite in v1's
 single-function shape, is cheap insurance against reintroducing the
 exact bug class #512 just closed.
+
+**Where this requirement now lives in the code.** It is written into the
+module doc of `crates/cratestack-macros/src/query/entry.rs` — the file
+that generates the single entry point, and therefore the file anyone
+splitting it would be editing. A requirement recorded only in a design doc
+is one nobody is reading at the moment they violate it.
 
 One more policy-adjacent hazard, carried over honestly from epic
 cratestack#488's own Risk table and *not* solved by anything above:

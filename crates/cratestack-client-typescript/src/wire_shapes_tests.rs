@@ -17,6 +17,10 @@ fn schema(models: Vec<cratestack_core::Model>, types: Vec<cratestack_core::TypeD
         enums: Vec::new(),
         procedures: Vec::new(),
         views: Vec::new(),
+        // cratestack#867 — a `query` never reaches a client generator,
+        // so this fixture has nothing to say about them beyond being
+        // constructible.
+        queries: Vec::new(),
         transport: TransportStyle::Rest,
         declared_extensions: Default::default(),
     }

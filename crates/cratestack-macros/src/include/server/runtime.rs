@@ -10,6 +10,7 @@
 
 mod none;
 mod postgres;
+mod sub_accessors;
 #[cfg(test)]
 mod tests;
 

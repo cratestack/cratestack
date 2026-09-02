@@ -28,9 +28,9 @@
 //! `CRATESTACK_REQUIRE_DB=1` to make that a hard failure instead. Read
 //! `finished in` rather than the summary line to tell a skip from a pass.
 
-use cratestack::{include_client_schema, include_server_schema};
 use cratestack::sqlx::{PgPool, query};
 use cratestack::{CratestackContext, CratestackError, Value};
+use cratestack::{include_client_schema, include_server_schema};
 
 include_server_schema!("tests/fixtures/declarative_query.cstack", db = Postgres);
 
@@ -67,17 +67,12 @@ async fn reset_schema(pool: &PgPool) {
 }
 
 fn operator(subject: &str) -> CratestackContext {
-    CratestackContext::authenticated([(
-        "subjectId".to_owned(),
-        Value::String(subject.to_owned()),
-    )])
+    CratestackContext::authenticated([("subjectId".to_owned(), Value::String(subject.to_owned()))])
 }
 
 /// 2026-03-01, the cutoff the `FILTER` clause compares against.
 fn cutoff() -> cratestack::chrono::DateTime<cratestack::chrono::Utc> {
-    "2026-03-01T00:00:00Z"
-        .parse()
-        .expect("cutoff should parse")
+    "2026-03-01T00:00:00Z".parse().expect("cutoff should parse")
 }
 
 #[tokio::test]

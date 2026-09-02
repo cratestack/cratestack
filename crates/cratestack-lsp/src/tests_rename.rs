@@ -9,7 +9,8 @@ use std::str::FromStr;
 use tower_lsp_server::ls_types::{Position, Uri};
 
 use crate::analyze::analyze_document;
-use crate::rename::{RenameError, prepare_rename, rename_ranges};
+use crate::rename::{prepare_rename, rename_ranges};
+use crate::rename_error::RenameError;
 use crate::state::{DocumentState, next_document_state};
 use crate::text::offset_to_position;
 

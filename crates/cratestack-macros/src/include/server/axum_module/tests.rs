@@ -38,6 +38,13 @@ fn empty_collected() -> ServerCollected {
         view_descriptors: Vec::new(),
         view_pg_from_row_impls: Vec::new(),
         view_accessors: Vec::new(),
+        // cratestack#867: empty on purpose, and the axum module is where
+        // it has to stay empty — a `query` contributes no route, no
+        // handler and no transport constant, so this fixture would be
+        // testing the wrong thing if it ever had to populate them.
+        query_modules: Vec::new(),
+        query_from_row_impls: Vec::new(),
+        query_accessors: Vec::new(),
         procedure_modules: Vec::new(),
         procedure_registry_methods: Vec::new(),
         procedure_axum_handler_defs: Vec::new(),

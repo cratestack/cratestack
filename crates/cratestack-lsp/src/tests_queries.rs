@@ -96,10 +96,7 @@ fn decoded_tokens() -> Vec<(String, SemanticTokenType)> {
 fn the_query_name_and_parameters_get_semantic_tokens() {
     let decoded = decoded_tokens();
     assert!(
-        decoded.contains(&(
-            "loyaltyFeeSummary".to_owned(),
-            SemanticTokenType::FUNCTION
-        )),
+        decoded.contains(&("loyaltyFeeSummary".to_owned(), SemanticTokenType::FUNCTION)),
         "query name should colour as a function: {decoded:?}",
     );
     assert!(
@@ -107,12 +104,8 @@ fn the_query_name_and_parameters_get_semantic_tokens() {
         "query parameters should colour as parameters: {decoded:?}",
     );
     assert!(
-        decoded.contains(&(
-            "LoyaltyFeeSummary".to_owned(),
-            SemanticTokenType::CLASS
-        )) || decoded
-            .iter()
-            .any(|(text, _)| text == "LoyaltyFeeSummary"),
+        decoded.contains(&("LoyaltyFeeSummary".to_owned(), SemanticTokenType::CLASS))
+            || decoded.iter().any(|(text, _)| text == "LoyaltyFeeSummary"),
         "the result type reference should be tokenised: {decoded:?}",
     );
 }

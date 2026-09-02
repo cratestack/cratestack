@@ -2,13 +2,19 @@
 //! unchanged (still `sqlx::PgPool`-shaped), and `db = None` runtime
 //! codegen has genuinely no `PgPool`/`sqlx` anywhere — not merely an
 //! `Option<PgPool>` that happens to always be `None`.
+//!
+//! The empty fifth argument is `query_accessors` (cratestack#867). Passing
+//! `&[]` is the case that matters for these guards: a schema with no
+//! `query` blocks must still generate byte-identical tokens to before the
+//! construct existed, which is what the `db = Postgres` assertion below
+//! pins.
 
 use super::super::super::parse::ServerDb;
 use super::build_runtime_block;
 
 #[test]
 fn postgres_runtime_block_still_takes_a_pgpool_builder() {
-    let generated = build_runtime_block(ServerDb::Postgres, &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::Postgres, &[], &[], &[], &[]).to_string();
 
     assert!(
         generated.contains("fn builder (pool : :: cratestack :: sqlx :: PgPool)"),
@@ -21,7 +27,7 @@ fn postgres_runtime_block_still_takes_a_pgpool_builder() {
 
 #[test]
 fn none_runtime_block_builder_takes_no_pool_parameter() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[]).to_string();
 
     assert!(
         generated.contains("fn builder () -> CratestackBuilder"),
@@ -32,7 +38,7 @@ fn none_runtime_block_builder_takes_no_pool_parameter() {
 
 #[test]
 fn none_runtime_block_never_mentions_pgpool_or_sqlx() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[]).to_string();
 
     assert!(
         !generated.contains("PgPool"),
@@ -51,7 +57,7 @@ fn none_runtime_block_never_mentions_pgpool_or_sqlx() {
 
 #[test]
 fn none_runtime_block_cratestack_type_is_a_zero_field_marker() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[]).to_string();
 
     // Not `struct Cratestack { runtime: ... }`, not `struct Cratestack {
     // pool: Option<PgPool> }` — a bare marker with no fields at all, so

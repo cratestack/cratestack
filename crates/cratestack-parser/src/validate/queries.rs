@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 
 use cratestack_core::route_naming::to_snake_case;
-use cratestack_core::{Query, QUERY_SQL_ATTRIBUTE, Schema};
+use cratestack_core::{QUERY_SQL_ATTRIBUTE, Query, Schema};
 
 use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::collect::record;
@@ -55,7 +55,11 @@ pub(super) fn validate_queries_collecting(
 
     for query in &schema.queries {
         record(errors, || {
-            validate_reserved_identifier(&query.name, query.name_span, &format!("query `{}`", query.name))
+            validate_reserved_identifier(
+                &query.name,
+                query.name_span,
+                &format!("query `{}`", query.name),
+            )
         });
         record(errors, || validate_query_attributes(query));
         record(errors, || validate_query_args(query));

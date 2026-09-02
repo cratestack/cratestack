@@ -49,6 +49,12 @@ mod tests_procedures;
 #[cfg(test)]
 mod tests_queries;
 #[cfg(test)]
+mod tests_queries_attributes;
+#[cfg(test)]
+mod tests_queries_rejections;
+#[cfg(test)]
+mod tests_queries_support;
+#[cfg(test)]
 mod tests_relation_actions;
 #[cfg(test)]
 mod tests_relations;

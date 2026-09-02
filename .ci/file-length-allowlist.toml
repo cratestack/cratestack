@@ -504,13 +504,6 @@ added = "2026-08-29"
 reason = "pre-existing; split by concern (extract inline tests first)"
 
 [[file]]
-path = "crates/cratestack-parser/src/parse/views.rs"
-lines = 229
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-core/src/route_naming.rs"
 lines = 228
 issue = "#TBD"

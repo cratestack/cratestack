@@ -121,43 +121,9 @@ pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo
         }
     }
 
-    // `query` blocks (cratestack#867). Same three hover targets a
-    // procedure has — an argument, a named type inside the signature, and
-    // the declaration's own name.
-    for query in &schema.queries {
-        for arg in &query.args {
-            if span_contains(arg.ty.name_span, offset)
-                && let Some(symbol) = named_type_symbol(schema, &arg.ty, offset)
-            {
-                return Some(symbol);
-            }
-            if span_contains(arg.span, offset) {
-                return Some(SymbolInfo {
-                    kind: "argument",
-                    name: arg.name.clone(),
-                    detail: render_type_ref(&arg.ty),
-                    docs: arg.docs.clone(),
-                    selection_span: arg.name_span,
-                });
-            }
-        }
-        if type_ref_at_offset(&query.result_type, offset)
-            && let Some(symbol) = named_type_symbol(schema, &query.result_type, offset)
-        {
-            return Some(symbol);
-        }
-        if span_contains(query.name_span, offset) {
-            return Some(SymbolInfo {
-                kind: "query",
-                name: query.name.clone(),
-                detail: format!("query -> {}", render_type_ref(&query.result_type)),
-                docs: query.docs.clone(),
-                selection_span: query.name_span,
-            });
-        }
-    }
-
-    None
+    // `query` blocks (cratestack#867) — see `crate::query_symbols`'s
+    // module doc for why every query-aware branch lives together.
+    crate::query_symbols::hover_symbol(schema, offset)
 }
 
 /// Hover detail for a `datasource` block: names the current `provider`
@@ -191,7 +157,11 @@ fn field_symbol(field: &cratestack_core::Field) -> SymbolInfo {
     }
 }
 
-fn named_type_symbol(schema: &Schema, ty: &TypeRef, offset: usize) -> Option<SymbolInfo> {
+pub(crate) fn named_type_symbol(
+    schema: &Schema,
+    ty: &TypeRef,
+    offset: usize,
+) -> Option<SymbolInfo> {
     if let Some(inner) = ty
         .generic_args
         .iter()

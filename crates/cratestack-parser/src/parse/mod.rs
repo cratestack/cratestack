@@ -13,8 +13,8 @@ mod views;
 use std::collections::BTreeSet;
 
 use cratestack_core::{
-    AuthBlock, ConfigEntry, Datasource, EnumDecl, ExtensionKind, MixinDecl, Model, Schema,
-    Query, TransportStyle, TypeDecl, View,
+    AuthBlock, ConfigEntry, Datasource, EnumDecl, ExtensionKind, MixinDecl, Model, Query, Schema,
+    TransportStyle, TypeDecl, View,
 };
 
 use crate::diagnostics::{SchemaError, span_error};

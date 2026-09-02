@@ -28,10 +28,10 @@ pub mod placeholders;
 
 use serde::{Deserialize, Serialize};
 
+use super::SourceSpan;
 use super::model::{Attribute, TypeRef};
 use super::procedure::ProcedureArg;
 use super::sql_body::extract_sql_body;
-use super::SourceSpan;
 
 pub use placeholders::scan_sql_placeholders;
 

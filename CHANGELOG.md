@@ -53,6 +53,77 @@ when the probe is what fixed the artifact. Cosmetic, resolved at the next real t
 the point of use rather than left to be discovered.
 
 
+### A `.cstack` schema can declare a parameterized custom SQL query
+
+`query <name>(<arg>: <Type>, ...): <ResultType>` is a new top-level block carrying an
+opaque SQL body and a policy:
+
+```cstack
+type LoyaltyFeeSummary {
+  total     Int
+  thisMonth Int
+}
+
+query loyaltyFeeSummary(userId: String, cutoff: DateTime): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      COALESCE(SUM(discount) FILTER (WHERE created_at >= $2), 0)::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+  @allow(auth() != null && auth().subjectId == userId)
+```
+
+Call it as `db.queries().loyalty_fee_summary(&args, &ctx).await`. This is the last of epic
+#488's five gaps: two aggregates in one round trip, a `FILTER (WHERE …)` clause, a window
+function or a CTE had no expression in `.cstack` at all — the generated aggregate builder
+handles exactly one column and one aggregate per call — so any service that needed one was a
+direct `sqlx` dependent. `examples/declarative-query-verification` proves it isn't any more,
+from a `Cargo.toml` with no `sqlx` line and a `src/` with no SQL string in it, against a real
+Postgres in CI.
+
+What the framework checks that hand-written `sqlx` cannot:
+
+- **`$N` references, at build time, in both directions.** A `$3` past the declared parameter
+  count fails `cargo check`, and so does a declared parameter no `$N` uses. Both are needed:
+  typing `$3` where you meant `$2` trips the first, but only the second names the parameter
+  that silently went dead.
+- **`@allow`/`@deny`, unconditionally, before any SQL runs.** There is one generated entry
+  point and no unchecked variant, so there is nothing to bypass by construction. A query that
+  declares no `@allow` denies everyone.
+- **The result is a declared `type`**, decoded into real Rust fields.
+
+Deliberate limits, so none is discovered as a surprise:
+
+- **The policy gates whether the call is permitted, not which rows match.** Nothing injects a
+  `deleted_at IS NULL` predicate or a row-level `@allow` filter into a `query` body the way
+  every generated read gets one. Query a soft-delete-enabled model's table and deleted rows
+  count toward your totals unless you say otherwise. You own every predicate.
+- **Postgres only.** A `query` under `include_embedded_schema!` or `db = None` is a compile
+  error naming the block. There is no `@@embedded_sql` twin — the escape hatch exists for
+  Postgres spellings no portable dialect could translate.
+- **No client surface.** No REST route, no RPC op id, no Rust/Dart/TypeScript stub, no
+  migration output. A query is reachable only from Rust already running in the process.
+- **Column names are the declared field names, verbatim.** A `type` field `thisMonth` decodes
+  from a column named `thisMonth`, so alias it `AS "thisMonth"` — quoted, since Postgres folds
+  unquoted identifiers to lower case. A mismatch fails loudly at first execution rather than
+  resolving to something else.
+- **Parameters** may be `String`, `Cuid`, `Int`, `Float`, `Boolean`, `DateTime`, `Uuid` or
+  `Bytes`, required arity. `Decimal` is excluded for now because its Rust type depends on the
+  schema's `decimal =` backend; a `Decimal` *result* column is unaffected. Widening the list
+  later is additive.
+
+Purely additive: no existing schema changes behaviour, and `query` was not previously a valid
+top-level keyword.
+
+Design: `docs/design/declarative-custom-query.md`, accepted in #488's 2026-09-02 decision
+comment. That decision also settled #488's open question 2 — using CrateStack as an ORM is a
+supported posture — now recorded as `docs/adr/0018-orm-posture.md`.
+
+Closes #867. Refs #488, #515.
+
+
 ## 0.10.1 (2026-09-01)
 
 ### `azure/login` needs `allow-no-subscriptions` for Marketplace publishing

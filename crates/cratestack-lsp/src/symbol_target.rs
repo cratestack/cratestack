@@ -90,17 +90,8 @@ fn type_reference_target(schema: &Schema, offset: usize) -> Option<SymbolTarget>
         }
     }
     // cratestack#867 — see `references::type_references`' matching note.
-    for query in &schema.queries {
-        if let Some(name) = nested_type_reference_name_at_offset(&query.result_type, offset) {
-            return Some(SymbolTarget::Declaration(name.to_owned()));
-        }
-        for arg in &query.args {
-            if let Some(name) = nested_type_reference_name_at_offset(&arg.ty, offset) {
-                return Some(SymbolTarget::Declaration(name.to_owned()));
-            }
-        }
-    }
-    None
+    crate::query_symbols::type_reference_at(schema, offset)
+        .map(|name| SymbolTarget::Declaration(name.to_owned()))
 }
 
 /// The cursor sitting on a declaration's own name, or on one of its members.
@@ -166,11 +157,8 @@ fn declaration_target(schema: &Schema, offset: usize) -> Option<SymbolTarget> {
         return Some(SymbolTarget::Declaration(procedure.name.clone()));
     }
 
-    schema
-        .queries
-        .iter()
-        .find(|query| span_contains(query.name_span, offset))
-        .map(|query| SymbolTarget::Declaration(query.name.clone()))
+    crate::query_symbols::declaration_at(schema, offset)
+        .map(|name| SymbolTarget::Declaration(name.to_owned()))
 }
 
 /// Last resort for positions no span covers: treat the bare word as a global
@@ -186,6 +174,6 @@ fn word_target(text: &str, schema: &Schema, offset: usize) -> Option<SymbolTarge
             .procedures
             .iter()
             .any(|procedure| procedure.name == word)
-        || schema.queries.iter().any(|query| query.name == word);
+        || crate::query_symbols::declares(schema, word);
     declared.then(|| SymbolTarget::Declaration(word.to_owned()))
 }
