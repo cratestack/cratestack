@@ -103,8 +103,17 @@ the root `npm publish --dry-run` does not propagate `--dry-run` into the `prepub
 no registry". Each name now goes through the wrapper, which honours `NPM_PUBLISH_REHEARSAL`.
 
 **Still requires a manual step before the next tag.** Neither musl name has been published, so
-`publish-npm-cbor-node` ends red until a maintainer bootstraps both by hand — procedure in
-`docs/tooling/npm-publishing.md`.
+`publish-npm-cbor-node` ends red until a maintainer bootstraps both by hand.
+
+That bootstrap procedure in `docs/tooling/npm-publishing.md` was rewritten in the same change, and
+the old version of it is now actively wrong rather than merely dated: it told you to `npm publish`
+at the package root and let the `prepublishOnly` hook create and publish the subpackage as a side
+effect, which `--skip-optional-publish` disables. The new procedure publishes `npm/<platform>/`
+directly — it is a complete standalone package (own `package.json`, no `scripts` key, so no hook
+runs; verified with `npm pack --dry-run` inside it), which also means the all-targets validation is
+never reached and the old "temporarily narrow `napi.targets`" workaround is gone. The binaries come
+from `gh run download`, so no local Rust or zig toolchain is needed, and each new name still needs
+its own Trusted Publisher entry afterwards before CI can publish its next version.
 
 ### `napi.targets` and the `build-cbor-node` matrix are checked against each other
 

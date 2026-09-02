@@ -68,53 +68,73 @@ by a new package just because a sibling already has one configured:
   already exist before you can attach a Trusted Publisher to it), so this is unavoidably manual,
   from a maintainer's own machine, using real `npm login` credentials, once per name.
 
-  **Verified procedure** (confirmed by hand, not from `@napi-rs/cli` docs alone — an earlier
-  version of this doc assumed `napi prepublish` alone would scaffold everything it needs; it
-  doesn't):
+  **Verified procedure.** Rewritten for cratestack#850: the platform subpackages are now published
+  **directly, one directory at a time**, never through the root package. Before #850 this section
+  told you to run `npm publish` at the package root and let the `prepublishOnly` hook
+  (`napi prepublish -t npm`) create and publish the subpackages as a side effect. That hook now
+  carries `--skip-optional-publish` — because leaving it in charge of publishing is what let one
+  un-bootstrapped name abort the whole release — so a root `npm publish` would publish **nothing**
+  for the platform package you are trying to bootstrap.
 
-  1. Build the native addon for your own host platform:
-     `cd packages/cratestack-cbor-node && pnpm install && pnpm run build:napi && pnpm exec tsc -p tsconfig.json`.
-  2. **You don't have to build all 7 platforms to publish something real.** To bootstrap with only
-     your host platform (e.g. `aarch64-apple-darwin` on Apple Silicon) and let CI publish the rest
-     once their binaries are built there, temporarily narrow `napi.targets` in `package.json` down
-     to just your platform — **do not commit this**, it's a local-only edit for this one publish:
+  What makes the direct path work: `npm/<platform>/` is already a complete, self-contained package
+  — its own `package.json` (with `cpu`/`os`/`libc` set, and **no `scripts` key**, so no lifecycle
+  hook runs) plus the `.node` binary and a README. Confirmed with `npm pack --dry-run --json`
+  inside `npm/linux-x64-musl/`: a 3-entry tarball,
+  `@cratestack/cbor-node-linux-x64-musl@0.10.1`, built without consulting `napi.targets` at all.
+  That is also why the old "temporarily narrow `napi.targets`" dance is **gone**: it existed only
+  to satisfy the all-targets validation in `napi artifacts`/`napi prepublish`, and this path never
+  invokes either.
+
+  1. **Get the binary.** You do **not** need a Rust or zig toolchain locally — take the artifact CI
+     already built, from a rehearsal run or any tag build:
      ```bash
-     node -e '
-       const fs = require("fs");
-       const p = JSON.parse(fs.readFileSync("package.json"));
-       p.napi.targets = ["aarch64-apple-darwin"]; // your platform only
-       fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
-     '
+     gh run download <run-id> -n cbor-node-binary-x86_64-unknown-linux-musl
      ```
-     `napi artifacts`/`napi prepublish` both validate that a binary exists for **every** target
-     currently listed in `napi.targets` before touching any of them (confirmed: no partial runs) —
-     narrowing the list to what you actually built is what makes a single-platform bootstrap
-     possible instead of a hard failure.
-  3. Scaffold the per-platform npm package directories and drop your binary into the matching one
-     (`napi create-npm-dirs` does **not** run automatically inside `napi prepublish` — confirmed by
-     hand, it hard-fails with `Release package directory does not exist` without this step first):
+     (Artifact names are `cbor-node-binary-<target-triple>`; a rehearsal —
+     `gh workflow run release-cli.yml --ref <branch> -f rehearsal=true` — builds every leg and
+     publishes nothing, so it is the cheapest way to produce one.) Building locally instead is
+     fine where the toolchain is easy: `cd packages/cratestack-cbor-node && pnpm install && pnpm run build:napi`.
+  2. **Scaffold the platform directories.** `napi prepublish` does *not* do this for you — it
+     hard-fails with `Release package directory does not exist` if the directory is missing:
      ```bash
+     cd packages/cratestack-cbor-node
      pnpm exec napi create-npm-dirs
-     cp cratestack-cbor-node.darwin-arm64.node npm/darwin-arm64/   # match your actual binary filename
      ```
-  4. `npm login`, then sanity-check before publishing for real:
-     `pnpm exec napi prepublish -t npm --dry-run` — should complete with no error and no missing-
-     target complaint now that `napi.targets` only lists what you built.
-  5. Publish for real — this is `npm publish`'s own `prepublishOnly` hook running `napi prepublish
-     -t npm` for you, which creates+publishes the platform subpackage(s) present, then npm packs and
-     publishes the main package with `optionalDependencies` scoped to only those:
+     This writes `npm/<platform>/package.json` for every entry in `napi.targets`. Scaffolding all
+     of them is harmless; you publish only the one you are bootstrapping.
+  3. **Drop the binary into its directory**, matching the filename exactly:
      ```bash
-     npm publish --access public
+     cp cratestack-cbor-node.linux-x64-musl.node npm/linux-x64-musl/
+     ```
+  4. **Sanity-check the tarball** before touching the registry — this is a pure local pack, no
+     network write:
+     ```bash
+     cd npm/linux-x64-musl && npm pack --dry-run
+     ```
+     Expect exactly three entries (`package.json`, the `.node`, `README.md`) and the package id
+     `@cratestack/cbor-node-linux-x64-musl@<version>`. A missing `.node` here means step 3's
+     filename didn't match.
+  5. **Publish that directory, and only that directory:**
+     ```bash
+     npm login          # once
+     cd npm/linux-x64-musl && npm publish --access public
      ```
      **No `--provenance` / `npm config set provenance true` here** — confirmed by hand: provenance
      needs npm to detect a supported CI OIDC provider (GitHub/GitLab Actions), and errors with
      `EUSAGE: Automatic provenance generation not supported for provider: null` on a plain local
      `npm publish` — it doesn't silently skip, it aborts the whole publish before anything uploads.
      Provenance is for `publish-npm-cbor-node`'s real CI run only, never this manual bootstrap.
-  6. **Revert the local `napi.targets` edit** (`git checkout packages/cratestack-cbor-node/package.json`)
-     so the committed config keeps declaring all 7 targets — that's what the next real tag push's
-     `build-cbor-node` matrix + `publish-npm-cbor-node` job need to build and publish the remaining
-     platforms.
+
+     Repeat steps 3-5 per platform name you are bootstrapping. Never run `npm publish` at the
+     package root as part of this procedure: the root package is CI's job, and at an
+     already-released version it would just fail with "cannot publish over".
+  6. **Add the Trusted Publisher entry for each name you just created** — this is the whole point of
+     the bootstrap, and it is *not* automatic. Publishing the name only makes it *possible* to
+     attach a publisher; go configure `@cratestack/cbor-node-<platform>` on npmjs.com now, with the
+     same org/repo/workflow-filename values as every other package in the list at the top of this
+     section. Until you do, the name exists but CI still cannot publish its *next* version, and
+     `publish-npm-cbor-node` keeps failing on it — which looks identical to not having bootstrapped
+     at all.
 
   > **⚠ ACTION REQUIRED (cratestack#850).** The two musl names —
   > `@cratestack/cbor-node-linux-x64-musl` and `@cratestack/cbor-node-linux-arm64-musl` — were
@@ -136,11 +156,13 @@ by a new package just because a sibling already has one configured:
   > `./cratestack-cbor-node.<platform>.node` *before* the `@cratestack/cbor-node-<platform>`
   > subpackage — so Alpine works from the main package alone.
   >
-  > To close it out: CI *can* build both binaries (`workflow_dispatch` against an existing tag),
-  > so dispatch the build, download the two `.node` artifacts to one machine, and run **steps 2-5
-  > per name** with `napi.targets` narrowed to that one target — step 4 is only a dry run, step 5
-  > is the publish that actually creates the name — then **step 6 once** at the end to restore the
-  > committed `napi.targets`.
+  > To close it out, no Rust or zig toolchain required: run a rehearsal
+  > (`gh workflow run release-cli.yml --ref <branch> -f rehearsal=true`, which builds every leg and
+  > publishes nothing), `gh run download <run-id> -n cbor-node-binary-x86_64-unknown-linux-musl`
+  > and the `aarch64` equivalent, then follow **steps 2-5** of the procedure above, repeating
+  > **steps 3-5 per name** — the publish is `cd npm/<platform> && npm publish --access public`,
+  > from the platform directory, never the root. Finish with **step 6** for each name: its Trusted
+  > Publisher entry, without which CI still cannot publish that name's *next* version.
 
   **The original 5 platform subpackages have been bootstrapped** and publish from CI on every tag —
   verified against the registry on 2026-08-13, all six `cbor-node*` names at `0.7.15`. The procedure
@@ -152,15 +174,17 @@ by a new package just because a sibling already has one configured:
   not that loop succeeded — so an un-bootstrapped platform name now costs a red job rather than the
   whole release. CI can build a new platform's binary (via `workflow_dispatch` against an existing
   tag, no code changes needed) but **cannot** do its first publish, for the same "name must already
-  exist" reason. Downloading the `workflow_dispatch`-built binaries to one machine and repeating
-  steps 2-5 per platform (narrowing `napi.targets` to each in turn), then step 6 once, closes it
-  out without needing physical access to each OS.
+  exist" reason. Downloading the CI-built binaries to one machine and repeating steps 3-5 per
+  platform — each one a direct `npm publish` from inside `npm/<platform>/` — then step 6 per name,
+  closes it out without needing physical access to each OS.
 
   Note the one place "all targets or nothing" still holds, because it is a *build*-completeness
   gate rather than a publish gate: `napi artifacts` and `napi prepublish` both validate that a
   binary exists for **every** entry in `napi.targets` before touching any of them. That is what
   makes a missing matrix leg fail loudly instead of shipping a release with a platform quietly
-  absent — and it is why step 2's "narrow `napi.targets` to what you actually built" exists.
+  absent. It is also why the bootstrap above never runs either command: publishing
+  `npm/<platform>/` directly sidesteps the all-targets validation entirely, which is what replaced
+  the old "temporarily narrow `napi.targets`" workaround.
 
 ### Bootstrapping a brand-new package name (applies to every package, not just `cbor-node`)
 
