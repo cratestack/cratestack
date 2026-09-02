@@ -52,6 +52,59 @@ artifact differs from the one attached to that tag's GitHub Release — which is
 when the probe is what fixed the artifact. Cosmetic, resolved at the next real tag, and documented at
 the point of use rather than left to be discovered.
 
+### Rate-limit store failures fail open by default, and every middleware error body is typed — breaking (#846)
+
+A single dropped Redis connection in `RateLimitLayer` took a production RPC call down twice over: the
+layer turned the store error into a 500, and the 500's body was a bare `text/plain` string, so the
+generated client reported `RPC call returned status 500 with an unrecognized error body` rather than
+a code it could branch on.
+
+**`StoreErrorPolicy` — the breaking part.** `RateLimitLayer` now defaults to
+`StoreErrorPolicy::Allow`: a store failure is logged at `WARN` (with a once-per-process explanation of
+what that means) and the request is served *unthrottled*. Set
+`.with_store_error_policy(StoreErrorPolicy::Deny)` to keep the previous refuse-on-store-error
+behaviour. The asymmetry with key derivation, which stays fail-closed (#416), is deliberate and is the
+whole argument: the key function's inputs are caller-controlled, so refusing is the only way to stop
+one caller sharing or minting another's bucket, whereas a store outage is caused by nobody and fixable
+by nobody in the request path. Failing closed there converts a limiter hiccup into a simultaneous
+outage of every rate-limited route. The limiter protects capacity, so a broken limiter degrades to
+unlimited. Deployments using the limiter as a *security* control — a paywall, a brute-force guard —
+are the ones that want `Deny`, and now have to say so.
+
+`RateLimitConfig` has no env-driven surface, so this is a builder-only knob; there is no environment
+variable to set.
+
+**Typed error bodies, both middleware layers, both transports.** Every response the two tower layers
+emit themselves now carries the framework's own codec-negotiated error envelope, encoded through the
+same `Accept` negotiation and the same two wire shapes the generated handlers use — the REST
+`CratestackErrorResponse` for ordinary paths, `RpcErrorBody` for `/rpc/…` ones. That covers the
+rate-limit layer's throttled `429`, its identity refusal and its `Deny`d store error, and — a
+deliberate scope extension, same crate and same bug class — the idempotency layer's key conflict,
+in-flight `409`, fingerprint refusal and buffer-limit errors. The idempotency layer gets **no**
+fail-open policy: a failed idempotency store must keep failing the request, which is the entire point
+of having one.
+
+The `429` needed a code of its own, so `CratestackError` gains `TooManyRequests` (additive, the enum
+is `#[non_exhaustive]`) mapping to `TOO_MANY_REQUESTS` over REST and gRPC-style `resource_exhausted`
+over RPC; the Rust client maps that code back to a 429 for batch frames, where the wire frame carries
+no status of its own.
+
+Consumers who assert on these bodies as text will see the change: a throttled response is now a CBOR
+(or JSON, per `Accept`) `{code, message, details}` map rather than the string `rate limit exceeded`.
+`Retry-After` and the `X-RateLimit-*` headers are unchanged.
+
+**Retry-once in the Redis rate-limit store.** `RedisRateLimitStore::consume` now re-issues its script
+exactly once when the first attempt fails with a connection-class error (broken pipe, connection
+reset, unexpected EOF — `RedisError::is_connection_dropped`). Per `ConnectionManager`'s own contract
+(see `docs/design/redis-store-connection-reuse.md`, #174) the command that observes a dropped
+connection still fails while the manager reconnects in the background, so a Redis idle-timeout used to
+cost exactly one user-visible request; the retry awaits the replacement connection instead. Deliberately
+bounded: exactly one retry, never a loop — a larger budget amplifies load on an already-struggling
+server — and only for connection-class errors, since a `NOSCRIPT` or a malformed reply is
+deterministic. `consume` is not idempotent, so a retry after a mid-flight drop can spend a second
+token; that is one token out of a bucket that exists for approximate capacity protection, against a
+failed user request. The idempotency store gets no such retry, for the opposite reason.
+
 
 ## 0.10.1 (2026-09-01)
 

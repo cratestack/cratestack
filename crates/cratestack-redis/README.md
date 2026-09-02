@@ -96,6 +96,13 @@ let app = axum::Router::new()
 
 `RedisRateLimitStoreConfig` mirrors the idempotency config — a single normalised `key_prefix` field. Each bucket is stored under `<prefix>:rl:<sha256(key)>` and refreshes its TTL on every `consume`, so idle buckets evict themselves and memory stays bounded.
 
+`consume` retries exactly once on a connection-class failure (broken pipe, connection reset — the
+classic stale-pooled-connection symptom after a Redis idle timeout), on a re-acquired connection.
+Only once, and only for connection-class errors: see `ratelimit::retry`'s module docs for why a loop
+would be worse, and for the non-idempotency this trades away. What happens if the retry *also* fails
+is the layer's call, not the store's — `cratestack_axum::ratelimit::StoreErrorPolicy`, which defaults
+to serving the request unthrottled.
+
 ## How It Works
 
 ### Idempotency

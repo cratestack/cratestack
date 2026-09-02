@@ -90,6 +90,30 @@ let app = axum::Router::new()
 
 `RateLimitConfig` carries `burst` (max in-flight) and `refill_per_second`. `RateLimitDecision` is either `Allowed { remaining }` or `Throttled { retry_after_secs }`.
 
+### When the store itself fails
+
+A failure of the backing store — Redis unreachable, a dropped connection — is **not** treated like a
+caller who is over budget. The layer logs a `WARN` and lets the request through unthrottled
+(`StoreErrorPolicy::Allow`, the default since #846): the limiter protects capacity, so a broken
+limiter degrades to unlimited rather than taking every rate-limited route down at once. Key
+derivation stays fail-closed, because unlike a store outage its inputs are caller-controlled.
+
+Deployments where the limiter is a security control (a paywall, a brute-force guard) want the
+opposite, and must say so:
+
+```rust
+use cratestack_axum::ratelimit::StoreErrorPolicy;
+
+let app = router.layer(
+    RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+        .with_store_error_policy(StoreErrorPolicy::Deny),
+);
+```
+
+Every response the layer emits itself — the `429`, an identity refusal, a `Deny`d store failure —
+carries the framework error envelope, content-negotiated from `Accept` exactly like a handler
+response, so generated clients decode a typed code. The same is true of `IdempotencyLayer`.
+
 ### Honoring `@no_rate_limit` (schemas declaring `extension rate_limit { }`)
 
 The wiring above rate-limits every request equally — a procedure marked `@no_rate_limit` in your schema is **not** exempt unless you also install a `should_rate_limit_fn` that reads the generated descriptors. `RateLimitLayer` is never auto-wired by codegen (see `rate_limit_extension.rs`'s header comment: that machinery is assembled entirely imperatively by the consuming app), so this is opt-in:
