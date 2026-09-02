@@ -36,6 +36,8 @@ mod util;
 #[cfg(test)]
 mod tests_config;
 #[cfg(test)]
+mod tests_error_class;
+#[cfg(test)]
 mod tests_fixtures;
 #[cfg(test)]
 mod tests_helpers;
@@ -45,8 +47,6 @@ mod tests_parse;
 mod tests_randomized_keys;
 #[cfg(test)]
 mod tests_randomized_parse;
-#[cfg(test)]
-mod tests_error_class;
 #[cfg(test)]
 mod tests_retry;
 #[cfg(test)]

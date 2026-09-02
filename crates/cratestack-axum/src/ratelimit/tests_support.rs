@@ -1,13 +1,13 @@
-//! Shared fixtures for the store-error/typed-body test modules: a store
-//! that always fails, and a `tracing` layer that captures events so a
-//! test can assert on log level and content without a full fmt layer.
+//! Shared fixtures for the store-error / timeout / typed-body test
+//! modules: one store double per failure class, plus the service and
+//! request boilerplate they all need.
 //!
-//! Moved verbatim out of `tests.rs` when cratestack#846 split the
-//! store-error tests into their own module.
+//! No log-capturing layer lives here any more — see
+//! `super::tests_store_error`'s module docs for why asserting on captured
+//! `tracing` events from these suites was scheduling-dependent.
 
 #![cfg(test)]
 
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -76,39 +76,6 @@ impl RateLimitStore for SlowStore {
     }
 }
 
-/// Records every event's level + fields as a formatted string, so a test can
-/// assert on log level and content without a full `tracing-subscriber` fmt layer.
-#[derive(Default, Clone)]
-pub(super) struct CapturingLayer {
-    pub(super) events: Arc<Mutex<Vec<(tracing::Level, String)>>>,
-}
-
-pub(super) struct FieldsToString(pub(super) String);
-
-impl tracing::field::Visit for FieldsToString {
-    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if !self.0.is_empty() {
-            self.0.push(' ');
-        }
-        self.0.push_str(&format!("{}={value:?}", field.name()));
-    }
-}
-
-impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for CapturingLayer {
-    fn on_event(
-        &self,
-        event: &tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
-    ) {
-        let mut visitor = FieldsToString(String::new());
-        event.record(&mut visitor);
-        self.events
-            .lock()
-            .unwrap()
-            .push((*event.metadata().level(), visitor.0));
-    }
-}
-
 /// Buffer a response into `(content_type, body_bytes)`.
 pub(super) async fn content_type_and_body(response: Response) -> (String, Vec<u8>) {
     let content_type = response
@@ -152,20 +119,4 @@ pub(super) fn authed_request() -> Request {
         .header("authorization", "Bearer test")
         .body(Body::empty())
         .unwrap()
-}
-
-pub(super) type CapturedEvents = Arc<Mutex<Vec<(tracing::Level, String)>>>;
-
-/// `#[tokio::test]` drives a current-thread runtime, so the thread-local
-/// default subscriber this guard installs stays in effect across the
-/// `.await` points in the callers — no separate runtime needed. The
-/// throttles the layer logs through are per-layer (see `super::policy`),
-/// so a fresh layer per test keeps these assertions order-independent.
-pub(super) fn capture_logs() -> (tracing::subscriber::DefaultGuard, CapturedEvents) {
-    use tracing_subscriber::layer::SubscriberExt;
-
-    let capture = CapturingLayer::default();
-    let events = capture.events.clone();
-    let guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(capture));
-    (guard, events)
 }

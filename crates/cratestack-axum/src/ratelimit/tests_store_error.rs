@@ -5,6 +5,18 @@
 //! is reachable and *refusing* may not, because that failure is
 //! caller-inducible — see `super::policy::StoreErrorPolicy` for the full
 //! argument, and `super::store_error` for the unit-level table.
+//!
+//! These assert on STATUS, not on the `WARN` the layer emits alongside it.
+//! An earlier revision asserted on captured log events and was flaky:
+//! `tracing` caches a callsite's interest globally, so whether a
+//! thread-local `set_default` subscriber sees an event depends on whether
+//! some other test in the binary reached that same callsite first with no
+//! subscriber installed — which the sibling `tests_store_timeout` and
+//! `tests_typed_bodies` modules do. Scheduling-dependent, and a test that
+//! passes for scheduling reasons is worse than no test. The decision the
+//! log reports is the same boolean these tests assert through the status
+//! code, and the throttle itself is covered deterministically in
+//! `cratestack_core::log_throttle`.
 
 #![cfg(test)]
 
@@ -18,8 +30,7 @@ use tower::{Layer as TowerLayer, Service};
 use super::layer::RateLimitLayer;
 use super::policy::StoreErrorPolicy;
 use super::tests_support::{
-    RefusingStore, UnreachableStore, authed_request, capture_logs, content_type_and_body,
-    ok_service,
+    RefusingStore, UnreachableStore, authed_request, content_type_and_body, ok_service,
 };
 
 /// A store that cannot be reached is the one case the default serves
@@ -27,23 +38,15 @@ use super::tests_support::{
 /// self-heals when the socket is replaced.
 #[tokio::test]
 async fn an_unreachable_store_is_served_through_under_the_default_policy() {
-    let (_guard, events) = capture_logs();
     let layer = RateLimitLayer::new(Arc::new(UnreachableStore), RateLimitConfig::new(10, 1.0));
     let mut svc = layer.layer(ok_service());
     let status = svc.call(authed_request()).await.unwrap().status();
-    let captured = events.lock().unwrap().clone();
 
     assert_eq!(
         status,
         StatusCode::OK,
         "a transport-class store failure must degrade to unlimited, not to a 500 on every \
          rate-limited route"
-    );
-    assert!(
-        captured.iter().any(|(level, msg)| *level == tracing::Level::WARN
-            && msg.contains("rate limit store error")
-            && msg.contains("served_unthrottled=true")),
-        "the WARN must record that the limiter stopped limiting, got: {captured:?}"
     );
 }
 
@@ -56,11 +59,9 @@ async fn an_unreachable_store_is_served_through_under_the_default_policy() {
 /// refused under `Allow` exactly as under `Deny`.
 #[tokio::test]
 async fn a_reachable_but_refusing_store_is_refused_even_under_the_default_policy() {
-    let (_guard, events) = capture_logs();
     let layer = RateLimitLayer::new(Arc::new(RefusingStore), RateLimitConfig::new(10, 1.0));
     let mut svc = layer.layer(ok_service());
     let response = svc.call(authed_request()).await.unwrap();
-    let captured = events.lock().unwrap().clone();
 
     assert_eq!(
         response.status(),
@@ -77,12 +78,6 @@ async fn a_reachable_but_refusing_store_is_refused_even_under_the_default_policy
     assert_eq!(
         decoded.message, "internal error",
         "the driver's OOM text stays operator-only"
-    );
-    assert!(
-        captured
-            .iter()
-            .any(|(_, msg)| msg.contains("served_unthrottled=false")),
-        "the WARN must record that the request was refused, got: {captured:?}"
     );
 }
 

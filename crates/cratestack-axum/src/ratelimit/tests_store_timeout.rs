@@ -19,9 +19,7 @@ use tower::{Layer as TowerLayer, Service};
 
 use super::layer::RateLimitLayer;
 use super::policy::StoreErrorPolicy;
-use super::tests_support::{
-    SlowStore, authed_request, content_type_and_body, ok_service,
-};
+use super::tests_support::{SlowStore, authed_request, content_type_and_body, ok_service};
 
 const BUDGET: Duration = Duration::from_millis(150);
 
@@ -99,4 +97,3 @@ async fn a_prompt_store_is_not_disturbed_by_the_budget() {
         "a real Allowed decision still carries its budget hints"
     );
 }
-

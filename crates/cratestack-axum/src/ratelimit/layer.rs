@@ -163,17 +163,18 @@ where
             // for it twice. An elapse is reported as a transport-class
             // error, so it is subject to the same policy as any other
             // "the store did not answer" — cratestack#846.
-            let outcome = match tokio::time::timeout(store_timeout, store.consume(&key, config))
-                .await
-            {
-                Ok(outcome) => outcome,
-                Err(_elapsed) => Err(store_timeout_error()),
-            };
+            let outcome =
+                match tokio::time::timeout(store_timeout, store.consume(&key, config)).await {
+                    Ok(outcome) => outcome,
+                    Err(_elapsed) => Err(store_timeout_error()),
+                };
 
             match outcome {
-                Ok(RateLimitDecision::Allowed { remaining }) => {
-                    Ok(with_budget_headers(inner.call(req).await?, config, remaining))
-                }
+                Ok(RateLimitDecision::Allowed { remaining }) => Ok(with_budget_headers(
+                    inner.call(req).await?,
+                    config,
+                    remaining,
+                )),
                 Ok(RateLimitDecision::Throttled { retry_after_secs }) => Ok(throttled_response(
                     req.headers(),
                     req.uri().path(),

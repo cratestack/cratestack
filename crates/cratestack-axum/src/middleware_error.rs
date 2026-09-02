@@ -145,7 +145,6 @@ fn last_resort_response(status: StatusCode) -> Response {
     response
 }
 
-
 mod rpc_probe;
 
 #[cfg(test)]

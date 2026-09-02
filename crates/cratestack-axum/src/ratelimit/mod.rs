@@ -91,6 +91,6 @@ mod tests_store_error;
 #[cfg(test)]
 mod tests_store_timeout;
 #[cfg(test)]
-mod tests_typed_bodies;
-#[cfg(test)]
 mod tests_support;
+#[cfg(test)]
+mod tests_typed_bodies;
