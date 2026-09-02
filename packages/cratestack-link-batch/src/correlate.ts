@@ -80,6 +80,15 @@ export function errorStatus(code: string): number {
       return 404;
     case "conflict":
       return 409;
+    // cratestack#846: emitted by the server's RateLimitLayer on a
+    // throttled request. Without this arm a batched throttle surfaced as
+    // a synthetic 500, which is precisely the status a client's backoff
+    // logic must not see — it hides the one signal that says "retry after
+    // a delay" rather than "this call is broken".
+    case "resource_exhausted":
+      return 429;
+    case "unavailable":
+      return 503;
     default:
       return 500;
   }

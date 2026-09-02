@@ -11,7 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use axum::body::to_bytes;
+use axum::body::{Body, to_bytes};
+use axum::extract::Request;
 use axum::response::Response;
 use cratestack_core::{CratestackError, RateLimitConfig, RateLimitDecision};
 use http::header;
@@ -120,4 +121,51 @@ pub(super) async fn content_type_and_body(response: Response) -> (String, Vec<u8
         .await
         .expect("body should buffer");
     (content_type, bytes.to_vec())
+}
+
+// --- Service / request / log fixtures shared by the store-error suites ---
+
+async fn ok_handler(_req: Request) -> Result<Response, std::convert::Infallible> {
+    Ok(Response::new(Body::from("ok")))
+}
+
+pub(super) type OkService = tower::util::ServiceFn<fn(Request) -> OkFuture>;
+pub(super) type OkFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<Response, std::convert::Infallible>> + Send>,
+>;
+
+/// Spelled with an explicit fn-pointer type rather than an `impl Trait`
+/// return: `RateLimitService`'s `Service` impl requires `S::Future: Send`,
+/// which an opaque `impl Service` return type does not carry.
+pub(super) fn ok_service() -> OkService {
+    fn make(req: Request) -> OkFuture {
+        Box::pin(ok_handler(req))
+    }
+    tower::service_fn(make as fn(Request) -> OkFuture)
+}
+
+/// A verifiable caller identity, so the request reaches the (failing)
+/// store rather than being refused by the default key fn itself
+/// (cratestack#416).
+pub(super) fn authed_request() -> Request {
+    Request::builder()
+        .header("authorization", "Bearer test")
+        .body(Body::empty())
+        .unwrap()
+}
+
+pub(super) type CapturedEvents = Arc<Mutex<Vec<(tracing::Level, String)>>>;
+
+/// `#[tokio::test]` drives a current-thread runtime, so the thread-local
+/// default subscriber this guard installs stays in effect across the
+/// `.await` points in the callers — no separate runtime needed. The
+/// throttles the layer logs through are per-layer (see `super::policy`),
+/// so a fresh layer per test keeps these assertions order-independent.
+pub(super) fn capture_logs() -> (tracing::subscriber::DefaultGuard, CapturedEvents) {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let capture = CapturingLayer::default();
+    let events = capture.events.clone();
+    let guard = tracing::subscriber::set_default(tracing_subscriber::registry().with(capture));
+    (guard, events)
 }

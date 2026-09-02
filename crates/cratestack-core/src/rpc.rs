@@ -56,7 +56,8 @@ pub const RPC_STREAM_ERROR_TAG: u64 = 48900;
 pub struct RpcErrorBody {
     /// Stable gRPC-style code: `not_found`, `invalid_argument`,
     /// `permission_denied`, `failed_precondition`, `conflict`,
-    /// `unauthenticated`, `internal`.
+    /// `unauthenticated`, `resource_exhausted` (a rate-limit throttle,
+    /// cratestack#846), `unavailable`, `internal`.
     pub code: String,
     /// Public, safe-to-expose message.
     pub message: String,

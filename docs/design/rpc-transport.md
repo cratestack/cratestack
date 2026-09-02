@@ -165,8 +165,15 @@ ErrorBody {
 
 Stable `code` values, modeled on gRPC: `not_found`, `invalid_argument`,
 `permission_denied`, `failed_precondition`, `conflict`, `unauthenticated`,
-`internal`, `unavailable`, `deadline_exceeded`, `canceled`. Each maps to an
-HTTP status for the unary HTTP binding.
+`resource_exhausted`, `internal`, `unavailable`, `deadline_exceeded`,
+`canceled`. Each maps to an HTTP status for the unary HTTP binding.
+
+`resource_exhausted` (HTTP 429) is emitted by `RateLimitLayer` on a
+throttled request (cratestack#846). It is the one code produced by
+middleware sitting *outside* the generated router rather than by the
+dispatcher, so every client that maps codes back to statuses — including
+the batch-frame path, where the outer response is always 200 and the
+status is synthesized from the code — must carry an arm for it.
 
 ## 3. Bindings
 
