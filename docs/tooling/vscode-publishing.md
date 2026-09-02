@@ -295,10 +295,27 @@ independently verifies crates.io/npm rather than trusting the checkmark, confirm
   ```
   This matters more than usual here: `publish-openvsx` exits 0 when `OVSX_PAT` is missing, so a
   green job is not evidence of a publish.
-* Marketplace (armed — **check this after the next tag; no publish has landed here yet**):
-  `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin` shows
-  the new version. Unlike Open VSX, a failure here is loud: with `AZURE_CLIENT_ID` set the job runs
-  for real, so a broken setup shows up as a red `publish (Marketplace)` job, not a silent skip.
+* Marketplace: `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin`
+  shows the new version. The `itemName` is case-insensitive — both `cratestack.` and `Cratestack.`
+  resolve, which is worth knowing because the gallery API reports the publisher as `Cratestack` while
+  `package.json` declares `cratestack`. Unlike Open VSX, a failure here is loud: with
+  `AZURE_CLIENT_ID` set the job runs for real, so a broken setup shows up as a red
+  `publish (Marketplace)` job, not a silent skip.
+
+  **That page lags the publish.** After a successful `publish (Marketplace)` it returned 404 for
+  several minutes, in both casings, while the extension was already fully published. Do not read that
+  as a failed publish — it is the same write-path/read-path split that makes `npm view` unreliable
+  straight after a publish. Query the gallery API instead, which is consistent with the write path:
+
+  ```bash
+  curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: application/json;api-version=3.0-preview.1' \
+    -d '{"filters":[{"criteria":[{"filterType":7,"value":"cratestack.cratestack-vscode-plugin"}],"pageSize":5,"pageNumber":1}],"flags":914}'
+  ```
+
+  It returns `displayName`, the version list, and `targetPlatform` per version — so it also confirms
+  all five targets landed, which the item page does not show directly.
 
 ## Display name collisions
 
