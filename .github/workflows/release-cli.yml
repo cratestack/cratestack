@@ -847,11 +847,13 @@ jobs:
   # keep failing for any platform subpackage that hasn't gone through that
   # one-time manual bootstrap yet, even once all 7 binaries build cleanly.
   #
-  # THAT APPLIES RIGHT NOW to the two names cratestack#850 added:
+  # The two names cratestack#850 added —
   # `@cratestack/cbor-node-linux-x64-musl` and
-  # `@cratestack/cbor-node-linux-arm64-musl` have never been published, so
-  # this job ends RED on the next tag until a maintainer runs the manual
-  # bootstrap in docs/tooling/npm-publishing.md for both.
+  # `@cratestack/cbor-node-linux-arm64-musl` — were bootstrapped by hand on
+  # 2026-09-02 and are live at 0.10.1, so nothing here is outstanding. The
+  # note stays because the constraint is permanent: the NEXT target added to
+  # `napi.targets` will need the same manual first publish
+  # (docs/tooling/npm-publishing.md).
   #
   # What it no longer does is take the release down with it. #850 also
   # changed the publish shape here (see the steps' own comments): the
@@ -939,9 +941,17 @@ jobs:
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
       # `--provenance` on the outer `npm publish` only covers THIS command,
-      # and `napi prepublish` no longer publishes anything itself (see the
-      # `--skip-optional-publish` note below), so provenance is requested
-      # via npm config instead — covering the platform loop as well.
+      # and `napi prepublish` no longer publishes npm SUBPACKAGES itself
+      # (see the `--skip-optional-publish` note below), so provenance is
+      # requested via npm config instead — covering the platform loop too.
+      #
+      # Scoped deliberately to npm: `napi prepublish` still attempts its
+      # GitHub-release side effects regardless of that flag. Rehearsal
+      # 33677846346 shows it issuing `POST /repos/…/releases` (401, no token
+      # wired) followed by seven asset uploads. That is pre-existing
+      # behaviour, unrelated to the musl targets, and out of scope for
+      # cratestack#850 — noted here so the next reader does not mistake
+      # "publishes no subpackages" for "does nothing".
       # `npm config set` writes to the *user* config (~/.npmrc) by
       # default, so it applies regardless of which directory it runs
       # from — the wrapper below cd's into each package itself.
@@ -1000,12 +1010,20 @@ jobs:
             echo "::error::platform subpackage publish failed for: ${failed[*]} — the main package is published by the next step regardless (it bundles every .node binary, so consumers still resolve a working binding). A brand-new platform name needs the one-time manual bootstrap in docs/tooling/npm-publishing.md."
             echo "SUBPACKAGE_PUBLISH_FAILED=${failed[*]}" >> "$GITHUB_ENV"
           fi
-      # Runs even when the loop above reported failures, deliberately: a
-      # missing platform subpackage must not cost this release its main
-      # package, and therefore its version number. The job still ends red,
-      # via the final step.
+      # Runs even when the loop above reported failures — but WITHOUT
+      # `if: always()`, deliberately. The loop step never fails on its own:
+      # it runs under `set -uo pipefail` (no `-e`), collects failed names
+      # into an array, and ends on an `if` block that exits 0, recording the
+      # failures into `$GITHUB_ENV` for the final step to act on. Measured:
+      # the loop exits 0 with two names failing.
+      #
+      # So `always()` would buy nothing for the case it looks like it covers,
+      # while silently covering a case it must NOT: any EARLIER step failing
+      # — `pnpm exec tsc`, the `@cratestack/ts-types` build — would still
+      # reach this publish, shipping a tarball whose `main: ./dist/index.js`
+      # is not in it, at a version number that can never be reused. Plain
+      # step ordering gives the intended behaviour and nothing else.
       - name: Publish @cratestack/cbor-node
-        if: always()
         env:
           # cratestack#652: the shared wrapper switches to
           # `npm publish --dry-run` when this is 1. Wiring it here rather
@@ -1809,8 +1827,14 @@ jobs:
       - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
         run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       # wasm-pack downloads its own binaryen (hardcoded version) mid-build
-      # unless a `wasm-opt` is already on PATH — see ci.yml's identical step
-      # for the incident that made this pinned rather than left to chance.
+      # unless a `wasm-opt` is already on PATH — see ci.yml's counterpart
+      # step for the incident that made this pinned rather than left to
+      # chance. Deliberately no longer described as "identical": since
+      # cratestack#850 the two release-cli.yml binaryen downloads verify a
+      # sha256 and ci.yml's seven do not. Checksumming those is worth doing
+      # and is a separate change — a CI-wide supply-chain edit does not
+      # belong in a release-pipeline PR, and CI cannot burn a version
+      # number the way this workflow can.
       #
       # The sha256 is the digest GitHub reports for that release asset
       # (`gh api repos/WebAssembly/binaryen/releases/tags/version_130`,

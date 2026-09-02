@@ -136,33 +136,34 @@ by a new package just because a sibling already has one configured:
      `publish-npm-cbor-node` keeps failing on it — which looks identical to not having bootstrapped
      at all.
 
-  > **⚠ ACTION REQUIRED (cratestack#850).** The two musl names —
-  > `@cratestack/cbor-node-linux-x64-musl` and `@cratestack/cbor-node-linux-arm64-musl` — were
-  > added to `napi.targets` but have **never been published**, so they have no Trusted Publisher
-  > entry and cannot get one until someone publishes them by hand (npm/cli#8544: Trusted
-  > Publishing categorically cannot create a name). Until then `publish-npm-cbor-node` ends **red
-  > on every tag push**, naming exactly which subpackages it could not publish.
+  > **✅ DONE — the two musl names were bootstrapped on 2026-09-02 (cratestack#850).**
+  > `@cratestack/cbor-node-linux-x64-musl` and `@cratestack/cbor-node-linux-arm64-musl` are live
+  > (`npm view @cratestack/cbor-node-linux-x64-musl version` → `0.10.1`, `libc` → `musl`), by
+  > exactly the procedure above. Nothing is outstanding; this note is kept because the procedure is
+  > the recipe for the **next** target added to `napi.targets`, and because what it worked around
+  > is permanent: npm Trusted Publishing categorically cannot create a name (npm/cli#8544), so the
+  > first publish of every future platform package is manual too.
   >
-  > What it no longer does is take the release with it. #850 changed the publish shape: the
-  > platform packages are published by an explicit loop in the job that attempts *every* name and
-  > only then exits non-zero, and the main package publishes regardless. Before that change, the
-  > `prepublishOnly` hook published subpackages sequentially from inside the root `npm publish`,
-  > so the first 404 aborted the hook: earlier platform packages live, later ones skipped, main
-  > package never published, and the tag's version number burned.
+  > What #850 also changed, and what makes the *next* one cheap: an un-bootstrapped name no longer
+  > takes the release with it. The platform packages are published by an explicit loop that
+  > attempts *every* name and only then exits non-zero, and the main package publishes regardless.
+  > Before that change, the `prepublishOnly` hook published subpackages sequentially from inside
+  > the root `npm publish`, so the first 404 aborted the hook: earlier platform packages live,
+  > later ones skipped, main package never published, and the tag's version number burned.
   >
-  > **Consumers are not blocked in the meantime.** The main package's tarball bundles every
+  > **Consumers are never blocked on a bootstrap.** The main package's tarball bundles every
   > `.node` binary (`files: ["*.node"]`, and `napi artifacts` copies each one to the package root
   > as well as into `npm/<platform>/`), and the generated `native.mjs` tries the bundled
   > `./cratestack-cbor-node.<platform>.node` *before* the `@cratestack/cbor-node-<platform>`
-  > subpackage — so Alpine works from the main package alone.
+  > subpackage — so a platform works from the main package alone even before its subpackage exists.
   >
-  > To close it out, no Rust or zig toolchain required: run a rehearsal
+  > For the next target, no Rust or zig toolchain is required: run a rehearsal
   > (`gh workflow run release-cli.yml --ref <branch> -f rehearsal=true`, which builds every leg and
-  > publishes nothing), `gh run download <run-id> -n cbor-node-binary-x86_64-unknown-linux-musl`
-  > and the `aarch64` equivalent, then follow **steps 2-5** of the procedure above, repeating
-  > **steps 3-5 per name** — the publish is `cd npm/<platform> && npm publish --access public`,
-  > from the platform directory, never the root. Finish with **step 6** for each name: its Trusted
-  > Publisher entry, without which CI still cannot publish that name's *next* version.
+  > publishes nothing), `gh run download <run-id> -n cbor-node-binary-<target-triple>`, then follow
+  > **steps 2-5** of the procedure above, repeating **steps 3-5 per name** — the publish is
+  > `cd npm/<platform> && npm publish --access public`, from the platform directory, never the
+  > root. Finish with **step 6** for each name: its Trusted Publisher entry, without which CI still
+  > cannot publish that name's *next* version.
 
   **The original 5 platform subpackages have been bootstrapped** and publish from CI on every tag —
   verified against the registry on 2026-08-13, all six `cbor-node*` names at `0.7.15`. The procedure

@@ -102,8 +102,10 @@ the root `npm publish --dry-run` does not propagate `--dry-run` into the `prepub
 `napi prepublish` was attempting real subpackage publishes during a run whose contract is "writes to
 no registry". Each name now goes through the wrapper, which honours `NPM_PUBLISH_REHEARSAL`.
 
-**Still requires a manual step before the next tag.** Neither musl name has been published, so
-`publish-npm-cbor-node` ends red until a maintainer bootstraps both by hand.
+**The two new names needed a manual first publish**, since npm Trusted Publishing cannot create a
+name (npm/cli#8544). Both were bootstrapped on 2026-09-02 and are live at 0.10.1
+(`npm view @cratestack/cbor-node-linux-x64-musl libc` → `musl`), so nothing is outstanding — but
+the next target added to `napi.targets` will need the same treatment.
 
 That bootstrap procedure in `docs/tooling/npm-publishing.md` was rewritten in the same change, and
 the old version of it is now actively wrong rather than merely dated: it told you to `npm publish`
