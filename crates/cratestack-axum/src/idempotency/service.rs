@@ -16,10 +16,9 @@ use crate::middleware_error::middleware_error_response;
 use super::complete::buffer_and_persist_response;
 use super::hash::{hash_request, is_idempotent_target_method};
 use super::parse::parse_idempotency_key;
-use super::record::ReservationOutcome;
-use super::responses::{in_flight_response, replay_response};
 use super::store::{IdempotencyStore, MAX_BODY_BYTES};
-use super::stream_bypass::is_streamed_response;
+use super::reserve::token_or_response;
+use super::stream_bypass::{is_streamed_response, release_streamed_reservation};
 
 #[derive(Clone)]
 pub struct IdempotencyService<S> {
@@ -147,24 +146,9 @@ where
                 }
             };
 
-            let token = match outcome {
-                ReservationOutcome::Replay(record) => {
-                    return Ok(replay_response(&record));
-                }
-                ReservationOutcome::Conflict => {
-                    return Ok(middleware_error_response(
-                        &error_headers,
-                        &error_path,
-                        CratestackError::Validation(
-                            "idempotency_key_conflict: key reused with a different request body"
-                                .to_owned(),
-                        ),
-                    ));
-                }
-                ReservationOutcome::InFlight => {
-                    return Ok(in_flight_response(&error_headers, &error_path));
-                }
-                ReservationOutcome::Reserved { token } => token,
+            let token = match token_or_response(outcome, &error_headers, &error_path) {
+                Ok(token) => token,
+                Err(response) => return Ok(response),
             };
 
             // We hold the reservation. Run the handler.
@@ -191,24 +175,7 @@ where
                 }
             };
             if is_streamed_response(&response) {
-                // Genuinely incremental response (a `@stream` procedure,
-                // cratestack#283) — buffering it here would silently
-                // defeat streaming, and idempotency-replaying a partial
-                // stream has no defined semantics. The handler already
-                // ran, so refusing to forward its output would only
-                // discard completed work; instead we bypass buffering
-                // entirely, release the reservation so a legitimate
-                // retry isn't stuck "in flight" forever, and say so
-                // loudly. See `super::stream_bypass` for the full
-                // rationale.
-                let _ = store.release(&principal, &key, token).await;
-                tracing::warn!(
-                    target: "cratestack",
-                    cratestack_operation = "idempotency",
-                    "idempotency key supplied for a @stream response body; streaming \
-                     responses are not idempotency-replayable — bypassing buffering/replay \
-                     for this call (see cratestack#283)",
-                );
+                release_streamed_reservation(store.as_ref(), &principal, &key, token).await;
                 return Ok(response);
             }
             Ok(buffer_and_persist_response(

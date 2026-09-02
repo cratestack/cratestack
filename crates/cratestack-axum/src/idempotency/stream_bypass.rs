@@ -48,6 +48,30 @@ pub(super) fn is_streamed_response(response: &Response) -> bool {
         .is_some()
 }
 
+/// The bypass itself: the handler already ran, so refusing to forward its
+/// output would only discard completed work. Instead release the
+/// reservation — so a legitimate retry isn't stuck "in flight" forever —
+/// and say so loudly.
+///
+/// Lives here rather than inline in `service.rs` so the rationale above
+/// sits next to the marker it keys off (and to keep `service.rs` under
+/// the workspace's 200-line ceiling). Moved verbatim in cratestack#846.
+pub(super) async fn release_streamed_reservation(
+    store: &dyn super::store::IdempotencyStore,
+    principal: &str,
+    key: &str,
+    token: uuid::Uuid,
+) {
+    let _ = store.release(principal, key, token).await;
+    tracing::warn!(
+        target: "cratestack",
+        cratestack_operation = "idempotency",
+        "idempotency key supplied for a @stream response body; streaming \
+         responses are not idempotency-replayable — bypassing buffering/replay \
+         for this call (see cratestack#283)",
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::Body;
