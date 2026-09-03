@@ -1,0 +1,50 @@
+name: 💡 Idea / feature request
+description: You want CrateStack to do something it doesn't do yet. Rough ideas are fine.
+title: "[Idea]: "
+labels: ["enhancement", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for the early, unshaped version of an idea. If it's accepted a
+        maintainer will restate it as an [Epic](https://github.com/cratestack/cratestack/issues/new?template=epic.yml)
+        or [User Story](https://github.com/cratestack/cratestack/issues/new?template=user-story.yml)
+        with acceptance criteria — **you don't have to write those.**
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you hitting?
+      description: >
+        Describe the situation that made you want this, not the solution. The
+        problem is the part we can't guess; a good problem statement often gets a
+        better answer than the feature you had in mind.
+      placeholder: |
+        Every time I add a field to my schema I have to hand-edit three client
+        packages, because …
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: Your idea of a solution, if you have one. Sketch schema syntax or an API shape if that's easier than prose.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What are you doing instead today?
+      description: The workaround you have now, and why it isn't good enough.
+
+  - type: checkboxes
+    id: transports
+    attributes:
+      label: Does this touch the request/response surface?
+      description: >
+        If it changes query parameters, response shapes, or client call surfaces,
+        it has to land on **both** the REST and RPC transports together — that's a
+        hard rule here. Ticking this just tells us to scope it that way.
+      options:
+        - label: This would change what goes over the wire (new query params, new response shape, new client call).
+        - label: I'm not sure.

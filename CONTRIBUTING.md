@@ -1,8 +1,50 @@
 # Contributing
 
-CrateStack is early public-release software. Keep changes small, tested, and aligned with the schema-first framework boundary described in `README.md`.
+CrateStack is early public-release software. Keep changes small, tested, and aligned with the
+schema-first framework boundary described in `README.md`.
 
-Before opening a pull request:
+> **New here?** Read **[Your first contribution](docs/contributing/first-contribution.md)** instead
+> — it's a start-to-finish walkthrough (clone, build, change, test, PR) that assumes no prior
+> knowledge of this codebase. This page is the reference for the details it summarises.
+
+## Ways to contribute
+
+All of these are real contributions. They're listed roughly by how much context they need:
+
+| | Where to start |
+| --- | --- |
+| Report a bug | [Bug report form](https://github.com/cratestack/cratestack/issues/new?template=bug-report.yml) — the smallest reproducing `.cstack` schema is worth more than anything else you can add |
+| Ask a question | [Question form](https://github.com/cratestack/cratestack/issues/new?template=question.yml) — if the docs didn't answer it, that's useful signal |
+| Fix docs, a typo, or a stale command | Open a PR directly; see [Your first contribution](docs/contributing/first-contribution.md) |
+| Suggest a feature | [Idea form](https://github.com/cratestack/cratestack/issues/new?template=feature-request.yml) — describe the problem, not just the solution |
+| Fix a bug or build a feature | [`good first issue`](https://github.com/cratestack/cratestack/labels/good%20first%20issue) · [`help wanted`](https://github.com/cratestack/cratestack/labels/help%20wanted) |
+| Add an example | `examples/` — see its [README](examples/README.md) for the two homes examples live in |
+
+Not sure which issue form applies? [Filing an issue](docs/contributing/filing-an-issue.md) explains
+the difference between the four short reporting forms (for you) and the three governance planning
+forms (which maintainers fill in on your behalf).
+
+Everyone participating here is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Conventions worth knowing before you write code
+
+Two will otherwise cost you a review round-trip:
+
+- **~200-line file ceiling.** Split larger files by concern rather than growing one — this is why
+  `crates/cratestack-macros/` and `crates/cratestack-axum/` are nested so deeply. Enforced by CI
+  (`file-length ceiling`).
+- **REST and RPC ship together.** Anything touching the request/response surface (query parameters,
+  projections, response shapes, client call surfaces) must land on **both** transports in the same
+  PR — server dispatch, the `RpcListInput`/`RpcGetInput` frame slots, and every generated client
+  (Rust/Dart/TS, plus the swr/riverpod layers). RPC dispatch synthesizes a URL query string and
+  re-enters the REST parsing path (`crates/cratestack-axum/src/rpc/synthesize.rs`), so this is
+  usually one frame field plus one `pairs.push`. Shipping REST-only has taken three follow-up PRs to
+  correct before; that's why the rule exists.
+- `unsafe_code = "forbid"` workspace-wide. The handful of FFI-boundary crates that override it each
+  document why.
+- Rust sources use `snake_case` filenames; everything else is `kebab-case`.
+
+## Before opening a pull request
 
 1. Run `cargo fmt`.
 2. Run `cargo check --workspace --exclude embedded_flutter_native --all-targets`. (`just all-checks` wraps fmt + clippy + this check.) Do **not** add `--all-features`: it enables both mutually-exclusive `decimal-*` backends and trips a `compile_error!` in `cratestack-core`. Exclude `embedded_flutter_native` — its `flutter_rust_bridge`-generated glue isn't checked in, so a bare `--workspace` build fails with E0583.

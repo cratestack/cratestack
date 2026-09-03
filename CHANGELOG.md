@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### A beginner on-ramp, and a README that stops describing itself by comparison
+
+The repository had three issue forms, all of them internal planning forms. Epic, User Story and
+Development Ticket each demand an intent statement, a linked source of truth, acceptance criteria, a
+test plan, verification evidence and a named accountable human — which is the right bar for work we
+commit to doing, and an absurd one to put in front of someone who just wants to say "this command in
+your README doesn't work". Blank issues are disabled, so there was no lighter path at all.
+
+Four short forms now sit alongside them — bug report, question, documentation problem, and idea —
+asking only what a maintainer genuinely cannot work without. They carry `needs-review` and are
+explicitly *not* the governance forms: if a report is accepted, a maintainer writes the Development
+Ticket and links the report as its source of truth. The governance CI check is PR-only and is
+unaffected by any of this.
+
+New: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SUPPORT.md`,
+`docs/contributing/filing-an-issue.md` (which form, and what makes a report actionable — the smallest
+reproducing `.cstack` schema, above everything else), and
+`docs/contributing/first-contribution.md` (clone to merged PR, assuming no prior knowledge of this
+codebase, including the Linux GTK/WebKit prerequisite, the `--exclude embedded_flutter_native` rule,
+and why a green `cargo test` does not mean the PG paths ran). `CONTRIBUTING.md` gains a
+ways-to-contribute table and the two conventions — the file-length ceiling and REST/RPC parity — that
+otherwise cost a review round-trip.
+
+The README is rewritten. It led with a macro inventory and a facade migration note, ended on a
+"Current Limits" section whose second bullet was "full ZenStack-style policy and exposure parity",
+and told the reader that browser and mobile examples would "land in follow-up PRs" — there are now
+about thirty of them, including Next.js, Flutter/Riverpod and Tauri. It now opens with what the tool
+does, shows a schema, and gets to an install command inside a screen. The ZenStack comparison is
+gone; the limits it was standing in for are stated directly instead.
+
+Three factual corrections came out of the rewrite:
+
+- The examples table said `cargo run --example sqlite_quickstart -p cratestack`. That package is the
+  documentation-only vitrine crate and has no examples: `error: no example target named
+  sqlite_quickstart in cratestack package`. The four example files carried the same wrong invocation
+  in their own header comments. All now name `-p cratestack-sqlite` / `-p cratestack-pg`, and
+  `cargo run --example sqlite_quickstart -p cratestack-sqlite` was run to confirm it.
+- The "Validation" section prescribed `cargo check --workspace --all-targets --all-features` and
+  `cargo test --workspace --all-features`. `--all-features` enables both mutually-exclusive
+  `decimal-*` backends and trips a `compile_error!` in `cratestack-core` — the README was handing new
+  contributors the one flag `CONTRIBUTING.md` and every `just` recipe deliberately avoid.
+- The facade snippets pinned `version = "0.7"` against a 0.11.0 workspace.
+
 ### Open VSX publishing is live
 
 `publish-openvsx` is no longer an armed-but-unexercised job. It has published all five platform
