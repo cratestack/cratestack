@@ -24,6 +24,45 @@ Open VSX API was a valid check while a 404 meant "nothing has ever shipped"; now
 exists permanently, a 200 proves only that *some* version did. The documented check reads the
 `version` field instead.
 
+### ADR 0015 accepted (amended): the L3 OpExecutor is being built in slices
+
+`docs/design/rpc-transport.md` §4 has specified an `OpExecutor` since 2026-05-15, and ADR 0015
+deferred building it behind a gate: L3 gets built when a dispatch path must make an admission
+decision from an input that is not an `http::Request`. That gate has fired — not by WebSocket, which
+is what everyone expected, but by ADR 0018. Making the in-process invocation path (`invoke_with_db`,
+`db.transaction(...)`, `db.queries().<name>().run(...)`) a compatibility-committed dispatch surface
+created a second input shape with real, CI-exercised consumers. Alternative (a) — build L3 now — was
+rejected in August on the single ground that N = 1 transport shape cannot validate a
+transport-neutral design. N = 2 today, so ADR 0015 is now **Accepted (amended)** at alternative (a).
+
+Three facts the original ADR's argument rested on had gone stale in the month it sat open, and the
+amendment corrects them rather than editing the Context section in place:
+
+- `rate_limited_by_default` **is** read at runtime. `ratelimit/{rest,rpc}_ops_filter.rs` (#474)
+  resolve a request to its descriptor and consult the flag through
+  `RateLimitLayer::with_should_rate_limit_fn`, driven end to end by
+  `crates/cratestack-pg/tests/rate_limit_runtime.rs`. `@no_rate_limit` is not inert. This
+  *strengthens* the case for L3 rather than weakening it — #474 shipped the substance of
+  alternative (c) for one of the two flags (a resolver closure over the static table rather than the
+  matched descriptor) and it worked, leaving idempotency as the only concern that still cannot see
+  the op it is about to run. `extensions.md` §5 said the `rate_limit` Cargo feature "gates the
+  dispatch-layer codegen that reads `rate_limited_by_default`"; there is no such codegen reader, the
+  readers are runtime and ungated, and that bullet now says so.
+- `AuditSink` has a consumer — `SqlxRuntime::with_audit_sink` (#473), dispatched post-commit and
+  asserted by `banking_audit.rs`. Alternative (b) is still not adopted, but no longer on the grounds
+  that fan-out has no call site.
+- The open question "is `mcp` the non-HTTP dispatch path?" is answered: no. `mcp { }` parses as an
+  inert config block and neither `cratestack-macros` nor `cratestack-axum` mentions it.
+
+The work lands one concern at a time, each with byte-identical wire behaviour as its acceptance bar
+and the existing test suites as the regression oracle — unedited, which is the point. Slice 1
+(idempotency, #876) creates `cratestack-exec` at L3 and finally makes `@no_idempotency` do
+something after two release cycles of parsing and being ignored. Slice 2 (rate limiting, #877) waits
+for #871 so that rewrite is not re-landed against L3. Epic: #875.
+
+No code changes here — this is the decision, its amendment, and the pointers from the four design
+documents that had been describing `OpExecutor` as unbuilt.
+
 ## 0.11.0 (2026-09-03)
 
 ### The Marketplace item page lags a successful publish

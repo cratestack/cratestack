@@ -162,6 +162,11 @@ once the executor lands. Sequencing the other way — executor first, flag
 second — means the flag has exactly one runtime path to wire into instead of
 two.
 
+**Status update 2026-09-03:** the sequencing described above is now happening in
+that order. [ADR 0015](../adr/0015-op-executor-l3.md) is Accepted (amended) at
+alternative (a), and slice 1 (#876, under epic #875) builds the executor *and*
+wires `@no_idempotency` into it in the same slice.
+
 ## 5. What the flag would look like, when it's time
 
 Not building this now, but recording the shape so the follow-up ticket
@@ -202,6 +207,12 @@ If/when picked back up, the properly scoped ticket is:
 > **Out of scope:** anything not gated on `OpExecutor` existing.
 
 This should not be opened until `OpExecutor` has a concrete plan, per §4.2.
+
+**Opened 2026-09-03 as #876** (epic #875). `OpExecutor` has a concrete plan — ADR
+0015 is Accepted (amended) at alternative (a) — so the gate above is satisfied.
+The ticket as filed is wider than the sketch: it creates the L3 crate
+`cratestack-exec` and moves idempotency admission into it in the same slice,
+rather than assuming a "post-consolidation executor" already exists.
 
 ## 7. Non-goals
 
