@@ -44,6 +44,10 @@ cost of the empty layer is now itemisable without it. Verified against `origin/m
    does nothing at runtime.** The field's own doc comment admits it
    (`transport.rs:54-56`): "changes nothing about whether `RateLimitLayer` is
    actually wired up at runtime."
+   **Superseded 2026-09-03 — see Amendment below:** #474 shipped the runtime
+   readers (`cratestack-axum/src/ratelimit/{rest,rpc}_ops_filter.rs`), installed via
+   `RateLimitLayer::with_should_rate_limit_fn`. `@no_rate_limit` takes effect
+   wherever that layer is installed.
 2. **`@no_idempotency` has been blocked on `OpExecutor` since before it was
    written down.** Parsed
    (`crates/cratestack-parser/src/tests_procedures.rs:157`), documented at
@@ -84,6 +88,9 @@ back into [layering.md](../design/layering.md) so the two documents agree:
   **zero** mentions of it, and `CratestackBuilder`
   (`crates/cratestack-macros/src/include/server/runtime/postgres.rs:46-48`) has
   exactly one field, `SqlxRuntime`, and no method that accepts a sink.
+  **Superseded 2026-09-03 — see Amendment below:** #473 added
+  `SqlxRuntime::with_audit_sink` / `CratestackBuilder::with_audit_sink` and the
+  post-commit dispatch at `cratestack-sqlx/src/audit/sink.rs:82`.
 - **"Audit fires from L2" is not a misplacement.**
   `crates/cratestack-sqlx/src/audit.rs:1-5` states the guarantee — "Audit rows
   write inside the mutation's transaction — you can never see a committed row whose
@@ -100,6 +107,12 @@ reframing is recorded rather than left to go stale (`extensions.md` §9):
   is why. That sentence should be corrected to describe what shipped: the feature
   unlocks the attribute and threads the flag onto the descriptor, and nothing consumes
   it yet.
+  **Superseded 2026-09-03 — see Amendment below:** the instruction above is itself
+  now wrong in its second half. There is still no *codegen* reader, but there are
+  runtime readers (#474), so "nothing consumes it yet" must not be written into
+  `extensions.md`. The correction actually applied by the accepting PR says the
+  feature unlocks the **attribute** — the field is emitted unconditionally — and
+  names the ops filters as the consumers.
 - `rpc-transport.md` §4's and
   `idempotency-rate-limit-declarative-surface.md` §4.2's statements of the
   `OpExecutor` gate should point here for the restated form below.
@@ -128,9 +141,10 @@ than edited in place:**
    `cratestack-pg/tests/rate_limit_runtime.rs`. `@no_rate_limit` is no longer inert,
    and the corresponding *Negative* consequence and the `extensions.md` §5
    correction it demanded are both void. This does not weaken the case for L3 — it
-   strengthens it: #474 shipped exactly alternative (c) for one of the two flags,
-   proving the descriptor-lookup mechanism works, and leaving idempotency as the
-   only concern still unable to see the op it is about to run.
+   strengthens it: #474 shipped the substance of alternative (c) for one of the two
+   flags (a resolver closure over the static table rather than the matched
+   descriptor), proving the descriptor-lookup mechanism works, and leaving
+   idempotency as the only concern still unable to see the op it is about to run.
 2. **Correction 1 is obsolete.** `AuditSink` has a consumer:
    `SqlxRuntime::with_audit_sink` / `CratestackBuilder::with_audit_sink` (#473),
    dispatched post-commit from `cratestack-sqlx/src/audit/sink.rs:82` and asserted

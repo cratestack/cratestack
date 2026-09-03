@@ -476,6 +476,18 @@ binding; row-level policy fires from inside generated SQL; audit fan-out
 fires from nowhere at all. There is no layer at which you can stand and see
 an operation whole.
 
+**Post-#473:** the "Audit (fan-out)" row's *Applied at* cell — "nowhere — no
+caller" — no longer holds. `SqlxRuntime::with_audit_sink` /
+`CratestackBuilder::with_audit_sink` are the installation path, and dispatch
+fires post-commit from `cratestack-sqlx/src/audit/sink.rs:82`. Fan-out is
+therefore applied at L2, alongside persistence, rather than nowhere. This
+weakens nothing in the argument above — the point of the table is that the
+concerns are applied at four *different* layers and no single one sees the
+operation whole, which is still true, and is why
+[ADR 0015](../adr/0015-op-executor-l3.md) was accepted at alternative (a) on
+2026-09-03. It does retire the separate claim, made in §4.2 and in ADR 0015's
+alternative (b), that "move audit fan-out to L3" would be relocating dead code.
+
 One row of that table is *not* a misplacement, and the distinction is worth
 protecting. Audit **persistence** is at L2 because it must be:
 `sqlx/src/audit.rs:1-5` states the invariant — "Audit rows write inside the
@@ -738,7 +750,9 @@ Deliberately left open, each to its own ADR (§8) or existing document:
 - **Whether `OpExecutor` gets built now.** §5.1 itemises the cost of not
   having it; it does not overturn `rpc-transport.md` §6.5's gate. That is
   a maintainer call with a real "build speculative infrastructure" risk on
-  the other side.
+  the other side. **Decided 2026-09-03 — [ADR 0015](../adr/0015-op-executor-l3.md)
+  Accepted (amended) at alternative (a): L3 gets built, in slices, as
+  `cratestack-exec`. Epic cratestack#875.**
 - **How far the Store SPI should go.** Freeze at three operational
   traits, or push toward a persistence SPI? §5.6 shows the second is much
   more expensive than `cratestack-sql`'s existence suggests.

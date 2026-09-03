@@ -42,9 +42,10 @@ amendment corrects them rather than editing the Context section in place:
   resolve a request to its descriptor and consult the flag through
   `RateLimitLayer::with_should_rate_limit_fn`, driven end to end by
   `crates/cratestack-pg/tests/rate_limit_runtime.rs`. `@no_rate_limit` is not inert. This
-  *strengthens* the case for L3 rather than weakening it — #474 shipped alternative (c) for one of
-  the two flags and it worked, leaving idempotency as the only concern that still cannot see the op
-  it is about to run. `extensions.md` §5 said the `rate_limit` Cargo feature "gates the
+  *strengthens* the case for L3 rather than weakening it — #474 shipped the substance of
+  alternative (c) for one of the two flags (a resolver closure over the static table rather than the
+  matched descriptor) and it worked, leaving idempotency as the only concern that still cannot see
+  the op it is about to run. `extensions.md` §5 said the `rate_limit` Cargo feature "gates the
   dispatch-layer codegen that reads `rate_limited_by_default`"; there is no such codegen reader, the
   readers are runtime and ungated, and that bullet now says so.
 - `AuditSink` has a consumer — `SqlxRuntime::with_audit_sink` (#473), dispatched post-commit and
