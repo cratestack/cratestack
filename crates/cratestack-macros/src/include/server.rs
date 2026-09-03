@@ -5,6 +5,7 @@
 mod axum_dtos;
 mod axum_module;
 mod collect;
+mod query_guard;
 mod rpc_module;
 mod runtime;
 
@@ -42,6 +43,9 @@ pub(super) fn compose_server_schema(
     {
         return error;
     }
+    if let Err(error) = query_guard::guard_no_queries_without_a_database(schema_path, &schema, db) {
+        return error;
+    }
     let decimal_backend = match resolve_decimal_backend(schema_path, &schema, decimal) {
         Ok(backend) => backend,
         Err(error) => return error,
@@ -65,6 +69,7 @@ pub(super) fn compose_server_schema(
             &collected.model_accessors,
             &collected.bound_model_accessors,
             &collected.view_accessors,
+            &collected.query_accessors,
         );
 
         // Destructure here for `quote!` interpolation — quoting through the
@@ -94,6 +99,9 @@ pub(super) fn compose_server_schema(
             view_structs,
             view_descriptors,
             view_pg_from_row_impls,
+            query_modules,
+            query_from_row_impls,
+            query_accessors,
             procedure_modules,
             procedure_registry_methods,
             generated_client_module,
@@ -160,6 +168,52 @@ pub(super) fn compose_server_schema(
                     use ::cratestack::serde;
 
                     #(#wire_structs)*
+                }
+            }
+        };
+
+        // `query` blocks (cratestack#867). Emitted only when the schema
+        // declares at least one — the same "zero generated code when
+        // there's nothing" convention `wire_module` above follows, and
+        // here it also keeps an unused `use ::cratestack::sqlx;` from
+        // tripping the workspace's `-D warnings` gate in every schema that
+        // declares no queries.
+        //
+        // The `Queries` accessor struct lives inside this module rather
+        // than beside `Views` in the runtime block because its methods
+        // reference sibling query modules by bare path; keeping them in one
+        // module is what makes `loyalty_fee_summary::Args` resolve without
+        // a `super::` prefix that would have to change if the nesting ever
+        // moved.
+        let queries_module = if query_modules.is_empty() {
+            proc_macro2::TokenStream::new()
+        } else {
+            quote! {
+                pub mod queries {
+                    //! Declarative custom-SQL reads (`query` blocks).
+                    //!
+                    //! Server-internal by design: no route, no RPC op id and
+                    //! no generated client stub exists for any of these —
+                    //! they are reachable only as Rust calls from code
+                    //! already running inside this process. See
+                    //! `docs/design/declarative-custom-query.md` §5.
+                    use ::cratestack::sqlx;
+
+                    #(#query_from_row_impls)*
+                    #(#query_modules)*
+
+                    /// Sub-accessor returned by `Cratestack::queries()`.
+                    pub struct Queries<'a> {
+                        pub(super) db: &'a super::Cratestack,
+                    }
+
+                    impl<'a> Queries<'a> {
+                        pub(super) fn new(db: &'a super::Cratestack) -> Self {
+                            Self { db }
+                        }
+
+                        #(#query_accessors)*
+                    }
                 }
             }
         };
@@ -242,6 +296,7 @@ pub(super) fn compose_server_schema(
 
                 #generated_client_module
                 #generated_event_module
+                #queries_module
 
                 pub mod procedures {
                     #(#procedure_modules)*

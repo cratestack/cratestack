@@ -15,7 +15,8 @@ use crate::shared::{bytes_serde_attr, doc_attrs, ident, value_tokens};
 use super::type_tokens::procedure_type_tokens;
 
 pub(crate) use super::type_tokens::procedure_client_output_item_tokens;
-pub(super) use super::type_tokens::{procedure_output_tokens, procedure_stream_item_tokens};
+pub(crate) use super::type_tokens::procedure_output_tokens;
+pub(super) use super::type_tokens::procedure_stream_item_tokens;
 
 /// `Args` field specs for a procedure's argument list, on both the server
 /// and client sides — they emit the identical field set, so one builder
@@ -35,7 +36,7 @@ fn is_list_arg(ty: &cratestack_core::TypeRef) -> bool {
     matches!(ty.arity, TypeArity::List) && !ty.is_page() && !ty.is_find_many()
 }
 
-fn procedure_arg_builder_fields(
+pub(super) fn procedure_arg_builder_fields(
     procedure: &Procedure,
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,
@@ -71,10 +72,16 @@ fn procedure_arg_builder_fields(
         .collect()
 }
 
-pub(super) fn generate_procedure_args_struct(
+/// `construct` is the schema-author-facing noun for the declaration
+/// these args belong to — `"procedure"` or `"query"`. It reaches the
+/// generated struct's doc comment only; a `query`'s `Args` describing
+/// itself as a procedure's is the kind of small wrongness that makes a
+/// reader distrust the rest of the generated docs.
+pub(crate) fn generate_procedure_args_struct(
     procedure: &Procedure,
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,
+    construct: &str,
 ) -> proc_macro2::TokenStream {
     let args_ident = ident("Args");
     let definitions = procedure.args.iter().map(|arg| {
@@ -127,8 +134,10 @@ pub(super) fn generate_procedure_args_struct(
         quote! {}
     };
 
+    let struct_doc = format!("Generated argument payload for this {construct}.");
+
     quote! {
-        #[doc = "Generated argument payload for this procedure."]
+        #[doc = #struct_doc]
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize #default_derive)]
         pub struct #args_ident {
             #(#definitions)*
@@ -144,50 +153,5 @@ pub(super) fn generate_procedure_args_struct(
                 }
             }
         }
-    }
-}
-
-pub(super) fn generate_client_procedure_args_struct(
-    procedure: &Procedure,
-    types: &[TypeDecl],
-    enum_names: &BTreeSet<&str>,
-) -> proc_macro2::TokenStream {
-    let args_ident = ident("Args");
-    let definitions = procedure.args.iter().map(|arg| {
-        let field_ident = ident(&arg.name);
-        let field_type = procedure_type_tokens(&arg.ty, types, enum_names);
-        let docs = doc_attrs(&arg.docs);
-        // An `Args` field carries no serde attributes of its own, so a
-        // `Bytes` argument brings its whole `#[serde(...)]` list. This is
-        // the case cratestack#783 was actually reported against — a
-        // `Bytes` argument on an RPC procedure, where `POST
-        // /rpc/procedure.<name>` decodes the body straight into this
-        // struct.
-        let serde_attr = bytes_serde_attr(&arg.ty, false);
-        quote! {
-            #docs
-            #serde_attr
-            pub #field_ident: #field_type,
-        }
-    });
-    let builder = generate_builder(
-        &args_ident,
-        &procedure_arg_builder_fields(procedure, types, enum_names),
-    );
-
-    let default_derive = if procedure.args.is_empty() {
-        quote! { , Default }
-    } else {
-        quote! {}
-    };
-
-    quote! {
-        #[doc = "Generated argument payload for this procedure."]
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize #default_derive)]
-        pub struct #args_ident {
-            #(#definitions)*
-        }
-
-        #builder
     }
 }

@@ -76,6 +76,8 @@ pub(crate) fn semantic_tokens(text: &str, schema: &Schema) -> Vec<SemanticToken>
             collect_type_ref(schema, &arg.ty, &mut entries);
         }
     }
+    // `query` blocks (cratestack#867) colour exactly like procedures.
+    crate::query_symbols::collect_semantic_tokens(schema, FUNCTION, PARAMETER, &mut entries);
 
     // `@use(...)` is erased from the IR by `expand_model_mixins`, so its span
     // comes from source text — see `mixin_use::mixin_use_names`.
@@ -131,7 +133,11 @@ fn collect_attributes(
     }
 }
 
-fn collect_type_ref(schema: &Schema, ty: &TypeRef, entries: &mut Vec<(SourceSpan, u32)>) {
+pub(crate) fn collect_type_ref(
+    schema: &Schema,
+    ty: &TypeRef,
+    entries: &mut Vec<(SourceSpan, u32)>,
+) {
     entries.push((ty.name_span, classify(schema, &ty.name)));
     for inner in &ty.generic_args {
         collect_type_ref(schema, inner, entries);

@@ -14,6 +14,25 @@ pub(crate) fn find_auth_field<'a>(
     resolve_auth_field_path(auth, types, field)
 }
 
+/// Recognises `auth().isSystem()` (and the bare `isSystem()` shorthand)
+/// with any interior whitespace, e.g. `auth() . isSystem ()`.
+///
+/// Shared by both policy dialects. It lived in `policy/model/term.rs`
+/// until cratestack#867's review found that the *procedure* dialect —
+/// which a `query`'s `@allow` also uses — had no arm for it at all, so
+/// `@allow(auth().isSystem())` died with "policy function `auth` requires
+/// a string literal argument". A system-caller reconciliation read is
+/// precisely what the `query` construct exists for (epic cratestack#488,
+/// webank ADR 0038), so that combination has to work; sharing the
+/// recogniser is what keeps the two dialects agreeing on the spelling.
+pub(super) fn is_auth_is_system_term(term: &str) -> bool {
+    let squashed = term
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    squashed == "auth().isSystem()" || squashed == "isSystem()"
+}
+
 pub(super) fn parse_string_literal(value: &str) -> Option<&str> {
     if let Some(value) = value
         .strip_prefix('"')

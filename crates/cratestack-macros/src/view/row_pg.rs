@@ -35,7 +35,12 @@ pub(crate) fn generate_view_pg_from_row_impl(
     }
 }
 
-fn row_field_tokens(
+/// Shared with `query/row_pg.rs` (cratestack#867) rather than copied:
+/// design §3 makes a `query`'s result decode *identical* to a view's on
+/// purpose — column-name `try_get` against the declared field name, enums
+/// parsed from their string form — so that the two constructs cannot end
+/// up disagreeing about, say, how an optional enum column decodes.
+pub(crate) fn row_field_tokens(
     field: &cratestack_core::Field,
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {

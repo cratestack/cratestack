@@ -121,7 +121,9 @@ pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo
         }
     }
 
-    None
+    // `query` blocks (cratestack#867) — see `crate::query_symbols`'s
+    // module doc for why every query-aware branch lives together.
+    crate::query_symbols::hover_symbol(schema, offset)
 }
 
 /// Hover detail for a `datasource` block: names the current `provider`
@@ -155,7 +157,11 @@ fn field_symbol(field: &cratestack_core::Field) -> SymbolInfo {
     }
 }
 
-fn named_type_symbol(schema: &Schema, ty: &TypeRef, offset: usize) -> Option<SymbolInfo> {
+pub(crate) fn named_type_symbol(
+    schema: &Schema,
+    ty: &TypeRef,
+    offset: usize,
+) -> Option<SymbolInfo> {
     if let Some(inner) = ty
         .generic_args
         .iter()

@@ -76,7 +76,7 @@ pub use cratestack_parser::{SchemaError, parse_schema, parse_schema_file, parse_
 pub use cratestack_policy::{
     PolicyExpr, PolicyLiteral, ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr,
     ProcedurePolicyLiteral, ProcedurePredicate, ReadPolicy, ReadPredicate, RelationQuantifier,
-    authorize_procedure,
+    authorize_procedure, authorize_query,
 };
 pub use futures_util as futures;
 

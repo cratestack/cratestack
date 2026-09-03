@@ -6,7 +6,7 @@
 use cratestack_core::{EnumDecl, Model, TypeArity, TypeDecl};
 use quote::quote;
 
-use crate::policy::auth::parse_builtin_policy_call;
+use crate::policy::auth::{is_auth_is_system_term, parse_builtin_policy_call};
 use crate::relation::parse_relation_attribute;
 use crate::shared::to_snake_case;
 
@@ -117,16 +117,6 @@ pub(super) fn parse_policy_term(
             column: #column,
         }
     })
-}
-
-/// Recognises `auth().isSystem()` (and the bare `isSystem()` shorthand)
-/// with any interior whitespace, e.g. `auth() . isSystem ()`.
-fn is_auth_is_system_term(term: &str) -> bool {
-    let squashed = term
-        .chars()
-        .filter(|character| !character.is_whitespace())
-        .collect::<String>();
-    squashed == "auth().isSystem()" || squashed == "isSystem()"
 }
 
 fn parse_builtin_model_policy_term(

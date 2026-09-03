@@ -12,7 +12,7 @@ mod tests_procedure_input_predicates;
 #[cfg(test)]
 mod tests_read_types;
 
-pub use eval::{authorize_procedure, context_has_role, context_in_tenant};
+pub use eval::{authorize_procedure, authorize_query, context_has_role, context_in_tenant};
 pub use procedure_types::{
     ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral, ProcedurePredicate,
 };

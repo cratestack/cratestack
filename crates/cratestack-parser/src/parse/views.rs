@@ -6,16 +6,17 @@
 //! field lines, `@@…` lines collected as block-level attributes — with
 //! one extra capability: `@@server_sql` / `@@embedded_sql` / `@@sql`
 //! values are allowed to span multiple physical lines using triple-
-//! quoted strings (`"""…"""`). The continuation logic lives here so
-//! the SQL body is captured verbatim in the `Attribute.raw` field.
+//! quoted strings (`"""…"""`). That continuation logic lives in
+//! [`crate::parse::sql_attribute`], shared with the `query` block parser
+//! (cratestack#867), so the SQL body is captured verbatim in the
+//! `Attribute.raw` field the same way for both constructs.
 
 use cratestack_core::{Attribute, Field, SourceSpan, View, ViewSource};
 
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, parse_doc_comment, trimmed_span};
 use crate::parse::fields::parse_field;
-
-const SQL_ATTRS: &[&str] = &["@@server_sql", "@@embedded_sql", "@@sql"];
+use crate::parse::sql_attribute::collect_attribute_text;
 
 pub(super) fn parse_view_block<'a>(
     lines: &'a [Line<'a>],
@@ -143,7 +144,7 @@ fn parse_view_body(lines: &[Line<'_>]) -> Result<(Vec<Field>, Vec<Attribute>), S
             pending_docs.clear();
             // Multi-line capture for `@@…_sql("""…""")` — extend the
             // attribute text until the matching closing triple quote.
-            let (raw, span, next) = collect_attribute_text(lines, cursor)?;
+            let (raw, span, next) = collect_attribute_text(lines, cursor, "view")?;
             attributes.push(Attribute { raw, span });
             cursor = next;
             continue;
@@ -161,57 +162,6 @@ fn parse_view_body(lines: &[Line<'_>]) -> Result<(Vec<Field>, Vec<Attribute>), S
     Ok((fields, attributes))
 }
 
-fn collect_attribute_text(
-    lines: &[Line<'_>],
-    start: usize,
-) -> Result<(String, SourceSpan, usize), SchemaError> {
-    let first = &lines[start];
-    let trimmed = first.trimmed;
-
-    // Only `@@server_sql` / `@@embedded_sql` / `@@sql` support multi-
-    // line capture. Any other `@@…` attribute is a single line.
-    let opens_multiline_sql = SQL_ATTRS.iter().any(|prefix| trimmed.starts_with(prefix))
-        && trimmed.contains("(\"\"\"")
-        && !single_line_triple_closed(trimmed);
-
-    if !opens_multiline_sql {
-        return Ok((trimmed.to_owned(), trimmed_span(first), start + 1));
-    }
-
-    let mut buffer = first.raw.to_owned();
-    let mut cursor = start + 1;
-    while cursor < lines.len() {
-        let line = &lines[cursor];
-        buffer.push('\n');
-        buffer.push_str(line.raw);
-        if line.raw.contains("\"\"\")") {
-            let span = SourceSpan {
-                start: first.start + leading_ws(first.raw),
-                end: line.start + line.raw.len(),
-                line: first.number,
-            };
-            return Ok((buffer.trim().to_owned(), span, cursor + 1));
-        }
-        cursor += 1;
-    }
-
-    Err(SchemaError::new(
-        "unterminated `\"\"\"` SQL body in view attribute".to_owned(),
-        first.start..first.start + first.raw.len(),
-        first.number,
-    ))
-}
-
-fn single_line_triple_closed(trimmed: &str) -> bool {
-    // Check if the same physical line both opens and closes a triple-
-    // quoted body, in which case no multi-line stitching is needed.
-    let after_open = match trimmed.split_once("(\"\"\"") {
-        Some((_, rest)) => rest,
-        None => return false,
-    };
-    after_open.contains("\"\"\"")
-}
-
 fn span_of_substring(line: &Line<'_>, needle: &str) -> Option<SourceSpan> {
     let raw = line.raw;
     let offset = raw.find(needle)?;
@@ -220,10 +170,4 @@ fn span_of_substring(line: &Line<'_>, needle: &str) -> Option<SourceSpan> {
         end: line.start + offset + needle.len(),
         line: line.number,
     })
-}
-
-fn leading_ws(raw: &str) -> usize {
-    raw.bytes()
-        .take_while(|byte| byte.is_ascii_whitespace())
-        .count()
 }

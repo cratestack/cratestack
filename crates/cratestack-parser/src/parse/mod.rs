@@ -5,13 +5,15 @@ mod fields;
 mod models;
 mod procedure_docs;
 mod procedures;
+mod queries;
+mod sql_attribute;
 mod types;
 mod views;
 
 use std::collections::BTreeSet;
 
 use cratestack_core::{
-    AuthBlock, ConfigEntry, Datasource, EnumDecl, ExtensionKind, MixinDecl, Model, Schema,
+    AuthBlock, ConfigEntry, Datasource, EnumDecl, ExtensionKind, MixinDecl, Model, Query, Schema,
     TransportStyle, TypeDecl, View,
 };
 
@@ -27,6 +29,7 @@ use self::blocks::{
 use self::fields::{parse_enum_variants, parse_fields};
 use self::models::{expand_model_mixins, parse_model_body};
 use self::procedures::parse_procedure;
+use self::queries::parse_query;
 use self::views::parse_view_block;
 
 pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
@@ -43,6 +46,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut enums = Vec::new();
     let mut procedures = Vec::new();
     let mut views: Vec<View> = Vec::new();
+    let mut queries: Vec<Query> = Vec::new();
     let mut transport: Option<TransportStyle> = None;
     let mut transport_line: Option<usize> = None;
     let mut declared_extensions: BTreeSet<ExtensionKind> = BTreeSet::new();
@@ -205,6 +209,18 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             continue;
         }
 
+        // Before `view `, and before the catch-all: `query ` is its own
+        // top-level construct (cratestack#867), not a `procedure` variant
+        // and not a parameterized `view` — see
+        // `docs/design/declarative-custom-query.md` §1 for why sharing
+        // either one was rejected.
+        if line.trimmed.starts_with("query ") {
+            let (query, next) = parse_query(&lines, cursor, std::mem::take(&mut pending_docs))?;
+            queries.push(query);
+            cursor = next;
+            continue;
+        }
+
         if line.trimmed.starts_with("view ") {
             let (view, next) = parse_view_block(&lines, cursor, std::mem::take(&mut pending_docs))?;
             views.push(view);
@@ -231,6 +247,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         enums,
         procedures,
         views,
+        queries,
         transport: transport.unwrap_or_default(),
         declared_extensions,
     })

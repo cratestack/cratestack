@@ -4,6 +4,7 @@
 //! client-side equivalent.
 
 mod authorizer;
+mod client_types;
 mod instrument;
 #[cfg(test)]
 mod tests;
@@ -16,21 +17,27 @@ use cratestack_core::{Model, Procedure, TypeDecl};
 use quote::quote;
 
 use crate::policy::{
-    generate_procedure_policy, parse_procedure_allow_expression, parse_procedure_deny_expression,
+    PolicySubject, generate_procedure_policy, parse_procedure_allow_expression,
+    parse_procedure_deny_expression,
 };
 use crate::shared::{doc_attrs, ident, is_stream_procedure, to_snake_case};
 
 use authorizer::{generate_procedure_model_authorizer, parse_procedure_model_authorizer};
+use client_types::generate_client_procedure_args_struct;
 use instrument::{
     authorize_fn_tokens, authorize_with_db_fn_tokens, authorized_type_tokens, invoke_fn_tokens,
     invoke_with_db_fn_tokens,
 };
-use types::{
-    generate_client_procedure_args_struct, generate_procedure_args_struct, procedure_output_tokens,
-    procedure_stream_item_tokens,
-};
+use types::procedure_stream_item_tokens;
 
 pub(crate) use types::procedure_client_output_item_tokens;
+/// Re-exported for `crate::query` (cratestack#867): a `query`'s `Args`
+/// struct and result-type tokens are a procedure's, resolved against the
+/// same `type`/`enum` declarations at the same module depth. Sharing the
+/// generator is what makes the policy resolver — which reads `Args`
+/// through the `ProcedureArgs` impl emitted here — work for a `query`
+/// with no new machinery (design §6).
+pub(crate) use types::{generate_procedure_args_struct, procedure_output_tokens};
 
 pub(crate) fn generate_procedure_module(
     procedure: &Procedure,
@@ -60,16 +67,17 @@ pub(crate) fn generate_procedure_module(
             )?);
         }
     }
+    let subject = PolicySubject::procedure(procedure);
     let allow_policies = allow_expressions
         .into_iter()
-        .map(|expression| generate_procedure_policy(expression, procedure, types, auth))
+        .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
     let deny_policies = deny_expressions
         .into_iter()
-        .map(|expression| generate_procedure_policy(expression, procedure, types, auth))
+        .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
     let procedure_name = &procedure.name;
-    let args_struct = generate_procedure_args_struct(procedure, types, enum_names);
+    let args_struct = generate_procedure_args_struct(procedure, types, enum_names, "procedure");
     let output_type = procedure_output_tokens(&procedure.return_type, types, enum_names);
     // `@stream` procedures additionally get a `pub type Item = T;` alias
     // (the list's element type, not `Vec<T>`) alongside `Output` — the

@@ -11,7 +11,7 @@ use quote::quote;
 
 use crate::shared::ident;
 
-pub(super) fn procedure_output_tokens(
+pub(crate) fn procedure_output_tokens(
     type_ref: &TypeRef,
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,

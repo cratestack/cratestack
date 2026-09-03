@@ -13,12 +13,15 @@
 
 mod comparison;
 mod resolver;
+mod subject;
 mod term;
 
-use cratestack_core::{Procedure, TypeDecl};
+use cratestack_core::TypeDecl;
 use quote::quote;
 
 use super::ast::{generate_policy_ast_tokens, parse_policy_ast};
+
+pub(crate) use subject::PolicySubject;
 
 use term::parse_procedure_policy_term;
 
@@ -30,9 +33,13 @@ pub(crate) fn parse_procedure_deny_expression(raw: &str) -> Option<Result<&str, 
     parse_procedure_policy_expression(raw, "@deny")
 }
 
+/// Lower one `@allow`/`@deny` expression for whichever construct
+/// `subject` describes — `procedure` or `query`. See
+/// [`subject::PolicySubject`] for why the resolver takes that rather than
+/// a `Procedure`.
 pub(crate) fn generate_procedure_policy(
     expression: &str,
-    procedure: &Procedure,
+    subject: &PolicySubject<'_>,
     types: &[TypeDecl],
     auth: Option<&cratestack_core::AuthBlock>,
 ) -> Result<proc_macro2::TokenStream, String> {
@@ -40,7 +47,7 @@ pub(crate) fn generate_procedure_policy(
     let expr = generate_policy_ast_tokens(
         &ast,
         &|term| {
-            parse_procedure_policy_term(term, procedure, types, auth).map(
+            parse_procedure_policy_term(term, subject, types, auth).map(
                 |predicate| quote! { ::cratestack::ProcedurePolicyExpr::Predicate(#predicate) },
             )
         },

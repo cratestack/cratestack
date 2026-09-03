@@ -79,7 +79,7 @@ pub(crate) fn declaration_span(schema: &Schema, word: &str) -> Option<SourceSpan
             return Some(arg.name_span);
         }
     }
-    None
+    crate::query_symbols::declaration_span(schema, word)
 }
 
 /// `@use(Timestamps)` on a model resolves to the `mixin Timestamps`
@@ -129,6 +129,11 @@ pub(crate) fn type_reference_target_span(schema: &Schema, offset: usize) -> Opti
                 return declaration_span(schema, target);
             }
         }
+    }
+    // A query's result type is a reference to a `type` declaration, so
+    // go-to-definition on it must land on that block (cratestack#867).
+    if let Some(target) = crate::query_symbols::type_reference_at(schema, offset) {
+        return declaration_span(schema, target);
     }
     None
 }

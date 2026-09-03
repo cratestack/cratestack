@@ -7,29 +7,16 @@
 
 use quote::quote;
 
+use super::sub_accessors;
+
 pub(super) fn build_runtime_block(
     model_accessors: &[proc_macro2::TokenStream],
     bound_model_accessors: &[proc_macro2::TokenStream],
     view_accessors: &[proc_macro2::TokenStream],
+    query_accessors: &[proc_macro2::TokenStream],
 ) -> proc_macro2::TokenStream {
-    let views_module = quote! {
-        pub mod views {
-            //! View sub-accessor (ADR-0003). `runtime.views()` returns
-            //! a `Views<'_>` whose methods hand out `ViewDelegate`s for
-            //! each `view` block declared in the schema.
-            pub struct Views<'a> {
-                pub(super) runtime: &'a ::cratestack::__private::SqlxRuntime,
-            }
-
-            impl<'a> Views<'a> {
-                pub(super) fn new(runtime: &'a ::cratestack::__private::SqlxRuntime) -> Self {
-                    Self { runtime }
-                }
-
-                #(#view_accessors)*
-            }
-        }
-    };
+    let views_module = sub_accessors::views_module(view_accessors);
+    let queries_accessor = sub_accessors::queries_accessor(query_accessors);
 
     quote! {
         #[derive(Clone)]
@@ -141,6 +128,8 @@ pub(super) fn build_runtime_block(
             pub fn views(&self) -> views::Views<'_> {
                 views::Views::new(&self.runtime)
             }
+
+            #queries_accessor
         }
 
         impl<'a> BoundCratestack<'a> {

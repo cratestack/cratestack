@@ -1,0 +1,14 @@
+// cratestack#867: no `datasource` block at all, on purpose — that is what
+// makes this fixture load-bearing. `guard_server_datasource_provider` only
+// cross-checks the macro's `db` argument against a provider that is
+// actually declared, so this schema passes it, and only
+// `include::server::query_guard` stands between `db = None` and generated
+// code calling `db.pool()` on a database-free `Cratestack`.
+
+type Totals {
+  total Int
+}
+
+query totals(userId: String): Totals
+  @@sql("SELECT COUNT(*)::bigint AS total FROM events WHERE user_id = $1")
+  @allow(auth() != null)

@@ -43,5 +43,6 @@ not a promise about content.
 | [0015](0015-op-executor-l3.md) | OpExecutor as the L3 execution layer | Proposed |
 | [0016](0016-store-spi-scope.md) | Store SPI scope | Proposed |
 | [0017](0017-remove-grpc-protobuf.md) | Remove gRPC/protobuf support | Accepted |
+| [0018](0018-orm-posture.md) | CrateStack as an ORM is a supported posture | Accepted |
 
 Context for 0011–0016: [docs/design/layering.md](../design/layering.md).

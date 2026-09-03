@@ -7,9 +7,11 @@ mod hover;
 mod hover_render;
 mod mixin_use;
 mod navigation;
+mod query_symbols;
 mod references;
 mod relation_parse;
 mod rename;
+mod rename_error;
 mod semantic_tokens;
 mod server;
 mod state;
@@ -23,6 +25,10 @@ mod tests;
 mod tests_last_known_good;
 #[cfg(test)]
 mod tests_navigation;
+#[cfg(test)]
+mod tests_queries;
+#[cfg(test)]
+mod tests_queries_rename;
 #[cfg(test)]
 mod tests_rename;
 #[cfg(test)]

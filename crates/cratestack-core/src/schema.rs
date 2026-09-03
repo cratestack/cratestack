@@ -11,8 +11,10 @@ pub mod index_attribute;
 pub mod internal_attribute;
 pub mod model;
 pub mod procedure;
+pub mod query;
 pub mod selection;
 pub mod spatial;
+mod sql_body;
 pub mod view;
 
 use std::collections::BTreeSet;
@@ -31,6 +33,7 @@ pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
 };
 pub use procedure::{Procedure, ProcedureArg, ProcedureKind};
+pub use query::{QUERY_SQL_ATTRIBUTE, Query, scan_sql_placeholders};
 pub use selection::SelectionQuery;
 pub use spatial::{canonical_geometry_subtype, geometry_subtype_names};
 pub use view::{View, ViewSource};
@@ -118,6 +121,17 @@ pub struct Schema {
     pub procedures: Vec<Procedure>,
     #[serde(default)]
     pub views: Vec<View>,
+    /// `query` blocks — declarative parameterized custom-SQL reads
+    /// (cratestack#867). `#[serde(default)]` like `views` above so an IR
+    /// snapshot produced before this field existed still deserializes.
+    ///
+    /// Deliberately a list of its own rather than a flag on `procedures`:
+    /// every route/op-descriptor/client-stub emission site iterates
+    /// `procedures` and `models`, so a list none of them looks at is what
+    /// makes "no client surface" structural instead of a filter that can
+    /// be forgotten at one of five sites (design §1/§5).
+    #[serde(default)]
+    pub queries: Vec<Query>,
     #[serde(default)]
     pub transport: TransportStyle,
     /// Opt-in framework/database capabilities this schema declared via

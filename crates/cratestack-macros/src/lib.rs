@@ -7,6 +7,7 @@ mod include;
 mod model;
 mod policy;
 mod procedure;
+mod query;
 mod relation;
 mod shared;
 mod transport;

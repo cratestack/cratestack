@@ -60,6 +60,15 @@ pub(super) struct ServerCollected {
     pub(super) view_descriptors: Vec<Ts>,
     pub(super) view_pg_from_row_impls: Vec<Ts>,
     pub(super) view_accessors: Vec<Ts>,
+    /// `query` emission (cratestack#867). Note what is *not* here: no
+    /// `query_op_descriptors`, no `query_rpc_dispatch_arms`, no
+    /// `query_axum_routes`, no entry in `generated_client_module`. A
+    /// `query` is server-internal by design (design §5), and the way that
+    /// is guaranteed is that the route/op/client loops below never see one
+    /// — not a filter they could forget to apply.
+    pub(super) query_modules: Vec<Ts>,
+    pub(super) query_from_row_impls: Vec<Ts>,
+    pub(super) query_accessors: Vec<Ts>,
     pub(super) procedure_modules: Vec<Ts>,
     pub(super) procedure_registry_methods: Vec<Ts>,
     pub(super) procedure_axum_handler_defs: Vec<Ts>,
@@ -254,6 +263,24 @@ pub(super) fn collect_server_schema(
         view_accessors.push(crate::view::generate_view_accessor(view));
     }
 
+    // `query` emission (cratestack#867). Collected after views because
+    // it reads the same `types`/`enums` name sets, and — like views —
+    // contributes to none of the transport/client collections above.
+    let mut query_modules = Vec::new();
+    let mut query_accessors = Vec::new();
+    for query in &schema.queries {
+        query_modules.push(
+            crate::query::generate_query_module(query, &schema.types, &enum_name_set, auth)
+                .map_err(|e| compile_error(schema_path, e))?,
+        );
+        query_accessors.push(crate::query::generate_query_accessor(query));
+    }
+    let query_from_row_impls = crate::query::generate_query_result_from_row_impls(
+        &schema.queries,
+        &schema.types,
+        &enum_name_set,
+    );
+
     Ok(ServerCollected {
         transport_style_str: schema.transport.as_str().to_owned(),
         is_rpc,
@@ -284,6 +311,9 @@ pub(super) fn collect_server_schema(
         view_descriptors,
         view_pg_from_row_impls,
         view_accessors,
+        query_modules,
+        query_from_row_impls,
+        query_accessors,
         procedure_modules: pc.modules,
         procedure_registry_methods: pc.registry_methods,
         procedure_axum_handler_defs: pc.axum_handler_defs,

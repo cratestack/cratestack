@@ -112,7 +112,12 @@ pub(super) fn parse_procedure(
     ))
 }
 
-fn parse_procedure_args(
+/// Shared with the `query` block parser (`parse/queries.rs`,
+/// cratestack#867): a `query`'s parameter list is a procedure's parameter
+/// list — same syntax, same [`ProcedureArg`] IR, same span arithmetic —
+/// so it is reused rather than reimplemented, which is what keeps the two
+/// constructs from drifting on argument-span reporting.
+pub(super) fn parse_procedure_args(
     args_src: &str,
     line: &Line<'_>,
     arg_docs: &BTreeMap<String, Vec<String>>,

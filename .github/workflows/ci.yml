@@ -75,7 +75,7 @@ jobs:
 
   facade-disjointness:
     timeout-minutes: 45
-    name: facade disjointness (examples/no-database-verification*, examples/client-only-verification, examples/db-transaction-verification)
+    name: facade disjointness (examples/no-database-verification*, examples/client-only-verification, examples/db-transaction-verification, examples/declarative-query-verification)
     runs-on: ubuntu-latest
     # `examples/no-database-verification`, `-api`, and `client-only-
     # verification` are each their own `[workspace]` root (see their
@@ -95,6 +95,14 @@ jobs:
     # Postgres run (testcontainers; GitHub-hosted runners ship Docker) to
     # prove `db.transaction(...)` actually works from that Cargo.toml, not
     # just that it compiles.
+    #
+    # `examples/declarative-query-verification` (cratestack#867) is the
+    # identical shape for epic #488's remaining gap, with one extra grep:
+    # as well as "no `sqlx = ...` line", `src/` must contain no `sqlx::`
+    # path *and* no SQL string — the SQL belongs in `schema.cstack`, where
+    # its `$N` references are compile-time checked and an `@allow` is
+    # attached. A real Postgres run proves the query executes and that the
+    # policy actually refuses a principal it should.
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -105,6 +113,7 @@ jobs:
             examples/no-database-verification-api
             examples/client-only-verification
             examples/db-transaction-verification
+            examples/declarative-query-verification
       - name: Assert Cargo.lock is up to date (no-database-verification)
         working-directory: examples/no-database-verification
         run: cargo metadata --locked --format-version=1 > /dev/null
@@ -116,6 +125,9 @@ jobs:
         run: cargo metadata --locked --format-version=1 > /dev/null
       - name: Assert Cargo.lock is up to date (db-transaction-verification)
         working-directory: examples/db-transaction-verification
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - name: Assert Cargo.lock is up to date (declarative-query-verification)
+        working-directory: examples/declarative-query-verification
         run: cargo metadata --locked --format-version=1 > /dev/null
       - name: sqlx absent by default (no-database-verification, postgres feature off)
         working-directory: examples/no-database-verification
@@ -168,6 +180,25 @@ jobs:
             echo "::error::expected no direct sqlx dependency in db-transaction-verification's Cargo.toml"
             exit 1
           fi
+      - name: no direct sqlx dependency (declarative-query-verification)
+        working-directory: examples/declarative-query-verification
+        run: |
+          if grep -Eq '^\s*sqlx\s*=' Cargo.toml; then
+            echo "::error::expected no direct sqlx dependency in declarative-query-verification's Cargo.toml"
+            exit 1
+          fi
+      - name: no sqlx path and no SQL in src (declarative-query-verification)
+        # The extra claim this example carries over its #513 sibling: the
+        # SQL belongs in `schema.cstack`, not in Rust. `src/` is checked,
+        # not `tests/` — the test file legitimately uses
+        # `cratestack::sqlx::query` for its own fixture DDL, the same way
+        # `crates/cratestack-pg/tests/banking_*.rs` do.
+        working-directory: examples/declarative-query-verification
+        run: |
+          if grep -rnE '\bsqlx::|\bSELECT\b' src/ | grep -vE '^\S+:[0-9]+:\s*(//|///|//!)'; then
+            echo "::error::expected no sqlx:: path and no SQL string in declarative-query-verification's src/"
+            exit 1
+          fi
       - name: cargo test (no-database-verification, both feature states)
         working-directory: examples/no-database-verification
         run: |
@@ -179,6 +210,12 @@ jobs:
       - name: cargo test (client-only-verification)
         working-directory: examples/client-only-verification
         run: cargo test --locked
+      # `--test-threads=1` on both: each test in these crates starts its
+      # own testcontainer, and concurrent starts hit a port-bind race that
+      # fails as `RootlessKit PortManager.AddPort(): address already in
+      # use` — indistinguishable from a real failure in the log. Observed
+      # twice locally on rootless Docker. Serializing costs a few seconds
+      # and removes the flake; see CONTRIBUTING.md's rootless-Docker note.
       - name: cargo test against real Postgres (db-transaction-verification)
         working-directory: examples/db-transaction-verification
         env:
@@ -186,7 +223,15 @@ jobs:
           # error rather than a silent per-test skip — same rationale as
           # the `tests-db` job's own `CRATESTACK_REQUIRE_DB`.
           CRATESTACK_REQUIRE_DB: "1"
-        run: cargo test --locked
+        run: cargo test --locked -- --test-threads=1
+      - name: cargo test against real Postgres (declarative-query-verification)
+        working-directory: examples/declarative-query-verification
+        env:
+          # Same reason as the step above: without this, a runner whose
+          # Docker can't start the container would skip every test and
+          # still print `ok`.
+          CRATESTACK_REQUIRE_DB: "1"
+        run: cargo test --locked -- --test-threads=1
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to

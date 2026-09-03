@@ -16,6 +16,6 @@ pub(crate) mod struct_only;
 
 pub(crate) use accessor::generate_view_accessor;
 pub(crate) use descriptor::generate_view_descriptor;
-pub(crate) use row_pg::generate_view_pg_from_row_impl;
+pub(crate) use row_pg::{generate_view_pg_from_row_impl, row_field_tokens};
 pub(crate) use row_sqlite::generate_view_rusqlite_from_row_impl;
 pub(crate) use struct_only::generate_view_struct_only;

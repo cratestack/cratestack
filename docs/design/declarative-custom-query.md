@@ -1,10 +1,97 @@
 # Declarative, parameterized custom query in `.cstack` — spike
 
-Status: **proposal, not a decision.** This is the deliverable of a spike
-(cratestack#515), written so the accountable owner (@stephane-segning) can
-accept or reject the recommendation. **No implementation is proposed or
-merged by this document or this ticket** — cratestack#515's own acceptance
-criteria require maintainer sign-off before any follow-up ticket opens.
+Status: **accepted** (2026-09-02) and **implemented** (cratestack#867).
+
+The recommendation table below was accepted as written by the accountable
+owner (@stephane-segning) in [epic cratestack#488's decision
+comment](https://github.com/cratestack/cratestack/issues/488#issuecomment-5514756770),
+which also answered the epic's open questions 1-4 in its terms. The spike
+(cratestack#515) forbade implementation under itself; cratestack#867 is
+the follow-up ticket that carried it, and shipped it.
+
+> **Where the implementation deviated from this document, and why.** The
+> spike deliberately left "exact keyword/attribute spelling" and the
+> generated function shape as implementation-ticket decisions (§8). What
+> cratestack#867 settled, recorded here rather than only in a PR body:
+>
+> - **Header spelling** follows `procedure`'s exactly —
+>   `query <name>(<arg>: <Type>, ...): <ResultType>`, or `: <ResultType>[]`
+>   for many rows — reusing the same argument parser. `T?` is rejected:
+>   use `T` for one row or `T[]` for zero or more.
+> - **The result type must be a `type` declaration.** A `model` is
+>   rejected. §3 assumed a `type`; §6's soft-delete hazard is why it has to
+>   be enforced rather than merely assumed — handing back a `Model` would
+>   make a raw, unfiltered read look like the policy-filtered model read it
+>   is not.
+> - **Column names are the declared field names, verbatim**, which §3 left
+>   open ("`AS this_month`, or `AS \"this_month\"` — resolved
+>   per-implementation"). A `type` field `thisMonth` decodes from a column
+>   named `thisMonth`, so the author's SQL must write `AS "thisMonth"`,
+>   quoted, since Postgres folds unquoted identifiers to lower case. No
+>   snake_case fallback: a decode that tries two names has a failure mode
+>   that depends on which spelling the author happened to pick, which is
+>   the opposite of §3's "fail loudly" position.
+> - **Parameter types are restricted** to `String`, `Cuid`, `Int`,
+>   `Float`, `Boolean`, `DateTime`, `Uuid` and `Bytes`, at required arity.
+>   The spike did not scope this. `Decimal` is excluded because its Rust
+>   type depends on the schema's `decimal =` backend (cratestack#505) and
+>   whether that type implements `sqlx::Encode` depends on the backend
+>   crate's feature set — a matrix that needs pinning down first. A money
+>   *result* column is unaffected. Widening the list later is additive.
+> - **Both an accessor and a free function.** §5 left the naming open;
+>   §8 sketched a free `run`. Both exist: `db.queries().<name>(args, ctx)`
+>   forwards to the module's own `run`, which is where the policy check
+>   lives. That is a forwarder, not a second entry point — the §6 property
+>   that matters is that no call shape *skips* the check, and none does.
+> - **`db = None` gets its own guard**, which the spike did not anticipate:
+>   a schema with no `datasource` block at all is legal and passes the
+>   existing datasource guard, so `db = None` plus no datasource block
+>   would otherwise reach codegen with queries intact.
+>
+> Everything in the recommendation table shipped as written.
+
+> **Two things the spike missed entirely, found by cratestack#870's
+> security review and fixed before merge.** Recorded here because both
+> change what the construct *is*, not just how it is spelled.
+>
+> **A `query` body could write, and §6 did not notice.** This document's
+> §6 reasons carefully about whether `@allow` can be bypassed and about
+> which *rows* a read returns, and concludes the single-entry-point shape
+> is safe. It never asks whether the body is a read at all. It is not:
+> `WITH ins AS (INSERT … RETURNING …) SELECT …` is an ordinary `SELECT`
+> to the driver, and it ran. The `@allow` gated the call, but the write
+> bypassed `@@audit`, the `@@emit` outbox, `@version` optimistic locking,
+> soft-delete, `@@internal` suppression and the target model's own write
+> `@@allow` — an escape hatch around every guarantee the framework's own
+> write path provides, reachable from a construct whose whole premise is
+> that it only reads.
+>
+> The fix is not a SQL-text check. Classifying arbitrary SQL is the
+> parsing §3 prices out and rejects, and a DML keyword blocklist is
+> exactly the kind of check that looks right and is bypassable. Instead
+> the generated `run` executes inside a Postgres `READ ONLY` transaction,
+> so the engine refuses DML and DDL with SQLSTATE `25006` from the inside,
+> whatever the statement looks like. Enforcement, not detection. **"A
+> `query` reads only" is now a guarantee this document makes**, alongside
+> the ones in §7.
+>
+> **A `query` does not observe an enclosing `db.transaction(...)`.** It
+> runs on its own pooled connection, so a query called from inside that
+> closure sees the pre-transaction state and, for a single-row query, can
+> return `NotFound` for a row the closure just wrote. Composing the two is
+> out of scope for v1 and is contradictory anyway now that the query's own
+> transaction is `READ ONLY`. Documented on the generated `run` and pinned
+> by a test that measures both halves — invisible before commit, visible
+> after — so a future change here fails loudly instead of drifting.
+>
+> The sharper edge, measured in the same review: it takes a **second**
+> connection for the duration. On a pool with no free slot the result is
+> not a stale read but a stall — the acquire blocks for `acquire_timeout`
+> and then fails with "pool timed out while waiting for an open
+> connection" (5 s on a one-slot pool). Calling a query from inside a
+> transaction is therefore a deadlock risk on a small pool, which is a
+> different and worse failure than reading the wrong snapshot.
+
 Scope: `cratestack-parser` grammar, `cratestack-core` IR, `cratestack-macros`
 codegen, and (for the "does it need one" question) the three client
 generators, for a schema construct that lets `.cstack` express a
@@ -323,6 +410,12 @@ missed. Recording this now, even though it doesn't bite in v1's
 single-function shape, is cheap insurance against reintroducing the
 exact bug class #512 just closed.
 
+**Where this requirement now lives in the code.** It is written into the
+module doc of `crates/cratestack-macros/src/query/entry.rs` — the file
+that generates the single entry point, and therefore the file anyone
+splitting it would be editing. A requirement recorded only in a design doc
+is one nobody is reading at the moment they violate it.
+
 One more policy-adjacent hazard, carried over honestly from epic
 cratestack#488's own Risk table and *not* solved by anything above:
 `push_scoped_conditions` (`crates/cratestack-sqlx/src/query/support/conditions.rs:35-90`)
@@ -360,14 +453,27 @@ with a possible compile-time lint suggested as future work, not required.
   `db.pool()`-style deliberate escape hatch for `query` specifically;
   `db.pool()` itself remains available and unaffected, but a `query`
   block's own generated entry point always checks its policy.
+- **No writes.** A `query` body executes inside a Postgres `READ ONLY`
+  transaction, so `INSERT`/`UPDATE`/`DELETE`/`TRUNCATE` and DDL are
+  refused by the engine — including inside a data-modifying CTE. Use a
+  `procedure` or a model write builder for anything that changes data.
+  Added after cratestack#870's review; see the header note for why this
+  is enforced by the database rather than by inspecting the SQL.
 - **No query-builder/composable-filter surface** — a `query` block's body
   is opaque raw SQL text end to end; nothing about `.cstack`'s `Filter`/
   `OrderClause` AST (`cratestack-sql`) applies to it. This is the epic's
   own Out-of-Scope framing restated for this construct: an escape hatch
   to real SQL, not a reimplementation of SQL in `.cstack`.
-- **No `db.transaction()` combinator, no `ProcedureRegistry`-bypass fix
-  beyond what #512/#540 already shipped, no route-suppression work** —
-  each is a separate epic cratestack#488 child story with its own ticket.
+- **No composition with `db.transaction()`.** *(Corrected 2026-09-02:
+  when this spike was written it said "no `db.transaction()` combinator",
+  which was already false — cratestack#513 shipped it in PR #539, and
+  cratestack#488's own 2026-09-02 comment retracts the same stale claim.
+  The combinator exists; what is out of scope is a `query` participating
+  in one.)* A query runs on its own pooled connection and cannot see an
+  enclosing transaction's uncommitted writes. Read after it commits.
+- **No `ProcedureRegistry`-bypass fix beyond what #512/#540 already
+  shipped, and no route-suppression work** — the latter shipped
+  separately as cratestack#743.
 - **No migration/DDL involvement** — a `query` block never appears in any
   `cratestack-migrate` output; unlike `view`, there is no persistent
   database object to create, replace, or drop.

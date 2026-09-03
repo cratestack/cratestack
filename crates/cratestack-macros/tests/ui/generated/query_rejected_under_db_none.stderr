@@ -1,0 +1,5 @@
+error: schema declares `query` block(s) (totals) but this macro call says `db = None`, which configures no database — a `query` is raw SQL against Postgres and has nothing to run against. Either remove the query blocks, or switch this call to `db = Postgres` (and the schema's `datasource` to `provider = "postgresql"`). See docs/design/declarative-custom-query.md §4.
+ --> tests/ui/generated/query_rejected_under_db_none.rs
+  |
+  | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-query-867/query_db_none_rejected.cstack", db = None);
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

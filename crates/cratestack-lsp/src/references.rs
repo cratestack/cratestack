@@ -72,6 +72,7 @@ fn declaration_references(text: &str, schema: &Schema, name: &str) -> Vec<Source
             collect_type_ref_spans(&arg.ty, name, &mut spans);
         }
     }
+    crate::query_symbols::collect_type_reference_spans(schema, name, &mut spans);
 
     // `@use(Timestamps)` is a reference to the mixin just as much as a field
     // type is a reference to a model.
@@ -157,6 +158,7 @@ fn declaration_name_span(schema: &Schema, name: &str) -> Option<SourceSpan> {
                 .find(|procedure| procedure.name == name)
                 .map(|procedure| procedure.name_span)
         })
+        .or_else(|| crate::query_symbols::declaration_span(schema, name))
 }
 
 fn field_name_span(schema: &Schema, owner: &str, field: &str) -> Option<SourceSpan> {

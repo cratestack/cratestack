@@ -1,0 +1,130 @@
+// cratestack#867 fixture: the design's motivating two-aggregate
+// `FILTER (WHERE …)` query, which no other `.cstack` construct can
+// express — plus a policy-less twin and a list-returning twin so the
+// deny-by-default rule and `fetch_all` path are exercised too.
+//
+// The `LoyaltyFeeEvent` model exists to prove co-existence, not because
+// a `query` needs one: the SQL below names the table directly. Note the
+// quoted `AS "thisMonth"` aliases — a query's SELECT is the author's, so
+// nothing inserts an alias for it, and Postgres folds unquoted
+// identifiers to lower case.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  subjectId String
+}
+
+model LoyaltyFeeEvent {
+  id Int @id
+  userId String
+  discount Int
+  createdAt DateTime
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type LoyaltyFeeSummary {
+  total Int
+  thisMonth Int
+}
+
+type LoyaltyFeeRow {
+  userId String
+  total Int
+}
+
+/// Two aggregates in one round trip, one of them `FILTER`ed — the exact
+/// shape epic #488 opened against.
+query loyaltyFeeSummary(userId: String, cutoff: DateTime): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      COALESCE(SUM(discount) FILTER (WHERE created_at >= $2), 0)::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+  @allow(auth() != null && auth().subjectId == userId)
+
+/// Deliberately has no `@allow` at all: deny-by-default must reject every
+/// caller, including an authenticated one.
+query unreachableSummary(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+
+/// `T[]` result: the same construct through `fetch_all` instead of
+/// `fetch_one`, with a `GROUP BY` that the aggregate builder cannot express.
+query loyaltyLeaderboard(minTotal: Int): LoyaltyFeeRow[]
+  @@sql("""
+    SELECT user_id AS "userId", SUM(discount)::bigint AS "total"
+    FROM loyalty_fee_events
+    GROUP BY user_id
+    HAVING SUM(discount) >= $1
+    ORDER BY 2 DESC, 1 ASC
+  """)
+  @allow(auth() != null)
+
+/// Zero parameters — design §8's self-test case, where the `$N` range
+/// check is vacuously satisfied and no special case should be needed.
+query loyaltyEventCount(): LoyaltyFeeSummary
+  @@sql("""
+    SELECT COUNT(*)::bigint AS "total", 0::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+  """)
+  @allow(auth() != null)
+
+/// cratestack#867 review finding 1: a data-modifying CTE is an ordinary
+/// `SELECT` to the driver, so nothing about the *statement* stops it
+/// writing. The generated `run` executes inside a Postgres `READ ONLY`
+/// transaction, which is what refuses it — from inside the engine, not by
+/// inspecting the text. Declared here so the guarantee is exercised
+/// against a body that genuinely tries.
+query sneakyWrite(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    WITH ins AS (
+      INSERT INTO loyalty_fee_events (id, user_id, discount, created_at)
+      VALUES (9001, $1, 1, NOW())
+      RETURNING discount
+    )
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM ins
+  """)
+  @allow(auth() != null)
+
+/// Pins #867's acceptance criterion "returns Forbidden **and no SQL is
+/// executed**". The body is deliberately not valid SQL, so a caller the
+/// policy denies must see a policy error — if the statement ran at all,
+/// Postgres would report a syntax error instead, and the criterion would
+/// be silently unmet. Only reachable by a system principal, which this
+/// test never uses.
+query deniedBeforeExecution(userId: String): LoyaltyFeeSummary
+  @@sql("SELECT this is not valid sql at all $1")
+  @allow(auth().isSystem())
+
+/// cratestack#867 review finding 4: `auth().isSystem()` had no arm on the
+/// procedure policy dialect at all, so this — the reconciliation shape the
+/// whole construct exists for (epic #488, webank ADR 0038) — failed to
+/// compile with "policy function `auth` requires a string literal
+/// argument".
+query systemOnlyTotals(userId: String): LoyaltyFeeSummary
+  @@sql("""
+    SELECT
+      COALESCE(SUM(discount), 0)::bigint AS "total",
+      0::bigint AS "thisMonth"
+    FROM loyalty_fee_events
+    WHERE user_id = $1
+  """)
+  @allow(auth().isSystem())
