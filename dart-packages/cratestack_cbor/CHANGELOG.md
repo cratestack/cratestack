@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.12.0 (2026-09-03)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.11.1 (2026-09-03)
 
 - **`example/tool/verify_web_console.dart`'s headless-Chrome readiness check no longer flakes on a
