@@ -13,11 +13,14 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Request};
-use cratestack_core::{CratestackError, RateLimitConfig, RateLimitDecision};
+use cratestack_core::{
+    BucketBudget, Charged, ConsumeRequest, CratestackError, RateLimitConfig, RateLimitDecision,
+};
 use http::StatusCode;
 use tower::{Layer, Service};
 
@@ -143,6 +146,20 @@ async fn a_store_without_consume_bounded_behaves_exactly_as_before() {
         20,
         "the default consume_bounded must delegate to consume, once per request",
     );
+
+    // And it must SAY it did not apply the budget it was handed. A store
+    // that reported `Requested` here would let a deployment believe it is
+    // bounded when nothing bounded it — worse than being unbounded loudly.
+    let budget = BucketBudget::new("peer:x", "ip:x", 1, Duration::from_secs(60));
+    let outcome = store
+        .consume_bounded(ConsumeRequest::new(
+            "auth:whatever",
+            RateLimitConfig::new(5, 0.001),
+            Some(&budget),
+        ))
+        .await
+        .expect("legacy store consumes");
+    assert_eq!(outcome.charged, Charged::Unbounded);
 }
 
 #[test]
