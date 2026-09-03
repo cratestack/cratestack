@@ -5,38 +5,50 @@
 | Channel | State | Reaches |
 |---|---|---|
 | GitHub Releases | **live** — has shipped every release to date | everyone, by manual download |
-| Open VSX | **armed** — publishes on the next `vX.Y.Z` tag | Cursor, Windsurf, VSCodium |
-| Marketplace | **armed** — publishes on the next `vX.Y.Z` tag | VS Code |
+| Open VSX | **live** — every `vX.Y.Z` tag publishes all five targets | Cursor, Windsurf, VSCodium |
+| Marketplace | **live** — every `vX.Y.Z` tag publishes all five targets | VS Code |
 
 `.github/workflows/release-vscode.yml` builds `packages/cratestack-vscode` on every `vX.Y.Z` tag
-push and attaches a platform-specific `.vsix` to the same GitHub Release `release-cli.yml` creates
-for that tag. That remains the only channel that has actually shipped anything: **no version has
-been published to either registry yet.** See [Manual install for users](#manual-install-for-users)
-for what to tell someone who wants the extension right now.
+push, attaches a platform-specific `.vsix` to the same GitHub Release `release-cli.yml` creates for
+that tag, and publishes the same five artifacts to both registries. All three channels have now
+actually shipped. See [Installing the extension](#installing-the-extension) for what to tell
+someone who wants it.
 
-* **Open VSX: configured, not yet exercised.** The `OVSX_PAT` repo secret is set and the
-  `cratestack` namespace exists (both done 2026-09-01), so `publish-openvsx` will attempt a real
-  publish on the next tag instead of soft-skipping. Nothing has gone through it yet — confirm the
-  first one actually lands rather than assuming, per
+* **Open VSX: live.** The `OVSX_PAT` repo secret is set and the `cratestack` namespace exists (both
+  done 2026-09-01). `publish-openvsx` first published for real on the v0.10.1 tag and again on
+  v0.11.0, all five targets each time:
+
+  ```
+  🚀  Published cratestack.cratestack-vscode-plugin v0.11.0@darwin-arm64
+  ```
+
+  Listing: <https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin>. A green job is
+  still not by itself evidence of a publish — see
   [Verifying a publish actually shipped](#verifying-a-publish-actually-shipped).
-* **Marketplace: credentials configured, also not yet exercised.** The `cratestack` publisher, the
-  `cratestack-vsce-publish` managed identity, its federated credential, the `vscode-marketplace`
-  environment, and the three `AZURE_*` secrets all exist (2026-09-01). `publish-marketplace` no
-  longer soft-skips — it attempts a real publish on the next tag.
+* **Marketplace: live.** The `cratestack` publisher, the `cratestack-vsce-publish` managed identity,
+  its federated credential, the `vscode-marketplace` environment, and the three `AZURE_*` secrets all
+  exist (2026-09-01), and the identity is authorized on the publisher — a publish could not succeed
+  otherwise. `publish-marketplace` shipped v0.10.1 (by manual dispatch) and v0.11.0 (by tag):
 
-  **This changes the failure mode of a release.** While the secrets were absent the job exited 0
-  and a release stayed green regardless. It will now fail the run if the setup is incomplete, and
-  the step most likely to be incomplete is authorizing the managed identity **on the Marketplace
-  publisher** (steps 6-7 of [Marketplace setup](#vs-code-marketplace-one-time-setup)), which is
-  **not yet done** — the only part that succeeds silently when skipped and surfaces at publish time
-  as `InvalidAccessException: The requested operation is not allowed`.
+  ```
+  Published cratestack.cratestack-vscode-plugin (darwin-arm64) v0.11.0.
+  ```
+
+  Listing: <https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin>.
+
+  **The failure mode of a release changed when these secrets landed.** While they were absent the job
+  exited 0 and a release stayed green regardless. It now fails the run if the setup breaks —
+  a revoked credential or a de-authorized identity surfaces at publish time as
+  `InvalidAccessException: The requested operation is not allowed`, which is the symptom to match
+  against steps 6-7 of [Marketplace setup](#vs-code-marketplace-one-time-setup).
 
 **Open VSX does not cover VS Code, and this is the most common thing to get wrong here.** Open VSX
 is the Eclipse Foundation's registry — a separate account system from the Microsoft Marketplace.
 Microsoft's VS Code build is hardwired to the Marketplace and has no way to see Open VSX, so the
 Open VSX listing serves [Cursor](https://www.cursor.com/), [Windsurf](https://windsurf.com/), and
-[VSCodium](https://vscodium.com/) only. VS Code users stay on the manual `.vsix` download — and so
-get **no auto-updates** — until the Marketplace path is finished. Overriding `product.json`'s
+[VSCodium](https://vscodium.com/) only. VS Code reaches the extension through the Marketplace
+listing instead — a separate publish job, on separate credentials, either of which can fail while
+the other succeeds. Overriding `product.json`'s
 `extensionsGallery` to point VS Code at Open VSX is a per-user hack that no publisher can ship: it
 is reverted by every VS Code update and invalidates the app's code signature on macOS. It is not a
 distribution strategy.
@@ -57,14 +69,28 @@ release job runs first creates the Release and the other appends to it.
 once (on `ubuntu-latest`, after `build` finishes) against every vsix `build` produced — publishing a
 pre-built vsix doesn't need the native OS, so there's no reason to repeat the publish step per
 platform. Both publish jobs soft-skip (log a warning, exit 0, without failing the rest of the run)
-when their credentials aren't set, so the workflow succeeds even before everything below is
-configured.
+when their credentials aren't set. Both credentials are set today, so neither skips — but the guard
+is still there, which is why a green run is not evidence of a publish.
 
-## Manual install for users
+## Installing the extension
 
-No registry listing exists yet, and VS Code users will still need this after the first Open VSX
-publish lands (see [Current status](#current-status)). This is what to tell someone who wants the
-extension:
+Both registry listings are live, so the normal in-editor install works. Which one an editor can see
+is fixed by the editor, not by a setting:
+
+* **VS Code** — Extensions view → search `CrateStack Schema`, or
+  [the Marketplace listing](https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin).
+  Command line: `code --install-extension cratestack.cratestack-vscode-plugin`.
+* **VSCodium, Cursor, Windsurf** (and anything else on Open VSX) — Extensions view → search
+  `CrateStack Schema`, or
+  [the Open VSX listing](https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin).
+  Command line: `codium --install-extension cratestack.cratestack-vscode-plugin`.
+
+Either path gets the right platform build automatically and auto-updates on subsequent releases.
+
+### Manual `.vsix` install (fallback)
+
+Still the answer for an air-gapped machine, an editor on neither registry, or pinning a specific
+version. It does **not** auto-update — repeat these steps for each new release:
 
 1. Go to the [Releases page](https://github.com/cratestack/cratestack/releases) and open the
    latest `vX.Y.Z` release.
@@ -86,13 +112,10 @@ existing version replaces it, no uninstall needed first.
 
 ## VS Code Marketplace one-time setup
 
-> **Steps 1-5 done (2026-09-01); steps 6-7 outstanding.** The identity, its federated credential,
-> the environment, the publisher and the secrets all exist. What remains is registering the identity
-> with Azure DevOps and adding it to the publisher — the part that grants publish rights.
->
-> This matters now rather than later: because `AZURE_CLIENT_ID` is set, `publish-marketplace` no
-> longer soft-skips. It will run for real on the next tag and **fail the release** until step 7 is
-> done, where previously it exited 0 and a release stayed green regardless.
+> **Done — kept as reference.** All seven steps were completed 2026-09-01/02 and the channel has
+> published for real since. Retained as the procedure for re-issuing a revoked credential, moving
+> the identity, or onboarding another publisher — and as the diagnostic path when a publish that
+> used to work stops working.
 
 The publisher ID is `cratestack` (`packages/cratestack-vscode/package.json`'s `publisher` field —
 this can't be changed after the publisher is created, so it has to match exactly).
@@ -252,9 +275,10 @@ omission surfaces only at publish time as
 ## Open VSX one-time setup
 
 > **Done — kept as reference.** Every step below has been completed: the `cratestack` namespace
-> exists and `OVSX_PAT` is set, so the next tag publishes for real. Retained as the procedure for
-> re-issuing a revoked token or onboarding another publisher. Remember this channel reaches
-> Cursor/Windsurf/VSCodium but **not** VS Code — see [Current status](#current-status).
+> exists and `OVSX_PAT` is set, and the channel has published for real since v0.10.1. Retained as
+> the procedure for re-issuing a revoked token or onboarding another publisher. Remember this
+> channel reaches Cursor/Windsurf/VSCodium but **not** VS Code — see
+> [Current status](#current-status).
 
 The namespace is `cratestack`, matching the same `publisher` field.
 
@@ -285,17 +309,24 @@ part of CI), the next tag push publishes the extension to Open VSX — no other 
 A green `release-vscode.yml` run only proves the CLI exited 0 — for the same reason `RELEASE.md`
 independently verifies crates.io/npm rather than trusting the checkmark, confirm directly:
 
-* GitHub Release (the primary path — check this one first): `gh release view vX.Y.Z` should list
-  five `cratestack-vscode-plugin-*.vsix` assets alongside the CLI binaries.
-* Open VSX (armed — **check this after the next tag; no publish has landed here yet**):
+* GitHub Release (check this one first — it carries the same artifacts both registries publish):
+  `gh release view vX.Y.Z` should list five `cratestack-vscode-plugin-*.vsix` assets alongside the
+  CLI binaries.
+* Open VSX (live since v0.10.1):
   `https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin` shows the new version. The
-  API is scriptable, and a 404 means nothing shipped:
+  API is scriptable, and it is the fastest of the three to reflect a publish — it served v0.11.0
+  four minutes after `publish (Open VSX)` finished, while the Marketplace item page still showed
+  v0.10.1:
   ```bash
-  curl -s -o /dev/null -w '%{http_code}\n' https://open-vsx.org/api/cratestack/cratestack-vscode-plugin
+  curl -s https://open-vsx.org/api/cratestack/cratestack-vscode-plugin | grep -o '"version":"[^"]*"'
   ```
-  This matters more than usual here: `publish-openvsx` exits 0 when `OVSX_PAT` is missing, so a
-  green job is not evidence of a publish.
-* Marketplace: `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin`
+  Check the `version` field, not just the status code. The listing now exists permanently, so a 200
+  proves only that *some* version shipped once — it no longer distinguishes "this release published"
+  from "nothing happened". `publish-openvsx` still exits 0 when `OVSX_PAT` is missing, so a green job
+  remains no evidence of a publish. `/versions` lists every version, and each
+  `/<version>` document reports its `targetPlatform`, which is how to confirm all five landed.
+* Marketplace (live since v0.10.1):
+  `https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin`
   shows the new version. The `itemName` is case-insensitive — both `cratestack.` and `Cratestack.`
   resolve, which is worth knowing because the gallery API reports the publisher as `Cratestack` while
   `package.json` declares `cratestack`. Unlike Open VSX, a failure here is loud: with
