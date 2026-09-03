@@ -75,9 +75,13 @@
 //!   [`build_rpc_op_resolver_with_prefix`].
 //! - **The exemption is wider than the attribute.** A resolver exempts
 //!   everything marked `idempotent_by_default`, which is annotated
-//!   procedures *and* every read (`query procedure`, `GET` model routes).
-//!   Nothing stops a `query procedure` from writing; if one does,
-//!   installing a resolver removes its protection.
+//!   procedures *and* every read op (`query procedure`, model
+//!   `list`/`get`). "Read op" is not "`GET` request": under `transport
+//!   rpc` reads are dispatched by `POST /rpc/{op_id}`, so they do reach
+//!   this layer and are exempted; under REST they are `GET` and never
+//!   reach it, so there the exemption is a no-op. Nothing stops a `query
+//!   procedure` from writing; if one does, installing a resolver removes
+//!   its protection, and on RPC that is a live path.
 
 mod complete;
 mod finish;

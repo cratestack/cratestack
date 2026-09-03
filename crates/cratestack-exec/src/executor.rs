@@ -35,6 +35,17 @@ pub struct OpExecutor {
 }
 
 impl OpExecutor {
+    /// Wire the executor to a store, or to nothing.
+    ///
+    /// `idempotency` is `None` for a service with no store to install —
+    /// `db = None`, or an operator who simply did not configure one. Both
+    /// admit everything; see the type's own docs for why those two are the
+    /// same path rather than two.
+    ///
+    /// `ttl` bounds a reservation's lifetime. It is read once per
+    /// [`admit`](Self::admit) — against the clock at that moment, not at
+    /// construction — so a long-lived executor does not hand out
+    /// reservations that expire relative to process start.
     pub fn new(idempotency: Option<Arc<dyn IdempotencyStore>>, ttl: Duration) -> Self {
         Self { idempotency, ttl }
     }

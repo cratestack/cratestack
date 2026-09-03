@@ -16,6 +16,18 @@ use cratestack_core::idempotency_record::IdempotencyRecord;
 ///
 /// [`Bypass`](Admission::Bypass) is the one genuinely new variant, and the
 /// only one that carries no token.
+///
+/// # `#[non_exhaustive]`
+///
+/// Slices 2 and 3 add variants — a rate-limit refusal carries a retry
+/// budget, and policy denial is a different answer from either — and this
+/// crate is unreleased, so the marker costs nothing now and saves a second
+/// breaking release later. It forces a wildcard arm on external `match`es;
+/// `cratestack-axum`'s is deliberately fail-closed (it refuses the request
+/// rather than running the handler), because the one thing a future
+/// admission outcome must never do by default is silently admit. See
+/// `idempotency/reserve.rs`.
+#[non_exhaustive]
 pub enum Admission {
     /// Run the op with no reservation taken: there is nothing to
     /// `complete` and nothing to `release`.

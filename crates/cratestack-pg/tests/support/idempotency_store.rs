@@ -29,12 +29,18 @@ pub struct InMemoryIdempotencyStore {
     /// Counts `reserve_or_fetch` calls, so "this op took no reservation"
     /// can be asserted directly instead of inferred from the absence of a
     /// conflict response.
-    pub reserve_calls: AtomicUsize,
+    ///
+    /// Private, and named differently from its accessor: a `pub` field and
+    /// a `pub fn` sharing one name compile, but then `store.reserve_calls`
+    /// and `store.reserve_calls()` are different types at every call site,
+    /// which is a footgun in a test helper whose whole job is being read
+    /// at a glance.
+    reserve_count: AtomicUsize,
 }
 
 impl InMemoryIdempotencyStore {
     pub fn reserve_calls(&self) -> usize {
-        self.reserve_calls.load(Ordering::SeqCst)
+        self.reserve_count.load(Ordering::SeqCst)
     }
 }
 
@@ -47,7 +53,7 @@ impl IdempotencyStore for InMemoryIdempotencyStore {
         request_hash: [u8; 32],
         _expires_at: SystemTime,
     ) -> Result<ReservationOutcome, CratestackError> {
-        self.reserve_calls.fetch_add(1, Ordering::SeqCst);
+        self.reserve_count.fetch_add(1, Ordering::SeqCst);
         let mut entries = self.entries.lock().unwrap();
         let map_key = (principal.to_owned(), key.to_owned());
         match entries.get(&map_key) {

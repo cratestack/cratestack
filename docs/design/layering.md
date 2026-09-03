@@ -505,9 +505,9 @@ different layers*, inconsistently:
 | Audit (fan-out) | L1 `core::audit::AuditSink` | L1 (`MulticastAuditSink`) | **nowhere — no caller** |
 
 Read the "Applied at" column. Rate limiting fires from the binding;
-row-level policy fires from inside generated SQL; audit fan-out fires from
-nowhere at all. (Idempotency fired from the binding too until #876 moved
-its decision to L3 — that is one row of four, and it is the row this
+row-level policy fires from inside generated SQL; audit fan-out fires at L2
+post-commit (#473). (Idempotency fired from the binding too until #876
+moved its decision to L3 — that is one row of four, and it is the row this
 section's own `@no_idempotency` bullet below was blocked on.) There is
 still no layer at which you can stand and see an operation whole.
 

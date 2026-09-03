@@ -109,6 +109,13 @@ opposite of what it said; arguments and duplicates are now parse errors. And a b
 longer pays the 2 MiB idempotency request-body cap it was skipping the response cap for, so a
 `@no_idempotency` POST larger than that succeeds exactly as it would without the header.
 
+That second fix has a visible half worth calling out: an exempt op no longer runs the principal
+fingerprint either. If you install a resolver, a `@no_idempotency` request that previously drew
+#416's `412 Precondition Failed` — no `Authorization` header and no `ConnectInfo<SocketAddr>`
+peer — now succeeds, and stops contributing to that check's once-per-process warning. This is
+intended: the fingerprint exists to namespace a reservation, and an exempt op takes none. It
+only affects ops the schema marks exempt, and only once a resolver is installed.
+
 Install no resolver and every request looks unresolved, and unresolved **reserves** — so the layer
 guards exactly what it guarded before. That fail-closed direction is the inverse of the rate-limit
 filters' (a miss there throttles; a miss here reserves), because the two descriptor flags are
@@ -117,7 +124,19 @@ the miss rather than only the hit.
 
 `RouteTransportDescriptor` gains `idempotent_by_default`, which RPC's `OpDescriptor` already had.
 **Breaking**: it is a required field on a struct that is not `#[non_exhaustive]`, so any
-hand-written literal needs the new field; in practice these are emitted by codegen. REST needed it because shipping this on RPC alone would
+hand-written literal needs the new field; in practice these are emitted by codegen.
+
+The three new types in `cratestack-exec` — `Admission`, `OpAdmission`, `OpInput` — *are*
+`#[non_exhaustive]`, which is deliberate and is the opposite call from the one above. Slices 2
+and 3 add exactly the variants and fields this would otherwise force a second breaking release
+for (a rate-limit refusal, a policy denial, the context slot `OpInput::ctx` reserves), and the
+crate is unreleased, so the marker costs nothing today. Build them with `OpInput::new` /
+`with_ctx` and `OpAdmission::new` / `unresolved` / the two `From` impls. This follows the
+existing house precedent (`CratestackError`, `OpKind`, `cratestack-sql`'s `ConflictTarget`,
+`StoreErrorPolicy`) rather than introducing it. One consequence is load-bearing: an external
+exhaustive `match` on `Admission` now needs a wildcard arm, and `cratestack-axum`'s is
+fail-closed — it refuses the request rather than falling into either arm that would run the
+handler. REST needed it because shipping this on RPC alone would
 have reproduced #474 — a fix that works on one transport and silently no-ops on the other.
 
 Still at L4 and unchanged: rate limiting (slice 2), audit fan-out, and row-level `@@allow` replay

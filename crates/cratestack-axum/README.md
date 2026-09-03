@@ -82,10 +82,16 @@ keyed request on a mutating method, so a procedure marked `@no_idempotency` in y
 
 **Know the blast radius before you install one.** The resolver exempts everything the schema
 marks `idempotent_by_default`, which is *two* groups, not one: procedures you annotated
-`@no_idempotency`, **and every `query procedure` plus every `GET` model route** — reads are
-treated as inherently safe to repeat (`cratestack-core/src/transport.rs`). Nothing stops a
-`query procedure`'s handler from writing, so if you have one that does, installing a resolver
-silently removes its duplicate-execution protection. Either make it a `mutation procedure` or
+`@no_idempotency`, **and every read op** — `query procedure`s and model `list`/`get` — because
+reads are treated as inherently safe to repeat (`cratestack-core/src/transport.rs`).
+
+Do not read "read op" as "`GET` request". Under `transport rpc` every op is dispatched by
+`POST /rpc/{op_id}`, including the reads, so those reads *do* reach the layer (`POST` is an
+idempotency-target method) and *are* exempted by a resolver. Under REST the reads are `GET`
+and never reach the layer in the first place, so there the exemption is a no-op. Nothing stops
+a `query procedure`'s handler from writing, so if you have one that does, installing a resolver
+silently removes its duplicate-execution protection — and on RPC that is a live path, not a
+theoretical one. Either make it a `mutation procedure` or
 do not install the resolver on that router.
 
 ```rust

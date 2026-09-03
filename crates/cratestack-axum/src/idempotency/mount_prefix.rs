@@ -12,6 +12,14 @@
 //! silently did nothing. Safe — a miss reserves — but silently inert, which
 //! is the exact failure mode #876 set out to end.
 //!
+//! **`nest` only — `nest_service` cannot be rescued by a prefix.**
+//! `Router::nest` runs the inner router's own matching, so `MatchedPath`
+//! is populated and a prefix is all that is missing. `Router::nest_service`
+//! mounts an opaque `Service` and never populates `MatchedPath` at all, so
+//! the REST resolver resolves unresolved there no matter what prefix it is
+//! given — safe (a miss reserves) but permanently inert. The RPC resolver
+//! is unaffected either way: it reads the raw URI, not `MatchedPath`.
+//!
 //! The prefix is not inferred. `MatchedPath` reports the full path
 //! including the nest prefix, but nothing in the request says which leading
 //! segments were the mount and which belong to the schema, and guessing

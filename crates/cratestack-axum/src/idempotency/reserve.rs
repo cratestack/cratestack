@@ -47,13 +47,11 @@ pub(super) async fn admit_or_response(
     headers: &HeaderMap,
     path: &str,
 ) -> Reservation {
-    let input = OpInput {
-        op,
-        principal,
-        idempotency_key: Some(key),
-        fingerprint,
-        ctx: None,
-    };
+    // `OpInput::new` rather than a struct literal: the type is
+    // `#[non_exhaustive]` so slice 3 can add its context field without a
+    // second breaking release. `ctx` stays unset here — `with_ctx` is the
+    // call site slice 3 will add.
+    let input = OpInput::new(op, principal, Some(key), fingerprint);
     match executor.admit(&input).await {
         Ok(admission) => token_or_response(admission, headers, path),
         Err(error) => Reservation::Finished(middleware_error_response(headers, path, error)),
@@ -73,5 +71,25 @@ fn token_or_response(admission: Admission, headers: &HeaderMap, path: &str) -> R
         Admission::InFlight => Reservation::Finished(in_flight_response(headers, path)),
         Admission::Reserved { token } => Reservation::Held(token),
         Admission::Bypass => Reservation::Bypass,
+        // `Admission` is `#[non_exhaustive]`; slices 2 and 3 add variants
+        // (a rate-limit refusal, a policy denial). Refusing is the only
+        // safe default: this adapter cannot know what a future outcome
+        // permits, and the two arms it might otherwise fall into —
+        // `Held` and `Bypass` — both RUN THE HANDLER. A 500 on an
+        // outcome we do not understand is a bug report; silently
+        // executing one is a duplicate charge.
+        //
+        // Deliberately not interpolated into the message: `Replay`
+        // carries a captured response body, and a future variant may
+        // too — an error string is the wrong place for either.
+        _ => Reservation::Finished(middleware_error_response(
+            headers,
+            path,
+            CratestackError::Internal(
+                "idempotency: unhandled admission outcome; refusing rather than \
+                 running the operation"
+                    .to_owned(),
+            ),
+        )),
     }
 }

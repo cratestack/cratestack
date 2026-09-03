@@ -12,7 +12,17 @@ use cratestack_core::{CratestackContext, OpDescriptor, RouteTransportDescriptor}
 /// descriptor shapes — the transport-parity rule in `CLAUDE.md`, and the
 /// concrete lesson of cratestack#474, where a fix landed on one transport
 /// and silently no-oped on the other.
+/// # `#[non_exhaustive]`
+///
+/// Slices 2 and 3 add fields here — rate-limit tunables and whatever
+/// policy evaluation needs — and this crate is unreleased, so the marker
+/// costs nothing now and saves a second breaking release later. Consumers
+/// build one with [`OpAdmission::new`], [`OpAdmission::unresolved`] or the
+/// two `From` impls below rather than a struct literal; reading the public
+/// fields is unaffected. Same reasoning `ConflictTarget`
+/// (`cratestack-sql`) and `CratestackError` already use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct OpAdmission {
     /// Identifier for diagnostics only — nothing here dispatches on it.
     /// The name carries the constraint so a call site cannot forget it
@@ -37,6 +47,24 @@ pub struct OpAdmission {
 }
 
 impl OpAdmission {
+    /// Build the admission facts for an op a caller *has* identified.
+    ///
+    /// The two `From` impls below cover every in-tree caller; this exists
+    /// for a consumer whose descriptors do not come from a generated
+    /// `OPS`/`ROUTE_TRANSPORTS` slice, and as the supported alternative to
+    /// the struct literal `#[non_exhaustive]` now blocks.
+    pub const fn new(
+        diagnostic_op_id: &'static str,
+        idempotent_by_default: bool,
+        rate_limited_by_default: bool,
+    ) -> Self {
+        Self {
+            diagnostic_op_id,
+            idempotent_by_default,
+            rate_limited_by_default,
+        }
+    }
+
     /// The facts to assume when a caller could not identify the op at all
     /// — no descriptor matched the request, or the caller has no
     /// descriptor table wired up.
@@ -81,7 +109,25 @@ impl From<&'static RouteTransportDescriptor> for OpAdmission {
 /// Borrowed throughout: every field is already owned by the caller for the
 /// duration of the request, and copying a principal string plus a 32-byte
 /// digest per call to satisfy a type would be a cost with no reader.
+///
+/// # `#[non_exhaustive]`
+///
+/// Slice 3 adds at least one field (it is the slice that fills
+/// [`ctx`](Self::ctx)), and this crate is unreleased. Build one with
+/// [`OpInput::new`], adding [`OpInput::with_ctx`] when there is a context
+/// to pass; the fields stay public to read.
+#[non_exhaustive]
 pub struct OpInput<'a> {
+    /// What the schema declared about this op — the only thing admission
+    /// actually branches on today, via
+    /// [`idempotent_by_default`](OpAdmission::idempotent_by_default).
+    ///
+    /// A caller that cannot identify the op passes
+    /// [`OpAdmission::unresolved`], which reserves. That is the whole
+    /// fail-closed contract, and it is why this is a plain value rather
+    /// than an `Option`: "unidentified" is a *kind* of admission fact, not
+    /// the absence of one, and an `Option` would invite `unwrap_or_default`
+    /// — whose `false`/`false` would silently mean "skip the reservation".
     pub op: OpAdmission,
     /// Namespace the idempotency key is scoped to. How it is derived is a
     /// caller concern — the HTTP adapter hashes `Authorization` or falls
@@ -104,4 +150,35 @@ pub struct OpInput<'a> {
     /// moves here and needs the authenticated principal's claims rather
     /// than just a namespace string.
     pub ctx: Option<&'a CratestackContext>,
+}
+
+impl<'a> OpInput<'a> {
+    /// Everything admission needs today. `ctx` starts `None`; slice 3's
+    /// callers add it with [`with_ctx`](Self::with_ctx).
+    ///
+    /// `fingerprint` is a parameter rather than something computed here
+    /// on purpose — see the field's own doc for why that exclusion is what
+    /// makes HTTP byte-identity provable.
+    pub fn new(
+        op: OpAdmission,
+        principal: &'a str,
+        idempotency_key: Option<&'a str>,
+        fingerprint: [u8; 32],
+    ) -> Self {
+        Self {
+            op,
+            principal,
+            idempotency_key,
+            fingerprint,
+            ctx: None,
+        }
+    }
+
+    /// Attach the authenticated context. Unused in slice 1 — nothing reads
+    /// [`ctx`](Self::ctx) yet — and present so slice 3 adds a call site
+    /// rather than a field.
+    pub fn with_ctx(mut self, ctx: &'a CratestackContext) -> Self {
+        self.ctx = Some(ctx);
+        self
+    }
 }
