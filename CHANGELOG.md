@@ -24,6 +24,20 @@ Open VSX API was a valid check while a 404 meant "nothing has ever shipped"; now
 exists permanently, a 200 proves only that *some* version did. The documented check reads the
 `version` field instead.
 
+### Governance-check pinned to the fence-aware fix (cratestack#879)
+
+The AI Governance PR gate (`.github/workflows/governance.yml`) delegates to the reusable
+workflow hosted in `ADORSYS-GIS/ai-governance`, pinned to release `v1.0.0`. That release
+predates the fence-aware fix to the check's section parser, so a PR body whose Verification
+section contains `#` shell comments inside a fenced code block had its section truncated at
+the first comment and was wrongly flagged as missing evidence — cratestack#879.
+
+The fix (ai-governance commit `a85edd52`) is unreleased, so this PR pins the reusable
+workflow to the fix commit itself. A commit-SHA pin is GitHub's documented safest option for
+stability and security, and is strictly more immutable than a movable tag. It is a deliberate
+temporary measure: once ai-governance cuts `v1.1.0`, the pin moves back to the release tag in
+a follow-up PR.
+
 ## 0.11.0 (2026-09-03)
 
 ### The Marketplace item page lags a successful publish

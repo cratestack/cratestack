@@ -7,9 +7,15 @@
 #
 # Source of truth: https://adorsys-gis.github.io/ai-governance/
 #
-# The reusable workflow is pinned to an immutable release tag (not @main), so a future
-# push to ai-governance cannot change what runs here with write access. Bump the tag
-# deliberately when you want to adopt new governance behaviour.
+# The reusable workflow is pinned to an immutable ref (a release tag, or a fixed commit
+# SHA while awaiting the upstream release) — never @main — so a future push to
+# ai-governance cannot change what runs here with write access. Bump the ref deliberately
+# when you want to adopt new governance behaviour.
+#
+# Temporary pin (cratestack#879): the fence-aware governance-check fix is unreleased
+# (ai-governance commit a85edd5297540cbaafdc9e4fda26a4b713e2e4f6), so v1.0.0 still runs the
+# buggy section parser. We pin to the fix commit now and swap to @v1.1.0 once ai-governance
+# cuts that release.
 name: AI Governance
 
 on:
@@ -32,7 +38,7 @@ jobs:
     # Deliberately keyed on the bot actor rather than a label, so it cannot be
     # switched on for a human PR by adding one.
     if: github.actor != 'dependabot[bot]'
-    uses: ADORSYS-GIS/ai-governance/.github/workflows/governance-check.yml@v1.0.0
+    uses: ADORSYS-GIS/ai-governance/.github/workflows/governance-check.yml@a85edd5297540cbaafdc9e4fda26a4b713e2e4f6
     permissions:
       pull-requests: write
       contents: read
