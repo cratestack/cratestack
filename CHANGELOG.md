@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.1 (2026-09-03)
+
 ### Procedures and auth providers are plain `async fn` — in every example, and in the trait docs
 
 Every `impl` block an application hands to the generated `router()` — a `ProcedureRegistry`, an
