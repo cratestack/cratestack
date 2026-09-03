@@ -25,6 +25,13 @@
 // this is used both for the happy path and the "corrupt the artifact"
 // negative proof.
 //
+// Chrome launching and DevTools-readiness waiting (including the one
+// automatic relaunch on a readiness failure) live in
+// `verify_web_console/devtools_ready.dart` — split out to keep this file
+// under the repo's 200-line-per-file convention and because that logic is
+// independently unit-testable without a real Chrome (see
+// `verify_web_console/self_test.dart`).
+//
 // A command-line verification tool legitimately writes its result to
 // stdout — that is its entire job — so `avoid_print` is disabled for the
 // whole file rather than suppressed line by line.
@@ -33,30 +40,23 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'verify_web_console/devtools_ready.dart';
+import 'verify_web_console/options.dart';
+
 const _resultMarkerPrefix = 'CRATESTACK_CBOR_EXAMPLE_RESULT:';
 
 Future<void> main(List<String> args) async {
-  final options = _Options.parse(args);
+  final options = Options.parse(args);
   print('=== verify_web_console: launching headless Chrome ===');
 
-  final chromeBinary =
-      Platform.environment['CHROME_EXECUTABLE'] ?? 'google-chrome';
-  final debugPort = options.debugPort;
-  final process = await Process.start(chromeBinary, [
-    '--headless=new',
-    '--disable-gpu',
-    '--no-sandbox',
-    '--remote-debugging-port=$debugPort',
-    '--remote-debugging-address=127.0.0.1',
-    'about:blank',
-  ]);
-  process.stdout.transform(utf8.decoder).listen((_) {});
-  process.stderr.transform(utf8.decoder).listen((_) {});
+  final chrome = await ensureChromeReady(
+    initialPort: options.debugPort,
+    timeout: Duration(seconds: options.devtoolsReadyTimeoutSeconds),
+  );
+  final process = chrome.process;
 
   try {
-    await _waitForDevtoolsReady(debugPort);
-
-    final targetInfo = await _openTarget(debugPort, options.url);
+    final targetInfo = await _openTarget(chrome.port, options.url);
     final wsUrl = targetInfo['webSocketDebuggerUrl'] as String;
     final socket = await WebSocket.connect(wsUrl);
 
@@ -139,29 +139,6 @@ Future<void> main(List<String> args) async {
   }
 }
 
-Future<void> _waitForDevtoolsReady(int port) async {
-  final client = HttpClient();
-  final deadline = DateTime.now().add(const Duration(seconds: 15));
-  while (DateTime.now().isBefore(deadline)) {
-    try {
-      final request = await client.getUrl(
-        Uri.parse('http://127.0.0.1:$port/json/version'),
-      );
-      final response = await request.close();
-      if (response.statusCode == 200) {
-        await response.drain<void>();
-        client.close();
-        return;
-      }
-    } catch (_) {
-      // Not up yet; retry.
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-  }
-  client.close();
-  throw StateError('Chrome DevTools Protocol never became ready on $port');
-}
-
 Future<Map<String, dynamic>> _openTarget(int port, String url) async {
   final client = HttpClient();
   // Recent Chrome versions require PUT (not GET) for /json/new — GET is
@@ -174,54 +151,4 @@ Future<Map<String, dynamic>> _openTarget(int port, String url) async {
   final body = await response.transform(utf8.decoder).join();
   client.close();
   return jsonDecode(body) as Map<String, dynamic>;
-}
-
-class _Options {
-  _Options({
-    required this.url,
-    required this.timeoutSeconds,
-    required this.debugPort,
-    required this.expectFailure,
-    this.expectHex,
-  });
-
-  final String url;
-  final int timeoutSeconds;
-  final int debugPort;
-  final bool expectFailure;
-  final String? expectHex;
-
-  static _Options parse(List<String> args) {
-    String? url;
-    var timeoutSeconds = 15;
-    var debugPort = 9333;
-    var expectFailure = false;
-    String? expectHex;
-    for (var i = 0; i < args.length; i++) {
-      switch (args[i]) {
-        case '--url':
-          url = args[++i];
-        case '--timeout-seconds':
-          timeoutSeconds = int.parse(args[++i]);
-        case '--debug-port':
-          debugPort = int.parse(args[++i]);
-        case '--expect-failure':
-          expectFailure = true;
-        case '--expect-hex':
-          expectHex = args[++i];
-        default:
-          throw ArgumentError('unknown argument: ${args[i]}');
-      }
-    }
-    if (url == null) {
-      throw ArgumentError('--url is required');
-    }
-    return _Options(
-      url: url,
-      timeoutSeconds: timeoutSeconds,
-      debugPort: debugPort,
-      expectFailure: expectFailure,
-      expectHex: expectHex,
-    );
-  }
 }

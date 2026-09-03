@@ -211,6 +211,36 @@ than hash-tagged onto one node), and distinct hosts sharing one routable IPv6 /6
 Full write-up, including why verified principals are opt-in rather than the default and why IPv6 is
 aggregated but IPv4 is not: `docs/design/ratelimit-bucket-cardinality.md`.
 
+### `cbor-example-verify`'s headless-Chrome step no longer flakes on a cold CI runner
+
+The `flutter (cratestack_cbor example — linux + web, real builds)` job failed three times in one
+day on unrelated PRs and on `main` (runs 33694021063, 33771671818, 33772875028), always with every
+real build step green and always the same shape: `verify_web_console.dart` launched headless
+Chrome, then ~15s later threw `Bad state: Chrome DevTools Protocol never became ready on 9333` — and
+a plain rerun always passed. Three compounding root causes, all in
+`dart-packages/cratestack_cbor/example/tool/verify_web_console.dart`:
+
+- The DevTools-readiness poll had a hardcoded 15s deadline (200ms interval) — too tight on a loaded
+  runner. It is now 60s by default (250ms interval), overridable per-run via
+  `--devtools-ready-timeout-seconds` or `CRATESTACK_CBOR_DEVTOOLS_READY_SECONDS`.
+- Chrome's stderr was discarded (`process.stderr...listen((_) {})`), so a failure explained nothing.
+  It is now captured (bounded to the last ~4 KB) and included in the thrown error.
+- Nothing checked whether the Chrome process had already exited, so a dead Chrome still waited out
+  the full deadline before failing. The wait now races the poll against `process.exitCode` and fails
+  immediately, with the real exit code, the moment Chrome dies.
+
+A readiness failure now also gets one automatic relaunch (fresh Chrome process, logged loudly, same
+port if it frees up in time or the next port otherwise) before giving up; a second failure is fatal
+with full diagnostics from both attempts.
+
+`verify_web_console.dart` is split into `verify_web_console/{chrome_launch,chrome_stderr_capture,
+devtools_ready,options,self_test}.dart` to keep every file under this repo's 200-line convention —
+the script's contract (exit codes, `CRATESTACK_CBOR_EXAMPLE_RESULT` marker semantics, existing CLI
+options) is unchanged. `verify_web_console/self_test.dart` is a manual (not CI-wired, ~20s) proof
+that a fake Chrome exiting with stderr fails fast with that stderr and exit code, and that a fake
+DevTools server which only becomes ready after 20s fails under the old 15s deadline but succeeds
+under the new 60s default.
+
 ## 0.11.0 (2026-09-03)
 
 ### The Marketplace item page lags a successful publish
