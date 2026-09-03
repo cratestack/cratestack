@@ -1,10 +1,10 @@
 # CrateStack Roadmap
 
-**Last updated: 2026-09-03 · current release: 0.11.0**
+**Last updated: 2026-09-03 · current release: 0.11.1**
 
 This is a map of where CrateStack is, what's being built, and what's been
 deliberately ruled out. It is not a schedule and not a commitment. CrateStack is
-pre-1.0 and moves fast — 0.2.0 shipped on 2026-05-12 and 0.11.0 on 2026-09-03,
+pre-1.0 and moves fast — 0.2.0 shipped on 2026-05-12 and 0.11.1 on 2026-09-03,
 so anything below marked "considering" may land next month or never.
 
 Three things this document tries to do that a changelog can't:
@@ -273,9 +273,9 @@ answer. It is not a positioning claim, and the README deliberately makes none.)*
 🔵 **Undecided, and genuinely a maintainer call.**
 
 There is currently no written definition of what 1.0 means for CrateStack — no
-milestone, no criteria, no target. Given the release cadence (nine minor
-releases in four months) and that breaking changes still land in minors, the
-useful question isn't "when" but "what has to be true".
+milestone, no criteria, no target. Given the release cadence (ten minor
+lines, 0.2 through 0.11, in under four months) and that breaking changes still
+land in minors, the useful question isn't "when" but "what has to be true".
 
 Candidate gates, offered as a starting point and **not** as a decision:
 
