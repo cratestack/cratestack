@@ -128,7 +128,15 @@ Eviction uses `PEXPIREAT` based on the `expires_at` derived from the layer's TTL
 
 Each rate-limit key maps to a Redis hash at `<prefix>:rl:<sha256(key)>` carrying two fields: `tokens` (current bucket fill) and `last_refill_ms` (the wall-clock timestamp of the most recent refill). A single Lua script does the entire read-refill-decrement-write cycle in one round-trip, so concurrent replicas can never grant more than one token's worth of overshoot.
 
-Eviction uses a relative `EXPIRE` derived from the time required to refill a full bucket (clamped to 24h), refreshed on every `consume`. This keeps memory bounded even for tenant-scoped keyspaces with churn.
+Eviction uses a relative `EXPIRE` derived from the time required to refill a full bucket (clamped to 24h), refreshed on every `consume`. The formula lives in `cratestack_core::bucket_ttl_secs` and is passed into the script, so the Redis and in-memory backends cannot drift apart on it.
+
+#### Bucket cardinality budget (#871)
+
+`EXPIRE` bounds how long a bucket lives, not how many a caller can create — and `RateLimitLayer` runs before authentication, so a caller rotating an unverified `Authorization` header used to mint one `:rl:` key per request. `consume_bounded` closes that in the **same** Lua script, with no extra round-trip: it additionally takes a scope set at `<prefix>:rls:<sha256(scope)>:<epoch>` and a fallback bucket key. On first sight of a bucket under a scope it `SADD`s it (with a window `PEXPIRE` on creation) when `SCARD < max_distinct`, and otherwise charges the *fallback* bucket. Steady-state keyspace becomes O(scopes × max_distinct) rather than O(requests). Set members are the first 16 hex chars of the bucket hash; the fixed-window epoch is computed in Rust, not from Lua's `TIME`, so the script stays deterministic for replication and AOF.
+
+`consume` (no budget) is unchanged: one key per caller, no scope set.
+
+**Redis Cluster is not a supported deployment for this store**, and #871 makes that louder rather than quieter — three un-hash-tagged keys in one script means `CROSSSLOT`, which classifies as logical-class and is therefore refused under every `StoreErrorPolicy` instead of silently disabling the limiter. Forcing the three keys into one slot with a shared hash tag would concentrate an attacker's traffic on a single node, so it is deliberately not done.
 
 ## See Also
 

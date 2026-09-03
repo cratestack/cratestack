@@ -168,6 +168,47 @@ let app = axum::Router::new()
 
 `RateLimitConfig` carries `burst` (max in-flight) and `refill_per_second`. `RateLimitDecision` is either `Allowed { remaining }` or `Throttled { retry_after_secs }`.
 
+### How many buckets a caller can create (#871)
+
+This layer runs **before** authentication, so the `Authorization` header its default key function
+hashes is unverified. Without a bound that is an amplification primitive: rotate the header and mint
+one store key per request, each with a ≥60s TTL.
+
+So the default derivation carries a cardinality budget, applied by the store *atomically* with the
+token consumption:
+
+| Request carries | Bucket key | Scope | Cap (default) | Charged past the cap |
+|---|---|---|---|---|
+| `VerifiedPrincipal` extension | `princ:<sha256>` | — | none | — |
+| `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<ip>` (IPv6 → /64) | 128 / 60s | the peer's own `ip:<ip>` bucket |
+| `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192 / 60s | one `overflow` bucket |
+| `ConnectInfo` only | `ip:<ip>` | — | none | — |
+| neither | refused, `412` (#416) | | | |
+
+Past the cap a caller is **collapsed onto its own peer bucket, not refused** — refusing there would
+hand an attacker a deterministic outage of every rate-limited route. Under the cap, distinct callers
+still never share (#416). `InMemoryRateLimitStore` additionally sweeps buckets idle for a full TTL
+and caps live buckets at `DEFAULT_MAX_BUCKETS` (100 000), failing closed with a logical-class error
+past that; raise it with `with_max_buckets` or drop it with `without_max_buckets`.
+
+```rust
+use std::time::Duration;
+use cratestack_axum::ratelimit::{RateLimitBucketBudget, UnverifiedAuthPolicy};
+
+let layer = RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+    // tune the caps / window
+    .with_bucket_budget(RateLimitBucketBudget::default().max_distinct_per_peer(32))
+    // or key unverified traffic on the peer only — strictly stronger, at the
+    // cost of collapsing everyone behind one NAT egress into one bucket
+    .with_unverified_auth_policy(UnverifiedAuthPolicy::Ignore);
+```
+
+**Not bounded**, stated plainly: distinct peers (a botnet), a third-party `RateLimitStore` that does
+not implement `consume_bounded` (the layer logs a throttled `WARN` and behaves exactly as before),
+Redis Cluster, and the fixed window's 2N boundary case. A `with_key_fn` override carries no budget —
+bounding a key function the layer cannot see is the consumer's job. Full write-up:
+`docs/design/ratelimit-bucket-cardinality.md`.
+
 ### When the store itself fails
 
 A failure of the backing store is not treated like a caller who is over budget — but *which* failure
