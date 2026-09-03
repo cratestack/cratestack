@@ -423,3 +423,20 @@ linking the published tarball back to this exact GitHub Actions run and commit. 
 No additional GitHub secret is needed for provenance — it's purely a CI-side capability enabled by
 the permission and the flag, on top of whatever auth method (Trusted Publishing, here) gets the
 publish itself authorized.
+
+## When a publish is accepted but never becomes visible (v0.11.1)
+
+`npm publish` exiting 0 means the registry *accepted* the tarball ("Your package is being processed
+and may take a few minutes to become available"), not that anyone can install it. During npm's
+2026-09-03 publish incident two cbor-node subpackages stayed invisible for over an hour after a
+green exit, and a third was "staged" (`E409 Cannot publish over previously staged version`) after
+an earlier attempt had 401'd. `publish-npm-cbor-node` therefore ends with a step that polls
+`https://registry.npmjs.org/<name>/<version>` for every package it published and fails naming the
+ones that are not visible after six minutes.
+
+If that step fails: check <https://status.npmjs.org/> first. A staged or accepted version may still
+appear once the incident resolves — re-check with the same `curl` before doing anything. What you
+cannot do is re-run the publish jobs from CI (they are gated on the tag push); the choices are the
+manual per-directory publish above for the missing names once the registry is healthy, or a new
+version. `.github/scripts/npm-publish.sh`'s header documents how it classifies each failure, and
+`just npm-publish-test` runs that classification against the real 0.11.1 output lines.

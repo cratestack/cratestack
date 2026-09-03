@@ -1450,6 +1450,12 @@ verify-ignore-doctest-fences:
 changelog-seed-test:
 	./.ci/changelog-seed-tests.sh
 
+# Test .github/scripts/npm-publish.sh's failure classification against a
+# fake `npm` that replays the real v0.11.1 outputs (no network, no
+# registry). Wired into CI for the same reason as changelog-seed-test.
+npm-publish-test:
+	./.ci/npm-publish-tests.sh
+
 # Regenerate flutter_rust_bridge glue (Rust `frb_generated.rs` plus the
 # Dart bindings a `flutter_rust_bridge.yaml` in DIR points at) for one
 # frb-bridged crate/example. Glue is deliberately NOT committed

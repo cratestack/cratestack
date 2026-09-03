@@ -28,6 +28,36 @@
 #    Hence: whole-command retry, with a deliberate sleep between tries.
 #    Revisit (and consider dropping) once #1709 ships in an npm release.
 #
+# 3. (v0.11.1, run 33808493207, 2026-09-03 — during npm's "Intermittent
+#    Failures Impacting npm Publish" incident) Transient registry auth
+#    failure: `E401 ... Failed to generate Web Auth URLs due to error:
+#    BadRequestError: token is invalid` on an OIDC publish whose provenance
+#    had ALREADY been accepted by sigstore. Retrying the whole command
+#    cleared it on attempt 2 for four Linux legs, so it is retried here.
+#
+# 4. Version already STAGED upstream (stop retrying, treat as accepted).
+#    `E409 ... Cannot publish over previously staged version "X"` means an
+#    earlier attempt — possibly one that returned 401 to us — was accepted
+#    by the registry and is being processed. Retrying can only ever get
+#    the same 409, and the version may appear minutes later. So: exit 0
+#    with a loud `::warning::`, and leave it to the caller's post-publish
+#    registry verification (publish-npm-cbor-node's "Verify every
+#    subpackage is visible on the registry" step) to decide whether the
+#    release is actually complete. This is the same posture as (2): npm
+#    already holds the tarball; there is nothing this script can add.
+#
+# HOW FAILURES ARE CLASSIFIED — read this before adding a pattern. Only
+# `npm error` lines are consulted. The first version of this script
+# grepped the WHOLE output for `transparency log`, which also matches the
+# informational notice npm prints on EVERY publish ("Provenance statement
+# published to transparency log: ...") — so every failure, of any kind,
+# was labelled "sigstore tlog conflict" and retried four times. On
+# v0.11.1 that turned a 401 into a three-minute retry loop that ended in a
+# 409 "previously staged" the script then reported as a tlog failure.
+# `.ci/npm-publish-tests.sh` pins the classification with the real 0.11.1
+# outputs; its "permanent error with the notice line present" case fails
+# against that first version.
+#
 # 2. Version already published (skip, treat as success).
 #    Re-running a release re-executes every publish job against the same
 #    tag, including the ones that already succeeded. Without this, one
@@ -123,38 +153,42 @@ fi
 max_attempts=${NPM_PUBLISH_MAX_ATTEMPTS:-4}
 backoff_seconds=${NPM_PUBLISH_BACKOFF_SECONDS:-20}
 attempt=1
-
 while true; do
-  # Output is captured rather than streamed so it can be pattern-matched,
-  # then echoed verbatim so the Actions log still shows the full npm
-  # output (including the provenance/tarball notices) for every attempt.
   out=$(cd "$pkg_dir" && npm publish "$@" 2>&1)
   rc=$?
   printf '%s\n' "$out"
-
   if [ "$rc" -eq 0 ]; then
     exit 0
   fi
-
-  # Checked before the tlog case on purpose: when a retried publish
-  # actually landed on the previous attempt, the next attempt reports
-  # "cannot publish over" rather than a tlog conflict. That is success.
-  if printf '%s' "$out" | grep -qi 'cannot publish over the previously published version'; then
+  # Classify on `npm error` lines ONLY — see the header. The provenance
+  # notice ("... published to transparency log: ...") is `npm notice`,
+  # not `npm error`, and must never reach these patterns.
+  errs=$(printf '%s\n' "$out" | grep -i '^npm error' || true)
+  if printf '%s' "$errs" | grep -qi 'cannot publish over the previously published version'; then
     echo "npm-publish: $pkg_dir is already published at this version — treating as success" >&2
     exit 0
   fi
-
-  if printf '%s' "$out" | grep -qi 'TLOG_CREATE_ENTRY_ERROR\|transparency log'; then
-    if [ "$attempt" -ge "$max_attempts" ]; then
-      echo "npm-publish: $pkg_dir still failing on a sigstore tlog conflict after $attempt attempts — giving up" >&2
-      exit "$rc"
-    fi
-    echo "npm-publish: $pkg_dir hit a sigstore tlog conflict (attempt $attempt/$max_attempts) — retrying in ${backoff_seconds}s" >&2
-    sleep "$backoff_seconds"
-    attempt=$((attempt + 1))
-    continue
+  if printf '%s' "$errs" | grep -qi 'cannot publish over previously staged version'; then
+    echo "::warning::npm-publish: $pkg_dir is already STAGED upstream at this version (E409 'previously staged'): an earlier attempt was accepted and npm is still processing it. Not retrying — a retry can only repeat this 409. The post-publish registry verification step decides whether it became visible." >&2
+    exit 0
   fi
-
-  # Genuine failure — surface it as-is.
-  exit "$rc"
+  transient=""
+  if printf '%s' "$errs" | grep -qi 'TLOG_CREATE_ENTRY_ERROR\|transparency log'; then
+    transient="sigstore tlog conflict"
+  elif printf '%s' "$errs" | grep -qi 'Failed to generate Web Auth URLs'; then
+    transient="transient registry auth failure (E401 'Failed to generate Web Auth URLs')"
+  elif printf '%s' "$errs" | grep -qiE 'E(502|503|504)\b|ECONNRESET|ETIMEDOUT|EAI_AGAIN|socket hang up'; then
+    transient="registry/network error"
+  fi
+  if [ -z "$transient" ]; then
+    echo "npm-publish: $pkg_dir failed with a non-transient error (exit $rc) — not retrying" >&2
+    exit "$rc"
+  fi
+  if [ "$attempt" -ge "$max_attempts" ]; then
+    echo "npm-publish: $pkg_dir still failing on a $transient after $attempt attempts — giving up" >&2
+    exit "$rc"
+  fi
+  echo "npm-publish: $pkg_dir hit a $transient (attempt $attempt/$max_attempts) — retrying in ${backoff_seconds}s" >&2
+  sleep "$backoff_seconds"
+  attempt=$((attempt + 1))
 done
