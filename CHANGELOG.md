@@ -62,7 +62,8 @@ for #871 so that rewrite is not re-landed against L3. Epic: #875.
 
 No code changes here — this is the decision, its amendment, and the pointers from the four design
 documents that had been describing `OpExecutor` as unbuilt.
-### `@no_idempotency` works, and idempotency admission moves to a new L3 crate
+
+### `@no_idempotency` works, and idempotency admission moves to a new L3 crate — breaking
 
 `@no_idempotency` has parsed since before it was written down and done nothing at runtime —
 `crates/cratestack-axum/src/idempotency/mod.rs` documented the wiring as a follow-up that never
@@ -94,6 +95,20 @@ IdempotencyLayer::new(store, ttl)
     .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS))
 ```
 
+**A nested router must be told its mount point.** Descriptors record the path the schema
+declares (`/$procs/notify`); `MatchedPath` and `Uri::path` report the full path including the
+mount, so under `Router::nest("/api", router)` — the example this crate's own README gives —
+every lookup misses and the attribute silently does nothing. Use
+`build_rpc_op_resolver_with_prefix("/api", OPS)` / `build_rest_op_resolver_with_prefix(...)`.
+The prefix is supplied rather than inferred: nothing in a request says which leading segments
+were the mount, and guessing would trade a silent no-op for a silent mis-match.
+
+Two related fixes. `@no_idempotency(true)` used to pass `cratestack-cli check` with `schema OK`
+and then emit `idempotent_by_default: false` — the argument was accepted and silently did the
+opposite of what it said; arguments and duplicates are now parse errors. And a bypassed op no
+longer pays the 2 MiB idempotency request-body cap it was skipping the response cap for, so a
+`@no_idempotency` POST larger than that succeeds exactly as it would without the header.
+
 Install no resolver and every request looks unresolved, and unresolved **reserves** — so the layer
 guards exactly what it guarded before. That fail-closed direction is the inverse of the rate-limit
 filters' (a miss there throttles; a miss here reserves), because the two descriptor flags are
@@ -101,8 +116,8 @@ polarised opposite ways. Both mean "when in doubt, apply the protection", and bo
 the miss rather than only the hit.
 
 `RouteTransportDescriptor` gains `idempotent_by_default`, which RPC's `OpDescriptor` already had.
-Adding a field to a public struct is technically breaking for anything constructing one by hand;
-in practice these are emitted by codegen. REST needed it because shipping this on RPC alone would
+**Breaking**: it is a required field on a struct that is not `#[non_exhaustive]`, so any
+hand-written literal needs the new field; in practice these are emitted by codegen. REST needed it because shipping this on RPC alone would
 have reproduced #474 — a fix that works on one transport and silently no-ops on the other.
 
 Still at L4 and unchanged: rate limiting (slice 2), audit fan-out, and row-level `@@allow` replay
