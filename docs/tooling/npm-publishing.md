@@ -428,8 +428,8 @@ publish itself authorized.
 
 `npm publish` exiting 0 means the registry *accepted* the tarball ("Your package is being processed
 and may take a few minutes to become available"), not that anyone can install it. During npm's
-2026-09-03 publish incident two cbor-node subpackages stayed invisible for over an hour after a
-green exit, and a third was "staged" (`E409 Cannot publish over previously staged version`) after
+2026-09-03 publish incident two cbor-node subpackages stayed invisible for about an hour after a
+green exit (then appeared on their own), and a third was "staged" (`E409 Cannot publish over previously staged version`) after
 an earlier attempt had 401'd. `publish-npm-cbor-node` therefore ends with a step that polls
 `https://registry.npmjs.org/<name>/<version>` for every package it published and fails naming the
 ones that are not visible after six minutes.

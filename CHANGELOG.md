@@ -11,8 +11,9 @@ error: BadRequestError: token is invalid` — a registry-side auth failure on an
 provenance sigstore had already accepted. Four Linux legs cleared it on their second attempt.
 `@cratestack/cbor-node-darwin-arm64` got three of them and then `E409 Cannot publish over previously
 staged version "0.11.1"`: npm had accepted an earlier attempt and was processing it. And
-`darwin-x64` and `win32-x64-msvc` exited 0 with `+ name@0.11.1 … being processed` and were still
-absent from the registry an hour later.
+`darwin-x64` and `win32-x64-msvc` exited 0 with `+ name@0.11.1 … being processed` and stayed absent
+from the registry for about an hour before appearing — a window in which the job's green meant
+nothing a consumer could act on.
 
 Two defects in `.github/scripts/npm-publish.sh` turned that into a misleading log. Its retry
 classifier grepped the *whole* output for `transparency log` — which also matches the informational
@@ -35,9 +36,10 @@ case fails against the previous wrapper — that is the proof the fix is load-be
 
 What this does *not* fix: 0.11.1 itself. crates.io (all crates, `cratestack-exec` included), pub.dev,
 `@cratestack/cli`, the api family, `cbor-web`, `refine` and four Linux cbor-node subpackages are live;
-`cbor-node-{darwin-arm64,darwin-x64,win32-x64-msvc}` and `@cratestack/cbor` are not, and cannot be
-re-run from CI (every publish job is gated on the tag push). `@cratestack/cbor-node@0.11.1` bundles
-every `.node` binary, so consumers still resolve a working binding.
+`cbor-node-darwin-x64` and `-win32-x64-msvc` appeared about an hour after the run;
+`cbor-node-darwin-arm64` (staged) and `@cratestack/cbor` (skipped as a dependent) are not live, and
+cannot be re-run from CI (every publish job is gated on the tag push). `@cratestack/cbor-node@0.11.1`
+bundles every `.node` binary, so consumers still resolve a working binding.
 
 ## 0.11.1 (2026-09-03)
 
