@@ -2,30 +2,33 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::Request;
-use axum::response::Response;
 use cratestack_core::CratestackError;
-use tower::{Layer, Service};
+use tower::Layer;
 
-use crate::middleware_error::middleware_error_response;
-
-use super::config::{RateLimitConfig, RateLimitDecision};
-use super::decision::{key_failure_response, throttled_response, with_budget_headers};
+use super::budget::RateLimitBucketBudget;
+use super::budget::warn::BudgetWarnings;
+use super::config::RateLimitConfig;
 use super::key_fn::{default_key_fn, default_should_rate_limit_fn};
-use super::policy::{
-    DEFAULT_STORE_TIMEOUT, StoreErrorPolicy, StoreErrorWarnings, store_timeout_error,
-};
+use super::policy::{DEFAULT_STORE_TIMEOUT, StoreErrorPolicy, StoreErrorWarnings};
+use super::scope::{KeyDerivation, UnverifiedAuthPolicy};
+use super::service::RateLimitService;
 use super::store::RateLimitStore;
-use super::store_error::{StoreFailure, classify_store_failure};
+
+pub(super) type KeyFn =
+    Arc<dyn Fn(&Request) -> Result<KeyDerivation, CratestackError> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct RateLimitLayer {
     store: Arc<dyn RateLimitStore>,
     config: RateLimitConfig,
-    key_fn: Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
+    key_fn: Option<KeyFn>,
     should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
     store_error_policy: StoreErrorPolicy,
     store_timeout: Duration,
+    bucket_budget: Option<RateLimitBucketBudget>,
+    unverified_auth_policy: UnverifiedAuthPolicy,
     warnings: Arc<StoreErrorWarnings>,
+    budget_warnings: Arc<BudgetWarnings>,
 }
 
 impl RateLimitLayer {
@@ -33,11 +36,14 @@ impl RateLimitLayer {
         Self {
             store,
             config,
-            key_fn: Arc::new(default_key_fn),
+            key_fn: None,
             should_rate_limit_fn: Arc::new(default_should_rate_limit_fn),
             store_error_policy: StoreErrorPolicy::default(),
             store_timeout: DEFAULT_STORE_TIMEOUT,
+            bucket_budget: Some(RateLimitBucketBudget::default()),
+            unverified_auth_policy: UnverifiedAuthPolicy::default(),
             warnings: Arc::new(StoreErrorWarnings::default()),
+            budget_warnings: Arc::new(BudgetWarnings::default()),
         }
     }
 
@@ -67,12 +73,43 @@ impl RateLimitLayer {
         self
     }
 
+    /// Tune how many distinct buckets one scope may create
+    /// (cratestack#871). Defaults to [`RateLimitBucketBudget::default`].
+    pub fn with_bucket_budget(mut self, budget: RateLimitBucketBudget) -> Self {
+        self.bucket_budget = Some(budget);
+        self
+    }
+
+    /// Let an unverified `Authorization` header mint buckets without any
+    /// cardinality bound — the pre-cratestack#871 behaviour.
+    ///
+    /// Only correct when something else already bounds the keyspace (an
+    /// authenticating proxy in front, a `with_key_fn` that keys on
+    /// verified material, mTLS). Otherwise this restores the measured
+    /// amplification primitive: one store key per request, attacker-chosen.
+    pub fn without_bucket_budget(mut self) -> Self {
+        self.bucket_budget = None;
+        self
+    }
+
+    /// What the default key function does with an `Authorization` header
+    /// nothing has verified. See [`UnverifiedAuthPolicy`].
+    pub fn with_unverified_auth_policy(mut self, policy: UnverifiedAuthPolicy) -> Self {
+        self.unverified_auth_policy = policy;
+        self
+    }
+
     /// Override how the layer derives the bucket key. The supplied closure
     /// is infallible by design — opting out of the default's fail-closed
     /// behavior is the caller's explicit choice, including any deliberate
     /// shared bucket.
+    ///
+    /// An override carries **no** bucket budget: the layer has no basis to
+    /// invent a scope or a fallback for a key whose derivation it cannot
+    /// see. A consumer whose key function reads caller-supplied material
+    /// owns bounding it, exactly as it owns the fail-closed decision.
     pub fn with_key_fn(mut self, f: impl Fn(&Request) -> String + Send + Sync + 'static) -> Self {
-        self.key_fn = Arc::new(move |req| Ok(f(req)));
+        self.key_fn = Some(Arc::new(move |req| Ok(KeyDerivation::unbudgeted(f(req)))));
         self
     }
 
@@ -82,6 +119,35 @@ impl RateLimitLayer {
     ) -> Self {
         self.should_rate_limit_fn = Arc::new(f);
         self
+    }
+
+    /// Test seam: the warning counters this layer shares with every
+    /// service it builds. Lets a test assert that the per-request path
+    /// actually *called* `consume::report`, which deleting outright used
+    /// to leave every test green (cratestack#871 review, should-fix 3).
+    pub(super) fn _budget_warnings(&self) -> &BudgetWarnings {
+        &self.budget_warnings
+    }
+
+    /// Bind the layer's configuration into the closure `RateLimitService`
+    /// calls, so the per-request path never has to branch on "default or
+    /// override" again.
+    fn resolved_key_fn(&self) -> KeyFn {
+        if let Some(key_fn) = &self.key_fn {
+            return key_fn.clone();
+        }
+        let budget = self.bucket_budget;
+        let policy = self.unverified_auth_policy;
+        let warnings = self.budget_warnings.clone();
+        Arc::new(move |req| match budget {
+            Some(budget) => default_key_fn(req, budget, policy, &warnings),
+            // `without_bucket_budget()`: derive exactly as before, then
+            // drop the budget rather than skipping derivation, so the
+            // key SHAPE (and therefore every existing bucket) is
+            // untouched by the opt-out.
+            None => default_key_fn(req, RateLimitBucketBudget::default(), policy, &warnings)
+                .map(|derivation| KeyDerivation::unbudgeted(derivation.key)),
+        })
     }
 }
 
@@ -93,102 +159,12 @@ impl<S> Layer<S> for RateLimitLayer {
             inner,
             store: self.store.clone(),
             config: self.config,
-            key_fn: self.key_fn.clone(),
+            key_fn: self.resolved_key_fn(),
             should_rate_limit_fn: self.should_rate_limit_fn.clone(),
             store_error_policy: self.store_error_policy,
             store_timeout: self.store_timeout,
             warnings: self.warnings.clone(),
+            budget_warnings: self.budget_warnings.clone(),
         }
-    }
-}
-
-#[derive(Clone)]
-pub struct RateLimitService<S> {
-    inner: S,
-    store: Arc<dyn RateLimitStore>,
-    config: RateLimitConfig,
-    key_fn: Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
-    should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
-    store_error_policy: StoreErrorPolicy,
-    store_timeout: Duration,
-    warnings: Arc<StoreErrorWarnings>,
-}
-
-impl<S> Service<Request> for RateLimitService<S>
-where
-    S: Service<Request, Response = Response, Error = std::convert::Infallible>
-        + Clone
-        + Send
-        + 'static,
-    S::Future: Send + 'static,
-{
-    type Response = Response;
-    type Error = std::convert::Infallible;
-    type Future =
-        std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response, Self::Error>> + Send>>;
-
-    fn poll_ready(
-        &mut self,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: Request) -> Self::Future {
-        let mut inner = self.inner.clone();
-        let store = self.store.clone();
-        let config = self.config;
-        let key_fn = self.key_fn.clone();
-        let store_error_policy = self.store_error_policy;
-        let store_timeout = self.store_timeout;
-        let warnings = self.warnings.clone();
-        let should_rate_limit = (self.should_rate_limit_fn)(&req);
-        Box::pin(async move {
-            // If the operation is exempt from rate limiting, skip the check
-            // entirely — including key derivation. An exempt route must not
-            // be refused just because the default key fn can't verify the
-            // caller's identity; only routes that actually need a bucket
-            // pay that cost.
-            if !should_rate_limit {
-                return inner.call(req).await;
-            }
-
-            let key = match (key_fn)(&req) {
-                Ok(key) => key,
-                Err(error) => return Ok(key_failure_response(&req, error)),
-            };
-
-            // ONE budget for the whole lookup, retry included: the store
-            // is free to retry internally, but the caller must not pay
-            // for it twice. An elapse is reported as a transport-class
-            // error, so it is subject to the same policy as any other
-            // "the store did not answer" — cratestack#846.
-            let outcome =
-                match tokio::time::timeout(store_timeout, store.consume(&key, config)).await {
-                    Ok(outcome) => outcome,
-                    Err(_elapsed) => Err(store_timeout_error()),
-                };
-
-            match outcome {
-                Ok(RateLimitDecision::Allowed { remaining }) => Ok(with_budget_headers(
-                    inner.call(req).await?,
-                    config,
-                    remaining,
-                )),
-                Ok(RateLimitDecision::Throttled { retry_after_secs }) => Ok(throttled_response(
-                    req.headers(),
-                    req.uri().path(),
-                    retry_after_secs,
-                )),
-                Err(error) => match classify_store_failure(error, store_error_policy, &warnings) {
-                    StoreFailure::Serve => inner.call(req).await,
-                    StoreFailure::Refuse(error) => Ok(middleware_error_response(
-                        req.headers(),
-                        req.uri().path(),
-                        error,
-                    )),
-                },
-            }
-        })
     }
 }

@@ -10,4 +10,7 @@ pub use client_state::{
     RequestJournalEntry,
 };
 pub use idempotency::IdempotencyStore;
-pub use ratelimit::{RateLimitConfig, RateLimitDecision, RateLimitStore};
+pub use ratelimit::{
+    BoundedOutcome, BucketBudget, Charged, ConsumeRequest, MAX_TTL_SECS, RateLimitConfig,
+    RateLimitDecision, RateLimitStore, bucket_ttl_secs, scope_ttl_secs,
+};

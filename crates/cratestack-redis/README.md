@@ -128,7 +128,17 @@ Eviction uses `PEXPIREAT` based on the `expires_at` derived from the layer's TTL
 
 Each rate-limit key maps to a Redis hash at `<prefix>:rl:<sha256(key)>` carrying two fields: `tokens` (current bucket fill) and `last_refill_ms` (the wall-clock timestamp of the most recent refill). A single Lua script does the entire read-refill-decrement-write cycle in one round-trip, so concurrent replicas can never grant more than one token's worth of overshoot.
 
-Eviction uses a relative `EXPIRE` derived from the time required to refill a full bucket (clamped to 24h), refreshed on every `consume`. This keeps memory bounded even for tenant-scoped keyspaces with churn.
+Eviction uses a relative `EXPIRE` derived from the time required to refill a full bucket (clamped to 24h), refreshed on every `consume`. The formula lives in `cratestack_core::bucket_ttl_secs` and is passed into the script, so the Redis and in-memory backends cannot drift apart on it.
+
+#### Bucket cardinality budget (#871)
+
+`EXPIRE` bounds how long a bucket lives, not how many a caller can create — and `RateLimitLayer` runs before authentication, so a caller rotating an unverified `Authorization` header used to mint one `:rl:` key per request. `consume_bounded` closes that in the **same** Lua script, with no extra round-trip: it additionally takes a scope `ZSET` at `<prefix>:rls:<sha256(scope)>` and a fallback bucket key. Per request it trims aged-out slots (`ZREMRANGEBYSCORE`), admits the bucket if it is already scored or if `ZCARD < max_distinct` (`ZADD`), and otherwise charges the *fallback* bucket. Set members are the first 16 hex chars of the bucket hash.
+
+Scores are **last-use** timestamps and the key is `PEXPIRE`d to `cratestack_core::scope_ttl_secs` — never shorter than the bucket TTL — on **every hit**. So a slot always outlives the bucket it admitted (no second generation can open underneath a live one), an actively-used credential never loses its slot, and a credential the peer stopped using ages out so rotation reclaims the slot. A shared per-scope deadline could only ever have one of those two properties: refreshing it on every hit capped a token-rotating peer permanently, and refreshing only on admission left a transient `2 × max_distinct`. (An earlier revision suffixed the key with a fixed-window epoch and expired it after the window; with `window < bucket_ttl` that produced `max_distinct × ceil(bucket_ttl / window)` buckets per scope.) Re-`PEXPIRE`ing unconditionally also repairs a key left without a TTL by a script that aborted between `ZADD` and `PEXPIRE`: Lua here is atomic but not transactional, so a mid-script `OOM` can stop it partway. Keyspace is O(scopes × max_distinct) at every instant, not O(requests).
+
+`consume` (no budget) is unchanged: one key per caller, no scope set.
+
+**Redis Cluster is not a supported deployment for this store**, and #871 makes that louder rather than quieter — three un-hash-tagged keys in one script means `CROSSSLOT`, which classifies as logical-class and is therefore refused under every `StoreErrorPolicy` instead of silently disabling the limiter. Forcing the three keys into one slot with a shared hash tag would concentrate an attacker's traffic on a single node, so it is deliberately not done.
 
 ## See Also
 

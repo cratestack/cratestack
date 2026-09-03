@@ -143,6 +143,74 @@ Still at L4 and unchanged: rate limiting (slice 2), audit fan-out, and row-level
 for subscriptions (slice 3). `invoke_with_db` keeps its signature; an idempotent variant is
 additive and separate.
 
+### breaking (#871): the rate-limit bucket keyspace is bounded
+
+`RateLimitLayer` runs before authentication, so the `Authorization` header its default key function
+hashes has been validated by nobody. Measured in the #846 security review: 20 requests with a
+rotating bearer token created 20 distinct Redis keys, each with a ≥60s TTL, and driving that to
+`maxmemory` made every subsequent write fail. #846 stopped that from *disabling* the limiter; this
+closes the primitive.
+
+The default key derivation now carries a **cardinality budget** that the store applies atomically
+with the token consumption (a separate lookup would race — N concurrent requests each read "under
+budget" and each mint a bucket):
+
+| Request carries | Bucket key | Scope | Cap | Charged past the cap |
+|---|---|---|---|---|
+| `VerifiedPrincipal` extension | `princ:<sha256>` | — | none | — |
+| `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<addr>` | **128** | the peer's own `ip:<addr>` bucket |
+| `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | **8192** | one `overflow` bucket |
+| `ConnectInfo` only | `ip:<addr>` | — | none | — |
+
+`<addr>` is the peer address for IPv4 and its **/64 prefix** for routable IPv6 — in the scope
+*and* in every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so
+leaving bucket keys un-aggregated let an attacker rotate the source address inside their own
+prefix and evade the cap entirely. **The accepted cost: two distinct hosts inside one routable
+IPv6 /64 share a throttling bucket.** IPv4 is not aggregated (a /24 under CGNAT is thousands of
+unrelated subscribers), and **IPv4-mapped addresses (`::ffff:a.b.c.d`, which is how a dual-stack
+`[::]` listener delivers every IPv4 client) are unwrapped to their IPv4 form before any
+aggregation** — without that, every IPv4 client in the world shares one `ip:::/64` bucket.
+
+Bucket key *shapes* are unchanged, so no existing bucket moves. Past the cap a caller is collapsed
+onto its own peer bucket rather than refused — refusing would hand an attacker a deterministic
+outage of every rate-limited route, the failure mode #846 was fought over. Under the cap, distinct
+callers still never share (#416).
+
+**Behaviour changes to know about:**
+
+- `InMemoryRateLimitStore` now evicts. Buckets idle for a full TTL (`cratestack_core::
+  bucket_ttl_secs`, the same horizon Redis's `EXPIRE` uses) are dropped by an amortised sweep, and
+  live buckets are capped at `DEFAULT_MAX_BUCKETS` (**100 000**) — past which a request for a
+  *new* identity is refused with `CratestackError::Internal`, a logical class that stays closed
+  under every `StoreErrorPolicy`. Existing buckets keep being served. `with_max_buckets(n)` raises
+  it; `without_max_buckets()` removes it.
+- `RateLimitStore` gains `consume_bounded`. It has a default that delegates to `consume` and
+  reports `Charged::Unbounded`, so **third-party stores keep compiling and behaving identically** —
+  but they are not bounded, and the layer says so in a throttled `WARN`.
+- New: `RateLimitBucketBudget`, `VerifiedPrincipal`, `UnverifiedAuthPolicy`, and the builder methods
+  `with_bucket_budget` / `without_bucket_budget` / `with_unverified_auth_policy`.
+  `RateLimitService` moved to its own module (the re-export path is unchanged).
+- `RedisRateLimitStore` writes one new key kind, `<prefix>:rls:<sha256(scope)>` — a scope's member
+  set, a `ZSET` scored by last use. `consume` (no budget) creates none.
+- **`window` (default 60s) is a floor on a sliding per-credential slot, not a fixed window.** Each
+  admitted credential holds a slot for `max(window, bucket_ttl_secs(config))` after it was **last
+  used**; slots expire individually. So a slot always outlives the bucket it admitted (no fresh
+  generation can open beneath a live one), an actively-used caller never loses its slot, and a peer
+  whose tokens rotate reclaims the slots of credentials it stopped using instead of being capped at
+  its first `max_distinct` forever. `cratestack_core::scope_ttl_secs` and `MAX_TTL_SECS` are new and
+  public at the crate root; a `Duration::MAX` window is now clamped rather than failing every request.
+- **`InMemoryRateLimitStore`'s cap now bounds the scope index too.** Admission is gated on the
+  bucket being creatable, so a request refused at the cap no longer interns a scope entry and a
+  member key on its way out. New `#[doc(hidden)] _scope_count()` seam alongside `_bucket_count()`.
+
+**Not bounded, stated plainly:** distinct peers (a botnet), stores that do not implement
+`consume_bounded`, `with_key_fn` overrides (the layer cannot see the derivation, so bounding it is
+the consumer's job), Redis Cluster (three un-hash-tagged keys → `CROSSSLOT`, refused loudly rather
+than hash-tagged onto one node), and distinct hosts sharing one routable IPv6 /64.
+
+Full write-up, including why verified principals are opt-in rather than the default and why IPv6 is
+aggregated but IPv4 is not: `docs/design/ratelimit-bucket-cardinality.md`.
+
 ## 0.11.0 (2026-09-03)
 
 ### The Marketplace item page lags a successful publish
