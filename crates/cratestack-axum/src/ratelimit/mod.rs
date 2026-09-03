@@ -64,28 +64,78 @@
 //! identity refusal, a `Deny`d store failure — carries the framework's
 //! own codec-negotiated error envelope, so a generated client decodes a
 //! typed code rather than an opaque body.
+//!
+//! ## The bucket keyspace is bounded (cratestack#871)
+//!
+//! The `auth:` key above is a hash of an **unverified** header, because
+//! this layer runs before authentication. Left alone, that is an
+//! amplification primitive: rotate the header and mint one store key per
+//! request. It is what made the `OOM` case in the previous section
+//! reachable by anyone in the first place.
+//!
+//! So the default derivation no longer returns a bare key. It returns the
+//! key *plus* a [`cratestack_core::BucketBudget`] naming the scope that
+//! key is counted against, how many distinct buckets that scope may
+//! create per window, and which bucket to charge instead once it is full:
+//!
+//! | Request carries | Key | Scope | Cap | Fallback |
+//! |---|---|---|---|---|
+//! | [`VerifiedPrincipal`] extension | `princ:<sha256>` | — | none | — |
+//! | `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<ip>` (IPv6 → /64) | 128/60s | `ip:<ip>` |
+//! | `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192/60s | `overflow` |
+//! | `ConnectInfo` only | `ip:<ip>` | — | none | — |
+//! | neither | *refused, `412`* (cratestack#416) | | | |
+//!
+//! The store applies it atomically alongside the token consumption —
+//! doing it as a separate lookup would race, with N concurrent requests
+//! each reading "under budget" and each minting a bucket. Steady-state
+//! keyspace becomes O(peers × cap) instead of O(requests).
+//!
+//! Over the cap the caller is *collapsed onto its own* `ip:` bucket, not
+//! refused: refusing would hand an attacker a deterministic outage of
+//! every rate-limited route, which is the failure mode cratestack#846 was
+//! fought over. Under the cap, distinct callers still never share
+//! (cratestack#416). Tune with
+//! [`RateLimitLayer::with_bucket_budget`], opt out with
+//! [`RateLimitLayer::without_bucket_budget`], and see
+//! [`UnverifiedAuthPolicy`] for the stronger "ignore the header entirely"
+//! mode. `docs/design/ratelimit-bucket-cardinality.md` states what is
+//! **not** bounded.
 
+mod budget;
 mod config;
+mod consume;
 mod decision;
 mod key_fn;
 mod layer;
 mod policy;
 mod rest_ops_filter;
 mod rpc_ops_filter;
+mod scope;
+mod service;
 mod store;
 mod store_error;
 
+pub use budget::RateLimitBucketBudget;
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
-pub use layer::{RateLimitLayer, RateLimitService};
+pub use layer::RateLimitLayer;
 pub use policy::{DEFAULT_STORE_TIMEOUT, StoreErrorPolicy};
 pub use rest_ops_filter::build_rest_ops_filter;
 pub use rpc_ops_filter::build_rpc_ops_filter;
-pub use store::{InMemoryRateLimitStore, RateLimitStore};
+pub use scope::{UnverifiedAuthPolicy, VerifiedPrincipal};
+pub use service::RateLimitService;
+pub use store::{DEFAULT_MAX_BUCKETS, InMemoryRateLimitStore, RateLimitStore};
 
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_budget;
+#[cfg(test)]
+mod tests_budget_store;
+#[cfg(test)]
 mod tests_key_fn;
+#[cfg(test)]
+mod tests_scope;
 #[cfg(test)]
 mod tests_store_error;
 #[cfg(test)]

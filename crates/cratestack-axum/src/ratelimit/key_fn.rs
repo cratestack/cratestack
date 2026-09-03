@@ -3,16 +3,24 @@
 //!
 //! Split out of `layer.rs` verbatim (cratestack#846) to keep that file
 //! under the workspace's 200-line ceiling once the store-error policy
-//! landed there. No behavioural change: cratestack#416's fail-closed
-//! rationale below moved unedited.
+//! landed there. cratestack#871 then changed what it *returns* — a key
+//! plus, when that key is caller-mintable, the [`BucketBudget`] governing
+//! how many such keys its scope may create. The cratestack#416
+//! fail-closed rationale below is unchanged.
 
 use std::net::SocketAddr;
 use std::sync::Once;
 
 use axum::extract::{ConnectInfo, Request};
-use cratestack_core::CratestackError;
+use cratestack_core::{BucketBudget, CratestackError};
 use http::header;
 use sha2::{Digest, Sha256};
+
+use super::budget::RateLimitBucketBudget;
+use super::budget::warn::BudgetWarnings;
+use super::scope::{
+    BudgetScope, KeyDerivation, UnverifiedAuthPolicy, VerifiedPrincipal, scope_address,
+};
 
 /// Logged once per process, not per request — see the identical rationale
 /// in `idempotency::layer::MISSING_IDENTITY_WARNING`.
@@ -24,21 +32,70 @@ static MISSING_IDENTITY_WARNING: Once = Once::new();
 /// for that traffic, and one caller could exhaust another's budget. Refusing
 /// the request instead makes the gap loud in staging/CI rather than a
 /// silently-reachable production bypass.
-pub(super) fn default_key_fn(req: &Request) -> Result<String, CratestackError> {
+///
+/// cratestack#871: the `auth:` branch below still keys on an **unverified**
+/// header — this layer runs before authentication — so it is now handed a
+/// budget instead of being trusted to be low-cardinality. The key *shape*
+/// is unchanged, so no existing bucket moves; what changes is that the
+/// scope which mints it can only mint so many.
+pub(super) fn default_key_fn(
+    req: &Request,
+    budget: RateLimitBucketBudget,
+    policy: UnverifiedAuthPolicy,
+    warnings: &BudgetWarnings,
+) -> Result<KeyDerivation, CratestackError> {
+    // A principal an upstream layer actually verified is not caller-
+    // mintable, so it needs no budget: its cardinality is bounded by the
+    // number of principals that exist. Hashed like the header below so an
+    // identifier never lands in a store key verbatim.
+    if let Some(VerifiedPrincipal(principal)) = req.extensions().get::<VerifiedPrincipal>() {
+        return Ok(KeyDerivation::unbudgeted(format!(
+            "princ:{}",
+            sha256_hex(principal.as_bytes())
+        )));
+    }
+
+    let peer = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip());
+
     // Prefer Authorization header for authenticated requests.
-    if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
+    if policy == UnverifiedAuthPolicy::Budget
+        && let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
         && let Ok(auth_str) = auth_header.to_str()
     {
-        let mut h = Sha256::new();
-        h.update(auth_str.as_bytes());
-        // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
-        // digest 0.10's `GenericArray`) implements no `LowerHex`. The
-        // byte-wise `{:02x}` fold below is this repo's existing hex idiom
-        // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
-        // `format!("{:x}", …)` produced — this string is persisted/keyed on,
-        // so it must not change shape.
-        let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
-        return Ok(format!("auth:{hex}"));
+        let key = format!("auth:{}", sha256_hex(auth_str.as_bytes()));
+        return Ok(match peer {
+            Some(ip) => KeyDerivation::budgeted(
+                key,
+                BucketBudget::new(
+                    format!("peer:{}", scope_address(ip)),
+                    format!("ip:{ip}"),
+                    budget.max_distinct_per_peer,
+                    budget.window,
+                ),
+                BudgetScope::Peer,
+            ),
+            // No verified peer to attribute the cardinality to. The
+            // header is still the best available *throttling* key (it
+            // separates real callers), so it is kept — but every such
+            // caller shares one cardinality budget, because there is
+            // nothing to tell them apart by that they do not control.
+            None => {
+                warnings.missing_peer();
+                KeyDerivation::budgeted(
+                    key,
+                    BucketBudget::new(
+                        "global",
+                        "overflow",
+                        budget.max_distinct_global,
+                        budget.window,
+                    ),
+                    BudgetScope::Global,
+                )
+            }
+        });
     }
 
     // Fall back to the real TCP peer address for unauthenticated requests, to
@@ -50,8 +107,16 @@ pub(super) fn default_key_fn(req: &Request) -> Result<String, CratestackError> {
     // is populated by axum from the actual accepted socket (when the server
     // is served via `into_make_service_with_connect_info::<SocketAddr>()`)
     // and cannot be spoofed by the client.
-    if let Some(ConnectInfo(addr)) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
-        return Ok(format!("ip:{}", addr.ip()));
+    //
+    // This is also where `UnverifiedAuthPolicy::Ignore` lands: one bucket
+    // per verified peer, nothing caller-supplied in the key at all, and
+    // therefore no budget needed. Note the address is NOT aggregated here
+    // even for IPv6 — aggregation belongs to the *scope* (see
+    // `scope::scope_address`); aggregating the throttling key itself would
+    // make one subscriber's /64 a shared bucket, which is cratestack#416's
+    // collision all over again.
+    if let Some(ip) = peer {
+        return Ok(KeyDerivation::unbudgeted(format!("ip:{ip}")));
     }
 
     // Neither Authorization nor a verified peer address is available (e.g.
@@ -78,6 +143,18 @@ pub(super) fn default_key_fn(req: &Request) -> Result<String, CratestackError> {
          function"
             .to_owned(),
     ))
+}
+
+/// sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
+/// digest 0.10's `GenericArray`) implements no `LowerHex`. The byte-wise
+/// `{:02x}` fold below is this repo's existing hex idiom
+/// (`cratestack-core/src/transport.rs`) and is byte-for-byte what
+/// `format!("{:x}", …)` produced — this string is persisted/keyed on, so
+/// it must not change shape.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// Default rate limit filter: always rate-limit. Fail closed.

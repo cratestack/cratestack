@@ -50,7 +50,10 @@ fn bucket_ttl_is_clamped_at_both_ends() {
     assert_eq!(bucket_ttl_secs(RateLimitConfig::new(1, 1000.0)), 61);
     assert_eq!(bucket_ttl_secs(RateLimitConfig::new(0, 1000.0)), 60);
     // Glacial refill saturates at 24h rather than growing without bound.
-    assert_eq!(bucket_ttl_secs(RateLimitConfig::new(u32::MAX, 0.001)), 86_400);
+    assert_eq!(
+        bucket_ttl_secs(RateLimitConfig::new(u32::MAX, 0.001)),
+        86_400
+    );
 }
 
 /// A never-refilling bucket has no "time to refill" to derive a TTL from,
@@ -107,6 +110,9 @@ async fn default_consume_bounded_delegates_and_reports_unbounded() {
         .await
         .expect("legacy store consumes");
 
-    assert_eq!(outcome.decision, RateLimitDecision::Allowed { remaining: 3 });
+    assert_eq!(
+        outcome.decision,
+        RateLimitDecision::Allowed { remaining: 3 }
+    );
     assert_eq!(outcome.charged, Charged::Unbounded);
 }
