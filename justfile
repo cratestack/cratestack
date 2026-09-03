@@ -2521,7 +2521,20 @@ cbor-example-verify:
 	  echo "FAIL: static file server for build/web never became ready on port $port" >&2
 	  exit 1
 	fi
-	(cd "$example" && dart run tool/verify_web_console.dart \
+	# `timeout 300`: a second, OS-level line of defence on top of
+	# `verify_web_console.dart`'s own in-process hard-timeout watchdog
+	# (default 180s, `--hard-timeout-seconds`). The watchdog can only fire
+	# if the Dart isolate's event loop is still running at all; wrapping the
+	# invocation here bounds the worst case even against a failure mode the
+	# watchdog structurally cannot catch (the isolate itself wedged, not
+	# just an open handle). 300s gives the watchdog's own 180s+grace room to
+	# fire and print its diagnostic first. Exit codes are unaffected for
+	# every outcome this recipe's contract already covers (0/1 pass
+	# straight through); a genuine future hang now costs 5 minutes here
+	# instead of the CI job's full `timeout-minutes: 45` — see cratestack
+	# PR 887, whose own first landing hung this exact step for 45 minutes
+	# before this and the in-process watchdog were added.
+	(cd "$example" && timeout 300 dart run tool/verify_web_console.dart \
 	  --url "http://127.0.0.1:$port/index.html" \
 	  --expect-hex "$expected_hex")
 	kill "$server_pid" 2>/dev/null || true

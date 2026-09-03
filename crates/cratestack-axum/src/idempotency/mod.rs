@@ -35,18 +35,66 @@
 //! `into_make_service_with_connect_info` — must supply
 //! [`IdempotencyLayer::with_principal_fingerprint`] explicitly.
 //!
-//! In Phase 1 the layer is opt-in at the consumer's router. A follow-up will
-//! wire it into macro-generated routers by default, gated by a
-//! `@no_idempotency` opt-out attribute already recognised by the parser.
+//! # Where the decision is made
+//!
+//! Not here. Since ADR 0015 slice 1, everything in this module is the
+//! HTTP adapter around [`cratestack_exec::OpExecutor`] (L3): it derives
+//! the principal, parses the key, hashes the request, and renders the
+//! answer — but whether to reserve is `OpExecutor::admit`'s call. The
+//! split follows `docs/design/layering.md` §2's L3 exclusions: a method,
+//! a `HeaderMap` and a `Response` are transport facts and stay at L4.
+//!
+//! # Honouring `@no_idempotency`
+//!
+//! The layer is opt-in at the consumer's router, and by default it
+//! reserves for every keyed request on a mutating method — exactly as it
+//! always did. To let a schema's `@no_idempotency` procedures (and its
+//! reads) skip reservation, install a resolver over the generated
+//! descriptors:
+//!
+//! ```text
+//! // transport rpc
+//! IdempotencyLayer::new(store, ttl)
+//!     .with_op_resolver(build_rpc_op_resolver(cratestack_schema::axum::OPS));
+//! // REST
+//! IdempotencyLayer::new(store, ttl)
+//!     .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS));
+//! ```
+//!
+//! Both resolvers fail closed toward **reserving** on any lookup miss —
+//! the opposite polarity from `crate::ratelimit`'s filters, and
+//! deliberately so; see [`build_rest_op_resolver`]'s module docs.
+//!
+//! Two things to know before installing one:
+//!
+//! - **A nested router needs its mount prefix.** Descriptors record the
+//!   path the schema declares, but `MatchedPath`/`Uri::path` report the
+//!   full path including the mount, so under `Router::nest("/api", ..)`
+//!   every lookup misses and `@no_idempotency` silently does nothing. Use
+//!   [`build_rest_op_resolver_with_prefix`] /
+//!   [`build_rpc_op_resolver_with_prefix`].
+//! - **The exemption is wider than the attribute.** A resolver exempts
+//!   everything marked `idempotent_by_default`, which is annotated
+//!   procedures *and* every read op (`query procedure`, model
+//!   `list`/`get`). "Read op" is not "`GET` request": under `transport
+//!   rpc` reads are dispatched by `POST /rpc/{op_id}`, so they do reach
+//!   this layer and are exempted; under REST they are `GET` and never
+//!   reach it, so there the exemption is a no-op. Nothing stops a `query
+//!   procedure` from writing; if one does, installing a resolver removes
+//!   its protection, and on RPC that is a live path.
 
 mod complete;
+mod finish;
 mod hash;
 mod headers;
 mod layer;
+mod mount_prefix;
 mod parse;
 mod record;
 mod reserve;
 mod responses;
+mod rest_op_resolver;
+mod rpc_op_resolver;
 mod service;
 mod store;
 mod stream_bypass;
@@ -60,6 +108,10 @@ mod tests_hash;
 #[cfg(test)]
 mod tests_headers;
 #[cfg(test)]
+mod tests_op_resolver;
+#[cfg(test)]
+mod tests_op_resolver_nested;
+#[cfg(test)]
 mod tests_parse;
 #[cfg(test)]
 mod tests_stream_bypass;
@@ -69,5 +121,13 @@ pub use headers::{decode_headers, encode_headers};
 pub use layer::IdempotencyLayer;
 pub use parse::parse_idempotency_key;
 pub use record::{IdempotencyRecord, ReservationOutcome};
+pub use rest_op_resolver::{build_rest_op_resolver, build_rest_op_resolver_with_prefix};
+pub use rpc_op_resolver::{build_rpc_op_resolver, build_rpc_op_resolver_with_prefix};
 pub use service::IdempotencyService;
 pub use store::{IDEMPOTENCY_TABLE_DDL, IdempotencyStore};
+
+/// Re-exported so `with_op_resolver` callers can name the type a custom
+/// resolver returns without adding a `cratestack-exec` dependency of
+/// their own — the crate arrives transitively through whichever facade
+/// the consumer already picked.
+pub use cratestack_exec::OpAdmission;

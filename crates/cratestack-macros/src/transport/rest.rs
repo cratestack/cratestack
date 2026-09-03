@@ -1,13 +1,21 @@
 //! REST binding: per-procedure / per-model `RouteTransportDescriptor`
 //! consts and entries used by the generated router.
 
+mod capabilities;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_idempotency;
 
-use cratestack_core::{Model, Procedure, TypeArity};
+use cratestack_core::{Model, Procedure};
 use quote::quote;
 
 use crate::shared::{ident, pluralize, to_snake_case};
+
+pub(crate) use capabilities::{
+    model_read_transport_capabilities_tokens, model_write_transport_capabilities_tokens,
+    procedure_transport_capabilities_tokens,
+};
 
 pub(crate) fn generate_procedure_transport_constants(
     procedure: &Procedure,
@@ -17,6 +25,7 @@ pub(crate) fn generate_procedure_transport_constants(
     let capabilities = procedure_transport_capabilities_tokens(procedure);
     let name = procedure.name.as_str();
     let rate_limited = super::rate_limit::procedure_rate_limited_by_default(procedure);
+    let idempotent = super::idempotency::procedure_idempotent_by_default(procedure);
 
     Ok(quote! {
         pub const #const_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
@@ -24,6 +33,7 @@ pub(crate) fn generate_procedure_transport_constants(
             method: "POST",
             path: #path,
             capabilities: #capabilities,
+            idempotent_by_default: #idempotent,
             rate_limited_by_default: #rate_limited,
         };
     })
@@ -54,6 +64,15 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
     // §5), so every one of them always participates in rate limiting.
     // Mirrors `generate_model_op_descriptors`'s identical `rate_limited`.
     let rate_limited = true;
+    // Reads are inherently safe to repeat, so they take no reservation;
+    // writes take one. Model CRUD has no `@no_idempotency`-equivalent
+    // opt-out today (that attribute is procedure-only, same as
+    // `@no_rate_limit`), so these two are constants rather than a
+    // predicate. Mirrors `generate_model_op_descriptors`'s per-verb
+    // `idempotent` argument literal-for-literal — list/get `true`,
+    // create/update/delete `false`.
+    let read_idempotent = true;
+    let write_idempotent = false;
 
     // `cratestack_core::model_internal_actions` — the same single
     // source of truth `axum/model/routes.rs`,
@@ -76,6 +95,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
                 method: "GET",
                 path: #list_path,
                 capabilities: #read_caps,
+                idempotent_by_default: #read_idempotent,
                 rate_limited_by_default: #rate_limited,
             };
         }
@@ -87,6 +107,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
                 method: "POST",
                 path: #list_path,
                 capabilities: #write_caps,
+                idempotent_by_default: #write_idempotent,
                 rate_limited_by_default: #rate_limited,
             };
         }
@@ -98,6 +119,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
                 method: "GET",
                 path: #detail_path,
                 capabilities: #read_caps,
+                idempotent_by_default: #read_idempotent,
                 rate_limited_by_default: #rate_limited,
             };
         }
@@ -109,6 +131,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
                 method: "PATCH",
                 path: #detail_path,
                 capabilities: #write_caps,
+                idempotent_by_default: #write_idempotent,
                 rate_limited_by_default: #rate_limited,
             };
         }
@@ -120,6 +143,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
                 method: "DELETE",
                 path: #detail_path,
                 capabilities: #read_caps,
+                idempotent_by_default: #write_idempotent,
                 rate_limited_by_default: #rate_limited,
             };
         }
@@ -160,54 +184,4 @@ pub(crate) fn generate_model_transport_entries(model: &Model) -> Vec<proc_macro2
 
 pub(crate) fn route_transport_const_ident(kind: &str, name: &str, suffix: &str) -> syn::Ident {
     ident(&format!("{}_{}_{}", kind, to_snake_case(name), suffix).to_ascii_uppercase())
-}
-
-pub(crate) fn procedure_transport_capabilities_tokens(
-    procedure: &Procedure,
-) -> proc_macro2::TokenStream {
-    if matches!(procedure.return_type.arity, TypeArity::List) {
-        quote! {
-            ::cratestack::RouteTransportCapabilities {
-                request_types: &["application/cbor", "application/json"],
-                response_types: &[
-                    "application/cbor",
-                    "application/json",
-                    ::cratestack::CBOR_SEQUENCE_CONTENT_TYPE,
-                ],
-                default_response_type: "application/cbor",
-                supports_sequence_response: true,
-            }
-        }
-    } else {
-        quote! {
-            ::cratestack::RouteTransportCapabilities {
-                request_types: &["application/cbor", "application/json"],
-                response_types: &["application/cbor", "application/json"],
-                default_response_type: "application/cbor",
-                supports_sequence_response: false,
-            }
-        }
-    }
-}
-
-pub(crate) fn model_read_transport_capabilities_tokens() -> proc_macro2::TokenStream {
-    quote! {
-        ::cratestack::RouteTransportCapabilities {
-            request_types: &[],
-            response_types: &["application/cbor", "application/json"],
-            default_response_type: "application/cbor",
-            supports_sequence_response: false,
-        }
-    }
-}
-
-pub(crate) fn model_write_transport_capabilities_tokens() -> proc_macro2::TokenStream {
-    quote! {
-        ::cratestack::RouteTransportCapabilities {
-            request_types: &["application/cbor", "application/json"],
-            response_types: &["application/cbor", "application/json"],
-            default_response_type: "application/cbor",
-            supports_sequence_response: false,
-        }
-    }
 }

@@ -1,11 +1,20 @@
 blank_issues_enabled: false
 contact_links:
-  - name: AI Governance — source of truth
+  - name: 🧭 Which template should I use?
+    url: https://github.com/cratestack/cratestack/blob/main/docs/contributing/filing-an-issue.md
+    about: A short guide to picking a form and writing a report we can act on. Start here if the list below is intimidating.
+  - name: 📚 Documentation & quickstart
+    url: https://cratestack.dev
+    about: Guides, reference, and the getting-started quickstart. Most usage questions are answered here.
+  - name: 🧪 Runnable examples
+    url: https://github.com/cratestack/cratestack/tree/main/examples
+    about: End-to-end projects for every deployment shape — server, embedded, browser wasm, Flutter, React, Tauri.
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/cratestack/cratestack/blob/main/SECURITY.md
+    about: Please do not open a public issue for security problems. Follow the disclosure process here.
+  - name: ⚖️ AI Governance — source of truth
     url: https://adorsys-gis.github.io/ai-governance/
-    about: The canonical governance home. Read this before opening issues or PRs.
-  - name: AI Working Agreement
+    about: The canonical governance home. Read this before opening the Epic, User Story, or Development Ticket forms.
+  - name: 🤝 AI Working Agreement
     url: https://adorsys-gis.github.io/ai-governance/12-ai-working-agreement
     about: Humans own intent, verification, and consequences. AI output is not truth.
-  - name: The Doctrine
-    url: https://adorsys-gis.github.io/ai-governance/13-doctrine
-    about: AI may accelerate the work, but it must not launder ignorance into polished artifacts.

@@ -3,7 +3,7 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run --example sqlite_offline_first -p cratestack
+//! cargo run --example sqlite_offline_first -p cratestack-sqlite
 //! ```
 //!
 //! Covers what a real app needs day-to-day:

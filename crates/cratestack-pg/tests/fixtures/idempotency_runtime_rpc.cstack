@@ -1,0 +1,37 @@
+// Runtime fixture for `@no_idempotency` on the RPC transport (#876).
+//
+// `transport rpc` so the generated `OPS` slice is populated —
+// `OpDescriptor`s only ever exist for RPC schemas, and REST emits
+// `ROUTE_TRANSPORTS` instead (docs/design/rpc-transport.md). The REST twin
+// of this file is `idempotency_runtime_rest.cstack`; they declare the same
+// two procedures on purpose, so the pair proves transport parity rather
+// than two unrelated things.
+//
+// Two MUTATION procedures, deliberately: `idempotent_by_default` is true
+// for every read already, so a query procedure would pass the bypass
+// assertion for a reason that has nothing to do with the attribute.
+// `transfer` is the control (reserves); `notify` carries
+// `@no_idempotency` (does not). Note there is no `extension` block —
+// unlike `@no_rate_limit`, this attribute is not gated on one.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+type PingArgs {
+  nonce String
+}
+
+mutation procedure transfer(args: PingArgs): PingArgs
+  @allow(auth() != null)
+
+mutation procedure notify(args: PingArgs): PingArgs
+  @allow(auth() != null)
+  @no_idempotency

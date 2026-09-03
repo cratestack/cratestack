@@ -1,0 +1,32 @@
+// Runtime fixture for `@no_idempotency` on the REST transport (#876).
+//
+// Byte-for-byte the same two procedures as `idempotency_runtime_rpc.cstack`
+// minus the `transport rpc` line, so the only variable between the two
+// halves of `idempotency_runtime.rs` is the transport. That is the point:
+// cratestack#474 shipped a fix that worked on one transport and silently
+// no-oped on the other, and a REST fixture that differed in some second way
+// would not rule out a repeat.
+//
+// REST schemas emit `ROUTE_TRANSPORTS` (`RouteTransportDescriptor`) rather
+// than `OPS`, which is why `idempotent_by_default` had to be added to that
+// struct for this slice to ship at all.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+type PingArgs {
+  nonce String
+}
+
+mutation procedure transfer(args: PingArgs): PingArgs
+  @allow(auth() != null)
+
+mutation procedure notify(args: PingArgs): PingArgs
+  @allow(auth() != null)
+  @no_idempotency

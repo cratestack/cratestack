@@ -5,7 +5,7 @@
 use cratestack_core::{CratestackError, RateLimitDecision};
 use redis::Value as RedisValue;
 
-use super::parse::{next_u32_decimal, parse_consume_outcome};
+use super::parse::{next_u32_decimal, parse_bounded_outcome};
 use super::tests_fixtures::{XorShift64, bulk, test_seed};
 
 #[test]
@@ -14,12 +14,16 @@ fn randomized_parse_allowed_roundtrips_remaining() {
     let mut rng = XorShift64::new(seed);
     for iteration in 0..200 {
         let remaining = rng.next_u32();
-        let value = RedisValue::Array(vec![bulk("allowed"), bulk(&remaining.to_string())]);
-        let outcome = parse_consume_outcome(value).unwrap_or_else(|err| {
+        let value = RedisValue::Array(vec![
+            bulk("allowed"),
+            bulk(&remaining.to_string()),
+            bulk("requested"),
+        ]);
+        let outcome = parse_bounded_outcome(value).unwrap_or_else(|err| {
             panic!("seed={seed:#x} iter={iteration} remaining={remaining}: {err:?}")
         });
         assert_eq!(
-            outcome,
+            outcome.decision,
             RateLimitDecision::Allowed { remaining },
             "seed={seed:#x} iter={iteration}",
         );
@@ -33,11 +37,15 @@ fn randomized_parse_throttled_roundtrips_retry_after() {
     for iteration in 0..200 {
         // retry_after must be >= 1 in our wire format; clamp.
         let retry = rng.next_range(1, u32::MAX);
-        let value = RedisValue::Array(vec![bulk("throttled"), bulk(&retry.to_string())]);
-        let outcome = parse_consume_outcome(value)
+        let value = RedisValue::Array(vec![
+            bulk("throttled"),
+            bulk(&retry.to_string()),
+            bulk("requested"),
+        ]);
+        let outcome = parse_bounded_outcome(value)
             .unwrap_or_else(|err| panic!("seed={seed:#x} iter={iteration} retry={retry}: {err:?}"));
         assert_eq!(
-            outcome,
+            outcome.decision,
             RateLimitDecision::Throttled {
                 retry_after_secs: retry
             },
@@ -53,8 +61,12 @@ fn randomized_parse_rejects_out_of_u32_range_remaining() {
     let mut rng = XorShift64::new(seed);
     for iteration in 0..50 {
         let oversized: i64 = (u32::MAX as i64) + 1 + (rng.next_u64() as i64).abs() % 1_000_000;
-        let value = RedisValue::Array(vec![bulk("allowed"), bulk(&oversized.to_string())]);
-        let err = parse_consume_outcome(value).expect_err(&format!(
+        let value = RedisValue::Array(vec![
+            bulk("allowed"),
+            bulk(&oversized.to_string()),
+            bulk("requested"),
+        ]);
+        let err = parse_bounded_outcome(value).expect_err(&format!(
             "seed={seed:#x} iter={iteration} oversized={oversized}: must reject",
         ));
         assert!(matches!(err, CratestackError::Internal(_)));

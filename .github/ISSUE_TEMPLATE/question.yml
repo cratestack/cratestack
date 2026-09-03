@@ -1,0 +1,57 @@
+name: 💬 Question / help using CrateStack
+description: You're trying to do something and can't work out how. Asking is welcome.
+title: "[Question]: "
+labels: ["question", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        There are no bad questions here. If the answer turns out to be "the docs
+        don't say", that's a docs bug on us and we'll relabel it — you don't need
+        to figure out which it is before asking.
+
+        Worth a quick look first, in case it saves you the wait:
+        [Quickstart](https://cratestack.dev/getting-started/quickstart) ·
+        [Examples](https://github.com/cratestack/cratestack/tree/main/examples) ·
+        [Docs](https://cratestack.dev)
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What are you trying to do?
+      description: Describe the goal, not just the error. Knowing where you're headed usually changes the answer.
+      placeholder: |
+        I want to share one schema between a Postgres server and a Flutter app that
+        works offline, and I can't tell which macro belongs in which crate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Code, schema, commands, docs pages you already read. Partial attempts are useful — they tell us which mental model to correct.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      options:
+        - Not sure
+        - Server (include_server_schema! / cratestack-pg)
+        - No-database server (cratestack-api)
+        - Embedded SQLite, native (include_embedded_schema! / cratestack-sqlite)
+        - Embedded SQLite, browser wasm32 + OPFS
+        - Rust client (include_client_schema! / cratestack-client)
+        - Generated Dart / Flutter client
+        - Generated TypeScript client
+        - CLI, Studio, or editor tooling
+        - Choosing between the above
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: CrateStack version
+      placeholder: "0.11.0"

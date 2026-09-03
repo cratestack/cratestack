@@ -1,5 +1,23 @@
 ## Unreleased
 
+- **`example/tool/verify_web_console.dart`'s headless-Chrome readiness check no longer flakes on a
+  cold CI runner.** The DevTools-readiness deadline was a hardcoded 15s that a loaded runner could
+  miss with zero diagnostics (Chrome's stderr was discarded, and nothing checked whether Chrome had
+  already exited); this failed `just cbor-example-verify`'s web step three times in one day before
+  clearing on a plain rerun. The deadline is now 60s by default (`--devtools-ready-timeout-seconds` /
+  `CRATESTACK_CBOR_DEVTOOLS_READY_SECONDS`), a dead Chrome now fails immediately with its captured
+  stderr and exit code instead of waiting out the deadline, and one automatic relaunch is attempted
+  before giving up. Not a published-artifact change — this is example/CI tooling only, split into
+  `example/tool/verify_web_console/*.dart` to stay under this repo's 200-line-per-file convention.
+- **That same fix's first landing hung the job it was fixing** — reading `process.exitCode` to
+  detect an already-exited Chrome opens a native exit-watch handle that keeps the Dart isolate alive
+  until the process is truly reaped, and a bare `process.kill()` doesn't guarantee that. Every exit
+  path now tears down deterministically (`ChromeProcess.shutDown`, escalating to SIGKILL) and
+  finishes with an explicit `exit(code)` instead of trusting the event loop to drain on its own; a
+  new `HardTimeoutWatchdog` (`--hard-timeout-seconds`, default 180s) is an in-process backstop, and
+  `just cbor-example-verify` now also wraps the tool invocation in `timeout 300` as a second,
+  OS-level line of defence.
+
 ## 0.11.0 (2026-09-03)
 
 - No functional changes. Version kept in lockstep with the CrateStack

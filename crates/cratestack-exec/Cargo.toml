@@ -1,0 +1,46 @@
+[package]
+name = "cratestack-exec"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Forwards to `cratestack-core`'s decimal backend choice. Required because
+# `cratestack-core`'s dependency edge has `default-features = false` at the
+# workspace root — every direct consumer re-selects a backend explicitly, or
+# Cargo's cross-member feature unification silently pins one for it
+# (cratestack#495). This crate's own source never names a decimal type; the
+# forwarding exists purely so `--features decimal-bigdecimal` builds keep
+# `rust_decimal` out of the graph the same way every other direct
+# `cratestack-core` consumer does.
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = ["cratestack-core/decimal-rust-decimal"]
+decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
+
+[dependencies]
+# The complete workspace dependency list, and it is the point of the crate:
+# L3 (`docs/design/layering.md` §2) excludes anything transport-shaped and
+# anything backend-shaped, so there is no `http`/`tower`/`axum` edge and no
+# `sqlx`/`rusqlite` edge to add. `uuid` is not a layering exception — it is
+# the type `IdempotencyStore`'s reservation token already has at L1.
+cratestack-core.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+# Only the in-crate test fakes need this: `IdempotencyStore` is declared
+# with `#[async_trait]` at L1, so an implementor has to desugar the same
+# way. Nothing in `src/` outside `#[cfg(test)]` uses it.
+async-trait.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }

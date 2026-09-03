@@ -33,12 +33,14 @@ default = ["decimal-rust-decimal"]
 # check --all-targets`.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
+    "cratestack-exec/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
     "cratestack-codec-json/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
+    "cratestack-exec/decimal-bigdecimal",
     "cratestack-sql/decimal-bigdecimal",
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json/decimal-bigdecimal",
@@ -59,6 +61,11 @@ cratestack-core.workspace = true
 # crates unconditionally. Layering-legal both ways (L2 -> L4, ADR 0014).
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
+# ADR 0015 slice 1: `IdempotencyLayer` is now a thin adapter over the L3
+# `OpExecutor`. L4 -> L3 is a legal direction (ADR 0014), and this pulls
+# nothing new into any facade's graph — `cratestack-exec` depends on
+# `cratestack-core` and `uuid`, both of which this crate already has.
+cratestack-exec.workspace = true
 cratestack-sql.workspace = true
 erased-serde.workspace = true
 futures-util.workspace = true

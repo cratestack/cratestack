@@ -1,0 +1,45 @@
+name: 📖 Documentation problem
+description: Something is missing, wrong, out of date, or confusing in the docs, a README, or an example.
+title: "[Docs]: "
+labels: ["documentation", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Documentation issues are real issues. "I couldn't follow this" is a
+        complete and valid report — you don't need to know what the correct text
+        would be.
+
+        Small fixes (a typo, a stale command, a broken link) are also very welcome
+        as a direct pull request. See
+        [Your first contribution](https://github.com/cratestack/cratestack/blob/main/docs/contributing/first-contribution.md).
+
+  - type: input
+    id: where
+    attributes:
+      label: Where?
+      description: URL of the docs page, or the path to the file in this repository.
+      placeholder: "https://cratestack.dev/getting-started/quickstart — or README.md, \"Install Locally\""
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of problem?
+      options:
+        - Instructions don't work (command fails, code doesn't compile)
+        - Out of date (describes an older version)
+        - Missing (the thing I needed isn't documented anywhere)
+        - Confusing or ambiguous
+        - Broken link, typo, or formatting
+    validations:
+      required: true
+
+  - type: textarea
+    id: detail
+    attributes:
+      label: What went wrong?
+      description: What you expected the docs to tell you, and what you found instead. Paste the failing command and its output if there was one.
+    validations:
+      required: true

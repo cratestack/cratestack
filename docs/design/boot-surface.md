@@ -15,6 +15,16 @@ and health and cross-cutting concerns are declared. Not the crate graph:
 that is [`layering.md`](layering.md), and this document changes nothing
 in it (§6).
 
+> **Post-merge note (2026-09-03).** Between this document's draft and its
+> merge, ADR 0015 was **accepted (amended)** and its first slice landed:
+> `cratestack-exec` now occupies L3 and owns idempotency *admission*
+> (#881), with rate limiting (#877) and policy replay for subscriptions
+> as slices 2–3, and #880 bounded the rate-limit bucket keyspace. Nothing
+> below proposes anything at L3; §4.2's builder wires the L4 adapters
+> *around* the L3 executor, and §6 records that. Where the text below
+> says "the two seams ADR 0012 already counts", read the post-#881 shape:
+> `IdempotencyLayer` is now the thin L4 adapter over `OpExecutor::admit`.
+
 > **What this is not.** [`layering.md`](layering.md) §6 ("Spring,
 > honestly") and [ADR 0012](../adr/0012-no-ioc-container.md) already
 > settled the *framework-internal* half of "make CrateStack like Spring":
@@ -90,11 +100,21 @@ in-workspace consumers are `cratestack-outbox` and `cratestack-migrate`'s
 tests.
 
 **Cross-cutting concerns are `.layer()` calls the user must know to
-make.** Idempotency and rate limiting are `IdempotencyLayer::new(store,
-ttl)` / `RateLimitLayer::new(store, config)` applied to the router by the
+make — and, since #881, a resolver they must know to install.**
+Idempotency and rate limiting are `IdempotencyLayer::new(store, ttl)` /
+`RateLimitLayer::new(store, config)` applied to the router by the
 application (`banking_idempotency.rs:81`, `banking_rate_limit.rs:27`).
 Correct per ADR 0012 — the application chooses the adapter — but
-undiscoverable: nothing at the composition root says these exist.
+undiscoverable: nothing at the composition root says these exist. #881
+adds a second thing to know: `@no_idempotency` is honoured only if the
+application also calls `.with_op_resolver(build_rest_op_resolver(
+cratestack_schema::axum::ROUTE_TRANSPORTS))` (or the RPC twin over
+`OPS`), and under `Router::nest("/api", ..)` the `_with_prefix` variant,
+because "nothing in a request says which leading segments were the
+mount". Every one of those inputs is a fact the *generated* module
+already knows — the transport style, the descriptor table, and (if the
+builder is told it) the mount — which is the strongest single argument
+for §4.2.
 
 **There is no project generator.** `CLAUDE.md`'s CLI list mentions
 `init`; the only top-level scaffolder that actually exists is `studio
@@ -110,7 +130,7 @@ independently of this proposal.
 | `SpringApplication.run()` | hand-rolled `main.rs` | **§4.2** generated `App` builder + `serve()` | passes: typed builder, constructor injection (ADR 0012 names exactly this as the answer to unwieldy builders) |
 | `@ConfigurationProperties`, profiles | `ServiceConfig::from_env` (fixed shape) | **§4.3** typed env config + profile overlay | passes: a struct built at startup |
 | Actuator | `cratestack_service::health::router()` merged by hand | **§4.2** `.health()` on the builder | passes |
-| Filters / interceptors | `IdempotencyLayer`, `RateLimitLayer` applied by hand | **§4.2** `.idempotency(..)`, `.rate_limit(..)` setters | passes: explicit `Arc<dyn Store>`, the two seams ADR 0012 already counts |
+| Filters / interceptors | `IdempotencyLayer` (+ `with_op_resolver`, #881), `RateLimitLayer` applied by hand | **§4.2** `.idempotency(..)`, `.rate_limit(..)` setters; the generated builder installs the right op resolver itself | passes: explicit `Arc<dyn Store>`, the two seams ADR 0012 already counts; L3 untouched |
 | `@Transactional` | `db.transaction(|tx| …)` (#513) | nothing | **fails** — needs a proxy; refused (§5) |
 | `@SpringBootTest`, `MockMvc` | `router.oneshot(..)` by hand | **§4.4** typed test client | passes |
 | Initializr | `studio eject` only | **§4.5** `cratestack new` | n/a (tool) |
@@ -188,8 +208,11 @@ let app = cratestack_schema::App::new(db)
     .codec(CodecSet::new(CborCodec, JsonCodec)) // default when `codec-json` is on
     .resolvers(())                           // default when schema has no @computed
     .body_limit(DEFAULT_BODY_LIMIT_BYTES)    // default
-    .idempotency(store, Duration::from_secs(3600)) // optional: Arc<dyn IdempotencyStore>
-    .rate_limit(store, RateLimitConfig::new(100, 1.0)) // optional
+    .idempotency(store, Duration::from_secs(3600)) // optional: Arc<dyn IdempotencyStore>;
+                                             // the generated builder adds the schema's own
+                                             // op resolver (#881) — REST or RPC, it knows which
+    .rate_limit(store, RateLimitConfig::new(100, 1.0)) // optional (#880's budget applies)
+    .mount("/api")                           // optional; feeds the `_with_prefix` resolvers
     .health()                                // mounts /healthz, /healthz/ready
     .router();                               // a plain axum::Router — nothing hidden
 
@@ -205,11 +228,16 @@ Three properties, each a §8 decision:
   is a plain field with a default.
 - **Optional collaborators are the existing seams, unchanged.**
   `.idempotency(..)` takes the same `Arc<dyn IdempotencyStore>` the
-  `IdempotencyLayer` takes today and applies the same layer. No new trait,
-  no new `dyn`; ADR 0016's freeze at three operational traits is
-  untouched. This is *not* the L3 `OpExecutor` (ADR 0015): the builder
-  wires the layers, it does not execute operations, and it does not read
-  `idempotent_by_default` — that gap stays ADR 0015's.
+  `IdempotencyLayer` takes today and applies the same layer — plus the
+  `with_op_resolver` call #881 made necessary, which the generated builder
+  can make correctly because it knows whether the schema is REST or RPC
+  and can name `ROUTE_TRANSPORTS`/`OPS`. No new trait, no new `dyn`; ADR
+  0016's freeze at three operational traits is untouched. This is *not*
+  L3: `cratestack-exec`'s `OpExecutor::admit` (ADR 0015 slice 1) makes
+  the admission decision; the builder only composes the L4 adapters
+  around it. When slice 2 moves rate limiting to L3 the builder's
+  `.rate_limit(..)` setter should not need to change — that is the test
+  of whether it was placed correctly.
 - **`serve()` is the `cratestack-service` `run()` that exists, plus
   graceful shutdown**, reachable from the facade. Today no facade
   re-exports `cratestack-service`; an optional `service` feature on
@@ -286,7 +314,8 @@ them:
   exactly like `router()` today.
 - `serve()` / `Env` — L2 `cratestack-service`, reached through an optional
   L5 facade feature. L5 → L2 is legal (`layering.md` §3).
-- L3 stays empty. Nothing here is an execution layer.
+- L3 (`cratestack-exec`, ADR 0015 slice 1 / #881) is untouched. Nothing
+  here is an execution layer; the builder composes around it.
 
 ## 7. Phasing
 

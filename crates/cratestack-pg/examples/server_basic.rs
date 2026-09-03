@@ -7,7 +7,7 @@
 //!
 //! ```bash
 //! export DATABASE_URL=postgres://cratestack:cratestack@localhost/cratestack
-//! cargo run --example server_basic -p cratestack
+//! cargo run --example server_basic -p cratestack-pg
 //! ```
 //!
 //! Without `DATABASE_URL`, the example prints the generated route table and
