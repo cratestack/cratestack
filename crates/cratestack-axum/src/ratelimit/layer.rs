@@ -121,6 +121,14 @@ impl RateLimitLayer {
         self
     }
 
+    /// Test seam: the warning counters this layer shares with every
+    /// service it builds. Lets a test assert that the per-request path
+    /// actually *called* `consume::report`, which deleting outright used
+    /// to leave every test green (cratestack#871 review, should-fix 3).
+    pub(super) fn _budget_warnings(&self) -> &BudgetWarnings {
+        &self.budget_warnings
+    }
+
     /// Bind the layer's configuration into the closure `RateLimitService`
     /// calls, so the per-request path never has to branch on "default or
     /// override" again.

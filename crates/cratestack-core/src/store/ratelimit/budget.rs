@@ -41,13 +41,31 @@ pub struct BucketBudget {
     /// peer's own `ip:` bucket), which is what makes the collapse a
     /// throttle rather than a bypass.
     pub fallback_key: String,
-    /// How many distinct bucket keys this scope may create per `window`.
+    /// How many distinct bucket keys this scope may admit while it lives.
     pub max_distinct: u32,
-    /// Fixed window over which `max_distinct` is counted. A fixed (not
-    /// sliding) window is a deliberate simplification: it admits up to
-    /// `2 * max_distinct` buckets alive at once across a window boundary,
-    /// which is a constant factor on a bound whose whole purpose is to
-    /// replace "unbounded" with "constant".
+    /// **Floor** on how long the scope's admission record lives; the store
+    /// raises it to at least `bucket_ttl_secs(config)` (cratestack#871
+    /// review, blocker 2).
+    ///
+    /// It is a floor rather than a fixed window because a scope that
+    /// expired *before* the buckets it admitted did not bound anything: a
+    /// fresh scope re-admits `max_distinct` more while the previous
+    /// generation is still alive, so the real steady state was
+    /// `max_distinct × ceil(bucket_ttl / window)` — measured at 21 buckets
+    /// for a cap of 4 over five 1s windows, and ~184 320 per peer for a
+    /// non-refilling bucket under the defaults. Tying the lifetime to the
+    /// buckets' own TTL makes the scope outlive everything it admitted, so
+    /// the steady-state bound is `max_distinct + 2` per scope.
+    ///
+    /// The lifetime is refreshed on every admission, so a scope stays
+    /// alive while it is actively admitting and expires that long after it
+    /// stops. A member admitted once stays admitted until the whole record
+    /// expires; further distinct keys take the fallback until then.
+    ///
+    /// A transient overlap of up to `2 × max_distinct` is still reachable:
+    /// a bucket touched shortly before its scope expires can outlive it by
+    /// up to one bucket TTL while a new generation fills. It rejoins the
+    /// new scope's count on its next request, so it does not compound.
     pub window: Duration,
 }
 

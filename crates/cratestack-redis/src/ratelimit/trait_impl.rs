@@ -3,7 +3,7 @@ use std::time::SystemTime;
 use async_trait::async_trait;
 use cratestack_core::{
     BoundedOutcome, BucketBudget, ConsumeRequest, CratestackError, RateLimitConfig,
-    RateLimitDecision, RateLimitStore, bucket_ttl_secs,
+    RateLimitDecision, RateLimitStore, bucket_ttl_secs, scope_ttl_secs,
 };
 use redis::Value as RedisValue;
 
@@ -40,7 +40,7 @@ impl RateLimitStore for RedisRateLimitStore {
     ) -> Result<BoundedOutcome, CratestackError> {
         let now_ms = system_time_to_ms(SystemTime::now())?;
         let bucket_key = self.bucket_key(request.key);
-        let keys = self.budget_keys(request.budget, now_ms, &bucket_key);
+        let keys = self.budget_keys(request.budget, &bucket_key);
         // Owned up front so the retry closure below can be `Fn` (called
         // twice) rather than `FnOnce`.
         let args = ScriptArgs::new(request, now_ms, request.budget);
@@ -65,7 +65,7 @@ impl RateLimitStore for RedisRateLimitStore {
                         .arg(&args.refill)
                         .arg(&args.ttl_sec)
                         .arg(&args.max_distinct)
-                        .arg(&args.window_ms)
+                        .arg(&args.scope_ttl_ms)
                         .arg(&args.member)
                         .invoke_async(&mut conn)
                         .await
@@ -91,7 +91,6 @@ impl RedisRateLimitStore {
     fn budget_keys(
         &self,
         budget: Option<&BucketBudget>,
-        now_ms: i64,
         bucket_key: &str,
     ) -> (String, String, String) {
         let Some(budget) = budget else {
@@ -101,14 +100,9 @@ impl RedisRateLimitStore {
                 bucket_key.to_owned(),
             );
         };
-        let window_ms = window_ms(budget);
-        // Fixed-window epoch, computed here rather than in Lua: the script
-        // must stay deterministic for replication/AOF, and `TIME` is not
-        // allowed before a write in older Redis versions.
-        let epoch = now_ms.div_euclid(window_ms.max(1));
         (
             bucket_key.to_owned(),
-            self.scope_key(&budget.scope_key, epoch),
+            self.scope_key(&budget.scope_key),
             self.bucket_key(&budget.fallback_key),
         )
     }
@@ -121,7 +115,7 @@ struct ScriptArgs {
     refill: String,
     ttl_sec: String,
     max_distinct: String,
-    window_ms: String,
+    scope_ttl_ms: String,
     member: String,
 }
 
@@ -135,18 +129,25 @@ impl ScriptArgs {
             max_distinct: budget
                 .map_or(NO_BUDGET, |b| i64::from(b.max_distinct))
                 .to_string(),
-            window_ms: budget.map_or(0, window_ms).to_string(),
+            scope_ttl_ms: budget
+                .map_or(0, |b| scope_ttl_ms(request.config, b))
+                .to_string(),
             member: scope_member(request.key),
         }
     }
 }
 
-/// A window of zero (or one that overflows an `i64` of milliseconds) would
-/// make the epoch divisor zero and the `PEXPIRE` invalid, so it is clamped
-/// to at least one millisecond — a degenerate but well-defined budget
-/// rather than a script error.
-fn window_ms(budget: &BucketBudget) -> i64 {
-    i64::try_from(budget.window.as_millis())
-        .unwrap_or(i64::MAX)
-        .max(1)
+/// How long the scope's member set lives, in milliseconds.
+///
+/// Delegates the policy to [`scope_ttl_secs`] — which raises the caller's
+/// `window` to at least the bucket TTL (cratestack#871 review, blocker 2)
+/// and clamps it to `MAX_TTL_SECS` — so both backends cannot drift and no
+/// `Duration` can reach `PEXPIRE` as an out-of-range integer.
+///
+/// That clamp is not cosmetic: a `Duration::MAX` window used to arrive as
+/// `value is not an integer or out of range`, failing the whole `consume`
+/// with `Internal`, which 500s every rate-limited route (should-fix 4).
+fn scope_ttl_ms(config: RateLimitConfig, budget: &BucketBudget) -> i64 {
+    let secs = scope_ttl_secs(config, budget.window);
+    i64::try_from(secs.saturating_mul(1_000)).unwrap_or(i64::MAX)
 }

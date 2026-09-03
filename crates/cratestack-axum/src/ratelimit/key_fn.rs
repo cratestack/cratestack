@@ -19,7 +19,7 @@ use sha2::{Digest, Sha256};
 use super::budget::RateLimitBucketBudget;
 use super::budget::warn::BudgetWarnings;
 use super::scope::{
-    BudgetScope, KeyDerivation, UnverifiedAuthPolicy, VerifiedPrincipal, scope_address,
+    BudgetScope, KeyDerivation, UnverifiedAuthPolicy, VerifiedPrincipal, bucket_address,
 };
 
 /// Logged once per process, not per request — see the identical rationale
@@ -70,8 +70,13 @@ pub(super) fn default_key_fn(
             Some(ip) => KeyDerivation::budgeted(
                 key,
                 BucketBudget::new(
-                    format!("peer:{}", scope_address(ip)),
-                    format!("ip:{ip}"),
+                    format!("peer:{}", bucket_address(ip)),
+                    // Aggregated too, not the raw address: see
+                    // `bucket_address`. A /64-scoped budget whose fallback
+                    // is per-address gives an attacker 2^64 free fallback
+                    // buckets, which is the bound evaded from the other
+                    // side (cratestack#871 review, blocker 1).
+                    format!("ip:{}", bucket_address(ip)),
                     budget.max_distinct_per_peer,
                     budget.window,
                 ),
@@ -110,13 +115,19 @@ pub(super) fn default_key_fn(
     //
     // This is also where `UnverifiedAuthPolicy::Ignore` lands: one bucket
     // per verified peer, nothing caller-supplied in the key at all, and
-    // therefore no budget needed. Note the address is NOT aggregated here
-    // even for IPv6 — aggregation belongs to the *scope* (see
-    // `scope::scope_address`); aggregating the throttling key itself would
-    // make one subscriber's /64 a shared bucket, which is cratestack#416's
-    // collision all over again.
+    // therefore no budget needed.
+    //
+    // The address IS aggregated for IPv6 (`bucket_address`), and this
+    // branch is why that matters most: with no `Authorization` header
+    // there is no budget at all here, so an attacker rotating the source
+    // address inside one /64 minted one bucket per request and every one
+    // of them was allowed — measured at 200/200 in the cratestack#871
+    // review. Aggregation is the ONLY thing bounding this path.
     if let Some(ip) = peer {
-        return Ok(KeyDerivation::unbudgeted(format!("ip:{ip}")));
+        return Ok(KeyDerivation::unbudgeted(format!(
+            "ip:{}",
+            bucket_address(ip)
+        )));
     }
 
     // Neither Authorization nor a verified peer address is available (e.g.

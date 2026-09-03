@@ -20,7 +20,12 @@
 
 mod support;
 
-use cratestack_core::{ConsumeRequest, RateLimitConfig, RateLimitDecision, RateLimitStore};
+use std::time::Duration;
+
+use cratestack_core::{
+    BucketBudget, ConsumeRequest, RateLimitConfig, RateLimitDecision, RateLimitStore,
+    bucket_ttl_secs, scope_ttl_secs,
+};
 use redis::AsyncCommands;
 
 use support::ratelimit_budget::{WINDOW, budget, scan_keys, scopes, store_or_skip};
@@ -63,20 +68,68 @@ async fn rotating_bearer_cannot_mint_a_key_per_request() {
     );
 }
 
-/// The scope set must not outlive its window, or the bound leaks one set
-/// per window forever.
+/// **cratestack#871 review, blocker 2.** The scope record must OUTLIVE the
+/// buckets it admitted. Measured before the fix with a window shorter than
+/// the bucket TTL: every rollover minted a fresh epoch-suffixed key that
+/// re-admitted `max_distinct` more buckets while the previous generation
+/// was still alive — 21 buckets for a cap of 4 over five 1s windows.
+///
+/// Here the budget asks for a 1s window against a 5060s bucket TTL, and
+/// drives 5x more distinct tokens than the cap over real time. The scope
+/// TTL is raised to the bucket TTL, so there is no second generation.
 #[tokio::test]
-async fn the_scope_set_carries_a_window_ttl() {
+async fn a_scope_cannot_expire_underneath_the_buckets_it_admitted() {
+    let Some((store, prefix, redis)) = store_or_skip("generations").await else {
+        return;
+    };
+    const CAP: u32 = 4;
+    // bucket_ttl_secs = ceil(5000 / 1.0) + 60 = 5060s.
+    let config = RateLimitConfig::new(5000, 1.0);
+    let budget = BucketBudget::new(
+        "peer:198.51.100.9",
+        "ip:198.51.100.9",
+        CAP,
+        Duration::from_secs(1),
+    );
+
+    for window in 0..5 {
+        for nonce in 0..10 {
+            let key = format!("auth:w{window}-{nonce}");
+            store
+                .consume_bounded(ConsumeRequest::new(&key, config, Some(&budget)))
+                .await
+                .expect("consume");
+        }
+        // Cross a real window boundary between generations.
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+    }
+
+    let keys = scan_keys(&redis, &prefix).await;
+    assert!(
+        keys.len() <= CAP as usize + 2,
+        "five 1s windows against a 5060s bucket TTL created {} keys; the bound is {} \
+         ({CAP} buckets + 1 scope set + 1 fallback). Keys: {keys:?}",
+        keys.len(),
+        CAP as usize + 2,
+    );
+    assert_eq!(
+        scopes(&keys).len(),
+        1,
+        "exactly one scope record, not one per window: {keys:?}",
+    );
+}
+
+/// The scope record's TTL must be at least the bucket TTL — that is the
+/// whole invariant blocker 2 turns on — and it must exist at all.
+#[tokio::test]
+async fn the_scope_set_ttl_covers_the_bucket_ttl() {
     let Some((store, prefix, redis)) = store_or_skip("ttl").await else {
         return;
     };
     let budget = budget(4);
+    let config = RateLimitConfig::new(5, 0.001);
     store
-        .consume_bounded(ConsumeRequest::new(
-            "auth:a",
-            RateLimitConfig::new(5, 0.001),
-            Some(&budget),
-        ))
+        .consume_bounded(ConsumeRequest::new("auth:a", config, Some(&budget)))
         .await
         .expect("consume");
 
@@ -90,10 +143,17 @@ async fn the_scope_set_carries_a_window_ttl() {
         .await
         .expect("connect");
     let pttl: i64 = conn.pttl(scope_keys[0]).await.expect("pttl");
+    let expected = scope_ttl_secs(config, WINDOW) as i64 * 1000;
     assert!(
-        pttl > 0 && pttl <= WINDOW.as_millis() as i64,
-        "scope set PTTL was {pttl}ms; must be positive and at most the {}ms window",
-        WINDOW.as_millis(),
+        pttl > 0 && pttl <= expected,
+        "scope set PTTL was {pttl}ms; must be positive and at most {expected}ms",
+    );
+    // The invariant: the record outlives every bucket it admitted.
+    let bucket_ttl_ms = bucket_ttl_secs(config) as i64 * 1000;
+    assert!(
+        pttl >= bucket_ttl_ms - 5_000,
+        "scope PTTL {pttl}ms is shorter than the {bucket_ttl_ms}ms bucket TTL, so a second \
+         generation can open underneath the buckets this one admitted",
     );
 }
 

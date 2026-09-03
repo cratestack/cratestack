@@ -89,7 +89,9 @@ impl KeyDerivation {
     }
 }
 
-/// The address form a per-peer budget counts against.
+/// The address form used **everywhere a peer address becomes a key** — the
+/// budget scope, the `ip:` fallback bucket, and the `ip:` bucket an
+/// unauthenticated request gets.
 ///
 /// IPv6 is aggregated to its **/64** because that is the smallest block
 /// routinely delegated to a single subscriber: without aggregation an
@@ -98,7 +100,23 @@ impl KeyDerivation {
 /// aggregated — /24 collateral under CGNAT would collapse thousands of
 /// unrelated subscribers into one budget, and IPv4 gives an attacker no
 /// comparable free-address supply.
-pub(super) fn scope_address(ip: IpAddr) -> String {
+///
+/// # Why it is ONE function and not two (cratestack#871 review, blocker 1)
+///
+/// The first cut aggregated only the scope and left the bucket keys on the
+/// full address. That left the whole mechanism evadable from the other
+/// side, and it was measured: rotating the source address inside a single
+/// /64 produced 200 buckets with an `Authorization` header (cap 8) and 200
+/// buckets, 200/200 allowed, with **no header at all** — the cratestack#846
+/// signature with the address, rather than the token, as the rotating
+/// variable. Aggregating the scope while leaving the key un-aggregated
+/// bounds nothing.
+///
+/// The accepted cost, stated rather than hidden: two distinct hosts inside
+/// one /64 share a throttling bucket. That is a real cratestack#416
+/// trade-off, taken because a /64 is one subscriber and an attacker's
+/// 2^64-address supply is not a hypothetical.
+pub(super) fn bucket_address(ip: IpAddr) -> String {
     match ip {
         IpAddr::V4(v4) => v4.to_string(),
         IpAddr::V6(v6) => {

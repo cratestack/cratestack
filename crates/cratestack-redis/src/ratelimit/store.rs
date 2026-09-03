@@ -70,17 +70,22 @@ impl RedisRateLimitStore {
         self.namespaced(":rl:", &key_hash(key))
     }
 
-    /// The Redis key holding one scope's distinct-bucket set for one fixed
-    /// window (cratestack#871).
+    /// The Redis key holding one scope's distinct-bucket set
+    /// (cratestack#871).
     ///
-    /// The window epoch is baked into the key rather than tracked inside
-    /// the value: rotation then costs nothing (a new epoch is a new key)
-    /// and the old set expires on its own. A separate `:rls:` namespace,
-    /// not `:rl:`, so a `SCAN <prefix>:rl:*` still counts buckets and only
-    /// buckets — which is exactly what the regression test asserts a bound
-    /// on.
-    pub(super) fn scope_key(&self, scope: &str, epoch: i64) -> String {
-        self.namespaced(":rls:", &format!("{}:{epoch}", key_hash(scope)))
+    /// **No window epoch in the key.** The first cut suffixed one, which
+    /// meant every rollover minted a fresh set that re-admitted
+    /// `max_distinct` more buckets while the previous generation was still
+    /// alive — and made replicas with skewed clocks land on different
+    /// generations at once. One key per scope, re-`PEXPIRE`d on every
+    /// admission, is what actually bounds the keyspace; see
+    /// `super::scripts`.
+    ///
+    /// A separate `:rls:` namespace, not `:rl:`, so a `SCAN <prefix>:rl:*`
+    /// still counts buckets and only buckets — which is exactly what the
+    /// regression test asserts a bound on.
+    pub(super) fn scope_key(&self, scope: &str) -> String {
+        self.namespaced(":rls:", &key_hash(scope))
     }
 
     fn namespaced(&self, infix: &str, suffix: &str) -> String {

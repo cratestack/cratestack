@@ -65,6 +65,43 @@ fn bucket_ttl_handles_non_positive_refill() {
     assert_eq!(bucket_ttl_secs(RateLimitConfig::new(10, f64::NAN)), 86_400);
 }
 
+/// cratestack#871 review, blocker 2: the scope lifetime must never be
+/// shorter than the buckets it admitted, or a fresh scope re-admits
+/// `max_distinct` more while the previous generation is still alive.
+#[test]
+fn scope_ttl_is_never_shorter_than_the_bucket_ttl() {
+    // The measured regression: window 1s, bucket TTL 5060s. A 1s scope
+    // let 21 buckets accumulate over five windows for a cap of 4.
+    let config = RateLimitConfig::new(5000, 1.0);
+    assert_eq!(bucket_ttl_secs(config), 5060);
+    assert_eq!(scope_ttl_secs(config, Duration::from_secs(1)), 5060);
+}
+
+#[test]
+fn scope_ttl_honours_a_window_longer_than_the_bucket_ttl() {
+    let config = RateLimitConfig::new(1, 1000.0); // bucket TTL 61s
+    assert_eq!(scope_ttl_secs(config, Duration::from_secs(3600)), 3600);
+}
+
+/// should-fix 4: a `Duration::MAX` window used to reach Redis's `PEXPIRE`
+/// as an out-of-range integer, failing `consume` with `Internal` — which
+/// 500s every rate-limited route. A nonsensical budget must degrade, not
+/// take the service down.
+#[test]
+fn scope_ttl_clamps_every_degenerate_window() {
+    let config = RateLimitConfig::new(10, 1.0); // bucket TTL 70s
+    assert_eq!(scope_ttl_secs(config, Duration::ZERO), 70);
+    assert_eq!(scope_ttl_secs(config, Duration::from_millis(1)), 70);
+    assert_eq!(scope_ttl_secs(config, Duration::MAX), MAX_TTL_SECS);
+    assert_eq!(
+        scope_ttl_secs(config, Duration::from_secs(u64::MAX / 2)),
+        MAX_TTL_SECS,
+    );
+    // Even the widest bucket TTL stays inside the ceiling.
+    let never_refills = RateLimitConfig::new(10, 0.0);
+    assert!(scope_ttl_secs(never_refills, Duration::ZERO) <= MAX_TTL_SECS);
+}
+
 #[test]
 fn charged_key_resolves_to_the_fallback_only_when_over_budget() {
     let budget = BucketBudget::new("peer:192.0.2.1", "ip:192.0.2.1", 8, Duration::from_secs(60));

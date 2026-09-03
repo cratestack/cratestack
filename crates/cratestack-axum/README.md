@@ -180,10 +180,14 @@ token consumption:
 | Request carries | Bucket key | Scope | Cap (default) | Charged past the cap |
 |---|---|---|---|---|
 | `VerifiedPrincipal` extension | `princ:<sha256>` | — | none | — |
-| `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<ip>` (IPv6 → /64) | 128 / 60s | the peer's own `ip:<ip>` bucket |
-| `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192 / 60s | one `overflow` bucket |
-| `ConnectInfo` only | `ip:<ip>` | — | none | — |
+| `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<addr>` | 128 | the peer's own `ip:<addr>` bucket |
+| `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192 | one `overflow` bucket |
+| `ConnectInfo` only | `ip:<addr>` | — | none | — |
 | neither | refused, `412` (#416) | | | |
+
+`<addr>` is the peer address for IPv4 and its **/64 prefix** for IPv6 — in the scope *and* in every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so without aggregation an attacker rotating the source address inside their own prefix evades the cap entirely (measured: 200 buckets with a token, 200 buckets all allowed without one). The accepted cost, stated rather than hidden: two distinct hosts inside one /64 share a throttling bucket. IPv4 is not aggregated — a /24 under CGNAT is thousands of unrelated subscribers.
+
+The `window` is a **floor** on how long a scope's admission record lives, not a fixed window: the store raises it to at least the bucket TTL, so the record cannot expire underneath the buckets it admitted and let a fresh generation open beneath it. Every admission pushes the deadline forward, and a saturated scope ages out so a peer whose tokens rotate is not capped at its first 128 credentials forever.
 
 Past the cap a caller is **collapsed onto its own peer bucket, not refused** — refusing there would
 hand an attacker a deterministic outage of every rate-limited route. Under the cap, distinct callers

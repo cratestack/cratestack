@@ -21,6 +21,24 @@
 //! `StoreErrorPolicy` instead of silently disabling the limiter. Cluster
 //! is not a supported deployment for this store today.
 //!
+//! # The scope set outlives the buckets it admitted (cratestack#871 review)
+//!
+//! The first cut suffixed the scope key with a fixed-window epoch and gave
+//! it `PEXPIRE window_ms` while buckets got `EXPIRE bucket_ttl`. With
+//! `window < bucket_ttl` that bounded nothing — every rollover minted a
+//! fresh key that re-admitted `max_distinct` more buckets while the
+//! previous generation was still alive, so the steady state was
+//! `max_distinct * ceil(bucket_ttl / window)`. Measured: 21 buckets for a
+//! cap of 4 over five 1s windows, and ~184 320 per peer for a
+//! non-refilling bucket under the defaults — past the in-memory cap on its
+//! own.
+//!
+//! So there is no epoch. One key per scope, `PEXPIRE`d to
+//! `cratestack_core::scope_ttl_secs` (at least the bucket TTL) on every
+//! admission. Dropping the epoch also removes a clock-skew multiplier:
+//! replicas disagreeing on `now_ms` used to land on different epoch keys
+//! and each mint their own generation.
+//!
 //! # The TTL is passed in, not computed here
 //!
 //! `ttl_sec` used to be `ceil(burst / refill) + 60`, clamped, computed in
@@ -39,7 +57,7 @@ local burst = tonumber(ARGV[2])
 local refill_per_second = tonumber(ARGV[3])
 local ttl_sec = tonumber(ARGV[4])
 local max_distinct = tonumber(ARGV[5])
-local window_ms = tonumber(ARGV[6])
+local scope_ttl_ms = tonumber(ARGV[6])
 local member = ARGV[7]
 
 -- KEYS[1] requested bucket, KEYS[2] scope set, KEYS[3] fallback bucket.
@@ -50,14 +68,19 @@ local charged = 'requested'
 if max_distinct >= 0 then
   local card = redis.call('SCARD', KEYS[2])
   if redis.call('SISMEMBER', KEYS[2], member) == 1 then
-    -- Already admitted this window: keep its own bucket even if the
-    -- scope is now saturated, so an attacker cannot displace callers
-    -- that were under the cap first.
+    -- Already admitted: keep its own bucket even if the scope is now
+    -- saturated, so an attacker cannot displace callers that were under
+    -- the cap first. Deliberately does NOT refresh the scope TTL — a
+    -- saturated scope must be able to age out and let its peer start
+    -- over, or a deployment whose tokens rotate is capped at its first N
+    -- credentials forever.
   elseif card < max_distinct then
     redis.call('SADD', KEYS[2], member)
-    if card == 0 then
-      redis.call('PEXPIRE', KEYS[2], window_ms)
-    end
+    -- Unconditional, not just on creation. Two reasons: the record must
+    -- outlive the buckets it admits (scope_ttl_ms >= the bucket EXPIRE
+    -- below), and refreshing on every admission repairs a set that lost
+    -- its TTL because an earlier script aborted between SADD and PEXPIRE.
+    redis.call('PEXPIRE', KEYS[2], scope_ttl_ms)
   else
     target = KEYS[3]
     charged = 'fallback'

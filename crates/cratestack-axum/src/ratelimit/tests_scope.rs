@@ -100,9 +100,10 @@ fn authorization_without_a_peer_falls_into_the_global_scope() {
 }
 
 /// Without /64 aggregation the per-peer cap is free to evade: one ordinary
-/// residential IPv6 delegation is 2^64 addresses, i.e. 2^64 scopes.
+/// residential IPv6 delegation is 2^64 addresses, i.e. 2^64 scopes AND
+/// 2^64 fallback buckets.
 #[test]
-fn ipv6_scopes_aggregate_to_a_64_but_keys_do_not() {
+fn ipv6_scopes_and_fallbacks_both_aggregate_to_a_64() {
     let one = derive(&with_connect_info(
         bearer("Bearer a"),
         "[2001:db8:1:2:3:4:5:6]:1",
@@ -132,23 +133,40 @@ fn ipv6_scopes_aggregate_to_a_64_but_keys_do_not() {
         "a different /64 is a different scope",
     );
 
-    // The FALLBACK is the exact address, not the /64: aggregating the
-    // throttling bucket itself would collapse a whole subscriber prefix
-    // into one bucket, which is cratestack#416's collision again.
+    // The FALLBACK is aggregated too (cratestack#871 review, blocker 1).
+    // A /64-scoped budget whose fallback is per-address hands an attacker
+    // 2^64 free fallback buckets — the bound evaded from the other side,
+    // measured at 200 buckets for a cap of 8. The accepted cost is that
+    // two hosts in one /64 share a throttling bucket.
     let fallback = |d: &KeyDerivation| d.budget.as_ref().expect("budgeted").fallback_key.clone();
-    assert_eq!(fallback(&one), "ip:2001:db8:1:2:3:4:5:6");
-    assert_ne!(fallback(&one), fallback(&two));
+    assert_eq!(fallback(&one), "ip:2001:db8:1:2::/64");
+    assert_eq!(fallback(&one), fallback(&two));
+    assert_ne!(fallback(&one), fallback(&other_64));
 }
 
-/// IPv4 is deliberately not aggregated: a /24 under CGNAT is thousands of
-/// unrelated subscribers, and IPv4 gives an attacker no free-address supply
-/// comparable to a /64.
+/// The path with NO budget at all, and therefore the one where
+/// aggregation is the only bound there is: rotating the source address
+/// inside one /64 with no `Authorization` header minted one bucket per
+/// request, all allowed (cratestack#871 review, blocker 1).
 #[test]
-fn ipv4_scopes_are_not_aggregated() {
-    let one = derive(&with_connect_info(bearer("Bearer a"), "192.0.2.1:1")).expect("derives");
-    let two = derive(&with_connect_info(bearer("Bearer b"), "192.0.2.2:1")).expect("derives");
+fn ipv6_unauthenticated_keys_aggregate_to_a_64() {
+    let bare = || {
+        Request::from(
+            HttpRequest::builder()
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+    };
+    let one = derive(&with_connect_info(bare(), "[2001:db8:9:9:1:2:3:4]:1")).expect("derives");
+    let two =
+        derive(&with_connect_info(bare(), "[2001:db8:9:9:dead:beef:0:1]:1")).expect("derives");
+    let other = derive(&with_connect_info(bare(), "[2001:db8:9:a::1]:1")).expect("derives");
 
-    let scope = |d: &KeyDerivation| d.budget.as_ref().expect("budgeted").scope_key.clone();
-    assert_eq!(scope(&one), "peer:192.0.2.1");
-    assert_ne!(scope(&one), scope(&two));
+    assert_eq!(one.key, "ip:2001:db8:9:9::/64");
+    assert_eq!(
+        one.key, two.key,
+        "one /64 is one bucket, or the cap is free"
+    );
+    assert_ne!(one.key, other.key, "a different /64 is a different bucket");
+    assert!(one.budget.is_none());
 }

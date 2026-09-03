@@ -31,14 +31,21 @@
 //! caller rotating an unverified `Authorization` header used to mint one
 //! `:rl:` key per request. [`RateLimitStore::consume_bounded`] closes
 //! that. The same Lua script — no extra round-trip — additionally takes a
-//! scope set at `<prefix>:rls:<sha256(scope)>:<epoch>` and a fallback
-//! bucket key: on first sight of a bucket under a scope it `SADD`s (with
-//! a window `PEXPIRE` on creation) if `SCARD < max_distinct`, and
-//! otherwise charges the *fallback* bucket instead. Steady-state keyspace
-//! becomes O(scopes × max_distinct).
+//! scope set at `<prefix>:rls:<sha256(scope)>` and a fallback bucket key:
+//! on first sight of a bucket under a scope it `SADD`s it if
+//! `SCARD < max_distinct`, and otherwise charges the *fallback* bucket
+//! instead. Steady-state keyspace becomes O(scopes × max_distinct).
 //!
-//! The fixed-window epoch is computed in Rust, not from Lua's `TIME`, so
-//! the script stays deterministic for replication and AOF.
+//! The scope set is `PEXPIRE`d to `cratestack_core::scope_ttl_secs` — at
+//! least the bucket TTL — on **every** admission, so the record always
+//! outlives the buckets it admitted. An earlier cut suffixed the key with
+//! a fixed-window epoch and expired it after the window: with
+//! `window < bucket_ttl` that let each rollover re-admit `max_distinct`
+//! more buckets on top of a still-live generation (measured: 21 buckets
+//! for a cap of 4 over five 1s windows). Re-`PEXPIRE`ing on every
+//! admission also repairs a set left without a TTL by a script that
+//! aborted between `SADD` and `PEXPIRE` — Lua here is atomic but not
+//! transactional, so a mid-script `OOM` can stop it partway.
 //!
 //! **Redis Cluster is not supported by this store**, and cratestack#871
 //! makes that louder rather than papering over it: three un-hash-tagged

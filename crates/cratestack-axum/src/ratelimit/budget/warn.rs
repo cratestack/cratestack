@@ -11,6 +11,7 @@
 //! lines order-dependent, and two routers with independent limiters have
 //! no reason to silence each other.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use cratestack_core::log_throttle::{LogThrottle, ThrottleDecision};
@@ -38,6 +39,19 @@ pub(crate) struct BudgetWarnings {
     unbounded_store: LogThrottle,
     fallback: LogThrottle,
     overflow: LogThrottle,
+    /// Every warning *condition* observed, throttled or not.
+    ///
+    /// Separate from the throttles on purpose: the throttles answer "did
+    /// we write a line", which is deliberately lossy, and a test asserting
+    /// on that alone cannot tell "the condition never happened" from "the
+    /// line was suppressed". This counter is the seam the cratestack#871
+    /// review asked for — deleting the `report(...)` call in
+    /// `super::super::consume` used to leave all 216 tests green.
+    ///
+    /// Not a `tracing` subscriber: callsite-cache flakiness made that
+    /// approach unreliable in cratestack#869, and it is recorded as
+    /// rejected in `super::super::tests_store_error`'s module docs.
+    raised: AtomicU64,
 }
 
 impl Default for BudgetWarnings {
@@ -47,6 +61,7 @@ impl Default for BudgetWarnings {
             unbounded_store: LogThrottle::new(WIRING_INTERVAL),
             fallback: LogThrottle::new(ATTACK_INTERVAL),
             overflow: LogThrottle::new(ATTACK_INTERVAL),
+            raised: AtomicU64::new(0),
         }
     }
 }
@@ -58,6 +73,7 @@ impl BudgetWarnings {
     /// deployment that authenticates but does not wire `ConnectInfo` — but
     /// it does mean unrelated callers share one budget.
     pub(crate) fn missing_peer(&self) -> bool {
+        self.raised.fetch_add(1, Ordering::Relaxed);
         let ThrottleDecision::Emit {
             suppressed_since_last,
         } = self.missing_peer.check()
@@ -81,6 +97,7 @@ impl BudgetWarnings {
     /// budget was computed and then ignored. Says so rather than letting a
     /// deployment believe it is bounded when it is not.
     pub(crate) fn unbounded_store(&self) -> bool {
+        self.raised.fetch_add(1, Ordering::Relaxed);
         let ThrottleDecision::Emit {
             suppressed_since_last,
         } = self.unbounded_store.check()
@@ -104,6 +121,7 @@ impl BudgetWarnings {
     /// for every further distinct credential. Legitimate traffic does not
     /// reach this, so it reads as an attack indicator.
     pub(crate) fn fallback(&self, scope_key: &str) -> bool {
+        self.raised.fetch_add(1, Ordering::Relaxed);
         let ThrottleDecision::Emit {
             suppressed_since_last,
         } = self.fallback.check()
@@ -127,6 +145,7 @@ impl BudgetWarnings {
     /// overflow bucket, which is the only case in this design where one
     /// caller can consume another's budget.
     pub(crate) fn overflow(&self) -> bool {
+        self.raised.fetch_add(1, Ordering::Relaxed);
         let ThrottleDecision::Emit {
             suppressed_since_last,
         } = self.overflow.check()
@@ -144,5 +163,11 @@ impl BudgetWarnings {
              attempt.",
         );
         true
+    }
+
+    /// How many warning conditions this layer has observed. See
+    /// [`Self::raised`] for why this exists separately from the throttles.
+    pub(crate) fn _raised(&self) -> u64 {
+        self.raised.load(Ordering::Relaxed)
     }
 }

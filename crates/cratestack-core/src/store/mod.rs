@@ -12,5 +12,5 @@ pub use client_state::{
 pub use idempotency::IdempotencyStore;
 pub use ratelimit::{
     BoundedOutcome, BucketBudget, Charged, ConsumeRequest, RateLimitConfig, RateLimitDecision,
-    RateLimitStore, bucket_ttl_secs,
+    RateLimitStore, bucket_ttl_secs, scope_ttl_secs,
 };

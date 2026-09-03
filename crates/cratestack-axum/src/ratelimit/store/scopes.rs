@@ -2,9 +2,19 @@
 //! cratestack#871's cardinality budget.
 //!
 //! One entry per scope (a verified peer, or the process-global scope),
-//! holding the set of bucket keys that scope has been allowed to create in
-//! the current fixed window. `admit` is the whole contract: "may this
-//! scope charge the bucket it asked for, or must it take the fallback?"
+//! holding the set of bucket keys that scope has been allowed to create.
+//! `admit` is the whole contract: "may this scope charge the bucket it
+//! asked for, or must it take the fallback?"
+//!
+//! # The record must outlive the buckets it admitted
+//!
+//! The first cut reset the whole scope on a fixed `window`. That bounded
+//! nothing, and it was measured (cratestack#871 review, blocker 2): with a
+//! window shorter than the bucket TTL, each new generation admitted
+//! `max_distinct` more buckets while the previous generation was still
+//! alive — 81 buckets over 20 windows for a cap of 4. The lifetime is now
+//! [`cratestack_core::scope_ttl_secs`], i.e. at least the buckets' own
+//! TTL, and every admission pushes it forward.
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -14,19 +24,18 @@ use cratestack_core::BucketBudget;
 #[derive(Debug)]
 struct Scope {
     members: HashSet<String>,
-    /// Start of the fixed window. The window is reset wholesale rather
-    /// than expiring members individually: per-member expiry is a sliding
-    /// window, which needs an ordered structure and a trim on every
-    /// request. See `BucketBudget::window` for why the 2N boundary case
-    /// this admits is acceptable.
-    opened: Instant,
+    /// When this admission record dies, taking its whole member set with
+    /// it. Pushed forward by every admission — so a scope stays alive
+    /// while it is actively admitting, and expires one full lifetime after
+    /// it stops. Never shortened.
+    expires_at: Instant,
 }
 
 impl Scope {
-    fn new(now: Instant) -> Self {
+    fn new(expires_at: Instant) -> Self {
         Self {
             members: HashSet::new(),
-            opened: now,
+            expires_at,
         }
     }
 }
@@ -43,38 +52,48 @@ impl Scopes {
     /// turns into a charge against the budget's fallback bucket. Note the
     /// order: an already-known member is admitted *before* the cap is
     /// consulted, so a caller who was under the cap when it first appeared
-    /// keeps its own bucket for the rest of the window even while the
-    /// scope is saturated. That is what preserves cratestack#416 under
+    /// keeps its own bucket for the rest of the scope's life even while
+    /// the scope is saturated. That is what preserves cratestack#416 under
     /// attack — an attacker filling a peer's budget cannot displace the
     /// legitimate callers already in it.
-    pub(super) fn admit(&mut self, budget: &BucketBudget, member: &str, now: Instant) -> bool {
+    ///
+    /// `scope_ttl` comes from [`cratestack_core::scope_ttl_secs`] and is
+    /// never shorter than the bucket TTL; see the module docs.
+    pub(super) fn admit(
+        &mut self,
+        budget: &BucketBudget,
+        member: &str,
+        now: Instant,
+        scope_ttl: Duration,
+    ) -> bool {
+        let deadline = now.checked_add(scope_ttl).unwrap_or(now);
         let scope = self
             .map
             .entry(budget.scope_key.clone())
-            .or_insert_with(|| Scope::new(now));
-        if now.saturating_duration_since(scope.opened) >= budget.window {
-            *scope = Scope::new(now);
+            .or_insert_with(|| Scope::new(deadline));
+        if now >= scope.expires_at {
+            *scope = Scope::new(deadline);
         }
         if scope.members.contains(member) {
             return true;
         }
         if scope.members.len() < budget.max_distinct as usize {
             scope.members.insert(member.to_owned());
+            // Refreshed on admission, not on every hit. A saturated scope
+            // therefore ages out and lets its peer start over, instead of
+            // capping that peer at its first N credentials forever — which
+            // would break any deployment whose tokens rotate.
+            scope.expires_at = scope.expires_at.max(deadline);
             return true;
         }
         false
     }
 
-    /// Drop scopes whose window closed at least `max_window` ago.
-    ///
-    /// Takes the horizon as an argument rather than remembering each
-    /// scope's own window because the sweep runs from the bucket side,
-    /// which has no budget in hand — and a scope whose window is longer
-    /// than the horizon simply gets re-created on its next request, which
-    /// costs one admitted member, not correctness.
-    pub(super) fn sweep(&mut self, now: Instant, max_window: Duration) {
-        self.map
-            .retain(|_, scope| now.saturating_duration_since(scope.opened) < max_window);
+    /// Drop scopes whose lifetime has run out. Each carries its own
+    /// deadline, so no horizon has to be passed in — and none can be
+    /// passed in wrongly, which is how the previous version leaked.
+    pub(super) fn sweep(&mut self, now: Instant) {
+        self.map.retain(|_, scope| now < scope.expires_at);
     }
 
     #[cfg(test)]
@@ -86,6 +105,8 @@ impl Scopes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TTL: Duration = Duration::from_secs(60);
 
     fn budget(max_distinct: u32, window_secs: u64) -> BucketBudget {
         BucketBudget::new(
@@ -102,38 +123,61 @@ mod tests {
         let budget = budget(2, 60);
         let now = Instant::now();
 
-        assert!(scopes.admit(&budget, "a", now));
-        assert!(scopes.admit(&budget, "b", now));
-        assert!(!scopes.admit(&budget, "c", now));
+        assert!(scopes.admit(&budget, "a", now, TTL));
+        assert!(scopes.admit(&budget, "b", now, TTL));
+        assert!(!scopes.admit(&budget, "c", now, TTL));
         // An already-admitted member stays admitted even while saturated:
         // an attacker filling a scope must not displace the callers
         // already in it (cratestack#416).
-        assert!(scopes.admit(&budget, "a", now));
+        assert!(scopes.admit(&budget, "a", now, TTL));
     }
 
+    /// A saturated scope ages out so its peer can start over — otherwise a
+    /// deployment whose tokens rotate would be capped at its first N
+    /// credentials forever.
     #[test]
-    fn the_window_resets_wholesale() {
+    fn a_saturated_scope_expires_and_lets_the_peer_start_over() {
         let mut scopes = Scopes::default();
         let budget = budget(1, 60);
         let now = Instant::now();
 
-        assert!(scopes.admit(&budget, "a", now));
-        assert!(!scopes.admit(&budget, "b", now));
-        assert!(scopes.admit(&budget, "b", now + Duration::from_secs(60)));
+        assert!(scopes.admit(&budget, "a", now, TTL));
+        assert!(!scopes.admit(&budget, "b", now, TTL));
+        assert!(scopes.admit(&budget, "b", now + TTL, TTL));
+    }
+
+    /// cratestack#871 review, blocker 2: admissions push the deadline
+    /// forward, so a scope that keeps admitting never expires underneath
+    /// the buckets it is admitting.
+    #[test]
+    fn each_admission_extends_the_scope_lifetime() {
+        let mut scopes = Scopes::default();
+        let budget = budget(10, 60);
+        let now = Instant::now();
+
+        assert!(scopes.admit(&budget, "a", now, TTL));
+        assert!(scopes.admit(&budget, "b", now + TTL - Duration::from_secs(1), TTL));
+
+        // The ORIGINAL deadline has passed, but the extension means the
+        // scope is still live and still remembers `a` — so `a` cannot be
+        // re-admitted into a fresh generation, which is how the previous
+        // version leaked a second N.
+        scopes.sweep(now + TTL + Duration::from_secs(1));
+        assert_eq!(scopes.len(), 1, "an extended scope must survive the sweep");
     }
 
     #[test]
-    fn sweep_drops_scopes_whose_window_has_closed() {
+    fn sweep_drops_scopes_whose_lifetime_has_run_out() {
         let mut scopes = Scopes::default();
         let budget = budget(4, 60);
         let now = Instant::now();
-        scopes.admit(&budget, "a", now);
+        scopes.admit(&budget, "a", now, TTL);
         assert_eq!(scopes.len(), 1);
 
-        scopes.sweep(now + Duration::from_secs(30), Duration::from_secs(60));
-        assert_eq!(scopes.len(), 1, "a live window must survive the sweep");
+        scopes.sweep(now + Duration::from_secs(30));
+        assert_eq!(scopes.len(), 1, "a live scope must survive the sweep");
 
-        scopes.sweep(now + Duration::from_secs(61), Duration::from_secs(60));
+        scopes.sweep(now + Duration::from_secs(61));
         assert_eq!(scopes.len(), 0);
     }
 }

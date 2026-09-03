@@ -11,9 +11,9 @@ pub(super) mod warn;
 /// # Where the defaults come from
 ///
 /// `max_distinct_per_peer = 128` is sized so that no realistic *legitimate*
-/// peer reaches it: a single NAT egress serving 128 simultaneously-active
-/// distinct credentials within a 60s window is already an unusual
-/// deployment, and one that should be configuring this rather than
+/// peer reaches it: a single NAT egress (or IPv6 /64) serving 128
+/// simultaneously-active distinct credentials within one scope lifetime is
+/// already an unusual deployment, and one that should be configuring this rather than
 /// inheriting it. An attacker, by contrast, needs one bucket per request
 /// to amplify — so 128 is three orders of magnitude below what the attack
 /// needs while still above what real traffic uses.
@@ -25,10 +25,16 @@ pub(super) mod warn;
 /// overflow bucket only when the deployment is both misconfigured and
 /// under attack.
 ///
-/// The window is fixed, not sliding: up to `2 × max_distinct` buckets can
-/// be alive across a window boundary. That is a constant factor on a
-/// bound whose purpose is to replace "unbounded" with "constant", and a
-/// sliding window would cost a sorted set and a range trim per request.
+/// `window` is a **floor** on how long a scope's admission record lives,
+/// not a fixed window that resets it. The store raises it to at least the
+/// buckets' own TTL (`cratestack_core::scope_ttl_secs`), because a record
+/// that expired first bounded nothing — the next generation re-admitted
+/// `max_distinct` more while the previous generation was still alive, for
+/// a real steady state of `max_distinct × ceil(bucket_ttl / window)`
+/// (cratestack#871 review, blocker 2). Every admission pushes the deadline
+/// forward, so a saturated scope still ages out and lets its peer start
+/// over — otherwise a deployment whose tokens rotate would be capped at
+/// its first `max_distinct` credentials forever.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimitBucketBudget {
     pub max_distinct_per_peer: u32,

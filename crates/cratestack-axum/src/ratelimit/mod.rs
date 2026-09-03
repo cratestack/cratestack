@@ -81,15 +81,26 @@
 //! | Request carries | Key | Scope | Cap | Fallback |
 //! |---|---|---|---|---|
 //! | [`VerifiedPrincipal`] extension | `princ:<sha256>` | — | none | — |
-//! | `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<ip>` (IPv6 → /64) | 128/60s | `ip:<ip>` |
-//! | `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192/60s | `overflow` |
-//! | `ConnectInfo` only | `ip:<ip>` | — | none | — |
+//! | `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<addr>` | 128 | `ip:<addr>` |
+//! | `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192 | `overflow` |
+//! | `ConnectInfo` only | `ip:<addr>` | — | none | — |
 //! | neither | *refused, `412`* (cratestack#416) | | | |
 //!
-//! The store applies it atomically alongside the token consumption —
-//! doing it as a separate lookup would race, with N concurrent requests
-//! each reading "under budget" and each minting a bucket. Steady-state
-//! keyspace becomes O(peers × cap) instead of O(requests).
+//! `<addr>` is the peer address for IPv4 and its **/64 prefix** for IPv6,
+//! in the scope AND in every bucket key. Aggregating only the scope left
+//! the whole mechanism evadable by rotating the source address inside one
+//! subscriber prefix — measured at 200 buckets with a token and 200
+//! buckets, all allowed, without one.
+//!
+//! The store applies the budget atomically alongside the token
+//! consumption — doing it as a separate lookup would race, with N
+//! concurrent requests each reading "under budget" and each minting a
+//! bucket. The scope's admission record is kept alive for at least the
+//! buckets' own TTL ([`cratestack_core::scope_ttl_secs`]), so it cannot
+//! expire underneath the buckets it admitted and let a fresh generation
+//! open beneath it. Steady-state keyspace is then O(peers × cap), and
+//! `window` is a *floor* on the record's lifetime rather than a fixed
+//! window.
 //!
 //! Over the cap the caller is *collapsed onto its own* `ip:` bucket, not
 //! refused: refusing would hand an attacker a deterministic outage of
@@ -133,9 +144,13 @@ mod tests_budget;
 #[cfg(test)]
 mod tests_budget_store;
 #[cfg(test)]
+mod tests_evasion;
+#[cfg(test)]
 mod tests_key_fn;
 #[cfg(test)]
 mod tests_scope;
+#[cfg(test)]
+mod tests_scope_ipv6;
 #[cfg(test)]
 mod tests_store_error;
 #[cfg(test)]

@@ -3,7 +3,9 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use cratestack_core::{BoundedOutcome, Charged, ConsumeRequest, CratestackError, bucket_ttl_secs};
+use cratestack_core::{
+    BoundedOutcome, Charged, ConsumeRequest, CratestackError, bucket_ttl_secs, scope_ttl_secs,
+};
 
 use super::config::{RateLimitConfig, RateLimitDecision};
 
@@ -32,12 +34,6 @@ pub const DEFAULT_MAX_BUCKETS: usize = 100_000;
 struct State {
     buckets: Buckets,
     scopes: Scopes,
-    /// The widest budget window seen so far, used as the scope-eviction
-    /// horizon. Tracked rather than assumed because the sweep runs on the
-    /// bucket schedule and has no budget in hand at that moment; using the
-    /// bucket TTL instead would silently reset a longer-than-TTL budget
-    /// window early, handing an attacker a fresh cardinality allowance.
-    max_window: Duration,
 }
 
 /// In-memory `RateLimitStore`. Suitable for single-replica deployments and
@@ -103,20 +99,26 @@ impl InMemoryRateLimitStore {
             .lock()
             .map_err(|_| CratestackError::Internal("rate limit store poisoned".to_owned()))?;
 
-        if let Some(budget) = request.budget
-            && budget.window > state.max_window
-        {
-            state.max_window = budget.window;
-        }
-        let max_window = state.max_window;
         if state.buckets.maybe_sweep(now, ttl) {
-            state.scopes.sweep(now, max_window);
+            // Each scope carries its own deadline, so the sweep needs no
+            // horizon argument — one fewer way to get the scope lifetime
+            // wrong (cratestack#871 review, blocker 2).
+            state.scopes.sweep(now);
         }
 
         let charged = match request.budget {
             None => Charged::Requested,
-            Some(budget) if state.scopes.admit(budget, request.key, now) => Charged::Requested,
-            Some(_) => Charged::Fallback,
+            Some(budget) => {
+                // Never shorter than the bucket TTL: a scope that expires
+                // before its buckets do re-admits `max_distinct` more
+                // while the previous generation is still alive.
+                let scope_ttl = Duration::from_secs(scope_ttl_secs(request.config, budget.window));
+                if state.scopes.admit(budget, request.key, now, scope_ttl) {
+                    Charged::Requested
+                } else {
+                    Charged::Fallback
+                }
+            }
         };
         let decision = state.buckets.consume(
             request.charged_key(charged),

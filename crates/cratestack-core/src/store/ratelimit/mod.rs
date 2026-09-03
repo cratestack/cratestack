@@ -1,5 +1,7 @@
 //! Rate limiting store trait and configuration types.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 
 use crate::CratestackError;
@@ -60,15 +62,47 @@ pub fn _bucket_capacity_for(config: RateLimitConfig) -> u32 {
 /// "time to refill" to derive from; it gets the 24h clamp.
 pub fn bucket_ttl_secs(config: RateLimitConfig) -> u64 {
     const MIN_TTL_SECS: f64 = 60.0;
-    const MAX_TTL_SECS: f64 = 86_400.0;
+    const MAX_BUCKET_TTL_SECS: f64 = 86_400.0;
     if config.refill_per_second <= 0.0 || config.refill_per_second.is_nan() {
-        return MAX_TTL_SECS as u64;
+        return MAX_BUCKET_TTL_SECS as u64;
     }
     let ttl = (f64::from(config.burst) / config.refill_per_second).ceil() + 60.0;
     // `ttl` is non-NaN here (the guard above excludes NaN and the numerator
     // is finite), so `clamp` cannot panic; an infinite quotient lands on
     // MAX rather than saturating the cast.
-    ttl.clamp(MIN_TTL_SECS, MAX_TTL_SECS) as u64
+    ttl.clamp(MIN_TTL_SECS, MAX_BUCKET_TTL_SECS) as u64
+}
+
+/// Ceiling on any store-side TTL, in seconds: one year.
+///
+/// Exists because `Duration` reaches 584 billion years and Redis's
+/// `PEXPIRE` takes an `i64` of milliseconds — a `Duration::MAX` window
+/// reached the script as an out-of-range integer, which failed the whole
+/// `consume` with `Internal` and therefore 500'd every rate-limited route
+/// (cratestack#871 review, should-fix 4). Clamping keeps a nonsensical
+/// configuration a *degenerate* budget rather than an outage.
+pub const MAX_TTL_SECS: u64 = 365 * 24 * 60 * 60;
+
+/// How long a scope's admission record must live: at least as long as the
+/// buckets it admitted, and at least the caller's requested floor.
+///
+/// This is the whole fix for cratestack#871's second blocker. A scope that
+/// expires before its buckets do bounds nothing — the next generation
+/// admits `max_distinct` more while the previous ones are still alive, so
+/// the steady state was `max_distinct × ceil(bucket_ttl / window)` rather
+/// than `max_distinct`. Shared between both backends for the same reason
+/// [`bucket_ttl_secs`] is: a divergence here is a silently different bound
+/// per backend.
+pub fn scope_ttl_secs(config: RateLimitConfig, window: Duration) -> u64 {
+    // Clamped at both ends. `Duration::MAX` is ~584 billion years, which
+    // reached Redis's `PEXPIRE` as an out-of-range integer and failed the
+    // whole `consume` with `Internal` — 500ing every rate-limited route.
+    // And a zero-length lifetime would expire the record before the
+    // request that created it could use it, which Redis rejects outright.
+    window
+        .as_secs()
+        .max(bucket_ttl_secs(config))
+        .clamp(1, MAX_TTL_SECS)
 }
 
 /// Pluggable storage for token-bucket state. Implementations must be safe
