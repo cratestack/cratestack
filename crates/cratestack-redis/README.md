@@ -96,6 +96,20 @@ let app = axum::Router::new()
 
 `RedisRateLimitStoreConfig` mirrors the idempotency config — a single normalised `key_prefix` field. Each bucket is stored under `<prefix>:rl:<sha256(key)>` and refreshes its TTL on every `consume`, so idle buckets evict themselves and memory stays bounded.
 
+`consume` retries exactly once on a transport-class failure (broken pipe, connection reset, a
+half-read reply — the classic stale-pooled-connection symptoms after a Redis idle timeout), on a
+re-acquired connection. Only once, and only for that class: see `ratelimit::retry`'s module docs for
+why a loop would be worse, and for the non-idempotency this trades away. The `ConnectionManager` is
+built with explicit connection and response timeouts, since the driver's own defaults for both are
+unbounded.
+
+Failures are classified before they leave this crate, and that classification is
+security-relevant: a transport failure becomes `CratestackError::Unavailable`, while a
+reachable-but-refusing Redis (`OOM`, `NOPERM`, a malformed reply) stays `CratestackError::Internal`.
+`cratestack_axum::ratelimit::StoreErrorPolicy` serves through the former and refuses the latter —
+because an unauthenticated caller can *induce* an `OOM` by rotating the `Authorization` header the
+default key function hashes, and serving through that would disable the limiter globally.
+
 ## How It Works
 
 ### Idempotency

@@ -22,6 +22,9 @@ cratestack-core.workspace = true
 redis = { workspace = true, features = ["aio", "tokio-comp", "script", "connection-manager"] }
 sha2.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+# The retry WARN in `ratelimit::retry` (cratestack#846) — a Redis that is
+# dropping connections must not look healthy from the outside.
+tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
@@ -29,6 +32,9 @@ axum.workspace = true
 # Plain edge: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
 # forwards below.
 cratestack-axum.workspace = true
+# Decodes the middleware's error envelope in `tests/e2e_ratelimit.rs` with
+# the same codec a generated client uses (cratestack#846).
+cratestack-codec-cbor.workspace = true
 http.workspace = true
 testcontainers = { workspace = true, features = ["http_wait"] }
 testcontainers-modules = { workspace = true, features = ["redis"] }
@@ -42,7 +48,7 @@ default = ["decimal-rust-decimal"]
 # `cratestack-core`'s dependency edge has `default-features = false` at the
 # workspace root — every direct consumer must explicitly re-select a
 # backend, or `cratestack-core` fails to compile at all (cratestack#495).
-# Also forwards to `cratestack-axum`, this crate's dev-dependency-only test
+# Also forwards to `cratestack-axum`/`cratestack-codec-cbor`, this crate's dev-dependency-only test
 # fixture — Cargo's feature resolver unifies dev-dependency feature
 # requests with the rest of the graph for the same workspace member, so
 # leaving it on a hardcoded backend would conflict with `--features
@@ -50,10 +56,12 @@ default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-axum/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-axum/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
 ]
 # Enables `rediss://` (TLS) connections against a Postgres-managed or
 # self-hosted Redis whose only listener is TLS — common for managed/HA

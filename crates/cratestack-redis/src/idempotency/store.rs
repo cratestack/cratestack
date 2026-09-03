@@ -5,6 +5,8 @@ use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
 
+use crate::connection_config::manager_config;
+
 use super::config::RedisIdempotencyStoreConfig;
 use super::util::{nibble_hex, redis_error};
 
@@ -74,10 +76,17 @@ impl RedisIdempotencyStore {
     /// establishing it once on first use rather than opening a new TCP
     /// connection to Redis on every call. A failed connection attempt is
     /// not cached, so the next call retries instead of failing forever.
+    ///
+    /// Bounded by [`crate::connection_config`]: idempotency stays
+    /// fail-closed on a store failure — that is the whole point of the
+    /// layer — but it must fail *promptly*, not after the driver's
+    /// unbounded reconnect cycle (cratestack#846).
     pub(super) async fn connection(&self) -> Result<ConnectionManager, CratestackError> {
         let manager = self
             .conn
-            .get_or_try_init(|| async { ConnectionManager::new(self.client.clone()).await })
+            .get_or_try_init(|| async {
+                ConnectionManager::new_with_config(self.client.clone(), manager_config()).await
+            })
             .await
             .map_err(redis_error)?;
         Ok(manager.clone())

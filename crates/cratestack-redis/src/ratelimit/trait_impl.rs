@@ -5,10 +5,10 @@ use cratestack_core::{CratestackError, RateLimitConfig, RateLimitDecision, RateL
 use redis::Value as RedisValue;
 
 use super::parse::parse_consume_outcome;
+use super::retry::invoke_with_retry;
 use super::scripts::CONSUME_SCRIPT;
 use super::store::RedisRateLimitStore;
 use super::time::system_time_to_ms;
-use super::util::redis_error;
 
 #[async_trait]
 impl RateLimitStore for RedisRateLimitStore {
@@ -17,9 +17,13 @@ impl RateLimitStore for RedisRateLimitStore {
         key: &str,
         config: RateLimitConfig,
     ) -> Result<RateLimitDecision, CratestackError> {
-        let mut conn = self.connection().await?;
         let now_ms = system_time_to_ms(SystemTime::now())?;
         let bucket_key = self.bucket_key(key);
+        // Owned up front so the retry closure below can be `Fn` (called
+        // twice) rather than `FnOnce`.
+        let now_arg = now_ms.to_string();
+        let burst_arg = config.burst.to_string();
+        let refill_arg = format!("{}", config.refill_per_second);
 
         // Lua's `tonumber` accepts standard decimal notation; we serialise
         // the float with `{:?}` so values like `0.001` round-trip through
@@ -27,14 +31,24 @@ impl RateLimitStore for RedisRateLimitStore {
         // locale-dependent form. `tostring`/`tonumber` inside the script
         // are unaffected by Redis's locale because Lua 5.1 (which Redis
         // embeds) uses C-locale formatting.
-        let value: RedisValue = CONSUME_SCRIPT
-            .key(bucket_key)
-            .arg(now_ms.to_string())
-            .arg(config.burst.to_string())
-            .arg(format!("{}", config.refill_per_second))
-            .invoke_async(&mut conn)
-            .await
-            .map_err(redis_error)?;
+        let value: RedisValue = invoke_with_retry(
+            || self.connection(),
+            |mut conn| {
+                let (bucket_key, now_arg, burst_arg, refill_arg) =
+                    (&bucket_key, &now_arg, &burst_arg, &refill_arg);
+                async move {
+                    CONSUME_SCRIPT
+                        .key(bucket_key)
+                        .arg(now_arg)
+                        .arg(burst_arg)
+                        .arg(refill_arg)
+                        .invoke_async(&mut conn)
+                        .await
+                }
+            },
+            &self.retry_warning,
+        )
+        .await?;
 
         parse_consume_outcome(value)
     }

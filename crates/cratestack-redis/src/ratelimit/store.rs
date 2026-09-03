@@ -1,18 +1,30 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use cratestack_core::CratestackError;
+use cratestack_core::log_throttle::LogThrottle;
 use redis::aio::ConnectionManager;
 use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
 
+use crate::connection_config::manager_config;
+
 use super::config::RedisRateLimitStoreConfig;
 use super::util::{nibble_hex, redis_error};
+
+/// How often the retry WARN may fire per store. Long enough that a
+/// sustained outage cannot flood the log, short enough that an operator
+/// watching a live incident still sees movement.
+const RETRY_WARNING_INTERVAL: Duration = Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct RedisRateLimitStore {
     pub(super) client: redis::Client,
     pub(super) config: RedisRateLimitStoreConfig,
     pub(super) conn: Arc<OnceCell<ConnectionManager>>,
+    /// Log budget for the retry WARN in `super::retry`. Per-store, not a
+    /// `static`: see that function's docs.
+    pub(super) retry_warning: Arc<LogThrottle>,
 }
 
 impl RedisRateLimitStore {
@@ -47,6 +59,7 @@ impl RedisRateLimitStore {
             client,
             config: RedisRateLimitStoreConfig::new(key_prefix),
             conn: Arc::new(OnceCell::new()),
+            retry_warning: Arc::new(LogThrottle::new(RETRY_WARNING_INTERVAL)),
         }
     }
 
@@ -75,7 +88,9 @@ impl RedisRateLimitStore {
     pub(super) async fn connection(&self) -> Result<ConnectionManager, CratestackError> {
         let manager = self
             .conn
-            .get_or_try_init(|| async { ConnectionManager::new(self.client.clone()).await })
+            .get_or_try_init(|| async {
+                ConnectionManager::new_with_config(self.client.clone(), manager_config()).await
+            })
             .await
             .map_err(redis_error)?;
         Ok(manager.clone())

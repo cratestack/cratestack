@@ -90,6 +90,44 @@ let app = axum::Router::new()
 
 `RateLimitConfig` carries `burst` (max in-flight) and `refill_per_second`. `RateLimitDecision` is either `Allowed { remaining }` or `Throttled { retry_after_secs }`.
 
+### When the store itself fails
+
+A failure of the backing store is not treated like a caller who is over budget — but *which* failure
+matters, and the split is deliberate:
+
+- **Transport-class** (the socket broke, Redis is unreachable, the lookup timed out): the layer logs
+  a `WARN` and lets the request through unthrottled. Nothing a caller sent caused it, nobody in the
+  request path can fix it, and it self-heals — so the limiter degrades to unlimited rather than
+  taking every rate-limited route down at once.
+- **Everything else** (`OOM`, `NOPERM`, a poisoned mutex, a malformed reply): refused, under every
+  policy. These are reachable-and-refusing, do not self-heal, and can be *caller-induced* — the
+  default key function hashes an unvalidated `Authorization` header, so rotating it mints one Redis
+  key per request until the instance reaches `maxmemory`. Serving through that would be a global
+  limiter bypass available to anyone.
+
+Key derivation itself stays fail-closed for the same reason: its inputs are caller-controlled.
+
+One `consume` is also bounded in wall-clock — `with_store_timeout(Duration)`, default 500ms, covering
+the first attempt and any backend-internal retry as a single budget. Without it, "degrade to
+unlimited" means "wait out the driver's reconnect cycle first", which was measured at nineteen
+seconds per request.
+
+Deployments where the limiter is a security control (a paywall, a brute-force guard) want even
+transport failures to refuse, and must say so:
+
+```rust
+use cratestack_axum::ratelimit::StoreErrorPolicy;
+
+let app = router.layer(
+    RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+        .with_store_error_policy(StoreErrorPolicy::Deny),
+);
+```
+
+Every response the layer emits itself — the `429`, an identity refusal, a `Deny`d store failure —
+carries the framework error envelope, content-negotiated from `Accept` exactly like a handler
+response, so generated clients decode a typed code. The same is true of `IdempotencyLayer`.
+
 ### Honoring `@no_rate_limit` (schemas declaring `extension rate_limit { }`)
 
 The wiring above rate-limits every request equally — a procedure marked `@no_rate_limit` in your schema is **not** exempt unless you also install a `should_rate_limit_fn` that reads the generated descriptors. `RateLimitLayer` is never auto-wired by codegen (see `rate_limit_extension.rs`'s header comment: that machinery is assembled entirely imperatively by the consuming app), so this is opt-in:

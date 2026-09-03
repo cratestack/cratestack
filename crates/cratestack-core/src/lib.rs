@@ -24,6 +24,7 @@ pub mod idempotency_record;
 pub mod json;
 pub mod lenient_bytes;
 pub mod limits;
+pub mod log_throttle;
 pub mod page;
 pub mod pascal_case;
 pub mod patch;

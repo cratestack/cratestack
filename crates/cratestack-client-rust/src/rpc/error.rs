@@ -70,6 +70,11 @@ pub(crate) fn http_status_for_rpc_code(code: &str) -> StatusCode {
         "not_found" => StatusCode::NOT_FOUND,
         "conflict" => StatusCode::CONFLICT,
         "failed_precondition" => StatusCode::PRECONDITION_FAILED,
+        // cratestack#846: emitted by `RateLimitLayer` on a throttled
+        // request. Without this arm a batched throttle would surface to
+        // the caller as a synthetic 500, hiding the one status a client's
+        // backoff logic actually keys on.
+        "resource_exhausted" => StatusCode::TOO_MANY_REQUESTS,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

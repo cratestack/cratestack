@@ -52,6 +52,105 @@ artifact differs from the one attached to that tag's GitHub Release — which is
 when the probe is what fixed the artifact. Cosmetic, resolved at the next real tag, and documented at
 the point of use rather than left to be discovered.
 
+### Rate-limit store failures fail open only for transport errors, and every middleware error body is typed — breaking (#846)
+
+A single dropped Redis connection in `RateLimitLayer` took a production RPC call down twice over: the
+layer turned the store error into a 500, and the 500's body was a bare `text/plain` string, so the
+generated client reported `RPC call returned status 500 with an unrecognized error body` rather than
+a code it could branch on.
+
+**`StoreErrorPolicy` — the breaking part.** `RateLimitLayer` gains
+`with_store_error_policy(...)`, defaulting to `StoreErrorPolicy::Allow`. `Allow` is
+**class-conditional**, not a blanket fail-open: it serves a request unthrottled only when the store
+failure is *transport-class* — the socket broke, the server is unreachable — and refuses every other
+store failure exactly as `StoreErrorPolicy::Deny` does. Backends signal the transport class with
+`CratestackError::Unavailable`; anything else they return stays closed.
+
+That distinction is the whole design, and it is not the one this change originally shipped with. A
+blanket fail-open rests on the premise that a store failure is never caller-controlled, and that
+premise is false: the default key function hashes an **unvalidated** `Authorization` header (the
+layer runs before authentication), so an unauthenticated caller mints one Redis key per request just
+by rotating that header. Driven to `maxmemory`, every write then fails with `OOM` — and a blanket
+fail-open would serve *every* request through, including from buckets already exhausted. That is a
+global limiter bypass reachable by anyone. This change closes the bypass but not the primitive
+underneath it — an unauthenticated caller can still mint one Redis key per request, which is tracked
+separately as #871. An `OOM`, a `NOPERM`, a poisoned mutex or a malformed reply are all
+reachable-and-refusing, do not self-heal, and stay closed. A broken pipe is caused by
+nobody, fixable by nobody in the request path, and self-heals — refusing there would convert a
+limiter hiccup into a simultaneous outage of every rate-limited route, which is why it is the one
+class that degrades to unlimited. Key derivation itself remains fail-closed under both policies
+(#416) for exactly the reason the `OOM` case does.
+
+**Set `StoreErrorPolicy::Deny` to keep the previous behaviour** — every store failure, transport
+included, refuses the request exactly as before this change. That is what deployments using the
+limiter as a security control (a paywall, a brute-force guard) rather than a capacity control want.
+`RateLimitConfig` has no env-driven surface, so this is a builder-only knob; there is no environment
+variable to set.
+
+**A bounded store lookup, also new.** `with_store_timeout(Duration)` (default 500ms) caps one
+`consume` — first attempt *and* any backend-internal retry — as a single budget, and reports an
+elapse as a transport-class failure. Without it, "degrade to unlimited" silently meant "hang, then
+allow": `redis`'s `ConnectionManager` defaults both its connection and response timeouts to `None`,
+so each attempt awaited an unbounded reconnect cycle, measured at 9.46s and doubled to 18.92s by the
+retry. Nineteen seconds of blocking is worse for the caller than the refusal it replaced, and is
+itself a denial-of-service lever. Both Redis stores now also configure explicit connection/response
+timeouts on the `ConnectionManager` (2s each), so a store used outside this layer is bounded too —
+including `RedisIdempotencyStore`, which stays fail-closed but now fails promptly.
+
+**Check the 500ms default against your Redis latency.** A store whose p99 `consume` exceeds the
+budget is classified transport-unavailable and, under the default `Allow`, served **unthrottled** —
+so an under-provisioned or cross-region Redis turns into a silent partial limiter bypass rather than
+a slow one. Deployments with a Redis in another region, or a heavily loaded one, should raise the
+budget with `with_store_timeout` (or set `Deny`) rather than take the default on faith. The
+per-10s `WARN` names the elapse, so the condition is visible, but it is visible only if someone is
+reading.
+
+**Typed error bodies, both middleware layers, both transports.** Every response the two tower layers
+emit themselves now carries the framework's own codec-negotiated error envelope, encoded through the
+same `Accept` negotiation and the same two wire shapes the generated handlers use — the REST
+`CratestackErrorResponse` for ordinary paths, `RpcErrorBody` for RPC ones. That covers the rate-limit
+layer's throttled `429`, its identity refusal and its refused store error, and — a deliberate scope
+extension, same crate and same bug class — the idempotency layer's key conflict, in-flight `409`,
+fingerprint refusal and buffer-limit errors. The idempotency layer gets **no** fail-open policy: a
+failed idempotency store must keep failing the request, which is the entire point of having one.
+
+Content negotiation never rewrites the status of these responses. `Accept` is caller-controlled, so
+passing a negotiation failure through would let any caller downgrade its own throttle — `Accept:
+text/html` turned a `429` into a `406`, and a malformed `Accept` into a `400`. An unsatisfiable or
+malformed `Accept` now falls back to the default codec and keeps the original status, which RFC 9110
+§12.5.1 explicitly permits for a server-originated response.
+
+The `429` needed a code of its own, so `CratestackError` gains `TooManyRequests` (additive, the enum
+is `#[non_exhaustive]`) mapping to `TOO_MANY_REQUESTS` over REST and gRPC-style `resource_exhausted`
+over RPC. Every client that maps codes back to statuses carries an arm for it: the Rust client, the
+TypeScript and Dart RPC runtimes, and `@cratestack/link-batch`'s `errorStatus` — that last one
+matters most, because a `/rpc/batch` response is always HTTP 200 and the per-frame status is
+synthesized from the code, so a missing arm turned a throttle into a synthetic 500.
+
+Consumers who assert on these bodies as text will see the change: a throttled response is now a CBOR
+(or JSON, per `Accept`) `{code, message, details}` map rather than the string `rate limit exceeded`.
+`Retry-After` and the `X-RateLimit-*` headers are unchanged.
+
+**Retry-once in the Redis rate-limit store.** `RedisRateLimitStore::consume` re-issues its script
+exactly once when the first attempt fails with a transport-class error, keyed on
+`RedisError::is_unrecoverable_error` — precisely the set `ConnectionManager` itself reconnects on, so
+"the driver considers this connection finished" and "we treat it as transport-class" cannot drift
+apart. That set also covers `ErrorKind::Parse`, a half-read reply from a dying socket, which a
+narrower connection-dropped test misses. Per `ConnectionManager`'s own contract (see
+`docs/design/redis-store-connection-reuse.md`, #174) the command that observes a dropped connection
+still fails while the manager reconnects in the background, so a Redis idle-timeout used to cost
+exactly one user-visible request; the retry awaits the replacement connection instead. Deliberately
+bounded: exactly one retry, never a loop, and never for a deterministic refusal such as `OOM` or
+`NOSCRIPT`. `consume` is not idempotent, so a retry after a mid-flight drop can spend a second token;
+that is one token out of a bucket that exists for approximate capacity protection, against a failed
+user request. The idempotency store gets no such retry, for the opposite reason.
+
+Both store-error `WARN`s are rate-limited (10s and 60s budgets, carrying the count they suppressed),
+since an attacker-induced outage must not double as a log-volume amplifier. The mechanism is a new
+public module, `cratestack_core::log_throttle` (`LogThrottle`/`ThrottleDecision`) — additive API,
+usable by any crate with the same problem, and deliberately not a general-purpose rate limiter: no
+token bucket, no configuration, no allocation.
+
 
 ### `@cratestack/cbor-node` ships musl (Alpine) platform packages
 

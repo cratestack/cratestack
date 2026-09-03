@@ -27,8 +27,10 @@ use super::record::{IdempotencyRecord, ReservationOutcome};
 use super::store::IdempotencyStore;
 use crate::transport::StreamedResponseMarker;
 
+/// Shared with `super::tests_error_body` (cratestack#846) rather than
+/// duplicated — same store double, different assertions.
 #[derive(Default)]
-struct InMemoryIdempotencyStore {
+pub(super) struct InMemoryIdempotencyStore {
     entries: Mutex<HashMap<(String, String), Entry>>,
 }
 
