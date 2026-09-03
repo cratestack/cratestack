@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.11.1 (2026-09-03)
+
 - **`example/tool/verify_web_console.dart`'s headless-Chrome readiness check no longer flakes on a
   cold CI runner.** The DevTools-readiness deadline was a hardcoded 15s that a loaded runner could
   miss with zero diagnostics (Chrome's stderr was discarded, and nothing checked whether Chrome had
