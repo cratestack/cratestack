@@ -2,11 +2,13 @@
 
 ## Status
 
-Proposed
+**Accepted (amended)** — 2026-09-03. Accepted at alternative **(a) build L3 now**,
+not at the Decision as proposed. The original Decision text is retained below as
+the historical record; where the two conflict, this amendment governs.
 
 ## Date
 
-2026-08-08
+2026-08-08 (proposed); **2026-09-03 (accepted, amended — maintainer-delegated)**
 
 Context doc: [docs/design/layering.md](../design/layering.md)
 
@@ -102,6 +104,58 @@ reframing is recorded rather than left to go stale (`extensions.md` §9):
   `OpExecutor` gate should point here for the restated form below.
 
 ## Decision
+
+### Amendment 2026-09-03 — the gate fired, and three facts went stale
+
+**Deferred trigger 1 fired.** The restated gate — "L3 gets built when a dispatch
+path must make an admission decision from an input that is not an `http::Request`"
+— is met, and not by WebSocket. ADR 0018 (Accepted 2026-09-02, v0.11.0) makes the
+in-process invocation path (`invoke_with_db`, `db.transaction(...)`,
+`db.queries().<name>().run(...)`) a first-class, compatibility-committed dispatch
+path whose input is a typed `Args` struct and a `CratestackContext`, never an
+`http::Request`. It has real consumers: `examples/db-transaction-verification`
+(#513) and `examples/declarative-query-verification` (#867), both re-run by CI's
+`facade-disjointness` job, plus the #486 estate. **N = 2 input shapes exist today**,
+which is exactly the condition alternative (a) was rejected for lacking.
+
+**Three facts in *Context* are stale as of `8ee25402` and are corrected here rather
+than edited in place:**
+
+1. **Fact 1 is obsolete.** `rate_limited_by_default` *is* read at runtime, by
+   `cratestack-axum/src/ratelimit/{rest,rpc}_ops_filter.rs` (#474, closed), wired
+   through `RateLimitLayer::with_should_rate_limit_fn` and driven by
+   `cratestack-pg/tests/rate_limit_runtime.rs`. `@no_rate_limit` is no longer inert,
+   and the corresponding *Negative* consequence and the `extensions.md` §5
+   correction it demanded are both void. This does not weaken the case for L3 — it
+   strengthens it: #474 shipped exactly alternative (c) for one of the two flags,
+   proving the descriptor-lookup mechanism works, and leaving idempotency as the
+   only concern still unable to see the op it is about to run.
+2. **Correction 1 is obsolete.** `AuditSink` has a consumer:
+   `SqlxRuntime::with_audit_sink` / `CratestackBuilder::with_audit_sink` (#473),
+   dispatched post-commit from `cratestack-sqlx/src/audit/sink.rs:82` and asserted
+   by `cratestack-pg/tests/banking_audit.rs`. Alternative (b)'s rejection ("fan-out
+   has no call site") no longer holds on those grounds; it is still not part of this
+   acceptance, because fan-out already fires from the correct place.
+3. **The `mcp` question is answered: no.** `mcp { }` parses
+   (`cratestack-parser/src/parse/mod.rs:179`) as an inert config block.
+   `cratestack-macros` and `cratestack-axum` contain zero references to it. It
+   dispatches nothing and is not the trigger.
+
+**Constraints carried forward unchanged from the original Decision.** L3 is a
+function over an already-chosen set of collaborators, never a registry (ADR 0012).
+Audit *persistence* stays at L2 inside the mutation's transaction. Nothing threads
+`&mut Transaction` through L3. `examples/no-database-verification`'s proof of
+absence stays stateable, and `db = None` keeps working — the L3 crate's only
+workspace dependency is `cratestack-core`.
+
+**Sequencing.** L3 lands in slices, one concern at a time, each with byte-identical
+wire behaviour as its acceptance bar. Slice 1 is idempotency (it is the only
+concern still blocked) and is tracked by **#876**. Slice 2 is rate limiting (#877),
+and must wait for #871, which is rewriting `ratelimit/` now. Slice 3 is row-level
+policy replay for subscriptions (fact 3). The WS binding remains the eventual
+fourth caller, no longer the trigger. The epic is **#875**.
+
+### Original Decision (2026-08-08, retained as historical record)
 
 **CrateStack will not build the L3 `OpExecutor` in this cycle.** The
 `rpc-transport.md` §6.5 gate holds, but it is **restated in layer terms rather than
@@ -209,6 +263,20 @@ Revisit immediately on any of:
    `08fbb7e`'s shape. One occurrence is a wiring problem; two is a layering one.
 3. A user-visible bug is filed that `@no_rate_limit` has no effect — at which point
    this stops being a deferred cost and becomes a correctness defect.
+
+### Amended 2026-09-03
+
+The *Positive* bullet "no abstraction designed against one imagined caller" is
+retained but re-scoped: it is now satisfied rather than protective. L3 is designed
+against two shipped input shapes with CI-enforced consumers, and the first slice's
+regression oracle is the existing HTTP test suite, unedited.
+
+The *Negative* bullets survive as an accepted cost of the slicing, not of deferral:
+the `@no_rate_limit` bullet is void (#474), the `@no_idempotency` bullet is closed
+by slice 1, the row-level `@@allow` bullet stays open until slice 3, and "the
+eventual migration gets more expensive, monotonically" is now a live constraint on
+slice ordering — #871 lands before slice 2 so its rewrite of
+`ratelimit/key_fn.rs`/`store.rs` is not re-landed against L3.
 
 ## Alternatives considered
 
