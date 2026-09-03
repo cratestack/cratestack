@@ -1410,6 +1410,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-exec"
+version = "0.11.0"
+dependencies = [
+ "async-trait",
+ "cratestack-core",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "cratestack-lsp"
 version = "0.11.0"
 dependencies = [
