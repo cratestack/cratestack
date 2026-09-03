@@ -1,0 +1,114 @@
+name: 🐞 Bug report
+description: Something in CrateStack doesn't work the way it's documented. No prior knowledge of our process needed.
+title: "[Bug]: "
+labels: ["bug", "needs-review"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This form is deliberately short — fill in what you
+        know and leave the rest blank. A maintainer will triage it and, if it's
+        accepted, convert it into a
+        [Development Ticket](https://github.com/cratestack/cratestack/issues/new?template=dev-ticket.yml)
+        with the internal process fields. **You don't have to do that part.**
+
+        Not sure this is a bug? [Ask a question](https://github.com/cratestack/cratestack/issues/new?template=question.yml) instead —
+        that's a perfectly good first issue too.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, and what you got instead of what you expected.
+      placeholder: |
+        I ran `cratestack check --schema schema.cstack` and it reported …
+        I expected it to …
+    validations:
+      required: true
+
+  - type: textarea
+    id: schema
+    attributes:
+      label: Smallest `.cstack` schema that reproduces it
+      description: >
+        If the bug involves a schema, paste the smallest one that still shows the
+        problem. Delete models and fields until it stops reproducing, then add the
+        last one back. This is the single most useful thing you can include.
+      render: text
+      placeholder: |
+        datasource db {
+          provider = "postgresql"
+          url = env("DATABASE_URL")
+        }
+
+        model Post {
+          id Int @id
+          title String
+        }
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands, in order, that someone else can paste into a terminal.
+      render: shell
+      placeholder: |
+        cargo run -p cratestack-cli -- check --schema schema.cstack
+        cargo build
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Error output
+      description: >
+        Full compiler/CLI output, not just the last line. Macro errors in particular
+        carry their useful context above the final message.
+      render: text
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      description: Best guess is fine — leave it on "Not sure" if you don't know.
+      options:
+        - Not sure
+        - Server (include_server_schema! / cratestack-pg)
+        - No-database server (cratestack-api)
+        - Embedded SQLite, native (include_embedded_schema! / cratestack-sqlite)
+        - Embedded SQLite, browser wasm32 + OPFS
+        - Rust client (include_client_schema! / cratestack-client)
+        - Generated Dart / Flutter client
+        - Generated TypeScript client
+        - CLI (cratestack check / generate-* / migrate)
+        - Studio
+        - VS Code extension / language server
+        - Docs
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: CrateStack version
+      description: "From `cratestack --version`, or the version in your `Cargo.toml`. If you're on a git checkout, the commit SHA."
+      placeholder: "0.11.0"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS and toolchain
+      description: "Output of `rustc --version` plus your OS. For browser/mobile bugs, add the browser or device."
+      placeholder: "rustc 1.98.0 on Ubuntu 24.04"
+
+  - type: checkboxes
+    id: ai-usage
+    attributes:
+      label: AI usage (optional)
+      description: >
+        We ask this because [our governance](https://adorsys-gis.github.io/ai-governance/)
+        says AI output isn't truth. It's informational on a bug report — it will not
+        get your issue rejected.
+      options:
+        - label: I used an AI assistant to help write this report, and I checked its claims against what I actually observed.

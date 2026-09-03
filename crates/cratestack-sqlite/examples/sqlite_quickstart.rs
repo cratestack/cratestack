@@ -3,7 +3,7 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run --example sqlite_quickstart -p cratestack
+//! cargo run --example sqlite_quickstart -p cratestack-sqlite
 //! ```
 //!
 //! Demonstrates the smallest useful CrateStack-on-SQLite program:

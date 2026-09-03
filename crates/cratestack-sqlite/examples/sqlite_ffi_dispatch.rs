@@ -3,7 +3,7 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run --example sqlite_ffi_dispatch -p cratestack
+//! cargo run --example sqlite_ffi_dispatch -p cratestack-sqlite
 //! ```
 //!
 //! On a real mobile build, Dart calls into Rust through `flutter_rust_bridge`
