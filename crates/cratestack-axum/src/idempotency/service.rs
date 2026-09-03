@@ -20,12 +20,11 @@ use tower::Service;
 
 use crate::middleware_error::middleware_error_response;
 
-use super::complete::buffer_and_persist_response;
+use super::finish::finish_response;
 use super::hash::{hash_request, is_idempotent_target_method};
 use super::parse::parse_idempotency_key;
 use super::reserve::{Reservation, admit_or_response};
 use super::store::MAX_BODY_BYTES;
-use super::stream_bypass::{is_streamed_response, release_streamed_reservation};
 
 #[derive(Clone)]
 pub struct IdempotencyService<S> {
@@ -165,48 +164,16 @@ where
                 Reservation::Finished(response) => return Ok(response),
             };
 
-            // Run the handler.
+            // Run the handler, then dispose of its response
+            // (release / forward / persist) in `finish_response`.
             let req2 = Request::from_parts(parts, Body::from(bytes));
             let response_result = inner.call(req2).await;
-            let response = match response_result {
-                Ok(response) => response,
-                Err(_) => {
-                    // `Service::Error = Infallible` so this branch is
-                    // unreachable in practice. The release-on-error path
-                    // is still here for if/when a fallible inner service
-                    // is plugged in. Guarding on `token` ensures a
-                    // handler whose reservation has already been
-                    // reclaimed (TTL ran out) doesn't drop the new
-                    // owner's row.
-                    if let Some(token) = token {
-                        executor.release(&principal, &key, token).await;
-                    }
-                    return Ok(middleware_error_response(
-                        &error_headers,
-                        &error_path,
-                        CratestackError::Internal(
-                            "handler returned an unrecoverable error".to_owned(),
-                        ),
-                    ));
-                }
-            };
-            if is_streamed_response(&response) {
-                if let Some(token) = token {
-                    release_streamed_reservation(&executor, &principal, &key, token).await;
-                }
-                return Ok(response);
-            }
-            // A bypassed call has no reservation to record against, so
-            // its response is forwarded untouched — not even buffered.
-            let Some(token) = token else {
-                return Ok(response);
-            };
-            Ok(buffer_and_persist_response(
+            Ok(finish_response(
                 &executor,
+                token,
                 &principal,
                 &key,
-                token,
-                response,
+                response_result,
                 &error_headers,
                 &error_path,
             )

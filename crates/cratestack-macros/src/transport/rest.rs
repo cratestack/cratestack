@@ -4,6 +4,8 @@
 mod capabilities;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_idempotency;
 
 use cratestack_core::{Model, Procedure};
 use quote::quote;

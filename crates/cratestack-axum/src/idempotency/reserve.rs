@@ -60,11 +60,7 @@ pub(super) async fn admit_or_response(
     }
 }
 
-fn token_or_response(
-    admission: Admission,
-    headers: &HeaderMap,
-    path: &str,
-) -> Reservation {
+fn token_or_response(admission: Admission, headers: &HeaderMap, path: &str) -> Reservation {
     match admission {
         Admission::Replay(record) => Reservation::Finished(replay_response(&record)),
         Admission::Conflict => Reservation::Finished(middleware_error_response(

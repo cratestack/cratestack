@@ -66,6 +66,7 @@
 //! deliberately so; see [`build_rest_op_resolver`]'s module docs.
 
 mod complete;
+mod finish;
 mod hash;
 mod headers;
 mod layer;
@@ -87,6 +88,8 @@ mod tests_fingerprint;
 mod tests_hash;
 #[cfg(test)]
 mod tests_headers;
+#[cfg(test)]
+mod tests_op_resolver;
 #[cfg(test)]
 mod tests_parse;
 #[cfg(test)]

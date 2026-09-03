@@ -74,6 +74,45 @@ let app = axum::Router::new()
 
 The crate exports `IDEMPOTENCY_TABLE_DDL` for the SQL store; see the [Idempotency guide](https://cratestack.dev/guides/idempotency) for the table contract and replay semantics.
 
+### Honoring `@no_idempotency`
+
+`IdempotencyLayer` has the same shape and the same opt-in: by default it reserves for every
+keyed request on a mutating method, so a procedure marked `@no_idempotency` in your schema is
+**not** exempt unless you install an op resolver that reads the generated descriptors.
+
+```rust
+use cratestack_axum::idempotency::{
+    IdempotencyLayer, build_rpc_op_resolver, build_rest_op_resolver,
+};
+
+// `transport rpc` schemas: resolver keys off the `/rpc/{op_id}` path against
+// the generated `OPS` slice.
+let app = router.layer(
+    IdempotencyLayer::new(store.clone(), ttl)
+        .with_op_resolver(build_rpc_op_resolver(cratestack_schema::axum::OPS)),
+);
+
+// REST-transport schemas: resolver keys off `axum::extract::MatchedPath`
+// against the generated `ROUTE_TRANSPORTS` slice.
+let app = router.route_layer(
+    IdempotencyLayer::new(store, ttl)
+        .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS)),
+);
+```
+
+**The fail-closed direction is inverted relative to rate limiting, and that is deliberate.**
+A rate-limit filter miss *throttles*; an idempotency resolver miss *reserves*. Both mean "when
+in doubt, apply the protection" — the two descriptor flags are simply polarised opposite ways
+(`rate_limited_by_default: true` means "protect", `idempotent_by_default: true` means "skip").
+The practical consequence: installing **no** resolver reserves exactly the set of requests the
+layer reserved before `OpExecutor` existed, so the upgrade is behaviour-preserving by
+construction.
+
+The decision itself lives in `cratestack-exec` (L3, ADR 0015); this layer derives the
+principal, parses the key, hashes the request, and renders the answer. `POST /rpc/batch` has
+the same known limitation as its rate-limit counterpart — the resolver runs before the batch
+body is decoded, so a batch always reserves regardless of what is inside it.
+
 ## Rate Limiting
 
 Token-bucket layer with a pluggable store. `InMemoryRateLimitStore` is the default; production multi-replica clusters back this with Redis.

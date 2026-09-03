@@ -22,8 +22,8 @@ use super::store::MAX_BODY_BYTES;
 /// can negotiate its content type the same way every other error in the
 /// stack does (cratestack#846).
 ///
-/// Takes the L3 executor rather than the store directly (ADR 0015 slice
-/// 1) so the reservation this completes and the reservation
+/// Takes the L3 executor rather than the store directly (ADR 0015,
+/// slice 1) so the reservation this completes and the reservation
 /// `OpExecutor::admit` granted are held by the same object; the store is
 /// no longer something this layer names.
 pub(super) async fn buffer_and_persist_response(
