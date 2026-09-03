@@ -9,19 +9,25 @@
 use axum::body::Body;
 use axum::response::Response;
 use cratestack_core::CratestackError;
+use cratestack_exec::OpExecutor;
 use http::HeaderMap;
 
 use crate::middleware_error::middleware_error_response;
 
 use super::headers::encode_headers;
-use super::store::{IdempotencyStore, MAX_BODY_BYTES};
+use super::store::MAX_BODY_BYTES;
 
 /// `request_headers`/`request_path` describe the *request*, not the
 /// response being buffered: they exist only so the one error exit below
 /// can negotiate its content type the same way every other error in the
 /// stack does (cratestack#846).
+///
+/// Takes the L3 executor rather than the store directly (ADR 0015 slice
+/// 1) so the reservation this completes and the reservation
+/// `OpExecutor::admit` granted are held by the same object; the store is
+/// no longer something this layer names.
 pub(super) async fn buffer_and_persist_response(
-    store: &dyn IdempotencyStore,
+    executor: &OpExecutor,
     principal: &str,
     key: &str,
     token: uuid::Uuid,
@@ -35,7 +41,7 @@ pub(super) async fn buffer_and_persist_response(
         Err(_) => {
             // Drop the reservation so retries can attempt again — but
             // only if our token still holds.
-            let _ = store.release(principal, key, token).await;
+            executor.release(principal, key, token).await;
             // `Internal` already maps to 500, so no status override is
             // needed here — the pre-cratestack#846 code set it explicitly
             // because it built the response by hand.
@@ -62,7 +68,7 @@ pub(super) async fn buffer_and_persist_response(
     // reservation got reclaimed (TTL expired, retry took over) silently
     // fails this write rather than poisoning the newer reservation's
     // row.
-    let _ = store
+    executor
         .complete(
             principal,
             key,

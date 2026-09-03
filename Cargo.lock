@@ -1182,6 +1182,7 @@ dependencies = [
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
+ "cratestack-exec",
  "cratestack-sql",
  "erased-serde",
  "futures-util",

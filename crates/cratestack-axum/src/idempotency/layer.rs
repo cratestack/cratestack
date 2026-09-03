@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use axum::extract::{ConnectInfo, Request};
 use cratestack_core::CratestackError;
+use cratestack_exec::{OpAdmission, OpExecutor};
 use http::header;
 use sha2::{Digest, Sha256};
 use tower::Layer;
@@ -14,12 +15,18 @@ use super::service::IdempotencyService;
 use super::store::IdempotencyStore;
 
 /// Tower layer that wires an `IdempotencyStore` into the request pipeline.
+///
+/// Since ADR 0015 slice 1 the decision itself lives at L3 in
+/// [`cratestack_exec::OpExecutor`]; this layer is the HTTP adapter around
+/// it, owning exactly the things L3 may not name — the `Idempotency-Key`
+/// header, the request fingerprint, the principal derivation, and the
+/// response shapes.
 #[derive(Clone)]
 pub struct IdempotencyLayer {
-    pub(super) store: Arc<dyn IdempotencyStore>,
-    pub(super) ttl: Duration,
+    pub(super) executor: OpExecutor,
     pub(super) principal_fingerprint:
         Arc<dyn Fn(&Request) -> Result<String, CratestackError> + Send + Sync>,
+    pub(super) op_resolver: Arc<dyn Fn(&Request) -> OpAdmission + Send + Sync>,
 }
 
 impl IdempotencyLayer {
@@ -34,9 +41,9 @@ impl IdempotencyLayer {
     /// [`with_principal_fingerprint`] explicitly.
     pub fn new(store: Arc<dyn IdempotencyStore>, ttl: Duration) -> Self {
         Self {
-            store,
-            ttl,
+            executor: OpExecutor::new(Some(store), ttl),
             principal_fingerprint: Arc::new(default_principal_fingerprint),
+            op_resolver: Arc::new(|_| OpAdmission::unresolved()),
         }
     }
 
@@ -51,6 +58,31 @@ impl IdempotencyLayer {
         f: impl Fn(&Request) -> String + Send + Sync + 'static,
     ) -> Self {
         self.principal_fingerprint = Arc::new(move |req| Ok(f(req)));
+        self
+    }
+
+    /// Teach the layer which schema op each request is about, so
+    /// `@no_idempotency` (and every read) can skip reservation.
+    ///
+    /// Mirrors [`crate::ratelimit::RateLimitLayer::with_should_rate_limit_fn`]
+    /// — pass [`build_rest_op_resolver`] over the generated
+    /// `ROUTE_TRANSPORTS`, or [`build_rpc_op_resolver`] over `OPS`.
+    ///
+    /// **Not installing one is a supported configuration and changes
+    /// nothing.** The default resolver reports every request as
+    /// [`OpAdmission::unresolved`], which reserves — so an existing
+    /// consumer that never calls this method reserves exactly the set of
+    /// requests it always did. That is the property ADR 0015 slice 1's
+    /// byte-identity bar rests on, and it is why this is opt-in rather
+    /// than wired automatically.
+    ///
+    /// [`build_rest_op_resolver`]: super::build_rest_op_resolver
+    /// [`build_rpc_op_resolver`]: super::build_rpc_op_resolver
+    pub fn with_op_resolver(
+        mut self,
+        f: impl Fn(&Request) -> OpAdmission + Send + Sync + 'static,
+    ) -> Self {
+        self.op_resolver = Arc::new(f);
         self
     }
 }
@@ -130,9 +162,9 @@ impl<S> Layer<S> for IdempotencyLayer {
     fn layer(&self, inner: S) -> Self::Service {
         IdempotencyService {
             inner,
-            store: self.store.clone(),
-            ttl: self.ttl,
+            executor: self.executor.clone(),
             principal_fingerprint: self.principal_fingerprint.clone(),
+            op_resolver: self.op_resolver.clone(),
         }
     }
 }
