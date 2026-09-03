@@ -172,13 +172,13 @@ pub(crate) enum Command {
         /// never depends on this flag.
         ///
         /// `@cratestack/cbor-node`'s napi target matrix covers
-        /// `x86_64`/`aarch64` on macOS and glibc Linux plus
-        /// `x86_64-pc-windows-msvc` only — there is no musl (Alpine) build
-        /// and no `win32-arm64`. On either platform the napi loader fails
-        /// with a generic "Cannot find native binding…" error rather than
-        /// naming the real cause. Pass `--no-native-cbor` on those targets
-        /// to fall back to `jsonRpcCodec`, which has no native dependency
-        /// and works everywhere.
+        /// `x86_64`/`aarch64` on macOS, glibc Linux and musl Linux
+        /// (Alpine, since cratestack#850) plus `x86_64-pc-windows-msvc` —
+        /// `win32-arm64` is the one remaining gap. There the napi loader
+        /// fails with a generic "Cannot find native binding…" error rather
+        /// than naming the real cause. Pass `--no-native-cbor` on that
+        /// target to fall back to `jsonRpcCodec`, which has no native
+        /// dependency and works everywhere.
         ///
         /// Purely additive: with an RPC-transport schema, every other
         /// emitted file is byte-identical with and without it; with a

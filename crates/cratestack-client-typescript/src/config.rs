@@ -105,19 +105,20 @@ pub struct TypeScriptGeneratorConfig {
     /// has defaulted to its own native codec since cratestack#563.
     ///
     /// **Known platform gap.** `@cratestack/cbor-node` ships prebuilt napi
-    /// binaries for exactly five targets: `x86_64-apple-darwin`,
+    /// binaries for exactly seven targets: `x86_64-apple-darwin`,
     /// `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
-    /// `aarch64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc`. There is
-    /// **no musl build** (Alpine — the default base image for a large
-    /// share of Node backend containers) and **no `win32-arm64`**. On
-    /// either platform the napi dispatcher fails with a generic *"Cannot
-    /// find native binding. npm has a bug related to optional
-    /// dependencies…"* error that blames npm rather than naming the real
-    /// cause (unsupported platform) — nothing like Dart's explicit
-    /// `UnsupportedError` on Linux arm64. `--no-native-cbor` (`native_cbor:
-    /// false`) is the escape hatch for both: it falls back to
+    /// `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`,
+    /// `aarch64-unknown-linux-musl`, and `x86_64-pc-windows-msvc`. The two
+    /// musl targets — Alpine, the default base image for a large share of
+    /// Node backend containers — were added by cratestack#850; the
+    /// remaining gap is **`win32-arm64`**. There the napi dispatcher fails
+    /// with a generic *"Cannot find native binding. npm has a bug related
+    /// to optional dependencies…"* error that blames npm rather than
+    /// naming the real cause (unsupported platform) — nothing like Dart's
+    /// explicit `UnsupportedError` on Linux arm64. `--no-native-cbor`
+    /// (`native_cbor: false`) is the escape hatch: it falls back to
     /// `jsonRpcCodec`, which has no native dependency and works
-    /// everywhere. Closing the musl/win32-arm64 gap in
+    /// everywhere. Closing the remaining win32-arm64 gap in
     /// `@cratestack/cbor-node`'s own napi target matrix is out of this
     /// ticket's scope (a prerequisite ticket, not a generator change).
     ///

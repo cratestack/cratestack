@@ -527,6 +527,37 @@ jobs:
       - name: Every irreversible publish step is guarded
         run: python3 .ci/release-rehearsal-guard-check.py
 
+  # napi target drift check (cratestack#850). `@cratestack/cbor-node`'s
+  # platform list is duplicated between `napi.targets` in its package.json
+  # and the `build-cbor-node` matrix in release-cli.yml, and the two must
+  # agree exactly, in both directions.
+  #
+  # Same "cannot be exercised on a PR" reasoning as the rehearsal guard
+  # above: a mismatch produces no signal at all until a tag is pushed, and
+  # then it either aborts `publish-npm-cbor-node` outright (target with no
+  # leg) or silently drops a platform from npm while CI stays green (leg
+  # with no target) — the second being precisely the failure #850 reports.
+  #
+  # Invokes the `just` recipe rather than the script directly, for the same
+  # reason the flutter/js drift steps call `just regen-examples --check`:
+  # the recipe developers run locally and the thing CI runs are then one
+  # command, and cannot copy-paste diverge.
+  napi-targets:
+    timeout-minutes: 10
+    name: napi.targets matches the build matrix (cratestack#850)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      # The script's one non-stdlib dependency; it checks for the module
+      # itself and fails as a setup error rather than as a drift report.
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+      - name: napi.targets and build-cbor-node agree
+        run: just verify-napi-targets
+
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
   # (worse than an honest gap, because it looks maintained but isn't), AND

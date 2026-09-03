@@ -167,10 +167,10 @@ No effect on a REST-transport schema: `rest-runtime.ts.j2` hardcodes JSON and ha
 seam at all, so REST output never depends on this flag.
 
 Reach for `--no-native-cbor` on a platform `@cratestack/cbor-node`'s napi target matrix
-doesn't cover: it ships prebuilt binaries for `x86_64`/`aarch64` on macOS and glibc Linux
-plus `x86_64-pc-windows-msvc` only — there is no musl (Alpine) build and no `win32-arm64`.
-On either platform the napi loader fails with a generic "Cannot find native binding…" error
-that blames npm rather than naming the real cause (unsupported platform).
+doesn't cover: it ships prebuilt binaries for `x86_64`/`aarch64` on macOS, glibc Linux and
+musl Linux (Alpine, since cratestack#850) plus `x86_64-pc-windows-msvc` — `win32-arm64` is
+the one remaining gap. There the napi loader fails with a generic "Cannot find native
+binding…" error that blames npm rather than naming the real cause (unsupported platform).
 
 Additive by construction: with an RPC-transport schema, every other emitted file is
 byte-identical with and without the flag — `tests/native_cbor_generator.rs` pins the

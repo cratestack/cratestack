@@ -10,8 +10,9 @@
 //! **Native is now the default** (`TypeScriptGeneratorConfig::
 //! DEFAULT_NATIVE_CBOR` is `true` — see `native_cbor`'s field doc comment
 //! for the full history and the one open platform gap: `@cratestack/cbor-node`
-//! ships no musl/`win32-arm64` build). `default_config_uses_native_cbor`
-//! below reads `TypeScriptGeneratorConfig::default()` directly (never a
+//! ships no `win32-arm64` build; musl was closed by cratestack#850).
+//! `default_config_uses_native_cbor` below reads
+//! `TypeScriptGeneratorConfig::default()` directly (never a
 //! hardcoded bool) so it fails if the constant is ever flipped back without
 //! updating this test — the same anti-pattern Dart's own doc comment for
 //! this test file calls out and that `tests/snapshot.rs`'s pre-existing

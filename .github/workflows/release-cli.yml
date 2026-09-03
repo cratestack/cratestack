@@ -641,8 +641,11 @@ jobs:
   # ---- @cratestack/cbor family (issue #285) ------------------------------
   # Unlike the API family above, @cratestack/cbor-node is a real napi-rs
   # native addon (crates/cratestack-cbor-napi) — it needs a per-platform
-  # release binary for each of `napi.targets` in its package.json, matching
-  # the same 5 platforms `build` builds `cratestack-cli` for above. CI's
+  # release binary for each of `napi.targets` in its package.json: the same
+  # 5 platforms `build` builds `cratestack-cli` for above, PLUS the two musl
+  # (Alpine) targets `cratestack-cli` has no equivalent of — see the matrix
+  # comment below and cratestack#850, which is the Alpine load failure the
+  # missing `-musl` platform packages caused in production. CI's
   # own `js-cbor-napi` job (ci.yml) deliberately only proves a single-host
   # sanity build; this is the real release matrix that job's own comment
   # said was deferred (issue #286's explicit scope note).
@@ -661,6 +664,23 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
+          # musl (Alpine) — cratestack#850. Unlike every other leg here
+          # these CROSS-compile: napi-rs's current guidance for musl is
+          # zig + `--cross-compile`/`-x` on an ordinary glibc runner (the
+          # `ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine` image it used
+          # to document is deprecated), and the CLI appends
+          # `-C target-feature=-crt-static` to RUSTFLAGS for musl itself.
+          # Each musl leg still runs on the runner arch it targets, mirroring
+          # the -gnu legs above — the zig cross is glibc->musl, not a change
+          # of CPU — which is what lets the smoke-load step below actually
+          # RUN the artifact it just built under `node:22-alpine`, on both
+          # architectures, with no qemu in the picture.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: "-x"
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+            cross: "-x"
           - target: x86_64-pc-windows-msvc
             os: windows-latest
     runs-on: ${{ matrix.os }}
@@ -671,9 +691,73 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      # REQUIRED on the musl legs, and the reason the first version of them
+      # failed a real rehearsal run with E0463 "can't find crate for `core`
+      # … the x86_64-unknown-linux-musl target may not be installed".
+      # `with: targets:` above installs the target for `stable`, but
+      # rust-toolchain.toml pins 1.98.0 and cargo selects THAT inside the
+      # checkout — so the std the action installed is never the one in use.
+      # Identical to what `build-cbor-macos` and `build-cbor-ios` already do
+      # further down this file; see their steps' comments.
+      - name: Add the cross target to the pinned toolchain (not stable)
+        if: contains(matrix.target, 'musl')
+        run: rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release-cbor-node-${{ matrix.target }}
+      # musl legs only (cratestack#850). `napi build -x` shells out to
+      # `cargo zigbuild`, which needs BOTH cargo-zigbuild and a real `zig`
+      # on PATH. @napi-rs/cli will `cargo install` cargo-zigbuild itself if
+      # it's missing; taiki-e/install-action fetches the prebuilt release
+      # binary instead, which is the same tool minutes faster. Version-
+      # pinned rather than floating: 0.23.4 is what the musl build was
+      # verified against with zig 0.14.1, and an unpinned `@latest` is
+      # exactly the shape of dependency that turns a release red on someone
+      # else's release day (the first rehearsal picked up 0.23.3 this way).
+      #
+      # zig itself is a pinned curl download rather than a setup-zig
+      # action: taiki-e/install-action has no zig manifest (checked), and
+      # this is exactly the precedent `publish-npm-cbor-web` already sets
+      # for binaryen a few jobs below — pin the version, verify the
+      # checksum, add one directory to PATH, add no new third-party action
+      # to the release pipeline's trust surface. Both checksums are the
+      # ones published in https://ziglang.org/download/index.json for
+      # 0.14.1; the tarball is selected by RUNNER arch, which is not the
+      # same thing as the target arch (the arm64 leg cross-compiles
+      # glibc->musl on an arm64 runner, so it needs the arm64 zig).
+      - uses: taiki-e/install-action@v2
+        if: contains(matrix.target, 'musl')
+        with:
+          tool: cargo-zigbuild@0.23.4
+      - name: Install zig (pinned) for the musl cross-build
+        if: contains(matrix.target, 'musl')
+        # Unpacked into RUNNER_TEMP rather than the checkout purely to keep
+        # a ~400 MB toolchain tree out of the repo working copy.
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64)
+              ZIG_ARCH=x86_64
+              ZIG_SHA=24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c
+              ;;
+            aarch64|arm64)
+              ZIG_ARCH=aarch64
+              ZIG_SHA=f7a654acc967864f7a050ddacfaa778c7504a0eca8d2b678839c21eea47c992b
+              ;;
+            *)
+              echo "::error::no pinned zig 0.14.1 tarball for runner arch $(uname -m)"
+              exit 1
+              ;;
+          esac
+          ZIG_DIR="zig-${ZIG_ARCH}-linux-0.14.1"
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 5 --retry-connrefused -o zig.tar.xz \
+            "https://ziglang.org/download/0.14.1/${ZIG_DIR}.tar.xz"
+          echo "${ZIG_SHA}  zig.tar.xz" | sha256sum -c -
+          tar xf zig.tar.xz
+          rm zig.tar.xz
+          echo "$RUNNER_TEMP/$ZIG_DIR" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/$ZIG_DIR/zig" version
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -689,6 +773,11 @@ jobs:
       # dispatch JS/TS loader `napi build --platform` generates) come out
       # identical on every leg — uploaded from each anyway so the publish
       # job below doesn't need to special-case which leg "owns" them.
+      #
+      # `${{ matrix.cross }}` is `-x` on the two musl legs and EMPTY
+      # everywhere else (the key is simply absent from those matrix
+      # entries) — `-x` swaps `cargo build` for `cargo zigbuild`, which is
+      # only correct where a zig toolchain was installed above.
       - name: Build native addon (napi build)
         working-directory: packages/cratestack-cbor-node
         # Explicit bash — the default shell on the windows-msvc leg is
@@ -702,7 +791,25 @@ jobs:
             --platform --release --esm \
             --js native.mjs --dts native.d.mts \
             --output-dir . \
-            --target ${{ matrix.target }}
+            --target ${{ matrix.target }} ${{ matrix.cross }}
+      # The musl legs' actual acceptance test, and the only step in this
+      # workflow that RUNS an artifact it built rather than just packaging
+      # it. cratestack#850 was a load failure, not a build failure: the
+      # glibc build compiled perfectly and CI was green the whole time it
+      # was unusable on Alpine. Each leg runs on its own architecture, so
+      # `node:22-alpine` here is the real arm64 image on the arm64 leg —
+      # no qemu, no emulation caveat.
+      #
+      # `scripts/smoke-load.mjs` asserts a fixed hex vector through the
+      # package's own generated `native.mjs`, so it fails on a binding that
+      # loads but encodes differently, not only on one that won't load.
+      - name: Smoke-load the musl binding under node:22-alpine
+        if: contains(matrix.target, 'musl')
+        working-directory: packages/cratestack-cbor-node
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/pkg:ro" node:22-alpine \
+            node /pkg/scripts/smoke-load.mjs
       - uses: actions/upload-artifact@v7
         with:
           name: cbor-node-binary-${{ matrix.target }}
@@ -731,14 +838,38 @@ jobs:
   # `@cratestack/cbor-node-darwin-arm64`) BEFORE npm packs and publishes
   # this main package with `optionalDependencies` pointing at them. Same
   # tag-push-only gate and OIDC Trusted Publishing hard-cutover as the
-  # other publish-npm* jobs, except EACH of the 5 auto-generated platform
+  # other publish-npm* jobs, except EACH of the 7 auto-generated platform
   # subpackages ALSO needs its own separate Trusted Publisher entry on
   # npmjs.com, on top of `@cratestack/cbor-node` itself — see
   # docs/tooling/npm-publishing.md, including the bootstrap note there:
   # a brand-new package name can't have Trusted Publishing configured
   # until it's been published manually at least once, so this job will
   # keep failing for any platform subpackage that hasn't gone through that
-  # one-time manual bootstrap yet, even once all 5 binaries build cleanly.
+  # one-time manual bootstrap yet, even once all 7 binaries build cleanly.
+  #
+  # The two names cratestack#850 added —
+  # `@cratestack/cbor-node-linux-x64-musl` and
+  # `@cratestack/cbor-node-linux-arm64-musl` — were bootstrapped by hand on
+  # 2026-09-02 and are live at 0.10.1, so nothing here is outstanding. The
+  # note stays because the constraint is permanent: the NEXT target added to
+  # `napi.targets` will need the same manual first publish
+  # (docs/tooling/npm-publishing.md).
+  #
+  # What it no longer does is take the release down with it. #850 also
+  # changed the publish shape here (see the steps' own comments): the
+  # platform packages are published by an explicit loop that attempts every
+  # name and fails at the end, and the main package publishes regardless —
+  # so an un-bootstrapped platform name costs a red job, not a burned
+  # version number. Consumers on that platform still work in the meantime,
+  # because the main package's tarball bundles every `.node` binary and the
+  # generated loader prefers the bundled file over the subpackage.
+  #
+  # Separately and still true: `napi artifacts` and `napi prepublish` each
+  # validate that EVERY target in `napi.targets` is present before touching
+  # any of them (verified by hand — deleting one musl artifact fails the
+  # whole step). That is a BUILD-completeness gate, not a publish gate: it
+  # is what makes a missing matrix leg fail here loudly rather than ship a
+  # package with a platform silently absent.
   publish-npm-cbor-node:
     name: publish npm package (@cratestack/cbor-node)
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
@@ -809,14 +940,90 @@ jobs:
       # package can be packed" error that gave no hint of the real cause.
       - name: Ensure npm supports Trusted Publishing
         run: npm install -g npm@^11
-      # `--provenance` on the outer `npm publish` only covers THIS command
-      # — it doesn't propagate into the per-platform `npm publish` calls
-      # `napi prepublish` makes internally via the prepublishOnly hook, so
-      # provenance is requested via npm config instead, covering both.
+      # `--provenance` on the outer `npm publish` only covers THIS command,
+      # and `napi prepublish` no longer publishes npm SUBPACKAGES itself
+      # (see the `--skip-optional-publish` note below), so provenance is
+      # requested via npm config instead — covering the platform loop too.
+      #
+      # Scoped deliberately to npm: `napi prepublish` still attempts its
+      # GitHub-release side effects regardless of that flag. Rehearsal
+      # 33677846346 shows it issuing `POST /repos/…/releases` (401, no token
+      # wired) followed by seven asset uploads. That is pre-existing
+      # behaviour, unrelated to the musl targets, and out of scope for
+      # cratestack#850 — noted here so the next reader does not mistake
+      # "publishes no subpackages" for "does nothing".
       # `npm config set` writes to the *user* config (~/.npmrc) by
       # default, so it applies regardless of which directory it runs
-      # from — the wrapper below cd's into the package itself.
-      - name: Publish @cratestack/cbor-node (+ per-platform subpackages)
+      # from — the wrapper below cd's into each package itself.
+      #
+      # PLATFORM SUBPACKAGES ARE PUBLISHED HERE, EXPLICITLY, NOT BY THE
+      # `prepublishOnly` HOOK (cratestack#850). That hook — `napi prepublish
+      # -t npm`, now carrying `--skip-optional-publish` — used to publish
+      # each `npm/<platform>` package itself, SEQUENTIALLY, from inside the
+      # root `npm publish`. Two things follow from that shape, both bad:
+      #
+      #   1. The first subpackage that fails aborts the hook, so the root
+      #      package never publishes at all — and every later subpackage is
+      #      skipped. With a brand-new platform name in the list (which
+      #      404s until it is hand-bootstrapped; Trusted Publishing cannot
+      #      create a name, npm/cli#8544) that means: some platform
+      #      packages live, the main package missing, and the tag's version
+      #      number burned. Adding the two musl targets made that
+      #      reachable, which is why this shape changed alongside them.
+      #   2. In rehearsal mode the root `npm publish --dry-run` does NOT
+      #      propagate `--dry-run` into the hook, so `napi prepublish`
+      #      attempted REAL subpackage publishes during a run whose whole
+      #      contract is "writes to no registry". Pre-existing hole; newly
+      #      reachable for the same reason.
+      #
+      # The loop below closes both. It goes through the same
+      # `npm-publish.sh` wrapper as every other package here — so it
+      # honours NPM_PUBLISH_REHEARSAL per name, and already-published counts
+      # as success — attempts EVERY name rather than stopping at the first
+      # failure, and only then exits non-zero. Loud, but no longer
+      # load-bearing for the names beside it.
+      #
+      # Note what this does NOT put at risk: the root tarball bundles every
+      # `.node` file (`files: ["*.node"]`, and `napi artifacts` copies each
+      # binary to the package root as well as into `npm/<platform>/`), and
+      # the generated `native.mjs` tries
+      # `./cratestack-cbor-node.<platform>.node` BEFORE the
+      # `@cratestack/cbor-node-<platform>` subpackage. So an Alpine consumer
+      # resolves a working binding from the main package even while the musl
+      # subpackage names are still un-bootstrapped.
+      - name: Publish the per-platform subpackages (all attempted, then fail loudly)
+        env:
+          NPM_PUBLISH_REHEARSAL: ${{ needs.prepare.outputs.rehearsal == 'true' && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          npm config set provenance true
+          failed=()
+          for dir in packages/cratestack-cbor-node/npm/*/; do
+            name=$(node -p "require('./${dir}package.json').name")
+            echo "::group::npm publish $name"
+            if ! .github/scripts/npm-publish.sh "$dir" --access public; then
+              failed+=("$name")
+            fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::platform subpackage publish failed for: ${failed[*]} — the main package is published by the next step regardless (it bundles every .node binary, so consumers still resolve a working binding). A brand-new platform name needs the one-time manual bootstrap in docs/tooling/npm-publishing.md."
+            echo "SUBPACKAGE_PUBLISH_FAILED=${failed[*]}" >> "$GITHUB_ENV"
+          fi
+      # Runs even when the loop above reported failures — but WITHOUT
+      # `if: always()`, deliberately. The loop step never fails on its own:
+      # it runs under `set -uo pipefail` (no `-e`), collects failed names
+      # into an array, and ends on an `if` block that exits 0, recording the
+      # failures into `$GITHUB_ENV` for the final step to act on. Measured:
+      # the loop exits 0 with two names failing.
+      #
+      # So `always()` would buy nothing for the case it looks like it covers,
+      # while silently covering a case it must NOT: any EARLIER step failing
+      # — `pnpm exec tsc`, the `@cratestack/ts-types` build — would still
+      # reach this publish, shipping a tarball whose `main: ./dist/index.js`
+      # is not in it, at a version number that can never be reused. Plain
+      # step ordering gives the intended behaviour and nothing else.
+      - name: Publish @cratestack/cbor-node
         env:
           # cratestack#652: the shared wrapper switches to
           # `npm publish --dry-run` when this is 1. Wiring it here rather
@@ -826,6 +1033,14 @@ jobs:
         run: |
           npm config set provenance true
           .github/scripts/npm-publish.sh packages/cratestack-cbor-node --access public
+      - name: Fail the job if any platform subpackage did not publish
+        if: always()
+        run: |
+          if [ -n "${SUBPACKAGE_PUBLISH_FAILED:-}" ]; then
+            echo "::error::these platform subpackages did not publish: $SUBPACKAGE_PUBLISH_FAILED"
+            exit 1
+          fi
+          echo "all platform subpackages published (or were already published)"
 
   # Same rationale as js-cbor-wasm in ci.yml: needs a real Rust wasm32
   # toolchain (the package's `prebuild` hook runs `wasm-pack build` against
@@ -875,11 +1090,22 @@ jobs:
       # correct here — this job is `runs-on: ubuntu-latest`, no matrix.
       # taiki-e/install-action has no binaryen manifest, hence the
       # explicit curl.
+      #
+      # The sha256 is the digest GitHub reports for that release asset
+      # (`gh api repos/WebAssembly/binaryen/releases/tags/version_130`,
+      # `.assets[].digest`), cross-checked against a local `sha256sum` of
+      # the downloaded file. Added by cratestack#850, whose own pinned-zig
+      # step in `build-cbor-node` cites this step as the precedent for
+      # "pin the version, verify the checksum" — a version pin alone does
+      # not make a mutable release asset tamper-evident, so the precedent
+      # had to actually exist before it could be cited.
       - name: Install binaryen (wasm-opt), pinned
         run: |
           set -euo pipefail
-          curl -fsSL -o binaryen.tar.gz \
+          curl -fsSL --retry 5 --retry-connrefused -o binaryen.tar.gz \
             "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          echo "0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc  binaryen.tar.gz" \
+            | sha256sum -c -
           tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
           rm binaryen.tar.gz
@@ -1601,13 +1827,30 @@ jobs:
       - name: Install flutter_rust_bridge_codegen (pinned =2.13.0)
         run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       # wasm-pack downloads its own binaryen (hardcoded version) mid-build
-      # unless a `wasm-opt` is already on PATH — see ci.yml's identical step
-      # for the incident that made this pinned rather than left to chance.
+      # unless a `wasm-opt` is already on PATH — see ci.yml's counterpart
+      # step for the incident that made this pinned rather than left to
+      # chance. Deliberately no longer described as "identical": since
+      # cratestack#850 the two release-cli.yml binaryen downloads verify a
+      # sha256 and ci.yml's seven do not. Checksumming those is worth doing
+      # and is a separate change — a CI-wide supply-chain edit does not
+      # belong in a release-pipeline PR, and CI cannot burn a version
+      # number the way this workflow can.
+      #
+      # The sha256 is the digest GitHub reports for that release asset
+      # (`gh api repos/WebAssembly/binaryen/releases/tags/version_130`,
+      # `.assets[].digest`), cross-checked against a local `sha256sum` of
+      # the downloaded file. Added by cratestack#850, whose own pinned-zig
+      # step in `build-cbor-node` cites this step as the precedent for
+      # "pin the version, verify the checksum" — a version pin alone does
+      # not make a mutable release asset tamper-evident, so the precedent
+      # had to actually exist before it could be cited.
       - name: Install binaryen (wasm-opt), pinned
         run: |
           set -euo pipefail
-          curl -fsSL -o binaryen.tar.gz \
+          curl -fsSL --retry 5 --retry-connrefused -o binaryen.tar.gz \
             "https://github.com/WebAssembly/binaryen/releases/download/version_130/binaryen-version_130-x86_64-linux.tar.gz"
+          echo "0a18362361ad05465118cd8eeb72edaeec89de6894bc283576ef4e07aa3babcc  binaryen.tar.gz" \
+            | sha256sum -c -
           tar -xzf binaryen.tar.gz
           echo "$PWD/binaryen-version_130/bin" >> "$GITHUB_PATH"
           rm binaryen.tar.gz

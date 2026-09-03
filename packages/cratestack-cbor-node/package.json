@@ -44,6 +44,8 @@
       "aarch64-apple-darwin",
       "x86_64-unknown-linux-gnu",
       "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl",
       "x86_64-pc-windows-msvc"
     ]
   },
@@ -55,7 +57,7 @@
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "test": "pnpm run typecheck && vitest run",
     "lint": "biome check .",
-    "prepublishOnly": "napi prepublish -t npm"
+    "prepublishOnly": "napi prepublish -t npm --skip-optional-publish"
   },
   "devDependencies": {
     "@cratestack/ts-types": "0.10.1",
