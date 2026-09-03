@@ -8,7 +8,8 @@ the historical record; where the two conflict, this amendment governs.
 
 ## Date
 
-2026-08-08 (proposed); **2026-09-03 (accepted, amended — maintainer-delegated)**
+2026-08-08 (proposed); **2026-09-03 (accepted, amended — maintainer-delegated,
+[cratestack#875 comment][decision])**
 
 Context doc: [docs/design/layering.md](../design/layering.md)
 
@@ -317,3 +318,6 @@ would make the missing layer honest rather than half-declared. Rejected: they ar
 the correct target shape — `rpc-transport.md` §2.2 reserved `idempotent_by_default`
 before any of this existed — and removing them is churn that would have to be
 undone by (a) or (c).
+
+[epic]: https://github.com/cratestack/cratestack/issues/875
+[decision]: https://github.com/cratestack/cratestack/issues/875#issuecomment-5524011041
