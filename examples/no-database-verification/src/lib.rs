@@ -14,20 +14,16 @@ pub use cratestack_schema as schema;
 pub struct Procedures;
 
 impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
-    fn ping(
+    async fn ping(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::ping::Args,
         _authorized: cratestack_schema::procedures::ping::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::ping::Output, CratestackError>,
-    > + Send {
-        async move {
-            Ok(cratestack_schema::PingReply {
-                echo: args.args.message,
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::ping::Output, CratestackError> {
+        Ok(cratestack_schema::PingReply {
+            echo: args.args.message,
+        })
     }
 }
 
@@ -37,14 +33,14 @@ pub struct AllowAllAuth;
 impl AuthProvider for AllowAllAuth {
     type Error = CratestackError;
 
-    fn authenticate(
+    async fn authenticate(
         &self,
         _request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
-        core::future::ready(Ok(CratestackContext::authenticated([(
+    ) -> Result<CratestackContext, Self::Error> {
+        Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             cratestack::Value::Int(1),
-        )])))
+        )]))
     }
 }
 
