@@ -41,10 +41,11 @@ pub struct BucketBudget {
 
 The **store** applies it, in the same operation as the token consumption:
 
-- **Redis** — one Lua script, three `KEYS` (requested bucket, scope set,
-  fallback bucket). `SISMEMBER` hit → charge the requested bucket; else
-  `SCARD < max_distinct` → `SADD`, re-`PEXPIRE` the set, and charge it; else
-  charge the fallback. Zero extra round-trips.
+- **Redis** — one Lua script, three `KEYS` (requested bucket, scope ZSET,
+  fallback bucket). `ZREMRANGEBYSCORE` trims aged-out slots; `ZSCORE` hit →
+  refresh the score and charge the requested bucket; else `ZCARD <
+  max_distinct` → `ZADD` and charge it; else charge the fallback. The scope key
+  is `PEXPIRE`d on every hit. Zero extra round-trips.
 - **In-memory** — a `HashSet` per scope behind the same mutex as the buckets,
   plus an amortised sweep (at most once per 60s) that drops buckets idle for a
   full `cratestack_core::bucket_ttl_secs`, and a hard `max_buckets` cap that
@@ -65,9 +66,26 @@ admission, and the Redis key carries no epoch. Dropping the epoch also removes a
 clock-skew multiplier: replicas disagreeing on `now_ms` used to land on
 different epoch keys and each mint their own generation.
 
-Refreshing on every *admission* rather than every *hit* is deliberate: a
-saturated scope must still age out, or a deployment whose tokens rotate
-normally would be capped at its first `max_distinct` credentials forever.
+### The window slides, per member
+
+One shared deadline for the whole scope forced a choice between two defects.
+Refreshing it on every *hit* pinned a saturated scope open forever, capping a
+token-rotating deployment at its first `max_distinct` credentials. Refreshing
+only on *admission* let the record expire while a bucket it admitted was still
+alive (kept warm by traffic), freeing a slot for another alongside it — a
+transient `2 × max_distinct`.
+
+Per-member expiry removes the choice, so the "sliding window" this document
+previously ruled out is now what ships. The scope is a sorted set scored by
+**last use**; each slot expires `scope_ttl` after its credential was last seen.
+An actively-used member's score is refreshed, so its slot is never freed while
+its bucket is alive; one that goes quiet is trimmed, so rotation reclaims it.
+The bound is `max_distinct` live buckets per scope at *every* instant, not just
+in steady state. Cost is one extra O(log N) command at N ≤ 128, in the same
+round-trip.
+
+Scoring by first admission rather than last use would reintroduce the `2N`
+exactly, which is why the score is written on every hit.
 
 Redis Lua is atomic but **not transactional**: a script that aborts partway (a
 mid-script `OOM`) can leave a set that was `SADD`ed but never `PEXPIRE`d, and
@@ -92,17 +110,19 @@ it is bounded.
 | `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<addr>` | **128** | `ip:<addr>` |
 | `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | **8192** | `overflow` |
 | `ConnectInfo` only | `ip:<addr>` | — | none | — |
+| neither | *refused, `412`* (cratestack#416) | — | — | — |
 
-`<addr>` is the peer address for IPv4 and its **/64 prefix** for IPv6.
-| neither | refused, `412` (cratestack#416) | | | |
+`<addr>` is the peer address for IPv4 and its **/64 prefix** for routable IPv6.
+IPv4-mapped addresses (`::ffff:a.b.c.d`) are unwrapped to their IPv4 form
+first — see the IPv6 section below.
 
-**128 per peer / 60s.** No realistic legitimate peer reaches it — 128
-simultaneously-active distinct credentials from one NAT egress inside a minute
-is already a deployment that should be configuring this rather than inheriting
-it. An attacker needs one bucket per *request*, so the cap is orders of
+**128 per peer.** No realistic legitimate peer reaches it — 128
+simultaneously-active distinct credentials from one NAT egress (or one IPv6
+/64) within a slot lifetime is already a deployment that should be configuring
+this rather than inheriting it. An attacker needs one bucket per *request*, so the cap is orders of
 magnitude below what the attack needs and above what real traffic uses.
 
-**8192 globally / 60s.** Applies only when no verified peer address exists at
+**8192 globally.** Applies only when no verified peer address exists at
 all (an unconfigured `into_make_service_with_connect_info`). Collateral there
 falls on *unrelated* callers, so the cap is far looser: the global scope
 degrades to one loud `overflow` bucket only when the deployment is both
@@ -115,8 +135,8 @@ caller's *own* `ip:` bucket throttles the attacker without giving them a lever
 over anyone else's availability.
 
 **cratestack#416 is preserved.** Under the cap, distinct callers never share.
-An already-admitted member stays admitted for the rest of the window even while
-its scope is saturated, so an attacker filling a peer's budget cannot displace
+An already-admitted member keeps its slot for as long as it keeps using it,
+even while its scope is saturated, so an attacker filling a peer's budget cannot displace
 the legitimate callers that were in it first.
 
 **IPv6 aggregated to /64 EVERYWHERE the address becomes a key, IPv4 not.** A
@@ -134,8 +154,22 @@ buckets** with a token at cap 8, and **200 buckets, 200/200 allowed**, with no
 the rotating variable. Aggregation now applies to the scope key, the fallback
 bucket key, and the unauthenticated bucket key alike.
 
+**IPv4-mapped addresses are unwrapped first.** A dual-stack listener —
+`TcpListener::bind("[::]:0")`, the ordinary Linux bind — delivers every IPv4
+client as `::ffff:a.b.c.d`, whose top four groups are zero. Taking the /64
+blindly therefore mapped **every IPv4 client onto `ip:::/64`**: measured, 200
+distinct IPv4 clients collapsed into 1 bucket with 5 allowed — a collision of
+unlimited width and a one-client denial of service against all IPv4 traffic,
+strictly worse than the evasion the aggregation closed. `to_ipv4_mapped()` is
+applied before aggregating, and `to_ipv4()` is deliberately NOT used: it also
+accepts the deprecated IPv4-compatible form, mapping `::1` to `0.0.0.1` and
+`::` to `0.0.0.0` — trading one collision for another. Instead the whole
+all-zero `::/64` region is exempted from aggregation and keyed per-address;
+nothing in it is globally routable, so it offers no address supply to rotate
+through.
+
 **The accepted trade-off, stated rather than hidden:** two distinct hosts inside
-one IPv6 /64 share a throttling bucket. That is a genuine cratestack#416
+one *routable* IPv6 /64 share a throttling bucket. That is a genuine cratestack#416
 collision, taken deliberately because a /64 is one subscriber and an attacker's
 2^64-address supply is not hypothetical.
 
@@ -159,8 +193,9 @@ Stated plainly, because a security control that overstates its coverage is worse
 than one that does not exist:
 
 - **Distinct peers.** A botnet with N source addresses gets N per-peer budgets.
-  The bound is O(peers × cap), not O(1). The in-memory `max_buckets` cap is the
-  only backstop, and it is a fail-closed one.
+  The bound is O(peers × cap), not O(1). In the in-memory store the
+  `max_buckets` cap backstops both the bucket and the scope map, fail-closed;
+  Redis has no such cap and relies on the per-key TTLs.
 - **Third-party stores that do not implement `consume_bounded`.** They keep
   working, unbounded, with a throttled `WARN` per hour. The trait cannot force
   the atomicity the bound needs.
@@ -172,17 +207,26 @@ than one that does not exist:
   refused loudly as a logical-class error. Forcing them into one slot would
   concentrate an attacker's traffic on a single node. Cluster is not a supported
   deployment for this store today.
-- **Distinct hosts inside one IPv6 /64.** They share a bucket, by design (see
-  above). This is a cratestack#416 collision accepted in exchange for closing
-  the address-rotation evasion.
-- **A transient overlap of up to `2 × max_distinct`.** A bucket touched shortly
-  before its scope's record expires can outlive that record by up to one bucket
-  TTL while a new generation fills. It rejoins the new scope's count on its next
-  request, so it does not compound — but it is reachable, and "≤ N + 2 at any
-  instant" is a steady-state claim, not an instantaneous one.
-- **Scope-set memory itself.** Each admitted member is one entry in a set that
-  expires with the scope record. It is proportional to the buckets it indexes,
-  not independent of them, but it is real added memory.
+- **Distinct hosts inside one routable IPv6 /64.** They share a bucket, by
+  design (see above). This is a cratestack#416 collision accepted in exchange
+  for closing the address-rotation evasion. It applies to *routable* IPv6 only:
+  IPv4, IPv4-mapped addresses and the whole `::/64` special region are keyed
+  per-address.
+- ~~A transient overlap of up to `2 × max_distinct`.~~ **Closed** by the
+  sliding window (see "The window slides, per member"): a member's slot is
+  refreshed on use, so it can never expire while its bucket is alive, and the
+  bound `max_distinct + 2` now holds at every instant rather than only in steady
+  state.
+- **Scope memory is bounded but not free.** Each admitted member is one entry
+  in its scope's sorted set, expiring individually. It is NOT merely
+  "proportional to the buckets it indexes" — an earlier revision claimed that
+  and it was false: scope entries outlive their buckets by design (`scope_ttl`
+  ≥ bucket TTL), and admission used to happen before the bucket cap could
+  refuse, so a capped in-memory store measured 10 buckets against 5000 scopes.
+  Admission is now gated on the bucket being creatable, and the scope map has
+  its own `max_buckets`-derived cap that fails closed — but the two counts are
+  separate quantities and are asserted separately (`_bucket_count`,
+  `_scope_count`).
 - **A scope set that lost its TTL to an aborted script.** Redis Lua is atomic
   but not transactional, so a mid-script failure between `SADD` and `PEXPIRE`
   leaves a set with no expiry. The next admission on that scope re-`PEXPIRE`s

@@ -10,6 +10,7 @@ use cratestack_core::{
 use super::config::{RateLimitConfig, RateLimitDecision};
 
 mod buckets;
+mod capacity;
 mod scopes;
 
 // Re-export from cratestack-core for internal use
@@ -109,9 +110,17 @@ impl InMemoryRateLimitStore {
         let charged = match request.budget {
             None => Charged::Requested,
             Some(budget) => {
-                // Never shorter than the bucket TTL: a scope that expires
-                // before its buckets do re-admits `max_distinct` more
-                // while the previous generation is still alive.
+                // Refuse BEFORE touching the scope index, not after
+                // (cratestack#871 round-2, item 2). Admitting first and
+                // letting `Buckets::consume` refuse afterwards left a
+                // scope entry — and an interned member key — behind for
+                // every refused request: measured `max_buckets=10` ->
+                // `buckets=10 scopes=5000`, each scope able to hold 128
+                // keys for up to a day. `max_buckets` bounded the bucket
+                // map and nothing else.
+                self.reserve_admission(&mut state, &request, budget, now, ttl)?;
+                // Never shorter than the bucket TTL, so a member's slot
+                // outlives the bucket it admitted.
                 let scope_ttl = Duration::from_secs(scope_ttl_secs(request.config, budget.window));
                 if state.scopes.admit(budget, request.key, now, scope_ttl) {
                     Charged::Requested
@@ -137,6 +146,17 @@ impl InMemoryRateLimitStore {
         self.state
             .lock()
             .map(|state| state.buckets.len())
+            .unwrap_or(0)
+    }
+
+    /// Test seam: how many scope records are live. Separate from
+    /// [`Self::_bucket_count`] because the round-2 review found the two
+    /// diverging by three orders of magnitude.
+    #[doc(hidden)]
+    pub fn _scope_count(&self) -> usize {
+        self.state
+            .lock()
+            .map(|state| state.scopes.len())
             .unwrap_or(0)
     }
 }

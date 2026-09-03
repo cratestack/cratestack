@@ -35,9 +35,26 @@
 //!
 //! So there is no epoch. One key per scope, `PEXPIRE`d to
 //! `cratestack_core::scope_ttl_secs` (at least the bucket TTL) on every
-//! admission. Dropping the epoch also removes a clock-skew multiplier:
-//! replicas disagreeing on `now_ms` used to land on different epoch keys
-//! and each mint their own generation.
+//! hit. Dropping the epoch also removes a clock-skew multiplier: replicas
+//! disagreeing on `now_ms` used to land on different epoch keys and each
+//! mint their own generation.
+//!
+//! # The window slides, per member (cratestack#871 round-2, item 3)
+//!
+//! The scope is a **`ZSET` scored by last use**, not a `SET`. A shared
+//! deadline for the whole scope forced a choice between two defects:
+//! refreshing it on every hit capped a token-rotating peer at its first
+//! `max_distinct` credentials forever, and refreshing only on admission
+//! left a transient `2 x max_distinct` (a bucket kept alive by traffic
+//! could outlive the record that admitted it, freeing a slot for another
+//! while it was still there).
+//!
+//! Per-member expiry removes the choice. `ZREMRANGEBYSCORE` trims slots
+//! whose credential has gone quiet for `scope_ttl`; an actively-used
+//! member's score is refreshed, so its slot is never freed while its
+//! bucket is alive. The bound is then `max_distinct` live buckets per
+//! scope with no transient overshoot. Cost is one extra O(log N) command
+//! at N <= 128, in the same round-trip.
 //!
 //! # The TTL is passed in, not computed here
 //!
@@ -66,25 +83,27 @@ local member = ARGV[7]
 local target = KEYS[1]
 local charged = 'requested'
 if max_distinct >= 0 then
-  local card = redis.call('SCARD', KEYS[2])
-  if redis.call('SISMEMBER', KEYS[2], member) == 1 then
+  -- Slide the window: drop members whose slot aged out. Scores are
+  -- LAST-USE timestamps, so this frees the slots of credentials the peer
+  -- has stopped using without ever evicting one it is still using.
+  redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now_ms - scope_ttl_ms)
+  if redis.call('ZSCORE', KEYS[2], member) then
     -- Already admitted: keep its own bucket even if the scope is now
     -- saturated, so an attacker cannot displace callers that were under
-    -- the cap first. Deliberately does NOT refresh the scope TTL — a
-    -- saturated scope must be able to age out and let its peer start
-    -- over, or a deployment whose tokens rotate is capped at its first N
-    -- credentials forever.
-  elseif card < max_distinct then
-    redis.call('SADD', KEYS[2], member)
-    -- Unconditional, not just on creation. Two reasons: the record must
-    -- outlive the buckets it admits (scope_ttl_ms >= the bucket EXPIRE
-    -- below), and refreshing on every admission repairs a set that lost
-    -- its TTL because an earlier script aborted between SADD and PEXPIRE.
-    redis.call('PEXPIRE', KEYS[2], scope_ttl_ms)
+    -- the cap first. ZADD refreshes the score rather than adding a member.
+    redis.call('ZADD', KEYS[2], now_ms, member)
+  elseif redis.call('ZCARD', KEYS[2]) < max_distinct then
+    redis.call('ZADD', KEYS[2], now_ms, member)
   else
     target = KEYS[3]
     charged = 'fallback'
   end
+  -- Unconditional, on every hit and not only on admission. The record must
+  -- outlive every bucket it admitted (scope_ttl_ms >= the bucket EXPIRE
+  -- below) or a fresh generation opens underneath a live one; and
+  -- re-arming it every time repairs a key that lost its TTL because an
+  -- earlier script aborted between ZADD and PEXPIRE.
+  redis.call('PEXPIRE', KEYS[2], scope_ttl_ms)
 end
 
 local existing = redis.call('HMGET', target, 'tokens', 'last_refill_ms')

@@ -31,20 +31,23 @@
 //! caller rotating an unverified `Authorization` header used to mint one
 //! `:rl:` key per request. [`RateLimitStore::consume_bounded`] closes
 //! that. The same Lua script — no extra round-trip — additionally takes a
-//! scope set at `<prefix>:rls:<sha256(scope)>` and a fallback bucket key:
-//! on first sight of a bucket under a scope it `SADD`s it if
-//! `SCARD < max_distinct`, and otherwise charges the *fallback* bucket
-//! instead. Steady-state keyspace becomes O(scopes × max_distinct).
+//! scope `ZSET` at `<prefix>:rls:<sha256(scope)>` and a fallback bucket
+//! key: it trims aged-out slots, admits the bucket if it is already scored
+//! or if `ZCARD < max_distinct`, and otherwise charges the *fallback*
+//! bucket instead. Keyspace becomes O(scopes × max_distinct).
 //!
-//! The scope set is `PEXPIRE`d to `cratestack_core::scope_ttl_secs` — at
-//! least the bucket TTL — on **every** admission, so the record always
-//! outlives the buckets it admitted. An earlier cut suffixed the key with
-//! a fixed-window epoch and expired it after the window: with
-//! `window < bucket_ttl` that let each rollover re-admit `max_distinct`
-//! more buckets on top of a still-live generation (measured: 21 buckets
-//! for a cap of 4 over five 1s windows). Re-`PEXPIRE`ing on every
-//! admission also repairs a set left without a TTL by a script that
-//! aborted between `SADD` and `PEXPIRE` — Lua here is atomic but not
+//! Scores are **last-use** timestamps, and the key is `PEXPIRE`d to
+//! `cratestack_core::scope_ttl_secs` — at least the bucket TTL — on
+//! **every hit**, so a slot always outlives the bucket it admitted. An
+//! earlier cut suffixed the key with a fixed-window epoch and expired it
+//! after the window: with `window < bucket_ttl` that let each rollover
+//! re-admit `max_distinct` more buckets on top of a still-live generation
+//! (measured: 21 buckets for a cap of 4 over five 1s windows). Trimming
+//! per member rather than resetting per scope is what lets an active
+//! credential keep its slot while a rotated-away one releases it — see
+//! `scripts` for why a shared deadline cannot do both. Re-`PEXPIRE`ing
+//! unconditionally also repairs a key left without a TTL by a script that
+//! aborted between `ZADD` and `PEXPIRE` — Lua here is atomic but not
 //! transactional, so a mid-script `OOM` can stop it partway.
 //!
 //! **Redis Cluster is not supported by this store**, and cratestack#871

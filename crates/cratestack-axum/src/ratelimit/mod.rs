@@ -75,8 +75,8 @@
 //!
 //! So the default derivation no longer returns a bare key. It returns the
 //! key *plus* a [`cratestack_core::BucketBudget`] naming the scope that
-//! key is counted against, how many distinct buckets that scope may
-//! create per window, and which bucket to charge instead once it is full:
+//! key is counted against, how many distinct buckets that scope may hold
+//! at once, and which bucket to charge instead once it is full:
 //!
 //! | Request carries | Key | Scope | Cap | Fallback |
 //! |---|---|---|---|---|
@@ -95,12 +95,17 @@
 //! The store applies the budget atomically alongside the token
 //! consumption — doing it as a separate lookup would race, with N
 //! concurrent requests each reading "under budget" and each minting a
-//! bucket. The scope's admission record is kept alive for at least the
-//! buckets' own TTL ([`cratestack_core::scope_ttl_secs`]), so it cannot
-//! expire underneath the buckets it admitted and let a fresh generation
-//! open beneath it. Steady-state keyspace is then O(peers × cap), and
-//! `window` is a *floor* on the record's lifetime rather than a fixed
-//! window.
+//! bucket.
+//!
+//! Each admitted credential holds a **slot** that expires
+//! [`cratestack_core::scope_ttl_secs`] after it was last used — at least
+//! the buckets' own TTL, so a slot always outlives the bucket it admitted
+//! and no fresh generation can open beneath a live one. The window slides
+//! per credential: an actively-used caller never loses its slot, and a
+//! peer whose tokens rotate reclaims the slots of credentials it stopped
+//! using. `window` (default 60s) is the *floor* on that lifetime, not a
+//! fixed period that resets the scope. Keyspace is O(peers × cap) at every
+//! instant.
 //!
 //! Over the cap the caller is *collapsed onto its own* `ip:` bucket, not
 //! refused: refusing would hand an attacker a deterministic outage of
@@ -142,9 +147,13 @@ mod tests;
 #[cfg(test)]
 mod tests_budget;
 #[cfg(test)]
+mod tests_budget_caps;
+#[cfg(test)]
 mod tests_budget_store;
 #[cfg(test)]
 mod tests_evasion;
+#[cfg(test)]
+mod tests_evasion_v4;
 #[cfg(test)]
 mod tests_key_fn;
 #[cfg(test)]

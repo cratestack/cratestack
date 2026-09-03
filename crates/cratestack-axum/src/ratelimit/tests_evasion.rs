@@ -23,7 +23,7 @@ use super::store::{InMemoryRateLimitStore, RateLimitStore};
 use super::tests_support::ok_service;
 
 /// One request from a chosen source address, optionally bearing a token.
-fn request(addr: &str, bearer: Option<usize>) -> Request {
+pub(super) fn request(addr: &str, bearer: Option<usize>) -> Request {
     let mut builder = Request::builder().extension(ConnectInfo(
         addr.parse::<std::net::SocketAddr>().expect("addr parses"),
     ));
@@ -39,7 +39,10 @@ fn address_in_one_64(nonce: usize) -> String {
     format!("[2001:db8:1:2::{nonce:x}]:1")
 }
 
-async fn drive(layer: &RateLimitLayer, requests: impl Iterator<Item = Request>) -> usize {
+pub(super) async fn drive(
+    layer: &RateLimitLayer,
+    requests: impl Iterator<Item = Request>,
+) -> usize {
     let mut service = layer.layer(ok_service());
     let mut allowed = 0;
     for req in requests {

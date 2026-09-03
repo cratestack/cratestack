@@ -102,7 +102,7 @@ pub use schema::{
 };
 pub use store::{
     BoundedOutcome, BucketBudget, Charged, ClientStateStore, ConsumeRequest, IdempotencyStore,
-    InMemoryStateStore, JsonFileStateStore, PersistedClientState, RateLimitConfig,
+    InMemoryStateStore, JsonFileStateStore, MAX_TTL_SECS, PersistedClientState, RateLimitConfig,
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
 pub use transport::{

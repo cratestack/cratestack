@@ -57,15 +57,13 @@ pub struct BucketBudget {
     /// buckets' own TTL makes the scope outlive everything it admitted, so
     /// the steady-state bound is `max_distinct + 2` per scope.
     ///
-    /// The lifetime is refreshed on every admission, so a scope stays
-    /// alive while it is actively admitting and expires that long after it
-    /// stops. A member admitted once stays admitted until the whole record
-    /// expires; further distinct keys take the fallback until then.
-    ///
-    /// A transient overlap of up to `2 × max_distinct` is still reachable:
-    /// a bucket touched shortly before its scope expires can outlive it by
-    /// up to one bucket TTL while a new generation fills. It rejoins the
-    /// new scope's count on its next request, so it does not compound.
+    /// The window **slides per member**: each admitted key holds a slot
+    /// that expires this long after it was last used, refreshed on every
+    /// hit. So an actively-used credential never loses its slot while its
+    /// bucket is alive, and a peer whose credentials rotate reclaims the
+    /// slots of the ones it stopped using rather than being capped at its
+    /// first `max_distinct` forever. A shared per-scope deadline could
+    /// only have one of those two properties, never both.
     pub window: Duration,
 }
 

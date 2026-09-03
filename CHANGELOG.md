@@ -162,12 +162,14 @@ budget" and each mint a bucket):
 | `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | **8192** | one `overflow` bucket |
 | `ConnectInfo` only | `ip:<addr>` | — | none | — |
 
-`<addr>` is the peer address for IPv4 and its **/64 prefix** for IPv6 — in the scope *and* in
-every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so leaving
-bucket keys un-aggregated let an attacker rotate the source address inside their own prefix and
-evade the cap entirely. **The accepted cost: two distinct hosts inside one IPv6 /64 share a
-throttling bucket.** IPv4 is not aggregated (a /24 under CGNAT is thousands of unrelated
-subscribers).
+`<addr>` is the peer address for IPv4 and its **/64 prefix** for routable IPv6 — in the scope
+*and* in every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so
+leaving bucket keys un-aggregated let an attacker rotate the source address inside their own
+prefix and evade the cap entirely. **The accepted cost: two distinct hosts inside one routable
+IPv6 /64 share a throttling bucket.** IPv4 is not aggregated (a /24 under CGNAT is thousands of
+unrelated subscribers), and **IPv4-mapped addresses (`::ffff:a.b.c.d`, which is how a dual-stack
+`[::]` listener delivers every IPv4 client) are unwrapped to their IPv4 form before any
+aggregation** — without that, every IPv4 client in the world shares one `ip:::/64` bucket.
 
 Bucket key *shapes* are unchanged, so no existing bucket moves. Past the cap a caller is collapsed
 onto its own peer bucket rather than refused — refusing would hand an attacker a deterministic
@@ -189,19 +191,22 @@ callers still never share (#416).
   `with_bucket_budget` / `without_bucket_budget` / `with_unverified_auth_policy`.
   `RateLimitService` moved to its own module (the re-export path is unchanged).
 - `RedisRateLimitStore` writes one new key kind, `<prefix>:rls:<sha256(scope)>` — a scope's member
-  set. `consume` (no budget) creates none.
-- **`window` is a floor, not a fixed window.** The scope's admission record lives for
-  `max(window, bucket_ttl_secs(config))`, refreshed on every admission, so it always outlives the
-  buckets it admitted. A record that expired first bounded nothing: the next generation re-admitted
-  `max_distinct` more on top of a still-live one, for a real steady state of
-  `max_distinct × ceil(bucket_ttl / window)`. `cratestack_core::scope_ttl_secs` and `MAX_TTL_SECS`
-  are new and public; a `Duration::MAX` window is now clamped rather than failing every request.
+  set, a `ZSET` scored by last use. `consume` (no budget) creates none.
+- **`window` (default 60s) is a floor on a sliding per-credential slot, not a fixed window.** Each
+  admitted credential holds a slot for `max(window, bucket_ttl_secs(config))` after it was **last
+  used**; slots expire individually. So a slot always outlives the bucket it admitted (no fresh
+  generation can open beneath a live one), an actively-used caller never loses its slot, and a peer
+  whose tokens rotate reclaims the slots of credentials it stopped using instead of being capped at
+  its first `max_distinct` forever. `cratestack_core::scope_ttl_secs` and `MAX_TTL_SECS` are new and
+  public at the crate root; a `Duration::MAX` window is now clamped rather than failing every request.
+- **`InMemoryRateLimitStore`'s cap now bounds the scope index too.** Admission is gated on the
+  bucket being creatable, so a request refused at the cap no longer interns a scope entry and a
+  member key on its way out. New `#[doc(hidden)] _scope_count()` seam alongside `_bucket_count()`.
 
 **Not bounded, stated plainly:** distinct peers (a botnet), stores that do not implement
 `consume_bounded`, `with_key_fn` overrides (the layer cannot see the derivation, so bounding it is
 the consumer's job), Redis Cluster (three un-hash-tagged keys → `CROSSSLOT`, refused loudly rather
-than hash-tagged onto one node), distinct hosts sharing one IPv6 /64, and a transient overlap of up
-to `2 × max_distinct` when a bucket outlives the scope record that admitted it.
+than hash-tagged onto one node), and distinct hosts sharing one routable IPv6 /64.
 
 Full write-up, including why verified principals are opt-in rather than the default and why IPv6 is
 aggregated but IPv4 is not: `docs/design/ratelimit-bucket-cardinality.md`.

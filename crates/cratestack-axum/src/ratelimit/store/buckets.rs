@@ -40,6 +40,29 @@ pub(super) struct Buckets {
 }
 
 impl Buckets {
+    pub(super) fn contains(&self, key: &str) -> bool {
+        self.map.contains_key(key)
+    }
+
+    /// Whether one more bucket could be created right now, sweeping first
+    /// if that is what it takes. Exposed so the store can refuse BEFORE it
+    /// mutates the scope index (cratestack#871 round-2, item 2).
+    pub(super) fn has_room_for_one(
+        &mut self,
+        now: Instant,
+        max_buckets: Option<usize>,
+        ttl: Duration,
+    ) -> bool {
+        let Some(max) = max_buckets else {
+            return true;
+        };
+        if self.map.len() < max {
+            return true;
+        }
+        self.sweep(now, ttl);
+        self.map.len() < max
+    }
+
     pub(super) fn len(&self) -> usize {
         self.map.len()
     }

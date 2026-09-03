@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use super::*;
+use crate::MAX_TTL_SECS as ROOT_MAX_TTL_SECS;
 
 #[test]
 fn rate_limit_config_new_creates_correct_values() {
@@ -87,6 +88,16 @@ fn scope_ttl_honours_a_window_longer_than_the_bucket_ttl() {
 /// as an out-of-range integer, failing `consume` with `Internal` — which
 /// 500s every rate-limited route. A nonsensical budget must degrade, not
 /// take the service down.
+/// cratestack#871 round-2, item 6: the changelog advertises
+/// `cratestack_core::MAX_TTL_SECS` at the crate root, and it was not
+/// re-exported there — an out-of-tree crate got `error[E0425]`. This
+/// resolves it through the ROOT path, exactly as a consumer would.
+#[test]
+fn max_ttl_secs_is_reachable_from_the_crate_root() {
+    assert_eq!(ROOT_MAX_TTL_SECS, MAX_TTL_SECS);
+    assert_eq!(ROOT_MAX_TTL_SECS, 365 * 24 * 60 * 60);
+}
+
 #[test]
 fn scope_ttl_clamps_every_degenerate_window() {
     let config = RateLimitConfig::new(10, 1.0); // bucket TTL 70s

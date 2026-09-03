@@ -25,16 +25,15 @@ pub(super) mod warn;
 /// overflow bucket only when the deployment is both misconfigured and
 /// under attack.
 ///
-/// `window` is a **floor** on how long a scope's admission record lives,
-/// not a fixed window that resets it. The store raises it to at least the
-/// buckets' own TTL (`cratestack_core::scope_ttl_secs`), because a record
-/// that expired first bounded nothing — the next generation re-admitted
-/// `max_distinct` more while the previous generation was still alive, for
-/// a real steady state of `max_distinct × ceil(bucket_ttl / window)`
-/// (cratestack#871 review, blocker 2). Every admission pushes the deadline
-/// forward, so a saturated scope still ages out and lets its peer start
-/// over — otherwise a deployment whose tokens rotate would be capped at
-/// its first `max_distinct` credentials forever.
+/// `window` (default 60s) is a **floor** on how long one admitted
+/// credential holds its slot, not a fixed period that resets the scope.
+/// The store raises it to at least the buckets' own TTL
+/// (`cratestack_core::scope_ttl_secs`), because a record that expired
+/// first bounded nothing — the next generation re-admitted `max_distinct`
+/// more while the previous one was still alive, for a real steady state of
+/// `max_distinct × ceil(bucket_ttl / window)` (cratestack#871 review,
+/// blocker 2). Slots expire individually and are refreshed on use, so an
+/// active credential keeps its slot while a rotated-away one releases it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimitBucketBudget {
     pub max_distinct_per_peer: u32,

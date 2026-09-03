@@ -187,7 +187,7 @@ token consumption:
 
 `<addr>` is the peer address for IPv4 and its **/64 prefix** for IPv6 — in the scope *and* in every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so without aggregation an attacker rotating the source address inside their own prefix evades the cap entirely (measured: 200 buckets with a token, 200 buckets all allowed without one). The accepted cost, stated rather than hidden: two distinct hosts inside one /64 share a throttling bucket. IPv4 is not aggregated — a /24 under CGNAT is thousands of unrelated subscribers.
 
-The `window` is a **floor** on how long a scope's admission record lives, not a fixed window: the store raises it to at least the bucket TTL, so the record cannot expire underneath the buckets it admitted and let a fresh generation open beneath it. Every admission pushes the deadline forward, and a saturated scope ages out so a peer whose tokens rotate is not capped at its first 128 credentials forever.
+The `window` (default **60s**) is a **floor** on how long an admitted credential holds its slot, not a fixed window that resets the scope: the store raises it to at least the bucket TTL, so a slot always outlives the bucket it admitted and no fresh generation can open beneath a live one. The window **slides per credential** — each slot expires that long after it was last used — so an actively-used caller never loses its slot while its bucket is alive, and a peer whose tokens rotate reclaims the slots of credentials it stopped using instead of being capped at its first 128 forever.
 
 Past the cap a caller is **collapsed onto its own peer bucket, not refused** — refusing there would
 hand an attacker a deterministic outage of every rate-limited route. Under the cap, distinct callers
@@ -209,7 +209,7 @@ let layer = RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
 
 **Not bounded**, stated plainly: distinct peers (a botnet), a third-party `RateLimitStore` that does
 not implement `consume_bounded` (the layer logs a throttled `WARN` and behaves exactly as before),
-Redis Cluster, and the fixed window's 2N boundary case. A `with_key_fn` override carries no budget —
+Redis Cluster, and distinct hosts sharing one routable IPv6 /64. A `with_key_fn` override carries no budget —
 bounding a key function the layer cannot see is the consumer's job. Full write-up:
 `docs/design/ratelimit-bucket-cardinality.md`.
 

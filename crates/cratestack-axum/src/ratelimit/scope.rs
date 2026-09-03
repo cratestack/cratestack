@@ -113,16 +113,47 @@ impl KeyDerivation {
 /// bounds nothing.
 ///
 /// The accepted cost, stated rather than hidden: two distinct hosts inside
-/// one /64 share a throttling bucket. That is a real cratestack#416
-/// trade-off, taken because a /64 is one subscriber and an attacker's
-/// 2^64-address supply is not a hypothetical.
+/// one *routable* /64 share a throttling bucket. That is a real
+/// cratestack#416 trade-off, taken because a /64 is one subscriber and an
+/// attacker's 2^64-address supply is not a hypothetical.
+///
+/// # IPv4-mapped addresses are unwrapped FIRST (cratestack#871 round-2)
+///
+/// A dual-stack listener — `TcpListener::bind("[::]:0")`, the ordinary
+/// Linux bind — delivers every IPv4 client as `::ffff:a.b.c.d`. Those have
+/// all-zero top groups, so blindly taking the /64 mapped **every IPv4
+/// client in the world onto `ip:::/64`**: measured, 200 distinct IPv4
+/// clients collapsed into 1 bucket with 5 allowed. That is a
+/// cratestack#416 collision of unlimited width and a one-client denial of
+/// service against all IPv4 traffic — strictly worse than the evasion the
+/// aggregation was added to close.
+///
+/// So a mapped address is unwrapped to its IPv4 form and then treated
+/// exactly like any other IPv4 address: per-address, never aggregated.
+///
+/// **`to_ipv4_mapped`, deliberately not `to_ipv4`.** The latter also
+/// accepts the deprecated IPv4-*compatible* form (`::a.b.c.d`, RFC 4291
+/// §2.5.5.1), which means it maps `::1` to `0.0.0.1` and `::` to
+/// `0.0.0.0` — conflating the IPv6 loopback and the unspecified address
+/// with real IPv4 addresses. That trades one collision for another.
+/// Instead, the whole all-zero `::/64` region (unspecified, loopback, and
+/// both mapped/compatible forms) is exempted from aggregation below and
+/// keyed on the full address. Nothing in that region is globally routable,
+/// so it hands an attacker no address supply to rotate through.
 pub(super) fn bucket_address(ip: IpAddr) -> String {
-    match ip {
-        IpAddr::V4(v4) => v4.to_string(),
-        IpAddr::V6(v6) => {
-            let s = v6.segments();
-            let network = Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0);
-            format!("{network}/64")
-        }
+    let v6 = match ip {
+        IpAddr::V4(v4) => return v4.to_string(),
+        IpAddr::V6(v6) => v6,
+    };
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return v4.to_string();
     }
+    let s = v6.segments();
+    if s[0] == 0 && s[1] == 0 && s[2] == 0 && s[3] == 0 {
+        // The `::/64` special region — see the note above. Aggregating it
+        // would merge unrelated special addresses into one bucket.
+        return v6.to_string();
+    }
+    let network = Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0);
+    format!("{network}/64")
 }
