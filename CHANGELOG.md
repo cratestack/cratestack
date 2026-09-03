@@ -2,36 +2,6 @@
 
 ## Unreleased
 
-## 0.11.1 (2026-09-03)
-
-### Procedures and auth providers are plain `async fn` — in every example, and in the trait docs
-
-Every `impl` block an application hands to the generated `router()` — a `ProcedureRegistry`, an
-`AuthProvider`, a `ComputedFieldResolver` — implements a trait whose methods are declared as
-`fn … -> impl Future<Output = …> + Send`. That trait-side spelling is necessary (an `async fn` in a
-trait cannot promise `Send`, and every axum handler needs it). What was *not* necessary is the
-impl-side spelling every example in this repo used: `-> impl core::future::Future<Output = …> + Send
-{ async move { … } }`, nine lines of signature around a three-line body, eighteen times across eight
-examples. Since Rust 1.75 an impl may satisfy such a method with a plain `async fn`, and the compiler
-checks the `Send` bound on the concrete future.
-
-All eighteen sites are now `async fn` (`examples/{rpc-procedures, rpc-batch, rpc-batch-debounce,
-rpc-streaming, react-vite-swr, microservice-pair, no-database-verification,
-no-database-verification-api}`), the generated `ProcedureRegistry` trait and `AuthProvider` gain a doc
-comment saying so, and `crates/cratestack-api/tests/async_fn_impls.rs` guards the property against the
-real generated `router()` — if the trait ever changed to a shape `async fn` cannot satisfy, that file
-stops compiling. No API change; existing long-form impls keep compiling.
-
-Recorded honestly: this PR first built a `#[cratestack::service]` attribute macro to do the rewrite,
-and deleted it when its own break-it check (remove the attribute, expect a signature mismatch) passed
-`cargo check` instead. `justfile`'s `-A clippy::manual_async_fn` — rationale: "examples/tests return
-`impl Future` by hand" — had been muting the lint that says exactly this; the 36 facade test files
-that still use the long form, and un-muting that lint, are `docs/design/boot-surface.md` §8.1.
-
-That document is the wider frame: a Spring-Boot-shaped, compile-time-only application surface for
-CrateStack (one-line boot, typed config, health, declared cross-cutting concerns, test client,
-scaffolder), each piece tested against ADR 0012 and refused where it would need a proxy or a registry.
-This is its phase 1; phases 2–3 wait on the document's §8 decisions.
 ### A roadmap, and a recorded decision not to add SeaORM or Diesel
 
 There was no roadmap — no `ROADMAP.md`, no milestones, four open issues. The
@@ -74,6 +44,36 @@ capability slicing. Most of the rest of that comparison was already shipped here
 The road to 1.0 is left blank on purpose. There is no written definition of what
 1.0 means, and inventing one is not a documentation change.
 
+## 0.11.1 (2026-09-03)
+
+### Procedures and auth providers are plain `async fn` — in every example, and in the trait docs
+
+Every `impl` block an application hands to the generated `router()` — a `ProcedureRegistry`, an
+`AuthProvider`, a `ComputedFieldResolver` — implements a trait whose methods are declared as
+`fn … -> impl Future<Output = …> + Send`. That trait-side spelling is necessary (an `async fn` in a
+trait cannot promise `Send`, and every axum handler needs it). What was *not* necessary is the
+impl-side spelling every example in this repo used: `-> impl core::future::Future<Output = …> + Send
+{ async move { … } }`, nine lines of signature around a three-line body, eighteen times across eight
+examples. Since Rust 1.75 an impl may satisfy such a method with a plain `async fn`, and the compiler
+checks the `Send` bound on the concrete future.
+
+All eighteen sites are now `async fn` (`examples/{rpc-procedures, rpc-batch, rpc-batch-debounce,
+rpc-streaming, react-vite-swr, microservice-pair, no-database-verification,
+no-database-verification-api}`), the generated `ProcedureRegistry` trait and `AuthProvider` gain a doc
+comment saying so, and `crates/cratestack-api/tests/async_fn_impls.rs` guards the property against the
+real generated `router()` — if the trait ever changed to a shape `async fn` cannot satisfy, that file
+stops compiling. No API change; existing long-form impls keep compiling.
+
+Recorded honestly: this PR first built a `#[cratestack::service]` attribute macro to do the rewrite,
+and deleted it when its own break-it check (remove the attribute, expect a signature mismatch) passed
+`cargo check` instead. `justfile`'s `-A clippy::manual_async_fn` — rationale: "examples/tests return
+`impl Future` by hand" — had been muting the lint that says exactly this; the 36 facade test files
+that still use the long form, and un-muting that lint, are `docs/design/boot-surface.md` §8.1.
+
+That document is the wider frame: a Spring-Boot-shaped, compile-time-only application surface for
+CrateStack (one-line boot, typed config, health, declared cross-cutting concerns, test client,
+scaffolder), each piece tested against ADR 0012 and refused where it would need a proxy or a registry.
+This is its phase 1; phases 2–3 wait on the document's §8 decisions.
 ### A beginner on-ramp, and a README that stops describing itself by comparison
 
 The repository had three issue forms, all of them internal planning forms. Epic, User Story and
