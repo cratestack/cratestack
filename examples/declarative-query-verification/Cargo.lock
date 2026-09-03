@@ -473,6 +473,7 @@ dependencies = [
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
+ "cratestack-exec",
  "cratestack-sql",
  "erased-serde",
  "futures-util",
@@ -547,6 +548,14 @@ dependencies = [
  "subtle",
  "thiserror",
  "url",
+ "uuid",
+]
+
+[[package]]
+name = "cratestack-exec"
+version = "0.11.0"
+dependencies = [
+ "cratestack-core",
  "uuid",
 ]
 

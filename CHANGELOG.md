@@ -62,6 +62,52 @@ for #871 so that rewrite is not re-landed against L3. Epic: #875.
 
 No code changes here — this is the decision, its amendment, and the pointers from the four design
 documents that had been describing `OpExecutor` as unbuilt.
+### `@no_idempotency` works, and idempotency admission moves to a new L3 crate
+
+`@no_idempotency` has parsed since before it was written down and done nothing at runtime —
+`crates/cratestack-axum/src/idempotency/mod.rs` documented the wiring as a follow-up that never
+landed, and `idempotency-rate-limit-declarative-surface.md` §6 declared its own ticket unopenable
+until `OpExecutor` had a concrete plan. It now works: a procedure carrying the attribute takes no
+idempotency reservation, on REST and on RPC.
+
+The mechanism is ADR 0015's first slice. A new crate, `cratestack-exec`, occupies layer 3 — the
+slot `docs/adr/layers.toml` recorded as "empty by design" — and owns the admission decision:
+
+```rust
+let admission = executor.admit(&OpInput { op, principal, idempotency_key, fingerprint, ctx }).await?;
+// Bypass | Reserved { token } | Replay(record) | InFlight | Conflict
+```
+
+`IdempotencyLayer` becomes the thin adapter around it that `rpc-transport.md` §4 predicted. It has
+two dependencies, `cratestack-core` and `uuid`, because `layering.md` §2's two L3 exclusions hold:
+the request fingerprint arrives already computed (method, path and content-type are transport
+facts), and no `&mut Transaction` crosses the boundary — audit persistence stays at L2, where its
+"the audit row commits with the mutation" guarantee requires it to be.
+
+**Nothing changes for an existing consumer.** Honouring the attribute is opt-in, via a resolver
+that reads the generated descriptors, mirroring how `@no_rate_limit` is wired:
+
+```rust
+IdempotencyLayer::new(store, ttl)
+    .with_op_resolver(build_rpc_op_resolver(cratestack_schema::axum::OPS))
+// or, for REST schemas:
+    .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS))
+```
+
+Install no resolver and every request looks unresolved, and unresolved **reserves** — so the layer
+guards exactly what it guarded before. That fail-closed direction is the inverse of the rate-limit
+filters' (a miss there throttles; a miss here reserves), because the two descriptor flags are
+polarised opposite ways. Both mean "when in doubt, apply the protection", and both are tested for
+the miss rather than only the hit.
+
+`RouteTransportDescriptor` gains `idempotent_by_default`, which RPC's `OpDescriptor` already had.
+Adding a field to a public struct is technically breaking for anything constructing one by hand;
+in practice these are emitted by codegen. REST needed it because shipping this on RPC alone would
+have reproduced #474 — a fix that works on one transport and silently no-ops on the other.
+
+Still at L4 and unchanged: rate limiting (slice 2), audit fan-out, and row-level `@@allow` replay
+for subscriptions (slice 3). `invoke_with_db` keeps its signature; an idempotent variant is
+additive and separate.
 
 ## 0.11.0 (2026-09-03)
 
