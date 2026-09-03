@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Open VSX publishing is live
+
+`publish-openvsx` is no longer an armed-but-unexercised job. It has published all five platform
+targets on both the v0.10.1 and v0.11.0 tags:
+
+```
+🚀  Published cratestack.cratestack-vscode-plugin v0.11.0@darwin-arm64
+```
+
+The listing is <https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin>, which reaches
+VSCodium, Cursor and Windsurf — VS Code still sees only the Marketplace, which is a separate publish
+on separate credentials. `docs/tooling/vscode-publishing.md`, `RELEASE.md` and
+`release-vscode.yml`'s header all still said no version had been published to either registry and
+that the manual `.vsix` download was the only way in; they now describe installing from a registry,
+with the `.vsix` demoted to the fallback it is. The extension README — which is also the listing
+page on both registries — gains the install section it never had.
+
+One verification step changes shape as a result. `curl -o /dev/null -w '%{http_code}'` against the
+Open VSX API was a valid check while a 404 meant "nothing has ever shipped"; now that the listing
+exists permanently, a 200 proves only that *some* version did. The documented check reads the
+`version` field instead.
+
 ## 0.11.0 (2026-09-03)
 
 ### The Marketplace item page lags a successful publish

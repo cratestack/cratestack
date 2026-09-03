@@ -2,6 +2,15 @@
 
 This extension registers the `.cstack` language in VS Code and starts the standalone `cratestack-lsp` binary.
 
+## Install
+
+Search the Extensions view for **CrateStack Schema**, or install by ID:
+
+* VS Code — [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin), or `code --install-extension cratestack.cratestack-vscode-plugin`
+* VSCodium, Cursor, Windsurf — [Open VSX listing](https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin), or `codium --install-extension cratestack.cratestack-vscode-plugin`
+
+Either registry serves the right platform build and auto-updates. As a fallback — air-gapped machines, editors on neither registry, or pinning a version — download the platform `.vsix` from a [GitHub Release](https://github.com/cratestack/cratestack/releases) and run `code --install-extension <file>.vsix`; that path does not auto-update.
+
 When the extension package includes a staged server binary under `server/<platform>/`, the extension prefers that bundled binary automatically and falls back to `cratestack.lsp.path` or `cratestack-lsp` on `PATH`.
 
 Current editor features come from the language server plus the bundled grammar:
