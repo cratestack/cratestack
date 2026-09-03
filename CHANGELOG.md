@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.12.0 (2026-09-03)
+
 ### The npm publish wrapper retried the wrong things, and a green exit code was not a publish
 
 v0.11.1 (run 33808402763's tag, release run 33808493207) landed during npm's "Intermittent Failures
