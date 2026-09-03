@@ -23,6 +23,30 @@
 //! if the previous writer had a slower clock; the script clamps
 //! `elapsed < 0` to zero so a backward-jumping clock can only delay
 //! refill, never advance it.
+//!
+//! ## Bucket cardinality is bounded too (cratestack#871)
+//!
+//! Per-bucket `EXPIRE` bounds how long a bucket lives, but not how many a
+//! caller can create: `RateLimitLayer` runs before authentication, so a
+//! caller rotating an unverified `Authorization` header used to mint one
+//! `:rl:` key per request. [`RateLimitStore::consume_bounded`] closes
+//! that. The same Lua script — no extra round-trip — additionally takes a
+//! scope set at `<prefix>:rls:<sha256(scope)>:<epoch>` and a fallback
+//! bucket key: on first sight of a bucket under a scope it `SADD`s (with
+//! a window `PEXPIRE` on creation) if `SCARD < max_distinct`, and
+//! otherwise charges the *fallback* bucket instead. Steady-state keyspace
+//! becomes O(scopes × max_distinct).
+//!
+//! The fixed-window epoch is computed in Rust, not from Lua's `TIME`, so
+//! the script stays deterministic for replication and AOF.
+//!
+//! **Redis Cluster is not supported by this store**, and cratestack#871
+//! makes that louder rather than papering over it: three un-hash-tagged
+//! keys in one script means `CROSSSLOT`, which classifies as
+//! logical-class and is therefore refused under every `StoreErrorPolicy`.
+//! Forcing the three into one slot with a shared hash tag would
+//! concentrate an attacker's traffic on a single node, so it is
+//! deliberately not done. See `scripts.rs` for the full argument.
 
 mod config;
 mod parse;

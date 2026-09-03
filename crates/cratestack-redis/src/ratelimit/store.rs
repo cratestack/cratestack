@@ -4,13 +4,12 @@ use std::time::Duration;
 use cratestack_core::CratestackError;
 use cratestack_core::log_throttle::LogThrottle;
 use redis::aio::ConnectionManager;
-use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
 
 use crate::connection_config::manager_config;
 
 use super::config::RedisRateLimitStoreConfig;
-use super::util::{nibble_hex, redis_error};
+use super::util::{key_hash, redis_error};
 
 /// How often the retry WARN may fire per store. Long enough that a
 /// sustained outage cannot flood the log, short enough that an operator
@@ -68,16 +67,28 @@ impl RedisRateLimitStore {
     }
 
     pub fn bucket_key(&self, key: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(key.as_bytes());
-        let digest = hasher.finalize();
-        let mut out = String::with_capacity(self.config.key_prefix.len() + 4 + 64);
+        self.namespaced(":rl:", &key_hash(key))
+    }
+
+    /// The Redis key holding one scope's distinct-bucket set for one fixed
+    /// window (cratestack#871).
+    ///
+    /// The window epoch is baked into the key rather than tracked inside
+    /// the value: rotation then costs nothing (a new epoch is a new key)
+    /// and the old set expires on its own. A separate `:rls:` namespace,
+    /// not `:rl:`, so a `SCAN <prefix>:rl:*` still counts buckets and only
+    /// buckets — which is exactly what the regression test asserts a bound
+    /// on.
+    pub(super) fn scope_key(&self, scope: &str, epoch: i64) -> String {
+        self.namespaced(":rls:", &format!("{}:{epoch}", key_hash(scope)))
+    }
+
+    fn namespaced(&self, infix: &str, suffix: &str) -> String {
+        let mut out =
+            String::with_capacity(self.config.key_prefix.len() + infix.len() + suffix.len());
         out.push_str(&self.config.key_prefix);
-        out.push_str(":rl:");
-        for byte in digest {
-            out.push(nibble_hex(byte >> 4));
-            out.push(nibble_hex(byte & 0x0f));
-        }
+        out.push_str(infix);
+        out.push_str(suffix);
         out
     }
 
