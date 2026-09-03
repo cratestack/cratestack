@@ -644,6 +644,20 @@ jobs:
       - name: Changelog seed/check tests
         run: just changelog-seed-test
 
+  # Tests for the npm publish wrapper's failure classification (the
+  # v0.11.1 misclassification, run 33808493207). Fake npm, no network.
+  npm-publish-wrapper-test:
+    timeout-minutes: 10
+    name: npm publish wrapper (classification tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: npm-publish.sh classification tests
+        run: just npm-publish-test
+
   # ---- Lint gates ------------------------------------------------------
   # Blocking. Determinism comes from rust-toolchain.toml pinning the
   # version (and clippy/rustfmt components), so new stable lints/format

@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### The npm publish wrapper retried the wrong things, and a green exit code was not a publish
+
+v0.11.1 (run 33808402763's tag, release run 33808493207) landed during npm's "Intermittent Failures
+Impacting npm Publish" incident (opened 21:42 UTC, eighteen minutes before the cbor-node job started
+publishing). Every affected attempt failed with `E401 … Failed to generate Web Auth URLs due to
+error: BadRequestError: token is invalid` — a registry-side auth failure on an OIDC publish whose
+provenance sigstore had already accepted. Four Linux legs cleared it on their second attempt.
+`@cratestack/cbor-node-darwin-arm64` got three of them and then `E409 Cannot publish over previously
+staged version "0.11.1"`: npm had accepted an earlier attempt and was processing it. And
+`darwin-x64` and `win32-x64-msvc` exited 0 with `+ name@0.11.1 … being processed` and stayed absent
+from the registry for about an hour before appearing — a window in which the job's green meant
+nothing a consumer could act on.
+
+Two defects in `.github/scripts/npm-publish.sh` turned that into a misleading log. Its retry
+classifier grepped the *whole* output for `transparency log` — which also matches the informational
+notice npm prints on **every** publish ("Provenance statement published to transparency log: …") —
+so every failure of any kind was reported as a "sigstore tlog conflict" and retried four times; a
+permanent 403 would have been too. And "previously staged" was treated as a give-up failure although
+retrying can only repeat the 409.
+
+Now: only `npm error` lines are classified; a sigstore tlog conflict, the `Web Auth URLs` 401, and
+5xx/reset/timeout errors are retried; anything else fails on the first attempt and says so; and
+"previously staged" exits 0 with a `::warning::`, because npm already holds the tarball. What decides
+whether the release is complete is a new step in `publish-npm-cbor-node` that asks the registry —
+polls `registry.npmjs.org/<name>/<version>` for the main package and every platform subpackage for
+up to six minutes and fails naming the ones that never became visible. It is skipped on rehearsal
+(nothing was published, so nothing can be visible) and only ever reads.
+
+`.ci/npm-publish-tests.sh` pins the classification with the real 0.11.1 output lines against a fake
+`npm`, wired into CI as `just npm-publish-test`. Its "permanent error with the notice line present"
+case fails against the previous wrapper — that is the proof the fix is load-bearing.
+
+What this does *not* fix: 0.11.1 itself. crates.io (all crates, `cratestack-exec` included), pub.dev,
+`@cratestack/cli`, the api family, `cbor-web`, `refine` and four Linux cbor-node subpackages are live;
+`cbor-node-darwin-x64` and `-win32-x64-msvc` appeared about an hour after the run;
+`cbor-node-darwin-arm64` (staged) and `@cratestack/cbor` (skipped as a dependent) are not live, and
+cannot be re-run from CI (every publish job is gated on the tag push). `@cratestack/cbor-node@0.11.1`
+bundles every `.node` binary, so consumers still resolve a working binding.
+
 ### A roadmap, and a recorded decision not to add SeaORM or Diesel
 
 There was no roadmap — no `ROADMAP.md`, no milestones, four open issues. The
