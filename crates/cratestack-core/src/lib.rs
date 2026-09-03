@@ -101,8 +101,9 @@ pub use schema::{
     scan_sql_placeholders,
 };
 pub use store::{
-    ClientStateStore, IdempotencyStore, InMemoryStateStore, JsonFileStateStore,
-    PersistedClientState, RateLimitConfig, RateLimitDecision, RateLimitStore, RequestJournalEntry,
+    BoundedOutcome, BucketBudget, Charged, ClientStateStore, ConsumeRequest, IdempotencyStore,
+    InMemoryStateStore, JsonFileStateStore, PersistedClientState, RateLimitConfig,
+    RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs,
 };
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,
