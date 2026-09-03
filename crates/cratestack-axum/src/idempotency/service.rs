@@ -76,6 +76,29 @@ where
                     ));
                 }
             };
+            // Resolve the op BEFORE anything else touches the request:
+            // both resolvers need only the method and the path (plus
+            // `MatchedPath` from the extensions), none of which survives
+            // `into_parts` below. With no resolver installed this is
+            // `OpAdmission::unresolved()`, whose `idempotent_by_default`
+            // is `false` — so the short-circuit below never fires and the
+            // path through this function is bit-for-bit the pre-ADR-0015
+            // one.
+            let op = (op_resolver)(&req);
+            if op.idempotent_by_default {
+                // The op does not participate: `admit` would answer
+                // `Bypass`, and everything between here and there exists
+                // only to build that answer's argument. Returning now,
+                // rather than after buffering, makes a bypassed request
+                // behave exactly like one that sent no `Idempotency-Key`
+                // at all — otherwise a `@no_idempotency` POST paid the
+                // 2 MiB request cap to compute a fingerprint nobody reads
+                // (and was refused at 2 MiB + 1 for carrying a header its
+                // own schema says does nothing), and could be refused
+                // outright by the principal fingerprint (cratestack#416)
+                // for want of a namespace it will never use.
+                return inner.call(req).await;
+            }
             let principal = match (principal_fp)(&req) {
                 Ok(principal) => principal,
                 Err(error) => {
@@ -86,12 +109,6 @@ where
                     ));
                 }
             };
-            // Resolved here, while `req` is still whole: `MatchedPath`
-            // lives in the request extensions and the RPC resolver reads
-            // the URI, neither of which survives `into_parts` below.
-            // Defaults to `OpAdmission::unresolved()` (which reserves)
-            // when no resolver was installed.
-            let op = (op_resolver)(&req);
             // Hash the full path + query string. Skipping the query
             // makes `POST /transfer?dry_run=true` collide with
             // `POST /transfer?dry_run=false` under the same key, so a

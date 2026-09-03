@@ -1,5 +1,9 @@
 //! The two op resolvers, and the direction they fail in.
 //!
+//! Nested-mount coverage lives in the sibling
+//! `tests_op_resolver_nested.rs`; the fixtures below are shared with
+//! it rather than copied.
+//!
 //! Every assertion here is the **inverse** of what
 //! `ratelimit/{rest,rpc}_ops_filter.rs`'s tests assert: a lookup miss
 //! must resolve to something that RESERVES. Getting this backwards is
@@ -17,14 +21,14 @@ use tower::ServiceExt;
 
 use super::{build_rest_op_resolver, build_rpc_op_resolver};
 
-const CAPS: RouteTransportCapabilities = RouteTransportCapabilities {
+pub(super) const CAPS: RouteTransportCapabilities = RouteTransportCapabilities {
     request_types: &[],
     response_types: &[],
     default_response_type: "",
     supports_sequence_response: false,
 };
 
-const ROUTES: &[RouteTransportDescriptor] = &[
+pub(super) const ROUTES: &[RouteTransportDescriptor] = &[
     RouteTransportDescriptor {
         name: "createPayment",
         method: "POST",
@@ -43,7 +47,7 @@ const ROUTES: &[RouteTransportDescriptor] = &[
     },
 ];
 
-const OPS: &[OpDescriptor] = &[
+pub(super) const OPS: &[OpDescriptor] = &[
     OpDescriptor {
         op_id: "procedure.createPayment",
         kind: OpKind::Unary,
@@ -64,7 +68,7 @@ const OPS: &[OpDescriptor] = &[
     },
 ];
 
-fn post_request(uri: &str) -> Request {
+pub(super) fn post_request(uri: &str) -> Request {
     HttpRequest::builder()
         .method("POST")
         .uri(uri)

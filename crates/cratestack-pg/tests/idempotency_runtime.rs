@@ -412,3 +412,109 @@ async fn without_a_resolver_even_the_annotated_procedure_still_reserves() {
         "the default resolver must still reach the store"
     );
 }
+
+// ------------------------------------------- request-body cap symmetry
+
+/// A body comfortably over the idempotency middleware's 2 MiB
+/// `MAX_BODY_BYTES` buffer.
+///
+/// The router's own `DefaultBodyLimit` is raised to 8 MiB in the helper
+/// below so this test isolates the *idempotency* cap. Both constants are
+/// 2 MiB by default and `cratestack-core/src/limits.rs` asserts
+/// `DEFAULT_BODY_LIMIT_BYTES <= MAX_BODY_BYTES` at compile time, so
+/// without that the router would reject first and this test would prove
+/// nothing about the middleware.
+fn oversized_body() -> String {
+    let filler = "x".repeat(3 * 1024 * 1024);
+    format!(r#"{{"args":{{"nonce":"{filler}"}}}}"#)
+}
+
+const ROOMY_LIMIT: usize = 8 * 1024 * 1024;
+
+/// One oversized POST carrying an `Idempotency-Key`, against an RPC
+/// router whose own body limit is out of the way.
+async fn oversized_post(uri: &str, with_resolver: bool) -> (StatusCode, String) {
+    use cratestack_axum::idempotency::build_rpc_op_resolver;
+
+    let db = rpc::cratestack_schema::Cratestack::builder(lazy_pool()).build();
+    let store = Arc::new(InMemoryIdempotencyStore::default());
+    let base = rpc::cratestack_schema::axum::rpc_router(
+        db,
+        rpc::Procedures(Calls::default()),
+        (),
+        JsonCodec,
+        AlwaysAuth,
+        ROOMY_LIMIT,
+    );
+    let layer = IdempotencyLayer::new(store, std::time::Duration::from_secs(60));
+    let router = if with_resolver {
+        base.layer(layer.with_op_resolver(build_rpc_op_resolver(rpc::cratestack_schema::axum::OPS)))
+    } else {
+        base.layer(layer)
+    };
+
+    let response = router
+        .oneshot(with_peer(
+            Request::post(uri)
+                .header("content-type", "application/json")
+                .header("accept", "application/json")
+                .header("idempotency-key", "oversized-key")
+                .body(Body::from(oversized_body()))
+                .expect("request should build"),
+        ))
+        .await
+        .expect("router is infallible");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .unwrap_or_default();
+    (status, body)
+}
+
+/// A `@no_idempotency` POST larger than the idempotency buffer must
+/// succeed, exactly as it would with no `Idempotency-Key` header at all.
+///
+/// Before the short-circuit moved above the body read, this request paid
+/// the 2 MiB cap to compute a fingerprint that admission was going to
+/// throw away — i.e. the header, which the schema says does nothing for
+/// this op, was the only reason the request failed.
+#[tokio::test]
+async fn oversized_body_succeeds_for_a_no_idempotency_procedure() {
+    let (status, body) = oversized_post("/rpc/procedure.notify", true).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a @no_idempotency op must not pay the idempotency buffer cap. Got: {body}"
+    );
+}
+
+/// Negative control: the un-annotated twin still pays the cap, so the
+/// test above is measuring the bypass and not a raised limit.
+#[tokio::test]
+async fn oversized_body_still_rejected_for_a_participating_procedure() {
+    let (status, body) = oversized_post("/rpc/procedure.transfer", true).await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "a participating mutation must still be capped by the idempotency buffer"
+    );
+    assert!(
+        body.contains("idempotency buffer limit"),
+        "the rejection must be the idempotency buffer's, not the router's: {body}"
+    );
+}
+
+/// Byte-identity control: with NO resolver installed, even the annotated
+/// procedure is unresolved, never short-circuits, and still pays the cap —
+/// which is what every pre-existing consumer sees.
+#[tokio::test]
+async fn oversized_body_still_rejected_when_no_resolver_is_installed() {
+    let (status, body) = oversized_post("/rpc/procedure.notify", false).await;
+    assert_ne!(
+        status,
+        StatusCode::OK,
+        "with no resolver the op is unresolved, so the short-circuit must not fire"
+    );
+    assert!(body.contains("idempotency buffer limit"), "got: {body}");
+}

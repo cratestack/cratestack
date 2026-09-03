@@ -9,6 +9,13 @@
 //!
 //! [`build_rest_op_resolver`]: super::build_rest_op_resolver
 //!
+//! # A nested mount needs [`build_rpc_op_resolver_with_prefix`]
+//!
+//! This reads the raw request path, so under `Router::nest("/api", router)`
+//! it sees `/api/rpc/procedure.notify`, fails the `/rpc/` prefix test, and
+//! resolves everything unresolved — safe, but `@no_idempotency` silently
+//! does nothing. Pass the mount point in. See `super::mount_prefix`.
+//!
 //! # `/rpc/batch` is not per-op, and the consequence is benign here
 //!
 //! `POST /rpc/batch` carries a sequence of ops in one body
@@ -30,17 +37,36 @@ use axum::extract::Request;
 use cratestack_core::OpDescriptor;
 use cratestack_exec::OpAdmission;
 
+use super::mount_prefix;
+
 /// Build an op resolver for `transport rpc` schemas, over the generated
-/// `OPS` slice.
+/// `OPS` slice, for a router mounted at the root.
 ///
 /// Returns [`OpAdmission::unresolved`] — which reserves — for a non-RPC
 /// path, for `/rpc/batch`, for `/rpc/subscribe/...`, and for any op id
 /// absent from `ops`.
+///
+/// **If the router is nested, use [`build_rpc_op_resolver_with_prefix`].**
 pub fn build_rpc_op_resolver(
     ops: &'static [OpDescriptor],
 ) -> impl Fn(&Request) -> OpAdmission + Send + Sync {
+    build_rpc_op_resolver_with_prefix("", ops)
+}
+
+/// [`build_rpc_op_resolver`] for a router mounted under `prefix`, e.g.
+/// `build_rpc_op_resolver_with_prefix("/api", OPS)` to match
+/// `Router::nest("/api", router)`.
+///
+/// Same forgiving-spelling / strict-boundary rules as the REST twin.
+pub fn build_rpc_op_resolver_with_prefix(
+    prefix: &str,
+    ops: &'static [OpDescriptor],
+) -> impl Fn(&Request) -> OpAdmission + Send + Sync {
+    let prefix = mount_prefix::normalize(prefix);
     move |req: &Request| {
-        let path = req.uri().path();
+        let Some(path) = mount_prefix::strip(req.uri().path(), &prefix) else {
+            return OpAdmission::unresolved();
+        };
         let Some(op_id) = path.strip_prefix("/rpc/") else {
             return OpAdmission::unresolved();
         };

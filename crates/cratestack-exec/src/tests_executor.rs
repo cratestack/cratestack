@@ -82,9 +82,9 @@ fn both_descriptor_shapes_lift_onto_one_admission_type() {
         from_rpc.rate_limited_by_default,
         from_rest.rate_limited_by_default
     );
-    assert_eq!(from_rpc.op_id, "procedure.transfer");
+    assert_eq!(from_rpc.diagnostic_op_id, "procedure.transfer");
     assert_eq!(
-        from_rest.op_id, "transfer",
+        from_rest.diagnostic_op_id, "transfer",
         "REST has no dotted op id; `name` is the closest stable identifier \
          and is documented as diagnostics-only for exactly that reason"
     );

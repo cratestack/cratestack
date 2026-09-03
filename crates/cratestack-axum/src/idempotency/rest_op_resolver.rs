@@ -9,6 +9,16 @@
 //! the full write-up of why `Router::layer` and `Router::route_layer` both
 //! populate `MatchedPath` and how they differ on 404s.
 //!
+//! # A nested mount needs [`build_rest_op_resolver_with_prefix`]
+//!
+//! `MatchedPath` reports the full matched path, so under
+//! `Router::nest("/api", router)` it reads `/api/$procs/notify` while the
+//! generated descriptor says `/$procs/notify`. With the plain constructor
+//! every lookup then misses, every op resolves unresolved, and
+//! `@no_idempotency` silently does nothing. Pass the mount point to the
+//! `_with_prefix` constructor instead. See `super::mount_prefix` for why
+//! the prefix is supplied rather than inferred.
+//!
 //! # The fail-closed direction is inverted here, and that is the point
 //!
 //! The rate-limit filter fails closed by *rate-limiting* on a lookup miss.
@@ -28,8 +38,10 @@ use axum::extract::{MatchedPath, Request};
 use cratestack_core::RouteTransportDescriptor;
 use cratestack_exec::OpAdmission;
 
+use super::mount_prefix;
+
 /// Build an op resolver for REST schemas, over the generated
-/// `ROUTE_TRANSPORTS` slice.
+/// `ROUTE_TRANSPORTS` slice, for a router mounted at the root.
 ///
 /// Matches on the route *pattern* (`/widgets/{id}`) rather than the
 /// concrete request path (`/widgets/42`), plus the HTTP method — the two
@@ -39,14 +51,37 @@ use cratestack_exec::OpAdmission;
 /// Returns [`OpAdmission::unresolved`] when `MatchedPath` is absent (the
 /// request hit no route — a 404) or no descriptor matches (a
 /// schema/router mismatch). Both still reserve.
+///
+/// **If the router is nested, use [`build_rest_op_resolver_with_prefix`]**
+/// — this constructor compares the matched path exactly, so a nested mount
+/// misses every lookup.
 pub fn build_rest_op_resolver(
     routes: &'static [RouteTransportDescriptor],
 ) -> impl Fn(&Request) -> OpAdmission + Send + Sync {
+    build_rest_op_resolver_with_prefix("", routes)
+}
+
+/// [`build_rest_op_resolver`] for a router mounted under `prefix`, e.g.
+/// `build_rest_op_resolver_with_prefix("/api", ROUTE_TRANSPORTS)` to match
+/// `Router::nest("/api", router)`.
+///
+/// `prefix` is forgiving about spelling — `"/api"`, `"/api/"` and `"api"`
+/// are the same mount — but strict about boundaries: a path that is not
+/// under the prefix *at a segment boundary* resolves unresolved rather
+/// than being matched on a truncated remainder. `/apiary/...` is not
+/// under `/api`.
+pub fn build_rest_op_resolver_with_prefix(
+    prefix: &str,
+    routes: &'static [RouteTransportDescriptor],
+) -> impl Fn(&Request) -> OpAdmission + Send + Sync {
+    let prefix = mount_prefix::normalize(prefix);
     move |req: &Request| {
         let Some(matched) = req.extensions().get::<MatchedPath>() else {
             return OpAdmission::unresolved();
         };
-        let path = matched.as_str();
+        let Some(path) = mount_prefix::strip(matched.as_str(), &prefix) else {
+            return OpAdmission::unresolved();
+        };
         let method = req.method().as_str();
 
         // Linear search, matching `rest_ops_filter`: the slice is not

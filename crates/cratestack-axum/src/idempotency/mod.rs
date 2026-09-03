@@ -64,12 +64,27 @@
 //! Both resolvers fail closed toward **reserving** on any lookup miss —
 //! the opposite polarity from `crate::ratelimit`'s filters, and
 //! deliberately so; see [`build_rest_op_resolver`]'s module docs.
+//!
+//! Two things to know before installing one:
+//!
+//! - **A nested router needs its mount prefix.** Descriptors record the
+//!   path the schema declares, but `MatchedPath`/`Uri::path` report the
+//!   full path including the mount, so under `Router::nest("/api", ..)`
+//!   every lookup misses and `@no_idempotency` silently does nothing. Use
+//!   [`build_rest_op_resolver_with_prefix`] /
+//!   [`build_rpc_op_resolver_with_prefix`].
+//! - **The exemption is wider than the attribute.** A resolver exempts
+//!   everything marked `idempotent_by_default`, which is annotated
+//!   procedures *and* every read (`query procedure`, `GET` model routes).
+//!   Nothing stops a `query procedure` from writing; if one does,
+//!   installing a resolver removes its protection.
 
 mod complete;
 mod finish;
 mod hash;
 mod headers;
 mod layer;
+mod mount_prefix;
 mod parse;
 mod record;
 mod reserve;
@@ -91,6 +106,8 @@ mod tests_headers;
 #[cfg(test)]
 mod tests_op_resolver;
 #[cfg(test)]
+mod tests_op_resolver_nested;
+#[cfg(test)]
 mod tests_parse;
 #[cfg(test)]
 mod tests_stream_bypass;
@@ -100,8 +117,8 @@ pub use headers::{decode_headers, encode_headers};
 pub use layer::IdempotencyLayer;
 pub use parse::parse_idempotency_key;
 pub use record::{IdempotencyRecord, ReservationOutcome};
-pub use rest_op_resolver::build_rest_op_resolver;
-pub use rpc_op_resolver::build_rpc_op_resolver;
+pub use rest_op_resolver::{build_rest_op_resolver, build_rest_op_resolver_with_prefix};
+pub use rpc_op_resolver::{build_rpc_op_resolver, build_rpc_op_resolver_with_prefix};
 pub use service::IdempotencyService;
 pub use store::{IDEMPOTENCY_TABLE_DDL, IdempotencyStore};
 

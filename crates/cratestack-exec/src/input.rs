@@ -15,6 +15,9 @@ use cratestack_core::{CratestackContext, OpDescriptor, RouteTransportDescriptor}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpAdmission {
     /// Identifier for diagnostics only — nothing here dispatches on it.
+    /// The name carries the constraint so a call site cannot forget it
+    /// (this is `pub` in a published crate, where a bare `op_id` would
+    /// read as a dispatch key).
     ///
     /// RPC descriptors carry a real dotted op id (`procedure.transfer`).
     /// REST descriptors carry no such thing, so the `From` impl below uses
@@ -22,7 +25,7 @@ pub struct OpAdmission {
     /// model's five verbs. That is acceptable precisely because no
     /// decision reads this field; if one ever does, REST needs a genuine
     /// op id first.
-    pub op_id: &'static str,
+    pub diagnostic_op_id: &'static str,
     /// `true` when the op does **not** participate in idempotency
     /// reservation — see the field of the same name on [`OpDescriptor`]
     /// for the full statement of what the flag means.
@@ -46,7 +49,7 @@ impl OpAdmission {
     /// execute twice. Both mean "when in doubt, apply the protection".
     pub const fn unresolved() -> Self {
         Self {
-            op_id: "",
+            diagnostic_op_id: "",
             idempotent_by_default: false,
             rate_limited_by_default: true,
         }
@@ -56,7 +59,7 @@ impl OpAdmission {
 impl From<&'static OpDescriptor> for OpAdmission {
     fn from(descriptor: &'static OpDescriptor) -> Self {
         Self {
-            op_id: descriptor.op_id,
+            diagnostic_op_id: descriptor.op_id,
             idempotent_by_default: descriptor.idempotent_by_default,
             rate_limited_by_default: descriptor.rate_limited_by_default,
         }
@@ -66,7 +69,7 @@ impl From<&'static OpDescriptor> for OpAdmission {
 impl From<&'static RouteTransportDescriptor> for OpAdmission {
     fn from(descriptor: &'static RouteTransportDescriptor) -> Self {
         Self {
-            op_id: descriptor.name,
+            diagnostic_op_id: descriptor.name,
             idempotent_by_default: descriptor.idempotent_by_default,
             rate_limited_by_default: descriptor.rate_limited_by_default,
         }

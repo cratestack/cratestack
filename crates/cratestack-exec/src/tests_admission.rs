@@ -90,7 +90,7 @@ pub(crate) fn input<'a>(op: OpAdmission, key: Option<&'a str>) -> OpInput<'a> {
 
 pub(crate) fn participating() -> OpAdmission {
     OpAdmission {
-        op_id: "procedure.transfer",
+        diagnostic_op_id: "procedure.transfer",
         idempotent_by_default: false,
         rate_limited_by_default: true,
     }
@@ -98,7 +98,7 @@ pub(crate) fn participating() -> OpAdmission {
 
 pub(crate) fn opted_out() -> OpAdmission {
     OpAdmission {
-        op_id: "procedure.transfer",
+        diagnostic_op_id: "procedure.transfer",
         idempotent_by_default: true,
         rate_limited_by_default: true,
     }

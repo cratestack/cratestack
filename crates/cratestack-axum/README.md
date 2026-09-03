@@ -80,6 +80,14 @@ The crate exports `IDEMPOTENCY_TABLE_DDL` for the SQL store; see the [Idempotenc
 keyed request on a mutating method, so a procedure marked `@no_idempotency` in your schema is
 **not** exempt unless you install an op resolver that reads the generated descriptors.
 
+**Know the blast radius before you install one.** The resolver exempts everything the schema
+marks `idempotent_by_default`, which is *two* groups, not one: procedures you annotated
+`@no_idempotency`, **and every `query procedure` plus every `GET` model route** — reads are
+treated as inherently safe to repeat (`cratestack-core/src/transport.rs`). Nothing stops a
+`query procedure`'s handler from writing, so if you have one that does, installing a resolver
+silently removes its duplicate-execution protection. Either make it a `mutation procedure` or
+do not install the resolver on that router.
+
 ```rust
 use cratestack_axum::idempotency::{
     IdempotencyLayer, build_rpc_op_resolver, build_rest_op_resolver,
@@ -99,6 +107,31 @@ let app = router.route_layer(
         .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS)),
 );
 ```
+
+**A nested router needs its mount prefix**, including the `.nest("/api", router)` shown in the
+Idempotency section above. Both resolvers compare against the path the *schema* declares
+(`/$procs/notify`, `/rpc/procedure.notify`), while `MatchedPath` and `Uri::path` report the
+full path including the mount. Mismatch means every lookup misses, every op resolves
+unresolved, and `@no_idempotency` silently does nothing — safe, because a miss reserves, but
+inert. Tell the resolver where you mounted it:
+
+```rust
+use cratestack_axum::idempotency::{
+    build_rest_op_resolver_with_prefix, build_rpc_op_resolver_with_prefix,
+};
+
+let app = axum::Router::new()
+    .nest("/api", router)
+    .layer(IdempotencyLayer::new(store, ttl).with_op_resolver(
+        build_rpc_op_resolver_with_prefix("/api", cratestack_schema::axum::OPS),
+    ));
+```
+
+The prefix is forgiving about spelling (`"/api"`, `"/api/"`, `"api"`) and strict about
+boundaries: `/apiary/...` is not under `/api`, and resolves unresolved rather than being
+matched on a truncated remainder. It is supplied rather than inferred because nothing in a
+request says which leading segments were the mount — guessing would trade a silent no-op for a
+silent mis-match.
 
 **The fail-closed direction is inverted relative to rate limiting, and that is deliberate.**
 A rate-limit filter miss *throttles*; an idempotency resolver miss *reserves*. Both mean "when
