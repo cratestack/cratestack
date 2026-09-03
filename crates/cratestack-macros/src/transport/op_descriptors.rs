@@ -8,7 +8,7 @@
 #[cfg(test)]
 mod tests;
 
-use cratestack_core::{Model, Procedure, ProcedureKind, TypeArity};
+use cratestack_core::{Model, Procedure, TypeArity};
 use quote::quote;
 
 pub(crate) fn generate_model_op_descriptors(
@@ -153,8 +153,10 @@ pub(crate) fn generate_procedure_op_descriptor(
         .map(|a| a.ty.name.as_str())
         .unwrap_or("");
     let output_ty = procedure.return_type.name.as_str();
-    // Queries are safe to retry without an idempotency key; mutations are not.
-    let idempotent = matches!(procedure.kind, ProcedureKind::Query);
+    // Queries are safe to retry without an idempotency key; mutations are
+    // not, unless the author opted out with `@no_idempotency`. Shared with
+    // `transport::rest` so the two transports cannot answer differently.
+    let idempotent = super::idempotency::procedure_idempotent_by_default(procedure);
     let rate_limited = super::rate_limit::procedure_rate_limited_by_default(procedure);
 
     op_descriptor(
