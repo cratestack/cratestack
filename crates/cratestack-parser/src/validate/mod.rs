@@ -14,6 +14,7 @@ mod mixins_types;
 mod model_attributes;
 mod model_relation;
 mod models;
+mod no_idempotency;
 mod patch_touch_flag_collisions;
 mod procedure_handler_collisions;
 mod procedure_idents;
@@ -45,6 +46,7 @@ use self::mixins_types::{
     validate_auth, validate_enums_collecting, validate_mixins_collecting, validate_types_collecting,
 };
 use self::models::validate_models_collecting;
+use self::no_idempotency::validate_procedure_no_idempotency_attribute;
 use self::procedure_handler_collisions::validate_procedure_model_handler_collisions;
 use self::procedure_idents::validate_procedure_idents;
 use self::procedures::{
@@ -291,6 +293,7 @@ fn validate_procedures(
         validate_procedure_deprecated_attribute(procedure)?;
         validate_procedure_stream_attribute(procedure)?;
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
+        validate_procedure_no_idempotency_attribute(procedure)?;
         validate_procedure_status_attribute(procedure, schema)?;
     }
     Ok(())

@@ -15,6 +15,14 @@ Tracking: this document is the source of truth for the ADRs listed in §8.
 > [`rpc-transport.md`](rpc-transport.md) §4 and deliberately gated in §6.5.
 > If you read a sentence here as "move a lot of code", you have read it
 > wrong.
+>
+> **Amended 2026-09-03 (ADR 0015 / #876).** L3 is no longer empty:
+> `cratestack-exec` exists and owns idempotency admission. The sentence
+> above is left standing because it describes the state this document was
+> written against and the rest of §5.1's argument still reads from there;
+> see §2's L3 section and §5.1's table for what actually changed. The
+> gate was not abandoned — ADR 0015 restated it in layer terms and
+> settled on building L3 in slices, of which one has landed.
 
 > **Merge-order note.** Everything below is measured against `origin/main`
 > at `08fbb7e`. That commit includes #464 (`cfde4e0`), #465 (`6f14f1e`) and
@@ -96,7 +104,7 @@ flattering.
 | **L0** | Schema IR | `cratestack-parser`, `cratestack-core::schema` | 9,265 / — |
 | **L1** | Contracts | `cratestack-sql`, `cratestack-core::{store,audit,codec}`, `cratestack-policy`, `cratestack-auth` | 2,799 / — / 822 / 4,438 |
 | **L2** | Adapters | `cratestack-sqlx`, `cratestack-rusqlite`, `cratestack-redis`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}`, `cratestack-outbox`, `cratestack-service` | 10,907 / 4,828 / 2,167 / 59 / 37 / 305 / 245 / 644 / 845 |
-| **L3** | Execution | *(nothing — see §5.1)* | 0 |
+| **L3** | Execution | `cratestack-exec` | 636 |
 | **L4** | Bindings | `cratestack-axum`, `cratestack-client-{rust,dart,typescript,flutter}` | 5,212 / 3,269 / 4,537 / 3,525 / 553 |
 | **L5** | Facades | `cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, `cratestack-client` | 246 / 156 / 75 / 150 |
 | **⊥** | Compiler | `cratestack-macros` | 18,172 |
@@ -196,13 +204,30 @@ audit *persistence* cannot move here, because
 `cratestack-sqlx/src/audit.rs:1-5` guarantees the audit row commits inside
 the mutation's own transaction. Only fan-out is L3-shaped.
 
-This layer does not exist. `rpc-transport.md` §4 already names it —
+**This layer now exists, partially.** `rpc-transport.md` §4 named it —
 "idempotency, ratelimit, and audit cannot remain HTTP-only `tower::Layer`s.
 They move into a small `OpExecutor` service in `cratestack-core` (or a new
-crate)" — and §6.5 gates building it on a concrete WebSocket or
-multiplexing case that has not appeared. `grep -rn OpExecutor` over the
-repo returns hits in three design documents and the CHANGELOG, and zero
-lines of code. §5.1 describes what its absence costs today.
+crate)" — and §6.5 gated building it on a concrete WebSocket or
+multiplexing case. ADR 0015 (accepted, amended 2026-09-03) restated that
+gate in layer terms and settled on building L3 **in slices** rather than
+all at once.
+
+Slice 1 (#876) shipped `cratestack-exec`, holding idempotency
+**admission**: `OpExecutor::admit` takes an `OpInput` — op participation
+flags, principal, idempotency key, request fingerprint — and answers
+`Bypass`/`Reserved`/`Replay`/`InFlight`/`Conflict`. `IdempotencyLayer` is
+now a thin adapter over it, which is exactly the relationship
+`rpc-transport.md` §4 predicted ("the HTTP `Layer`s become thin adapters
+around that service"). The crate has two dependencies, `cratestack-core`
+and `uuid`, because both exclusions above hold: the request fingerprint
+arrives already computed, and no `&mut Transaction` crosses the boundary.
+
+What has **not** moved is as important. Rate limiting is still an L4
+`tower::Layer` (slice 2, #877); audit persistence stays at L2 permanently,
+for the transactional reason stated above; audit fan-out still has no
+caller; row-level `@@allow` on subscriptions is still unenforced (slice 3).
+§5.1's table is updated for the one row that changed and is otherwise
+unchanged.
 
 ### L4 — Bindings
 
@@ -458,6 +483,14 @@ that shows what the fix looks like.
 
 ### 5.1 L3 is missing, and the symptom is precise
 
+> **Amended 2026-09-03 (ADR 0015 slice 1, #876).** One row of the table
+> below has moved: idempotency now decides at L3. The section is otherwise
+> unchanged and still accurate — rate limiting is still applied from L4,
+> row-level policy still from inside generated SQL, audit fan-out still
+> from nowhere. Three concerns across three layers is a smaller version of
+> the same symptom, not its absence, which is why this section is amended
+> rather than deleted.
+
 The interesting claim is not "there is no `OpExecutor`". It is that the
 four concerns L3 would own are currently distributed across *three
 different layers*, inconsistently:
@@ -466,15 +499,17 @@ different layers*, inconsistently:
 |---|---|---|---|
 | Policy (procedure) | L1 `policy/src/eval.rs` | L1 (pure) | ⊥-generated `authorize_with_db` (`macros/src/procedure/instrument.rs:44`) |
 | Policy (row-level) | L1 `ReadPolicy` literals | **L2** — compiled into SQL, `sqlx/src/query/support/policy.rs` | inside the query |
-| Idempotency | L1 `core::store::idempotency` | L2 sqlx / redis | **L4** `tower::Layer` |
+| Idempotency | L1 `core::store::idempotency` | L2 sqlx / redis | **L3** `exec::OpExecutor::admit` (adapted at L4) |
 | Rate limit | L1 `core::store::ratelimit` | L2 redis / L4 in-memory | **L4** `tower::Layer` |
 | Audit (persistence) | — | L2 `sqlx/src/audit.rs` | L2, inside the mutation's transaction |
 | Audit (fan-out) | L1 `core::audit::AuditSink` | L1 (`MulticastAuditSink`) | **nowhere — no caller** |
 
-Read the "Applied at" column. Idempotency and rate limiting fire from the
-binding; row-level policy fires from inside generated SQL; audit fan-out
-fires from nowhere at all. There is no layer at which you can stand and see
-an operation whole.
+Read the "Applied at" column. Rate limiting fires from the binding;
+row-level policy fires from inside generated SQL; audit fan-out fires at L2
+post-commit (#473). (Idempotency fired from the binding too until #876
+moved its decision to L3 — that is one row of four, and it is the row this
+section's own `@no_idempotency` bullet below was blocked on.) There is
+still no layer at which you can stand and see an operation whole.
 
 **Post-#473:** the "Audit (fan-out)" row's *Applied at* cell — "nowhere — no
 caller" — no longer holds. `SqlxRuntime::with_audit_sink` /
@@ -515,11 +550,20 @@ consequences other documents have had to work around:
   "gated on `OpExecutor`" — the ticket sketch in its §6 says so in its
   title, and adds "this should not be opened until `OpExecutor` has a
   concrete plan". A feature has been blocked for two release cycles on a
-  layer that does not exist.
+  layer that does not exist. **Resolved 2026-09-03 by #876**: the
+  attribute is live on both transports, and the ticket that was
+  unopenable by its own terms is the one that closed it.
 
 None of this argues for building L3 today. It argues that the cost of not
 having it is now itemisable, which is what §6.5's gate needs in order to
 be re-evaluated honestly. That re-evaluation is ADR work (§8).
+
+**Outcome (2026-09-03).** That re-evaluation happened, as ADR 0015, and it
+came out the other way from this paragraph's expectation: the itemised
+costs were judged sufficient on their own, and L3 is being built in slices
+rather than waiting for a non-`http::Request` caller to appear. Slice 1
+has landed. The paragraph is kept because its reasoning — "the cost is now
+itemisable" — is what the ADR actually argued from.
 
 ### 5.2 The backend axis is branched at two different granularities
 

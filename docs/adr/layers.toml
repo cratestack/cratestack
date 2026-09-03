@@ -8,8 +8,8 @@
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (33 as of this
-# writing, 32 of them workspace members — `cratestack-studio-ui` is excluded
+# Scope: only packages whose manifest lives under `crates/` (34 as of this
+# writing, 33 of them workspace members — `cratestack-studio-ui` is excluded
 # from the workspace and not covered here; cratestack#490's `cratestack-client`
 # is included). `examples/*` and
 # app-shaped workspace members are consumers of the layered architecture,
@@ -35,8 +35,13 @@
 #              matching this file against the ADR isn't left wondering where
 #              `cratestack` went.
 #
-# L3 (Execution) has no members — see layering.md §5.1 / ADR 0011 decision
-# 4. Do not add a crate here merely to fill the slot.
+# L3 (Execution) had no members until ADR 0015 (accepted, amended
+# 2026-09-03) settled building it; `cratestack-exec` is its first and, as
+# of this writing, only member. The original instruction — "do not add a
+# crate here merely to fill the slot" — is unchanged and still the rule:
+# what got L3 built was a concrete admission decision that had to be made
+# from something other than an `http::Request`, not the emptiness of the
+# slot. See the L3 section below and layering.md §5.1.
 
 [layers]
 # --- L0: Schema IR -----------------------------------------------------
@@ -148,7 +153,18 @@ cratestack-service = 2
 cratestack-outbox = 2
 
 # --- L3: Execution -----------------------------------------------------
-# (empty by design — see module comment above)
+# `cratestack-exec` (ADR 0015 slice 1): idempotency ADMISSION, expressed
+# once against `(op participation flags, principal, idempotency key,
+# request fingerprint)` with no knowledge of how the caller arrived.
+# `cratestack-axum`'s `IdempotencyLayer` is now a thin adapter over it.
+# Its normal workspace dependencies are exactly `cratestack-core` (L0) —
+# `dep.layer <= self.layer` holds with no exception — and the two
+# exclusions layering.md §2 states for this layer are what keep the list
+# that short: nothing transport-shaped (no `http`/`tower`/`axum` edge) and
+# nothing backend-shaped (no `sqlx`/`rusqlite` edge). Depended on by
+# `cratestack-axum` (L4), so the upper-bound half of the rule reads
+# 3 <= 4 and needs no allowlist entry.
+cratestack-exec = 3
 
 # --- L4: Bindings --------------------------------------------------------
 cratestack-axum = 4

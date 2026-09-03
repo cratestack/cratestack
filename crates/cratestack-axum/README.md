@@ -74,6 +74,84 @@ let app = axum::Router::new()
 
 The crate exports `IDEMPOTENCY_TABLE_DDL` for the SQL store; see the [Idempotency guide](https://cratestack.dev/guides/idempotency) for the table contract and replay semantics.
 
+### Honoring `@no_idempotency`
+
+`IdempotencyLayer` has the same shape and the same opt-in: by default it reserves for every
+keyed request on a mutating method, so a procedure marked `@no_idempotency` in your schema is
+**not** exempt unless you install an op resolver that reads the generated descriptors.
+
+**Know the blast radius before you install one.** The resolver exempts everything the schema
+marks `idempotent_by_default`, which is *two* groups, not one: procedures you annotated
+`@no_idempotency`, **and every read op** — `query procedure`s and model `list`/`get` — because
+reads are treated as inherently safe to repeat (`cratestack-core/src/transport.rs`).
+
+Do not read "read op" as "`GET` request". Under `transport rpc` every op is dispatched by
+`POST /rpc/{op_id}`, including the reads, so those reads *do* reach the layer (`POST` is an
+idempotency-target method) and *are* exempted by a resolver. Under REST the reads are `GET`
+and never reach the layer in the first place, so there the exemption is a no-op. Nothing stops
+a `query procedure`'s handler from writing, so if you have one that does, installing a resolver
+silently removes its duplicate-execution protection — and on RPC that is a live path, not a
+theoretical one. Either make it a `mutation procedure` or
+do not install the resolver on that router.
+
+```rust
+use cratestack_axum::idempotency::{
+    IdempotencyLayer, build_rpc_op_resolver, build_rest_op_resolver,
+};
+
+// `transport rpc` schemas: resolver keys off the `/rpc/{op_id}` path against
+// the generated `OPS` slice.
+let app = router.layer(
+    IdempotencyLayer::new(store.clone(), ttl)
+        .with_op_resolver(build_rpc_op_resolver(cratestack_schema::axum::OPS)),
+);
+
+// REST-transport schemas: resolver keys off `axum::extract::MatchedPath`
+// against the generated `ROUTE_TRANSPORTS` slice.
+let app = router.route_layer(
+    IdempotencyLayer::new(store, ttl)
+        .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS)),
+);
+```
+
+**A nested router needs its mount prefix**, including the `.nest("/api", router)` shown in the
+Idempotency section above. Both resolvers compare against the path the *schema* declares
+(`/$procs/notify`, `/rpc/procedure.notify`), while `MatchedPath` and `Uri::path` report the
+full path including the mount. Mismatch means every lookup misses, every op resolves
+unresolved, and `@no_idempotency` silently does nothing — safe, because a miss reserves, but
+inert. Tell the resolver where you mounted it:
+
+```rust
+use cratestack_axum::idempotency::{
+    build_rest_op_resolver_with_prefix, build_rpc_op_resolver_with_prefix,
+};
+
+let app = axum::Router::new()
+    .nest("/api", router)
+    .layer(IdempotencyLayer::new(store, ttl).with_op_resolver(
+        build_rpc_op_resolver_with_prefix("/api", cratestack_schema::axum::OPS),
+    ));
+```
+
+The prefix is forgiving about spelling (`"/api"`, `"/api/"`, `"api"`) and strict about
+boundaries: `/apiary/...` is not under `/api`, and resolves unresolved rather than being
+matched on a truncated remainder. It is supplied rather than inferred because nothing in a
+request says which leading segments were the mount — guessing would trade a silent no-op for a
+silent mis-match.
+
+**The fail-closed direction is inverted relative to rate limiting, and that is deliberate.**
+A rate-limit filter miss *throttles*; an idempotency resolver miss *reserves*. Both mean "when
+in doubt, apply the protection" — the two descriptor flags are simply polarised opposite ways
+(`rate_limited_by_default: true` means "protect", `idempotent_by_default: true` means "skip").
+The practical consequence: installing **no** resolver reserves exactly the set of requests the
+layer reserved before `OpExecutor` existed, so the upgrade is behaviour-preserving by
+construction.
+
+The decision itself lives in `cratestack-exec` (L3, ADR 0015); this layer derives the
+principal, parses the key, hashes the request, and renders the answer. `POST /rpc/batch` has
+the same known limitation as its rate-limit counterpart — the resolver runs before the batch
+body is decoded, so a batch always reserves regardless of what is inside it.
+
 ## Rate Limiting
 
 Token-bucket layer with a pluggable store. `InMemoryRateLimitStore` is the default; production multi-replica clusters back this with Redis.

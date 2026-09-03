@@ -75,6 +75,7 @@ The Rust workspace contains these main packages:
 * `cratestack-sql`: dialect-agnostic SQL primitives shared by both backends
 * `cratestack-sqlx`: SQLx-backed Postgres runtime and query/delegate primitives
 * `cratestack-rusqlite`: embedded SQLite backend (sync, no tokio, no policies; native and `wasm32-unknown-unknown` via `sqlite-wasm-rs`)
+* `cratestack-exec`: transport-neutral operation execution (L3) — owns idempotency admission; `cratestack-axum`'s `IdempotencyLayer` is a thin adapter over it
 * `cratestack-axum`: generated route integration helpers
 * `cratestack-client-rust`: generated Rust client runtime
 * `cratestack-client-dart`: Dart package generator

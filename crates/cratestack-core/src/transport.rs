@@ -16,6 +16,29 @@ pub struct RouteTransportDescriptor {
     pub method: &'static str,
     pub path: &'static str,
     pub capabilities: RouteTransportCapabilities,
+    /// Whether this route may be safely retried without an idempotency
+    /// key, and therefore takes **no** idempotency reservation.
+    ///
+    /// This is the single participation flag — there is no second boolean
+    /// distinguishing "inherently safe" from "opted out" (ADR 0015 (d)),
+    /// because no consumer has ever needed to tell them apart and an
+    /// unread flag is a worse artefact than no flag. It is `true` for
+    /// three things: reads (`GET` model routes), pure procedures
+    /// (`query procedure`), and any mutation the schema marked
+    /// `@no_idempotency`. `false` for every other model write.
+    ///
+    /// Mirrors `OpDescriptor::idempotent_by_default` so REST and RPC
+    /// carry the same fact about the same op, even though only one of
+    /// `ROUTE_TRANSPORTS`/`OPS` is ever populated for a given schema —
+    /// the transport-parity rule in `CLAUDE.md`, and the reason this
+    /// field exists at all: shipping idempotency admission on RPC alone
+    /// would have reproduced cratestack#474 in a narrower form.
+    ///
+    /// Read at runtime by `cratestack_exec::OpExecutor::admit`, via the
+    /// resolver `cratestack_axum::idempotency::build_rest_op_resolver`
+    /// installs. A route whose descriptor no resolver can find still
+    /// reserves — see that function's fail-closed direction.
+    pub idempotent_by_default: bool,
     /// Whether the dispatcher should treat this route as participating in
     /// rate limiting. `true` for every route by default; `false` only for
     /// a procedure marked `@no_rate_limit` in a schema that declares
@@ -55,7 +78,25 @@ pub struct OpDescriptor {
     /// op returns nothing (e.g. `delete` with no echo).
     pub output_ty: &'static str,
     /// Whether the op can be safely retried without an idempotency
-    /// key. True for reads and pure procedures; false for mutations.
+    /// key, and therefore takes **no** idempotency reservation.
+    ///
+    /// This is the single participation flag — there is no second boolean
+    /// distinguishing "inherently safe" from "opted out" (ADR 0015 (d)),
+    /// because no consumer has ever needed to tell them apart and an
+    /// unread flag is a worse artefact than no flag. It is `true` for
+    /// three things: reads (`model.<X>.{list,get,subscribe}`), pure
+    /// procedures (`query procedure`), and any mutation the schema marked
+    /// `@no_idempotency`. `false` for every other model write.
+    ///
+    /// Unlike `rate_limited_by_default` below, `@no_idempotency` is NOT
+    /// gated on an `extension` block — whether idempotency should acquire
+    /// one is an epic-level question, not a slice-1 one, so the attribute
+    /// is honoured wherever it appears.
+    ///
+    /// Read at runtime by `cratestack_exec::OpExecutor::admit`, via the
+    /// resolver `cratestack_axum::idempotency::build_rpc_op_resolver`
+    /// installs. An op no resolver can find still reserves — see that
+    /// function's fail-closed direction.
     pub idempotent_by_default: bool,
     /// Whether the dispatcher should treat this op as participating in
     /// rate limiting. `true` for every op by default; `false` only for a
@@ -123,41 +164,4 @@ pub fn canonical_request_string(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn op_kind_as_str() {
-        assert_eq!(OpKind::Unary.as_str(), "unary");
-        assert_eq!(OpKind::Sequence.as_str(), "sequence");
-        assert_eq!(OpKind::Subscription.as_str(), "subscription");
-    }
-
-    #[test]
-    fn op_kind_equality() {
-        assert_eq!(OpKind::Unary, OpKind::Unary);
-        assert_ne!(OpKind::Unary, OpKind::Sequence);
-        assert_ne!(OpKind::Sequence, OpKind::Subscription);
-    }
-
-    #[test]
-    fn canonical_request_string_empty() {
-        let result = canonical_request_string("GET", "/api/users", None, None, b"");
-        assert_eq!(result, "GET\n/api/users\n\n\n");
-    }
-
-    #[test]
-    fn canonical_request_string_with_query_and_content_type() {
-        let result = canonical_request_string(
-            "POST",
-            "/api/users",
-            Some("id=123"),
-            Some("application/json"),
-            b"test",
-        );
-        assert_eq!(
-            result,
-            "POST\n/api/users\nid=123\napplication/json\n74657374"
-        );
-    }
-}
+mod tests;
