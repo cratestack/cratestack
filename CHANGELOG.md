@@ -234,12 +234,31 @@ port if it frees up in time or the next port otherwise) before giving up; a seco
 with full diagnostics from both attempts.
 
 `verify_web_console.dart` is split into `verify_web_console/{chrome_launch,chrome_stderr_capture,
-devtools_ready,options,self_test}.dart` to keep every file under this repo's 200-line convention —
-the script's contract (exit codes, `CRATESTACK_CBOR_EXAMPLE_RESULT` marker semantics, existing CLI
-options) is unchanged. `verify_web_console/self_test.dart` is a manual (not CI-wired, ~20s) proof
-that a fake Chrome exiting with stderr fails fast with that stderr and exit code, and that a fake
-DevTools server which only becomes ready after 20s fails under the old 15s deadline but succeeds
-under the new 60s default.
+devtools_ready,fake_devtools_server,hard_timeout_watchdog,options,self_test,
+self_test_subprocess}.dart` to keep every file under this repo's 200-line convention — the script's
+contract (exit codes, `CRATESTACK_CBOR_EXAMPLE_RESULT` marker semantics, existing CLI options) is
+unchanged.
+
+**This fix's own first landing hung the job it was fixing** — this PR's own CI run sat for the full
+45-minute `timeout-minutes` after printing `PASS:`, with the tool's Dart process still alive as an
+orphan the runner had to force-kill. `waitForDevtoolsReady` reading `process.exitCode` (needed for
+the "did Chrome already exit" check above) opens a native exit-watch handle that keeps the Dart
+isolate alive until the process is truly reaped, and a bare `process.kill()` (SIGTERM) doesn't
+guarantee that — the old script never touched `process.exitCode` at all, so it always drained
+cleanly regardless. Fixed by not relying on the event loop draining at all: every exit path now
+tears down deterministically (`ChromeProcess.shutDown`, escalating to SIGKILL if SIGTERM doesn't
+reap the process within 5s) and finishes with an explicit `exit(code)`. A new in-process
+`HardTimeoutWatchdog` (`--hard-timeout-seconds`, default 180s) is a backstop against any future
+regression of the same shape, and `just cbor-example-verify` now also wraps the tool invocation in
+`timeout 300` as a second, OS-level line of defence.
+
+`verify_web_console/self_test.dart` (manual, not CI-wired, ~20s) now proves four things: a fake
+Chrome exiting with stderr fails fast with that stderr and exit code; a fake DevTools server which
+only becomes ready after 20s fails under the old 15s deadline but succeeds under the new 60s
+default; a fake Chrome that keeps running after the marker is observed still lets the tool exit
+within 5s; and the hard-timeout watchdog fires and exits 2 when the marker never arrives. Removing
+the teardown/`exit(code)` reproduces the hang in the third of those (confirmed while writing this
+fix — it fails by timing out, not by a wrong assertion).
 
 ## 0.11.0 (2026-09-03)
 

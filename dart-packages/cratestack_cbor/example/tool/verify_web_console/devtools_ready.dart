@@ -25,6 +25,16 @@
 // (same port if it frees up, otherwise the next port — see
 // `port_utils.dart`); a second failure is fatal with full diagnostics from
 // both attempts.
+//
+// Every Chrome teardown here goes through `ChromeProcess.shutDown`
+// (chrome_launch.dart), never a bare `process.kill()` — that fix's own
+// first landing hung PR 887's own CI run for the job's full 45-minute
+// timeout, because `waitForDevtoolsReady` reading `process.exitCode` (for
+// root cause (c) above) opens a native exit-watch handle that keeps the
+// Dart isolate alive until the process is truly reaped, and a bare
+// `kill()` (SIGTERM) doesn't guarantee that. `HttpClient.close(force:
+// true)` here is the same defense for the readiness poller's own HTTP
+// connections.
 import 'dart:async';
 import 'dart:io';
 
@@ -87,14 +97,17 @@ Future<void> waitForDevtoolsReady({
       '${timeout.inSeconds}s. Chrome stderr:\n${stderrCapture.tail}',
     );
   } finally {
-    client.close();
+    // `force: true`: don't wait for any keep-alive connection this client
+    // opened to close on its own — see this file's module doc.
+    client.close(force: true);
   }
 }
 
 /// Launches Chrome on [initialPort] and waits for DevTools readiness,
 /// retrying once (fresh process, loudly logged) on failure. Rethrows the
 /// second attempt's [StateError] — carrying that attempt's own
-/// diagnostics — if it also fails.
+/// diagnostics — if it also fails. Every failure path tears its Chrome
+/// process down via [ChromeProcess.shutDown] before returning or retrying.
 Future<ChromeProcess> ensureChromeReady({
   required int initialPort,
   String? chromeBinary,
@@ -116,7 +129,7 @@ Future<ChromeProcess> ensureChromeReady({
   } catch (firstFailure) {
     log('=== Chrome DevTools readiness failed once: $firstFailure ===');
     log('=== relaunching Chrome once and retrying readiness ===');
-    chrome.process.kill();
+    await chrome.shutDown();
     port = await pickRelaunchPort(port);
     chrome = await launchChrome(port: port, chromeBinary: chromeBinary);
     try {
@@ -129,7 +142,7 @@ Future<ChromeProcess> ensureChromeReady({
       );
       return chrome;
     } catch (secondFailure) {
-      chrome.process.kill();
+      await chrome.shutDown();
       throw StateError(
         'Chrome DevTools readiness failed twice in a row — giving up.\n'
         'First attempt (port $initialPort): $firstFailure\n'
