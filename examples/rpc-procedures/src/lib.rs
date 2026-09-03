@@ -45,37 +45,33 @@ pub struct Procedures {
     pub counter: Arc<AtomicI64>,
 }
 
+/// Each procedure is a plain `async fn`. The generated trait declares the
+/// method as `fn … -> impl Future<Output = …> + Send` — that is only how a
+/// trait spells "the future must be `Send`" — and an `async fn` in the impl
+/// satisfies it directly, with the compiler checking `Send` on the body's
+/// future (`docs/design/boot-surface.md` §4.1).
 impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
-    fn greet(
+    async fn greet(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::greet::Args,
         _authorized: cratestack_schema::procedures::greet::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::greet::Output, CratestackError>,
-    > + Send {
-        async move {
-            Ok(cratestack_schema::GreetReply {
-                message: format!("hello, {}!", args.args.name),
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::greet::Output, CratestackError> {
+        Ok(cratestack_schema::GreetReply {
+            message: format!("hello, {}!", args.args.name),
+        })
     }
 
-    fn increment(
+    async fn increment(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::increment::Args,
         _authorized: cratestack_schema::procedures::increment::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::increment::Output, CratestackError>,
-    > + Send {
-        let counter = Arc::clone(&self.counter);
-        async move {
-            let total = counter.fetch_add(args.args.by, Ordering::Relaxed) + args.args.by;
-            Ok(cratestack_schema::CounterValue { total })
-        }
+    ) -> Result<cratestack_schema::procedures::increment::Output, CratestackError> {
+        let total = self.counter.fetch_add(args.args.by, Ordering::Relaxed) + args.args.by;
+        Ok(cratestack_schema::CounterValue { total })
     }
 }
 
@@ -88,10 +84,10 @@ pub struct HeaderAuthProvider;
 impl AuthProvider for HeaderAuthProvider {
     type Error = CratestackError;
 
-    fn authenticate(
+    async fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+    ) -> Result<CratestackContext, Self::Error> {
         let ctx = request
             .headers
             .get("x-auth-id")
@@ -99,7 +95,7 @@ impl AuthProvider for HeaderAuthProvider {
             .and_then(|raw| raw.parse::<i64>().ok())
             .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
             .unwrap_or_else(CratestackContext::anonymous);
-        core::future::ready(Ok(ctx))
+        Ok(ctx)
     }
 }
 

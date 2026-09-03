@@ -2,27 +2,34 @@
 
 ## Unreleased
 
-### Open VSX publishing is live
+### Procedures and auth providers are plain `async fn` — in every example, and in the trait docs
 
-`publish-openvsx` is no longer an armed-but-unexercised job. It has published all five platform
-targets on both the v0.10.1 and v0.11.0 tags:
+Every `impl` block an application hands to the generated `router()` — a `ProcedureRegistry`, an
+`AuthProvider`, a `ComputedFieldResolver` — implements a trait whose methods are declared as
+`fn … -> impl Future<Output = …> + Send`. That trait-side spelling is necessary (an `async fn` in a
+trait cannot promise `Send`, and every axum handler needs it). What was *not* necessary is the
+impl-side spelling every example in this repo used: `-> impl core::future::Future<Output = …> + Send
+{ async move { … } }`, nine lines of signature around a three-line body, eighteen times across eight
+examples. Since Rust 1.75 an impl may satisfy such a method with a plain `async fn`, and the compiler
+checks the `Send` bound on the concrete future.
 
-```
-🚀  Published cratestack.cratestack-vscode-plugin v0.11.0@darwin-arm64
-```
+All eighteen sites are now `async fn` (`examples/{rpc-procedures, rpc-batch, rpc-batch-debounce,
+rpc-streaming, react-vite-swr, microservice-pair, no-database-verification,
+no-database-verification-api}`), the generated `ProcedureRegistry` trait and `AuthProvider` gain a doc
+comment saying so, and `crates/cratestack-api/tests/async_fn_impls.rs` guards the property against the
+real generated `router()` — if the trait ever changed to a shape `async fn` cannot satisfy, that file
+stops compiling. No API change; existing long-form impls keep compiling.
 
-The listing is <https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin>, which reaches
-VSCodium, Cursor and Windsurf — VS Code still sees only the Marketplace, which is a separate publish
-on separate credentials. `docs/tooling/vscode-publishing.md`, `RELEASE.md` and
-`release-vscode.yml`'s header all still said no version had been published to either registry and
-that the manual `.vsix` download was the only way in; they now describe installing from a registry,
-with the `.vsix` demoted to the fallback it is. The extension README — which is also the listing
-page on both registries — gains the install section it never had.
+Recorded honestly: this PR first built a `#[cratestack::service]` attribute macro to do the rewrite,
+and deleted it when its own break-it check (remove the attribute, expect a signature mismatch) passed
+`cargo check` instead. `justfile`'s `-A clippy::manual_async_fn` — rationale: "examples/tests return
+`impl Future` by hand" — had been muting the lint that says exactly this; the 36 facade test files
+that still use the long form, and un-muting that lint, are `docs/design/boot-surface.md` §8.1.
 
-One verification step changes shape as a result. `curl -o /dev/null -w '%{http_code}'` against the
-Open VSX API was a valid check while a 404 meant "nothing has ever shipped"; now that the listing
-exists permanently, a 200 proves only that *some* version did. The documented check reads the
-`version` field instead.
+That document is the wider frame: a Spring-Boot-shaped, compile-time-only application surface for
+CrateStack (one-line boot, typed config, health, declared cross-cutting concerns, test client,
+scaffolder), each piece tested against ADR 0012 and refused where it would need a proxy or a registry.
+This is its phase 1; phases 2–3 wait on the document's §8 decisions.
 
 ## 0.11.0 (2026-09-03)
 

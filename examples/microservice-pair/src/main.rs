@@ -49,10 +49,10 @@ struct HeaderAuthProvider;
 impl AuthProvider for HeaderAuthProvider {
     type Error = CratestackError;
 
-    fn authenticate(
+    async fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+    ) -> Result<CratestackContext, Self::Error> {
         let mut fields = Vec::new();
         if let Some(id) = request
             .headers
@@ -62,11 +62,11 @@ impl AuthProvider for HeaderAuthProvider {
         {
             fields.push(("id".to_owned(), Value::Int(id)));
         }
-        core::future::ready(Ok(if fields.is_empty() {
+        Ok(if fields.is_empty() {
             CratestackContext::anonymous()
         } else {
             CratestackContext::authenticated(fields)
-        }))
+        })
     }
 }
 

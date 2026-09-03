@@ -301,6 +301,12 @@ pub(super) fn compose_server_schema(
                 pub mod procedures {
                     #(#procedure_modules)*
 
+                    /// The schema's `procedure` declarations, one method each.
+                    /// Implement every method as a plain `async fn` — the
+                    /// `impl Future<Output = …> + Send` return type below is
+                    /// only how the trait spells "your future must be `Send`",
+                    /// and an `async fn` in the impl satisfies it directly (the
+                    /// compiler checks the `Send` bound on your body's future).
                     pub trait ProcedureRegistry: Clone + Send + Sync + 'static {
                         #(#procedure_registry_methods)*
                     }

@@ -35,24 +35,18 @@ pub use cratestack_schema as schema;
 pub struct Procedures;
 
 impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
-    fn estimate_focus_minutes(
+    async fn estimate_focus_minutes(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::estimate_focus_minutes::Args,
         _authorized: cratestack_schema::procedures::estimate_focus_minutes::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<
-            cratestack_schema::procedures::estimate_focus_minutes::Output,
-            CratestackError,
-        >,
-    > + Send {
-        async move {
-            let total_minutes = args.args.taskCount * args.args.minutesPerTask;
-            Ok(cratestack_schema::FocusEstimateResult {
-                totalMinutes: total_minutes,
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::estimate_focus_minutes::Output, CratestackError>
+    {
+        let total_minutes = args.args.taskCount * args.args.minutesPerTask;
+        Ok(cratestack_schema::FocusEstimateResult {
+            totalMinutes: total_minutes,
+        })
     }
 }
 
@@ -65,10 +59,10 @@ pub struct HeaderAuthProvider;
 impl AuthProvider for HeaderAuthProvider {
     type Error = CratestackError;
 
-    fn authenticate(
+    async fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+    ) -> Result<CratestackContext, Self::Error> {
         let ctx = request
             .headers
             .get("x-auth-id")
@@ -76,7 +70,7 @@ impl AuthProvider for HeaderAuthProvider {
             .and_then(|raw| raw.parse::<i64>().ok())
             .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
             .unwrap_or_else(CratestackContext::anonymous);
-        core::future::ready(Ok(ctx))
+        Ok(ctx)
     }
 }
 

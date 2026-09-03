@@ -80,6 +80,15 @@ pub struct RequestContext<'a> {
     pub extensions: &'a http::Extensions,
 }
 
+/// Resolves the caller of a request into a [`CratestackContext`].
+///
+/// Implement `authenticate` as a plain `async fn` returning
+/// `Result<CratestackContext, Self::Error>` — the `impl Future + Send`
+/// return type below is only how the trait spells "the future must be
+/// `Send`", and an `async fn` in the impl satisfies it directly. For the
+/// synchronous, header-only case a `Clone + Send + Sync` closure
+/// `Fn(&http::HeaderMap) -> Result<CratestackContext, E>` already
+/// implements this trait (see the blanket impl below).
 pub trait AuthProvider: Clone + Send + Sync + 'static {
     type Error: Into<CratestackError> + Send;
 

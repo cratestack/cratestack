@@ -23,58 +23,46 @@ pub use cratestack_schema as schema;
 pub struct Procedures;
 
 impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
-    fn add(
+    async fn add(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::add::Args,
         _authorized: cratestack_schema::procedures::add::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::add::Output, CratestackError>,
-    > + Send {
-        async move {
-            Ok(cratestack_schema::ScalarResult {
-                value: args.args.a + args.args.b,
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::add::Output, CratestackError> {
+        Ok(cratestack_schema::ScalarResult {
+            value: args.args.a + args.args.b,
+        })
     }
 
-    fn multiply(
+    async fn multiply(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::multiply::Args,
         _authorized: cratestack_schema::procedures::multiply::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::multiply::Output, CratestackError>,
-    > + Send {
-        async move {
-            Ok(cratestack_schema::ScalarResult {
-                value: args.args.a * args.args.b,
-            })
-        }
+    ) -> Result<cratestack_schema::procedures::multiply::Output, CratestackError> {
+        Ok(cratestack_schema::ScalarResult {
+            value: args.args.a * args.args.b,
+        })
     }
 
-    fn divide(
+    async fn divide(
         &self,
         _db: &cratestack_schema::Cratestack,
         _ctx: &CratestackContext,
         args: cratestack_schema::procedures::divide::Args,
         _authorized: cratestack_schema::procedures::divide::Authorized,
-    ) -> impl core::future::Future<
-        Output = Result<cratestack_schema::procedures::divide::Output, CratestackError>,
-    > + Send {
-        async move {
-            if args.args.denominator == 0 {
-                // Maps to `failed_precondition` on the RPC binding.
-                return Err(CratestackError::PreconditionFailed(
-                    "denominator must not be zero".to_owned(),
-                ));
-            }
-            Ok(cratestack_schema::ScalarResult {
-                value: args.args.numerator / args.args.denominator,
-            })
+    ) -> Result<cratestack_schema::procedures::divide::Output, CratestackError> {
+        if args.args.denominator == 0 {
+            // Maps to `failed_precondition` on the RPC binding.
+            return Err(CratestackError::PreconditionFailed(
+                "denominator must not be zero".to_owned(),
+            ));
         }
+        Ok(cratestack_schema::ScalarResult {
+            value: args.args.numerator / args.args.denominator,
+        })
     }
 }
 
@@ -84,10 +72,10 @@ pub struct HeaderAuthProvider;
 impl AuthProvider for HeaderAuthProvider {
     type Error = CratestackError;
 
-    fn authenticate(
+    async fn authenticate(
         &self,
         request: &RequestContext<'_>,
-    ) -> impl core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send {
+    ) -> Result<CratestackContext, Self::Error> {
         let ctx = request
             .headers
             .get("x-auth-id")
@@ -95,7 +83,7 @@ impl AuthProvider for HeaderAuthProvider {
             .and_then(|raw| raw.parse::<i64>().ok())
             .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
             .unwrap_or_else(CratestackContext::anonymous);
-        core::future::ready(Ok(ctx))
+        Ok(ctx)
     }
 }
 
