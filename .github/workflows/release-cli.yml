@@ -1033,6 +1033,39 @@ jobs:
         run: |
           npm config set provenance true
           .github/scripts/npm-publish.sh packages/cratestack-cbor-node --access public
+      # v0.11.1 (run 33808493207): two subpackages exited 0 with "+ name@ver
+      # ... being processed" and were still absent from the registry an
+      # hour later, while a third was "staged" upstream after a 401 — a
+      # green exit code told us nothing about what a consumer could
+      # install. So ask the registry, the only thing that can answer.
+      # Skipped on rehearsal (nothing was published, so nothing can be
+      # visible) — this step reads; it never writes.
+      - name: Verify every subpackage is visible on the registry
+        if: needs.prepare.outputs.rehearsal != 'true'
+        run: |
+          set -uo pipefail
+          version=$(node -p "require('./packages/cratestack-cbor-node/package.json').version")
+          names=("@cratestack/cbor-node")
+          for dir in packages/cratestack-cbor-node/npm/*/; do
+            names+=("$(node -p "require('./${dir}package.json').name")")
+          done
+          deadline=$((SECONDS + 360))
+          missing=("${names[@]}")
+          while [ "${#missing[@]}" -gt 0 ] && [ "$SECONDS" -lt "$deadline" ]; do
+            still=()
+            for name in "${missing[@]}"; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/${name}/${version}" || echo 000)
+              if [ "$code" = "200" ]; then echo "✓ ${name}@${version} visible"; else still+=("$name"); fi
+            done
+            missing=("${still[@]+"${still[@]}"}")
+            [ "${#missing[@]}" -gt 0 ] && sleep 30
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::not visible on registry.npmjs.org after 6 minutes at ${version}: ${missing[*]} — the publish was accepted (or staged) upstream but has not become installable. Check https://status.npmjs.org/ first; re-check with 'curl -s https://registry.npmjs.org/<name>/${version}' before deciding between waiting and cutting a new version."
+            echo "SUBPACKAGE_NOT_VISIBLE=${missing[*]}" >> "$GITHUB_ENV"
+            exit 1
+          fi
+          echo "all ${#names[@]} packages visible on the registry at ${version}"
       - name: Fail the job if any platform subpackage did not publish
         if: always()
         run: |
@@ -1040,7 +1073,11 @@ jobs:
             echo "::error::these platform subpackages did not publish: $SUBPACKAGE_PUBLISH_FAILED"
             exit 1
           fi
-          echo "all platform subpackages published (or were already published)"
+          if [ -n "${SUBPACKAGE_NOT_VISIBLE:-}" ]; then
+            echo "::error::these packages were accepted but are not visible on the registry: $SUBPACKAGE_NOT_VISIBLE"
+            exit 1
+          fi
+          echo "all platform subpackages published and visible on the registry"
 
   # Same rationale as js-cbor-wasm in ci.yml: needs a real Rust wasm32
   # toolchain (the package's `prebuild` hook runs `wasm-pack build` against
