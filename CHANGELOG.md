@@ -67,6 +67,193 @@ Open VSX API was a valid check while a 404 meant "nothing has ever shipped"; now
 exists permanently, a 200 proves only that *some* version did. The documented check reads the
 `version` field instead.
 
+### ADR 0015 accepted (amended): the L3 OpExecutor is being built in slices
+
+`docs/design/rpc-transport.md` §4 has specified an `OpExecutor` since 2026-05-15, and ADR 0015
+deferred building it behind a gate: L3 gets built when a dispatch path must make an admission
+decision from an input that is not an `http::Request`. That gate has fired — not by WebSocket, which
+is what everyone expected, but by ADR 0018. Making the in-process invocation path (`invoke_with_db`,
+`db.transaction(...)`, `db.queries().<name>().run(...)`) a compatibility-committed dispatch surface
+created a second input shape with real, CI-exercised consumers. Alternative (a) — build L3 now — was
+rejected in August on the single ground that N = 1 transport shape cannot validate a
+transport-neutral design. N = 2 today, so ADR 0015 is now **Accepted (amended)** at alternative (a).
+
+Three facts the original ADR's argument rested on had gone stale in the month it sat open, and the
+amendment corrects them rather than editing the Context section in place:
+
+- `rate_limited_by_default` **is** read at runtime. `ratelimit/{rest,rpc}_ops_filter.rs` (#474)
+  resolve a request to its descriptor and consult the flag through
+  `RateLimitLayer::with_should_rate_limit_fn`, driven end to end by
+  `crates/cratestack-pg/tests/rate_limit_runtime.rs`. `@no_rate_limit` is not inert. This
+  *strengthens* the case for L3 rather than weakening it — #474 shipped the substance of
+  alternative (c) for one of the two flags (a resolver closure over the static table rather than the
+  matched descriptor) and it worked, leaving idempotency as the only concern that still cannot see
+  the op it is about to run. `extensions.md` §5 said the `rate_limit` Cargo feature "gates the
+  dispatch-layer codegen that reads `rate_limited_by_default`"; there is no such codegen reader, the
+  readers are runtime and ungated, and that bullet now says so.
+- `AuditSink` has a consumer — `SqlxRuntime::with_audit_sink` (#473), dispatched post-commit and
+  asserted by `banking_audit.rs`. Alternative (b) is still not adopted, but no longer on the grounds
+  that fan-out has no call site.
+- The open question "is `mcp` the non-HTTP dispatch path?" is answered: no. `mcp { }` parses as an
+  inert config block and neither `cratestack-macros` nor `cratestack-axum` mentions it.
+
+The work lands one concern at a time, each with byte-identical wire behaviour as its acceptance bar
+and the existing test suites as the regression oracle — unedited, which is the point. Slice 1
+(idempotency, #876) creates `cratestack-exec` at L3 and finally makes `@no_idempotency` do
+something after two release cycles of parsing and being ignored. Slice 2 (rate limiting, #877) waits
+for #871 so that rewrite is not re-landed against L3. Epic: #875.
+
+No code changes here — this is the decision, its amendment, and the pointers from the four design
+documents that had been describing `OpExecutor` as unbuilt.
+
+### `@no_idempotency` works, and idempotency admission moves to a new L3 crate — breaking
+
+`@no_idempotency` has parsed since before it was written down and done nothing at runtime —
+`crates/cratestack-axum/src/idempotency/mod.rs` documented the wiring as a follow-up that never
+landed, and `idempotency-rate-limit-declarative-surface.md` §6 declared its own ticket unopenable
+until `OpExecutor` had a concrete plan. It now works: a procedure carrying the attribute takes no
+idempotency reservation, on REST and on RPC.
+
+The mechanism is ADR 0015's first slice. A new crate, `cratestack-exec`, occupies layer 3 — the
+slot `docs/adr/layers.toml` recorded as "empty by design" — and owns the admission decision:
+
+```rust
+let admission = executor.admit(&OpInput { op, principal, idempotency_key, fingerprint, ctx }).await?;
+// Bypass | Reserved { token } | Replay(record) | InFlight | Conflict
+```
+
+`IdempotencyLayer` becomes the thin adapter around it that `rpc-transport.md` §4 predicted. It has
+two dependencies, `cratestack-core` and `uuid`, because `layering.md` §2's two L3 exclusions hold:
+the request fingerprint arrives already computed (method, path and content-type are transport
+facts), and no `&mut Transaction` crosses the boundary — audit persistence stays at L2, where its
+"the audit row commits with the mutation" guarantee requires it to be.
+
+**Nothing changes for an existing consumer.** Honouring the attribute is opt-in, via a resolver
+that reads the generated descriptors, mirroring how `@no_rate_limit` is wired:
+
+```rust
+IdempotencyLayer::new(store, ttl)
+    .with_op_resolver(build_rpc_op_resolver(cratestack_schema::axum::OPS))
+// or, for REST schemas:
+    .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS))
+```
+
+**A nested router must be told its mount point.** Descriptors record the path the schema
+declares (`/$procs/notify`); `MatchedPath` and `Uri::path` report the full path including the
+mount, so under `Router::nest("/api", router)` — the example this crate's own README gives —
+every lookup misses and the attribute silently does nothing. Use
+`build_rpc_op_resolver_with_prefix("/api", OPS)` / `build_rest_op_resolver_with_prefix(...)`.
+The prefix is supplied rather than inferred: nothing in a request says which leading segments
+were the mount, and guessing would trade a silent no-op for a silent mis-match.
+
+Two related fixes. `@no_idempotency(true)` used to pass `cratestack-cli check` with `schema OK`
+and then emit `idempotent_by_default: false` — the argument was accepted and silently did the
+opposite of what it said; arguments and duplicates are now parse errors. And a bypassed op no
+longer pays the 2 MiB idempotency request-body cap it was skipping the response cap for, so a
+`@no_idempotency` POST larger than that succeeds exactly as it would without the header.
+
+That second fix has a visible half worth calling out: an exempt op no longer runs the principal
+fingerprint either. If you install a resolver, a `@no_idempotency` request that previously drew
+#416's `412 Precondition Failed` — no `Authorization` header and no `ConnectInfo<SocketAddr>`
+peer — now succeeds, and stops contributing to that check's once-per-process warning. This is
+intended: the fingerprint exists to namespace a reservation, and an exempt op takes none. It
+only affects ops the schema marks exempt, and only once a resolver is installed.
+
+Install no resolver and every request looks unresolved, and unresolved **reserves** — so the layer
+guards exactly what it guarded before. That fail-closed direction is the inverse of the rate-limit
+filters' (a miss there throttles; a miss here reserves), because the two descriptor flags are
+polarised opposite ways. Both mean "when in doubt, apply the protection", and both are tested for
+the miss rather than only the hit.
+
+`RouteTransportDescriptor` gains `idempotent_by_default`, which RPC's `OpDescriptor` already had.
+**Breaking**: it is a required field on a struct that is not `#[non_exhaustive]`, so any
+hand-written literal needs the new field; in practice these are emitted by codegen.
+
+The three new types in `cratestack-exec` — `Admission`, `OpAdmission`, `OpInput` — *are*
+`#[non_exhaustive]`, which is deliberate and is the opposite call from the one above. Slices 2
+and 3 add exactly the variants and fields this would otherwise force a second breaking release
+for (a rate-limit refusal, a policy denial, the context slot `OpInput::ctx` reserves), and the
+crate is unreleased, so the marker costs nothing today. Build them with `OpInput::new` /
+`with_ctx` and `OpAdmission::new` / `unresolved` / the two `From` impls. This follows the
+existing house precedent (`CratestackError`, `OpKind`, `cratestack-sql`'s `ConflictTarget`,
+`StoreErrorPolicy`) rather than introducing it. One consequence is load-bearing: an external
+exhaustive `match` on `Admission` now needs a wildcard arm, and `cratestack-axum`'s is
+fail-closed — it refuses the request rather than falling into either arm that would run the
+handler. REST needed it because shipping this on RPC alone would
+have reproduced #474 — a fix that works on one transport and silently no-ops on the other.
+
+Still at L4 and unchanged: rate limiting (slice 2), audit fan-out, and row-level `@@allow` replay
+for subscriptions (slice 3). `invoke_with_db` keeps its signature; an idempotent variant is
+additive and separate.
+
+### breaking (#871): the rate-limit bucket keyspace is bounded
+
+`RateLimitLayer` runs before authentication, so the `Authorization` header its default key function
+hashes has been validated by nobody. Measured in the #846 security review: 20 requests with a
+rotating bearer token created 20 distinct Redis keys, each with a ≥60s TTL, and driving that to
+`maxmemory` made every subsequent write fail. #846 stopped that from *disabling* the limiter; this
+closes the primitive.
+
+The default key derivation now carries a **cardinality budget** that the store applies atomically
+with the token consumption (a separate lookup would race — N concurrent requests each read "under
+budget" and each mint a bucket):
+
+| Request carries | Bucket key | Scope | Cap | Charged past the cap |
+|---|---|---|---|---|
+| `VerifiedPrincipal` extension | `princ:<sha256>` | — | none | — |
+| `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<addr>` | **128** | the peer's own `ip:<addr>` bucket |
+| `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | **8192** | one `overflow` bucket |
+| `ConnectInfo` only | `ip:<addr>` | — | none | — |
+
+`<addr>` is the peer address for IPv4 and its **/64 prefix** for routable IPv6 — in the scope
+*and* in every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so
+leaving bucket keys un-aggregated let an attacker rotate the source address inside their own
+prefix and evade the cap entirely. **The accepted cost: two distinct hosts inside one routable
+IPv6 /64 share a throttling bucket.** IPv4 is not aggregated (a /24 under CGNAT is thousands of
+unrelated subscribers), and **IPv4-mapped addresses (`::ffff:a.b.c.d`, which is how a dual-stack
+`[::]` listener delivers every IPv4 client) are unwrapped to their IPv4 form before any
+aggregation** — without that, every IPv4 client in the world shares one `ip:::/64` bucket.
+
+Bucket key *shapes* are unchanged, so no existing bucket moves. Past the cap a caller is collapsed
+onto its own peer bucket rather than refused — refusing would hand an attacker a deterministic
+outage of every rate-limited route, the failure mode #846 was fought over. Under the cap, distinct
+callers still never share (#416).
+
+**Behaviour changes to know about:**
+
+- `InMemoryRateLimitStore` now evicts. Buckets idle for a full TTL (`cratestack_core::
+  bucket_ttl_secs`, the same horizon Redis's `EXPIRE` uses) are dropped by an amortised sweep, and
+  live buckets are capped at `DEFAULT_MAX_BUCKETS` (**100 000**) — past which a request for a
+  *new* identity is refused with `CratestackError::Internal`, a logical class that stays closed
+  under every `StoreErrorPolicy`. Existing buckets keep being served. `with_max_buckets(n)` raises
+  it; `without_max_buckets()` removes it.
+- `RateLimitStore` gains `consume_bounded`. It has a default that delegates to `consume` and
+  reports `Charged::Unbounded`, so **third-party stores keep compiling and behaving identically** —
+  but they are not bounded, and the layer says so in a throttled `WARN`.
+- New: `RateLimitBucketBudget`, `VerifiedPrincipal`, `UnverifiedAuthPolicy`, and the builder methods
+  `with_bucket_budget` / `without_bucket_budget` / `with_unverified_auth_policy`.
+  `RateLimitService` moved to its own module (the re-export path is unchanged).
+- `RedisRateLimitStore` writes one new key kind, `<prefix>:rls:<sha256(scope)>` — a scope's member
+  set, a `ZSET` scored by last use. `consume` (no budget) creates none.
+- **`window` (default 60s) is a floor on a sliding per-credential slot, not a fixed window.** Each
+  admitted credential holds a slot for `max(window, bucket_ttl_secs(config))` after it was **last
+  used**; slots expire individually. So a slot always outlives the bucket it admitted (no fresh
+  generation can open beneath a live one), an actively-used caller never loses its slot, and a peer
+  whose tokens rotate reclaims the slots of credentials it stopped using instead of being capped at
+  its first `max_distinct` forever. `cratestack_core::scope_ttl_secs` and `MAX_TTL_SECS` are new and
+  public at the crate root; a `Duration::MAX` window is now clamped rather than failing every request.
+- **`InMemoryRateLimitStore`'s cap now bounds the scope index too.** Admission is gated on the
+  bucket being creatable, so a request refused at the cap no longer interns a scope entry and a
+  member key on its way out. New `#[doc(hidden)] _scope_count()` seam alongside `_bucket_count()`.
+
+**Not bounded, stated plainly:** distinct peers (a botnet), stores that do not implement
+`consume_bounded`, `with_key_fn` overrides (the layer cannot see the derivation, so bounding it is
+the consumer's job), Redis Cluster (three un-hash-tagged keys → `CROSSSLOT`, refused loudly rather
+than hash-tagged onto one node), and distinct hosts sharing one routable IPv6 /64.
+
+Full write-up, including why verified principals are opt-in rather than the default and why IPv6 is
+aggregated but IPv4 is not: `docs/design/ratelimit-bucket-cardinality.md`.
+
 ## 0.11.0 (2026-09-03)
 
 ### The Marketplace item page lags a successful publish

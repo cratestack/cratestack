@@ -1,4 +1,7 @@
 //! cratestack#154: `rate_limited_by_default` on the generated `OpDescriptor`.
+//! The `idempotent_by_default` half lives in the sibling
+//! `tests_idempotency.rs` (#876) — one concern per file, and together
+//! the two were 40 lines past the workspace ceiling.
 //! Mirrors the fixture-parsing pattern already established in
 //! `crate::procedure::tests` (`parse_first_procedure`) — parsing a real
 //! `.cstack` snippet through `cratestack_parser::parse_schema` exercises the
@@ -8,14 +11,14 @@
 
 use super::{generate_model_op_descriptors, generate_procedure_op_descriptor};
 
-fn parse_first_procedure(source: &str) -> cratestack_core::Procedure {
+pub(super) fn parse_first_procedure(source: &str) -> cratestack_core::Procedure {
     cratestack_parser::parse_schema(source)
         .expect("fixture schema should parse and validate")
         .procedures
         .remove(0)
 }
 
-fn parse_first_model(source: &str) -> cratestack_core::Model {
+pub(super) fn parse_first_model(source: &str) -> cratestack_core::Model {
     cratestack_parser::parse_schema(source)
         .expect("fixture schema should parse and validate")
         .models
@@ -34,7 +37,7 @@ mutation procedure createPayment(args: Ping): Ping
   @no_rate_limit
 "#;
 
-const ORDINARY_PROCEDURE_SCHEMA: &str = r#"
+pub(super) const ORDINARY_PROCEDURE_SCHEMA: &str = r#"
 type Ping {
   nonce String
 }
@@ -42,7 +45,7 @@ type Ping {
 mutation procedure createPayment(args: Ping): Ping
 "#;
 
-const MODEL_SCHEMA: &str = r#"
+pub(super) const MODEL_SCHEMA: &str = r#"
 model Widget {
   id Int @id
 }

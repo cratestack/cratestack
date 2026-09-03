@@ -57,12 +57,12 @@ pub(super) fn is_streamed_response(response: &Response) -> bool {
 /// sits next to the marker it keys off (and to keep `service.rs` under
 /// the workspace's 200-line ceiling). Moved verbatim in cratestack#846.
 pub(super) async fn release_streamed_reservation(
-    store: &dyn super::store::IdempotencyStore,
+    executor: &cratestack_exec::OpExecutor,
     principal: &str,
     key: &str,
     token: uuid::Uuid,
 ) {
-    let _ = store.release(principal, key, token).await;
+    executor.release(principal, key, token).await;
     tracing::warn!(
         target: "cratestack",
         cratestack_operation = "idempotency",

@@ -1,9 +1,15 @@
-use cratestack_core::{CratestackError, RateLimitDecision};
+use cratestack_core::{BoundedOutcome, Charged, CratestackError, RateLimitDecision};
 use redis::Value as RedisValue;
 
-pub(super) fn parse_consume_outcome(
-    value: RedisValue,
-) -> Result<RateLimitDecision, CratestackError> {
+/// Parses the script's `{tag, value, charged}` reply.
+///
+/// The third slot is **required**, not optional-with-a-default: the only
+/// producer is `super::scripts::CONSUME_LUA`, which always emits it, so a
+/// two-slot reply means we are talking to a script we do not recognise.
+/// Defaulting there would silently report `Requested` for a charge that
+/// may have been a fallback — a bound that reports itself as working when
+/// it is not is worse than one that errors (cratestack#871).
+pub(super) fn parse_bounded_outcome(value: RedisValue) -> Result<BoundedOutcome, CratestackError> {
     let items = match value {
         RedisValue::Array(items) => items,
         other => {
@@ -14,19 +20,34 @@ pub(super) fn parse_consume_outcome(
     };
     let mut iter = items.into_iter();
     let tag = next_string(&mut iter, "tag")?;
-    match tag.as_str() {
+    let decision = match tag.as_str() {
         "allowed" => {
             let remaining = next_u32_decimal(&mut iter, "remaining")?;
-            Ok(RateLimitDecision::Allowed { remaining })
+            RateLimitDecision::Allowed { remaining }
         }
         "throttled" => {
             let retry_after_secs = next_u32_decimal(&mut iter, "retry_after_secs")?;
-            Ok(RateLimitDecision::Throttled { retry_after_secs })
+            RateLimitDecision::Throttled { retry_after_secs }
         }
-        other => Err(CratestackError::Internal(format!(
-            "redis rate limit: unexpected outcome tag: {other}"
-        ))),
-    }
+        other => {
+            return Err(CratestackError::Internal(format!(
+                "redis rate limit: unexpected outcome tag: {other}"
+            )));
+        }
+    };
+    let charged = match next_string(&mut iter, "charged")?.as_str() {
+        "requested" => Charged::Requested,
+        // The script cannot tell a per-peer scope from the process-global
+        // one and does not need to; `cratestack_axum` refines this into
+        // `Charged::Overflow` where that distinction is known.
+        "fallback" => Charged::Fallback,
+        other => {
+            return Err(CratestackError::Internal(format!(
+                "redis rate limit: unexpected charged tag: {other}"
+            )));
+        }
+    };
+    Ok(BoundedOutcome::new(decision, charged))
 }
 
 pub(super) fn next_string<I: Iterator<Item = RedisValue>>(

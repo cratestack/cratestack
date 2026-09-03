@@ -6,6 +6,7 @@
 //! dispatch arms ([`subscribe_dispatch`]). The top-level macro picks
 //! which slice is populated at emission time based on `Schema.transport`.
 
+mod idempotency;
 mod op_descriptors;
 mod rate_limit;
 mod rest;

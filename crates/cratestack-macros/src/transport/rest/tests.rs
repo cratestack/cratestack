@@ -1,5 +1,8 @@
 //! cratestack#474: `rate_limited_by_default` on the generated
-//! `RouteTransportDescriptor`. Mirrors
+//! `RouteTransportDescriptor`. The `idempotent_by_default` half lives
+//! in the sibling `tests_idempotency.rs` (#876) — one concern per file,
+//! and together the two were 78 lines past the workspace ceiling.
+//! Mirrors
 //! `transport::op_descriptors::tests` (the RPC counterpart) so REST and
 //! RPC schemas are pinned to the same `@no_rate_limit` semantics — a fix
 //! that only covers one transport silently no-ops for the other.
@@ -9,14 +12,14 @@ use super::{
     generate_procedure_transport_constants,
 };
 
-fn parse_first_procedure(source: &str) -> cratestack_core::Procedure {
+pub(super) fn parse_first_procedure(source: &str) -> cratestack_core::Procedure {
     cratestack_parser::parse_schema(source)
         .expect("fixture schema should parse and validate")
         .procedures
         .remove(0)
 }
 
-fn parse_first_model(source: &str) -> cratestack_core::Model {
+pub(super) fn parse_first_model(source: &str) -> cratestack_core::Model {
     cratestack_parser::parse_schema(source)
         .expect("fixture schema should parse and validate")
         .models
@@ -35,7 +38,7 @@ mutation procedure createPayment(args: Ping): Ping
   @no_rate_limit
 "#;
 
-const ORDINARY_PROCEDURE_SCHEMA: &str = r#"
+pub(super) const ORDINARY_PROCEDURE_SCHEMA: &str = r#"
 type Ping {
   nonce String
 }
@@ -43,7 +46,7 @@ type Ping {
 mutation procedure createPayment(args: Ping): Ping
 "#;
 
-const MODEL_SCHEMA: &str = r#"
+pub(super) const MODEL_SCHEMA: &str = r#"
 model Widget {
   id Int @id
 }

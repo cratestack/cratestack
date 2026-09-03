@@ -7,7 +7,10 @@ use std::net::SocketAddr;
 use axum::extract::{ConnectInfo, Request};
 use http::Request as HttpRequest;
 
+use super::budget::RateLimitBucketBudget;
+use super::budget::warn::BudgetWarnings;
 use super::key_fn::default_key_fn;
+use super::scope::{BudgetScope, KeyDerivation, UnverifiedAuthPolicy};
 
 fn with_connect_info(mut req: Request, addr: &str) -> Request {
     let socket_addr: SocketAddr = addr.parse().unwrap();
@@ -15,59 +18,68 @@ fn with_connect_info(mut req: Request, addr: &str) -> Request {
     req
 }
 
+/// The default configuration, which is what every pre-cratestack#871
+/// assertion below is still asserting against.
+fn derive(req: &Request) -> Result<KeyDerivation, cratestack_core::CratestackError> {
+    default_key_fn(
+        req,
+        RateLimitBucketBudget::default(),
+        UnverifiedAuthPolicy::default(),
+        &BudgetWarnings::default(),
+    )
+}
+
+fn bearer(token: &str) -> Request {
+    Request::from(
+        HttpRequest::builder()
+            .header("authorization", token)
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    )
+}
+
+fn bare() -> Request {
+    Request::from(
+        HttpRequest::builder()
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    )
+}
+
 #[test]
 fn default_key_from_authorization_header() {
-    let req = HttpRequest::builder()
-        .header("authorization", "Bearer token123")
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req = Request::from(req);
-
-    let key = default_key_fn(&req).expect("authorization header present");
+    let derivation = derive(&bearer("Bearer token123")).expect("authorization header present");
 
     // Should hash the Authorization header value with "auth:" prefix.
-    assert!(key.starts_with("auth:"));
-    assert_ne!(key, "anonymous");
+    assert!(derivation.key.starts_with("auth:"));
+    assert_ne!(derivation.key, "anonymous");
     // Should be consistent (same input → same output).
-    let req2 = HttpRequest::builder()
-        .header("authorization", "Bearer token123")
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req2 = Request::from(req2);
-    assert_eq!(
-        key,
-        default_key_fn(&req2).expect("authorization header present")
-    );
+    let again = derive(&bearer("Bearer token123")).expect("authorization header present");
+    assert_eq!(derivation.key, again.key);
 }
 
 #[test]
 fn default_key_uses_connect_info_when_no_auth_header() {
-    let req = HttpRequest::builder()
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req = with_connect_info(Request::from(req), "192.0.2.42:12345");
+    let req = with_connect_info(bare(), "192.0.2.42:12345");
 
-    let key = default_key_fn(&req).expect("ConnectInfo present");
+    let derivation = derive(&req).expect("ConnectInfo present");
 
     // Should use the verified peer address with "ip:" prefix instead of
     // "anonymous".
-    assert_eq!(key, "ip:192.0.2.42");
+    assert_eq!(derivation.key, "ip:192.0.2.42");
+    // A verified peer address is not caller-mintable, so it needs no
+    // cardinality budget (cratestack#871).
+    assert!(derivation.budget.is_none());
 }
 
 #[test]
 fn different_connect_info_addrs_produce_different_rate_limit_keys() {
-    let req1 = HttpRequest::builder()
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req1 = with_connect_info(Request::from(req1), "192.0.2.1:1");
-
-    let req2 = HttpRequest::builder()
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req2 = with_connect_info(Request::from(req2), "192.0.2.2:1");
-
-    let key1 = default_key_fn(&req1).expect("ConnectInfo present");
-    let key2 = default_key_fn(&req2).expect("ConnectInfo present");
+    let key1 = derive(&with_connect_info(bare(), "192.0.2.1:1"))
+        .expect("ConnectInfo present")
+        .key;
+    let key2 = derive(&with_connect_info(bare(), "192.0.2.2:1"))
+        .expect("ConnectInfo present")
+        .key;
 
     // Two distinct peers without Authorization headers must produce
     // different rate-limit keys to avoid sharing a rate-limit bucket.
@@ -78,19 +90,23 @@ fn different_connect_info_addrs_produce_different_rate_limit_keys() {
 
 #[test]
 fn authorization_header_takes_precedence_over_connect_info() {
-    let req = HttpRequest::builder()
-        .header("authorization", "Bearer token123")
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req = with_connect_info(Request::from(req), "192.0.2.42:1");
+    let req = with_connect_info(bearer("Bearer token123"), "192.0.2.42:1");
 
-    let key = default_key_fn(&req).expect("authorization header present");
+    let derivation = derive(&req).expect("authorization header present");
 
     // Authorization header should take precedence; peer address should be
-    // ignored.
-    assert!(key.starts_with("auth:"));
-    assert_ne!(key, "ip:192.0.2.42");
-    assert_ne!(key, "anonymous");
+    // ignored for the KEY, and used for the budget SCOPE instead.
+    assert!(derivation.key.starts_with("auth:"));
+    assert_ne!(derivation.key, "ip:192.0.2.42");
+    assert_ne!(derivation.key, "anonymous");
+    let budget = derivation.budget.expect("unverified auth must be budgeted");
+    assert_eq!(budget.scope_key, "peer:192.0.2.42");
+    assert_eq!(budget.fallback_key, "ip:192.0.2.42");
+    assert_eq!(
+        budget.max_distinct,
+        RateLimitBucketBudget::DEFAULT_MAX_DISTINCT_PER_PEER
+    );
+    assert_eq!(derivation.scope, Some(BudgetScope::Peer));
 }
 
 /// cratestack#416: the pre-existing default silently fell back to a shared
@@ -99,12 +115,7 @@ fn authorization_header_takes_precedence_over_connect_info() {
 /// now refuse the request instead of manufacturing a shared bucket.
 #[test]
 fn default_key_refuses_when_no_connect_info_extension() {
-    let req = HttpRequest::builder()
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req = Request::from(req);
-
-    let error = default_key_fn(&req)
+    let error = derive(&bare())
         .expect_err("neither Authorization nor ConnectInfo present must not succeed");
     assert_eq!(error.status_code(), http::StatusCode::PRECONDITION_FAILED);
 }
@@ -119,21 +130,25 @@ fn spoofed_forwarded_headers_are_ignored_without_connect_info() {
     // identically (cratestack#416: no longer a shared "anonymous" bucket,
     // but still never a bucket keyed off the attacker-controlled header
     // value).
-    let req1 = HttpRequest::builder()
-        .header("x-forwarded-for", "203.0.113.1")
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req1 = Request::from(req1);
+    let req1 = Request::from(
+        HttpRequest::builder()
+            .header("x-forwarded-for", "203.0.113.1")
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    );
+    let req2 = Request::from(
+        HttpRequest::builder()
+            .header("x-forwarded-for", "203.0.113.2")
+            .body(axum::body::Body::empty())
+            .unwrap(),
+    );
 
-    let req2 = HttpRequest::builder()
-        .header("x-forwarded-for", "203.0.113.2")
-        .body(axum::body::Body::empty())
-        .unwrap();
-    let req2 = Request::from(req2);
-
-    let key1 = default_key_fn(&req1);
-    let key2 = default_key_fn(&req2);
-
-    assert!(key1.is_err(), "spoofable header must not be trusted");
-    assert!(key2.is_err(), "spoofable header must not be trusted");
+    assert!(
+        derive(&req1).is_err(),
+        "spoofable header must not be trusted"
+    );
+    assert!(
+        derive(&req2).is_err(),
+        "spoofable header must not be trusted"
+    );
 }

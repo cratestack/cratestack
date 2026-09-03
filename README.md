@@ -201,6 +201,12 @@ ship together — every request/response feature lands on both.
 JWKS), `cratestack-outbox`, `cratestack-service` (env config, health checks,
 graceful shutdown), and `cratestack-migrate`.
 
+`cratestack-exec` is the transport-neutral execution layer (L3) that owns
+idempotency admission; you don't depend on it directly — it arrives transitively
+through whichever facade your schema selected, and the HTTP entry point stays
+`cratestack_axum::idempotency::IdempotencyLayer`, now a thin adapter over
+`OpExecutor::admit`.
+
 **npm packages** — [`@cratestack/cli`](https://www.npmjs.com/package/@cratestack/cli),
 `@cratestack/ts-types`, `@cratestack/runtime-fetch`, `@cratestack/runtime-axios`,
 `@cratestack/adapter-tanstack-query`, `@cratestack/adapter-rtk`,

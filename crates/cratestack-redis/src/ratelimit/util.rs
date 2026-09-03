@@ -1,11 +1,47 @@
 use cratestack_core::CratestackError;
 
+use sha2::{Digest, Sha256};
+
 pub(super) fn nibble_hex(nibble: u8) -> char {
     match nibble {
         0..=9 => (b'0' + nibble) as char,
         10..=15 => (b'a' + nibble - 10) as char,
         _ => unreachable!("nibble must be 0..=15"),
     }
+}
+
+/// Lowercase sha256 hex of a caller-supplied key.
+///
+/// Hashing keeps Redis keys a fixed length and sidesteps escaping around
+/// `:` in user-supplied values — same shape as the idempotency store. It
+/// is NOT a privacy measure: the input is already a hash or a peer address.
+pub(super) fn key_hash(key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(key.as_bytes());
+    let digest = hasher.finalize();
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        out.push(nibble_hex(byte >> 4));
+        out.push(nibble_hex(byte & 0x0f));
+    }
+    out
+}
+
+/// How much of a bucket hash goes into a scope's member set.
+///
+/// 16 hex chars is 64 bits. Collisions inside ONE scope's set of at most a
+/// few thousand members are ~2^-40 by the birthday bound, and a collision
+/// costs an attacker nothing they could not get by simply not rotating the
+/// header — it lets one bucket look already-admitted. In exchange the set
+/// is a quarter the size, which matters because the set is the memory this
+/// whole mechanism adds.
+pub(super) const SCOPE_MEMBER_HEX_LEN: usize = 16;
+
+/// The member string for `key` inside a scope set.
+pub(super) fn scope_member(key: &str) -> String {
+    let mut hash = key_hash(key);
+    hash.truncate(SCOPE_MEMBER_HEX_LEN);
+    hash
 }
 
 /// Public message for a transport-class failure. Fixed text, never the

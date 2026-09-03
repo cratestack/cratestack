@@ -460,6 +460,11 @@ HTTP-only `tower::Layer`s. They move into a small `OpExecutor` service in
 `Layer`s become thin adapters around that service; the WS dispatcher calls
 the service directly.
 
+**Status update 2026-09-03:** this is being built. [ADR
+0015](../adr/0015-op-executor-l3.md) is Accepted (amended) at alternative (a) —
+L3 lands in slices as `cratestack-exec`, starting with idempotency (#876); §6.5's
+WebSocket gate is no longer the trigger. Epic: #875.
+
 ## 5. Canonical request signing
 
 `canonical_request_string` in `cratestack-core` is unchanged — only the

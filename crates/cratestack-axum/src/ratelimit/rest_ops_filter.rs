@@ -98,6 +98,7 @@ mod tests {
             method: "POST",
             path: "/$procs/createPayment",
             capabilities: CAPS,
+            idempotent_by_default: false,
             rate_limited_by_default: false,
         },
         RouteTransportDescriptor {
@@ -105,6 +106,7 @@ mod tests {
             method: "GET",
             path: "/widgets/{id}",
             capabilities: CAPS,
+            idempotent_by_default: true,
             rate_limited_by_default: true,
         },
     ];

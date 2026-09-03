@@ -74,6 +74,84 @@ let app = axum::Router::new()
 
 The crate exports `IDEMPOTENCY_TABLE_DDL` for the SQL store; see the [Idempotency guide](https://cratestack.dev/guides/idempotency) for the table contract and replay semantics.
 
+### Honoring `@no_idempotency`
+
+`IdempotencyLayer` has the same shape and the same opt-in: by default it reserves for every
+keyed request on a mutating method, so a procedure marked `@no_idempotency` in your schema is
+**not** exempt unless you install an op resolver that reads the generated descriptors.
+
+**Know the blast radius before you install one.** The resolver exempts everything the schema
+marks `idempotent_by_default`, which is *two* groups, not one: procedures you annotated
+`@no_idempotency`, **and every read op** — `query procedure`s and model `list`/`get` — because
+reads are treated as inherently safe to repeat (`cratestack-core/src/transport.rs`).
+
+Do not read "read op" as "`GET` request". Under `transport rpc` every op is dispatched by
+`POST /rpc/{op_id}`, including the reads, so those reads *do* reach the layer (`POST` is an
+idempotency-target method) and *are* exempted by a resolver. Under REST the reads are `GET`
+and never reach the layer in the first place, so there the exemption is a no-op. Nothing stops
+a `query procedure`'s handler from writing, so if you have one that does, installing a resolver
+silently removes its duplicate-execution protection — and on RPC that is a live path, not a
+theoretical one. Either make it a `mutation procedure` or
+do not install the resolver on that router.
+
+```rust
+use cratestack_axum::idempotency::{
+    IdempotencyLayer, build_rpc_op_resolver, build_rest_op_resolver,
+};
+
+// `transport rpc` schemas: resolver keys off the `/rpc/{op_id}` path against
+// the generated `OPS` slice.
+let app = router.layer(
+    IdempotencyLayer::new(store.clone(), ttl)
+        .with_op_resolver(build_rpc_op_resolver(cratestack_schema::axum::OPS)),
+);
+
+// REST-transport schemas: resolver keys off `axum::extract::MatchedPath`
+// against the generated `ROUTE_TRANSPORTS` slice.
+let app = router.route_layer(
+    IdempotencyLayer::new(store, ttl)
+        .with_op_resolver(build_rest_op_resolver(cratestack_schema::axum::ROUTE_TRANSPORTS)),
+);
+```
+
+**A nested router needs its mount prefix**, including the `.nest("/api", router)` shown in the
+Idempotency section above. Both resolvers compare against the path the *schema* declares
+(`/$procs/notify`, `/rpc/procedure.notify`), while `MatchedPath` and `Uri::path` report the
+full path including the mount. Mismatch means every lookup misses, every op resolves
+unresolved, and `@no_idempotency` silently does nothing — safe, because a miss reserves, but
+inert. Tell the resolver where you mounted it:
+
+```rust
+use cratestack_axum::idempotency::{
+    build_rest_op_resolver_with_prefix, build_rpc_op_resolver_with_prefix,
+};
+
+let app = axum::Router::new()
+    .nest("/api", router)
+    .layer(IdempotencyLayer::new(store, ttl).with_op_resolver(
+        build_rpc_op_resolver_with_prefix("/api", cratestack_schema::axum::OPS),
+    ));
+```
+
+The prefix is forgiving about spelling (`"/api"`, `"/api/"`, `"api"`) and strict about
+boundaries: `/apiary/...` is not under `/api`, and resolves unresolved rather than being
+matched on a truncated remainder. It is supplied rather than inferred because nothing in a
+request says which leading segments were the mount — guessing would trade a silent no-op for a
+silent mis-match.
+
+**The fail-closed direction is inverted relative to rate limiting, and that is deliberate.**
+A rate-limit filter miss *throttles*; an idempotency resolver miss *reserves*. Both mean "when
+in doubt, apply the protection" — the two descriptor flags are simply polarised opposite ways
+(`rate_limited_by_default: true` means "protect", `idempotent_by_default: true` means "skip").
+The practical consequence: installing **no** resolver reserves exactly the set of requests the
+layer reserved before `OpExecutor` existed, so the upgrade is behaviour-preserving by
+construction.
+
+The decision itself lives in `cratestack-exec` (L3, ADR 0015); this layer derives the
+principal, parses the key, hashes the request, and renders the answer. `POST /rpc/batch` has
+the same known limitation as its rate-limit counterpart — the resolver runs before the batch
+body is decoded, so a batch always reserves regardless of what is inside it.
+
 ## Rate Limiting
 
 Token-bucket layer with a pluggable store. `InMemoryRateLimitStore` is the default; production multi-replica clusters back this with Redis.
@@ -89,6 +167,51 @@ let app = axum::Router::new()
 ```
 
 `RateLimitConfig` carries `burst` (max in-flight) and `refill_per_second`. `RateLimitDecision` is either `Allowed { remaining }` or `Throttled { retry_after_secs }`.
+
+### How many buckets a caller can create (#871)
+
+This layer runs **before** authentication, so the `Authorization` header its default key function
+hashes is unverified. Without a bound that is an amplification primitive: rotate the header and mint
+one store key per request, each with a ≥60s TTL.
+
+So the default derivation carries a cardinality budget, applied by the store *atomically* with the
+token consumption:
+
+| Request carries | Bucket key | Scope | Cap (default) | Charged past the cap |
+|---|---|---|---|---|
+| `VerifiedPrincipal` extension | `princ:<sha256>` | — | none | — |
+| `Authorization` + `ConnectInfo` | `auth:<sha256>` | `peer:<addr>` | 128 | the peer's own `ip:<addr>` bucket |
+| `Authorization`, no `ConnectInfo` | `auth:<sha256>` | `global` | 8192 | one `overflow` bucket |
+| `ConnectInfo` only | `ip:<addr>` | — | none | — |
+| neither | refused, `412` (#416) | | | |
+
+`<addr>` is the peer address for IPv4 and its **/64 prefix** for IPv6 — in the scope *and* in every bucket key. A /64 is the smallest block routinely delegated to one subscriber, so without aggregation an attacker rotating the source address inside their own prefix evades the cap entirely (measured: 200 buckets with a token, 200 buckets all allowed without one). The accepted cost, stated rather than hidden: two distinct hosts inside one /64 share a throttling bucket. IPv4 is not aggregated — a /24 under CGNAT is thousands of unrelated subscribers.
+
+The `window` (default **60s**) is a **floor** on how long an admitted credential holds its slot, not a fixed window that resets the scope: the store raises it to at least the bucket TTL, so a slot always outlives the bucket it admitted and no fresh generation can open beneath a live one. The window **slides per credential** — each slot expires that long after it was last used — so an actively-used caller never loses its slot while its bucket is alive, and a peer whose tokens rotate reclaims the slots of credentials it stopped using instead of being capped at its first 128 forever.
+
+Past the cap a caller is **collapsed onto its own peer bucket, not refused** — refusing there would
+hand an attacker a deterministic outage of every rate-limited route. Under the cap, distinct callers
+still never share (#416). `InMemoryRateLimitStore` additionally sweeps buckets idle for a full TTL
+and caps live buckets at `DEFAULT_MAX_BUCKETS` (100 000), failing closed with a logical-class error
+past that; raise it with `with_max_buckets` or drop it with `without_max_buckets`.
+
+```rust
+use std::time::Duration;
+use cratestack_axum::ratelimit::{RateLimitBucketBudget, UnverifiedAuthPolicy};
+
+let layer = RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+    // tune the caps / window
+    .with_bucket_budget(RateLimitBucketBudget::default().max_distinct_per_peer(32))
+    // or key unverified traffic on the peer only — strictly stronger, at the
+    // cost of collapsing everyone behind one NAT egress into one bucket
+    .with_unverified_auth_policy(UnverifiedAuthPolicy::Ignore);
+```
+
+**Not bounded**, stated plainly: distinct peers (a botnet), a third-party `RateLimitStore` that does
+not implement `consume_bounded` (the layer logs a throttled `WARN` and behaves exactly as before),
+Redis Cluster, and distinct hosts sharing one routable IPv6 /64. A `with_key_fn` override carries no budget —
+bounding a key function the layer cannot see is the consumer's job. Full write-up:
+`docs/design/ratelimit-bucket-cardinality.md`.
 
 ### When the store itself fails
 

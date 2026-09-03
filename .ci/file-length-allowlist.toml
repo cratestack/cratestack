@@ -665,13 +665,6 @@ added = "2026-08-29"
 reason = "pre-existing; split by concern (extract inline tests first)"
 
 [[file]]
-path = "crates/cratestack-macros/src/transport/rest.rs"
-lines = 213
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-macros/src/model/row_sqlite.rs"
 lines = 211
 issue = "#TBD"

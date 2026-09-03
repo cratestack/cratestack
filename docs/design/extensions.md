@@ -234,10 +234,29 @@ doesn't know what Cargo features the consuming crate has.
   (the enforcement check in #161 evaluates `cfg!(feature = "rate_limit")`
   against `cratestack-macros`' own compiled features — see §2's revised
   mechanism), forwarded down from the `cratestack-pg`/`cratestack-sqlite`
-  facades via `rate_limit = ["cratestack-macros/rate_limit"]`. Gates the
-  dispatch-layer codegen that reads `rate_limited_by_default` — i.e. it
-  unlocks the `@no_rate_limit` procedure attribute and the
-  `rate_limited_by_default` field on the generated `OpDescriptor`.
+  facades via `rate_limit = ["cratestack-macros/rate_limit"]`. It unlocks the
+  `@no_rate_limit` procedure attribute — and *only* the attribute. The
+  `rate_limited_by_default` field is emitted unconditionally on the generated
+  `OpDescriptor`/`RouteTransportDescriptor` and simply always defaults to `true`
+  without the feature.
+  **Corrected 2026-09-03:** this bullet previously said the feature "gates the
+  dispatch-layer codegen that reads `rate_limited_by_default`". Two things were
+  wrong with that. First, the gate is on the attribute, not the field:
+  `transport/rest.rs` and `transport/rate_limit.rs` carry no `cfg` at all —
+  `procedure_rate_limited_by_default` returns `true` unless it sees the raw
+  `@no_rate_limit` attribute — and the actual feature check is a single
+  `cfg!(feature = "rate_limit")` in `include/extension_gate.rs:93`, which rejects
+  the `extension rate_limit { }` declaration the parser requires before the
+  attribute is legal. Second, there was no reader when that sentence was written
+  and there is no *codegen* reader now either. The readers that shipped are
+  runtime, in `cratestack-axum`, and are not feature-gated by this flag:
+  `ratelimit/rest_ops_filter.rs` and `ratelimit/rpc_ops_filter.rs`
+  (cratestack#474) resolve a request to its descriptor and consult
+  `rate_limited_by_default`, installed onto the layer via
+  `RateLimitLayer::with_should_rate_limit_fn` by the application at startup.
+  `@no_rate_limit` therefore has a real runtime effect today — driven end-to-end
+  by `crates/cratestack-pg/tests/rate_limit_runtime.rs` — wherever that layer is
+  installed.
   **Revised during #154's implementation:** the paragraph below (and §2's
   "Consequence" note above it) originally proposed that this same feature
   would also move `cratestack-axum`'s existing `RateLimitLayer`/
@@ -257,8 +276,8 @@ doesn't know what Cargo features the consuming crate has.
   or requires a specific one.
 - **Codegen surface:** a `rate_limited_by_default: bool` (or per-procedure
   descriptor field) analogous to `OpDescriptor.idempotent_by_default`
-  from the RPC transport design — read by the dispatcher, not baked into
-  a limit value.
+  from the RPC transport design — read by the runtime ops filters
+  (`ratelimit/{rest,rpc}_ops_filter.rs`), not baked into a limit value.
 
 ## 6. Extension: `pgvector`
 
