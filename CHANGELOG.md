@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 (2026-09-03)
+
 ### The Marketplace item page lags a successful publish
 
 After `publish (Marketplace)` succeeded for v0.10.1, the listing page returned 404 for several
