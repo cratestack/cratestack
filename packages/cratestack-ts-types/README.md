@@ -4,6 +4,9 @@ Shared TypeScript interfaces for CrateStack's generated TypeScript RPC client (`
 schemas) and for the rest of the `@cratestack/*` npm family (`link-*`, `runtime-*`, `validator-*`,
 `adapter-*`).
 
+React Native compatibility evidence is tracked in
+[`docs/react-native-compatibility.md`](../../docs/react-native-compatibility.md).
+
 Pinned local copies of the wire/link contract generated into every CrateStack `transport rpc`
 project by `crates/cratestack-client-typescript/templates/src/rpc-links.ts.j2` and
 `rpc-runtime.ts.j2` ([issue #182](https://github.com/cratestack/cratestack/issues/182)). Kept as

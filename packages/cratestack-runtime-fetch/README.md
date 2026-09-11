@@ -4,6 +4,9 @@ A `typeof fetch`-compatible transport for CrateStack's generated TypeScript RPC 
 (`transport rpc` schemas). With no options it's byte-identical to the global `fetch`; its only
 behavior is an optional per-call `timeoutMs`.
 
+React Native compatibility evidence is tracked in
+[`docs/react-native-compatibility.md`](../../docs/react-native-compatibility.md).
+
 ## Usage
 
 ```ts

@@ -6,6 +6,9 @@ CrateStack's generated TypeScript RPC clients: `@cratestack/cbor-node`
 browser — one `npm install`, one import path, the environment picks the
 implementation. The final piece of [epic #285](https://github.com/cratestack/cratestack/issues/285).
 
+React Native compatibility evidence is tracked in
+[`docs/react-native-compatibility.md`](../../docs/react-native-compatibility.md).
+
 ```sh
 npm install @cratestack/cbor
 ```

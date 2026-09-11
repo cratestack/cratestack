@@ -7,6 +7,9 @@ generated TypeScript RPC client (`transport rpc` schemas), shipped as an
 override — so it composes with `@cratestack/link-logger`, a retry link, or an auth-refresh link
 instead of clobbering them.
 
+React Native compatibility evidence is tracked in
+[`docs/react-native-compatibility.md`](../../docs/react-native-compatibility.md).
+
 Multiple unary calls issued in the same tick collapse into a single `POST /rpc/batch` request
 instead of firing one `POST /rpc/{op_id}` each.
 
