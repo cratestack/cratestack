@@ -200,11 +200,17 @@ pub(super) fn validate_enums_collecting(schema: &Schema, errors: &mut Vec<Schema
 
 pub(super) fn validate_auth(
     schema: &Schema,
+    source: &str,
     type_names: &BTreeSet<String>,
     page_item_type_names: &BTreeSet<String>,
     model_names: &BTreeSet<String>,
 ) -> Result<(), SchemaError> {
     if let Some(auth) = &schema.auth {
+        validate_reserved_identifier(
+            &auth.name,
+            super::reserved_idents::block_name_span(source, auth.span, &auth.name)?,
+            &format!("auth block `{}`", auth.name),
+        )?;
         validate_field_column_collisions(&auth.fields, "auth block", &auth.name)?;
 
         let mut fields = BTreeSet::new();

@@ -45,6 +45,8 @@ mod tests_model_internal;
 mod tests_model_unique;
 #[cfg(test)]
 mod tests_multi_error;
+#[cfg(test)]
+mod tests_multifile_reserved_keywords;
 mod tests_patch_touch_flag_collisions;
 #[cfg(test)]
 mod tests_procedure_handler_collisions;
@@ -107,6 +109,13 @@ pub use entry::{
 /// drifted from the LSP's hand-copied one before this accessor existed).
 pub fn builtin_type_names() -> &'static [&'static str] {
     validate::builtin_type_names()
+}
+
+/// Words reserved for the multi-file schema grammar. Consumers that accept
+/// prospective identifiers, such as the LSP rename flow, must reject this
+/// canonical list before producing source the parser cannot read.
+pub fn reserved_multi_file_keywords() -> &'static [&'static str] {
+    validate::multi_file_schema_keywords()
 }
 
 #[cfg(test)]

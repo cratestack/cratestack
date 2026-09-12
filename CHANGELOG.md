@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Reserve `part` and `import` for multi-file schemas — breaking (#922)
+
+Every `.cstack` identifier position now rejects the exact, case-sensitive words
+`part` and `import` with a contextual parse error. This keeps existing schemas
+from claiming syntax reserved for future multi-file declarations. The words are
+reserved consistently across declaration names, fields, variants, and parameters
+so parsers and editor tooling share one context-independent keyword policy. The
+word `of` remains available: reserving `part` is sufficient to protect a future
+`part of` grammar sequence.
+
+Errors underline the reserved name in `auth` and `datasource` headers as precisely
+as other declarations, and regression checks pin each diagnostic's owner name.
+
 ### Optional scalars now expose equality filters on generated list routes (#953)
 
 Generated Axum list routes previously emitted `eq`/`ne`/`in` query-filter
