@@ -35,21 +35,31 @@ jobs:
   # instead of running on every PR. The workflow-level `paths-ignore` above
   # is the first, cheapest filter; this is the job-level complement.
   #
-  # Every filter deliberately over-includes (generator crates, example
-  # schemas, shared infra: justfile/.ci/.github) so a change that can affect
-  # a job's output re-runs that job — a false RUN is cheap, a false SKIP is
-  # silently lost coverage. `base: ${{ github.ref }}` is ignored on
-  # pull_request events (the action uses the PR base via the REST API) and
-  # on push-to-main compares against the commit before the push, per the
-  # action's documented long-lived-branch semantics. `workflow_dispatch`
-  # bypasses all gating via the `github.event_name` OR in each gated job's
-  # `if:`.
+  # Two filter layers:
+  # - `infra` captures workspace-level inputs that affect ANY job's outcome
+  #   (root Cargo.toml, Cargo.lock, rust-toolchain.toml) plus the scripts
+  #   and workflows that drive CI itself (justfile, .ci/**, .github/**).
+  #   Shared files live ONLY here, so a new shared input is added once and
+  #   every gated job hears it — a component filter cannot silently forget
+  #   it.
+  # - `cbor`/`dart`/... capture each component's own source paths only.
+  #   Gated jobs run when EITHER their component filter OR `infra` matches.
+  #
+  # Every component filter deliberately over-includes (generator crates,
+  # example schemas) so a change that can affect a job's output re-runs that
+  # job — a false RUN is cheap, a false SKIP is silently lost coverage.
+  # `base: ${{ github.ref }}` is ignored on pull_request events (the action
+  # uses the PR base via the REST API) and on push-to-main compares against
+  # the commit before the push, per the action's documented long-lived-branch
+  # semantics. `workflow_dispatch` bypasses all gating via the
+  # `github.event_name` OR in each gated job's `if:`.
   changes:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
+      infra: ${{ steps.filter.outputs.infra }}
       cbor: ${{ steps.filter.outputs.cbor }}
       dart: ${{ steps.filter.outputs.dart }}
       dart_pkgs: ${{ steps.filter.outputs.dart_pkgs }}
@@ -66,6 +76,13 @@ jobs:
         with:
           base: ${{ github.ref }}
           filters: |
+            infra:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'justfile'
+              - '.ci/**'
+              - '.github/**'
             cbor:
               - 'dart-packages/cratestack_cbor/**'
               - 'crates/cratestack-cbor-napi/**'
@@ -74,9 +91,6 @@ jobs:
               - 'crates/cratestack-client-dart/**'
               - 'crates/cratestack-codec-cbor/**'
               - 'examples/**'
-              - 'justfile'
-              - '.ci/**'
-              - '.github/**'
             dart:
               - 'dart-packages/**'
               - 'crates/cratestack-client-dart/**'
@@ -84,16 +98,11 @@ jobs:
               - 'crates/cratestack-cbor-wasm/**'
               - 'crates/cratestack-cbor-napi/**'
               - 'crates/cratestack-codec-cbor/**'
+              - 'crates/cratestack-cli/**'
               - 'examples/**'
-              - 'justfile'
-              - '.ci/**'
-              - '.github/**'
             dart_pkgs:
               - 'dart-packages/cratestack_annotations/**'
               - 'dart-packages/cratestack_builder/**'
-              - 'justfile'
-              - '.ci/**'
-              - '.github/**'
             ts:
               - 'packages/**'
               - 'crates/cratestack-client-typescript/**'
@@ -104,33 +113,22 @@ jobs:
               - 'crates/cratestack-parser/**'
               - 'crates/cratestack-macros/**'
               - 'crates/cratestack-sql/**'
+              - 'crates/cratestack-cbor-napi/**'
+              - 'crates/cratestack-cbor-wasm/**'
               - 'examples/**'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'package.json'
               - 'turbo.json'
               - 'biome.json'
-              - 'justfile'
-              - '.ci/**'
-              - '.github/**'
             changelog:
               - '**/CHANGELOG.md'
               - '.ci/changelog*'
-              - 'justfile'
-              - '.github/**'
             npm:
               - 'packages/cratestack-cli-npm/**'
               - '.ci/npm-publish*'
-              - 'justfile'
-              - '.github/**'
             cli:
               - 'crates/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - 'justfile'
-              - '.ci/**'
-              - '.github/**'
 
   # ---- Blocking gates --------------------------------------------------
   check:
@@ -728,7 +726,7 @@ jobs:
   # touches a declared changelog.
   changelog-verify:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.changelog == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.changelog == 'true' }}
     timeout-minutes: 45
     name: changelog (no unedited seeds, correct placement)
     runs-on: ubuntu-latest
@@ -753,7 +751,7 @@ jobs:
   # tracked file — see .ci/changelog-seed-tests.sh.
   changelog-seed-test:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.changelog == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.changelog == 'true' }}
     timeout-minutes: 45
     name: changelog (seed/check script tests)
     runs-on: ubuntu-latest
@@ -769,7 +767,7 @@ jobs:
   # v0.11.1 misclassification, run 33808493207). Fake npm, no network.
   npm-publish-wrapper-test:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.npm == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.npm == 'true' }}
     timeout-minutes: 10
     name: npm publish wrapper (classification tests)
     runs-on: ubuntu-latest
@@ -872,7 +870,7 @@ jobs:
   # not decided here, and this addition doesn't change that either way.
   dart-verify:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.dart == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.dart == 'true' }}
     timeout-minutes: 45
     name: dart (generated packages)
     runs-on: ubuntu-latest
@@ -902,7 +900,7 @@ jobs:
   # analyzer infos as defects.
   dart-packages-verify:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.dart_pkgs == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.dart_pkgs == 'true' }}
     timeout-minutes: 45
     name: dart (cratestack_annotations + cratestack_builder)
     runs-on: ubuntu-latest
@@ -947,7 +945,7 @@ jobs:
   # to assert zero on; the compile + real Dart execution IS the check.
   frb-verify-client-flutter:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack-client-flutter frb bridge)
     runs-on: ubuntu-latest
@@ -986,7 +984,7 @@ jobs:
   # just internal self-consistency.
   cratestack-cbor-package:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor package — native + web)
     runs-on: ubuntu-latest
@@ -1079,7 +1077,7 @@ jobs:
   # path-filtered job in this workflow.
   cratestack-cbor-example:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor example — linux + web, real builds)
     runs-on: ubuntu-latest
@@ -1171,7 +1169,7 @@ jobs:
   # question those two jobs already flagged; not decided here.
   cratestack-cbor-android:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor android — APK build + jniLibs proof)
     runs-on: ubuntu-latest
@@ -1327,7 +1325,7 @@ jobs:
   # this artifact later if the CI-minute saving is judged worth it.
   cbor-glue:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor frb glue — generated once, Linux)
     runs-on: ubuntu-latest
@@ -1416,7 +1414,7 @@ jobs:
 
   cratestack-cbor-windows:
     needs: [cbor-glue, changes]
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor windows — real build, DLL + round-trip proof)
     runs-on: windows-latest
@@ -1557,7 +1555,7 @@ jobs:
   # on macOS genuinely untested until this job ran.
   cratestack-cbor-macos:
     needs: [cbor-glue, changes]
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)
     runs-on: macos-latest
@@ -1685,7 +1683,7 @@ jobs:
   # `continue-on-error:` added to this step.
   cratestack-cbor-ios:
     needs: [cbor-glue, changes]
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cbor == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
     timeout-minutes: 45
     name: flutter (cratestack_cbor ios — real build, xcframework + round-trip proof)
     runs-on: macos-latest
@@ -1775,7 +1773,7 @@ jobs:
   # proves the RPC-specific template overrides do as well.
   typescript-verify:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: typescript (generated packages — REST + RPC)
     runs-on: ubuntu-latest
@@ -1833,7 +1831,7 @@ jobs:
   # verification section for that (run locally with the pinned SDK).
   flutter-riverpod-example:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.dart == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.dart == 'true' }}
     timeout-minutes: 45
     name: flutter (flutter-riverpod example)
     runs-on: ubuntu-latest
@@ -2004,7 +2002,7 @@ jobs:
   # `js-refine` job instead.
   js:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: js (pnpm + turbo)
     runs-on: ubuntu-latest
@@ -2064,7 +2062,7 @@ jobs:
   # target does.
   js-cbor-napi:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: js (@cratestack/cbor-node)
     runs-on: ubuntu-latest
@@ -2107,7 +2105,7 @@ jobs:
   # deliberately doesn't set up.
   js-cbor-wasm:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: js (@cratestack/cbor-web)
     runs-on: ubuntu-latest
@@ -2168,7 +2166,7 @@ jobs:
   # fixture directory is missing.
   js-refine:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: js (@cratestack/refine)
     runs-on: ubuntu-latest
@@ -2224,7 +2222,7 @@ jobs:
   # observed.
   react-vite-swr-example:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: js (react-vite-swr example)
     runs-on: ubuntu-latest
@@ -2320,7 +2318,7 @@ jobs:
   # instead of leaving the README quietly wrong).
   react-vite-refine-example:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.ts == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
     timeout-minutes: 45
     name: js (react-vite-refine example)
     runs-on: ubuntu-latest
@@ -2396,7 +2394,7 @@ jobs:
   # doesn't expose one).
   install-cratestack-cli-smoke-test:
     needs: changes
-    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.cli == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cli == 'true' }}
     timeout-minutes: 45
     name: install-cratestack-cli (${{ matrix.target }})
     strategy:
