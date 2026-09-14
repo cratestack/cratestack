@@ -13,8 +13,8 @@
     "seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-vite-swr-client": "workspace:*",
     "swr": "^2.2.0"
   },
@@ -25,6 +25,6 @@
     "@vitejs/plugin-react": "^6.0.5",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
-    "vite": "^8.2.0"
+    "vite": "^8.3.0"
   }
 }
