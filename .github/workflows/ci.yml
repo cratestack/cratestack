@@ -31,104 +31,57 @@ env:
 jobs:
   # ---- Change detection (job-level path gating) -----------------------
   # Computes which component directories changed so the heterogeneous
-  # language/component jobs below can be gated with dorny/paths-filter
-  # instead of running on every PR. The workflow-level `paths-ignore` above
-  # is the first, cheapest filter; this is the job-level complement.
+  # language/component jobs below can be gated instead of running on every
+  # PR. The workflow-level `paths` filter above is the first, cheapest
+  # gate; this is the job-level complement.
   #
-  # Two filter layers:
-  # - `infra` captures workspace-level inputs that affect ANY job's outcome
+  # Two inputs, both computed by `.ci/affected-components.py`:
+  # - `infra` — workspace-level inputs that can affect ANY job's outcome
   #   (root Cargo.toml, Cargo.lock, rust-toolchain.toml) plus the scripts
   #   and workflows that drive CI itself (justfile, .ci/**, .github/**).
-  #   Shared files live ONLY here, so a new shared input is added once and
-  #   every gated job hears it — a component filter cannot silently forget
-  #   it.
-  # - `cbor`/`dart`/... capture each component's own source paths only.
-  #   Gated jobs run when EITHER their component filter OR `infra` matches.
+  # - `cbor`/`dart`/... — file globs for non-Rust inputs (dart-packages/**,
+  #   packages/**, ...) OR'ed with reverse-transitive reachability over the
+  #   Cargo dependency graph: a component runs when a changed crate — or any
+  #   crate that transitively depends on it — is one of the component's root
+  #   crates (see the ROOTS table in the script).
   #
-  # Every component filter deliberately over-includes (generator crates,
-  # example schemas) so a change that can affect a job's output re-runs that
-  # job — a false RUN is cheap, a false SKIP is silently lost coverage.
-  # `base: ${{ github.ref }}` is ignored on pull_request events (the action
-  # uses the PR base via the REST API) and on push-to-main compares against
-  # the commit before the push, per the action's documented long-lived-branch
-  # semantics. `workflow_dispatch` bypasses all gating via the
-  # `github.event_name` OR in each gated job's `if:`.
+  # The graph is read live from `cargo metadata`, so upstream crates
+  # (cratestack-core, cratestack-parser, cratestack-client-rust, ...) never
+  # need to be listed in a filter: a change to them reaches every crate that
+  # depends on them, and new crates/edges are covered the moment they land.
+  # `workflow_dispatch` bypasses all gating via the `github.event_name` OR in
+  # each gated job's `if:`.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      infra: ${{ steps.filter.outputs.infra }}
-      cbor: ${{ steps.filter.outputs.cbor }}
-      dart: ${{ steps.filter.outputs.dart }}
-      dart_pkgs: ${{ steps.filter.outputs.dart_pkgs }}
-      ts: ${{ steps.filter.outputs.ts }}
-      changelog: ${{ steps.filter.outputs.changelog }}
-      npm: ${{ steps.filter.outputs.npm }}
-      cli: ${{ steps.filter.outputs.cli }}
+      infra: ${{ steps.components.outputs.infra }}
+      cbor: ${{ steps.components.outputs.cbor }}
+      dart: ${{ steps.components.outputs.dart }}
+      dart_pkgs: ${{ steps.components.outputs.dart_pkgs }}
+      ts: ${{ steps.components.outputs.ts }}
+      changelog: ${{ steps.components.outputs.changelog }}
+      npm: ${{ steps.components.outputs.npm }}
+      cli: ${{ steps.components.outputs.cli }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          base: ${{ github.ref }}
-          filters: |
-            infra:
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - 'rust-toolchain.toml'
-              - 'justfile'
-              - '.ci/**'
-              - '.github/**'
-            cbor:
-              - 'dart-packages/cratestack_cbor/**'
-              - 'crates/cratestack-cbor-napi/**'
-              - 'crates/cratestack-cbor-wasm/**'
-              - 'crates/cratestack-client-flutter/**'
-              - 'crates/cratestack-client-dart/**'
-              - 'crates/cratestack-codec-cbor/**'
-              - 'examples/**'
-            dart:
-              - 'dart-packages/**'
-              - 'crates/cratestack-client-dart/**'
-              - 'crates/cratestack-client-flutter/**'
-              - 'crates/cratestack-cbor-wasm/**'
-              - 'crates/cratestack-cbor-napi/**'
-              - 'crates/cratestack-codec-cbor/**'
-              - 'crates/cratestack-cli/**'
-              - 'examples/**'
-            dart_pkgs:
-              - 'dart-packages/cratestack_annotations/**'
-              - 'dart-packages/cratestack_builder/**'
-            ts:
-              - 'packages/**'
-              - 'crates/cratestack-client-typescript/**'
-              - 'crates/cratestack-client-dart/**'
-              - 'crates/cratestack-client-flutter/**'
-              - 'crates/cratestack-client/**'
-              - 'crates/cratestack-cli/**'
-              - 'crates/cratestack-parser/**'
-              - 'crates/cratestack-macros/**'
-              - 'crates/cratestack-sql/**'
-              - 'crates/cratestack-cbor-napi/**'
-              - 'crates/cratestack-cbor-wasm/**'
-              - 'examples/**'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'package.json'
-              - 'turbo.json'
-              - 'biome.json'
-            changelog:
-              - '**/CHANGELOG.md'
-              - '.ci/changelog*'
-            npm:
-              - 'packages/cratestack-cli-npm/**'
-              - '.ci/npm-publish*'
-            cli:
-              - 'crates/**'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Fetch PR base (for merge-base diff)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --depth=1 origin "$PR_BASE_SHA"
+      - name: Compute affected components
+        id: components
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 .ci/affected-components.py
 
   # ---- Blocking gates --------------------------------------------------
   check:
@@ -1065,16 +1018,12 @@ jobs:
   # CI cost: this is the heaviest job in the workflow — a full Linux
   # desktop CMake/ninja compile AND a full dart2js web compile, on top of
   # everything `cratestack-cbor-package` already does (frb codegen + a
-  # release Rust build + a wasm-pack build). It runs on every PR today,
-  # consistent with this workflow's existing convention of no path
-  # filtering anywhere (`grep -n paths: .github/workflows/ci.yml` — zero
-  # hits) rather than inventing one unilaterally here. If CI spend becomes
-  # a concern, scoping this job to changes under `dart-packages/
-  # cratestack_cbor/**`, `crates/cratestack-client-flutter/**`, and
-  # `crates/cratestack-cbor-wasm/**` via `paths:` (or `dorny/paths-filter`)
-  # would be the natural next step — flagged here for a maintainer
-  # decision rather than added unilaterally, since it would be the first
-  # path-filtered job in this workflow.
+  # release Rust build + a wasm-pack build). Gated on the `cbor` component
+  # output like the rest of the cbor jobs; its inputs (dart-packages/
+  # cratestack_cbor/**, crates/cratestack-client-flutter/**,
+  # crates/cratestack-cbor-wasm/** and every upstream crate they reach)
+  # are captured by the `cbor` flag via the dependency-graph reachability
+  # in `.ci/affected-components.py`.
   cratestack-cbor-example:
     needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
@@ -1162,11 +1111,10 @@ jobs:
   # a maintainer call, not something to add unilaterally here.
   #
   # Path filtering: this job — like `cratestack-cbor-package` and
-  # `cratestack-cbor-example` before it — runs unscoped on every PR,
-  # consistent with this workflow's existing convention of no path
-  # filtering anywhere. It only adds to the same open "should
-  # dart-packages/cratestack_cbor/**-touching jobs be path-filtered"
-  # question those two jobs already flagged; not decided here.
+  # `cratestack-cbor-example` before it — is gated on the `cbor` component
+  # output. Its inputs (dart-packages/cratestack_cbor/** and the
+  # cbor crates) are captured by the `cbor` flag via the dependency-graph
+  # reachability in `.ci/affected-components.py`.
   cratestack-cbor-android:
     needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.cbor == 'true' }}
