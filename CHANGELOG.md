@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Reserve `part` and `import` for multi-file schemas — breaking (#922)
+
+Every `.cstack` identifier position now rejects the exact, case-sensitive words
+`part` and `import` with a contextual parse error. This keeps existing schemas
+from claiming syntax reserved for future multi-file declarations. The words are
+reserved consistently across declaration names, fields, variants, and parameters
+so parsers and editor tooling share one context-independent keyword policy. The
+word `of` remains available: reserving `part` is sufficient to protect a future
+`part of` grammar sequence.
+
+Errors underline the reserved name in `auth` and `datasource` headers as precisely
+as other declarations, including CRLF and mixed-line-ending schemas. Their names
+now carry `name_span` in the public `AuthBlock` and `Datasource` AST structs and
+serialized schema representation; code constructing these structs must supply
+the field. Validation consumes the parsed span instead of searching the source
+again. Regression checks pin each diagnostic's owner name and ensure names such
+as `datasource source` underline the identifier rather than part of the keyword.
+
 ### `rustls` moves to 0.23.45 (RUSTSEC-2026-0285), and the scanner that found it stops hiding its own failures
 
 `Quality` has been red on `main` since 2026-09-16. The cause is a real

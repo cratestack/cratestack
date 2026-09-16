@@ -187,6 +187,7 @@ pub struct OwnedSchemaSummary {
 pub struct Datasource {
     pub docs: Vec<String>,
     pub name: String,
+    pub name_span: SourceSpan,
     pub entries: Vec<ConfigEntry>,
     pub span: SourceSpan,
 }
@@ -195,6 +196,7 @@ pub struct Datasource {
 pub struct AuthBlock {
     pub docs: Vec<String>,
     pub name: String,
+    pub name_span: SourceSpan,
     pub fields: Vec<Field>,
     pub span: SourceSpan,
 }

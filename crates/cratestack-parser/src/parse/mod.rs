@@ -74,6 +74,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             datasource = Some(Datasource {
                 docs: std::mem::take(&mut pending_docs),
                 name: block.name,
+                name_span: name_span_in_line(line, line.trimmed, "datasource ")?,
                 entries: block
                     .entries
                     .into_iter()
@@ -93,6 +94,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             auth = Some(AuthBlock {
                 docs: std::mem::take(&mut pending_docs),
                 name,
+                name_span: name_span_in_line(line, line.trimmed, "auth ")?,
                 fields: parse_fields(&body)?,
                 span,
             });
