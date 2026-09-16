@@ -20,8 +20,26 @@ fi
 mkdir -p "$REPORTS_DIR"
 
 log() { echo "[quality] $*" >&2; }
-error() { echo "[quality] ERROR: $*" >&2; exit 1; }
 warn() { echo "[quality] WARN: $*" >&2; }
+
+# Fatal errors ALSO emit a GitHub Actions `::error::` annotation, not just a
+# log line. A log line is not reliably readable: this script's console output
+# runs to tens of thousands of lines (cargo-deny alone emits ~14k when it has
+# findings), GitHub caps a step's log, and the cap is reached *before* the end
+# of this script — so the one line that says why the job failed is exactly the
+# line most likely to be truncated away. That is not hypothetical: on
+# 2026-09-16 the job failed on RUSTSEC-2026-0285, this line was cut, and the
+# last visible output was an unrelated semgrep rule warning.
+#
+# An annotation is rendered from the API rather than the log body, so it
+# survives truncation and shows up in the job's Annotations panel. Outside
+# Actions the `::error::` prefix is just inert text on stderr, so this is safe
+# to run locally.
+error() {
+  echo "::error title=Quality check failed::$*"
+  echo "[quality] ERROR: $*" >&2
+  exit 1
+}
 
 # Track errors but don't fail immediately — collect all reports first
 SCAN_ERRORS=0
@@ -100,8 +118,19 @@ scan_cargo_deny() {
   # failing" design — an immediate exit here would starve the later
   # scanners of a run and break gate.sh's "every scanner produced a SARIF"
   # check for unrelated reasons.
-  if ! cargo deny check all 2>&1 | tee "$REPORTS_DIR/cargo-deny.txt"; then
-    warn "cargo deny found license/advisory/ban/source issues (see $REPORTS_DIR/cargo-deny.txt)"
+  # Redirected, NOT `tee`d. `cargo deny check all` prints the full dependency
+  # tree for every finding — ~14k lines on this workspace when advisories fire,
+  # which is on its own enough to exhaust a GitHub step's log budget and
+  # truncate everything this script prints afterwards, including its own fatal
+  # error. The full report is still written to cargo-deny.txt and uploaded as
+  # a build artifact; the console gets the part a human reads first.
+  if ! cargo deny check all > "$REPORTS_DIR/cargo-deny.txt" 2>&1; then
+    warn "cargo deny FAILED — this WILL fail the quality job (see the summary below, and $REPORTS_DIR/cargo-deny.txt for the full report with dependency trees)"
+    # The `error[...]`/`warning[...]` headline lines and cargo-deny's own
+    # per-category summary. Capped, so a pathological run cannot reintroduce
+    # the flooding this redirect exists to prevent.
+    grep -E '^(error|warning)\[' "$REPORTS_DIR/cargo-deny.txt" | head -40 >&2 || true
+    grep -E '^(advisories|bans|licenses|sources) ' "$REPORTS_DIR/cargo-deny.txt" | tail -1 >&2 || true
     CARGO_DENY_FAILED=1
   else
     log "cargo deny check passed"
@@ -158,11 +187,29 @@ scan_semgrep() {
   # no --offline flag — confirmed via `semgrep scan --help` against a real
   # install; it errors "unknown option '--offline'".)
   #
-  # --sarif/--sarif-output produce SARIF natively (with real fingerprints
-  # and code snippets) — no custom JSON→SARIF conversion needed.
+  # --sarif-output produces SARIF natively (with real fingerprints and code
+  # snippets) — no custom JSON→SARIF conversion needed.
+  #
+  # `--sarif` is deliberately NOT passed alongside it. The two are not
+  # complementary: --sarif switches stdout to the SARIF document, while
+  # --sarif-output writes the same document to a file, so passing both
+  # emits it TWICE. Measured against the pinned semgrep 1.171.0 on a
+  # one-finding fixture: with --sarif, 866 bytes to stdout and 865 to the
+  # file; without it, 330 bytes of human-readable summary to stdout and a
+  # byte-identical SARIF file (compared as parsed JSON — equal, whole
+  # document, not just `results`).
+  #
+  # That duplication is not cosmetic. stdout here is piped through `tee`
+  # into the CI step log, and on this repository the SARIF document is
+  # ~1.4 MB — enough to blow past GitHub's per-step log cap and truncate
+  # away everything printed AFTER the scan. On 2026-09-16 that is exactly
+  # what happened: `cargo deny` failed on RUSTSEC-2026-0285, this script
+  # reported it at the very end via `error` as designed, and that message
+  # was among the truncated lines. The job showed "Process completed with
+  # exit code 1" over a log whose last visible line was a semgrep rule
+  # warning — pointing every reader at the wrong scanner.
   if semgrep scan \
     --config="$RULES_DIR" \
-    --sarif \
     --sarif-output="$REPORTS_DIR/semgrep.sarif" \
     --no-git-ignore \
     --metrics=off \

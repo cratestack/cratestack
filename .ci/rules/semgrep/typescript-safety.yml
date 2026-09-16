@@ -21,9 +21,39 @@ rules:
       cwe: CWE-532
 
   - id: ts-any-type
+    # Every pattern here must be a COMPLETE TypeScript construct, not the
+    # fragment of one that reads naturally in prose. This rule previously
+    # used `": any"` and `"as any"`, and BOTH are unparseable on their own:
+    # semgrep rejected the whole rule with
+    #   Rule parse error in rule ci.rules.semgrep.ts-any-type:
+    #    Invalid pattern for TypeScript: Stdlib.Parsing.Parse_error
+    # on every single run since it was written. A rule parse error takes the
+    # rule out entirely — the valid-looking `as any` half never ran either.
+    # Measured against the pinned semgrep 1.171.0: `"as any"` alone fails the
+    # same way; `"$X as any"` parses.
+    #
+    # Coverage is the four commonest forms, verified on a fixture holding one
+    # of each. Two forms are knowingly NOT covered because no parseable
+    # standalone pattern for them was found: an arrow parameter
+    # (`(y: any) => y`) and an interface member (`interface I { p: any }`).
+    #
+    # A `pattern-regex: '(:|\bas)\s*any\b'` WOULD cover all six, and was
+    # rejected on evidence rather than on principle: run against this
+    # repository it produced exactly one finding, and that finding was the
+    # phrase "same as any direct API consumer would" inside a comment in
+    # examples/react-vite-refine/web/scripts/verify.ts. Semgrep patterns do
+    # not see comments; a regex does. One false positive out of one finding
+    # is the wrong trade for a rule whose whole job is signal.
+    #
+    # Findings from the patterns below, across the whole repository at the
+    # time of the fix: zero. Restoring this rule adds no noise — it only
+    # stops semgrep reporting a rule error on every run.
     pattern-either:
-      - pattern: ": any"
-      - pattern: "as any"
+      - pattern: "$X as any"
+      - pattern: "let $X: any = $Y"
+      - pattern: "const $X: any = $Y"
+      - pattern: "var $X: any = $Y"
+      - pattern: "function $F(...): any { ... }"
     message: |
       TypeScript any type used; this defeats type safety.
       Use a concrete type, unknown with runtime checks, or generics instead.
