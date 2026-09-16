@@ -54,13 +54,28 @@ default:
 #     pattern as `embedded_flutter_native` — verified to keep this crate
 #     a normal, always-built, always-tested workspace member instead of
 #     joining the exclusion list.
-#   * NO `--all-features` — `--all-features` turns on both
-#     `decimal-rust-decimal` and `decimal-bigdecimal`, which are
-#     mutually exclusive backends (cratestack#495), tripping a
-#     `compile_error!` in cratestack-core. Default features select
-#     `decimal-rust-decimal`; pass `--features decimal-bigdecimal
-#     --no-default-features` on individual `-p` invocations to build
-#     against the other one instead.
+#   * NO `--all-features` — it does not compile, for two independent
+#     reasons, and the `decimal-*` backends are no longer either of
+#     them. First, it turns on `cratestack-client-flutter`'s
+#     `frb-glue` feature, so that crate's `mod frb_generated;` needs
+#     the uncommitted flutter_rust_bridge glue described above and
+#     fails E0583 — and `--exclude`ing it is not an option the way it
+#     is for `embedded_flutter_native`, because it is a framework
+#     crate this gate exists to check. Second, it turns on
+#     `cratestack-pg`'s `crypto-aws-lc-rs`, a deliberately empty
+#     feature (`crates/cratestack-pg/Cargo.toml`) that exists solely
+#     to hard-`compile_error!` (`crates/cratestack-pg/src/lib.rs`)
+#     rather than let `install_fips_crypto_provider` return `Ok(())`
+#     without installing any FIPS provider, which is what it used to
+#     do (cratestack#334).
+#
+#     The decimal backends USED to be the reason: selecting both
+#     `decimal-rust-decimal` and `decimal-bigdecimal` was once a hard
+#     `compile_error!` in cratestack-core. That was itself the defect
+#     cratestack#505 reports, and it is fixed — any combination is now
+#     legal, including both (cratestack-core's `[features]` header).
+#     A schema picks its backend with the `decimal = RustDecimal |
+#     BigDecimal` macro argument, not with a Cargo feature.
 #
 # The trailing `just lint` is the recipe's real verdict (cratestack#775),
 # and it is NOT redundant with the `--fix` clippy line above it.
@@ -171,8 +186,9 @@ _fmt extra='':
 	cargo fmt "${args[@]}" {{extra}}
 
 # Type-check the whole workspace. Blocking CI gate. Same `--exclude`
-# (Flutter glue → E0583) and no-`--all-features` (mutually-exclusive
-# `decimal-*` backends → compile_error!) scoping as `all-checks`.
+# (Flutter glue → E0583) and no-`--all-features` (`frb-glue` → E0583,
+# plus cratestack-pg's `crypto-aws-lc-rs` → compile_error!, cratestack#334)
+# scoping as `all-checks` — see that recipe's header for the detail.
 # Extra args pass through (CI appends `--locked` to catch lockfile drift).
 check *args='':
 	cargo check --workspace --exclude embedded_flutter_native --all-targets {{args}}

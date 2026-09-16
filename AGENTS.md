@@ -15,13 +15,29 @@ list previously said "two" and omitted `cratestack-api`; corrected alongside cra
 
 ```sh
 cargo fmt --check
-cargo check --workspace --all-targets --all-features
-cargo test --workspace --all-features            # skips PG integration when no DB URL
-just test-pg                                     # full suite with Docker Postgres
-just test-pg-tc                                  # same via testcontainers
+cargo check --workspace --exclude embedded_flutter_native --all-targets
+cargo test  --workspace --exclude embedded_flutter_native   # skips PG integration when no DB URL
+just test-pg                                                # full suite with Docker Postgres
+just test-pg-tc                                             # same via testcontainers
 ```
 
-`just all-checks` runs fmt, auto-fix, clippy with `-D warnings`, check, and `deny check`.
+`just all-checks` runs fmt, auto-fix, clippy with `-D warnings`, check, and `deny check`. Prefer
+running *it* over the individual commands above — the flags it sets are deliberate.
+
+**Never add `--all-features`.** It does not compile, for two independent reasons:
+
+- it enables `cratestack-client-flutter`'s `frb-glue` feature, whose `mod frb_generated;` needs
+  `flutter_rust_bridge`-generated glue that is not checked in → `E0583`. You cannot `--exclude` your
+  way out of this one: it is a framework crate, not an example.
+- it enables `cratestack-pg`'s `crypto-aws-lc-rs`, an empty feature that exists only to
+  hard-`compile_error!` rather than let `install_fips_crypto_provider` return `Ok(())` without
+  installing a FIPS provider ([#334](https://github.com/cratestack/cratestack/issues/334)).
+
+The `decimal-*` backends are **not** a reason, despite what older notes said: selecting both was
+once a `compile_error!`, that was the defect
+[#505](https://github.com/cratestack/cratestack/issues/505) reports, and it is fixed. Any
+combination — neither, one, or both — is legal now; a schema picks its backend with the
+`decimal = RustDecimal | BigDecimal` argument on its `include_*_schema!` macro call.
 
 ## Testing Nuances
 
@@ -29,7 +45,10 @@ just test-pg-tc                                  # same via testcontainers
   - `just test-pg` — brings up `compose.yml` Postgres, tears down on exit
   - `CRATESTACK_TEST_DATABASE_URL=...` + manual `docker compose up -d postgres`
   - `just test-pg-tc` — ephemeral containers per test binary (CI default)
-- `embedded_flutter_native` is excluded from `--workspace` tests because `flutter_rust_bridge`'s cargokit requires the crate name to use underscores
+- `embedded_flutter_native` is excluded from `--workspace` builds and tests because its
+  `flutter_rust_bridge`-generated glue (`src/frb_generated.rs`) is not checked in, so a bare
+  `--workspace` run fails with `E0583`. (Its underscored crate name is a separate
+  `flutter_rust_bridge` cargokit requirement, not the reason for the exclusion.)
 
 ## Workspace Structure
 

@@ -34,8 +34,16 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
   integration tests (`banking_*`, `policy_db_*`, `generated_client_rust`) **skip silently** when
   `CRATESTACK_TEST_DATABASE_URL` is unset — a green run here does *not* mean full coverage.
   Two flags to avoid: `embedded_flutter_native` needs flutter_rust_bridge-generated glue that isn't
-  checked in (hence the `--exclude`, mirroring the `just` recipes), and `--all-features` enables both
-  mutually-exclusive `decimal-*` backends, which trips a `compile_error!` in `cratestack-core`.
+  checked in (hence the `--exclude`, mirroring the `just` recipes), and `--all-features` does not
+  compile — for two reasons, neither of them the decimal backends. It turns on
+  `cratestack-client-flutter`'s `frb-glue` feature, whose `mod frb_generated;` is the same
+  uncommitted glue (E0583) — and `--exclude` cannot help there, it is a framework crate, not an
+  example. It also turns on `cratestack-pg`'s `crypto-aws-lc-rs`, a deliberately empty feature
+  (`crates/cratestack-pg/Cargo.toml`) whose entire purpose is to hard-`compile_error!`
+  (`crates/cratestack-pg/src/lib.rs`) rather than let `install_fips_crypto_provider` return `Ok(())`
+  without installing a FIPS provider, as it once did (cratestack#334). The `decimal-*` backends are
+  **not** a reason any more: since cratestack#505 any combination of them may be selected — see
+  "Decimal backend selection: additive, not mutually exclusive" below.
 - **PG-backed tests:** `just test-pg` — brings up the Postgres container from `compose.yml` (port `55432`),
   runs the full suite, and tears the container down on exit even on failure. `just test-pg-only` is the
   faster inner loop (server facade only). `just test-pg-tc` uses ephemeral per-binary testcontainers

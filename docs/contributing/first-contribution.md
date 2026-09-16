@@ -110,8 +110,12 @@ reconstruction of it — the flags it sets are deliberate.
 
 Two flags never to add:
 
-- **Not `--all-features`.** It enables both mutually-exclusive `decimal-*`
-  backends and trips a `compile_error!` in `cratestack-core`.
+- **Not `--all-features`.** It doesn't compile: it switches on
+  `cratestack-client-flutter`'s `frb-glue` feature (the same uncommitted
+  `flutter_rust_bridge` glue, E0583) and `cratestack-pg`'s `crypto-aws-lc-rs`,
+  an empty feature whose only job is to fail loudly instead of letting
+  `install_fips_crypto_provider` claim a FIPS provider it never installed
+  ([#334](https://github.com/cratestack/cratestack/issues/334)).
 - **Not a bare `--workspace`** without the exclude, per above.
 
 ### About "all tests passed"

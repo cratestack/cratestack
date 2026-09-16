@@ -297,8 +297,12 @@ cargo test  --workspace --exclude embedded_flutter_native
 just all-checks     # the canonical pre-PR gate: fmt, clippy, check, cargo-deny
 ```
 
-Never pass `--all-features`: it enables both mutually-exclusive `decimal-*`
-backends and trips a `compile_error!` in `cratestack-core`.
+Never pass `--all-features`: it does not compile. It turns on
+`cratestack-client-flutter`'s `frb-glue` feature, which needs the same
+uncommitted `flutter_rust_bridge` glue (E0583), and `cratestack-pg`'s
+`crypto-aws-lc-rs`, an empty feature that exists only to fail loudly rather
+than let `install_fips_crypto_provider` report success without installing a
+FIPS provider ([#334](https://github.com/cratestack/cratestack/issues/334)).
 
 ### AI governance
 
