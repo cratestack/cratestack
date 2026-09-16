@@ -216,6 +216,17 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   `@computed` params surface shipped REST-only in v1 and closing the gap took three follow-up PRs
   (cratestack#724 and kin). If a transport is genuinely excluded, that is a design-doc'd,
   changelog'd decision — not an omission.
+- **Docs and skills parity — a feature is not done until all three repos agree.** A user-facing
+  change has two companions, and they drift in opposite directions: `cratestack/cratestack-docs`
+  (Mintlify, for humans) goes stale, and `cratestack/cratestack-skills` (agent skills, installed
+  with `npx skills add cratestack/cratestack-skills`) actively teaches coding agents to generate
+  code against a surface that no longer exists — which is worse than a gap, because the agent is
+  confident. Any PR that adds a `### ` entry under `## Unreleased` must therefore fill in section 9
+  of the PR template with a link for each companion, or `n/a — <reason>`; a bare `n/a` is rejected.
+  `just verify-parity-declaration` (CI job `docs & skills parity (declaration)`) enforces it.
+  **Read what that gate actually proves:** it reads the PR body and nothing else. It cannot see the
+  other two repositories, so a green run means somebody wrote down what they did — not that docs or
+  skills are in sync. Which skill a change belongs in is mapped in the skills repo's `COVERAGE.md`.
 - Rust source uses `snake_case` filenames (rustfmt convention); all other files are `kebab-case`.
 - **200-LoC file ceiling:** there is an active, validated convention of keeping each source file under
   ~200 lines, splitting larger files by concern (this is why `macros/` and `axum/` are deeply nested).

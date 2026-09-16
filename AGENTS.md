@@ -108,6 +108,15 @@ Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and r
   dispatch re-enters the REST parse/validate path via query synthesis
   (`cratestack-axum/src/rpc/synthesize.rs`), so server-side parity is usually one frame field + one
   `pairs.push`. A genuinely excluded transport is a documented decision, not an omission.
+- **Docs and skills parity: a feature is not done until all three repos agree.** A user-facing
+  change has two companions — `cratestack/cratestack-docs` (Mintlify site, for humans) and
+  `cratestack/cratestack-skills` (agent skills, `npx skills add cratestack/cratestack-skills`).
+  They fail differently: docs go stale, while stale skills actively teach coding agents to emit
+  code against a surface that no longer exists. Any PR adding a `### ` entry under
+  `## Unreleased` must fill in section 9 of the PR template with a link per companion, or
+  `n/a — <reason>` (a bare `n/a` is rejected). Gate: `just verify-parity-declaration`. It reads
+  the PR body only — it cannot see the other repositories, so green means "declared", not
+  "in sync". The feature-to-skill map is `COVERAGE.md` in the skills repo.
 
 ## Schema Macros
 

@@ -126,3 +126,25 @@ Please focus your review on:
 * [ ] Maintainability
 * [ ] Product intent
 * [ ] Edge cases
+
+---
+
+## 9. Docs & Skills Parity
+
+A user-facing change has two companions: **[cratestack-docs](https://github.com/cratestack/cratestack-docs)**
+(for humans) and **[cratestack-skills](https://github.com/cratestack/cratestack-skills)**
+(for coding agents, installed with `npx skills add cratestack/cratestack-skills`).
+Both drift silently, and in opposite ways — docs go stale, skills teach agents
+to write code against a surface that no longer exists.
+
+Fill in both lines. A link, or `n/a — <reason>`; a bare `n/a` is rejected by CI.
+
+- docs:
+- skills:
+
+<!--
+CI (`just verify-parity-declaration`) requires these two lines whenever this
+PR adds a "### " entry under "## Unreleased" in CHANGELOG.md. It checks the
+DECLARATION only — it cannot see the other repositories, so a green check is
+not evidence that either is up to date. That part is yours.
+-->

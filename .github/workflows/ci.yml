@@ -629,6 +629,42 @@ jobs:
       - name: Changelog verification
         run: just verify-changelog
 
+  # Docs & skills parity declaration (companion repos cratestack-docs and
+  # cratestack-skills). Fires only when a PR adds a "### " entry under
+  # "## Unreleased" — this repo's own existing signal for "a human needs to
+  # be told about this" — so internal refactors and release bumps do not
+  # trip it. See .ci/parity-declaration-check.sh for why a path allowlist
+  # was rejected as the trigger.
+  #
+  # This gate checks the DECLARATION, not the parity: it cannot read the
+  # other two repositories. Green here means the author wrote down what they
+  # did with docs and skills, not that either is actually up to date.
+  parity-declaration:
+    timeout-minutes: 15
+    name: docs & skills parity (declaration)
+    # Only a pull_request event carries a body to check. On push-to-main
+    # there is nothing to read and the job would be vacuous.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 for the same reason changelog-verify needs it — the
+      # check diffs against origin/main to find the lines this PR adds, and
+      # a shallow checkout has no such ref, which would make the check
+      # silently no-op on every PR.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Parity declaration present in PR body
+        env:
+          # Through the environment, never interpolated into the `run:`
+          # script: a PR body is attacker-controlled text and ${{ }}
+          # interpolation would splice it straight into the shell.
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: just verify-parity-declaration
+
   # Tests for changelog-seed.sh/changelog-check.sh themselves (issue #479).
   # Runs against an isolated sandbox copy of CHANGELOG.md, never the real,
   # tracked file — see .ci/changelog-seed-tests.sh.

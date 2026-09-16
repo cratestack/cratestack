@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Agent skills are a third repo, and a PR that announces a change now has to say what happened to them
+
+CrateStack's user-facing surface is documented for humans at
+[cratestack-docs](https://github.com/cratestack/cratestack-docs). It is now also
+documented for coding agents at
+[cratestack-skills](https://github.com/cratestack/cratestack-skills), installable
+with `npx skills add cratestack/cratestack-skills` — fourteen skills covering the
+schema language, the four facades, the server, policy and auth, data integrity,
+embedded SQLite, the three client generators, RPC, migrations, the CLI, Studio,
+editor tooling, troubleshooting, and this repo's own conventions.
+
+The two companions fail differently, and the second failure is the dangerous one.
+Stale prose misleads a human who is already reading sceptically. A stale skill
+instructs a coding agent to generate code against a surface that no longer
+exists — confidently, fluently, and at scale, with the tooling vouching for it.
+
+So a PR that adds a `### ` entry under `## Unreleased` must now fill in section 9
+of the pull request template with a link for each companion, or `n/a — <reason>`.
+A bare `n/a` is rejected: the reason is what makes it a decision rather than an
+omission. The gate is `just verify-parity-declaration`, wired as the CI job
+`docs & skills parity (declaration)`.
+
+**Read what that gate actually proves.** It reads the PR body and nothing else.
+It cannot see the other two repositories, so a green run means somebody wrote
+down what they did — not that docs or skills are in sync. That limit is stated in
+the script, in the recipe, in the CI job comment and in the failure output,
+because a checker whose scope is misread is worse than no checker.
+
+The trigger is the changelog rather than a path allowlist on purpose. "Did this
+PR touch `crates/cratestack-macros/`" fires on nearly every PR here, including
+pure refactors with no surface change, and a gate that fires on everything gets
+rubber-stamped and then stops meaning anything. A `### ` entry under
+`## Unreleased` is this repo's own existing signal for "a human needs to be told
+about this", so it costs no new metadata. The diff-parsing machinery is reused
+wholesale from `changelog-placement-check.sh` (cratestack#739) rather than
+reimplemented, and entries that land under a dated heading the same diff created
+are excluded — a release bump promoting `## Unreleased` is not announcing
+anything new.
+
+Consequence, by design: a PR that ships a user-facing feature and writes no
+changelog entry passes this gate. Closing that would mean a generic "every PR
+needs a changelog entry" rule, which this repo has considered and not adopted.
+
 ### Optional scalars now expose equality filters on generated list routes (#953)
 
 Generated Axum list routes previously emitted `eq`/`ne`/`in` query-filter

@@ -1435,6 +1435,25 @@ verify-napi-targets:
 verify-changelog:
 	./.ci/changelog-check.sh
 
+# Docs & skills parity declaration gate.
+#
+# A PR that adds a "### " entry under "## Unreleased" is announcing a
+# user-facing change, and must say in its body what happened to the two
+# companion repos — cratestack/cratestack-docs (for humans) and
+# cratestack/cratestack-skills (for agents). See .ci/parity-declaration-check.sh
+# for why the changelog is the trigger rather than a path allowlist.
+#
+# IMPORTANT, and stated in the script's own output: this verifies the
+# DECLARATION, not the parity. It cannot see the other repositories. A green
+# run means somebody wrote down what they did, not that the docs and skills
+# are in sync.
+#
+# Locally this reads the PR body via `gh` when one is open, and skips loudly
+# (never silently passes) when it cannot find one. CI passes the body in
+# explicitly via $PR_BODY.
+verify-parity-declaration:
+	./.ci/parity-declaration-check.sh
+
 # ```ignore-fence convention check (cratestack#683).
 #
 # `cargo test --doc -- --ignored` reports ```ignore-fenced doctests as
