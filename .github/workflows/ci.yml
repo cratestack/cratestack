@@ -76,11 +76,17 @@ jobs:
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: git fetch --depth=1 origin "$PR_BASE_SHA"
+      - name: Fetch push base (for merge-base diff)
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          PUSH_BASE: ${{ github.event.before }}
+        run: git fetch --depth=1 origin "$PUSH_BASE"
       - name: Compute affected components
         id: components
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE: ${{ github.event.before }}
         run: python3 .ci/affected-components.py
 
   # ---- Blocking gates --------------------------------------------------

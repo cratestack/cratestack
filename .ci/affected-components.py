@@ -18,8 +18,12 @@ Outputs (one `name=true|false` per line): infra, cbor, dart, dart_pkgs, ts,
 changelog, npm, cli. Writes to $GITHUB_OUTPUT when set, else stdout.
 
 Base semantics match dorny/paths-filter: on pull_request the merge-base with
-the PR base is used; on push the previous commit is used. workflow_dispatch
-results are unused (gated jobs bypass on that event) but still computed.
+the PR base is used; on push the SHA of the tip before the push began
+(`github.event.before`) is used, spanning every commit in the push (HEAD~1
+would under-diff a multi-commit push and silently skip gated jobs on main);
+on the first-ever push (all-zeros `before`) it falls back to HEAD~1.
+workflow_dispatch results are unused (gated jobs bypass on that event) but
+still computed.
 """
 
 from __future__ import annotations
@@ -228,7 +232,14 @@ def compute(files, meta):
 def main():
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     pr_base = os.environ.get("PR_BASE_SHA", "")
-    base = pr_base if (event == "pull_request" and pr_base) else "HEAD~1"
+    push_base = os.environ.get("PUSH_BASE", "")
+    zero = "0" * 40
+    if event == "pull_request" and pr_base:
+        base = pr_base
+    elif event == "push" and push_base and push_base != zero:
+        base = push_base
+    else:
+        base = "HEAD~1"
 
     files = changed_files(base)
     meta = load_metadata()
