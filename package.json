@@ -9,8 +9,8 @@
     "format": "biome format --write packages"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.12",
-    "turbo": "^2.10.12"
+    "@biomejs/biome": "^2.5.14",
+    "turbo": "^2.10.13"
   },
   "packageManager": "pnpm@11.24.0",
   "engines": {
