@@ -77,6 +77,19 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         ),
     ];
 
+    // Words reserved for the upcoming multi-file schema grammar
+    // (cratestack#922 makes `part`/`import` non-identifiers; #910 is the
+    // multi-file epic). Sourced from the parser rather than copied — the
+    // same "one list, N readers" rule that governs `builtin_types` above —
+    // so a future grammar keyword lands here without a second edit.
+    // Each carries a `detail` string because a completion is an active
+    // suggestion: without it, offering `part` would imply a usable
+    // `part "..."` construct today, which the parser rejects. The detail
+    // keeps the editor honest — the word is on the map, just not
+    // swim-in-able yet (the declarations are not implemented).
+    const MULTI_FILE_KEYWORD_DETAIL: &str = "reserved for upcoming multi-file schemas (cratestack#910) — cannot be used as a \
+         standalone identifier today";
+
     let mut items = keywords
         .into_iter()
         .map(|label| CompletionItem {
@@ -85,6 +98,17 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
             ..CompletionItem::default()
         })
         .collect::<Vec<_>>();
+
+    items.extend(
+        cratestack_parser::reserved_multi_file_keywords()
+            .iter()
+            .map(|label| CompletionItem {
+                label: label.to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                detail: Some(MULTI_FILE_KEYWORD_DETAIL.to_owned()),
+                ..CompletionItem::default()
+            }),
+    );
 
     items.extend(
         keywords_with_detail
@@ -289,6 +313,42 @@ mod tests {
             "completion list must track cratestack_parser::builtin_type_names() \
              (minus `Page`) — see cratestack#232",
         );
+    }
+
+    /// The multi-file grammar words (`part`/`import`, cratestack#922) must be
+    /// offered among the KEYWORD completions, sourced from the parser's
+    /// `reserved_multi_file_keywords()` so the two can't drift (the same
+    /// "one list, N readers" rule as cratestack#232's type list). Inclusion,
+    /// not equality, is the contract: `model`/`type`/`procedure` etc. are
+    /// keyword completions that are not (and must not be) part of the
+    /// reserved set.
+    #[test]
+    fn multi_file_keywords_are_offered_as_completions_with_reserved_detail() {
+        let labels: std::collections::BTreeSet<String> = completion_items(None)
+            .into_iter()
+            .filter(|item| item.kind == Some(CompletionItemKind::KEYWORD))
+            .map(|item| item.label)
+            .collect();
+
+        for keyword in cratestack_parser::reserved_multi_file_keywords() {
+            assert!(
+                labels.contains(*keyword),
+                "completion list must offer the parser-reserved multi-file keyword \
+                 `{keyword}`: {labels:?}",
+            );
+        }
+
+        for item in completion_items(None) {
+            if cratestack_parser::reserved_multi_file_keywords().contains(&item.label.as_str()) {
+                let detail = item.detail.as_deref().unwrap_or_default();
+                assert!(
+                    detail.contains("reserved"),
+                    "multi-file keyword `{}` should carry a detail that says it is reserved, \
+                     so completion doesn't imply a usable construct: {detail:?}",
+                    item.label,
+                );
+            }
+        }
     }
 
     /// `@custom` was removed in favor of `@computed`
