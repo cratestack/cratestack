@@ -57,15 +57,26 @@ runs:
         # fixture server that counts hits):
         #
         #   connection-level (52/56)  retried 6x, then exit 52/56   [7 attempts]
-        #   HTTP 5xx                  retried 6x, then exit 1       [7 attempts]
-        #   HTTP 404                  NOT retried, exit 1           [1 attempt]
+        #   HTTP 408/429/500/502/503/504  retried 6x, then exit 1   [7 attempts]
+        #   HTTP 404 (and any other 4xx/5xx)  NOT retried, exit 1   [1 attempt]
         #
-        # The 5xx row is deliberate, not an oversight: curl's *default*
-        # transient set already includes 500/502/503/504 and it retries
-        # them with or without `-f`, so a 5xx from the release CDN — which
-        # genuinely is usually transient — gets the same treatment as a
-        # dropped connection, and still fails loud once the budget is
-        # spent. Only a 4xx is treated as permanent.
+        # Re-measured 2026-09-22 against a hit-counting fixture server, on
+        # curl 8.7.1, with the exact invocation below: 504/502/503/500/429
+        # each produced 7 hits, 404 produced 1. The transient rows are
+        # deliberate, not an oversight — curl's *default* transient set
+        # already includes 408/429/500/502/503/504 and it retries them with
+        # or without `-f`, so a 504 from the release CDN gets the same
+        # treatment as a dropped connection and still fails loud once the
+        # budget is spent.
+        #
+        # Note the set is exactly those six codes, NOT "5xx": a 501 or 505
+        # is not transient to curl and is not retried. The failure message
+        # below is written against that list rather than a `>= 500` test,
+        # because a message that misstates what happened is not a cosmetic
+        # defect — the previous single message claimed every non-2xx was
+        # "not retried" and pointed at a missing release asset, and that
+        # wording alone caused this action to be reported as having no
+        # retry logic while it was in fact retrying seven times.
         #
         # The two curl behaviours this relies on are NOT handled the same way:
         #
@@ -109,15 +120,45 @@ runs:
           # ever runs — confirmed locally. Wrapping it in this and/or list
           # is the idiom that lets `set -e` see the list as "handled" while
           # still landing the real exit code in $curl_status.
+          # No `--retry-delay`: that flag pins a FLAT delay and overrides
+          # curl's own exponential backoff. At the previous `--retry-delay 2`
+          # all seven attempts finished inside 12 seconds (measured, hit-
+          # counting fixture server), so `--retry-max-time 60` was never
+          # approached and a CDN outage lasting longer than 12s exhausted the
+          # budget — which is how a release asset that was present the whole
+          # time failed a real run (vaam-apps/vpay#235, HTTP 504). Omitting it
+          # restores curl's default 1,2,4,8,16,32s schedule, spreading the same
+          # seven attempts over ~63s. `--retry-max-time` is raised to 120 so
+          # that schedule can actually finish: the timer counts from the first
+          # attempt, so at 60 the final retry (due at t≈63s) would be dropped.
           http_code=$(curl -sS -L \
-            --retry 6 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+            --retry 6 --retry-all-errors --retry-max-time 120 \
             -o "$out" -w '%{http_code}' "$@" "$url") && curl_status=0 || curl_status=$?
           if [ "$curl_status" -ne 0 ]; then
             echo "::error::download of ${label} failed after retries (curl exit ${curl_status})" >&2
             exit "$curl_status"
           fi
           if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-            echo "::error::download of ${label} returned HTTP ${http_code} (not retried — this indicates a real failure such as a missing release asset, not a transient network error)" >&2
+            # Two different failures, two different messages. The single
+            # message this replaced told every caller the status was "not
+            # retried" and "indicates a real failure such as a missing release
+            # asset" — false for a 5xx on both counts, and it really did
+            # mislead a reader into reporting the action as having no retry at
+            # all when it retries seven times. Only say "not retried" where
+            # that is true.
+            #
+            # The list is curl's own transient set, verbatim, not `>= 500`:
+            # 408, 429, 500, 502, 503, 504. A 501 or 505 is NOT in it and is
+            # NOT retried, so claiming otherwise would repeat the same kind of
+            # wrong statement in the opposite direction.
+            case "$http_code" in
+              408 | 429 | 500 | 502 | 503 | 504)
+                echo "::error::download of ${label} returned HTTP ${http_code} after 7 attempts over ~63s. This status is in curl's transient retry set and every attempt was made; it usually means the release CDN was briefly unavailable, not that the asset is missing. Verify the asset exists (gh release view v<version> --repo cratestack/cratestack) and re-run the job." >&2
+                ;;
+              *)
+                echo "::error::download of ${label} returned HTTP ${http_code} (not retried — this status is outside curl's transient set, so it indicates a permanent failure such as a missing release asset or a bad version input)" >&2
+                ;;
+            esac
             exit 1
           fi
         }
