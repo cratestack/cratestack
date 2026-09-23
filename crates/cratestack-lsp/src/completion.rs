@@ -77,6 +77,18 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         ),
     ];
 
+    // Multi-file keywords: reserved for the multi-file schema grammar
+    // (cratestack#922, epic #910). Sourced from the parser rather than
+    // copied, under the same "one list, N readers" rule as `builtin_types`
+    // above. The detail string carries the caveat a bare keyword cannot: the
+    // words are permanently unavailable as names, and the declarations they
+    // introduce are not implemented yet, so inserting one today is always a
+    // parse error.
+    // Worded without naming either word, so it stays true for whatever the
+    // parser's list holds.
+    const MULTI_FILE_KEYWORD_DETAIL: &str = "reserved for multi-file schemas (cratestack#910) — never valid \
+         as a name, and the declaration is not implemented yet";
+
     let mut items = keywords
         .into_iter()
         .map(|label| CompletionItem {
@@ -85,6 +97,18 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
             ..CompletionItem::default()
         })
         .collect::<Vec<_>>();
+
+    items.extend(
+        cratestack_parser::reserved_multi_file_keywords()
+            .iter()
+            .copied()
+            .map(|label| CompletionItem {
+                label: label.to_owned(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                detail: Some(MULTI_FILE_KEYWORD_DETAIL.to_owned()),
+                ..CompletionItem::default()
+            }),
+    );
 
     items.extend(
         keywords_with_detail
@@ -259,100 +283,4 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
     }
 
     items
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Regression test for cratestack#232: the builtin-type completion list
-    /// had silently drifted from `cratestack_parser::builtin_type_names()`
-    /// (missing `Decimal`), and nothing caught it. This pins the two lists
-    /// together so a future drift fails the suite instead of shipping.
-    #[test]
-    fn builtin_type_completions_match_parser_list_minus_page() {
-        let labels: std::collections::BTreeSet<String> = completion_items(None)
-            .into_iter()
-            .filter(|item| item.kind == Some(CompletionItemKind::TYPE_PARAMETER))
-            .map(|item| item.label)
-            .collect();
-
-        let expected: std::collections::BTreeSet<String> = cratestack_parser::builtin_type_names()
-            .iter()
-            .copied()
-            .filter(|name| *name != "Page")
-            .map(str::to_owned)
-            .collect();
-
-        assert_eq!(
-            labels, expected,
-            "completion list must track cratestack_parser::builtin_type_names() \
-             (minus `Page`) — see cratestack#232",
-        );
-    }
-
-    /// `@custom` was removed in favor of `@computed`
-    /// (`docs/design/computed-fields.md`) — the completion list must
-    /// offer the new attribute and never suggest the removed one, which
-    /// is now a parse error everywhere it's spelled.
-    #[test]
-    fn computed_attribute_is_offered_and_custom_is_gone() {
-        let labels: std::collections::BTreeSet<String> = completion_items(None)
-            .into_iter()
-            .filter(|item| item.kind == Some(CompletionItemKind::KEYWORD))
-            .map(|item| item.label)
-            .collect();
-
-        assert!(
-            labels.contains("@computed"),
-            "completion list must offer @computed: {labels:?}"
-        );
-        assert!(
-            !labels.contains("@custom"),
-            "completion list must never suggest the removed @custom attribute: {labels:?}"
-        );
-    }
-
-    /// cratestack#743: `@@internal(...)` must be offered as a completion,
-    /// with a detail string distinguishing it from a policy attribute
-    /// (`@@allow`/`@@deny`) — it's easy to reach for by analogy and get
-    /// wrong, since it looks like one but isn't.
-    #[test]
-    fn internal_attribute_is_offered_with_a_detail_string() {
-        let items = completion_items(None);
-        let internal = items
-            .iter()
-            .find(|item| item.label == "@@internal")
-            .unwrap_or_else(|| panic!("completion list must offer @@internal: {items:?}"));
-        assert_eq!(internal.kind, Some(CompletionItemKind::KEYWORD));
-        let detail = internal
-            .detail
-            .as_deref()
-            .unwrap_or_else(|| panic!("@@internal completion should carry a detail string"));
-        assert!(
-            detail.contains("generation-time"),
-            "@@internal's detail should distinguish it from a policy attribute like @@allow: \
-             {detail}"
-        );
-    }
-
-    /// cratestack#327: `datasource { provider = "none" }` must be offered
-    /// alongside the existing `"postgresql"`/`"sqlite"` provider values.
-    #[test]
-    fn datasource_provider_completions_include_none_alongside_postgresql_and_sqlite() {
-        let labels: std::collections::BTreeSet<String> = completion_items(None)
-            .into_iter()
-            .filter(|item| item.kind == Some(CompletionItemKind::ENUM_MEMBER))
-            .map(|item| item.label)
-            .collect();
-
-        assert_eq!(
-            labels,
-            std::collections::BTreeSet::from([
-                "\"postgresql\"".to_owned(),
-                "\"sqlite\"".to_owned(),
-                "\"none\"".to_owned(),
-            ])
-        );
-    }
 }

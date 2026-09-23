@@ -24,6 +24,8 @@ mod tests;
 #[cfg(test)]
 mod tests_block_diagnostics;
 #[cfg(test)]
+mod tests_completion;
+#[cfg(test)]
 mod tests_last_known_good;
 #[cfg(test)]
 mod tests_navigation;

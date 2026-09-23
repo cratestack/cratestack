@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### LSP completion offers `part` and `import` as reserved keywords (#952)
+
+The editor's completion list now includes `part` and `import`, sourced from the parser's
+`reserved_multi_file_keywords()` rather than a hand-copied list, so it cannot drift the way
+the builtin-type list once did (cratestack#232). This matches the editor grammar, which
+already highlights both words as keywords (#929), and rename, which already refuses them.
+
+Each item carries a detail string saying the word is reserved for multi-file schemas
+(cratestack#910), is never valid as a name, and introduces a declaration that is not
+implemented yet. That caveat matters because the completion list is context-free: accepting
+either suggestion today inserts a parse error wherever the cursor is.
+
 ### Reserve `part` and `import` for multi-file schemas — breaking (#922)
 
 Every `.cstack` identifier position now rejects the exact, case-sensitive words
