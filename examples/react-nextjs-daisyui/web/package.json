@@ -15,7 +15,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "^16.3.4",
+    "next": "^16.3.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-nextjs-daisyui-napi": "workspace:*"
@@ -26,7 +26,7 @@
     "@types/node": "^24.13.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "daisyui": "^5.7.36",
+    "daisyui": "^5.7.40",
     "postcss": "^8.5.28",
     "serwist": "^9.5.11",
     "tailwindcss": "^4.3.0",
