@@ -6,11 +6,13 @@
 
 The editor's completion list now includes `part` and `import`, sourced from the parser's
 `reserved_multi_file_keywords()` rather than a hand-copied list, so it cannot drift the way
-it did for the builtin types (cratestack#232). Each carries a detail string noting the word
-is reserved for upcoming multi-file schemas (cratestack#910) and cannot be used as a
-standalone identifier yet — keeping the suggestion honest, since these declarations are not
-implemented. This brings completion in line with the editor grammar (#929) and the rename
-flow, which already reject these words.
+the builtin-type list once did (cratestack#232). This matches the editor grammar, which
+already highlights both words as keywords (#929), and rename, which already refuses them.
+
+Each item carries a detail string saying the word is reserved for multi-file schemas
+(cratestack#910), is never valid as a name, and introduces a declaration that is not
+implemented yet. That caveat matters because the completion list is context-free: accepting
+either suggestion today inserts a parse error wherever the cursor is.
 
 ### Reserve `part` and `import` for multi-file schemas — breaking (#922)
 
