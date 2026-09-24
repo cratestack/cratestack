@@ -7,6 +7,7 @@
 #![allow(dead_code)] // Each test binary uses a different subset.
 
 pub mod client;
+pub mod failing;
 pub mod stores;
 
 use std::sync::Arc;
