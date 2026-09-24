@@ -260,29 +260,45 @@ jobs:
         # lockfile. The other two loops pin that the check can fail: pg/api
         # must show `rmcp` with `--features mcp`, and sqlite/client must
         # reject `--features mcp` outright (D3).
+        #
+        # Every graph is captured into a variable before it is searched. In
+        # `if cargo tree ... | grep -q`, a `cargo tree` that fails (a stale
+        # lockfile under `--locked`) makes the pipeline false, which reads
+        # as "no rmcp" and passes; so can `grep -q` closing the pipe early
+        # once the tree outgrows the pipe buffer. A bare `graph="$(...)"`
+        # fails the step under `set -e` instead. Likewise sqlite/client must
+        # fail for the missing feature, not for any reason at all.
         run: |
           set -euo pipefail
           for facade in cratestack-pg cratestack-api cratestack-sqlite cratestack-client; do
-            if cargo tree --locked -e normal -p "$facade" | grep -q '\brmcp v'; then
+            graph="$(cargo tree --locked -e normal -p "$facade")"
+            if grep -q '\brmcp v' <<<"$graph"; then
               echo "::error::expected no rmcp in $facade's default normal dependency graph"
               cargo tree --locked -e normal -p "$facade" -i rmcp
               exit 1
             fi
           done
           for facade in cratestack-pg cratestack-api; do
-            if ! cargo tree --locked -e normal -p "$facade" --features mcp | grep -q '\brmcp v'; then
+            graph="$(cargo tree --locked -e normal -p "$facade" --features mcp)"
+            if ! grep -q '\brmcp v' <<<"$graph"; then
               echo "::error::expected rmcp in $facade's graph with --features mcp"
               exit 1
             fi
           done
           for facade in cratestack-sqlite cratestack-client; do
-            if cargo tree --locked -e normal -p "$facade" --features mcp >/dev/null 2>&1; then
+            if refusal="$(cargo tree --locked -e normal -p "$facade" --features mcp 2>&1)"; then
               echo "::error::$facade must not offer an mcp feature (ADR 0002 D3)"
+              exit 1
+            fi
+            if ! grep -q 'does not contain this feature: mcp' <<<"$refusal"; then
+              echo "::error::cargo tree failed for $facade, but not for the missing mcp feature:"
+              echo "$refusal"
               exit 1
             fi
           done
           for example in no-database-verification no-database-verification-api client-only-verification db-transaction-verification declarative-query-verification; do
-            if (cd "examples/$example" && cargo tree --locked -e normal | grep -q '\brmcp v'); then
+            graph="$(cd "examples/$example" && cargo tree --locked -e normal)"
+            if grep -q '\brmcp v' <<<"$graph"; then
               echo "::error::expected no rmcp in examples/$example's dependency graph"
               exit 1
             fi
