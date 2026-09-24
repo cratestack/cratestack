@@ -10,10 +10,12 @@
 //! - **Stayed at the transport:** deriving the bucket key and its budget
 //!   (they read `Authorization`, `ConnectInfo` and a verified-principal
 //!   extension — all transport facts, exactly like the idempotency
-//!   fingerprint in slice 1), the lookup timeout, the store-error policy,
-//!   and every response the limiter renders. Those are cratestack#846 and
-//!   cratestack#871's decisions, carried across verbatim rather than
-//!   re-decided under a refactor.
+//!   fingerprint in slice 1), enforcing the lookup timeout, applying the
+//!   store-error policy, and every response the limiter renders. Those are
+//!   cratestack#846 and cratestack#871's decisions, carried across
+//!   verbatim rather than re-decided under a refactor. The policy's *type*
+//!   and its rule did move later, to `crate::store_error`, so the
+//!   transports share one (cratestack#1038).
 //!
 //! # Why this is not a new [`crate::Admission`] variant
 //!
@@ -125,8 +127,8 @@ impl OpExecutor {
     ///
     /// A store error is returned as-is: what a *transport* does with an
     /// unreachable limiter (serve through it, or refuse) is cratestack#846's
-    /// `StoreErrorPolicy`, and it stays with the transport that owns the
-    /// response.
+    /// [`crate::StoreErrorPolicy`], which the transport applies because it
+    /// owns the log line and the response.
     ///
     /// An op that [`Self::rate_limit_applies`] to but whose input carries
     /// no [`OpInput::rate_limit_bucket`] is refused with
