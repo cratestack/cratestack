@@ -130,6 +130,29 @@ fn the_scheme_is_matched_in_any_case() {
     }
 }
 
+/// Only *ASCII* case folds, and nothing else about the scheme is forgiven.
+/// Each of these survived as a mutation of `strip_scheme`: Unicode
+/// lowercasing (U+212A KELVIN SIGN lowercases to ASCII `k`, so
+/// `CRATESTAC\u{212A}` would pass `to_lowercase`), trimming whitespace, and
+/// accepting `cratestack:` without the `//`.
+#[test]
+fn the_scheme_folds_ascii_case_and_nothing_else() {
+    for uri in [
+        "CRATESTAC\u{212A}://blog/posts/1",
+        "cratestac\u{212A}://blog/posts/1",
+        "CRATE\u{17F}TACK://blog/posts/1",
+        " cratestack://blog/posts/1",
+        "\tcratestack://blog/posts/1",
+        "cratestack ://blog/posts/1",
+        "cratestack:// blog/posts/1",
+        "cratestack:blog/posts/1",
+        "cratestack:blog/posts",
+        "CRATESTACK:blog/posts",
+    ] {
+        assert_eq!(error(uri), UriError::Unknown, "{uri:?}");
+    }
+}
+
 #[test]
 fn a_bad_page_query_is_invalid_not_unknown() {
     for uri in [
