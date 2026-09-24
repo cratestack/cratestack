@@ -71,7 +71,12 @@ fn optional_arguments_may_be_omitted_and_reordered() {
 
 #[test]
 fn a_schema_without_mcp_serializes_exactly_as_before() {
-    let schema = parse_schema("model A {\n  id Int @id\n}\n").expect("parses");
+    // A model *and* a procedure: each of `Schema`, `Model` and `Procedure`
+    // gained an `mcp` field, and each must be skipped when empty.
+    let schema =
+        parse_schema("model A {\n  id Int @id\n}\n\nprocedure ping(n: Int): Int\n  @allow(true)\n")
+            .expect("parses");
+    assert_eq!(schema.procedures.len(), 1);
     let json = serde_json::to_string(&schema).expect("serializes");
     assert!(!json.contains("\"mcp\""), "{json}");
 }
