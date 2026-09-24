@@ -52,7 +52,7 @@ impl<T: McpTools> McpServer<T> {
     /// Fails only when the table's schemas are not JSON objects or a name
     /// repeats, which the generated table never produces.
     pub fn new(tools: T, context: CratestackContext) -> Result<Self, ToolTableError> {
-        Self::with_caller(tools, Caller::Fixed(context))
+        Self::with_caller(tools, Caller::Fixed(Box::new(context)))
     }
 
     /// `pub(crate)`: only `crate::streamable_http` builds a server whose caller comes

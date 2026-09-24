@@ -16,7 +16,8 @@ use rmcp::{ErrorData, RoleServer};
 
 pub(crate) enum Caller {
     /// stdio: the one context the application passed to `StdioServer::new`.
-    Fixed(CratestackContext),
+    /// Boxed: a `CratestackContext` is large, and the other variant is empty.
+    Fixed(Box<CratestackContext>),
     /// Streamable HTTP: the [`AuthenticatedCaller`] the guard put on this
     /// request.
     PerRequest,
