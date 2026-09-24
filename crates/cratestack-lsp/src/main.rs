@@ -5,6 +5,8 @@ mod definition;
 mod document_symbols;
 mod hover;
 mod hover_render;
+mod mcp_completion;
+mod mcp_hover;
 mod mixin_use;
 mod navigation;
 mod query_symbols;
@@ -27,6 +29,8 @@ mod tests_block_diagnostics;
 mod tests_completion;
 #[cfg(test)]
 mod tests_last_known_good;
+#[cfg(test)]
+mod tests_mcp;
 #[cfg(test)]
 mod tests_navigation;
 #[cfg(test)]

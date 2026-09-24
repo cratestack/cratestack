@@ -5,6 +5,9 @@ use crate::text::span_contains;
 use crate::type_ref::{render_type_ref, type_ref_at_offset};
 
 pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo> {
+    if let Some(symbol) = crate::mcp_hover::hover_symbol(schema, offset) {
+        return Some(symbol);
+    }
     if let Some(datasource) = &schema.datasource
         && span_contains(datasource.span, offset)
     {
