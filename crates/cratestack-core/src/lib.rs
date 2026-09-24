@@ -52,10 +52,13 @@ pub use batch::{
     BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest, BatchResponse,
     BatchSummary, find_duplicate_position,
 };
-pub use codec::{CratestackCodec, CratestackEnvelope, NoEnvelope};
+pub use codec::{
+    Binding, BodyShape, CratestackCodec, CratestackEnvelope, NoEnvelope, OpenedFrame, SealedItem,
+    StreamEnd, StreamOpener, StreamSealer,
+};
 pub use context::{
     AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
-    PrincipalFacet, RequestContext, SystemContext,
+    PrincipalFacet, RequestContext, SystemContext, VerifiedSigner,
 };
 // `Decimal` only exists when EXACTLY ONE decimal backend feature is
 // active; `RustDecimal`/`BigDecimal` each only exist under their own

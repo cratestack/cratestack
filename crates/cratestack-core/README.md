@@ -11,7 +11,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 - **Schema AST**: `Schema`, `Model`, `Field`, `Procedure`, `MixinDecl`, `TypeDecl`, `EnumDecl`
 - **Audit**: `AuditEvent`, `AuditOperation`, `AuditActor`, `AuditSink`, `NoopAuditSink`, `MulticastAuditSink`
 - **Signed envelope**: `HmacEnvelope` (HS256), `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
-- **Codec/envelope traits**: `CratestackCodec`, `CratestackEnvelope`, `NoEnvelope`
+- **Codec/envelope traits**: `CratestackCodec`; the async signing seam `CratestackEnvelope` with its `Binding` (the COSE external-AAD inputs), `BodyShape`, the provisional `StreamSealer`/`StreamOpener`, and the zero-cost `NoEnvelope` (ADR 0006)
 - **Event bus**: `CratestackEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CratestackEventEnvelope`
 - **Transaction isolation**: `TransactionIsolation`
 - **Decimal scalar**: `Decimal` (compile-time backend)
@@ -161,7 +161,11 @@ Accepts `read_committed` / `read committed`, `repeatable_read` / `repeatable rea
 
 ## Signed Envelope (HMAC-SHA-256)
 
-`HmacEnvelope<K: KeyProvider>` implements `CratestackEnvelope` for HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide.
+`HmacEnvelope<K: KeyProvider>` seals and opens HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. It is a standalone async API: it does **not** implement `CratestackEnvelope`, and ADR 0006 replaces it with COSE_Mac0 mode (deprecated in its phase P2).
+
+## Envelope seam (ADR 0006)
+
+`CratestackEnvelope` sits between the codec and the HTTP body (`HTTP body → envelope.open → codec.decode`). `seal`/`open` are async and take a `Binding`, the method, route (`op_id`), query, schema SHA, payload media type and, for responses, the request digest and status. That binding becomes the COSE external AAD and is never sent. `open` records the key it verified with `CratestackContext::record_verified_signer`. `NoEnvelope` is the unsigned pass-through. It hands back the same `Bytes` without allocating and records nothing. No router calls the seam yet; the COSE implementation (`cratestack-cose`, cratestack#1005) and the router wiring (cratestack#1006) come next.
 
 ## See Also
 

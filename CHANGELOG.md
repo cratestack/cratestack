@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+### `CratestackEnvelope` is async and takes a `Binding` — breaking (#1004)
+
+**The sync `open_request`/`seal_response` envelope trait is gone.**
+`cratestack_core::CratestackEnvelope` now has the shape ADR 0006 §1 accepted
+(2026-09-24, #1003). It is the seam the COSE envelope (#1005) and its router
+wiring (#1006) plug into:
+
+```rust
+pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
+    fn media_type(&self, shape: BodyShape) -> Option<&'static str>;
+    fn seal<'a>(&'a self, payload: Bytes, bind: &'a Binding<'a>)
+        -> impl Future<Output = Result<Bytes, CratestackError>> + Send + 'a;
+    fn open<'a>(&'a self, body: Bytes, bind: &'a Binding<'a>, ctx: &'a mut CratestackContext)
+        -> impl Future<Output = Result<Bytes, CratestackError>> + Send + 'a;
+    fn stream_sealer(&self, bind: Binding<'static>) -> Option<Box<dyn StreamSealer>>;
+    fn stream_opener(&self, bind: Binding<'static>) -> Option<Box<dyn StreamOpener>>;
+}
+```
+
+- **`Binding`** holds the COSE external-AAD inputs: method, route (`op_id`),
+  query, `schema_sha`, payload media type, and for responses the request
+  digest and status. It is never sent. Its string fields are `Cow`, so the
+  unary path borrows everything, and `into_owned()` produces the
+  `Binding<'static>` a stream sealer needs.
+- **`open` records the verified key** with the new
+  `CratestackContext::record_verified_signer(VerifiedSigner)`. The slot is
+  private and `#[serde(skip)]`, so a deserialized context never carries one.
+  Recording a signer does not make a context authenticated; #1006 decides
+  what it feeds.
+- **`StreamSealer`/`StreamOpener`** are provisional. P1 (#1008, #1009)
+  finalises them.
+- **`NoEnvelope`** returns the same `Bytes` without allocating (a
+  counting-allocator test asserts it) and returns `None` from `media_type`.
+  It used to answer `application/octet-stream`, which was wrong for CBOR, but
+  nothing ever called it.
+
+Two deviations from the ADR's sketch. `seal`/`open` return `impl Future`
+rather than `BoxFuture`, because a boxed future is an 80-byte allocation per
+call on the unsigned path, and the `Clone` bound already made the trait
+non-object-safe. `media_type` returns `Option`, so "no envelope framing" is
+`None` instead of a sentinel string.
+
+**Who breaks:** only code that implemented or called the old trait. No router
+or client in this workspace did, so no service changes behaviour. An
+implementation ports method by method: `request_content_type` and
+`response_content_type` become `media_type`, `open_request` becomes `open`,
+and `seal_response` becomes `seal`. Each now takes a `Binding`.
+`CratestackContext` gains a private field, which breaks no one, because its
+existing private `system` field already ruled out struct literals outside
+core.
+
 ### MCP phase 3: `@mcp(tool)` procedures are served over stdio, through the same policy check as REST and RPC (#1038)
 
 **A schema's `@mcp(tool)` procedures can now be served to agents.** Turn on the
