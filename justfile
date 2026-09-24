@@ -458,6 +458,13 @@ test-ci-host *args='':
 	# here — it's self-documented as needing the `pgvector/pgvector`
 	# Postgres image, not the stock one this shard (or any shard) runs.
 	cargo test -p cratestack-pg --features rate_limit --test rate_limit_extension {{args}} || status=1
+	# cratestack#877: `rate_limit_runtime.rs` is gated
+	# `#![cfg(all(feature = "rate_limit", feature = "codec-json"))]` and was
+	# missed by the audit above — every CI run compiled it to `running 0
+	# tests` in the db shard, although it is the binding check for
+	# `@no_rate_limit` over real HTTP. No database needed (`connect_lazy`);
+	# `codec-json` is a `cratestack-pg` default.
+	cargo test -p cratestack-pg --features rate_limit --test rate_limit_runtime {{args}} || status=1
 	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
 	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}} || status=1
 	# cratestack#926: `tests/middleware.rs` is `#![cfg(feature = "middleware")]`

@@ -45,26 +45,38 @@
 //! constraint for this crate by name ("a function over an already-chosen
 //! set of collaborators, never a registry").
 //!
-//! # Scope of slice 1
+//! # Scope: slices 1 and 2
 //!
-//! Only **idempotency admission** — [`OpExecutor::admit`],
-//! [`OpExecutor::complete`], [`OpExecutor::release`]. Rate limiting stays
-//! at L4 (`cratestack-axum::ratelimit`), audit stays where it is, row-level
-//! policy on subscriptions stays unenforced, and
-//! [`OpInput::ctx`] is always `None`. Those are later slices, not
-//! omissions; `OpAdmission::rate_limited_by_default` is carried through
-//! today so the input shape does not have to change when rate limiting
-//! follows.
+//! - **Slice 1, idempotency admission** — [`OpExecutor::admit`],
+//!   [`OpExecutor::complete`], [`OpExecutor::release`].
+//! - **Slice 2, rate-limit admission** (cratestack#877) —
+//!   [`OpExecutor::with_rate_limit`], [`OpExecutor::rate_limit_applies`],
+//!   [`OpExecutor::admit_rate_limit`]. The decision (is this op limited,
+//!   and what does an unidentified op get) and the store call live here;
+//!   key derivation, the lookup timeout, the store-error policy and the
+//!   rendered responses stay at the transport. See the `rate_limit`
+//!   module for why it answers with [`RateLimitAdmission`] rather than a
+//!   new [`Admission`] variant.
+//!
+//! Audit stays where it is, row-level policy on subscriptions stays
+//! unenforced, and [`OpInput::ctx`] is always `None`. Those are later
+//! slices, not omissions.
 
 mod admission;
 mod executor;
 mod input;
+mod rate_limit;
 
 #[cfg(test)]
 mod tests_admission;
 #[cfg(test)]
 mod tests_executor;
+#[cfg(test)]
+mod tests_rate_limit;
+#[cfg(test)]
+mod tests_rate_limit_fail;
 
 pub use admission::Admission;
 pub use executor::OpExecutor;
 pub use input::{OpAdmission, OpInput};
+pub use rate_limit::{RateLimitAdmission, RateLimitBucket};

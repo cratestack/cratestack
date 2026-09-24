@@ -85,6 +85,7 @@ pub(crate) fn input<'a>(op: OpAdmission, key: Option<&'a str>) -> OpInput<'a> {
         idempotency_key: key,
         fingerprint: [7u8; 32],
         ctx: None,
+        rate_limit_bucket: None,
     }
 }
 

@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Rate-limit admission moves to the L3 `OpExecutor`, and `@no_rate_limit` works under `Router::nest` (#877)
+
+ADR 0015 slice 2. The decision `RateLimitLayer` made — is this op rate limited at
+all, what does an op nobody could identify get, and the store call itself — now
+lives in `cratestack-exec`, next to slice 1's idempotency admission:
+`OpExecutor::with_rate_limit`, `OpExecutor::rate_limit_applies` and
+`OpExecutor::admit_rate_limit`, which answers a new `RateLimitAdmission`. The
+layer is an adapter over it. Everything transport-shaped stayed put and is
+unchanged: key derivation and the cratestack#871 bucket budget, the single
+lookup timeout, the cratestack#846 store-error policy, and every response and
+header the limiter renders. **No wire change:** `rate_limit_runtime.rs` and
+`e2e_ratelimit.rs` pass with zero diff. All additions are additive, since the
+`cratestack-exec` types were already `#[non_exhaustive]`.
+
+It answers with its own type rather than a new `Admission` variant, because an
+*admitted* rate-limited call still carries data the response needs
+(`X-RateLimit-Remaining`, and which bucket was charged). The failure directions
+are pinned by name: an unidentified op is **charged**, the inverse of
+idempotency, where the same doubt reserves.
+
+`build_rest_ops_filter` / `build_rpc_ops_filter` keep their signatures and
+behaviour, and are now projections of slice 1's op resolvers, so both concerns
+share one descriptor lookup. New: `RateLimitLayer::with_op_resolver`, which
+takes those same resolvers — including the `_with_prefix` ones — so a router
+mounted with `Router::nest` can finally honour `@no_rate_limit`. Under the
+filters it could not, and still cannot.
+
+Found on the way: `crates/cratestack-pg/tests/rate_limit_runtime.rs`, the
+end-to-end check that `@no_rate_limit` is honoured over real HTTP, has never
+run in CI. It is gated on the `rate_limit` feature, no recipe enabled it, and
+every run printed `running 0 tests`. `just test-ci-host` now runs it.
+
 ### LSP completion offers `part` and `import` as reserved keywords (#952)
 
 The editor's completion list now includes `part` and `import`, sourced from the parser's

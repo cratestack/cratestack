@@ -3,6 +3,8 @@
 
 use cratestack_core::{CratestackContext, OpDescriptor, RouteTransportDescriptor};
 
+use crate::rate_limit::RateLimitBucket;
+
 /// The participation facts a schema declares about one op, lifted off
 /// whichever descriptor the schema's transport emitted.
 ///
@@ -14,9 +16,11 @@ use cratestack_core::{CratestackContext, OpDescriptor, RouteTransportDescriptor}
 /// and silently no-oped on the other.
 /// # `#[non_exhaustive]`
 ///
-/// Slices 2 and 3 add fields here — rate-limit tunables and whatever
-/// policy evaluation needs — and this crate is unreleased, so the marker
-/// costs nothing now and saves a second breaking release later. Consumers
+/// Later slices may add fields here — whatever policy evaluation needs —
+/// and the marker lets them do so without a breaking release. (Slice 2
+/// needed none: rate-limit tunables are the limiter's own configuration,
+/// passed to [`OpExecutor::with_rate_limit`](crate::OpExecutor::with_rate_limit),
+/// not a per-op fact.) Consumers
 /// build one with [`OpAdmission::new`], [`OpAdmission::unresolved`] or the
 /// two `From` impls below rather than a struct literal; reading the public
 /// fields is unaffected. Same reasoning `ConflictTarget`
@@ -40,9 +44,10 @@ pub struct OpAdmission {
     /// reservation — see the field of the same name on [`OpDescriptor`]
     /// for the full statement of what the flag means.
     pub idempotent_by_default: bool,
-    /// `true` when the op participates in rate limiting. Carried but
-    /// unread in slice 1 (rate limiting is still an L4 `tower::Layer`);
-    /// it is here so a later slice does not have to change this type.
+    /// `true` when the op participates in rate limiting — `false` is what
+    /// `@no_rate_limit` compiles to. Read by
+    /// [`OpExecutor::rate_limit_applies`](crate::OpExecutor::rate_limit_applies)
+    /// since slice 2 (cratestack#877).
     pub rate_limited_by_default: bool,
 }
 
@@ -112,10 +117,11 @@ impl From<&'static RouteTransportDescriptor> for OpAdmission {
 ///
 /// # `#[non_exhaustive]`
 ///
-/// Slice 3 adds at least one field (it is the slice that fills
-/// [`ctx`](Self::ctx)), and this crate is unreleased. Build one with
-/// [`OpInput::new`], adding [`OpInput::with_ctx`] when there is a context
-/// to pass; the fields stay public to read.
+/// Slice 2 added [`rate_limit_bucket`](Self::rate_limit_bucket) without a
+/// breaking release because of this marker, and slice 3 will add what it
+/// needs the same way. Build one with [`OpInput::new`] or
+/// [`OpInput::for_rate_limit`], adding [`OpInput::with_ctx`] when there is
+/// a context to pass; the fields stay public to read.
 #[non_exhaustive]
 pub struct OpInput<'a> {
     /// What the schema declared about this op — the only thing admission
@@ -150,6 +156,10 @@ pub struct OpInput<'a> {
     /// moves here and needs the authenticated principal's claims rather
     /// than just a namespace string.
     pub ctx: Option<&'a CratestackContext>,
+    /// The bucket rate-limit admission charges, already derived by the
+    /// caller (slice 2). `None` for a call that asks only the idempotency
+    /// question; build a rate-limit input with [`OpInput::for_rate_limit`].
+    pub rate_limit_bucket: Option<RateLimitBucket<'a>>,
 }
 
 impl<'a> OpInput<'a> {
@@ -171,6 +181,7 @@ impl<'a> OpInput<'a> {
             idempotency_key,
             fingerprint,
             ctx: None,
+            rate_limit_bucket: None,
         }
     }
 

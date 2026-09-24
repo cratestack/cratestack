@@ -282,6 +282,19 @@ let app = router.route_layer(
 
 Both filters fail closed: a lookup miss (unknown op, unmatched route, non-RPC path) always rate-limits rather than exempts. `POST /rpc/batch` is a known exception — it is always rate-limited wholesale, because the filter runs before the batch body is decoded and can't see the individual ops inside it; see `build_rpc_ops_filter`'s rustdoc.
 
+**Under `Router::nest`, use a resolver instead of a filter.** Both filters compare against the path the schema declares, so behind `.nest("/api", router)` every lookup misses and `@no_rate_limit` is silently inert (safe — a miss rate-limits — but inert). Since ADR 0015 slice 2 the layer accepts the same op resolvers `IdempotencyLayer` does, including the prefixed ones:
+
+```rust
+use cratestack_axum::idempotency::build_rpc_op_resolver_with_prefix;
+
+let app = Router::new().nest("/api", router).layer(
+    RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+        .with_op_resolver(build_rpc_op_resolver_with_prefix("/api", cratestack_schema::axum::OPS)),
+);
+```
+
+One resolver can serve both layers, so a single descriptor lookup decides both `@no_idempotency` and `@no_rate_limit`. The decision itself is made by `cratestack_exec::OpExecutor::admit_rate_limit`; this layer derives the bucket key, bounds the lookup, applies the store-error policy and renders the response.
+
 ## Trusted Proxy / Audit `client_ip`
 
 `Forwarded`/`X-Forwarded-For` are client-suppliable headers. Without a trusted-proxy

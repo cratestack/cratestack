@@ -20,15 +20,17 @@
 //! it still runs the filter, finds no match, and fails closed (rate-limits
 //! the 404). Either is safe — pick based on whether 404s should count
 //! against the budget.
-use axum::extract::{MatchedPath, Request};
+use axum::extract::Request;
 use cratestack_core::RouteTransportDescriptor;
+
+use crate::idempotency::build_rest_op_resolver;
 
 /// Build a rate-limit filter function for REST schemas.
 ///
 /// Returns a function that:
-/// - Reads the matched route pattern via [`MatchedPath`] (populated by
-///   axum under both `Router::layer` and `Router::route_layer` — see
-///   module docs).
+/// - Reads the matched route pattern via [`axum::extract::MatchedPath`]
+///   (populated by axum under both `Router::layer` and
+///   `Router::route_layer` — see module docs).
 /// - Looks up the route (matched pattern + HTTP method) in the provided
 ///   descriptors.
 /// - Returns `false` (exempt) if `rate_limited_by_default` is false.
@@ -39,25 +41,18 @@ use cratestack_core::RouteTransportDescriptor;
 /// route — a 404) or the route isn't found in `routes` (a schema/router
 /// mismatch), the request is rate-limited. This prevents accidental
 /// exemptions from missing data or misconfiguration.
+///
+/// Since ADR 0015 slice 2 (cratestack#877) this is a projection of
+/// [`build_rest_op_resolver`] — one lookup shared with idempotency, whose
+/// miss (`OpAdmission::unresolved`) is `rate_limited_by_default: true`,
+/// i.e. exactly the fail-closed answer above. For a router mounted with
+/// `Router::nest`, pass `build_rest_op_resolver_with_prefix` to
+/// [`super::RateLimitLayer::with_op_resolver`] instead.
 pub fn build_rest_ops_filter(
     routes: &'static [RouteTransportDescriptor],
 ) -> impl Fn(&Request) -> bool + Send + Sync {
-    move |req: &Request| {
-        let Some(matched) = req.extensions().get::<MatchedPath>() else {
-            // No matched path: the request hit no route (a 404). Fail closed.
-            return true;
-        };
-        let path = matched.as_str();
-        let method = req.method().as_str();
-
-        match routes
-            .iter()
-            .find(|route| route.method == method && route.path == path)
-        {
-            Some(route) => route.rate_limited_by_default,
-            None => true,
-        }
-    }
+    let resolve = build_rest_op_resolver(routes);
+    move |req: &Request| resolve(req).rate_limited_by_default
 }
 
 #[cfg(test)]

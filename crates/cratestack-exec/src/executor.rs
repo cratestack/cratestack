@@ -8,6 +8,7 @@ use cratestack_core::{CratestackError, IdempotencyStore};
 
 use crate::admission::Admission;
 use crate::input::OpInput;
+use crate::rate_limit::RateLimiter;
 
 /// Runs the admission half of an operation, independently of how the
 /// caller arrived.
@@ -32,6 +33,9 @@ use crate::input::OpInput;
 pub struct OpExecutor {
     idempotency: Option<Arc<dyn IdempotencyStore>>,
     ttl: Duration,
+    /// Set by [`Self::with_rate_limit`]; `None` bypasses rate limiting the
+    /// same way a missing idempotency store bypasses reservation.
+    pub(crate) rate_limit: Option<RateLimiter>,
 }
 
 impl OpExecutor {
@@ -47,7 +51,11 @@ impl OpExecutor {
     /// construction — so a long-lived executor does not hand out
     /// reservations that expire relative to process start.
     pub fn new(idempotency: Option<Arc<dyn IdempotencyStore>>, ttl: Duration) -> Self {
-        Self { idempotency, ttl }
+        Self {
+            idempotency,
+            ttl,
+            rate_limit: None,
+        }
     }
 
     /// Decide whether this call may run, and whether it owes a

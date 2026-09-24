@@ -1,13 +1,14 @@
 //! Op resolver for REST transport: recover the `OpAdmission` facts the
 //! schema declared about the route a request matched.
 //!
-//! Deliberately shaped after `crate::ratelimit::rest_ops_filter`, which
+//! Originally shaped after `crate::ratelimit::rest_ops_filter`, which
 //! solved the identical "a `tower::Layer` sits above routing and has to
 //! learn which op it is about to dispatch" problem for cratestack#474.
-//! Same mechanism, same `MatchedPath` trick, same
-//! `RouteTransportDescriptor::path` `{param}` shape — see that module for
-//! the full write-up of why `Router::layer` and `Router::route_layer` both
-//! populate `MatchedPath` and how they differ on 404s.
+//! Since ADR 0015 slice 2 (cratestack#877) the dependency runs the other
+//! way: that filter is now a projection of this resolver, so rate limiting
+//! and idempotency share one lookup. See the filter's module for the
+//! write-up of why `Router::layer` and `Router::route_layer` both populate
+//! `MatchedPath` and how they differ on 404s.
 //!
 //! # A nested mount needs [`build_rest_op_resolver_with_prefix`]
 //!

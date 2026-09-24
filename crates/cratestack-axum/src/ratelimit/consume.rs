@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use axum::extract::Request;
 use axum::response::Response;
-use cratestack_core::{BoundedOutcome, Charged, ConsumeRequest, RateLimitDecision};
+use cratestack_core::{BoundedOutcome, Charged, CratestackError, RateLimitDecision};
+use cratestack_exec::{OpAdmission, OpInput, RateLimitAdmission, RateLimitBucket};
 
 use crate::middleware_error::middleware_error_response;
 
@@ -18,7 +19,12 @@ use super::store_error::{StoreFailure, classify_store_failure};
 
 /// Runs the limiter for one request that is not exempt, and returns the
 /// response — either the inner service's, or one of the layer's own.
-pub(super) async fn run<S>(service: RateLimitService<S>, req: Request) -> Response
+///
+/// Since ADR 0015 slice 2 (cratestack#877) the store call goes through
+/// [`cratestack_exec::OpExecutor::admit_rate_limit`]. Everything around it
+/// is unchanged: key derivation before it, the single lookup budget around
+/// it, and the response shaping after it all stayed at this layer.
+pub(super) async fn run<S>(service: RateLimitService<S>, req: Request, op: OpAdmission) -> Response
 where
     S: tower::Service<Request, Response = Response, Error = std::convert::Infallible>
         + Clone
@@ -39,15 +45,44 @@ where
     // for it twice. An elapse is reported as a transport-class
     // error, so it is subject to the same policy as any other
     // "the store did not answer" — cratestack#846.
-    let request = ConsumeRequest::new(&derivation.key, config, derivation.budget.as_ref());
-    let outcome = match tokio::time::timeout(
+    let input = OpInput::for_rate_limit(
+        op,
+        RateLimitBucket::new(&derivation.key, derivation.budget.as_ref()),
+    );
+    let admitted = match tokio::time::timeout(
         service.store_timeout,
-        service.store.consume_bounded(request),
+        service.executor.admit_rate_limit(&input),
     )
     .await
     {
-        Ok(outcome) => outcome,
+        Ok(admitted) => admitted,
         Err(_elapsed) => Err(super::policy::store_timeout_error()),
+    };
+    let outcome = match admitted {
+        Ok(RateLimitAdmission::Consumed(outcome)) => Ok(outcome),
+        // Unreachable while `RateLimitService::call` asks
+        // `rate_limit_applies` first; if it ever is reached, serve as the
+        // exempt path does rather than invent a charge.
+        Ok(RateLimitAdmission::Bypass) => {
+            return match inner.call(req).await {
+                Ok(response) => response,
+                Err(infallible) => match infallible {},
+            };
+        }
+        // `RateLimitAdmission` is `#[non_exhaustive]`. An outcome this
+        // build does not know must not run the handler.
+        Ok(_) => {
+            return middleware_error_response(
+                req.headers(),
+                req.uri().path(),
+                CratestackError::Internal(
+                    "rate limit: unhandled admission outcome; refusing rather than running \
+                     the operation"
+                        .to_owned(),
+                ),
+            );
+        }
+        Err(error) => Err(error),
     };
 
     match outcome {

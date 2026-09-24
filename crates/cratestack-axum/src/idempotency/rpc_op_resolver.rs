@@ -1,10 +1,11 @@
 //! Op resolver for RPC transport: recover the `OpAdmission` facts the
 //! schema declared about the op named in a `/rpc/{op_id}` path.
 //!
-//! Deliberately shaped after `crate::ratelimit::rpc_ops_filter`, which
+//! Originally shaped after `crate::ratelimit::rpc_ops_filter`, which
 //! solved the identical lookup for cratestack#474 — same `/rpc/` prefix
 //! strip, same `batch`/`subscribe/` exclusions, same linear search over an
-//! unsorted slice. See [`build_rest_op_resolver`] for why this module's
+//! unsorted slice. Since ADR 0015 slice 2 (cratestack#877) that filter is a
+//! projection of this resolver, so the two concerns share one lookup. See [`build_rest_op_resolver`] for why this module's
 //! fail-closed direction is the inverse of the rate-limit filter's.
 //!
 //! [`build_rest_op_resolver`]: super::build_rest_op_resolver

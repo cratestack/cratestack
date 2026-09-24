@@ -157,6 +157,8 @@ mod tests_evasion_v4;
 #[cfg(test)]
 mod tests_key_fn;
 #[cfg(test)]
+mod tests_op_resolver;
+#[cfg(test)]
 mod tests_scope;
 #[cfg(test)]
 mod tests_scope_ipv6;
