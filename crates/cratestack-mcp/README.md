@@ -1,6 +1,7 @@
 # cratestack-mcp
 
-**L4 — the MCP binding.** Serves a CrateStack schema's `@mcp(tool)` procedures to agents over the
+**L4 — the MCP binding.** Serves a CrateStack schema's `@mcp(tool)` procedures and `@@mcp(resource)`
+models to agents over the
 [Model Context Protocol](https://modelcontextprotocol.io), revision `2026-07-28`, through the same
 generated policy check as REST and RPC (ADR 0002, cratestack#1033).
 
@@ -77,5 +78,19 @@ identifier: MCP requires it, and CrateStack ships no generic OAuth provider in v
 Errors are `isError: true` results whose text is exactly REST's error envelope (`code`, `message`), so
 MCP reveals nothing REST does not.
 
-Not yet: resources (phase 5). A schema that declares `@@mcp(resource: ...)` does not compile until
-they ship.
+## Resources (`cratestack-pg` only)
+
+A model annotated `@@mcp(resource: "posts")` is a read-only resource (cratestack#1040):
+
+- `cratestack://<schema>/posts/{id}` reads one record, shaped exactly like REST's `GET /posts/{id}`
+  (same serializer, so `@server_only` fields are absent and `@computed` fields resolved).
+- `cratestack://<schema>/posts{?limit,cursor}` reads a page, `{"items": [...], "nextCursor": "..."}`, in
+  primary-key order. `limit` defaults to 50 and is clamped (not refused) at 200, or at the model's
+  `max_page_size:` when lower. Pass `nextCursor` back as `cursor`; a cursor this server did not issue for
+  that resource is `-32602`.
+
+`<schema>` is the schema file's name without `.cstack`. Reads go through the same ORM calls REST's handlers
+make, under the caller's context (the one passed to `StdioServer::new`, or the one your `AuthProvider`
+built for this HTTP request), so `@@allow("read", ...)` is in the SQL: a row the caller may not read and a
+row that does not exist are the same `-32602` "resource not found". Reads pass the same rate-limit
+admission as tool calls, in the caller's bucket. Every result is `cacheScope: private`, `ttlMs: 0`.

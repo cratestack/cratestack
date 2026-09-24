@@ -9,8 +9,10 @@ use std::borrow::Cow;
 use cratestack_core::CratestackContext;
 use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::model::{
-    CacheScope, CallToolRequestParams, CallToolResponse, Implementation, ListToolsResult,
-    PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig, Tool,
+    CacheScope, CallToolRequestParams, CallToolResponse, Implementation,
+    ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+    ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ResourcesCapability,
+    ServerCapabilities, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
@@ -103,7 +105,11 @@ impl<T: McpTools> McpServer<T> {
 
 impl<T: McpTools> ServerHandler for McpServer<T> {
     fn get_info(&self) -> ServerConfig {
-        let capabilities = ServerCapabilities::builder().enable_tools().build();
+        let mut capabilities = ServerCapabilities::builder().enable_tools().build();
+        // Only a table with resources advertises them (cratestack#1040).
+        if !self.tools.resources().is_empty() {
+            capabilities.resources = Some(ResourcesCapability::default());
+        }
         let mut config = ServerConfig::new(capabilities);
         config.protocol_version = ProtocolVersion::V_2026_07_28;
         config.server_info = self.implementation.clone();
@@ -137,6 +143,40 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         crate::call::call_tool(self, &caller, request, &context.meta)
             .await
             .map(CallToolResponse::from)
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        // The list is static, but over HTTP it is still only for a caller
+        // the guard authenticated: resolving fails closed exactly as a read
+        // would, so the two cannot drift apart on who may see the table.
+        self.caller.resolve(&context)?;
+        Ok(crate::resources::list_resources(self.tools.resources()))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        self.caller.resolve(&context)?;
+        Ok(crate::resources::list_templates(self.tools.resources()))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        // The per-request caller, as `call_tool`'s: it is both whose rows
+        // the read may see and whose rate-limit bucket it is charged to.
+        let caller = self.caller.resolve(&context)?;
+        crate::resources::read_resource(self, &caller, &request.uri)
+            .await
+            .map(ReadResourceResponse::from)
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {

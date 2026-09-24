@@ -1,0 +1,112 @@
+//! URI matching: exactly the two shapes, nothing normalized.
+
+use cratestack_core::{OpDescriptor, OpKind};
+
+use super::ResourceDescriptor;
+use super::uri::{Target, UriError, parse};
+
+static OP: OpDescriptor = OpDescriptor {
+    op_id: "model.Post.get",
+    kind: OpKind::Unary,
+    input_ty: "",
+    output_ty: "",
+    idempotent_by_default: true,
+    rate_limited_by_default: true,
+    auth_required: false,
+};
+
+static TABLE: [ResourceDescriptor; 2] = [
+    ResourceDescriptor::new("blog", "posts", 200, &OP, &OP),
+    ResourceDescriptor::new("blog", "comments", 20, &OP, &OP),
+];
+
+fn record(uri: &str) -> (&'static str, String) {
+    match parse(uri, &TABLE) {
+        Ok(Target::Record { resource, id }) => (resource.segment, id),
+        other => panic!("{uri}: expected a record, got {other:?}"),
+    }
+}
+
+fn page(uri: &str) -> (&'static str, Option<u64>, Option<String>) {
+    match parse(uri, &TABLE) {
+        Ok(Target::Page {
+            resource,
+            limit,
+            cursor,
+        }) => (resource.segment, limit, cursor),
+        other => panic!("{uri}: expected a page, got {other:?}"),
+    }
+}
+
+fn error(uri: &str) -> UriError {
+    match parse(uri, &TABLE) {
+        Err(error) => error,
+        Ok(target) => panic!("{uri}: expected an error, got {target:?}"),
+    }
+}
+
+#[test]
+fn a_record_uri_names_the_resource_and_the_decoded_id() {
+    assert_eq!(
+        record("cratestack://blog/posts/7"),
+        ("posts", "7".to_owned())
+    );
+    assert_eq!(
+        record("cratestack://blog/comments/a%2Fb%20c"),
+        ("comments", "a/b c".to_owned())
+    );
+}
+
+#[test]
+fn a_collection_uri_carries_only_limit_and_cursor() {
+    assert_eq!(page("cratestack://blog/posts"), ("posts", None, None));
+    assert_eq!(
+        page("cratestack://blog/posts?limit=500&cursor=abc"),
+        ("posts", Some(500), Some("abc".to_owned()))
+    );
+    assert_eq!(
+        page("cratestack://blog/posts?limit=99999999999999999999999"),
+        ("posts", Some(u64::MAX), None),
+        "an absurd limit saturates, to be clamped rather than refused"
+    );
+}
+
+#[test]
+fn anything_else_is_unknown() {
+    for uri in [
+        "cratestack://blog/Post/1",
+        "cratestack://blog/post_table/1",
+        "cratestack://other/posts",
+        "cratestack://BLOG/posts",
+        "cratestack://blog/posts/",
+        "cratestack://blog/posts/1/2",
+        "cratestack://blog/posts#x",
+        "cratestack://blog",
+        "file://blog/posts",
+        "cratestack:/blog/posts",
+        "cratestack://blog/posts/%zz",
+        "cratestack://blog/posts/%+1",
+        "cratestack://blog/posts/%ff",
+    ] {
+        assert_eq!(error(uri), UriError::Unknown, "{uri}");
+    }
+}
+
+#[test]
+fn a_bad_page_query_is_invalid_not_unknown() {
+    for uri in [
+        "cratestack://blog/posts?limit=0",
+        "cratestack://blog/posts?limit=-1",
+        "cratestack://blog/posts?limit=ten",
+        "cratestack://blog/posts?limit=",
+        "cratestack://blog/posts?cursor=",
+        "cratestack://blog/posts?limit=1&limit=2",
+        "cratestack://blog/posts?offset=10",
+        "cratestack://blog/posts/1?limit=5",
+    ] {
+        assert!(
+            matches!(error(uri), UriError::Invalid(_)),
+            "{uri} should be refused as invalid"
+        );
+    }
+}
