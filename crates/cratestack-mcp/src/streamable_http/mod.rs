@@ -69,6 +69,8 @@ mod origin;
 mod reply;
 mod resource;
 mod strict;
+#[cfg(test)]
+mod tests_call_guard;
 
 pub use builder::{StreamableHttp, StreamableHttpServer};
 pub use error::HttpConfigError;
