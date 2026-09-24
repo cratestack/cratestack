@@ -46,6 +46,9 @@ pub fn wrong_scalars() -> Vec<(&'static str, Value)> {
         ("count", json!(null)),
         ("count", json!(9_223_372_036_854_775_808_u64)),
         ("count", json!(u64::MAX)),
+        // Below `i64::MIN`. serde_json has no integer for it, so it is
+        // float-shaped; only the schema's `minimum` rejects it there.
+        ("count", json!(-1e19)),
         ("ratio", json!("1.5")),
         ("ratio", json!(null)),
         ("flag", json!("true")),

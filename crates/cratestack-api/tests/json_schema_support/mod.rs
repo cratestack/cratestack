@@ -12,6 +12,7 @@
 //! annotation. That is what an MCP client that doesn't opt in to format
 //! assertion sees, so the generated patterns have to do the rejecting.
 
+mod accepted_forms;
 mod gaps;
 mod negative;
 mod round_trip;
