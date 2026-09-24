@@ -46,6 +46,8 @@ mod uri;
 #[cfg(test)]
 mod tests_cursor;
 #[cfg(test)]
+mod tests_descriptor;
+#[cfg(test)]
 mod tests_error;
 #[cfg(test)]
 mod tests_listed;

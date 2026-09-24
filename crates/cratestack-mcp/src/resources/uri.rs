@@ -56,7 +56,7 @@ pub(crate) fn parse<'t>(
         None => (rest, None),
     };
     let mut parts = path.split('/');
-    let (Some(schema), Some(segment)) = (parts.next(), parts.next()) else {
+    let (Some(name), Some(segment)) = (parts.next(), parts.next()) else {
         return Err(UriError::Unknown);
     };
     let id = parts.next();
@@ -65,7 +65,7 @@ pub(crate) fn parse<'t>(
     }
     let resource = table
         .iter()
-        .find(|resource| resource.schema == schema && resource.segment == segment)
+        .find(|resource| resource.name == name && resource.segment == segment)
         .ok_or(UriError::Unknown)?;
 
     match id {

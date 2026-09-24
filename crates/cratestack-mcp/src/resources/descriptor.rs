@@ -10,10 +10,12 @@ use cratestack_core::OpDescriptor;
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct ResourceDescriptor {
-    /// The URI authority, `<name>` in `cratestack://<name>/<segment>`: the
-    /// schema's `mcp { name = "..." }`, `[a-z0-9-]+` (cratestack#1040). The
-    /// same for every resource of one table.
-    pub schema: &'static str,
+    /// The URI's host, `<name>` in `cratestack://<name>/<segment>`: the
+    /// schema's `mcp { name = "..." }`, a DNS label by the parser's rule
+    /// (cratestack#1040). The same for every resource of one table. Called
+    /// `name` after the key it holds, not `schema`: it says nothing about
+    /// the schema file, whose name deliberately no longer matters.
+    pub name: &'static str,
     /// The author's `@@mcp(resource: "...")` segment, never a table or
     /// model name (ADR 0002 security requirement 11).
     pub segment: &'static str,
@@ -32,14 +34,14 @@ pub struct ResourceDescriptor {
 
 impl ResourceDescriptor {
     pub const fn new(
-        schema: &'static str,
+        name: &'static str,
         segment: &'static str,
         max_page_size: u32,
         get_op: &'static OpDescriptor,
         list_op: &'static OpDescriptor,
     ) -> Self {
         Self {
-            schema,
+            name,
             segment,
             max_page_size,
             get_op,
@@ -52,7 +54,7 @@ impl ResourceDescriptor {
         format!(
             "{}://{}/{}",
             super::RESOURCE_SCHEME,
-            self.schema,
+            self.name,
             self.segment
         )
     }
