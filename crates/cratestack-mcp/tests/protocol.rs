@@ -33,7 +33,11 @@ async fn tools_list_is_the_table_in_order_with_schemas_and_hints() {
     let response = client.request("tools/list", json!({})).await;
     let tools = response["result"]["tools"].as_array().expect("tools");
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, ["echo", "transfer"], "declaration order, nothing else");
+    assert_eq!(
+        names,
+        ["echo", "transfer"],
+        "declaration order, nothing else"
+    );
 
     let parse = |s: &str| serde_json::from_str::<Value>(s).unwrap();
     assert_eq!(tools[0]["inputSchema"], parse(ECHO_INPUT));
@@ -42,8 +46,14 @@ async fn tools_list_is_the_table_in_order_with_schemas_and_hints() {
     assert_eq!(tools[0]["annotations"], json!({ "readOnlyHint": true }));
 
     assert_eq!(tools[1]["inputSchema"], parse(TRANSFER_INPUT));
-    assert!(tools[1].get("outputSchema").is_none(), "a list output has none");
-    assert!(tools[1].get("description").is_none(), "no description was declared");
+    assert!(
+        tools[1].get("outputSchema").is_none(),
+        "a list output has none"
+    );
+    assert!(
+        tools[1].get("description").is_none(),
+        "no description was declared"
+    );
     assert_eq!(
         tools[1]["annotations"],
         json!({ "readOnlyHint": false, "idempotentHint": false }),
@@ -70,7 +80,9 @@ async fn bad_arguments_are_an_is_error_result_naming_the_field() {
     let tools = FakeTools::default();
     let mut client = Client::start(server(tools.clone()));
 
-    let wrong_type = client.call("transfer", json!({ "amount": "ten" }), None).await;
+    let wrong_type = client
+        .call("transfer", json!({ "amount": "ten" }), None)
+        .await;
     let error = envelope(&wrong_type);
     assert_eq!(error["code"], "VALIDATION_ERROR");
     let message = error["message"].as_str().unwrap();
@@ -78,7 +90,10 @@ async fn bad_arguments_are_an_is_error_result_naming_the_field() {
 
     let missing = client.call("echo", json!({}), None).await;
     let message = envelope(&missing)["message"].as_str().unwrap().to_owned();
-    assert!(message.contains("`text`"), "names the missing field: {message}");
+    assert!(
+        message.contains("`text`"),
+        "names the missing field: {message}"
+    );
 
     assert_eq!(tools.runs(), 0, "nothing ran");
     client.close().await.expect("clean exit");
@@ -97,7 +112,10 @@ async fn success_is_structured_content_and_text() {
     );
 
     let list = client.call("transfer", json!({ "amount": 3 }), None).await;
-    assert!(list.get("structuredContent").is_none(), "no outputSchema, no structuredContent");
+    assert!(
+        list.get("structuredContent").is_none(),
+        "no outputSchema, no structuredContent"
+    );
     // Run 2: the echo above was run 1.
     assert_eq!(text(&list), r#"[3,2,"system:tests"]"#);
     client.close().await.expect("clean exit");
@@ -157,5 +175,8 @@ async fn a_legacy_initialize_is_refused() {
 #[tokio::test]
 async fn closing_input_before_any_request_is_a_clean_exit() {
     let client = Client::start(server(FakeTools::default()));
-    client.close().await.expect("nothing to serve is not an error");
+    client
+        .close()
+        .await
+        .expect("nothing to serve is not an error");
 }

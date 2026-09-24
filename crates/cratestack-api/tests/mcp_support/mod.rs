@@ -20,9 +20,7 @@ use cratestack::{CratestackContext, CratestackError, Value};
 
 include_server_schema!("tests/fixtures/mcp_tools.cstack", db = None);
 
-pub use cratestack_schema::procedures::{
-    badge, internal_only, touch, transfer, whoami,
-};
+pub use cratestack_schema::procedures::{badge, internal_only, touch, transfer, whoami};
 
 #[derive(Clone, Default)]
 pub struct Registry {
@@ -47,7 +45,10 @@ impl cratestack_schema::procedures::ProcedureRegistry for Registry {
         _args: whoami::Args,
         _authorized: whoami::Authorized,
     ) -> Result<whoami::Output, CratestackError> {
-        Ok(cratestack_schema::Receipt { amount: 0, run: self.run() })
+        Ok(cratestack_schema::Receipt {
+            amount: 0,
+            run: self.run(),
+        })
     }
 
     async fn transfer(

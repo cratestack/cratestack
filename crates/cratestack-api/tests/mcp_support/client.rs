@@ -36,17 +36,19 @@ impl Client {
             meta.as_object_mut().unwrap().extend(extra);
         }
         params["_meta"] = meta;
-        let message = json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params });
+        let message =
+            json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params });
         self.next_id += 1;
         let mut line = message.to_string();
         line.push('\n');
         self.writer.write_all(line.as_bytes()).await.unwrap();
         self.writer.flush().await.unwrap();
-        let reply = tokio::time::timeout(std::time::Duration::from_secs(10), self.reader.next_line())
-            .await
-            .expect("answered within 10s")
-            .unwrap()
-            .expect("the server answered");
+        let reply =
+            tokio::time::timeout(std::time::Duration::from_secs(10), self.reader.next_line())
+                .await
+                .expect("answered within 10s")
+                .unwrap()
+                .expect("the server answered");
         serde_json::from_str(&reply).expect("JSON on the wire")
     }
 
@@ -66,7 +68,11 @@ impl Client {
 
 /// The REST error envelope an `isError` result carries as its text.
 pub fn envelope(result: &Value) -> Value {
-    assert_eq!(result["isError"], json!(true), "expected an isError result: {result}");
+    assert_eq!(
+        result["isError"],
+        json!(true),
+        "expected an isError result: {result}"
+    );
     let text = result["content"][0]["text"].as_str().expect("a text block");
     serde_json::from_str(text).expect("the REST envelope")
 }

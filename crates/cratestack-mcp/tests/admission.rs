@@ -33,12 +33,22 @@ fn key(value: &str) -> Option<serde_json::Value> {
 async fn the_same_key_runs_once_and_replays_the_first_result() {
     let tools = FakeTools::default();
     let mut client = with_store(tools.clone(), user("u-1"));
-    let first = client.call("transfer", json!({ "amount": 5 }), key("k-1")).await;
-    let second = client.call("transfer", json!({ "amount": 5 }), key("k-1")).await;
+    let first = client
+        .call("transfer", json!({ "amount": 5 }), key("k-1"))
+        .await;
+    let second = client
+        .call("transfer", json!({ "amount": 5 }), key("k-1"))
+        .await;
 
     assert_eq!(tools.runs(), 1, "the second call must replay, not run");
-    assert_eq!(first["content"], second["content"], "the recorded result, byte for byte");
-    assert_eq!(second["_meta"]["dev.cratestack/idempotencyReplayed"], json!(true));
+    assert_eq!(
+        first["content"], second["content"],
+        "the recorded result, byte for byte"
+    );
+    assert_eq!(
+        second["_meta"]["dev.cratestack/idempotencyReplayed"],
+        json!(true)
+    );
     assert!(first.get("_meta").is_none(), "a live run is not marked");
     client.close().await.unwrap();
 }
@@ -58,11 +68,20 @@ async fn without_a_key_nothing_is_reserved() {
 async fn a_reused_key_with_other_arguments_is_a_conflict() {
     let tools = FakeTools::default();
     let mut client = with_store(tools.clone(), user("u-1"));
-    client.call("transfer", json!({ "amount": 5 }), key("k-1")).await;
-    let reused = client.call("transfer", json!({ "amount": 6 }), key("k-1")).await;
+    client
+        .call("transfer", json!({ "amount": 5 }), key("k-1"))
+        .await;
+    let reused = client
+        .call("transfer", json!({ "amount": 6 }), key("k-1"))
+        .await;
     let error = envelope(&reused);
     assert_eq!(error["code"], "VALIDATION_ERROR");
-    assert!(error["message"].as_str().unwrap().starts_with("idempotency_key_conflict"));
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("idempotency_key_conflict")
+    );
     assert_eq!(tools.runs(), 1);
     client.close().await.unwrap();
 }
@@ -73,8 +92,12 @@ async fn a_read_tool_never_reserves_even_with_a_key() {
     // Anonymous: if a reservation were attempted, the missing principal id
     // would refuse the call. It runs, so none was.
     let mut client = with_store(tools.clone(), CratestackContext::anonymous());
-    client.call("echo", json!({ "text": "a" }), key("k-1")).await;
-    client.call("echo", json!({ "text": "a" }), key("k-1")).await;
+    client
+        .call("echo", json!({ "text": "a" }), key("k-1"))
+        .await;
+    client
+        .call("echo", json!({ "text": "a" }), key("k-1"))
+        .await;
     assert_eq!(tools.runs(), 2);
     client.close().await.unwrap();
 }
@@ -83,7 +106,9 @@ async fn a_read_tool_never_reserves_even_with_a_key() {
 async fn a_keyed_mutation_without_a_principal_id_is_refused_before_running() {
     let tools = FakeTools::default();
     let mut client = with_store(tools.clone(), CratestackContext::anonymous());
-    let result = client.call("transfer", json!({ "amount": 5 }), key("k-1")).await;
+    let result = client
+        .call("transfer", json!({ "amount": 5 }), key("k-1"))
+        .await;
     assert_eq!(envelope(&result)["code"], "PRECONDITION_FAILED");
     assert_eq!(tools.runs(), 0);
     client.close().await.unwrap();
@@ -94,7 +119,11 @@ async fn a_malformed_key_is_refused_not_ignored() {
     let tools = FakeTools::default();
     let mut client = with_store(tools.clone(), user("u-1"));
     let result = client
-        .call("transfer", json!({ "amount": 5 }), Some(json!({ "dev.cratestack/idempotencyKey": 42 })))
+        .call(
+            "transfer",
+            json!({ "amount": 5 }),
+            Some(json!({ "dev.cratestack/idempotencyKey": 42 })),
+        )
         .await;
     assert_eq!(envelope(&result)["code"], "BAD_REQUEST");
     assert_eq!(tools.runs(), 0);
@@ -129,7 +158,9 @@ async fn without_an_executor_nothing_is_limited() {
     let tools = FakeTools::default();
     let mut client = Client::start(StdioServer::new(tools.clone(), user("u-1")).unwrap());
     for _ in 0..3 {
-        client.call("transfer", json!({ "amount": 1 }), key("k")).await;
+        client
+            .call("transfer", json!({ "amount": 1 }), key("k"))
+            .await;
     }
     assert_eq!(tools.runs(), 3, "no store wired: the key reserves nothing");
     client.close().await.unwrap();

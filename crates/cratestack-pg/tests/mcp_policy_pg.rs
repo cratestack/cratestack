@@ -87,8 +87,16 @@ async fn call(
             },
         },
     });
-    writer.write_all(format!("{request}\n").as_bytes()).await.unwrap();
-    let line = BufReader::new(reader).lines().next_line().await.unwrap().unwrap();
+    writer
+        .write_all(format!("{request}\n").as_bytes())
+        .await
+        .unwrap();
+    let line = BufReader::new(reader)
+        .lines()
+        .next_line()
+        .await
+        .unwrap()
+        .unwrap();
     let response: serde_json::Value = serde_json::from_str(&line).unwrap();
     response["result"].clone()
 }
@@ -102,7 +110,10 @@ async fn seeded() -> Option<(pg::TestPg, cratestack_schema::Cratestack)> {
         "INSERT INTO mcp_notes (id, owner_id, title) VALUES \
          ('note_a', 'u-1', 'mine'), ('note_b', 'u-2', 'theirs')",
     ] {
-        cratestack::sqlx::query(statement).execute(pool).await.expect(statement);
+        cratestack::sqlx::query(statement)
+            .execute(pool)
+            .await
+            .expect(statement);
     }
     let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
     Some((test_pg, db))
@@ -128,14 +139,36 @@ async fn a_delegated_authorize_denial_refuses_the_call_before_it_runs(
 ) {
     let registry = Procedures::default();
 
-    let denied = call(db, &registry, user("u-1"), "archiveNote", json!({ "args": { "id": "note_b" } })).await;
-    assert_eq!(denied["isError"], json!(true), "u-1 may not update u-2's note: {denied}");
+    let denied = call(
+        db,
+        &registry,
+        user("u-1"),
+        "archiveNote",
+        json!({ "args": { "id": "note_b" } }),
+    )
+    .await;
+    assert_eq!(
+        denied["isError"],
+        json!(true),
+        "u-1 may not update u-2's note: {denied}"
+    );
     let envelope: serde_json::Value =
         serde_json::from_str(denied["content"][0]["text"].as_str().unwrap()).unwrap();
     assert_eq!(envelope["code"], "FORBIDDEN", "{envelope}");
-    assert_eq!(registry.runs.load(Ordering::SeqCst), 0, "denied before the implementation");
+    assert_eq!(
+        registry.runs.load(Ordering::SeqCst),
+        0,
+        "denied before the implementation"
+    );
 
-    let allowed = call(db, &registry, user("u-1"), "archiveNote", json!({ "args": { "id": "note_a" } })).await;
+    let allowed = call(
+        db,
+        &registry,
+        user("u-1"),
+        "archiveNote",
+        json!({ "args": { "id": "note_a" } }),
+    )
+    .await;
     assert_eq!(allowed["isError"], json!(false), "{allowed}");
     assert_eq!(registry.runs.load(Ordering::SeqCst), 1);
 }
@@ -146,7 +179,14 @@ async fn a_row_the_callers_allow_hides_is_absent_from_the_result(
     let registry = Procedures::default();
 
     for (caller, visible) in [("u-1", "note_a"), ("u-2", "note_b")] {
-        let result = call(db, &registry, user(caller), "myNotes", json!({ "tag": "x" })).await;
+        let result = call(
+            db,
+            &registry,
+            user(caller),
+            "myNotes",
+            json!({ "tag": "x" }),
+        )
+        .await;
         assert_eq!(result["isError"], json!(false), "{result}");
         let rows: serde_json::Value =
             serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();

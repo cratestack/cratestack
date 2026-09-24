@@ -62,13 +62,17 @@ fn parent() {
     let requests = [
         ("server/discover", json!({})),
         ("tools/list", json!({})),
-        ("tools/call", json!({ "name": "echo", "arguments": { "text": "hi" } })),
+        (
+            "tools/call",
+            json!({ "name": "echo", "arguments": { "text": "hi" } }),
+        ),
     ];
     {
         let mut stdin = child.stdin.take().expect("stdin");
         for (id, (method, mut params)) in requests.into_iter().enumerate() {
             params["_meta"] = meta("2026-07-28");
-            let line = json!({ "jsonrpc": "2.0", "id": id + 1, "method": method, "params": params });
+            let line =
+                json!({ "jsonrpc": "2.0", "id": id + 1, "method": method, "params": params });
             writeln!(stdin, "{line}").expect("write a request");
         }
         // Dropping stdin closes it: the server must now exit by itself.
@@ -76,10 +80,23 @@ fn parent() {
 
     let status = wait(&mut child, Duration::from_secs(20));
     let mut stdout = String::new();
-    child.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
     let mut stderr = String::new();
-    child.stderr.take().unwrap().read_to_string(&mut stderr).unwrap();
-    assert!(status.success(), "the server exited with {status}; stderr:\n{stderr}");
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    assert!(
+        status.success(),
+        "the server exited with {status}; stderr:\n{stderr}"
+    );
 
     let messages: Vec<Value> = stdout
         .lines()
@@ -88,13 +105,23 @@ fn parent() {
                 .unwrap_or_else(|_| panic!("stdout carried a non-JSON line: {line:?}"))
         })
         .collect();
-    assert_eq!(messages.len(), 3, "one response per request, nothing else:\n{stdout}");
+    assert_eq!(
+        messages.len(),
+        3,
+        "one response per request, nothing else:\n{stdout}"
+    );
     for (index, message) in messages.iter().enumerate() {
-        assert_eq!(message["jsonrpc"], "2.0", "not a JSON-RPC message: {message}");
+        assert_eq!(
+            message["jsonrpc"], "2.0",
+            "not a JSON-RPC message: {message}"
+        );
         assert_eq!(message["id"], json!(index + 1));
         assert!(message.get("result").is_some(), "{message}");
     }
-    assert_eq!(messages[2]["result"]["structuredContent"], json!({ "text": "hi" }));
+    assert_eq!(
+        messages[2]["result"]["structuredContent"],
+        json!({ "text": "hi" })
+    );
     assert!(
         stderr.contains("cratestack mcp tool call completed"),
         "tracing output belongs on stderr, and there was some:\n{stderr}"

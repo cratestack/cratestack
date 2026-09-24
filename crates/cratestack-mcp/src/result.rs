@@ -43,7 +43,10 @@ pub(crate) fn failure(descriptor: &ToolDescriptor, error: CratestackError) -> Ca
     // `CratestackErrorResponse` is three plain fields; it cannot fail to
     // serialize, but a panic is not an acceptable way to find out.
     let text = serde_json::to_string(&envelope).unwrap_or_else(|_| {
-        format!(r#"{{"code":"{}","message":"internal error"}}"#, envelope.code)
+        format!(
+            r#"{{"code":"{}","message":"internal error"}}"#,
+            envelope.code
+        )
     });
     CallToolResult::error(vec![ContentBlock::text(text)])
 }

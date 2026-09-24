@@ -55,7 +55,10 @@ pub(crate) fn idempotency_key(
     if key.len() > MAX_KEY_LEN {
         return Err(bad_key("must be at most 255 characters"));
     }
-    if !key.bytes().all(|byte| byte.is_ascii_graphic() || byte == b' ') {
+    if !key
+        .bytes()
+        .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    {
         return Err(bad_key("must be printable ASCII"));
     }
     Ok(Some(key.to_owned()))
@@ -134,6 +137,9 @@ mod tests {
     fn no_actor_id_means_no_namespace() {
         assert_eq!(namespace(Some("u-1")).unwrap(), "mcp:u-1");
         assert_eq!(namespace(None).unwrap_err().code(), "PRECONDITION_FAILED");
-        assert_eq!(namespace(Some("")).unwrap_err().code(), "PRECONDITION_FAILED");
+        assert_eq!(
+            namespace(Some("")).unwrap_err().code(),
+            "PRECONDITION_FAILED"
+        );
     }
 }

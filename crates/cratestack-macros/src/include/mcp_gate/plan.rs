@@ -57,10 +57,7 @@ pub(super) fn server_plan(
     Ok(tools)
 }
 
-fn tool_plans(
-    schema: &Schema,
-    decimal: Option<DecimalBackend>,
-) -> Result<Vec<ToolPlan>, String> {
+fn tool_plans(schema: &Schema, decimal: Option<DecimalBackend>) -> Result<Vec<ToolPlan>, String> {
     let mut plans = Vec::new();
     for procedure in &schema.procedures {
         let Some(tool) = procedure.mcp.as_ref() else {
@@ -110,7 +107,11 @@ pub(super) fn mcp_declarations(schema: &Schema) -> Option<String> {
 
 fn resource_declarations(schema: &Schema) -> Option<String> {
     let mut declared = resource_list(schema);
-    if schema.mcp.as_ref().is_some_and(|mcp| mcp.exposes_resources()) {
+    if schema
+        .mcp
+        .as_ref()
+        .is_some_and(|mcp| mcp.exposes_resources())
+    {
         declared.insert(0, "`resources` in `expose`".to_owned());
     }
     (!declared.is_empty()).then(|| declared.join(", "))

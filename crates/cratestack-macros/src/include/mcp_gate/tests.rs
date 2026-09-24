@@ -86,7 +86,10 @@ fn feature_on_tools_are_planned_in_declaration_order() {
 fn feature_off_asks_for_the_feature() {
     let schema = parse(TOOLS_ONLY);
     let message = server_plan(&schema, None, false).err().expect("gated");
-    assert!(message.contains("without its `mcp` Cargo feature"), "{message}");
+    assert!(
+        message.contains("without its `mcp` Cargo feature"),
+        "{message}"
+    );
     assert!(message.contains(r#"features = ["mcp"]"#), "{message}");
 }
 
@@ -94,7 +97,10 @@ fn feature_off_asks_for_the_feature() {
 fn resources_stay_gated_with_the_feature_on() {
     let schema = parse(WITH_RESOURCES);
     let message = server_plan(&schema, None, true).err().expect("phase 5");
-    assert!(message.contains("MCP resources are not served yet"), "{message}");
+    assert!(
+        message.contains("MCP resources are not served yet"),
+        "{message}"
+    );
     assert!(message.contains("`resources` in `expose`"), "{message}");
     assert!(message.contains("model `Post`"), "{message}");
 }
@@ -111,6 +117,9 @@ fn an_unmappable_tool_is_refused_in_both_feature_states() {
             message.starts_with("`@mcp(tool)` on procedure `getFeed` cannot be exposed"),
             "{message}"
         );
-        assert!(message.contains("`Json` has no faithful JSON Schema mapping"), "{message}");
+        assert!(
+            message.contains("`Json` has no faithful JSON Schema mapping"),
+            "{message}"
+        );
     }
 }

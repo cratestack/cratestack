@@ -52,8 +52,10 @@ impl Client {
             merged.as_object_mut().unwrap().extend(extra);
         }
         object.insert("_meta".to_owned(), merged);
-        self.send(json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params }))
-            .await
+        self.send(
+            json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params }),
+        )
+        .await
     }
 
     pub async fn send(&mut self, message: Value) -> Value {
@@ -63,11 +65,12 @@ impl Client {
         let writer = self.writer.as_mut().expect("client still open");
         writer.write_all(line.as_bytes()).await.expect("write");
         writer.flush().await.expect("flush");
-        let reply = tokio::time::timeout(std::time::Duration::from_secs(10), self.reader.next_line())
-            .await
-            .expect("server answered within 10s")
-            .expect("read")
-            .expect("server closed the stream instead of answering");
+        let reply =
+            tokio::time::timeout(std::time::Duration::from_secs(10), self.reader.next_line())
+                .await
+                .expect("server answered within 10s")
+                .expect("read")
+                .expect("server closed the stream instead of answering");
         serde_json::from_str(&reply).expect("the server writes JSON")
     }
 
@@ -102,6 +105,10 @@ pub fn text(result: &Value) -> &str {
 
 /// The REST-shaped error envelope an `isError` result carries.
 pub fn envelope(result: &Value) -> Value {
-    assert_eq!(result["isError"], json!(true), "expected an isError result: {result}");
+    assert_eq!(
+        result["isError"],
+        json!(true),
+        "expected an isError result: {result}"
+    );
     serde_json::from_str(text(result)).expect("the error text is the REST envelope")
 }

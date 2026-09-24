@@ -38,16 +38,28 @@ async fn the_same_key_runs_the_tool_once_and_replays_the_first_result() {
     let mut client = with_idempotency(&registry);
     let arguments = json!({ "args": { "amount": 25 } });
 
-    let first = client.call("transfer_funds", arguments.clone(), key("pay-1")).await;
+    let first = client
+        .call("transfer_funds", arguments.clone(), key("pay-1"))
+        .await;
     let second = client.call("transfer_funds", arguments, key("pay-1")).await;
 
-    assert_eq!(registry.runs(), 1, "the retry must replay, not run the transfer again");
-    assert_eq!(first["structuredContent"], json!({ "amount": 25, "run": 1 }));
+    assert_eq!(
+        registry.runs(),
+        1,
+        "the retry must replay, not run the transfer again"
+    );
+    assert_eq!(
+        first["structuredContent"],
+        json!({ "amount": 25, "run": 1 })
+    );
     assert_eq!(
         second["structuredContent"], first["structuredContent"],
         "the replay is the first call's recorded result"
     );
-    assert_eq!(second["_meta"]["dev.cratestack/idempotencyReplayed"], json!(true));
+    assert_eq!(
+        second["_meta"]["dev.cratestack/idempotencyReplayed"],
+        json!(true)
+    );
 }
 
 #[tokio::test]
@@ -65,8 +77,12 @@ async fn without_a_key_the_same_call_runs_twice() {
 async fn a_no_idempotency_tool_ignores_the_key() {
     let registry = Registry::default();
     let mut client = with_idempotency(&registry);
-    client.call("touch", json!({ "args": { "amount": 1 } }), key("k")).await;
-    client.call("touch", json!({ "args": { "amount": 1 } }), key("k")).await;
+    client
+        .call("touch", json!({ "args": { "amount": 1 } }), key("k"))
+        .await;
+    client
+        .call("touch", json!({ "args": { "amount": 1 } }), key("k"))
+        .await;
     assert_eq!(registry.runs(), 2, "`@no_idempotency` takes no reservation");
 }
 

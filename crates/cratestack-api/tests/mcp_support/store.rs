@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-use cratestack::{
-    CratestackError, IdempotencyRecord, IdempotencyStore, ReservationOutcome,
-};
+use cratestack::{CratestackError, IdempotencyRecord, IdempotencyStore, ReservationOutcome};
 
 type Slot = (String, String);
 

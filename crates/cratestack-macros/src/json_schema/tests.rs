@@ -104,8 +104,14 @@ fn computed_fields_are_advertised() {
         .expect("a computed-bearing output has a schema since phase 3")
         .expect("`Shelf` is an object");
     let widget = &output["$defs"]["Widget"];
-    assert_eq!(widget["properties"]["slug"], serde_json::json!({ "type": "string" }));
-    assert!(widget["properties"]["badge"]["anyOf"].is_array(), "{widget}");
+    assert_eq!(
+        widget["properties"]["slug"],
+        serde_json::json!({ "type": "string" })
+    );
+    assert!(
+        widget["properties"]["badge"]["anyOf"].is_array(),
+        "{widget}"
+    );
     assert_eq!(widget["required"], serde_json::json!(["label", "slug"]));
 }
 
