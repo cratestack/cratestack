@@ -1,0 +1,46 @@
+// cratestack#1040 (MCP phase 5): read-only resources, against real
+// Postgres, by `tests/mcp_resources_pg.rs`. The file is named `blog.cstack`
+// because a resource URI's authority is the schema file's stem, so this
+// serves `cratestack://blog/posts` and `cratestack://blog/notes`, the URIs
+// the story names. The model names (and so the tables, `mcp_res_posts` /
+// `mcp_res_notes`) appear in no URI.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+mcp {
+  expose = [resources]
+}
+
+auth Caller {
+  id String
+}
+
+// A caller reads published posts and its own drafts. `secretNote` must never
+// reach MCP output (`@server_only`), and `excerpt` must be resolved exactly
+// as REST resolves it (`@computed`): both at once, on one model, because the
+// procedure-output composer is known to leak `@server_only` on such models
+// and resources must not go through it.
+model McpResPost {
+  id Int @id
+  authorId String
+  title String
+  published Boolean
+  secretNote String @server_only
+  excerpt String @computed
+
+  @@allow("read", published || authorId == auth().id)
+  @@mcp(resource: "posts")
+}
+
+// A lowered page ceiling (ADR 0002 Q3).
+model McpResNote {
+  id String @id
+  ownerId String
+  body String
+
+  @@allow("read", auth() != null && auth().id == ownerId)
+  @@mcp(resource: "notes", max_page_size: 20)
+}
