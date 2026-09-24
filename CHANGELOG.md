@@ -56,10 +56,10 @@ message is unchanged). The same generated table serves them:
   context passed to `StdioServer::new`, or, over Streamable HTTP (phase 4),
   the one your `AuthProvider` built for that request, so two tokens reading
   the same collection each see only their own visible rows. `resources/list`
-  and `resources/templates/list` sit behind the same HTTP guard, and so does
-  `tools/list` now: every list method resolves the guard's caller and fails
-  closed (`-32603`) on a request that reached the handler without one.
-  Nothing changes over stdio.
+  and `resources/templates/list` sit behind the same HTTP guard, and so do
+  `tools/list` and `prompts/list` (always empty) now: every list method
+  resolves the guard's caller and fails closed (`-32603`) on a request that
+  reached the handler without one. Nothing changes over stdio.
 - **Caching and admission.** Every result is `cacheScope: private`, `ttlMs: 0`.
   Reads pass the same rate-limit admission as tool calls, charged to the same
   per-caller bucket (`mcp:<id>` for a user, `mcp-system:<id>` for a system

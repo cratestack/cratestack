@@ -9,7 +9,7 @@ use std::borrow::Cow;
 use cratestack_core::CratestackContext;
 use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::model::{
-    CacheScope, CallToolRequestParams, CallToolResponse, Implementation,
+    CacheScope, CallToolRequestParams, CallToolResponse, Implementation, ListPromptsResult,
     ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
     ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ResourcesCapability,
     ServerCapabilities, ServerConfig, Tool,
@@ -128,10 +128,9 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         // The list is static and unfiltered, so the caller changes nothing
         // in it. Resolved anyway (maintainer decision on #1040) so that over
         // Streamable HTTP every list method, like the resource lists
-        // (`resources::listed`), answers only a request the guard
-        // authenticated: a way around the guard is refused everywhere, not
-        // only where the answer depends on who asks. Over stdio the caller
-        // is fixed and this always succeeds.
+        // (`resources::listed`) and `list_prompts`, answers only a request
+        // the guard authenticated. Over stdio the caller is fixed and this
+        // always succeeds.
         self.caller.resolve(&context)?;
         // The whole table in one page. `ttlMs: 0` and a private scope are
         // `rmcp`'s own `server/discover` defaults; the list is static, but a
@@ -140,6 +139,17 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         result.ttl_ms = Some(0);
         result.cache_scope = Some(CacheScope::Private);
         Ok(result)
+    }
+
+    /// No prompts, but a list method all the same: `rmcp`'s default would
+    /// answer it below the guard, the one list `list_tools`' rule missed.
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        self.caller.resolve(&context)?;
+        Ok(ListPromptsResult::default())
     }
 
     async fn call_tool(

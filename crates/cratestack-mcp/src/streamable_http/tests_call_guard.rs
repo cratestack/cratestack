@@ -1,8 +1,8 @@
-//! `call_tool` and `list_tools` fail closed when a request reaches `rmcp`
-//! without the guard's caller. Over the wire the guard always attaches one,
-//! so a `resolve(...).unwrap_or(anonymous)` in `server.rs` passed every
-//! suite (phase 5 review, mutation M18). This hands a `tools/call` or a
-//! `tools/list` to the `rmcp` service *behind* the guard — as a layer
+//! `call_tool`, `list_tools` and `list_prompts` fail closed when a request
+//! reaches `rmcp` without the guard's caller. Over the wire the guard
+//! always attaches one, so a `resolve(...).unwrap_or(anonymous)` in
+//! `server.rs` passed every suite (phase 5 review, mutation M18). This
+//! hands each request to the `rmcp` service *behind* the guard — as a layer
 //! mounted around it by mistake would — and requires the fail-closed error;
 //! the same request with the guard's caller attached must succeed, so the
 //! refusal is the caller check's and not `rmcp` rejecting the request's
@@ -149,6 +149,24 @@ async fn a_tool_list_that_skipped_the_guard_fails_closed() {
         json!("whoami"),
         "{guarded}"
     );
+}
+
+/// `prompts/list` is a list method too, although this server has no
+/// prompts: `rmcp`'s default answers it with an empty list whoever asks,
+/// which would leave the one list the decision above did not name
+/// answering below the guard.
+#[tokio::test]
+async fn a_prompt_list_that_skipped_the_guard_fails_closed() {
+    let http = server();
+    let inner = &http.service().shared.inner;
+
+    let unguarded = request("prompts/list", json!({}), None, None);
+    let unguarded = answer(inner.handle(unguarded).await).await;
+    assert_eq!(unguarded["error"]["code"], json!(-32603), "{unguarded}");
+
+    let guarded = request("prompts/list", json!({}), None, Some(user()));
+    let guarded = answer(inner.handle(guarded).await).await;
+    assert_eq!(guarded["result"]["prompts"], json!([]), "{guarded}");
 }
 
 #[tokio::test]
