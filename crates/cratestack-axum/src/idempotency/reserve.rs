@@ -71,8 +71,9 @@ fn token_or_response(admission: Admission, headers: &HeaderMap, path: &str) -> R
         Admission::InFlight => Reservation::Finished(in_flight_response(headers, path)),
         Admission::Reserved { token } => Reservation::Held(token),
         Admission::Bypass => Reservation::Bypass,
-        // `Admission` is `#[non_exhaustive]`; slices 2 and 3 add variants
-        // (a rate-limit refusal, a policy denial). Refusing is the only
+        // `Admission` is `#[non_exhaustive]`; slice 3 adds a variant (a
+        // policy denial). Slice 2 did not — rate limiting answers with
+        // `cratestack_exec::RateLimitAdmission` instead. Refusing is the only
         // safe default: this adapter cannot know what a future outcome
         // permits, and the two arms it might otherwise fall into —
         // `Held` and `Bypass` — both RUN THE HANDLER. A 500 on an

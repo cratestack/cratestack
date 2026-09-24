@@ -1,6 +1,6 @@
 # CrateStack Roadmap
 
-**Last updated: 2026-09-05 · current release: 0.11.1**
+**Last updated: 2026-09-24 · current release: 0.12.0**
 
 This is a map of where CrateStack is, what's being built, and what's been
 deliberately ruled out. It is not a schedule and not a commitment. CrateStack is
