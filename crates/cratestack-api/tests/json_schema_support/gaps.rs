@@ -48,9 +48,15 @@ fn known_gaps() -> Vec<(&'static str, Value)> {
     let mut cases = vec![
         // `integer` means "zero fractional part", so `1.0` qualifies.
         ("count", json!(1.0)),
+        // One below `i64::MIN`. serde_json reads it as an `f64`, which
+        // rounds to exactly `i64::MIN`, so it clears `minimum`.
+        ("count", parse("-9223372036854775809")),
         // The pattern checks RFC 3339's shape, not the calendar.
         ("at", json!("2024-02-30T00:00:00Z")),
         ("at", json!("2024-01-01T25:00:00Z")),
+        // Nor the offset's range: chrono caps it below 24 hours.
+        ("at", json!("2024-01-01T00:00:00+24:00")),
+        ("at", json!("2024-01-01T00:00:00+02:60")),
     ];
     cases.extend(
         crate::DECIMAL
@@ -144,8 +150,9 @@ fn every_input_the_schema_accepts_deserializes() {
 /// Outputs serde can write that the schema rejects. serde_json writes a
 /// non-finite `f64` as `null`, which no `number` schema allows, and a
 /// `null`-tolerant one would be wrong for input, where serde rejects
-/// `null`. chrono writes a year past 9999 as `+10000-…`, which is not RFC
-/// 3339, so neither the pattern nor `format: date-time` allows it.
+/// `null`. chrono writes a year past 9999 as `+10000-…` and a year before
+/// 0 as `-0001-…`, neither of which is RFC 3339, so neither the pattern
+/// nor `format: date-time` allows them.
 #[test]
 fn outputs_outside_the_schema_are_only_the_listed_ones() {
     let tool = tool("echoScalars");
@@ -162,4 +169,10 @@ fn outputs_outside_the_schema_are_only_the_listed_ones() {
     let written = serde_json::to_value(&sample).unwrap();
     assert_eq!(written["at"], "+10000-01-01T00:00:00Z");
     assert_rejects(output, &written, "`at` in year 10000");
+    // 0001-01-01 minus 731 days (year 0 is a leap year): 1 BC in RFC
+    // 3339's missing notation, which chrono spells with a sign.
+    sample.at = cratestack::chrono::DateTime::from_timestamp(-62_198_755_200, 0).unwrap();
+    let written = serde_json::to_value(&sample).unwrap();
+    assert_eq!(written["at"], "-0001-01-01T00:00:00Z");
+    assert_rejects(output, &written, "`at` in year -1");
 }

@@ -32,18 +32,22 @@
 //! test in the round-trip suites, so a change on either side is noticed:
 //!
 //! - `Int`: JSON Schema's `integer` accepts `1.0`; serde_json's `i64`
-//!   rejects any float-shaped number.
-//! - `DateTime`: the pattern checks the RFC 3339 shape, not the calendar.
-//!   `2024-02-30T00:00:00Z` passes the pattern and fails chrono. Validators
-//!   that assert `format: date-time` catch it.
+//!   rejects any float-shaped number. That includes an integer literal
+//!   just below `i64::MIN`, which serde_json can only read as an `f64`
+//!   that rounds onto the bound.
+//! - `DateTime`: the pattern checks the RFC 3339 shape, not the calendar
+//!   or the offset's range. `2024-02-30T00:00:00Z` and `…+24:00` pass the
+//!   pattern and fail chrono. Validators that assert `format: date-time`
+//!   catch them.
 //! - `Decimal`: the patterns have no digit or exponent limit.
 //!   `rust_decimal` holds at most 28–29 significant digits, and
 //!   `bigdecimal` rejects an exponent past `i64`.
 //! - `Float` on output: serde_json writes a non-finite `f64` as `null`,
 //!   which the `number` schema rejects. No JSON Schema is right for both
 //!   directions here, since serde rejects `null` on input.
-//! - `DateTime` on output: chrono writes a year past 9999 as `+10000-…`,
-//!   which is not RFC 3339, so the schema rejects it.
+//! - `DateTime` on output: chrono writes a year past 9999 as `+10000-…`
+//!   and a year before 0 as `-0001-…`. Neither is RFC 3339, so the schema
+//!   rejects both.
 
 mod error;
 mod generator;
