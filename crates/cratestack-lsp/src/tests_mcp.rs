@@ -127,6 +127,31 @@ fn mcp_syntax_errors_are_reported_as_diagnostics() {
     assert_eq!(diagnostics[0].range, expected);
 }
 
+/// `name` is a DNS label (cratestack#1040): the completion popup states the
+/// rule, and a name that breaks it is a diagnostic on the entry that names
+/// the broken rule.
+#[test]
+fn the_mcp_name_is_hinted_and_checked_as_a_dns_label() {
+    let items = completion_items(None);
+    let name = items.iter().find(|item| item.label == "name = \"...\"");
+    let detail = name.and_then(|item| item.detail.as_deref()).unwrap_or("");
+    assert!(detail.contains("a DNS label"), "{detail}");
+    assert!(detail.contains("1-63 characters"), "{detail}");
+
+    for (value, rule) in [
+        ("-blog", "must not start or end with `-`"),
+        (&"a".repeat(64), "must be 1 to 63 characters"),
+    ] {
+        let text = SCHEMA.replace("name = \"blog\"", &format!("name = \"{value}\""));
+        let (_, diagnostics) = analyze_document(&uri(), &text);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(diagnostics[0].message.contains(rule), "{diagnostics:?}");
+        let start = text.find("name = ").expect("entry");
+        let end = start + format!("name = \"{value}\"").len();
+        assert_eq!(diagnostics[0].range, range_from_offsets(&text, start, end));
+    }
+}
+
 /// Before cratestack#1036 `@@mcp(...)` was a raw model attribute and got the
 /// decorator token every `@@...` gets. Moving it into `Model.mcp` took it out
 /// of the list `semantic_tokens` walks; it must still be coloured.

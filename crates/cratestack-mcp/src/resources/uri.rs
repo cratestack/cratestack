@@ -10,8 +10,8 @@
 //! 3986 § 3.1 makes schemes case-insensitive, so `CRATESTACK://blog/...`
 //! is the same URI as `cratestack://blog/...` to any conforming client,
 //! and refusing it would be this server disagreeing with the standard, not
-//! strictness. The name after `://` is ours, `[a-z0-9-]+` by the parser's
-//! rule, and stays exact.
+//! strictness. The name after `://` is ours, a lowercase DNS label by the
+//! parser's rule, and stays exact.
 
 use super::{RESOURCE_SCHEME, ResourceDescriptor};
 

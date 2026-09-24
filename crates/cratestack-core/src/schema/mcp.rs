@@ -62,10 +62,12 @@ pub struct McpConfig {
 /// The `name = "..."` entry of the `mcp { }` block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpName {
-    /// The string's contents, `[a-z0-9-]+` once parsed: lowercase so the
-    /// one spelling is the only spelling (a URI's host is compared exactly),
-    /// and no `.`, `:`, `@` or `%`, so it never needs percent-encoding and
-    /// never reads as a port, userinfo or a dotted host name.
+    /// The string's contents, a lowercase DNS label once parsed (`[a-z0-9-]`,
+    /// 1 to 63 characters, no `-` at either end; cratestack#1040), because
+    /// it is a URI's host: lowercase so the one spelling is the only
+    /// spelling (the host is compared exactly), and no `.`, `:`, `@` or `%`,
+    /// so it never needs percent-encoding and never reads as a port,
+    /// userinfo or a dotted host name.
     pub value: String,
     /// The whole `name = "..."` entry.
     pub span: SourceSpan,

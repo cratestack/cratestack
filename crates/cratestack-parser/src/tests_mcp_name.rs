@@ -1,5 +1,6 @@
-//! `name = "..."` in the `mcp { }` block (maintainer decision on
-//! cratestack#1040): the `<name>` of every resource URI. One test per rule,
+//! `name = "..."` in the `mcp { }` block (maintainer decisions on
+//! cratestack#1040): the `<name>` of every resource URI, and so a DNS label,
+//! since it sits in the URI's host position. One test per rule,
 //! each derived from [`VALID`] by one edit, so deleting that rule's check
 //! makes exactly that test fail.
 
@@ -15,7 +16,7 @@ fn the_name_is_carried_into_the_ir_with_its_entry_span() {
     assert_eq!(name.value, "blog");
     assert_eq!(&VALID[name.span.start..name.span.end], "name = \"blog\"");
 
-    // Any `[a-z0-9-]+`, and anywhere in the block.
+    // Any lowercase DNS label, and anywhere in the block.
     let source = edit(NAME, "").replace(
         "  expose = [tools, resources]\n",
         "  expose = [tools, resources]\n  name = \"my-app-2\"\n",
@@ -55,8 +56,9 @@ fn rule_the_name_is_a_quoted_string() {
 
 #[test]
 fn rule_the_name_is_lowercase_letters_digits_and_hyphens() {
+    // The empty name is the length rule's (`rule_the_name_is_1_to_63_characters`).
     for value in [
-        "Blog", "BLOG", "my_app", "my.app", "my app", "", "café", "a/b", "a%20",
+        "Blog", "BLOG", "my_app", "my.app", "my app", "café", "a/b", "a%20",
     ] {
         let message = syntax_error(&edit(NAME, &format!("  name = \"{value}\"\n")));
         assert!(
@@ -78,4 +80,42 @@ fn rule_the_name_is_set_once() {
         message.contains("`name` is set more than once"),
         "{message}"
     );
+}
+
+/// A DNS label is 1 to 63 characters (RFC 1035 § 2.3.4). A 64-character
+/// name is a hard error naming that rule, and so is the empty one.
+#[test]
+fn rule_the_name_is_1_to_63_characters() {
+    for value in [String::new(), "a".repeat(64), format!("{}0", "b".repeat(63))] {
+        let message = syntax_error(&edit(NAME, &format!("  name = \"{value}\"\n")));
+        assert!(
+            message.contains("must be 1 to 63 characters, the length of a DNS label"),
+            "{value:?}: {message}"
+        );
+    }
+}
+
+/// A DNS label neither starts nor ends with `-` (RFC 952, RFC 1123 § 2.1).
+#[test]
+fn rule_the_name_does_not_start_or_end_with_a_hyphen() {
+    for value in ["-", "--", "-blog", "blog-", "-blog-"] {
+        let message = syntax_error(&edit(NAME, &format!("  name = \"{value}\"\n")));
+        assert!(
+            message.contains("must not start or end with `-`, as a DNS label may not"),
+            "{value:?}: {message}"
+        );
+    }
+}
+
+/// The edges of the two rules above are still names: exactly 63
+/// characters, hyphens inside, a leading or trailing digit, one character.
+#[test]
+fn a_dns_label_at_the_edges_of_the_rules_is_a_name() {
+    let longest = format!("a{}9", "-".repeat(61));
+    let widest = "z".repeat(63);
+    for value in ["a-b", "a--b", "0blog9", "a", "7", &widest, &longest] {
+        let source = edit(NAME, &format!("  name = \"{value}\"\n"));
+        let schema = parse_schema(&source).unwrap_or_else(|error| panic!("{value:?}: {error}"));
+        assert_eq!(schema.mcp.unwrap().name.unwrap().value, value);
+    }
 }

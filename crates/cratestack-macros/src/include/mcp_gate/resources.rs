@@ -90,8 +90,8 @@ fn plan(model: &Model, authority: &str) -> Result<ResourcePlan, String> {
 /// The `mcp { name = "..." }` value: `name = "blog"` serves
 /// `cratestack://blog/...` (maintainer decision on cratestack#1040). The
 /// parser has already required it whenever a model is a resource, and
-/// checked it is `[a-z0-9-]+`, so the authority needs no percent-encoding
-/// and cannot read as a port or userinfo.
+/// checked it is a lowercase DNS label, so the authority needs no
+/// percent-encoding and cannot read as a port or userinfo.
 ///
 /// There is deliberately no fallback to the `.cstack` file's name, which
 /// phase 5 first used: a URI an agent holds must not change when the file
