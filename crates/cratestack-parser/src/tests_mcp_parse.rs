@@ -116,6 +116,13 @@ fn malformed_attribute_shapes_are_parse_errors() {
             r#"@@mcp(resource: "a", max_page_size: -1)"#,
             "must be an integer",
         ),
+        // `u32::from_str` takes a leading `+`; the ADR's "an integer from 1
+        // to 200" is a plain decimal literal, so the parser does not.
+        (
+            resource,
+            r#"@@mcp(resource: "a", max_page_size: +5)"#,
+            "must be an integer",
+        ),
         (
             resource,
             r#"@@mcp(resource: "a", resource: "b")"#,

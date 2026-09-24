@@ -95,7 +95,13 @@ pub(super) fn quoted(value: &str, key: &str) -> Result<String, String> {
 
 pub(super) fn page_size(value: Option<&str>) -> Result<u32, String> {
     let value = value.unwrap_or_default();
-    value.parse::<u32>().map_err(|_| {
+    // Digits only: `u32::from_str` would also take a leading `+`.
+    let parsed = value
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+        .then(|| value.parse::<u32>().ok())
+        .flatten();
+    parsed.ok_or_else(|| {
         format!(
             "has `max_page_size: {value}`; `max_page_size:` must be an integer from 1 to {} \
              (ADR 0002 Q3)",
