@@ -51,13 +51,17 @@ pub(super) fn parse_name(line: &Line<'_>, value: &str) -> Result<McpName, Schema
 /// the case-insensitive label DNS allows, because the host is compared
 /// exactly and one spelling must be the only spelling. One message per rule,
 /// so each is its own test and deleting one check fails only that test.
+///
+/// The character set is checked before the length because `len()` counts
+/// bytes: only once every byte is ASCII is it also the character count, so
+/// a 32-character non-ASCII name is not told it is too long.
 fn broken_label_rule(name: &str) -> Option<&'static str> {
-    if name.is_empty() || name.len() > 63 {
-        return Some("must be 1 to 63 characters, the length of a DNS label");
-    }
     let charset = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-';
     if !name.bytes().all(charset) {
         return Some("must be lowercase ASCII letters, digits and `-` only");
+    }
+    if name.is_empty() || name.len() > 63 {
+        return Some("must be 1 to 63 characters, the length of a DNS label");
     }
     if name.starts_with('-') || name.ends_with('-') {
         return Some("must not start or end with `-`, as a DNS label may not");

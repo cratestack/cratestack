@@ -58,8 +58,28 @@ fn rule_the_name_is_a_quoted_string() {
 fn rule_the_name_is_lowercase_letters_digits_and_hyphens() {
     // The empty name is the length rule's (`rule_the_name_is_1_to_63_characters`).
     for value in [
-        "Blog", "BLOG", "my_app", "my.app", "my app", "café", "a/b", "a%20",
-    ] {
+        "Blog",
+        "BLOG",
+        "my_app",
+        "my.app",
+        "my app",
+        "café",
+        "a/b",
+        "a%20",
+        // Characters Unicode case folding or NFKC turns into ASCII: KELVIN
+        // SIGN, LONG S, DOTLESS I and fullwidth letters. The check is on
+        // bytes, never on a folded or normalized form, so none is a name.
+        "\u{212A}ey",
+        "\u{17F}hop",
+        "\u{131}d",
+        "\u{FF42}\u{FF4C}\u{FF4F}\u{FF47}",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    // 32 characters but 64 bytes: its broken rule is the character set, not
+    // a length it doesn't have.
+    .chain(["é".repeat(32)])
+    {
         let message = syntax_error(&edit(NAME, &format!("  name = \"{value}\"\n")));
         assert!(
             message.contains("must be lowercase ASCII letters, digits and `-` only"),
