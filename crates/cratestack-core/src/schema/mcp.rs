@@ -1,8 +1,8 @@
 //! Typed IR for a schema's MCP operator surface (ADR 0002, cratestack#1033
 //! phase 1, cratestack#1036).
 //!
-//! Three declarations feed it: the top-level `mcp { expose tools / expose
-//! resources }` block ([`McpConfig`]), `@mcp(tool[: "name"][, description:
+//! Three declarations feed it: the top-level `mcp { expose = [tools,
+//! resources] }` block ([`McpConfig`]), `@mcp(tool[: "name"][, description:
 //! "..."])` on a procedure ([`ProcedureMcpExposure`]), and `@@mcp(resource:
 //! "segment"[, max_page_size: N])` on a model ([`ModelMcpExposure`]).
 //!
@@ -31,16 +31,16 @@ pub const MCP_MAX_PAGE_SIZE: u32 = 200;
 
 /// The top-level `mcp { }` block.
 ///
-/// Each `expose` flag is the span of the line that declared it rather than a
-/// `bool`, so that "an `expose` line nothing uses" can point at that line —
-/// and so presence and position can never disagree the way a `bool` plus a
-/// separate span could.
+/// Each `expose` flag is the span of its element in `expose = [...]` rather
+/// than a `bool`, so that "an exposed kind nothing uses" can point at that
+/// element — and so presence and position can never disagree the way a
+/// `bool` plus a separate span could.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct McpConfig {
     pub docs: Vec<String>,
-    /// `Some(span of the line)` when the block says `expose tools`.
+    /// `Some(span of the `tools` element)` when `expose` lists it.
     pub expose_tools: Option<SourceSpan>,
-    /// `Some(span of the line)` when the block says `expose resources`.
+    /// `Some(span of the `resources` element)` when `expose` lists it.
     pub expose_resources: Option<SourceSpan>,
     /// The whole block, header to closing brace. This is the span a `part of`
     /// file's rejection of `mcp { }` reports (cratestack#993).

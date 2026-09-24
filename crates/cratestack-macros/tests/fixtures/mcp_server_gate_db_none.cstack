@@ -7,7 +7,7 @@ datasource db {
 }
 
 mcp {
-  expose tools
+  expose = [tools]
 }
 
 type PingArgs {

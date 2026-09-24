@@ -44,6 +44,8 @@ mod tests_mcp_placement;
 #[cfg(test)]
 mod tests_mcp_rules;
 #[cfg(test)]
+mod tests_mcp_scope;
+#[cfg(test)]
 mod tests_mcp_support;
 #[cfg(test)]
 mod tests_mixins;

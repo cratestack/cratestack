@@ -97,8 +97,7 @@ datasource db {
 }
 
 mcp {
-  expose tools
-  expose resources
+  expose = [tools, resources]
 }
 
 type Args {

@@ -49,8 +49,7 @@ The syntax (ADR 0002, decided 2026-09-24):
 
 ```cstack
 mcp {
-  expose tools
-  expose resources
+  expose = [tools, resources]       // or [tools], or [resources]
 }
 
 model Post {
@@ -82,7 +81,8 @@ literal needs `mcp: None` added.
 Every ADR 0002 § Validation rule is a hard error with a span:
 
 - an MCP attribute with no `mcp { }` block;
-- an `expose` line that nothing uses;
+- an exposed kind that nothing uses (`tools` with no `@mcp(tool)`, `resources` with
+  no `@@mcp`);
 - a malformed tool name, given or defaulted (`[A-Za-z0-9_.-]{1,128}`), resource
   segment (`[a-z0-9-]+`) or `max_page_size:` (1 to 200; a larger value is an
   error, not a clamp);
@@ -90,20 +90,23 @@ Every ADR 0002 § Validation rule is a hard error with a span:
 - `@@mcp` on a model with no read allow (`@@allow` with `"read"` or `"all"`, or
   both a `"list"` and a `"detail"` allow);
 - `@mcp(tool)` on a procedure with no `@allow` (`@deny` alone never allows);
-- `@@mcp` or `expose resources` in a `datasource { provider = "none" }` schema.
+- `@@mcp`, or `resources` in `expose`, in a `datasource { provider = "none" }`
+  schema.
+
+The block is `key = value` like every other config block, so
+tree-sitter-cstack parses it with no grammar change. `expose` is its only key,
+and these are errors too: a block with no `expose`, an unknown key, `expose` set
+twice, a value that is not a one-line list, an empty list, an unknown or repeated
+element, and `procedures` (renamed to `tools`). The one-word-per-line form an
+earlier ADR 0002 draft used is rejected with a message giving the `expose = [...]`
+spelling.
 
 Also rejected, because any of them would otherwise be silently inert: an
-attribute whose `expose` line is missing, `@mcp`/`@@mcp` anywhere except a
+attribute whose kind is missing from `expose`, `@mcp`/`@@mcp` anywhere except a
 procedure or a model (on a field, on a view, `@@mcp` on a procedure, on a
-`query`), an MCP attribute that shares a line with another attribute, the dotted
-`@mcp.tool` form (ADR 0002 D1), an empty `mcp { }` block, and the old `expose
-procedures` spelling (renamed to `expose tools`). The LSP completes and hovers
-the new syntax and reports these errors as diagnostics.
-
-Not yet in sync: tree-sitter-cstack's grammar parses the attributes but not the
-`expose` lines (its `mcp_block` accepts only `key = value` entries), so its
-`test/conformance.sh` reports an `ERROR` node on the new fixtures until that
-grammar is extended.
+`query`), an MCP attribute that shares a line with another attribute, and the
+dotted `@mcp.tool` form (ADR 0002 D1). The LSP completes and hovers the new
+syntax and reports these errors as diagnostics.
 
 ### Rate-limit admission moves to the L3 `OpExecutor`, and `@no_rate_limit` works under `Router::nest` (#877)
 

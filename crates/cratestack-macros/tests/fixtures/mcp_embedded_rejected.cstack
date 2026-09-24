@@ -7,7 +7,7 @@ datasource db {
 }
 
 mcp {
-  expose resources
+  expose = [resources]
 }
 
 model Note {

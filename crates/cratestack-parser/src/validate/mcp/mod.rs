@@ -26,8 +26,8 @@ use crate::diagnostics::SchemaError;
 
 pub(super) fn validate_mcp_collecting(schema: &Schema, errors: &mut Vec<SchemaError>) {
     scope::attributes_need_a_block(schema, errors);
-    scope::attributes_need_their_expose_line(schema, errors);
-    scope::expose_lines_must_be_used(schema, errors);
+    scope::attributes_need_their_exposed_kind(schema, errors);
+    scope::exposed_kinds_must_be_used(schema, errors);
     scope::no_resources_without_a_database(schema, errors);
     names::tool_names_are_well_formed(schema, errors);
     names::resource_segments_are_well_formed(schema, errors);

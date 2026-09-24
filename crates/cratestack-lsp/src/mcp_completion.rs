@@ -8,27 +8,24 @@
 
 use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind};
 
-const ENTRIES: [(&str, &str); 4] = [
+const ENTRIES: [(&str, &str); 3] = [
     (
         "@mcp",
         "procedure attribute: expose it as an MCP tool — `@mcp(tool)` uses the procedure name, \
          `@mcp(tool: \"name\", description: \"...\")` names it; needs an `@allow(...)` and \
-         `expose tools` (ADR 0002)",
+         `tools` in the block's `expose` list (ADR 0002)",
     ),
     (
         "@@mcp",
         "model attribute: expose it as a read-only MCP resource — `@@mcp(resource: \"segment\")`, \
-         optional `max_page_size:` 1-200; needs a read `@@allow` and `expose resources` \
-         (ADR 0002)",
+         optional `max_page_size:` 1-200; needs a read `@@allow` and \
+         `resources` in the block's `expose` list (ADR 0002)",
     ),
     (
-        "expose tools",
-        "inside `mcp { }`: serve the procedures marked `@mcp(tool)` as MCP tools",
-    ),
-    (
-        "expose resources",
-        "inside `mcp { }`: serve the models marked `@@mcp(resource: ...)` as read-only MCP \
-         resources (not in a `provider = \"none\"` schema)",
+        "expose = [tools, resources]",
+        "inside `mcp { }`: which MCP kinds to serve — `tools` (procedures marked \
+         `@mcp(tool)`), `resources` (models marked `@@mcp(resource: ...)`, not in a \
+         `provider = \"none\"` schema), or both",
     ),
 ];
 

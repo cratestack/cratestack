@@ -5,6 +5,7 @@
 mod args;
 mod attribute;
 mod block;
+mod expose;
 pub(crate) mod position;
 
 pub(crate) use attribute::{extract_model_mcp, extract_procedure_mcp};

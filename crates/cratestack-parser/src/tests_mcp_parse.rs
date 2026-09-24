@@ -10,14 +10,9 @@ fn the_block_and_both_attributes_parse_into_typed_ir() {
 
     let mcp = schema.mcp.as_ref().expect("typed mcp block");
     assert_eq!(mcp.docs, vec!["Agent-facing surface.".to_owned()]);
-    assert_eq!(
-        &VALID[mcp.expose_tools.unwrap().start..][..12],
-        "expose tools"
-    );
-    assert_eq!(
-        &VALID[mcp.expose_resources.unwrap().start..][..16],
-        "expose resources"
-    );
+    let (tools, resources) = (mcp.expose_tools.unwrap(), mcp.expose_resources.unwrap());
+    assert_eq!(&VALID[tools.start..tools.end], "tools");
+    assert_eq!(&VALID[resources.start..resources.end], "resources");
     assert!(VALID[mcp.span.start..mcp.span.end].starts_with("mcp {"));
     assert!(VALID[mcp.span.start..mcp.span.end].ends_with('}'));
     assert!(

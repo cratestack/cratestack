@@ -15,8 +15,7 @@ pub(crate) const VALID: &str = r#"datasource db {
 
 /// Agent-facing surface.
 mcp {
-  expose tools
-  expose resources
+  expose = [tools, resources]
 }
 
 type FeedArgs {

@@ -17,8 +17,7 @@ const SCHEMA: &str = r#"datasource db {
 
 /// Agent surface.
 mcp {
-  expose tools
-  expose resources
+  expose = [tools, resources]
 }
 
 type FeedArgs {
@@ -42,9 +41,9 @@ fn uri() -> Uri {
 }
 
 #[test]
-fn completion_offers_the_mcp_attributes_and_expose_lines_with_detail() {
+fn completion_offers_the_mcp_attributes_and_expose_key_with_detail() {
     let items = completion_items(None);
-    for label in ["@mcp", "@@mcp", "expose tools", "expose resources"] {
+    for label in ["@mcp", "@@mcp", "expose = [tools, resources]"] {
         let item = items
             .iter()
             .find(|item| item.label == label)
@@ -76,13 +75,13 @@ fn hover_resolves_each_mcp_declaration() {
     );
     assert!(resource.detail.contains("at most 20 records per page"));
 
-    let expose = at("expose tools");
+    let expose = at("tools, resources]");
     assert_eq!(
         (expose.kind, expose.name.as_str()),
-        ("mcp setting", "expose tools")
+        ("mcp exposed kind", "tools")
     );
     assert_eq!(expose.detail, "tools: getFeed");
-    assert_eq!(at("expose resources").detail, "resources: posts");
+    assert_eq!(at("resources]").detail, "resources: posts");
 
     let block = at("mcp {");
     assert_eq!(block.kind, "mcp block");
@@ -108,11 +107,11 @@ fn mcp_rules_are_reported_as_diagnostics_at_the_attribute() {
 
 #[test]
 fn mcp_syntax_errors_are_reported_as_diagnostics() {
-    let text = SCHEMA.replace("expose tools", "expose procedures");
+    let text = SCHEMA.replace("[tools, resources]", "[procedures, resources]");
     let (_, diagnostics) = analyze_document(&uri(), &text);
     assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert!(diagnostics[0].message.contains("renamed to `expose tools`"));
-    let start = text.find("expose procedures").expect("line");
-    let expected = range_from_offsets(&text, start, start + "expose procedures".len());
+    assert!(diagnostics[0].message.contains("renamed to `tools`"));
+    let start = text.find("procedures").expect("element");
+    let expected = range_from_offsets(&text, start, start + "procedures".len());
     assert_eq!(diagnostics[0].range, expected);
 }

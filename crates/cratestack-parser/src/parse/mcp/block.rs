@@ -1,13 +1,16 @@
-//! The top-level `mcp { expose tools / expose resources }` block (ADR 0002
+//! The top-level `mcp { expose = [tools, resources] }` block (ADR 0002
 //! § Schema surface).
 //!
 //! Before cratestack#1036 this went through `parse_simple_config_block` and
 //! became opaque text lines in `Schema.config_blocks` that nothing read, so
-//! `mcp { anything at all }` parsed. Every line is now one of the two
-//! `expose` settings or an error.
+//! `mcp { anything at all }` parsed. The body is now `key = value` like every
+//! other config block — the maintainer's 2026-09-24 choice, which is also
+//! what tree-sitter-cstack's `config_body` already accepts — and `expose` is
+//! its only key. Everything else is an error.
 
-use cratestack_core::{McpConfig, SourceSpan};
+use cratestack_core::McpConfig;
 
+use super::expose::{ExposeList, old_line_form_hint, parse_expose_list};
 use crate::diagnostics::{SchemaError, span_error};
 use crate::line_helpers::{Line, span_from_lines, trimmed_span};
 
@@ -18,8 +21,7 @@ pub(crate) fn parse_mcp_block(
     previous: Option<&McpConfig>,
 ) -> Result<(McpConfig, usize), SchemaError> {
     let header = &lines[start];
-    let mut expose_tools: Option<SourceSpan> = None;
-    let mut expose_resources: Option<SourceSpan> = None;
+    let mut expose: Option<ExposeList> = None;
     let mut cursor = start + 1;
     while cursor < lines.len() {
         let line = &lines[cursor];
@@ -36,17 +38,18 @@ pub(crate) fn parse_mcp_block(
                     span,
                 ));
             }
-            if expose_tools.is_none() && expose_resources.is_none() {
+            let Some(expose) = expose else {
                 return Err(span_error(
-                    "empty `mcp { }` block: it exposes nothing, so it would turn MCP on for \
-                     no declaration; add `expose tools` and/or `expose resources`",
+                    "`mcp { }` block has no `expose` key, so it would turn MCP on for no \
+                     declaration: write `expose = [tools]`, `expose = [resources]` or \
+                     `expose = [tools, resources]`",
                     span,
                 ));
-            }
+            };
             let config = McpConfig {
                 docs,
-                expose_tools,
-                expose_resources,
+                expose_tools: expose.tools,
+                expose_resources: expose.resources,
                 span,
             };
             return Ok((config, cursor));
@@ -54,49 +57,36 @@ pub(crate) fn parse_mcp_block(
         if line.trimmed.is_empty() || line.trimmed.starts_with("//") {
             continue;
         }
-        let slot = match line
-            .trimmed
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .as_slice()
-        {
-            ["expose", "tools"] => &mut expose_tools,
-            ["expose", "resources"] => &mut expose_resources,
-            ["expose", "procedures"] => {
-                return Err(entry_error(
-                    line,
-                    "`expose procedures` was renamed to `expose tools`, MCP's own word for an \
-                     invocable procedure (ADR 0002 § Schema surface)",
-                ));
-            }
-            ["expose", other] => {
-                return Err(entry_error(
-                    line,
-                    &format!("unknown `expose` target `{other}` (expected `tools` or `resources`)"),
-                ));
-            }
-            _ => {
-                return Err(entry_error(
-                    line,
-                    &format!(
-                        "unsupported `mcp` block entry `{}` (expected `expose tools` or \
-                         `expose resources`, one per line)",
-                        line.trimmed
-                    ),
-                ));
-            }
+        let Some((key, value)) = line.trimmed.split_once('=') else {
+            let message = old_line_form_hint(line.trimmed).unwrap_or_else(|| {
+                format!(
+                    "unsupported `mcp` block entry `{}` (the block takes `expose = [...]`)",
+                    line.trimmed
+                )
+            });
+            return Err(entry_error(line, &message));
         };
-        if slot.is_some() {
-            return Err(entry_error(
-                line,
-                &format!("`{}` is declared more than once", line.trimmed),
-            ));
+        match key.trim() {
+            "expose" if expose.is_some() => {
+                return Err(entry_error(line, "`expose` is set more than once"));
+            }
+            "expose" => {
+                // Offset of the value inside `line.raw`, so element spans are
+                // absolute source positions.
+                let value_offset = line.raw.len() - line.raw.trim_start().len() + key.len() + 1;
+                expose = Some(parse_expose_list(line, value, value_offset)?);
+            }
+            other => {
+                return Err(entry_error(
+                    line,
+                    &format!("unknown `mcp` setting `{other}` (the block takes only `expose`)"),
+                ));
+            }
         }
-        *slot = Some(trimmed_span(line));
     }
     Err(span_error("unterminated `mcp` block", trimmed_span(header)))
 }
 
-fn entry_error(line: &Line<'_>, message: &str) -> SchemaError {
+pub(super) fn entry_error(line: &Line<'_>, message: &str) -> SchemaError {
     span_error(format!("mcp block: {message}"), trimmed_span(line))
 }

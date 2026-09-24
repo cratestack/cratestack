@@ -1,5 +1,5 @@
 //! Hover for the MCP surface (ADR 0002, cratestack#1036): the `mcp { }`
-//! block, each `expose` line, `@mcp(...)` on a procedure and `@@mcp(...)` on
+//! block, each element of its `expose` list, `@mcp(...)` on a procedure and `@@mcp(...)` on
 //! a model.
 //!
 //! Every target is a span the parser recorded in the typed IR, so hover shows
@@ -83,14 +83,14 @@ fn block_symbol(schema: &Schema, config: &McpConfig, offset: usize) -> SymbolInf
         .expose_tools
         .filter(|span| span_contains(*span, offset))
     {
-        return expose_symbol("expose tools", format!("tools: {}", listed(&tools)), span);
+        return expose_symbol("tools", format!("tools: {}", listed(&tools)), span);
     }
     if let Some(span) = config
         .expose_resources
         .filter(|span| span_contains(*span, offset))
     {
         let detail = format!("resources: {}", listed(&resources));
-        return expose_symbol("expose resources", detail, span);
+        return expose_symbol("resources", detail, span);
     }
     SymbolInfo {
         kind: "mcp block",
@@ -107,7 +107,7 @@ fn block_symbol(schema: &Schema, config: &McpConfig, offset: usize) -> SymbolInf
 
 fn expose_symbol(name: &str, detail: String, span: cratestack_core::SourceSpan) -> SymbolInfo {
     SymbolInfo {
-        kind: "mcp setting",
+        kind: "mcp exposed kind",
         name: name.to_owned(),
         detail,
         docs: Vec::new(),

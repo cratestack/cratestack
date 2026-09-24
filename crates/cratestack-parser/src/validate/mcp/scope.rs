@@ -16,7 +16,7 @@ pub(super) fn attributes_need_a_block(schema: &Schema, errors: &mut Vec<SchemaEr
     for (procedure, tool) in tools(schema) {
         errors.push(span_error(
             format!(
-                "`@mcp(tool)` on procedure `{}` needs a top-level `mcp {{ expose tools }}` \
+                "`@mcp(tool)` on procedure `{}` needs a top-level `mcp {{ expose = [tools] }}` \
                  block: an MCP attribute in a schema with no `mcp {{ }}` block is an error \
                  (ADR 0002 § Validation)",
                 procedure.name
@@ -27,8 +27,8 @@ pub(super) fn attributes_need_a_block(schema: &Schema, errors: &mut Vec<SchemaEr
     for (model, resource) in resources(schema) {
         errors.push(span_error(
             format!(
-                "`@@mcp(resource: ...)` on model `{}` needs a top-level `mcp {{ expose \
-                 resources }}` block: an MCP attribute in a schema with no `mcp {{ }}` block \
+                "`@@mcp(resource: ...)` on model `{}` needs a top-level `mcp {{ expose = \
+                 [resources] }}` block: an MCP attribute in a schema with no `mcp {{ }}` block \
                  is an error (ADR 0002 § Validation)",
                 model.name
             ),
@@ -38,10 +38,10 @@ pub(super) fn attributes_need_a_block(schema: &Schema, errors: &mut Vec<SchemaEr
 }
 
 /// The block exists but does not open the scope the attribute needs —
-/// `@mcp(tool)` under a block with only `expose resources`, or the reverse.
+/// `@mcp(tool)` under `expose = [resources]`, or the reverse.
 /// Without this the attribute would be declared, validated and then served
 /// by nothing.
-pub(super) fn attributes_need_their_expose_line(schema: &Schema, errors: &mut Vec<SchemaError>) {
+pub(super) fn attributes_need_their_exposed_kind(schema: &Schema, errors: &mut Vec<SchemaError>) {
     let Some(config) = &schema.mcp else {
         return;
     };
@@ -49,8 +49,8 @@ pub(super) fn attributes_need_their_expose_line(schema: &Schema, errors: &mut Ve
         for (procedure, tool) in tools(schema) {
             errors.push(span_error(
                 format!(
-                    "`@mcp(tool)` on procedure `{}` is not exposed: the `mcp {{ }}` block has \
-                     no `expose tools` line (ADR 0002 § Schema surface)",
+                    "`@mcp(tool)` on procedure `{}` is not exposed: the `mcp {{ }}` block's \
+                     `expose` list has no `tools` (ADR 0002 § Schema surface)",
                     procedure.name
                 ),
                 tool.span,
@@ -61,8 +61,8 @@ pub(super) fn attributes_need_their_expose_line(schema: &Schema, errors: &mut Ve
         for (model, resource) in resources(schema) {
             errors.push(span_error(
                 format!(
-                    "`@@mcp(resource: ...)` on model `{}` is not exposed: the `mcp {{ }}` block \
-                     has no `expose resources` line (ADR 0002 § Schema surface)",
+                    "`@@mcp(resource: ...)` on model `{}` is not exposed: the `mcp {{ }}` \
+                     block's `expose` list has no `resources` (ADR 0002 § Schema surface)",
                     model.name
                 ),
                 resource.span,
@@ -71,9 +71,10 @@ pub(super) fn attributes_need_their_expose_line(schema: &Schema, errors: &mut Ve
     }
 }
 
-/// ADR 0002: "... and so is `mcp { expose tools }` with no `@mcp(tool)`
-/// anywhere." Same for resources.
-pub(super) fn expose_lines_must_be_used(schema: &Schema, errors: &mut Vec<SchemaError>) {
+/// ADR 0002: an exposed kind with nothing of that kind annotated is an error
+/// — `expose = [tools]` with no `@mcp(tool)` anywhere, and the same for
+/// resources. Each error points at the unused element.
+pub(super) fn exposed_kinds_must_be_used(schema: &Schema, errors: &mut Vec<SchemaError>) {
     let Some(config) = &schema.mcp else {
         return;
     };
@@ -81,8 +82,8 @@ pub(super) fn expose_lines_must_be_used(schema: &Schema, errors: &mut Vec<Schema
         && tools(schema).next().is_none()
     {
         errors.push(span_error(
-            "`expose tools` exposes nothing: no procedure carries `@mcp(tool)`. An `expose` \
-             line that nothing uses is an error (ADR 0002 § Validation)",
+            "`tools` in `expose` exposes nothing: no procedure carries `@mcp(tool)`. An \
+             exposed kind that nothing uses is an error (ADR 0002 § Validation)",
             span,
         ));
     }
@@ -90,16 +91,16 @@ pub(super) fn expose_lines_must_be_used(schema: &Schema, errors: &mut Vec<Schema
         && resources(schema).next().is_none()
     {
         errors.push(span_error(
-            "`expose resources` exposes nothing: no model carries `@@mcp(resource: ...)`. An \
-             `expose` line that nothing uses is an error (ADR 0002 § Validation)",
+            "`resources` in `expose` exposes nothing: no model carries `@@mcp(resource: \
+             ...)`. An exposed kind that nothing uses is an error (ADR 0002 § Validation)",
             span,
         ));
     }
 }
 
 /// ADR 0002: "`@@mcp` is an error in a `db = None` schema, which has no
-/// models. More generally, `mcp { expose resources }` is rejected wherever
-/// resources cannot exist." The existing "no `model` under `provider =
+/// models. More generally, exposing resources is rejected wherever resources
+/// cannot exist." The existing "no `model` under `provider =
 /// \"none\"`" error already fires for such a model; this one names MCP so
 /// the author learns that resources, not just models, are off the table.
 pub(super) fn no_resources_without_a_database(schema: &Schema, errors: &mut Vec<SchemaError>) {
@@ -114,7 +115,7 @@ pub(super) fn no_resources_without_a_database(schema: &Schema, errors: &mut Vec<
         .and_then(|config| config.expose_resources)
     {
         errors.push(span_error(
-            format!("`expose resources` is not allowed: {reason}"),
+            format!("`resources` in `expose` is not allowed: {reason}"),
             span,
         ));
     }
