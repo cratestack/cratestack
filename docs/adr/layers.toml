@@ -8,8 +8,8 @@
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (35 as of this
-# writing, 34 of them workspace members — `cratestack-studio-ui` is excluded
+# Scope: only packages whose manifest lives under `crates/` (36 as of this
+# writing, 35 of them workspace members — `cratestack-studio-ui` is excluded
 # from the workspace and not covered here; cratestack#490's `cratestack-client`
 # is included). `examples/*` and
 # app-shaped workspace members are consumers of the layered architecture,
@@ -151,6 +151,21 @@ cratestack-service = 2
 # "must not be depended on by anything above its layer" half of the rule is
 # satisfied vacuously, same as every other crate in this section.
 cratestack-outbox = 2
+# `cratestack-cose` (ADR 0006 §11, as amended while scoping P0;
+# cratestack#1005): the COSE_Sign1 / COSE_Mac0 envelope, one implementation
+# shared by the server and every client. Its only normal workspace
+# dependency is `cratestack-core` (L0), verified with `cargo tree -p
+# cratestack-cose -e normal`, which lists no other `cratestack-*` crate; so
+# `dep.layer <= self.layer` holds with no exception. It sits at L2 by the
+# maintainer's decision (ADR 0006, "Decisions taken while scoping P0"),
+# not by the lowest-supported-layer rule `cratestack-macros` and
+# `cratestack-auth` follow above: it is an adapter over a wire format, like
+# the codecs in this section, and its planned `auth` feature adds an edge to
+# `cratestack-auth` (L1), which L2 admits. Nothing depends on it yet;
+# its consumers-to-be are `cratestack-axum`, `cratestack-client-rust` and
+# the wasm/napi bindings (all L4), so the upper-bound half of the rule
+# reads 2 <= 4 and needs no allowlist entry.
+cratestack-cose = 2
 
 # --- L3: Execution -----------------------------------------------------
 # `cratestack-exec` (ADR 0015 slices 1 and 2): idempotency and rate-limit

@@ -2,6 +2,57 @@
 
 ## Unreleased
 
+### `cratestack-cose`: unary COSE_Sign1 / COSE_Mac0 envelope, first half (#1005)
+
+**A new L2 crate implements ADR 0006's unary envelope.** `CoseEnvelope`
+implements `cratestack_core::CratestackEnvelope` (#1004). A signed body is the
+codec's output wrapped as a COSE_Sign1 (tag 18) or COSE_Mac0 (tag 17) and bound
+to its request through external AAD. The AAD is rebuilt on both sides and never
+sent. Nothing calls the envelope yet: the router and client wiring is #1006, so
+no service changes behaviour. Its only workspace dependency is
+`cratestack-core`.
+
+```rust
+let server = CoseEnvelope::server(CoseMode::Sign1, signer, resolver, nonce_store).build()?;
+let opened = server.open_request(body, &binding).await?; // no CratestackContext needed
+```
+
+- **Algorithms.** Sign1 uses Ed25519 (`-19`, the default) or ESP256 (`-9`,
+  RFC 6979 deterministic in process). Mac0 uses HMAC 256/64 (`4`) or 256/256
+  (`5`), with secrets of at least 32 bytes. Everything else is refused,
+  including the deprecated `-8`/`-7`.
+- **Wire format.** The protected header is `{1: alg, 4: kid, ? 15: {6: iat,
+  7: cti}}`, with claims on requests only. The unprotected header is always
+  empty. The `kid` is the first 8 bytes of the key's RFC 9679 thumbprint. The
+  parser accepts only the one deterministic encoding and checks it against
+  `coset`.
+- **AAD.** `[1, method, route, path_params, query / null, schema_sha,
+  payload_type, ? request_digest, ? status]`. An empty query binds as `null`.
+  `request_digest` and `status` are both present or both absent.
+- **Replay.** `nonce` mode: `iat` within a 300 s skew (configurable), and
+  `(kid, cti)` recorded in core's `NonceStore` only after the signature
+  verifies. Entries are kept for twice the skew, so a replica whose clock
+  disagrees with the store's cannot reopen a replay window.
+- **Errors.** Every failed check is the same `401`. A failing key resolver,
+  nonce store or signer is a `500`.
+- **Vectors.** `crates/cratestack-cose/tests/vectors/` holds the fixed test
+  keys, a reconstructed 112-byte payment fixture and 24 unary cases in hex,
+  for the wasm, napi, TypeScript and Dart bindings. The measured sizes match
+  ADR 0006: 153 / 178 / 210 B for Mac0 64, Mac0 256 and a Sign1 request with a
+  2-byte `cti`, 167 / 192 / 224 B with the 16-byte `cti` P0 sends, and 197 B
+  for a Sign1 response.
+
+Three departures from the ADR's sketch. The outer structure is emitted and
+parsed by hand, because `coset` can neither encode in place nor parse
+strictly. Algorithms are a closed `CoseAlg` rather than
+`coset::iana::Algorithm`. The payload is copied into the message once instead
+of being encoded in place, because the envelope trait receives it already
+encoded.
+
+Not in this entry: the `auth` feature (the `cratestack-auth` adapters, the
+Redis nonce bridge and the move of the enrolment code), which is the second
+half of #1005.
+
 ### `CratestackEnvelope` is async and takes a `Binding` — breaking (#1004)
 
 **The sync `open_request`/`seal_response` envelope trait is gone.**

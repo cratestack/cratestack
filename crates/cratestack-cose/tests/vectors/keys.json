@@ -1,0 +1,20 @@
+{
+  "_comment": "TEST KEYS. Published in this repository; never use them outside tests.",
+  "ed25519": {
+    "kid": "be5de2f4bcdc383a",
+    "public": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+    "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "thumbprint": "be5de2f4bcdc383add3fc9827d345f1a37c6a06026b38696fb3229c003b35f49"
+  },
+  "hmac": {
+    "kid": "8439440003a3c5e1",
+    "secret": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+    "thumbprint": "8439440003a3c5e1afa14c854c112051985bd0ba4eb002ecb778c41b02aa8982"
+  },
+  "p256": {
+    "kid": "750ca40795ab23e5",
+    "public_sec1_uncompressed": "0460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+    "scalar": "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+    "thumbprint": "750ca40795ab23e51a75dc76fa12c052f6f6c57ba8a732337b91f096592b6ef6"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "_comment": "The 7-field payment row, reconstructed; see tests/common/fixture.rs.",
+  "cbor": "a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074",
+  "codec": "CborCodec (minicbor-serde, string keys)",
+  "fields": {
+    "amount": 125000,
+    "created_at": 1790000000,
+    "currency": "XAF",
+    "id": "0192f5a8-7c3e-7b21-9d4f-6a1e2c3b4d5e",
+    "note": "rent sept",
+    "payer": "Amina Tchoupo",
+    "status": "settled"
+  },
+  "size": 112
+}
