@@ -67,9 +67,11 @@ impl BytesSerde {
 ///
 /// `Geography`/`Geometry` opt in alongside `Bytes` (cratestack#842):
 /// their Rust type is `Vec<u8>` holding EWKB, so they need exactly the
-/// same base64 JSON treatment. Leaving them out would serialize a
-/// geometry as a JSON array of integers on the REST/RPC surface while
-/// every other byte-valued field is base64.
+/// same lenient *inbound* decoding. Leaving them out would make a CBOR
+/// byte-string geometry a decode error while a `Bytes` field accepts it.
+/// Outbound is untouched, as for `Bytes` (see the module doc): nothing
+/// here emits a `serialize_with`, so a geometry goes out as an array of
+/// integers, in JSON and CBOR alike, never as base64.
 pub(crate) fn bytes_serde(ty: &TypeRef, wrap_for_patch: bool) -> Option<BytesSerde> {
     if !matches!(ty.name.as_str(), "Bytes" | "Geography" | "Geometry") {
         return None;

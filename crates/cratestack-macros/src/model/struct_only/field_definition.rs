@@ -64,13 +64,12 @@ pub(crate) fn struct_field_definition(
         Some(argument) => quote! { , #argument },
         None => quote! {},
     };
-    // `@server_only` fields stay readable inside server code (SQLx populates
-    // them via FromRow, which doesn't go through serde) but are masked from
-    // both outbound JSON and inbound deserialization. The default value is
-    // used if a client somehow sends one — banks shouldn't rely on that;
-    // it's a defence-in-depth seam.
+    // `@server_only`: populated via `FromRow` (no serde), skipped by serde
+    // both ways. Not `skip_serializing, default`: `default` only fills an
+    // absent key, so a procedure argument naming the model (CRUD inputs omit
+    // the field) decoded a client-sent value. `bytes_arg` would never run.
     let serde_attr = if is_server_only_field(field) {
-        quote! { #[serde(skip_serializing, default #bytes_arg)] }
+        quote! { #[serde(skip)] }
     } else if wrap_for_patch && matches!(field.ty.arity, TypeArity::Optional) {
         // A nullable column on an update input is `Option<Option<T>>`:
         // outer = "did this patch touch the field at all", inner = "the
@@ -212,8 +211,9 @@ pub(crate) fn struct_field_definition_with_wire_scope(
         Some(argument) => quote! { , #argument },
         None => quote! {},
     };
+    // `@server_only`: see `struct_field_definition`'s comment.
     let serde_attr = if is_server_only_field(field) {
-        quote! { #[serde(skip_serializing, default #bytes_arg)] }
+        quote! { #[serde(skip)] }
     } else if matches!(field.ty.arity, TypeArity::Optional) {
         quote! { #[serde(default #bytes_arg)] }
     } else if let Some(argument) = &bytes_deserialize_with {

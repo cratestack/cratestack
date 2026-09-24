@@ -5,8 +5,10 @@
 //! - `@readonly` is absent from Create/Update inputs at the *type level* —
 //!   verified at compile time by the input-construction tests below
 //!   (omitting the field is the only way to build the struct).
-//! - `@server_only` adds JSON skip-serializing on top, so the value is
-//!   readable from server-side Rust but invisible to clients.
+//! - `@server_only` adds serde `skip` on top, so the value is readable
+//!   from server-side Rust but invisible to clients, and a client cannot
+//!   set it through a procedure argument that decodes the full model
+//!   either (`tests/server_only_inbound.rs`).
 
 use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
