@@ -35,7 +35,7 @@
 //! # Where this departs from the ADR's sketch
 //!
 //! - The outer structure is emitted and parsed by hand, not with `coset`
-//!   (see [`cbor`](crate::cbor)'s module doc); `coset` is a dev-dependency
+//!   (see the private `cbor` module's doc); `coset` is a dev-dependency
 //!   that the tests check the bytes against.
 //! - Algorithms are the closed [`CoseAlg`], not `coset::iana::Algorithm`.
 //! - The payload is copied into the message once instead of being encoded

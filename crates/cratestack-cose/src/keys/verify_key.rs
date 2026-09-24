@@ -17,7 +17,7 @@ use crate::thumbprint::{self, KID_LEN};
 /// COSE/JOSE mistake is unrepresentable: an Ed25519 public key can never be
 /// used as an HMAC secret (an attacker who knows the public key could
 /// otherwise MAC anything with it), and a P-256 key can never verify an
-/// Ed25519 signature. [`CoseVerifyKey::verify`] pairs each variant with the
+/// Ed25519 signature. Verification pairs each variant with the
 /// algorithms of its own family and answers `false` for every other pair.
 #[derive(Clone, PartialEq, Eq)]
 pub enum CoseVerifyKey {

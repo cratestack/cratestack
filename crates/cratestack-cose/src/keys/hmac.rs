@@ -5,6 +5,7 @@ use std::fmt;
 use cratestack_core::CratestackError;
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
+use subtle::ConstantTimeEq;
 
 use super::traits::CoseSigner;
 use crate::alg::CoseAlg;
@@ -20,9 +21,17 @@ use crate::thumbprint::{self, KID_LEN};
 pub const MIN_HMAC_SECRET_LEN: usize = 32;
 
 /// An HMAC secret of at least [`MIN_HMAC_SECRET_LEN`] bytes. `Debug` does
-/// not print it.
-#[derive(Clone, PartialEq, Eq)]
+/// not print it, and `==` compares in constant time.
+#[derive(Clone)]
 pub struct HmacSecret(Vec<u8>);
+
+impl PartialEq for HmacSecret {
+    fn eq(&self, other: &Self) -> bool {
+        bool::from(self.0.as_slice().ct_eq(other.0.as_slice()))
+    }
+}
+
+impl Eq for HmacSecret {}
 
 impl HmacSecret {
     pub fn new(secret: impl Into<Vec<u8>>) -> Result<Self, CratestackError> {
