@@ -4,13 +4,14 @@
 //! # URIs
 //!
 //! ```text
-//! cratestack://<schema>/<segment>/{id}             one record
-//! cratestack://<schema>/<segment>{?limit,cursor}   a page of records
+//! cratestack://<name>/<segment>/{id}             one record
+//! cratestack://<name>/<segment>{?limit,cursor}   a page of records
 //! ```
 //!
-//! `<segment>` is the author's `@@mcp(resource: ...)` value and `<schema>`
-//! the generated table's authority, so neither a table nor a model name
-//! reaches an agent (security requirement 11).
+//! `<segment>` is the author's `@@mcp(resource: ...)` value and `<name>`
+//! the schema's `mcp { name = "..." }` (maintainer decision on #1040), so
+//! neither a table nor a model name reaches an agent (security requirement
+//! 11).
 //!
 //! # Where the row policy is enforced
 //!

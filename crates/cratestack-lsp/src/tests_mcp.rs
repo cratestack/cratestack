@@ -18,6 +18,7 @@ const SCHEMA: &str = r#"datasource db {
 
 /// Agent surface.
 mcp {
+  name = "blog"
   expose = [tools, resources]
 }
 
@@ -44,7 +45,12 @@ fn uri() -> Uri {
 #[test]
 fn completion_offers_the_mcp_attributes_and_expose_key_with_detail() {
     let items = completion_items(None);
-    for label in ["@mcp", "@@mcp", "expose = [tools, resources]"] {
+    for label in [
+        "@mcp",
+        "@@mcp",
+        "expose = [tools, resources]",
+        "name = \"...\"",
+    ] {
         let item = items
             .iter()
             .find(|item| item.label == label)
@@ -83,6 +89,10 @@ fn hover_resolves_each_mcp_declaration() {
     );
     assert_eq!(expose.detail, "tools: getFeed");
     assert_eq!(at("resources]").detail, "resources: posts");
+
+    let name = at("name = ");
+    assert_eq!((name.kind, name.name.as_str()), ("mcp name", "blog"));
+    assert_eq!(name.detail, "MCP resource URIs: cratestack://blog/posts");
 
     let block = at("mcp {");
     assert_eq!(block.kind, "mcp block");

@@ -58,7 +58,7 @@ pub(super) fn guard_server_mcp(
         return Ok(McpPlan::default());
     }
     let decimal = resolve_decimal_backend(schema_path, schema, decimal)?;
-    plan::server_plan(schema, &schema_path.value(), decimal, cfg!(feature = "mcp"))
+    plan::server_plan(schema, decimal, cfg!(feature = "mcp"))
         .map_err(|message| error(schema_path, message))
 }
 

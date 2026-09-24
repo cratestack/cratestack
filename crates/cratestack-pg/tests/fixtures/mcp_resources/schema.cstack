@@ -1,9 +1,12 @@
 // cratestack#1040 (MCP phase 5): read-only resources, against real
-// Postgres, by `tests/mcp_resources_pg.rs`. The file is named `blog.cstack`
-// because a resource URI's authority is the schema file's stem, so this
-// serves `cratestack://blog/posts` and `cratestack://blog/notes`, the URIs
-// the story names. The model names (and so the tables, `mcp_res_posts` /
-// `mcp_res_notes`) appear in no URI.
+// Postgres, by `tests/mcp_resources_pg.rs`. A resource URI's authority is
+// the block's `name`, so this serves `cratestack://blog/posts` and
+// `cratestack://blog/notes`, the URIs the story names. The file is
+// deliberately *not* `blog.cstack`: its stem was the authority before the
+// maintainer's decision on #1040, and with a different stem every URI
+// these tests assert fails if the file's name ever leaks back in. The
+// model names (and so the tables, `mcp_res_posts` / `mcp_res_notes`)
+// appear in no URI.
 
 datasource db {
   provider = "postgresql"
@@ -11,6 +14,7 @@ datasource db {
 }
 
 mcp {
+  name = "blog"
   expose = [resources]
 }
 

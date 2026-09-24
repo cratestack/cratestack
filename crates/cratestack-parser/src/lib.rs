@@ -40,6 +40,8 @@ mod tests_mcp_block;
 #[cfg(test)]
 mod tests_mcp_inert;
 #[cfg(test)]
+mod tests_mcp_name;
+#[cfg(test)]
 mod tests_mcp_parse;
 #[cfg(test)]
 mod tests_mcp_placement;

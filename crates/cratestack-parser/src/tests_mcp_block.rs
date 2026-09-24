@@ -8,10 +8,13 @@ use crate::tests_mcp_support::{VALID, edit, rejected, syntax_error};
 
 const EXPOSE: &str = "  expose = [tools, resources]\n";
 
+/// A tools-only block has no `name` (cratestack#1040): only resource URIs
+/// read it, and `validate::mcp::name` refuses one that names nothing.
 #[test]
 fn either_kind_alone_is_a_complete_block() {
     let schema = parse_schema(
         &edit(EXPOSE, "  expose = [tools]\n")
+            .replace("  name = \"blog\"\n", "")
             .replace("  @@mcp(resource: \"posts\", max_page_size: 20)\n", ""),
     )
     .expect("tools only");

@@ -32,7 +32,7 @@ use mcp_resources_support::{adversarial, harness, paging, parity};
 
 use cratestack::include_server_schema;
 
-include_server_schema!("tests/fixtures/mcp_resources/blog.cstack", db = Postgres);
+include_server_schema!("tests/fixtures/mcp_resources/schema.cstack", db = Postgres);
 
 /// One test, one container, for the reason `mcp_policy_pg.rs` gives:
 /// a second container start in one binary races rootless Docker's port

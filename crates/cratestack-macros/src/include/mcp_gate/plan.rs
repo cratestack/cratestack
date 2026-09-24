@@ -41,7 +41,8 @@ pub(in crate::include) struct ToolPlan {
 ///    faithful mapping (`Json`, `FindMany`, `Vector`, `Geography`,
 ///    `Geometry`) is refused, never advertised as `{}` (ADR 0002 § Tools);
 /// 2. every resource must be servable as declared (`resources.rs`: a URI
-///    authority, an addressable `@id`, no `@@internal` read verb).
+///    authority from `mcp { name = "..." }`, an addressable `@id`, no
+///    `@@internal` read verb).
 ///    These two come first, so the author hears about a declaration that
 ///    can never be served before being told to turn a feature on for it;
 /// 3. the `mcp` feature must be on — without it nothing would serve the
@@ -50,12 +51,11 @@ pub(in crate::include) struct ToolPlan {
 ///    to end with.
 pub(super) fn server_plan(
     schema: &Schema,
-    schema_file: &str,
     decimal: Option<DecimalBackend>,
     feature_enabled: bool,
 ) -> Result<McpPlan, String> {
     let tools = tool_plans(schema, decimal)?;
-    let resources = resource_plans(schema, schema_file)?;
+    let resources = resource_plans(schema)?;
     if !feature_enabled {
         let declared = mcp_declarations(schema).unwrap_or_default();
         return Err(format!(

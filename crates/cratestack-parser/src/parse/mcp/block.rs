@@ -1,16 +1,24 @@
-//! The top-level `mcp { expose = [tools, resources] }` block (ADR 0002
-//! § Schema surface).
+//! The top-level `mcp { }` block (ADR 0002 § Schema surface):
+//!
+//! ```text
+//! mcp {
+//!   name = "blog"
+//!   expose = [tools, resources]
+//! }
+//! ```
 //!
 //! Before cratestack#1036 this went through `parse_simple_config_block` and
 //! became opaque text lines in `Schema.config_blocks` that nothing read, so
 //! `mcp { anything at all }` parsed. The body is now `key = value` like every
 //! other config block — the maintainer's 2026-09-24 choice, which is also
-//! what tree-sitter-cstack's `config_body` already accepts — and `expose` is
-//! its only key. Everything else is an error.
+//! what tree-sitter-cstack's `config_body` already accepts. It has two keys,
+//! `expose` and `name` (`name.rs`, cratestack#1040); everything else is an
+//! error, and so is either key set twice.
 
 use cratestack_core::McpConfig;
 
 use super::expose::{ExposeList, old_line_form_hint, parse_expose_list};
+use super::name::parse_name;
 use crate::diagnostics::{SchemaError, span_error};
 use crate::line_helpers::{Line, span_from_lines, trimmed_span};
 
@@ -22,6 +30,7 @@ pub(crate) fn parse_mcp_block(
 ) -> Result<(McpConfig, usize), SchemaError> {
     let header = &lines[start];
     let mut expose: Option<ExposeList> = None;
+    let mut name = None;
     let mut cursor = start + 1;
     while cursor < lines.len() {
         let line = &lines[cursor];
@@ -50,6 +59,7 @@ pub(crate) fn parse_mcp_block(
                 docs,
                 expose_tools: expose.tools,
                 expose_resources: expose.resources,
+                name,
                 span,
             };
             return Ok((config, cursor));
@@ -60,7 +70,8 @@ pub(crate) fn parse_mcp_block(
         let Some((key, value)) = line.trimmed.split_once('=') else {
             let message = old_line_form_hint(line.trimmed).unwrap_or_else(|| {
                 format!(
-                    "unsupported `mcp` block entry `{}` (the block takes `expose = [...]`)",
+                    "unsupported `mcp` block entry `{}` (the block takes `expose = [...]` and \
+                     `name = \"...\"`)",
                     line.trimmed
                 )
             });
@@ -76,10 +87,16 @@ pub(crate) fn parse_mcp_block(
                 let value_offset = line.raw.len() - line.raw.trim_start().len() + key.len() + 1;
                 expose = Some(parse_expose_list(line, value, value_offset)?);
             }
+            "name" if name.is_some() => {
+                return Err(entry_error(line, "`name` is set more than once"));
+            }
+            "name" => name = Some(parse_name(line, value)?),
             other => {
                 return Err(entry_error(
                     line,
-                    &format!("unknown `mcp` setting `{other}` (the block takes only `expose`)"),
+                    &format!(
+                        "unknown `mcp` setting `{other}` (the block takes `expose` and `name`)"
+                    ),
                 ));
             }
         }

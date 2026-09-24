@@ -9,8 +9,6 @@
 //! each names a case the ADR does not cover, and the report on #1040 lists
 //! them for the maintainer.
 
-use std::path::Path;
-
 use cratestack_core::{Field, MCP_MAX_PAGE_SIZE, Model, Schema, TypeArity, model_internal_actions};
 
 use crate::shared::is_primary_key;
@@ -21,7 +19,8 @@ pub(in crate::include) struct ResourcePlan {
     pub(in crate::include) segment: String,
     /// `max_page_size:`, or the framework maximum (Q3).
     pub(in crate::include) max_page_size: u32,
-    /// `<schema>` in `cratestack://<schema>/<segment>`.
+    /// `<name>` in `cratestack://<name>/<segment>`: the `mcp { name = "..." }`
+    /// value, the same for every resource of the schema.
     pub(in crate::include) authority: String,
     pub(in crate::include) primary_key: Field,
 }
@@ -30,15 +29,12 @@ pub(in crate::include) struct ResourcePlan {
 /// `FromStr` text a REST path segment uses.
 const ADDRESSABLE_KEYS: [&str; 4] = ["String", "Cuid", "Int", "Uuid"];
 
-pub(super) fn resource_plans(
-    schema: &Schema,
-    schema_file: &str,
-) -> Result<Vec<ResourcePlan>, String> {
+pub(super) fn resource_plans(schema: &Schema) -> Result<Vec<ResourcePlan>, String> {
     let exposed: Vec<&Model> = schema.models.iter().filter(|m| m.mcp.is_some()).collect();
     if exposed.is_empty() {
         return Ok(Vec::new());
     }
-    let authority = authority(schema_file)?;
+    let authority = authority(schema)?;
     exposed
         .into_iter()
         .map(|model| plan(model, &authority))
@@ -91,23 +87,26 @@ fn plan(model: &Model, authority: &str) -> Result<ResourcePlan, String> {
     })
 }
 
-/// The schema file's name without its extension: `blog.cstack` serves
-/// `cratestack://blog/...`. Only RFC 3986 unreserved characters, so the
-/// authority never needs percent-encoding and never looks like a port or
-/// userinfo. The IR has no schema name, and choosing one is a maintainer
-/// question (#1040); the file stem is the placeholder that needs no syntax.
-fn authority(schema_file: &str) -> Result<String, String> {
-    let stem = Path::new(schema_file)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_default();
-    let unreserved = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~');
-    if stem.is_empty() || !stem.chars().all(unreserved) {
-        return Err(format!(
-            "MCP resources are addressed as `cratestack://<schema>/<segment>`, where `<schema>` \
-             is the schema file's name without `.cstack`; `{schema_file}` gives `{stem}`, which \
-             is not made of letters, digits, `-`, `.`, `_` and `~` only. Rename the file."
-        ));
-    }
-    Ok(stem.to_owned())
+/// The `mcp { name = "..." }` value: `name = "blog"` serves
+/// `cratestack://blog/...` (maintainer decision on cratestack#1040). The
+/// parser has already required it whenever a model is a resource, and
+/// checked it is `[a-z0-9-]+`, so the authority needs no percent-encoding
+/// and cannot read as a port or userinfo.
+///
+/// There is deliberately no fallback to the `.cstack` file's name, which
+/// phase 5 first used: a URI an agent holds must not change when the file
+/// is renamed or moved, and two schemas whose files share a name must not
+/// serve the same URIs. A missing name is therefore an error here too,
+/// should a schema ever reach the macro without the parser's check.
+fn authority(schema: &Schema) -> Result<String, String> {
+    schema
+        .mcp
+        .as_ref()
+        .and_then(|config| config.name.as_ref())
+        .map(|name| name.value.clone())
+        .ok_or_else(|| {
+            "MCP resources are addressed as `cratestack://<name>/<segment>`, and the schema's \
+             `mcp { }` block has no `name = \"...\"`: add one, for example `name = \"blog\"`"
+                .to_owned()
+        })
 }

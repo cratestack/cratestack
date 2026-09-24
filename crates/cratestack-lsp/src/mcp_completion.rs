@@ -8,7 +8,7 @@
 
 use tower_lsp_server::ls_types::{CompletionItem, CompletionItemKind};
 
-const ENTRIES: [(&str, &str); 3] = [
+const ENTRIES: [(&str, &str); 4] = [
     (
         "@mcp",
         "procedure attribute: expose it as an MCP tool — `@mcp(tool)` uses the procedure name, \
@@ -26,6 +26,12 @@ const ENTRIES: [(&str, &str); 3] = [
         "inside `mcp { }`: which MCP kinds to serve — `tools` (procedures marked \
          `@mcp(tool)`), `resources` (models marked `@@mcp(resource: ...)`, not in a \
          `provider = \"none\"` schema), or both",
+    ),
+    (
+        "name = \"...\"",
+        "inside `mcp { }`: the `<name>` of every MCP resource URI, \
+         `cratestack://<name>/<segment>/{id}` — required when `expose` lists `resources`, \
+         refused otherwise; lowercase letters, digits and `-` (cratestack#1040)",
     ),
 ];
 

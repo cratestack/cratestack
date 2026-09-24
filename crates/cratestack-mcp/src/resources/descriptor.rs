@@ -10,8 +10,9 @@ use cratestack_core::OpDescriptor;
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct ResourceDescriptor {
-    /// The URI authority, `<schema>` in `cratestack://<schema>/<segment>`.
-    /// The same for every resource of one table.
+    /// The URI authority, `<name>` in `cratestack://<name>/<segment>`: the
+    /// schema's `mcp { name = "..." }`, `[a-z0-9-]+` (cratestack#1040). The
+    /// same for every resource of one table.
     pub schema: &'static str,
     /// The author's `@@mcp(resource: "...")` segment, never a table or
     /// model name (ADR 0002 security requirement 11).
@@ -46,7 +47,7 @@ impl ResourceDescriptor {
         }
     }
 
-    /// `cratestack://<schema>/<segment>`.
+    /// `cratestack://<name>/<segment>`.
     pub fn collection_uri(&self) -> String {
         format!(
             "{}://{}/{}",

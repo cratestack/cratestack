@@ -13,6 +13,7 @@ datasource db {{
 }}
 
 mcp {{
+  name = "blog"
   expose = [resources]
 }}
 
@@ -26,9 +27,9 @@ model Post {{
     cratestack_parser::parse_schema(&source).expect("valid schema")
 }
 
-fn refused(schema: &cratestack_core::Schema, file: &str) -> String {
+fn refused(schema: &cratestack_core::Schema) -> String {
     let mut messages = [false, true].map(|feature| {
-        server_plan(schema, file, None, feature)
+        server_plan(schema, None, feature)
             .err()
             .unwrap_or_else(|| panic!("refused with the feature {feature}"))
     });
@@ -39,7 +40,7 @@ fn refused(schema: &cratestack_core::Schema, file: &str) -> String {
 #[test]
 fn max_page_size_is_carried_into_the_plan() {
     let schema = schema("  id Int @id\n  @@mcp(resource: \"posts\", max_page_size: 20)");
-    let plan = server_plan(&schema, "blog.cstack", None, true).expect("served");
+    let plan = server_plan(&schema, None, true).expect("served");
     assert_eq!(plan.resources[0].max_page_size, 20);
 }
 
@@ -57,7 +58,7 @@ fn an_internal_read_verb_contradicts_the_resource() {
         let schema = schema(&format!(
             "  id Int @id\n  @@internal(\"{action}\")\n  @@mcp(resource: \"posts\")"
         ));
-        let message = refused(&schema, "blog.cstack");
+        let message = refused(&schema);
         assert!(
             message.contains(&format!("keeps the model's `{verb}` off the wire")),
             "{action}: {message}"
@@ -68,13 +69,13 @@ fn an_internal_read_verb_contradicts_the_resource() {
 #[test]
 fn a_write_only_internal_verb_is_no_contradiction() {
     let schema = schema("  id Int @id\n  @@internal(\"create\")\n  @@mcp(resource: \"posts\")");
-    assert!(server_plan(&schema, "blog.cstack", None, true).is_ok());
+    assert!(server_plan(&schema, None, true).is_ok());
 }
 
 #[test]
 fn a_key_a_uri_cannot_carry_is_refused() {
     let schema = schema("  id DateTime @id\n  @@mcp(resource: \"posts\")");
-    let message = refused(&schema, "blog.cstack");
+    let message = refused(&schema);
     assert!(
         message.contains("cannot address a record by URI"),
         "{message}"
@@ -86,18 +87,22 @@ fn a_key_a_uri_cannot_carry_is_refused() {
 fn every_addressable_key_type_is_planned() {
     for ty in ["String", "Cuid", "Int", "Uuid"] {
         let schema = schema(&format!("  id {ty} @id\n  @@mcp(resource: \"posts\")"));
-        assert!(
-            server_plan(&schema, "blog.cstack", None, true).is_ok(),
-            "{ty}"
-        );
+        assert!(server_plan(&schema, None, true).is_ok(), "{ty}");
     }
 }
 
+/// The authority is the block's `name` (maintainer decision on
+/// cratestack#1040), which replaced the `.cstack` file stem: the plan no
+/// longer sees the file at all, so no rename can move a URI.
 #[test]
-fn the_authority_is_the_file_stem_and_must_be_unreserved() {
-    let schema = schema("  id Int @id\n  @@mcp(resource: \"posts\")");
-    let plan = server_plan(&schema, "schemas/my-app_v2.cstack", None, true).unwrap();
-    assert_eq!(plan.resources[0].authority, "my-app_v2");
-    let message = refused(&schema, "schemas/my app.cstack");
-    assert!(message.contains("gives `my app`"), "{message}");
+fn the_authority_is_the_blocks_name() {
+    let mut schema = schema("  id Int @id\n  @@mcp(resource: \"posts\")");
+    let plan = server_plan(&schema, None, true).unwrap();
+    assert_eq!(plan.resources[0].authority, "blog");
+
+    // The parser never lets this through; the plan refuses it anyway
+    // rather than inventing an authority.
+    schema.mcp.as_mut().unwrap().name = None;
+    let message = refused(&schema);
+    assert!(message.contains("has no `name = \"...\"`"), "{message}");
 }
