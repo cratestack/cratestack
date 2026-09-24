@@ -44,10 +44,21 @@ async fn tools_list_is_exactly_the_annotated_tools_in_declaration_order() {
         json!({ "readOnlyHint": false, "idempotentHint": false }),
         "a mutation that takes reservations"
     );
+    // cratestack#1038 decision 3: a `@no_idempotency` mutation opts out of
+    // reservations, so it must not claim to be safe to retry — even though
+    // its generated descriptor is `idempotent_by_default`, which is what the
+    // hint used to be read from. The first assertion keeps this test from
+    // passing vacuously if the fixture ever stops exercising that case.
+    let touch = &mcp_support::cratestack_schema::mcp::TOOLS[2];
+    assert_eq!(touch.name, "touch");
+    assert!(
+        touch.op.idempotent_by_default,
+        "`@no_idempotency` is `idempotent_by_default` in the generated TOOLS"
+    );
     assert_eq!(
         *hints[2],
-        json!({ "readOnlyHint": false, "idempotentHint": true }),
-        "`@no_idempotency` is `idempotent_by_default`"
+        json!({ "readOnlyHint": false, "idempotentHint": false }),
+        "`@no_idempotency` must never advertise `idempotentHint: true`"
     );
     assert_eq!(tools[1]["description"], "Move money between accounts.");
 

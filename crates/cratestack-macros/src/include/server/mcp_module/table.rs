@@ -4,11 +4,13 @@
 //! The descriptors come from [`generate_procedure_op_descriptor`], the same
 //! function that fills RPC's `OPS`, which reads `@no_idempotency` and
 //! `@no_rate_limit` through the helpers REST's route descriptors share
-//! (`transport::idempotency`, `transport::rate_limit`). So MCP admission,
-//! and the `idempotentHint` an agent reads, cannot disagree with what REST
-//! and RPC do for the same procedure (cratestack#474's lesson). They are
-//! emitted here for every schema, because REST schemas leave `axum::OPS`
-//! empty.
+//! (`transport::idempotency`, `transport::rate_limit`). So MCP admission
+//! cannot disagree with what REST and RPC do for the same procedure
+//! (cratestack#474's lesson). The `idempotentHint` an agent reads is *not*
+//! taken from `idempotent_by_default` any more: a mutation's is always
+//! `false` (`cratestack-mcp`'s `listing.rs`, cratestack#1038 decision 3).
+//! They are emitted here for every schema, because REST schemas leave
+//! `axum::OPS` empty.
 //!
 //! The JSON Schemas are the phase 2 generator's output, serialized once at
 //! expansion time and embedded as `&'static str`.

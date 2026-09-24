@@ -42,7 +42,8 @@ mutation procedure transfer(args: TransferInput): Receipt
   @allow(auth().role == "teller")
   @mcp(tool: "transfer_funds", description: "Move money between accounts.")
 
-// Opted out of reservations: its `idempotentHint` is `true`.
+// Opted out of reservations: `idempotent_by_default`, yet its
+// `idempotentHint` stays `false` (cratestack#1038 decision 3).
 mutation procedure touch(args: TransferInput): Receipt
   @allow(true)
   @no_idempotency

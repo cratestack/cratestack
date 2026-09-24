@@ -57,16 +57,26 @@ pub(crate) fn build_listing(descriptors: &[ToolDescriptor]) -> Result<Vec<Tool>,
 }
 
 /// ADR 0002 § Tools: `procedure` → `readOnlyHint: true`; `mutation
-/// procedure` → `readOnlyHint: false` plus `idempotentHint` from
-/// `OpDescriptor.idempotent_by_default`. The spec gives `idempotentHint`
-/// meaning only when `readOnlyHint` is false, so a read carries none.
-/// Hints only: clients must not trust them, and nothing here relies on them.
+/// procedure` → `readOnlyHint: false` plus `idempotentHint`. The spec gives
+/// `idempotentHint` meaning only when `readOnlyHint` is false, so a read
+/// carries none. Hints only: clients must not trust them, and nothing here
+/// relies on them.
+///
+/// A mutation's `idempotentHint` is `false`, never `true` — the
+/// cratestack#1038 maintainer decision (2026-09-24), which amends ADR 0002's
+/// "taken from `OpDescriptor.idempotent_by_default`". For a mutation that
+/// flag is `true` only through `@no_idempotency`
+/// (`cratestack-macros`' `transport::idempotency`), and a procedure that
+/// opts *out* of reservations must not tell an agent it is safe to retry:
+/// a retry repeats its effects, with no key to replay from. Reading the
+/// flag here would advertise exactly the wrong thing for exactly those
+/// tools.
 fn annotations(descriptor: &ToolDescriptor) -> ToolAnnotations {
     let annotations = ToolAnnotations::new().read_only(descriptor.read_only);
     if descriptor.read_only {
         annotations
     } else {
-        annotations.idempotent(descriptor.op.idempotent_by_default)
+        annotations.idempotent(false)
     }
 }
 
