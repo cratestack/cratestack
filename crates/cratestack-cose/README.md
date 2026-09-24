@@ -20,30 +20,42 @@ use cratestack_cose::{CoseEnvelope, CoseMode, Ed25519Signer, StaticVerifierResol
 
 let server = CoseEnvelope::server(CoseMode::Sign1, signer, resolver, nonce_store).build()?;
 
-// Through `cratestack_core::CratestackEnvelope` (records a `VerifiedSigner` in the context):
+// Through `cratestack_core::CratestackEnvelope` (records a `VerifiedSigner`, naming the
+// verifying key's thumbprint, in the context):
 let payload = server.open(body, &binding, &mut ctx).await?;
 
 // Or typed, before any context exists (the axum layer, cratestack#1006):
 let opened = server.open_request(body, &binding).await?; // payload, kid, alg, key_thumbprint, iat, cti
+
+// Sealing a value encodes it straight into the message buffer:
+let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).await?;
 ```
 
-- **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`) for Sign1; HMAC 256/64
-  (`4`) and 256/256 (`5`) for Mac0. Nothing else is accepted, including the deprecated
-  `-8` and `-7`.
+- **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`, low-`s` only) for Sign1;
+  HMAC 256/64 (`4`) and 256/256 (`5`) for Mac0. Nothing else is accepted, including the
+  deprecated `-8` and `-7`. A key verifies exactly one algorithm.
 - **Header:** protected `{1: alg, 4: kid, ? 15: {6: iat, 7: cti}}` (claims on requests
   only), unprotected always empty. The `kid` is the first 8 bytes of the key's RFC 9679
-  thumbprint (`cratestack_cose::thumbprint`).
-- **AAD:** `[1, method, route, path_params, query / null, schema_sha, payload_type,
-  ? request_digest, ? status]`; see `external_aad` and `request_digest`.
-- **Errors:** every failed check is the same `401`; a failing key resolver or nonce store
-  is a `500`.
+  thumbprint (`cratestack_cose::thumbprint`), and a key verifies only under its own `kid`.
+- **AAD:** `[1, audience, method, route, path_params, query / null, schema_sha,
+  payload_type, ? request_digest, ? status]`; see `external_aad`. `audience` is the
+  receiving service's configured id. A response to a signed request is bound to
+  `request_digest` (SHA-256 of the request's COSE bytes); a response to an unsigned one to
+  `request_digest_unsigned` (SHA-256 of the client's `Cratestack-Nonce` and the payload;
+  see `RequestNonce`). Sending and reading that header is wired in cratestack#1006/#1007.
+- **Errors:** every failed check is the same `401`; a failing key resolver, nonce store or
+  signer, and local misuse, is a `500`.
 - **Keys:** `CoseSigner` signs without exporting the key (KMS, HSM); `CoseVerifierResolver`
-  returns every candidate for a `kid`; `CoseVerifyKey` is typed, so an Ed25519 public key
-  can never be used as an HMAC secret.
+  returns every candidate for a `kid`; `CoseVerifyKey` is opaque and typed, so an Ed25519
+  public key can never be used as an HMAC secret; `KeyProviderMacKeys` loads Mac0 keys from
+  core's `KeyProvider`. HMAC secrets must be random: a Mac0 `kid` publishes 64 bits of the
+  secret's thumbprint, so a guessable secret can be found offline.
 
 ## Shared vectors
 
-`tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture and 24 unary
-cases in hex, for the wasm, napi, TypeScript and Dart bindings to check themselves
-against. The Ed25519 and in-process ESP256 (RFC 6979) cases are byte-exact. The keys in
-them are published test keys; never use them for anything else.
+`tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture, 33 unary cases
+and 10 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
+themselves against. Each case carries its AAD, protected header and to-be-signed bytes.
+The Ed25519 and HMAC cases are byte-exact (`deterministic: true`); ESP256 cases were made
+with RFC 6979 and low-`s`, and another implementation should verify them rather than
+reproduce them. The keys in them are published test keys; never use them for anything else.

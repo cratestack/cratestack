@@ -120,6 +120,12 @@ jobs:
         # step verifies the wasm32 surface in isolation (without Postgres
         # features that would drag in sqlx/rust_decimal).
         run: cargo check --locked -p cratestack-sqlite --target wasm32-unknown-unknown
+      - name: cargo check (cratestack-cose for wasm32-unknown-unknown)
+        # The COSE envelope is shared by the wasm and napi client builds
+        # (ADR 0006 §11), and it draws randomness (`cti`, `Cratestack-Nonce`)
+        # through getrandom, which needs its `wasm_js` backend on this
+        # target (cratestack#1005). Nothing else compiles it for wasm32.
+        run: cargo check --locked -p cratestack-cose --target wasm32-unknown-unknown
       - name: Assert rustc, rust-toolchain.toml, and Cargo.toml rust-version agree
         # Verify the MSRV declaration (#422) stays synchronized with the
         # pinned toolchain and what rustc actually resolved to. Three-way
