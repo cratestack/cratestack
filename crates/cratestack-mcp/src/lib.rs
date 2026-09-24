@@ -52,6 +52,8 @@ mod stdio;
 mod table;
 #[cfg(test)]
 mod tests_idempotency;
+#[cfg(test)]
+mod tests_listing;
 
 /// Re-exported so an application configuring MCP admission names both
 /// without a direct `cratestack-exec` dependency. `StoreErrorPolicy` is the
