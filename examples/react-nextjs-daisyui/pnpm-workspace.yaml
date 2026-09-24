@@ -1,6 +1,13 @@
 # The Next.js example is itself a small pnpm monorepo: the Next.js app
 # under `web/` depends on the napi-rs addon package under `napi/` (which
 # is the JS shim around the native `.node` binary).
+#
+# The root `package.json` next to this file declares no dependencies. It
+# exists so Dependabot can maintain `pnpm-lock.yaml`: with no manifest at the
+# workspace root, Dependabot bumped `web/package.json` nine times and never the
+# lockfile (#1050). `.github/dependabot.yml` points at this directory, and the
+# `js (react-nextjs-daisyui example)` CI job installs it with
+# `--frozen-lockfile`, so a drift now fails CI instead of going unnoticed.
 packages:
   - 'napi'
   - 'web'

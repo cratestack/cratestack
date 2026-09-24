@@ -740,6 +740,21 @@ jobs:
       - name: napi.targets and build-cbor-node agree
         run: just verify-napi-targets
 
+  # pnpm version pin agreement (cratestack#1050). Invokes the `just` recipe,
+  # like napi-targets above. Ungated: it reads a handful of package.json
+  # files, and a pin can drift from a change anywhere in the tree.
+  pnpm-pins:
+    timeout-minutes: 10
+    name: packageManager pins agree with the root (cratestack#1050)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Every packageManager pin matches the root's
+        run: just verify-pnpm-pins
+
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
   # (worse than an honest gap, because it looks maintained but isn't), AND
@@ -2343,6 +2358,63 @@ jobs:
         run: |
           pnpm --filter react-vite-swr-web run typecheck
           pnpm --filter react-vite-swr-web run lint
+
+  # ---- react-nextjs-daisyui example (lockfile + typecheck) ---------------
+  # Blocking. Issue #1050: until this job existed, nothing in CI installed
+  # this example, so its `pnpm-lock.yaml` drifted 7 dependencies behind
+  # `web/package.json` without anyone noticing (Dependabot bumped the
+  # manifest nine times and the lockfile never). It is its own two-member
+  # pnpm workspace (`napi/` + `web/`), shaped like react-vite-swr above.
+  #
+  # Covered here: the lockfile matches both members (frozen install), it
+  # resolves one copy of each package that could be shared (the hazard
+  # react-vite-swr's job describes; here it would bite if `napi/`, which today
+  # has only `@napi-rs/cli`, ever resolved its own React), and the web app
+  # typechecks. The typecheck needs the wasm bundle: `components/worker.ts`
+  # imports `public/pkg/`, which only a wasm-pack build produces (gitignored,
+  # built `--no-typescript`, so tsc infers its types from the JS). A `--dev`
+  # build is enough for that and skips wasm-opt, so no binaryen pin.
+  #
+  # NOT covered here: `next build`. Its `prebuild` hook also builds the napi
+  # `.node` addon, and `lint` is `next lint`, which Next 16 removed. Neither
+  # is what #1050 is about; both belong to a job that runs the app.
+  react-nextjs-daisyui-example:
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
+    timeout-minutes: 20
+    name: js (react-nextjs-daisyui example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # wasm32-unknown-unknown comes from rust-toolchain.toml's `targets`.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: examples/react-nextjs-daisyui/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm install --frozen-lockfile
+      # See the same step in react-vite-swr-example for why, and for the
+      # pnpm/pnpm#14987 two-pass `pnpm dedupe` remedy under pnpm 11.24.0.
+      - name: Assert the lockfile is deduplicated
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm dedupe --check
+      - name: Build the wasm bundle (dev) that the web app imports
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm --filter react-nextjs-daisyui-example run wasm:build:dev
+      - name: Typecheck the web app
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm --filter react-nextjs-daisyui-example run typecheck
 
   # ---- react-vite-refine example (generated client + WireMock backend) --
   # Blocking. Docs: examples/react-vite-refine/README.md. Unlike

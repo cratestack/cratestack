@@ -15,6 +15,8 @@ Plus an **offline-first sync engine**: writes go to the wasm/OPFS store first (i
 ```
 react-nextjs-daisyui/
 ├── pnpm-workspace.yaml         # the example is itself a pnpm monorepo
+├── package.json                # manifest-only workspace root (pnpm pin; lets Dependabot refresh the lockfile)
+├── pnpm-lock.yaml              # one lockfile for both members
 ├── wasm/                       # browser-side cdylib (wasm32-unknown-unknown)
 │   ├── Cargo.toml
 │   ├── schema.cstack           # Note model
@@ -59,7 +61,7 @@ react-nextjs-daisyui/
 
 - Rust + `wasm32-unknown-unknown` target + [wasm-pack](https://rustwasm.github.io/wasm-pack/)
 - A wasm-capable clang. On macOS: `brew install llvm` (auto-detected by `examples/scripts/wasm-build.mjs`).
-- Node.js 20+ and pnpm 9+
+- Node.js 24+ and pnpm 11 (the root `package.json` pins the exact pnpm; with Corepack or a recent pnpm it is picked up automatically)
 - `@napi-rs/cli` (installed via the napi/ package); first build compiles the addon for your host. Cross-compilation to other targets is configured in `napi/package.json#napi.targets` for CI.
 
 ## Run
