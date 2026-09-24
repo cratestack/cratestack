@@ -123,8 +123,16 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        // The list is static and unfiltered, so the caller changes nothing
+        // in it. Resolved anyway (maintainer decision on #1040) so that over
+        // Streamable HTTP every list method, like the resource lists
+        // (`resources::listed`), answers only a request the guard
+        // authenticated: a way around the guard is refused everywhere, not
+        // only where the answer depends on who asks. Over stdio the caller
+        // is fixed and this always succeeds.
+        self.caller.resolve(&context)?;
         // The whole table in one page. `ttlMs: 0` and a private scope are
         // `rmcp`'s own `server/discover` defaults; the list is static, but a
         // redeploy can change it, and nothing here knows how often that is.

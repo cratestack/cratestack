@@ -6,7 +6,9 @@
 //! failing closed exactly as a read or a tool call would
 //! (`crate::streamable_http::caller`). Otherwise a way of reaching the
 //! handler that skipped the guard would still be refused for reads and
-//! served for lists, and nothing would notice.
+//! served for lists, and nothing would notice. `tools/list` resolves the
+//! caller the same way, inline in `server.rs` (maintainer decision on
+//! #1040), so no list method is the exception.
 //!
 //! A function over the request's extensions rather than inline in
 //! `server.rs` because `rmcp` does not let a test build a `RequestContext`,
