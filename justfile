@@ -467,6 +467,10 @@ test-ci-host *args='':
 	cargo test -p cratestack-pg --features rate_limit --test rate_limit_runtime {{args}} || status=1
 	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
 	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}} || status=1
+	# cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
+	# round-trip suite. `required-features = ["decimal-bigdecimal"]`, so the
+	# `--workspace` run above skips it without a word. No database needed.
+	cargo test -p cratestack-api --features decimal-bigdecimal --test json_schema_bigdecimal {{args}} || status=1
 	# cratestack#926: `tests/middleware.rs` is `#![cfg(feature = "middleware")]`
 	# and `client::http`'s Middleware arm plus the `with_middleware_client`
 	# doctest only exist under that feature, so the plain `--workspace` run
