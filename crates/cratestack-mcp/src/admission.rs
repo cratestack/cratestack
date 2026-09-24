@@ -17,7 +17,7 @@ use rmcp::model::CallToolResult;
 use serde_json::Value;
 
 use crate::fingerprint::fingerprint;
-use crate::idempotency::{namespace, record, replay};
+use crate::idempotency::{namespace, principal_id, record, replay};
 use crate::result::{failure, success};
 use crate::server::McpServer;
 use crate::table::{McpTools, ToolDescriptor};
@@ -41,7 +41,7 @@ pub(crate) async fn admit_and_run<T: McpTools>(
         // nothing is reserved (ADR 0002 Q6: "when absent, no reservation").
         _ => return run(server, descriptor, call).await.0,
     };
-    let principal = match namespace(server.context.principal_actor_id()) {
+    let principal = match namespace(principal_id(&server.context).as_deref()) {
         Ok(principal) => principal,
         Err(error) => return failure(descriptor, error),
     };
@@ -102,7 +102,7 @@ async fn rate_limit<T: McpTools>(
     }
     // One bucket per principal, `mcp:`-prefixed like the idempotency
     // namespace and refused without an identity for the same reason.
-    let bucket = namespace(server.context.principal_actor_id())?;
+    let bucket = namespace(principal_id(&server.context).as_deref())?;
     let input = OpInput::for_rate_limit(op, RateLimitBucket::new(&bucket, None));
     match server.executor.admit_rate_limit(&input).await {
         Ok(RateLimitAdmission::Bypass) => Ok(()),

@@ -1,6 +1,7 @@
 //! L3 admission over MCP beyond the happy path (cratestack#1038 review):
-//! whose namespace a key lives in, what an error outcome records, and
-//! what a failing rate-limit store does to a call. Each test kills a mutation the suite in
+//! whose namespace a key lives in, what an error outcome records, which
+//! identities can be scoped at all, and what a failing rate-limit store
+//! does to a call. Each test kills a mutation the suite in
 //! `admission.rs` let survive.
 
 mod support;
@@ -9,13 +10,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use cratestack_core::{
-    CratestackContext, CratestackError, IdempotencyStore, RateLimitConfig, RateLimitStore,
+    CratestackContext, CratestackError, IdempotencyStore, RateLimitConfig, RateLimitStore, Value,
 };
 use cratestack_mcp::{OpExecutor, StdioServer};
 use serde_json::json;
 use support::client::{Client, envelope, text};
 use support::failing::FailingLimiter;
-use support::stores::MemoryIdempotency;
+use support::stores::{CountingLimiter, MemoryIdempotency};
 use support::{FakeTools, user};
 
 fn key(value: &str) -> Option<serde_json::Value> {
@@ -87,6 +88,23 @@ async fn an_error_outcome_is_recorded_and_replayed() {
         second["_meta"]["dev.cratestack/idempotencyReplayed"],
         json!(true)
     );
+}
+
+/// An `Int` `id` claim — `auth User { id Int }`, the shape ADR 0002's own
+/// examples use (`authorId == auth().id` on an `Int` column) — is an
+/// identity like a string one. Refusing it would make every rate-limited
+/// call fail with advice to add the `id` claim the caller already has.
+#[tokio::test]
+async fn an_integer_id_claim_scopes_admission() {
+    let tools = FakeTools::default();
+    let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(7))]);
+    let limiter = Arc::new(CountingLimiter::new(5));
+    let mut client = limited(&tools, ctx, limiter.clone());
+
+    let result = client.call("echo", json!({ "text": "a" }), None).await;
+
+    assert_eq!(result["isError"], json!(false), "{result}");
+    assert_eq!(*limiter.keys.lock().unwrap(), ["mcp:7"]);
 }
 
 /// `StoreErrorPolicy::default()` on HTTP serves through only a

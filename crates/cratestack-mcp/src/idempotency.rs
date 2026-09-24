@@ -17,13 +17,23 @@
 //! each other's results. The `mcp:` prefix keeps these rows apart from
 //! HTTP's in a store both transports share.
 //!
+//! The id is read by [`principal_id`], not `principal_actor_id`, because
+//! the latter answers only a *string* `id`: an `auth User { id Int }`
+//! schema — the shape ADR 0002's own examples use — would otherwise be
+//! refused on every keyed or rate-limited call, told to add the `id` claim
+//! it already has. An `Int` id renders as its decimal digits, so `7` and
+//! `"7"` share a namespace; one `auth` block declares one type for `id`,
+//! so a single service never has both.
+//!
 //! **The record** is the serialized `CallToolResult`, with status 200 for a
 //! success and the error's HTTP status for an `isError` result. As on HTTP,
 //! an error outcome is recorded too: the IETF contract freezes the outcome,
 //! whatever it was (`IdempotencyStore::complete`'s docs).
 
-use cratestack_core::CratestackError;
+use std::borrow::Cow;
+
 use cratestack_core::idempotency_record::IdempotencyRecord;
+use cratestack_core::{CratestackContext, CratestackError, Value as ClaimValue};
 use rmcp::model::{CallToolResult, RequestMetaObject};
 use serde_json::Value;
 
@@ -68,6 +78,25 @@ fn bad_key(rule: &str) -> CratestackError {
     CratestackError::BadRequest(format!("_meta[\"{IDEMPOTENCY_KEY_META}\"] {rule}"))
 }
 
+/// The caller's `id` claim as text: the value `principal_actor_id` finds,
+/// in its lookup order (actor facet, principal claims, auth fields; the
+/// first *present* one wins), but answered for an `Int` as well as a
+/// `String`. The `a_string_id_agrees_with_principal_actor_id` test keeps
+/// the two from drifting apart.
+pub(crate) fn principal_id(ctx: &CratestackContext) -> Option<Cow<'_, str>> {
+    let principal = ctx.principal.as_ref();
+    let id = principal
+        .and_then(|principal| principal.actor.as_ref())
+        .and_then(|facet| facet.fields.get("id"))
+        .or_else(|| principal.and_then(|principal| principal.claims.get("id")))
+        .or_else(|| ctx.auth.as_ref().and_then(|auth| auth.fields.get("id")))?;
+    match id {
+        ClaimValue::String(id) => Some(Cow::Borrowed(id.as_str())),
+        ClaimValue::Int(id) => Some(Cow::Owned(id.to_string())),
+        _ => None,
+    }
+}
+
 /// `mcp:<actor id>`, or a refusal when the context has none.
 pub(crate) fn namespace(actor_id: Option<&str>) -> Result<String, CratestackError> {
     match actor_id {
@@ -100,46 +129,4 @@ pub(crate) fn replay(record: &IdempotencyRecord) -> Result<CallToolResult, Crate
     meta.insert(IDEMPOTENCY_REPLAYED_META.to_owned(), Value::Bool(true));
     result.meta = Some(meta);
     Ok(result)
-}
-
-#[cfg(test)]
-mod tests {
-    use rmcp::model::RequestMetaObject;
-    use serde_json::{Value, json};
-
-    use super::{idempotency_key, namespace};
-
-    fn meta(value: Value) -> RequestMetaObject {
-        let mut meta = RequestMetaObject::new();
-        meta.insert(crate::IDEMPOTENCY_KEY_META.to_owned(), value);
-        meta
-    }
-
-    #[test]
-    fn a_key_follows_the_idempotency_key_header_rules() {
-        let empty = RequestMetaObject::new();
-        assert_eq!(idempotency_key(&empty, None).unwrap(), None);
-        assert_eq!(
-            idempotency_key(&meta(json!("  k-1 ")), None).unwrap(),
-            Some("k-1".to_owned())
-        );
-        assert_eq!(
-            idempotency_key(&empty, Some(&meta(json!("k-2")))).unwrap(),
-            Some("k-2".to_owned())
-        );
-        for bad in [json!(7), json!("   "), json!("x".repeat(256)), json!("é")] {
-            let error = idempotency_key(&meta(bad.clone()), None).unwrap_err();
-            assert_eq!(error.code(), "BAD_REQUEST", "{bad} must be refused");
-        }
-    }
-
-    #[test]
-    fn no_actor_id_means_no_namespace() {
-        assert_eq!(namespace(Some("u-1")).unwrap(), "mcp:u-1");
-        assert_eq!(namespace(None).unwrap_err().code(), "PRECONDITION_FAILED");
-        assert_eq!(
-            namespace(Some("")).unwrap_err().code(),
-            "PRECONDITION_FAILED"
-        );
-    }
 }

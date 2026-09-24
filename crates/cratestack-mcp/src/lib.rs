@@ -48,6 +48,8 @@ mod result;
 mod server;
 mod stdio;
 mod table;
+#[cfg(test)]
+mod tests_idempotency;
 
 pub use cratestack_exec::OpExecutor;
 pub use listing::ToolTableError;

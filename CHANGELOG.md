@@ -41,8 +41,9 @@ cratestack::mcp::StdioServer::new(tools, ctx)?.serve().await?;
   repeat replays the recorded result (marked
   `_meta["dev.cratestack/idempotencyReplayed"]`) instead of running again.
   Without a key nothing is reserved. Both the idempotency namespace and the
-  rate-limit bucket are `mcp:<principal id>`; a context with no `id` claim is
-  refused (`PRECONDITION_FAILED`) for a keyed or rate-limited call.
+  rate-limit bucket are `mcp:<principal id>`, from the context's `id` claim (a
+  string or an integer); a context with no such claim is refused
+  (`PRECONDITION_FAILED`) for a keyed or rate-limited call.
 - **stdio.** Only MCP messages go to stdout; point your `tracing` subscriber at
   stderr. The server exits when stdin closes.
 - **`@computed` outputs (Q7)** are resolved by the same generated composition
