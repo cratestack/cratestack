@@ -276,8 +276,9 @@ async fn client_recovers_after_waiting_retry_after() {
     //   elapsed_sec * refill`, then `tokens >= 1.0`), timed by the *client*
     //   `SystemTime` read before the round-trip (`trait_impl.rs`). So request
     //   2 is refused as long as less than 1000 ms separate the two
-    //   `consume` calls. That window includes request 1's lazy
-    //   `ConnectionManager` dial and its `NOSCRIPT` fallback. The old
+    //   `consume` calls. Cold, that window would also have to absorb
+    //   request 1's lazy `ConnectionManager` dial and its `NOSCRIPT`
+    //   fallback, so a warm-up request (below) pays both first. The old
     //   100/s refill left 10 ms, which a loaded CI runner exceeded
     //   (CI run 36002281906).
     // * Recovery side: the client sleeps for the Retry-After the layer
@@ -289,6 +290,17 @@ async fn client_recovers_after_waiting_retry_after() {
     let router = build_router(store, config, || async {
         (StatusCode::CREATED, "ok").into_response()
     });
+
+    // Warm-up under a different principal, so its own bucket: it opens the
+    // store's shared connection (one `OnceCell` behind every router clone)
+    // and loads the script into Redis's server-side cache, keeping both
+    // cold costs out of the request 1 -> request 2 window.
+    let warm_up = router
+        .clone()
+        .oneshot(post_request("Bearer warm-up"))
+        .await
+        .expect("warm-up");
+    assert_eq!(warm_up.status(), StatusCode::CREATED);
 
     let first = router
         .clone()
