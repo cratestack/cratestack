@@ -5,6 +5,7 @@ use cratestack_core::{Attribute, Procedure, ProcedureArg, ProcedureKind, SourceS
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, name_span_in_line, trimmed_span};
 use crate::parse::arg_split::split_top_level_commas;
+use crate::parse::mcp::extract_procedure_mcp;
 use crate::parse::procedure_docs::split_procedure_docs;
 use crate::parse::types::parse_type_ref;
 
@@ -75,6 +76,7 @@ pub(super) fn parse_procedure(
         break;
     }
 
+    let (mcp, attributes) = extract_procedure_mcp(name, attributes)?;
     let (procedure_docs, arg_docs) = split_procedure_docs(docs);
     let procedure_name_span = name_span_in_line(
         line,
@@ -107,6 +109,7 @@ pub(super) fn parse_procedure(
                 end: line.start + line.raw.len(),
                 line: line.number,
             },
+            mcp,
         },
         cursor,
     ))

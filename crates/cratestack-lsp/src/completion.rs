@@ -138,6 +138,8 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
             }),
     );
 
+    items.extend(crate::mcp_completion::completion_items());
+
     let mut seen = BTreeSet::new();
     if let Some(schema) = schema {
         for mixin in &schema.mixins {

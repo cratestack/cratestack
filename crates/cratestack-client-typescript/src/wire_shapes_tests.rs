@@ -23,6 +23,7 @@ fn schema(models: Vec<cratestack_core::Model>, types: Vec<cratestack_core::TypeD
         queries: Vec::new(),
         transport: TransportStyle::Rest,
         declared_extensions: Default::default(),
+        mcp: None,
     }
 }
 
@@ -60,6 +61,7 @@ fn model(name: &str, fields: Vec<cratestack_core::Field>) -> cratestack_core::Mo
         fields,
         attributes: Vec::new(),
         span: span(),
+        mcp: None,
     }
 }
 

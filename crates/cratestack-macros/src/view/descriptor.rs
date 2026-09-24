@@ -161,5 +161,6 @@ fn view_as_model(view: &View) -> Model {
         fields: view.fields.clone(),
         attributes: view.attributes.clone(),
         span: view.span,
+        mcp: None,
     }
 }

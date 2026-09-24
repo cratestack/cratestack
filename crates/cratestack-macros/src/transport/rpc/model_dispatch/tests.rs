@@ -142,6 +142,7 @@ fn internal_filters_the_no_primary_key_fallback_too() {
             span: span(),
         }],
         span: span(),
+        mcp: None,
     };
 
     let arms = generate_model_rpc_dispatch_arms(&model);

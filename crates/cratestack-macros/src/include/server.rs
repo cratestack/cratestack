@@ -30,6 +30,9 @@ pub(super) fn compose_server_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) = super::mcp_gate::guard_server_mcp(schema_path, &schema) {
+        return error;
+    }
     if let Err(error) =
         super::datasource_guard::guard_server_datasource_provider(schema_path, &schema, db)
     {

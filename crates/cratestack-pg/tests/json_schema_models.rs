@@ -157,28 +157,27 @@ fn a_model_argument_rejects_wrong_shapes() {
 }
 
 /// A `@server_only` field is left out of the schema so its name is never
-/// advertised, and serde skips it in both directions (cratestack#1051), so
-/// the two agree: a value for it, of any type, passes the schema (which
-/// allows unknown properties, as serde does) and is ignored by serde. This
-/// used to be a pinned gap: serde parsed the field on input, so a
-/// wrong-typed value failed there while the schema let it through, and a
-/// well-typed one reached the procedure. Pinned so a change on either side
-/// is noticed.
+/// advertised, and since #1057 serde skips it on input too, so schema and
+/// serde agree: a client-sent value, of any type, is accepted and dropped.
+/// (Before #1057 serde still parsed the key, so a wrong-typed value failed
+/// deserialization while the schema let it through — the gap this test
+/// used to pin.)
 #[test]
-fn a_server_only_field_is_ignored_by_schema_and_serde_alike() {
+fn a_server_only_field_on_input_is_ignored_by_schema_and_serde_alike() {
     let import = validator("importPost", false);
-    for secret in [json!(5), json!("from-agent")] {
+    for sent in [json!(5), json!("from-agent")] {
         let mut post = serde_json::to_value(&posts()[0]).unwrap();
         post.as_object_mut()
             .unwrap()
-            .insert("secret".to_owned(), secret.clone());
+            .insert("secret".to_owned(), sent.clone());
         let args = json!({ "post": post });
-        assert!(import.is_valid(&args), "schema rejected secret = {secret}");
+        assert!(import.is_valid(&args), "schema rejected `secret` = {sent}");
         let decoded = serde_json::from_value::<import_post::Args>(args)
-            .unwrap_or_else(|error| panic!("serde rejected secret = {secret}: {error}"));
+            .unwrap_or_else(|error| panic!("serde rejected `secret` = {sent}: {error}"));
         assert_eq!(
-            decoded.post.secret, "",
-            "secret = {secret} reached the argument"
+            decoded.post.secret,
+            String::default(),
+            "a client-sent `secret` = {sent} reached the procedure"
         );
     }
 }
