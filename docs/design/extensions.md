@@ -186,12 +186,13 @@ Per research into `crates/cratestack-parser/src/parse/mod.rs:45-193`, the
 top-level grammar is a hand-rolled dispatch over line prefixes (not a
 chumsky-parsed enum) — `datasource`, `auth`, `mixin`, `model`, `type`,
 `enum` route through `parse_body_block`/`parse_named_config_block`; `mcp {`
-through `parse_simple_config_block`; bare `transport rpc`/`transport rest`
+through `parse_simple_config_block` (since cratestack#1036, through its own
+typed parser in `parse/mcp/` instead — ADR 0002); bare `transport rpc`/`transport rest`
 through a directive parser with no braces at all
 (`crates/cratestack-parser/src/parse/blocks.rs:6`).
 
 `extension <name> { ... }` is additive to this list — the same shape as
-`mcp { }` (a simple top-level config block keyed by name), not a novel
+`mcp { }` had then (a simple top-level config block keyed by name), not a novel
 grammar construct:
 
 ```cstack
