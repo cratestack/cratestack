@@ -202,6 +202,13 @@ lint:
 	# is never lint-checked by it — same blind spot the
 	# `--features`-forwarding lines in `test-ci-host` close for tests.
 	cargo clippy -p cratestack-client-rust --features middleware --all-targets -- -D warnings {{clippy_allow}}
+	# Same blind spot for `mcp` (cratestack#1038): the generated
+	# `cratestack_schema::mcp` module only exists under the feature, and its
+	# test targets are `required-features = ["mcp"]`. `cratestack-api` whole;
+	# `cratestack-pg` scoped to its lib and the two MCP targets, since every
+	# other test there would re-expand under the feature for no new code.
+	cargo clippy -p cratestack-api --features mcp --all-targets -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test json_schema_models -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
