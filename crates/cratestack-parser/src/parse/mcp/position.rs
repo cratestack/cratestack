@@ -24,18 +24,35 @@ pub(crate) fn attribute_has_name(raw: &str, name: &str) -> bool {
 /// Whether `@mcp` or `@@mcp` occurs anywhere in `raw` outside a string
 /// literal — used to catch one sharing a line with another attribute.
 pub(crate) fn contains_mcp_token(raw: &str) -> bool {
+    any_attribute_head(raw, |head| head.strip_prefix("mcp").is_some_and(ends_name))
+}
+
+/// Looser than [`contains_mcp_token`]: any case (`@MCP`, `@@Mcp`) and
+/// whitespace after the `@`s (`@ mcp`). The parser reads neither spelling,
+/// so raw text this matches names MCP and is read by nothing —
+/// `validate::mcp::inert` rejects it wherever it survives parsing.
+pub(crate) fn mentions_mcp(raw: &str) -> bool {
+    any_attribute_head(raw, |head| {
+        let head = head.trim_start();
+        head.get(..3)
+            .is_some_and(|word| word.eq_ignore_ascii_case("mcp"))
+            && ends_name(&head[3..])
+    })
+}
+
+/// `@mcpx` or `@mcp_tool` is another name, not MCP.
+fn ends_name(after: &str) -> bool {
+    !after.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Whether `matches` holds for the text after some run of `@`s outside a
+/// string literal.
+fn any_attribute_head(raw: &str, matches: impl Fn(&str) -> bool) -> bool {
     let mut in_string = false;
     for (index, ch) in raw.char_indices() {
         match ch {
             '"' => in_string = !in_string,
-            '@' if !in_string => {
-                let rest = raw[index..].trim_start_matches('@');
-                if rest.strip_prefix("mcp").is_some_and(|after| {
-                    !after.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
-                }) {
-                    return true;
-                }
-            }
+            '@' if !in_string && matches(raw[index..].trim_start_matches('@')) => return true,
             _ => {}
         }
     }
@@ -61,7 +78,7 @@ pub(super) fn reject_embedded_mcp(attribute: &Attribute, owner: &str) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{MCP, MODEL_MCP, attribute_has_name, contains_mcp_token};
+    use super::{MCP, MODEL_MCP, attribute_has_name, contains_mcp_token, mentions_mcp};
 
     #[test]
     fn names_match_exactly_not_by_prefix() {
@@ -81,5 +98,26 @@ mod tests {
         ));
         assert!(!contains_mcp_token("@allow(auth().note == \"@mcp\")"));
         assert!(!contains_mcp_token("@mcpish"));
+        assert!(!contains_mcp_token("@MCP(tool)"));
+    }
+
+    #[test]
+    fn mentions_mcp_in_any_case_or_spacing_but_not_inside_a_string() {
+        for raw in [
+            "@MCP(tool)",
+            "@@Mcp",
+            "@ mcp(tool)",
+            "@allow(true) @mCp(tool)",
+        ] {
+            assert!(mentions_mcp(raw), "{raw}");
+        }
+        for raw in [
+            "@mcpx(tool)",
+            "@mcp_tool",
+            "@default(\"@MCP\")",
+            "@allow(true)",
+        ] {
+            assert!(!mentions_mcp(raw), "{raw}");
+        }
     }
 }

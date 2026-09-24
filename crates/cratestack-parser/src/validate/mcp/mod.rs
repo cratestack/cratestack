@@ -15,6 +15,7 @@
 //! type resolution, and the `db = None` rule has to sit next to the existing
 //! "no model under `provider = \"none\"`" check so both are reported.
 
+mod inert;
 mod names;
 mod placement;
 mod policy;
@@ -38,6 +39,7 @@ pub(super) fn validate_mcp_collecting(schema: &Schema, errors: &mut Vec<SchemaEr
     policy::tools_need_an_allow(schema, errors);
     placement::no_mcp_on_fields(schema, errors);
     placement::no_mcp_on_views(schema, errors);
+    inert::no_inert_mcp(schema, errors);
 }
 
 /// Every procedure that carries `@mcp(tool ...)`, with its exposure.
