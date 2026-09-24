@@ -70,32 +70,6 @@ pub(super) fn parse_named_config_block(
     ))
 }
 
-pub(super) fn parse_simple_config_block(
-    lines: &[Line<'_>],
-    start: usize,
-    keyword: &str,
-) -> Result<(ConfigBlock, usize), SchemaError> {
-    let header = &lines[start];
-    if header.trimmed != format!("{keyword} {{") {
-        return Err(SchemaError::new(
-            format!("expected {keyword} block"),
-            header.start..header.start + header.raw.len(),
-            header.number,
-        ));
-    }
-
-    let (entries, next) = collect_block_entries(lines, start)?;
-    Ok((
-        ConfigBlock {
-            docs: Vec::new(),
-            name: keyword.to_owned(),
-            entries,
-            span: span_from_lines(header, &lines[next - 1]),
-        },
-        next,
-    ))
-}
-
 pub(super) fn parse_body_block<'a>(
     lines: &'a [Line<'a>],
     start: usize,

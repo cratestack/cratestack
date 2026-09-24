@@ -105,6 +105,7 @@ mod tests {
             return_type,
             attributes: Vec::new(),
             span: span(),
+            mcp: None,
         }
     }
 

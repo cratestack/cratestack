@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::SourceSpan;
+use super::mcp::ModelMcpExposure;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Model {
@@ -15,6 +16,10 @@ pub struct Model {
     pub fields: Vec<Field>,
     pub attributes: Vec<Attribute>,
     pub span: SourceSpan,
+    /// `@@mcp(resource: ...)`, extracted out of [`Self::attributes`] by the
+    /// parser (ADR 0002, cratestack#1036).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<ModelMcpExposure>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
