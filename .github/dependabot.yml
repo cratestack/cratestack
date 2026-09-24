@@ -32,8 +32,11 @@
 # `examples/react-vite-swr/pnpm-lock.yaml` when it bumps `web/package.json`
 # (measured: #947 and #980 both changed the manifest and not the lock).
 # Such a PR fails `pnpm install --frozen-lockfile` in that CI job. Fix it
-# on the Dependabot PR with `pnpm install --lockfile-only` in
-# `examples/react-vite-swr`, before merging.
+# on the Dependabot PR, in `examples/react-vite-swr`, with
+# `pnpm install --lockfile-only && pnpm dedupe` before merging. The
+# `dedupe` is NOT optional: `--lockfile-only` alone moved `web/` to a newer
+# react while leaving `client/` on the old one, and two Reacts break every
+# SWR hook at runtime ("Invalid hook call") while typecheck and lint pass.
 
 version: 2
 

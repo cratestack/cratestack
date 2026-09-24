@@ -14,13 +14,13 @@ importers:
     devDependencies:
       '@types/react':
         specifier: ^18.0.0 || ^19.0.0
-        version: 19.2.18
+        version: 19.3.0
       react:
         specifier: ^18.0.0 || ^19.0.0
-        version: 19.2.8
+        version: 19.3.0
       swr:
         specifier: ^2.2.0
-        version: 2.5.1(react@19.2.8)
+        version: 2.5.1(react@19.3.0)
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -384,9 +384,6 @@ packages:
     peerDependencies:
       '@types/react': ^19.3.0
 
-  '@types/react@19.2.18':
-    resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
-
   '@types/react@19.3.0':
     resolution: {integrity: sha512-N0rFCuH9YoxG9/m61l9MfpJKfmLOVU0em7ipIz6TRgSSkvReLB9vL85GB+yr8Bs5leqpvg96JSwF4ZS1s4viQg==}
 
@@ -654,10 +651,6 @@ packages:
     peerDependencies:
       react: ^19.3.0
 
-  react@19.2.8:
-    resolution: {integrity: sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw==}
-    engines: {node: '>=0.10.0'}
-
   react@19.3.0:
     resolution: {integrity: sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog==}
     engines: {node: '>=0.10.0'}
@@ -909,10 +902,6 @@ snapshots:
     dependencies:
       '@types/react': 19.3.0
 
-  '@types/react@19.2.18':
-    dependencies:
-      csstype: 3.2.3
-
   '@types/react@19.3.0':
     dependencies:
       csstype: 3.2.3
@@ -1092,8 +1081,6 @@ snapshots:
       react: 19.3.0
       scheduler: 0.28.0
 
-  react@19.2.8: {}
-
   react@19.3.0: {}
 
   rolldown@1.2.6:
@@ -1120,12 +1107,6 @@ snapshots:
   scheduler@0.28.0: {}
 
   source-map-js@1.2.1: {}
-
-  swr@2.5.1(react@19.2.8):
-    dependencies:
-      dequal: 2.0.3
-      react: 19.2.8
-      use-sync-external-store: 1.6.0(react@19.2.8)
 
   swr@2.5.1(react@19.3.0):
     dependencies:
@@ -1166,10 +1147,6 @@ snapshots:
       '@typescript/typescript-sunos-x64': 7.0.2
       '@typescript/typescript-win32-arm64': 7.0.2
       '@typescript/typescript-win32-x64': 7.0.2
-
-  use-sync-external-store@1.6.0(react@19.2.8):
-    dependencies:
-      react: 19.2.8
 
   use-sync-external-store@1.6.0(react@19.3.0):
     dependencies:
