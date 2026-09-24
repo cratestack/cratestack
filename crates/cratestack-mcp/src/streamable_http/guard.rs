@@ -6,6 +6,7 @@
 //! ```text
 //! Origin not allowed                 -> 403   (before any MCP handling)
 //! not POST                           -> 405
+//! `access_token` in the query        -> 400 + WWW-Authenticate (strict.rs)
 //! no bearer token                    -> 401 + WWW-Authenticate
 //! body over 4 MiB                    -> 413
 //! AuthProvider refuses / no identity -> 401 (403, 5xx) + WWW-Authenticate
@@ -32,7 +33,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use cratestack_core::AuthProvider;
-use http::{Method, Request};
+use http::{Method, Request, StatusCode};
 use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
@@ -93,6 +94,10 @@ impl<T: McpTools, A: AuthProvider> Shared<T, A> {
         }
         if request.method() != Method::POST {
             return reply::method_not_allowed();
+        }
+        if strict::query_token(request.uri()) {
+            let header = self.resource.challenge(Some("invalid_request"));
+            return reply::challenge(StatusCode::BAD_REQUEST, header);
         }
         let Some(token) = bearer(request.headers()).map(str::to_owned) else {
             return missing_token(&self.resource);

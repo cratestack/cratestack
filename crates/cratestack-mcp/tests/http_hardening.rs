@@ -5,6 +5,10 @@
 //!   intermediary that routes or rate-limits on the header may read another,
 //!   which is exactly the split MCP's header validation exists to prevent
 //!   ("different components rely on different sources of truth").
+//! - A token in the query string. MCP forbids it and OAuth 2.1 dropped the
+//!   query method; an application provider shared with REST may still read
+//!   `access_token` there, and the guard strips only `Authorization`, so the
+//!   token would travel on to `rmcp` and the handler in the request URI.
 //! - An allowed origin written with its default port (`:443`). The guard
 //!   admitted the browser form (`https://host`) and `rmcp`'s second check
 //!   then refused it, so every browser request from that origin got 403.
@@ -16,7 +20,8 @@ use cratestack_mcp::{ProtectedResource, StreamableHttpServer};
 use http::StatusCode;
 use serde_json::json;
 use support::FakeTools;
-use support::http_app::{RESOURCE, mount, send, served, token, tool_call};
+use support::counting::CountingProvider;
+use support::http_app::{RESOURCE, mount, post, rpc, send, served, token, tool_call};
 use support::token::{AudienceProvider, ISSUER};
 
 fn echo_call() -> http::Request<Body> {
@@ -78,6 +83,69 @@ async fn a_second_mcp_param_value_is_a_header_mismatch() {
         reply.text
     );
     assert_eq!(tools.runs(), 0);
+}
+
+/// RFC 6750 §3.1 `invalid_request`: a token presented in more than one way,
+/// or in a way this resource does not accept. Refused before the provider
+/// could read it, with or without a header token beside it, and however the
+/// parameter name is percent-encoded.
+#[tokio::test]
+async fn a_token_in_the_query_string_is_refused_before_the_provider_runs() {
+    let tools = FakeTools::default();
+    let provider = CountingProvider::new(RESOURCE);
+    let server = StreamableHttpServer::builder(
+        tools.clone(),
+        provider.clone(),
+        [support::http_app::APP_ORIGIN],
+        ProtectedResource::new(RESOURCE, [ISSUER]),
+    )
+    .build()
+    .unwrap();
+    let app = mount(&server);
+    let valid = token("u-1");
+
+    for (query, header) in [
+        (format!("access_token={valid}"), Some(valid.as_str())),
+        (format!("x=1&access_token={valid}"), None),
+        (format!("access%5Ftoken={valid}"), Some(valid.as_str())),
+    ] {
+        let body = rpc(
+            "tools/call",
+            json!({ "name": "echo", "arguments": { "text": "a" } }),
+        );
+        let request = post(&format!("/mcp?{query}"), header, &body)
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let reply = send(&app, request).await;
+
+        assert_eq!(
+            reply.status,
+            StatusCode::BAD_REQUEST,
+            "{query}: {}",
+            reply.text
+        );
+        assert!(
+            reply
+                .header("www-authenticate")
+                .starts_with("Bearer error=\"invalid_request\""),
+            "{}",
+            reply.header("www-authenticate")
+        );
+        assert!(!reply.text.contains(&valid), "the token is not echoed");
+    }
+    assert_eq!(provider.calls(), 0);
+    assert_eq!(tools.runs(), 0);
+
+    // An unrelated query parameter is not a token.
+    let body = rpc(
+        "tools/call",
+        json!({ "name": "echo", "arguments": { "text": "a" } }),
+    );
+    let request = post("/mcp?trace=1", Some(&valid), &body)
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    assert_eq!(send(&app, request).await.status, StatusCode::OK);
 }
 
 #[tokio::test]

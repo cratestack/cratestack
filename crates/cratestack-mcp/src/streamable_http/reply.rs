@@ -1,6 +1,6 @@
-//! The responses the guard gives before `rmcp` is reached: 403, 405, 401,
-//! 413, a provider's 5xx, and 400 `-32020` for a repeated mirrored header
-//! (`strict.rs`).
+//! The responses the guard gives before `rmcp` is reached: 403, 405, 400
+//! (a query token), 401, 413, a provider's 5xx, and 400 `-32020` for a
+//! repeated mirrored header (`strict.rs`).
 //!
 //! Plain HTTP, not JSON-RPC, except the `-32020`, which MCP requires to be
 //! a JSON-RPC error. None of these requests reached MCP handling,
@@ -78,12 +78,16 @@ pub(crate) fn bad_body() -> Reply {
     )
 }
 
-/// 401 or 403 with the RFC 6750 challenge naming the metadata document.
+/// 401, 403 or 400 (`invalid_request`) with the RFC 6750 challenge naming
+/// the metadata document.
 pub(crate) fn challenge(status: StatusCode, header: HeaderValue) -> Reply {
-    let (code, message) = if status == StatusCode::FORBIDDEN {
-        ("FORBIDDEN", "the access token does not grant this request")
-    } else {
-        ("UNAUTHORIZED", "a valid bearer access token is required")
+    let (code, message) = match status {
+        StatusCode::FORBIDDEN => ("FORBIDDEN", "the access token does not grant this request"),
+        StatusCode::BAD_REQUEST => (
+            "BAD_REQUEST",
+            "send the access token in the Authorization header only",
+        ),
+        _ => ("UNAUTHORIZED", "a valid bearer access token is required"),
     };
     let mut reply = envelope(status, code, message);
     reply.headers_mut().insert(WWW_AUTHENTICATE, header);
