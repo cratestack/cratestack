@@ -253,7 +253,7 @@ response, so generated clients decode a typed code. The same is true of `Idempot
 
 ### Honoring `@no_rate_limit` (schemas declaring `extension rate_limit { }`)
 
-The wiring above rate-limits every request equally — a procedure marked `@no_rate_limit` in your schema is **not** exempt unless you also install a `should_rate_limit_fn` that reads the generated descriptors. `RateLimitLayer` is never auto-wired by codegen (see `rate_limit_extension.rs`'s header comment: that machinery is assembled entirely imperatively by the consuming app), so this is opt-in:
+The wiring above rate-limits every request equally — a procedure marked `@no_rate_limit` in your schema is **not** exempt unless you also tell the layer which op each request is — a `should_rate_limit_fn` filter or (since #877) an op resolver, both reading the generated descriptors. `RateLimitLayer` is never auto-wired by codegen (see `rate_limit_extension.rs`'s header comment: that machinery is assembled entirely imperatively by the consuming app), so this is opt-in:
 
 ```rust
 use cratestack_axum::ratelimit::{
@@ -281,6 +281,19 @@ let app = router.route_layer(
 ```
 
 Both filters fail closed: a lookup miss (unknown op, unmatched route, non-RPC path) always rate-limits rather than exempts. `POST /rpc/batch` is a known exception — it is always rate-limited wholesale, because the filter runs before the batch body is decoded and can't see the individual ops inside it; see `build_rpc_ops_filter`'s rustdoc.
+
+**Under `Router::nest`, use a resolver instead of a filter.** Both filters compare against the path the schema declares, so behind `.nest("/api", router)` every lookup misses and `@no_rate_limit` is silently inert (safe — a miss rate-limits — but inert). Since ADR 0015 slice 2 the layer accepts the same op resolvers `IdempotencyLayer` does, including the prefixed ones:
+
+```rust
+use cratestack_axum::idempotency::build_rpc_op_resolver_with_prefix;
+
+let app = Router::new().nest("/api", router).layer(
+    RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0))
+        .with_op_resolver(build_rpc_op_resolver_with_prefix("/api", cratestack_schema::axum::OPS)),
+);
+```
+
+Call the same builder once per layer — `IdempotencyLayer::with_op_resolver` and `RateLimitLayer::with_op_resolver` each take their own instance (the builders return an opaque `impl Fn`, which is not `Clone`), and both run the same lookup code. `with_op_resolver` and `with_should_rate_limit_fn` replace each other; install one. The decision itself is made by `cratestack_exec::OpExecutor::admit_rate_limit`; this layer derives the bucket key, bounds the lookup, applies the store-error policy and renders the response.
 
 ## Trusted Proxy / Audit `client_ip`
 

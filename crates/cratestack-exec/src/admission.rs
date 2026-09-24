@@ -19,10 +19,13 @@ use cratestack_core::idempotency_record::IdempotencyRecord;
 ///
 /// # `#[non_exhaustive]`
 ///
-/// Slices 2 and 3 add variants — a rate-limit refusal carries a retry
-/// budget, and policy denial is a different answer from either — and this
-/// crate is unreleased, so the marker costs nothing now and saves a second
-/// breaking release later. It forces a wildcard arm on external `match`es;
+/// Slice 3 adds a variant — policy denial is a different answer from any
+/// of these — and the marker lets it do so without a breaking release.
+/// Slice 2 did *not* add one: rate limiting answers with
+/// [`crate::RateLimitAdmission`] instead, because an admitted rate-limited
+/// call still carries data the response needs, which no variant here has
+/// room for (see the `rate_limit` module doc). The marker forces a wildcard
+/// arm on external `match`es;
 /// `cratestack-axum`'s is deliberately fail-closed (it refuses the request
 /// rather than running the handler), because the one thing a future
 /// admission outcome must never do by default is silently admit. See

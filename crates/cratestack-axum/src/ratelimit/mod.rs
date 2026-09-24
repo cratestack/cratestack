@@ -134,6 +134,10 @@ mod store_error;
 
 pub use budget::RateLimitBucketBudget;
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
+/// Re-exported for the same reason `idempotency` re-exports it: a custom
+/// `with_op_resolver` closure returns one, and naming it should not need a
+/// direct `cratestack-exec` dependency.
+pub use cratestack_exec::OpAdmission;
 pub use layer::RateLimitLayer;
 pub use policy::{DEFAULT_STORE_TIMEOUT, StoreErrorPolicy};
 pub use rest_ops_filter::build_rest_ops_filter;
@@ -156,6 +160,10 @@ mod tests_evasion;
 mod tests_evasion_v4;
 #[cfg(test)]
 mod tests_key_fn;
+#[cfg(test)]
+mod tests_op_resolver;
+#[cfg(test)]
+mod tests_op_resolver_rest;
 #[cfg(test)]
 mod tests_scope;
 #[cfg(test)]

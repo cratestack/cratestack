@@ -1,5 +1,6 @@
-//! The default bucket-key derivation, and the default "should this
-//! request be rate-limited at all" filter.
+//! The default bucket-key derivation. (The default "should this request
+//! be rate-limited at all" answer moved to `RateLimitLayer::new` as
+//! `OpAdmission::unresolved()` in ADR 0015 slice 2 — still "yes".)
 //!
 //! Split out of `layer.rs` verbatim (cratestack#846) to keep that file
 //! under the workspace's 200-line ceiling once the store-error policy
@@ -166,11 +167,4 @@ fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Default rate limit filter: always rate-limit. Fail closed.
-/// Custom filters can check operation descriptors and return false for
-/// operations marked `@no_rate_limit` or similar exemptions.
-pub(super) fn default_should_rate_limit_fn(_req: &Request) -> bool {
-    true
 }

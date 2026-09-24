@@ -153,10 +153,11 @@ cratestack-service = 2
 cratestack-outbox = 2
 
 # --- L3: Execution -----------------------------------------------------
-# `cratestack-exec` (ADR 0015 slice 1): idempotency ADMISSION, expressed
-# once against `(op participation flags, principal, idempotency key,
-# request fingerprint)` with no knowledge of how the caller arrived.
-# `cratestack-axum`'s `IdempotencyLayer` is now a thin adapter over it.
+# `cratestack-exec` (ADR 0015 slices 1 and 2): idempotency and rate-limit
+# ADMISSION, expressed once against `(op participation flags, principal,
+# idempotency key, request fingerprint, rate-limit bucket)` with no
+# knowledge of how the caller arrived. `cratestack-axum`'s
+# `IdempotencyLayer` and `RateLimitLayer` are thin adapters over it.
 # Its normal workspace dependencies are exactly `cratestack-core` (L0) —
 # `dep.layer <= self.layer` holds with no exception — and the two
 # exclusions layering.md §2 states for this layer are what keep the list

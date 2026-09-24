@@ -64,7 +64,8 @@ impl IdempotencyLayer {
     /// Teach the layer which schema op each request is about, so
     /// `@no_idempotency` (and every read) can skip reservation.
     ///
-    /// Mirrors [`crate::ratelimit::RateLimitLayer::with_should_rate_limit_fn`]
+    /// Mirrors [`crate::ratelimit::RateLimitLayer::with_op_resolver`], which
+    /// accepts the same resolvers
     /// — pass [`build_rest_op_resolver`] over the generated
     /// `ROUTE_TRANSPORTS`, or [`build_rpc_op_resolver`] over `OPS`.
     ///

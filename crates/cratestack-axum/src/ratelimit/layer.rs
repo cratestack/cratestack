@@ -3,12 +3,13 @@ use std::time::Duration;
 
 use axum::extract::Request;
 use cratestack_core::CratestackError;
+use cratestack_exec::{OpAdmission, OpExecutor};
 use tower::Layer;
 
 use super::budget::RateLimitBucketBudget;
 use super::budget::warn::BudgetWarnings;
 use super::config::RateLimitConfig;
-use super::key_fn::{default_key_fn, default_should_rate_limit_fn};
+use super::key_fn::default_key_fn;
 use super::policy::{DEFAULT_STORE_TIMEOUT, StoreErrorPolicy, StoreErrorWarnings};
 use super::scope::{KeyDerivation, UnverifiedAuthPolicy};
 use super::service::RateLimitService;
@@ -16,13 +17,14 @@ use super::store::RateLimitStore;
 
 pub(super) type KeyFn =
     Arc<dyn Fn(&Request) -> Result<KeyDerivation, CratestackError> + Send + Sync>;
+pub(super) type OpResolver = Arc<dyn Fn(&Request) -> OpAdmission + Send + Sync>;
 
 #[derive(Clone)]
 pub struct RateLimitLayer {
     store: Arc<dyn RateLimitStore>,
     config: RateLimitConfig,
     key_fn: Option<KeyFn>,
-    should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
+    op_resolver: OpResolver,
     store_error_policy: StoreErrorPolicy,
     store_timeout: Duration,
     bucket_budget: Option<RateLimitBucketBudget>,
@@ -37,7 +39,9 @@ impl RateLimitLayer {
             store,
             config,
             key_fn: None,
-            should_rate_limit_fn: Arc::new(default_should_rate_limit_fn),
+            // Every request unidentified — and so charged — until a
+            // resolver says otherwise: rate limiting's fail-closed default.
+            op_resolver: Arc::new(|_| OpAdmission::unresolved()),
             store_error_policy: StoreErrorPolicy::default(),
             store_timeout: DEFAULT_STORE_TIMEOUT,
             bucket_budget: Some(RateLimitBucketBudget::default()),
@@ -113,11 +117,32 @@ impl RateLimitLayer {
         self
     }
 
+    /// Exempt requests by predicate: `false` skips the limiter — key
+    /// derivation included. Kept as a thin adapter over
+    /// [`with_op_resolver`](Self::with_op_resolver) since ADR 0015 slice 2
+    /// (cratestack#877) moved the decision to [`OpExecutor`]; the
+    /// `idempotent_by_default` it fills in is never read by this layer.
+    /// Replaces any resolver installed before it, and vice versa.
     pub fn with_should_rate_limit_fn(
-        mut self,
+        self,
         f: impl Fn(&Request) -> bool + Send + Sync + 'static,
     ) -> Self {
-        self.should_rate_limit_fn = Arc::new(f);
+        self.with_op_resolver(move |req| OpAdmission::new("", false, f(req)))
+    }
+
+    /// Tell the layer which op a request is, so `@no_rate_limit` is
+    /// honoured. Takes the same resolvers as
+    /// [`crate::idempotency::IdempotencyLayer::with_op_resolver`] — pass
+    /// [`crate::idempotency::build_rpc_op_resolver_with_prefix`] (or its
+    /// REST twin) to cover a router mounted with `Router::nest`, which the
+    /// `build_*_ops_filter` predicates cannot. A resolver miss answers
+    /// [`OpAdmission::unresolved`], which is rate limited. Replaces any
+    /// `with_should_rate_limit_fn` predicate installed before it.
+    pub fn with_op_resolver(
+        mut self,
+        f: impl Fn(&Request) -> OpAdmission + Send + Sync + 'static,
+    ) -> Self {
+        self.op_resolver = Arc::new(f);
         self
     }
 
@@ -157,10 +182,13 @@ impl<S> Layer<S> for RateLimitLayer {
     fn layer(&self, inner: S) -> Self::Service {
         RateLimitService {
             inner,
-            store: self.store.clone(),
+            // No idempotency store: this executor only ever answers the
+            // rate-limit question, so the reservation TTL is never read.
+            executor: OpExecutor::new(None, Duration::ZERO)
+                .with_rate_limit(self.store.clone(), self.config),
             config: self.config,
             key_fn: self.resolved_key_fn(),
-            should_rate_limit_fn: self.should_rate_limit_fn.clone(),
+            op_resolver: self.op_resolver.clone(),
             store_error_policy: self.store_error_policy,
             store_timeout: self.store_timeout,
             warnings: self.warnings.clone(),

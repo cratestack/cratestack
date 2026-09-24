@@ -1,10 +1,12 @@
 //! Op resolver for RPC transport: recover the `OpAdmission` facts the
 //! schema declared about the op named in a `/rpc/{op_id}` path.
 //!
-//! Deliberately shaped after `crate::ratelimit::rpc_ops_filter`, which
+//! Originally shaped after `crate::ratelimit::rpc_ops_filter`, which
 //! solved the identical lookup for cratestack#474 — same `/rpc/` prefix
 //! strip, same `batch`/`subscribe/` exclusions, same linear search over an
-//! unsorted slice. See [`build_rest_op_resolver`] for why this module's
+//! unsorted slice. Since ADR 0015 slice 2 (cratestack#877) that filter is a
+//! projection of this resolver, so the two concerns share one lookup
+//! implementation. See [`build_rest_op_resolver`] for why this module's
 //! fail-closed direction is the inverse of the rate-limit filter's.
 //!
 //! [`build_rest_op_resolver`]: super::build_rest_op_resolver
@@ -57,11 +59,12 @@ pub fn build_rpc_op_resolver(
 /// `build_rpc_op_resolver_with_prefix("/api", OPS)` to match
 /// `Router::nest("/api", router)`.
 ///
-/// Same forgiving-spelling / strict-boundary rules as the REST twin.
+/// Same forgiving-spelling / strict-boundary rules as the REST twin, and
+/// the same `use<>`: the prefix may be a runtime `String`.
 pub fn build_rpc_op_resolver_with_prefix(
     prefix: &str,
     ops: &'static [OpDescriptor],
-) -> impl Fn(&Request) -> OpAdmission + Send + Sync {
+) -> impl Fn(&Request) -> OpAdmission + Send + Sync + use<> {
     let prefix = mount_prefix::normalize(prefix);
     move |req: &Request| {
         let Some(path) = mount_prefix::strip(req.uri().path(), &prefix) else {

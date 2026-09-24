@@ -61,8 +61,8 @@ cratestack-core.workspace = true
 # crates unconditionally. Layering-legal both ways (L2 -> L4, ADR 0014).
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
-# ADR 0015 slice 1: `IdempotencyLayer` is now a thin adapter over the L3
-# `OpExecutor`. L4 -> L3 is a legal direction (ADR 0014), and this pulls
+# ADR 0015 slices 1 and 2: `IdempotencyLayer` and `RateLimitLayer` are now
+# thin adapters over the L3 `OpExecutor`. L4 -> L3 is a legal direction (ADR 0014), and this pulls
 # nothing new into any facade's graph — `cratestack-exec` depends on
 # `cratestack-core` and `uuid`, both of which this crate already has.
 cratestack-exec.workspace = true

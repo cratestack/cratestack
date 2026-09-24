@@ -19,6 +19,8 @@
 use axum::extract::Request;
 use cratestack_core::OpDescriptor;
 
+use crate::idempotency::build_rpc_op_resolver;
+
 /// Build a rate-limit filter function for RPC schemas.
 ///
 /// Returns a function that:
@@ -32,45 +34,19 @@ use cratestack_core::OpDescriptor;
 ///
 /// `/rpc/batch` is always rate-limited regardless of its contents — see
 /// the module-level "Known limitation" doc above.
+///
+/// Since ADR 0015 slice 2 (cratestack#877) this is a projection of
+/// [`build_rpc_op_resolver`] — one lookup shared with idempotency. Every
+/// case above that resolver answers `OpAdmission::unresolved`, whose
+/// `rate_limited_by_default` is `true`: the same fail-closed answer. For a
+/// router mounted with `Router::nest`, pass
+/// `build_rpc_op_resolver_with_prefix` to
+/// [`super::RateLimitLayer::with_op_resolver`] instead.
 pub fn build_rpc_ops_filter(
     ops: &'static [OpDescriptor],
 ) -> impl Fn(&Request) -> bool + Send + Sync {
-    move |req: &Request| {
-        let path = req.uri().path();
-
-        // Only apply descriptor lookup to `/rpc/{op_id}` paths.
-        if !path.starts_with("/rpc/") {
-            // Not an RPC path; default to rate-limit.
-            return true;
-        }
-
-        // Extract op_id from `/rpc/{op_id}` (strip `/rpc/` prefix).
-        // Note: `/rpc/batch` and `/rpc/subscribe/{op_id}` are handled separately
-        // by RPC dispatch and subscription endpoints, not generic ops. Only
-        // unary ops live at `/rpc/{op_id}`.
-        let op_id = &path[5..]; // skip "/rpc/"
-
-        // If the path is `/rpc/batch` or `/rpc/subscribe/...`, those are
-        // framework dispatch points, not op invocations. Rate-limit them.
-        if op_id == "batch" || op_id.starts_with("subscribe/") {
-            return true;
-        }
-
-        // Look up the op in the descriptor array.
-        // Note: The array is not sorted, so we use linear search.
-        match ops.iter().find(|op| op.op_id == op_id) {
-            Some(op) => {
-                // Op found. Return whether it should be rate-limited.
-                op.rate_limited_by_default
-            }
-            None => {
-                // Op not found in descriptors. Fail closed: rate-limit it.
-                // This could indicate a malformed op_id or a schema mismatch,
-                // so treating it conservatively is correct.
-                true
-            }
-        }
-    }
+    let resolve = build_rpc_op_resolver(ops);
+    move |req: &Request| resolve(req).rate_limited_by_default
 }
 
 #[cfg(test)]

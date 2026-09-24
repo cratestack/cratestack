@@ -10,21 +10,24 @@ use std::time::Duration;
 
 use axum::extract::Request;
 use axum::response::Response;
+use cratestack_exec::OpExecutor;
 use tower::Service;
 
 use super::budget::warn::BudgetWarnings;
 use super::config::RateLimitConfig;
-use super::layer::KeyFn;
+use super::layer::{KeyFn, OpResolver};
 use super::policy::{StoreErrorPolicy, StoreErrorWarnings};
-use super::store::RateLimitStore;
 
 #[derive(Clone)]
 pub struct RateLimitService<S> {
     pub(super) inner: S,
-    pub(super) store: Arc<dyn RateLimitStore>,
+    /// Owns the decision (ADR 0015 slice 2): whether an op is limited at
+    /// all, and the store call. Everything else here is transport.
+    pub(super) executor: OpExecutor,
+    /// Still read for the `X-RateLimit-Limit` header on allowed responses.
     pub(super) config: RateLimitConfig,
     pub(super) key_fn: KeyFn,
-    pub(super) should_rate_limit_fn: Arc<dyn Fn(&Request) -> bool + Send + Sync>,
+    pub(super) op_resolver: OpResolver,
     pub(super) store_error_policy: StoreErrorPolicy,
     pub(super) store_timeout: Duration,
     pub(super) warnings: Arc<StoreErrorWarnings>,
@@ -52,9 +55,10 @@ where
     }
 
     fn call(&mut self, req: Request) -> Self::Future {
-        let should_rate_limit = (self.should_rate_limit_fn)(&req);
+        let op = (self.op_resolver)(&req);
+        let should_rate_limit = self.executor.rate_limit_applies(&op);
         // Clone the whole service, not just `inner`: the async body needs
-        // the store, the key fn and both warning budgets, and cloning
+        // the executor, the key fn and both warning budgets, and cloning
         // once is cheaper than seven `Arc::clone`s at the call site.
         let mut service = self.clone();
         Box::pin(async move {
@@ -66,7 +70,7 @@ where
             if !should_rate_limit {
                 return service.inner.call(req).await;
             }
-            Ok(super::consume::run(service, req).await)
+            Ok(super::consume::run(service, req, op).await)
         })
     }
 }
