@@ -150,11 +150,8 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
-        // The list is static, but over HTTP it is still only for a caller
-        // the guard authenticated: resolving fails closed exactly as a read
-        // would, so the two cannot drift apart on who may see the table.
-        self.caller.resolve(&context)?;
-        Ok(crate::resources::list_resources(self.tools.resources()))
+        use crate::resources::{list_resources, listed};
+        listed(self, &context.extensions, list_resources)
     }
 
     async fn list_resource_templates(
@@ -162,8 +159,8 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, ErrorData> {
-        self.caller.resolve(&context)?;
-        Ok(crate::resources::list_templates(self.tools.resources()))
+        use crate::resources::{list_templates, listed};
+        listed(self, &context.extensions, list_templates)
     }
 
     async fn read_resource(

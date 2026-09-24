@@ -35,6 +35,7 @@
 mod cursor;
 mod descriptor;
 mod error;
+mod listed;
 mod listing;
 mod page;
 mod read;
@@ -45,6 +46,8 @@ mod tests_cursor;
 #[cfg(test)]
 mod tests_error;
 #[cfg(test)]
+mod tests_listed;
+#[cfg(test)]
 mod tests_page;
 #[cfg(test)]
 mod tests_uri;
@@ -52,6 +55,7 @@ mod tests_uri;
 pub use descriptor::ResourceDescriptor;
 pub use page::DEFAULT_PAGE_SIZE;
 
+pub(crate) use listed::listed;
 pub(crate) use listing::{list_resources, list_templates};
 pub(crate) use read::read_resource;
 

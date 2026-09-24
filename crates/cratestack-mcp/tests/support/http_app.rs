@@ -4,7 +4,7 @@
 
 use axum::Router;
 use axum::body::Body;
-use cratestack_mcp::{ProtectedResource, StreamableHttp, StreamableHttpServer};
+use cratestack_mcp::{McpTools, ProtectedResource, StreamableHttp, StreamableHttpServer};
 use http::{HeaderMap, Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
@@ -22,8 +22,13 @@ pub const APP_ORIGIN: &str = "https://app.example.test";
 pub type Server = StreamableHttp<FakeTools, AudienceProvider>;
 pub type Builder = StreamableHttpServer<FakeTools, AudienceProvider>;
 
-/// A builder whose provider only accepts tokens for `resource`.
-pub fn builder(tools: &FakeTools, resource: &str) -> Builder {
+/// A builder whose provider only accepts tokens for `resource`. Generic
+/// over the table so the resource tables (`resources.rs`, `owned.rs`) are
+/// served by exactly the harness the tool tests use.
+pub fn builder<T: McpTools + Clone>(
+    tools: &T,
+    resource: &str,
+) -> StreamableHttpServer<T, AudienceProvider> {
     StreamableHttpServer::builder(
         tools.clone(),
         AudienceProvider::new(resource),
@@ -33,13 +38,15 @@ pub fn builder(tools: &FakeTools, resource: &str) -> Builder {
 }
 
 /// The endpoint at `/mcp`, the metadata at the root.
-pub fn mount<A: cratestack_core::AuthProvider>(server: &StreamableHttp<FakeTools, A>) -> Router {
+pub fn mount<T: McpTools, A: cratestack_core::AuthProvider>(
+    server: &StreamableHttp<T, A>,
+) -> Router {
     Router::new()
         .nest_service("/mcp", server.service())
         .merge(server.metadata_router())
 }
 
-pub fn served(tools: &FakeTools) -> Router {
+pub fn served<T: McpTools + Clone>(tools: &T) -> Router {
     mount(
         &builder(tools, RESOURCE)
             .build()
@@ -102,6 +109,16 @@ pub fn keyed_call(
     }
     let body = rpc("tools/call", params);
     post(path, token, &body)
+        .body(Body::from(body.to_string()))
+        .unwrap()
+}
+
+/// A complete `resources/read` of `uri`. `Mcp-Name` mirrors `params.uri`,
+/// as SEP-2243 requires for this method.
+pub fn resource_read(path: &str, token: Option<&str>, uri: &str) -> Request<Body> {
+    let body = rpc("resources/read", json!({ "uri": uri }));
+    post(path, token, &body)
+        .header("mcp-name", uri)
         .body(Body::from(body.to_string()))
         .unwrap()
 }

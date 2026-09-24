@@ -10,6 +10,7 @@ pub mod client;
 pub mod counting;
 pub mod failing;
 pub mod http_app;
+pub mod owned;
 pub mod resources;
 pub mod stores;
 pub mod token;
