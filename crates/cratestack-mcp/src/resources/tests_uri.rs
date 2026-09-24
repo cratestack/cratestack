@@ -78,6 +78,12 @@ fn anything_else_is_unknown() {
         "cratestack://blog/post_table/1",
         "cratestack://other/posts",
         "cratestack://BLOG/posts",
+        // Not even the scheme is case-folded (module doc: nothing is
+        // normalized). RFC 3986 § 3.1 says a scheme *should* be accepted
+        // in either case; refusing it is this module's stated choice,
+        // pinned here so changing it is a decision, not drift.
+        "CRATESTACK://blog/posts",
+        "Cratestack://blog/posts/1",
         "cratestack://blog/posts/",
         "cratestack://blog/posts/1/2",
         "cratestack://blog/posts#x",

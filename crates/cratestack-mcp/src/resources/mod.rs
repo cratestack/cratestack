@@ -43,6 +43,8 @@ mod uri;
 #[cfg(test)]
 mod tests_cursor;
 #[cfg(test)]
+mod tests_error;
+#[cfg(test)]
 mod tests_page;
 #[cfg(test)]
 mod tests_uri;
