@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Security: a client could set a `@server_only` field through a procedure argument (#1051)
+
+A procedure whose argument names a model, directly (`procedure p(account: Account)`)
+or through a `type` that embeds one, decoded the full model struct. The struct's
+`@server_only` fields carried `#[serde(skip_serializing, default)]`, and `default`
+only fills a key that is *absent*: a client that sent `"secret": "..."` had the
+value deserialized and handed to the implementation as if the server had set it.
+This affected both transports, `POST /$procs/<name>` and
+`POST /rpc/procedure.<name>`, and every field type, `Bytes` included. The fix
+is on the struct itself, so any other request body that decodes a model is
+covered too. The only other candidate found in review is a
+`@computed(params: T?)` whose `type` embeds a model. It was read, not
+exercised by a test.
+
+The field is now `#[serde(skip)]`. It is still never written to a response, and
+it is now never read from a request: the implementation sees `Default::default()`
+whatever the client sent, and a wrong-typed value is ignored, not a decode
+error. Values loaded from the database are unaffected, since `FromRow` does
+not go through serde.
+
+**Not affected:** model create and update, on both transports. The generated
+`Create*Input`/`Update*Input` never had the field. **Behaviour change:** code that
+deserializes a generated model from its own JSON now gets the default for a
+`@server_only` key it supplies. The derived `Serialize` never wrote that key, so
+a serde round trip is unchanged. **Action:** if a procedure took a
+`@server_only` value from its argument, the value was client-controlled. Audit
+any such procedure and derive the value server-side.
+
 ### Rate-limit admission moves to the L3 `OpExecutor`, and `@no_rate_limit` works under `Router::nest` (#877)
 
 ADR 0015 slice 2. The decision `RateLimitLayer` made — is this op rate limited at

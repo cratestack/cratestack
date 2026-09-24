@@ -1,0 +1,24 @@
+// A `@server_only` field must never be settable from client input. The
+// generated CRUD inputs filter it out, but a procedure argument can name a
+// model directly, or through a `type` that embeds one, and both decode the
+// full model struct. `transport rpc` twin of `server_only_inbound.cstack`.
+
+transport rpc
+
+model Account {
+  id Int @id
+  name String
+  secret String @server_only
+  token Bytes? @server_only
+}
+
+type AccountEnvelope {
+  account Account
+  note String
+}
+
+procedure inspectAccount(account: Account): String
+  @allow(auth() != null)
+
+procedure inspectEnvelope(envelope: AccountEnvelope): String
+  @allow(auth() != null)

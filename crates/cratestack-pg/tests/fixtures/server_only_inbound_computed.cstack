@@ -1,0 +1,12 @@
+// A computed-bearing model gets a second, wire-shaped struct
+// (`include/server.rs`'s `wire` module) whose fields come from
+// `struct_field_definition_with_wire_scope`, not `struct_field_definition`.
+// It must mask `@server_only` exactly like the plain model struct. See
+// `tests/server_only_inbound.rs`.
+
+model Badge {
+  id Int @id
+  label String
+  secret String @server_only
+  shout String @computed
+}
