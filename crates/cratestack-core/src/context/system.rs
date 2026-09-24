@@ -81,6 +81,7 @@ impl SystemContext {
                 principal: Some(PrincipalContext::from_claims(fields)),
                 extensions: BTreeMap::new(),
                 system: true,
+                verified_signer: None,
             },
         }
     }

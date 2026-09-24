@@ -5,6 +5,7 @@
 mod identity;
 mod principal;
 mod system;
+mod verified_signer;
 
 #[cfg(test)]
 mod tests;
@@ -19,6 +20,7 @@ use crate::value::Value;
 pub use identity::CratestackAuthIdentity;
 pub use principal::{PrincipalContext, PrincipalFacet};
 pub use system::SystemContext;
+pub use verified_signer::VerifiedSigner;
 
 use principal::lookup_value_path_in_map;
 
@@ -51,6 +53,10 @@ pub struct CratestackContext {
     ///   `context::system::tests::forged_system_field_in_payload_is_ignored`.
     #[serde(skip)]
     system: bool,
+    /// Set by an envelope's `open`; private and `#[serde(skip)]` for the
+    /// same reasons as `system`. See [`VerifiedSigner`] (ADR 0006 §12).
+    #[serde(skip)]
+    verified_signer: Option<VerifiedSigner>,
 }
 
 /// Everything an [`AuthProvider`] gets to see about an inbound request.
@@ -191,6 +197,7 @@ impl CratestackContext {
             principal: Some(PrincipalContext::from_claims(fields)),
             extensions: BTreeMap::new(),
             system: false,
+            verified_signer: None,
         }
     }
 
@@ -235,6 +242,7 @@ impl CratestackContext {
             principal: Some(principal),
             extensions: BTreeMap::new(),
             system: false,
+            verified_signer: None,
         })
     }
 
@@ -244,6 +252,7 @@ impl CratestackContext {
             principal: Some(principal),
             extensions: BTreeMap::new(),
             system: false,
+            verified_signer: None,
         }
     }
 

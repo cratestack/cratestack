@@ -59,6 +59,9 @@ rust_decimal = { workspace = true, optional = true }
 bigdecimal = { workspace = true, optional = true }
 
 [dev-dependencies]
+# Installs a counting `#[global_allocator]`. It is linked only into the test
+# binary that names it (`tests/no_envelope_alloc.rs`), never into the library.
+allocation-counter.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 # Pins `Value`'s CBOR wire shape against the first-party backend. A
 # dev-dependency rather than a real one: depending on `cratestack-codec-cbor`

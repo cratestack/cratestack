@@ -123,6 +123,14 @@ authors = [
 ]
 
 [workspace.dependencies]
+# Test-only: `cratestack-core`'s `tests/no_envelope_alloc.rs` asserts that
+# `NoEnvelope` allocates nothing (cratestack#1004). Counting allocations
+# needs a `#[global_allocator]`, which is an `unsafe impl`, and the
+# workspace forbids `unsafe_code`, so the impl comes from this zero-dependency
+# crate. It counts per thread, which keeps the libtest harness out of the
+# count. `"0.8"`, not `"0"`, for the 0.x-minor-is-major reason given on
+# `axum` below.
+allocation-counter = "0.8"
 anyhow = "1"
 ariadne = "0.6"
 async-stream = "0.3"
