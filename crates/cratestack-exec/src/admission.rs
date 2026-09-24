@@ -24,7 +24,8 @@ use cratestack_core::idempotency_record::IdempotencyRecord;
 /// Slice 2 did *not* add one: rate limiting answers with
 /// [`crate::RateLimitAdmission`] instead, because an admitted rate-limited
 /// call still carries data the response needs, which no variant here has
-/// room for (see the `rate_limit` module doc). It forces a wildcard arm on external `match`es;
+/// room for (see the `rate_limit` module doc). The marker forces a wildcard
+/// arm on external `match`es;
 /// `cratestack-axum`'s is deliberately fail-closed (it refuses the request
 /// rather than running the handler), because the one thing a future
 /// admission outcome must never do by default is silently admit. See

@@ -127,6 +127,22 @@ async fn prefixed_resolver_still_throttles_an_ordinary_op() {
     );
 }
 
+/// A mount prefix read at runtime — config, env — must be installable:
+/// the resolver owns its copy, so the source string can be dropped before
+/// the first request. Before `use<>` on the builder this was E0597.
+#[tokio::test]
+async fn a_runtime_prefix_string_can_build_the_resolver() {
+    let prefix = String::from("/api");
+    let resolver = build_rpc_op_resolver_with_prefix(&prefix, OPS);
+    drop(prefix);
+    let router = nested(|layer| layer.with_op_resolver(resolver));
+
+    assert_eq!(
+        status(&router, "/api/rpc/procedure.createPayment", None).await,
+        StatusCode::OK
+    );
+}
+
 /// FAIL DIRECTION at the transport: an op id the resolver does not know is
 /// CHARGED. A miss that exempted would let any unknown path spend nothing.
 #[tokio::test]

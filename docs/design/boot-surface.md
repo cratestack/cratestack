@@ -235,9 +235,12 @@ Three properties, each a §8 decision:
   0016's freeze at three operational traits is untouched. This is *not*
   L3: `cratestack-exec`'s `OpExecutor::admit` (ADR 0015 slice 1) makes
   the admission decision; the builder only composes the L4 adapters
-  around it. When slice 2 moves rate limiting to L3 the builder's
-  `.rate_limit(..)` setter should not need to change — that is the test
-  of whether it was placed correctly.
+  around it. Slice 2 (#877) has since moved rate-limit admission to L3
+  too (`OpExecutor::admit_rate_limit`) with `RateLimitLayer`'s public
+  builder unchanged, so a `.rate_limit(..)` setter composing that layer
+  still needs no change — the test of placement this sentence set, now
+  met. It can also pass the schema's resolver to
+  `RateLimitLayer::with_op_resolver`, exactly as for idempotency.
 - **`serve()` is the `cratestack-service` `run()` that exists, plus
   graceful shutdown**, reachable from the facade. Today no facade
   re-exports `cratestack-service`; an optional `service` feature on

@@ -289,7 +289,7 @@ test-pg-only *args='':
 # Audited across the file: applied to every recipe that can run >1 binary.
 # Deliberately absent from the shards pinned to a single `--test <name>`
 # (`test-ci-db-decimal-bigdecimal`, `test-ci-db-outbox`,
-# `test-ci-db-migrate-introspect`, and the three `--features`-forwarding lines
+# `test-ci-db-migrate-introspect`, and the single-`--test` `--features` lines
 # in `test-ci-host`), where it would be a no-op. `test-ci-host` needed a second
 # fix for the same bug class at the shell level — see its comment.
 test-pg-tc *args='':
@@ -433,7 +433,7 @@ test-ci-studio-db *args='':
 # — this shard is what actually *runs* their tests.)
 test-ci-host *args='':
 	#!/usr/bin/env bash
-	# Deliberately NOT `set -e`: this recipe runs four independent cargo
+	# Deliberately NOT `set -e`: this recipe runs several independent cargo
 	# invocations, and under `-e` a failure in any one cancels the rest —
 	# the same "one failure hides the remaining coverage" bug that
 	# `--no-fail-fast` fixes *within* a single cargo run (cratestack#851).
@@ -449,7 +449,7 @@ test-ci-host *args='':
 		--exclude tauri-web-shell-example \
 		--exclude tauri-native-shell-example \
 		--exclude react-nextjs-daisyui-napi --no-fail-fast {{args}} || status=1
-	# The three lines below close a `--features`-forwarding gap (a 2026-08
+	# The next three lines close a `--features`-forwarding gap (a 2026-08
 	# CI-coverage audit found these three were missed): each test file is
 	# gated `#![cfg(feature = "...")]` or a
 	# Cargo-level `required-features`, so it compiles to an empty 0-test

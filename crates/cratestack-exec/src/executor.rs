@@ -25,7 +25,9 @@ use crate::rate_limit::RateLimiter;
 ///
 /// # Named collaborators, not a lookup
 ///
-/// Both fields are supplied at construction and read by name. Per ADR 0012
+/// Every collaborator is supplied at construction — the idempotency store
+/// by [`OpExecutor::new`], the rate limiter by
+/// [`OpExecutor::with_rate_limit`] — and read by name. Per ADR 0012
 /// there is no registry and no type-keyed resolution here — see this
 /// crate's module doc for why that constraint is about the dependency
 /// graph being *inspectable*, not about taste.

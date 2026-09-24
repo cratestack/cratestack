@@ -62,8 +62,15 @@ where
         Ok(RateLimitAdmission::Consumed(outcome)) => Ok(outcome),
         // Unreachable while `RateLimitService::call` asks
         // `rate_limit_applies` first; if it ever is reached, serve as the
-        // exempt path does rather than invent a charge.
+        // exempt path does rather than invent a charge. Reaching it means
+        // the two executor answers disagree — loud in debug builds, because
+        // serving here masks exactly that regression from the end-to-end
+        // suites (cratestack#877 review, mutation c).
         Ok(RateLimitAdmission::Bypass) => {
+            debug_assert!(
+                !service.executor.rate_limit_applies(&input.op),
+                "rate_limit_applies charged this op but admit_rate_limit bypassed it"
+            );
             return match inner.call(req).await {
                 Ok(response) => response,
                 Err(infallible) => match infallible {},

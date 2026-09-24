@@ -222,8 +222,9 @@ around that service"). The crate has two dependencies, `cratestack-core`
 and `uuid`, because both exclusions above hold: the request fingerprint
 arrives already computed, and no `&mut Transaction` crosses the boundary.
 
-What has **not** moved is as important. Rate limiting is still an L4
-`tower::Layer` (slice 2, #877); audit persistence stays at L2 permanently,
+What has **not** moved is as important. Rate limiting was still an L4
+`tower::Layer` after slice 1 (it moved in slice 2, #877 — see §5.1's
+second amendment); audit persistence stays at L2 permanently,
 for the transactional reason stated above; audit fan-out still has no
 caller; row-level `@@allow` on subscriptions is still unenforced (slice 3).
 §5.1's table is updated for the one row that changed and is otherwise
@@ -491,6 +492,16 @@ that shows what the fix looks like.
 > the same symptom, not its absence, which is why this section is amended
 > rather than deleted.
 
+> **Amended 2026-09-24 (ADR 0015 slice 2, #877).** A second row has moved:
+> rate-limit *admission* — is this op limited, what does an unidentified op
+> get, and the store call — now decides at L3
+> (`OpExecutor::admit_rate_limit`). The rate-limit remark in the note above
+> is superseded. What stayed at L4 is the transport's part: bucket-key
+> derivation (it reads `Authorization`, the peer address and a verified
+> principal), the lookup timeout, the store-error policy and the rendered
+> `429`. Two concerns now decide at L3, row-level policy still inside
+> generated SQL, audit fan-out at L2 post-commit.
+
 The interesting claim is not "there is no `OpExecutor`". It is that the
 four concerns L3 would own are currently distributed across *three
 different layers*, inconsistently:
@@ -500,15 +511,15 @@ different layers*, inconsistently:
 | Policy (procedure) | L1 `policy/src/eval.rs` | L1 (pure) | ⊥-generated `authorize_with_db` (`macros/src/procedure/instrument.rs:44`) |
 | Policy (row-level) | L1 `ReadPolicy` literals | **L2** — compiled into SQL, `sqlx/src/query/support/policy.rs` | inside the query |
 | Idempotency | L1 `core::store::idempotency` | L2 sqlx / redis | **L3** `exec::OpExecutor::admit` (adapted at L4) |
-| Rate limit | L1 `core::store::ratelimit` | L2 redis / L4 in-memory | **L4** `tower::Layer` |
+| Rate limit | L1 `core::store::ratelimit` | L2 redis / L4 in-memory | **L3** `exec::OpExecutor::admit_rate_limit` (key, timeout and `429` at L4) |
 | Audit (persistence) | — | L2 `sqlx/src/audit.rs` | L2, inside the mutation's transaction |
 | Audit (fan-out) | L1 `core::audit::AuditSink` | L1 (`MulticastAuditSink`) | **nowhere — no caller** |
 
-Read the "Applied at" column. Rate limiting fires from the binding;
-row-level policy fires from inside generated SQL; audit fan-out fires at L2
-post-commit (#473). (Idempotency fired from the binding too until #876
-moved its decision to L3 — that is one row of four, and it is the row this
-section's own `@no_idempotency` bullet below was blocked on.) There is
+Read the "Applied at" column. Row-level policy fires from inside
+generated SQL; audit fan-out fires at L2 post-commit (#473). (Idempotency
+and rate limiting fired from the binding too, until #876 and #877 moved
+their decisions to L3 — two rows of four, and the idempotency row is the
+one this section's own `@no_idempotency` bullet below was blocked on.) There is
 still no layer at which you can stand and see an operation whole.
 
 **Post-#473:** the "Audit (fan-out)" row's *Applied at* cell — "nowhere — no
@@ -561,8 +572,8 @@ be re-evaluated honestly. That re-evaluation is ADR work (§8).
 **Outcome (2026-09-03).** That re-evaluation happened, as ADR 0015, and it
 came out the other way from this paragraph's expectation: the itemised
 costs were judged sufficient on their own, and L3 is being built in slices
-rather than waiting for a non-`http::Request` caller to appear. Slice 1
-has landed. The paragraph is kept because its reasoning — "the cost is now
+rather than waiting for a non-`http::Request` caller to appear. Slices 1
+and 2 have landed. The paragraph is kept because its reasoning — "the cost is now
 itemisable" — is what the ADR actually argued from.
 
 ### 5.2 The backend axis is branched at two different granularities

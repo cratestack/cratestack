@@ -256,7 +256,10 @@ doesn't know what Cargo features the consuming crate has.
   `RateLimitLayer::with_should_rate_limit_fn` by the application at startup.
   `@no_rate_limit` therefore has a real runtime effect today — driven end-to-end
   by `crates/cratestack-pg/tests/rate_limit_runtime.rs` — wherever that layer is
-  installed.
+  installed on a router mounted at the root. Under `Router::nest` those filters
+  miss every lookup and the attribute is inert; since #877 the layer also takes
+  the idempotency op resolvers through `RateLimitLayer::with_op_resolver`,
+  whose `_with_prefix` variants cover a nested mount.
   **Revised during #154's implementation:** the paragraph below (and §2's
   "Consequence" note above it) originally proposed that this same feature
   would also move `cratestack-axum`'s existing `RateLimitLayer`/

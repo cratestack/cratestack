@@ -122,6 +122,7 @@ impl RateLimitLayer {
     /// [`with_op_resolver`](Self::with_op_resolver) since ADR 0015 slice 2
     /// (cratestack#877) moved the decision to [`OpExecutor`]; the
     /// `idempotent_by_default` it fills in is never read by this layer.
+    /// Replaces any resolver installed before it, and vice versa.
     pub fn with_should_rate_limit_fn(
         self,
         f: impl Fn(&Request) -> bool + Send + Sync + 'static,
@@ -135,7 +136,8 @@ impl RateLimitLayer {
     /// [`crate::idempotency::build_rpc_op_resolver_with_prefix`] (or its
     /// REST twin) to cover a router mounted with `Router::nest`, which the
     /// `build_*_ops_filter` predicates cannot. A resolver miss answers
-    /// [`OpAdmission::unresolved`], which is rate limited.
+    /// [`OpAdmission::unresolved`], which is rate limited. Replaces any
+    /// `with_should_rate_limit_fn` predicate installed before it.
     pub fn with_op_resolver(
         mut self,
         f: impl Fn(&Request) -> OpAdmission + Send + Sync + 'static,

@@ -71,10 +71,15 @@ pub fn build_rest_op_resolver(
 /// under the prefix *at a segment boundary* resolves unresolved rather
 /// than being matched on a truncated remainder. `/apiary/...` is not
 /// under `/api`.
+///
+/// The resolver keeps its own normalised copy of `prefix` and borrows
+/// nothing (`use<>`), so the prefix may come from runtime configuration;
+/// without it, edition 2024 captured `prefix`'s lifetime and a `String`
+/// prefix could not meet `with_op_resolver`'s `'static` bound.
 pub fn build_rest_op_resolver_with_prefix(
     prefix: &str,
     routes: &'static [RouteTransportDescriptor],
-) -> impl Fn(&Request) -> OpAdmission + Send + Sync {
+) -> impl Fn(&Request) -> OpAdmission + Send + Sync + use<> {
     let prefix = mount_prefix::normalize(prefix);
     move |req: &Request| {
         let Some(matched) = req.extensions().get::<MatchedPath>() else {

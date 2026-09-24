@@ -3,8 +3,9 @@
 //! This crate is the `OpExecutor` [`docs/design/rpc-transport.md`][rpc] §4
 //! has specified since 2026-05-15 and [`docs/design/layering.md`][lay] §2
 //! has named as the one layer that did not exist. ADR 0015 (accepted,
-//! amended 2026-09-03) settles building it; this is slice 1, which moves
-//! **idempotency admission only** — see "Scope" below.
+//! amended 2026-09-03) settles building it, one concern per slice. Slices
+//! 1 and 2 are here: **idempotency and rate-limit admission** — see
+//! "Scope" below.
 //!
 //! [rpc]: https://github.com/cratestack/cratestack/blob/main/docs/design/rpc-transport.md
 //! [lay]: https://github.com/cratestack/cratestack/blob/main/docs/design/layering.md
