@@ -121,7 +121,7 @@ impl<T: McpTools, A: AuthProvider> StreamableHttpServer<T, A> {
             .with_stateless_protocol_metadata_required(true)
             .with_max_request_body_bytes(MAX_BODY_BYTES)
             .with_allowed_hosts(hosts)
-            .with_allowed_origins(origins.raw().to_vec())
+            .with_allowed_origins(origins.for_rmcp())
             .enforce_origin_validation();
         let inner = rmcp::transport::StreamableHttpService::new(
             move || Ok(Arc::clone(&server)),

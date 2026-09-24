@@ -47,11 +47,7 @@ fn parse(value: &str) -> Option<Origin> {
     if !bare || authority.host().is_empty() {
         return None;
     }
-    let port = authority.port_u16().or(match scheme.as_str() {
-        "http" | "ws" => Some(80),
-        "https" | "wss" => Some(443),
-        _ => None,
-    });
+    let port = authority.port_u16().or(default_port(&scheme));
     Some(Origin::Tuple {
         scheme,
         host: authority.host().to_ascii_lowercase(),
@@ -59,11 +55,35 @@ fn parse(value: &str) -> Option<Origin> {
     })
 }
 
+fn default_port(scheme: &str) -> Option<u16> {
+    match scheme {
+        "http" | "ws" => Some(80),
+        "https" | "wss" => Some(443),
+        _ => None,
+    }
+}
+
+/// An entry as `rmcp`'s copy of the check needs it: without a default
+/// port. `rmcp` compares an entry's explicit port with the one the `Origin`
+/// literally carries, and a browser never writes a default port, so a
+/// listed `https://h:443` would refuse every browser request from
+/// `https://h` after this crate's check had admitted it. Without a port,
+/// `rmcp` admits the host on any port; the exact check has already run.
+fn for_rmcp(origin: &Origin) -> String {
+    match origin {
+        Origin::Null => "null".to_owned(),
+        Origin::Tuple { scheme, host, port } => match port {
+            Some(port) if Some(*port) != default_port(scheme) => {
+                format!("{scheme}://{host}:{port}")
+            }
+            _ => format!("{scheme}://{host}"),
+        },
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct AllowedOrigins {
     parsed: Vec<Origin>,
-    /// The entries as given, for `rmcp`'s own copy of the check.
-    raw: Vec<String>,
 }
 
 impl AllowedOrigins {
@@ -75,11 +95,12 @@ impl AllowedOrigins {
             .iter()
             .map(|entry| parse(entry).ok_or_else(|| HttpConfigError::InvalidOrigin(entry.clone())))
             .collect::<Result<_, _>>()?;
-        Ok(Self { parsed, raw })
+        Ok(Self { parsed })
     }
 
-    pub(crate) fn raw(&self) -> &[String] {
-        &self.raw
+    /// The list for `rmcp`'s own check (see [`for_rmcp`]).
+    pub(crate) fn for_rmcp(&self) -> Vec<String> {
+        self.parsed.iter().map(for_rmcp).collect()
     }
 
     /// `true` when the request may proceed: no `Origin`, or exactly one
