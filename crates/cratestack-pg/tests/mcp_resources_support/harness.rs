@@ -28,6 +28,10 @@ pub fn u1_visible_posts() -> Vec<i64> {
     (1..=POSTS).filter(|id| u1_may_read(*id)).collect()
 }
 
+/// Text that exists only in hidden or `@server_only` data. No MCP answer
+/// may contain any of it.
+pub const NEVER_SENT: [&str; 4] = ["do not leak", "do-not-leak", "author two", "passwordHash"];
+
 pub fn user(id: &str) -> CratestackContext {
     CratestackContext::authenticated([("id".to_owned(), Value::String(id.to_owned()))])
 }
@@ -35,12 +39,22 @@ pub fn user(id: &str) -> CratestackContext {
 pub async fn seeded() -> Option<(pg::TestPg, Cratestack)> {
     let test_pg = pg::connect_or_skip().await?;
     for statement in [
-        "DROP TABLE IF EXISTS mcp_res_posts, mcp_res_notes",
+        "DROP TABLE IF EXISTS mcp_res_posts, mcp_res_notes, mcp_res_authors",
         "CREATE TABLE mcp_res_posts (id BIGINT PRIMARY KEY, author_id TEXT NOT NULL, \
          title TEXT NOT NULL, published BOOLEAN NOT NULL, secret_note TEXT NOT NULL)",
+        // Inserted in a scrambled order, so the heap order a query with no
+        // `ORDER BY` returns is not id order: a page that lost its
+        // primary-key sort fails on the rows it returns, not only on the
+        // SQL text `paging.rs` quotes.
         "INSERT INTO mcp_res_posts (id, author_id, title, published, secret_note) \
          SELECT g, CASE WHEN g % 2 = 0 THEN 'u-1' ELSE 'u-2' END, 'post number ' || g, \
-         g % 3 <> 0, 'do not leak ' || g FROM generate_series(1, 260) AS g",
+         g % 3 <> 0, 'do not leak ' || g FROM generate_series(1, 260) AS g \
+         ORDER BY md5(g::text)",
+        "CREATE TABLE mcp_res_authors (id TEXT PRIMARY KEY, name TEXT NOT NULL, \
+         password_hash TEXT NOT NULL)",
+        "INSERT INTO mcp_res_authors (id, name, password_hash) VALUES \
+         ('u-1', 'author one', 'hash-u-1-do-not-leak'), \
+         ('u-2', 'author two', 'hash-u-2-do-not-leak')",
         "CREATE TABLE mcp_res_notes (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, body TEXT NOT NULL)",
         // Notes `n-001..=n-030` belong to `u-1`, `n-031..=n-035` to `u-2`.
         "INSERT INTO mcp_res_notes (id, owner_id, body) \

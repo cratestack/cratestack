@@ -14,7 +14,11 @@
 //!   lower), a tampered cursor is `-32602`, and the page SQL filters before
 //!   it limits, quoted from sqlx's own statement log (`mcp_resources_support/paging.rs`);
 //! - `@server_only` never reaches the output, on a model that also has a
-//!   `@computed` field (`parity.rs`).
+//!   `@computed` field (`parity.rs`);
+//! - odd ids, unannotated models and near-miss URIs answer exactly like a
+//!   missing row; a record names no relation (its author is hidden and has
+//!   a `@server_only` field); and hidden rows promise no further page
+//!   (`mcp_resources_support/adversarial.rs`).
 //!
 //! Gated `required-features = ["mcp"]`. Run with a database and
 //! `CRATESTACK_REQUIRE_DB=1` — `just test-ci-db-mcp` does — or a missing
@@ -24,7 +28,7 @@
 mod mcp_resources_support;
 mod support;
 
-use mcp_resources_support::{harness, paging, parity};
+use mcp_resources_support::{adversarial, harness, paging, parity};
 
 use cratestack::include_server_schema;
 
@@ -47,4 +51,7 @@ async fn mcp_resources_see_exactly_what_rest_sees() {
     paging::page_sizes_follow_q3(&db).await;
     paging::a_tampered_cursor_is_invalid_params(&db).await;
     paging::the_page_query_filters_before_it_limits(&db).await;
+    adversarial::odd_uris_answer_exactly_like_a_missing_row(&db).await;
+    adversarial::a_record_carries_no_relation(&db).await;
+    adversarial::hidden_rows_promise_no_further_page(&db).await;
 }

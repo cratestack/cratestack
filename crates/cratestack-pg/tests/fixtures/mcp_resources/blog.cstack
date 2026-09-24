@@ -30,9 +30,23 @@ model McpResPost {
   published Boolean
   secretNote String @server_only
   excerpt String @computed
+  author McpResAuthor @relation(fields:[authorId],references:[id])
 
   @@allow("read", published || authorId == auth().id)
   @@mcp(resource: "posts")
+}
+
+// Not exposed. A post's author is hidden from every caller but itself and
+// carries a `@server_only` field: a resource record must name neither,
+// since REST's default read includes no relation (cratestack#1040 review).
+// Its model name, table name and any segment-like spelling of either must
+// not resolve as a resource.
+model McpResAuthor {
+  id String @id
+  name String
+  passwordHash String @server_only
+
+  @@allow("read", auth() != null && auth().id == id)
 }
 
 // A lowered page ceiling (ADR 0002 Q3).
