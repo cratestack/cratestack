@@ -1,7 +1,9 @@
 //! The responses the guard gives before `rmcp` is reached: 403, 405, 401,
-//! 413 and a provider's 5xx.
+//! 413, a provider's 5xx, and 400 `-32020` for a repeated mirrored header
+//! (`strict.rs`).
 //!
-//! Plain HTTP, not JSON-RPC. None of these requests reached MCP handling,
+//! Plain HTTP, not JSON-RPC, except the `-32020`, which MCP requires to be
+//! a JSON-RPC error. None of these requests reached MCP handling,
 //! and a 401 must be readable by a client that knows only RFC 6750. The
 //! body is REST's error envelope (`{"code","message","details":null}`), so
 //! an operator sees one shape across REST, RPC and MCP, and a provider's
@@ -15,6 +17,8 @@ use http::header::{ALLOW, CONTENT_TYPE, WWW_AUTHENTICATE};
 use http::{HeaderValue, Response, StatusCode};
 use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
+use rmcp::ErrorData;
+use rmcp::model::JsonRpcError;
 
 /// The response type `rmcp`'s service answers with, so the guard's own
 /// replies and `rmcp`'s share one type.
@@ -83,5 +87,20 @@ pub(crate) fn challenge(status: StatusCode, header: HeaderValue) -> Reply {
     };
     let mut reply = envelope(status, code, message);
     reply.headers_mut().insert(WWW_AUTHENTICATE, header);
+    reply
+}
+
+/// 400 with a JSON-RPC `-32020` (`HeaderMismatch`) error, the answer MCP
+/// requires for a mirrored header that disagrees with the body. The same
+/// shape `rmcp` gives for its own mismatches; no `id`, since the guard does
+/// not parse the body.
+pub(crate) fn header_mismatch(message: String) -> Reply {
+    let error = JsonRpcError::new(None, ErrorData::header_mismatch(message, None));
+    let body = serde_json::to_vec(&error).unwrap_or_default();
+    let mut reply = Response::new(Full::new(Bytes::from(body)).boxed());
+    *reply.status_mut() = StatusCode::BAD_REQUEST;
+    reply
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
     reply
 }

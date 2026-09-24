@@ -9,6 +9,7 @@
 //! no bearer token                    -> 401 + WWW-Authenticate
 //! body over 4 MiB                    -> 413
 //! AuthProvider refuses / no identity -> 401 (403, 5xx) + WWW-Authenticate
+//! a mirrored MCP header sent twice   -> 400 / -32020 (strict.rs)
 //! Authorization removed, caller attached to the request, then rmcp:
 //!   Host, Origin again, MCP-Protocol-Version / Mcp-Method / Mcp-Name
 //!   against the body (400 / -32020), then the handler
@@ -41,6 +42,7 @@ use super::caller::hand_over;
 use super::origin::AllowedOrigins;
 use super::reply::{self, Reply};
 use super::resource::Resolved;
+use super::strict;
 use crate::server::McpServer;
 use crate::table::McpTools;
 
@@ -109,6 +111,9 @@ impl<T: McpTools, A: AuthProvider> Shared<T, A> {
             Ok(caller) => caller,
             Err(refusal) => return *refusal,
         };
+        if let Some(name) = strict::repeated_mirror(&parts.headers) {
+            return reply::header_mismatch(format!("the {name} header appears more than once"));
+        }
 
         hand_over(&mut parts, caller);
         self.inner

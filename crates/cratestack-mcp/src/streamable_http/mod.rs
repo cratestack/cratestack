@@ -16,6 +16,8 @@
 //!   `metadata.rs`). `rmcp` has none on the server side: a 401 with
 //!   `WWW-Authenticate: Bearer resource_metadata="..."`, and RFC 9728
 //!   metadata naming the authorization servers.
+//! - **A request shape `rmcp` would serve** (`strict.rs`): a header MCP
+//!   mirrors from the body, sent twice.
 //! - **The caller's identity** (`caller.rs`). The provider's
 //!   `CratestackContext` travels to the handler in the request's
 //!   extensions, and every tool call runs under exactly that context,
@@ -66,6 +68,7 @@ mod metadata;
 mod origin;
 mod reply;
 mod resource;
+mod strict;
 
 pub use builder::{StreamableHttp, StreamableHttpServer};
 pub use error::HttpConfigError;
