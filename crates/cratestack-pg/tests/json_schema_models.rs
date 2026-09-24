@@ -157,18 +157,27 @@ fn a_model_argument_rejects_wrong_shapes() {
 }
 
 /// A `@server_only` field is left out of the schema so its name is never
-/// advertised. It is only `skip_serializing`, so serde still parses it on
-/// input, and a wrong-typed one fails there while the schema (which
-/// allows unknown properties, as serde does) lets it through. Pinned so
-/// a change on either side is noticed.
+/// advertised, and since #1057 serde skips it on input too, so schema and
+/// serde agree: a client-sent value, of any type, is accepted and dropped.
+/// (Before #1057 serde still parsed the key, so a wrong-typed value failed
+/// deserialization while the schema let it through — the gap this test
+/// used to pin.)
 #[test]
-fn a_wrong_typed_server_only_field_is_a_known_gap() {
+fn a_server_only_field_on_input_is_ignored_by_schema_and_serde_alike() {
     let import = validator("importPost", false);
-    let mut post = serde_json::to_value(&posts()[0]).unwrap();
-    post.as_object_mut()
-        .unwrap()
-        .insert("secret".to_owned(), json!(5));
-    let args = json!({ "post": post });
-    assert!(import.is_valid(&args));
-    assert!(serde_json::from_value::<import_post::Args>(args).is_err());
+    for sent in [json!(5), json!("from-agent")] {
+        let mut post = serde_json::to_value(&posts()[0]).unwrap();
+        post.as_object_mut()
+            .unwrap()
+            .insert("secret".to_owned(), sent.clone());
+        let args = json!({ "post": post });
+        assert!(import.is_valid(&args), "schema rejected `secret` = {sent}");
+        let decoded = serde_json::from_value::<import_post::Args>(args)
+            .unwrap_or_else(|error| panic!("serde rejected `secret` = {sent}: {error}"));
+        assert_eq!(
+            decoded.post.secret,
+            String::default(),
+            "a client-sent `secret` = {sent} reached the procedure"
+        );
+    }
 }
