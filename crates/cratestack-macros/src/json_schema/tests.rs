@@ -89,21 +89,30 @@ fn spatial_fields_are_refused() {
 }
 
 #[test]
-fn computed_bearing_output_is_refused() {
-    // Only the output side can be tested: the parser already rejects a
-    // computed-bearing type as procedure input.
+fn computed_fields_are_advertised() {
+    // ADR 0002 Q7: MCP dispatch composes computed fields the way REST does,
+    // so the output schema lists them — here nested one `type` deep, and
+    // optional. Only the output side can be tested: the parser already
+    // rejects a computed-bearing type as procedure input.
     let schema = parse(
-        "type Widget {\n  label String\n  slug String @computed\n}\n\
+        "type Widget {\n  label String\n  slug String @computed\n  \
+         badge String? @computed\n}\n\
          type Shelf {\n  widgets Widget[]\n}\n\
          procedure get(label: String): Shelf\n  @allow(true)",
     );
-    let error = procedure_output_schema(&schema, &schema.procedures[0], None).unwrap_err();
-    assert_eq!(refused_type(&error), "Widget");
-    assert!(
-        error
-            .to_string()
-            .ends_with("field `Shelf.widgets` → field `Widget.slug`)")
+    let output = procedure_output_schema(&schema, &schema.procedures[0], None)
+        .expect("a computed-bearing output has a schema since phase 3")
+        .expect("`Shelf` is an object");
+    let widget = &output["$defs"]["Widget"];
+    assert_eq!(
+        widget["properties"]["slug"],
+        serde_json::json!({ "type": "string" })
     );
+    assert!(
+        widget["properties"]["badge"]["anyOf"].is_array(),
+        "{widget}"
+    );
+    assert_eq!(widget["required"], serde_json::json!(["label", "slug"]));
 }
 
 #[test]

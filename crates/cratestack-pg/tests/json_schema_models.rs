@@ -4,6 +4,11 @@
 //! coverage lives in `cratestack-api`'s `tests/json_schema_*.rs`; this
 //! suite needs `db = Postgres`, the only mode with models. No database is
 //! touched: everything here is serde and schema validation.
+//!
+//! The schemas come from the generated MCP tool table
+//! (`cratestack_schema::mcp::TOOLS`, cratestack#1038), so this checks what
+//! an agent is sent. Gated `required-features = ["mcp"]`; `just
+//! test-ci-host` runs it with the feature on.
 
 use cratestack::include_server_schema;
 use jsonschema::Validator;
@@ -15,20 +20,18 @@ include_server_schema!(
     decimal = RustDecimal
 );
 
-const SCHEMAS: &[(&str, Result<&str, &str>, Result<Option<&str>, &str>)] = cratestack_macros::__procedure_json_schemas!(
-    "tests/fixtures/json_schema_models.cstack",
-    decimal = RustDecimal
-);
-
 use cratestack_schema::procedures::{feed, fetch_post, import_post};
 use cratestack_schema::{Post, Visibility};
 
 fn schema(name: &str, output: bool) -> Value {
-    let (_, input_schema, output_schema) = SCHEMAS.iter().find(|(n, _, _)| *n == name).unwrap();
+    let tool = cratestack_schema::mcp::TOOLS
+        .iter()
+        .find(|tool| tool.name == name)
+        .unwrap();
     let text = if output {
-        output_schema.unwrap().expect("an object output")
+        tool.output_schema.expect("an object output")
     } else {
-        input_schema.unwrap()
+        tool.input_schema
     };
     serde_json::from_str(text).unwrap()
 }

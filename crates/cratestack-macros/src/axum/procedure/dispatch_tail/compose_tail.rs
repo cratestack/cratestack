@@ -23,7 +23,7 @@ use crate::computed::{ProcedureOutputComposition, compose_fn_ident};
 /// time propagation reaches the `Err` arm the encoder below already
 /// knows how to map to a response, so a compose failure gets the exact
 /// same status/tracing treatment as any other procedure error.
-pub(super) fn compose_tail_tokens(
+pub(crate) fn compose_tail_tokens(
     composition: Option<ProcedureOutputComposition>,
 ) -> proc_macro2::TokenStream {
     let Some(composition) = composition else {

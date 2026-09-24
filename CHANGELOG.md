@@ -2,6 +2,87 @@
 
 ## Unreleased
 
+### MCP phase 3: `@mcp(tool)` procedures are served over stdio, through the same policy check as REST and RPC (#1038)
+
+**A schema's `@mcp(tool)` procedures can now be served to agents.** Turn on the
+new `mcp` feature of `cratestack-pg` or `cratestack-api` (ADR 0002 D3;
+`cratestack-sqlite` and `cratestack-client` have none), and
+`include_server_schema!` generates `cratestack_schema::mcp` instead of
+refusing the schema. Serve it over stdio with the caller's identity, which is a
+required argument with no default (Q1):
+
+```rust
+let ctx = cratestack::SystemContext::for_service("support-agent").into_context();
+// or: cratestack::CratestackContext::authenticated(claims_from_a_verified_token)
+let tools = cratestack_schema::mcp::tools(db, registry, resolvers);
+cratestack::mcp::StdioServer::new(tools, ctx)?.serve().await?;
+```
+
+- **Policy.** Every tool call goes through the procedure's generated
+  `invoke_with_db`, so `@allow`/`@deny` and delegated `@authorize(...)` run
+  before the implementation, and the implementation's ORM calls carry
+  `@@allow` in their SQL. The generated dispatch cannot skip the check: the
+  registry method needs the `Authorized` witness (#512).
+- **Protocol.** MCP `2026-07-28` only, pinned (`rmcp` 3.4's `LATEST` is still
+  `2025-11-25`): `server/discover` and `tools/list` answer, a legacy
+  `initialize` is refused. `tools/list` is the annotated tools in declaration
+  order with their JSON Schemas, `readOnlyHint` (`procedure` vs `mutation
+  procedure`) and, on a mutation, `idempotentHint: false`; it is not filtered
+  by the caller's authorization. A `@no_idempotency` mutation never claims
+  `idempotentHint: true` although its `OpDescriptor` is
+  `idempotent_by_default`: it opted out of reservations, so a retry repeats
+  its effects (this amends ADR 0002 § Tools, which read the hint from that
+  flag).
+- **Errors.** An unknown tool is JSON-RPC `-32602`. Everything after that is an
+  `isError: true` result whose text is REST's error envelope (`code`,
+  `message`), so a 5xx detail stays in the log. The one addition over REST: the
+  message names an argument that fails to decode (for example `args.amount`),
+  so an agent can correct itself.
+- **Admission (L3).** Opt-in, application-built, as for `cratestack-axum`'s
+  layers: `StdioServer::with_executor(OpExecutor::new(store, ttl)
+  .with_rate_limit(...))`. A call may carry
+  `_meta["dev.cratestack/idempotencyKey"]` (Q6); with a store configured, a
+  repeat replays the recorded result (marked
+  `_meta["dev.cratestack/idempotencyReplayed"]`) instead of running again.
+  Without a key nothing is reserved. Both the idempotency namespace and the
+  rate-limit bucket are `mcp:<principal id>`, from the context's `id` claim (a
+  string or an integer); a context with no such claim is refused
+  (`PRECONDITION_FAILED`) for a keyed or rate-limited call. One rate-limit
+  store lookup is bounded at 500ms (`DEFAULT_STORE_TIMEOUT`, as on HTTP; not
+  yet tunable over MCP), and what a failing store does is the
+  `StoreErrorPolicy` you pass to `StdioServer::with_store_error_policy`. The
+  default is HTTP's: serve through an unreachable store (`Unavailable`,
+  including an elapsed lookup), refuse any other failure. **If you chose
+  `StoreErrorPolicy::Deny` on HTTP, pass it here too** — the two transports
+  are configured separately.
+- **`StoreErrorPolicy` moved to `cratestack-exec` (L3),** with
+  `DEFAULT_STORE_TIMEOUT`, so HTTP and MCP take one type.
+  `cratestack_axum::ratelimit::{StoreErrorPolicy, DEFAULT_STORE_TIMEOUT}`
+  re-export them, so existing code compiles unchanged; both are also
+  re-exported as `cratestack::mcp::{StoreErrorPolicy, DEFAULT_STORE_TIMEOUT}`.
+  `StoreErrorPolicy::permits` — the rule both transports apply — is now public.
+- **stdio.** Only MCP messages go to stdout; point your `tracing` subscriber at
+  stderr. The server exits when stdin closes.
+- **`@computed` outputs (Q7)** are resolved by the same generated composition
+  as REST/RPC, and their `outputSchema` advertises the computed fields. The
+  phase 2 generator's refusal of those outputs is lifted.
+
+New compile errors: `@mcp(tool)` on a `@stream` procedure (Q8, a parser rule
+the LSP reports too), and a tool whose arguments or object output have no
+faithful JSON Schema (`Json`, `FindMany`, `Vector`, `Geography`, `Geometry`).
+Phase 1's gate now fires only when the `mcp` feature is off, and says to turn
+it on. `@@mcp(resource: ...)` and `resources` in `expose` stay a compile error
+even with the feature, until resources ship (phase 5); Streamable HTTP is
+phase 4.
+
+Also: `cratestack-exec` gains `OpExecutor::idempotency_applies`, the pure
+twin of `rate_limit_applies`. The `#[doc(hidden)]`
+`cratestack_macros::__procedure_json_schemas!` test probe from phase 2 is
+removed; the generated `cratestack_schema::mcp::TOOLS` carries the same
+schemas. The transport-parity rule (CLAUDE.md, CONTRIBUTING.md, AGENTS.md)
+now states that MCP is exempt (ADR 0002 D5): it serves an opt-in subset to
+agents, not the application API.
+
 ### Security: a client could set a `@server_only` field through a procedure argument (#1051)
 
 A procedure whose argument names a model, directly (`procedure p(account: Account)`)
@@ -39,7 +120,9 @@ cratestack#1036 the block's body was kept as raw text in
 
 - the server macro rejects any schema that declares an MCP surface with a
   `compile_error!` naming cratestack#1033, until the MCP runtime lands (ADR 0002
-  Q4 — no release may carry an `@mcp` that parses and serves nothing);
+  Q4 — no release may carry an `@mcp` that parses and serves nothing). Phase 3
+  (#1038, above) narrowed this: tools compile with the `mcp` feature on, and the
+  error now asks for that feature;
 - the embedded macro rejects it permanently, citing ADR 0002 D3 (the embedded
   role enforces no policy);
 - `include_client_schema!` accepts and ignores it. A client consumes another

@@ -42,7 +42,9 @@ Two will otherwise cost you a review round-trip:
   (Rust/Dart/TS, plus the swr/riverpod layers). RPC dispatch synthesizes a URL query string and
   re-enters the REST parsing path (`crates/cratestack-axum/src/rpc/synthesize.rs`), so this is
   usually one frame field plus one `pairs.push`. Shipping REST-only has taken three follow-up PRs to
-  correct before; that's why the rule exists.
+  correct before; that's why the rule exists. **MCP is exempt** (ADR 0002 D5): it serves an opt-in
+  subset of procedures to agents, not the application API, so a new feature reaches MCP only when
+  someone deliberately extends MCP.
 - `unsafe_code = "forbid"` workspace-wide. The handful of FFI-boundary crates that override it each
   document why.
 - Rust sources use `snake_case` filenames; everything else is `kebab-case`.

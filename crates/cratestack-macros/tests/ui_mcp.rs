@@ -1,15 +1,23 @@
-//! Compile-fail UI tests for the MCP release gate (`include/mcp_gate.rs`,
-//! ADR 0002 Q4/D3, cratestack#1036).
+//! Compile-fail UI tests for the MCP gate (`include/mcp_gate.rs`, ADR 0002
+//! Q4/Q8/D3; cratestack#1036, cratestack#1038).
 //!
-//! What these pin is that a valid MCP schema cannot build today:
+//! This crate's tests build *without* its `mcp` feature (no dev-dependency
+//! turns it on), so what these pin is the feature-off behaviour, plus the
+//! refusals that hold whatever the feature state:
 //!
-//! - `include_server_schema!` fails naming cratestack#1033, for both server
-//!   shapes (`db = Postgres` with tools and resources, `db = None` with tools
-//!   only). Phase 3 removes this gate and must replace these cases with
-//!   passing ones — the snapshot changing is the signal, not an accident.
+//! - `include_server_schema!` without the `mcp` feature fails asking for it,
+//!   for both server shapes (`db = Postgres` with tools and resources,
+//!   `db = None` with tools only). Phase 1's message named cratestack#1033
+//!   instead; phase 3 made the schemas servable, so the message changed.
+//!   The feature-on side is not reachable from here: it is what the
+//!   facades' `mcp` suites (`cratestack-api`'s `tests/mcp_*.rs`) compile,
+//!   and `include/mcp_gate/tests.rs` drives the decision in both states.
 //! - `include_embedded_schema!` fails citing ADR 0002 D3, permanently.
+//! - `@mcp(tool)` on a `@stream` procedure fails naming Q8 (a parser rule).
+//! - `@mcp(tool)` on a procedure taking `Json` fails naming the missing
+//!   JSON Schema mapping, before the feature check.
 //!
-//! The third role, `include_client_schema!`, *accepts* the same schema; that
+//! The third role, `include_client_schema!`, *accepts* an MCP schema; that
 //! is a pass case, so it lives in `cratestack-client`'s
 //! `tests/mcp_declarations_are_ignored.rs`, where the generated client can
 //! actually be exercised.
@@ -49,6 +57,16 @@ fn mcp_release_gate_compile_fail() {
             "mcp_rejected_on_embedded.rs",
             "tests/fixtures/mcp_embedded_rejected.cstack",
             "include_embedded_schema!({staged})",
+        ),
+        (
+            "mcp_stream_tool_refused.rs",
+            "tests/fixtures/mcp_stream_tool.cstack",
+            "include_server_schema!({staged}, db = None)",
+        ),
+        (
+            "mcp_json_tool_refused.rs",
+            "tests/fixtures/mcp_json_tool.cstack",
+            "include_server_schema!({staged}, db = None)",
         ),
     ];
     for (file_name, fixture, call) in cases {

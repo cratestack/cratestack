@@ -20,6 +20,7 @@ mod names;
 mod placement;
 mod policy;
 mod scope;
+mod stream;
 
 use cratestack_core::Schema;
 
@@ -37,6 +38,7 @@ pub(super) fn validate_mcp_collecting(schema: &Schema, errors: &mut Vec<SchemaEr
     names::resource_segments_are_unique(schema, errors);
     policy::resources_need_a_read_allow(schema, errors);
     policy::tools_need_an_allow(schema, errors);
+    stream::tools_are_not_streams(schema, errors);
     placement::no_mcp_on_fields(schema, errors);
     placement::no_mcp_on_views(schema, errors);
     inert::no_inert_mcp(schema, errors);

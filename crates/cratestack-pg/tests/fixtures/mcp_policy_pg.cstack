@@ -1,0 +1,45 @@
+// cratestack#1038 (MCP phase 3): the policy that only a database can
+// enforce, reached over MCP. `tests/mcp_policy_pg.rs` runs it against real
+// Postgres.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+mcp {
+  expose = [tools]
+}
+
+auth Caller {
+  id String
+  role String
+}
+
+// `McpNote`, so its table (`mcp_notes`) collides with nothing else in the
+// shared test database.
+model McpNote {
+  id String @id
+  ownerId String
+  title String
+
+  @@allow('read', auth() != null && auth().id == ownerId)
+  @@allow('update', auth() != null && auth().id == ownerId)
+}
+
+type NoteId {
+  id String
+}
+
+// Reads through the ORM: `@@allow('read', ...)` is in the SQL, so a row
+// the caller may not read never reaches the implementation.
+procedure myNotes(tag: String): McpNote[]
+  @allow(auth() != null)
+  @mcp(tool)
+
+// Delegated: the caller must be allowed to update the named row before
+// the implementation runs.
+mutation procedure archiveNote(args: NoteId): Boolean
+  @allow(auth() != null)
+  @authorize(McpNote, update, args.id)
+  @mcp(tool)

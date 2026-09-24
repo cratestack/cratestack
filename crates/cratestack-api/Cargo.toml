@@ -50,6 +50,7 @@ decimal-rust-decimal = [
     "cratestack-axum/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
     "cratestack-codec-json/decimal-rust-decimal",
+    "cratestack-mcp?/decimal-rust-decimal",
 ]
 # Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
 # (cratestack#495).
@@ -63,6 +64,7 @@ decimal-bigdecimal = [
     "cratestack-macros/decimal-bigdecimal",
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json/decimal-bigdecimal",
+    "cratestack-mcp?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg` for rationale. On by default so `include_client_schema!`
@@ -75,6 +77,15 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# Serves the schema's `@mcp(tool)` procedures to agents over MCP (ADR 0002
+# D3, cratestack#1038) — tools only: a `db = None` schema has no models, so
+# it has no resources to serve. Pulls `cratestack-mcp` (and through it
+# `rmcp`) and forwards `cratestack-macros/mcp`, the switch that makes
+# `include_server_schema!` generate `cratestack_schema::mcp` instead of
+# refusing the schema. Off by default, and with it off `rmcp` is absent
+# from this crate's normal dependency graph (CI's `facade-disjointness`
+# job asserts it). Still no `cratestack-sqlx` under any feature.
+mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
 
 [dependencies]
 async-stream.workspace = true
@@ -83,6 +94,7 @@ cratestack-axum.workspace = true
 cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
 cratestack-macros.workspace = true
+cratestack-mcp = { workspace = true, optional = true }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true
@@ -140,14 +152,37 @@ serde_json.workspace = true
 # `net` on top of the workspace default (`macros`, `rt-multi-thread`): the
 # real-`TcpListener` test above still needs `tokio::net::TcpListener` to
 # bind and serve through — only the *client* side moved to `reqwest`.
-tokio = { workspace = true, features = ["net"] }
+# `io-util`/`time`: the MCP suites (`tests/mcp_*.rs`, cratestack#1038) drive
+# the stdio server over an in-memory `tokio::io::duplex` with a timeout.
+tokio = { workspace = true, features = ["net", "io-util", "time"] }
 tower.workspace = true
 tracing-subscriber.workspace = true
 
 # cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
 # round-trip suite. The default test run never selects that backend, so
-# `just test-ci-host` runs this target with the feature on explicitly.
+# `just test-ci-host` runs this target with the features on explicitly.
+# `mcp` since cratestack#1038: the schemas are read from the generated MCP
+# tool table, which only exists with the feature.
 [[test]]
 name = "json_schema_bigdecimal"
 path = "tests/json_schema_bigdecimal.rs"
-required-features = ["decimal-bigdecimal"]
+required-features = ["decimal-bigdecimal", "mcp"]
+
+# The rest of the MCP suites (cratestack#1037, cratestack#1038) need the
+# generated `cratestack_schema::mcp` module, so they compile only with the
+# `mcp` feature. `just test-ci-host` runs this crate with it on; without
+# it these targets are skipped by Cargo, not compiled to zero tests.
+[[test]]
+name = "json_schema_round_trip"
+path = "tests/json_schema_round_trip.rs"
+required-features = ["mcp"]
+
+[[test]]
+name = "mcp_tools"
+path = "tests/mcp_tools.rs"
+required-features = ["mcp"]
+
+[[test]]
+name = "mcp_admission"
+path = "tests/mcp_admission.rs"
+required-features = ["mcp"]

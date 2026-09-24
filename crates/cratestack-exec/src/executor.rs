@@ -7,7 +7,7 @@ use cratestack_core::idempotency_record::ReservationOutcome;
 use cratestack_core::{CratestackError, IdempotencyStore};
 
 use crate::admission::Admission;
-use crate::input::OpInput;
+use crate::input::{OpAdmission, OpInput};
 use crate::rate_limit::RateLimiter;
 
 /// Runs the admission half of an operation, independently of how the
@@ -58,6 +58,23 @@ impl OpExecutor {
             ttl,
             rate_limit: None,
         }
+    }
+
+    /// Whether [`Self::admit`] could take a reservation for `op` at all:
+    /// a store is wired and the op participates. It says nothing about a
+    /// key, which is per call.
+    ///
+    /// Pure, and the idempotency twin of
+    /// [`rate_limit_applies`](Self::rate_limit_applies), for the same
+    /// reason: deriving the principal namespace a reservation is scoped to
+    /// is the transport's job and can itself refuse the call (no
+    /// verifiable identity, cratestack#416). A transport that holds its
+    /// executor unconditionally — MCP does, where HTTP only mounts
+    /// `IdempotencyLayer` when a store exists — asks this first, so a
+    /// service with no store never refuses a keyed call for want of a
+    /// namespace it would never use.
+    pub fn idempotency_applies(&self, op: &OpAdmission) -> bool {
+        self.idempotency.is_some() && !op.idempotent_by_default
     }
 
     /// Decide whether this call may run, and whether it owes a

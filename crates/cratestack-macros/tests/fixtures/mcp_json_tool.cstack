@@ -1,0 +1,18 @@
+// cratestack#1038 (ADR 0002 § Tools): `Json` has no faithful JSON Schema
+// (serde accepts any value for it), so a tool taking one is refused rather
+// than advertised as `{}`. Checked before the `mcp` feature gate, so the
+// author hears about the unservable tool first. Replaces phase 2's
+// `a_json_argument_is_refused_through_macro_expansion`, which read the same
+// refusal out of the retired `__procedure_json_schemas!` probe as data.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+procedure stash(payload: Json): Boolean
+  @allow(true)
+  @mcp(tool)

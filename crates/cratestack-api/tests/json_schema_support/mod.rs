@@ -1,12 +1,19 @@
 //! Shared body of the JSON Schema round-trip suites (cratestack#1037, MCP
 //! phase 2): `json_schema_round_trip.rs` (`decimal = RustDecimal`) and
 //! `json_schema_bigdecimal.rs` (`decimal = BigDecimal`). Each suite
-//! expands `tests/fixtures/json_schema_round_trip.cstack` twice, once with
-//! the real `include_server_schema!` (the generated types) and once with
-//! `cratestack_macros::__procedure_json_schemas!` (the generated schemas),
-//! then defines the backend-specific [`crate::DECIMAL`] cases and pulls in
-//! this module. The tests here never construct the wire shape by hand:
-//! every positive value is a generated type run through `serde_json`.
+//! expands `tests/fixtures/json_schema_round_trip.cstack` with the real
+//! `include_server_schema!` under the `mcp` feature, which yields both the
+//! generated types and, in `cratestack_schema::mcp::TOOLS`, the generated
+//! schemas (phase 3 replaced phase 2's hidden `__procedure_json_schemas!`
+//! probe with that table, cratestack#1038). Each suite then defines the
+//! backend-specific [`crate::DECIMAL`] cases and pulls in this module. The
+//! tests here never construct the wire shape by hand: every positive value
+//! is a generated type run through `serde_json`.
+//!
+//! `@computed` outputs (ADR 0002 Q7) cannot be covered here: their wire
+//! value only exists after response composition, which needs a resolver
+//! and a dispatch. `tests/mcp_tools.rs` round-trips one through a real
+//! `tools/call` instead.
 //!
 //! Validation uses `jsonschema`'s 2020-12 defaults, where `format` is an
 //! annotation. That is what an MCP client that doesn't opt in to format
@@ -44,16 +51,17 @@ pub struct Tool {
     pub output: Option<Validator>,
 }
 
+/// The tool's schemas as the generated MCP table carries them. A tool the
+/// generator refused would not be in the table at all: it is a compile
+/// error since phase 3 (`cratestack-macros`' `tests/ui_mcp.rs`).
 pub fn tool(name: &str) -> Tool {
-    let (_, input, output) = crate::SCHEMAS
+    let descriptor = crate::cratestack_schema::mcp::TOOLS
         .iter()
-        .find(|(candidate, _, _)| *candidate == name)
-        .unwrap_or_else(|| panic!("no procedure `{name}` in the fixture"));
-    let input = input.unwrap_or_else(|error| panic!("`{name}` input refused: {error}"));
-    let output = output.unwrap_or_else(|error| panic!("`{name}` output refused: {error}"));
+        .find(|descriptor| descriptor.name == name)
+        .unwrap_or_else(|| panic!("no tool `{name}` in the fixture"));
     Tool {
-        input: compile(name, input),
-        output: output.map(|output| compile(name, output)),
+        input: compile(name, descriptor.input_schema),
+        output: descriptor.output_schema.map(|output| compile(name, output)),
     }
 }
 

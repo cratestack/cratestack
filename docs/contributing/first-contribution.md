@@ -91,7 +91,9 @@ TypeScript clients. This is cheap by design: RPC dispatch synthesizes a URL quer
 string and re-enters the REST parsing path
 (`crates/cratestack-axum/src/rpc/synthesize.rs`), so the server side is usually
 one struct field and one `pairs.push`. Shipping REST-only has cost us three
-follow-up PRs before; the rule exists because of that.
+follow-up PRs before; the rule exists because of that. MCP is the deliberate
+exception (ADR 0002 D5): it serves agents an opt-in subset of procedures, so your
+feature does not have to reach it.
 
 Add a test. If you fixed a bug, the honest test is one that **fails before your
 fix and passes after**. Confirm that by stashing your fix and watching it go red —

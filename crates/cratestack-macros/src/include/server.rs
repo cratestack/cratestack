@@ -5,6 +5,7 @@
 mod axum_dtos;
 mod axum_module;
 mod collect;
+mod mcp_module;
 mod query_guard;
 mod rpc_module;
 mod runtime;
@@ -30,9 +31,10 @@ pub(super) fn compose_server_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
-    if let Err(error) = super::mcp_gate::guard_server_mcp(schema_path, &schema) {
-        return error;
-    }
+    let mcp_tools = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
+        Ok(tools) => tools,
+        Err(error) => return error,
+    };
     if let Err(error) =
         super::datasource_guard::guard_server_datasource_provider(schema_path, &schema, db)
     {
@@ -67,6 +69,12 @@ pub(super) fn compose_server_schema(
         };
 
         let axum_module = axum_module::build_axum_module(&collected, db);
+        // Empty unless the schema exposes tools (ADR 0002, cratestack#1038).
+        let mcp_module = mcp_module::build_mcp_module(
+            &mcp_tools,
+            schema.auth.is_some(),
+            &crate::computed::computed_bearing_names(&schema),
+        );
         let runtime_block = runtime::build_runtime_block(
             db,
             &collected.model_accessors,
@@ -343,6 +351,7 @@ pub(super) fn compose_server_schema(
                 pub const COMPUTED_FIELD_COUNT: usize = computed::FIELD_COUNT;
 
                 #axum_module
+                #mcp_module
 
                 #runtime_block
             }

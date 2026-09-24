@@ -128,3 +128,20 @@ fn rule_tool_needs_an_allow() {
         "@deny alone never allows"
     );
 }
+
+#[test]
+fn rule_tool_is_not_a_stream() {
+    // `getFeed` returns `Post[]`, so `@stream` alone is valid on it (the
+    // `validate_procedure_stream_attribute` arity rule passes); only the
+    // combination with `@mcp(tool)` is refused (ADR 0002 Q8).
+    let stream = "  @allow(auth() != null)\n  @stream\n  @mcp(tool)\n";
+    let source = edit("  @allow(auth() != null)\n  @mcp(tool)\n", stream);
+    let span = rejected(&source, "exposes a `@stream` procedure");
+    assert_eq!(span, "@mcp(tool)");
+    // `publishPost` is still a tool, so `expose = [tools]` stays used.
+    let without_tool = source.replacen("  @stream\n  @mcp(tool)\n", "  @stream\n", 1);
+    assert!(
+        crate::parse_schema(&without_tool).is_ok(),
+        "`@stream` on a procedure that is not a tool stays valid"
+    );
+}

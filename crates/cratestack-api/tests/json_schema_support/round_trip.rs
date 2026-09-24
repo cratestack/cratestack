@@ -111,16 +111,7 @@ fn a_scalar_return_has_no_output_schema() {
     );
 }
 
-#[test]
-fn a_json_argument_is_refused_through_macro_expansion() {
-    let (_, input, _) = crate::SCHEMAS
-        .iter()
-        .find(|(name, _, _)| *name == "stash")
-        .expect("fixture declares `stash`");
-    let error = input.expect_err("`Json` has no faithful mapping");
-    assert!(
-        error.starts_with("`Json` has no faithful JSON Schema mapping"),
-        "{error}"
-    );
-    assert!(error.contains("argument `payload`"), "{error}");
-}
+// `a_json_argument_is_refused_through_macro_expansion` used to live here,
+// reading the refusal out of phase 2's probe as data. Since phase 3 a
+// `Json` tool is a compile error, so the same check is a trybuild case:
+// `cratestack-macros`' `tests/ui_mcp.rs`, `mcp_json_tool_refused`.

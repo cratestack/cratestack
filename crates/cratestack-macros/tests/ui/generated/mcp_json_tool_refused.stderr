@@ -1,0 +1,5 @@
+error: `@mcp(tool)` on procedure `stash` cannot be exposed: its input has no JSON Schema. `Json` has no faithful JSON Schema mapping: it deserializes from every JSON value (`cratestack_core::Value`'s untagged visitor), so the only schema that matches serde is the permissive `{}` — which tells an agent nothing, and which this generator never emits (at procedure `stash` → argument `payload`). A type with no faithful JSON Schema mapping is refused rather than advertised as `{}` (ADR 0002 § Tools); remove `@mcp(tool)`, or change the input type.
+ --> tests/ui/generated/mcp_json_tool_refused.rs
+  |
+  | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-mcp-1036/mcp_json_tool.cstack", db = None);
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -54,10 +54,16 @@
 //!   [`OpExecutor::with_rate_limit`], [`OpExecutor::rate_limit_applies`],
 //!   [`OpExecutor::admit_rate_limit`]. The decision (is this op limited,
 //!   and what does an unidentified op get) and the store call live here;
-//!   key derivation, the lookup timeout, the store-error policy and the
-//!   rendered responses stay at the transport. See the `rate_limit`
-//!   module for why it answers with [`RateLimitAdmission`] rather than a
-//!   new [`Admission`] variant.
+//!   key derivation, enforcing the lookup timeout, applying the
+//!   store-error policy and the rendered responses stay at the transport.
+//!   See the `rate_limit` module for why it answers with
+//!   [`RateLimitAdmission`] rather than a new [`Admission`] variant.
+//! - **The store-error policy type** (cratestack#1038 decision,
+//!   2026-09-24) — [`StoreErrorPolicy`] and [`DEFAULT_STORE_TIMEOUT`],
+//!   moved from `cratestack-axum` so HTTP and MCP take the same setting.
+//!   A value, not a collaborator: the executor does not hold it, and each
+//!   transport applies it to the error [`OpExecutor::admit_rate_limit`]
+//!   hands back.
 //!
 //! Audit stays where it is, row-level policy on subscriptions stays
 //! unenforced, and [`OpInput::ctx`] is always `None`. Those are later
@@ -67,6 +73,7 @@ mod admission;
 mod executor;
 mod input;
 mod rate_limit;
+mod store_error;
 
 #[cfg(test)]
 mod tests_admission;
@@ -76,8 +83,11 @@ mod tests_executor;
 mod tests_rate_limit;
 #[cfg(test)]
 mod tests_rate_limit_fail;
+#[cfg(test)]
+mod tests_store_error;
 
 pub use admission::Admission;
 pub use executor::OpExecutor;
 pub use input::{OpAdmission, OpInput};
 pub use rate_limit::{RateLimitAdmission, RateLimitBucket};
+pub use store_error::{DEFAULT_STORE_TIMEOUT, StoreErrorPolicy};

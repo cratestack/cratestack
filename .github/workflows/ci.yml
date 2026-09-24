@@ -247,6 +247,62 @@ jobs:
             cargo tree --locked | grep -i axum
             exit 1
           fi
+      - name: rmcp absent without the mcp feature (every facade, and every standalone example)
+        # cratestack#1038 (ADR 0002 § Crate layout, "Disjointness"): MCP's
+        # dependencies live in `cratestack-mcp` behind the `mcp` feature of
+        # `cratestack-pg`/`cratestack-api` only, so a facade built without it
+        # must not contain `rmcp`. Checked at the repository root with `-p`
+        # (features resolve per selected package, so another member's
+        # features cannot leak in), and in each standalone example, which is
+        # what an external consumer's graph actually looks like. The
+        # lockfiles *do* list `rmcp` — a Cargo.lock resolves every optional
+        # dependency — which is why this reads `cargo tree`, not the
+        # lockfile. The other two loops pin that the check can fail: pg/api
+        # must show `rmcp` with `--features mcp`, and sqlite/client must
+        # reject `--features mcp` outright (D3).
+        #
+        # Every graph is captured into a variable before it is searched. In
+        # `if cargo tree ... | grep -q`, a `cargo tree` that fails (a stale
+        # lockfile under `--locked`) makes the pipeline false, which reads
+        # as "no rmcp" and passes; so can `grep -q` closing the pipe early
+        # once the tree outgrows the pipe buffer. A bare `graph="$(...)"`
+        # fails the step under `set -e` instead. Likewise sqlite/client must
+        # fail for the missing feature, not for any reason at all.
+        run: |
+          set -euo pipefail
+          for facade in cratestack-pg cratestack-api cratestack-sqlite cratestack-client; do
+            graph="$(cargo tree --locked -e normal -p "$facade")"
+            if grep -q '\brmcp v' <<<"$graph"; then
+              echo "::error::expected no rmcp in $facade's default normal dependency graph"
+              cargo tree --locked -e normal -p "$facade" -i rmcp
+              exit 1
+            fi
+          done
+          for facade in cratestack-pg cratestack-api; do
+            graph="$(cargo tree --locked -e normal -p "$facade" --features mcp)"
+            if ! grep -q '\brmcp v' <<<"$graph"; then
+              echo "::error::expected rmcp in $facade's graph with --features mcp"
+              exit 1
+            fi
+          done
+          for facade in cratestack-sqlite cratestack-client; do
+            if refusal="$(cargo tree --locked -e normal -p "$facade" --features mcp 2>&1)"; then
+              echo "::error::$facade must not offer an mcp feature (ADR 0002 D3)"
+              exit 1
+            fi
+            if ! grep -q 'does not contain this feature: mcp' <<<"$refusal"; then
+              echo "::error::cargo tree failed for $facade, but not for the missing mcp feature:"
+              echo "$refusal"
+              exit 1
+            fi
+          done
+          for example in no-database-verification no-database-verification-api client-only-verification db-transaction-verification declarative-query-verification; do
+            graph="$(cd "examples/$example" && cargo tree --locked -e normal)"
+            if grep -q '\brmcp v' <<<"$graph"; then
+              echo "::error::expected no rmcp in examples/$example's dependency graph"
+              exit 1
+            fi
+          done
       - name: no direct sqlx dependency (db-transaction-verification)
         working-directory: examples/db-transaction-verification
         run: |
@@ -340,6 +396,13 @@ jobs:
         # `required-features = ["postgres", "decimal-bigdecimal"]`, so the
         # default-feature step above never builds or runs it.
         run: just test-ci-db-decimal-bigdecimal --locked
+      - name: cargo test (MCP policy over tools/call, testcontainers Postgres)
+        # cratestack#1038: a delegated `@authorize(...)` denial and an
+        # `@@allow`-hidden row, both reached through the MCP stdio server.
+        # Gated `required-features = ["mcp"]`, so the default-feature step
+        # above never builds it; `CRATESTACK_REQUIRE_DB` (job env) makes a
+        # missing database fail rather than skip.
+        run: just test-ci-db-mcp --locked -- --test-threads=1
       - name: cargo test (cratestack-outbox, testcontainers Postgres)
         # A 2026-08 CI-coverage audit found `cratestack-outbox`'s 5
         # transactional-outbox tests (atomic persist/rollback, cursor-

@@ -62,8 +62,11 @@ Both bite here:
   content-type are transport facts. Keeping the hash at the transport is what makes
   "the wire did not change" checkable rather than assertable.
 - `OpInput::rate_limit_bucket` arrives derived for the same reason: the bucket key reads
-  `Authorization`, the peer address and a verified-principal extension. The lookup
-  timeout, the store-error policy and the rendered `429` stay at the transport too.
+  `Authorization`, the peer address and a verified-principal extension. Enforcing the
+  lookup timeout, applying the store-error policy and the rendered `429` stay at the
+  transport too. The policy's *type* and rule (`StoreErrorPolicy`, `DEFAULT_STORE_TIMEOUT`)
+  live here since cratestack#1038, so HTTP and MCP take the same setting;
+  `cratestack_axum::ratelimit` re-exports both from their old path.
 - Audit persistence cannot move here at all — it commits inside the mutation's own
   transaction (`cratestack-sqlx/src/audit.rs`), and threading `&mut Transaction` through a
   transport-neutral interface is precisely what the second exclusion forbids.

@@ -135,6 +135,13 @@ pub use cratestack_axum::*;
 // `::cratestack::rpc` to the axum module. Mirrors `cratestack-pg`.
 pub use cratestack_axum::rpc;
 
+/// The MCP binding (ADR 0002, cratestack#1038), behind the `mcp` feature:
+/// `StdioServer`, the `McpTools` trait the generated `cratestack_schema::mcp`
+/// module implements, and the runtime helpers it names. Tools only here —
+/// a `db = None` schema has no models to serve as resources.
+#[cfg(feature = "mcp")]
+pub use cratestack_mcp as mcp;
+
 #[doc(hidden)]
 pub mod __private {
     /// Re-exports for the macro-emitted RPC batch dispatcher

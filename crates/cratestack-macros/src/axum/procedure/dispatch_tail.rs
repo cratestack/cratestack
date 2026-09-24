@@ -31,7 +31,7 @@ use std::collections::BTreeSet;
 use cratestack_core::Procedure;
 use quote::quote;
 
-use compose_tail::compose_tail_tokens;
+pub(crate) use compose_tail::compose_tail_tokens;
 
 use crate::computed::procedure_output_composition;
 use crate::shared::is_stream_procedure;

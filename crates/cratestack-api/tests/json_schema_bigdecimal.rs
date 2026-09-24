@@ -1,8 +1,8 @@
 //! cratestack#1037 (MCP phase 2): `json_schema_round_trip.rs`'s cases,
 //! under `decimal = BigDecimal`. Gated `required-features =
-//! ["decimal-bigdecimal"]` in `Cargo.toml`, because the default test run
-//! never selects that backend; `just test-ci-host` runs it explicitly
-//! (`cargo test -p cratestack-api --features decimal-bigdecimal --test
+//! ["decimal-bigdecimal", "mcp"]` in `Cargo.toml`, because the default test
+//! run selects neither; `just test-ci-host` runs it explicitly (`cargo test
+//! -p cratestack-api --features decimal-bigdecimal,mcp --test
 //! json_schema_bigdecimal`), so it is not a silent skip.
 
 use cratestack::include_server_schema;
@@ -11,11 +11,6 @@ use json_schema_support::DecimalCases;
 include_server_schema!(
     "tests/fixtures/json_schema_round_trip.cstack",
     db = None,
-    decimal = BigDecimal
-);
-
-const SCHEMAS: &[(&str, Result<&str, &str>, Result<Option<&str>, &str>)] = cratestack_macros::__procedure_json_schemas!(
-    "tests/fixtures/json_schema_round_trip.cstack",
     decimal = BigDecimal
 );
 

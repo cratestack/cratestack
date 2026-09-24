@@ -11,7 +11,7 @@ use super::error::JsonSchemaError;
 use super::parts::{is_required, nullable, object_schema, page, page_input, with_docs};
 use super::scalar::{Scalar, builtin_scalar};
 use crate::shared::decimal_backend::DecimalBackend;
-use crate::shared::{is_computed_field, is_relation_field, is_server_only_field};
+use crate::shared::{is_relation_field, is_server_only_field};
 
 pub(super) struct Generator<'a> {
     schema: &'a Schema,
@@ -122,8 +122,8 @@ impl<'a> Generator<'a> {
         }
         if let Some(decl) = schema.types.iter().find(|t| t.name == name) {
             // `crate::types::generate_type_struct`: every field, no serde
-            // attributes beyond `Bytes`' lenient deserializer.
-            reject_computed(name, &decl.fields)?;
+            // attributes beyond `Bytes`' lenient deserializer. `@computed`
+            // fields included — see `computed_fields_are_advertised`.
             let object = self.object(name, decl.fields.iter().collect())?;
             return Ok(with_docs(object, &decl.docs));
         }
@@ -132,7 +132,6 @@ impl<'a> Generator<'a> {
             // are not struct fields at all. `@server_only` fields are serde
             // `skip` (cratestack#1051): never written, never read. They are
             // left out rather than advertised to an agent.
-            reject_computed(name, &model.fields)?;
             let fields = model
                 .fields
                 .iter()
@@ -163,20 +162,13 @@ impl<'a> Generator<'a> {
     }
 }
 
-/// A `type` or `model` with `@computed` fields has two serde shapes: the
-/// server struct without them (`Output`), and the wire struct with them
-/// (`crate::computed::wire`) that REST and RPC fill by composing resolved
-/// values in. Which of the two an MCP tool returns depends on whether
-/// phase 3's dispatch composes, so no schema is guessed here. (The parser
-/// already rejects a computed-bearing type as procedure input.)
-fn reject_computed(owner: &str, fields: &[Field]) -> Result<(), JsonSchemaError> {
-    match fields.iter().find(|f| is_computed_field(f)) {
-        None => Ok(()),
-        Some(field) => Err(JsonSchemaError::NoFaithfulMapping {
-            type_name: owner.to_owned(),
-            reason: "it has `@computed` fields, whose values reach the wire only through \
-                     response composition, which MCP dispatch does not do yet",
-            at: vec![format!("field `{owner}.{}`", field.name)],
-        }),
-    }
-}
+// `@computed` fields (ADR 0002 Q7, cratestack#1038). A computed-bearing
+// `type` or `model` has two serde shapes: the server struct without them
+// (`Output`), and the composed value with them that REST and RPC send
+// (`crate::computed::compose`). MCP dispatch runs that same composition
+// (`include/server/mcp_module/dispatch.rs`), so the composed shape is the
+// one a tool returns, and a computed field is advertised like any stored
+// field of its type: `compose_<owner>_value` inserts every field, with
+// `None` as `null`. Phase 2 refused these outputs until dispatch composed.
+// The parser still rejects a computed-bearing type as procedure *input*,
+// so only outputs can reach here with one.

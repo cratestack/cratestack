@@ -14,7 +14,10 @@
 //! generated `axum` module's top level (spliced in by
 //! `include::server::axum_module`) alongside the per-procedure handlers
 //! that call them, rather than nested inside any one procedure's own
-//! generated code.
+//! generated code. They are `pub(super)` — visible to the rest of the
+//! generated `cratestack_schema` module, never outside it — because MCP
+//! tool dispatch (`include::server::mcp_module`) composes through these
+//! same functions: ADR 0002 Q7 asks for REST's resolution path, not a copy.
 //!
 //! Field-by-field, each helper mirrors
 //! `axum::model::serializers::projection_fields` (cratestack#430): a
@@ -121,7 +124,7 @@ fn owner_compose_fn(
         .collect();
 
     quote! {
-        async fn #compose_ident<CR: super::computed::ComputedFieldResolver>(
+        pub(super) async fn #compose_ident<CR: super::computed::ComputedFieldResolver>(
             db: &super::Cratestack,
             resolvers: &CR,
             ctx: &::cratestack::CratestackContext,

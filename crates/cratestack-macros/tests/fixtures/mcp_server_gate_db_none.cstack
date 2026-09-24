@@ -1,6 +1,7 @@
 // cratestack#1036 (ADR 0002 Q4): the tools-only shape a `db = None`
-// (`cratestack-api`) service would use. Gated exactly like the Postgres
-// schema until the MCP runtime ships (cratestack#1033).
+// (`cratestack-api`) service would use. Since cratestack#1038 it compiles
+// when `cratestack-macros` has its `mcp` feature; this crate's own tests
+// build without it, so here it must fail asking for the feature.
 
 datasource db {
   provider = "none"

@@ -126,7 +126,9 @@ Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and r
   transports in the same PR — server dispatch, RPC frame slots, and every generated client. RPC
   dispatch re-enters the REST parse/validate path via query synthesis
   (`cratestack-axum/src/rpc/synthesize.rs`), so server-side parity is usually one frame field + one
-  `pairs.push`. A genuinely excluded transport is a documented decision, not an omission.
+  `pairs.push`. A genuinely excluded transport is a documented decision, not an omission. MCP is
+  one, decided (ADR 0002 D5): it carries an opt-in subset of procedures for agents, not the
+  application API, so a feature reaches MCP only when someone deliberately extends MCP.
 - **Docs and skills parity: a feature is not done until all three repos agree.** A user-facing
   change has two companions — `cratestack/cratestack-docs` (Mintlify site, for humans) and
   `cratestack/cratestack-skills` (agent skills, `npx skills add cratestack/cratestack-skills`).

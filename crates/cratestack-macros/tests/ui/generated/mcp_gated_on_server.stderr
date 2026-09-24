@@ -1,4 +1,4 @@
-error: schema declares an MCP surface (an `mcp { }` block, `@mcp(tool)` on procedure `getFeed`, `@mcp(tool)` on procedure `publishPost`, `@@mcp(resource: ...)` on model `Post`), but the MCP runtime has not shipped: include_server_schema! rejects MCP declarations until it does, so none can parse and then serve nothing (ADR 0002 Q4). Tracking: cratestack#1033 (https://github.com/cratestack/cratestack/issues/1033) — remove the MCP declarations to build this schema today.
+error: schema declares an MCP surface (an `mcp { }` block, `@mcp(tool)` on procedure `getFeed`, `@mcp(tool)` on procedure `publishPost`, `@@mcp(resource: ...)` on model `Post`), but `cratestack-macros` was built without its `mcp` Cargo feature, so nothing would serve it (ADR 0002 Q4). Enable the `mcp` feature on the facade this crate depends on — `cratestack = { package = "cratestack-pg", features = ["mcp"] }`, or the same on `cratestack-api` — or remove the MCP declarations.
  --> tests/ui/generated/mcp_gated_on_server.rs
   |
   | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-mcp-1036/mcp_server_gate.cstack", db = Postgres);

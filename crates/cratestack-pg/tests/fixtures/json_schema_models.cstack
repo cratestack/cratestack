@@ -10,6 +10,12 @@ datasource db {
   url = env("DATABASE_URL")
 }
 
+// cratestack#1038: the schemas under test are read from the generated MCP
+// tool table, so every procedure is a tool.
+mcp {
+  expose = [tools]
+}
+
 enum Visibility {
   Public
   Private
@@ -36,9 +42,12 @@ model Post {
 
 procedure fetchPost(id: Int): Post
   @allow(true)
+  @mcp(tool)
 
 procedure feed(page: PageInput?): Page<Post>
   @allow(true)
+  @mcp(tool)
 
 procedure importPost(post: Post): Boolean
   @allow(true)
+  @mcp(tool)
