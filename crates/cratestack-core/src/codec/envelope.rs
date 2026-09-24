@@ -44,7 +44,9 @@ pub enum BodyShape {
 ///
 /// Verification failures must be [`CratestackError::Unauthorized`] with a
 /// coarse message. The response must never reveal which check failed
-/// (§10).
+/// (§10). A backend outage (the key resolver or the nonce store is
+/// unreachable) is not a verification failure: it is
+/// [`CratestackError::Internal`], a `500` (ADR 0006, P0 scoping decisions).
 pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
     /// The `Content-Type` of a sealed body of this shape. `None` means this
     /// envelope adds no framing for `shape`, so the body keeps the
