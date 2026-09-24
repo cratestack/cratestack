@@ -38,7 +38,7 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 
-use super::auth::{authenticate, bearer, missing_token};
+use super::auth::{Bearer, authenticate, bearer, missing_token};
 use super::caller::hand_over;
 use super::origin::AllowedOrigins;
 use super::reply::{self, Reply};
@@ -99,8 +99,13 @@ impl<T: McpTools, A: AuthProvider> Shared<T, A> {
             let header = self.resource.challenge(Some("invalid_request"));
             return reply::challenge(StatusCode::BAD_REQUEST, header);
         }
-        let Some(token) = bearer(request.headers()).map(str::to_owned) else {
-            return missing_token(&self.resource);
+        let token = match bearer(request.headers()) {
+            Bearer::Token(token) => token.to_owned(),
+            Bearer::Missing => return missing_token(&self.resource),
+            Bearer::Malformed => {
+                let header = self.resource.challenge(Some("invalid_request"));
+                return reply::challenge(StatusCode::BAD_REQUEST, header);
+            }
         };
 
         let (mut parts, body) = request.into_parts();

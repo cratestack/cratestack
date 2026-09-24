@@ -30,9 +30,10 @@ let app = Router::new()
   any MCP handling. A method other than `POST` gets 405 (`Allow: POST`). An
   access token in the query string (`?access_token=`, which MCP forbids) gets
   400 with `error="invalid_request"`, whether or not your provider would read
-  it there. A request without `Authorization: Bearer` gets 401 with
-  `WWW-Authenticate: Bearer resource_metadata="<url>"`, plus `scope="..."` when
-  scopes are configured. A body over 4 MiB gets 413. Your provider then runs. A
+  it there. So does an ambiguous or malformed `Authorization` (two headers,
+  or `Bearer` with no token). A request without `Authorization: Bearer` gets
+  401 with `WWW-Authenticate: Bearer resource_metadata="<url>"`, plus
+  `scope="..."` when scopes are configured. A body over 4 MiB gets 413. Your provider then runs. A
   refusal, or a context that is not authenticated (a REST provider may return
   `anonymous()` for a token it does not know), gets 401 with
   `error="invalid_token"`; a provider `Forbidden` gets 403 with

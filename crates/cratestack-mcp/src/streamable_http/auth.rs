@@ -26,17 +26,42 @@ use http::{HeaderMap, StatusCode};
 use super::reply::{self, Reply};
 use super::resource::Resolved;
 
-/// The token of the request's single `Authorization: Bearer` header. Two
-/// `Authorization` headers are ambiguous, so they count as none.
-pub(crate) fn bearer(headers: &HeaderMap) -> Option<&str> {
+/// What the request's `Authorization` header says about a bearer token.
+pub(crate) enum Bearer<'a> {
+    /// No bearer credentials at all: no header, or another scheme. RFC 6750
+    /// §3.1 answers that with a 401 challenge that carries no `error`.
+    Missing,
+    /// The one, well-formed `Authorization: Bearer <token>`.
+    Token(&'a str),
+    /// A request shape the guard will not guess at: two `Authorization`
+    /// headers (even identical ones — the guard's token and the provider's
+    /// could differ, and the guard's is the one it redacts from the logs), a
+    /// value that is not text, or `Bearer` with no token. RFC 6750 §3.1 calls
+    /// that `invalid_request`: the client learns its request is malformed,
+    /// not that its token is missing.
+    Malformed,
+}
+
+/// Reads the request's bearer token; see [`Bearer`].
+pub(crate) fn bearer(headers: &HeaderMap) -> Bearer<'_> {
     let mut values = headers.get_all(AUTHORIZATION).iter();
-    let value = values.next()?;
+    let Some(value) = values.next() else {
+        return Bearer::Missing;
+    };
     if values.next().is_some() {
-        return None;
+        return Bearer::Malformed;
     }
-    let (scheme, token) = value.to_str().ok()?.split_once(' ')?;
-    let token = token.trim();
-    (scheme.eq_ignore_ascii_case("bearer") && !token.is_empty()).then_some(token)
+    let Ok(value) = value.to_str() else {
+        return Bearer::Malformed;
+    };
+    let (scheme, token) = value.split_once(' ').unwrap_or((value, ""));
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return Bearer::Missing;
+    }
+    match token.trim() {
+        "" => Bearer::Malformed,
+        token => Bearer::Token(token),
+    }
 }
 
 /// No token at all: RFC 6750 §3.1 says the challenge then carries no

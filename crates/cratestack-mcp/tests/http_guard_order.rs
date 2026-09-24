@@ -95,9 +95,10 @@ async fn an_oversized_chunked_body_is_413_before_the_provider_runs() {
 
 /// Two `Authorization` values are ambiguous, even two identical valid ones:
 /// the guard's token and the provider's could differ, and the guard's is
-/// the one it redacts from the logs. They count as no token at all.
+/// the one it redacts from the logs. RFC 6750 calls that shape
+/// `invalid_request` (400), not a missing token (review on #1067).
 #[tokio::test]
-async fn two_authorization_headers_are_no_token() {
+async fn two_authorization_headers_are_an_invalid_request() {
     let (app, provider) = counted(&FakeTools::default(), RESOURCE);
     let mut request = tool_call("/mcp", None, "echo", json!({ "text": "a" }));
     let value: http::HeaderValue = format!("Bearer {}", token("u-1")).parse().unwrap();
@@ -106,11 +107,37 @@ async fn two_authorization_headers_are_no_token() {
 
     let reply = send(&app, request).await;
 
-    assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{}", reply.text);
-    assert_eq!(
-        reply.header("www-authenticate"),
-        "Bearer resource_metadata=\"http://localhost/.well-known/oauth-protected-resource/mcp\""
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.text);
+    assert!(
+        reply
+            .header("www-authenticate")
+            .contains("error=\"invalid_request\""),
+        "{}",
+        reply.header("www-authenticate")
     );
+    assert_eq!(provider.calls(), 0);
+}
+
+/// `Bearer` with no token is malformed too; another scheme is simply no
+/// bearer credentials, which keeps the error-free 401 challenge.
+#[tokio::test]
+async fn an_empty_bearer_is_invalid_and_another_scheme_is_missing() {
+    let (app, provider) = counted(&FakeTools::default(), RESOURCE);
+    let mut empty = tool_call("/mcp", None, "echo", json!({ "text": "a" }));
+    empty
+        .headers_mut()
+        .insert("authorization", "Bearer   ".parse().unwrap());
+    let reply = send(&app, empty).await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.text);
+    assert!(reply.header("www-authenticate").contains("invalid_request"));
+
+    let mut basic = tool_call("/mcp", None, "echo", json!({ "text": "a" }));
+    basic
+        .headers_mut()
+        .insert("authorization", "Basic dTpw".parse().unwrap());
+    let reply = send(&app, basic).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{}", reply.text);
+    assert!(!reply.header("www-authenticate").contains("error="));
     assert_eq!(provider.calls(), 0);
 }
 
