@@ -24,6 +24,7 @@ mod datasource_guard;
 mod decimal_arg;
 mod embedded;
 mod extension_gate;
+mod json_schema_probe;
 mod parse;
 mod schema_args;
 mod server;
@@ -46,4 +47,8 @@ pub(crate) fn include_embedded_schema(input: TokenStream) -> TokenStream {
 pub(crate) fn include_client_schema(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as SchemaPathArgs);
     client::compose_client_schema(&args.schema_path, args.decimal)
+}
+
+pub(crate) fn procedure_json_schemas(input: TokenStream) -> TokenStream {
+    json_schema_probe::procedure_json_schemas(input)
 }

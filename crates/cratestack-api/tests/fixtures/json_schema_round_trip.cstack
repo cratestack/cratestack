@@ -1,0 +1,71 @@
+// cratestack#1037 (MCP phase 2): the JSON Schema round-trip fixture.
+// Every built-in scalar that can appear in procedure I/O, in every arity,
+// inside nested `type`s, lists, enums and `Page<T>`/`PageInput`. Expanded
+// by `tests/json_schema_round_trip.rs` (`decimal = RustDecimal`) and
+// `tests/json_schema_bigdecimal.rs` (`decimal = BigDecimal`). `db = None`,
+// so no `model` here — models are covered by `cratestack-pg`'s
+// `tests/json_schema_models.rs`.
+
+datasource db {
+  provider = "none"
+}
+
+/// Lifecycle of a record.
+enum Status {
+  Active
+  Archived
+}
+
+/// One field per mapped built-in scalar.
+type Scalars {
+  text String
+  cuid Cuid
+  count Int
+  ratio Float
+  flag Boolean
+  at DateTime
+  amount Decimal
+  blob Bytes
+  id Uuid
+  status Status
+}
+
+/// Optional and list arities, and nesting.
+type Shapes {
+  label String?
+  tags String[]
+  statuses Status[]
+  maybeStatus Status?
+  child Scalars
+  children Scalars[]
+  maybeChild Scalars?
+  blobs Bytes[]
+  maybeBlob Bytes?
+  maybeAmount Decimal?
+  maybeAt DateTime?
+  ids Uuid[]
+}
+
+/// Refers to itself.
+type Tree {
+  label String
+  children Tree[]
+}
+
+procedure echoScalars(args: Scalars): Scalars
+  @allow(true)
+
+procedure echoShapes(args: Shapes, page: PageInput?, limit: Int?, ids: Uuid[]): Shapes
+  @allow(true)
+
+procedure pageShapes(page: PageInput): Page<Shapes>
+  @allow(true)
+
+procedure echoTree(tree: Tree): Tree
+  @allow(true)
+
+procedure countScalars(filter: String?): Int
+  @allow(true)
+
+procedure stash(payload: Json): Boolean
+  @allow(true)
