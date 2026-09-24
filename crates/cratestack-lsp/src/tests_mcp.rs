@@ -4,12 +4,13 @@
 
 use std::str::FromStr;
 
-use tower_lsp_server::ls_types::{CompletionItemKind, Uri};
+use tower_lsp_server::ls_types::{CompletionItemKind, SemanticTokenType, Uri};
 
 use crate::analyze::analyze_document;
 use crate::completion::completion_items;
 use crate::hover::locate_symbol;
-use crate::text::range_from_offsets;
+use crate::semantic_tokens::{LEGEND, semantic_tokens};
+use crate::text::{offset_to_position, range_from_offsets};
 
 const SCHEMA: &str = r#"datasource db {
   provider = "postgresql"
@@ -114,4 +115,26 @@ fn mcp_syntax_errors_are_reported_as_diagnostics() {
     let start = text.find("procedures").expect("element");
     let expected = range_from_offsets(&text, start, start + "procedures".len());
     assert_eq!(diagnostics[0].range, expected);
+}
+
+/// Before cratestack#1036 `@@mcp(...)` was a raw model attribute and got the
+/// decorator token every `@@...` gets. Moving it into `Model.mcp` took it out
+/// of the list `semantic_tokens` walks; it must still be coloured.
+#[test]
+fn model_mcp_keeps_its_decorator_token() {
+    let (schema, _) = analyze_document(&uri(), SCHEMA);
+    let schema = schema.expect("valid MCP schema");
+    let at = offset_to_position(SCHEMA, SCHEMA.find("@@mcp(").expect("attribute"));
+    let (mut line, mut character) = (0u32, 0u32);
+    let decorated = semantic_tokens(SCHEMA, &schema).iter().any(|token| {
+        line += token.delta_line;
+        character = if token.delta_line == 0 {
+            character + token.delta_start
+        } else {
+            token.delta_start
+        };
+        (line, character, token.length) == (at.line, at.character, "@@mcp".len() as u32)
+            && LEGEND[token.token_type as usize] == SemanticTokenType::DECORATOR
+    });
+    assert!(decorated, "`@@mcp` must be a decorator token");
 }

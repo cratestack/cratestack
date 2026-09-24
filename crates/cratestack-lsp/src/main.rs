@@ -7,6 +7,7 @@ mod hover;
 mod hover_render;
 mod mcp_completion;
 mod mcp_hover;
+mod mcp_tokens;
 mod mixin_use;
 mod navigation;
 mod query_symbols;
