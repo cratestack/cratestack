@@ -1,0 +1,5 @@
+error: `@@mcp(resource: "posts")` on model `Post` contradicts its `@@internal(...)`, which keeps the model's `get` off the wire: a resource would put it back on. Remove one of the two.
+ --> tests/ui/generated/mcp_resource_internal_refused.rs
+  |
+  | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-mcp-1036/mcp_resource_internal.cstack", db = Postgres);
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
