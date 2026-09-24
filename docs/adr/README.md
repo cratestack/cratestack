@@ -19,13 +19,15 @@ regardless of which repo holds it.
 | Range | Status |
 |---|---|
 | 0001–0005 | Written, in `cratestack-docs/internals/` |
-| 0006–0010 | **Reserved** by ADR 0001's "Follow-Up ADRs" list — unwritten, do not reuse |
+| 0006 | **Proposed**, in `cratestack-docs/internals/cose-envelope-adr.md` — COSE envelope modes and key management ([cratestack-docs#95](https://github.com/cratestack/cratestack-docs/pull/95); decisions tracked in #1003) |
+| 0007–0010 | **Reserved** by ADR 0001's "Follow-Up ADRs" list — unwritten, do not reuse |
 | 0011– | This repo's internal-shape series |
 
 The gap is deliberate. ADR 0001 (`cratestack-docs/internals/core-architecture-adr.md`) names five
 planned ADRs at 0006–0010 (COSE envelope modes, migration strategy, relation loading, privileged
-operations, multi-framework support). None are written yet, but squatting those numbers would
-either collide later or silently retire five planned decisions. Note the reservation list is
+operations, multi-framework support). Only 0006 has been written since — in `cratestack-docs`,
+because it sets the wire format. Squatting 0007–0010 would either collide later or silently retire
+four planned decisions. Note the reservation list is
 already stale in its *titles* — the written ADR 0003 is "SQL Views as Projections of Models",
 while the list predicted "Permission Expression Semantics" — so treat it as a topic reservation,
 not a promise about content.
