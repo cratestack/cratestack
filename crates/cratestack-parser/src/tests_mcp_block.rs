@@ -21,12 +21,24 @@ fn either_kind_alone_is_a_complete_block() {
 
 #[test]
 fn spacing_inside_the_list_is_free_and_element_spans_follow_it() {
-    let source = edit(EXPOSE, "  expose=[ resources ,tools ]\n");
-    let mcp = parse_schema(&source).expect("parses").mcp.expect("block");
-    let tools = mcp.expose_tools.expect("tools");
-    let resources = mcp.expose_resources.expect("resources");
-    assert_eq!(&source[tools.start..tools.end], "tools");
-    assert_eq!(&source[resources.start..resources.end], "resources");
+    // Including whitespace between `expose` and `=` (review on #1056): the
+    // spans must still land on the element text, not short of it.
+    for line in [
+        "  expose=[ resources ,tools ]\n",
+        "  expose   =   [ resources ,tools ]\n",
+        "\texpose\t= [resources, tools]\n",
+    ] {
+        let source = edit(EXPOSE, line);
+        let mcp = parse_schema(&source).expect("parses").mcp.expect("block");
+        let tools = mcp.expose_tools.expect("tools");
+        let resources = mcp.expose_resources.expect("resources");
+        assert_eq!(&source[tools.start..tools.end], "tools", "{line:?}");
+        assert_eq!(
+            &source[resources.start..resources.end],
+            "resources",
+            "{line:?}"
+        );
+    }
 }
 
 #[test]
