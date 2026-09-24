@@ -46,13 +46,16 @@ fn ends_name(after: &str) -> bool {
 }
 
 /// Whether `matches` holds for the text after some run of `@`s outside a
-/// string literal.
+/// string literal. Policy literals may be single- or double-quoted
+/// (`@@allow('read', email == 'ops@mcp.io')`), so both open a string, and
+/// only the same quote closes it.
 fn any_attribute_head(raw: &str, matches: impl Fn(&str) -> bool) -> bool {
-    let mut in_string = false;
+    let mut quote: Option<char> = None;
     for (index, ch) in raw.char_indices() {
-        match ch {
-            '"' => in_string = !in_string,
-            '@' if !in_string && matches(raw[index..].trim_start_matches('@')) => return true,
+        match (quote, ch) {
+            (None, '"' | '\'') => quote = Some(ch),
+            (Some(open), _) if ch == open => quote = None,
+            (None, '@') if matches(raw[index..].trim_start_matches('@')) => return true,
             _ => {}
         }
     }
@@ -97,6 +100,13 @@ mod tests {
             "@@allow(\"read\", true) @@mcp(resource: \"x\")"
         ));
         assert!(!contains_mcp_token("@allow(auth().note == \"@mcp\")"));
+        assert!(!contains_mcp_token(
+            "@@allow('read', email == 'ops@mcp.io')"
+        ));
+        assert!(!contains_mcp_token("@allow(auth().note == \"it's @mcp\")"));
+        assert!(contains_mcp_token(
+            "@@allow('read', true) @@mcp(resource: \"x\")"
+        ));
         assert!(!contains_mcp_token("@mcpish"));
         assert!(!contains_mcp_token("@MCP(tool)"));
     }

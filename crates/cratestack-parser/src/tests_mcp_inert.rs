@@ -113,3 +113,14 @@ fn mcp_inside_a_string_or_as_a_longer_name_is_not_a_false_positive() {
     );
     parse_schema(&source).expect("a string default is not an attribute");
 }
+
+#[test]
+fn an_at_mcp_inside_a_single_quoted_string_is_not_an_attribute() {
+    // Policy literals may be single-quoted (`@@allow('read', ...)`), so an
+    // e-mail domain like `ops@mcp.io` inside one is data, not an attribute.
+    let source = format!(
+        "{VALID}\nmodel Contact {{\n  id Int @id\n  email String\n\n  \
+         @@allow('read', email == 'ops@mcp.io')\n}}\n"
+    );
+    parse_schema(&source).expect("a quoted `@mcp` is data, not an MCP attribute");
+}
