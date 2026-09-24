@@ -37,6 +37,7 @@
 mod cursor;
 mod descriptor;
 mod error;
+mod id;
 mod listed;
 mod listing;
 mod page;
@@ -49,6 +50,8 @@ mod tests_cursor;
 mod tests_descriptor;
 #[cfg(test)]
 mod tests_error;
+#[cfg(test)]
+mod tests_id;
 #[cfg(test)]
 mod tests_listed;
 #[cfg(test)]

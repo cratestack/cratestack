@@ -13,6 +13,7 @@
 //! strictness. The name after `://` is ours, a lowercase DNS label by the
 //! parser's rule, and stays exact.
 
+use super::id::record_id;
 use super::{RESOURCE_SCHEME, ResourceDescriptor};
 
 /// What a URI addresses.
@@ -36,7 +37,8 @@ pub(crate) enum Target<'t> {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum UriError {
     /// Not one of this server's resources, or a record id that cannot be
-    /// one (bad percent-encoding). Answered exactly like a missing row.
+    /// one (a raw non-URI character, bad percent-encoding, a NUL; `id.rs`).
+    /// Answered exactly like a missing row.
     Unknown,
     /// A known collection with a query this server cannot honour. The
     /// message restates only the caller's own input.
@@ -75,15 +77,9 @@ pub(crate) fn parse<'t>(
                     "a record URI takes no query; paging applies to the collection URI".to_owned(),
                 ));
             }
-            let id = percent_decode(raw).ok_or(UriError::Unknown)?;
-            // A NUL is in no key: `Int`/`Uuid` never parse one, and
-            // Postgres refuses it in `text` with an error rather than
-            // matching nothing — a `-32603` and a server-side error log
-            // any caller could trigger at will, where the true answer is
-            // "no such row". Deliberately unlike REST, which 500s.
-            if id.is_empty() || id.contains('\0') {
-                return Err(UriError::Unknown);
-            }
+            // A raw non-URI character, a bad escape, an empty id or a NUL
+            // addresses no record (`id.rs`).
+            let id = record_id(raw).ok_or(UriError::Unknown)?;
             Ok(Target::Record { resource, id })
         }
         None => {
@@ -152,27 +148,4 @@ fn parse_limit(value: &str) -> Result<u64, UriError> {
 
 fn invalid(message: impl Into<String>) -> UriError {
     UriError::Invalid(message.into())
-}
-
-/// RFC 3986 percent-decoding into UTF-8. `None` for a malformed escape or
-/// bytes that are not UTF-8.
-fn percent_decode(raw: &str) -> Option<String> {
-    let bytes = raw.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] == b'%' {
-            let hex = raw.get(at + 1..at + 3)?;
-            // `from_str_radix` alone would accept a sign (`%+f`).
-            if !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-                return None;
-            }
-            decoded.push(u8::from_str_radix(hex, 16).ok()?);
-            at += 3;
-        } else {
-            decoded.push(bytes[at]);
-            at += 1;
-        }
-    }
-    String::from_utf8(decoded).ok()
 }
