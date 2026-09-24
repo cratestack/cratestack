@@ -24,7 +24,7 @@
 
 use cratestack_core::CratestackError;
 use cratestack_core::idempotency_record::IdempotencyRecord;
-use rmcp::model::{CallToolResult, MetaObject, RequestMetaObject};
+use rmcp::model::{CallToolResult, RequestMetaObject};
 use serde_json::Value;
 
 use crate::{IDEMPOTENCY_KEY_META, IDEMPOTENCY_REPLAYED_META};
@@ -93,7 +93,7 @@ pub(crate) fn replay(record: &IdempotencyRecord) -> Result<CallToolResult, Crate
                 "mcp: a recorded idempotent result does not decode: {error}"
             ))
         })?;
-    let mut meta = result.meta.take().unwrap_or_else(MetaObject::new);
+    let mut meta = result.meta.take().unwrap_or_default();
     meta.insert(IDEMPOTENCY_REPLAYED_META.to_owned(), Value::Bool(true));
     result.meta = Some(meta);
     Ok(result)
