@@ -51,6 +51,18 @@ fn no_actor_id_means_no_namespace() {
     );
 }
 
+/// The cratestack#1039 maintainer decision, at the unit level: a user whose
+/// `id` claim is literally a system id does not land in that service's
+/// namespace. The end-to-end replay test is `tests/admission_prefix.rs`.
+#[test]
+fn a_user_claiming_a_system_id_is_not_in_the_system_namespace() {
+    let system = SystemContext::for_service("svc").into_context();
+    let impostor = id(ClaimValue::String("system:svc".to_owned()));
+    assert_eq!(principal_id(&system), principal_id(&impostor));
+    assert_eq!(namespace(&system).unwrap(), "mcp-system:system:svc");
+    assert_eq!(namespace(&impostor).unwrap(), "mcp:system:svc");
+}
+
 fn id(value: ClaimValue) -> CratestackContext {
     CratestackContext::authenticated([("id".to_owned(), value)])
 }
