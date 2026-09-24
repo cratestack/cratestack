@@ -8,14 +8,14 @@
 //! characters, printable ASCII. Absent means no reservation — the same as
 //! REST without the header.
 //!
-//! **The namespace** is `mcp:<principal actor id>`. HTTP derives it from a
-//! hash of `Authorization` or the verified peer address, neither of which
-//! exists on stdio; the caller here *is* the context the application
-//! supplied, so its actor id is the identity to scope by. With no actor id
-//! the call is refused rather than put in a shared `"anonymous"` namespace,
-//! for cratestack#416's reason: two callers sharing a namespace can replay
-//! each other's results. The `mcp:` prefix keeps these rows apart from
-//! HTTP's in a store both transports share.
+//! **The namespace** is `mcp:<principal actor id>`. REST derives its own
+//! from a hash of `Authorization` or the verified peer address; the caller
+//! here *is* a context — the one the application supplied on stdio, or the
+//! one its `AuthProvider` built on Streamable HTTP — so its actor id is the
+//! identity to scope by. With no actor id the call is refused rather than
+//! put in a shared `"anonymous"` namespace, for cratestack#416's reason: two
+//! callers sharing a namespace can replay each other's results. The `mcp:`
+//! prefix keeps these rows apart from REST's in a store both share.
 //!
 //! The id is read by [`principal_id`], not `principal_actor_id`, because
 //! the latter answers only a *string* `id`: an `auth User { id Int }`
@@ -98,8 +98,8 @@ pub(crate) fn principal_id(ctx: &CratestackContext) -> Option<Cow<'_, str>> {
 }
 
 /// `mcp:<actor id>`, or a refusal when the context has none.
-pub(crate) fn namespace(actor_id: Option<&str>) -> Result<String, CratestackError> {
-    match actor_id {
+pub(crate) fn namespace(ctx: &CratestackContext) -> Result<String, CratestackError> {
+    match principal_id(ctx) {
         Some(id) if !id.is_empty() => Ok(format!("mcp:{id}")),
         _ => Err(CratestackError::PreconditionFailed(
             "this server's context has no principal id, so a keyed or rate-limited call has no \

@@ -37,10 +37,16 @@ fn a_key_follows_the_idempotency_key_header_rules() {
 
 #[test]
 fn no_actor_id_means_no_namespace() {
-    assert_eq!(namespace(Some("u-1")).unwrap(), "mcp:u-1");
-    assert_eq!(namespace(None).unwrap_err().code(), "PRECONDITION_FAILED");
+    let string = |value: &str| id(ClaimValue::String(value.to_owned()));
+    assert_eq!(namespace(&string("u-1")).unwrap(), "mcp:u-1");
     assert_eq!(
-        namespace(Some("")).unwrap_err().code(),
+        namespace(&CratestackContext::anonymous())
+            .unwrap_err()
+            .code(),
+        "PRECONDITION_FAILED"
+    );
+    assert_eq!(
+        namespace(&string("")).unwrap_err().code(),
         "PRECONDITION_FAILED"
     );
 }

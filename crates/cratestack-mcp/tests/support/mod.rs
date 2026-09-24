@@ -8,7 +8,9 @@
 
 pub mod client;
 pub mod failing;
+pub mod http_app;
 pub mod stores;
+pub mod token;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
