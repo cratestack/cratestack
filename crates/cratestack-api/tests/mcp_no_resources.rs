@@ -17,7 +17,10 @@ use serde_json::json;
 async fn a_database_less_schema_exposes_no_resources() {
     let registry = Registry::default();
     let table = tools(&registry);
-    assert!(table.resources().is_empty(), "the generated table lists none");
+    assert!(
+        table.resources().is_empty(),
+        "the generated table lists none"
+    );
     let ctx = caller("u-1", "teller");
     assert_eq!(
         table.read_record("anything", "1", &ctx).await.unwrap(),
@@ -28,7 +31,9 @@ async fn a_database_less_schema_exposes_no_resources() {
     let mut client = Client::start(StdioServer::new(table, ctx).expect("valid table"));
     let discovered = client.request("server/discover", json!({})).await;
     assert!(
-        discovered["result"]["capabilities"].get("resources").is_none(),
+        discovered["result"]["capabilities"]
+            .get("resources")
+            .is_none(),
         "no resources capability: {discovered}"
     );
     let listed = client.request("resources/list", json!({})).await;
@@ -36,7 +41,10 @@ async fn a_database_less_schema_exposes_no_resources() {
     let templates = client.request("resources/templates/list", json!({})).await;
     assert_eq!(templates["result"]["resourceTemplates"], json!([]));
     let read = client
-        .request("resources/read", json!({ "uri": "cratestack://mcp_tools/anything/1" }))
+        .request(
+            "resources/read",
+            json!({ "uri": "cratestack://mcp_tools/anything/1" }),
+        )
         .await;
     assert_eq!(read["error"]["code"], json!(-32602), "{read}");
 }

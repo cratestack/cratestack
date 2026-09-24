@@ -40,7 +40,7 @@ pub static RESOURCES: [ResourceDescriptor; 2] = [
 pub const ROWS: u64 = 450;
 
 pub fn visible(id: u64) -> bool {
-    id % 3 != 0
+    !id.is_multiple_of(3)
 }
 
 /// Counts reads that reached the table, the witness that a refused read
