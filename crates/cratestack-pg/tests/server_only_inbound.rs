@@ -201,3 +201,30 @@ mod rpc {
         assert_eq!(seen, NOTHING_LEAKED);
     }
 }
+
+/// The wire-shaped struct a computed-bearing model also gets is built by a
+/// separate emitter, so it is pinned separately, in both directions.
+mod computed_wire {
+    use super::*;
+
+    include_server_schema!(
+        "tests/fixtures/server_only_inbound_computed.cstack",
+        db = Postgres
+    );
+
+    #[test]
+    fn the_wire_struct_masks_a_server_only_field_both_ways() {
+        let body = json!({ "id": 1, "label": "l", "secret": "from-client", "shout": "L!" });
+        let badge: cratestack_schema::wire::Badge = serde_json::from_value(body).unwrap();
+        assert_eq!(badge.secret, "");
+
+        let badge = cratestack_schema::wire::Badge {
+            secret: "server-set".to_owned(),
+            ..badge
+        };
+        assert_eq!(
+            serde_json::to_value(&badge).unwrap(),
+            json!({ "id": 1, "label": "l", "shout": "L!" })
+        );
+    }
+}

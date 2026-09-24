@@ -10,7 +10,11 @@ or through a `type` that embeds one, decoded the full model struct. The struct's
 only fills a key that is *absent*: a client that sent `"secret": "..."` had the
 value deserialized and handed to the implementation as if the server had set it.
 This affected both transports, `POST /$procs/<name>` and
-`POST /rpc/procedure.<name>`, and every field type, `Bytes` included.
+`POST /rpc/procedure.<name>`, and every field type, `Bytes` included. The fix
+is on the struct itself, so any other request body that decodes a model is
+covered too. The only other candidate found in review is a
+`@computed(params: T?)` whose `type` embeds a model. It was read, not
+exercised by a test.
 
 The field is now `#[serde(skip)]`. It is still never written to a response, and
 it is now never read from a request: the implementation sees `Default::default()`

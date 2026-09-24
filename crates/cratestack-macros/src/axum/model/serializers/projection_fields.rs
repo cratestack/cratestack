@@ -24,7 +24,8 @@ use super::super::prep::ModelHandlerPrep;
 /// One `object.insert(name, ProjectedValue::leaf(record.field.clone()))`
 /// per non-`@server_only` scalar field — mirrors what `#[serde(skip_
 /// serializing)]` did for those fields under the old `serde_json::
-/// to_value` path (see `struct_field_definition` in `model/struct_only.rs`).
+/// to_value` path (see `struct_field_definition` in
+/// `model/struct_only/field_definition.rs`).
 /// Every arity (required, optional, list) goes through the same
 /// `leaf()` call: `Option<T>`'s own `Serialize` impl already encodes
 /// `None` correctly under every codec (`serialize_none()`), so there is
