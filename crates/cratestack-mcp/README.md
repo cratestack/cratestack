@@ -56,8 +56,11 @@ A foreign `Origin` gets 403 and `GET`/`DELETE` get 405. A missing or rejected to
 400 `invalid_request` before your provider runs, and a mirrored MCP header sent twice gets 400 /
 `-32020`. The token is removed from the request before `rmcp`
 sees it, and every call runs under the `CratestackContext` your provider built, through the same
-admission and policy as stdio. **Your provider must check the token's audience** against the resource
-identifier: MCP requires it, and CrateStack ships no generic OAuth provider in v1 (ADR 0002 Q5).
+admission and policy as stdio. Every method, `tools/list` and the resource lists included, answers only
+a request the guard authenticated: one that reaches the handler another way (a layer mounted around the
+guard by mistake) is `-32603`, never served anonymously. **Your provider must check the token's
+audience** against the resource identifier: MCP requires it, and CrateStack ships no generic OAuth
+provider in v1 (ADR 0002 Q5).
 `tests/support/token.rs` is an example.
 
 ## What a call goes through
@@ -96,10 +99,16 @@ mcp {
   `max_page_size:` when lower. Pass `nextCursor` back as `cursor`; a cursor this server did not issue for
   that resource is `-32602`.
 
-`blog` is the block's `name`, required whenever `expose` lists `resources` and refused otherwise: a quoted
-string of lowercase letters, digits and `-`. It is stated rather than taken from the file's name so that
-renaming the `.cstack` file never moves a URI an agent holds. The scheme is case-insensitive (RFC 3986
-§ 3.1: `CRATESTACK://blog/posts/1` is the same URI); the name, segment and id are matched exactly.
+`blog` is the block's `name`, required whenever `expose` lists `resources` and refused otherwise. It is
+the URI's host, so it is a DNS label: a quoted string of lowercase letters, digits and `-`, 1 to 63
+characters, not starting or ending with `-`. It is stated rather than taken from the file's name so that
+renaming the `.cstack` file never moves a URI an agent holds; `ResourceDescriptor::name` carries it. The
+scheme is case-insensitive (RFC 3986 § 3.1: `CRATESTACK://blog/posts/1` is the same URI); the name,
+segment and id are matched exactly.
+
+An `{id}` is one URI path segment: letters, digits, `-._~!$&'()*+,;=:@` and `%XX` escapes (RFC 3986
+`pchar`). Percent-encode anything else (`cratestack://blog/posts/a%20b` reads id `a b`); an id carrying
+it raw, a space for example, is "resource not found" and never reaches the database.
 
 Reads go through the same ORM calls REST's handlers make, under the caller's context (the one passed to
 `StdioServer::new`, or the one your `AuthProvider` built for this HTTP request), so `@@allow("read", ...)`

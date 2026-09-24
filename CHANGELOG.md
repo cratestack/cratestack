@@ -25,11 +25,14 @@ message is unchanged). The same generated table serves them:
   }
   ```
 
-  `name` is a quoted string of lowercase ASCII letters, digits and `-`. The
-  parser refuses it missing when resources are exposed, malformed, set twice,
-  or present when they are not (only resource URIs read it, so there it would
-  be inert). The LSP completes `name = "..."` and its hover shows the URIs it
-  produces. No table or model name appears in any URI. The scheme is matched
+  `name` is the URI's host, so it is a DNS label: a quoted string of
+  lowercase ASCII letters, digits and `-`, 1 to 63 characters, not starting
+  or ending with `-` (`a-b` is fine; `-blog`, `blog-` and a 64-character name
+  are not). The parser refuses it missing when resources are exposed,
+  malformed (one error per broken rule, naming it), set twice, or present
+  when they are not (only resource URIs read it, so there it would be
+  inert). The LSP completes `name = "..."` with the rule in its detail, and
+  its hover shows the URIs it produces. No table or model name appears in any URI. The scheme is matched
   case-insensitively, per RFC 3986 § 3.1 (`CRATESTACK://blog/posts/1` reads the
   same record); the name, segment and id are matched exactly.
 - **Same read path as REST.** A record is `find_unique(id).run(ctx)`, a page is
@@ -40,6 +43,11 @@ message is unchanged). The same generated table serves them:
 - **No existence oracle.** An unknown resource, a missing id, an id that is not
   a valid key and a row the caller may not read all answer the same JSON-RPC
   error, byte for byte: `-32602` `"resource not found"`.
+- **An id is one URI path segment** (RFC 3986 `pchar`: letters, digits,
+  `-._~!$&'()*+,;=:@`, and `%XX`). An id with any other raw character (a
+  space, a control, `"`, `<`, `>`, non-ASCII, ...) is that same "resource not
+  found" and never reaches the database; percent-encode it instead
+  (`cratestack://blog/notes/a%20b` reads id `a b`).
 - **Pages** are `{"items": [...], "nextCursor": "..."}` (no `nextCursor` on the
   last page). `limit` defaults to 50 and is clamped, not refused, at 200 or the
   model's `max_page_size:`. The cursor is opaque and bound to its resource; one
@@ -48,7 +56,10 @@ message is unchanged). The same generated table serves them:
   context passed to `StdioServer::new`, or, over Streamable HTTP (phase 4),
   the one your `AuthProvider` built for that request, so two tokens reading
   the same collection each see only their own visible rows. `resources/list`
-  and `resources/templates/list` sit behind the same HTTP guard.
+  and `resources/templates/list` sit behind the same HTTP guard, and so does
+  `tools/list` now: every list method resolves the guard's caller and fails
+  closed (`-32603`) on a request that reached the handler without one.
+  Nothing changes over stdio.
 - **Caching and admission.** Every result is `cacheScope: private`, `ttlMs: 0`.
   Reads pass the same rate-limit admission as tool calls, charged to the same
   per-caller bucket (`mcp:<id>` for a user, `mcp-system:<id>` for a system
@@ -62,7 +73,9 @@ message is unchanged). The same generated table serves them:
   its entry); `serde(default)`, so an older IR snapshot still deserializes.
 - **`cratestack-mcp` API.** `McpTools` gains `resources()`, `read_record` and
   `read_page`, all defaulted, so hand-written tool tables compile unchanged.
-  New: `ResourceDescriptor`, `DEFAULT_PAGE_SIZE`, `RESOURCE_SCHEME`.
+  New: `ResourceDescriptor` (`name`, the URI's host; `segment`;
+  `max_page_size`; the two admission descriptors), `DEFAULT_PAGE_SIZE`,
+  `RESOURCE_SCHEME`.
 - **Not in this release:** schema-metadata resources (ADR 0002 § Resources),
   relation traversal in URIs, `subscriptions/listen`.
 
