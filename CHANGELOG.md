@@ -27,8 +27,12 @@ cratestack::mcp::StdioServer::new(tools, ctx)?.serve().await?;
   `2025-11-25`): `server/discover` and `tools/list` answer, a legacy
   `initialize` is refused. `tools/list` is the annotated tools in declaration
   order with their JSON Schemas, `readOnlyHint` (`procedure` vs `mutation
-  procedure`) and `idempotentHint` (from `OpDescriptor.idempotent_by_default`);
-  it is not filtered by the caller's authorization.
+  procedure`) and, on a mutation, `idempotentHint: false`; it is not filtered
+  by the caller's authorization. A `@no_idempotency` mutation never claims
+  `idempotentHint: true` although its `OpDescriptor` is
+  `idempotent_by_default`: it opted out of reservations, so a retry repeats
+  its effects (this amends ADR 0002 § Tools, which read the hint from that
+  flag).
 - **Errors.** An unknown tool is JSON-RPC `-32602`. Everything after that is an
   `isError: true` result whose text is REST's error envelope (`code`,
   `message`), so a 5xx detail stays in the log. The one addition over REST: the
@@ -43,7 +47,20 @@ cratestack::mcp::StdioServer::new(tools, ctx)?.serve().await?;
   Without a key nothing is reserved. Both the idempotency namespace and the
   rate-limit bucket are `mcp:<principal id>`, from the context's `id` claim (a
   string or an integer); a context with no such claim is refused
-  (`PRECONDITION_FAILED`) for a keyed or rate-limited call.
+  (`PRECONDITION_FAILED`) for a keyed or rate-limited call. One rate-limit
+  store lookup is bounded at 500ms (`DEFAULT_STORE_TIMEOUT`, as on HTTP; not
+  yet tunable over MCP), and what a failing store does is the
+  `StoreErrorPolicy` you pass to `StdioServer::with_store_error_policy`. The
+  default is HTTP's: serve through an unreachable store (`Unavailable`,
+  including an elapsed lookup), refuse any other failure. **If you chose
+  `StoreErrorPolicy::Deny` on HTTP, pass it here too** — the two transports
+  are configured separately.
+- **`StoreErrorPolicy` moved to `cratestack-exec` (L3),** with
+  `DEFAULT_STORE_TIMEOUT`, so HTTP and MCP take one type.
+  `cratestack_axum::ratelimit::{StoreErrorPolicy, DEFAULT_STORE_TIMEOUT}`
+  re-export them, so existing code compiles unchanged; both are also
+  re-exported as `cratestack::mcp::{StoreErrorPolicy, DEFAULT_STORE_TIMEOUT}`.
+  `StoreErrorPolicy::permits` — the rule both transports apply — is now public.
 - **stdio.** Only MCP messages go to stdout; point your `tracing` subscriber at
   stderr. The server exits when stdin closes.
 - **`@computed` outputs (Q7)** are resolved by the same generated composition
