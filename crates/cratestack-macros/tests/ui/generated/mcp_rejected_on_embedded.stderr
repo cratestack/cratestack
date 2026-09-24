@@ -1,0 +1,5 @@
+error: schema declares an MCP surface (an `mcp { }` block, `@@mcp(resource: ...)` on model `Note`), but include_embedded_schema! never serves MCP: the embedded role enforces no `@allow`/`@@allow` policy, so an MCP surface here could not keep MCP's policy guarantee (ADR 0002 D3). Remove the MCP declarations, or consume this schema through include_server_schema!.
+ --> tests/ui/generated/mcp_rejected_on_embedded.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-mcp-1036/mcp_embedded_rejected.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

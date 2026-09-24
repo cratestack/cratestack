@@ -1,0 +1,19 @@
+// cratestack#1036 (ADR 0002 D3): the embedded role enforces no policy, so
+// `include_embedded_schema!` rejects any MCP declaration — permanently, not
+// only until the runtime ships.
+
+datasource db {
+  provider = "sqlite"
+}
+
+mcp {
+  expose resources
+}
+
+model Note {
+  id   Int    @id
+  body String
+
+  @@allow("all", true)
+  @@mcp(resource: "notes")
+}
