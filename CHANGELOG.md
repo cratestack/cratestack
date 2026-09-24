@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### MCP phase 5: `@@mcp(resource: ...)` models are read-only resources, with REST's visibility (#1040)
+
+**With the `mcp` feature of `cratestack-pg` on, `include_server_schema!` now
+serves `@@mcp(resource: "<segment>")` models instead of refusing them** (the
+phase-1 release gate is lifted for resources; without the feature, the Q4
+message is unchanged). The same generated table serves them:
+`cratestack_schema::mcp::tools(db, registry, resolvers)`.
+
+- **URIs.** `resources/templates/list` offers `cratestack://<schema>/<segment>/{id}`
+  and `cratestack://<schema>/<segment>{?limit,cursor}`; `resources/list` offers
+  `cratestack://<schema>/<segment>`. `<segment>` is the author's; `<schema>` is
+  **the schema file's name without `.cstack`** (`blog.cstack` →
+  `cratestack://blog/...`), because the IR has no schema name — see the open
+  question on #1040. No table or model name appears in any URI.
+- **Same read path as REST.** A record is `find_unique(id).run(ctx)`, a page is
+  REST's own list builder (primary-key order), and both render through REST's
+  serializer, so the JSON is exactly REST's `GET` body: `@server_only` fields
+  omitted, `@computed` fields resolved. `@@allow("read", ...)` is in the SQL,
+  in the `WHERE` before `ORDER BY ... LIMIT ... OFFSET`.
+- **No existence oracle.** An unknown resource, a missing id, an id that is not
+  a valid key and a row the caller may not read all answer the same JSON-RPC
+  error, byte for byte: `-32602` `"resource not found"`.
+- **Pages** are `{"items": [...], "nextCursor": "..."}` (no `nextCursor` on the
+  last page). `limit` defaults to 50 and is clamped, not refused, at 200 or the
+  model's `max_page_size:`. The cursor is opaque and bound to its resource; one
+  this server did not issue for it is `-32602`.
+- **Whose rows, whose bucket.** A read runs as the call's own caller: the
+  context passed to `StdioServer::new`, or, over Streamable HTTP (phase 4),
+  the one your `AuthProvider` built for that request, so two tokens reading
+  the same collection each see only their own visible rows. `resources/list`
+  and `resources/templates/list` sit behind the same HTTP guard.
+- **Caching and admission.** Every result is `cacheScope: private`, `ttlMs: 0`.
+  Reads pass the same rate-limit admission as tool calls, charged to the same
+  per-caller bucket (`mcp:<id>` for a user, `mcp-system:<id>` for a system
+  caller) under the same `StoreErrorPolicy`; a throttled read is `-32603` with
+  `data.code = "TOO_MANY_REQUESTS"`.
+- **New compile errors**, in both feature states: `@@mcp` on a model whose
+  `@@internal(...)` hides `get` or `list`; `@@mcp` on a model whose `@id` is not
+  `String`, `Cuid`, `Int` or `Uuid`; and, when resources are declared, a schema
+  file name that is not letters, digits, `-`, `.`, `_`, `~`.
+- **`cratestack-mcp` API.** `McpTools` gains `resources()`, `read_record` and
+  `read_page`, all defaulted, so hand-written tool tables compile unchanged.
+  New: `ResourceDescriptor`, `DEFAULT_PAGE_SIZE`, `RESOURCE_SCHEME`.
+- **Not in this release:** schema-metadata resources (ADR 0002 § Resources),
+  relation traversal in URIs, `subscriptions/listen`.
+
 ### MCP phase 4: Streamable HTTP, authenticated by your `AuthProvider`, with RFC 9728 metadata and an enforced Origin allowlist (#1039)
 
 **The MCP server can now be mounted on your axum router.** The same generated
