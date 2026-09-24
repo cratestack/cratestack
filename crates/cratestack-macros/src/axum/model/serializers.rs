@@ -40,8 +40,14 @@ pub(super) fn build_serialize_helper(
         proc_macro2::TokenStream::new()
     };
 
+    // `pub(super)`, visible to the rest of the generated `cratestack_schema`
+    // and never outside it, for the reason the `compose_*` helpers are:
+    // MCP resources (`include::server::mcp_module::resources_dispatch`,
+    // cratestack#1040) serialize a record through this exact function, so
+    // a resource is shaped like the REST read — `@server_only` fields
+    // omitted, `@computed` fields resolved — by construction, not by copy.
     quote! {
-        fn #serialize_model_value_ident<'a, CR: super::computed::ComputedFieldResolver>(
+        pub(super) fn #serialize_model_value_ident<'a, CR: super::computed::ComputedFieldResolver>(
             db: &'a super::Cratestack,
             resolvers: &'a CR,
             ctx: &'a ::cratestack::CratestackContext,
@@ -83,8 +89,11 @@ pub(super) fn build_list_builder(
     let order_by_arms = &arms.order_by_arms;
     let order_catalog_ident = &p.order_catalog_ident;
 
+    // `pub(super)` for MCP collection resources (cratestack#1040): a page
+    // is built by the same builder `GET /<plural>` uses, so filtering,
+    // ordering and the row policy cannot drift between the two.
     quote! {
-        fn #list_builder_ident<'a>(
+        pub(super) fn #list_builder_ident<'a>(
             db: &'a super::Cratestack,
             query: &ModelListQuery,
             apply_paging: bool,

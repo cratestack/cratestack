@@ -5,6 +5,7 @@
 //! the schema declares an `auth` block, `false` otherwise. Per-op
 //! policy resolution is future work.
 
+mod reads;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -13,17 +14,16 @@ mod tests_idempotency;
 use cratestack_core::{Model, Procedure, TypeArity};
 use quote::quote;
 
+pub(crate) use reads::{model_get_op_descriptor, model_list_op_descriptor};
+
 pub(crate) fn generate_model_op_descriptors(
     model: &Model,
     auth_required: bool,
 ) -> Vec<proc_macro2::TokenStream> {
     let model_name = model.name.as_str();
-    let page_ty = format!("Page<{model_name}>");
     let create_input = format!("Create{model_name}Input");
     let update_input = format!("Update{model_name}Input");
 
-    let list_id = format!("model.{model_name}.list");
-    let get_id = format!("model.{model_name}.get");
     let create_id = format!("model.{model_name}.create");
     let update_id = format!("model.{model_name}.update");
     let delete_id = format!("model.{model_name}.delete");
@@ -43,26 +43,10 @@ pub(crate) fn generate_model_op_descriptors(
 
     let mut descriptors = Vec::new();
     if !internal.contains("list") {
-        descriptors.push(op_descriptor(
-            &list_id,
-            quote! { ::cratestack::OpKind::Unary },
-            "",
-            &page_ty,
-            true,
-            rate_limited,
-            auth_required,
-        ));
+        descriptors.push(model_list_op_descriptor(model, auth_required));
     }
     if !internal.contains("get") {
-        descriptors.push(op_descriptor(
-            &get_id,
-            quote! { ::cratestack::OpKind::Unary },
-            "",
-            model_name,
-            true,
-            rate_limited,
-            auth_required,
-        ));
+        descriptors.push(model_get_op_descriptor(model, auth_required));
     }
     if !internal.contains("create") {
         descriptors.push(op_descriptor(

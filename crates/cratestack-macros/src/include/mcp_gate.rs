@@ -1,15 +1,16 @@
 //! What each role does with a schema's MCP declarations (ADR 0002 Q4, D3;
 //! cratestack#1036, cratestack#1038).
 //!
-//! - **server** (`include_server_schema!`): the tools are served by the
-//!   generated `mcp` module (`include/server/mcp_module/`) when
-//!   `cratestack-macros` has its `mcp` feature, forwarded from
-//!   `cratestack-pg`/`cratestack-api`'s own. Without the feature, and for
-//!   resources in any case, this is still the Q4 `compile_error!`: an
-//!   attribute that parsed and then served nothing is what Q4 exists to
-//!   prevent (`@no_idempotency` sat inert for two release cycles that way).
-//!   Resources are phase 5 of cratestack#1033, so they stay gated until it
-//!   lands. See [`plan::server_plan`] for the order of the checks.
+//! - **server** (`include_server_schema!`): the tools and resources are
+//!   served by the generated `mcp` module (`include/server/mcp_module/`)
+//!   when `cratestack-macros` has its `mcp` feature, forwarded from
+//!   `cratestack-pg`/`cratestack-api`'s own. Without the feature this is
+//!   still the Q4 `compile_error!`: an attribute that parsed and then
+//!   served nothing is what Q4 exists to prevent (`@no_idempotency` sat
+//!   inert for two release cycles that way). Resources joined tools in
+//!   phase 5 (cratestack#1040); `cratestack-api` has no models, so only
+//!   `cratestack-pg` ever serves one. See [`plan::server_plan`] for the
+//!   order of the checks.
 //! - **embedded** (`include_embedded_schema!`): `compile_error!` for good —
 //!   the embedded role enforces no policy, so an MCP surface there could not
 //!   keep ADR 0002's central promise (D3), and no later phase changes that.
@@ -24,8 +25,11 @@
 //! `cratestack-macros/mcp`, the mechanism `rate_limit`/`pgvector` use.
 
 mod plan;
+mod resources;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_resources;
 
 use proc_macro::TokenStream;
 use syn::LitStr;
@@ -35,25 +39,26 @@ use cratestack_core::Schema;
 use super::decimal_arg::resolve_decimal_backend;
 use crate::shared::decimal_backend::DecimalBackend;
 
-pub(super) use plan::ToolPlan;
+pub(super) use plan::{McpPlan, ToolPlan};
+pub(super) use resources::ResourcePlan;
 
-/// The tools the server macro must generate, in declaration order — empty
-/// when the schema declares no MCP at all — or the compile error that stops
-/// it. Runs first in the server composer, straight after the schema
-/// parses, so an MCP schema fails with this message rather than whichever
-/// unrelated guard happens to run earlier. The decimal backend is resolved
-/// here only when there are tools, so a schema without MCP sees the same
-/// guard order as before.
+/// The tools and resources the server macro must generate, in declaration
+/// order — empty when the schema declares no MCP at all — or the compile
+/// error that stops it. Runs first in the server composer, straight after
+/// the schema parses, so an MCP schema fails with this message rather than
+/// whichever unrelated guard happens to run earlier. The decimal backend is
+/// resolved here only when there is MCP, so a schema without MCP sees the
+/// same guard order as before.
 pub(super) fn guard_server_mcp(
     schema_path: &LitStr,
     schema: &Schema,
     decimal: Option<DecimalBackend>,
-) -> Result<Vec<ToolPlan>, TokenStream> {
+) -> Result<McpPlan, TokenStream> {
     if plan::mcp_declarations(schema).is_none() {
-        return Ok(Vec::new());
+        return Ok(McpPlan::default());
     }
     let decimal = resolve_decimal_backend(schema_path, schema, decimal)?;
-    plan::server_plan(schema, decimal, cfg!(feature = "mcp"))
+    plan::server_plan(schema, &schema_path.value(), decimal, cfg!(feature = "mcp"))
         .map_err(|message| error(schema_path, message))
 }
 

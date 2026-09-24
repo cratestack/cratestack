@@ -73,7 +73,9 @@ fn names_every_mcp_declaration() {
 #[test]
 fn feature_on_tools_are_planned_in_declaration_order() {
     let schema = parse(TOOLS_ONLY);
-    let plans = server_plan(&schema, None, true).expect("tools are served");
+    let plans = server_plan(&schema, "tools.cstack", None, true)
+        .expect("tools are served")
+        .tools;
     let names: Vec<&str> = plans.iter().map(|plan| plan.name.as_str()).collect();
     assert_eq!(names, ["getFeed", "publish_post"]);
     assert_eq!(plans[1].description.as_deref(), Some("Publish."));
@@ -85,7 +87,9 @@ fn feature_on_tools_are_planned_in_declaration_order() {
 #[test]
 fn feature_off_asks_for_the_feature() {
     let schema = parse(TOOLS_ONLY);
-    let message = server_plan(&schema, None, false).err().expect("gated");
+    let message = server_plan(&schema, "tools.cstack", None, false)
+        .err()
+        .expect("gated");
     assert!(
         message.contains("without its `mcp` Cargo feature"),
         "{message}"
@@ -93,15 +97,36 @@ fn feature_off_asks_for_the_feature() {
     assert!(message.contains(r#"features = ["mcp"]"#), "{message}");
 }
 
+/// Phase 5 (cratestack#1040) lifted the refusal this test used to pin
+/// (`resources_stay_gated_with_the_feature_on`): with the feature on, a
+/// resource is planned, not refused.
 #[test]
-fn resources_stay_gated_with_the_feature_on() {
+fn feature_on_resources_are_planned_beside_tools() {
     let schema = parse(WITH_RESOURCES);
-    let message = server_plan(&schema, None, true).err().expect("phase 5");
+    let plan = server_plan(&schema, "tests/blog.cstack", None, true).expect("served");
+    assert_eq!(plan.tools.len(), 1);
+    let [post] = plan.resources.as_slice() else {
+        panic!("one resource");
+    };
+    assert_eq!(post.segment, "posts");
+    assert_eq!(post.authority, "blog", "the schema file's stem");
+    assert_eq!(
+        post.max_page_size, 200,
+        "no `max_page_size:` means Q3's 200"
+    );
+    assert_eq!(post.primary_key.name, "id");
+}
+
+#[test]
+fn feature_off_still_refuses_resources() {
+    let schema = parse(WITH_RESOURCES);
+    let message = server_plan(&schema, "blog.cstack", None, false)
+        .err()
+        .expect("gated");
     assert!(
-        message.contains("MCP resources are not served yet"),
+        message.contains("without its `mcp` Cargo feature"),
         "{message}"
     );
-    assert!(message.contains("`resources` in `expose`"), "{message}");
     assert!(message.contains("model `Post`"), "{message}");
 }
 
@@ -112,7 +137,9 @@ fn an_unmappable_tool_is_refused_in_both_feature_states() {
         "procedure getFeed(payload: Json): Args",
     ));
     for feature in [false, true] {
-        let message = server_plan(&schema, None, feature).err().expect("refused");
+        let message = server_plan(&schema, "tools.cstack", None, feature)
+            .err()
+            .expect("refused");
         assert!(
             message.starts_with("`@mcp(tool)` on procedure `getFeed` cannot be exposed"),
             "{message}"

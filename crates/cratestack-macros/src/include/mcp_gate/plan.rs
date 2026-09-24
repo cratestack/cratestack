@@ -8,6 +8,22 @@ use cratestack_core::{Procedure, Schema};
 use crate::json_schema::{JsonSchemaError, procedure_input_schema, procedure_output_schema};
 use crate::shared::decimal_backend::DecimalBackend;
 
+use super::resources::{ResourcePlan, resource_plans};
+
+/// Everything the server macro generates for MCP. Empty when the schema
+/// declares no MCP at all.
+#[derive(Default)]
+pub(in crate::include) struct McpPlan {
+    pub(in crate::include) tools: Vec<ToolPlan>,
+    pub(in crate::include) resources: Vec<ResourcePlan>,
+}
+
+impl McpPlan {
+    pub(in crate::include) fn is_empty(&self) -> bool {
+        self.tools.is_empty() && self.resources.is_empty()
+    }
+}
+
 /// One `@mcp(tool)` procedure, with the schemas the generated table embeds.
 pub(in crate::include) struct ToolPlan {
     pub(in crate::include) procedure: Procedure,
@@ -23,19 +39,23 @@ pub(in crate::include) struct ToolPlan {
 ///
 /// 1. every tool's input and output schema must generate. A type with no
 ///    faithful mapping (`Json`, `FindMany`, `Vector`, `Geography`,
-///    `Geometry`) is refused, never advertised as `{}` (ADR 0002 § Tools).
-///    First, so the author hears about a tool that can never be served
-///    before being told to turn a feature on for it;
-/// 2. the `mcp` feature must be on — without it nothing would serve the
-///    declarations (Q4);
-/// 3. no resources: they are phase 5, and until it ships they would parse
-///    and serve nothing (Q4 again).
+///    `Geometry`) is refused, never advertised as `{}` (ADR 0002 § Tools);
+/// 2. every resource must be servable as declared (`resources.rs`: a URI
+///    authority, an addressable `@id`, no `@@internal` read verb).
+///    These two come first, so the author hears about a declaration that
+///    can never be served before being told to turn a feature on for it;
+/// 3. the `mcp` feature must be on — without it nothing would serve the
+///    declarations (Q4). With it, tools and resources are both served:
+///    phase 5 (cratestack#1040) lifted the resource refusal this step used
+///    to end with.
 pub(super) fn server_plan(
     schema: &Schema,
+    schema_file: &str,
     decimal: Option<DecimalBackend>,
     feature_enabled: bool,
-) -> Result<Vec<ToolPlan>, String> {
+) -> Result<McpPlan, String> {
     let tools = tool_plans(schema, decimal)?;
+    let resources = resource_plans(schema, schema_file)?;
     if !feature_enabled {
         let declared = mcp_declarations(schema).unwrap_or_default();
         return Err(format!(
@@ -46,15 +66,7 @@ pub(super) fn server_plan(
              remove the MCP declarations."
         ));
     }
-    if let Some(resources) = resource_declarations(schema) {
-        return Err(format!(
-            "schema declares MCP resources ({resources}), but MCP resources are not served yet \
-             (cratestack#1033, phase 5): include_server_schema! rejects them until they are, so \
-             none can parse and then serve nothing (ADR 0002 Q4). Remove `@@mcp(resource: ...)` \
-             and `resources` from the `mcp {{ expose = [...] }}` list; tools are served today."
-        ));
-    }
-    Ok(tools)
+    Ok(McpPlan { tools, resources })
 }
 
 fn tool_plans(schema: &Schema, decimal: Option<DecimalBackend>) -> Result<Vec<ToolPlan>, String> {
@@ -102,18 +114,6 @@ pub(super) fn mcp_declarations(schema: &Schema) -> Option<String> {
         }
     }
     declared.extend(resource_list(schema));
-    (!declared.is_empty()).then(|| declared.join(", "))
-}
-
-fn resource_declarations(schema: &Schema) -> Option<String> {
-    let mut declared = resource_list(schema);
-    if schema
-        .mcp
-        .as_ref()
-        .is_some_and(|mcp| mcp.exposes_resources())
-    {
-        declared.insert(0, "`resources` in `expose`".to_owned());
-    }
     (!declared.is_empty()).then(|| declared.join(", "))
 }
 
