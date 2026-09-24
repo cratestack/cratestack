@@ -1,14 +1,4 @@
 //! [`CoseEnvelope`]: the COSE implementation of `CratestackEnvelope`.
-//!
-//! Errors from every method follow one rule (§10): a failed verification
-//! is the coarse `CratestackError::Unauthorized`; a failing backend (key
-//! resolver, nonce store, signer) is `CratestackError::Internal`, a `500`;
-//! and **local misuse** (a binding whose shape does not fit the call, a
-//! request opened without a nonce store, a clock or `cti` source returning
-//! nonsense, a signer returning a signature of the wrong length) is also
-//! `CratestackError::Internal`. Misuse depends only on local state, never
-//! on the received bytes, so reporting it as a `500` reveals nothing about
-//! a message.
 
 mod builder;
 mod trait_impl;
@@ -51,8 +41,18 @@ pub enum CoseRole {
 /// A COSE_Sign1 or COSE_Mac0 envelope (ADR 0006 §§1, 3-5).
 ///
 /// Cheap to clone: the configuration sits behind one `Arc`. Build it with
-/// [`CoseEnvelope::server`] or [`CoseEnvelope::client`]. See the module
-/// docs for the error contract every method follows.
+/// [`CoseEnvelope::server`] or [`CoseEnvelope::client`].
+///
+/// **Errors**, for every method (§10): a failed verification is the coarse
+/// `CratestackError::Unauthorized`; a failing backend (key resolver, nonce
+/// store, signer) is `CratestackError::Internal`, a `500`; and **local
+/// misuse** (a binding whose shape does not fit the call, a request opened
+/// without a nonce store, a clock or `cti` source returning nonsense, a
+/// signer returning a signature of the wrong length) is also
+/// `CratestackError::Internal`. Misuse depends only on local state, never
+/// on the received bytes, so a `500` for it reveals nothing about a
+/// message. A codec error from a `*_value` method is returned as the codec
+/// reported it.
 #[derive(Clone)]
 pub struct CoseEnvelope {
     pub(crate) inner: Arc<Inner>,

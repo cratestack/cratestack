@@ -32,7 +32,7 @@
 //! **Errors (§10):** every failed check is the same
 //! `CratestackError::Unauthorized` carrying [`UNAUTHENTICATED`]; a failing
 //! key resolver, nonce store or signer is `CratestackError::Internal`, and
-//! so is local misuse (see [`CoseEnvelope`]'s module docs).
+//! so is local misuse (see [`CoseEnvelope`]).
 //!
 //! **Not here yet:** `chain` streams (P1), `window` replay (P2), and the
 //! `auth` feature (the `cratestack-auth` adapters, the Redis nonce bridge
