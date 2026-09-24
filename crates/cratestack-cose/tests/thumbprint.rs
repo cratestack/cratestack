@@ -63,7 +63,7 @@ fn symmetric_hand_encoded() {
     let expected: [u8; 32] = Sha256::digest(&encoded).into();
     assert_eq!(symmetric_thumbprint(&k), expected);
     assert_eq!(
-        CoseVerifyKey::hmac(k.to_vec())
+        CoseVerifyKey::hmac(cratestack_cose::CoseAlg::Hmac256_256, k.to_vec())
             .expect("32 bytes")
             .thumbprint(),
         expected

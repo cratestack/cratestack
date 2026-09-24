@@ -17,8 +17,13 @@
 //! - [`CoseSigner`] and [`CoseVerifierResolver`] are the key seams: a KMS or
 //!   HSM signs without exporting the key, and a resolver may return several
 //!   candidates for one `kid`.
-//! - [`external_aad`] and [`request_digest`] define the binding (§4);
+//! - [`external_aad`] defines the binding (§4), which includes the
+//!   receiving service's `audience`; [`request_digest`] and
+//!   [`request_digest_unsigned`] bind a response to its request, the latter
+//!   through the client's [`RequestNonce`] (`Cratestack-Nonce`);
 //!   [`thumbprint`] the RFC 9679 key ids (§3).
+//! - [`KeyProviderMacKeys`] turns `cratestack_core::KeyProvider` secrets
+//!   into Mac0 keys.
 //!
 //! **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`) for
 //! Sign1, HMAC 256/64 (`4`) and 256/256 (`5`) for Mac0. Nothing else is
@@ -26,7 +31,8 @@
 //!
 //! **Errors (§10):** every failed check is the same
 //! `CratestackError::Unauthorized` carrying [`UNAUTHENTICATED`]; a failing
-//! key resolver, nonce store or signer is `CratestackError::Internal`.
+//! key resolver, nonce store or signer is `CratestackError::Internal`, and
+//! so is local misuse (see [`CoseEnvelope`]'s module docs).
 //!
 //! **Not here yet:** `chain` streams (P1), `window` replay (P2), and the
 //! `auth` feature (the `cratestack-auth` adapters, the Redis nonce bridge
@@ -38,9 +44,16 @@
 //!   (see the private `cbor` module's doc); `coset` is a dev-dependency
 //!   that the tests check the bytes against.
 //! - Algorithms are the closed [`CoseAlg`], not `coset::iana::Algorithm`.
-//! - The payload is copied into the message once instead of being encoded
-//!   in place (see `seal`), because the envelope trait receives it already
-//!   encoded.
+//! - The payload is encoded in place only on the `seal_value` path
+//!   (`CratestackEnvelope::seal_value`, [`CoseEnvelope::seal_request_value`]
+//!   and [`CoseEnvelope::seal_response_value`]). `seal` receives bytes that
+//!   are already encoded and copies them into the message once.
+//! - The signature over the to-be-signed structure is computed
+//!   incrementally for HMAC and ESP256, with no copy of the payload, but
+//!   Ed25519 (PureEdDSA) is signed and verified over one contiguous copy
+//!   of the structure (see [`Ed25519Signer`]).
+//! - ESP256 signatures are low-`s` only: the sealer normalises them, the
+//!   opener rejects a high `s`, so every message has one encoding.
 
 mod aad;
 mod alg;
@@ -52,17 +65,22 @@ mod keys;
 mod open;
 mod opened;
 mod replay;
+mod request_nonce;
 mod seal;
+mod tbs;
 pub mod thumbprint;
 mod wire;
 
 pub use aad::{BINDING_VERSION, external_aad, request_digest};
 pub use alg::{CoseAlg, CoseMode};
-pub use envelope::{Clock, CoseEnvelope, CoseEnvelopeBuilder, CoseRole, CtiSource};
+pub use envelope::{CoseEnvelope, CoseEnvelopeBuilder, CoseRole};
 pub use error::UNAUTHENTICATED;
 pub use keys::{
     CoseSigner, CoseVerifierResolver, CoseVerifyKey, Ed25519Signer, HmacSecret, HmacSigner,
-    MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
+    KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
 };
 pub use opened::Opened;
 pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN};
+pub use request_nonce::{
+    NONCE_HEADER, NONCE_HEADER_VALUE_LEN, REQUEST_NONCE_LEN, RequestNonce, request_digest_unsigned,
+};

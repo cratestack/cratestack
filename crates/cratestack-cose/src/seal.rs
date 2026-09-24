@@ -1,31 +1,65 @@
-//! Sealing: payload in, COSE message out.
+//! Sealing: payload in, COSE message out, with the payload written once.
+//!
+//! ADR 0006 §1: "the sealer encodes straight into the COSE buffer: it
+//! reserves up to 9 bytes for the `bstr` head, encodes, then patches the
+//! head" (kept by the maintainer over accepting a copy, cratestack#1005).
+//! The message is `prefix ‖ payload head ‖ payload ‖ signature`, where the
+//! prefix (tag, array head, protected header, empty unprotected map) has a
+//! length known before the payload exists, and the payload head's length
+//! is known only after. So the buffer starts with `prefix_len + 9` bytes of
+//! room, the payload is written right after that room, and once its length
+//! is known the head (1 to 9 bytes) and then the prefix are written **right
+//! aligned against the payload**. The `9 - head_len` bytes of room left at
+//! the front are skipped by `Bytes::advance`, which moves a pointer.
+//!
+//! So nothing is shifted: the ADR's "shift once if the reserved head is too
+//! long" is avoided by writing the short, fixed-length prefix last instead
+//! of moving the payload. The cost is at most 8 unused bytes in front of
+//! the message's allocation.
+//!
+//! What remains is ordinary buffer growth. The payload's size is unknown
+//! until it is encoded, so the buffer starts with room for
+//! [`PAYLOAD_CAPACITY_HINT`] bytes of it, and if the codec writes more, or
+//! the signature does not fit after it, the `Vec` grows, which the
+//! allocator may do by moving it. That is the same growth the codec's own
+//! `Vec` would go through; what is gone is the second buffer and the copy
+//! from it into the message.
+//!
+//! [`seal`] serves both entry points. `seal_value` hands it a closure that
+//! runs `CratestackCodec::encode_into` on the buffer; `seal` (bytes already
+//! encoded) one that copies them in, the one unavoidable copy for a caller
+//! that encoded elsewhere. Both therefore produce the same bytes.
+//!
+//! The signature is computed over the to-be-signed structure without
+//! building it (see `tbs.rs`) when the signer can take it in pieces (the
+//! in-process HMAC and ESP256 signers); otherwise the structure is built
+//! once and handed to the signer.
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use cratestack_core::{Binding, CratestackError};
 
 use crate::aad::{self, Direction};
+use crate::alg::CoseAlg;
+use crate::cbor::write::{self, EMPTY_MAP, Head, MAJOR_ARRAY, MAJOR_BSTR, MAJOR_TAG, MAX_HEAD_LEN};
 use crate::envelope::Inner;
 use crate::error::{backend, misuse};
 use crate::header;
-use crate::wire;
+use crate::keys::esp256_low_s;
+use crate::tbs::Tbs;
 
-/// Seal `payload` for `bind`, as a request (`request == true`, with `iat`
-/// and `cti`) or a response (`kid` and `alg` only; Q1).
-///
-/// **Deviation from ADR 0006 §1** ("the sealer encodes straight into the
-/// COSE buffer ... then patches the head"): `CratestackEnvelope::seal`
-/// receives the codec's output as `Bytes`, already encoded, and the trait
-/// has no encode-in-place hook. The payload is therefore copied into the
-/// message once, and once more into the to-be-signed structure (see
-/// `wire::to_be_signed`). The bytes on the wire are the codec's output
-/// unchanged, which is what the "no re-serialization" requirement protects;
-/// only the zero-copy half of §1 is given up.
-pub(crate) async fn seal(
+/// Seal the payload `write_payload` appends, for `bind`, as a request
+/// (`request == true`, with `iat` and `cti`) or a response (`kid` and `alg`
+/// only; Q1). `payload_hint` sizes the buffer; the payload may exceed it.
+pub(crate) async fn seal<W>(
     inner: &Inner,
-    payload: &[u8],
     bind: &Binding<'_>,
     request: bool,
-) -> Result<Bytes, CratestackError> {
+    payload_hint: usize,
+    write_payload: W,
+) -> Result<Bytes, CratestackError>
+where
+    W: FnOnce(&mut Vec<u8>) -> Result<(), CratestackError>,
+{
     let direction = aad::direction(bind)?;
     if request != matches!(direction, Direction::Request) {
         return Err(misuse(if request {
@@ -50,17 +84,76 @@ pub(crate) async fn seal(
     };
     let protected = header::encode(alg, signer.kid(), claims);
     let external_aad = aad::external_aad(bind)?;
-    let to_be_signed = wire::to_be_signed(inner.mode, &protected, &external_aad, payload);
-    let signature = signer
-        .sign(&to_be_signed)
-        .await
-        .map_err(|error| backend("signer", error))?;
+
+    let tag = Head::new(MAJOR_TAG, inner.mode.tag());
+    let array = Head::new(MAJOR_ARRAY, 4);
+    let protected_head = Head::new(MAJOR_BSTR, write::len_arg(protected.len()));
+    let prefix_len = tag.as_slice().len()
+        + array.as_slice().len()
+        + protected_head.as_slice().len()
+        + protected.len()
+        + 1;
+    let payload_at = prefix_len + MAX_HEAD_LEN;
+    let mut out =
+        Vec::with_capacity(payload_at + payload_hint + write::bstr_len(alg.signature_len()));
+    out.resize(payload_at, 0);
+    write_payload(&mut out)?;
+
+    let payload_head = Head::new(MAJOR_BSTR, write::len_arg(out.len() - payload_at));
+    let start = MAX_HEAD_LEN - payload_head.as_slice().len();
+    let mut at = start;
+    for part in [
+        tag.as_slice(),
+        array.as_slice(),
+        protected_head.as_slice(),
+        &protected,
+        &[EMPTY_MAP],
+        payload_head.as_slice(),
+    ] {
+        out[at..at + part.len()].copy_from_slice(part);
+        at += part.len();
+    }
+    debug_assert_eq!(at, payload_at);
+
+    let tbs = Tbs {
+        mode: inner.mode,
+        protected: &protected,
+        external_aad: &external_aad,
+        payload: &out[payload_at..],
+    };
+    let signature = match tbs.with_chunks(|chunks| signer.sign_chunks(chunks)) {
+        Some(signed) => signed,
+        None => {
+            let to_be_signed = tbs.assemble();
+            signer.sign(&to_be_signed).await
+        }
+    }
+    .map_err(|error| backend("signer", error))?;
+    let signature = checked_signature(alg, signature)?;
+
+    write::bstr(&mut out, &signature);
+    let mut sealed = Bytes::from(out);
+    sealed.advance(start);
+    Ok(sealed)
+}
+
+/// Refuse a signature of the wrong length (Q5: sizes come from `alg`), and
+/// normalise ESP256 to low-`s`, whichever signer produced it: a KMS or
+/// WebCrypto signer may return either, and the opener accepts only low-`s`
+/// (one message, one encoding; see `CoseVerifyKey::verify`).
+fn checked_signature(alg: CoseAlg, signature: Vec<u8>) -> Result<Vec<u8>, CratestackError> {
     if signature.len() != alg.signature_len() {
         return Err(misuse(
             "the signer returned a signature of the wrong length",
         ));
     }
-    Ok(Bytes::from(wire::emit(
-        inner.mode, &protected, payload, &signature,
-    )))
+    if alg == CoseAlg::Esp256 {
+        return esp256_low_s(&signature)
+            .ok_or_else(|| misuse("the signer returned an invalid ESP256 signature"));
+    }
+    Ok(signature)
 }
+
+/// The capacity reserved for a payload `seal_value` has not encoded yet.
+/// Past it, the buffer grows the way a `Vec` the codec owned would have.
+pub(crate) const PAYLOAD_CAPACITY_HINT: usize = 256;

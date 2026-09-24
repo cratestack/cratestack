@@ -36,7 +36,7 @@ fn media_types() {
 #[tokio::test]
 async fn client_to_server_and_back_through_the_trait() {
     let now = common::now();
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let client = common::client(alg, now, CTI_16);
         let server = common::server(alg, now);
         let request = rest_request();

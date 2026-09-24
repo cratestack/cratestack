@@ -36,6 +36,10 @@ cratestack-core.workspace = true
 # signer, a device-key database), so they desugar the way core's
 # `KeyProvider` / `NonceStore` do.
 async-trait.workspace = true
+# The `Cratestack-Nonce` header (16 bytes as unpadded base64url). Its
+# decoder rejects padding and non-zero trailing bits, which the strict
+# 22-character rule relies on.
+base64.workspace = true
 bytes.workspace = true
 # `NonceStore::record_if_unseen` takes a `chrono` expiry, and the default
 # clock is `chrono::Utc::now`, which works on `wasm32-unknown-unknown`
@@ -45,10 +49,33 @@ ed25519-dalek.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
 p256.workspace = true
+# `seal_value` / `seal_*_value` take `T: Serialize` (the encode-in-place
+# hook, cratestack#1005); already a dependency of `cratestack-core`.
+serde.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+zeroize.workspace = true
+
+# Browser wasm (`wasm32-unknown-unknown`, ADR 0006 §11: the wasm and napi
+# builds share this crate): neither crate below knows where randomness comes
+# from on that target unless told. `getrandom` draws this crate's `cti` and
+# `Cratestack-Nonce` bytes and needs its `wasm_js` backend (getrandom 0.4:
+# the feature alone selects it, no `--cfg` flag). `uuid` is not used here
+# directly, but `cratestack-core` depends on it with `v4`, which fails to
+# compile on this target without a randomness feature; this follows
+# `cratestack-rusqlite`'s precedent for the same edge. `target_os =
+# "unknown"` keeps WASI, which has its own randomness, out of it. CI's
+# `check` job runs `cargo check -p cratestack-cose --target
+# wasm32-unknown-unknown`.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
+# `tests/seal_value_alloc.rs` counts allocations to show `seal_value`
+# keeps the payload in one buffer (cratestack#1005). Its own binary, as it
+# installs a `#[global_allocator]`.
+allocation-counter.workspace = true
 # Independent implementation the wire bytes are checked against: the
 # `Sig_structure` / `MAC_structure`, the tagged message, and the AAD array
 # (through its `ciborium::Value`). Not a normal dependency: `coset` can
@@ -60,7 +87,6 @@ coset.workspace = true
 cratestack-codec-cbor.workspace = true
 # A randomized (non-RFC 6979) ES256 signature for the verify-only test.
 rand.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 uuid.workspace = true

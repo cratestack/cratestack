@@ -9,12 +9,17 @@
 
 mod common;
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use bytes::Bytes;
 use common::fixture::payment_bytes;
 use common::forge::{self, TAG_SIGN1, bstr, layout, with_unprotected};
 use common::{CTI_16, IAT, rest_request, unhex};
-use cratestack_core::CratestackError;
-use cratestack_cose::{CoseAlg, CoseSigner, Opened, UNAUTHENTICATED, external_aad};
+use cratestack_core::{CratestackError, InMemoryNonceStore};
+use cratestack_cose::{
+    CoseAlg, CoseSigner, CoseVerifierResolver, CoseVerifyKey, Opened, UNAUTHENTICATED, external_aad,
+};
 
 async fn open(body: Vec<u8>) -> Result<Opened, CratestackError> {
     common::server(CoseAlg::Ed25519, IAT)
@@ -347,4 +352,81 @@ async fn a_request_does_not_open_as_a_response_nor_the_reverse() {
         &forge::ed25519_sign(&forge::sign1_tbs(&bare, &aad, &payment_bytes())),
     );
     rejects(message, "claims-less request").await;
+}
+
+/// A resolver that ignores `kid` and `alg` and counts its calls.
+struct CountingResolver(Arc<AtomicUsize>);
+
+#[async_trait::async_trait]
+impl CoseVerifierResolver for CountingResolver {
+    async fn resolve(
+        &self,
+        _kid: &[u8],
+        _alg: CoseAlg,
+    ) -> Result<Vec<CoseVerifyKey>, CratestackError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(vec![common::ed25519().verify_key()])
+    }
+}
+
+/// A `kid` is exactly 8 bytes, enforced by the header parser before any
+/// key is looked up (security review of cratestack#1005, fix 4). The
+/// resolver here is kid-blind, so it would hand over the signing key for
+/// any `kid`, and the messages are correctly signed by that key: only the
+/// length rule refuses them. It must also refuse them before the resolver
+/// sees attacker-sized input, which is what makes this test fail if the
+/// length check is deleted even though the later "the candidate's own kid
+/// is the header's" check would also refuse the message.
+#[tokio::test]
+async fn a_7_or_9_byte_kid_is_refused_before_the_resolver() {
+    let now = common::now();
+    let aad = external_aad(&rest_request()).expect("aad");
+    let payload = payment_bytes();
+    for len in [7, 9, 0, 32] {
+        let protected = forge::request_protected(
+            -19,
+            &vec![0x01; len],
+            u32::try_from(now).expect("u32"),
+            &unhex(CTI_16),
+        );
+        let body = forge::ed25519_request(&protected, &aad, &payload);
+        let calls = Arc::new(AtomicUsize::new(0));
+        let server = common::server_with(
+            CoseAlg::Ed25519,
+            now,
+            Arc::new(CountingResolver(calls.clone())),
+            Arc::new(InMemoryNonceStore::new()),
+        );
+        match server
+            .open_request(Bytes::from(body), &rest_request())
+            .await
+        {
+            Err(CratestackError::Unauthorized(message)) => assert_eq!(message, UNAUTHENTICATED),
+            other => panic!("a {len}-byte kid: {other:?}"),
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            0,
+            "a {len}-byte kid reached the resolver"
+        );
+    }
+    // Control: the same construction with the real 8-byte kid opens, and
+    // does consult the resolver.
+    let kid = common::ed25519().verify_key().kid();
+    let protected =
+        forge::request_protected(-19, &kid, u32::try_from(now).expect("u32"), &unhex(CTI_16));
+    let calls = Arc::new(AtomicUsize::new(0));
+    common::server_with(
+        CoseAlg::Ed25519,
+        now,
+        Arc::new(CountingResolver(calls.clone())),
+        Arc::new(InMemoryNonceStore::new()),
+    )
+    .open_request(
+        Bytes::from(forge::ed25519_request(&protected, &aad, &payload)),
+        &rest_request(),
+    )
+    .await
+    .expect("control opens");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

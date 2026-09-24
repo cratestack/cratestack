@@ -47,7 +47,9 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
     let (account, payment) = (String::from("acc 1"), String::from("pay/2"));
     let params = [account.as_str(), payment.as_str()];
     let query = String::from("a=1&b=2");
+    let audience = String::from("payments");
     let borrowed = Binding {
+        audience: Cow::Borrowed(&audience),
         method: Cow::Borrowed("POST"),
         route: Cow::Borrowed(&route),
         path_params: PathParams::Borrowed(&params),
@@ -59,7 +61,9 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
     };
     let owned: Binding<'static> = borrowed.into_owned();
     // Outliving the strings it borrowed from is the point of `into_owned`.
-    drop((route, account, payment, query));
+    drop((route, account, payment, query, audience));
+    assert!(matches!(owned.audience, Cow::Owned(_)));
+    assert_eq!(owned.audience, "payments");
     assert!(matches!(owned.route, Cow::Owned(_)));
     assert_eq!(owned.route, "/accounts/{id}/payments/{payment}");
     assert!(matches!(owned.path_params, PathParams::Owned(_)));

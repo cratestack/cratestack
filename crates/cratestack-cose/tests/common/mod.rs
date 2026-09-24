@@ -92,18 +92,25 @@ pub fn signer(alg: CoseAlg) -> Arc<dyn CoseSigner> {
     }
 }
 
-/// A resolver holding every fixed key.
+/// A resolver holding every fixed key: one per algorithm. An HMAC key is
+/// bound to one algorithm, so the shared secret is listed twice, once for
+/// HMAC 256/64 and once for 256/256 (the two share a `kid`).
 pub fn resolver() -> Arc<dyn CoseVerifierResolver> {
     Arc::new(
         StaticVerifierResolver::new()
             .with_key(ed25519().verify_key())
             .with_key(p256().verify_key())
+            .with_key(hmac(CoseAlg::Hmac256_64).verify_key())
             .with_key(hmac(CoseAlg::Hmac256_256).verify_key()),
     )
 }
 
+/// The audience every test binding is addressed to.
+pub const AUDIENCE: &str = "payments";
+
 pub fn rpc_request() -> Binding<'static> {
     Binding {
+        audience: Cow::Borrowed(AUDIENCE),
         method: Cow::Borrowed("POST"),
         route: Cow::Borrowed("model.Payment.create"),
         path_params: PathParams::EMPTY,
@@ -205,4 +212,37 @@ pub async fn sealed_request_at(alg: CoseAlg, bind: &Binding<'_>, iat: u64) -> By
         .seal_request(&fixture::payment_bytes(), bind)
         .await
         .expect("seal request")
+}
+
+/// A `Binding` rebuilt from a vector file's `binding` object, the way
+/// another implementation would read it.
+pub fn binding_from_json(json: &serde_json::Value) -> Binding<'static> {
+    let text = |field: &str| Cow::Owned(json[field].as_str().expect(field).to_owned());
+    let digest = |value: &serde_json::Value| -> Option<[u8; 32]> {
+        value
+            .as_str()
+            .map(|hex| unhex(hex).try_into().expect("32 bytes"))
+    };
+    Binding {
+        audience: text("audience"),
+        method: text("method"),
+        route: text("route"),
+        path_params: PathParams::Owned(
+            json["path_params"]
+                .as_array()
+                .expect("path_params")
+                .iter()
+                .map(|value| value.as_str().expect("tstr").to_owned())
+                .collect(),
+        ),
+        query: json["query"]
+            .as_str()
+            .map(|query| Cow::Owned(query.to_owned())),
+        schema_sha: digest(&json["schema_sha"]).expect("schema_sha"),
+        payload_media_type: text("payload_type"),
+        request_digest: digest(&json["request_digest"]),
+        status: json["status"]
+            .as_u64()
+            .map(|status| u16::try_from(status).expect("status")),
+    }
 }

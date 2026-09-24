@@ -33,6 +33,7 @@ fn coset_alg(alg: CoseAlg) -> Algorithm {
 fn aad_via_ciborium(bind: &Binding<'_>) -> Vec<u8> {
     let mut items = vec![
         Value::Integer(1.into()),
+        Value::Text(bind.audience.to_string()),
         Value::Text(bind.method.to_string()),
         Value::Text(bind.route.to_string()),
         Value::Array(
@@ -97,7 +98,13 @@ async fn coset_request(alg: CoseAlg, bind: &Binding<'_>) -> Vec<u8> {
         cratestack_cose::CoseMode::Sign1 => common::forge::sign1_tbs(&protected, &aad, &payload),
         cratestack_cose::CoseMode::Mac0 => common::forge::mac0_tbs(&protected, &aad, &payload),
     };
-    let signature = signer.sign(&tbs).await.expect("sign");
+    let mut signature = signer.sign(&tbs).await.expect("sign");
+    if alg == CoseAlg::Esp256 {
+        // The envelope's contract, not `coset`'s: an ESP256 signature goes
+        // on the wire with a low `s` (RFC 6979 gives either).
+        let raw = p256::ecdsa::Signature::from_slice(&signature).expect("signature");
+        signature = raw.normalize_s().to_bytes().to_vec();
+    }
     match alg.mode() {
         cratestack_cose::CoseMode::Sign1 => CoseSign1Builder::new()
             .protected(header)
@@ -119,7 +126,7 @@ async fn coset_request(alg: CoseAlg, bind: &Binding<'_>) -> Vec<u8> {
 #[tokio::test]
 async fn sealed_requests_are_byte_identical_to_coset() {
     // ESP256 is included: the in-process signer is RFC 6979 deterministic.
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         for bind in [rpc_request(), rest_request()] {
             let ours = common::sealed_request(alg, &bind).await;
             let theirs = coset_request(alg, &bind).await;

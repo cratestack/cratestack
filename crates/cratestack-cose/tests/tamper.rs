@@ -45,7 +45,7 @@ async fn flip(alg: CoseAlg, at: usize, what: &str) {
 
 #[tokio::test]
 async fn a_bit_flip_in_the_payload_rejects() {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let sealed = common::sealed_request(alg, &rest_request()).await;
         let payload = layout(&sealed).payload;
         flip(alg, payload.start, "payload first byte").await;
@@ -55,7 +55,7 @@ async fn a_bit_flip_in_the_payload_rejects() {
 
 #[tokio::test]
 async fn a_bit_flip_in_the_protected_header_rejects() {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let sealed = common::sealed_request(alg, &rest_request()).await;
         let protected = layout(&sealed).protected;
         // Content is `a3 01 <alg> 04 48 <kid×8> 0f …`: offset 12 is the
@@ -68,7 +68,7 @@ async fn a_bit_flip_in_the_protected_header_rejects() {
 
 #[tokio::test]
 async fn a_bit_flip_in_the_signature_rejects() {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let sealed = common::sealed_request(alg, &rest_request()).await;
         let signature = layout(&sealed).signature;
         flip(alg, signature.start, "signature first byte").await;
@@ -101,7 +101,7 @@ async fn every_single_bit_flip_rejects() {
 
 /// Seal for `rest_request()`, open with one field changed.
 async fn aad_mismatch(change: impl Fn(&mut Binding<'static>), what: &str) {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let sealed = common::sealed_request(alg, &rest_request()).await.to_vec();
         let mut other = rest_request();
         change(&mut other);
@@ -149,7 +149,7 @@ async fn aad_binds_every_request_field() {
 
 #[tokio::test]
 async fn aad_binds_request_digest_and_status_on_responses() {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let request = rest_request();
         let request_body = common::sealed_request(alg, &request).await;
         let response = common::response_to(&request, &request_body, 200);
@@ -301,17 +301,11 @@ async fn signature_alg_swap_rejects() {
 #[tokio::test]
 async fn an_ed25519_public_key_is_never_an_hmac_secret() {
     let ed = common::ed25519().verify_key();
-    let CoseVerifyKey::Ed25519(public) = &ed else {
-        unreachable!()
-    };
+    let public = ed.ed25519_bytes().expect("an Ed25519 key");
     let aad = external_aad(&rest_request()).expect("aad");
     let payload = payment_bytes();
     let protected = protected_for(5, &ed.kid());
-    let tag = forge::hmac_with(
-        public.as_bytes(),
-        &forge::mac0_tbs(&protected, &aad, &payload),
-        32,
-    );
+    let tag = forge::hmac_with(&public, &forge::mac0_tbs(&protected, &aad, &payload), 32);
     let message = forge::assemble(TAG_MAC0, &protected, &[0xa0], &payload, &tag);
     let server = common::server_with(
         CoseAlg::Hmac256_256,

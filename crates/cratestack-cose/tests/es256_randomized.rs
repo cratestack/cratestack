@@ -1,5 +1,6 @@
 //! ESP256 signatures from a randomized signer (a KMS, WebCrypto) verify
-//! like the deterministic ones. ADR 0006 Q2: the vectors are byte-exact for
+//! like the deterministic ones, once in the low-`s` form the sealer puts
+//! every ESP256 signature in. ADR 0006 Q2: the vectors are byte-exact for
 //! the in-process RFC 6979 signer and verify-only for everything else.
 
 mod common;
@@ -32,16 +33,30 @@ async fn a_randomized_es256_signature_verifies() {
     assert_ne!(first.to_bytes().to_vec(), deterministic);
 
     for signature in [first, second] {
-        let message = forge::assemble(
-            TAG_SIGN1,
-            &protected,
-            &[0xa0],
-            &payload,
-            &signature.to_bytes(),
-        );
-        common::server(CoseAlg::Esp256, now)
-            .open_request(Bytes::from(message), &rest_request())
+        let low = signature.normalize_s();
+        let (r, s) = low.split_scalars();
+        let high = p256::ecdsa::Signature::from_scalars(r.to_bytes(), (-*s).to_bytes())
+            .expect("high-s twin");
+        let open = |signature: p256::ecdsa::Signature| {
+            let message = forge::assemble(
+                TAG_SIGN1,
+                &protected,
+                &[0xa0],
+                &payload,
+                &signature.to_bytes(),
+            );
+            async move {
+                common::server(CoseAlg::Esp256, now)
+                    .open_request(Bytes::from(message), &rest_request())
+                    .await
+            }
+        };
+        open(low)
             .await
-            .expect("a randomized ESP256 signature verifies");
+            .expect("a randomized ESP256 signature verifies in its low-s form");
+        assert!(
+            open(high).await.is_err(),
+            "its high-s twin is the same signature spelled twice, and is refused"
+        );
     }
 }

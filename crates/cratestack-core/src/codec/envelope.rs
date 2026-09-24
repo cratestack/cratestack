@@ -3,7 +3,9 @@
 use std::future::Future;
 
 use bytes::Bytes;
+use serde::Serialize;
 
+use super::CratestackCodec;
 use super::binding::Binding;
 use super::stream::{StreamOpener, StreamSealer};
 use crate::context::CratestackContext;
@@ -68,6 +70,37 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
         payload: Bytes,
         bind: &'a Binding<'a>,
     ) -> impl Future<Output = Result<Bytes, CratestackError>> + Send + 'a;
+
+    /// Encode `value` with `codec` and seal the result for `bind`: the same
+    /// bytes as `codec.encode` followed by [`seal`](Self::seal), which is
+    /// exactly what the default does.
+    ///
+    /// It exists so that an envelope can **encode in place** (ADR 0006 §1;
+    /// maintainer decision on cratestack#1005, which kept that design over
+    /// accepting one copy of the payload): `cratestack-cose` overrides it to
+    /// reserve the payload's `bstr` head inside its output buffer and let
+    /// [`CratestackCodec::encode_into`] write the payload right after it, so
+    /// the encoded payload is never held in a buffer of its own. `seal`
+    /// stays for callers that already hold the encoded bytes.
+    ///
+    /// A provided method with a default body, added after cratestack#1004
+    /// merged the trait, so no implementation had to change. `T: Sync`
+    /// because the value is borrowed by the returned `Send` future.
+    fn seal_value<'a, C, T>(
+        &'a self,
+        codec: &'a C,
+        value: &'a T,
+        bind: &'a Binding<'a>,
+    ) -> impl Future<Output = Result<Bytes, CratestackError>> + Send + 'a
+    where
+        C: CratestackCodec,
+        T: Serialize + ?Sized + Sync,
+    {
+        async move {
+            let payload = codec.encode(value)?;
+            self.seal(Bytes::from(payload), bind).await
+        }
+    }
 
     /// Verify `body` against `bind`, run the replay checks, and return the
     /// payload for `codec.decode`. The result should be a zero-copy slice of

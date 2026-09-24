@@ -20,14 +20,16 @@ use crate::alg::CoseAlg;
 pub struct Opened {
     /// The payload, exactly as signed, for `codec.decode`.
     pub payload: Bytes,
-    /// The `kid` from the protected header (8 bytes).
+    /// The `kid` from the protected header (8 bytes). It is the verifying
+    /// key's own `kid`: a candidate whose `kid` differs is never tried.
     pub kid: Bytes,
     /// The algorithm the message was verified with.
     pub alg: CoseAlg,
     /// The RFC 9679 thumbprint of the key that verified. Two keys can share
-    /// a `kid` (8 bytes collide at about 2³² keys), so this, not the `kid`,
-    /// identifies the signer unambiguously; a principal derived from a
-    /// verified message should use it.
+    /// a `kid` (8 bytes collide at about 2³² keys; `tests/replay.rs` uses a
+    /// real pair), so this, not the `kid`, identifies the signer
+    /// unambiguously; a principal derived from a verified message should use
+    /// it. The trait path records it in the context's `VerifiedSigner`.
     pub key_thumbprint: [u8; 32],
     /// `iat`, seconds. `Some` for a request, `None` for a response.
     pub iat: Option<u64>,

@@ -10,8 +10,12 @@
 //!    tag and the algorithm agree), and carry claims exactly when a request
 //!    is expected;
 //! 3. resolve candidate keys by `(kid, alg)`;
-//! 4. verify over the **received** protected bytes, trying each candidate;
-//!    a candidate of the wrong key type never verifies;
+//! 4. verify over the **received** protected bytes, trying each candidate
+//!    whose own `kid` (computed from the key, never taken from the
+//!    resolver's word) is the header's `kid` and whose algorithm is the
+//!    header's `alg`. The principal is the key that verified, so a resolver
+//!    that returns too much (every key of a tenant, say) cannot let one key
+//!    sign under another's `kid`;
 //! 5. requests: `iat` within the skew;
 //! 6. requests: record `(kid, cti)` in the nonce store.
 //!
@@ -25,8 +29,10 @@ use cratestack_core::{Binding, CratestackError};
 use crate::aad::{self, Direction};
 use crate::envelope::Inner;
 use crate::error::{Reject, backend, misuse};
+use crate::keys::CoseVerifyKey;
 use crate::opened::Opened;
 use crate::replay;
+use crate::tbs::{Tbs, TbsView};
 use crate::{header, wire};
 
 pub(crate) async fn open(
@@ -64,17 +70,21 @@ pub(crate) async fn open(
         .resolve(&kid, protected.alg)
         .await
         .map_err(|error| backend("key resolver", error))?;
-    let to_be_signed = wire::to_be_signed(
-        inner.mode,
-        protected_bytes,
-        &external_aad,
-        &body[parts.payload.clone()],
-    );
     let signature = &body[parts.signature.clone()];
-    let key = candidates
-        .iter()
-        .find(|key| key.verify(protected.alg, &to_be_signed, signature))
-        .ok_or(Reject)?;
+    let key_thumbprint = {
+        // Scoped so the view (not `Sync`) is gone before the next `await`.
+        let tbs = TbsView::new(Tbs {
+            mode: inner.mode,
+            protected: protected_bytes,
+            external_aad: &external_aad,
+            payload: &body[parts.payload.clone()],
+        });
+        candidates
+            .iter()
+            .find(|key| key.kid()[..] == kid[..] && key.verify(protected.alg, &tbs, signature))
+            .map(CoseVerifyKey::thumbprint)
+            .ok_or(Reject)?
+    };
 
     let (iat, cti) = match (protected.claims, nonce_store) {
         (Some((iat, cti)), Some(store)) => {
@@ -99,7 +109,7 @@ pub(crate) async fn open(
         payload: body.slice(parts.payload),
         kid,
         alg: protected.alg,
-        key_thumbprint: key.thumbprint(),
+        key_thumbprint,
         iat,
         cti,
     })

@@ -1,19 +1,26 @@
 //! External AAD: the request context a message is bound to, encoded, never
-//! sent (ADR 0006 §4, as amended while scoping P0).
+//! sent (ADR 0006 §4, as amended while scoping P0 and by the maintainer's
+//! 2026-09-24 decisions on cratestack#1005, which added `audience`).
 //!
 //! ```cddl
 //! external_aad = bstr .cbor [
 //!   1,                                  ; binding version
+//!   audience: tstr,                     ; the receiving service's configured id
 //!   method: tstr,
 //!   route: tstr,                        ; RPC op_id; REST route template
 //!   path_params: [* tstr],              ; REST: matched values in template order; RPC: []
 //!   query: tstr / null,
 //!   schema_sha: bstr .size 32,
 //!   payload_type: tstr,
-//!   ? request_digest: bstr .size 32,    ; responses
+//!   ? request_digest: bstr .size 32,    ; responses, see request_digest*
 //!   ? status: uint,                     ; responses
 //! ]
 //! ```
+//!
+//! `audience` did not bump the binding version: nothing has been released
+//! with version 1 yet, so there is no older layout to tell it apart from.
+//! It sits right after the version so that every other field keeps its
+//! relative position.
 //!
 //! Two rules the CDDL leaves open are pinned here, because the client and
 //! the server each rebuild this array from their own context and any
@@ -23,7 +30,7 @@
 //!   router that sees `/x?` and a client that built `/x` must agree, and
 //!   the `?` alone carries nothing to bind.
 //! - **`request_digest` and `status` travel together.** Both present is a
-//!   response binding (9 elements), both absent a request binding (7). One
+//!   response binding (10 elements), both absent a request binding (8). One
 //!   without the other is a local bug and is refused with a `500` rather
 //!   than encoded as some third shape.
 //!
@@ -67,13 +74,15 @@ pub(crate) fn direction(bind: &Binding<'_>) -> Result<Direction, CratestackError
 pub fn external_aad(bind: &Binding<'_>) -> Result<Vec<u8>, CratestackError> {
     let direction = direction(bind)?;
     let query = bind.query.as_deref().filter(|query| !query.is_empty());
-    let mut out = Vec::with_capacity(96 + bind.route.len() + bind.method.len());
+    let mut out =
+        Vec::with_capacity(96 + bind.audience.len() + bind.route.len() + bind.method.len());
     let elements = match direction {
-        Direction::Request => 7,
-        Direction::Response { .. } => 9,
+        Direction::Request => 8,
+        Direction::Response { .. } => 10,
     };
     write::head(&mut out, MAJOR_ARRAY, elements);
     write::head(&mut out, MAJOR_UINT, BINDING_VERSION);
+    write::tstr(&mut out, &bind.audience);
     write::tstr(&mut out, &bind.method);
     write::tstr(&mut out, &bind.route);
     write::head(
@@ -97,12 +106,13 @@ pub fn external_aad(bind: &Binding<'_>) -> Result<Vec<u8>, CratestackError> {
     Ok(out)
 }
 
-/// The `request_digest` a response binding carries: SHA-256 over the
-/// request body **exactly as it travelled**. For a signed request that is
-/// the whole COSE message (tag, headers, signature and all); for an
-/// unsigned one it is the plain payload. The same function covers both
-/// because both are "the bytes of the request body"; the caller passes the
-/// body, never a re-encoding of it.
-pub fn request_digest(request_body: &[u8]) -> [u8; 32] {
-    Sha256::digest(request_body).into()
+/// The `request_digest` a response binding carries when the request was
+/// **signed**: SHA-256 over the request body exactly as it travelled, the
+/// whole COSE message (tag, headers, signature and all). The caller passes
+/// the received body, never a re-encoding of it.
+///
+/// For an unsigned request, use [`request_digest_unsigned`](crate::request_digest_unsigned),
+/// which also binds the client's `Cratestack-Nonce`.
+pub fn request_digest(signed_request_body: &[u8]) -> [u8; 32] {
+    Sha256::digest(signed_request_body).into()
 }

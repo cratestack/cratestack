@@ -60,7 +60,8 @@ async fn hmac_signer_matches_rfc4231_test_6_and_truncates_for_256_64() {
 fn hmac_secrets_below_32_bytes_are_refused() {
     let short = vec![7; MIN_HMAC_SECRET_LEN - 1];
     assert!(HmacSigner::new(CoseAlg::Hmac256_256, short.clone()).is_err());
-    assert!(CoseVerifyKey::hmac(short).is_err());
+    assert!(CoseVerifyKey::hmac(CoseAlg::Hmac256_256, short).is_err());
+    assert!(CoseVerifyKey::hmac(CoseAlg::Ed25519, vec![7; 32]).is_err());
     assert!(HmacSigner::new(CoseAlg::Hmac256_256, vec![7; MIN_HMAC_SECRET_LEN]).is_ok());
 }
 
@@ -77,7 +78,7 @@ fn p256_signer_refuses_invalid_scalars() {
 
 #[test]
 fn only_four_algorithm_ids_exist() {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         assert_eq!(CoseAlg::from_id(alg.id()), Some(alg));
     }
     // -8 (EdDSA) and -7 (ES256) are the deprecated polymorphic ids that
@@ -102,7 +103,20 @@ fn algorithms_know_their_mode_and_signature_length() {
 #[test]
 fn debug_output_never_shows_a_secret() {
     let signer = HmacSigner::new(CoseAlg::Hmac256_256, vec![0x5a; 32]).expect("key");
-    let rendered = format!("{signer:?} {:?}", signer.verify_key());
+    let builder = cratestack_cose::CoseEnvelope::client(
+        CoseMode::Mac0,
+        std::sync::Arc::new(signer.clone()),
+        std::sync::Arc::new(
+            cratestack_cose::StaticVerifierResolver::new().with_key(signer.verify_key()),
+        ),
+    );
+    let builder_rendered = format!("{builder:?}");
+    assert!(builder_rendered.contains("Mac0") && builder_rendered.contains("skew_secs"));
+    let envelope = builder.build().expect("build");
+    let rendered = format!(
+        "{signer:?} {:?} {builder_rendered} {envelope:?}",
+        signer.verify_key()
+    );
     assert!(!rendered.contains("5a, 5a"), "{rendered}");
     assert!(!rendered.to_lowercase().contains("5a5a"), "{rendered}");
 }

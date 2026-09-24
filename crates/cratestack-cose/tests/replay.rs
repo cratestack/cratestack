@@ -7,10 +7,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use common::backends::{FailingNonceStore, FailingResolver, FixedResolver, RecordingNonceStore};
-use common::{CTI_16, IAT, rest_request};
-use cratestack_core::{CratestackError, InMemoryNonceStore};
-use cratestack_cose::{CoseAlg, CoseEnvelope, CoseMode, Ed25519Signer, UNAUTHENTICATED};
+use common::backends::{FailingNonceStore, FailingResolver, RecordingNonceStore};
+use common::{CTI_16, IAT, rest_request, unhex};
+use cratestack_core::{CratestackContext, CratestackEnvelope, CratestackError, InMemoryNonceStore};
+use cratestack_cose::{
+    CoseAlg, CoseEnvelope, CoseMode, CoseSigner, CoseVerifyKey, HmacSigner, StaticVerifierResolver,
+    UNAUTHENTICATED,
+};
 
 fn is_coarse_401<T: std::fmt::Debug>(result: &Result<T, CratestackError>) -> bool {
     matches!(result, Err(CratestackError::Unauthorized(message)) if message == UNAUTHENTICATED)
@@ -18,7 +21,7 @@ fn is_coarse_401<T: std::fmt::Debug>(result: &Result<T, CratestackError>) -> boo
 
 #[tokio::test]
 async fn the_same_request_twice_is_a_replay() {
-    for alg in CoseAlg::ALL {
+    for &alg in CoseAlg::ALL {
         let now = common::now();
         let server = common::server(alg, now);
         let sealed = common::sealed_request_at(alg, &rest_request(), now).await;
@@ -129,6 +132,55 @@ async fn the_skew_is_configurable() {
     ));
 }
 
+/// A skew whose nonce expiry (`iat + 2·skew + 1`) would leave the time
+/// range is refused when the envelope is built (security review of
+/// cratestack#1005, fix 5). Before, it built, and then every valid request
+/// was a `401`, because the expiry could not be computed.
+#[test]
+fn a_skew_that_overflows_the_nonce_expiry_is_refused_at_build() {
+    for skew in [
+        u64::MAX,
+        u64::try_from(i64::MAX).expect("fits"),
+        10_000_000_000_000,
+    ] {
+        let built = CoseEnvelope::server(
+            CoseMode::Sign1,
+            common::signer(CoseAlg::Ed25519),
+            common::resolver(),
+            Arc::new(InMemoryNonceStore::new()),
+        )
+        .skew(Duration::from_secs(skew))
+        .build();
+        match built {
+            Err(CratestackError::Validation(message)) => assert!(message.contains("skew")),
+            other => panic!("skew {skew} built: {other:?}"),
+        }
+    }
+}
+
+/// A large but representable skew still builds, and a valid request opens
+/// under it.
+#[tokio::test]
+async fn a_large_representable_skew_builds_and_works() {
+    let now = common::now();
+    let ten_years = 10 * 366 * 24 * 60 * 60;
+    let server = CoseEnvelope::server(
+        CoseMode::Sign1,
+        common::signer(CoseAlg::Ed25519),
+        common::resolver(),
+        Arc::new(InMemoryNonceStore::new()),
+    )
+    .skew(Duration::from_secs(ten_years))
+    .clock(move || i64::try_from(now).expect("fits"))
+    .build()
+    .expect("ten years of skew is representable");
+    let sealed = common::sealed_request_at(CoseAlg::Ed25519, &rest_request(), now).await;
+    server
+        .open_request(sealed, &rest_request())
+        .await
+        .expect("a valid request opens");
+}
+
 #[tokio::test]
 async fn a_failing_resolver_is_a_500_not_a_401() {
     let server = common::server_with(
@@ -177,35 +229,85 @@ async fn a_failing_nonce_store_is_a_500_not_a_401() {
     ));
 }
 
-/// The resolver returns two candidates for one `kid` (a prefix
-/// collision); the second is the signer. The opener tries both.
+/// Two 32-byte HMAC secrets whose RFC 9679 thumbprints share their first
+/// 8 bytes, so both keys have the `kid` `aee74241c1a4ec95`: a real 64-bit
+/// prefix collision, not a resolver pretending one exists. Found with a
+/// parallel Pollard-rho search (distinguished points) over
+/// `x ↦ kid(secret(x))`, where `secret(x)` is the 8 big-endian bytes of `x`
+/// repeated four times: about 6.4·10⁹ SHA-256 evaluations, 20 s on 16
+/// threads. The test recomputes both thumbprints, so it depends on nothing
+/// but these bytes.
+const COLLIDING_A: &str = "995acdc2fbb6599b995acdc2fbb6599b995acdc2fbb6599b995acdc2fbb6599b";
+const COLLIDING_B: &str = "e9937b54005bf2c1e9937b54005bf2c1e9937b54005bf2c1e9937b54005bf2c1";
+
+/// Two keys share a `kid`; the resolver files each under its own computed
+/// `kid` and so returns both. The message is B's, B is the second
+/// candidate: the opener must try past the first, and the principal must
+/// be B's thumbprint, not A's.
 #[tokio::test]
 async fn kid_collision_tries_every_candidate() {
-    let other = Ed25519Signer::from_seed(&common::OTHER_ED25519_SEED).verify_key();
-    let right = common::ed25519().verify_key();
-    let sealed = common::sealed_request(CoseAlg::Ed25519, &rest_request()).await;
-    let server = |keys| {
+    let a = HmacSigner::new(CoseAlg::Hmac256_256, unhex(COLLIDING_A)).expect("key a");
+    let b = HmacSigner::new(CoseAlg::Hmac256_256, unhex(COLLIDING_B)).expect("key b");
+    let (a_key, b_key) = (a.verify_key(), b.verify_key());
+    assert_eq!(a.kid(), b.kid(), "a real kid collision");
+    assert_eq!(a_key.kid(), common::unhex("aee74241c1a4ec95").as_slice());
+    assert_ne!(a_key.thumbprint(), b_key.thumbprint(), "two different keys");
+
+    let now = common::now();
+    let server = |keys: Vec<CoseVerifyKey>| {
+        let resolver = keys.into_iter().fold(
+            StaticVerifierResolver::new(),
+            StaticVerifierResolver::with_key,
+        );
         common::server_with(
-            CoseAlg::Ed25519,
-            IAT,
-            Arc::new(FixedResolver(keys)),
+            CoseAlg::Hmac256_256,
+            now,
+            Arc::new(resolver),
             Arc::new(InMemoryNonceStore::new()),
         )
     };
+    let seal_by = |signer: HmacSigner, cti: &'static str| async move {
+        CoseEnvelope::client(CoseMode::Mac0, Arc::new(signer), common::resolver())
+            .clock(move || i64::try_from(now).expect("fits"))
+            .cti_source(move || Ok(common::unhex(cti)))
+            .build()
+            .expect("client")
+            .seal_request(&common::fixture::payment_bytes(), &rest_request())
+            .await
+            .expect("seal")
+    };
+    let by_b = seal_by(b.clone(), CTI_16).await;
 
-    let opened = server(vec![other.clone(), right.clone()])
-        .open_request(sealed.clone(), &rest_request())
+    let mut ctx = CratestackContext::anonymous();
+    CratestackEnvelope::open(
+        &server(vec![a_key.clone(), b_key.clone()]),
+        by_b.clone(),
+        &rest_request(),
+        &mut ctx,
+    )
+    .await
+    .expect("the second candidate verifies");
+    let signer = ctx.verified_signer().expect("recorded");
+    assert_eq!(
+        signer.thumbprint(),
+        &b_key.thumbprint(),
+        "the principal is B"
+    );
+    assert_eq!(signer.kid(), a.kid(), "under the shared kid");
+
+    // A's own message, same resolver: the first candidate, A.
+    let by_a = seal_by(a, "00112233445566778899aabbccddeeff").await;
+    let opened = server(vec![a_key.clone(), b_key.clone()])
+        .open_request(by_a, &rest_request())
         .await
-        .expect("the second candidate verifies");
-    assert_eq!(opened.key_thumbprint, right.thumbprint());
-    assert_ne!(opened.key_thumbprint, other.thumbprint());
+        .expect("A verifies");
+    assert_eq!(opened.key_thumbprint, a_key.thumbprint());
 
-    let wrong_only = server(vec![other])
-        .open_request(sealed.clone(), &rest_request())
+    // B's message where only A is known: the shared kid is not enough.
+    let wrong_only = server(vec![a_key])
+        .open_request(by_b.clone(), &rest_request())
         .await;
     assert!(is_coarse_401(&wrong_only));
-    let none = server(Vec::new())
-        .open_request(sealed, &rest_request())
-        .await;
+    let none = server(Vec::new()).open_request(by_b, &rest_request()).await;
     assert!(is_coarse_401(&none), "an unknown kid is the same 401");
 }

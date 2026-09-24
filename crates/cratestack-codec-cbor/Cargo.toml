@@ -32,4 +32,8 @@ minicbor-serde.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
+# `tests/encode_into_alloc.rs` counts allocations to prove `encode_into`
+# writes into the caller's buffer (cratestack#1005). Its own test binary,
+# because it installs a `#[global_allocator]`.
+allocation-counter.workspace = true
 serde_json.workspace = true

@@ -14,23 +14,53 @@ pub(crate) const NULL: u8 = 0xf6;
 /// The empty map, the only unprotected header this crate writes or reads.
 pub(crate) const EMPTY_MAP: u8 = 0xa0;
 
+/// The shortest head for `major` / `arg`, on the stack. The sealer writes
+/// heads into slices of a buffer it has already sized (the payload head is
+/// patched in after the payload is encoded), and the to-be-signed structure
+/// feeds them to a hash, so a head must exist without a `Vec` to push to.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Head {
+    bytes: [u8; 9],
+    len: usize,
+}
+
+impl Head {
+    pub(crate) fn new(major: u8, arg: u64) -> Self {
+        let initial = major << 5;
+        let mut bytes = [0; 9];
+        let len = if arg < 24 {
+            bytes[0] = initial | arg as u8;
+            1
+        } else if let Ok(byte) = u8::try_from(arg) {
+            bytes[..2].copy_from_slice(&[initial | 24, byte]);
+            2
+        } else if let Ok(short) = u16::try_from(arg) {
+            bytes[0] = initial | 25;
+            bytes[1..3].copy_from_slice(&short.to_be_bytes());
+            3
+        } else if let Ok(word) = u32::try_from(arg) {
+            bytes[0] = initial | 26;
+            bytes[1..5].copy_from_slice(&word.to_be_bytes());
+            5
+        } else {
+            bytes[0] = initial | 27;
+            bytes[1..9].copy_from_slice(&arg.to_be_bytes());
+            9
+        };
+        Self { bytes, len }
+    }
+
+    pub(crate) fn as_slice(&self) -> &[u8] {
+        &self.bytes[..self.len]
+    }
+}
+
+/// The longest head: a major type byte and an 8-byte argument.
+pub(crate) const MAX_HEAD_LEN: usize = 9;
+
 /// Write the shortest head for `major` / `arg`.
 pub(crate) fn head(out: &mut Vec<u8>, major: u8, arg: u64) {
-    let initial = major << 5;
-    if arg < 24 {
-        out.push(initial | arg as u8);
-    } else if let Ok(byte) = u8::try_from(arg) {
-        out.extend_from_slice(&[initial | 24, byte]);
-    } else if let Ok(short) = u16::try_from(arg) {
-        out.push(initial | 25);
-        out.extend_from_slice(&short.to_be_bytes());
-    } else if let Ok(word) = u32::try_from(arg) {
-        out.push(initial | 26);
-        out.extend_from_slice(&word.to_be_bytes());
-    } else {
-        out.push(initial | 27);
-        out.extend_from_slice(&arg.to_be_bytes());
-    }
+    out.extend_from_slice(Head::new(major, arg).as_slice());
 }
 
 /// The length of the head [`head`] writes for `arg`, so buffers can be

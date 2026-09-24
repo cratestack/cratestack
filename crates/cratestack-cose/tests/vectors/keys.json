@@ -1,10 +1,16 @@
 {
-  "_comment": "TEST KEYS. Published in this repository; never use them outside tests.",
+  "_comment": "TEST KEYS. Published in this repository; never use them outside tests. The HMAC secret is one key per algorithm (hmac-256-64, hmac-256-256): an HMAC key verifies only the algorithm it is configured for.",
   "ed25519": {
     "kid": "be5de2f4bcdc383a",
     "public": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
     "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "thumbprint": "be5de2f4bcdc383add3fc9827d345f1a37c6a06026b38696fb3229c003b35f49"
+  },
+  "ed25519_other": {
+    "kid": "1595beaccf8469a9",
+    "public": "cd14b37f956e953194ff7fb73b3d81dcc561d61a7538094b7c3e1a643ee5f3aa",
+    "seed": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    "thumbprint": "1595beaccf8469a90fa3a86af319ac65aaf1ddf6c12a3c40980884ca6530c5b0"
   },
   "hmac": {
     "kid": "8439440003a3c5e1",

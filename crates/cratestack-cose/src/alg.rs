@@ -33,8 +33,10 @@ pub enum CoseAlg {
 }
 
 impl CoseAlg {
-    /// Every accepted algorithm, for tests and for exhaustive tables.
-    pub const ALL: [CoseAlg; 4] = [
+    /// Every accepted algorithm, for tests and for exhaustive tables. A
+    /// slice, not an array, so that Q5's reserved hybrid algorithm can be
+    /// added without changing this constant's type.
+    pub const ALL: &'static [CoseAlg] = &[
         CoseAlg::Ed25519,
         CoseAlg::Esp256,
         CoseAlg::Hmac256_64,

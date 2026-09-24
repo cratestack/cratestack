@@ -35,12 +35,30 @@ impl CratestackCodec for CborCodec {
         // caller of this codec, closing that gap without requiring every
         // opaque-`Value` call site to route through `ProjectedValue` first.
         let mut buf = Vec::new();
-        let mut serializer = minicbor_serde::Serializer::new(&mut buf);
-        serializer.serialize_unit_as_null(true);
-        value.serialize(&mut serializer).map_err(|error| {
-            CratestackError::Codec(format!("failed to encode CBOR body: {error}"))
-        })?;
+        self.encode_into(value, &mut buf)?;
         Ok(buf)
+    }
+
+    /// The serializer writes straight into `out`, so a signing envelope's
+    /// `seal_value` (cratestack#1005) gets the payload in its own buffer with
+    /// no intermediate `Vec`. `encode` is this into an empty `Vec`, so the
+    /// two cannot drift apart.
+    fn encode_into<T: Serialize + ?Sized>(
+        &self,
+        value: &T,
+        out: &mut Vec<u8>,
+    ) -> Result<(), CratestackError> {
+        let start = out.len();
+        let result = {
+            let mut serializer = minicbor_serde::Serializer::new(&mut *out);
+            serializer.serialize_unit_as_null(true);
+            value.serialize(&mut serializer)
+        };
+        result.map_err(|error| {
+            // The trait asks an override to leave `out` as it found it.
+            out.truncate(start);
+            CratestackError::Codec(format!("failed to encode CBOR body: {error}"))
+        })
     }
 
     fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError> {
@@ -64,6 +82,33 @@ mod tests {
         let value: Vec<String> = codec.decode(&bytes).expect("decode should succeed");
 
         assert_eq!(value, vec!["cool".to_owned(), "stack".to_owned()]);
+    }
+
+    #[test]
+    fn encode_into_appends_exactly_what_encode_returns() {
+        let codec = CborCodec;
+        let value = (1_u32, "two", serde_json::Value::Null, vec![3_u8; 40]);
+        let mut out = vec![0xd2, 0x84];
+        codec.encode_into(&value, &mut out).expect("encode_into");
+        assert_eq!(&out[..2], &[0xd2, 0x84]);
+        assert_eq!(&out[2..], codec.encode(&value).expect("encode").as_slice());
+    }
+
+    struct Unserializable;
+
+    impl serde::Serialize for Unserializable {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("no"))
+        }
+    }
+
+    #[test]
+    fn encode_into_leaves_out_at_its_old_length_on_error() {
+        let mut out = vec![1, 2, 3];
+        // Partially written before failing: the map head goes out first.
+        let partial = std::collections::BTreeMap::from([("k", Unserializable)]);
+        assert!(CborCodec.encode_into(&partial, &mut out).is_err());
+        assert_eq!(out, [1, 2, 3]);
     }
 
     #[test]
