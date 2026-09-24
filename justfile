@@ -1443,12 +1443,12 @@ verify-napi-targets:
 	./.ci/napi-targets-check.sh
 
 # pnpm version pin agreement (cratestack#1050) — asserts every tracked
-# `package.json` that declares `packageManager` pins exactly the root's pnpm.
-# The example workspace roots pin it so Dependabot resolves them with the pnpm
-# CI uses; CI itself reads only the root pin, so a drift would have Dependabot
-# write lockfiles with one pnpm and CI check them with another. Blocking CI
-# gate, run as the `pnpm-pins` job in `.github/workflows/ci.yml`. See
-# `.ci/pnpm-pin-check.sh`.
+# `package.json` that declares `packageManager` pins exactly the root's pnpm,
+# and that each manifest-only example workspace root declares one. Inside an
+# example, pnpm switches to that example's pin (Dependabot uses it too), so a
+# drift silently runs the example on a different pnpm from the rest of CI.
+# Blocking CI gate, run as the `pnpm-pins` job in `.github/workflows/ci.yml`.
+# See `.ci/pnpm-pin-check.sh`.
 verify-pnpm-pins:
 	./.ci/pnpm-pin-check.sh
 

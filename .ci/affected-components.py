@@ -73,6 +73,10 @@ ROOTS = {
         "cratestack-cbor-wasm",
         "react-vite-refine-example",
         "react-vite-swr-example",
+        # `js (react-nextjs-daisyui example)` builds this crate's wasm bundle
+        # before its typecheck, so a change to cratestack-sqlite/-rusqlite
+        # must run that job (cratestack#1050).
+        "react-nextjs-daisyui-wasm",
     },
     "cli": {"cratestack-cli"},
 }

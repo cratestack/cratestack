@@ -2,49 +2,32 @@
 # pnpm version pin agreement check (cratestack#1050).
 #
 # The pnpm version is pinned with `packageManager` in more than one tracked
-# `package.json`: the repo root, which `pnpm/action-setup` reads for every CI
-# job, and the example workspace roots that exist so Dependabot can maintain
-# their lockfiles (`examples/react-vite-swr`, #1049, and
-# `examples/react-nextjs-daisyui`, #1050). Dependabot resolves each example
-# with ITS OWN pin, while CI installs it with the ROOT pin. If the two drift,
-# Dependabot writes a lockfile with one pnpm and CI checks it with another,
-# and nothing else compares them.
+# `package.json`: the repo root, and the manifest-only roots of the example
+# workspaces that exist so Dependabot can maintain their lockfiles
+# (`examples/react-vite-swr`, #1049; `examples/react-nextjs-daisyui`, #1050).
+# Dependabot resolves each example with that example's pin, and pnpm itself
+# switches to it too: run inside the example, even CI's root-pinned pnpm
+# hands over to the example's version (measured: an example pin of 11.23.0
+# makes `pnpm --version` there print 11.23.0). So a drifted pin silently runs
+# that example on a different pnpm from the rest of CI, and every comment
+# written against the root's version (e.g. the pnpm/pnpm#14987 note in
+# ci.yml) stops being true there. Nothing else compares them.
 #
-# So: every tracked `package.json` that declares `packageManager` must declare
-# exactly the root's value. The root must declare one; a checker with nothing
-# to compare against fails as a setup error rather than passing vacuously.
+# Rules and edge cases live in `.ci/pnpm_pin_check.py`'s docstring.
 #
 # Deliberately NOT checked: that every lockfile root declares a pin. Eight
 # example lockfile roots declare none today, and adding one changes which pnpm
 # Dependabot uses there, which is a separate decision.
+#
+# Run locally via `just verify-pnpm-pins`.
 set -euo pipefail
 
-cd "$(git rev-parse --show-toplevel)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$script_dir/.."
 
-git ls-files -z -- '*package.json' | python3 -c '
-import json, sys
+if ! command -v python3 > /dev/null; then
+  echo "python3 not found on PATH" >&2
+  exit 1
+fi
 
-paths = [p for p in sys.stdin.buffer.read().decode().split("\0") if p]
-if "package.json" not in paths:
-    sys.exit("pnpm-pin-check: setup error: no tracked root package.json")
-
-def pin(path):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f).get("packageManager")
-
-root = pin("package.json")
-if not root:
-    sys.exit("pnpm-pin-check: setup error: root package.json declares no packageManager")
-
-pinned = {p: pin(p) for p in paths if p != "package.json"}
-pinned = {p: v for p, v in pinned.items() if v is not None}
-bad = {p: v for p, v in pinned.items() if v != root}
-
-for p, v in sorted(bad.items()):
-    print(f"::error file={p}::packageManager is {v!r}, but the root package.json pins {root!r}")
-if bad:
-    sys.exit(f"pnpm-pin-check: {len(bad)} packageManager pin(s) disagree with the root ({root})")
-
-listed = ", ".join(sorted(pinned)) or "(none)"
-print(f"pnpm-pin-check: ok, root {root} and {len(pinned)} other pin(s) agree: {listed}")
-'
+git ls-files -z -- '*package.json' | python3 "$script_dir/pnpm_pin_check.py"

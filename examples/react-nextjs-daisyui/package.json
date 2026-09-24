@@ -1,7 +1,7 @@
 {
   "name": "react-nextjs-daisyui-workspace",
   "private": true,
-  "description": "Workspace root for the react-nextjs-daisyui example. It declares no dependencies of its own. It exists because Dependabot cannot find a pnpm-lock.yaml whose workspace root has no package.json (it bumped web/package.json nine times and never this lockfile, #1050), so .github/dependabot.yml points at this directory instead of at web/. Members and pnpm settings live in pnpm-workspace.yaml.",
+  "description": "Workspace root for the react-nextjs-daisyui example. It declares no dependencies of its own. It exists because Dependabot cannot find a pnpm-lock.yaml whose workspace root has no package.json (it bumped web/package.json nine times and never this lockfile, #1050), so .github/dependabot.yml points at this directory instead of at web/. The packageManager pin must equal the repo root's (just verify-pnpm-pins). Members are listed in pnpm-workspace.yaml.",
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=24"

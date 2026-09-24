@@ -2304,9 +2304,9 @@ jobs:
   # pnpm workspace (`napi/` + `web/`), shaped like react-vite-swr above.
   #
   # Covered here: the lockfile matches both members (frozen install), it
-  # resolves one copy of each package that could be deduplicated (the same
-  # two-Reacts hazard react-vite-swr's job describes), and the web app
-  # typechecks. The typecheck needs the wasm bundle: `components/worker.ts`
+  # resolves one copy of each package that could be shared (the hazard
+  # react-vite-swr's job describes; here, a second member such as `napi/`
+  # pulling its own React), and the web app typechecks. The typecheck needs the wasm bundle: `components/worker.ts`
   # imports `public/pkg/`, which only a wasm-pack build produces (gitignored,
   # built `--no-typescript`, so tsc infers its types from the JS). A `--dev`
   # build is enough for that and skips wasm-opt, so no binaryen pin.
