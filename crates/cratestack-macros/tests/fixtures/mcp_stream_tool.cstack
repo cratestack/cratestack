@@ -1,0 +1,20 @@
+// cratestack#1038 (ADR 0002 Q8): a `@stream` procedure cannot be an MCP
+// tool, because a tool returns a single result. Refused by the parser, so
+// the error names the rule whatever the `mcp` feature state.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+type Tick {
+  n Int
+}
+
+procedure ticks(count: Int): Tick[]
+  @allow(true)
+  @stream
+  @mcp(tool)

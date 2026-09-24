@@ -1,0 +1,12 @@
+error: ␛[31mError:␛[0m `@mcp(tool)` on procedure `ticks` exposes a `@stream` procedure: an MCP tool returns a single result, so a streaming procedure cannot be a tool (ADR 0002 Q8). Remove `@mcp(tool)`, or expose a non-streaming procedure instead
+           ␛[38;5;246m╭␛[0m␛[38;5;246m─␛[0m␛[38;5;246m[␛[0m /tmp/cratestack-macros-ui-mcp-1036/mcp_stream_tool.cstack:20:3 ␛[38;5;246m]␛[0m
+           ␛[38;5;246m│␛[0m
+        ␛[38;5;246m20 │␛[0m ␛[38;5;249m ␛[0m␛[38;5;249m ␛[0m␛[31m@␛[0m␛[31mm␛[0m␛[31mc␛[0m␛[31mp␛[0m␛[31m(␛[0m␛[31mt␛[0m␛[31mo␛[0m␛[31mo␛[0m␛[31ml␛[0m␛[31m)␛[0m
+        ␛[38;5;240m   │␛[0m   ␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m┬␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m
+        ␛[38;5;240m   │␛[0m        ␛[31m╰␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m `@mcp(tool)` on procedure `ticks` exposes a `@stream` procedure: an MCP tool returns a single result, so a streaming procedure cannot be a tool (ADR 0002 Q8). Remove `@mcp(tool)`, or expose a non-streaming procedure instead
+       ␛[38;5;246m────╯␛[0m
+
+ --> tests/ui/generated/mcp_stream_tool_refused.rs
+  |
+  | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-mcp-1036/mcp_stream_tool.cstack", db = None);
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

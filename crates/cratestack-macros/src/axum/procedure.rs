@@ -15,6 +15,7 @@ use quote::quote;
 
 use crate::shared::{ident, to_snake_case};
 use crate::transport::procedure_transport_capabilities_tokens;
+pub(crate) use dispatch_tail::compose_tail_tokens;
 use dispatch_tail::procedure_dispatch_tail_tokens;
 use invoke_call::procedure_invoke_call_tokens;
 use route_attrs::{

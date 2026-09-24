@@ -103,6 +103,7 @@ decimal-rust-decimal = [
     "cratestack-codec-json/decimal-rust-decimal",
     "cratestack-migrate/decimal-rust-decimal",
     "cratestack-sqlx?/decimal-rust-decimal",
+    "cratestack-mcp?/decimal-rust-decimal",
 ]
 # Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
 # (cratestack#495).
@@ -118,6 +119,7 @@ decimal-bigdecimal = [
     "cratestack-codec-json/decimal-bigdecimal",
     "cratestack-migrate/decimal-bigdecimal",
     "cratestack-sqlx?/decimal-bigdecimal",
+    "cratestack-mcp?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. On by default
 # so `include_client_schema!` keeps offering both CBOR and JSON; disable
@@ -178,6 +180,14 @@ pgvector = ["cratestack-macros/pgvector", "cratestack-sqlx/pgvector"]
 # (spatial column bind/decode). Adds no new third-party dependency —
 # PostGIS's wire format is EWKB, i.e. bytes.
 postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
+# Serves the schema's `@mcp(tool)` procedures to agents over MCP (ADR 0002,
+# cratestack#1038): pulls `cratestack-mcp` (and through it `rmcp`), and
+# forwards `cratestack-macros/mcp`, which makes `include_server_schema!`
+# generate `cratestack_schema::mcp` instead of refusing the schema. Off by
+# default, and with it off `rmcp` is absent from this crate's normal
+# dependency graph (CI's `facade-disjointness` job asserts it). Tools only
+# for now; `@@mcp(resource: ...)` stays a compile error until phase 5.
+mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
 
 [dependencies]
 async-stream.workspace = true
@@ -191,6 +201,7 @@ cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true
 cratestack-sqlx = { workspace = true, optional = true }
+cratestack-mcp = { workspace = true, optional = true }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -233,7 +244,9 @@ reqwest.workspace = true
 rustls.workspace = true
 testcontainers.workspace = true
 testcontainers-modules.workspace = true
-tokio.workspace = true
+# `io-util`: `tests/mcp_policy_pg.rs` (cratestack#1038) drives the MCP stdio
+# server over an in-memory `tokio::io::duplex`.
+tokio = { workspace = true, features = ["io-util"] }
 tower.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
@@ -293,3 +306,19 @@ required-features = ["pgvector"]
 name = "decimal_bigdecimal_backend"
 path = "tests/decimal_bigdecimal_backend.rs"
 required-features = ["postgres", "decimal-bigdecimal"]
+
+# The MCP suites (cratestack#1037, cratestack#1038) need the generated
+# `cratestack_schema::mcp` module, so they compile only with the `mcp`
+# feature. `json_schema_models` needs no database and runs in `just
+# test-ci-host`; `mcp_policy_pg` is Postgres-backed and runs in `just
+# test-ci-db-mcp`, with `CRATESTACK_REQUIRE_DB=1` so a missing database
+# fails instead of skipping.
+[[test]]
+name = "json_schema_models"
+path = "tests/json_schema_models.rs"
+required-features = ["mcp"]
+
+[[test]]
+name = "mcp_policy_pg"
+path = "tests/mcp_policy_pg.rs"
+required-features = ["mcp"]

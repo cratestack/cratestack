@@ -23,10 +23,13 @@
 //! alternative home, `cratestack-mcp` (L4), would need the IR at runtime
 //! and could not run during expansion.
 //!
-//! Phase 2 emits nothing into users' code. The only caller outside this
-//! module is `include::json_schema_probe`, a `#[doc(hidden)]` macro the
-//! round-trip suites use to reach the generator through real macro
-//! expansion.
+//! The only caller outside this module is `include::mcp_gate`, which
+//! generates the schemas of every `@mcp(tool)` procedure and turns a
+//! refusal into a compile error; `include::server::mcp_module` embeds the
+//! result as `cratestack_schema::mcp::TOOLS`. The round-trip suites read
+//! the schemas from there, through real macro expansion. (Phase 2 used a
+//! hidden `__procedure_json_schemas!` probe for this; phase 3's generated
+//! table replaced it.)
 //!
 //! **Where JSON Schema is looser than serde.** Each gap is pinned by a
 //! test in the round-trip suites, so a change on either side is noticed:

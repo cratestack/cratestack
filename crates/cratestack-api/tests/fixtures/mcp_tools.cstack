@@ -1,0 +1,57 @@
+// cratestack#1038 (MCP phase 3): the tools behind `tests/mcp_tools.rs` and
+// `tests/mcp_admission.rs`. `db = None`, so everything here is procedure
+// policy, admission and composition; row policy over the ORM is
+// `cratestack-pg`'s `tests/mcp_policy_pg.rs`.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+auth Caller {
+  id String
+  role String
+}
+
+type TransferInput {
+  amount Int
+}
+
+type Receipt {
+  amount Int
+  run Int
+}
+
+/// A label with two resolved fields (ADR 0002 Q7).
+type Badge {
+  label String
+  shout String @computed
+  note String? @computed
+}
+
+procedure whoami(tag: String): Receipt
+  @allow(auth() != null)
+  @mcp(tool)
+
+// The decisive policy case: only a teller may move money. Loosening this
+// to `@allow(true)` must make `tests/mcp_tools.rs`'s denial test fail.
+mutation procedure transfer(args: TransferInput): Receipt
+  @allow(auth().role == "teller")
+  @mcp(tool: "transfer_funds", description: "Move money between accounts.")
+
+// Opted out of reservations: its `idempotentHint` is `true`.
+mutation procedure touch(args: TransferInput): Receipt
+  @allow(true)
+  @no_idempotency
+  @mcp(tool)
+
+procedure badge(label: String): Badge
+  @allow(true)
+  @mcp(tool)
+
+// Not a tool: must appear nowhere in `tools/list`.
+procedure internalOnly(n: Int): Int
+  @allow(true)

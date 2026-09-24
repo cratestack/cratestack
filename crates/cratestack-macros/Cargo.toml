@@ -98,6 +98,15 @@ pgvector = []
 # SpatiaLite, so no Cargo feature can make it valid there (see
 # `extension_gate.rs`, `docs/design/extensions.md` §6b). Off by default.
 postgis = []
+# Serves `@mcp(tool)` procedures (ADR 0002, cratestack#1038): with it,
+# `include_server_schema!` emits the per-schema `mcp` module; without it, a
+# schema that declares MCP is a `compile_error!` naming this feature, so no
+# declaration can parse and then serve nothing (Q4). Same `cfg!(feature =
+# ...)`-against-this-crate mechanism as `rate_limit` above — see
+# `src/include/mcp_gate.rs`. Forwarded only by `cratestack-pg` and
+# `cratestack-api` (D3), each of which also pulls `cratestack-mcp`, the
+# runtime the generated module names. Off by default.
+mcp = []
 
 [dependencies]
 cratestack-core.workspace = true

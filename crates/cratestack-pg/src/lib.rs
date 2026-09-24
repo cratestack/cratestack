@@ -159,6 +159,12 @@ pub use cratestack_axum::*;
 // types from `cratestack-core::rpc`).
 pub use cratestack_axum::rpc;
 
+/// The MCP binding (ADR 0002, cratestack#1038), behind the `mcp` feature:
+/// `StdioServer`, the `McpTools` trait the generated `cratestack_schema::mcp`
+/// module implements, and the runtime helpers it names.
+#[cfg(feature = "mcp")]
+pub use cratestack_mcp as mcp;
+
 // Everything below is sqlx (Postgres)-backed and only compiled in when the
 // default-on `postgres` feature is enabled (cratestack#329). A `db = None`
 // -only consumer builds with `default-features = false` (or explicitly

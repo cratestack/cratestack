@@ -10,6 +10,12 @@ datasource db {
   provider = "none"
 }
 
+// cratestack#1038: every procedure is a tool, so the schemas under test are
+// the ones the generated MCP table (`cratestack_schema::mcp::TOOLS`) sends.
+mcp {
+  expose = [tools]
+}
+
 /// Lifecycle of a record.
 enum Status {
   Active
@@ -54,18 +60,24 @@ type Tree {
 
 procedure echoScalars(args: Scalars): Scalars
   @allow(true)
+  @mcp(tool)
 
 procedure echoShapes(args: Shapes, page: PageInput?, limit: Int?, ids: Uuid[]): Shapes
   @allow(true)
+  @mcp(tool)
 
 procedure pageShapes(page: PageInput): Page<Shapes>
   @allow(true)
+  @mcp(tool)
 
 procedure echoTree(tree: Tree): Tree
   @allow(true)
+  @mcp(tool)
 
 procedure countScalars(filter: String?): Int
   @allow(true)
+  @mcp(tool)
 
-procedure stash(payload: Json): Boolean
-  @allow(true)
+// `stash(payload: Json)` used to be here, refused by the generator as data.
+// A `Json` tool is a compile error since phase 3 (cratestack#1038); the
+// refusal is pinned by `cratestack-macros/tests/ui_mcp.rs`.

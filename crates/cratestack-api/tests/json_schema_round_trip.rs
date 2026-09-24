@@ -3,6 +3,11 @@
 //! `decimal = RustDecimal`. The `decimal = BigDecimal` run is
 //! `json_schema_bigdecimal.rs`; the shared cases are in
 //! `json_schema_support/`, whose module doc explains the setup.
+//!
+//! The schemas are read from the generated MCP tool table
+//! (`cratestack_schema::mcp::TOOLS`, cratestack#1038), so this suite
+//! checks what an agent is actually sent. Gated `required-features =
+//! ["mcp"]`; `just test-ci-host` runs it with the feature on.
 
 use cratestack::include_server_schema;
 use json_schema_support::DecimalCases;
@@ -10,11 +15,6 @@ use json_schema_support::DecimalCases;
 include_server_schema!(
     "tests/fixtures/json_schema_round_trip.cstack",
     db = None,
-    decimal = RustDecimal
-);
-
-const SCHEMAS: &[(&str, Result<&str, &str>, Result<Option<&str>, &str>)] = cratestack_macros::__procedure_json_schemas!(
-    "tests/fixtures/json_schema_round_trip.cstack",
     decimal = RustDecimal
 );
 

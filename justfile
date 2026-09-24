@@ -324,6 +324,15 @@ test-ci-db *args='':
 test-ci-db-decimal-bigdecimal *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal --test decimal_bigdecimal_backend {{args}}
 
+# Shard addendum: MCP's database-enforced policy (cratestack#1038) — a
+# delegated `@authorize(...)` denial and an `@@allow`-hidden row, both
+# reached through a `tools/call`. `required-features = ["mcp"]`
+# (`crates/cratestack-pg/tests/mcp_policy_pg.rs`), so `test-ci-db` above,
+# which runs default features, never compiles it. Set
+# `CRATESTACK_REQUIRE_DB=1` so a missing database fails instead of skipping.
+test-ci-db-mcp *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg {{args}}
+
 # Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
 # persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage
 # audit found no workflow ever invoked them (`grep -rn outbox
@@ -468,9 +477,17 @@ test-ci-host *args='':
 	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
 	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}} || status=1
 	# cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
-	# round-trip suite. `required-features = ["decimal-bigdecimal"]`, so the
+	# round-trip suite. `required-features = ["decimal-bigdecimal", "mcp"]`
+	# (the schemas are read from the generated MCP table since #1038), so the
 	# `--workspace` run above skips it without a word. No database needed.
-	cargo test -p cratestack-api --features decimal-bigdecimal --test json_schema_bigdecimal {{args}} || status=1
+	cargo test -p cratestack-api --features decimal-bigdecimal,mcp --test json_schema_bigdecimal {{args}} || status=1
+	# cratestack#1038: every MCP suite that needs no database —
+	# `required-features = ["mcp"]`, so the `--workspace` run above skips
+	# them. Whole `cratestack-api` crate rather than a `--test` list, so a new
+	# `tests/mcp_*.rs` there cannot be forgotten here; its other tests are
+	# fast and database-free. The Postgres-backed MCP test is `test-ci-db-mcp`.
+	cargo test -p cratestack-api --features mcp {{args}} || status=1
+	cargo test -p cratestack-pg --features mcp --test json_schema_models {{args}} || status=1
 	# cratestack#926: `tests/middleware.rs` is `#![cfg(feature = "middleware")]`
 	# and `client::http`'s Middleware arm plus the `with_middleware_client`
 	# doctest only exist under that feature, so the plain `--workspace` run
