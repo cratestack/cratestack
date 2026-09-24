@@ -41,8 +41,10 @@ cratestack-core.workspace = true
 cratestack-exec.workspace = true
 # `server` is the handler trait (it always pulls `schemars`, which ADR 0002
 # accepts); `transport-io` is stdio; `transport-streamable-http-server` is
-# the Streamable HTTP service `src/streamable_http/` guards (cratestack#1039),
-# and adds one package to an `mcp` build's graph, `sse-stream`. Nothing
+# the Streamable HTTP service `src/streamable_http/` guards (cratestack#1039).
+# It adds `sse-stream` to an `mcp` build of `cratestack-pg`, and to one of
+# `cratestack-api` also `tokio-stream` and `rand` 0.10 (with `rand_core` and
+# `chacha20`), which `cratestack-pg` already has through `sqlx`. Nothing
 # else: no `#[tool]` macros, no client.
 rmcp = { workspace = true, features = [
     "server",

@@ -51,7 +51,9 @@ let app = Router::new()
 ```
 
 A foreign `Origin` gets 403 and `GET`/`DELETE` get 405. A missing or rejected token gets 401 with
-`WWW-Authenticate: Bearer resource_metadata="…"`. The token is removed from the request before `rmcp`
+`WWW-Authenticate: Bearer resource_metadata="…"`. A token in the query string (`?access_token=`) gets
+400 `invalid_request` before your provider runs, and a mirrored MCP header sent twice gets 400 /
+`-32020`. The token is removed from the request before `rmcp`
 sees it, and every call runs under the `CratestackContext` your provider built, through the same
 admission and policy as stdio. **Your provider must check the token's audience** against the resource
 identifier: MCP requires it, and CrateStack ships no generic OAuth provider in v1 (ADR 0002 Q5).

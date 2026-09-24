@@ -27,22 +27,29 @@ let app = Router::new()
 ```
 
 - **Order of checks, each before the next.** A foreign `Origin` gets 403, before
-  any MCP handling. A method other than `POST` gets 405 (`Allow: POST`). A
-  request without `Authorization: Bearer` gets 401 with
+  any MCP handling. A method other than `POST` gets 405 (`Allow: POST`). An
+  access token in the query string (`?access_token=`, which MCP forbids) gets
+  400 with `error="invalid_request"`, whether or not your provider would read
+  it there. A request without `Authorization: Bearer` gets 401 with
   `WWW-Authenticate: Bearer resource_metadata="<url>"`, plus `scope="..."` when
   scopes are configured. A body over 4 MiB gets 413. Your provider then runs. A
   refusal, or a context that is not authenticated (a REST provider may return
   `anonymous()` for a token it does not know), gets 401 with
   `error="invalid_token"`; a provider `Forbidden` gets 403 with
   `insufficient_scope`; a provider 5xx passes through with REST's envelope and no
-  challenge. Only then does `rmcp` see the request: its `Host` check, its own
-  Origin check, and `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` against the
-  body (400 / `-32020`).
+  challenge. A second value of `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`
+  or an `Mcp-Param-*` header gets 400 / `-32020`: `rmcp` compares only the
+  first value with the body, and a proxy may act on another. Only then does
+  `rmcp` see the request: its `Host` check, its own Origin check, and
+  `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` against the body (400 /
+  `-32020`).
 - **Origin, twice.** `rmcp` turns its Origin check off when the list is empty,
   so the list is a required argument, `build()` refuses an empty or malformed
   one, the guard checks it first (RFC 6454 tuple: scheme, host, port, with the
   default port filled in), and `rmcp`'s `validate_empty_origin_allowlist` is on
-  as well. A request with no `Origin` passes: non-browser clients send none.
+  as well, fed the list without default ports (browsers never send one, and
+  `rmcp` compares ports literally). A request with no `Origin` passes:
+  non-browser clients send none.
 - **`Host`** defaults to the resource identifier's `host[:port]`, not `rmcp`'s
   loopback-only default, which would refuse every request to a deployed
   service. `with_allowed_hosts` overrides it, for a proxy that rewrites `Host`.
@@ -80,10 +87,12 @@ let app = Router::new()
 New API, all in `cratestack-mcp` and re-exported as `cratestack::mcp::*`:
 `StreamableHttpServer`, `StreamableHttp`, `StreamableHttpService`,
 `ProtectedResource`, `HttpConfigError`. `rmcp`'s `transport-streamable-http-server`
-feature adds one package to an `mcp` build, `sse-stream`; `cratestack-mcp` now also
-depends directly on `axum`, `bytes`, `http`, `http-body`, `http-body-util` and
-`tower`, all already in both `mcp` facades' graphs. Without the `mcp` feature
-nothing changes.
+feature adds `sse-stream` to an `mcp` build of `cratestack-pg`; an `mcp` build of
+`cratestack-api` also gains `tokio-stream` and `rand` 0.10 (with `rand_core` and
+`chacha20`), which `cratestack-pg` already had through `sqlx`. `cratestack-mcp` now
+also depends directly on `axum`, `bytes`, `http`, `http-body`, `http-body-util`,
+`serde_urlencoded` and `tower`, all already in both `mcp` facades' graphs. Without
+the `mcp` feature nothing changes.
 
 ### MCP phase 3: `@mcp(tool)` procedures are served over stdio, through the same policy check as REST and RPC (#1038)
 
