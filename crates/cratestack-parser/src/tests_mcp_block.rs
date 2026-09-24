@@ -20,11 +20,6 @@ fn either_expose_line_alone_is_a_complete_block() {
 fn malformed_blocks_are_parse_errors() {
     let cases = [
         (
-            "  expose tools\n  expose resources\n",
-            "",
-            "empty `mcp { }` block",
-        ),
-        (
             "  expose tools\n",
             "  expose procedures\n",
             "renamed to `expose tools`",
@@ -49,6 +44,10 @@ fn malformed_blocks_are_parse_errors() {
         let message = syntax_error(&edit(from, to));
         assert!(message.contains(needle), "{to:?}: {message}");
     }
+    // Alone, with no attribute to trip any other rule: an empty block would
+    // otherwise be a valid, inert declaration.
+    let empty = syntax_error("mcp {\n  // nothing yet\n}\n");
+    assert!(empty.contains("empty `mcp { }` block"), "{empty}");
     let twice = format!("{VALID}\nmcp {{\n  expose tools\n}}\n");
     assert!(syntax_error(&twice).contains("duplicate `mcp { }` block"));
     let unterminated = "mcp {\n  expose tools\n";
