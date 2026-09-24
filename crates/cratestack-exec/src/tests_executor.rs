@@ -114,3 +114,20 @@ static ROUTE: cratestack_core::RouteTransportDescriptor =
         idempotent_by_default: false,
         rate_limited_by_default: true,
     };
+
+#[test]
+fn idempotency_applies_needs_a_store_and_a_participating_op() {
+    let store = Arc::new(CountingStore::reserving());
+    let wired = OpExecutor::new(Some(store as Arc<dyn IdempotencyStore>), TTL);
+    let opted_out = OpAdmission::new("procedure.read", true, true);
+
+    assert!(wired.idempotency_applies(&participating()));
+    assert!(
+        !wired.idempotency_applies(&opted_out),
+        "an op `admit` would bypass must not make a transport derive a namespace"
+    );
+    assert!(
+        !OpExecutor::new(None, TTL).idempotency_applies(&participating()),
+        "with no store, `admit` bypasses everything, so nothing applies"
+    );
+}

@@ -21,6 +21,7 @@ members = [
     "crates/cratestack-exec",
     "crates/cratestack-lsp",
     "crates/cratestack-macros",
+    "crates/cratestack-mcp",
     "crates/cratestack-migrate",
     "crates/cratestack-mock-wiremock",
     "crates/cratestack-outbox",
@@ -218,6 +219,13 @@ cratestack-exec = { path = "crates/cratestack-exec", version = "0.12.0", default
 # decimal-bigdecimal` is supposed to satisfy — regardless of which backend
 # the depending facade actually chose.
 cratestack-macros = { path = "crates/cratestack-macros", version = "0.12.0", default-features = false }
+# `default-features = false` for the same cratestack#495 reason as
+# `cratestack-exec` above: it forwards a decimal-backend choice to
+# `cratestack-core`, and letting its own default activate unconditionally
+# would put `rust_decimal` back in a `--features decimal-bigdecimal,mcp`
+# graph. Optional, behind the `mcp` feature of `cratestack-pg` and
+# `cratestack-api` only (ADR 0002 D3).
+cratestack-mcp = { path = "crates/cratestack-mcp", version = "0.12.0", default-features = false }
 # `default-features = false` (cratestack#495): real dependency of
 # `cratestack-cli` and `cratestack-studio`, dev-dependency of
 # `cratestack-pg` — see each consumer's own decimal feature for the
@@ -342,11 +350,21 @@ rand = "0.10.2"
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
 sha2 = "0.11"
+# The official MCP Rust SDK (ADR 0002 D4). Only `cratestack-mcp` depends on
+# it, and only behind the facades' `mcp` feature, so a facade built without
+# that feature has no `rmcp` in its graph (CI's `facade-disjointness` job
+# asserts it). Default features off: its `macros` feature (`#[tool]`) is
+# exactly what the generated tool table replaces.
+rmcp = { version = "3.4.1", default-features = false }
 async-trait = "0.1"
 hmac = "0.13"
 subtle = "2"
 base64 = "0.23"
 serde_json = "1"
+# `cratestack-mcp`: names the argument that failed to deserialize in a
+# `tools/call` error, so an agent can correct itself. Already in the graph
+# through `axum`'s `json` extractor, so it adds no package.
+serde_path_to_error = "0.1"
 # Dev-only: validates the generated JSON Schemas (cratestack#1037) against
 # serde's real output in the round-trip suites. `default-features = false`
 # drops the HTTP/file `$ref` resolvers and their `reqwest`/`rustls`/

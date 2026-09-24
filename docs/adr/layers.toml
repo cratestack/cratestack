@@ -8,8 +8,8 @@
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (34 as of this
-# writing, 33 of them workspace members — `cratestack-studio-ui` is excluded
+# Scope: only packages whose manifest lives under `crates/` (35 as of this
+# writing, 34 of them workspace members — `cratestack-studio-ui` is excluded
 # from the workspace and not covered here; cratestack#490's `cratestack-client`
 # is included). `examples/*` and
 # app-shaped workspace members are consumers of the layered architecture,
@@ -175,6 +175,15 @@ cratestack-client-typescript = 4
 cratestack-client-flutter = 4
 cratestack-cbor-napi = 4
 cratestack-cbor-wasm = 4
+# `cratestack-mcp` (ADR 0002 § Crate layout, cratestack#1038): one wire
+# protocol's encode, decode and routing, next to `cratestack-axum`. Its
+# normal workspace dependencies are exactly `cratestack-core` (L0) and
+# `cratestack-exec` (L3, admission only — ADR 0002 D2), so `dep.layer <=
+# self.layer` holds with no exception, and it has no database edge: tools
+# reach the database only through the per-schema module the macro generates
+# into the consuming crate. Depended on only by `cratestack-pg` and
+# `cratestack-api` (L5), optionally, behind their `mcp` feature (D3).
+cratestack-mcp = 4
 
 # --- L5: Facades -----------------------------------------------------------
 cratestack-pg = 5

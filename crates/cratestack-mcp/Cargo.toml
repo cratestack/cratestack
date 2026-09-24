@@ -1,0 +1,74 @@
+[package]
+name = "cratestack-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack's MCP binding (ADR 0002): serves a schema's `@mcp(tool)` procedures to agents over the Model Context Protocol, through the same generated policy check as REST and RPC. Reached through the `mcp` feature of `cratestack-pg` or `cratestack-api`, never directly."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Forwards to `cratestack-core`'s decimal backend choice, the same way
+# `cratestack-exec` does and for its reason (cratestack#495): every direct
+# `cratestack-core` consumer re-selects a backend, so a `decimal-bigdecimal`
+# build keeps `rust_decimal` out of the graph. Nothing here names a decimal
+# type.
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-exec/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-exec/decimal-bigdecimal",
+]
+
+[dependencies]
+# L4 (ADR 0002 § Crate layout, `docs/adr/layers.toml`): one wire protocol's
+# encode, decode and routing. The workspace edges are exactly L0 and L3, and
+# there is no database edge: a tool reaches the database only through the
+# per-schema module the macro generates into the consuming crate.
+cratestack-core.workspace = true
+cratestack-exec.workspace = true
+# `server` is the handler trait (it always pulls `schemars`, which ADR 0002
+# accepts); `transport-io` is stdio. Nothing else: no `#[tool]` macros, no
+# HTTP transport (phase 4), no client.
+rmcp = { workspace = true, features = ["server", "transport-io"] }
+serde.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+# The idempotency fingerprint (`src/fingerprint.rs`). Already in every facade's
+# graph through `cratestack-axum` and `cratestack-macros`.
+sha2.workspace = true
+# The stdio transport's reader/writer bounds and `tokio::io::stdin/stdout`.
+# `rmcp` already depends on it; every facade has it through `axum`.
+tokio = { workspace = true, features = ["io-std", "io-util"] }
+tracing.workspace = true
+
+[dev-dependencies]
+# The in-test idempotency store implements a trait declared with
+# `#[async_trait]` at L1, so it has to desugar the same way.
+async-trait.workspace = true
+tokio = { workspace = true, features = ["io-std", "io-util", "rt", "time"] }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
+# The in-test idempotency store mints reservation tokens.
+uuid.workspace = true
+
+# The stdio contract (only MCP on stdout, `tracing` on stderr, exit on stdin
+# EOF) can only be observed from outside a real process, and libtest writes
+# its own progress to stdout. `harness = false` makes the test binary its own
+# `main`, so it can re-spawn itself as the server and own every byte of its
+# stdout.
+[[test]]
+name = "stdio_process"
+path = "tests/stdio_process.rs"
+harness = false
