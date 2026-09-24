@@ -1,4 +1,5 @@
-//! URI matching: exactly the two shapes, nothing normalized.
+//! URI matching: exactly the two shapes, nothing normalized but the
+//! scheme's case.
 
 use cratestack_core::{OpDescriptor, OpKind};
 
@@ -77,13 +78,15 @@ fn anything_else_is_unknown() {
         "cratestack://blog/Post/1",
         "cratestack://blog/post_table/1",
         "cratestack://other/posts",
+        // The name, segment and id are matched exactly, whatever the
+        // scheme's case (`the_scheme_is_matched_in_any_case`).
         "cratestack://BLOG/posts",
-        // Not even the scheme is case-folded (module doc: nothing is
-        // normalized). RFC 3986 § 3.1 says a scheme *should* be accepted
-        // in either case; refusing it is this module's stated choice,
-        // pinned here so changing it is a decision, not drift.
-        "CRATESTACK://blog/posts",
-        "Cratestack://blog/posts/1",
+        "CRATESTACK://BLOG/posts",
+        "cratestack://Blog/posts/1",
+        "CRATESTACK://blog/POSTS/1",
+        // A multi-byte character across the scheme's end is a mismatch,
+        // not a panic.
+        "cratestacé://blog/posts",
         "cratestack://blog/posts/",
         "cratestack://blog/posts/1/2",
         "cratestack://blog/posts#x",
@@ -100,6 +103,30 @@ fn anything_else_is_unknown() {
         "cratestack://blog/comments/%00",
     ] {
         assert_eq!(error(uri), UriError::Unknown, "{uri}");
+    }
+}
+
+/// RFC 3986 § 3.1: a scheme is case-insensitive (maintainer decision on
+/// #1040, which flipped the lowercase-only pin `anything_else_is_unknown`
+/// used to carry). Only the scheme: the name after it stays exact.
+#[test]
+fn the_scheme_is_matched_in_any_case() {
+    for scheme in ["CRATESTACK", "Cratestack", "cRaTeStAcK"] {
+        assert_eq!(
+            record(&format!("{scheme}://blog/posts/7")),
+            ("posts", "7".to_owned()),
+            "{scheme}"
+        );
+        assert_eq!(
+            page(&format!("{scheme}://blog/comments?limit=5")),
+            ("comments", Some(5), None),
+            "{scheme}"
+        );
+        assert_eq!(
+            error(&format!("{scheme}://BLOG/posts/7")),
+            UriError::Unknown,
+            "{scheme}: the name is not case-folded"
+        );
     }
 }
 

@@ -98,9 +98,11 @@ mcp {
 
 `blog` is the block's `name`, required whenever `expose` lists `resources` and refused otherwise: a quoted
 string of lowercase letters, digits and `-`. It is stated rather than taken from the file's name so that
-renaming the `.cstack` file never moves a URI an agent holds.
+renaming the `.cstack` file never moves a URI an agent holds. The scheme is case-insensitive (RFC 3986
+§ 3.1: `CRATESTACK://blog/posts/1` is the same URI); the name, segment and id are matched exactly.
 
 Reads go through the same ORM calls REST's handlers make, under the caller's context (the one passed to
-`StdioServer::new`, or the one your `AuthProvider` built for this HTTP request), so `@@allow("read", ...)` is in the SQL: a row the caller may not read and a
-row that does not exist are the same `-32602` "resource not found". Reads pass the same rate-limit
-admission as tool calls, in the caller's bucket. Every result is `cacheScope: private`, `ttlMs: 0`.
+`StdioServer::new`, or the one your `AuthProvider` built for this HTTP request), so `@@allow("read", ...)`
+is in the SQL: a row the caller may not read and a row that does not exist are the same `-32602`
+"resource not found". Reads pass the same rate-limit admission as tool calls, in the caller's bucket.
+Every result is `cacheScope: private`, `ttlMs: 0`.

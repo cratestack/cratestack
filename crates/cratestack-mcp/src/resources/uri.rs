@@ -2,9 +2,16 @@
 //!
 //! Strict on purpose. A URI is either exactly a record URI, exactly a
 //! collection URI with only `limit`/`cursor` in its query, or unknown.
-//! Nothing is normalized (no case folding of the authority, no trailing
-//! slash, no fragment): a lenient matcher is where two spellings of "the
-//! same" resource start behaving differently.
+//! Nothing after the scheme is normalized (no case folding of the name,
+//! segment or id, no trailing slash, no fragment): a lenient matcher is
+//! where two spellings of "the same" resource start behaving differently.
+//!
+//! **The scheme is the one exception** (maintainer decision on #1040): RFC
+//! 3986 § 3.1 makes schemes case-insensitive, so `CRATESTACK://blog/...`
+//! is the same URI as `cratestack://blog/...` to any conforming client,
+//! and refusing it would be this server disagreeing with the standard, not
+//! strictness. The name after `://` is ours, `[a-z0-9-]+` by the parser's
+//! rule, and stays exact.
 
 use super::{RESOURCE_SCHEME, ResourceDescriptor};
 
@@ -40,10 +47,7 @@ pub(crate) fn parse<'t>(
     uri: &str,
     table: &'t [ResourceDescriptor],
 ) -> Result<Target<'t>, UriError> {
-    let rest = uri
-        .strip_prefix(RESOURCE_SCHEME)
-        .and_then(|rest| rest.strip_prefix("://"))
-        .ok_or(UriError::Unknown)?;
+    let rest = strip_scheme(uri).ok_or(UriError::Unknown)?;
     if rest.contains('#') {
         return Err(UriError::Unknown);
     }
@@ -91,6 +95,18 @@ pub(crate) fn parse<'t>(
             })
         }
     }
+}
+
+/// What follows `cratestack://`, the scheme compared ASCII
+/// case-insensitively (RFC 3986 § 3.1). `get` rather than slicing, so a
+/// multi-byte character where the scheme would end is a mismatch, not a
+/// panic.
+fn strip_scheme(uri: &str) -> Option<&str> {
+    let scheme = uri.get(..RESOURCE_SCHEME.len())?;
+    if !scheme.eq_ignore_ascii_case(RESOURCE_SCHEME) {
+        return None;
+    }
+    uri[RESOURCE_SCHEME.len()..].strip_prefix("://")
 }
 
 type PageQuery = (Option<u64>, Option<String>);

@@ -107,6 +107,32 @@ async fn a_record_read_is_one_private_json_block() {
     client.close().await.unwrap();
 }
 
+/// RFC 3986 § 3.1 (maintainer decision on #1040): `CRATESTACK://` is the
+/// same URI as `cratestack://`, and reads the same record. The name after
+/// it is not case-folded: `cratestack://BLOG/` is the not-found a missing
+/// row gets.
+#[tokio::test]
+async fn the_scheme_is_case_insensitive_and_the_name_is_not() {
+    let mut client = client(FakeResources::default());
+    for uri in ["CRATESTACK://blog/posts/1", "Cratestack://blog/posts/1"] {
+        let response = read(&mut client, uri).await;
+        assert_eq!(document(&response), json!({ "id": 1, "segment": "posts" }));
+        assert_eq!(
+            response["result"]["contents"][0]["uri"], uri,
+            "echoed as sent"
+        );
+    }
+    let page = read(&mut client, "CRATESTACK://blog/notes?limit=2").await;
+    assert_eq!(ids(&document(&page)), [1, 2]);
+
+    let missing = read(&mut client, "cratestack://blog/posts/99999").await;
+    for uri in ["cratestack://BLOG/posts/1", "CRATESTACK://Blog/posts/1"] {
+        let response = read(&mut client, uri).await;
+        assert_eq!(response["error"], missing["error"], "{uri}: {response}");
+    }
+    client.close().await.unwrap();
+}
+
 #[tokio::test]
 async fn hidden_missing_and_unknown_are_the_same_error() {
     let mut client = client(FakeResources::default());

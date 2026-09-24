@@ -11,7 +11,8 @@
 //! `<segment>` is the author's `@@mcp(resource: ...)` value and `<name>`
 //! the schema's `mcp { name = "..." }` (maintainer decision on #1040), so
 //! neither a table nor a model name reaches an agent (security requirement
-//! 11).
+//! 11). The scheme is matched without regard to case, as RFC 3986 § 3.1
+//! requires; the name, segment and id are matched exactly (`uri.rs`).
 //!
 //! # Where the row policy is enforced
 //!

@@ -46,11 +46,20 @@ pub async fn odd_uris_answer_exactly_like_a_missing_row(db: &Cratestack) {
         "cratestack://blog/posts/",
         "cratestack://blog/posts/1/",
         "cratestack://blog/posts/1/author",
-        "CRATESTACK://blog/posts/1",
+        // The scheme is case-insensitive (RFC 3986 § 3.1, maintainer
+        // decision on #1040), the name is not.
+        "CRATESTACK://BLOG/posts/1",
+        "cratestack://BLOG/posts/1",
     ] {
         let response = mcp.read(uri).await;
         assert_eq!(response["error"], missing["error"], "{uri}: {response}");
     }
+    // ...so an upper-case scheme reads the same visible row, byte for byte.
+    let lower = mcp.read("cratestack://blog/posts/1").await;
+    let upper = mcp.read("CRATESTACK://blog/posts/1").await;
+    let text = |response: &Value| response["result"]["contents"][0]["text"].clone();
+    assert!(text(&lower).is_string(), "{lower}");
+    assert_eq!(text(&upper), text(&lower), "{upper}");
 
     // String keys: a hidden note (u-2's) and a missing one, with the same
     // id tricks, all answer as missing.

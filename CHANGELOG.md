@@ -29,7 +29,9 @@ message is unchanged). The same generated table serves them:
   parser refuses it missing when resources are exposed, malformed, set twice,
   or present when they are not (only resource URIs read it, so there it would
   be inert). The LSP completes `name = "..."` and its hover shows the URIs it
-  produces. No table or model name appears in any URI.
+  produces. No table or model name appears in any URI. The scheme is matched
+  case-insensitively, per RFC 3986 § 3.1 (`CRATESTACK://blog/posts/1` reads the
+  same record); the name, segment and id are matched exactly.
 - **Same read path as REST.** A record is `find_unique(id).run(ctx)`, a page is
   REST's own list builder (primary-key order), and both render through REST's
   serializer, so the JSON is exactly REST's `GET` body: `@server_only` fields
