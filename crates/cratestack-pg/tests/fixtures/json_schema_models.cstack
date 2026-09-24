@@ -2,7 +2,7 @@
 // Schema round-trip in `tests/json_schema_models.rs`. Scalars, lists and
 // nesting are covered by `cratestack-api`'s `db = None` fixture; this one
 // only adds what a model brings: relation fields (not serde fields at
-// all), `@server_only` fields (`skip_serializing`), and a model used as a
+// all), `@server_only` fields (serde `skip`), and a model used as a
 // procedure argument, a return type and a `Page<T>` item.
 
 datasource db {

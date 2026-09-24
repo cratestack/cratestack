@@ -86,7 +86,7 @@ fn a_model_round_trips_as_output_argument_and_page_item() {
         let written = serde_json::to_value(&written).unwrap();
         assert!(
             written.get("secret").is_none(),
-            "`@server_only` is skip_serializing"
+            "`@server_only` is never serialized"
         );
         assert_valid(&get, &written, "fetchPost output");
         let args = serde_json::to_value(import_post::Args { post }).unwrap();
@@ -157,18 +157,28 @@ fn a_model_argument_rejects_wrong_shapes() {
 }
 
 /// A `@server_only` field is left out of the schema so its name is never
-/// advertised. It is only `skip_serializing`, so serde still parses it on
-/// input, and a wrong-typed one fails there while the schema (which
-/// allows unknown properties, as serde does) lets it through. Pinned so
-/// a change on either side is noticed.
+/// advertised, and serde skips it in both directions (cratestack#1051), so
+/// the two agree: a value for it, of any type, passes the schema (which
+/// allows unknown properties, as serde does) and is ignored by serde. This
+/// used to be a pinned gap: serde parsed the field on input, so a
+/// wrong-typed value failed there while the schema let it through, and a
+/// well-typed one reached the procedure. Pinned so a change on either side
+/// is noticed.
 #[test]
-fn a_wrong_typed_server_only_field_is_a_known_gap() {
+fn a_server_only_field_is_ignored_by_schema_and_serde_alike() {
     let import = validator("importPost", false);
-    let mut post = serde_json::to_value(&posts()[0]).unwrap();
-    post.as_object_mut()
-        .unwrap()
-        .insert("secret".to_owned(), json!(5));
-    let args = json!({ "post": post });
-    assert!(import.is_valid(&args));
-    assert!(serde_json::from_value::<import_post::Args>(args).is_err());
+    for secret in [json!(5), json!("from-agent")] {
+        let mut post = serde_json::to_value(&posts()[0]).unwrap();
+        post.as_object_mut()
+            .unwrap()
+            .insert("secret".to_owned(), secret.clone());
+        let args = json!({ "post": post });
+        assert!(import.is_valid(&args), "schema rejected secret = {secret}");
+        let decoded = serde_json::from_value::<import_post::Args>(args)
+            .unwrap_or_else(|error| panic!("serde rejected secret = {secret}: {error}"));
+        assert_eq!(
+            decoded.post.secret, "",
+            "secret = {secret} reached the argument"
+        );
+    }
 }

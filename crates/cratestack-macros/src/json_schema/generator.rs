@@ -129,8 +129,8 @@ impl<'a> Generator<'a> {
         }
         if let Some(model) = schema.models.iter().find(|m| m.name == name) {
             // `crate::model::generate_model_struct_only`: relation fields
-            // are not struct fields at all. `@server_only` fields are
-            // `skip_serializing`, so they never reach the wire; they are
+            // are not struct fields at all. `@server_only` fields are serde
+            // `skip` (cratestack#1051): never written, never read. They are
             // left out rather than advertised to an agent.
             reject_computed(name, &model.fields)?;
             let fields = model
