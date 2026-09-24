@@ -1442,6 +1442,16 @@ verify-file-length:
 verify-napi-targets:
 	./.ci/napi-targets-check.sh
 
+# pnpm version pin agreement (cratestack#1050) — asserts every tracked
+# `package.json` that declares `packageManager` pins exactly the root's pnpm.
+# The example workspace roots pin it so Dependabot resolves them with the pnpm
+# CI uses; CI itself reads only the root pin, so a drift would have Dependabot
+# write lockfiles with one pnpm and CI check them with another. Blocking CI
+# gate, run as the `pnpm-pins` job in `.github/workflows/ci.yml`. See
+# `.ci/pnpm-pin-check.sh`.
+verify-pnpm-pins:
+	./.ci/pnpm-pin-check.sh
+
 # Changelog verification: detect unedited seeds, and (cratestack#739) any
 # entry a PR adds that landed under a dated release section instead of
 # under "## Unreleased".

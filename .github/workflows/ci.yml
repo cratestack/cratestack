@@ -677,6 +677,21 @@ jobs:
       - name: napi.targets and build-cbor-node agree
         run: just verify-napi-targets
 
+  # pnpm version pin agreement (cratestack#1050). Invokes the `just` recipe,
+  # like napi-targets above. Ungated: it reads a handful of package.json
+  # files, and a pin can drift from a change anywhere in the tree.
+  pnpm-pins:
+    timeout-minutes: 10
+    name: packageManager pins agree with the root (cratestack#1050)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Every packageManager pin matches the root's
+        run: just verify-pnpm-pins
+
   # Changelog verification (issue #479). Detects unedited changelog seeds
   # that would silently degrade the changelog from prose to a commit list
   # (worse than an honest gap, because it looks maintained but isn't), AND
@@ -2291,11 +2306,13 @@ jobs:
   # Covered here: the lockfile matches both members (frozen install), it
   # resolves one copy of each package that could be deduplicated (the same
   # two-Reacts hazard react-vite-swr's job describes), and the web app
-  # typechecks.
+  # typechecks. The typecheck needs the wasm bundle: `components/worker.ts`
+  # imports `public/pkg/`, which only a wasm-pack build produces (gitignored,
+  # built `--no-typescript`, so tsc infers its types from the JS). A `--dev`
+  # build is enough for that and skips wasm-opt, so no binaryen pin.
   #
-  # NOT covered here: `next build`. The `prebuild` hook builds the wasm
-  # module and the napi `.node` addon first, i.e. two more Rust toolchains'
-  # worth of work, and `lint` is `next lint`, which Next 16 removed. Neither
+  # NOT covered here: `next build`. Its `prebuild` hook also builds the napi
+  # `.node` addon, and `lint` is `next lint`, which Next 16 removed. Neither
   # is what #1050 is about; both belong to a job that runs the app.
   react-nextjs-daisyui-example:
     needs: changes
@@ -2305,6 +2322,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # wasm32-unknown-unknown comes from rust-toolchain.toml's `targets`.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -2320,6 +2343,10 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: examples/react-nextjs-daisyui
         run: pnpm dedupe --check
+      - name: Build the wasm bundle (dev) that the web app imports
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm --filter react-nextjs-daisyui-example run wasm:build:dev
       - name: Typecheck the web app
         if: ${{ !cancelled() }}
         working-directory: examples/react-nextjs-daisyui

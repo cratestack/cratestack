@@ -16,13 +16,15 @@
 # Keep this list in sync with:
 #   find . -name pnpm-lock.yaml -not -path '*/node_modules/*'
 #
-# Note on `examples/react-vite-swr`: it gets its OWN entry below, pointed at
-# the example root, which has a manifest-only `package.json` for exactly this
-# reason. Dependabot does not refresh a `pnpm-lock.yaml` whose workspace root
-# has no `package.json`: while this entry listed the members instead, it
-# bumped `web/package.json` and left the shared lockfile stale on both #947
-# and #980. The same holds for `examples/react-nextjs-daisyui`, which is still
-# laid out that way and already drifted (#1050).
+# Note on `examples/react-vite-swr` and `examples/react-nextjs-daisyui`: each
+# gets its OWN entry below, pointed at the example root, which has a
+# manifest-only `package.json` for exactly this reason. Dependabot does not
+# refresh a `pnpm-lock.yaml` whose workspace root has no `package.json`: while
+# the entries listed the members instead, Dependabot bumped `web/package.json`
+# and left the shared lockfile stale (react-vite-swr on #947 and #980, fixed
+# by #1049; react-nextjs-daisyui on nine PRs, fixed by #1050). Each root
+# `package.json` pins `packageManager` to the repo root's pnpm, so Dependabot
+# resolves with the pnpm CI uses; `just verify-pnpm-pins` keeps the pins equal.
 #
 # The entry excludes `client/` from VERSION updates (`exclude-paths` does
 # not apply to security updates, which are off for this repo today; if
@@ -33,11 +35,11 @@
 # and CI's `just regen-examples --check` rejects any hand edit. #980 rewrote
 # it and turned `main` red for two days.
 #
-# CI also runs `pnpm dedupe --check` for this example. A lockfile refresh can
+# CI also runs `pnpm dedupe --check` for both examples. A lockfile refresh can
 # leave `client/`'s `^18 || ^19` react on an older version than `web/`'s,
 # bundling two Reacts, which breaks every SWR hook at runtime while
 # typecheck and lint pass. If that step fails on a Dependabot PR, run
-# `pnpm dedupe` in `examples/react-vite-swr` and push.
+# `pnpm dedupe` in the example (twice if needed: pnpm/pnpm#14987) and push.
 
 version: 2
 
@@ -166,18 +168,16 @@ updates:
       # during the 2026-08 audit. Move it when the Node floor moves, not before.
       - dependency-name: "@types/node"
 
-  # `examples/react-nextjs-daisyui/web` — its own entry for the same reason as
-  # the webpack example above: a scoped `@types/node` pin. NOTE this example
-  # was missing from the shared list entirely; its `pnpm-lock.yaml` was
-  # generated during the 2026-08 audit, after this file was first written, so
-  # nothing was refreshing it. The lockfile sits at the example root while the
-  # manifest is in `web/`, so the manifest directory is what is listed here.
-  # KNOWN BROKEN: listing the member does NOT make Dependabot refresh that
-  # root lockfile (9 PRs on main, lockfile touched 0 times). The fix is the
-  # react-vite-swr one above: a root `package.json` and this entry at the
-  # root. Tracked in #1050.
+  # `examples/react-nextjs-daisyui` — its own entry for the same reason as
+  # the webpack example above: a scoped `@types/node` pin. It points at the
+  # example ROOT, not `web/`: the root has a manifest-only `package.json` so
+  # Dependabot refreshes the shared `pnpm-lock.yaml` (see this file's header;
+  # listing `web/` bumped the manifest nine times and the lockfile never,
+  # #1050). Both members are hand-written, so nothing is excluded. Pointing at
+  # the root also brings `napi/` (its `@napi-rs/cli` dev dependency) under
+  # Dependabot for the first time.
   - package-ecosystem: npm
-    directory: /examples/react-nextjs-daisyui/web
+    directory: /examples/react-nextjs-daisyui
     schedule:
       interval: weekly
       day: monday
