@@ -2253,6 +2253,23 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: pnpm install --frozen-lockfile
+      # A lockfile can pass the frozen install yet resolve TWO Reacts: bump
+      # `web/`'s react and the generated `client/`'s `^18 || ^19` range can
+      # stay on the old version, so the app bundles both and every SWR hook
+      # fails at runtime ("Invalid hook call") while typecheck and lint pass.
+      # #1042's first lockfile did exactly that. `dedupe --check` fails when
+      # any duplicate could be collapsed; the fix is `pnpm dedupe`, repeated
+      # until `pnpm dedupe --check` passes locally. The pinned pnpm 11.24.0
+      # carries pnpm/pnpm#14987 (a direct-dependency bump, i.e. every
+      # Dependabot PR here, can need a SECOND `pnpm dedupe`; fixed in
+      # 11.27.1), so one pass that still leaves this red is that bug, not a
+      # flake — re-run the command, don't re-run the job. The other
+      # nondeterminism reports (pnpm/pnpm#8155, #10626) were fixed before
+      # 11.24.0.
+      - name: Assert the lockfile is deduplicated (one React)
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-vite-swr
+        run: pnpm dedupe --check
       - name: Build the generated client (typechecks client/ for real)
         if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr

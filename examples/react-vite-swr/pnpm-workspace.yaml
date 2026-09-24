@@ -7,6 +7,12 @@
 # description) — this file makes `examples/react-vite-swr` its own
 # workspace root instead, so `pnpm install` run anywhere under this
 # directory resolves here, not at the repo root.
+#
+# The root `package.json` next to this file declares no dependencies. It
+# exists so Dependabot can maintain `pnpm-lock.yaml`: with no manifest at the
+# workspace root, Dependabot bumped `web/package.json` and never the lockfile
+# (#947, #980). `.github/dependabot.yml` points at this directory and excludes
+# the generated `client/`.
 packages:
   - "client"
   - "web"

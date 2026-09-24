@@ -1,0 +1,9 @@
+{
+  "name": "react-vite-swr-workspace",
+  "private": true,
+  "description": "Workspace root for the react-vite-swr example. It declares no dependencies of its own. It exists because Dependabot cannot find a pnpm-lock.yaml whose workspace root has no package.json (it bumped web/package.json and left the lockfile stale on #947 and #980), so .github/dependabot.yml points at this directory instead of at the members. Members and pnpm settings live in pnpm-workspace.yaml.",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=24"
+  }
+}
