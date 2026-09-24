@@ -15,11 +15,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use cratestack_core::{CratestackContext, CratestackError, RateLimitConfig, RateLimitStore};
+use cratestack_core::{
+    CratestackContext, CratestackError, IdempotencyStore, RateLimitConfig, RateLimitStore,
+};
 use cratestack_mcp::{OpExecutor, StdioServer, StoreErrorPolicy};
 use serde_json::json;
 use support::client::{Client, envelope};
-use support::failing::{FailingLimiter, HungLimiter};
+use support::failing::{FailingLimiter, HungLimiter, UnreachableIdempotency};
 use support::{FakeTools, user};
 
 fn executor(store: Arc<dyn RateLimitStore>) -> OpExecutor {
@@ -119,4 +121,50 @@ async fn an_explicit_allow_behaves_as_the_default() {
 
     assert_eq!(result["isError"], json!(false), "{result}");
     assert_eq!(tools.runs(), 1);
+}
+
+/// The other builder order: policy *after* the executor. Refusing proves
+/// both halves at once — the policy took effect, and setting it did not
+/// drop the executor (without one nothing is limited and the call runs).
+#[tokio::test]
+async fn deny_set_after_the_executor_still_refuses() {
+    let tools = FakeTools::default();
+    let server = StdioServer::new(tools.clone(), user("u-1"))
+        .unwrap()
+        .with_executor(executor(unavailable()))
+        .with_store_error_policy(StoreErrorPolicy::Deny);
+    let mut client = Client::start(server);
+
+    let result = client.call("echo", json!({ "text": "a" }), None).await;
+
+    assert_eq!(envelope(&result)["code"], "UNAVAILABLE", "{result}");
+    assert_eq!(tools.runs(), 0);
+}
+
+/// `StoreErrorPolicy` governs the rate-limit store only. An unreachable
+/// *idempotency* store refuses a keyed mutation under every policy, `Allow`
+/// included, as HTTP's `IdempotencyLayer` does: running a mutation that
+/// could not be reserved is the duplicate the store exists to prevent.
+#[tokio::test]
+async fn an_unreachable_idempotency_store_refuses_under_every_policy() {
+    for policy in [StoreErrorPolicy::Allow, StoreErrorPolicy::Deny] {
+        let tools = FakeTools::default();
+        let store = Arc::new(UnreachableIdempotency::default());
+        let idempotency: Arc<dyn IdempotencyStore> = store.clone();
+        let server = StdioServer::new(tools.clone(), user("u-1"))
+            .unwrap()
+            .with_executor(OpExecutor::new(Some(idempotency), Duration::from_secs(60)))
+            .with_store_error_policy(policy);
+        let mut client = Client::start(server);
+        let meta = json!({ "dev.cratestack/idempotencyKey": "k-1" });
+
+        let result = client
+            .call("transfer", json!({ "amount": 5 }), Some(meta))
+            .await;
+
+        assert_eq!(store.reservations.load(Ordering::SeqCst), 1, "{policy:?}");
+        let code = &envelope(&result)["code"];
+        assert_eq!(code, "UNAVAILABLE", "{policy:?}: {result}");
+        assert_eq!(tools.runs(), 0, "{policy:?}: the mutation must not run");
+    }
 }
