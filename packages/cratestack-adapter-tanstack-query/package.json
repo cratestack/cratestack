@@ -41,7 +41,7 @@
     "@cratestack/ts-types": "0.12.0"
   },
   "peerDependencies": {
-    "@tanstack/query-core": "^5.103.1"
+    "@tanstack/query-core": "^5.103.2"
   },
   "peerDependenciesMeta": {
     "@tanstack/query-core": {
@@ -49,7 +49,7 @@
     }
   },
   "devDependencies": {
-    "@tanstack/query-core": "^5.103.1",
+    "@tanstack/query-core": "^5.103.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   },
