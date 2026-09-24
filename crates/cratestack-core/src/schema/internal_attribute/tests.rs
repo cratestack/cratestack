@@ -25,6 +25,7 @@ fn model_with_attrs(raws: &[&str]) -> Model {
             })
             .collect(),
         span: span(),
+        mcp: None,
     }
 }
 

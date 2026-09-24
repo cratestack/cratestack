@@ -25,6 +25,7 @@ mod decimal_arg;
 mod embedded;
 mod extension_gate;
 mod json_schema_probe;
+mod mcp_gate;
 mod parse;
 mod schema_args;
 mod server;

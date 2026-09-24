@@ -38,5 +38,6 @@ pub(super) fn as_procedure(query: &Query) -> Procedure {
         return_type: query.result_type.clone(),
         attributes: query.attributes.clone(),
         span: query.span,
+        mcp: None,
     }
 }

@@ -57,6 +57,7 @@ pub(crate) fn semantic_tokens(text: &str, schema: &Schema) -> Vec<SemanticToken>
         entries.push((model.name_span, STRUCT));
         collect_fields(schema, &model.fields, &mut entries);
         collect_attributes(&model.attributes, &mut entries);
+        entries.extend(crate::mcp_tokens::decorator(model).map(|span| (span, DECORATOR)));
     }
     for ty in &schema.types {
         entries.push((ty.name_span, TYPE));

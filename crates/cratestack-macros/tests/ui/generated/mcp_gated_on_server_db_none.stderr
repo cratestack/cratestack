@@ -1,0 +1,5 @@
+error: schema declares an MCP surface (an `mcp { }` block, `@mcp(tool)` on procedure `ping`), but the MCP runtime has not shipped: include_server_schema! rejects MCP declarations until it does, so none can parse and then serve nothing (ADR 0002 Q4). Tracking: cratestack#1033 (https://github.com/cratestack/cratestack/issues/1033) — remove the MCP declarations to build this schema today.
+ --> tests/ui/generated/mcp_gated_on_server_db_none.rs
+  |
+  | cratestack_macros::include_server_schema!("/tmp/cratestack-macros-ui-mcp-1036/mcp_server_gate_db_none.cstack", db = None);
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

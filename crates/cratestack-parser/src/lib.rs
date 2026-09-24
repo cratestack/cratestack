@@ -36,6 +36,20 @@ mod tests_field_attrs;
 #[cfg(test)]
 mod tests_list_arity;
 #[cfg(test)]
+mod tests_mcp_block;
+#[cfg(test)]
+mod tests_mcp_inert;
+#[cfg(test)]
+mod tests_mcp_parse;
+#[cfg(test)]
+mod tests_mcp_placement;
+#[cfg(test)]
+mod tests_mcp_rules;
+#[cfg(test)]
+mod tests_mcp_scope;
+#[cfg(test)]
+mod tests_mcp_support;
+#[cfg(test)]
 mod tests_mixins;
 #[cfg(test)]
 mod tests_model_attrs;

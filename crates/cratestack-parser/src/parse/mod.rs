@@ -2,6 +2,7 @@ mod arg_split;
 mod attribute_spacing;
 mod blocks;
 mod fields;
+pub(crate) mod mcp;
 mod models;
 mod procedure_docs;
 mod procedures;
@@ -22,11 +23,9 @@ use crate::line_helpers::{
     collect_lines, name_span_in_line, parse_doc_comment, split_config_entry,
 };
 
-use self::blocks::{
-    parse_body_block, parse_named_config_block, parse_simple_config_block,
-    parse_transport_directive,
-};
+use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
 use self::fields::{parse_enum_variants, parse_fields};
+use self::mcp::{extract_model_mcp, parse_mcp_block};
 use self::models::{expand_model_mixins, parse_model_body};
 use self::procedures::parse_procedure;
 use self::queries::parse_query;
@@ -39,7 +38,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
 
     let mut datasource = None;
     let mut auth = None;
-    let mut config_blocks = Vec::new();
+    let mut mcp = None;
     let mut mixins = Vec::new();
     let mut models = Vec::new();
     let mut types = Vec::new();
@@ -118,6 +117,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         if line.trimmed.starts_with("model ") {
             let (name, body, span, next) = parse_body_block(&lines, cursor, "model")?;
             let (fields, attributes) = parse_model_body(&body)?;
+            let (model_mcp, attributes) = extract_model_mcp(&name, attributes)?;
             models.push(Model {
                 docs: std::mem::take(&mut pending_docs),
                 name,
@@ -125,6 +125,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
                 fields,
                 attributes,
                 span,
+                mcp: model_mcp,
             });
             cursor = next;
             continue;
@@ -179,9 +180,9 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         }
 
         if line.trimmed == "mcp {" {
-            let (mut block, next) = parse_simple_config_block(&lines, cursor, "mcp")?;
-            block.docs = std::mem::take(&mut pending_docs);
-            config_blocks.push(block);
+            let docs = std::mem::take(&mut pending_docs);
+            let (block, next) = parse_mcp_block(&lines, cursor, docs, mcp.as_ref())?;
+            mcp = Some(block);
             cursor = next;
             continue;
         }
@@ -242,7 +243,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     Ok(Schema {
         datasource,
         auth,
-        config_blocks,
+        config_blocks: Vec::new(),
         mixins,
         models,
         types,
@@ -252,5 +253,6 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         queries,
         transport: transport.unwrap_or_default(),
         declared_extensions,
+        mcp,
     })
 }

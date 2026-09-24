@@ -87,7 +87,7 @@ match parse_schema_named("schema.cstack", source) {
 | `type`          | Named record type (`@computed` resolver fields supported)  |
 | `enum`          | Untyped identifier variants                                |
 | `procedure`     | `procedure` / `mutation procedure` with typed args/return  |
-| `mcp`           | Parsed as a config block                                   |
+| `mcp`           | `mcp { expose = [tools, resources] }`; typed and validated |
 
 See the root README for the canonical capability matrix.
 

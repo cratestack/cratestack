@@ -1,0 +1,23 @@
+// cratestack#1036 (ADR 0002 Q4): the tools-only shape a `db = None`
+// (`cratestack-api`) service would use. Gated exactly like the Postgres
+// schema until the MCP runtime ships (cratestack#1033).
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)
+  @mcp(tool: "ping")

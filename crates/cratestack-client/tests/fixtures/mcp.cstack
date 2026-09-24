@@ -1,0 +1,27 @@
+// Fixture for `mcp_declarations_are_ignored.rs` (cratestack#1036, ADR 0002):
+// a server's schema that declares an MCP surface. A client consumes it as a
+// contract; the MCP block and attributes must compile and change nothing.
+
+datasource db {
+  provider = "postgresql"
+}
+
+mcp {
+  expose = [tools, resources]
+}
+
+type FeedArgs {
+  limit Int
+}
+
+model Post {
+  id    Int    @id
+  title String
+
+  @@allow("read", true)
+  @@mcp(resource: "posts", max_page_size: 20)
+}
+
+procedure getFeed(args: FeedArgs): Post[]
+  @allow(auth() != null)
+  @mcp(tool, description: "The feed, newest first.")

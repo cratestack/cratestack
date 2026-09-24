@@ -9,6 +9,7 @@ mod computed_params;
 mod computed_resolver_names;
 mod fields;
 mod index_attribute;
+mod mcp;
 mod misspelled_attributes;
 mod mixins_types;
 mod model_attributes;
@@ -133,6 +134,7 @@ pub(crate) fn validate_schema_collecting(
     collect::record(&mut errors, || {
         validate_no_models_under_datasource_none(schema)
     });
+    self::mcp::validate_mcp_collecting(schema, &mut errors);
     if !errors.is_empty() {
         return errors;
     }
