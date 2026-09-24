@@ -335,10 +335,12 @@ test-ci-db-decimal-bigdecimal *args='':
 # delegated `@authorize(...)` denial and an `@@allow`-hidden row, both
 # reached through a `tools/call`. `required-features = ["mcp"]`
 # (`crates/cratestack-pg/tests/mcp_policy_pg.rs`), so `test-ci-db` above,
-# which runs default features, never compiles it. Set
-# `CRATESTACK_REQUIRE_DB=1` so a missing database fails instead of skipping.
+# which runs default features, never compiles it. The recipe exports
+# `CRATESTACK_REQUIRE_DB=1` itself, so a local run with no reachable database
+# fails instead of skipping and printing `ok` (CI's `tests-db` job sets it
+# too; the two agree).
 test-ci-db-mcp *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg {{args}}
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg {{args}}
 
 # Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
 # persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage
