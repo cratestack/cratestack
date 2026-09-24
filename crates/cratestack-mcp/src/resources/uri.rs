@@ -72,7 +72,12 @@ pub(crate) fn parse<'t>(
                 ));
             }
             let id = percent_decode(raw).ok_or(UriError::Unknown)?;
-            if id.is_empty() {
+            // A NUL is in no key: `Int`/`Uuid` never parse one, and
+            // Postgres refuses it in `text` with an error rather than
+            // matching nothing — a `-32603` and a server-side error log
+            // any caller could trigger at will, where the true answer is
+            // "no such row". Deliberately unlike REST, which 500s.
+            if id.is_empty() || id.contains('\0') {
                 return Err(UriError::Unknown);
             }
             Ok(Target::Record { resource, id })

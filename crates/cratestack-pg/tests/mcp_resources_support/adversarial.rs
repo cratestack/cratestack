@@ -61,26 +61,16 @@ pub async fn odd_uris_answer_exactly_like_a_missing_row(db: &Cratestack) {
         "cratestack://blog/notes/n%2D031",
         "cratestack://blog/notes/N-031",
         "cratestack://blog/notes/n-031%20",
-    ] {
-        let response = mcp.read(uri).await;
-        assert_eq!(response["error"], missing["error"], "{uri}: {response}");
-    }
-
-    // A NUL in a text key is refused by Postgres itself, before any row is
-    // compared, so it cannot be "not found" — but it must not depend on
-    // whether the row exists either: visible, hidden and missing ids fail
-    // alike, and name nothing.
-    let nul = mcp.read("cratestack://blog/notes/n-001%00").await;
-    println!("NUL in a text key: {nul}");
-    for uri in [
+        // A NUL is in no `text` key. Postgres would refuse it with a
+        // database error (`-32603`, `DATABASE_ERROR`) rather than match
+        // nothing, so the URI layer answers it as the missing row it is.
+        "cratestack://blog/notes/n-001%00",
         "cratestack://blog/notes/n-031%00",
         "cratestack://blog/notes/n-999%00",
     ] {
         let response = mcp.read(uri).await;
-        assert_eq!(response["error"], nul["error"], "{uri}: {response}");
+        assert_eq!(response["error"], missing["error"], "{uri}: {response}");
     }
-    assert!(nul.get("result").is_none(), "{nul}");
-    assert!(!nul.to_string().contains("mcp_res"), "{nul}");
 }
 
 /// REST's default read includes no relation, so neither may a resource: a

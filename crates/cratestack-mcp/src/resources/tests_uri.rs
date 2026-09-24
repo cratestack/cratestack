@@ -93,6 +93,11 @@ fn anything_else_is_unknown() {
         "cratestack://blog/posts/%zz",
         "cratestack://blog/posts/%+1",
         "cratestack://blog/posts/%ff",
+        // No key of any addressable type can hold a NUL: `Int`/`Uuid`
+        // never parse one, and Postgres refuses it in `text` before
+        // comparing a row — as a database error, not "not found".
+        "cratestack://blog/comments/a%00b",
+        "cratestack://blog/comments/%00",
     ] {
         assert_eq!(error(uri), UriError::Unknown, "{uri}");
     }
