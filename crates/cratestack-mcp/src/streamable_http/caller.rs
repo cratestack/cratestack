@@ -48,10 +48,19 @@ impl Caller {
         &self,
         request: &RequestContext<RoleServer>,
     ) -> Result<Cow<'_, CratestackContext>, ErrorData> {
+        self.resolve_from(&request.extensions)
+    }
+
+    /// [`Self::resolve`] over just the extensions, because `rmcp` does not
+    /// let a test build a `RequestContext` (its `Peer` is crate-private),
+    /// and the fail-closed arm below is the one worth a test.
+    fn resolve_from(
+        &self,
+        extensions: &rmcp::model::Extensions,
+    ) -> Result<Cow<'_, CratestackContext>, ErrorData> {
         match self {
             Self::Fixed(context) => Ok(Cow::Borrowed(context)),
-            Self::PerRequest => request
-                .extensions
+            Self::PerRequest => extensions
                 .get::<http::request::Parts>()
                 .and_then(|parts| parts.extensions.get::<AuthenticatedCaller>())
                 .map(|caller| Cow::Owned(caller.0.clone()))
@@ -73,8 +82,36 @@ impl Caller {
 #[cfg(test)]
 mod tests {
     use cratestack_core::{CratestackContext, Value};
+    use rmcp::model::Extensions;
 
-    use super::{AuthenticatedCaller, hand_over};
+    use super::{AuthenticatedCaller, Caller, hand_over};
+
+    /// The HTTP caller comes from the guard or not at all: no `Parts`, or
+    /// `Parts` the guard never handed over, is an error, not an anonymous
+    /// (or any other) context.
+    #[test]
+    fn a_per_request_caller_fails_closed_without_the_guards_context() {
+        let mut extensions = Extensions::new();
+        let error = Caller::PerRequest.resolve_from(&extensions).unwrap_err();
+        assert_eq!(error.code, rmcp::model::ErrorCode::INTERNAL_ERROR);
+
+        let (mut parts, ()) = http::Request::new(()).into_parts();
+        parts.extensions.insert(CratestackContext::anonymous());
+        extensions.insert(parts.clone());
+        assert!(
+            Caller::PerRequest.resolve_from(&extensions).is_err(),
+            "a plain CratestackContext in the extensions is not the guard's"
+        );
+
+        let caller =
+            CratestackContext::authenticated([("id".to_owned(), Value::String("u-1".into()))]);
+        hand_over(&mut parts, caller.clone());
+        extensions.insert(parts);
+        assert_eq!(
+            *Caller::PerRequest.resolve_from(&extensions).unwrap(),
+            caller
+        );
+    }
 
     #[test]
     fn the_token_is_removed_and_the_caller_attached() {

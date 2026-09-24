@@ -7,6 +7,7 @@
 #![allow(dead_code)] // Each test binary uses a different subset.
 
 pub mod client;
+pub mod counting;
 pub mod failing;
 pub mod http_app;
 pub mod stores;
