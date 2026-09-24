@@ -105,8 +105,14 @@ Also rejected, because any of them would otherwise be silently inert: an
 attribute whose kind is missing from `expose`, `@mcp`/`@@mcp` anywhere except a
 procedure or a model (on a field, on a view, `@@mcp` on a procedure, on a
 `query`), an MCP attribute that shares a line with another attribute, and the
-dotted `@mcp.tool` form (ADR 0002 D1). The LSP completes and hovers the new
-syntax and reports these errors as diagnostics.
+dotted `@mcp.tool` form (ADR 0002 D1). So is anything else that names MCP but
+is not one of the two spellings the parser reads, wherever it sits: another
+case (`@MCP(tool)`, `@@Mcp(...)`), whitespace after the `@` (`@ mcp(tool)`),
+an MCP attribute after another one on a view or `query` line, or a bare
+`@@mcp` line inside an `enum`, which used to be read as a variant.
+`max_page_size:` takes a plain decimal integer (`+5` is rejected). The LSP
+completes and hovers the new syntax, colours `@@mcp` like every other model
+attribute, and reports these errors as diagnostics.
 
 ### Rate-limit admission moves to the L3 `OpExecutor`, and `@no_rate_limit` works under `Router::nest` (#877)
 
