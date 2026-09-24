@@ -34,10 +34,7 @@ pub(crate) fn list_templates(table: &[ResourceDescriptor]) -> ListResourceTempla
     let templates = table
         .iter()
         .flat_map(|resource| {
-            let base = format!(
-                "{RESOURCE_SCHEME}://{}/{}",
-                resource.name, resource.segment
-            );
+            let base = format!("{RESOURCE_SCHEME}://{}/{}", resource.name, resource.segment);
             [
                 ResourceTemplate::new(format!("{base}/{{id}}"), resource.segment)
                     .with_description(format!(

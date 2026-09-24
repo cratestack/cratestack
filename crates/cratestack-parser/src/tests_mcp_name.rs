@@ -86,7 +86,11 @@ fn rule_the_name_is_set_once() {
 /// name is a hard error naming that rule, and so is the empty one.
 #[test]
 fn rule_the_name_is_1_to_63_characters() {
-    for value in [String::new(), "a".repeat(64), format!("{}0", "b".repeat(63))] {
+    for value in [
+        String::new(),
+        "a".repeat(64),
+        format!("{}0", "b".repeat(63)),
+    ] {
         let message = syntax_error(&edit(NAME, &format!("  name = \"{value}\"\n")));
         assert!(
             message.contains("must be 1 to 63 characters, the length of a DNS label"),
