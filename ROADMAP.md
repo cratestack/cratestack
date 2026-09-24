@@ -80,7 +80,7 @@ dispatch path, which is the second input shape that made building L3 correct.
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | Idempotency admission → L3; `@no_idempotency` goes live | ✅ landed ([#876](https://github.com/cratestack/cratestack/issues/876)) |
-| 2 | Rate-limit admission → L3; `@no_rate_limit` honoured under `Router::nest` | 🔄 in review ([#877](https://github.com/cratestack/cratestack/issues/877)) |
+| 2 | Rate-limit admission → L3; `@no_rate_limit` honoured under `Router::nest` | ✅ landed ([#877](https://github.com/cratestack/cratestack/issues/877), [#995](https://github.com/cratestack/cratestack/pull/995)) |
 | 3 | Row-level policy replayed against streamed `ModelEvent<T>` | planned |
 | 4 | Audit fan-out | planned |
 
