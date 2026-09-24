@@ -224,6 +224,12 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   `@computed` params surface shipped REST-only in v1 and closing the gap took three follow-up PRs
   (cratestack#724 and kin). If a transport is genuinely excluded, that is a design-doc'd,
   changelog'd decision — not an omission.
+  **MCP is exempt, by decision (ADR 0002 D5, cratestack-docs `internals/mcp-operator-adr.md`,
+  § "Transport parity").** The rule binds REST and RPC because both carry the *application API*.
+  MCP (`cratestack-mcp`, behind the `mcp` feature of `cratestack-pg`/`cratestack-api`) carries an
+  opt-in subset for agents — the `@mcp(tool)` procedures — so a new request-surface feature ships on
+  REST and RPC and reaches MCP only when someone deliberately extends MCP. A feature missing from
+  MCP is therefore not a parity gap; one missing from RPC still is.
 - **Docs and skills parity — a feature is not done until all three repos agree.** A user-facing
   change has two companions, and they drift in opposite directions: `cratestack/cratestack-docs`
   (Mintlify, for humans) goes stale, and `cratestack/cratestack-skills` (agent skills, installed
