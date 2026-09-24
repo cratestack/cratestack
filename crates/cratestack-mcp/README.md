@@ -82,15 +82,25 @@ MCP reveals nothing REST does not.
 
 A model annotated `@@mcp(resource: "posts")` is a read-only resource (cratestack#1040):
 
-- `cratestack://<schema>/posts/{id}` reads one record, shaped exactly like REST's `GET /posts/{id}`
+```cstack
+mcp {
+  name = "blog"
+  expose = [resources]
+}
+```
+
+- `cratestack://blog/posts/{id}` reads one record, shaped exactly like REST's `GET /posts/{id}`
   (same serializer, so `@server_only` fields are absent and `@computed` fields resolved).
-- `cratestack://<schema>/posts{?limit,cursor}` reads a page, `{"items": [...], "nextCursor": "..."}`, in
+- `cratestack://blog/posts{?limit,cursor}` reads a page, `{"items": [...], "nextCursor": "..."}`, in
   primary-key order. `limit` defaults to 50 and is clamped (not refused) at 200, or at the model's
   `max_page_size:` when lower. Pass `nextCursor` back as `cursor`; a cursor this server did not issue for
   that resource is `-32602`.
 
-`<schema>` is the schema file's name without `.cstack`. Reads go through the same ORM calls REST's handlers
-make, under the caller's context (the one passed to `StdioServer::new`, or the one your `AuthProvider`
-built for this HTTP request), so `@@allow("read", ...)` is in the SQL: a row the caller may not read and a
+`blog` is the block's `name`, required whenever `expose` lists `resources` and refused otherwise: a quoted
+string of lowercase letters, digits and `-`. It is stated rather than taken from the file's name so that
+renaming the `.cstack` file never moves a URI an agent holds.
+
+Reads go through the same ORM calls REST's handlers make, under the caller's context (the one passed to
+`StdioServer::new`, or the one your `AuthProvider` built for this HTTP request), so `@@allow("read", ...)` is in the SQL: a row the caller may not read and a
 row that does not exist are the same `-32602` "resource not found". Reads pass the same rate-limit
 admission as tool calls, in the caller's bucket. Every result is `cacheScope: private`, `ttlMs: 0`.

@@ -10,12 +10,26 @@ phase-1 release gate is lifted for resources; without the feature, the Q4
 message is unchanged). The same generated table serves them:
 `cratestack_schema::mcp::tools(db, registry, resolvers)`.
 
-- **URIs.** `resources/templates/list` offers `cratestack://<schema>/<segment>/{id}`
-  and `cratestack://<schema>/<segment>{?limit,cursor}`; `resources/list` offers
-  `cratestack://<schema>/<segment>`. `<segment>` is the author's; `<schema>` is
-  **the schema file's name without `.cstack`** (`blog.cstack` →
-  `cratestack://blog/...`), because the IR has no schema name — see the open
-  question on #1040. No table or model name appears in any URI.
+- **URIs, named by a new `name` key.** `resources/templates/list` offers
+  `cratestack://<name>/<segment>/{id}` and
+  `cratestack://<name>/<segment>{?limit,cursor}`; `resources/list` offers
+  `cratestack://<name>/<segment>`. `<segment>` is the author's `@@mcp(resource:
+  ...)`; `<name>` is the block's own `name` (maintainer decision on #1040), so a
+  URI stays the same when the `.cstack` file is renamed or moved, and two
+  servers whose files share a name no longer collide:
+
+  ```cstack
+  mcp {
+    name = "blog"                   // required when `expose` lists `resources`
+    expose = [tools, resources]
+  }
+  ```
+
+  `name` is a quoted string of lowercase ASCII letters, digits and `-`. The
+  parser refuses it missing when resources are exposed, malformed, set twice,
+  or present when they are not (only resource URIs read it, so there it would
+  be inert). The LSP completes `name = "..."` and its hover shows the URIs it
+  produces. No table or model name appears in any URI.
 - **Same read path as REST.** A record is `find_unique(id).run(ctx)`, a page is
   REST's own list builder (primary-key order), and both render through REST's
   serializer, so the JSON is exactly REST's `GET` body: `@server_only` fields
@@ -39,9 +53,11 @@ message is unchanged). The same generated table serves them:
   caller) under the same `StoreErrorPolicy`; a throttled read is `-32603` with
   `data.code = "TOO_MANY_REQUESTS"`.
 - **New compile errors**, in both feature states: `@@mcp` on a model whose
-  `@@internal(...)` hides `get` or `list`; `@@mcp` on a model whose `@id` is not
-  `String`, `Cuid`, `Int` or `Uuid`; and, when resources are declared, a schema
-  file name that is not letters, digits, `-`, `.`, `_`, `~`.
+  `@@internal(...)` hides `get` or `list`; and `@@mcp` on a model whose `@id` is
+  not `String`, `Cuid`, `Int` or `Uuid`. The schema file's name no longer
+  matters to MCP at all.
+- **IR.** `McpConfig` gains `name: Option<McpName>` (the value and the span of
+  its entry); `serde(default)`, so an older IR snapshot still deserializes.
 - **`cratestack-mcp` API.** `McpTools` gains `resources()`, `read_record` and
   `read_page`, all defaulted, so hand-written tool tables compile unchanged.
   New: `ResourceDescriptor`, `DEFAULT_PAGE_SIZE`, `RESOURCE_SCHEME`.
@@ -339,6 +355,7 @@ The syntax (ADR 0002, decided 2026-09-24):
 
 ```cstack
 mcp {
+  name = "blog"                     // with resources only (phase 5, #1040)
   expose = [tools, resources]       // or [tools], or [resources]
 }
 
