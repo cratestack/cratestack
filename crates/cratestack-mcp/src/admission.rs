@@ -11,10 +11,10 @@
 //! enums refuses, never runs, as `cratestack-axum`'s adapters do: a future
 //! variant this build does not understand must not execute a mutation.
 
-use std::time::Duration;
-
 use cratestack_core::{CratestackError, RateLimitDecision};
-use cratestack_exec::{Admission, OpAdmission, OpInput, RateLimitAdmission, RateLimitBucket};
+use cratestack_exec::{
+    Admission, DEFAULT_STORE_TIMEOUT, OpAdmission, OpInput, RateLimitAdmission, RateLimitBucket,
+};
 use rmcp::model::CallToolResult;
 use serde_json::Value;
 
@@ -93,19 +93,18 @@ pub(crate) async fn admit_and_run<T: McpTools>(
     }
 }
 
-/// The budget for one rate-limit store call, the same 500ms as
-/// `cratestack-axum`'s `DEFAULT_STORE_TIMEOUT` and for its reason: a Redis
-/// behind a connection manager with no timeouts was measured hanging 19s
-/// per request during an outage, which turned "degrade to unlimited" into
-/// a denial-of-service lever. An elapsed budget is a transport-class
-/// failure (`Unavailable`), so it follows the same rule as any other.
-/// A constant here, where HTTP lets the application tune it
-/// (`RateLimitLayer::with_store_timeout`); making it configurable is an
-/// API question for the maintainer, not a correctness one.
-const RATE_LIMIT_STORE_TIMEOUT: Duration = Duration::from_millis(500);
-
 /// Charge the caller's bucket, when the application configured a limiter
 /// and the tool is not `@no_rate_limit`.
+///
+/// One store call is bounded at `DEFAULT_STORE_TIMEOUT` (500ms), HTTP's
+/// default and for its reason: a Redis behind a connection manager with no
+/// timeouts was measured hanging 19s per request during an outage, which
+/// turned "degrade to unlimited" into a denial-of-service lever. An
+/// elapsed budget is a transport-class failure (`Unavailable`). HTTP lets
+/// the application tune the budget (`RateLimitLayer::with_store_timeout`);
+/// MCP does not yet, and that is an API question left to the maintainer.
+/// What a store failure then does is the application's
+/// [`cratestack_exec::StoreErrorPolicy`], the same type HTTP takes.
 async fn rate_limit<T: McpTools>(
     server: &McpServer<T>,
     op: OpAdmission,
@@ -118,7 +117,7 @@ async fn rate_limit<T: McpTools>(
     let bucket = namespace(principal_id(&server.context).as_deref())?;
     let input = OpInput::for_rate_limit(op, RateLimitBucket::new(&bucket, None));
     let admitted = tokio::time::timeout(
-        RATE_LIMIT_STORE_TIMEOUT,
+        DEFAULT_STORE_TIMEOUT,
         server.executor.admit_rate_limit(&input),
     )
     .await
@@ -140,13 +139,15 @@ async fn rate_limit<T: McpTools>(
             "rate limit: unhandled admission outcome; refusing rather than running the tool"
                 .to_owned(),
         )),
-        // `StoreErrorPolicy::default()`'s rule on HTTP: serve through an
-        // unreachable store (`Unavailable`), refuse on any other failure.
-        Err(CratestackError::Unavailable(detail)) => {
+        // The rule `RateLimitLayer` applies, read from the one shared
+        // type: `Allow` (the default) serves through an unreachable store
+        // (`Unavailable`) and refuses anything else; `Deny` refuses all.
+        Err(error) if server.store_error_policy.permits(&error) => {
             tracing::warn!(
                 target: "cratestack",
                 cratestack_operation = "rate_limit",
-                cratestack_detail = %detail,
+                error = %error,
+                policy = ?server.store_error_policy,
                 "mcp: rate-limit store unavailable; serving the call unthrottled",
             );
             Ok(())

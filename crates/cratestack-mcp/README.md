@@ -41,7 +41,11 @@ only MCP messages. The server exits when stdin closes.
 2. The arguments are decoded into the procedure's `Args`. Failure → an `isError` result naming the field.
 3. L3 admission (`cratestack-exec`), only when the application passed an `OpExecutor` with
    `StdioServer::with_executor`: rate limiting, then idempotency. An idempotency key travels in
-   `_meta["dev.cratestack/idempotencyKey"]`; without one, nothing is reserved.
+   `_meta["dev.cratestack/idempotencyKey"]`; without one, nothing is reserved. A rate-limit store
+   lookup is bounded at 500ms (`DEFAULT_STORE_TIMEOUT`), and a failing store follows the
+   `StoreErrorPolicy` passed to `StdioServer::with_store_error_policy` — the same type
+   `cratestack_axum::ratelimit::RateLimitLayer` takes, with the same default (serve through an
+   unreachable store, refuse any other failure). Pass `StoreErrorPolicy::Deny` if you chose it on HTTP.
 4. The procedure's generated `invoke_with_db`: `@allow`/`@deny`, delegated `@authorize(...)`, then the
    implementation, whose ORM calls carry `@@allow` in their SQL. `@computed` output fields are resolved
    by the same generated code REST uses.

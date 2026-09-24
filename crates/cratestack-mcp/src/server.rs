@@ -7,7 +7,7 @@
 use std::borrow::Cow;
 
 use cratestack_core::CratestackContext;
-use cratestack_exec::OpExecutor;
+use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::model::{
     CacheScope, CallToolRequestParams, CallToolResponse, Implementation, ListToolsResult,
     PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig, Tool,
@@ -34,6 +34,11 @@ pub struct McpServer<T: McpTools> {
     pub(crate) tools: T,
     pub(crate) context: CratestackContext,
     pub(crate) executor: OpExecutor,
+    /// What a failing rate-limit store does to a call. Held here, not on
+    /// the executor, because applying it is the transport's job (it owns
+    /// the log line and the result), exactly as `RateLimitLayer` holds its
+    /// own on HTTP.
+    pub(crate) store_error_policy: StoreErrorPolicy,
     listing: Vec<Tool>,
     implementation: Implementation,
 }
@@ -50,6 +55,7 @@ impl<T: McpTools> McpServer<T> {
             // and reserves nothing, the same as a REST router with neither
             // layer installed. The TTL is unread without a store.
             executor: OpExecutor::new(None, std::time::Duration::ZERO),
+            store_error_policy: StoreErrorPolicy::default(),
             listing,
             implementation: Implementation::new("cratestack-mcp", env!("CARGO_PKG_VERSION")),
         })
@@ -60,6 +66,19 @@ impl<T: McpTools> McpServer<T> {
     /// `cratestack-axum`'s layers.
     pub fn with_executor(mut self, executor: OpExecutor) -> Self {
         self.executor = executor;
+        self
+    }
+
+    /// Choose what a failing rate-limit store does to a call, as
+    /// `RateLimitLayer::with_store_error_policy` does on HTTP; pass the
+    /// same value to both. Defaults to [`StoreErrorPolicy::Allow`], HTTP's
+    /// default: serve through a transport-class failure (`Unavailable`,
+    /// including a lookup that outlives `DEFAULT_STORE_TIMEOUT`), refuse
+    /// every other. [`StoreErrorPolicy::Deny`] refuses them all, for a
+    /// limiter that is a security control rather than a capacity one.
+    /// Unread without a rate limiter on the executor.
+    pub fn with_store_error_policy(mut self, policy: StoreErrorPolicy) -> Self {
+        self.store_error_policy = policy;
         self
     }
 

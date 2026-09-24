@@ -27,7 +27,9 @@
 //! opt-in and application-built, exactly as `cratestack-axum` installs
 //! `RateLimitLayer`/`IdempotencyLayer`: without
 //! [`StdioServer::with_executor`], nothing is limited and nothing is
-//! reserved. An idempotency key arrives in
+//! reserved. A failing rate-limit store follows
+//! [`StoreErrorPolicy`], set with [`StdioServer::with_store_error_policy`]
+//! and defaulting to HTTP's. An idempotency key arrives in
 //! `_meta["dev.cratestack/idempotencyKey"]` (ADR 0002 Q6); see
 //! `src/idempotency.rs`.
 //!
@@ -51,7 +53,10 @@ mod table;
 #[cfg(test)]
 mod tests_idempotency;
 
-pub use cratestack_exec::OpExecutor;
+/// Re-exported so an application configuring MCP admission names both
+/// without a direct `cratestack-exec` dependency. `StoreErrorPolicy` is the
+/// same type `cratestack_axum::ratelimit` re-exports (cratestack#1038).
+pub use cratestack_exec::{DEFAULT_STORE_TIMEOUT, OpExecutor, StoreErrorPolicy};
 pub use listing::ToolTableError;
 pub use server::McpServer;
 pub use stdio::{ServeError, StdioServer};

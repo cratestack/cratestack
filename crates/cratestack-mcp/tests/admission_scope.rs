@@ -131,8 +131,8 @@ async fn a_rate_limit_store_failure_other_than_unavailable_refuses() {
 
 /// The other half of that default: an unreachable store serves the call.
 /// This pins parity with HTTP's default, not a judgement that fail-open is
-/// right for every deployment — HTTP lets an application choose
-/// `StoreErrorPolicy::Deny`, and MCP does not yet (see the review notes).
+/// right for every deployment — an application may choose
+/// `StoreErrorPolicy::Deny` on both transports (`tests/store_error_policy.rs`).
 #[tokio::test]
 async fn an_unavailable_rate_limit_store_serves_the_call() {
     let tools = FakeTools::default();

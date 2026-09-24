@@ -51,7 +51,7 @@
 use std::fmt;
 
 use cratestack_core::CratestackContext;
-use cratestack_exec::OpExecutor;
+use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::ServiceExt;
 use rmcp::service::{QuitReason, ServerInitializeError};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -77,6 +77,13 @@ impl<T: McpTools> StdioServer<T> {
     /// [`McpServer::with_executor`].
     pub fn with_executor(mut self, executor: OpExecutor) -> Self {
         self.server = self.server.with_executor(executor);
+        self
+    }
+
+    /// What a failing rate-limit store does to a call. See
+    /// [`McpServer::with_store_error_policy`].
+    pub fn with_store_error_policy(mut self, policy: StoreErrorPolicy) -> Self {
+        self.server = self.server.with_store_error_policy(policy);
         self
     }
 
