@@ -1,7 +1,8 @@
-//! `NoEnvelope` pass-through, `Binding`, and the documented implementor
+//! `NoEnvelope` pass-through and the documented implementor
 //! ergonomics of `CratestackEnvelope`. The allocation guarantee lives in
 //! `tests/no_envelope_alloc.rs`, which needs its own `#[global_allocator]`.
 
+mod binding;
 mod stream_shape;
 
 use std::borrow::Cow;
@@ -11,7 +12,7 @@ use std::task::{Context, Poll, Waker};
 
 use bytes::Bytes;
 
-use super::{Binding, BodyShape, CratestackEnvelope, NoEnvelope};
+use super::{Binding, BodyShape, CratestackEnvelope, NoEnvelope, PathParams};
 use crate::context::{CratestackContext, VerifiedSigner};
 use crate::error::CratestackError;
 
@@ -19,6 +20,7 @@ fn request_binding() -> Binding<'static> {
     Binding {
         method: Cow::Borrowed("POST"),
         route: Cow::Borrowed("model.Payment.create"),
+        path_params: PathParams::EMPTY,
         query: None,
         schema_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
@@ -66,33 +68,6 @@ fn no_envelope_adds_no_framing_and_no_stream_signing() {
     // stream methods are.
     assert!(NoEnvelope.stream_sealer(request_binding()).is_none());
     assert!(NoEnvelope.stream_opener(request_binding()).is_none());
-}
-
-#[test]
-fn into_owned_keeps_every_field_and_detaches_the_borrow() {
-    let route = String::from("model.Payment.refund");
-    let query = String::from("a=1&b=2");
-    let borrowed = Binding {
-        method: Cow::Borrowed("POST"),
-        route: Cow::Borrowed(&route),
-        query: Some(Cow::Borrowed(&query)),
-        schema_sha: [9; 32],
-        payload_media_type: Cow::Borrowed("application/cbor"),
-        request_digest: Some([3; 32]),
-        status: Some(201),
-    };
-    let owned: Binding<'static> = borrowed.into_owned();
-    // Outliving the strings it borrowed from is the point of `into_owned`.
-    drop((route, query));
-    assert!(matches!(owned.route, Cow::Owned(_)));
-    assert_eq!(owned.route, "model.Payment.refund");
-    assert!(matches!(owned.query, Some(Cow::Owned(_))));
-    assert_eq!(owned.method, "POST");
-    assert_eq!(owned.query.as_deref(), Some("a=1&b=2"));
-    assert_eq!(owned.schema_sha, [9; 32]);
-    assert_eq!(owned.payload_media_type, "application/cbor");
-    assert_eq!(owned.request_digest, Some([3; 32]));
-    assert_eq!(owned.status, Some(201));
 }
 
 /// A toy envelope written with plain `async fn`, as the trait docs promise

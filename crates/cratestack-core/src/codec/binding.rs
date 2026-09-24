@@ -3,14 +3,17 @@
 
 use std::borrow::Cow;
 
+use super::path_params::PathParams;
+
 /// Everything that goes into a sealed body's COSE `external_aad` (ADR 0006
 /// §4). It is **never sent**: the router and the client each rebuild it
 /// from context they already hold, so the binding costs 0 bytes on the
-/// wire. A body sealed for one `(method, route, query, schema)` fails to
-/// open under any other, which defeats cross-endpoint replay; a response is
-/// bound to its request's digest and its status, which defeats response
-/// swapping; and a client built against another `.cstack` fails closed on
-/// `schema_sha`.
+/// wire. A body sealed for one `(method, route, path_params, query,
+/// schema)` fails to open under any other, which defeats cross-endpoint
+/// replay; a response is bound to its request's digest and its status,
+/// which defeats response swapping; a signed REST response is bound to the
+/// resource it answers, not only to the route's shape; and a client built
+/// against another `.cstack` fails closed on `schema_sha`.
 ///
 /// This type carries the **inputs** only. Encoding them into the AAD's CBOR
 /// array, including the leading binding-version field (currently `1`, the
@@ -24,8 +27,9 @@ use std::borrow::Cow;
 /// response binding sets both. The AAD encoder decides what a mismatch
 /// means; this type does not validate the combination.
 ///
-/// **Deviation from the ADR 0006 §1 sketch**, which uses `&'a str` and
-/// `&'a [u8; 32]`: the string fields are [`Cow`], and `schema_sha` is held
+/// **Deviation from the ADR 0006 §1 sketch**, which uses `&'a str`,
+/// `&'a [&'a str]` and `&'a [u8; 32]`: the string fields are [`Cow`],
+/// `path_params` is the `Cow`-like [`PathParams`], and `schema_sha` is held
 /// by value. The unary path still borrows everything and allocates nothing.
 /// The stream path can also produce the `Binding<'static>` that
 /// [`CratestackEnvelope::stream_sealer`](super::CratestackEnvelope::stream_sealer)
@@ -37,17 +41,31 @@ pub struct Binding<'a> {
     /// HTTP method, e.g. `"POST"`.
     pub method: Cow<'a, str>,
     /// The RPC `op_id` (e.g. `model.Payment.create`), or the REST route
-    /// template. **Never the raw URL path**: gateways rewrite prefixes, and
-    /// a binding that changes under `Router::nest` fails every legitimate
-    /// request (the same fact broke descriptor lookup in cratestack#877).
+    /// template (e.g. `/accounts/{id}`). The template alone names the
+    /// route's shape, not the resource; the matched values are bound
+    /// separately in [`path_params`](Self::path_params). **Never the raw URL
+    /// path**: gateways rewrite prefixes, and a binding that changes under
+    /// `Router::nest` fails every legitimate request (the same fact broke
+    /// descriptor lookup in cratestack#877).
     pub route: Cow<'a, str>,
+    /// REST: the matched path parameter values, in the order the route
+    /// template declares them, as the router decoded them. RPC: empty
+    /// ([`PathParams::EMPTY`]), because the `op_id` and the signed body
+    /// (for a response, the request digest) already bind it. Without these,
+    /// a signed response to `GET /accounts/1` would verify as the answer to
+    /// `GET /accounts/2` (ADR 0006 §4, amended 2026-09-24). The AAD encodes
+    /// them right after `route`.
+    pub path_params: PathParams<'a>,
     /// The request's canonicalised query string (the same canonical form
     /// `cratestack-auth`'s `canonical_query` produces), or `None` when the
     /// request has none.
     pub query: Option<Cow<'a, str>>,
     /// The schema's SHA-256 as raw bytes. It is the same digest that
     /// generated code bakes in as the hex string `SCHEMA_SHA256` and sends
-    /// in `x-cratestack-schema-sha`.
+    /// in `x-cratestack-schema-sha`. That digest hashes the raw `.cstack`
+    /// text today, so a comment-only edit changes it; what the AAD should
+    /// bind is settled before `Required` mode ships (ADR 0006, P0 scoping
+    /// decisions).
     pub schema_sha: [u8; 32],
     /// Media type of the payload *inside* the envelope, e.g.
     /// `"application/cbor"`. It is bound here instead of being sent in a
@@ -72,6 +90,7 @@ impl Binding<'_> {
         Binding {
             method: Cow::Owned(self.method.into_owned()),
             route: Cow::Owned(self.route.into_owned()),
+            path_params: self.path_params.into_owned(),
             query: self.query.map(|query| Cow::Owned(query.into_owned())),
             schema_sha: self.schema_sha,
             payload_media_type: Cow::Owned(self.payload_media_type.into_owned()),

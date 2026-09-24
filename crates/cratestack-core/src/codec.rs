@@ -10,6 +10,7 @@
 mod binding;
 mod envelope;
 mod no_envelope;
+mod path_params;
 mod stream;
 
 #[cfg(test)]
@@ -22,6 +23,7 @@ use crate::error::CratestackError;
 pub use binding::Binding;
 pub use envelope::{BodyShape, CratestackEnvelope};
 pub use no_envelope::NoEnvelope;
+pub use path_params::PathParams;
 pub use stream::{OpenedFrame, SealedItem, StreamEnd, StreamOpener, StreamSealer};
 
 pub trait CratestackCodec: Clone + Send + Sync + 'static {

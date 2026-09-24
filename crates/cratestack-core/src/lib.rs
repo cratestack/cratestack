@@ -53,8 +53,8 @@ pub use batch::{
     BatchSummary, find_duplicate_position,
 };
 pub use codec::{
-    Binding, BodyShape, CratestackCodec, CratestackEnvelope, NoEnvelope, OpenedFrame, SealedItem,
-    StreamEnd, StreamOpener, StreamSealer,
+    Binding, BodyShape, CratestackCodec, CratestackEnvelope, NoEnvelope, OpenedFrame, PathParams,
+    SealedItem, StreamEnd, StreamOpener, StreamSealer,
 };
 pub use context::{
     AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,

@@ -21,11 +21,21 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
 }
 ```
 
-- **`Binding`** holds the COSE external-AAD inputs: method, route (`op_id`),
-  query, `schema_sha`, payload media type, and for responses the request
-  digest and status. It is never sent. Its string fields are `Cow`, so the
-  unary path borrows everything, and `into_owned()` produces the
-  `Binding<'static>` a stream sealer needs.
+- **`Binding`** holds the COSE external-AAD inputs: method, route (the
+  `op_id` for RPC, the route template for REST), `path_params`, query,
+  `schema_sha`, payload media type, and for responses the request digest and
+  status. It is never sent. Its string fields are `Cow`, so the unary path
+  borrows everything, and `into_owned()` produces the `Binding<'static>` a
+  stream sealer needs.
+- **`path_params`** (a `PathParams`) carries the REST path parameter values
+  the router matched, in route-template order, as it decoded them, and is
+  empty for RPC. It binds a signed REST response to its resource: with the
+  template alone, a signed answer to `GET /accounts/1` would verify as the
+  answer to `GET /accounts/2` (ADR 0006 §4, amended while scoping P0).
+  `PathParams` is a small `Cow`-like enum rather than
+  `Cow<'a, [Cow<'a, str>]>`, which would make `Binding` invariant over its
+  lifetime; its borrowed form is `&'a [&'a str]`, so an empty or
+  stack-array list allocates nothing.
 - **`open` records the verified key** with the new
   `CratestackContext::record_verified_signer(VerifiedSigner)`. The slot is
   private and `#[serde(skip)]`, so a deserialized context never carries one.
@@ -38,11 +48,13 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
   It used to answer `application/octet-stream`, which was wrong for CBOR, but
   nothing ever called it.
 
-Two deviations from the ADR's sketch. `seal`/`open` return `impl Future`
+Three deviations from the ADR's sketch. `seal`/`open` return `impl Future`
 rather than `BoxFuture`, because a boxed future is an 80-byte allocation per
 call on the unsigned path, and the `Clone` bound already made the trait
 non-object-safe. `media_type` returns `Option`, so "no envelope framing" is
-`None` instead of a sentinel string.
+`None` instead of a sentinel string. `Binding`'s fields are `Cow`/`PathParams`
+with a by-value `schema_sha`, instead of plain borrows, so a stream sealer can
+hold a `Binding<'static>`.
 
 **Who breaks:** only code that implemented or called the old trait. No router
 or client in this workspace did, so no service changes behaviour. An

@@ -20,13 +20,18 @@ use std::task::{Context, Poll, Waker};
 
 use allocation_counter::measure;
 use bytes::Bytes;
-use cratestack_core::{Binding, BodyShape, CratestackContext, CratestackEnvelope, NoEnvelope};
+use cratestack_core::{
+    Binding, BodyShape, CratestackContext, CratestackEnvelope, NoEnvelope, PathParams,
+};
 
-/// Every field borrowed, the way a router builds a unary binding.
-fn binding<'a>(route: &'a str, query: Option<&'a str>) -> Binding<'a> {
+/// Every field borrowed, the way a router builds a unary binding. REST
+/// path parameters come from a stack array, as generated code that knows
+/// the route's parameter count can build them; RPC passes `EMPTY`.
+fn binding<'a>(route: &'a str, path_params: &'a [&'a str], query: Option<&'a str>) -> Binding<'a> {
     Binding {
         method: Cow::Borrowed("POST"),
         route: Cow::Borrowed(route),
+        path_params: PathParams::Borrowed(path_params),
         query: query.map(Cow::Borrowed),
         schema_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
@@ -75,12 +80,14 @@ fn the_counter_is_live_in_this_binary() {
 
 #[test]
 fn no_envelope_seal_does_not_allocate() {
-    let route = String::from("model.Payment.create");
+    let route = String::from("/accounts/{id}/payments");
+    let account = String::from("acc-1");
     let payload = heap_body();
     let (ptr, len) = (payload.as_ptr(), payload.len());
     let mut sealed = None;
     let info = measure(|| {
-        let bind = binding(&route, Some("a=1"));
+        let params = [account.as_str()];
+        let bind = binding(&route, &params, Some("a=1"));
         sealed = Some(seal(&NoEnvelope, payload, &bind));
     });
     assert_eq!(info.count_total, 0, "NoEnvelope::seal allocated: {info:?}");
@@ -96,7 +103,7 @@ fn no_envelope_open_does_not_allocate() {
     let mut ctx = CratestackContext::anonymous();
     let mut opened = None;
     let info = measure(|| {
-        let bind = binding(&route, None);
+        let bind = binding(&route, &[], None);
         opened = Some(open(&NoEnvelope, body, &bind, &mut ctx));
     });
     assert_eq!(info.count_total, 0, "NoEnvelope::open allocated: {info:?}");
@@ -116,10 +123,10 @@ fn no_envelope_media_type_and_stream_methods_do_not_allocate() {
             NoEnvelope.media_type(BodyShape::Unary),
             NoEnvelope.media_type(BodyShape::Stream),
             NoEnvelope
-                .stream_sealer(binding("model.Payment.list", None))
+                .stream_sealer(binding("model.Payment.list", &[], None))
                 .is_none(),
             NoEnvelope
-                .stream_opener(binding("model.Payment.list", None))
+                .stream_opener(binding("model.Payment.list", &[], None))
                 .is_none(),
         ));
     });
@@ -128,4 +135,16 @@ fn no_envelope_media_type_and_stream_methods_do_not_allocate() {
         "NoEnvelope stream path allocated: {info:?}"
     );
     assert_eq!(answers, Some((None, None, true, true)));
+}
+
+/// An RPC binding detached for a stream keeps its (empty) path parameters
+/// without allocating: `into_owned` of no values is an empty `Vec`.
+#[test]
+fn empty_path_params_into_owned_does_not_allocate() {
+    let mut owned = None;
+    let info = measure(|| {
+        owned = Some(PathParams::EMPTY.into_owned());
+    });
+    assert_eq!(info.count_total, 0, "empty PathParams allocated: {info:?}");
+    assert!(owned.is_some_and(|params| params.is_empty()));
 }
