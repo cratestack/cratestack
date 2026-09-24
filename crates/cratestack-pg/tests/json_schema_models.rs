@@ -86,7 +86,7 @@ fn a_model_round_trips_as_output_argument_and_page_item() {
         let written = serde_json::to_value(&written).unwrap();
         assert!(
             written.get("secret").is_none(),
-            "`@server_only` is skip_serializing"
+            "`@server_only` is never serialized"
         );
         assert_valid(&get, &written, "fetchPost output");
         let args = serde_json::to_value(import_post::Args { post }).unwrap();
