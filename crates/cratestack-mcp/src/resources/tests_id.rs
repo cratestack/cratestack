@@ -73,3 +73,43 @@ fn a_percent_encoded_character_is_the_character() {
         assert_eq!(id(&uri), Ok(decoded.to_owned()), "{uri}");
     }
 }
+
+/// Escapes are decoded exactly once: `%2541` is the three characters `%41`,
+/// never `A`. Decoding twice would give one record a second spelling and
+/// let an escaped `%` smuggle a character past the raw check above.
+#[test]
+fn an_escape_is_decoded_once() {
+    for (encoded, decoded) in [("%2541", "%41"), ("%25", "%"), ("%2520", "%20")] {
+        let uri = format!("cratestack://blog/notes/{encoded}");
+        assert_eq!(id(&uri), Ok(decoded.to_owned()), "{uri}");
+    }
+}
+
+/// `pct-encoded = "%" HEXDIG HEXDIG`, and the decoded bytes must be UTF-8:
+/// a `%` without two hex digits after it (at the end too), an overlong or
+/// surrogate encoding, a lone lead or continuation byte, and a decoded NUL
+/// address no record. A decoded `/` is only a character of the id, never a
+/// second segment.
+#[test]
+fn a_malformed_escape_or_bytes_that_are_not_utf8_are_not_found() {
+    for raw in [
+        "%",
+        "a%",
+        "a%4",
+        "%4",
+        "%G1",
+        "%1G",
+        "%%41",
+        "%C0%AF",
+        "%E0%80%AF",
+        "%ED%A0%80",
+        "%80",
+        "%C3",
+        "%00",
+        "a%00",
+    ] {
+        let uri = format!("cratestack://blog/notes/{raw}");
+        assert_eq!(id(&uri), Err(UriError::Unknown), "{uri}");
+    }
+    assert_eq!(id("cratestack://blog/notes/a%2fb"), Ok("a/b".to_owned()));
+}
