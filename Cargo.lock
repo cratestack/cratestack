@@ -5799,7 +5799,7 @@ dependencies = [
  "indexmap 2.14.1",
  "pastey",
  "pin-project-lite",
- "rand 0.10.2",
+ "rand 0.10.3",
  "reqwest",
  "schemars 1.2.2",
  "serde",
