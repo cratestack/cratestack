@@ -67,3 +67,56 @@ async fn a_missing_record_is_charged_and_a_throttled_one_never_reaches_the_table
     );
     client.close().await.unwrap();
 }
+
+/// Maintainer decision 3 on #1040, kept rather than changed. A collection
+/// read whose `limit` or cursor can never be served is refused (`-32602`)
+/// *before* admission, so it costs the caller nothing: the reason tool
+/// arguments decode before admission. A NUL or unparsable id is instead
+/// the same "resource not found" a missing row gets, so the answer says
+/// nothing more about the id than a missing row's would.
+#[tokio::test]
+async fn a_malformed_page_query_is_never_charged_and_a_bad_id_is_not_found() {
+    let limiter = Arc::new(CountingLimiter::new(100));
+    let executor = OpExecutor::new(None, Duration::ZERO).with_rate_limit(
+        limiter.clone() as Arc<dyn RateLimitStore>,
+        RateLimitConfig::new(100, 0.0),
+    );
+    let server = StdioServer::new(FakeResources::default(), user("u-1"))
+        .unwrap()
+        .with_executor(executor);
+    let mut client = Client::start(server);
+
+    for uri in [
+        "cratestack://blog/posts?limit=0",
+        "cratestack://blog/posts?limit=ten",
+        "cratestack://blog/posts?cursor=garbage",
+    ] {
+        let refused = client
+            .request("resources/read", json!({ "uri": uri }))
+            .await;
+        assert_eq!(refused["error"]["code"], json!(-32602), "{uri}: {refused}");
+        assert_ne!(refused["error"]["message"], "resource not found", "{uri}");
+    }
+    assert_eq!(
+        limiter.charged.load(Ordering::SeqCst),
+        0,
+        "a refused page query is never charged"
+    );
+
+    let missing = client
+        .request(
+            "resources/read",
+            json!({ "uri": "cratestack://blog/posts/99999" }),
+        )
+        .await;
+    for uri in [
+        "cratestack://blog/posts/abc",
+        "cratestack://blog/posts/1%00",
+    ] {
+        let bad = client
+            .request("resources/read", json!({ "uri": uri }))
+            .await;
+        assert_eq!(bad["error"], missing["error"], "{uri}: {bad}");
+    }
+    client.close().await.unwrap();
+}
