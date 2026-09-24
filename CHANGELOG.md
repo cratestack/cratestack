@@ -36,6 +36,10 @@ pub trait CratestackEnvelope: Clone + Send + Sync + 'static {
   `Cow<'a, [Cow<'a, str>]>`, which would make `Binding` invariant over its
   lifetime; its borrowed form is `&'a [&'a str]`, so an empty or
   stack-array list allocates nothing.
+- **Error contract.** Every failed verification check is the same coarse
+  `401` (`unauthenticated`), so the response never says which check failed. A
+  backend outage (the key resolver or the nonce store is unreachable) is a
+  `500`, logged server-side, so operators can tell an outage from an attack.
 - **`open` records the verified key** with the new
   `CratestackContext::record_verified_signer(VerifiedSigner)`. The slot is
   private and `#[serde(skip)]`, so a deserialized context never carries one.

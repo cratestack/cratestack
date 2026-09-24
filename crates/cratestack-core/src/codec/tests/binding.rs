@@ -22,6 +22,9 @@ fn path_params_compare_by_value_and_order() {
     assert_ne!(PathParams::Borrowed(&["2", "1"]), owned);
     assert_ne!(PathParams::Borrowed(&["1"]), owned);
     assert_eq!(PathParams::default(), PathParams::EMPTY);
+    // `Default` must stay the borrowed empty form: value equality alone
+    // would not notice an allocating `Owned(Vec::with_capacity(..))`.
+    assert!(matches!(PathParams::default(), PathParams::Borrowed([])));
     assert!(PathParams::EMPTY.is_empty());
     // Bound to the resource: `/accounts/1` and `/accounts/2` share a route
     // template but not a binding.
