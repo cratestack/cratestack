@@ -2281,6 +2281,50 @@ jobs:
           pnpm --filter react-vite-swr-web run typecheck
           pnpm --filter react-vite-swr-web run lint
 
+  # ---- react-nextjs-daisyui example (lockfile + typecheck) ---------------
+  # Blocking. Issue #1050: until this job existed, nothing in CI installed
+  # this example, so its `pnpm-lock.yaml` drifted 7 dependencies behind
+  # `web/package.json` without anyone noticing (Dependabot bumped the
+  # manifest nine times and the lockfile never). It is its own two-member
+  # pnpm workspace (`napi/` + `web/`), shaped like react-vite-swr above.
+  #
+  # Covered here: the lockfile matches both members (frozen install), it
+  # resolves one copy of each package that could be deduplicated (the same
+  # two-Reacts hazard react-vite-swr's job describes), and the web app
+  # typechecks.
+  #
+  # NOT covered here: `next build`. The `prebuild` hook builds the wasm
+  # module and the napi `.node` addon first, i.e. two more Rust toolchains'
+  # worth of work, and `lint` is `next lint`, which Next 16 removed. Neither
+  # is what #1050 is about; both belong to a job that runs the app.
+  react-nextjs-daisyui-example:
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
+    timeout-minutes: 20
+    name: js (react-nextjs-daisyui example)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: examples/react-nextjs-daisyui/pnpm-lock.yaml
+      - name: pnpm install
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm install --frozen-lockfile
+      # See the same step in react-vite-swr-example for why, and for the
+      # pnpm/pnpm#14987 two-pass `pnpm dedupe` remedy under pnpm 11.24.0.
+      - name: Assert the lockfile is deduplicated
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm dedupe --check
+      - name: Typecheck the web app
+        if: ${{ !cancelled() }}
+        working-directory: examples/react-nextjs-daisyui
+        run: pnpm --filter react-nextjs-daisyui-example run typecheck
+
   # ---- react-vite-refine example (generated client + WireMock backend) --
   # Blocking. Docs: examples/react-vite-refine/README.md. Unlike
   # react-vite-swr-example above, NOTHING generated is committed here —
