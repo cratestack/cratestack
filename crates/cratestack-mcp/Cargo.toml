@@ -49,9 +49,11 @@ serde_path_to_error.workspace = true
 # The idempotency fingerprint (`src/fingerprint.rs`). Already in every facade's
 # graph through `cratestack-axum` and `cratestack-macros`.
 sha2.workspace = true
-# The stdio transport's reader/writer bounds and `tokio::io::stdin/stdout`.
-# `rmcp` already depends on it; every facade has it through `axum`.
-tokio = { workspace = true, features = ["io-std", "io-util"] }
+# The stdio transport's reader/writer bounds and `tokio::io::stdin/stdout`;
+# `time` bounds a rate-limit store call (`src/admission.rs`), as
+# `cratestack-axum` does. `rmcp` already depends on it; every facade has it
+# through `axum`.
+tokio = { workspace = true, features = ["io-std", "io-util", "time"] }
 tracing.workspace = true
 
 [dev-dependencies]

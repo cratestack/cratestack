@@ -1,12 +1,13 @@
 //! L3 admission over MCP beyond the happy path (cratestack#1038 review):
 //! whose namespace a key lives in, what an error outcome records, which
-//! identities can be scoped at all, and what a failing rate-limit store
-//! does to a call. Each test kills a mutation the suite in
+//! identities can be scoped at all, and what a failing or hung rate-limit
+//! store does to a call. Each test kills a mutation the suite in
 //! `admission.rs` let survive.
 
 mod support;
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use cratestack_core::{
@@ -15,7 +16,7 @@ use cratestack_core::{
 use cratestack_mcp::{OpExecutor, StdioServer};
 use serde_json::json;
 use support::client::{Client, envelope, text};
-use support::failing::FailingLimiter;
+use support::failing::{FailingLimiter, HungLimiter};
 use support::stores::{CountingLimiter, MemoryIdempotency};
 use support::{FakeTools, user};
 
@@ -143,5 +144,27 @@ async fn an_unavailable_rate_limit_store_serves_the_call() {
     let result = client.call("echo", json!({ "text": "a" }), None).await;
 
     assert_eq!(result["isError"], json!(false), "{result}");
+    assert_eq!(tools.runs(), 1);
+}
+
+/// A store that never answers must not hang the call. HTTP bounds
+/// `consume` at `DEFAULT_STORE_TIMEOUT` (500ms) because an unbounded Redis
+/// reconnect was measured at 19s per request, itself a denial-of-service
+/// lever; the elapsed budget is a transport-class failure, so it serves.
+#[tokio::test]
+async fn a_hung_rate_limit_store_does_not_hang_the_call() {
+    let tools = FakeTools::default();
+    let store = Arc::new(HungLimiter::default());
+    let mut client = limited(&tools, user("u-1"), store.clone());
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        client.call("echo", json!({ "text": "a" }), None),
+    )
+    .await
+    .expect("a hung rate-limit store must not hang the tool call");
+
+    assert_eq!(result["isError"], json!(false), "{result}");
+    assert_eq!(store.calls.load(Ordering::SeqCst), 1);
     assert_eq!(tools.runs(), 1);
 }

@@ -11,6 +11,8 @@
 //! enums refuses, never runs, as `cratestack-axum`'s adapters do: a future
 //! variant this build does not understand must not execute a mutation.
 
+use std::time::Duration;
+
 use cratestack_core::{CratestackError, RateLimitDecision};
 use cratestack_exec::{Admission, OpAdmission, OpInput, RateLimitAdmission, RateLimitBucket};
 use rmcp::model::CallToolResult;
@@ -91,6 +93,17 @@ pub(crate) async fn admit_and_run<T: McpTools>(
     }
 }
 
+/// The budget for one rate-limit store call, the same 500ms as
+/// `cratestack-axum`'s `DEFAULT_STORE_TIMEOUT` and for its reason: a Redis
+/// behind a connection manager with no timeouts was measured hanging 19s
+/// per request during an outage, which turned "degrade to unlimited" into
+/// a denial-of-service lever. An elapsed budget is a transport-class
+/// failure (`Unavailable`), so it follows the same rule as any other.
+/// A constant here, where HTTP lets the application tune it
+/// (`RateLimitLayer::with_store_timeout`); making it configurable is an
+/// API question for the maintainer, not a correctness one.
+const RATE_LIMIT_STORE_TIMEOUT: Duration = Duration::from_millis(500);
+
 /// Charge the caller's bucket, when the application configured a limiter
 /// and the tool is not `@no_rate_limit`.
 async fn rate_limit<T: McpTools>(
@@ -104,7 +117,17 @@ async fn rate_limit<T: McpTools>(
     // namespace and refused without an identity for the same reason.
     let bucket = namespace(principal_id(&server.context).as_deref())?;
     let input = OpInput::for_rate_limit(op, RateLimitBucket::new(&bucket, None));
-    match server.executor.admit_rate_limit(&input).await {
+    let admitted = tokio::time::timeout(
+        RATE_LIMIT_STORE_TIMEOUT,
+        server.executor.admit_rate_limit(&input),
+    )
+    .await
+    .unwrap_or_else(|_elapsed| {
+        Err(CratestackError::Unavailable(
+            "rate limit store timed out".to_owned(),
+        ))
+    });
+    match admitted {
         Ok(RateLimitAdmission::Bypass) => Ok(()),
         Ok(RateLimitAdmission::Consumed(outcome)) => match outcome.decision {
             RateLimitDecision::Allowed { .. } => Ok(()),
