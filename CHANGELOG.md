@@ -2,6 +2,118 @@
 
 ## Unreleased
 
+### Security: a client could set a `@server_only` field through a procedure argument (#1051)
+
+A procedure whose argument names a model, directly (`procedure p(account: Account)`)
+or through a `type` that embeds one, decoded the full model struct. The struct's
+`@server_only` fields carried `#[serde(skip_serializing, default)]`, and `default`
+only fills a key that is *absent*: a client that sent `"secret": "..."` had the
+value deserialized and handed to the implementation as if the server had set it.
+This affected both transports, `POST /$procs/<name>` and
+`POST /rpc/procedure.<name>`, and every field type, `Bytes` included. The fix
+is on the struct itself, so any other request body that decodes a model is
+covered too. The only other candidate found in review is a
+`@computed(params: T?)` whose `type` embeds a model. It was read, not
+exercised by a test.
+
+The field is now `#[serde(skip)]`. It is still never written to a response, and
+it is now never read from a request: the implementation sees `Default::default()`
+whatever the client sent, and a wrong-typed value is ignored, not a decode
+error. Values loaded from the database are unaffected, since `FromRow` does
+not go through serde.
+
+**Not affected:** model create and update, on both transports. The generated
+`Create*Input`/`Update*Input` never had the field. **Behaviour change:** code that
+deserializes a generated model from its own JSON now gets the default for a
+`@server_only` key it supplies. The derived `Serialize` never wrote that key, so
+a serde round trip is unchanged. **Action:** if a procedure took a
+`@server_only` value from its argument, the value was client-controlled. Audit
+any such procedure and derive the value server-side.
+
+### MCP phase 1: `mcp { }`, `@mcp(tool)` and `@@mcp(resource: ...)` are parsed and strictly validated — breaking (#1036)
+
+**An `mcp { }` block that used to parse and do nothing now fails to compile
+under `include_server_schema!` and `include_embedded_schema!`.** Until
+cratestack#1036 the block's body was kept as raw text in
+`Schema.config_blocks` and read by nothing, so `mcp { anything }` parsed. Now:
+
+- the server macro rejects any schema that declares an MCP surface with a
+  `compile_error!` naming cratestack#1033, until the MCP runtime lands (ADR 0002
+  Q4 — no release may carry an `@mcp` that parses and serves nothing);
+- the embedded macro rejects it permanently, citing ADR 0002 D3 (the embedded
+  role enforces no policy);
+- `include_client_schema!` accepts and ignores it. A client consumes another
+  service's schema as a contract.
+
+The syntax (ADR 0002, decided 2026-09-24):
+
+```cstack
+mcp {
+  expose = [tools, resources]       // or [tools], or [resources]
+}
+
+model Post {
+  id Int @id
+  @@allow("read", true)
+  @@mcp(resource: "posts", max_page_size: 50)
+}
+
+procedure getFeed(args: FeedArgs): Post[]
+  @allow(auth() != null)
+  @mcp(tool)                        // tool name defaults to `getFeed`
+
+mutation procedure publishPost(args: PublishArgs): Post
+  @allow(auth().role == "admin")
+  @mcp(tool: "publish_post", description: "Publish a draft post.")
+```
+
+It parses into typed IR: `Schema.mcp: Option<McpConfig>`,
+`Procedure.mcp: Option<ProcedureMcpExposure>`,
+`Model.mcp: Option<ModelMcpExposure>`, plus `MCP_MAX_PAGE_SIZE` (200). The
+`@mcp`/`@@mcp` attributes are taken out of the raw `attributes` lists, and the
+`mcp` block no longer appears in `config_blocks`; its span is now
+`McpConfig::span` (#993 reads it from there). All three fields are
+`#[serde(default, skip_serializing_if = "Option::is_none")]`, so existing IR
+snapshots deserialize unchanged and a schema without MCP serializes exactly as
+before. Rust code that builds `Schema`, `Model` or `Procedure` with a struct
+literal needs `mcp: None` added.
+
+Every ADR 0002 § Validation rule is a hard error with a span:
+
+- an MCP attribute with no `mcp { }` block;
+- an exposed kind that nothing uses (`tools` with no `@mcp(tool)`, `resources` with
+  no `@@mcp`);
+- a malformed tool name, given or defaulted (`[A-Za-z0-9_.-]{1,128}`), resource
+  segment (`[a-z0-9-]+`) or `max_page_size:` (1 to 200; a larger value is an
+  error, not a clamp);
+- a duplicate tool name or resource segment;
+- `@@mcp` on a model with no read allow (`@@allow` with `"read"` or `"all"`, or
+  both a `"list"` and a `"detail"` allow);
+- `@mcp(tool)` on a procedure with no `@allow` (`@deny` alone never allows);
+- `@@mcp`, or `resources` in `expose`, in a `datasource { provider = "none" }`
+  schema.
+
+The block is `key = value` like every other config block, so
+tree-sitter-cstack parses it with no grammar change. `expose` is its only key,
+and these are errors too: a block with no `expose`, an unknown key, `expose` set
+twice, a value that is not a one-line list, an empty list, an unknown or repeated
+element, and `procedures` (renamed to `tools`). The one-word-per-line form an
+earlier ADR 0002 draft used is rejected with a message giving the `expose = [...]`
+spelling.
+
+Also rejected, because any of them would otherwise be silently inert: an
+attribute whose kind is missing from `expose`, `@mcp`/`@@mcp` anywhere except a
+procedure or a model (on a field, on a view, `@@mcp` on a procedure, on a
+`query`), an MCP attribute that shares a line with another attribute, and the
+dotted `@mcp.tool` form (ADR 0002 D1). So is anything else that names MCP but
+is not one of the two spellings the parser reads, wherever it sits: another
+case (`@MCP(tool)`, `@@Mcp(...)`), whitespace after the `@` (`@ mcp(tool)`),
+an MCP attribute after another one on a view or `query` line, or a bare
+`@@mcp` line inside an `enum`, which used to be read as a variant.
+`max_page_size:` takes a plain decimal integer (`+5` is rejected). The LSP
+completes and hovers the new syntax, colours `@@mcp` like every other model
+attribute, and reports these errors as diagnostics.
+
 ### Rate-limit admission moves to the L3 `OpExecutor`, and `@no_rate_limit` works under `Router::nest` (#877)
 
 ADR 0015 slice 2. The decision `RateLimitLayer` made — is this op rate limited at

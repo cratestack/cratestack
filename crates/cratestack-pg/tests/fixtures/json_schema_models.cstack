@@ -1,0 +1,44 @@
+// cratestack#1037 (MCP phase 2): `model`s in procedure I/O, for the JSON
+// Schema round-trip in `tests/json_schema_models.rs`. Scalars, lists and
+// nesting are covered by `cratestack-api`'s `db = None` fixture; this one
+// only adds what a model brings: relation fields (not serde fields at
+// all), `@server_only` fields (`skip_serializing`), and a model used as a
+// procedure argument, a return type and a `Page<T>` item.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum Visibility {
+  Public
+  Private
+}
+
+model Author {
+  id Int @id
+  name String
+}
+
+/// A published piece.
+model Post {
+  id Int @id @default(autoincrement())
+  title String
+  body String?
+  price Decimal
+  visibility Visibility
+  secret String @server_only
+  authorId Int
+  author Author @relation(fields: [authorId], references: [id])
+  publishedAt DateTime?
+  cover Bytes?
+}
+
+procedure fetchPost(id: Int): Post
+  @allow(true)
+
+procedure feed(page: PageInput?): Page<Post>
+  @allow(true)
+
+procedure importPost(post: Post): Boolean
+  @allow(true)

@@ -34,6 +34,9 @@ pub(super) fn compose_embedded_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
+    if let Err(error) = super::mcp_gate::guard_embedded_mcp(schema_path, &schema) {
+        return error;
+    }
     if let Err(error) = guard_embedded_no_computed_fields(schema_path, &schema) {
         return error;
     }

@@ -105,6 +105,10 @@ cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
+# The JSON Schema generator's output type (`src/json_schema.rs`,
+# cratestack#1037). Adds no package to any facade's graph: `cratestack-core`
+# already depends on `serde_json` unconditionally.
+serde_json.workspace = true
 sha2.workspace = true
 syn.workspace = true
 

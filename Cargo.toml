@@ -347,6 +347,14 @@ hmac = "0.13"
 subtle = "2"
 base64 = "0.23"
 serde_json = "1"
+# Dev-only: validates the generated JSON Schemas (cratestack#1037) against
+# serde's real output in the round-trip suites. `default-features = false`
+# drops the HTTP/file `$ref` resolvers and their `reqwest`/`rustls`/
+# `aws-lc-rs` graph; the generated schemas only use local `#/$defs` refs.
+# Never enable `arbitrary-precision`: it would switch `serde_json` itself
+# to arbitrary-precision numbers across the whole test build and change
+# the very output under test.
+jsonschema = { version = "0.57", default-features = false }
 serde_urlencoded = "0.7.1"
 http = "1"
 proc-macro2 = "1"

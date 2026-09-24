@@ -6,10 +6,15 @@
 not at the Decision as proposed. The original Decision text is retained below as
 the historical record; where the two conflict, this amendment governs.
 
+**Amended again 2026-09-24:** `mcp` tool dispatch is now proposed (ADR 0002,
+revised). It joins L3 as an **admission-only** caller and does not widen L3's
+scope. See *Amendment 2026-09-24* below.
+
 ## Date
 
 2026-08-08 (proposed); **2026-09-03 (accepted, amended — maintainer-delegated,
-[cratestack#875 comment][decision])**
+[cratestack#875 comment][decision])**; **2026-09-24 (amended: `mcp` as an admission-only
+caller, maintainer decision D2 of ADR 0002)**
 
 Context doc: [docs/design/layering.md](../design/layering.md)
 
@@ -118,6 +123,45 @@ reframing is recorded rather than left to go stale (`extensions.md` §9):
   `OpExecutor` gate should point here for the restated form below.
 
 ## Decision
+
+### Amendment 2026-09-24 — `mcp` tool dispatch is proposed, for admission only
+
+**Deferred trigger 1 names `mcp` tool dispatch, and it is now proposed.** Fact 3
+of the 2026-09-03 amendment below ("the `mcp` question is answered: no") is still
+true of the code: `mcp { }` dispatches nothing. What changed is intent. The
+revised ADR 0002
+([cratestack-docs#96](https://github.com/cratestack/cratestack-docs/pull/96),
+Proposed; epic #1033) proposes a generated MCP server whose stdio transport has
+no `http::Request` at all. That is the third example trigger 1 names, so this
+ADR is reopened, as its own Deferred section asks.
+
+**Answer (maintainer decision D2 of ADR 0002, 2026-09-24): L3 gains a caller, not
+a concern.**
+
+- MCP builds an `OpInput` from the generated `OpDescriptor` and asks `OpExecutor`
+  for rate-limit and idempotency admission, exactly as the REST and RPC layers
+  and the in-process path do.
+- Procedure policy stays in the generated `authorize_with_db` /
+  `invoke_with_db`. Their `Authorized` witness already makes skipping the check a
+  compile error (#512).
+- Row policy stays compiled into SQL
+  (`cratestack-sqlx/src/query/support/policy.rs`).
+- Both are already transport-neutral, so MCP needs nothing from L3 that L3 does
+  not already do.
+
+**What this does not change:** L3's scope, the slice order (slice 3 is still
+policy replay for SSE subscriptions), the ADR 0012 constraint (a function over
+chosen collaborators, never a registry), and `cratestack-exec`'s single
+workspace dependency on `cratestack-core`.
+
+**Future MCP work.** Trigger 1 firing for `mcp` again does not reopen this ADR.
+An MCP feature that needs L3 to decide more than admission does. The example is
+filtering `tools/list` by the caller's authorization, which the MCP spec permits
+and ADR 0002 leaves out of v1. That feature would need a new amendment here
+before it starts.
+
+**Conditional.** This amendment applies only if ADR 0002 is accepted. If ADR
+0002 is rejected, this amendment is void and fact 3 below stands unqualified.
 
 ### Amendment 2026-09-03 — the gate fired, and three facts went stale
 
@@ -273,7 +317,8 @@ Revisit immediately on any of:
 
 1. A dispatch path whose input is not an `http::Request` acquires a real consumer —
    the WS frame loop (`rpc-transport.md` §3.4), an in-process queue consumer, or
-   `mcp` tool dispatch.
+   `mcp` tool dispatch. *(2026-09-24: `mcp` tool dispatch is proposed and answered
+   as admission-only. See Amendment 2026-09-24.)*
 2. A second security fix has to be applied per-Layer-per-router, i.e. a repeat of
    `08fbb7e`'s shape. One occurrence is a wiring problem; two is a layering one.
 3. A user-visible bug is filed that `@no_rate_limit` has no effect — at which point

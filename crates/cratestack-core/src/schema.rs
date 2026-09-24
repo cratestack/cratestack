@@ -9,6 +9,7 @@ pub mod computed_attribute;
 mod field_list;
 pub mod index_attribute;
 pub mod internal_attribute;
+pub mod mcp;
 pub mod model;
 pub mod procedure;
 pub mod query;
@@ -29,6 +30,7 @@ pub use computed_attribute::{
 };
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use internal_attribute::{INTERNAL_ACTIONS, model_internal_actions, parse_internal_attribute};
+pub use mcp::{MCP_MAX_PAGE_SIZE, McpConfig, ModelMcpExposure, ProcedureMcpExposure};
 pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
 };
@@ -113,6 +115,10 @@ impl ExtensionKind {
 pub struct Schema {
     pub datasource: Option<Datasource>,
     pub auth: Option<AuthBlock>,
+    /// Untyped top-level config blocks. Empty for every schema the parser
+    /// produces today: `mcp { }` was the only block that ever landed here,
+    /// and it is now [`Self::mcp`]. Kept so IR snapshots that carry the key
+    /// still deserialize.
     pub config_blocks: Vec<ConfigBlock>,
     pub mixins: Vec<MixinDecl>,
     pub models: Vec<Model>,
@@ -139,6 +145,13 @@ pub struct Schema {
     /// every schema that declares none — no behavior change.
     #[serde(default)]
     pub declared_extensions: BTreeSet<ExtensionKind>,
+    /// The top-level `mcp { }` block, typed (ADR 0002, cratestack#1036).
+    /// It used to land in [`Self::config_blocks`] as raw text lines that
+    /// nothing read; it no longer does, and the block's span for
+    /// cratestack#993 is [`McpConfig::span`]. `skip_serializing_if` keeps a
+    /// schema without MCP serializing exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<McpConfig>,
 }
 
 impl Schema {

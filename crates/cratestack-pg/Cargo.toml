@@ -212,6 +212,11 @@ axum.workspace = true
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
 cratestack-migrate.workspace = true
+# cratestack#1037: validates the generated JSON Schemas for models against
+# serde's real output in `tests/json_schema_models.rs`. Dev-only, so the
+# facade's graph doesn't gain it (`cargo tree -p cratestack-pg -e normal |
+# grep -c jsonschema` is 0).
+jsonschema.workspace = true
 minicbor-serde.workspace = true
 # Real HTTP/1.1 client for the `@@subscribe` SSE end-to-end test
 # (`tests/rpc_subscribe_sse.rs`, cratestack#390) — handles

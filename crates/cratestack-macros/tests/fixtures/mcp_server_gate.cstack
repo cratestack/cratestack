@@ -1,0 +1,34 @@
+// cratestack#1036 (ADR 0002 Q4): a valid MCP schema — block, a tool with a
+// defaulted name, a named tool with a description, and a resource with a
+// lowered page size. Until the MCP runtime ships (cratestack#1033) this must
+// fail to compile under `include_server_schema!` rather than parse and serve
+// nothing. Also the tree-sitter-cstack conformance fixture for the syntax.
+
+datasource db {
+  provider = "postgresql"
+}
+
+mcp {
+  expose = [tools, resources]
+}
+
+type FeedArgs {
+  limit Int
+}
+
+model Post {
+  id        Int     @id
+  title     String
+  published Boolean
+
+  @@allow("read", published)
+  @@mcp(resource: "posts", max_page_size: 50)
+}
+
+procedure getFeed(args: FeedArgs): Post[]
+  @allow(auth() != null)
+  @mcp(tool)
+
+mutation procedure publishPost(args: FeedArgs): Post
+  @allow(auth() != null)
+  @mcp(tool: "publish_post", description: "Publish a draft post, then notify.")

@@ -76,6 +76,7 @@ mod tests {
                 end: 0,
                 line: 1,
             },
+            mcp: None,
         }
     }
 

@@ -4,6 +4,7 @@ mod client;
 mod computed;
 mod event;
 mod include;
+mod json_schema;
 mod model;
 mod policy;
 mod procedure;
@@ -39,4 +40,16 @@ pub fn include_embedded_schema(input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn include_client_schema(input: TokenStream) -> TokenStream {
     include::include_client_schema(input)
+}
+
+/// Not public API: no stability guarantee, and no facade re-exports it.
+/// Expands to the JSON Schemas phase 2 of the MCP operator generates for
+/// each procedure of a `.cstack` file (cratestack#1037), so the
+/// round-trip suites can check them against the real generated types.
+/// Takes the same arguments as `include_client_schema!`. See
+/// `src/include/json_schema_probe.rs`.
+#[doc(hidden)]
+#[proc_macro]
+pub fn __procedure_json_schemas(input: TokenStream) -> TokenStream {
+    include::procedure_json_schemas(input)
 }

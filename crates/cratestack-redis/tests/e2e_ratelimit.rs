@@ -269,11 +269,38 @@ async fn client_recovers_after_waiting_retry_after() {
     let Some((store, _redis_guard)) = store_or_skip("retry-after").await else {
         return;
     };
-    // 1 token burst, refill 100/sec — so 10ms is enough to refill.
-    let config = RateLimitConfig::new(1, 100.0);
+    // 1-token burst refilling 1 token/s. Two margins, both derived from the
+    // Lua script in `src/ratelimit/scripts.rs`:
+    //
+    // * Throttle side: the bucket holds fractional tokens (`tokens +
+    //   elapsed_sec * refill`, then `tokens >= 1.0`), timed by the *client*
+    //   `SystemTime` read before the round-trip (`trait_impl.rs`). So request
+    //   2 is refused as long as less than 1000 ms separate the two
+    //   `consume` calls. Cold, that window would also have to absorb
+    //   request 1's lazy `ConnectionManager` dial and its `NOSCRIPT`
+    //   fallback, so a warm-up request (below) pays both first. The old
+    //   100/s refill left 10 ms, which a loaded CI runner exceeded
+    //   (CI run 36002281906).
+    // * Recovery side: the client sleeps for the Retry-After the layer
+    //   advertises. The script computes it as `ceil((1 - tokens) / refill)`,
+    //   which is exactly 1 s here. The sleep starts after request 2 and so
+    //   after request 1, so at least 1000 ms elapse between request 1 and
+    //   request 3. Load can only lengthen that, never shorten it.
+    let config = RateLimitConfig::new(1, 1.0);
     let router = build_router(store, config, || async {
         (StatusCode::CREATED, "ok").into_response()
     });
+
+    // Warm-up under a different principal, so its own bucket: it opens the
+    // store's shared connection (one `OnceCell` behind every router clone)
+    // and loads the script into Redis's server-side cache, keeping both
+    // cold costs out of the request 1 -> request 2 window.
+    let warm_up = router
+        .clone()
+        .oneshot(post_request("Bearer warm-up"))
+        .await
+        .expect("warm-up");
+    assert_eq!(warm_up.status(), StatusCode::CREATED);
 
     let first = router
         .clone()
@@ -288,12 +315,21 @@ async fn client_recovers_after_waiting_retry_after() {
         .await
         .expect("throttled");
     assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
+    let retry_after: u64 = throttled
+        .headers()
+        .get(header::RETRY_AFTER)
+        .expect("Retry-After must accompany 429")
+        .to_str()
+        .expect("ASCII Retry-After")
+        .parse()
+        .expect("integer Retry-After");
+    // At 1 token/s the deficit is at most one token, so the ceiling is 1 s.
+    // Pinned so a regression toward a larger value fails loudly here
+    // instead of stalling the suite in the sleep below.
+    assert_eq!(retry_after, 1, "Retry-After for a <=1-token deficit at 1/s");
 
-    // Refill window is ~10ms; the layer ceilings Retry-After to a whole
-    // second, but the bucket itself refills well before then, so we
-    // only need to wait long enough for the script to observe new
-    // tokens.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Do what a well-behaved client does: wait exactly what the server said.
+    tokio::time::sleep(Duration::from_secs(retry_after)).await;
 
     let recovered = router
         .clone()
@@ -303,7 +339,7 @@ async fn client_recovers_after_waiting_retry_after() {
     assert_eq!(
         recovered.status(),
         StatusCode::CREATED,
-        "client must recover once the refill lands",
+        "a client that waits the advertised Retry-After must get through",
     );
 }
 
