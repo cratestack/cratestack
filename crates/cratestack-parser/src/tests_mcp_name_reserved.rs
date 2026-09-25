@@ -63,20 +63,30 @@ fn a_name_beside_the_two_rules_is_a_name() {
 #[test]
 fn a_name_breaking_several_rules_is_told_the_most_specific() {
     let long_digits = "1".repeat(64);
+    // 64 characters, `--` as the 3rd and 4th: too long before reserved.
+    let long_reserved = format!("ab--{}", "c".repeat(60));
     for (value, rule) in [
         // Reserved and an edge: the positional rule, which a fix of the
         // edge alone (`xn--` to `xn--a`) would still break.
         ("xn--", RESERVED),
         ("ab--", RESERVED),
+        ("----", RESERVED),
         // Reserved and no letter.
         ("12--3", RESERVED),
         // An edge and no letter.
         ("-127", EDGE),
         ("127-", EDGE),
+        ("-7", EDGE),
+        ("7-", EDGE),
+        // `--` at the 1st and 2nd characters is an edge, not the reserved
+        // form, which is the 3rd and 4th only.
+        ("--ab", EDGE),
+        ("a-", EDGE),
         // Broken before either new rule is looked at.
         ("XN--blog", "must be lowercase ASCII letters"),
         ("ab--\u{e9}", "must be lowercase ASCII letters"),
         (long_digits.as_str(), "must be 1 to 63 characters"),
+        (long_reserved.as_str(), "must be 1 to 63 characters"),
     ] {
         let message = message(value);
         assert!(message.contains(rule), "{value:?}: {message}");
