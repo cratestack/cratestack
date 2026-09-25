@@ -6,8 +6,13 @@
 //! stands in for that with a compact `<claims>.<signature>` token,
 //! base64url JSON claims under HMAC-SHA256, so the example needs no
 //! authorization server. What carries over to a real provider is the order
-//! of checks: signature, issuer, **audience**, expiry, and only then a
-//! context built from the claims.
+//! of checks: signature, issuer, **audience**, expiry and not-before, and
+//! only then a context built from the claims.
+//!
+//! What does **not** carry over: HMAC is symmetric, so whoever can verify
+//! these tokens can also mint them. A real provider verifies with the
+//! authorization server's public keys and pins the algorithm itself, never
+//! trusting a token header's `alg` (this format has no header to trust).
 //!
 //! The audience check is the one MCP insists on. A token minted for another
 //! resource must not open this one, or any service a user signed in to could
@@ -64,7 +69,8 @@ impl TokenVerifier {
         <HmacSha256 as KeyInit>::new_from_slice(&self.key).expect("HMAC takes any key length")
     }
 
-    /// Signature, issuer, audience, expiry, then the context.
+    /// Signature (`verify_slice` compares in constant time), issuer,
+    /// audience, expiry, not-before, then the context.
     pub fn verify(&self, token: &str) -> Result<CratestackContext, CratestackError> {
         let (payload, signature) = token.split_once('.').ok_or_else(|| refuse("malformed"))?;
         let signature = URL_SAFE_NO_PAD
@@ -83,15 +89,25 @@ impl TokenVerifier {
         if claims.get("iss").and_then(Json::as_str) != Some(ISSUER) {
             return Err(refuse("unknown issuer"));
         }
+        // Exact equality, never a prefix. A JWT `aud` may be a list, which a
+        // real provider accepts when it contains this resource exactly; this
+        // format only issues a string, so a list is refused.
         if claims.get("aud").and_then(Json::as_str) != Some(self.audience.as_str()) {
             return Err(refuse("token audience is not this resource"));
         }
+        let now = now();
         if claims
             .get("exp")
             .and_then(Json::as_i64)
-            .is_none_or(|exp| exp <= now())
+            .is_none_or(|exp| exp <= now)
         {
             return Err(refuse("expired"));
+        }
+        // Optional, as in a JWT, but honoured when present.
+        if let Some(nbf) = claims.get("nbf")
+            && nbf.as_i64().is_none_or(|nbf| nbf > now)
+        {
+            return Err(refuse("not yet valid"));
         }
         context(&claims)
     }
@@ -126,7 +142,7 @@ fn now() -> i64 {
 /// server would issue; here the `mint-token` subcommand prints one.
 pub fn mint(key: &[u8], audience: &str, id: &str, role: &str, ttl_secs: i64) -> String {
     let claims = json!({
-        "iss": ISSUER, "aud": audience, "exp": now() + ttl_secs, "id": id, "role": role,
+        "iss": ISSUER, "aud": audience, "exp": now().saturating_add(ttl_secs), "id": id, "role": role,
     });
     mint_claims(key, &claims)
 }

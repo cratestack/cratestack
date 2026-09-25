@@ -43,6 +43,17 @@ fn a_token_for_another_audience_is_refused() {
     assert!(refused(&mint_claims(KEY, &body)).contains("audience"));
 }
 
+/// Exact match, not a prefix: an audience that merely starts with this
+/// resource names some other endpoint.
+#[test]
+fn an_audience_that_only_extends_this_one_is_refused() {
+    for aud in [format!("{AUDIENCE}/admin"), format!("{AUDIENCE}.evil.test")] {
+        let mut body = claims();
+        body["aud"] = json!(aud);
+        assert!(refused(&mint_claims(KEY, &body)).contains("audience"));
+    }
+}
+
 #[test]
 fn a_token_from_another_issuer_is_refused() {
     let mut body = claims();
@@ -55,6 +66,23 @@ fn an_expired_token_is_refused() {
     let mut body = claims();
     body["exp"] = json!(1);
     assert!(refused(&mint_claims(KEY, &body)).contains("expired"));
+}
+
+#[test]
+fn a_token_without_an_expiry_is_refused() {
+    let mut body = claims();
+    body.as_object_mut().unwrap().remove("exp");
+    assert!(refused(&mint_claims(KEY, &body)).contains("expired"));
+}
+
+#[test]
+fn a_token_not_yet_valid_is_refused() {
+    let mut body = claims();
+    body["nbf"] = json!(4_102_444_000_i64);
+    assert!(refused(&mint_claims(KEY, &body)).contains("not yet valid"));
+    // ...and one whose `nbf` has passed is accepted.
+    body["nbf"] = json!(1);
+    verifier().verify(&mint_claims(KEY, &body)).expect("valid");
 }
 
 #[test]
