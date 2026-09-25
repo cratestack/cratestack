@@ -1,0 +1,54 @@
+[workspace]
+# Deliberately its own workspace root, listed in the parent repo's
+# `[workspace] exclude`. This crate turns on `cratestack-pg`'s `mcp`
+# feature, which forwards `cratestack-macros/mcp`. As a root workspace
+# member it would switch that feature on for every sibling in a
+# `cargo test --workspace` (Cargo unifies features across the members it
+# builds), and `cratestack-macros`' `tests/ui_mcp.rs` pins the feature-*off*
+# refusal, so it would start failing. Kept apart for the same reason as
+# `examples/no-database-verification` (cratestack#329): an external
+# consumer's graph is only visible from a crate with its own `Cargo.lock`.
+
+# A standalone workspace root cannot inherit the parent's
+# `[workspace.lints]`, so the guarantee is declared again (cratestack#523).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[package]
+name = "mcp-operator-example"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "CrateStack's MCP operator end to end (ADR 0002, cratestack#1041): one Postgres-backed schema whose `@mcp(tool)` procedures and `@@mcp(resource)` model are served over stdio and over Streamable HTTP behind an example audience-checking `AuthProvider`. `just mcp-conformance` drives both transports with the official MCP Inspector CLI."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mcp-operator-example"
+path = "src/main.rs"
+
+[dependencies]
+# `mcp` is the whole point: without it `include_server_schema!` refuses a
+# schema with an `mcp { }` block (ADR 0002 Q4) and `cratestack::mcp` does
+# not exist.
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", features = ["mcp"] }
+# The example token (`src/token.rs`): base64url claims, HMAC-SHA256 over
+# them. Stand-ins for a real authorization server's JWTs and JWKS.
+base64 = "0.23"
+hmac = "0.13"
+sha2 = "0.11"
+# The generated models derive `serde::{Serialize, Deserialize}` by path, so
+# every crate that calls `include_server_schema!` names `serde` directly.
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+# stdout carries only MCP messages over stdio, so logs go to stderr.
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+[dev-dependencies]
+# Real Postgres for `tests/serve.rs`, the same testcontainers backend
+# `examples/declarative-query-verification` uses.
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
+# `oneshot` on the HTTP app in `tests/serve.rs`.
+tower = { version = "0.5", default-features = false, features = ["util"] }
