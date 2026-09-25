@@ -343,6 +343,69 @@ test-ci-db-decimal-bigdecimal *args='':
 test-ci-db-mcp *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg {{args}}
 
+# MCP conformance with a real third-party client (cratestack#1041, ADR 0002
+# phase 6): the official MCP Inspector CLI drives `examples/mcp-operator`
+# over stdio and over Streamable HTTP with a bearer token, at protocol
+# 2026-07-28. `examples/mcp-operator/conformance/run.mjs` holds the cases:
+# discover, tools/list, a successful and a policy-denied tools/call,
+# resources/list and resources/read, and the refusals (no token, a token for
+# another audience, a legacy `initialize` client).
+#
+# The client is pinned to one exact version and installed with
+# `--ignore-scripts` into a throwaway directory: nothing is installed into
+# the repository or globally, and no package install script runs.
+# Only `@modelcontextprotocol/*` is named; its own dependencies come from
+# the public registry as that package declares them. Bump
+# `inspector_version` deliberately and re-read the run's output.
+#
+# Postgres: `MCP_CONFORMANCE_DATABASE_URL` if set (an empty database the
+# example may create `posts` in), otherwise a throwaway `postgres:18-alpine`
+# container on a random loopback port, removed on exit even on failure.
+# Needs `node` (>= 22.19, the client's engine floor), `npm`, and `docker`
+# unless a URL is given. On rootless Docker nothing extra is needed: this
+# uses the `docker` CLI, which reads `docker context`.
+mcp-conformance inspector_version='2.8.0':
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for tool in node npm cargo; do
+	  command -v "$tool" >/dev/null || { echo "mcp-conformance: $tool not found on PATH" >&2; exit 1; }
+	done
+	work="$(mktemp -d)"
+	container=""
+	cleanup() {
+	  if [ -n "$container" ]; then docker rm -f "$container" >/dev/null 2>&1 || true; fi
+	  rm -rf "$work"
+	}
+	trap cleanup EXIT
+	echo "installing @modelcontextprotocol/inspector@{{inspector_version}}"
+	npm install --prefix "$work/inspector" --no-save --no-audit --no-fund --ignore-scripts --loglevel=error \
+	  "@modelcontextprotocol/inspector@{{inspector_version}}"
+	cargo build --locked --manifest-path examples/mcp-operator/Cargo.toml
+	if [ -n "${MCP_CONFORMANCE_DATABASE_URL:-}" ]; then
+	  database_url="$MCP_CONFORMANCE_DATABASE_URL"
+	else
+	  command -v docker >/dev/null || { echo "mcp-conformance: docker not found; set MCP_CONFORMANCE_DATABASE_URL" >&2; exit 1; }
+	  container="cratestack-mcp-conformance-$$"
+	  docker run -d --rm --name "$container" -e POSTGRES_USER=blog -e POSTGRES_PASSWORD=blog \
+	    -e POSTGRES_DB=blog -p 127.0.0.1::5432 postgres:18-alpine >/dev/null
+	  # Over TCP, not the socket: the image's init-time server listens on the
+	  # socket only, so a socket probe can pass before the real server is up.
+	  for _ in $(seq 60); do
+	    docker exec "$container" pg_isready -h 127.0.0.1 -U blog -d blog >/dev/null 2>&1 && break
+	    sleep 1
+	  done
+	  docker exec "$container" pg_isready -h 127.0.0.1 -U blog -d blog >/dev/null
+	  port="$(docker port "$container" 5432/tcp | head -n1 | sed 's/.*://')"
+	  database_url="postgres://blog:blog@127.0.0.1:${port}/blog"
+	fi
+	mkdir -p "$work/home"
+	DATABASE_URL="$database_url" \
+	MCP_INSPECTOR_DIR="$work/inspector" \
+	MCP_INSPECTOR_HOME="$work/home" \
+	MCP_INSPECTOR_VERSION="{{inspector_version}}" \
+	MCP_EXAMPLE_BIN="$PWD/examples/mcp-operator/target/debug/mcp-operator-example" \
+	  node examples/mcp-operator/conformance/run.mjs
+
 # Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
 # persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage
 # audit found no workflow ever invoked them (`grep -rn outbox
