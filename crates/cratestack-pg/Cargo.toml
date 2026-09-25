@@ -188,6 +188,14 @@ postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
 # default, and with it off `rmcp` is absent from this crate's normal
 # dependency graph (CI's `facade-disjointness` job asserts it).
 mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
+# The COSE envelope layer (`cratestack::envelope_layer`, ADR 0006,
+# cratestack#1006): opens signed requests and seals responses in front of
+# the generated routers, and re-exports `cratestack-cose` as
+# `cratestack::cose` to build the envelope with. Forwards
+# `cratestack-axum/cose` (maintainer decision D7). Off by default, and with
+# it off no `cratestack-cose`, `p256` or `ed25519-dalek` is in this crate's
+# normal dependency graph (CI's `facade-disjointness` job asserts it).
+cose = ["cratestack-axum/cose"]
 
 [dependencies]
 async-stream.workspace = true

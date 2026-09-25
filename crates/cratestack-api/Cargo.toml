@@ -86,6 +86,14 @@ middleware = ["cratestack-client-rust/middleware"]
 # from this crate's normal dependency graph (CI's `facade-disjointness`
 # job asserts it). Still no `cratestack-sqlx` under any feature.
 mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
+# The COSE envelope layer (`cratestack::envelope_layer`, ADR 0006,
+# cratestack#1006): opens signed requests and seals responses in front of
+# the generated routers, and re-exports `cratestack-cose` as
+# `cratestack::cose` to build the envelope with. Forwards
+# `cratestack-axum/cose` (maintainer decision D7). Off by default, and with
+# it off no `cratestack-cose`, `p256` or `ed25519-dalek` is in this crate's
+# normal dependency graph (CI's `facade-disjointness` job asserts it).
+cose = ["cratestack-axum/cose"]
 
 [dependencies]
 async-stream.workspace = true
@@ -210,3 +218,17 @@ required-features = ["mcp"]
 name = "mcp_no_resources"
 path = "tests/mcp_no_resources.rs"
 required-features = ["mcp"]
+
+# cratestack#1006: the envelope layer over generated REST and RPC routers,
+# with the rate limiter and the idempotency layer behind it (ADR 0006 §12).
+# `just test-ci-host` runs them with the feature on; without it Cargo skips
+# them rather than compiling them to zero tests.
+[[test]]
+name = "cose_envelope_rest"
+path = "tests/cose_envelope_rest.rs"
+required-features = ["cose"]
+
+[[test]]
+name = "cose_envelope_rpc"
+path = "tests/cose_envelope_rpc.rs"
+required-features = ["cose"]

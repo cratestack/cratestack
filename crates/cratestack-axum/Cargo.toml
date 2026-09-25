@@ -55,6 +55,12 @@ decimal-bigdecimal = [
 # without its `auth` feature depends on `cratestack-core` alone.
 cose = ["dep:cratestack-cose"]
 
+# docs.rs builds default features only, which would leave
+# `cratestack_axum::envelope_layer` off the published docs; `rustdoc-pages.yml`
+# turns the same feature on for the rustdoc site.
+[package.metadata.docs.rs]
+features = ["cose"]
+
 [dependencies]
 async-trait.workspace = true
 axum.workspace = true
