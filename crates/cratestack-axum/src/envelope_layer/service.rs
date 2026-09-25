@@ -87,18 +87,21 @@ async fn dispatch<S: Inner>(config: Arc<Config>, inner: S, req: Request) -> Resp
         return call(inner, Request::from_parts(parts, body)).await;
     };
     let mode = config.policy.mode(&parts.method, &route);
-    let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri);
     match (enveloped, mode) {
         (true, EnvelopeMode::Off) => {
             refusal::unsupported_envelope(&parts.headers, parts.uri.path())
         }
         (true, EnvelopeMode::Required | EnvelopeMode::Optional) => {
+            let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri);
             signed::handle(inner, parts, body, inputs, mode).await
         }
         (false, EnvelopeMode::Required) => {
             refusal::unauthenticated(&parts.headers, parts.uri.path())
         }
-        (false, EnvelopeMode::Optional) => unsigned::handle(inner, parts, body, inputs).await,
+        (false, EnvelopeMode::Optional) => {
+            let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri);
+            unsigned::handle(inner, parts, body, inputs).await
+        }
         (false, EnvelopeMode::Off) => call(inner, Request::from_parts(parts, body)).await,
     }
 }
