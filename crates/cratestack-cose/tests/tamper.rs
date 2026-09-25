@@ -12,7 +12,7 @@ use common::backends::FixedResolver;
 use common::fixture::payment_bytes;
 use common::forge::{self, TAG_MAC0, TAG_SIGN1, layout};
 use common::{IAT, rest_request};
-use cratestack_core::{Binding, CratestackError, InMemoryNonceStore, PathParams};
+use cratestack_core::{Binding, CratestackError, InMemoryNonceStore, PathParams, RequestKind};
 use cratestack_cose::{CoseAlg, CoseSigner, CoseVerifyKey, UNAUTHENTICATED, external_aad};
 
 fn assert_rejected(result: Result<cratestack_cose::Opened, CratestackError>, what: &str) {
@@ -148,7 +148,7 @@ async fn aad_binds_every_request_field() {
 }
 
 #[tokio::test]
-async fn aad_binds_request_digest_and_status_on_responses() {
+async fn aad_binds_request_kind_digest_and_status_on_responses() {
     for &alg in CoseAlg::ALL {
         let request = rest_request();
         let request_body = common::sealed_request(alg, &request).await;
@@ -164,15 +164,21 @@ async fn aad_binds_request_digest_and_status_on_responses() {
             .expect("control opens");
 
         let mut digest = response.clone();
-        digest.request_digest.as_mut().expect("digest")[0] ^= 0x01;
+        digest.response.as_mut().expect("response").request.digest[0] ^= 0x01;
         assert_rejected(
             client.open_response(sealed.clone(), &digest).await,
             "request_digest",
         );
-        let status = Binding {
-            status: Some(201),
-            ..response.clone()
-        };
+        // The same digest, claimed as the other kind (cratestack#1005,
+        // 2026-09-25): see `tests/request_kind.rs` for the attack.
+        let mut kind = response.clone();
+        kind.response.as_mut().expect("response").request.kind = RequestKind::Unsigned;
+        assert_rejected(
+            client.open_response(sealed.clone(), &kind).await,
+            "request_kind",
+        );
+        let mut status = response.clone();
+        status.response.as_mut().expect("response").status = 201;
         assert_rejected(
             client.open_response(sealed.clone(), &status).await,
             "status",

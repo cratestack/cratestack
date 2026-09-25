@@ -7,19 +7,16 @@
 //! The structure is never assembled unless something needs it contiguous.
 //! [`Tbs::with_chunks`] hands it over as nine slices (the fixed opening, the
 //! `bstr` heads on the stack, and the three byte strings **where they
-//! already are**), so HMAC and ESP256 hash it incrementally, on the seal
-//! and on the open side, with no copy of the payload (maintainer decision
-//! on cratestack#1005). Ed25519 is the exception: PureEdDSA (RFC 8032) is
-//! not a pre-hash scheme, and `ed25519-dalek`'s public signing and strict
-//! verification APIs take the message as one slice, so for Ed25519 the
-//! structure is built once with [`Tbs::assemble`], which copies the payload
-//! once.
+//! already are**), so every algorithm computes over it with no copy of the
+//! payload, on the seal and on the open side (maintainer decisions on
+//! cratestack#1005): HMAC and ESP256 hash it incrementally, and Ed25519
+//! runs both PureEdDSA passes over the same slices. Only a signer that
+//! wants the bytes themselves (a KMS, an HSM) gets [`Tbs::assemble`], which
+//! copies the payload once.
 //!
 //! The protected header goes in **as received** (the caller passes the
 //! wire slice), never re-encoded: RFC 9052 §4.4 signs the serialized bytes,
 //! and re-encoding would make the result depend on the verifier's encoder.
-
-use std::cell::OnceCell;
 
 use crate::alg::CoseMode;
 use crate::cbor::write::{Head, MAJOR_BSTR, MAJOR_TSTR, len_arg};
@@ -57,8 +54,8 @@ impl Tbs<'_> {
         ])
     }
 
-    /// The structure in one buffer: for Ed25519, and for a signer that
-    /// takes the bytes (a KMS). Sized exactly before anything is written.
+    /// The structure in one buffer, for a signer that takes the bytes (a
+    /// KMS or an HSM). Sized exactly before anything is written.
     pub(crate) fn assemble(&self) -> Vec<u8> {
         self.with_chunks(|chunks| {
             let mut out = Vec::with_capacity(chunks.iter().map(|chunk| chunk.len()).sum());
@@ -67,29 +64,5 @@ impl Tbs<'_> {
             }
             out
         })
-    }
-}
-
-/// A [`Tbs`] being verified against several candidate keys: the contiguous
-/// form is built at most once, and only if an Ed25519 candidate asks.
-pub(crate) struct TbsView<'a> {
-    tbs: Tbs<'a>,
-    contiguous: OnceCell<Vec<u8>>,
-}
-
-impl<'a> TbsView<'a> {
-    pub(crate) fn new(tbs: Tbs<'a>) -> Self {
-        Self {
-            tbs,
-            contiguous: OnceCell::new(),
-        }
-    }
-
-    pub(crate) fn tbs(&self) -> &Tbs<'a> {
-        &self.tbs
-    }
-
-    pub(crate) fn contiguous(&self) -> &[u8] {
-        self.contiguous.get_or_init(|| self.tbs.assemble())
     }
 }

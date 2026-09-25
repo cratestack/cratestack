@@ -60,7 +60,12 @@ zeroize.workspace = true
 # builds share this crate): neither crate below knows where randomness comes
 # from on that target unless told. `getrandom` draws this crate's `cti` and
 # `Cratestack-Nonce` bytes and needs its `wasm_js` backend (getrandom 0.4:
-# the feature alone selects it, no `--cfg` flag). `uuid` is not used here
+# the feature alone selects it, no `--cfg` flag). getrandom's README advises
+# libraries against enabling `wasm_js`, except for a crate that already
+# depends unconditionally on `wasm-bindgen` or `js-sys` on "unknown" wasm
+# targets. This one does, through `chrono`'s default `wasmbind` feature
+# (`cargo tree -p cratestack-cose --target wasm32-unknown-unknown -i
+# js-sys`), so the feature adds no new crate to that graph. `uuid` is not used here
 # directly, but `cratestack-core` depends on it with `v4`, which fails to
 # compile on this target without a randomness feature; this follows
 # `cratestack-rusqlite`'s precedent for the same edge. `target_os =
@@ -85,6 +90,9 @@ coset.workspace = true
 # Encodes the payment fixture the shared vectors are built on, the way a
 # real service would.
 cratestack-codec-cbor.workspace = true
+# Forges the small-order `R` / weak-key Ed25519 signatures that
+# `tests/ed25519_streaming.rs` checks the streamed strict verify against.
+curve25519-dalek.workspace = true
 # A randomized (non-RFC 6979) ES256 signature for the verify-only test.
 rand.workspace = true
 serde_json.workspace = true

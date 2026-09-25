@@ -11,7 +11,8 @@ use crate::thumbprint::{self, KID_LEN};
 /// A key a message may be verified with, bound to exactly one algorithm.
 ///
 /// Opaque: built from bytes ([`ed25519`](Self::ed25519),
-/// [`p256_sec1`](Self::p256_sec1), [`hmac`](Self::hmac)) and read back as
+/// [`p256_sec1`](Self::p256_sec1), [`hmac`](Self::hmac),
+/// [`hmac_from_secret`](Self::hmac_from_secret)) and read back as
 /// bytes ([`ed25519_bytes`](Self::ed25519_bytes),
 /// [`p256_sec1_uncompressed`](Self::p256_sec1_uncompressed)), so no
 /// `ed25519-dalek` or `p256` type is part of this crate's public API and
@@ -75,7 +76,21 @@ impl CoseVerifyKey {
                 "an HMAC key needs an HMAC algorithm".to_owned(),
             ));
         }
-        Ok(Self::from_hmac_secret(alg, HmacSecret::new(secret)?))
+        Self::hmac_from_secret(alg, HmacSecret::new(secret)?)
+    }
+
+    /// As [`hmac`](Self::hmac), from an already validated [`HmacSecret`]
+    /// (the counterpart of `HmacSigner::from_secret`), so a secret loaded
+    /// once can back a signer and a verification key without its bytes
+    /// passing through a plain `Vec` again. Fails with
+    /// `CratestackError::Validation` for a non-HMAC `alg`.
+    pub fn hmac_from_secret(alg: CoseAlg, secret: HmacSecret) -> Result<Self, CratestackError> {
+        if !is_mac(alg) {
+            return Err(CratestackError::Validation(
+                "an HMAC key needs an HMAC algorithm".to_owned(),
+            ));
+        }
+        Ok(Self::from_hmac_secret(alg, secret))
     }
 
     pub(crate) fn from_ed25519(key: ed25519_dalek::VerifyingKey) -> Self {

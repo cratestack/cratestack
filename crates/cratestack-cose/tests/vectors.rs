@@ -11,8 +11,18 @@
 //! against the hand-computed breakdown in `sizes.rs`, all independent of
 //! the files.
 //!
-//! Positive cases must open; `negative` cases must be refused with the
-//! coarse `401`, by a verifier holding exactly the keys each one names.
+//! The files are self-contained for another implementation (the P1
+//! ports): every key carries its algorithm, every positive case names the
+//! key that verifies it (`key`) and, for a request, the verifier's clock
+//! and skew; every negative case names its verifier's mode, keys, clock and
+//! skew. Positive cases must open with exactly that one key; `negative`
+//! cases must be refused as `expected` says (the coarse `401`, or a `500`
+//! for local misuse), by a verifier holding exactly the keys each names.
+//! Both are checked here the way a port would check them, from the JSON.
+//!
+//! **An ESP256 sender MUST emit low-`s`**: verifiers refuse a high `s`
+//! (`neg-esp256-high-s`), so a port whose signer may return either
+//! normalises before sending.
 
 mod common;
 
@@ -26,8 +36,8 @@ use cratestack_codec_cbor::CborCodec;
 use cratestack_core::rpc::RpcErrorBody;
 use cratestack_core::{Binding, CratestackCodec};
 use cratestack_cose::{
-    CoseAlg, CoseMode, CoseVerifyKey, Ed25519Signer, RequestNonce, external_aad, request_digest,
-    request_digest_unsigned,
+    CoseAlg, CoseMode, CoseVerifyKey, DEFAULT_SKEW_SECS, Ed25519Signer, RequestNonce, external_aad,
+    request_digest, request_digest_unsigned,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +46,9 @@ struct Case {
     name: String,
     alg_id: i64,
     direction: String,
+    /// The `keys.json` entry that verifies this case, and the only key a
+    /// verifier needs to hold for it.
+    key: String,
     /// `false` for ESP256: another implementation's signature need not be
     /// byte-identical (ECDSA may be randomized); verify it instead. These
     /// bytes come from RFC 6979, normalised to low-`s`.
@@ -50,6 +63,10 @@ struct Case {
     request_payload: Option<String>,
     iat: Option<u64>,
     cti: Option<String>,
+    /// Requests: the verifier's clock (Unix seconds) and skew the case
+    /// opens at. `None` for a response, which carries no `iat`.
+    verifier_now: Option<u64>,
+    skew_secs: Option<u64>,
     payload: String,
     external_aad: String,
     protected: String,
@@ -67,6 +84,8 @@ struct BindingJson {
     query: Option<String>,
     schema_sha: String,
     payload_type: String,
+    /// Responses: 0 = unsigned request, 1 = signed request.
+    request_kind: Option<u8>,
     request_digest: Option<String>,
     status: Option<u16>,
 }
@@ -75,12 +94,16 @@ struct BindingJson {
 struct Negative {
     name: String,
     direction: String,
+    /// The verifier's configured mode (`sign1` / `mac0`), as a router's
+    /// comes from the `Content-Type`, not from the message's tag.
+    mode: String,
     /// The binding the verifier rebuilds.
     binding: BindingJson,
     /// The keys the verifier's resolver holds (names from `keys.json`).
     verifier_keys: Vec<String>,
-    /// The verifier's clock, Unix seconds.
+    /// The verifier's clock, Unix seconds, and its skew.
     verifier_now: u64,
+    skew_secs: u64,
     cose: String,
     expected: String,
     why: String,
@@ -98,8 +121,9 @@ fn binding_json(bind: &Binding<'_>) -> BindingJson {
         query: bind.query.as_deref().map(str::to_owned),
         schema_sha: hex(&bind.schema_sha),
         payload_type: bind.payload_media_type.to_string(),
-        request_digest: bind.request_digest.map(|digest| hex(&digest)),
-        status: bind.status,
+        request_kind: bind.response.map(|response| response.request.kind.code()),
+        request_digest: bind.response.map(|response| hex(&response.request.digest)),
+        status: bind.response.map(|response| response.status),
     }
 }
 
@@ -109,6 +133,17 @@ fn alg_name(alg: CoseAlg) -> &'static str {
         CoseAlg::Esp256 => "sign1-esp256",
         CoseAlg::Hmac256_64 => "mac0-hmac256-64",
         CoseAlg::Hmac256_256 => "mac0-hmac256-256",
+        _ => unreachable!(),
+    }
+}
+
+/// The `keys.json` entry for `alg`'s test key.
+fn key_name(alg: CoseAlg) -> &'static str {
+    match alg {
+        CoseAlg::Ed25519 => "ed25519",
+        CoseAlg::Esp256 => "p256",
+        CoseAlg::Hmac256_64 => "hmac-256-64",
+        CoseAlg::Hmac256_256 => "hmac-256-256",
         _ => unreachable!(),
     }
 }
@@ -153,6 +188,16 @@ fn case(
         CoseMode::Sign1 => common::forge::sign1_tbs(protected, &aad, payload),
         CoseMode::Mac0 => common::forge::mac0_tbs(protected, &aad, payload),
     };
+    if alg == CoseAlg::Ed25519 {
+        // The sealer streamed both PureEdDSA passes over the structure's
+        // pieces; the result must be `SigningKey::sign` over the contiguous
+        // `Sig_structure` (built by `coset`), byte for byte.
+        assert_eq!(
+            &sealed[parts.signature.clone()],
+            common::forge::ed25519_sign(&tbs).as_slice(),
+            "{name}: streamed Ed25519 differs from contiguous signing"
+        );
+    }
     Case {
         name,
         alg_id: alg.id(),
@@ -162,6 +207,7 @@ fn case(
             "response"
         }
         .to_owned(),
+        key: key_name(alg).to_owned(),
         deterministic: alg != CoseAlg::Esp256,
         binding: binding_json(bind),
         request_digest_of: link.0,
@@ -169,6 +215,8 @@ fn case(
         request_payload: link.1.map(|(_, payload)| hex(payload)),
         iat: claims.map(|(iat, _)| iat),
         cti: claims.map(|(_, cti)| cti.to_owned()),
+        verifier_now: claims.map(|_| IAT),
+        skew_secs: claims.map(|_| DEFAULT_SKEW_SECS),
         payload: hex(payload),
         external_aad: hex(&aad),
         protected: hex(protected),
@@ -237,11 +285,7 @@ async fn derive_cases() -> Vec<Case> {
     // A signed response to an UNSIGNED, bodiless GET: bound through the
     // client's Cratestack-Nonce.
     for &alg in CoseAlg::ALL {
-        let response = Binding {
-            request_digest: Some(request_digest_unsigned(&nonce(), b"")),
-            status: Some(200),
-            ..rest_get()
-        };
+        let response = common::answering(&rest_get(), request_digest_unsigned(&nonce(), b""), 200);
         let sealed = common::server(alg, IAT)
             .seal_response(&payload, &response)
             .await
@@ -298,10 +342,44 @@ fn check_links(cases: &[Case]) {
         };
         assert_eq!(
             case.binding.request_digest.as_deref(),
-            Some(hex(&expected).as_str()),
+            Some(hex(&expected.digest).as_str()),
             "{}",
             case.name
         );
+        assert_eq!(
+            case.binding.request_kind,
+            Some(expected.kind.code()),
+            "{}: a digest linked to a {} request",
+            case.name,
+            if case.request_digest_of.is_some() {
+                "signed"
+            } else {
+                "nonce-bound unsigned"
+            }
+        );
+    }
+}
+
+/// Open every positive case the way a port would: from its JSON alone,
+/// with a verifier holding only the key the case names, at the clock and
+/// skew it names.
+async fn check_opens_as_vector(cases: &[Case]) {
+    for case in cases {
+        let mode = negative::mode_name(CoseAlg::from_id(case.alg_id).expect("alg").mode());
+        let now = case.verifier_now.unwrap_or(IAT);
+        let skew = case.skew_secs.unwrap_or(DEFAULT_SKEW_SECS);
+        let opened = negative::open_as_vector(
+            &case.direction,
+            mode,
+            std::slice::from_ref(&case.key),
+            now,
+            skew,
+            &case.binding,
+            &case.cose,
+        )
+        .await
+        .unwrap_or_else(|error| panic!("{} must open: {error:?}", case.name));
+        assert_eq!(hex(&opened.payload), case.payload, "{}", case.name);
     }
 }
 
@@ -313,26 +391,38 @@ fn vectors_dir() -> PathBuf {
 }
 
 fn keys_json() -> serde_json::Value {
-    let key = |key: &CoseVerifyKey| serde_json::json!({ "thumbprint": hex(&key.thumbprint()), "kid": hex(&key.kid()) });
+    let ids = |key: &CoseVerifyKey| {
+        serde_json::json!({
+            "alg": key.alg().id(),
+            "thumbprint": hex(&key.thumbprint()),
+            "kid": hex(&key.kid()),
+        })
+    };
     let ed = common::ed25519().verify_key();
     let other = Ed25519Signer::from_seed(&common::OTHER_ED25519_SEED).verify_key();
     let p = common::p256().verify_key();
-    let mac = common::hmac(CoseAlg::Hmac256_256).verify_key();
+    let mac64 = common::hmac(CoseAlg::Hmac256_64).verify_key();
+    let mac256 = common::hmac(CoseAlg::Hmac256_256).verify_key();
+    let secret = hex(&common::HMAC_SECRET);
     let mut out = serde_json::json!({
-        "_comment": "TEST KEYS. Published in this repository; never use them outside tests. The HMAC secret is one key per algorithm (hmac-256-64, hmac-256-256): an HMAC key verifies only the algorithm it is configured for.",
+        "_comment": "TEST KEYS. Published in this repository; never use them outside tests. Every entry is one verification key bound to exactly one algorithm (`alg`, the IANA COSE value); a vector's `key` / `verifier_keys` name these entries. hmac-256-64 and hmac-256-256 are the same secret configured for two algorithms, so they share a kid; each verifies only its own algorithm.",
         "ed25519": { "seed": hex(&common::ED25519_SEED), "public": hex(&ed.ed25519_bytes().expect("ed")) },
         "ed25519_other": { "seed": hex(&common::OTHER_ED25519_SEED), "public": hex(&other.ed25519_bytes().expect("ed")) },
         "p256": { "scalar": common::P256_SCALAR, "public_sec1_uncompressed": hex(&p.p256_sec1_uncompressed().expect("p256")) },
-        "hmac": { "secret": hex(&common::HMAC_SECRET) },
+        "hmac-256-64": { "secret": secret },
+        "hmac-256-256": { "secret": secret },
     });
     for (name, k) in [
         ("ed25519", &ed),
         ("ed25519_other", &other),
         ("p256", &p),
-        ("hmac", &mac),
+        ("hmac-256-64", &mac64),
+        ("hmac-256-256", &mac256),
     ] {
+        // The file's names are the ones the vectors check against.
+        assert_eq!(negative::key(name), *k, "{name}");
         let fields = out[name].as_object_mut().expect("object");
-        for (field, value) in key(k).as_object().expect("object") {
+        for (field, value) in ids(k).as_object().expect("object") {
             fields.insert(field.clone(), value.clone());
         }
     }
@@ -370,12 +460,13 @@ fn check_or_write(name: &str, value: &serde_json::Value) {
 async fn checked_in_vectors_match() {
     let cases = derive_cases().await;
     check_links(&cases);
+    check_opens_as_vector(&cases).await;
     let negatives = negative::derive().await;
     for vector in &negatives {
         negative::check_rejected(vector).await;
     }
     let unary = serde_json::json!({
-        "_comment": "Unary COSE vectors (ADR 0006 §§3-5, and the 2026-09-24 decisions on cratestack#1005: audience in the AAD, Cratestack-Nonce for unsigned requests). Hex throughout. Payload: payment-fixture.json; keys: keys.json. `to_be_signed` is the logical Sig_structure / MAC_structure, even where the implementation hashes it incrementally. Every `negative` vector must be refused (401 unauthenticated) by a verifier holding exactly `verifier_keys`, at `verifier_now`.",
+        "_comment": "Unary COSE vectors (ADR 0006 §§3-5, and the decisions on cratestack#1005: audience in the AAD and Cratestack-Nonce for unsigned requests, 2026-09-24; request_kind in the response AAD and a non-empty audience, 2026-09-25). Hex throughout. Payload: payment-fixture.json; keys: keys.json. Every case must open with a verifier holding only the key its `key` names (requests: at `verifier_now`, with `skew_secs`). `to_be_signed` is the logical Sig_structure / MAC_structure, even where the implementation computes over it in pieces. ESP256 senders MUST emit low-s: verifiers refuse a high s (neg-esp256-high-s). Every `negative` vector must be refused as `expected` says by a verifier in `mode` holding exactly `verifier_keys`, at `verifier_now` with `skew_secs`.",
         "payload": hex(&payment_bytes()),
         "cases": cases,
         "negative": negatives,

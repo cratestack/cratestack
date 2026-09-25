@@ -112,14 +112,10 @@ async fn a_binding_of_the_wrong_shape_is_local_misuse() {
         server.open(sealed.clone(), &response, &mut ctx).await
     ));
     assert!(is_internal(client.open(sealed, &request, &mut ctx).await));
-
-    // Half a response binding.
-    let half = cratestack_core::Binding {
-        status: None,
-        ..response.clone()
-    };
-    assert!(is_internal(server.seal(payload.clone(), &half).await));
-    assert!(cratestack_cose::external_aad(&half).is_err());
+    // A half-built response binding (a digest without a status, a kind
+    // without a digest) used to be a third shape refused here at run time.
+    // `Binding::response` is one `Option<ResponseBinding>` now, so it no
+    // longer compiles.
 }
 
 #[tokio::test]

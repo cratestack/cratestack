@@ -152,13 +152,23 @@ chumsky = "0.13"
 # `cratestack-auth`'s COSE-signed enrolment challenges (`build_cose_enroll_response`/
 # `parse_cose_enroll_response`).
 coset = "0.4.2"
-# `cratestack-cose`'s random `cti` (ADR 0006 §5, `nonce` mode). Already in
-# the graph through `uuid` (a `cratestack-core` dependency). `wasm_js` is NOT
-# enabled here: getrandom's own README asks libraries not to, because it
-# breaks non-Web wasm builds. The wasm consumer (`cratestack-cbor-wasm`,
-# which already depends on `wasm-bindgen`) enables it when it takes the
-# crate on in P1.
+# `cratestack-cose`'s random `cti` and `Cratestack-Nonce` (ADR 0006 §5,
+# `nonce` mode). Already in the graph through `uuid` (a `cratestack-core`
+# dependency). No features here, so the workspace default selects no wasm
+# backend: `cratestack-cose` itself turns `wasm_js` on, and only for
+# `wasm32-unknown-unknown` (see its manifest). getrandom's README advises
+# libraries against enabling `wasm_js` (it breaks non-Web wasm and adds
+# `wasm-bindgen` to the lock), with one stated exception: a crate that
+# already depends unconditionally on `wasm-bindgen` or `js-sys` on "unknown"
+# wasm targets may. `cratestack-cose` does, through `chrono`'s default
+# `wasmbind` feature (`cargo tree -p cratestack-cose --target
+# wasm32-unknown-unknown -i js-sys` shows `js-sys` under `chrono`).
 getrandom = "0.4"
+# `cratestack-cose`'s Ed25519 strictness tests only (a dev-dependency): they
+# build the small-order points and the scalar arithmetic a weak-key or
+# small-order-`R` forgery needs. The same 5.x `ed25519-dalek` 3 already pulls
+# in, so this adds a manifest edge, not a crate to the graph.
+curve25519-dalek = { version = "5", default-features = false }
 # `cratestack-auth`'s challenge/enrollment/service-signing-key ids
 # (`cuid2::create_id()`), same generator every other `@paralleldrive/cuid2`-
 # style id in this workspace's downstream consumers already standardises on.

@@ -121,3 +121,62 @@ async fn a_response_from_one_service_does_not_verify_as_anothers() {
         .await
         .expect("control");
 }
+
+fn is_misuse<T: std::fmt::Debug>(result: &Result<T, CratestackError>) -> bool {
+    matches!(result, Err(CratestackError::Internal(message)) if message.contains("audience"))
+}
+
+/// An empty audience binds no recipient, so it would silently give up both
+/// protections above. It is local misuse, a `500` (maintainer decision on
+/// cratestack#1005, 2026-09-25), when sealing and when opening, for
+/// requests and responses, and `external_aad` refuses to encode it. It
+/// sealed and opened on c5c3f7a0.
+#[tokio::test]
+async fn an_empty_audience_is_local_misuse() {
+    let empty = addressed_to("");
+    assert!(is_misuse(&external_aad(&empty)));
+    for &alg in CoseAlg::ALL {
+        let client = common::client(alg, common::IAT, common::CTI_16);
+        let server = common::server(alg, common::IAT);
+        let payload = common::fixture::payment_bytes();
+        assert!(is_misuse(&client.seal_request(&payload, &empty).await));
+
+        let request = common::sealed_request(alg, &rpc_request()).await;
+        // Refused before the body is looked at: even a valid message is a
+        // 500, so the outcome depends on local state only.
+        assert!(is_misuse(
+            &server.open_request(request.clone(), &empty).await
+        ));
+        assert!(is_misuse(
+            &server
+                .open_request(Bytes::from_static(b"\xd2"), &empty)
+                .await
+        ));
+
+        let response = common::response_to(&empty, &request, 200);
+        assert!(is_misuse(&server.seal_response(&payload, &response).await));
+        let sealed = server
+            .seal_response(
+                &payload,
+                &common::response_to(&rpc_request(), &request, 200),
+            )
+            .await
+            .expect("seal");
+        assert!(is_misuse(&client.open_response(sealed, &response).await));
+    }
+}
+
+/// Why the inbound audience must differ from the outbound one: a service
+/// that uses one name (`"internal"`) both for itself and for its peers
+/// accepts its own reflected Mac0 request. This pins the documented
+/// hazard; it is configuration the envelope cannot see.
+#[tokio::test]
+async fn a_shared_audience_name_gives_up_reflection_protection() {
+    let now = common::now();
+    let shared = addressed_to("internal");
+    let sealed = common::sealed_request_at(CoseAlg::Hmac256_256, &shared, now).await;
+    common::server(CoseAlg::Hmac256_256, now)
+        .open_request(sealed, &shared)
+        .await
+        .expect("a sender that is also the addressee cannot tell its own message apart");
+}

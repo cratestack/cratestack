@@ -15,8 +15,8 @@ use coset::{
     CborSerializable, CoseMac0, CoseMac0Builder, CoseSign1, CoseSign1Builder, HeaderBuilder,
     TaggedCborSerializable,
 };
-use cratestack_core::Binding;
-use cratestack_cose::{CoseAlg, CoseSigner, external_aad};
+use cratestack_core::{Binding, RequestKind};
+use cratestack_cose::{CoseAlg, CoseSigner, RequestNonce, external_aad, request_digest_unsigned};
 use p256::ecdsa::signature::Verifier as _;
 
 fn coset_alg(alg: CoseAlg) -> Algorithm {
@@ -49,9 +49,16 @@ fn aad_via_ciborium(bind: &Binding<'_>) -> Vec<u8> {
         Value::Bytes(bind.schema_sha.to_vec()),
         Value::Text(bind.payload_media_type.to_string()),
     ];
-    if let (Some(digest), Some(status)) = (bind.request_digest, bind.status) {
-        items.push(Value::Bytes(digest.to_vec()));
-        items.push(Value::Integer(status.into()));
+    if let Some(response) = &bind.response {
+        // The ADR's numbers, spelled out here rather than taken from
+        // `RequestKind::code`, so this stays an independent encoding.
+        let kind: u8 = match response.request.kind {
+            RequestKind::Unsigned => 0,
+            RequestKind::Signed => 1,
+        };
+        items.push(Value::Integer(kind.into()));
+        items.push(Value::Bytes(response.request.digest.to_vec()));
+        items.push(Value::Integer(response.status.into()));
     }
     let mut out = Vec::new();
     coset::cbor::ser::into_writer(&Value::Array(items), &mut out).expect("encode");
@@ -62,11 +69,18 @@ fn aad_via_ciborium(bind: &Binding<'_>) -> Vec<u8> {
 fn aad_matches_ciborium_for_requests_and_responses() {
     for bind in [rpc_request(), rest_request()] {
         assert_eq!(external_aad(&bind).expect("aad"), aad_via_ciborium(&bind));
-        let response = common::response_to(&bind, b"request body", 201);
-        assert_eq!(
-            external_aad(&response).expect("aad"),
-            aad_via_ciborium(&response)
+        let signed = common::response_to(&bind, b"request body", 201);
+        let unsigned = common::answering(
+            &bind,
+            request_digest_unsigned(&RequestNonce::from_bytes([7; 16]), b"request body"),
+            201,
         );
+        for response in [signed, unsigned] {
+            assert_eq!(
+                external_aad(&response).expect("aad"),
+                aad_via_ciborium(&response)
+            );
+        }
     }
 }
 

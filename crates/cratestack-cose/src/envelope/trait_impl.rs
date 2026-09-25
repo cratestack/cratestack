@@ -69,8 +69,9 @@ impl CratestackEnvelope for CoseEnvelope {
     /// A server opens a request (replay checks included), a client opens a
     /// response. On success the context records a [`VerifiedSigner`] that
     /// names the key that verified: its thumbprint, its `kid` (the header's,
-    /// which the opener checked is the key's own) and the algorithm. The
-    /// payload returned is a slice of `body`.
+    /// which the opener checked is the key's own, copied so the context does
+    /// not keep the body alive) and the algorithm. The payload returned is a
+    /// slice of `body`.
     fn open<'a>(
         &'a self,
         body: Bytes,
@@ -81,8 +82,8 @@ impl CratestackEnvelope for CoseEnvelope {
         async move {
             let opened = crate::open::open(&self.inner, body, bind, request).await?;
             ctx.record_verified_signer(VerifiedSigner::new(
-                opened.kid,
-                opened.key_thumbprint,
+                Bytes::copy_from_slice(&opened.kid),
+                opened.thumbprint,
                 opened.alg.id(),
             ));
             Ok(opened.payload)

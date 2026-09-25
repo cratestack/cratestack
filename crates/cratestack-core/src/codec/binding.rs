@@ -4,14 +4,16 @@
 use std::borrow::Cow;
 
 use super::path_params::PathParams;
+use super::response_binding::ResponseBinding;
 
 /// Everything that goes into a sealed body's COSE `external_aad` (ADR 0006
 /// §4). It is **never sent**: the router and the client each rebuild it
 /// from context they already hold, so the binding costs 0 bytes on the
 /// wire. A body sealed for one `(audience, method, route, path_params,
 /// query, schema)` fails to open under any other, which defeats
-/// cross-service and cross-endpoint replay; a response is bound to its request's digest and its status,
-/// which defeats response swapping; a signed REST response is bound to the
+/// cross-service and cross-endpoint replay; a response is bound to its
+/// request (the digest and how it was computed) and its status, which
+/// defeats response swapping; a signed REST response is bound to the
 /// resource it answers, not only to the route's shape; and a client built
 /// against another `.cstack` fails closed on `schema_sha`.
 ///
@@ -23,9 +25,9 @@ use super::path_params::PathParams;
 /// should not gain one here. Keeping the byte layout in one crate also
 /// keeps it to one encoder that every client shares (§11).
 ///
-/// A request binding leaves `request_digest` and `status` as `None`. A
-/// response binding sets both. The AAD encoder decides what a mismatch
-/// means; this type does not validate the combination.
+/// A request binding leaves [`response`](Self::response) as `None`; a
+/// response binding sets it. The response half is one `Option`, not one per
+/// field, so a half-built response binding cannot be expressed.
 ///
 /// **Deviation from the ADR 0006 §1 sketch**, which uses `&'a str`,
 /// `&'a [&'a str]` and `&'a [u8; 32]`: the string fields are [`Cow`],
@@ -51,7 +53,11 @@ pub struct Binding<'a> {
     /// B, and a COSE_Mac0 request that service A sent out, reflected back to
     /// A itself (the MAC key is symmetric, so A cannot tell its own message
     /// from its peer's by the key). Both fail once A's inbound audience
-    /// differs from the audience it seals outbound requests for.
+    /// differs from the audience it seals outbound requests for, so a name
+    /// a service uses in both directions (a shared `"internal"`, say)
+    /// quietly gives up the reflection protection. An empty audience binds
+    /// nothing at all, and `cratestack-cose` refuses it as local misuse (a
+    /// `500`), when sealing and when opening.
     ///
     /// Added after cratestack#1004 merged, which made this a breaking
     /// change to a public-field struct. That is acceptable pre-1.0 with no
@@ -92,16 +98,16 @@ pub struct Binding<'a> {
     /// so a verifier cannot be tricked into decoding the payload as
     /// something else.
     pub payload_media_type: Cow<'a, str>,
-    /// Responses only: SHA-256 over the request's COSE bytes when the
-    /// request was signed. When it was not (a bodiless `GET`, say), SHA-256
-    /// over the 16-byte `Cratestack-Nonce` the client sent followed by the
-    /// payload, so that a signed response answers exactly one request and a
-    /// cached one cannot be replayed for the next `GET` of the same URL
-    /// (maintainer decision on cratestack#1005). `cratestack-cose` provides
-    /// both digests.
-    pub request_digest: Option<[u8; 32]>,
-    /// Responses only: the HTTP status code.
-    pub status: Option<u16>,
+    /// Responses only: the request answered and the status (see
+    /// [`ResponseBinding`]). The request digest is SHA-256 over the request's
+    /// COSE bytes when the request was signed; when it was not (a bodiless
+    /// `GET`, say), SHA-256 over the 16-byte `Cratestack-Nonce` the client
+    /// sent followed by the payload, so that a signed response answers
+    /// exactly one request and a cached one cannot be replayed for the next
+    /// `GET` of the same URL (maintainer decision on cratestack#1005). The
+    /// digest's [`RequestKind`](super::RequestKind) records which of the two
+    /// it is. `cratestack-cose` computes both.
+    pub response: Option<ResponseBinding>,
 }
 
 impl Binding<'_> {
@@ -119,8 +125,7 @@ impl Binding<'_> {
             query: self.query.map(|query| Cow::Owned(query.into_owned())),
             schema_sha: self.schema_sha,
             payload_media_type: Cow::Owned(self.payload_media_type.into_owned()),
-            request_digest: self.request_digest,
-            status: self.status,
+            response: self.response,
         }
     }
 }

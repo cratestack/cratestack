@@ -4,9 +4,9 @@
 use std::fmt;
 
 use cratestack_core::CratestackError;
-// One trait for both key types: `ed25519-dalek` 3 and `p256` 0.14 both
-// re-export `signature` 3's `Signer`.
+// `ed25519-dalek` 3 and `p256` 0.14 both re-export `signature` 3's traits.
 use ed25519_dalek::Signer as _;
+use ed25519_dalek::ed25519::signature::MultipartSigner as _;
 use p256::ecdsa::signature::DigestSigner as _;
 use sha2::{Digest, Sha256};
 
@@ -18,13 +18,18 @@ use crate::thumbprint::KID_LEN;
 /// An Ed25519 (`-19`) signer. Ed25519 is deterministic, so the shared
 /// vectors compare its output byte for byte.
 ///
-/// It does not override [`CoseSigner::sign_chunks`]: PureEdDSA hashes the
-/// message twice (for the nonce, then for the challenge), and
-/// `ed25519-dalek`'s safe signing API takes it as one slice, so the envelope
-/// builds the to-be-signed structure contiguously for this signer, which
-/// copies the payload once. `ed25519-dalek` 3 does offer a two-pass
-/// streaming primitive, but only in its `hazmat` module, which is not used
-/// here.
+/// It signs the to-be-signed structure in pieces, like the HMAC and ESP256
+/// signers, without the envelope building it in one buffer (maintainer
+/// decision on cratestack#1005, 2026-09-25). PureEdDSA (RFC 8032) is not a
+/// pre-hash scheme: it hashes the message twice, once for the nonce `r` and
+/// once for the challenge `k`. `ed25519-dalek`'s `MultipartSigner` runs both
+/// passes over the same slices, the computation its `hazmat` module exposes
+/// as `raw_sign_byupdate`, but with the secret expanded the standard way
+/// inside the crate. Reaching it through the safe trait needs no `hazmat`
+/// feature, and so no code here derives an `ExpandedSecretKey` itself,
+/// which is the misuse that module warns can leak the key. The result is
+/// byte for byte what signing the concatenation gives
+/// (`tests/ed25519_streaming.rs` checks every vector and a range of sizes).
 #[derive(Clone)]
 pub struct Ed25519Signer {
     key: ed25519_dalek::SigningKey,
@@ -66,6 +71,16 @@ impl CoseSigner for Ed25519Signer {
 
     async fn sign(&self, to_be_signed: &[u8]) -> Result<Vec<u8>, CratestackError> {
         Ok(self.key.sign(to_be_signed).to_bytes().to_vec())
+    }
+
+    /// Both PureEdDSA passes over the pieces (see the type's docs).
+    fn sign_chunks(&self, to_be_signed: &[&[u8]]) -> Option<Result<Vec<u8>, CratestackError>> {
+        Some(
+            self.key
+                .try_multipart_sign(to_be_signed)
+                .map(|signature| signature.to_bytes().to_vec())
+                .map_err(|_| CratestackError::Internal("Ed25519 signing failed".to_owned())),
+        )
     }
 }
 
@@ -135,8 +150,8 @@ impl CoseSigner for P256Signer {
         Ok(signature.to_bytes().to_vec())
     }
 
-    /// ESP256 signs SHA-256 of the message, so the structure is hashed
-    /// piece by piece. The result is the one [`sign`](Self::sign) gives for
+    /// ESP256 signs SHA-256 of the message, so the structure is hashed in
+    /// pieces. The result is the one [`sign`](Self::sign) gives for
     /// the concatenation (RFC 6979 derives `k` from the same digest).
     fn sign_chunks(&self, to_be_signed: &[&[u8]]) -> Option<Result<Vec<u8>, CratestackError>> {
         Some(

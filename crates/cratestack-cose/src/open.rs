@@ -26,13 +26,14 @@
 use bytes::Bytes;
 use cratestack_core::{Binding, CratestackError};
 
-use crate::aad::{self, Direction};
+use crate::aad;
 use crate::envelope::Inner;
 use crate::error::{Reject, backend, misuse};
 use crate::keys::CoseVerifyKey;
 use crate::opened::Opened;
 use crate::replay;
-use crate::tbs::{Tbs, TbsView};
+use crate::tbs::Tbs;
+use crate::thumbprint::KID_LEN;
 use crate::{header, wire};
 
 pub(crate) async fn open(
@@ -41,8 +42,7 @@ pub(crate) async fn open(
     bind: &Binding<'_>,
     request: bool,
 ) -> Result<Opened, CratestackError> {
-    let direction = aad::direction(bind)?;
-    if request != matches!(direction, Direction::Request) {
+    if request == bind.response.is_some() {
         return Err(misuse(if request {
             "opening a request with a response binding"
         } else {
@@ -63,7 +63,12 @@ pub(crate) async fn open(
         return Err(Reject.into());
     }
     let base = parts.protected.start;
-    let kid = body.slice(base + protected.kid.start..base + protected.kid.end);
+    // A copy, not a slice of `body`: it outlives the call in `Opened` and
+    // in the context's `VerifiedSigner`, and a slice would keep the whole
+    // body alive with it. `header::parse` has checked it is 8 bytes.
+    let kid: [u8; KID_LEN] = protected_bytes[protected.kid.clone()]
+        .try_into()
+        .map_err(|_| Reject)?;
 
     let candidates = inner
         .resolver
@@ -71,20 +76,17 @@ pub(crate) async fn open(
         .await
         .map_err(|error| backend("key resolver", error))?;
     let signature = &body[parts.signature.clone()];
-    let key_thumbprint = {
-        // Scoped so the view (not `Sync`) is gone before the next `await`.
-        let tbs = TbsView::new(Tbs {
-            mode: inner.mode,
-            protected: protected_bytes,
-            external_aad: &external_aad,
-            payload: &body[parts.payload.clone()],
-        });
-        candidates
-            .iter()
-            .find(|key| key.kid()[..] == kid[..] && key.verify(protected.alg, &tbs, signature))
-            .map(CoseVerifyKey::thumbprint)
-            .ok_or(Reject)?
+    let tbs = Tbs {
+        mode: inner.mode,
+        protected: protected_bytes,
+        external_aad: &external_aad,
+        payload: &body[parts.payload.clone()],
     };
+    let thumbprint = candidates
+        .iter()
+        .find(|key| key.kid() == kid && key.verify(protected.alg, &tbs, signature))
+        .map(CoseVerifyKey::thumbprint)
+        .ok_or(Reject)?;
 
     let (iat, cti) = match (protected.claims, nonce_store) {
         (Some((iat, cti)), Some(store)) => {
@@ -109,7 +111,7 @@ pub(crate) async fn open(
         payload: body.slice(parts.payload),
         kid,
         alg: protected.alg,
-        key_thumbprint,
+        thumbprint,
         iat,
         cti,
     })

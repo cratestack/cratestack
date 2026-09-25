@@ -15,7 +15,10 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use cratestack_core::{Binding, CratestackError, InMemoryNonceStore, NonceStore, PathParams};
+use cratestack_core::{
+    Binding, CratestackError, InMemoryNonceStore, NonceStore, PathParams, RequestDigest,
+    RequestKind, ResponseBinding,
+};
 use cratestack_cose::{
     CoseAlg, CoseEnvelope, CoseMode, CoseSigner, CoseVerifierResolver, Ed25519Signer, HmacSigner,
     P256Signer, StaticVerifierResolver,
@@ -117,8 +120,7 @@ pub fn rpc_request() -> Binding<'static> {
         query: None,
         schema_sha: schema_sha(),
         payload_media_type: Cow::Borrowed("application/cbor"),
-        request_digest: None,
-        status: None,
+        response: None,
     }
 }
 
@@ -134,16 +136,42 @@ pub fn rest_request() -> Binding<'static> {
     }
 }
 
-/// The response binding for `request`, answering `request_body`.
+/// The response binding for `request`, answering the signed request
+/// `request_body`.
 pub fn response_to(
     request: &Binding<'static>,
     request_body: &[u8],
     status: u16,
 ) -> Binding<'static> {
+    answering(
+        request,
+        cratestack_cose::request_digest(request_body),
+        status,
+    )
+}
+
+/// The response binding for `request`, answering the request `digest`
+/// names (signed or unsigned).
+pub fn answering(
+    request: &Binding<'static>,
+    digest: RequestDigest,
+    status: u16,
+) -> Binding<'static> {
     Binding {
-        request_digest: Some(cratestack_cose::request_digest(request_body)),
-        status: Some(status),
+        response: Some(ResponseBinding {
+            request: digest,
+            status,
+        }),
         ..request.clone()
+    }
+}
+
+/// The `RequestKind` a vector file's `request_kind` number names.
+pub fn request_kind(code: u64) -> RequestKind {
+    match code {
+        0 => RequestKind::Unsigned,
+        1 => RequestKind::Signed,
+        other => panic!("unknown request_kind {other}"),
     }
 }
 
@@ -240,9 +268,12 @@ pub fn binding_from_json(json: &serde_json::Value) -> Binding<'static> {
             .map(|query| Cow::Owned(query.to_owned())),
         schema_sha: digest(&json["schema_sha"]).expect("schema_sha"),
         payload_media_type: text("payload_type"),
-        request_digest: digest(&json["request_digest"]),
-        status: json["status"]
-            .as_u64()
-            .map(|status| u16::try_from(status).expect("status")),
+        response: json["status"].as_u64().map(|status| ResponseBinding {
+            request: RequestDigest {
+                kind: request_kind(json["request_kind"].as_u64().expect("request_kind")),
+                digest: digest(&json["request_digest"]).expect("request_digest"),
+            },
+            status: u16::try_from(status).expect("status"),
+        }),
     }
 }

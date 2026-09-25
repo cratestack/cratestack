@@ -301,7 +301,7 @@ async fn kid_collision_tries_every_candidate() {
         .open_request(by_a, &rest_request())
         .await
         .expect("A verifies");
-    assert_eq!(opened.key_thumbprint, a_key.thumbprint());
+    assert_eq!(opened.thumbprint, a_key.thumbprint());
 
     // B's message where only A is known: the shared kid is not enough.
     let wrong_only = server(vec![a_key])

@@ -7,7 +7,7 @@ mod common;
 use std::borrow::Cow;
 
 use common::{CTI_16, IAT, rest_request};
-use cratestack_core::{Binding, CratestackError};
+use cratestack_core::{Binding, CratestackError, RequestKind};
 use cratestack_cose::{
     CoseAlg, CoseEnvelope, CoseMode, NONCE_HEADER, NONCE_HEADER_VALUE_LEN, RequestNonce,
     UNAUTHENTICATED, request_digest_unsigned,
@@ -23,11 +23,7 @@ fn get() -> Binding<'static> {
 }
 
 fn answering(nonce: &RequestNonce) -> Binding<'static> {
-    Binding {
-        request_digest: Some(request_digest_unsigned(nonce, b"")),
-        status: Some(200),
-        ..get()
-    }
+    common::answering(&get(), request_digest_unsigned(nonce, b""), 200)
 }
 
 /// Two `GET`s of one URL, each with its own nonce: the signed answer to
@@ -65,14 +61,20 @@ fn the_unsigned_digest_is_sha256_of_nonce_then_payload() {
     expected.update(b"0123456789abcdef");
     expected.update(b"{\"amount\":1}");
     let expected: [u8; 32] = expected.finalize().into();
-    assert_eq!(request_digest_unsigned(&nonce, b"{\"amount\":1}"), expected);
+    let digest = request_digest_unsigned(&nonce, b"{\"amount\":1}");
+    assert_eq!(digest.digest, expected);
+    assert_eq!(digest.kind, RequestKind::Unsigned);
     // Empty payload (a GET): the nonce alone.
     let empty: [u8; 32] = Sha256::digest(b"0123456789abcdef").into();
-    assert_eq!(request_digest_unsigned(&nonce, b""), empty);
+    assert_eq!(request_digest_unsigned(&nonce, b"").digest, empty);
     // It is not the signed-request digest of the same bytes.
     assert_ne!(
-        request_digest_unsigned(&nonce, b""),
-        cratestack_cose::request_digest(b"")
+        request_digest_unsigned(&nonce, b"").digest,
+        cratestack_cose::request_digest(b"").digest
+    );
+    assert_eq!(
+        cratestack_cose::request_digest(b"").kind,
+        RequestKind::Signed
     );
 }
 

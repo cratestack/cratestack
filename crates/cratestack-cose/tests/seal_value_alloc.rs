@@ -1,6 +1,7 @@
 //! How many bytes `seal_value` allocates, against the payload's size
-//! (cratestack#1005: encode in place, and hash incrementally where the
-//! algorithm allows).
+//! (cratestack#1005: encode in place, and compute every in-process
+//! signature over the to-be-signed structure in pieces, Ed25519 included
+//! since the 2026-09-25 decision).
 //!
 //! A separate test binary: `allocation-counter` installs a counting
 //! `#[global_allocator]`, and `measure` counts only the calling thread.
@@ -9,9 +10,17 @@
 //! thread either. `realloc` is counted as a new allocation of the new size.
 //!
 //! The payload is 256 KiB, so anything payload-sized stands out against
-//! the few hundred bytes of headers, AAD and signature. The codec reserves
-//! the payload's room up front (see `the_payload_is_encoded_where_it_is_sent`
-//! in `seal_value.rs` for why), so the output buffer is allocated once.
+//! the few hundred bytes of headers, AAD and signature.
+//!
+//! **This measures the best case**: the test codec reserves the payload's
+//! room before it writes (see `the_payload_is_encoded_where_it_is_sent` in
+//! `seal_value.rs` for why), so the output buffer is allocated once and
+//! never grows. A codec that does not reserve, like `CborCodec` itself,
+//! grows the buffer as it writes, which the allocator may do by moving it,
+//! the same growth its own `Vec` would go through; `realloc` then counts
+//! each new size. What this pins is that the envelope adds no
+//! payload-sized buffer of its own: no second copy for the codec, and no
+//! contiguous to-be-signed copy for any algorithm.
 
 mod common;
 #[path = "common/in_place.rs"]
@@ -75,12 +84,14 @@ fn the_counter_is_live_in_this_binary() {
     assert!(info.count_total >= 1, "counting allocator not installed");
 }
 
-/// HMAC and ESP256: one payload-sized allocation, the message itself. No
-/// buffer of the codec's own, and no contiguous to-be-signed copy.
+/// Every algorithm: one payload-sized allocation, the message itself. No
+/// buffer of the codec's own, and no contiguous to-be-signed copy, Ed25519
+/// included (it allocated the payload twice before its signing was
+/// streamed).
 #[test]
-fn hmac_and_esp256_allocate_the_payload_once() {
+fn every_algorithm_allocates_the_payload_once() {
     let payload = u64::try_from(PAYLOAD).expect("fits");
-    for alg in [CoseAlg::Hmac256_64, CoseAlg::Hmac256_256, CoseAlg::Esp256] {
+    for &alg in CoseAlg::ALL {
         let (info, sealed) = measure_seal_value(alg);
         assert!(sealed.len() > PAYLOAD);
         assert!(
@@ -95,16 +106,25 @@ fn hmac_and_esp256_allocate_the_payload_once() {
     }
 }
 
-/// Ed25519 (PureEdDSA): the message, plus one contiguous copy of the
-/// to-be-signed structure, which the `ed25519-dalek` signing API needs.
-/// This pins that cost, so it neither grows unnoticed nor is claimed away.
+/// A server opening what it was sent allocates nothing payload-sized
+/// either: the payload is a slice of the body, and verification (Ed25519
+/// included) reads the to-be-signed structure in pieces.
 #[test]
-fn ed25519_allocates_the_payload_twice() {
+fn opening_allocates_nothing_payload_sized() {
     let payload = u64::try_from(PAYLOAD).expect("fits");
-    let (info, _) = measure_seal_value(CoseAlg::Ed25519);
-    assert!(
-        (2 * payload..2 * payload + SLACK).contains(&info.bytes_total),
-        "Ed25519: {} bytes for a {PAYLOAD}-byte payload: {info:?}",
-        info.bytes_total
-    );
+    for &alg in CoseAlg::ALL {
+        let (_, sealed) = measure_seal_value(alg);
+        let server = common::server(alg, IAT);
+        let bind = rpc_request();
+        let mut opened = None;
+        let info = measure(|| {
+            opened = Some(poll_once(server.open_request(sealed.clone(), &bind)));
+        });
+        opened.expect("ran").expect("opens");
+        assert!(
+            info.bytes_total < SLACK,
+            "{alg:?}: {} bytes allocated opening a {payload}-byte payload: {info:?}",
+            info.bytes_total
+        );
+    }
 }

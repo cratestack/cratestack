@@ -15,6 +15,7 @@ use super::hmac::{HmacSecret, HmacSigner, is_mac};
 use super::traits::CoseVerifierResolver;
 use super::verify_key::CoseVerifyKey;
 use crate::alg::CoseAlg;
+use crate::thumbprint::KID_LEN;
 
 /// A fixed set of HMAC keys, loaded from a [`KeyProvider`] by string id.
 ///
@@ -90,7 +91,7 @@ impl KeyProviderMacKeys {
 
     /// The configured key ids with the `kid` each one travels as, for logs
     /// and for mapping a verified message back to its configured name.
-    pub fn kids(&self) -> impl Iterator<Item = (&str, [u8; 8])> {
+    pub fn kids(&self) -> impl Iterator<Item = (&str, [u8; KID_LEN])> {
         self.entries
             .iter()
             .map(|entry| (entry.name.as_str(), entry.key.kid()))

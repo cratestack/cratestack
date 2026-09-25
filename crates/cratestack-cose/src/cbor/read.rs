@@ -6,8 +6,8 @@
 //! (additional information 31) and the reserved values 28-30 are rejected,
 //! and so is a head that could have been shorter (`0x18 0x05` for 5). Two
 //! encodings of one message would be two byte strings that verify the same
-//! way, and `request_digest` hashes the bytes (§4), so one message has
-//! exactly one encoding.
+//! way, and `request_digest` hashes the bytes (§4); refusing the longer
+//! heads means no third party can re-spell a signed message.
 //!
 //! Every length is checked against the remaining input before it is used,
 //! so a hostile head (`0x5b` with a 2⁶⁴-1 length) is a clean [`Reject`],

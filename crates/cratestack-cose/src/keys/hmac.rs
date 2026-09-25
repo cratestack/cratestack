@@ -153,8 +153,8 @@ impl CoseSigner for HmacSigner {
         Ok(hmac_tag(&self.secret, self.alg, &[to_be_signed]))
     }
 
-    /// In process, so the MAC is computed over the structure piece by
-    /// piece, without the envelope building it contiguously.
+    /// In process, so the MAC is computed over the structure's pieces,
+    /// without the envelope building it contiguously.
     fn sign_chunks(&self, to_be_signed: &[&[u8]]) -> Option<Result<Vec<u8>, CratestackError>> {
         Some(Ok(hmac_tag(&self.secret, self.alg, to_be_signed)))
     }

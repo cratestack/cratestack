@@ -37,17 +37,18 @@ pub trait CoseSigner: Send + Sync + 'static {
     /// built in one buffer, or `None` to have the envelope build it and
     /// call [`sign`](Self::sign) instead (the default).
     ///
-    /// This is how the in-process HMAC and ESP256 signers keep the payload
-    /// in the one place `seal_value` encoded it (maintainer decision on
-    /// cratestack#1005): both hash their input, so they can be fed the
-    /// structure's pieces, which lie in the output buffer, on the stack and
-    /// in the header. The design has to stay dyn-compatible (signers are
-    /// `Arc<dyn CoseSigner>`), which rules out a generic "feed this hasher"
-    /// method; a slice of slices is the dyn-compatible form of a stream of
-    /// bytes. It is a provided method, so adding it broke no signer. It is
-    /// synchronous because it exists for in-process signers only: a remote
-    /// signer needs the bytes (or a digest) on the wire and keeps `None`.
-    /// Ed25519 keeps `None` too (see [`Ed25519Signer`](crate::Ed25519Signer)).
+    /// This is how the in-process signers (HMAC, ESP256 and Ed25519) keep
+    /// the payload in the one place `seal_value` encoded it (maintainer
+    /// decisions on cratestack#1005): each hashes its input (Ed25519 twice),
+    /// so they can be fed the structure's pieces, which lie in the output
+    /// buffer, on the stack and in the header. The design has to stay
+    /// dyn-compatible (signers are `Arc<dyn CoseSigner>`), which rules out
+    /// a generic "feed this hasher" method; a slice of slices is the
+    /// dyn-compatible form of a stream of bytes. It is a provided method,
+    /// so adding it broke no signer. It is synchronous because it exists
+    /// for in-process signers only: a remote signer needs the bytes (or a
+    /// digest) on the wire and keeps `None`, so a KMS or HSM signer is
+    /// handed the contiguous structure.
     ///
     /// An override must return exactly what `sign` returns for the
     /// concatenated bytes; the shared vectors check that for the shipped

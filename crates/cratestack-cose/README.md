@@ -25,7 +25,7 @@ let server = CoseEnvelope::server(CoseMode::Sign1, signer, resolver, nonce_store
 let payload = server.open(body, &binding, &mut ctx).await?;
 
 // Or typed, before any context exists (the axum layer, cratestack#1006):
-let opened = server.open_request(body, &binding).await?; // payload, kid, alg, key_thumbprint, iat, cti
+let opened = server.open_request(body, &binding).await?; // payload, kid, alg, thumbprint, iat, cti
 
 // Sealing a value encodes it straight into the message buffer:
 let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).await?;
@@ -38,11 +38,15 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   only), unprotected always empty. The `kid` is the first 8 bytes of the key's RFC 9679
   thumbprint (`cratestack_cose::thumbprint`), and a key verifies only under its own `kid`.
 - **AAD:** `[1, audience, method, route, path_params, query / null, schema_sha,
-  payload_type, ? request_digest, ? status]`; see `external_aad`. `audience` is the
-  receiving service's configured id. A response to a signed request is bound to
-  `request_digest` (SHA-256 of the request's COSE bytes); a response to an unsigned one to
-  `request_digest_unsigned` (SHA-256 of the client's `Cratestack-Nonce` and the payload;
-  see `RequestNonce`). Sending and reading that header is wired in cratestack#1006/#1007.
+  payload_type, ? request_kind, ? request_digest, ? status]`; see `external_aad`.
+  `audience` is the receiving service's configured id. It must not be empty (a `500`), and a
+  service's inbound audience must differ from the audience it seals its outbound requests
+  for: a name shared by both directions, such as `internal`, gives up reflection
+  protection. A response to a signed request is bound to `request_digest` (kind `1`,
+  SHA-256 of the request's COSE bytes); a response to an unsigned one to
+  `request_digest_unsigned` (kind `0`, SHA-256 of the client's `Cratestack-Nonce` and the
+  payload; see `RequestNonce`). Both return the kind with the digest. Sending and reading
+  that header is wired in cratestack#1006/#1007.
 - **Errors:** every failed check is the same `401`; a failing key resolver, nonce store or
   signer, and local misuse, is a `500`.
 - **Keys:** `CoseSigner` signs without exporting the key (KMS, HSM); `CoseVerifierResolver`
@@ -54,8 +58,13 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
 ## Shared vectors
 
 `tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture, 33 unary cases
-and 10 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
+and 20 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
 themselves against. Each case carries its AAD, protected header and to-be-signed bytes.
 The Ed25519 and HMAC cases are byte-exact (`deterministic: true`); ESP256 cases were made
 with RFC 6979 and low-`s`, and another implementation should verify them rather than
-reproduce them. The keys in them are published test keys; never use them for anything else.
+reproduce them. **An ESP256 sender MUST emit low-`s`**: a verifier refuses a high `s`
+(`neg-esp256-high-s`), so an implementation whose signer may return either (WebCrypto, a
+KMS) normalises before sending. Every positive case names the key that verifies it
+(`key`, an entry of `keys.json`, each of which carries its algorithm) and, for requests,
+the verifier's clock and skew. The keys in them are published test keys; never use them
+for anything else.

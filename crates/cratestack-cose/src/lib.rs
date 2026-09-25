@@ -18,10 +18,13 @@
 //!   HSM signs without exporting the key, and a resolver may return several
 //!   candidates for one `kid`.
 //! - [`external_aad`] defines the binding (§4), which includes the
-//!   receiving service's `audience`; [`request_digest`] and
-//!   [`request_digest_unsigned`] bind a response to its request, the latter
-//!   through the client's [`RequestNonce`] (`Cratestack-Nonce`);
-//!   [`thumbprint`] the RFC 9679 key ids (§3).
+//!   receiving service's `audience` (never empty, and distinct from the
+//!   audience the service seals its own outbound requests for);
+//!   [`request_digest`] and [`request_digest_unsigned`] bind a response to
+//!   its request, the latter through the client's [`RequestNonce`]
+//!   (`Cratestack-Nonce`), and each returns its digest together with the
+//!   `RequestKind` the response AAD binds; [`thumbprint`] the RFC 9679 key
+//!   ids (§3).
 //! - [`KeyProviderMacKeys`] turns `cratestack_core::KeyProvider` secrets
 //!   into Mac0 keys.
 //!
@@ -48,12 +51,15 @@
 //!   (`CratestackEnvelope::seal_value`, [`CoseEnvelope::seal_request_value`]
 //!   and [`CoseEnvelope::seal_response_value`]). `seal` receives bytes that
 //!   are already encoded and copies them into the message once.
-//! - The signature over the to-be-signed structure is computed
-//!   incrementally for HMAC and ESP256, with no copy of the payload, but
-//!   Ed25519 (PureEdDSA) is signed and verified over one contiguous copy
-//!   of the structure (see [`Ed25519Signer`]).
+//! - For in-process signers (HMAC, ESP256 and Ed25519) the signature is
+//!   computed over the to-be-signed structure in pieces, with no copy of
+//!   the payload; Ed25519 runs both PureEdDSA passes over the pieces (see
+//!   [`Ed25519Signer`]). A KMS or HSM signer keeps the default
+//!   [`CoseSigner::sign_chunks`] and is handed the structure in one buffer.
+//!   Verification never builds it contiguously.
 //! - ESP256 signatures are low-`s` only: the sealer normalises them, the
-//!   opener rejects a high `s`, so every message has one encoding.
+//!   opener rejects a high `s`, so no third party can re-spell a signed
+//!   message.
 
 mod aad;
 mod alg;

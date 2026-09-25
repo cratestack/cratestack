@@ -25,7 +25,7 @@ use builder::{Clock, CtiSource, NonceSource};
 /// each handles depends on the side: a server opens requests and seals
 /// responses, a client seals requests and opens responses. The role is
 /// fixed at construction rather than inferred from the [`Binding`] (a
-/// response binding carries `request_digest` and `status`), so that a
+/// response binding carries a `ResponseBinding`), so that a
 /// router that builds the wrong binding gets a `500` instead of silently
 /// skipping the replay checks a request needs. The typed methods
 /// ([`CoseEnvelope::open_request`] and the rest) name the direction
@@ -46,9 +46,10 @@ pub enum CoseRole {
 /// **Errors**, for every method (§10): a failed verification is the coarse
 /// `CratestackError::Unauthorized`; a failing backend (key resolver, nonce
 /// store, signer) is `CratestackError::Internal`, a `500`; and **local
-/// misuse** (a binding whose shape does not fit the call, a request opened
-/// without a nonce store, a clock or `cti` source returning nonsense, a
-/// signer returning a signature of the wrong length) is also
+/// misuse** (a binding whose shape does not fit the call, an empty
+/// `audience`, a request opened without a nonce store, a clock or `cti`
+/// source returning nonsense, a signer returning a signature of the wrong
+/// length, a codec whose `encode_into` does not append) is also
 /// `CratestackError::Internal`. Misuse depends only on local state, never
 /// on the received bytes, so a `500` for it reveals nothing about a
 /// message. A codec error from a `*_value` method is returned as the codec
@@ -102,8 +103,8 @@ impl CoseEnvelope {
         (self.inner.nonce)().map(RequestNonce::from_bytes)
     }
 
-    /// Seal an encoded request payload for `bind` (a request binding: no
-    /// `request_digest`, no `status`), with `iat` from the clock and a
+    /// Seal an encoded request payload for `bind` (a request binding:
+    /// `response` is `None`), with `iat` from the clock and a
     /// fresh `cti`. The payload is copied into the message once; see
     /// [`seal_request_value`](Self::seal_request_value) to avoid that.
     pub async fn seal_request(
@@ -119,8 +120,8 @@ impl CoseEnvelope {
     }
 
     /// Seal an encoded response payload for `bind` (a response binding:
-    /// both `request_digest` and `status`). Responses carry `alg` and `kid`
-    /// only.
+    /// `response` names the request answered, its kind and the status).
+    /// Responses carry `alg` and `kid` only.
     pub async fn seal_response(
         &self,
         payload: &[u8],

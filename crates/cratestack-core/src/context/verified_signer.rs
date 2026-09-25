@@ -44,6 +44,10 @@ impl VerifiedSigner {
     /// `kid` as it appeared in the protected header, `thumbprint` the full
     /// RFC 9679 thumbprint of the key that verified, `alg` its IANA COSE
     /// algorithm value.
+    ///
+    /// Pass the `kid` as an owned copy, not as a `Bytes` slice of the
+    /// received body: the signer lives as long as the context, and a slice
+    /// would keep the whole body (payload included) alive with it.
     pub fn new(kid: impl Into<Bytes>, thumbprint: [u8; 32], alg: i64) -> Self {
         Self {
             kid: kid.into(),

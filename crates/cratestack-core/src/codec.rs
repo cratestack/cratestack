@@ -11,6 +11,7 @@ mod binding;
 mod envelope;
 mod no_envelope;
 mod path_params;
+mod response_binding;
 mod stream;
 
 #[cfg(test)]
@@ -24,6 +25,7 @@ pub use binding::Binding;
 pub use envelope::{BodyShape, CratestackEnvelope};
 pub use no_envelope::NoEnvelope;
 pub use path_params::PathParams;
+pub use response_binding::{RequestDigest, RequestKind, ResponseBinding};
 pub use stream::{OpenedFrame, SealedItem, StreamEnd, StreamOpener, StreamSealer};
 
 pub trait CratestackCodec: Clone + Send + Sync + 'static {

@@ -43,8 +43,7 @@ fn binding<'a>(
         query: query.map(Cow::Borrowed),
         schema_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
-        request_digest: None,
-        status: None,
+        response: None,
     }
 }
 

@@ -1,5 +1,5 @@
-//! One ESP256 message, one encoding (security review of cratestack#1005,
-//! fix 3).
+//! No third party can re-spell an ESP256 message (security review of
+//! cratestack#1005, fix 3).
 //!
 //! ECDSA's `(r, s)` and `(r, n - s)` both verify. Before the fix the
 //! opener accepted both, so a hop could rewrite any ESP256 message into a

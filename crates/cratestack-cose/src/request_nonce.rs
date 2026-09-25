@@ -15,7 +15,11 @@
 //! request_digest = SHA-256(nonce (16 bytes) ‖ payload)   ; payload empty for a GET
 //! ```
 //!
-//! A signed request keeps `request_digest = SHA-256(COSE bytes)`.
+//! A signed request keeps `request_digest = SHA-256(COSE bytes)`. The two
+//! forms are not domain-separated (a signed request's bytes `C` hash like
+//! an unsigned request with nonce `C[..16]` and payload `C[16..]`), so the
+//! response AAD also binds which one it is, as `request_kind` (2026-09-25).
+//! Both helpers return a `RequestDigest` that carries its kind.
 //!
 //! This module provides the pieces only. Sending the header (the Rust
 //! client, cratestack#1007) and reading it before building the response
@@ -25,7 +29,7 @@ use std::fmt;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use cratestack_core::CratestackError;
+use cratestack_core::{CratestackError, RequestDigest, RequestKind};
 use sha2::{Digest, Sha256};
 
 /// The request header that carries the nonce.
@@ -111,13 +115,17 @@ impl fmt::Debug for RequestNonce {
     }
 }
 
-/// The `request_digest` of a response to an **unsigned** request:
-/// SHA-256 over the 16 nonce bytes followed by the request payload exactly
-/// as received (empty for a bodiless request). The nonce has a fixed
-/// length, so the split between the two is unambiguous.
-pub fn request_digest_unsigned(nonce: &RequestNonce, payload: &[u8]) -> [u8; 32] {
+/// The request digest of a response to an **unsigned** request: SHA-256
+/// over the 16 nonce bytes followed by the request payload exactly as
+/// received (empty for a bodiless request), marked
+/// [`RequestKind::Unsigned`]. The nonce has a fixed length, so the split
+/// between the two is unambiguous.
+pub fn request_digest_unsigned(nonce: &RequestNonce, payload: &[u8]) -> RequestDigest {
     let mut digest = Sha256::new();
     digest.update(nonce.0);
     digest.update(payload);
-    digest.finalize().into()
+    RequestDigest {
+        kind: RequestKind::Unsigned,
+        digest: digest.finalize().into(),
+    }
 }

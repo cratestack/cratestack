@@ -30,15 +30,22 @@
 //! encoded) one that copies them in, the one unavoidable copy for a caller
 //! that encoded elsewhere. Both therefore produce the same bytes.
 //!
+//! The codec runs on a buffer the sealer owns, so the sealer checks the
+//! one thing `CratestackCodec::encode_into` promises that it relies on:
+//! that the codec appended and left the reserved room alone. A codec that
+//! replaced or truncated the buffer is refused as misuse (a `500`) rather
+//! than allowed to make the length arithmetic below underflow.
+//!
 //! The signature is computed over the to-be-signed structure without
-//! building it (see `tbs.rs`) when the signer can take it in pieces (the
-//! in-process HMAC and ESP256 signers); otherwise the structure is built
+//! building it (see `tbs.rs`) when the signer can take it in pieces (every
+//! in-process signer: HMAC, ESP256 and Ed25519); otherwise (a KMS or HSM
+//! signer, which keeps the default `sign_chunks`) the structure is built
 //! once and handed to the signer.
 
 use bytes::{Buf, Bytes};
 use cratestack_core::{Binding, CratestackError};
 
-use crate::aad::{self, Direction};
+use crate::aad;
 use crate::alg::CoseAlg;
 use crate::cbor::write::{self, EMPTY_MAP, Head, MAJOR_ARRAY, MAJOR_BSTR, MAJOR_TAG, MAX_HEAD_LEN};
 use crate::envelope::Inner;
@@ -60,14 +67,14 @@ pub(crate) async fn seal<W>(
 where
     W: FnOnce(&mut Vec<u8>) -> Result<(), CratestackError>,
 {
-    let direction = aad::direction(bind)?;
-    if request != matches!(direction, Direction::Request) {
+    if request == bind.response.is_some() {
         return Err(misuse(if request {
             "sealing a request with a response binding"
         } else {
             "sealing a response with a request binding"
         }));
     }
+    let external_aad = aad::external_aad(bind)?;
     let signer = inner.signer.as_ref();
     let alg = signer.alg();
     let cti;
@@ -83,7 +90,6 @@ where
         None
     };
     let protected = header::encode(alg, signer.kid(), claims);
-    let external_aad = aad::external_aad(bind)?;
 
     let tag = Head::new(MAJOR_TAG, inner.mode.tag());
     let array = Head::new(MAJOR_ARRAY, 4);
@@ -98,6 +104,11 @@ where
         Vec::with_capacity(payload_at + payload_hint + write::bstr_len(alg.signature_len()));
     out.resize(payload_at, 0);
     write_payload(&mut out)?;
+    if out.len() < payload_at || out[..payload_at].iter().any(|&byte| byte != 0) {
+        return Err(misuse(
+            "the codec's encode_into replaced or rewrote the buffer instead of appending to it",
+        ));
+    }
 
     let payload_head = Head::new(MAJOR_BSTR, write::len_arg(out.len() - payload_at));
     let start = MAX_HEAD_LEN - payload_head.as_slice().len();
@@ -140,7 +151,8 @@ where
 /// Refuse a signature of the wrong length (Q5: sizes come from `alg`), and
 /// normalise ESP256 to low-`s`, whichever signer produced it: a KMS or
 /// WebCrypto signer may return either, and the opener accepts only low-`s`
-/// (one message, one encoding; see `CoseVerifyKey::verify`).
+/// (so no third party can re-spell a signed message; see
+/// `CoseVerifyKey::verify`).
 fn checked_signature(alg: CoseAlg, signature: Vec<u8>) -> Result<Vec<u8>, CratestackError> {
     if signature.len() != alg.signature_len() {
         return Err(misuse(

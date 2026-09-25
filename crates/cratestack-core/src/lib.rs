@@ -54,7 +54,7 @@ pub use batch::{
 };
 pub use codec::{
     Binding, BodyShape, CratestackCodec, CratestackEnvelope, NoEnvelope, OpenedFrame, PathParams,
-    SealedItem, StreamEnd, StreamOpener, StreamSealer,
+    RequestDigest, RequestKind, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
 };
 pub use context::{
     AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
