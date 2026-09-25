@@ -845,7 +845,7 @@ numbered **0001–0005**, in the sibling documentation repository
 | # | File | Status |
 |---|---|---|
 | 0001 | `core-architecture-adr.md` | Proposed (updated 0.3.0, + RPC addendum) |
-| 0002 | `mcp-operator-adr.md` | Proposed (revised 2026-09-24, cratestack-docs#96; all open questions decided) |
+| 0002 | `mcp-operator-adr.md` | Accepted (2026-09-25, cratestack-docs#104; revised 2026-09-24, cratestack-docs#96) |
 | 0003 | `views-adr.md` | Accepted |
 | 0004 | `schema-diff-adr.md` | Proposed |
 | 0005 | `rpc-transport-adr.md` | Accepted |

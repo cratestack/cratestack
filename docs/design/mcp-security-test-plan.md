@@ -66,10 +66,9 @@ Streamable HTTP unless the case name says otherwise.
 ## Release blockers still open
 
 1. A pre-existing security issue is tracked privately (security advisory); it is a release blocker on #1033.
-2. **ADR 0002 is still Proposed.** Whether it moves to Accepted is the maintainer's decision
-   (cratestack#1041's acceptance criteria). This plan is part of the evidence, not the decision.
-3. **The companion docs page and `cratestack-skills` coverage** are separate deliverables of #1041,
-   not in this repository.
+
+Resolved since this plan was written: ADR 0002 was accepted on 2026-09-25 (cratestack-docs#104),
+and the companion docs page and skill shipped as cratestack-docs#102 and cratestack-skills#4.
 
 ## Gaps that are not blockers, for the maintainer
 
