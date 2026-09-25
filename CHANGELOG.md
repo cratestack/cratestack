@@ -18,10 +18,11 @@
   every `--workspace` build.
 - **`just mcp-conformance`** drives the example with a real third-party client:
   `@modelcontextprotocol/inspector` 2.8.0, the official Inspector CLI, built on
-  `@modelcontextprotocol/client` 2.0.0. It is pinned in the recipe and installed
-  with `--ignore-scripts` into a throwaway directory. Over both transports, the
-  client negotiates protocol **2026-07-28** through `server/discover`. The run
-  covers:
+  `@modelcontextprotocol/client` 2.0.0. The client and its whole dependency
+  tree are pinned by a committed `package-lock.json`, with an integrity hash
+  for every package, and installed with `npm ci --ignore-scripts` into a
+  throwaway directory. Over both transports, the client negotiates protocol
+  **2026-07-28** through `server/discover`. The run covers:
   - `tools/list`;
   - a successful `tools/call`;
   - a policy-denied `tools/call` (an `isError` result carrying REST's

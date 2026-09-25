@@ -351,25 +351,36 @@ test-ci-db-mcp *args='':
 # resources/list and resources/read, and the refusals (no token, a token for
 # another audience, a legacy `initialize` client).
 #
-# The client is pinned to one exact version and installed with
-# `--ignore-scripts` into a throwaway directory: nothing is installed into
-# the repository or globally, and no package install script runs.
-# Only `@modelcontextprotocol/*` is named; its own dependencies come from
-# the public registry as that package declares them. Bump
-# `inspector_version` deliberately and re-read the run's output.
+# The client and its whole dependency tree are pinned by
+# `examples/mcp-operator/conformance/package-lock.json` (committed, with an
+# `integrity` hash for every package) and installed with `npm ci`. That
+# refuses a lockfile that disagrees with `package.json`, and a tarball whose
+# hash differs. With `--ignore-scripts`, no package's install script runs.
+# The two files are copied into a throwaway directory and installed there,
+# so nothing lands in the repository, in any workspace, or globally. Bump
+# the client deliberately: edit the version in that `package.json`, run
+# `npm install --package-lock-only --ignore-scripts` next to it, and re-read
+# the lockfile diff and the run's output.
+#
+# Nothing here reports anywhere. The Inspector CLI has no telemetry (checked
+# in 2.8.0's bundle). npm's audit, funding and update-notifier requests are
+# off. `conformance/harness.mjs` keeps the client's secret store in memory,
+# away from the OS keychain.
 #
 # Postgres: `MCP_CONFORMANCE_DATABASE_URL` if set (an empty database the
 # example may create `posts` in), otherwise a throwaway `postgres:18-alpine`
 # container on a random loopback port, removed on exit even on failure.
-# Needs `node` (>= 22.19, the client's engine floor), `npm`, and `docker`
-# unless a URL is given. On rootless Docker nothing extra is needed: this
-# uses the `docker` CLI, which reads `docker context`.
-mcp-conformance inspector_version='2.8.0':
+# Needs `node` (>= 22.19, the client's engine floor, enforced at install by
+# `--engine-strict`), `npm`, and `docker` unless a URL is given. On rootless
+# Docker nothing extra is needed: this uses the `docker` CLI, which reads
+# `docker context`.
+mcp-conformance:
 	#!/usr/bin/env bash
 	set -euo pipefail
 	for tool in node npm cargo; do
 	  command -v "$tool" >/dev/null || { echo "mcp-conformance: $tool not found on PATH" >&2; exit 1; }
 	done
+	conformance=examples/mcp-operator/conformance
 	work="$(mktemp -d)"
 	container=""
 	cleanup() {
@@ -377,9 +388,11 @@ mcp-conformance inspector_version='2.8.0':
 	  rm -rf "$work"
 	}
 	trap cleanup EXIT
-	echo "installing @modelcontextprotocol/inspector@{{inspector_version}}"
-	npm install --prefix "$work/inspector" --no-save --no-audit --no-fund --ignore-scripts --loglevel=error \
-	  "@modelcontextprotocol/inspector@{{inspector_version}}"
+	mkdir -p "$work/inspector" "$work/home"
+	cp "$conformance/package.json" "$conformance/package-lock.json" "$work/inspector/"
+	echo "installing the MCP Inspector from $conformance/package-lock.json"
+	npm ci --prefix "$work/inspector" --ignore-scripts --engine-strict \
+	  --no-audit --no-fund --no-update-notifier --loglevel=error
 	cargo build --locked --manifest-path examples/mcp-operator/Cargo.toml
 	if [ -n "${MCP_CONFORMANCE_DATABASE_URL:-}" ]; then
 	  database_url="$MCP_CONFORMANCE_DATABASE_URL"
@@ -398,13 +411,11 @@ mcp-conformance inspector_version='2.8.0':
 	  port="$(docker port "$container" 5432/tcp | head -n1 | sed 's/.*://')"
 	  database_url="postgres://blog:blog@127.0.0.1:${port}/blog"
 	fi
-	mkdir -p "$work/home"
 	DATABASE_URL="$database_url" \
 	MCP_INSPECTOR_DIR="$work/inspector" \
 	MCP_INSPECTOR_HOME="$work/home" \
-	MCP_INSPECTOR_VERSION="{{inspector_version}}" \
 	MCP_EXAMPLE_BIN="$PWD/examples/mcp-operator/target/debug/mcp-operator-example" \
-	  node examples/mcp-operator/conformance/run.mjs
+	  node "$conformance/run.mjs"
 
 # Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
 # persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage

@@ -1,0 +1,11 @@
+{
+  "name": "mcp-operator-conformance",
+  "private": true,
+  "description": "The third-party MCP client `just mcp-conformance` drives the example with (cratestack#1041). Installed only by that recipe, with `npm ci --ignore-scripts` from the committed package-lock.json into a throwaway directory. Part of no workspace. The version is exact: bump it deliberately, then run `npm install --package-lock-only --ignore-scripts` here.",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/inspector": "2.8.0"
+  }
+}

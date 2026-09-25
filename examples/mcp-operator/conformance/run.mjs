@@ -3,9 +3,9 @@
 // third-party client built on the official TypeScript SDK, not on `rmcp`)
 // drives `mcp-operator-example` over stdio and over Streamable HTTP.
 //
-// Run it through `just mcp-conformance`, which installs the pinned client,
-// builds the example and provides Postgres. This file only drives the client
-// and checks what it reports; it has no dependencies of its own.
+// Run it through `just mcp-conformance`, which installs the client from
+// `package-lock.json`, builds the example and provides Postgres. This file
+// only drives the client and checks what it reports.
 //
 // Every case asserts on content, not only on an exit code, and the run fails
 // unless every expected case ran: a client that cannot connect, or a table
@@ -25,7 +25,10 @@ const env = (name) => {
 const INSPECTOR_DIR = env("MCP_INSPECTOR_DIR");
 const EXAMPLE_BIN = env("MCP_EXAMPLE_BIN");
 const DATABASE_URL = env("DATABASE_URL");
-const EXPECTED_INSPECTOR = env("MCP_INSPECTOR_VERSION");
+// `npm ci` already refuses a lockfile that disagrees with `package.json`;
+// this catches a run pointed at some other install.
+const EXPECTED_INSPECTOR = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"))
+  .dependencies["@modelcontextprotocol/inspector"];
 const SIGNING_KEY = "conformance-only-signing-key, not a secret, 0123456789";
 const PROTOCOL = "2026-07-28";
 const STDIO_AUDIENCE = "cratestack://blog";
@@ -46,9 +49,16 @@ function inspect(target, options) {
     {
       encoding: "utf8",
       timeout: 120_000,
-      // An isolated home: no stored OAuth token or catalog entry from the
-      // machine running this can change what the client does.
-      env: { ...process.env, HOME: env("MCP_INSPECTOR_HOME"), MCP_AUTO_OPEN_ENABLED: "false" },
+      env: {
+        ...process.env,
+        // An isolated home and an in-memory secret store: no stored OAuth
+        // token, catalog entry or OS keychain item from the machine running
+        // this can change what the client does, and it writes none.
+        HOME: env("MCP_INSPECTOR_HOME"),
+        MCP_STORAGE_DIR: env("MCP_INSPECTOR_HOME"),
+        MCP_INSPECTOR_SECRET_STORE: "memory",
+        MCP_AUTO_OPEN_ENABLED: "false",
+      },
     },
   );
   // `--format json` prints the result as one JSON line on stdout, and an

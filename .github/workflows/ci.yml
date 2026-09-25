@@ -376,8 +376,11 @@ jobs:
   # into every `--workspace` build (see its `Cargo.toml`), so nothing else
   # in CI builds, lints or tests it. This job does all three, then runs
   # `just mcp-conformance`: the official MCP Inspector CLI
-  # (`@modelcontextprotocol/inspector`, pinned in the recipe) against the
-  # example over stdio and over Streamable HTTP at protocol 2026-07-28.
+  # (`@modelcontextprotocol/inspector`, installed by `npm ci` from the
+  # committed `examples/mcp-operator/conformance/package-lock.json`) against
+  # the example over stdio and over Streamable HTTP at protocol 2026-07-28.
+  # Node is pinned to 24 like every other `setup-node` job here; the
+  # client's own floor is 22.19, and the install enforces it.
   #
   # It cannot pass silently. The recipe fails when `node`, `npm` or
   # `docker` is missing, `run.mjs` fails unless all of its expected cases

@@ -1,1 +1,4 @@
 /target
+# `npm install` run by hand next to conformance/package.json; `just
+# mcp-conformance` installs into a throwaway directory instead.
+/conformance/node_modules
