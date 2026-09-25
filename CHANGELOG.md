@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### Security: a procedure returning a model with a `@computed` field sent that model's `@server_only` fields (#1033)
+
+A procedure whose output is, or contains, a model that has a `@computed` field
+put every `@server_only` field of that model in its response. A probe returned
+`{"id":1,"label":"L","name":"n","secret":"HUNTER2"}` for a `secret String
+@server_only`. The output is built field by field by the generated
+`compose_<owner>_value` helper, not by serde, so the struct's `#[serde(skip)]`
+never ran, and the helper's field list kept `@server_only` fields. That
+affected every shape that composes: the model itself, `T?`, `T[]`, `Page<T>`,
+and a `type` that embeds the model, directly or in a list. The transports
+affected are `POST /$procs/<name>` and `POST /rpc/procedure.<name>`, including
+`/rpc/batch`, under every codec. It shipped with `@computed` in #719, so
+**v0.8.11 through v0.12.0 are affected**. MCP `tools/call` shared the path
+(ADR 0002 Q7) but has not been released.
+
+**Not affected:** model get and list, `?fields=`, `?include=` (both
+directions), MCP resources, and `@@subscribe` events. All of these go through
+serde or already left the field out. `@stream` cannot return a model with a
+`@computed` field. A model without a `@computed` field was never affected.
+`tests/server_only_outbound.rs` and `tests/server_only_outbound_mcp.rs` in
+`cratestack-pg` now pin every path in both lists.
+
+**Behaviour change:** `includeFields[<relation>]` naming a `@server_only`
+field is now refused, as `?fields=` already was. It never sent the value
+(it answered `{}`), but it was accepted.
+
+**Action:** upgrade, then treat every `@server_only` value of a model with a
+`@computed` field as disclosed to any caller that could reach a procedure
+returning that model. If such a field holds a credential, token or hash,
+rotate it. The generated Dart model class declares and decodes `@server_only`
+fields too, so a value an affected server sent may also be in client-side
+state or logs.
+
 ### `cratestack-cose`'s `auth` feature; COSE enrolment leaves `cratestack-auth`, and `DeviceKeyResolver` gains a required method — breaking (#1005)
 
 **The second half of #1005.** `cratestack-cose` gains an off-by-default `auth`
