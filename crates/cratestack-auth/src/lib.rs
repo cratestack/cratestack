@@ -6,8 +6,11 @@
 //!   [`IdTokenVerifier`]).
 //! - Multi-issuer JWKS resolution ([`MultiIssuerJwksVerifier`]) and
 //!   per-service signing identities ([`ServiceSigningKey`]).
-//! - COSE-signed enrolment challenges ([`build_cose_enroll_response`] /
-//!   [`parse_cose_enroll_response`]).
+//! - The COSE enrolment challenge's constants ([`ENROLL_CHALLENGE_COSE_KID`],
+//!   [`CHALLENGE_SIGNING_KEY_ENV`]) and payload ([`EnrollResponse`]). The
+//!   code that builds and parses it moved to `cratestack_cose::auth`
+//!   (`cratestack-cose`'s `auth` feature) in cratestack#1005, as did every
+//!   other COSE concern: that crate depends on this one, never the reverse.
 //! - [`SignedRequestAuthProvider`], a [`cratestack_core::AuthProvider`]
 //!   implementation wiring [`SignedRequestVerifier`] into a cratestack
 //!   server.
@@ -22,7 +25,6 @@
 
 mod authenticate;
 mod context_mapping;
-mod cose_enroll;
 mod crypto_provider;
 mod error;
 mod id_token;
@@ -40,10 +42,15 @@ mod signed_request;
 pub const SIGNATURE_SCHEME: &str = "Signature";
 pub const ID_TOKEN_GRANT: &str = "urn:cratestack:params:oauth:grant-type:id-sd-jwt";
 pub const REFRESH_TOKEN_GRANT: &str = "refresh_token";
+/// The `kid` of a COSE enrolment challenge (`cratestack_cose::auth::
+/// build_cose_enroll_response`). A label, not an ADR 0006 thumbprint `kid`:
+/// the enrolment challenge predates that format and keeps its own.
 pub const ENROLL_CHALLENGE_COSE_KID: &str = "cratestack-auth-enroll-challenge-v1";
 /// Env var carrying the URL-safe-base64-no-pad-encoded 32-byte Ed25519
-/// seed used to sign/verify COSE enrolment challenge responses. See
-/// `cose_enroll::challenge_signing_key`.
+/// seed used to sign/verify COSE enrolment challenge responses. Read by
+/// `cratestack_cose::auth::{build,parse}_cose_enroll_response`, which fail
+/// closed when it is absent or blank (see that module's
+/// `challenge_signing_key`).
 pub const CHALLENGE_SIGNING_KEY_ENV: &str = "CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY";
 
 pub use authenticate::{
@@ -51,7 +58,6 @@ pub use authenticate::{
     request_uri,
 };
 pub use context_mapping::principal_to_cratestack_context;
-pub use cose_enroll::{build_cose_enroll_response, parse_cose_enroll_response};
 pub use error::{AuthError, auth_error_to_cratestack_error};
 pub use id_token::{
     AuthenticatedPrincipal, CurrentPrincipal, DEFAULT_ID_TOKEN_AUDIENCE, DisclosureClaim,

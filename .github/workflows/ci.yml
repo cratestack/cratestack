@@ -126,6 +126,37 @@ jobs:
         # through getrandom, which needs its `wasm_js` backend on this
         # target (cratestack#1005). Nothing else compiles it for wasm32.
         run: cargo check --locked -p cratestack-cose --target wasm32-unknown-unknown
+      - name: cargo tree (cratestack-cose reaches cratestack-auth only through its `auth` feature)
+        # ADR 0006 §11 / cratestack#1005: clients and the wasm/napi builds
+        # depend on `cratestack-cose` without `auth`, and must not inherit
+        # auth's Redis, reqwest and rustls graph, nor the `coset` /
+        # `minicbor-serde` pair the moved enrolment code needs. Without the
+        # feature the only `cratestack-*` crates in the graph are cose
+        # itself and `cratestack-core`, exactly. With it, auth comes in with
+        # `default-features = false`, so its axum surface must stay out.
+        # The positive half keeps the grep honest: if the feature stopped
+        # adding the edge, the first assertion would pass for the wrong
+        # reason.
+        run: |
+          graph="$(cargo tree --locked -p cratestack-cose -e normal --prefix none)"
+          if grep -E '^(cratestack-auth|redis|reqwest|rustls|coset|minicbor-serde) ' <<<"$graph"; then
+            echo "::error::cratestack-cose without its auth feature reaches cratestack-auth's dependency graph"
+            exit 1
+          fi
+          workspace="$(grep -oE '^cratestack-[a-z0-9-]+ ' <<<"$graph" | sort -u | tr -d ' ' | paste -sd, -)"
+          if [ "$workspace" != "cratestack-core,cratestack-cose" ]; then
+            echo "::error::cratestack-cose without auth must depend on cratestack-core alone; its graph has: $workspace"
+            exit 1
+          fi
+          graph="$(cargo tree --locked -p cratestack-cose -e normal --features auth --prefix none)"
+          if ! grep -q '^cratestack-auth ' <<<"$graph"; then
+            echo "::error::expected cratestack-auth in cratestack-cose's graph with --features auth"
+            exit 1
+          fi
+          if grep -E '^axum(-core)? ' <<<"$graph"; then
+            echo "::error::cratestack-cose --features auth pulls axum: cratestack-auth's axum feature is on"
+            exit 1
+          fi
       - name: Assert rustc, rust-toolchain.toml, and Cargo.toml rust-version agree
         # Verify the MSRV declaration (#422) stays synchronized with the
         # pinned toolchain and what rustc actually resolved to. Three-way

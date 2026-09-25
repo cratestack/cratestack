@@ -56,8 +56,15 @@ jobs:
         # facades are intentionally skipped here; consumers depending on
         # one of them read the same crate-level docs via that facade's
         # own name (e.g. `cratestack-client`) on docs.rs.
+        #
+        # `--features cratestack-cose/auth`: `cratestack_cose::auth` (the
+        # `cratestack-auth` adapters and the enrolment code moved out of
+        # auth, cratestack#1005) is off by default and nothing in this list
+        # turns it on, so without it the module would be missing from the
+        # site. Matches the crate's `[package.metadata.docs.rs]`.
         run: |
           cargo doc --no-deps \
+            --features cratestack-cose/auth \
             -p cratestack-pg \
             -p cratestack-axum \
             -p cratestack-cli \

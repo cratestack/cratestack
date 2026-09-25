@@ -154,8 +154,11 @@ bytes = "1"
 # above. chumsky is the `.cstack` parser's combinator core, so an unattended
 # 0.14 would rewrite parser behaviour, not just recompile it.
 chumsky = "0.13"
-# `cratestack-auth`'s COSE-signed enrolment challenges (`build_cose_enroll_response`/
-# `parse_cose_enroll_response`).
+# The COSE enrolment challenges (`build_cose_enroll_response`/
+# `parse_cose_enroll_response`), in `cratestack-cose`'s `auth` feature since
+# cratestack#1005 moved them out of `cratestack-auth`. Also
+# `cratestack-cose`'s dev-dependency: the independent implementation its
+# hand-rolled wire format is checked against.
 coset = "0.4.2"
 # `cratestack-cose`'s random `cti` and `Cratestack-Nonce` (ADR 0006 §5,
 # `nonce` mode). Already in the graph through `uuid` (a `cratestack-core`
@@ -225,6 +228,11 @@ cratestack-client-typescript = { path = "crates/cratestack-client-typescript", v
 cratestack-client-store-redis = { path = "crates/cratestack-client-store-redis", version = "0.12.0" }
 cratestack-client-rust = { path = "crates/cratestack-client-rust", version = "0.12.0", default-features = false }
 cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite", version = "0.12.0" }
+# `default-features = false`: the default `axum` feature is the middleware,
+# router and extractor surface, which the one in-workspace consumer,
+# `cratestack-cose`'s optional `auth` feature (cratestack#1005), never
+# touches. A consumer that wants it turns `axum` on explicitly.
+cratestack-auth = { path = "crates/cratestack-auth", version = "0.12.0", default-features = false }
 # `default-features = false` (cratestack#495): both codecs are direct,
 # unconditional (non-optional) `cratestack-core` consumers of their own —
 # see each crate's own Cargo.toml. Without this, a consumer that

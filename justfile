@@ -209,6 +209,11 @@ lint:
 	# other test there would re-expand under the feature for no new code.
 	cargo clippy -p cratestack-api --features mcp --all-targets -- -D warnings {{clippy_allow}}
 	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models -- -D warnings {{clippy_allow}}
+	# Same blind spot for `cratestack-cose`'s off-by-default `auth` feature
+	# (cratestack#1005): `cratestack_cose::auth` and its `required-features`
+	# test targets only exist under it, and nothing in the workspace turns
+	# it on.
+	cargo clippy -p cratestack-cose --features auth --all-targets -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -463,8 +468,18 @@ test-ci-db-cli-baseline *args='':
 # for correctness under retries/concurrency, so this mirrors `test-ci-db`'s
 # testcontainers pattern one-for-one rather than riding along in the host
 # shard, where the tests used to skip silently for lack of a Redis.
+#
+# Also `cratestack-cose`'s Redis nonce bridge (cratestack#1005), whose
+# target is `required-features = ["auth"]`. Not `set -e`, for
+# `test-ci-host`'s reason: a failure in the first run must not hide the
+# second.
 test-ci-redis *args='':
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis --no-fail-fast {{args}}
+	#!/usr/bin/env bash
+	set -uo pipefail
+	status=0
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis --no-fail-fast {{args}} || status=1
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-cose --features auth --test auth_redis_nonce {{args}} || status=1
+	exit "$status"
 
 # Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
 # is embedded. CI runs `trunk build` first; no database needed.
@@ -578,6 +593,15 @@ test-ci-host *args='':
 	# above compiles all of it away. Whole crate, not one --test target, so
 	# the doctest runs too. No database needed.
 	cargo test -p cratestack-client-rust --features middleware {{args}} || status=1
+	# cratestack#1005: `cratestack_cose::auth` (the `cratestack-auth`
+	# adapters and the enrolment code moved out of auth) only exists under
+	# the off-by-default `auth` feature, and its test targets are
+	# `required-features = ["auth"]`, so the `--workspace` run above skips
+	# them. `--lib` for the enrolment golden vector. The Redis-backed
+	# `auth_redis_nonce` target runs in `test-ci-redis`, not here. A new
+	# `auth_*` target needs a `[[test]]` entry in the crate's manifest
+	# anyway; add it here in the same change.
+	cargo test -p cratestack-cose --features auth --lib --test auth_service_signer --test auth_device_resolver --test auth_nonce_bridge {{args}} || status=1
 	exit "$status"
 
 # Report-only: surfaces the current pass/fail state of every `#[ignore]`d

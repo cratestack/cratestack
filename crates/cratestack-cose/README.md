@@ -9,9 +9,11 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 ```
 
 This is P0: unary messages, `nonce` replay, and the shared test vectors. `chain` streams
-(P1) and `window` replay for device keys (P2) come later. The `auth` feature, with the
-`cratestack-auth` adapters, the Redis nonce bridge and the enrolment code, is the second
-half of cratestack#1005 and is not here yet.
+(P1) and `window` replay for device keys (P2) come later.
+
+Without features the crate depends on `cratestack-core` alone, and compiles for
+`wasm32-unknown-unknown`. The off-by-default `auth` feature adds `cratestack-auth` (see
+below).
 
 ## What is here
 
@@ -54,6 +56,30 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   public key can never be used as an HMAC secret; `KeyProviderMacKeys` loads Mac0 keys from
   core's `KeyProvider`. HMAC secrets must be random: a Mac0 `kid` publishes 64 bits of the
   secret's thumbprint, so a guessable secret can be found offline.
+
+## The `auth` feature
+
+`cratestack_cose::auth` connects the envelope to `cratestack-auth` (the edge points cose ->
+auth, never the reverse):
+
+- `ServiceKeySigner`: a `ServiceSigningKey` as an Ed25519 `CoseSigner`. Its COSE `kid` is the
+  thumbprint prefix of the key, **not** the key's human JWKS label (`ServiceSigningKey::kid`).
+- `DeviceKeyCoseResolver`: a `DeviceKeyResolver` as a `CoseVerifierResolver`, through the
+  resolver's required `lookup_device_verifying_keys_by_thumbprint`. Ed25519 only; an
+  unknown device is the `401`, a failing registry the `500`.
+- `AuthNonceStore`: `cratestack-auth`'s nonce store, in-memory or Redis
+  (`AuthNonceStore::redis(url)`, which refuses an empty URL rather than falling back to
+  memory), as core's `NonceStore`. Entries are `(kid, cti)` and live until at least
+  `iat + 2·skew + 1`; Redis `SET NX EX` makes the check atomic across replicas.
+  Deploy that Redis with `maxmemory-policy noeviction` (eviction drops live nonces), and
+  know that an asynchronous-replication failover can lose a recent `SET` and reopen the
+  replay window. Signed-request key ids must not be `cose-envelope` or start with
+  `cose-envelope:` when both share the store. Auth's Redis store currently opens one
+  connection per claim (cratestack#1070).
+- `build_cose_enroll_response` / `parse_cose_enroll_response`: the enrolment challenge,
+  moved here unchanged from `cratestack-auth`. It keeps its legacy shape (alg `-8`, a
+  35-byte `kid`, empty AAD) and its own `coset`-based code path; the strict opener above
+  never accepts it.
 
 ## Shared vectors
 

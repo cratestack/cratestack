@@ -9,8 +9,9 @@ use super::require_signed_request;
 
 fn example_signing_key() -> SigningKey {
     // Deterministic test-only key, distinct from any key ever committed
-    // as production key material — see `cose_enroll::challenge_signing_key`'s
-    // doc comment for why that distinction matters.
+    // as production key material — see the doc comment on
+    // `challenge_signing_key` in `cratestack_cose::auth` for why that
+    // distinction matters.
     SigningKey::from_bytes(&[
         0x31, 0x8a, 0x77, 0x02, 0x5e, 0x9b, 0x14, 0x3c, 0x8f, 0x21, 0xd4, 0x66, 0x0a, 0x99, 0x5d,
         0x3e, 0x12, 0x87, 0xb0, 0x44, 0x6f, 0x91, 0x2a, 0x5c, 0xe3, 0x08, 0x71, 0x4d, 0x2b, 0x93,
