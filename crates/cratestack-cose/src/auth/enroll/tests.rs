@@ -2,9 +2,7 @@ use super::{
     build_cose_enroll_response_with_key, challenge_signing_key_from,
     parse_cose_enroll_response_with_key,
 };
-use crate::error::AuthError;
-use crate::id_token::decode_signing_key;
-use crate::protocol::EnrollResponse;
+use cratestack_auth::{AuthError, EnrollResponse, decode_signing_key};
 
 /// A key used ONLY in tests. Never reuse this (or any other committed
 /// literal) as a real challenge-signing key — see the doc comment on
@@ -64,9 +62,10 @@ fn challenge_signing_key_fails_closed_when_env_var_is_whitespace_only() {
 }
 
 /// The exact bytes `build_cose_enroll_response_with_key` produces for a
-/// fixed response and the fixed test key. Pinned so that moving the
-/// enrolment code (cratestack#1005 part B, into `cratestack-cose`'s `auth`
-/// feature) is provably byte-neutral: Ed25519 is deterministic, so any
+/// fixed response and the fixed test key. Pinned in `cratestack-auth`
+/// before the enrolment code moved here (cratestack#1005 part B) and not
+/// changed since, so the move is provably byte-neutral: Ed25519 is
+/// deterministic, so any
 /// change to the payload encoding, the protected header (the legacy 35-byte
 /// `kid`, alg `-8`), the empty external AAD or the tagging shows up here.
 const GOLDEN_ENROLL_RESPONSE_HEX: &str = concat!(

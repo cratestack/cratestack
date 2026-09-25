@@ -20,18 +20,33 @@ workspace = true
 # source never names a decimal type, so it never selects a backend on
 # `cratestack-core`, and a `--features decimal-bigdecimal` build of a
 # consumer is unaffected by it (cratestack#495's bar holds trivially).
-#
-# The `auth` feature (the `ServiceSigningKey` / `DeviceKeyResolver`
-# adapters, the Redis nonce bridge and the enrolment code, ADR 0006 "P0
-# scoping decisions") is added by the second half of cratestack#1005. It is
-# not declared here yet, so that nothing can turn on a feature that does
-# nothing.
+
+[features]
+# Off by default. `cratestack_cose::auth`: the `ServiceSigningKey` signer and
+# `DeviceKeyResolver` resolver adapters, the bridge from `cratestack-auth`'s
+# (Redis) nonce store to core's `NonceStore`, and the COSE enrolment
+# challenge code moved out of `cratestack-auth` (ADR 0006, "Decisions taken
+# while scoping P0"; cratestack#1005). It is the crate's only edge to
+# `cratestack-auth` (L1, which L2 admits), so without it clients and the
+# wasm/napi builds never see auth's Redis, reqwest and rustls graph. The
+# edge points cose -> auth, never auth -> cose.
+auth = ["dep:cratestack-auth", "dep:coset", "dep:minicbor-serde"]
 
 [dependencies]
-# The only workspace dependency (ADR 0006 §11 as amended: L2, and
-# `cratestack-core` only without `auth`), so clients and the wasm/napi
-# builds stay free of `cratestack-auth`'s Redis, reqwest and rustls graph.
+# The only workspace dependency without `auth` (ADR 0006 §11 as amended:
+# L2, `cratestack-core` only), so clients and the wasm/napi builds stay
+# free of `cratestack-auth`'s Redis, reqwest and rustls graph.
 cratestack-core.workspace = true
+# `auth` only. The workspace entry has `default-features = false`, so auth's
+# axum middleware surface stays out as well.
+cratestack-auth = { workspace = true, optional = true }
+# `auth` only: the enrolment challenge (`auth::build_cose_enroll_response`)
+# is built and parsed with `coset`, byte for byte as it was in
+# `cratestack-auth`, and deliberately not with this crate's strict ADR 0006
+# wire format (it has a 35-byte `kid`, alg -8 and an empty AAD). Its payload
+# is `minicbor-serde`'s encoding of `EnrollResponse`, as before the move.
+coset = { workspace = true, optional = true }
+minicbor-serde = { workspace = true, optional = true }
 # `CoseSigner` / `CoseVerifierResolver` are used as `dyn` (a KMS or an HSM
 # signer, a device-key database), so they desugar the way core's
 # `KeyProvider` / `NonceStore` do.
@@ -101,6 +116,32 @@ coset.workspace = true
 cratestack-codec-cbor.workspace = true
 # A randomized (non-RFC 6979) ES256 signature for the verify-only test.
 rand.workspace = true
+# `tests/auth_redis_nonce.rs` (`auth` only) reads the key and its TTL back
+# from the real Redis the bridge wrote to.
+redis = { workspace = true, features = ["tokio-comp"] }
 serde_json.workspace = true
-tokio = { workspace = true, features = ["macros", "rt"] }
+# The Redis nonce bridge runs against a real Redis: an ephemeral container
+# per test binary, as `cratestack-redis`'s suites do.
+testcontainers.workspace = true
+testcontainers-modules = { workspace = true, features = ["redis"] }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
 uuid.workspace = true
+
+# `cargo test -p cratestack-cose` without `--features auth` would compile
+# these to empty binaries; `required-features` skips them instead, and the
+# justfile's `test-ci-host` / `test-ci-redis` run them with the feature.
+[[test]]
+name = "auth_service_signer"
+required-features = ["auth"]
+
+[[test]]
+name = "auth_device_resolver"
+required-features = ["auth"]
+
+[[test]]
+name = "auth_nonce_bridge"
+required-features = ["auth"]
+
+[[test]]
+name = "auth_redis_nonce"
+required-features = ["auth"]

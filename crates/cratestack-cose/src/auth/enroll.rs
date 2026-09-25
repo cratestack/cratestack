@@ -1,17 +1,36 @@
 //! COSE-signed enrolment challenge responses, and the Ed25519 key used to
 //! sign and verify them.
+//!
+//! **Moved, not rewritten** (cratestack#1005 part B, ADR 0006 §11 and
+//! "Decisions taken while scoping P0"): this is `cratestack-auth`'s
+//! `src/cose_enroll.rs` (and its tests), which was the crate's only `coset`
+//! user. The code is unchanged apart from its import paths. The
+//! golden vector in `tests.rs` was pinned in `cratestack-auth` before the
+//! move and passes here unchanged, so the bytes are the same. No behaviour
+//! was deliberately changed, and no bug was fixed on the way.
+//!
+//! **Not the ADR 0006 wire format, on purpose.** An enrolment challenge
+//! is a COSE_Sign1 with alg `-8` (EdDSA), the 35-byte `kid`
+//! [`ENROLL_CHALLENGE_COSE_KID`] and an empty external AAD, built and
+//! parsed by `coset`. The envelope's opener (`crate::open`) accepts only
+//! `-19`/`-9`, an 8-byte thumbprint `kid` and a bound AAD, and it is not
+//! loosened for this: the two paths share no parsing code, so the legacy
+//! shape cannot become acceptable to the strict one. Pinning the
+//! response-signing keys at enrolment (§8) is P1.
 
 use coset::{CoseSign1, CoseSign1Builder, HeaderBuilder, TaggedCborSerializable, iana};
+use cratestack_auth::{
+    AuthError, CHALLENGE_SIGNING_KEY_ENV, ENROLL_CHALLENGE_COSE_KID, EnrollResponse,
+    decode_signing_key,
+};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
-
-use crate::error::AuthError;
-use crate::id_token::decode_signing_key;
-use crate::protocol::EnrollResponse;
-use crate::{CHALLENGE_SIGNING_KEY_ENV, ENROLL_CHALLENGE_COSE_KID};
 
 #[cfg(test)]
 mod tests;
 
+/// Sign `response` as an enrolment challenge with the key in
+/// [`CHALLENGE_SIGNING_KEY_ENV`]. Fails closed without that key (see
+/// `challenge_signing_key`). Was `cratestack_auth::build_cose_enroll_response`.
 pub fn build_cose_enroll_response(response: &EnrollResponse) -> Result<Vec<u8>, AuthError> {
     let signing_key = challenge_signing_key()?;
     build_cose_enroll_response_with_key(response, &signing_key)
@@ -38,6 +57,11 @@ fn build_cose_enroll_response_with_key(
         .map_err(|error| AuthError::ChallengeEncoding(error.to_string()))
 }
 
+/// Verify and decode an enrolment challenge this service signed. The
+/// verifying key is derived from the same secret seed
+/// ([`CHALLENGE_SIGNING_KEY_ENV`]): the server checks its own challenge on
+/// the way back. It does **not** check `expires_at`; the caller must. Was
+/// `cratestack_auth::parse_cose_enroll_response`.
 pub fn parse_cose_enroll_response(bytes: &[u8]) -> Result<EnrollResponse, AuthError> {
     let signing_key = challenge_signing_key()?;
     parse_cose_enroll_response_with_key(bytes, &signing_key)

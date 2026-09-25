@@ -146,6 +146,13 @@ async fn device_resolver_none_is_authoritative_over_cnf_fallback() {
         ) -> Result<Option<VerifyingKey>, AuthError> {
             Ok(None)
         }
+
+        async fn lookup_device_verifying_keys_by_thumbprint(
+            &self,
+            _kid_prefix: &[u8],
+        ) -> Result<Vec<VerifyingKey>, AuthError> {
+            Ok(Vec::new())
+        }
     }
     let verifier = SignedRequestVerifier::new(Vec::<(String, VerifyingKey)>::new())
         .with_id_token_verifier(id_verifier)

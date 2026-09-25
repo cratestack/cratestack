@@ -37,9 +37,13 @@
 //! key resolver, nonce store or signer is `CratestackError::Internal`, and
 //! so is local misuse (see [`CoseEnvelope`]).
 //!
-//! **Not here yet:** `chain` streams (P1), `window` replay (P2), and the
-//! `auth` feature (the `cratestack-auth` adapters, the Redis nonce bridge
-//! and the enrolment code), which is the second half of cratestack#1005.
+//! **The `auth` feature** (off by default) adds `cratestack_cose::auth`: the
+//! `cratestack-auth` adapters (`ServiceSigningKey` as a signer,
+//! `DeviceKeyResolver` as a resolver), the bridge to its Redis nonce
+//! store, and the COSE enrolment challenge code moved out of
+//! `cratestack-auth`. It is this crate's only edge to `cratestack-auth`.
+//!
+//! **Not here yet:** `chain` streams (P1) and `window` replay (P2).
 //!
 //! # Where this departs from the ADR's sketch
 //!
@@ -63,6 +67,8 @@
 
 mod aad;
 mod alg;
+#[cfg(feature = "auth")]
+pub mod auth;
 mod cbor;
 mod envelope;
 mod error;

@@ -2,8 +2,8 @@
 
 Signed-request and identity-token auth for CrateStack applications: SigV4-style
 canonical-request signing/verification over Ed25519, SD-JWT id-token
-issuance/verification, multi-issuer JWKS resolution, per-service signing
-identities, and COSE-signed enrolment challenges.
+issuance/verification, multi-issuer JWKS resolution, and per-service signing
+identities.
 
 ## Overview
 
@@ -20,8 +20,10 @@ identities, and COSE-signed enrolment challenges.
 - [`ServiceSigningKey`] / [`MultiIssuerJwksVerifier`] — a per-service Ed25519
   signing identity (`from_env`/`ephemeral`) plus a trust-list-driven verifier
   that fetches and caches JWKS per trusted issuer.
-- [`build_cose_enroll_response`] / [`parse_cose_enroll_response`] — COSE
-  `Sign1`-signed enrolment challenge responses.
+- The COSE enrolment challenge's `kid` and signing-key env var
+  ([`ENROLL_CHALLENGE_COSE_KID`], [`CHALLENGE_SIGNING_KEY_ENV`]). The
+  functions that build and parse it moved to `cratestack_cose::auth`
+  (`cratestack-cose` with its `auth` feature) in cratestack#1005.
 - [`SignedRequestAuthProvider`] — a `cratestack_core::AuthProvider`
   implementation wiring [`SignedRequestVerifier`] into a cratestack server's
   auth pipeline.
@@ -34,7 +36,7 @@ mountable `axum::Router` serving `/jwks.json` and `/.well-known/jwks.json`),
 and the `FromRequestParts` extractor impls on `CurrentPrincipal`/
 `AuthenticatedPrincipal`. Everything else — signing, verifying,
 `SignedRequestAuthProvider`, SD-JWT issuance/verification,
-`ServiceSigningKey`, `MultiIssuerJwksVerifier`, COSE challenges — needs only
+`ServiceSigningKey`, `MultiIssuerJwksVerifier` — needs only
 the plain `http` crate for header/method/URI types, not `axum`, so a
 signing-only consumer (a `cratestack-client` SDK, say) can:
 
@@ -115,7 +117,7 @@ let app = Router::new().merge(jwks_router(signing_key.jwks_document()));
 
 | Variable | Used by |
 | --- | --- |
-| `CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY` | [`build_cose_enroll_response`]/[`parse_cose_enroll_response`] — **required**, fails closed if absent, empty, or whitespace-only. |
+| `CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY` | `cratestack_cose::auth::{build,parse}_cose_enroll_response` — **required**, fails closed if absent, empty, or whitespace-only. |
 | `CRATESTACK_AUTH_SIGNATURE_TRUSTED_KEYS` | [`SignedRequestVerifier::from_env`] — `keyId:base64url,...` static trust list. |
 | `CRATESTACK_AUTH_SIGNATURE_TRUSTED_ISSUERS` | [`SignedRequestVerifier::from_env`] — JSON `{issuer: jwks_url}` map. |
 | `CRATESTACK_AUTH_SIGNATURE_MAX_SKEW_SECONDS` | [`SignedRequestVerifier::from_env`] — default 300. |
@@ -129,8 +131,10 @@ of the raw 32-byte Ed25519 seed (see [`encode_signing_key`]/
 
 ## Security note
 
-[`CHALLENGE_SIGNING_KEY_ENV`]'s doc comment records why this fails closed
-rather than falling back to any default: a hardcoded seed literal is
+The enrolment challenge key ([`CHALLENGE_SIGNING_KEY_ENV`]) fails closed
+rather than falling back to any default; the doc comment on
+`challenge_signing_key` in `cratestack_cose::auth` (where the enrolment code
+lives since cratestack#1005) records why: a hardcoded seed literal is
 permanently compromised the moment it reaches git history, forks, or CI
 logs. Never reuse a committed literal as a real signing key, including in
 tests — this crate's own tests generate their own key material.
