@@ -30,10 +30,10 @@
   - `resources/list`;
   - `resources/read` for a record, for a collection, and for a hidden row,
     which answers exactly like a missing one;
-  - the refusals: no token, a token for another audience, and a legacy
-    `initialize` client.
+  - the refusals: no token (a stdio server does not even start), a token for
+    another audience, and a legacy `initialize` client.
 
-  It fails unless all 25 expected cases ran and passed. It starts a throwaway
+  It fails unless all 26 expected cases ran and passed. It starts a throwaway
   `postgres:18-alpine` container unless `MCP_CONFORMANCE_DATABASE_URL` is set.
   CI runs it in the new `mcp-example` job, with the example's rustfmt, clippy,
   and Postgres-backed tests (`CRATESTACK_REQUIRE_DB=1`).

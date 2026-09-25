@@ -5,84 +5,30 @@
 //
 // Run it through `just mcp-conformance`, which installs the client from
 // `package-lock.json`, builds the example and provides Postgres. This file
-// only drives the client and checks what it reports.
+// holds the cases; `harness.mjs` runs the client and keeps the count.
 //
 // Every case asserts on content, not only on an exit code, and the run fails
 // unless every expected case ran: a client that cannot connect, or a table
 // that loses a row, is a failure, never a skip.
 
-import { spawn, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { join } from "node:path";
+import * as h from "./harness.mjs";
 
-const env = (name) => {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set; run this through \`just mcp-conformance\``);
-  return value;
-};
-
-const INSPECTOR_DIR = env("MCP_INSPECTOR_DIR");
-const EXAMPLE_BIN = env("MCP_EXAMPLE_BIN");
-const DATABASE_URL = env("DATABASE_URL");
-// `npm ci` already refuses a lockfile that disagrees with `package.json`;
-// this catches a run pointed at some other install.
-const EXPECTED_INSPECTOR = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"))
-  .dependencies["@modelcontextprotocol/inspector"];
+const { check, same, text, doc, ids } = h;
+const EXAMPLE_BIN = h.env("MCP_EXAMPLE_BIN");
+const DATABASE_URL = h.env("DATABASE_URL");
+const HOME = h.env("MCP_INSPECTOR_HOME");
 const SIGNING_KEY = "conformance-only-signing-key, not a secret, 0123456789";
 const PROTOCOL = "2026-07-28";
 const STDIO_AUDIENCE = "cratestack://blog";
 
-const pkg = (name) =>
-  JSON.parse(readFileSync(join(INSPECTOR_DIR, "node_modules", name, "package.json"), "utf8"));
-const inspector = pkg("@modelcontextprotocol/inspector");
-const sdkClient = pkg("@modelcontextprotocol/client");
-const launcher = join(INSPECTOR_DIR, "node_modules/@modelcontextprotocol/inspector", inspector.bin["mcp-inspector"]);
+const { inspector, sdkClient, launcher } = h.installedInspector(h.env("MCP_INSPECTOR_DIR"));
+const mint = (audience, id, role) => h.mint(EXAMPLE_BIN, SIGNING_KEY, audience, id, role);
 
-// ---- the client ---------------------------------------------------------
-
-/** One Inspector CLI run: `{ status, result, error, raw }`. */
-function inspect(target, options) {
-  const run = spawnSync(
-    process.execPath,
-    [launcher, "--cli", ...target, "--", "--format", "json", "--connect-timeout", "30000", ...options],
-    {
-      encoding: "utf8",
-      timeout: 120_000,
-      env: {
-        ...process.env,
-        // An isolated home and an in-memory secret store: no stored OAuth
-        // token, catalog entry or OS keychain item from the machine running
-        // this can change what the client does, and it writes none.
-        HOME: env("MCP_INSPECTOR_HOME"),
-        MCP_STORAGE_DIR: env("MCP_INSPECTOR_HOME"),
-        MCP_INSPECTOR_SECRET_STORE: "memory",
-        MCP_AUTO_OPEN_ENABLED: "false",
-      },
-    },
-  );
-  // `--format json` prints the result as one JSON line on stdout, and an
-  // `error` object as one JSON line on stderr when the call failed (a tool
-  // `isError` prints both).
-  const lines = `${run.stdout ?? ""}\n${run.stderr ?? ""}`
-    .split("\n")
-    .filter((line) => line.startsWith("{"));
-  const objects = lines.map((line) => JSON.parse(line));
-  return {
-    status: run.status,
-    result: objects.find((o) => "result" in o)?.result,
-    error: objects.find((o) => "error" in o)?.error,
-    raw: `${run.stdout ?? ""}${run.stderr ?? ""}`.trim(),
-  };
-}
-
-const mint = (audience, id, role) =>
-  spawnSync(EXAMPLE_BIN, ["mint-token", "--audience", audience, "--id", id, "--role", role], {
-    encoding: "utf8",
-    env: { ...process.env, MCP_EXAMPLE_SIGNING_KEY: SIGNING_KEY },
-  }).stdout.trim();
-
+/** A stdio server whose identity is `token`, or none at all when `null`. */
 function stdioTarget(token, era = "modern") {
+  const identity = token === null ? [] : ["-e", `MCP_EXAMPLE_TOKEN=${token}`];
   return {
     name: "stdio",
     target: [EXAMPLE_BIN, "stdio"],
@@ -90,7 +36,7 @@ function stdioTarget(token, era = "modern") {
       "--protocol-era", era,
       "-e", `DATABASE_URL=${DATABASE_URL}`,
       "-e", `MCP_EXAMPLE_SIGNING_KEY=${SIGNING_KEY}`,
-      "-e", `MCP_EXAMPLE_TOKEN=${token}`,
+      ...identity,
     ],
   };
 }
@@ -106,32 +52,10 @@ function httpTarget(url, token) {
 }
 
 const call = (transport, ...options) =>
-  inspect(transport.target, [...transport.options, ...options]);
-
-// ---- assertions ---------------------------------------------------------
-
-const results = [];
-
-function check(transport, name, run, predicate) {
-  let failure;
-  try {
-    failure = predicate(run) === true ? undefined : "unexpected answer";
-  } catch (error) {
-    failure = error.message;
-  }
-  const summary = JSON.stringify(run.result ?? run.error ?? null);
-  results.push({ transport, name, ok: !failure });
-  console.log(`${failure ? "FAIL" : "ok  "} [${transport}] ${name}`);
-  console.log(`       exit ${run.status}: ${summary.length > 400 ? `${summary.slice(0, 400)}…` : summary}`);
-  if (failure) console.log(`       why: ${failure}\n       output: ${run.raw}`);
-}
-
-const text = (run) => JSON.parse(run.result.content[0].text);
-const doc = (run) => JSON.parse(run.result.contents[0].text);
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const ids = (rows) => rows.map((row) => row.id).sort((a, b) => a - b);
+  h.inspect(launcher, HOME, transport.target, [...transport.options, ...options]);
 
 /** The cases every transport must pass, as caller `u-1`. */
+const SUITE_CASES = 10;
 function suite(member, editor, author) {
   const t = member.name;
 
@@ -156,8 +80,8 @@ function suite(member, editor, author) {
   // plain text, so parsing `FORBIDDEN` out of it proves the server said so.
   // The message pins *which* policy refused: the procedure's `@allow`,
   // before the implementation ran. With that `@allow` loosened, the
-  // model's `@@allow("update", ...)` still refuses in SQL, but as "update
-  // policy denied", and this case fails.
+  // model's `@@allow("update", ...)` still refuses in SQL, but with another
+  // message, and this case fails.
   check(t, "tools/call publish_post as a member: policy-denied, isError + FORBIDDEN",
     call(member, "--method", "tools/call", "--tool-name", "publish_post", "--tool-args-json", '{"id":3}'),
     (r) => r.result.isError === true && r.error.code === "tool_is_error"
@@ -189,8 +113,6 @@ function suite(member, editor, author) {
     (r) => r.status !== 0 && r.result === undefined && same(r.error, missing.error)
       && /not found/.test(r.error.message));
 }
-
-// ---- the run ------------------------------------------------------------
 
 const freePort = () =>
   new Promise((resolve, reject) => {
@@ -226,21 +148,24 @@ async function startHttp(port) {
 console.log(`client: ${inspector.name} ${inspector.version} (${inspector.repository.url})`);
 console.log(`        on ${sdkClient.name} ${sdkClient.version}`);
 console.log(`server: mcp-operator-example, cratestack-mcp, protocol ${PROTOCOL}\n`);
-if (inspector.version !== EXPECTED_INSPECTOR) {
-  throw new Error(`expected inspector ${EXPECTED_INSPECTOR}, installed ${inspector.version}`);
-}
 
 const http = await startHttp(await freePort());
 try {
-  // stdio: the identity is the token in the server's environment.
+  // stdio: the identity is the token in the server's environment. The
+  // refusals below assert the server's own reason (its stderr reaches the
+  // client's output), so a server that died of something else fails them.
   suite(
     stdioTarget(mint(STDIO_AUDIENCE, "u-1", "member")),
     stdioTarget(mint(STDIO_AUDIENCE, "u-1", "editor")),
     stdioTarget(mint(STDIO_AUDIENCE, "u-2", "member")),
   );
+  check("stdio", "no MCP_EXAMPLE_TOKEN: the server does not start (no default identity)",
+    call(stdioTarget(null), "--method", "tools/list"),
+    (r) => r.status !== 0 && r.result === undefined && /MCP_EXAMPLE_TOKEN is not set/.test(r.raw));
   check("stdio", "a token for the HTTP audience does not start a stdio server",
     call(stdioTarget(mint(http.url, "u-1", "member")), "--method", "tools/list"),
-    (r) => r.status !== 0 && r.result === undefined);
+    (r) => r.status !== 0 && r.result === undefined
+      && /MCP_EXAMPLE_TOKEN refused: .*token audience is not this resource/.test(r.raw));
   check("stdio", "control: a legacy-era (initialize) client is refused, not negotiated down",
     call(stdioTarget(mint(STDIO_AUDIENCE, "u-1", "member"), "legacy"), "--method", "tools/list"),
     (r) => r.status !== 0 && /Unsupported protocol version/.test(r.raw));
@@ -263,7 +188,4 @@ try {
   http.child.kill();
 }
 
-const EXPECTED_CASES = 2 * 10 + 2 + 3;
-const failed = results.filter((result) => !result.ok);
-console.log(`\n${results.length - failed.length}/${results.length} passed (expected ${EXPECTED_CASES} cases)`);
-if (failed.length > 0 || results.length !== EXPECTED_CASES) process.exit(1);
+h.finish(2 * SUITE_CASES + 3 + 3);

@@ -210,8 +210,10 @@ cases, over stdio and over Streamable HTTP:
 - `resources/read` for a record, for a collection, and for a hidden row, which answers exactly like a
   missing one.
 
-It also runs the refusals: no token, a token for another audience, and a legacy-era client. It fails
-unless every expected case ran and passed. CI runs it in the `mcp-example` job.
+It also runs the refusals: no token (over stdio the server does not even start), a token for another
+audience, and a legacy-era client. A refusal must give the server's own reason, so a server that
+died of something else fails the case. The run fails unless every expected case ran, under a
+distinct name, and passed. CI runs it in the `mcp-example` job.
 
 To move to another Inspector version, edit the version in `conformance/package.json`, run
 `npm install --package-lock-only --ignore-scripts` in `conformance/`, and review the lockfile diff
