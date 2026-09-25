@@ -37,8 +37,7 @@ use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use server_only_outbound_support::{
     LABEL, PART_TOKEN, WIDGET_RECOVERY, WIDGET_SECRET, assert_no_server_only, expected_widget,
-    hint_for,
-    procedure_cases,
+    hint_for, procedure_cases,
 };
 use support::pg;
 use tower::util::ServiceExt;
