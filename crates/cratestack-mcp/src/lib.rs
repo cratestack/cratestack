@@ -1,6 +1,7 @@
 //! L4 — the MCP binding. Serves a schema's `@mcp(tool)` procedures to agents
 //! over the Model Context Protocol (ADR 0002, epic cratestack#1033, phase 3:
-//! cratestack#1038).
+//! cratestack#1038), and its `@@mcp(resource: ...)` models as read-only
+//! resources (phase 5, cratestack#1040; see `src/resources/mod.rs`).
 //!
 //! You do not depend on this crate directly. Turn on the `mcp` feature of
 //! `cratestack-pg` or `cratestack-api` (ADR 0002 D3), and the schema macro
@@ -48,6 +49,7 @@ mod call;
 mod fingerprint;
 mod idempotency;
 mod listing;
+mod resources;
 mod result;
 mod server;
 mod stdio;
@@ -63,6 +65,7 @@ mod tests_listing;
 /// same type `cratestack_axum::ratelimit` re-exports (cratestack#1038).
 pub use cratestack_exec::{DEFAULT_STORE_TIMEOUT, OpExecutor, StoreErrorPolicy};
 pub use listing::ToolTableError;
+pub use resources::{DEFAULT_PAGE_SIZE, RESOURCE_SCHEME, ResourceDescriptor};
 pub use server::McpServer;
 pub use stdio::{ServeError, StdioServer};
 pub use streamable_http::{

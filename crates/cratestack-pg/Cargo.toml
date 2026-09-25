@@ -180,13 +180,13 @@ pgvector = ["cratestack-macros/pgvector", "cratestack-sqlx/pgvector"]
 # (spatial column bind/decode). Adds no new third-party dependency —
 # PostGIS's wire format is EWKB, i.e. bytes.
 postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
-# Serves the schema's `@mcp(tool)` procedures to agents over MCP (ADR 0002,
-# cratestack#1038): pulls `cratestack-mcp` (and through it `rmcp`), and
+# Serves the schema's `@mcp(tool)` procedures and `@@mcp(resource: ...)`
+# models to agents over MCP (ADR 0002, cratestack#1038, cratestack#1040):
+# pulls `cratestack-mcp` (and through it `rmcp`), and
 # forwards `cratestack-macros/mcp`, which makes `include_server_schema!`
 # generate `cratestack_schema::mcp` instead of refusing the schema. Off by
 # default, and with it off `rmcp` is absent from this crate's normal
-# dependency graph (CI's `facade-disjointness` job asserts it). Tools only
-# for now; `@@mcp(resource: ...)` stays a compile error until phase 5.
+# dependency graph (CI's `facade-disjointness` job asserts it).
 mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
 
 [dependencies]
@@ -321,4 +321,11 @@ required-features = ["mcp"]
 [[test]]
 name = "mcp_policy_pg"
 path = "tests/mcp_policy_pg.rs"
+required-features = ["mcp"]
+
+# cratestack#1040: MCP resources against Postgres, REST as the visibility
+# oracle. Postgres-backed; runs in `just test-ci-db-mcp`.
+[[test]]
+name = "mcp_resources_pg"
+path = "tests/mcp_resources_pg.rs"
 required-features = ["mcp"]

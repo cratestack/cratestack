@@ -94,14 +94,15 @@ pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource, EnumDecl,
-    EnumVariant, ExtensionKind, Field, INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, MixinDecl,
-    Model, ModelMcpExposure, OwnedSchemaSummary, ParsedCompositeUnique, ParsedIndexAttribute,
-    Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query,
-    Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity, TypeDecl,
-    TypeRef, View, ViewSource, canonical_geometry_subtype, computed_params_type_name,
-    geometry_subtype_names, is_computed_attribute, is_computed_field, model_internal_actions,
-    parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
-    parse_index_attribute, parse_internal_attribute, scan_sql_placeholders,
+    EnumVariant, ExtensionKind, Field, INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName,
+    MixinDecl, Model, ModelMcpExposure, OwnedSchemaSummary, ParsedCompositeUnique,
+    ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure,
+    QUERY_SQL_ATTRIBUTE, Query, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle,
+    TypeArity, TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype,
+    computed_params_type_name, geometry_subtype_names, is_computed_attribute, is_computed_field,
+    model_internal_actions, parse_composite_id_attribute, parse_composite_unique_attribute,
+    parse_computed_params_arg, parse_index_attribute, parse_internal_attribute,
+    scan_sql_placeholders,
 };
 pub use store::{
     BoundedOutcome, BucketBudget, Charged, ClientStateStore, ConsumeRequest, IdempotencyStore,

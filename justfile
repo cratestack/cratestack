@@ -205,10 +205,10 @@ lint:
 	# Same blind spot for `mcp` (cratestack#1038): the generated
 	# `cratestack_schema::mcp` module only exists under the feature, and its
 	# test targets are `required-features = ["mcp"]`. `cratestack-api` whole;
-	# `cratestack-pg` scoped to its lib and the two MCP targets, since every
+	# `cratestack-pg` scoped to its lib and the MCP targets, since every
 	# other test there would re-expand under the feature for no new code.
 	cargo clippy -p cratestack-api --features mcp --all-targets -- -D warnings {{clippy_allow}}
-	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test json_schema_models -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -331,16 +331,17 @@ test-ci-db *args='':
 test-ci-db-decimal-bigdecimal *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --no-default-features --features postgres,decimal-bigdecimal --test decimal_bigdecimal_backend {{args}}
 
-# Shard addendum: MCP's database-enforced policy (cratestack#1038) — a
-# delegated `@authorize(...)` denial and an `@@allow`-hidden row, both
-# reached through a `tools/call`. `required-features = ["mcp"]`
-# (`crates/cratestack-pg/tests/mcp_policy_pg.rs`), so `test-ci-db` above,
-# which runs default features, never compiles it. The recipe exports
+# Shard addendum: MCP's database-enforced policy — a delegated
+# `@authorize(...)` denial and an `@@allow`-hidden row reached through a
+# `tools/call` (cratestack#1038, `mcp_policy_pg`), and resources read with
+# REST as the visibility oracle (cratestack#1040, `mcp_resources_pg`).
+# `required-features = ["mcp"]`, so `test-ci-db` above, which runs default
+# features, never compiles either. The recipe exports
 # `CRATESTACK_REQUIRE_DB=1` itself, so a local run with no reachable database
 # fails instead of skipping and printing `ok` (CI's `tests-db` job sets it
 # too; the two agree).
 test-ci-db-mcp *args='':
-	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg {{args}}
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg {{args}}
 
 # Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
 # persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage

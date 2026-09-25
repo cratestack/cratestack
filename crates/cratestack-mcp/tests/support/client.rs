@@ -3,12 +3,10 @@
 //! bytes a real client sees (error codes, `isError`, the version list), and
 //! an SDK client would decode some of that away.
 
-use cratestack_mcp::{ServeError, StdioServer};
+use cratestack_mcp::{McpTools, ServeError, StdioServer};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream, Lines};
 use tokio::task::JoinHandle;
-
-use super::FakeTools;
 
 pub struct Client {
     writer: Option<DuplexStream>,
@@ -27,7 +25,7 @@ pub fn meta(version: &str) -> Value {
 }
 
 impl Client {
-    pub fn start(server: StdioServer<FakeTools>) -> Self {
+    pub fn start<T: McpTools>(server: StdioServer<T>) -> Self {
         let (client_writer, server_reader) = tokio::io::duplex(1 << 16);
         let (server_writer, client_reader) = tokio::io::duplex(1 << 16);
         let handle = tokio::spawn(server.serve_io(server_reader, server_writer));

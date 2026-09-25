@@ -15,6 +15,8 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::resources::ResourceDescriptor;
+
 /// One exposed tool, as the generated table states it at compile time.
 ///
 /// `#[non_exhaustive]` so a later phase can add a field without a breaking
@@ -86,6 +88,43 @@ pub trait McpTools: Send + Sync + 'static {
         call: Self::Call,
         ctx: &CratestackContext,
     ) -> impl Future<Output = Result<Value, CratestackError>> + Send;
+
+    /// Every exposed `@@mcp(resource: ...)` model, in declaration order
+    /// (cratestack#1040). Defaulted to none, so a tools-only table (and
+    /// every hand-written one from before resources) needs no change.
+    fn resources(&self) -> &'static [ResourceDescriptor] {
+        &[]
+    }
+
+    /// One record of the resource named `segment`, as the REST read
+    /// serializes it, or `None` when no row with that id is *visible to
+    /// `ctx`* — a hidden row and a missing one must be the same `None`
+    /// (ADR 0002 security requirement 12). `id` is the URI's decoded text;
+    /// an id that does not parse as the primary key is also `None`.
+    fn read_record(
+        &self,
+        segment: &str,
+        id: &str,
+        ctx: &CratestackContext,
+    ) -> impl Future<Output = Result<Option<Value>, CratestackError>> + Send {
+        let _ = (segment, id, ctx);
+        async { Ok(None) }
+    }
+
+    /// At most `limit` records of `segment`, visible to `ctx`, in primary
+    /// key order, skipping the first `offset` of them. The row policy must
+    /// filter *before* `LIMIT`/`OFFSET`, so a hidden row never occupies a
+    /// slot of a page. `limit` is already clamped by this crate.
+    fn read_page(
+        &self,
+        segment: &str,
+        limit: u32,
+        offset: u64,
+        ctx: &CratestackContext,
+    ) -> impl Future<Output = Result<Vec<Value>, CratestackError>> + Send {
+        let _ = (segment, limit, offset, ctx);
+        async { Ok(Vec::new()) }
+    }
 }
 
 /// Arguments that do not deserialize into the tool's `Args`. The message

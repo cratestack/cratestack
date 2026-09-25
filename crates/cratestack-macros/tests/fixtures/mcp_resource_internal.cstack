@@ -1,0 +1,20 @@
+// cratestack#1040: `@@mcp(resource: ...)` on a model whose `@@internal`
+// keeps a read verb off the wire is a contradiction, refused before the
+// feature check, so the message is the same whether or not `mcp` is on.
+
+datasource db {
+  provider = "postgresql"
+}
+
+mcp {
+  name = "blog"
+  expose = [resources]
+}
+
+model Post {
+  id Int @id
+
+  @@allow("read", true)
+  @@internal("detail")
+  @@mcp(resource: "posts")
+}

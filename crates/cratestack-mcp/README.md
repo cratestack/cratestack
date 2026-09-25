@@ -1,6 +1,7 @@
 # cratestack-mcp
 
-**L4 — the MCP binding.** Serves a CrateStack schema's `@mcp(tool)` procedures to agents over the
+**L4 — the MCP binding.** Serves a CrateStack schema's `@mcp(tool)` procedures and `@@mcp(resource)`
+models to agents over the
 [Model Context Protocol](https://modelcontextprotocol.io), revision `2026-07-28`, through the same
 generated policy check as REST and RPC (ADR 0002, cratestack#1033).
 
@@ -55,8 +56,13 @@ A foreign `Origin` gets 403 and `GET`/`DELETE` get 405. A missing or rejected to
 400 `invalid_request` before your provider runs, and a mirrored MCP header sent twice gets 400 /
 `-32020`. The token is removed from the request before `rmcp`
 sees it, and every call runs under the `CratestackContext` your provider built, through the same
-admission and policy as stdio. **Your provider must check the token's audience** against the resource
-identifier: MCP requires it, and CrateStack ships no generic OAuth provider in v1 (ADR 0002 Q5).
+admission and policy as stdio. Every method answers only a request the guard authenticated. Behind the
+guard, `server/discover`, `completion/complete`, `tools/call`, `resources/read` and every list method
+(`tools/list`, `prompts/list` and the two resource lists) also check for the guard's caller. A request
+that reaches the handler another way (a layer mounted around the guard by mistake) is `-32603`, never
+served anonymously, even where the answer would not depend on the caller. **Your provider must check
+the token's audience** against the resource identifier: MCP requires it, and CrateStack ships no generic OAuth
+provider in v1 (ADR 0002 Q5).
 `tests/support/token.rs` is an example.
 
 ## What a call goes through
@@ -77,5 +83,41 @@ identifier: MCP requires it, and CrateStack ships no generic OAuth provider in v
 Errors are `isError: true` results whose text is exactly REST's error envelope (`code`, `message`), so
 MCP reveals nothing REST does not.
 
-Not yet: resources (phase 5). A schema that declares `@@mcp(resource: ...)` does not compile until
-they ship.
+## Resources (`cratestack-pg` only)
+
+A model annotated `@@mcp(resource: "posts")` is a read-only resource (cratestack#1040):
+
+```cstack
+mcp {
+  name = "blog"
+  expose = [resources]
+}
+```
+
+- `cratestack://blog/posts/{id}` reads one record, shaped exactly like REST's `GET /posts/{id}`
+  (same serializer, so `@server_only` fields are absent and `@computed` fields resolved).
+- `cratestack://blog/posts{?limit,cursor}` reads a page, `{"items": [...], "nextCursor": "..."}`, in
+  primary-key order. `limit` defaults to 50 and is clamped (not refused) at 200, or at the model's
+  `max_page_size:` when lower. Pass `nextCursor` back as `cursor`; a cursor this server did not issue for
+  that resource is `-32602`.
+
+`blog` is the block's `name`, required whenever `expose` lists `resources` and refused otherwise. It is
+the URI's host, so it is a DNS label: a quoted string of lowercase letters, digits and `-`, 1 to 63
+characters, not starting or ending with `-`. Two rules go further. `--` may not be its 3rd and 4th
+characters, the form IDNA reserves (RFC 5891 § 4.2.3.1): an IDNA-aware client may show an `xn--` name
+as a different, Unicode one, and every other `??--` is held for a prefix like it. So `xn--blog` and
+`ab--c` are refused, while `a--b` and `abc--d` are not. And it needs at least one letter: `127` is
+refused, `v2` and `3d-shop` are not. The name is stated rather than taken from the file's so that
+renaming the `.cstack` file never moves a URI an agent holds; `ResourceDescriptor::name` carries it. The
+scheme is case-insensitive (RFC 3986 § 3.1: `CRATESTACK://blog/posts/1` is the same URI); the name,
+segment and id are matched exactly.
+
+An `{id}` is one URI path segment: letters, digits, `-._~!$&'()*+,;=:@` and `%XX` escapes (RFC 3986
+`pchar`). Percent-encode anything else (`cratestack://blog/posts/a%20b` reads id `a b`); an id carrying
+it raw, a space for example, is "resource not found" and never reaches the database.
+
+Reads go through the same ORM calls REST's handlers make, under the caller's context (the one passed to
+`StdioServer::new`, or the one your `AuthProvider` built for this HTTP request), so `@@allow("read", ...)`
+is in the SQL: a row the caller may not read and a row that does not exist are the same `-32602`
+"resource not found". Reads pass the same rate-limit admission as tool calls, in the caller's bucket.
+Every result is `cacheScope: private`, `ttlMs: 0`.

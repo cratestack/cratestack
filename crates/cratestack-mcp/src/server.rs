@@ -9,8 +9,10 @@ use std::borrow::Cow;
 use cratestack_core::CratestackContext;
 use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::model::{
-    CacheScope, CallToolRequestParams, CallToolResponse, Implementation, ListToolsResult,
-    PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerConfig, Tool,
+    CacheScope, CallToolRequestParams, CallToolResponse, CompleteRequestParams, CompleteResult,
+    DiscoverResult, Implementation, ListPromptsResult, ListResourceTemplatesResult,
+    ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+    ReadResourceRequestParams, ReadResourceResponse, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
@@ -19,9 +21,7 @@ use crate::listing::{ToolTableError, build_listing};
 use crate::streamable_http::caller::Caller;
 use crate::table::McpTools;
 
-/// The single version [`ServerHandler::supported_protocol_versions`]
-/// returns. A `static` because the trait wants a `'static` slice.
-static SUPPORTED: [ProtocolVersion; 1] = [ProtocolVersion::V_2026_07_28];
+mod discovery;
 
 /// An MCP server over one schema's tools.
 ///
@@ -92,33 +92,29 @@ impl<T: McpTools> McpServer<T> {
         self.store_error_policy = policy;
         self
     }
-
-    /// The `serverInfo` `server/discover` reports. Defaults to this crate's
-    /// own name and version.
-    pub fn with_implementation(mut self, name: &str, version: &str) -> Self {
-        self.implementation = Implementation::new(name, version);
-        self
-    }
 }
 
 impl<T: McpTools> ServerHandler for McpServer<T> {
     fn get_info(&self) -> ServerConfig {
-        let capabilities = ServerCapabilities::builder().enable_tools().build();
-        let mut config = ServerConfig::new(capabilities);
-        config.protocol_version = ProtocolVersion::V_2026_07_28;
-        config.server_info = self.implementation.clone();
-        config
+        self.config()
     }
 
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        Cow::Borrowed(&SUPPORTED)
+        Cow::Borrowed(&discovery::SUPPORTED)
     }
 
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        // The list is static and unfiltered, so the caller changes nothing
+        // in it. Resolved anyway (maintainer decision on #1040) so that over
+        // Streamable HTTP every list method, like the resource lists
+        // (`resources::listed`) and `list_prompts`, answers only a request
+        // the guard authenticated. Over stdio the caller is fixed and this
+        // always succeeds.
+        self.caller.resolve(&context)?;
         // The whole table in one page. `ttlMs: 0` and a private scope are
         // `rmcp`'s own `server/discover` defaults; the list is static, but a
         // redeploy can change it, and nothing here knows how often that is.
@@ -126,6 +122,17 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         result.ttl_ms = Some(0);
         result.cache_scope = Some(CacheScope::Private);
         Ok(result)
+    }
+
+    /// No prompts, but a list method all the same: `rmcp`'s default would
+    /// answer it below the guard, the one list `list_tools`' rule missed.
+    async fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListPromptsResult, ErrorData> {
+        self.caller.resolve(&context)?;
+        Ok(ListPromptsResult::default())
     }
 
     async fn call_tool(
@@ -137,6 +144,53 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         crate::call::call_tool(self, &caller, request, &context.meta)
             .await
             .map(CallToolResponse::from)
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, ErrorData> {
+        use crate::resources::{list_resources, listed};
+        listed(self, &context.extensions, list_resources)
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, ErrorData> {
+        use crate::resources::{list_templates, listed};
+        listed(self, &context.extensions, list_templates)
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, ErrorData> {
+        // The per-request caller, as `call_tool`'s: it is both whose rows
+        // the read may see and whose rate-limit bucket it is charged to.
+        let caller = self.caller.resolve(&context)?;
+        crate::resources::read_resource(self, &caller, &request.uri)
+            .await
+            .map(ReadResourceResponse::from)
+    }
+
+    /// This and `complete` only add the caller check (`server/discovery.rs`).
+    async fn discover(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<DiscoverResult, ErrorData> {
+        self.discovered(&context.extensions)
+    }
+
+    async fn complete(
+        &self,
+        _request: CompleteRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CompleteResult, ErrorData> {
+        self.completed(&context.extensions)
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {

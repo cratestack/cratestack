@@ -161,6 +161,90 @@ outside core and `cratestack-cose` uses these types yet.
   method, encodes and seals in one call. The default is `codec.encode` then
   `seal`. `cratestack-cose` overrides it to encode in place.
 
+### MCP phase 5: `@@mcp(resource: ...)` models are read-only resources, with REST's visibility (#1040)
+
+**With the `mcp` feature of `cratestack-pg` on, `include_server_schema!` now
+serves `@@mcp(resource: "<segment>")` models instead of refusing them** (the
+phase-1 release gate is lifted for resources; without the feature, the Q4
+message is unchanged). The same generated table serves them:
+`cratestack_schema::mcp::tools(db, registry, resolvers)`.
+
+- **URIs, named by a new `name` key.** `resources/templates/list` offers
+  `cratestack://<name>/<segment>/{id}` and
+  `cratestack://<name>/<segment>{?limit,cursor}`; `resources/list` offers
+  `cratestack://<name>/<segment>`. `<segment>` is the author's `@@mcp(resource:
+  ...)`; `<name>` is the block's own `name` (maintainer decision on #1040), so a
+  URI stays the same when the `.cstack` file is renamed or moved, and two
+  servers whose files share a name no longer collide:
+
+  ```cstack
+  mcp {
+    name = "blog"                   // required when `expose` lists `resources`
+    expose = [tools, resources]
+  }
+  ```
+
+  `name` is the URI's host, so it is a DNS label: a quoted string of
+  lowercase ASCII letters, digits and `-`, 1 to 63 characters, not starting
+  or ending with `-` (`a-b` is fine; `-blog`, `blog-` and a 64-character name
+  are not). Two rules go further (maintainer decisions on #1040): no `--` as
+  the 3rd and 4th characters, the form IDNA reserves (RFC 5891 § 4.2.3.1),
+  so `xn--blog` and `ab--c` are refused while `a--b` and `abc--d` are not;
+  and at least one letter, so `127` and `2026` are refused while `v2` and
+  `3d-shop` are not. The parser refuses it missing when resources are exposed,
+  malformed (one error per broken rule, naming it), set twice, or present
+  when they are not (only resource URIs read it, so there it would be
+  inert). The LSP completes `name = "..."` with the rule in its detail, and
+  its hover shows the URIs it produces. No table or model name appears in any URI. The scheme is matched
+  case-insensitively, per RFC 3986 § 3.1 (`CRATESTACK://blog/posts/1` reads the
+  same record); the name, segment and id are matched exactly.
+- **Same read path as REST.** A record is `find_unique(id).run(ctx)`, a page is
+  REST's own list builder (primary-key order), and both render through REST's
+  serializer, so the JSON is exactly REST's `GET` body: `@server_only` fields
+  omitted, `@computed` fields resolved. `@@allow("read", ...)` is in the SQL,
+  in the `WHERE` before `ORDER BY ... LIMIT ... OFFSET`.
+- **No existence oracle.** An unknown resource, a missing id, an id that is not
+  a valid key and a row the caller may not read all answer the same JSON-RPC
+  error, byte for byte: `-32602` `"resource not found"`.
+- **An id is one URI path segment** (RFC 3986 `pchar`: letters, digits,
+  `-._~!$&'()*+,;=:@`, and `%XX`). An id with any other raw character (a
+  space, a control, `"`, `<`, `>`, non-ASCII, ...) is that same "resource not
+  found" and never reaches the database; percent-encode it instead
+  (`cratestack://blog/notes/a%20b` reads id `a b`).
+- **Pages** are `{"items": [...], "nextCursor": "..."}` (no `nextCursor` on the
+  last page). `limit` defaults to 50 and is clamped, not refused, at 200 or the
+  model's `max_page_size:`. The cursor is opaque and bound to its resource; one
+  this server did not issue for it is `-32602`.
+- **Whose rows, whose bucket.** A read runs as the call's own caller: the
+  context passed to `StdioServer::new`, or, over Streamable HTTP (phase 4),
+  the one your `AuthProvider` built for that request, so two tokens reading
+  the same collection each see only their own visible rows. `resources/list`
+  and `resources/templates/list` sit behind the same HTTP guard, and so do
+  `tools/list` and `prompts/list` (always empty) now: every list method
+  resolves the guard's caller and fails closed (`-32603`) on a request that
+  reached the handler without one. So do `server/discover` and
+  `completion/complete` (always empty), although neither answer depends on
+  who asks: `rmcp`'s defaults answered both below the guard, and they are
+  now overridden to resolve the caller first. Nothing changes over stdio.
+- **Caching and admission.** Every result is `cacheScope: private`, `ttlMs: 0`.
+  Reads pass the same rate-limit admission as tool calls, charged to the same
+  per-caller bucket (`mcp:<id>` for a user, `mcp-system:<id>` for a system
+  caller) under the same `StoreErrorPolicy`; a throttled read is `-32603` with
+  `data.code = "TOO_MANY_REQUESTS"`.
+- **New compile errors**, in both feature states: `@@mcp` on a model whose
+  `@@internal(...)` hides `get` or `list`; and `@@mcp` on a model whose `@id` is
+  not `String`, `Cuid`, `Int` or `Uuid`. The schema file's name no longer
+  matters to MCP at all.
+- **IR.** `McpConfig` gains `name: Option<McpName>` (the value and the span of
+  its entry); `serde(default)`, so an older IR snapshot still deserializes.
+- **`cratestack-mcp` API.** `McpTools` gains `resources()`, `read_record` and
+  `read_page`, all defaulted, so hand-written tool tables compile unchanged.
+  New: `ResourceDescriptor` (`name`, the URI's host; `segment`;
+  `max_page_size`; the two admission descriptors), `DEFAULT_PAGE_SIZE`,
+  `RESOURCE_SCHEME`.
+- **Not in this release:** schema-metadata resources (ADR 0002 § Resources),
+  relation traversal in URIs, `subscriptions/listen`.
+
 ### MCP phase 4: Streamable HTTP, authenticated by your `AuthProvider`, with RFC 9728 metadata and an enforced Origin allowlist (#1039)
 
 **The MCP server can now be mounted on your axum router.** The same generated
@@ -452,6 +536,7 @@ The syntax (ADR 0002, decided 2026-09-24):
 
 ```cstack
 mcp {
+  name = "blog"                     // with resources only (phase 5, #1040)
   expose = [tools, resources]       // or [tools], or [resources]
 }
 

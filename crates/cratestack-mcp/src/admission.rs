@@ -106,7 +106,12 @@ pub(crate) async fn admit_and_run<T: McpTools>(
 /// MCP does not yet, and that is an API question left to the maintainer.
 /// What a store failure then does is the application's
 /// [`cratestack_exec::StoreErrorPolicy`], the same type HTTP takes.
-async fn rate_limit<T: McpTools>(
+///
+/// Resource reads pass through here too (`src/resources/read.rs`,
+/// cratestack#1040), with their resource's `get`/`list` descriptor, so a
+/// read and a tool call share the caller's one bucket (`mcp:` for a user,
+/// `mcp-system:` for a system caller).
+pub(crate) async fn rate_limit<T: McpTools>(
     server: &McpServer<T>,
     ctx: &CratestackContext,
     op: OpAdmission,

@@ -16,6 +16,10 @@
 //! - `@mcp(tool)` on a `@stream` procedure fails naming Q8 (a parser rule).
 //! - `@mcp(tool)` on a procedure taking `Json` fails naming the missing
 //!   JSON Schema mapping, before the feature check.
+//! - `@@mcp(resource: ...)` on a model whose `@@internal` hides a read verb
+//!   fails naming the contradiction, before the feature check
+//!   (cratestack#1040). The resource *being served* with the feature on is
+//!   what `cratestack-pg`'s `tests/mcp_resources_pg.rs` compiles.
 //!
 //! The third role, `include_client_schema!`, *accepts* an MCP schema; that
 //! is a pass case, so it lives in `cratestack-client`'s
@@ -67,6 +71,11 @@ fn mcp_release_gate_compile_fail() {
             "mcp_json_tool_refused.rs",
             "tests/fixtures/mcp_json_tool.cstack",
             "include_server_schema!({staged}, db = None)",
+        ),
+        (
+            "mcp_resource_internal_refused.rs",
+            "tests/fixtures/mcp_resource_internal.cstack",
+            "include_server_schema!({staged}, db = Postgres)",
         ),
     ];
     for (file_name, fixture, call) in cases {
