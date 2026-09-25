@@ -1,0 +1,36 @@
+// `transport rpc` twin of `server_only_query.cstack`: the same models and
+// procedure, dispatched through `/rpc/...`. See that file and
+// `tests/server_only_query.rs`.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model SoQryOwner {
+  id Int @id
+  name String
+  age Int
+  nickname String?
+  secret String @server_only
+  pin Int @server_only
+  recovery String? @server_only
+  pets SoQryPet[] @relation(fields:[id],references:[ownerId])
+
+  @@allow("read", auth() != null)
+}
+
+model SoQryPet {
+  id Int @id
+  ownerId Int
+  label String
+  token String @server_only
+  owner SoQryOwner @relation(fields:[ownerId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+procedure soQryFindOwners(query: FindMany<SoQryOwner>): SoQryOwner[]
+  @allow(auth() != null)

@@ -1,0 +1,46 @@
+// A request may never filter or sort by a `@server_only` field. See
+// `tests/server_only_query.rs`. `server_only_query_rpc.cstack` is this
+// file over `transport rpc`; keep the two in step.
+//
+// Every `@server_only` field has a public twin of the same type and arity
+// (`secret`/`name`, `pin`/`age`, `recovery`/`nickname`, `token`/`label`).
+// The test runs each query with the twin first, to prove the query
+// contract offers that operator for that type. It then runs the query with
+// the `@server_only` field, which must be refused exactly as a field the
+// model does not declare.
+//
+// `SoQry` prefix: the tables must not collide with any other fixture's on
+// the shared test Postgres.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model SoQryOwner {
+  id Int @id
+  name String
+  age Int
+  nickname String?
+  secret String @server_only
+  pin Int @server_only
+  recovery String? @server_only
+  pets SoQryPet[] @relation(fields:[id],references:[ownerId])
+
+  @@allow("read", auth() != null)
+}
+
+model SoQryPet {
+  id Int @id
+  ownerId Int
+  label String
+  token String @server_only
+  owner SoQryOwner @relation(fields:[ownerId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+// `FindMany<Model>` decodes a client-built `where` and `orderBy` into the
+// generated `SoQryOwnerWhere` and `SoQryOwnerSortField`.
+procedure soQryFindOwners(query: FindMany<SoQryOwner>): SoQryOwner[]
+  @allow(auth() != null)
