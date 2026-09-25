@@ -62,3 +62,43 @@ fn challenge_signing_key_fails_closed_when_env_var_is_whitespace_only() {
         Err(error) => assert!(matches!(error, AuthError::MissingSigningKeyEnv(_))),
     }
 }
+
+/// The exact bytes `build_cose_enroll_response_with_key` produces for a
+/// fixed response and the fixed test key. Pinned so that moving the
+/// enrolment code (cratestack#1005 part B, into `cratestack-cose`'s `auth`
+/// feature) is provably byte-neutral: Ed25519 is deterministic, so any
+/// change to the payload encoding, the protected header (the legacy 35-byte
+/// `kid`, alg `-8`), the empty external AAD or the tagging shows up here.
+const GOLDEN_ENROLL_RESPONSE_HEX: &str = concat!(
+    "d2845829a201270458236372617465737461636b2d617574682d656e726f6c6c2d6368616c6c656e",
+    "67652d7631a0587da56c656e726f6c6c6d656e7449646a656e725f676f6c64656e656b6579496469",
+    "766b5f676f6c64656e696368616c6c656e67656a63686c5f676f6c64656e6f6368616c6c656e6765",
+    "466f726d617464636f736569657870697265734174781e323032362d30392d32315431343a31333a",
+    "32302e3132333435363738395a58407c5159e9b220688b8759f7ae1ed7dd56335ae3ad5e0937f03f",
+    "0189bf499060b1e898e78132862eaf70c7d0f60d6f5b3a9ea5f17c9ee595dcdb135896bb7f7f09",
+);
+
+fn golden_enroll_response() -> EnrollResponse {
+    EnrollResponse {
+        enrollment_id: "enr_golden".to_string(),
+        key_id: "vk_golden".to_string(),
+        challenge: "chl_golden".to_string(),
+        challenge_format: "cose".to_string(),
+        // 2026-09-21T14:13:20.123456789Z: sub-second digits included so a
+        // change in how the timestamp is rendered is caught too.
+        expires_at: chrono::DateTime::from_timestamp(1_790_000_000, 123_456_789).expect("in range"),
+    }
+}
+
+#[test]
+fn cose_enroll_response_matches_the_golden_bytes() {
+    let key = decode_signing_key(test_challenge_signing_key_b64()).expect("test key decodes");
+    let encoded = build_cose_enroll_response_with_key(&golden_enroll_response(), &key)
+        .expect("cose build should succeed");
+    let hex: String = encoded.iter().map(|byte| format!("{byte:02x}")).collect();
+    assert_eq!(hex, GOLDEN_ENROLL_RESPONSE_HEX);
+
+    let decoded = parse_cose_enroll_response_with_key(&encoded, &key).expect("golden parses");
+    assert_eq!(decoded.expires_at, golden_enroll_response().expires_at);
+    assert_eq!(decoded.enrollment_id, "enr_golden");
+}
