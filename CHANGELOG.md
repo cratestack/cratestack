@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### MCP phase 6: an example service, and a conformance run with the official MCP Inspector (#1041)
+
+- **`examples/mcp-operator`** is a Postgres-backed schema served to agents. It has
+  a query tool (`recent_posts`), a mutation tool whose `@allow` admits editors
+  only (`publish_post`), and a read-only `@@mcp(resource: "posts")` model under
+  an `mcp` block with `name = "blog"` and `expose = [tools, resources]`. It
+  runs over **stdio**, where the caller is a token verified from the
+  environment and there is no default identity, and over **Streamable HTTP**,
+  behind an example
+  audience-checking `AuthProvider` with RFC 9728 metadata. The provider
+  (`src/token.rs`) is example code, not a published API: CrateStack v1 ships
+  no generic OAuth provider (ADR 0002 Q5). The example is its own
+  `[workspace]` root. As a member, its `mcp` feature would be unified into
+  every `--workspace` build.
+- **`just mcp-conformance`** drives the example with a real third-party client:
+  `@modelcontextprotocol/inspector` 2.8.0, the official Inspector CLI, built on
+  `@modelcontextprotocol/client` 2.0.0. The client and its whole dependency
+  tree are pinned by a committed `package-lock.json`, with an integrity hash
+  for every package, and installed with `npm ci --ignore-scripts` into a
+  throwaway directory. Over both transports, the client negotiates protocol
+  **2026-07-28** through `server/discover`. The run covers:
+  - `tools/list`;
+  - a successful `tools/call`;
+  - a policy-denied `tools/call` (an `isError` result carrying REST's
+    `FORBIDDEN` envelope), then proof that it never ran;
+  - `resources/list`;
+  - `resources/read` for a record, for a collection, and for a hidden row,
+    which answers exactly like a missing one;
+  - the refusals: no token (a stdio server does not even start), a token for
+    another audience, and a legacy `initialize` client.
+
+  It fails unless all 26 expected cases ran and passed. It starts a throwaway
+  `postgres:18-alpine` container unless `MCP_CONFORMANCE_DATABASE_URL` is set.
+  CI runs it in the new `mcp-example` job, with the example's rustfmt, clippy,
+  and Postgres-backed tests (`CRATESTACK_REQUIRE_DB=1`).
+- **`docs/design/mcp-security-test-plan.md`** maps each of ADR 0002's 13
+  security requirements, and the ones phases 3 to 5 added, to the tests that
+  prove them. It names what no test proves, and the release blockers still
+  open.
+
 ### `cratestack-cose`: unary COSE_Sign1 / COSE_Mac0 envelope, first half (#1005)
 
 **A new L2 crate implements ADR 0006's unary envelope.** `CoseEnvelope`

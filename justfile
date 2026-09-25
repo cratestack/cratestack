@@ -343,6 +343,80 @@ test-ci-db-decimal-bigdecimal *args='':
 test-ci-db-mcp *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg {{args}}
 
+# MCP conformance with a real third-party client (cratestack#1041, ADR 0002
+# phase 6): the official MCP Inspector CLI drives `examples/mcp-operator`
+# over stdio and over Streamable HTTP with a bearer token, at protocol
+# 2026-07-28. `examples/mcp-operator/conformance/run.mjs` holds the cases:
+# discover, tools/list, a successful and a policy-denied tools/call,
+# resources/list and resources/read, and the refusals (no token, a token for
+# another audience, a legacy `initialize` client).
+#
+# The client and its whole dependency tree are pinned by
+# `examples/mcp-operator/conformance/package-lock.json` (committed, with an
+# `integrity` hash for every package) and installed with `npm ci`. That
+# refuses a lockfile that disagrees with `package.json`, and a tarball whose
+# hash differs. With `--ignore-scripts`, no package's install script runs.
+# The two files are copied into a throwaway directory and installed there,
+# so nothing lands in the repository, in any workspace, or globally. Bump
+# the client deliberately: edit the version in that `package.json`, run
+# `npm install --package-lock-only --ignore-scripts` next to it, and re-read
+# the lockfile diff and the run's output.
+#
+# Nothing here reports anywhere. The Inspector CLI has no telemetry (checked
+# in 2.8.0's bundle). npm's audit, funding and update-notifier requests are
+# off. `conformance/harness.mjs` keeps the client's secret store in memory,
+# away from the OS keychain.
+#
+# Postgres: `MCP_CONFORMANCE_DATABASE_URL` if set (an empty database the
+# example may create `posts` in), otherwise a throwaway `postgres:18-alpine`
+# container on a random loopback port, removed on exit even on failure.
+# Needs `node` (>= 22.19, the client's engine floor, enforced at install by
+# `--engine-strict`), `npm`, and `docker` unless a URL is given. On rootless
+# Docker nothing extra is needed: this uses the `docker` CLI, which reads
+# `docker context`.
+mcp-conformance:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	for tool in node npm cargo; do
+	  command -v "$tool" >/dev/null || { echo "mcp-conformance: $tool not found on PATH" >&2; exit 1; }
+	done
+	conformance=examples/mcp-operator/conformance
+	work="$(mktemp -d)"
+	container=""
+	cleanup() {
+	  if [ -n "$container" ]; then docker rm -f "$container" >/dev/null 2>&1 || true; fi
+	  rm -rf "$work"
+	}
+	trap cleanup EXIT
+	mkdir -p "$work/inspector" "$work/home"
+	cp "$conformance/package.json" "$conformance/package-lock.json" "$work/inspector/"
+	echo "installing the MCP Inspector from $conformance/package-lock.json"
+	npm ci --prefix "$work/inspector" --ignore-scripts --engine-strict \
+	  --no-audit --no-fund --no-update-notifier --loglevel=error
+	cargo build --locked --manifest-path examples/mcp-operator/Cargo.toml
+	if [ -n "${MCP_CONFORMANCE_DATABASE_URL:-}" ]; then
+	  database_url="$MCP_CONFORMANCE_DATABASE_URL"
+	else
+	  command -v docker >/dev/null || { echo "mcp-conformance: docker not found; set MCP_CONFORMANCE_DATABASE_URL" >&2; exit 1; }
+	  container="cratestack-mcp-conformance-$$"
+	  docker run -d --rm --name "$container" -e POSTGRES_USER=blog -e POSTGRES_PASSWORD=blog \
+	    -e POSTGRES_DB=blog -p 127.0.0.1::5432 postgres:18-alpine >/dev/null
+	  # Over TCP, not the socket: the image's init-time server listens on the
+	  # socket only, so a socket probe can pass before the real server is up.
+	  for _ in $(seq 60); do
+	    docker exec "$container" pg_isready -h 127.0.0.1 -U blog -d blog >/dev/null 2>&1 && break
+	    sleep 1
+	  done
+	  docker exec "$container" pg_isready -h 127.0.0.1 -U blog -d blog >/dev/null
+	  port="$(docker port "$container" 5432/tcp | head -n1 | sed 's/.*://')"
+	  database_url="postgres://blog:blog@127.0.0.1:${port}/blog"
+	fi
+	DATABASE_URL="$database_url" \
+	MCP_INSPECTOR_DIR="$work/inspector" \
+	MCP_INSPECTOR_HOME="$work/home" \
+	MCP_EXAMPLE_BIN="$PWD/examples/mcp-operator/target/debug/mcp-operator-example" \
+	  node "$conformance/run.mjs"
+
 # Shard addendum: `cratestack-outbox`'s 5 live-Postgres tests (atomic
 # persist/rollback, cursor-ordered drain, GC sweep) — a 2026-08 CI-coverage
 # audit found no workflow ever invoked them (`grep -rn outbox

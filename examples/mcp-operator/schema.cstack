@@ -1,0 +1,50 @@
+// A small blog served to agents over MCP (ADR 0002, cratestack#1041).
+//
+// Exposure is opt-in twice: the `mcp` Cargo feature on the facade
+// (`Cargo.toml`), and one annotation per declaration below. Nothing without
+// `@mcp`/`@@mcp` reaches an agent.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// `name` is the host of every resource URI (`cratestack://blog/posts/1`).
+// It is stated, not taken from this file's name, so renaming the file never
+// moves a URI an agent holds.
+mcp {
+  name = "blog"
+  expose = [tools, resources]
+}
+
+// Filled by the example `AuthProvider` from a verified token's claims
+// (`src/token.rs`), on both transports.
+auth Caller {
+  id String
+  role String
+}
+
+// Readable when published, or by its author. That rule is compiled into
+// the SQL of every read, so the resource below and the `recent_posts` tool
+// both see exactly the rows REST would.
+model Post {
+  id Int @id
+  authorId String
+  title String
+  published Boolean
+
+  @@allow("read", published || authorId == auth().id)
+  @@allow("update", auth() != null && auth().role == "editor")
+  @@mcp(resource: "posts")
+}
+
+// A query tool. `readOnlyHint: true` in `tools/list`.
+procedure recentPosts(limit: Int): Post[]
+  @allow(auth() != null)
+  @mcp(tool: "recent_posts", description: "The newest posts you may read, newest first.")
+
+// A mutation tool. Only an editor's call runs; anyone else's is an
+// `isError` result with the REST error envelope's `FORBIDDEN`.
+mutation procedure publishPost(id: Int): Post
+  @allow(auth() != null && auth().role == "editor")
+  @mcp(tool: "publish_post", description: "Publish a draft post. Editors only.")

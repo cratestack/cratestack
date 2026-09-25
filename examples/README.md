@@ -177,6 +177,30 @@ REMOTE_URL=http://localhost:3001 cargo run -p rpc-streaming-client-rust-example
 REMOTE_URL=http://localhost:3000 cargo run -p rpc-client-example
 ```
 
+## Phase G — MCP operator (standalone workspace)
+
+The MCP operator (ADR 0002) serves a schema's `@mcp(tool)` procedures and `@@mcp(resource: ...)`
+models to agents over the Model Context Protocol. It runs through the same generated policy checks as
+REST and RPC. The example is its own `[workspace]` root, listed in the root `Cargo.toml`'s `exclude`:
+it turns on `cratestack-pg`'s `mcp` feature, which a root member would switch on for every
+`--workspace` build. Run its commands from its directory.
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`mcp-operator/`](mcp-operator) | `include_server_schema!` (`db = Postgres`, `mcp` feature) | A query tool, a mutation tool with an editors-only `@allow`, and a read-only `@@mcp(resource: "posts")` model, served over stdio (the identity is a token from the environment) and over Streamable HTTP (behind an example audience-checking `AuthProvider`, with RFC 9728 metadata). `just mcp-conformance` drives both transports with the official MCP Inspector CLI at protocol `2026-07-28`. |
+
+```bash
+just pg-up
+cd examples/mcp-operator
+export MCP_EXAMPLE_SIGNING_KEY="$(openssl rand -hex 32)"
+MCP_EXAMPLE_TOKEN="$(cargo run -q -- mint-token --audience cratestack://blog --id u-1 --role editor)" cargo run -q -- stdio
+cargo run -q -- http                           # http://127.0.0.1:8787/mcp; tokens for that URL
+
+just mcp-conformance                           # from the repository root: needs node, npm, docker
+```
+
+See [`mcp-operator/README.md`](mcp-operator/README.md) for pointing an MCP client at each transport.
+
 ## Standalone verification crates (not workspace members)
 
 These two prove a dependency-graph property that only holds outside Cargo's workspace-wide feature
@@ -218,6 +242,7 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | `react-vite-swr` | ✅ | ✅ | Real server booted against Postgres; `pnpm --filter react-vite-swr-web run dev` in a real browser (Claude Preview) — created a board via `useCreateBoard` and watched the list refresh with no manual refetch, opened its detail screen, toggled/deleted tasks via `useUpdateTask`/`useDeleteTask` (both invalidated the list live), watched the `estimateFocusMinutes` procedure hook's estimate recompute automatically each time. `pnpm run seed` (`tsx`, plain generated functions, no React) separately created data and called the procedure outside any component. |
 | `flutter-riverpod` | n/a (no Rust crate — reuses `react-vite-swr`'s server; `client/`'s own `flutter test` is the analog) | ✅ macOS desktop | Real `react-vite-swr` server booted against Postgres; `flutter run -d macos` — created a board via the generated `BoardCreateController` and watched the list refresh (`ref.invalidate(boardListProvider)`, no manual refetch), opened its detail screen, toggled/deleted tasks via the generated `TaskUpdateController`/`TaskDeleteController` (both invalidated the list live), watched the `estimateFocusMinutes` procedure provider's estimate recompute automatically each time. Two real bugs found and fixed live during this run (a missing `Accept` header in `CratestackDioAdapter`, and a controller auto-dispose race) — see `flutter-riverpod/README.md`. |
 | `react-vite-refine` | ✅ (5 offline tests, no Docker) | ✅ | Real stateful WireMock container (built from `crates/cratestack-mock-wiremock/docker/Dockerfile`) — `pnpm run verify` (`web/scripts/verify.ts`, outside React) drove create → list → update → delete → 404 live for all three models, confirmed the falsy `published: false` round trip, and confirmed (asserted, not assumed) that a stale `If-Match` gets `200` not `412` against this mock. Also driven by hand in a real browser (Claude Preview): added/edited/deleted rows on all three tabs, confirmed against the container's own state via `fetch`. See `react-vite-refine/README.md`'s "What this demo can't prove" for the two confirmed gaps this surfaced in `cratestack-mock-wiremock`. |
+| `mcp-operator` | ✅ (`tests/token.rs` and `tests/cli.rs` offline; `tests/serve.rs` against a Postgres testcontainer) | ✅ | `just mcp-conformance`: the MCP Inspector CLI 2.8.0 (`@modelcontextprotocol/client` 2.0.0) negotiates `2026-07-28` over stdio and over Streamable HTTP. It lists tools and resources, calls a tool, sees a policy-denied call return `isError`/`FORBIDDEN` without running, reads a record and a collection, and gets "resource not found" for a hidden row, the same as for a missing one. It is refused with no token, with a token for another audience, and as a legacy `initialize` client (cratestack#1041). |
 
 What "end-to-end" means here:
 
@@ -265,3 +290,4 @@ cargo run -p microservice-pair-example
 | Drive the schema from React Native + Expo | [`embedded-expo`](embedded-expo) |
 | Consume a generated REST/RPC TypeScript client with zero hand-written data-fetching code (SWR hooks) | [`react-vite-swr`](react-vite-swr) |
 | Consume a generated Dart/Flutter client with zero hand-written Riverpod providers | [`flutter-riverpod`](flutter-riverpod) |
+| Let an AI agent call your procedures and read your models over MCP, under the same policies | [`mcp-operator`](mcp-operator) |
