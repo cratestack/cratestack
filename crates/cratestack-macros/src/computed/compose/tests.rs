@@ -25,7 +25,7 @@ fn rendered(source: &str) -> String {
 fn a_model_compose_helper_never_reads_a_server_only_field() {
     let rendered = rendered(
         "model Widget {\n  id Int @id\n  label String\n  secret String @server_only\n  \
-         hint String @computed\n}\n",
+         recovery String? @server_only\n  hint String @computed\n}\n",
     );
 
     assert!(
@@ -36,10 +36,12 @@ fn a_model_compose_helper_never_reads_a_server_only_field() {
         rendered.contains("resolve_widget_hint"),
         "the computed field is resolved: {rendered}"
     );
-    assert!(
-        !rendered.contains("secret"),
-        "`@server_only` must be neither read nor named: {rendered}"
-    );
+    for server_only in ["secret", "recovery"] {
+        assert!(
+            !rendered.contains(server_only),
+            "`@server_only` `{server_only}` must be neither read nor named: {rendered}"
+        );
+    }
 }
 
 /// A `type` that embeds the model composes it through the model's own

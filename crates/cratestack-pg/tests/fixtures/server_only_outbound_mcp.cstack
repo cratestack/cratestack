@@ -15,6 +15,7 @@ model SoOutWidget {
   id Int @id
   label String
   secret String @server_only
+  recovery String? @server_only
   shout String @computed
   hint String @computed
   parts SoOutPart[] @relation(fields:[id],references:[widgetId])

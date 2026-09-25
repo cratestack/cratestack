@@ -36,7 +36,8 @@ use cratestack::{
 use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use server_only_outbound_support::{
-    LABEL, PART_TOKEN, WIDGET_SECRET, assert_no_server_only, expected_widget, hint_for,
+    LABEL, PART_TOKEN, WIDGET_RECOVERY, WIDGET_SECRET, assert_no_server_only, expected_widget,
+    hint_for,
     procedure_cases,
 };
 use support::pg;
@@ -112,10 +113,11 @@ fn assert_procedure_output(name: &str, pointer: &str, expected: &Json, output: &
 // `@server_only` values are the ones `assert_no_server_only` searches for.
 const SEED: [&str; 5] = [
     "DROP TABLE IF EXISTS so_out_parts, so_out_widgets",
-    "CREATE TABLE so_out_widgets (id BIGINT PRIMARY KEY, label TEXT NOT NULL, secret TEXT NOT NULL)",
+    "CREATE TABLE so_out_widgets (id BIGINT PRIMARY KEY, label TEXT NOT NULL, \
+     secret TEXT NOT NULL, recovery TEXT)",
     "CREATE TABLE so_out_parts (id BIGINT PRIMARY KEY, widget_id BIGINT NOT NULL, \
      name TEXT NOT NULL, token TEXT NOT NULL)",
-    "INSERT INTO so_out_widgets (id, label, secret) VALUES (1, $1, $2)",
+    "INSERT INTO so_out_widgets (id, label, secret, recovery) VALUES (1, $1, $2, $3)",
     "INSERT INTO so_out_parts (id, widget_id, name, token) VALUES (10, 1, 'bolt', $1)",
 ];
 
@@ -129,6 +131,7 @@ async fn seed(pool: &cratestack::sqlx::PgPool) {
     cratestack::sqlx::query(SEED[3])
         .bind(LABEL)
         .bind(WIDGET_SECRET)
+        .bind(WIDGET_RECOVERY)
         .execute(pool)
         .await
         .expect(SEED[3]);
@@ -228,7 +231,7 @@ mod rest {
         let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
         let router = cratestack_schema::axum::model_router(db, Resolvers, JsonCodec, AllowAllAuth);
         let derived_only = json!({ "id": 1, "hint": hint_for(WIDGET_SECRET) });
-        let cases: [(&str, Option<Json>); 9] = [
+        let cases: [(&str, Option<Json>); 10] = [
             ("/so_out_widgets/1", Some(expected_widget(1))),
             ("/so_out_widgets", Some(json!([expected_widget(1)]))),
             (
@@ -245,6 +248,7 @@ mod rest {
             ),
             ("/so_out_widgets/1?fields=id,hint", Some(derived_only)),
             ("/so_out_widgets/1?fields=id,secret", None),
+            ("/so_out_widgets/1?fields=id,recovery", None),
             ("/so_out_widgets?fields=secret", None),
             (
                 "/so_out_widgets/1?include=parts&includeFields%5Bparts%5D=token",
@@ -344,7 +348,7 @@ mod rpc {
 
     pub(super) async fn model_reads(pool: &cratestack::sqlx::PgPool) {
         let derived_only = json!({ "id": 1, "hint": hint_for(WIDGET_SECRET) });
-        let cases: [(&str, Json, Option<Json>); 9] = [
+        let cases: [(&str, Json, Option<Json>); 10] = [
             (
                 "model.SoOutWidget.get",
                 json!({ "id": 1 }),
@@ -378,6 +382,11 @@ mod rpc {
             (
                 "model.SoOutWidget.get",
                 json!({ "id": 1, "fields": ["id", "secret"] }),
+                None,
+            ),
+            (
+                "model.SoOutWidget.get",
+                json!({ "id": 1, "fields": ["id", "recovery"] }),
                 None,
             ),
             (

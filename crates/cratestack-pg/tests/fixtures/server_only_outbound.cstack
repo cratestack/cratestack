@@ -20,6 +20,9 @@ model SoOutWidget {
   id Int @id
   label String
   secret String @server_only
+  // Optional, so a filter that only drops required `@server_only` fields
+  // still leaks one.
+  recovery String? @server_only
   shout String @computed
   // Derived from `secret`: the value may be sent, the raw field may not.
   hint String @computed

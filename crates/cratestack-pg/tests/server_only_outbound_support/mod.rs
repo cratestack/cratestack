@@ -9,11 +9,13 @@ use serde_json::{Value as Json, json};
 
 /// Held only in `SoOutWidget.secret` (`@server_only`).
 pub const WIDGET_SECRET: &str = "HUNTER2";
+/// Held only in `SoOutWidget.recovery` (`@server_only`, optional).
+pub const WIDGET_RECOVERY: &str = "RECOVER-9";
 /// Held only in `SoOutPart.token` (`@server_only`).
 pub const PART_TOKEN: &str = "PART-TOKEN-7";
 
 /// The fixture's `@server_only` field names.
-const SERVER_ONLY_KEYS: [&str; 2] = ["secret", "token"];
+const SERVER_ONLY_KEYS: [&str; 3] = ["secret", "recovery", "token"];
 
 /// `hint`'s resolver: a value derived from `secret`. Sending it is the
 /// schema author's choice; sending `secret` itself is the leak.
@@ -69,7 +71,7 @@ pub fn procedure_cases() -> Vec<(&'static str, &'static str, Json)> {
 /// any depth.
 pub fn assert_no_server_only(context: &str, body: &[u8]) {
     let text = String::from_utf8_lossy(body);
-    for value in [WIDGET_SECRET, PART_TOKEN] {
+    for value in [WIDGET_SECRET, WIDGET_RECOVERY, PART_TOKEN] {
         assert!(
             !text.contains(value),
             "{context}: a @server_only value reached the response: {text}"
@@ -118,6 +120,7 @@ macro_rules! so_out_impls {
                 id,
                 label: label.to_owned(),
                 secret: crate::server_only_outbound_support::WIDGET_SECRET.to_owned(),
+                recovery: Some(crate::server_only_outbound_support::WIDGET_RECOVERY.to_owned()),
             }
         }
 
