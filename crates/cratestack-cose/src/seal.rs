@@ -34,7 +34,11 @@
 //! one thing `CratestackCodec::encode_into` promises that it relies on:
 //! that the codec appended and left the reserved room alone. A codec that
 //! replaced or truncated the buffer is refused as misuse (a `500`) rather
-//! than allowed to make the length arithmetic below underflow.
+//! than allowed to make the length arithmetic below underflow. The room is
+//! filled with [`RESERVED`], not zeros, so that a codec that truncates and
+//! then pushes zeros (CBOR `0`) back is seen too; while it was zeros, one
+//! that swapped the last byte of the room for a zero sealed an empty
+//! payload.
 //!
 //! The signature is computed over the to-be-signed structure without
 //! building it (see `tbs.rs`) when the signer can take it in pieces (every
@@ -102,9 +106,9 @@ where
     let payload_at = prefix_len + MAX_HEAD_LEN;
     let mut out =
         Vec::with_capacity(payload_at + payload_hint + write::bstr_len(alg.signature_len()));
-    out.resize(payload_at, 0);
+    out.resize(payload_at, RESERVED);
     write_payload(&mut out)?;
-    if out.len() < payload_at || out[..payload_at].iter().any(|&byte| byte != 0) {
+    if out.len() < payload_at || out[..payload_at].iter().any(|&byte| byte != RESERVED) {
         return Err(misuse(
             "the codec's encode_into replaced or rewrote the buffer instead of appending to it",
         ));
@@ -169,3 +173,15 @@ fn checked_signature(alg: CoseAlg, signature: Vec<u8>) -> Result<Vec<u8>, Crates
 /// The capacity reserved for a payload `seal_value` has not encoded yet.
 /// Past it, the buffer grows the way a `Vec` the codec owned would have.
 pub(crate) const PAYLOAD_CAPACITY_HINT: usize = 256;
+
+/// What the room in front of the payload is filled with until the headers
+/// are written into it; any other byte there after `encode_into` is a
+/// codec that did not just append. `0xff` because a codec that truncates
+/// and then encodes writes the first byte of its output into the room, and
+/// that byte is never `0xff`: in CBOR it is the "break" stop code, never
+/// the start of a data item (RFC 8949 §3.2.1), and it never occurs in the
+/// UTF-8 of JSON text (RFC 3629). Every byte of the room is overwritten or
+/// skipped (`Bytes::advance`) before the message is returned, so the
+/// marker never reaches the wire, and a codec that appends never writes
+/// there, so no valid encoder output can collide with it.
+const RESERVED: u8 = 0xff;

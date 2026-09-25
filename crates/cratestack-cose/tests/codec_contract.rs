@@ -20,8 +20,15 @@ enum Abuse {
     Replace,
     /// Clears it, then appends: the reserved room is gone.
     Truncate,
-    /// Appends correctly, but also writes into the reserved room.
+    /// Appends correctly, but also writes into the reserved room (a zero:
+    /// the sealer fills the room with a marker, and a write of the marker
+    /// itself is the one scribble it cannot see).
     ScribbleOnTheReservedRoom,
+    /// Truncates by one and pushes a zero byte (CBOR `0`), writing nothing
+    /// else (security review of cratestack#1005, round 3). The length is
+    /// back where it was; while the reserved room was zeros, this sealed
+    /// an empty payload.
+    SwapTheLastReservedByteForAZero,
 }
 
 #[derive(Clone)]
@@ -51,7 +58,11 @@ impl CratestackCodec for Misbehaving {
             }
             Abuse::ScribbleOnTheReservedRoom => {
                 CborCodec.encode_into(value, out)?;
-                out[0] = 0xff;
+                out[0] = 0x00;
+            }
+            Abuse::SwapTheLastReservedByteForAZero => {
+                out.pop();
+                out.push(0);
             }
         }
         Ok(())
@@ -69,6 +80,7 @@ async fn a_codec_that_does_not_append_is_misuse_not_a_panic() {
         Abuse::Replace,
         Abuse::Truncate,
         Abuse::ScribbleOnTheReservedRoom,
+        Abuse::SwapTheLastReservedByteForAZero,
     ] {
         for &alg in CoseAlg::ALL {
             let server = common::server(alg, IAT);
