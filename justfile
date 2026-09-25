@@ -208,7 +208,7 @@ lint:
 	# `cratestack-pg` scoped to its lib and the MCP targets, since every
 	# other test there would re-expand under the feature for no new code.
 	cargo clippy -p cratestack-api --features mcp --all-targets -- -D warnings {{clippy_allow}}
-	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models --test server_only_outbound_mcp -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-cose`'s off-by-default `auth` feature
 	# (cratestack#1005): `cratestack_cose::auth` and its `required-features`
 	# test targets only exist under it, and nothing in the workspace turns
@@ -586,7 +586,7 @@ test-ci-host *args='':
 	# `tests/mcp_*.rs` there cannot be forgotten here; its other tests are
 	# fast and database-free. The Postgres-backed MCP test is `test-ci-db-mcp`.
 	cargo test -p cratestack-api --features mcp {{args}} || status=1
-	cargo test -p cratestack-pg --features mcp --test json_schema_models {{args}} || status=1
+	cargo test -p cratestack-pg --features mcp --test json_schema_models --test server_only_outbound_mcp {{args}} || status=1
 	# cratestack#926: `tests/middleware.rs` is `#![cfg(feature = "middleware")]`
 	# and `client::http`'s Middleware arm plus the `with_middleware_client`
 	# doctest only exist under that feature, so the plain `--workspace` run

@@ -1,0 +1,65 @@
+// A `@server_only` field must never reach a response, on any outbound
+// shape, when its model also has a `@computed` field. Procedure outputs of
+// such a model are built by `compose_<owner>_value`
+// (`cratestack-macros/src/computed/compose.rs`), which reads the struct's
+// fields directly and so never sees the struct's `#[serde(skip)]`; it used
+// to copy `secret` straight into the body. See
+// `tests/server_only_outbound.rs`. `server_only_outbound_rpc.cstack` and
+// `server_only_outbound_mcp.cstack` are this file on the other transports;
+// keep the three in step.
+//
+// `SoOut` prefix: the tables (`so_out_widgets`, `so_out_parts`) must not
+// collide with any other fixture's on the shared test Postgres.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model SoOutWidget {
+  id Int @id
+  label String
+  secret String @server_only
+  shout String @computed
+  // Derived from `secret`: the value may be sent, the raw field may not.
+  hint String @computed
+  parts SoOutPart[] @relation(fields:[id],references:[widgetId])
+
+  @@allow("read", auth() != null)
+}
+
+// The related side of `?include=parts`, with both attributes of its own.
+model SoOutPart {
+  id Int @id
+  widgetId Int
+  name String
+  token String @server_only
+  loud String @computed
+  widget SoOutWidget @relation(fields:[widgetId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+// A `type` that embeds the model at every arity: the compose helper of a
+// `type` recurses into the model's own for each of them.
+type SoOutEnvelope {
+  one SoOutWidget
+  maybe SoOutWidget?
+  many SoOutWidget[]
+  note String
+}
+
+procedure soOutWidget(label: String): SoOutWidget
+  @allow(auth() != null)
+
+procedure soOutMaybeWidget(label: String): SoOutWidget?
+  @allow(auth() != null)
+
+procedure soOutWidgets(label: String): SoOutWidget[]
+  @allow(auth() != null)
+
+procedure soOutWidgetPage(label: String): Page<SoOutWidget>
+  @allow(auth() != null)
+
+procedure soOutEnvelope(label: String): SoOutEnvelope
+  @allow(auth() != null)
