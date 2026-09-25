@@ -8,6 +8,7 @@ use cratestack_core::CratestackError;
 
 use crate::alg::CoseAlg;
 use crate::keys::{CoseVerifierResolver, CoseVerifyKey};
+use crate::thumbprint::KID_LEN;
 
 /// Resolves COSE_Sign1 device requests through the service's
 /// `cratestack_auth::DeviceKeyResolver` (ADR 0006 §8), by its required
@@ -19,6 +20,12 @@ use crate::keys::{CoseVerifierResolver, CoseVerifyKey};
 ///   resolver's type says so). For any other algorithm this returns no
 ///   candidate without asking the backend, so an ESP256 or HMAC header can
 ///   neither trigger a device-key lookup nor be verified with a device key.
+/// - **Only an 8-byte `kid` is looked up.** The opener never passes
+///   another length (the header parser refuses it), but `resolve` is
+///   public; a caller that passes a shorter prefix would otherwise turn
+///   one lookup into "every key starting with these bytes". Anything but
+///   [`KID_LEN`] bytes gets no candidate and no backend call, which is
+///   what lets `DeviceKeyResolver`'s docs promise implementors exactly 8.
 /// - **Unknown or revoked is `Ok(vec![])`**, which the opener turns into
 ///   the coarse `401`, like every other verification failure (§10).
 /// - **A backend `Err` is `CratestackError::Internal`**, so a `500`, and
@@ -56,7 +63,7 @@ impl CoseVerifierResolver for DeviceKeyCoseResolver {
         kid: &[u8],
         alg: CoseAlg,
     ) -> Result<Vec<CoseVerifyKey>, CratestackError> {
-        if alg != CoseAlg::Ed25519 {
+        if alg != CoseAlg::Ed25519 || kid.len() != KID_LEN {
             return Ok(Vec::new());
         }
         let keys = self

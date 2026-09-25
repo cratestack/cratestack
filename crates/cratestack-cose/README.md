@@ -71,6 +71,11 @@ auth, never the reverse):
   (`AuthNonceStore::redis(url)`, which refuses an empty URL rather than falling back to
   memory), as core's `NonceStore`. Entries are `(kid, cti)` and live until at least
   `iat + 2·skew + 1`; Redis `SET NX EX` makes the check atomic across replicas.
+  Deploy that Redis with `maxmemory-policy noeviction` (eviction drops live nonces), and
+  know that an asynchronous-replication failover can lose a recent `SET` and reopen the
+  replay window. Signed-request key ids must not be `cose-envelope` or start with
+  `cose-envelope:` when both share the store. Auth's Redis store currently opens one
+  connection per claim (cratestack#1070).
 - `build_cose_enroll_response` / `parse_cose_enroll_response`: the enrolment challenge,
   moved here unchanged from `cratestack-auth`. It keeps its legacy shape (alg `-8`, a
   35-byte `kid`, empty AAD) and its own `coset`-based code path; the strict opener above

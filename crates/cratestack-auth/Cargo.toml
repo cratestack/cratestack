@@ -26,10 +26,11 @@ default = ["axum"]
 # `AuthenticatedPrincipal`. Everything else — signing/verifying a
 # canonical request, minting/verifying an SD-JWT id-token, loading or
 # minting a `ServiceSigningKey`, resolving keys via `MultiIssuerJwksVerifier`
-# (a `reqwest` GET, not an axum route), and implementing `cratestack_core::AuthProvider` itself — needs
-# no axum route/middleware machinery and stays available with this feature
-# off. On by default so an existing server consumer sees no behavior change;
-# a `cratestack-client`-only consumer that just wants to *sign* outgoing
+# (a `reqwest` GET, not an axum route), and implementing
+# `cratestack_core::AuthProvider` itself — needs no axum route/middleware
+# machinery and stays available with this feature off. On by default so an
+# existing server consumer sees no behavior change; a
+# `cratestack-client`-only consumer that just wants to *sign* outgoing
 # requests can `default-features = false` to keep axum (and its own
 # tower/hyper/matchit tree) out of its build.
 axum = ["dep:axum"]

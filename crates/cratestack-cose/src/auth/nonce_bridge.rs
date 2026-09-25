@@ -20,14 +20,24 @@ use cratestack_core::{CratestackError, NonceStore};
 ///
 /// The opener passes one string, `cose:<hex kid>:<hex cti>`
 /// (`replay::nonce_key`); auth's store takes two and stores
-/// `cratestack:signature-nonce:<key_id>:<nonce>`. The bridge does not
-/// split the string. It claims all of it as the `nonce` under this fixed
-/// `key_id`, which keeps the mapping injective for any string (splitting
-/// on `:` is not). So a COSE entry in Redis is
-/// `cratestack:signature-nonce:cose-envelope:cose:<hex kid>:<hex cti>`.
-/// It can only coincide with a signed-request entry whose verified `keyId`
-/// is `cose-envelope` and whose `nonce` is `cose:<kid>:<cti>`, and even
-/// then the effect is a refused request, not an accepted one.
+/// `{key_id}:{nonce}` (in Redis, under `cratestack:signature-nonce:`). The
+/// bridge does not split the string. It claims all of it as the `nonce`
+/// under this fixed `key_id`, so two different opener keys never map to
+/// one entry (splitting on `:` would not guarantee that). A COSE entry is
+/// therefore `cose-envelope:cose:<hex kid>:<hex cti>`.
+///
+/// **Shared namespace with signed requests.** Auth's `{key_id}:{nonce}`
+/// join is not injective, and `SignedRequestVerifier` claims its nonces
+/// the same way, so when both point at one store (the same Redis, or one
+/// shared `Arc`) they share a keyspace. A verified signed request whose
+/// `keyId` is `cose-envelope` or *starts with* `cose-envelope:` can
+/// produce the same entry as a COSE message (for example `keyId = "cose-envelope:cose"`,
+/// `nonce = "<hex kid>:<hex cti>"`). The effect is refuse-only: whichever
+/// claim comes second is reported as a replay, never accepted. To block a
+/// COSE request that way, the signer of such a `keyId` would have to know
+/// the victim's random 16-byte `cti` before the victim's request lands.
+/// Operators sharing one store between the two must not issue
+/// signed-request key ids with the `cose-envelope` prefix.
 pub const AUTH_NONCE_KEY_ID: &str = "cose-envelope";
 
 /// `cratestack_auth`'s nonce store (in-memory, or Redis across replicas),
@@ -39,17 +49,32 @@ pub const AUTH_NONCE_KEY_ID: &str = "cose-envelope";
 /// see `replay.rs`). Auth's Redis store turns `timestamp + replay_window`
 /// into a whole-second TTL against its own clock and rounds **down**, so
 /// the bridge claims with `timestamp = now` and `replay_window =
-/// expires_at - now + 1 s`: the key then lives at least until `expires_at`
-/// and at most one second longer. An `expires_at` already in the past is
-/// still recorded (for at least one second, auth's floor) and reported new,
-/// the same answer core's `InMemoryNonceStore` gives; the opener never
-/// asks, since it checks freshness first.
+/// (expires_at + 1 s) - now`: the key then lives at least until
+/// `expires_at` and at most one second longer. The deadline is computed
+/// with checked arithmetic: an `expires_at` too close to
+/// `DateTime::<Utc>::MAX_UTC` for `+ 1 s` is `Internal` (a `500`) and no
+/// claim is made, because auth's in-memory store adds `timestamp +
+/// replay_window` unchecked and would panic. An `expires_at` already in
+/// the past is reported new, the same answer core's `InMemoryNonceStore`
+/// gives; what is kept depends on the store: Redis floors the TTL at one
+/// second, so the key exists for a second, while auth's in-memory store
+/// inserts an entry that is already expired and ignores it on the next
+/// claim. The opener never asks, since it checks freshness first.
 ///
 /// **Errors.** `NonceReused` is "seen" (`Ok(false)`, the opener's `401`).
 /// Every other error means the store could not answer, so it is
 /// `CratestackError::Internal` (a `500`, detail kept server-side), never
 /// "new". Answering "new" there would make a Redis outage switch replay
 /// protection off.
+///
+/// **Deploying the Redis store.** Replay protection is only as durable as
+/// the key. Run the nonce Redis with `maxmemory-policy noeviction`: an
+/// evicting policy can drop a live nonce under memory pressure and let its
+/// message be replayed. Redis replication is asynchronous, so a failover
+/// can lose a `SET` the old primary acknowledged but had not yet
+/// replicated, reopening the window for that nonce until it would have
+/// expired. Known limitation: auth's Redis store opens a new connection
+/// for every claim (cratestack#1070).
 ///
 /// [`CoseEnvelope`]: crate::CoseEnvelope
 #[derive(Clone)]
@@ -101,8 +126,8 @@ impl NonceStore for AuthNonceStore {
     ) -> Result<bool, CratestackError> {
         let now = Utc::now();
         let replay_window = expires_at
-            .signed_duration_since(now)
-            .checked_add(&TimeDelta::seconds(1))
+            .checked_add_signed(TimeDelta::seconds(1))
+            .map(|deadline| deadline.signed_duration_since(now))
             .ok_or_else(|| CratestackError::Internal("nonce expiry out of range".to_owned()))?;
         match self
             .inner

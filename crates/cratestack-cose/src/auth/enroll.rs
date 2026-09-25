@@ -4,10 +4,11 @@
 //! **Moved, not rewritten** (cratestack#1005 part B, ADR 0006 §11 and
 //! "Decisions taken while scoping P0"): this is `cratestack-auth`'s
 //! `src/cose_enroll.rs` (and its tests), which was the crate's only `coset`
-//! user. The code is unchanged apart from its import paths. The
-//! golden vector in `tests.rs` was pinned in `cratestack-auth` before the
-//! move and passes here unchanged, so the bytes are the same. No behaviour
-//! was deliberately changed, and no bug was fixed on the way.
+//! user. The code is unchanged apart from its import paths (and two doc
+//! links that pointed at `crate::`). The golden vector in `tests.rs` was
+//! pinned in `cratestack-auth` before the move and passes here unchanged,
+//! so the bytes are the same. No behaviour was deliberately changed, and
+//! no bug was fixed on the way.
 //!
 //! **Not the ADR 0006 wire format, on purpose.** An enrolment challenge
 //! is a COSE_Sign1 with alg `-8` (EdDSA), the 35-byte `kid`
@@ -90,8 +91,8 @@ fn parse_cose_enroll_response_with_key(
 /// challenge responses (`build_cose_enroll_response` /
 /// `parse_cose_enroll_response`) from [`CHALLENGE_SIGNING_KEY_ENV`]
 /// (URL-safe-base64-no-pad-encoded 32-byte seed — same encoding as
-/// [`ServiceSigningKey::from_env`][crate::ServiceSigningKey::from_env] and
-/// [`encode_signing_key`][crate::encode_signing_key]/[`decode_signing_key`]).
+/// [`ServiceSigningKey::from_env`][cratestack_auth::ServiceSigningKey::from_env] and
+/// [`encode_signing_key`][cratestack_auth::encode_signing_key]/[`decode_signing_key`]).
 ///
 /// **Security history:** the downstream crate this was absorbed from used
 /// to return a hardcoded Ed25519 seed literal here. That seed was committed

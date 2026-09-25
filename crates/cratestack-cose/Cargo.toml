@@ -32,6 +32,13 @@ workspace = true
 # edge points cose -> auth, never auth -> cose.
 auth = ["dep:cratestack-auth", "dep:coset", "dep:minicbor-serde"]
 
+# docs.rs builds default features only, which would leave `cratestack_cose::auth`
+# (including `build_cose_enroll_response`, moved here from `cratestack-auth`)
+# off the published docs. `rustdoc-pages.yml` turns the same feature on for
+# the rustdoc site.
+[package.metadata.docs.rs]
+features = ["auth"]
+
 [dependencies]
 # The only workspace dependency without `auth` (ADR 0006 §11 as amended:
 # L2, `cratestack-core` only), so clients and the wasm/napi builds stay

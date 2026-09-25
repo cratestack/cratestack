@@ -33,15 +33,26 @@ pub trait DeviceKeyResolver: Send + Sync {
     ///
     /// A COSE_Sign1 device request (ADR 0006 §3, §8) names its key by the
     /// first 8 bytes of that thumbprint, not by the `keyId` string, so the
-    /// registry needs this second index. `cratestack-cose` exposes the
-    /// thumbprint as `cratestack_cose::thumbprint::okp_ed25519_thumbprint`
-    /// (SHA-256 of the deterministic CBOR `{1: 1, -1: 6, -2: x}`); store it,
-    /// or its 8-byte prefix, next to each key when it is enrolled.
+    /// registry needs this second index. `cratestack-cose` (no feature
+    /// needed) exposes the thumbprint as
+    /// `cratestack_cose::thumbprint::okp_ed25519_thumbprint` (SHA-256 of the
+    /// deterministic CBOR `{1: 1, -1: 6, -2: x}`); store it, or its 8-byte
+    /// prefix `kid_from_thumbprint(&okp_ed25519_thumbprint(vk.as_bytes()))`
+    /// (both in `cratestack_cose::thumbprint`), next to each key when it is
+    /// enrolled.
+    ///
+    /// `kid_prefix` is always exactly 8 bytes when the caller is
+    /// `cratestack_cose::auth::DeviceKeyCoseResolver`: it passes the
+    /// message's COSE `kid` and asks nothing for any other length.
     ///
     /// Several keys may share a prefix (8 bytes collide at about 2³² keys),
-    /// so return all of them. Returning too many is safe: the COSE opener
-    /// recomputes each candidate's thumbprint and accepts only a key whose
-    /// own `kid` is the message's.
+    /// so return all of them. Returning *other active* keys is safe: the
+    /// COSE opener recomputes each candidate's thumbprint and accepts only
+    /// a key whose own `kid` is the message's. Returning a **revoked or
+    /// disabled** key is not safe, and nothing downstream catches it: that
+    /// key has the right thumbprint, so the opener accepts its signature
+    /// and the device keeps signing after revocation. Filtering by status
+    /// is this method's job alone.
     ///
     /// **Required, with no default**, on purpose (ADR 0006, "Decisions taken
     /// while scoping P0"; cratestack#1005): a provided `Ok(vec![])` would

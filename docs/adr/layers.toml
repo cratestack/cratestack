@@ -75,10 +75,12 @@ cratestack-sql = 1
 cratestack-macros = 1
 # `cratestack-auth` (new, "absorb the auth kit into the framework"): SigV4-
 # style Ed25519 signed-request auth, SD-JWT id-token issuance/verification,
-# multi-issuer JWKS resolution, per-service signing identities, and
-# COSE-signed enrolment challenges. Its axum middleware/router/extractor
-# surface (`require_signed_request`, `jwks_router`, the `FromRequestParts`
-# impls) is gated behind this crate's own default-on `axum` Cargo feature —
+# multi-issuer JWKS resolution, and per-service signing identities. (The
+# COSE-signed enrolment challenge code moved out to `cratestack-cose`'s
+# `auth` feature in cratestack#1005; auth keeps only its `kid` and env-var
+# constants.) Its axum middleware/router/extractor surface
+# (`require_signed_request`, `jwks_router`, the `FromRequestParts` impls)
+# is gated behind this crate's own default-on `axum` Cargo feature —
 # not a `cratestack-axum` dependency — because the underlying types it needs
 # (`AuthProvider`, `CratestackContext`, `RequestContext`, `CratestackError`) live in
 # `cratestack-core`, and the header/method/URI types it needs unconditionally
@@ -89,10 +91,11 @@ cratestack-macros = 1
 # uses above, verified via `cargo tree -p cratestack-auth
 # -e normal` (with and without `--no-default-features`): both report exactly
 # one cratestack-* line, `cratestack-core`. L1 satisfies `dep.layer <=
-# self.layer` with no exception, and nothing in the workspace depends on
-# `cratestack-auth` yet (a leaf, consumed directly by application binaries),
-# so the upper-bound half of the rule is vacuous, same as every crate in this
-# section.
+# self.layer` with no exception. Its one in-workspace dependent is
+# `cratestack-cose` (L2), optionally, behind cose's off-by-default `auth`
+# feature (cratestack#1005); `cargo metadata` lists that optional edge, so
+# this check sees it, and 1 <= 2 holds. The edge points cose -> auth only:
+# auth depends on nothing but `cratestack-core`, never on cose.
 cratestack-auth = 1
 
 # --- L2: Adapters ----------------------------------------------------------

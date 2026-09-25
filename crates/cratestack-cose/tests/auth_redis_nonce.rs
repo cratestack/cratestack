@@ -1,8 +1,9 @@
 //! The Redis nonce bridge against a real Redis (`auth` feature,
 //! cratestack#1005 part B). Skips without one, unless
 //! `CRATESTACK_REQUIRE_REDIS` is set, which makes a skip a failure (see
-//! `redis_support`). Run with `--test-threads=1`: each test starts its own
-//! container.
+//! `redis_support`). Each test starts its own container; on rootless
+//! Docker, use `--test-threads=1` (parallel containers race on the port
+//! bind, which looks like a test failure).
 
 mod common;
 mod redis_support;

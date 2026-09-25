@@ -176,6 +176,39 @@ async fn only_ed25519_is_resolved_for_devices() {
     assert_eq!(devices.calls.load(Ordering::SeqCst), before);
 }
 
+/// The registry is only ever asked for an 8-byte prefix, even when
+/// `resolve` is called directly with another length, so implementors can
+/// rely on `kid_prefix.len() == 8`.
+#[tokio::test]
+async fn only_an_eight_byte_kid_reaches_the_registry() {
+    let devices = Arc::new(Devices {
+        keys: vec![public(&ED25519_SEED)],
+        ..Devices::default()
+    });
+    let resolver = DeviceKeyCoseResolver::new(devices.clone());
+    let kid = Ed25519Signer::from_seed(&ED25519_SEED).kid().to_vec();
+    for len in [0, 1, 7, 9, 32] {
+        let mut wrong = kid.clone();
+        wrong.resize(len, 0);
+        let keys = resolver
+            .resolve(&wrong, CoseAlg::Ed25519)
+            .await
+            .expect("resolve");
+        assert!(keys.is_empty(), "len {len}");
+    }
+    assert_eq!(devices.calls.load(Ordering::SeqCst), 0);
+
+    assert_eq!(
+        resolver
+            .resolve(&kid, CoseAlg::Ed25519)
+            .await
+            .expect("resolve")
+            .len(),
+        1
+    );
+    assert_eq!(*devices.prefixes.lock().expect("lock"), vec![kid]);
+}
+
 /// A real device key that writes another device's `kid` into its header.
 struct KidLiar {
     key: Ed25519Signer,

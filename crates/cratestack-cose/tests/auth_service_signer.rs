@@ -128,3 +128,38 @@ async fn it_does_not_open_with_another_keys_resolver() {
         other => panic!("expected the coarse 401, got {other:?}"),
     }
 }
+
+/// `Debug` names the issuer, the JWKS label and the COSE `kid`, and never
+/// the secret, in any encoding a log line might carry it in. The seed is
+/// high-entropy on purpose, so an accidental match is not a small number.
+#[test]
+fn debug_output_carries_no_secret_material() {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+
+    let seed: [u8; 32] =
+        std::array::from_fn(|i| u8::try_from(i).expect("fits").wrapping_mul(73) ^ 0x9d);
+    let signing_key = SigningKey::from_bytes(&seed);
+    let signer = ServiceKeySigner::new(service_key(&seed));
+
+    let secrets = [
+        format!("{seed:?}"),
+        format!("{seed:#?}"),
+        format!("{:?}", &seed[..16]),
+        common::hex(&seed),
+        common::hex(&seed).to_uppercase(),
+        STANDARD.encode(seed),
+        URL_SAFE_NO_PAD.encode(seed),
+        cratestack_auth::encode_signing_key(&signing_key),
+        common::hex(&signing_key.to_keypair_bytes()),
+    ];
+    for rendered in [format!("{signer:?}"), format!("{signer:#?}")] {
+        assert!(rendered.contains(JWKS_LABEL), "{rendered}");
+        for secret in &secrets {
+            assert!(
+                !rendered.contains(secret.as_str()),
+                "Debug leaks the seed as {secret}: {rendered}"
+            );
+        }
+    }
+}

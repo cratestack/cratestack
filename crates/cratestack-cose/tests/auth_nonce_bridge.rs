@@ -117,6 +117,31 @@ async fn auths_in_memory_store_refuses_a_second_record() {
     );
 }
 
+/// An `expires_at` so far out that the bridge's deadline (`expires_at +
+/// 1 s`) is not a `DateTime` is a `500`, not a panic inside auth's store
+/// (whose `timestamp + replay_window` is unchecked `+`). The opener never
+/// asks for this (it bounds `expires_at` by `iat + 2·skew + 1`), but the
+/// bridge is a public `NonceStore`, callable directly.
+#[tokio::test]
+async fn an_unrepresentable_expiry_is_a_500_not_a_panic() {
+    let bridge = AuthNonceStore::new(nonce_store_from_redis_url(None).expect("in-memory"));
+    let error = bridge
+        .record_if_unseen("cose:aa:01", DateTime::<Utc>::MAX_UTC)
+        .await
+        .expect_err("no deadline, no record");
+    assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");
+    assert_eq!(error.status_code(), 500);
+
+    // Nor does the recording store see a claim it could overflow on.
+    let auth = recording(|| Ok(()));
+    let error = AuthNonceStore::new(auth.clone())
+        .record_if_unseen("k", DateTime::<Utc>::MAX_UTC)
+        .await
+        .expect_err("no deadline, no claim");
+    assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");
+    assert!(auth.claims.lock().expect("lock").is_empty());
+}
+
 #[test]
 fn an_empty_redis_url_is_refused_not_downgraded_to_in_memory() {
     for url in ["", "   "] {
