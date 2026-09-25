@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use cratestack::mcp::StdioServer;
 use cratestack::sqlx::PgPool;
 use mcp_operator_example::http::{HttpConfig, app};
-use mcp_operator_example::token::{STDIO_AUDIENCE, TokenVerifier, mint};
+use mcp_operator_example::token::{MIN_KEY_BYTES, STDIO_AUDIENCE, TokenVerifier, mint};
 use mcp_operator_example::{ensure_schema, mcp_table, schema};
 
 const USAGE: &str = "usage:
@@ -119,8 +119,17 @@ async fn database() -> Result<schema::Cratestack, String> {
     Ok(schema::Cratestack::builder(pool).build())
 }
 
+/// Checked here, before any mode touches the database or prints a token:
+/// `http` used to connect and seed Postgres before its verifier refused a
+/// short key, and `mint-token` minted with one.
 fn signing_key() -> Result<Vec<u8>, String> {
-    env("MCP_EXAMPLE_SIGNING_KEY").map(String::into_bytes)
+    let key = env("MCP_EXAMPLE_SIGNING_KEY")?.into_bytes();
+    if key.len() < MIN_KEY_BYTES {
+        return Err(format!(
+            "MCP_EXAMPLE_SIGNING_KEY must be at least {MIN_KEY_BYTES} bytes"
+        ));
+    }
+    Ok(key)
 }
 
 fn env(name: &str) -> Result<String, String> {
