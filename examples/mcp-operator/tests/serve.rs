@@ -14,8 +14,8 @@ use cratestack::serde_json::{Value as Json, json};
 use mcp_operator_example::http::{HttpConfig, app};
 use mcp_operator_example::token::{STDIO_AUDIENCE, TokenVerifier, mint};
 use mcp_operator_example::{ensure_schema, mcp_table, schema};
-use testcontainers::ImageExt;
 use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerAsync, ImageExt};
 use testcontainers_modules::postgres::Postgres;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tower::ServiceExt;
@@ -23,7 +23,10 @@ use tower::ServiceExt;
 const KEY: &[u8] = b"test-only signing key, at least 32 bytes long";
 const RESOURCE: &str = "http://localhost/mcp";
 
-async fn db_or_skip() -> Option<schema::Cratestack> {
+/// The container comes back with the database: the test holds it, and
+/// dropping it at the end removes it. `mem::forget` kept it running after
+/// the test binary exited, one leaked Postgres per local run.
+async fn db_or_skip() -> Option<(ContainerAsync<Postgres>, schema::Cratestack)> {
     let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
     let container = match Postgres::default().with_tag("18-alpine").start().await {
         Ok(container) => container,
@@ -37,9 +40,7 @@ async fn db_or_skip() -> Option<schema::Cratestack> {
         .await
         .expect("connect");
     ensure_schema(&pool).await.expect("seed");
-    // Kept alive for the rest of the test binary; one test, one container.
-    std::mem::forget(container);
-    Some(schema::Cratestack::builder(pool).build())
+    Some((container, schema::Cratestack::builder(pool).build()))
 }
 
 /// One request over stdio framing, as `(id, role)`; the JSON-RPC answer.
@@ -116,7 +117,7 @@ async fn http(
 
 #[tokio::test]
 async fn the_example_serves_both_transports_under_its_policies() {
-    let Some(db) = db_or_skip().await else {
+    let Some((_container, db)) = db_or_skip().await else {
         return;
     };
 
