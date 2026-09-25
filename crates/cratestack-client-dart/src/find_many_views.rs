@@ -18,7 +18,7 @@ use cratestack_core::Model;
 
 use crate::enum_filter_view::enum_filter_class_name;
 use crate::idents::dart_identifier;
-use crate::naming::{is_computed_field, scalar_model_fields};
+use crate::naming::{is_computed_field, is_server_only_field, scalar_model_fields};
 use crate::views::{DataClassView, EnumVariantView, EnumView, FieldView};
 
 /// Same types `cratestack-macros`'s `find_many_where.rs` (and its
@@ -79,6 +79,10 @@ pub(crate) fn build_where_data_class(
         // time, they never live in a column the server's `?where=` route
         // can query (`docs/design/computed-fields.md`).
         .filter(|field| !is_computed_field(field))
+        // Nor are `@server_only` fields: the server refuses them as it
+        // refuses an undeclared name (`queryable_model_fields` in
+        // `cratestack-macros`).
+        .filter(|field| !is_server_only_field(field))
         .filter(|field| is_filterable_scalar(field, enum_names))
         .collect::<Vec<_>>();
     if fields.is_empty() {
@@ -125,9 +129,10 @@ pub(crate) fn build_sort_field_enum(model: &Model, model_names: &BTreeSet<&str>)
         name: format!("{}SortField", model.name),
         variants: scalar_model_fields(model, model_names)
             .into_iter()
-            // `@computed` fields are never sortable, same reasoning as
-            // `build_where_data_class` above.
+            // `@computed` and `@server_only` fields are never sortable,
+            // same reasoning as `build_where_data_class` above.
             .filter(|field| !is_computed_field(field))
+            .filter(|field| !is_server_only_field(field))
             .map(|field| EnumVariantView {
                 identifier: dart_identifier(&field.name),
                 wire_name: field.name.clone(),
