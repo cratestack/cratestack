@@ -72,7 +72,11 @@ of every model to any caller that could list the model or call a
 `FindMany<Model>` procedure (issue 2). If such a field holds a credential,
 token or hash, rotate it: a rebuilt hash can be attacked offline. The
 generated Dart model class declares and decodes `@server_only` fields too, so a
-value an affected server sent may also be in client-side state or logs.
+value an affected server sent may also be in client-side state or logs. If the
+server runs `IdempotencyLayer`, a response it stored for replay before the
+upgrade still carries the value and is replayed as stored until the record
+expires: clear the idempotency store (SQL table or Redis keys), or wait out its
+TTL, before relying on issue 1 being closed.
 
 ### `cratestack-cose`'s `auth` feature; COSE enrolment leaves `cratestack-auth`, and `DeviceKeyResolver` gains a required method — breaking (#1005)
 
