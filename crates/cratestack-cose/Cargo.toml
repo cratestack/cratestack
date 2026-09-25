@@ -45,6 +45,15 @@ bytes.workspace = true
 # clock is `chrono::Utc::now`, which works on `wasm32-unknown-unknown`
 # (where `std::time::SystemTime::now` panics).
 chrono.workspace = true
+# `S < L` is checked with its `Scalar::from_canonical_bytes` (see
+# `keys/verify.rs`), not left to `ed25519-dalek`, whose
+# `legacy_compatibility` feature weakens that check graph-wide. Not a new
+# crate: `ed25519-dalek` already depends on this same 5.x
+# (`cargo tree -p cratestack-cose -e normal -i curve25519-dalek`), and the
+# workspace entry turns no feature on. The tests also use it to forge the
+# small-order and mixed-order signatures `tests/ed25519_streaming.rs`
+# checks the streamed strict verify against.
+curve25519-dalek.workspace = true
 ed25519-dalek.workspace = true
 getrandom.workspace = true
 hmac.workspace = true
@@ -90,9 +99,6 @@ coset.workspace = true
 # Encodes the payment fixture the shared vectors are built on, the way a
 # real service would.
 cratestack-codec-cbor.workspace = true
-# Forges the small-order `R` / weak-key Ed25519 signatures that
-# `tests/ed25519_streaming.rs` checks the streamed strict verify against.
-curve25519-dalek.workspace = true
 # A randomized (non-RFC 6979) ES256 signature for the verify-only test.
 rand.workspace = true
 serde_json.workspace = true

@@ -28,7 +28,10 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   normalises whatever the signer returns (in process, KMS or WebCrypto), and
   the opener refuses a high `s`, so no third party can re-spell a signed
   message. **Ed25519 verification is exactly `verify_strict`'s**: canonical
-  `S`, and no small-order `R` or key.
+  `S`, and no small-order `R` or key (mixed-order ones are accepted, as
+  `verify_strict` accepts them). `S < L` is checked by the crate itself, so
+  a build that enables `ed25519-dalek/legacy_compatibility` (which weakens
+  `verify_strict` to accept the `S + L` twin) does not weaken it.
 - **Wire format.** The protected header is `{1: alg, 4: kid, ? 15: {6: iat,
   7: cti}}`, with claims on requests only. The unprotected header is always
   empty. The `kid` is the first 8 bytes of the key's RFC 9679 thumbprint, and

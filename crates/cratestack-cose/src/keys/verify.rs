@@ -1,6 +1,7 @@
 //! Checking a signature or tag with a [`CoseVerifyKey`]: the one place
 //! key material meets received bytes.
 
+use curve25519_dalek::Scalar;
 use ed25519_dalek::Signature as EdSignature;
 use ed25519_dalek::ed25519::signature::MultipartVerifier as _;
 use p256::ecdsa::signature::DigestVerifier;
@@ -56,37 +57,54 @@ impl CoseVerifyKey {
     }
 }
 
-/// Ed25519, exactly as strict as `VerifyingKey::verify_strict`, over the
-/// message in pieces.
+/// Ed25519, as strict as `VerifyingKey::verify_strict` in its default
+/// configuration, over the message in pieces.
 ///
 /// `verify_strict` takes one contiguous slice. The pieces go through
 /// `MultipartVerifier::multipart_verify` instead (the same computation as
 /// `ed25519-dalek`'s `hazmat` stream verifier, without the `hazmat`
-/// feature), which is `verify_strict` minus two checks. Both parse the
-/// signature with a canonical `S` (`S < L`, so the `S + L` twin is refused)
-/// and compare the recomputed `R` with the received bytes, which also
-/// refuses a non-canonical `R` encoding. What `verify_strict` adds, and this
-/// function therefore adds back (`ed25519-dalek` 3.0.0,
-/// `VerifyingKey::verify_strict`):
+/// feature), which is `verify_strict` minus checks 2 and 3 below, and both
+/// make check 1 only in `ed25519-dalek`'s default configuration. Both
+/// compare the recomputed `R` with the received bytes, which also refuses a
+/// non-canonical `R` encoding. What this function adds (`ed25519-dalek`
+/// 3.0.0, `VerifyingKey::verify_strict`):
 ///
-/// 1. `R` must decompress to a curve point;
-/// 2. neither `R` nor the key `A` may be of small order. A small-order key
+/// 1. **`S < L`, checked here** with `Scalar::from_canonical_bytes`, the
+///    check `ed25519-dalek` itself makes when it parses a signature, but
+///    only by default: its `legacy_compatibility` feature swaps it for "the
+///    top three bits are clear", which accepts the `S + L` twin of every
+///    signature (in `verify_strict` too). Cargo unifies features across
+///    the build, so any crate in a consumer's graph could turn that on;
+///    checking here keeps this function's strictness independent of
+///    `ed25519-dalek`'s features. With the feature on, this function is
+///    stricter than `verify_strict`, deliberately.
+/// 2. `R` must decompress to a curve point. Kept for parity with
+///    `verify_strict` only: it cannot change an outcome, since the
+///    recomputed `R` is always a point's canonical encoding and so never
+///    equals bytes that are not one.
+/// 3. Neither `R` nor the key `A` may be of small order. A small-order key
 ///    is a "weak" key: with `A` and `R` both the identity and `S = 0`,
-///    the cofactorless equation holds for every message.
+///    the cofactorless equation holds for every message. Mixed-order
+///    points (a small-order component on top of a large-order one) are
+///    accepted, as `verify_strict` accepts them.
 ///
 /// `R` is decompressed through `VerifyingKey::from_bytes`, which is exactly
 /// `CompressedEdwardsY::decompress`, the call `verify_strict` makes, and
-/// `is_weak` is its `is_small_order`, so no direct `curve25519-dalek`
-/// dependency is needed. `tests/ed25519_streaming.rs` checks this function
-/// against `verify_strict` on the contiguous bytes for weak keys,
-/// small-order `R`, the `S + L` twin and every single-byte tamper.
+/// `is_weak` is its `is_small_order`. `tests/ed25519_streaming.rs` checks
+/// this function against `verify_strict` on the contiguous bytes for weak
+/// keys, small-order `R`, mixed-order keys and `R` and every single-bit
+/// flip, and that it refuses the `S + L` twin.
 fn ed25519_strict(key: &ed25519_dalek::VerifyingKey, chunks: &[&[u8]], signature: &[u8]) -> bool {
     let Ok(signature) = EdSignature::from_slice(signature) else {
         return false;
     };
+    let s_is_canonical = bool::from(Scalar::from_canonical_bytes(*signature.s_bytes()).is_some());
     let r_is_acceptable =
         ed25519_dalek::VerifyingKey::from_bytes(signature.r_bytes()).is_ok_and(|r| !r.is_weak());
-    r_is_acceptable && !key.is_weak() && key.multipart_verify(chunks, &signature).is_ok()
+    s_is_canonical
+        && r_is_acceptable
+        && !key.is_weak()
+        && key.multipart_verify(chunks, &signature).is_ok()
 }
 
 /// `signature` rewritten with a low `s`, or `None` if it is not a valid

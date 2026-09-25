@@ -164,10 +164,12 @@ coset = "0.4.2"
 # `wasmbind` feature (`cargo tree -p cratestack-cose --target
 # wasm32-unknown-unknown -i js-sys` shows `js-sys` under `chrono`).
 getrandom = "0.4"
-# `cratestack-cose`'s Ed25519 strictness tests only (a dev-dependency): they
-# build the small-order points and the scalar arithmetic a weak-key or
-# small-order-`R` forgery needs. The same 5.x `ed25519-dalek` 3 already pulls
-# in, so this adds a manifest edge, not a crate to the graph.
+# `cratestack-cose`'s explicit Ed25519 `S < L` check (independent of
+# `ed25519-dalek`'s `legacy_compatibility` feature), and its strictness
+# tests, which build the small-order points and the scalar arithmetic a
+# weak-key or small-order-`R` forgery needs. The same 5.x `ed25519-dalek` 3
+# already pulls in, so this adds a manifest edge, not a crate to the graph;
+# no default features, so it turns on nothing `ed25519-dalek` does not.
 curve25519-dalek = { version = "5", default-features = false }
 # `cratestack-auth`'s challenge/enrollment/service-signing-key ids
 # (`cuid2::create_id()`), same generator every other `@paralleldrive/cuid2`-

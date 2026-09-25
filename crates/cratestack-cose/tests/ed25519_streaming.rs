@@ -11,10 +11,16 @@
 //! 2. **Verifying is exactly as strict as `verify_strict`**: the streamed
 //!    path accepts a message if and only if `verify_strict` accepts its
 //!    contiguous structure, including for the forgeries only the strict
-//!    checks stop (a weak key, a small-order `R`, the `S + L` twin).
+//!    checks stop (a weak key, a small-order `R`, the `S + L` twin), and
+//!    for the mixed-order keys and `R` it does not stop (so it is not
+//!    stricter either). The one deliberate exception is the `S + L` twin
+//!    when something in the build enables `ed25519-dalek`'s
+//!    `legacy_compatibility`: `verify_strict` then accepts it, and the
+//!    envelope still refuses it (`src/keys/verify.rs`).
 
 mod common;
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -242,8 +248,7 @@ fn forgeries(payload: &[u8]) -> Vec<Forgery> {
 
 /// Each forgery passes the plain cofactorless check, so a streamed verify
 /// without the strict checks would accept it; `verify_strict` and the
-/// envelope both refuse it. Then the `S + L` twin of an honest signature,
-/// which the canonical-`S` parse refuses.
+/// envelope both refuse it.
 #[tokio::test]
 async fn streamed_verify_refuses_what_verify_strict_refuses() {
     let payload = common::fixture::payment_bytes();
@@ -269,7 +274,19 @@ async fn streamed_verify_refuses_what_verify_strict_refuses() {
             forgery.what
         );
     }
+}
 
+/// The `S + L` twin of an honest signature satisfies the verification
+/// equation (`[S + L]B = [S]B`), so only a canonical-`S` check refuses it.
+/// `verify_strict` refuses it by default and accepts it once anything in
+/// the build enables `ed25519-dalek/legacy_compatibility`, which only
+/// checks that `S`'s top three bits are clear; so this test does not use
+/// `verify_strict` as its reference, and the envelope must refuse the twin
+/// under either feature set (its own `S < L` check, `src/keys/verify.rs`).
+#[tokio::test]
+async fn the_s_plus_l_twin_is_refused_whatever_ed25519_dalek_features() {
+    let payload = common::fixture::payment_bytes();
+    let aad = external_aad(&rpc_request()).expect("aad");
     let signing = ed25519_dalek::SigningKey::from_bytes(&common::ED25519_SEED);
     let public = signing.verifying_key().to_bytes();
     let key = CoseVerifyKey::ed25519(&public).expect("point");
@@ -286,7 +303,12 @@ async fn streamed_verify_refuses_what_verify_strict_refuses() {
         carry = sum >> 8;
     }
     assert_eq!(carry, 0, "S + L fits in 256 bits");
-    assert!(!strict(&public, &tbs, &twin), "S + L: strict");
+    let twin_s: [u8; 32] = twin[32..].try_into().expect("32 bytes");
+    assert!(
+        bool::from(Scalar::from_canonical_bytes(twin_s).is_none()),
+        "S + L is not canonical"
+    );
+    assert_eq!(twin[63] & 0xe0, 0, "and passes the top-three-bits check");
     assert!(
         !opens(&key, &protected, &payload, &twin).await,
         "S + L twin accepted"
@@ -342,4 +364,84 @@ async fn every_bit_flip_is_decided_like_verify_strict() {
         }
     }
     assert!(checked > 1500, "only {checked} flips");
+}
+
+/// `(accepted, refused)` over mixed-order keys `A' = aB + T_i`, one per
+/// non-identity torsion point `T_i`, signed with `R = rB + T_j` for each
+/// `j` in `r_torsion` (`EIGHT_TORSION[0]` is the identity, so `0..1` is an
+/// honest `R`) and `S = r + k'·a`, over `messages` headers each.
+/// `[S]B = R + [k']A'` holds exactly when `T_j + [k']T_i` is the identity.
+/// Panics on the first case the envelope decides unlike `verify_strict`.
+async fn mixed_order(r_torsion: Range<usize>, messages: u16) -> (usize, usize) {
+    let signing = ed25519_dalek::SigningKey::from_bytes(&common::ED25519_SEED);
+    let a = signing.to_scalar();
+    let honest = signing.verifying_key().to_edwards();
+    let payload = common::fixture::payment_bytes();
+    let aad = external_aad(&rpc_request()).expect("aad");
+    let (mut accepted, mut refused) = (0, 0);
+    for (i, t_i) in EIGHT_TORSION.iter().enumerate().skip(1) {
+        let public = (honest + t_i).compress().to_bytes();
+        let key = CoseVerifyKey::ed25519(&public).expect("a curve point");
+        for j in r_torsion.clone() {
+            for counter in 0..messages {
+                let protected = protected_for(&public, counter);
+                let tbs = forge::sign1_tbs(&protected, &aad, &payload);
+                let seed: [u8; 64] = Sha512::new()
+                    .chain_update(counter.to_le_bytes())
+                    .chain_update([i as u8, j as u8])
+                    .finalize()
+                    .into();
+                let r = Scalar::from_bytes_mod_order_wide(&seed);
+                let big_r = (EdwardsPoint::mul_base(&r) + EIGHT_TORSION[j])
+                    .compress()
+                    .to_bytes();
+                let s = r + challenge(&big_r, &public, &tbs) * a;
+                let mut signature = [0; 64];
+                signature[..32].copy_from_slice(&big_r);
+                signature[32..].copy_from_slice(s.as_bytes());
+                let reference = strict(&public, &tbs, &signature);
+                let streamed = opens(&key, &protected, &payload, &signature).await;
+                assert_eq!(
+                    streamed, reference,
+                    "A = aB + T{i}, R = rB + T{j}, message {counter}"
+                );
+                if reference {
+                    accepted += 1;
+                } else {
+                    refused += 1;
+                }
+            }
+        }
+    }
+    (accepted, refused)
+}
+
+/// A mixed-order key with an honest `R = rB`: accepted exactly when
+/// `[k']T` vanishes (about one message in two, four or eight, by `T`'s
+/// order), as `verify_strict` does; it refuses small-order keys, not a
+/// torsion component. A verifier stricter than `verify_strict` (refusing
+/// any key that is not torsion-free) passes every refusal test above and
+/// fails here.
+#[tokio::test]
+async fn mixed_order_keys_are_decided_like_verify_strict() {
+    let (accepted, refused) = mixed_order(0..1, 24).await;
+    assert!(
+        accepted > 0,
+        "no accepted mixed-order key ({refused} refused): vacuous"
+    );
+    assert!(refused > 0, "no refused mixed-order case");
+}
+
+/// A mixed-order key with a mixed-order `R = rB + T_j`, every pair of
+/// non-identity torsion points: accepted exactly when `T_j = -[k']T_i`, as
+/// `verify_strict` does (it refuses a small-order `R`, not a torsion
+/// component).
+#[tokio::test]
+async fn mixed_order_keys_and_r_are_decided_like_verify_strict() {
+    let (accepted, refused) = mixed_order(1..8, 4).await;
+    assert!(
+        accepted > 0,
+        "no accepted mixed-order R ({refused} refused): vacuous"
+    );
+    assert!(refused > 0, "no refused mixed-order R");
 }
