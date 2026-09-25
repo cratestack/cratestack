@@ -103,7 +103,11 @@ mcp {
 
 `blog` is the block's `name`, required whenever `expose` lists `resources` and refused otherwise. It is
 the URI's host, so it is a DNS label: a quoted string of lowercase letters, digits and `-`, 1 to 63
-characters, not starting or ending with `-`. It is stated rather than taken from the file's name so that
+characters, not starting or ending with `-`. Two rules go further. `--` may not be its 3rd and 4th
+characters, the form IDNA reserves (RFC 5891 § 4.2.3.1): an IDNA-aware client may show an `xn--` name
+as a different, Unicode one, and every other `??--` is held for a prefix like it. So `xn--blog` and
+`ab--c` are refused, while `a--b` and `abc--d` are not. And it needs at least one letter: `127` is
+refused, `v2` and `3d-shop` are not. The name is stated rather than taken from the file's so that
 renaming the `.cstack` file never moves a URI an agent holds; `ResourceDescriptor::name` carries it. The
 scheme is case-insensitive (RFC 3986 § 3.1: `CRATESTACK://blog/posts/1` is the same URI); the name,
 segment and id are matched exactly.

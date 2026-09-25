@@ -133,11 +133,14 @@ fn rule_the_name_does_not_start_or_end_with_a_hyphen() {
 
 /// The edges of the two rules above are still names: exactly 63
 /// characters, hyphens inside, a leading or trailing digit, one character.
+/// The hyphen run starts at the 4th character, not the 2nd, and the
+/// one-character name is a letter: `--` as the 3rd and 4th characters and
+/// an all-digit name are their own rules (`tests_mcp_name_reserved.rs`).
 #[test]
 fn a_dns_label_at_the_edges_of_the_rules_is_a_name() {
-    let longest = format!("a{}9", "-".repeat(61));
+    let longest = format!("abc{}9", "-".repeat(59));
     let widest = "z".repeat(63);
-    for value in ["a-b", "a--b", "0blog9", "a", "7", &widest, &longest] {
+    for value in ["a-b", "a--b", "0blog9", "a", &widest, &longest] {
         let source = edit(NAME, &format!("  name = \"{value}\"\n"));
         let schema = parse_schema(&source).unwrap_or_else(|error| panic!("{value:?}: {error}"));
         assert_eq!(schema.mcp.unwrap().name.unwrap().value, value);

@@ -2,6 +2,8 @@
 //! words, hover resolves every MCP span the parser records, and the parser's
 //! MCP rules arrive as diagnostics pointing at the offending attribute.
 
+mod name_rules;
+
 use std::str::FromStr;
 
 use tower_lsp_server::ls_types::{CompletionItemKind, SemanticTokenType, Uri};

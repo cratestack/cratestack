@@ -28,7 +28,11 @@ message is unchanged). The same generated table serves them:
   `name` is the URI's host, so it is a DNS label: a quoted string of
   lowercase ASCII letters, digits and `-`, 1 to 63 characters, not starting
   or ending with `-` (`a-b` is fine; `-blog`, `blog-` and a 64-character name
-  are not). The parser refuses it missing when resources are exposed,
+  are not). Two rules go further (maintainer decisions on #1040): no `--` as
+  the 3rd and 4th characters, the form IDNA reserves (RFC 5891 § 4.2.3.1),
+  so `xn--blog` and `ab--c` are refused while `a--b` and `abc--d` are not;
+  and at least one letter, so `127` and `2026` are refused while `v2` and
+  `3d-shop` are not. The parser refuses it missing when resources are exposed,
   malformed (one error per broken rule, naming it), set twice, or present
   when they are not (only resource URIs read it, so there it would be
   inert). The LSP completes `name = "..."` with the rule in its detail, and

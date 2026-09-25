@@ -63,7 +63,9 @@ pub struct McpConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpName {
     /// The string's contents, a lowercase DNS label once parsed (`[a-z0-9-]`,
-    /// 1 to 63 characters, no `-` at either end; cratestack#1040), because
+    /// 1 to 63 characters, no `-` at either end, not `--` as the 3rd and 4th
+    /// characters (IDNA's reserved form), at least one letter;
+    /// cratestack#1040), because
     /// it is a URI's host: lowercase so the one spelling is the only
     /// spelling (the host is compared exactly), and no `.`, `:`, `@` or `%`,
     /// so it never needs percent-encoding and never reads as a port,
