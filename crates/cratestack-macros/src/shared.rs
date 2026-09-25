@@ -6,6 +6,7 @@ pub(crate) mod bytes_serde;
 pub(crate) mod decimal_backend;
 mod enum_query_parser;
 mod procedure_attrs;
+mod query_fields;
 mod sql;
 mod types;
 mod value;
@@ -25,6 +26,7 @@ pub(crate) use attrs::{
     supports_comparison,
 };
 pub(crate) use procedure_attrs::is_stream_procedure;
+pub(crate) use query_fields::queryable_model_fields;
 pub(crate) use sql::{create_sql_value, sql_value_tokens, update_sql_value};
 pub(crate) use types::{
     field_definition, field_type, query_scalar_list_parser_tokens, query_scalar_parser_tokens,

@@ -16,7 +16,7 @@ use cratestack_core::Model;
 use quote::quote;
 
 use crate::shared::{
-    ident, model_name_set, relation_model_fields, scalar_model_fields, to_snake_case,
+    ident, model_name_set, queryable_model_fields, relation_model_fields, to_snake_case,
 };
 
 use super::types::relation_link;
@@ -43,7 +43,9 @@ pub(crate) fn generate_model_order_catalog(
     let model_names = model_name_set(models);
     let catalog_ident = order_catalog_ident(&model.name);
 
-    let scalars = scalar_model_fields(model, &model_names)
+    // No `@server_only` column: `?sort=author.secret` must be refused as an
+    // unknown path is (`queryable_model_fields`).
+    let scalars = queryable_model_fields(model, &model_names)
         .into_iter()
         .map(|field| {
             let api_name = &field.name;
