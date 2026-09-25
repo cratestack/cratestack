@@ -1,0 +1,25 @@
+// A versioned procedure that opts out of idempotency.
+// `api_version_op_resolver.rs` proves the REST op resolver finds it at
+// the path the router mounts, `/v2/$procs/ping`. Before the fix
+// `ROUTE_TRANSPORTS` named `/$procs/ping`, so the lookup missed, the op
+// resolved as unresolved (reserve), and the opt-out was silently ignored.
+// `@no_rate_limit` goes through the same lookup (`rest_ops_filter` is a
+// projection of this resolver) but needs the `rate_limit` Cargo feature,
+// which this facade does not forward, so it is not declared here.
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @api_version("v2")
+  @no_idempotency
+  @allow(auth() != null)

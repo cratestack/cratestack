@@ -42,11 +42,13 @@ pub(crate) fn build_procedure_mapping(
         // silently never match a real client's request.
         TransportStyle::Rpc => format!("/rpc/procedure.{}", procedure.name),
         // REST is the schema default and the only other transport this
-        // generator supports — every procedure's REST route is
-        // `/$procs/{name}` regardless of `transport rest` being
-        // implicit or explicit (`generate_procedure_transport_constants`
-        // in `crates/cratestack-macros/src/transport/rest.rs`).
-        TransportStyle::Rest => format!("/$procs/{}", procedure.name),
+        // generator supports. The route is `/$procs/{name}`, or
+        // `/{version}/$procs/{name}` under `@api_version`, whether
+        // `transport rest` is implicit or explicit; derived by the same
+        // function the server mounts with.
+        TransportStyle::Rest => {
+            cratestack_core::procedure_route::procedure_rest_route_path(procedure)
+        }
     };
     let url_path = format!("{}{route_path}", config.base_path.trim_end_matches('/'));
 

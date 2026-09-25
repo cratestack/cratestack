@@ -200,7 +200,10 @@ pub(crate) fn build_procedure(
         method_name: to_camel_case(&procedure.name),
         args_name: procedure_wrapper_name(procedure, occupied_type_names),
         return_type: dart_type(&procedure.return_type, false),
-        route: format!("/\\$procs/{}", procedure.name),
+        // The server's own derivation, `@api_version` prefix included, then
+        // `$` escaped for the single-quoted Dart literal it lands in.
+        route: cratestack_core::procedure_route::procedure_rest_route_path(procedure)
+            .replace('$', "\\$"),
         return_decode_expr: decode_value_expr(
             "body",
             &procedure.return_type,
