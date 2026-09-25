@@ -1,8 +1,8 @@
 //! Typed IR for a schema's MCP operator surface (ADR 0002, cratestack#1033
 //! phase 1, cratestack#1036).
 //!
-//! Three declarations feed it: the top-level `mcp { expose = [tools,
-//! resources] }` block ([`McpConfig`]), `@mcp(tool[: "name"][, description:
+//! Three declarations feed it: the top-level `mcp { name = "..."  expose =
+//! [tools, resources] }` block ([`McpConfig`], [`McpName`]), `@mcp(tool[: "name"][, description:
 //! "..."])` on a procedure ([`ProcedureMcpExposure`]), and `@@mcp(resource:
 //! "segment"[, max_page_size: N])` on a model ([`ModelMcpExposure`]).
 //!
@@ -42,8 +42,36 @@ pub struct McpConfig {
     pub expose_tools: Option<SourceSpan>,
     /// `Some(span of the `resources` element)` when `expose` lists it.
     pub expose_resources: Option<SourceSpan>,
+    /// `name = "..."`: the `<name>` in every resource URI,
+    /// `cratestack://<name>/<segment>/{id}` (maintainer decision on
+    /// cratestack#1040). Present exactly when `expose` lists `resources`;
+    /// the parser refuses it missing there and present anywhere else.
+    ///
+    /// Stated in the schema rather than derived from the `.cstack` file's
+    /// name, as phase 5 first did, so renaming or moving the file does not
+    /// change a URI an agent already holds, and two servers whose files
+    /// share a name can still be told apart. `serde(default)` so a snapshot
+    /// from before the key existed still deserializes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<McpName>,
     /// The whole block, header to closing brace. This is the span a `part of`
     /// file's rejection of `mcp { }` reports (cratestack#993).
+    pub span: SourceSpan,
+}
+
+/// The `name = "..."` entry of the `mcp { }` block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct McpName {
+    /// The string's contents, a lowercase DNS label once parsed (`[a-z0-9-]`,
+    /// 1 to 63 characters, no `-` at either end, not `--` as the 3rd and 4th
+    /// characters (IDNA's reserved form), at least one letter;
+    /// cratestack#1040), because
+    /// it is a URI's host: lowercase so the one spelling is the only
+    /// spelling (the host is compared exactly), and no `.`, `:`, `@` or `%`,
+    /// so it never needs percent-encoding and never reads as a port,
+    /// userinfo or a dotted host name.
+    pub value: String,
+    /// The whole `name = "..."` entry.
     pub span: SourceSpan,
 }
 
@@ -76,7 +104,7 @@ pub struct ProcedureMcpExposure {
 /// resource.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ModelMcpExposure {
-    /// The URI segment in `cratestack://<schema>/<segment>`. Author-chosen,
+    /// The URI segment in `cratestack://<name>/<segment>`. Author-chosen,
     /// never derived from the table or model name, so the database layout is
     /// not exposed (ADR 0002 § Resources).
     pub resource: String,

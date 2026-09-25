@@ -2,15 +2,16 @@
 // defaulted name, a named tool with a description, and a resource with a
 // lowered page size. Built without the `mcp` feature (as this crate's tests
 // are), `include_server_schema!` must refuse it asking for the feature; with
-// the feature, the resource still keeps it from compiling until phase 5
-// (cratestack#1033). Also the tree-sitter-cstack conformance fixture for the
-// syntax.
+// the feature, tools and the resource are both served (the resource since
+// phase 5, cratestack#1040). Also the tree-sitter-cstack conformance fixture
+// for the syntax.
 
 datasource db {
   provider = "postgresql"
 }
 
 mcp {
+  name = "blog"
   expose = [tools, resources]
 }
 

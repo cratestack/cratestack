@@ -16,6 +16,7 @@
 //! "no model under `provider = \"none\"`" check so both are reported.
 
 mod inert;
+mod name;
 mod names;
 mod placement;
 mod policy;
@@ -31,6 +32,8 @@ pub(super) fn validate_mcp_collecting(schema: &Schema, errors: &mut Vec<SchemaEr
     scope::attributes_need_their_exposed_kind(schema, errors);
     scope::exposed_kinds_must_be_used(schema, errors);
     scope::no_resources_without_a_database(schema, errors);
+    name::resources_need_a_name(schema, errors);
+    name::name_needs_resources(schema, errors);
     names::tool_names_are_well_formed(schema, errors);
     names::resource_segments_are_well_formed(schema, errors);
     names::max_page_size_is_in_range(schema, errors);

@@ -15,7 +15,7 @@ mod subscribe_dispatch;
 
 pub(crate) use op_descriptors::{
     generate_model_op_descriptors, generate_model_subscribe_op_descriptor,
-    generate_procedure_op_descriptor,
+    generate_procedure_op_descriptor, model_get_op_descriptor, model_list_op_descriptor,
 };
 pub(crate) use rest::{
     generate_model_transport_constants, generate_model_transport_entries,

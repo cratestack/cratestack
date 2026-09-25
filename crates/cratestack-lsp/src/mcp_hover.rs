@@ -1,6 +1,6 @@
 //! Hover for the MCP surface (ADR 0002, cratestack#1036): the `mcp { }`
-//! block, each element of its `expose` list, `@mcp(...)` on a procedure and `@@mcp(...)` on
-//! a model.
+//! block, each element of its `expose` list, its `name` (cratestack#1040),
+//! `@mcp(...)` on a procedure and `@@mcp(...)` on a model.
 //!
 //! Every target is a span the parser recorded in the typed IR, so hover shows
 //! what the parser *resolved* — most usefully the tool name a bare
@@ -91,6 +91,25 @@ fn block_symbol(schema: &Schema, config: &McpConfig, offset: usize) -> SymbolInf
     {
         let detail = format!("resources: {}", listed(&resources));
         return expose_symbol("resources", detail, span);
+    }
+    if let Some(name) = config
+        .name
+        .as_ref()
+        .filter(|name| span_contains(name.span, offset))
+    {
+        // The URIs the name produces, which is the one thing it is for.
+        let uris = resources
+            .iter()
+            .map(|segment| format!("cratestack://{}/{segment}", name.value))
+            .collect::<Vec<_>>();
+        let uris = uris.iter().map(String::as_str).collect::<Vec<_>>();
+        return SymbolInfo {
+            kind: "mcp name",
+            name: name.value.clone(),
+            detail: format!("MCP resource URIs: {}", listed(&uris)),
+            docs: Vec::new(),
+            selection_span: name.span,
+        };
     }
     SymbolInfo {
         kind: "mcp block",

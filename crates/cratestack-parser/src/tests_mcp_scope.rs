@@ -7,7 +7,7 @@ use crate::tests_mcp_support::{edit, rejected};
 const TOOL: &str =
     r#"@mcp(tool: "publish_post", description: "Publish a draft, then notify: now.")"#;
 const RESOURCE: &str = r#"@@mcp(resource: "posts", max_page_size: 20)"#;
-const BLOCK: &str = "mcp {\n  expose = [tools, resources]\n}\n";
+const BLOCK: &str = "mcp {\n  name = \"blog\"\n  expose = [tools, resources]\n}\n";
 const EXPOSE: &str = "expose = [tools, resources]";
 
 fn without_block() -> String {

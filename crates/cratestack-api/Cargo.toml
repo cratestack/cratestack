@@ -204,3 +204,9 @@ required-features = ["mcp"]
 name = "mcp_http"
 path = "tests/mcp_http.rs"
 required-features = ["mcp"]
+
+# cratestack#1040: a `db = None` schema serves no resources, at runtime too.
+[[test]]
+name = "mcp_no_resources"
+path = "tests/mcp_no_resources.rs"
+required-features = ["mcp"]

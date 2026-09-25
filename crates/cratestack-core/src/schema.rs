@@ -30,7 +30,7 @@ pub use computed_attribute::{
 };
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use internal_attribute::{INTERNAL_ACTIONS, model_internal_actions, parse_internal_attribute};
-pub use mcp::{MCP_MAX_PAGE_SIZE, McpConfig, ModelMcpExposure, ProcedureMcpExposure};
+pub use mcp::{MCP_MAX_PAGE_SIZE, McpConfig, McpName, ModelMcpExposure, ProcedureMcpExposure};
 pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
 };

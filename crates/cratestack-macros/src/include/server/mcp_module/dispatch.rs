@@ -29,6 +29,7 @@ use crate::shared::{ident, is_stream_procedure, to_snake_case};
 pub(super) fn dispatch_tokens(
     tools: &[ToolPlan],
     bearing: &BTreeSet<String>,
+    resource_methods: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let variants: Vec<_> = tools
         .iter()
@@ -45,6 +46,21 @@ pub(super) fn dispatch_tokens(
         .zip(&modules)
         .map(|((tool, variant), module)| execute_arm(tool, variant, module, bearing));
     let compose_imports = compose_imports(tools, bearing);
+    // A resources-only schema (cratestack#1040) has no tool to run: `Call`
+    // is uninhabited, `execute` matches it with no arms and binds nothing,
+    // and nothing reads `registry` — still taken, so every schema's
+    // `tools(db, registry, resolvers)` has one shape.
+    let (execute_body, registry_allow) = if tools.is_empty() {
+        (
+            quote! { let _ = ctx; match call {} },
+            quote! { #[allow(dead_code)] },
+        )
+    } else {
+        (
+            quote! { let state = self; match call { #(#arms)* } },
+            proc_macro2::TokenStream::new(),
+        )
+    };
 
     quote! {
         use ::cratestack::CratestackError;
@@ -55,15 +71,17 @@ pub(super) fn dispatch_tokens(
             #(#variants(super::procedures::#modules::Args),)*
         }
 
-        /// The schema's tool table, for `::cratestack::mcp::StdioServer`.
+        /// The schema's tool and resource table, for
+        /// `::cratestack::mcp::StdioServer`.
         #[derive(Clone)]
         pub struct McpTools<R, CR> {
             db: super::Cratestack,
+            #registry_allow
             registry: R,
             resolvers: CR,
         }
 
-        /// Build the tool table from what the REST router is built from.
+        /// Build the table from what the REST router is built from.
         pub fn tools<R, CR>(db: super::Cratestack, registry: R, resolvers: CR) -> McpTools<R, CR>
         where
             R: super::procedures::ProcedureRegistry,
@@ -101,11 +119,10 @@ pub(super) fn dispatch_tokens(
                 call: Call,
                 ctx: &::cratestack::CratestackContext,
             ) -> ::core::result::Result<::cratestack::serde_json::Value, CratestackError> {
-                let state = self;
-                match call {
-                    #(#arms)*
-                }
+                #execute_body
             }
+
+            #resource_methods
         }
     }
 }

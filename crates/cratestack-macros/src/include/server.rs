@@ -31,8 +31,8 @@ pub(super) fn compose_server_schema(
         Ok(parsed) => parsed,
         Err(error) => return error,
     };
-    let mcp_tools = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
-        Ok(tools) => tools,
+    let mcp_plan = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
+        Ok(plan) => plan,
         Err(error) => return error,
     };
     if let Err(error) =
@@ -69,9 +69,10 @@ pub(super) fn compose_server_schema(
         };
 
         let axum_module = axum_module::build_axum_module(&collected, db);
-        // Empty unless the schema exposes tools (ADR 0002, cratestack#1038).
+        // Empty unless the schema exposes tools or resources (ADR 0002,
+        // cratestack#1038, cratestack#1040).
         let mcp_module = mcp_module::build_mcp_module(
-            &mcp_tools,
+            &mcp_plan,
             schema.auth.is_some(),
             &crate::computed::computed_bearing_names(&schema),
         );

@@ -2,6 +2,8 @@
 //! words, hover resolves every MCP span the parser records, and the parser's
 //! MCP rules arrive as diagnostics pointing at the offending attribute.
 
+mod name_rules;
+
 use std::str::FromStr;
 
 use tower_lsp_server::ls_types::{CompletionItemKind, SemanticTokenType, Uri};
@@ -18,6 +20,7 @@ const SCHEMA: &str = r#"datasource db {
 
 /// Agent surface.
 mcp {
+  name = "blog"
   expose = [tools, resources]
 }
 
@@ -44,7 +47,12 @@ fn uri() -> Uri {
 #[test]
 fn completion_offers_the_mcp_attributes_and_expose_key_with_detail() {
     let items = completion_items(None);
-    for label in ["@mcp", "@@mcp", "expose = [tools, resources]"] {
+    for label in [
+        "@mcp",
+        "@@mcp",
+        "expose = [tools, resources]",
+        "name = \"...\"",
+    ] {
         let item = items
             .iter()
             .find(|item| item.label == label)
@@ -84,6 +92,10 @@ fn hover_resolves_each_mcp_declaration() {
     assert_eq!(expose.detail, "tools: getFeed");
     assert_eq!(at("resources]").detail, "resources: posts");
 
+    let name = at("name = ");
+    assert_eq!((name.kind, name.name.as_str()), ("mcp name", "blog"));
+    assert_eq!(name.detail, "MCP resource URIs: cratestack://blog/posts");
+
     let block = at("mcp {");
     assert_eq!(block.kind, "mcp block");
     assert_eq!(block.docs, vec!["Agent surface.".to_owned()]);
@@ -115,6 +127,31 @@ fn mcp_syntax_errors_are_reported_as_diagnostics() {
     let start = text.find("procedures").expect("element");
     let expected = range_from_offsets(&text, start, start + "procedures".len());
     assert_eq!(diagnostics[0].range, expected);
+}
+
+/// `name` is a DNS label (cratestack#1040): the completion popup states the
+/// rule, and a name that breaks it is a diagnostic on the entry that names
+/// the broken rule.
+#[test]
+fn the_mcp_name_is_hinted_and_checked_as_a_dns_label() {
+    let items = completion_items(None);
+    let name = items.iter().find(|item| item.label == "name = \"...\"");
+    let detail = name.and_then(|item| item.detail.as_deref()).unwrap_or("");
+    assert!(detail.contains("a DNS label"), "{detail}");
+    assert!(detail.contains("1-63 characters"), "{detail}");
+
+    for (value, rule) in [
+        ("-blog", "must not start or end with `-`"),
+        (&"a".repeat(64), "must be 1 to 63 characters"),
+    ] {
+        let text = SCHEMA.replace("name = \"blog\"", &format!("name = \"{value}\""));
+        let (_, diagnostics) = analyze_document(&uri(), &text);
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert!(diagnostics[0].message.contains(rule), "{diagnostics:?}");
+        let start = text.find("name = ").expect("entry");
+        let end = start + format!("name = \"{value}\"").len();
+        assert_eq!(diagnostics[0].range, range_from_offsets(&text, start, end));
+    }
 }
 
 /// Before cratestack#1036 `@@mcp(...)` was a raw model attribute and got the

@@ -55,7 +55,9 @@ impl Caller {
     /// [`Self::resolve`] over just the extensions, because `rmcp` does not
     /// let a test build a `RequestContext` (its `Peer` is crate-private),
     /// and the fail-closed arm below is the one worth a test.
-    fn resolve_from(
+    /// `pub(crate)` so the resource lists can be tested the same way
+    /// (`src/resources/listed.rs`).
+    pub(crate) fn resolve_from(
         &self,
         extensions: &rmcp::model::Extensions,
     ) -> Result<Cow<'_, CratestackContext>, ErrorData> {
