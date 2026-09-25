@@ -13,6 +13,7 @@ use tower::Layer;
 
 use super::service::IdempotencyService;
 use super::store::IdempotencyStore;
+use crate::ratelimit::VerifiedPrincipal;
 
 /// Tower layer that wires an `IdempotencyStore` into the request pipeline.
 ///
@@ -103,6 +104,19 @@ static MISSING_IDENTITY_WARNING: Once = Once::new();
 /// ticket's Expected Behavior: "construction requires an explicit
 /// fingerprint function so the collision cannot be reached by accident."
 pub(super) fn default_principal_fingerprint(req: &Request) -> Result<String, CratestackError> {
+    // A principal an upstream layer verified (the COSE envelope layer's
+    // signer thumbprint, ADR 0006 §12, cratestack#1006) comes first, as it
+    // does in the rate limiter's default key: it is not caller-mintable, and
+    // a COSE-only client sends no `Authorization` header, so without this
+    // it was refused with the 412 below. The `princ:` prefix keeps it out of
+    // the other two namespaces (bare hex and an IP address never start with
+    // it), and it is hashed so an identifier is never stored verbatim.
+    if let Some(VerifiedPrincipal(principal)) = req.extensions().get::<VerifiedPrincipal>() {
+        let digest = Sha256::digest(principal.as_bytes());
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        return Ok(format!("princ:{hex}"));
+    }
+
     // Prefer Authorization header for authenticated requests.
     if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
         && let Ok(auth_str) = auth_header.to_str()

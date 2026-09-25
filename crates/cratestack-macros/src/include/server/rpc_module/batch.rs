@@ -110,7 +110,8 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
                 &client_ip_ctx.extensions,
             );
             let batch_ctx = match state.auth_provider.authenticate(&batch_request).await {
-                Ok(ctx) => ctx,
+                // The envelope's signer (cratestack#1006, D2): recorded, never an identity.
+                Ok(ctx) => ::cratestack::enrich_context_from_envelope(ctx, &client_ip_ctx.extensions),
                 Err(error) => {
                     let error: ::cratestack::CratestackError = error.into();
                     return rpc_dispatch_error(&state, &headers, error);

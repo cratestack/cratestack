@@ -10,10 +10,11 @@ use sha2::{Digest, Sha256};
 use syn::LitStr;
 
 pub(super) use super::schema_args::{SchemaPathArgs, ServerDb, ServerSchemaArgs};
+use super::schema_sha::SchemaShaConsts;
 
 pub(super) fn parse_schema_literal(
     schema_path: &LitStr,
-) -> Result<(String, PathBuf, cratestack_core::Schema, String), TokenStream> {
+) -> Result<(String, PathBuf, cratestack_core::Schema, SchemaShaConsts), TokenStream> {
     let schema_relative = schema_path.value();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
     let resolved = PathBuf::from(&manifest_dir).join(&schema_relative);
@@ -36,9 +37,9 @@ pub(super) fn parse_schema_literal(
 
     reject_composite_primary_keys(schema_path, &schema)?;
 
-    let schema_sha256 = hash_schema_source(&source);
+    let schema_sha = SchemaShaConsts::from_hex(hash_schema_source(&source));
 
-    Ok((schema_relative, resolved, schema, schema_sha256))
+    Ok((schema_relative, resolved, schema, schema_sha))
 }
 
 /// Raw SHA-256 of the schema's source bytes, hex-encoded — deliberately not

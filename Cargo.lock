@@ -1155,7 +1155,6 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "tower",
- "url",
 ]
 
 [[package]]
@@ -1168,6 +1167,7 @@ dependencies = [
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
+ "cratestack-cose",
  "cratestack-exec",
  "cratestack-sql",
  "erased-serde",

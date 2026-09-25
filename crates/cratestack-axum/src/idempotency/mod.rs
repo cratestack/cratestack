@@ -88,7 +88,7 @@ mod finish;
 mod hash;
 mod headers;
 mod layer;
-mod mount_prefix;
+pub(crate) mod mount_prefix;
 mod parse;
 mod record;
 mod reserve;
@@ -103,6 +103,8 @@ mod stream_bypass;
 mod tests_error_body;
 #[cfg(test)]
 mod tests_fingerprint;
+#[cfg(test)]
+mod tests_fingerprint_principal;
 #[cfg(test)]
 mod tests_hash;
 #[cfg(test)]

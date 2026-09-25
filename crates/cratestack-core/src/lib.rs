@@ -110,7 +110,7 @@ pub use store::{
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
 pub use transport::{
-    OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,
+    OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor, canonical_query,
     canonical_request_string,
 };
 pub use validators::{

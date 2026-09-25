@@ -44,7 +44,7 @@ use serde::Serialize;
 
 use crate::codec::CodecSet;
 
-use self::rpc_probe::is_rpc_path;
+pub(crate) use self::rpc_probe::is_rpc_path;
 use crate::transport::{HttpTransport, select_transport_response_content_type};
 
 /// The codec pair every generated `router()` is wired with by default —
@@ -85,8 +85,21 @@ pub(crate) fn middleware_error_response(
     path: &str,
     error: CratestackError,
 ) -> Response {
-    let codec = middleware_codec();
     let status = error.status_code();
+    middleware_error_response_with_status(headers, path, status, error)
+}
+
+/// [`middleware_error_response`] with an explicit status, for a refusal
+/// whose status has no `CratestackError` variant of its own (the envelope
+/// layer's `413`, cratestack#1006): the body carries `error`'s code and
+/// message, the response the given status.
+pub(crate) fn middleware_error_response_with_status(
+    headers: &HeaderMap,
+    path: &str,
+    status: StatusCode,
+    error: CratestackError,
+) -> Response {
+    let codec = middleware_codec();
     if is_rpc_path(path) {
         let body = RpcErrorBody::from_cratestack(&error);
         encode_with_status(&codec, headers, status, &body)

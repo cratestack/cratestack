@@ -45,12 +45,23 @@ decimal-bigdecimal = [
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json/decimal-bigdecimal",
 ]
+# The server envelope layer (`envelope_layer`, cratestack#1006, ADR 0006
+# §12): opens signed requests and seals responses in front of the generated
+# REST and RPC routers, with `cratestack_cose::CoseEnvelope` as the default
+# envelope (maintainer decision D7). Off by default and forwarded by the
+# `cratestack-pg` / `cratestack-api` facades, so without it no COSE, P-256
+# or Ed25519 crate is in their graphs (CI's `facade-disjointness` job
+# asserts it). L4 -> L2 is a legal edge (ADR 0014); `cratestack-cose`
+# without its `auth` feature depends on `cratestack-core` alone.
+cose = ["dep:cratestack-cose"]
 
 [dependencies]
 async-trait.workspace = true
 axum.workspace = true
 bytes.workspace = true
 cratestack-core.workspace = true
+# `cose` only; see the feature above.
+cratestack-cose = { workspace = true, optional = true }
 # Normal (not dev-only) dependencies since cratestack#846: the middleware
 # layers in this crate (`ratelimit`, `idempotency`) run *outside* the
 # generated router, so unlike every handler they have no `C: HttpTransport`
