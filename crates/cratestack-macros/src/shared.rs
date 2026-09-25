@@ -127,6 +127,9 @@ pub(crate) fn computed_type_fields(ty: &cratestack_core::TypeDecl) -> Vec<&Field
 /// Stored scalars plus computed fields, in declaration order — the wire
 /// shape client-side struct generators emit (computed fields are part of
 /// the response, even though the server-side struct excludes them).
+/// Keeps `@server_only` fields, which those structs still declare and
+/// serde masks; code that reads fields one by one into a response wants
+/// [`response_model_fields`].
 pub(crate) fn wire_model_fields<'a>(
     model: &'a Model,
     model_names: &BTreeSet<&str>,
@@ -135,6 +138,23 @@ pub(crate) fn wire_model_fields<'a>(
         .fields
         .iter()
         .filter(|field| !is_relation_field(model_names, field))
+        .collect()
+}
+
+/// [`wire_model_fields`] without `@server_only` fields: what a server may
+/// write into a response, or accept in a selection of one (`?fields=`,
+/// `includeFields[...]`). Any path that builds a response field by field
+/// bypasses the struct's `#[serde(skip)]`, so it must use this. The
+/// `@computed` compose helpers took `wire_model_fields` instead and sent
+/// every `@server_only` value of a model with a `@computed` field, on each
+/// procedure output over REST, RPC and MCP.
+pub(crate) fn response_model_fields<'a>(
+    model: &'a Model,
+    model_names: &BTreeSet<&str>,
+) -> Vec<&'a Field> {
+    wire_model_fields(model, model_names)
+        .into_iter()
+        .filter(|field| !is_server_only_field(field))
         .collect()
 }
 
