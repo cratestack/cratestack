@@ -511,14 +511,21 @@ dependencies = [
 name = "cratestack-mcp"
 version = "0.12.0"
 dependencies = [
+ "axum",
+ "bytes",
  "cratestack-core",
  "cratestack-exec",
+ "http",
+ "http-body",
+ "http-body-util",
  "rmcp",
  "serde",
  "serde_json",
  "serde_path_to_error",
+ "serde_urlencoded",
  "sha2 0.11.0",
  "tokio",
+ "tower",
  "tracing",
 ]
 
@@ -1765,17 +1772,27 @@ version = "3.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b6317cd8c13e3ec9033cf2aa5aa92cd743f0f4f8a93cddc42ea0ae6ce3b8898"
 dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
  "chrono",
  "futures",
+ "http",
+ "http-body",
+ "http-body-util",
  "indexmap",
  "pastey",
  "pin-project-lite",
+ "rand 0.10.2",
  "schemars",
  "serde",
  "serde_json",
+ "sse-stream",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-util",
+ "tower-service",
  "tracing",
  "uuid",
 ]
@@ -2198,6 +2215,19 @@ dependencies = [
  "tracing",
  "uuid",
  "whoami",
+]
+
+[[package]]
+name = "sse-stream"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c123f296ade4ec4b8b0f6162116e6629f5146922ca5ab40ca9d3c2e73ab4761e"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http-body",
+ "http-body-util",
+ "pin-project-lite",
 ]
 
 [[package]]

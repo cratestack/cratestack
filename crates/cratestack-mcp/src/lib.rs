@@ -5,7 +5,9 @@
 //! You do not depend on this crate directly. Turn on the `mcp` feature of
 //! `cratestack-pg` or `cratestack-api` (ADR 0002 D3), and the schema macro
 //! generates a `cratestack_schema::mcp` module whose `tools(...)` value
-//! implements [`McpTools`]. Hand that to [`StdioServer`].
+//! implements [`McpTools`]. Hand that to [`StdioServer`], or to
+//! [`StreamableHttpServer`] to mount it on an axum router behind the
+//! application's `AuthProvider` ([`streamable_http`], cratestack#1039).
 //!
 //! # Where the policy check happens, and why it cannot be skipped
 //!
@@ -49,6 +51,7 @@ mod listing;
 mod result;
 mod server;
 mod stdio;
+pub mod streamable_http;
 mod table;
 #[cfg(test)]
 mod tests_idempotency;
@@ -62,6 +65,9 @@ pub use cratestack_exec::{DEFAULT_STORE_TIMEOUT, OpExecutor, StoreErrorPolicy};
 pub use listing::ToolTableError;
 pub use server::McpServer;
 pub use stdio::{ServeError, StdioServer};
+pub use streamable_http::{
+    HttpConfigError, ProtectedResource, StreamableHttp, StreamableHttpServer, StreamableHttpService,
+};
 pub use table::{ArgumentsError, McpTools, ToolDescriptor, decode_arguments, encode_output};
 
 /// The one MCP revision this server speaks (ADR 0002 § Transports).

@@ -37,12 +37,30 @@ fn a_key_follows_the_idempotency_key_header_rules() {
 
 #[test]
 fn no_actor_id_means_no_namespace() {
-    assert_eq!(namespace(Some("u-1")).unwrap(), "mcp:u-1");
-    assert_eq!(namespace(None).unwrap_err().code(), "PRECONDITION_FAILED");
+    let string = |value: &str| id(ClaimValue::String(value.to_owned()));
+    assert_eq!(namespace(&string("u-1")).unwrap(), "mcp:u-1");
     assert_eq!(
-        namespace(Some("")).unwrap_err().code(),
+        namespace(&CratestackContext::anonymous())
+            .unwrap_err()
+            .code(),
         "PRECONDITION_FAILED"
     );
+    assert_eq!(
+        namespace(&string("")).unwrap_err().code(),
+        "PRECONDITION_FAILED"
+    );
+}
+
+/// The cratestack#1039 maintainer decision, at the unit level: a user whose
+/// `id` claim is literally a system id does not land in that service's
+/// namespace. The end-to-end replay test is `tests/admission_prefix.rs`.
+#[test]
+fn a_user_claiming_a_system_id_is_not_in_the_system_namespace() {
+    let system = SystemContext::for_service("svc").into_context();
+    let impostor = id(ClaimValue::String("system:svc".to_owned()));
+    assert_eq!(principal_id(&system), principal_id(&impostor));
+    assert_eq!(namespace(&system).unwrap(), "mcp-system:system:svc");
+    assert_eq!(namespace(&impostor).unwrap(), "mcp:system:svc");
 }
 
 fn id(value: ClaimValue) -> CratestackContext {

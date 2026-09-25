@@ -421,6 +421,12 @@ serde_path_to_error = "0.1"
 jsonschema = { version = "0.57", default-features = false }
 serde_urlencoded = "0.7.1"
 http = "1"
+# `cratestack-mcp`'s Streamable HTTP guard (cratestack#1039) buffers a request
+# body under a limit before the `AuthProvider` sees it, and answers with the
+# same boxed body type `rmcp`'s service does. Both are already in the graph
+# through `axum` and `rmcp`'s own HTTP server feature, so they add no package.
+http-body = "1"
+http-body-util = "0.1"
 proc-macro2 = "1"
 rust-embed = { version = "8", default-features = false }
 quote = "1"

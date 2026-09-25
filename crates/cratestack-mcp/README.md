@@ -35,12 +35,36 @@ cratestack::mcp::StdioServer::new(cratestack_schema::mcp::tools(db, registry, re
 Send `tracing` to stderr (`tracing_subscriber::fmt().with_writer(std::io::stderr)`): stdout carries
 only MCP messages. The server exits when stdin closes.
 
+## Streamable HTTP
+
+Or mount it on your axum router, authenticated by the `AuthProvider` your REST routes use
+(cratestack#1039). The allowed browser origins and the provider are required, and an empty origins
+list is refused:
+
+```text
+let resource = ProtectedResource::new("https://api.example.com/mcp", ["https://auth.example.com"]);
+let mcp = StreamableHttpServer::builder(tools, auth_provider, ["https://app.example.com"], resource)
+    .build()?;
+let app = Router::new()
+    .nest_service("/mcp", mcp.service())
+    .merge(mcp.metadata_router()); // RFC 9728 metadata, always at the root
+```
+
+A foreign `Origin` gets 403 and `GET`/`DELETE` get 405. A missing or rejected token gets 401 with
+`WWW-Authenticate: Bearer resource_metadata="…"`. A token in the query string (`?access_token=`) gets
+400 `invalid_request` before your provider runs, and a mirrored MCP header sent twice gets 400 /
+`-32020`. The token is removed from the request before `rmcp`
+sees it, and every call runs under the `CratestackContext` your provider built, through the same
+admission and policy as stdio. **Your provider must check the token's audience** against the resource
+identifier: MCP requires it, and CrateStack ships no generic OAuth provider in v1 (ADR 0002 Q5).
+`tests/support/token.rs` is an example.
+
 ## What a call goes through
 
 1. The tool name is looked up. Unknown → JSON-RPC `-32602`.
 2. The arguments are decoded into the procedure's `Args`. Failure → an `isError` result naming the field.
 3. L3 admission (`cratestack-exec`), only when the application passed an `OpExecutor` with
-   `StdioServer::with_executor`: rate limiting, then idempotency. An idempotency key travels in
+   `with_executor` (on either transport): rate limiting, then idempotency. An idempotency key travels in
    `_meta["dev.cratestack/idempotencyKey"]`; without one, nothing is reserved. A rate-limit store
    lookup is bounded at 500ms (`DEFAULT_STORE_TIMEOUT`), and a failing store follows the
    `StoreErrorPolicy` passed to `StdioServer::with_store_error_policy` — the same type
@@ -53,5 +77,5 @@ only MCP messages. The server exits when stdin closes.
 Errors are `isError: true` results whose text is exactly REST's error envelope (`code`, `message`), so
 MCP reveals nothing REST does not.
 
-Not yet: Streamable HTTP (phase 4) and resources (phase 5). A schema that declares `@@mcp(resource: ...)`
-does not compile until they ship.
+Not yet: resources (phase 5). A schema that declares `@@mcp(resource: ...)` does not compile until
+they ship.

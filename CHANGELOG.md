@@ -161,6 +161,99 @@ outside core and `cratestack-cose` uses these types yet.
   method, encodes and seals in one call. The default is `codec.encode` then
   `seal`. `cratestack-cose` overrides it to encode in place.
 
+### MCP phase 4: Streamable HTTP, authenticated by your `AuthProvider`, with RFC 9728 metadata and an enforced Origin allowlist (#1039)
+
+**The MCP server can now be mounted on your axum router.** The same generated
+tool table phase 3 served over stdio, behind the `AuthProvider` your REST and
+RPC routers already use:
+
+```rust
+use cratestack::mcp::{ProtectedResource, StreamableHttpServer};
+
+let resource = ProtectedResource::new("https://api.example.com/mcp", ["https://auth.example.com"])
+    .with_scopes(["mcp:tools"]); // optional
+let mcp = StreamableHttpServer::builder(
+    cratestack_schema::mcp::tools(db, registry, resolvers),
+    auth_provider,                // required: your AuthProvider
+    ["https://app.example.com"],  // required: browser origins; empty is refused
+    resource,
+)
+.with_executor(executor)          // optional: L3 admission, as over stdio
+.build()?;
+let app = Router::new()
+    .nest_service("/mcp", mcp.service())
+    .merge(mcp.metadata_router()); // at the root, even when the endpoint is nested
+```
+
+- **Order of checks, each before the next.** A foreign `Origin` gets 403, before
+  any MCP handling. A method other than `POST` gets 405 (`Allow: POST`). An
+  access token in the query string (`?access_token=`, which MCP forbids) gets
+  400 with `error="invalid_request"`, whether or not your provider would read
+  it there. So does an ambiguous or malformed `Authorization` (two headers,
+  or `Bearer` with no token). A request without `Authorization: Bearer` gets
+  401 with `WWW-Authenticate: Bearer resource_metadata="<url>"`, plus
+  `scope="..."` when scopes are configured. A body over 4 MiB gets 413. Your provider then runs. A
+  refusal, or a context that is not authenticated (a REST provider may return
+  `anonymous()` for a token it does not know), gets 401 with
+  `error="invalid_token"`; a provider `Forbidden` gets 403 with
+  `insufficient_scope`; a provider 5xx passes through with REST's envelope and no
+  challenge. A second value of `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`
+  or an `Mcp-Param-*` header gets 400 / `-32020`: `rmcp` compares only the
+  first value with the body, and a proxy may act on another. Only then does
+  `rmcp` see the request: its `Host` check, its own Origin check, and
+  `MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name` against the body (400 /
+  `-32020`).
+- **Origin, twice.** `rmcp` turns its Origin check off when the list is empty,
+  so the list is a required argument, `build()` refuses an empty or malformed
+  one, the guard checks it first (RFC 6454 tuple: scheme, host, port, with the
+  default port filled in), and `rmcp`'s `validate_empty_origin_allowlist` is on
+  as well, fed the list without default ports (browsers never send one, and
+  `rmcp` compares ports literally). A request with no `Origin` passes:
+  non-browser clients send none.
+- **`Host`** defaults to the resource identifier's `host[:port]`, not `rmcp`'s
+  loopback-only default, which would refuse every request to a deployed
+  service. `with_allowed_hosts` overrides it, for a proxy that rewrites `Host`.
+- **RFC 9728 metadata** (`resource`, `authorization_servers`,
+  `bearer_methods_supported`, `scopes_supported`) is served at
+  `/.well-known/oauth-protected-resource<resource path>` and at the root form.
+  Every URL is derived from the resource identifier, never from the request,
+  so a mount under `Router::nest` is described correctly. The identifier's path
+  is also the `path` your provider sees, as REST passes the declared route.
+- **Audience is your provider's job.** MCP requires a resource server to refuse
+  a token minted for another resource, and only your provider knows your token
+  format. CrateStack ships no generic OAuth access-token provider in v1 (ADR 0002
+  Q5); `cratestack-mcp`'s `tests/support/token.rs` is an example that checks
+  `aud`.
+- **The token goes nowhere.** The guard removes `Authorization` before `rmcp`
+  sees the request, so neither `rmcp`, nor a handler, nor anything downstream
+  holds it; the call runs under the `CratestackContext` your provider built.
+  Nothing logs a header. A provider's error detail is logged with the token cut
+  out, in case the provider quoted it.
+- **Same admission as stdio.** Rate limiting, idempotency (`_meta` key, Q6) and
+  `StoreErrorPolicy` apply exactly as over stdio, keyed by the token's `id`
+  claim.
+- **2026-07-28 only**, stateless: no sessions, `GET`/`DELETE` are 405, and the
+  per-request protocol metadata is required.
+- **Changed (maintainer decision on #1039): a `SystemContext`'s admission
+  namespace is now `mcp-system:<id>`** (was `mcp:system:<svc>`); a user's stays
+  `mcp:<id>`. A token's `id` claim is whatever the token says, so under one
+  prefix a token claiming `id = "system:<svc>"` could have replayed that
+  service's recorded results. Phase 3 is unreleased, so no released version
+  changes. If you run a build of `main` with a shared store, system-context
+  idempotency records written before this change no longer replay (a retry
+  within the TTL runs again) and their rate-limit buckets start fresh; user
+  namespaces are unchanged.
+
+New API, all in `cratestack-mcp` and re-exported as `cratestack::mcp::*`:
+`StreamableHttpServer`, `StreamableHttp`, `StreamableHttpService`,
+`ProtectedResource`, `HttpConfigError`. `rmcp`'s `transport-streamable-http-server`
+feature adds `sse-stream` to an `mcp` build of `cratestack-pg`; an `mcp` build of
+`cratestack-api` also gains `tokio-stream` and `rand` 0.10 (with `rand_core` and
+`chacha20`), which `cratestack-pg` already had through `sqlx`. `cratestack-mcp` now
+also depends directly on `axum`, `bytes`, `http`, `http-body`, `http-body-util`,
+`serde_urlencoded` and `tower`, all already in both `mcp` facades' graphs. Without
+the `mcp` feature nothing changes.
+
 ### `CratestackEnvelope` is async and takes a `Binding` — breaking (#1004)
 
 **The sync `open_request`/`seal_response` envelope trait is gone.**
@@ -271,7 +364,8 @@ cratestack::mcp::StdioServer::new(tools, ctx)?.serve().await?;
   repeat replays the recorded result (marked
   `_meta["dev.cratestack/idempotencyReplayed"]`) instead of running again.
   Without a key nothing is reserved. Both the idempotency namespace and the
-  rate-limit bucket are `mcp:<principal id>`, from the context's `id` claim (a
+  rate-limit bucket are `mcp:<principal id>` (`mcp-system:<principal id>` for a
+  `SystemContext` since #1039, below), from the context's `id` claim (a
   string or an integer); a context with no such claim is refused
   (`PRECONDITION_FAILED`) for a keyed or rate-limited call. One rate-limit
   store lookup is bounded at 500ms (`DEFAULT_STORE_TIMEOUT`, as on HTTP; not

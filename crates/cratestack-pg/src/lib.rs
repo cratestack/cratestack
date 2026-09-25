@@ -160,8 +160,9 @@ pub use cratestack_axum::*;
 pub use cratestack_axum::rpc;
 
 /// The MCP binding (ADR 0002, cratestack#1038), behind the `mcp` feature:
-/// `StdioServer`, the `McpTools` trait the generated `cratestack_schema::mcp`
-/// module implements, and the runtime helpers it names.
+/// `StdioServer` and `StreamableHttpServer` (cratestack#1039), the `McpTools`
+/// trait the generated `cratestack_schema::mcp` module implements, and the
+/// runtime helpers it names.
 #[cfg(feature = "mcp")]
 pub use cratestack_mcp as mcp;
 

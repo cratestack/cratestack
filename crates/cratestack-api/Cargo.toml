@@ -127,6 +127,18 @@ cratestack-codec-json.workspace = true
 # gains it (`cargo tree -p cratestack-api -e normal | grep -c jsonschema`
 # is 0).
 jsonschema.workspace = true
+# cratestack#1039, `tests/mcp_http.rs`: the example audience-checking
+# `AuthProvider` signs its test tokens with HMAC-SHA256 over base64url claims
+# (`base64`, `hmac`, `sha2`), requests are built and read with `http` and
+# `http-body-util`, and one call goes end to end through `rmcp`'s own
+# Streamable HTTP client. All already in the workspace graph; dev-only, so
+# neither facade graph changes.
+base64.workspace = true
+hmac.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+sha2.workspace = true
 # `trusted_proxy_client_ip.rs`'s real-`TcpListener` test (#415 Finding 4)
 # needs a genuine HTTP client to prove `ConnectInfo` reaches the dispatch
 # path through `into_make_service_with_connect_info` over a real accepted
@@ -185,4 +197,10 @@ required-features = ["mcp"]
 [[test]]
 name = "mcp_admission"
 path = "tests/mcp_admission.rs"
+required-features = ["mcp"]
+
+# cratestack#1039: the generated table over Streamable HTTP.
+[[test]]
+name = "mcp_http"
+path = "tests/mcp_http.rs"
 required-features = ["mcp"]

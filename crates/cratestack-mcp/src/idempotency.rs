@@ -8,14 +8,25 @@
 //! characters, printable ASCII. Absent means no reservation — the same as
 //! REST without the header.
 //!
-//! **The namespace** is `mcp:<principal actor id>`. HTTP derives it from a
-//! hash of `Authorization` or the verified peer address, neither of which
-//! exists on stdio; the caller here *is* the context the application
-//! supplied, so its actor id is the identity to scope by. With no actor id
-//! the call is refused rather than put in a shared `"anonymous"` namespace,
-//! for cratestack#416's reason: two callers sharing a namespace can replay
-//! each other's results. The `mcp:` prefix keeps these rows apart from
-//! HTTP's in a store both transports share.
+//! **The namespace** is `mcp:<principal actor id>` for a user and
+//! `mcp-system:<actor id>` for a `SystemContext`. REST derives its own from
+//! a hash of `Authorization` or the verified peer address; the caller here
+//! *is* a context — the one the application supplied on stdio, or the one
+//! its `AuthProvider` built on Streamable HTTP — so its actor id is the
+//! identity to scope by. With no actor id the call is refused rather than
+//! put in a shared `"anonymous"` namespace, for cratestack#416's reason: two
+//! callers sharing a namespace can replay each other's results. The `mcp`
+//! prefixes keep these rows apart from REST's in a store both share.
+//!
+//! **Why system callers get their own prefix** (maintainer decision on
+//! cratestack#1039): `SystemContext::for_service("svc")`'s id is the string
+//! `system:svc`, and on Streamable HTTP a token's `id` claim is whatever the
+//! token says. Under one `mcp:` prefix a token claiming `id = "system:svc"`
+//! would share that service's namespace and could replay its results. A
+//! user's namespace always starts `mcp:` and a system one `mcp-system:`, so
+//! no user id can produce a system namespace. `is_system()` is the only
+//! input, and it cannot be forged from a request (`cratestack-core`'s
+//! `context/system.rs`). User namespaces are unchanged from phase 3.
 //!
 //! The id is read by [`principal_id`], not `principal_actor_id`, because
 //! the latter answers only a *string* `id`: an `auth User { id Int }`
@@ -97,10 +108,12 @@ pub(crate) fn principal_id(ctx: &CratestackContext) -> Option<Cow<'_, str>> {
     }
 }
 
-/// `mcp:<actor id>`, or a refusal when the context has none.
-pub(crate) fn namespace(actor_id: Option<&str>) -> Result<String, CratestackError> {
-    match actor_id {
-        Some(id) if !id.is_empty() => Ok(format!("mcp:{id}")),
+/// `mcp:<actor id>` for a user, `mcp-system:<actor id>` for a system
+/// caller, or a refusal when the context has no actor id.
+pub(crate) fn namespace(ctx: &CratestackContext) -> Result<String, CratestackError> {
+    let prefix = if ctx.is_system() { "mcp-system" } else { "mcp" };
+    match principal_id(ctx) {
+        Some(id) if !id.is_empty() => Ok(format!("{prefix}:{id}")),
         _ => Err(CratestackError::PreconditionFailed(
             "this server's context has no principal id, so a keyed or rate-limited call has no \
              namespace to be scoped to; build the context with an `id` claim"
