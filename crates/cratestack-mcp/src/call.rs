@@ -11,7 +11,7 @@
 //! `isError` result, so an agent can read what went wrong and correct
 //! itself (ADR 0002 § Tools, "Errors").
 
-use cratestack_core::CratestackError;
+use cratestack_core::{CratestackContext, CratestackError};
 use rmcp::ErrorData;
 use rmcp::model::{CallToolRequestParams, CallToolResult, RequestMetaObject};
 use serde_json::Value;
@@ -24,6 +24,7 @@ use crate::table::McpTools;
 
 pub(crate) async fn call_tool<T: McpTools>(
     server: &McpServer<T>,
+    ctx: &CratestackContext,
     request: CallToolRequestParams,
     request_meta: &RequestMetaObject,
 ) -> Result<CallToolResult, ErrorData> {
@@ -68,5 +69,5 @@ pub(crate) async fn call_tool<T: McpTools>(
         Err(error) => return Ok(failure(descriptor, error)),
     };
 
-    Ok(admit_and_run(server, descriptor, &arguments, key.as_deref(), call).await)
+    Ok(admit_and_run(server, ctx, descriptor, &arguments, key.as_deref(), call).await)
 }

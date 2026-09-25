@@ -40,9 +40,32 @@ decimal-bigdecimal = [
 cratestack-core.workspace = true
 cratestack-exec.workspace = true
 # `server` is the handler trait (it always pulls `schemars`, which ADR 0002
-# accepts); `transport-io` is stdio. Nothing else: no `#[tool]` macros, no
-# HTTP transport (phase 4), no client.
-rmcp = { workspace = true, features = ["server", "transport-io"] }
+# accepts); `transport-io` is stdio; `transport-streamable-http-server` is
+# the Streamable HTTP service `src/streamable_http/` guards (cratestack#1039).
+# It adds `sse-stream` to an `mcp` build of `cratestack-pg`, and to one of
+# `cratestack-api` also `tokio-stream` and `rand` 0.10 (with `rand_core` and
+# `chacha20`), which `cratestack-pg` already has through `sqlx`. Nothing
+# else: no `#[tool]` macros, no client.
+rmcp = { workspace = true, features = [
+    "server",
+    "transport-io",
+    "transport-streamable-http-server",
+] }
+# Streamable HTTP (cratestack#1039, `src/streamable_http/`): the guard in front of
+# `rmcp`'s service is a tower `Service` over `http` types, and the RFC 9728
+# metadata document is an `axum::Router` the application merges at its root.
+# All of them are already in both `mcp` facades' graphs (`cratestack-axum`,
+# and `rmcp`'s HTTP server feature), so none adds a package.
+axum.workspace = true
+bytes.workspace = true
+http.workspace = true
+http-body.workspace = true
+http-body-util.workspace = true
+tower.workspace = true
+# The guard refuses an `access_token` query parameter however its name is
+# percent-encoded (`src/streamable_http/strict.rs`), so it decodes the query
+# the way axum's `Query` does. Already in the graph through `axum`.
+serde_urlencoded.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_path_to_error.workspace = true
@@ -60,6 +83,11 @@ tracing.workspace = true
 # The in-test idempotency store implements a trait declared with
 # `#[async_trait]` at L1, so it has to desugar the same way.
 async-trait.workspace = true
+# The Streamable HTTP suites' example `AuthProvider` (`tests/support/token.rs`)
+# signs and verifies its test tokens with HMAC-SHA256 over base64url claims.
+# Both are already workspace dependencies of `cratestack-core`.
+base64.workspace = true
+hmac.workspace = true
 tokio = { workspace = true, features = ["io-std", "io-util", "rt", "time"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 # The in-test idempotency store mints reservation tokens.

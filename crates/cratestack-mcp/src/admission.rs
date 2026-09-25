@@ -11,7 +11,7 @@
 //! enums refuses, never runs, as `cratestack-axum`'s adapters do: a future
 //! variant this build does not understand must not execute a mutation.
 
-use cratestack_core::{CratestackError, RateLimitDecision};
+use cratestack_core::{CratestackContext, CratestackError, RateLimitDecision};
 use cratestack_exec::{
     Admission, DEFAULT_STORE_TIMEOUT, OpAdmission, OpInput, RateLimitAdmission, RateLimitBucket,
 };
@@ -19,20 +19,21 @@ use rmcp::model::CallToolResult;
 use serde_json::Value;
 
 use crate::fingerprint::fingerprint;
-use crate::idempotency::{namespace, principal_id, record, replay};
+use crate::idempotency::{namespace, record, replay};
 use crate::result::{failure, success};
 use crate::server::McpServer;
 use crate::table::{McpTools, ToolDescriptor};
 
 pub(crate) async fn admit_and_run<T: McpTools>(
     server: &McpServer<T>,
+    ctx: &CratestackContext,
     descriptor: &ToolDescriptor,
     arguments: &Value,
     key: Option<&str>,
     call: T::Call,
 ) -> CallToolResult {
     let op = OpAdmission::from(descriptor.op);
-    if let Err(error) = rate_limit(server, op).await {
+    if let Err(error) = rate_limit(server, ctx, op).await {
         return failure(descriptor, error);
     }
 
@@ -41,9 +42,9 @@ pub(crate) async fn admit_and_run<T: McpTools>(
         // No key, no store, or an op that does not participate: `admit`
         // would answer `Bypass` for each, so no namespace is derived and
         // nothing is reserved (ADR 0002 Q6: "when absent, no reservation").
-        _ => return run(server, descriptor, call).await.0,
+        _ => return run(server, ctx, descriptor, call).await.0,
     };
-    let principal = match namespace(principal_id(&server.context).as_deref()) {
+    let principal = match namespace(ctx) {
         Ok(principal) => principal,
         Err(error) => return failure(descriptor, error),
     };
@@ -54,9 +55,9 @@ pub(crate) async fn admit_and_run<T: McpTools>(
         fingerprint(descriptor.name, arguments),
     );
     match server.executor.admit(&input).await {
-        Ok(Admission::Bypass) => run(server, descriptor, call).await.0,
+        Ok(Admission::Bypass) => run(server, ctx, descriptor, call).await.0,
         Ok(Admission::Reserved { token }) => {
-            let (result, status) = run(server, descriptor, call).await;
+            let (result, status) = run(server, ctx, descriptor, call).await;
             let (status, body) = record(&result, status);
             server
                 .executor
@@ -107,14 +108,16 @@ pub(crate) async fn admit_and_run<T: McpTools>(
 /// [`cratestack_exec::StoreErrorPolicy`], the same type HTTP takes.
 async fn rate_limit<T: McpTools>(
     server: &McpServer<T>,
+    ctx: &CratestackContext,
     op: OpAdmission,
 ) -> Result<(), CratestackError> {
     if !server.executor.rate_limit_applies(&op) {
         return Ok(());
     }
-    // One bucket per principal, `mcp:`-prefixed like the idempotency
-    // namespace and refused without an identity for the same reason.
-    let bucket = namespace(principal_id(&server.context).as_deref())?;
+    // One bucket per principal, named exactly like the idempotency
+    // namespace (`src/idempotency.rs`) and refused without an identity for
+    // the same reason.
+    let bucket = namespace(ctx)?;
     let input = OpInput::for_rate_limit(op, RateLimitBucket::new(&bucket, None));
     let admitted = tokio::time::timeout(
         DEFAULT_STORE_TIMEOUT,
@@ -159,10 +162,11 @@ async fn rate_limit<T: McpTools>(
 /// Execute, and render the outcome with the status its record carries.
 async fn run<T: McpTools>(
     server: &McpServer<T>,
+    ctx: &CratestackContext,
     descriptor: &ToolDescriptor,
     call: T::Call,
 ) -> (CallToolResult, u16) {
-    match server.tools.execute(call, &server.context).await {
+    match server.tools.execute(call, ctx).await {
         Ok(value) => {
             tracing::info!(
                 target: "cratestack",

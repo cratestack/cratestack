@@ -1,0 +1,31 @@
+// cratestack#1039 (MCP phase 4): the tool behind `tests/mcp_http.rs`. One
+// procedure gated on an auth field, returning the caller's own claims, so a
+// test sees both that the policy ran against the context the application's
+// `AuthProvider` built and that the whole context reached the implementation.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+auth Caller {
+  id String
+  role String
+  tenant String
+}
+
+type Me {
+  id String
+  role String
+  tenant String
+}
+
+// The decisive context-propagation case: only a teller may call it, and the
+// token's `role` claim is the only place that field comes from. Serving the
+// call under any other context (an anonymous one, a fixed one) refuses it.
+procedure me(tag: String): Me
+  @allow(auth().role == "teller")
+  @mcp(tool)

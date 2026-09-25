@@ -16,23 +16,28 @@ use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
 
 use crate::listing::{ToolTableError, build_listing};
+use crate::streamable_http::caller::Caller;
 use crate::table::McpTools;
 
 /// The single version [`ServerHandler::supported_protocol_versions`]
 /// returns. A `static` because the trait wants a `'static` slice.
 static SUPPORTED: [ProtocolVersion; 1] = [ProtocolVersion::V_2026_07_28];
 
-/// An MCP server over one schema's tools, answering as one caller.
+/// An MCP server over one schema's tools.
 ///
-/// The context is a constructor argument with no default and no `Option`
-/// (ADR 0002 Q1): stdio has no transport-level identity, so the
-/// application states who the caller is, deliberately — a
-/// `SystemContext::for_service(...)`, or `CratestackContext::authenticated`
-/// from a token it verified. Every tool call runs under exactly that
-/// context, through the procedure's generated policy check.
+/// Over stdio it answers as one caller: the context is a constructor
+/// argument with no default and no `Option` (ADR 0002 Q1), because stdio
+/// has no transport-level identity, so the application states who the
+/// caller is, deliberately — a `SystemContext::for_service(...)`, or
+/// `CratestackContext::authenticated` from a token it verified. Over
+/// Streamable HTTP each request brings its own, built by the application's
+/// `AuthProvider` (`crate::streamable_http`). Either way every tool call runs under
+/// exactly that context, through the procedure's generated policy check.
 pub struct McpServer<T: McpTools> {
     pub(crate) tools: T,
-    pub(crate) context: CratestackContext,
+    /// Who a call runs as. Read it through [`Caller::resolve`], never by
+    /// matching on it: that is the one place the HTTP case fails closed.
+    pub(crate) caller: Caller,
     pub(crate) executor: OpExecutor,
     /// What a failing rate-limit store does to a call. Held here, not on
     /// the executor, because applying it is the transport's job (it owns
@@ -47,10 +52,16 @@ impl<T: McpTools> McpServer<T> {
     /// Fails only when the table's schemas are not JSON objects or a name
     /// repeats, which the generated table never produces.
     pub fn new(tools: T, context: CratestackContext) -> Result<Self, ToolTableError> {
+        Self::with_caller(tools, Caller::Fixed(Box::new(context)))
+    }
+
+    /// `pub(crate)`: only `crate::streamable_http` builds a server whose caller comes
+    /// from the request, because only its guard puts one there.
+    pub(crate) fn with_caller(tools: T, caller: Caller) -> Result<Self, ToolTableError> {
         let listing = build_listing(tools.tools())?;
         Ok(Self {
             tools,
-            context,
+            caller,
             // Nothing wired: `OpExecutor::new(None, _)` admits every call
             // and reserves nothing, the same as a REST router with neither
             // layer installed. The TTL is unread without a store.
@@ -122,7 +133,8 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        crate::call::call_tool(self, request, &context.meta)
+        let caller = self.caller.resolve(&context)?;
+        crate::call::call_tool(self, &caller, request, &context.meta)
             .await
             .map(CallToolResponse::from)
     }
