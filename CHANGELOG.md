@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (#1033)
+### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
 
 One advisory, two issues.
 
