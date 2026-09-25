@@ -180,3 +180,22 @@ async fn closing_input_before_any_request_is_a_clean_exit() {
         .await
         .expect("nothing to serve is not an error");
 }
+
+/// `completion/complete` resolves the caller (maintainer decision on
+/// cratestack#1040), and stdio's is the fixed one it was built with, so the
+/// check never refuses here: the answer is still the empty completion.
+#[tokio::test]
+async fn completion_answers_empty_under_the_fixed_caller() {
+    let mut client = Client::start(server(FakeTools::default()));
+    let params = json!({
+        "ref": { "type": "ref/prompt", "name": "summary" },
+        "argument": { "name": "topic", "value": "po" },
+    });
+    let response = client.request("completion/complete", params).await;
+    assert_eq!(
+        response["result"]["completion"]["values"],
+        json!([]),
+        "{response}"
+    );
+    client.close().await.expect("clean exit");
+}

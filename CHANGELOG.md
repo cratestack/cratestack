@@ -59,7 +59,10 @@ message is unchanged). The same generated table serves them:
   and `resources/templates/list` sit behind the same HTTP guard, and so do
   `tools/list` and `prompts/list` (always empty) now: every list method
   resolves the guard's caller and fails closed (`-32603`) on a request that
-  reached the handler without one. Nothing changes over stdio.
+  reached the handler without one. So do `server/discover` and
+  `completion/complete` (always empty), although neither answer depends on
+  who asks: `rmcp`'s defaults answered both below the guard, and they are
+  now overridden to resolve the caller first. Nothing changes over stdio.
 - **Caching and admission.** Every result is `cacheScope: private`, `ttlMs: 0`.
   Reads pass the same rate-limit admission as tool calls, charged to the same
   per-caller bucket (`mcp:<id>` for a user, `mcp-system:<id>` for a system

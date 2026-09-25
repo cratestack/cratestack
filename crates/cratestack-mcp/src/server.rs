@@ -9,10 +9,10 @@ use std::borrow::Cow;
 use cratestack_core::CratestackContext;
 use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::model::{
-    CacheScope, CallToolRequestParams, CallToolResponse, Implementation, ListPromptsResult,
-    ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
-    ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ResourcesCapability,
-    ServerCapabilities, ServerConfig, Tool,
+    CacheScope, CallToolRequestParams, CallToolResponse, CompleteRequestParams, CompleteResult,
+    DiscoverResult, Implementation, ListPromptsResult, ListResourceTemplatesResult,
+    ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
+    ReadResourceRequestParams, ReadResourceResponse, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
@@ -21,9 +21,7 @@ use crate::listing::{ToolTableError, build_listing};
 use crate::streamable_http::caller::Caller;
 use crate::table::McpTools;
 
-/// The single version [`ServerHandler::supported_protocol_versions`]
-/// returns. A `static` because the trait wants a `'static` slice.
-static SUPPORTED: [ProtocolVersion; 1] = [ProtocolVersion::V_2026_07_28];
+mod discovery;
 
 /// An MCP server over one schema's tools.
 ///
@@ -94,30 +92,15 @@ impl<T: McpTools> McpServer<T> {
         self.store_error_policy = policy;
         self
     }
-
-    /// The `serverInfo` `server/discover` reports. Defaults to this crate's
-    /// own name and version.
-    pub fn with_implementation(mut self, name: &str, version: &str) -> Self {
-        self.implementation = Implementation::new(name, version);
-        self
-    }
 }
 
 impl<T: McpTools> ServerHandler for McpServer<T> {
     fn get_info(&self) -> ServerConfig {
-        let mut capabilities = ServerCapabilities::builder().enable_tools().build();
-        // Only a table with resources advertises them (cratestack#1040).
-        if !self.tools.resources().is_empty() {
-            capabilities.resources = Some(ResourcesCapability::default());
-        }
-        let mut config = ServerConfig::new(capabilities);
-        config.protocol_version = ProtocolVersion::V_2026_07_28;
-        config.server_info = self.implementation.clone();
-        config
+        self.config()
     }
 
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
-        Cow::Borrowed(&SUPPORTED)
+        Cow::Borrowed(&discovery::SUPPORTED)
     }
 
     async fn list_tools(
@@ -192,6 +175,22 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         crate::resources::read_resource(self, &caller, &request.uri)
             .await
             .map(ReadResourceResponse::from)
+    }
+
+    /// This and `complete` only add the caller check (`server/discovery.rs`).
+    async fn discover(
+        &self,
+        context: RequestContext<RoleServer>,
+    ) -> Result<DiscoverResult, ErrorData> {
+        self.discovered(&context.extensions)
+    }
+
+    async fn complete(
+        &self,
+        _request: CompleteRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CompleteResult, ErrorData> {
+        self.completed(&context.extensions)
     }
 
     fn get_tool(&self, name: &str) -> Option<Tool> {

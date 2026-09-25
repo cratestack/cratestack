@@ -6,7 +6,9 @@
 //! mounted around it by mistake would — and requires the fail-closed error;
 //! the same request with the guard's caller attached must succeed, so the
 //! refusal is the caller check's and not `rmcp` rejecting the request's
-//! shape.
+//! shape. `server/discover` and `completion/complete` are in `discovery.rs`.
+
+mod discovery;
 
 use bytes::Bytes;
 use cratestack_core::{

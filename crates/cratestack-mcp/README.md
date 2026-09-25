@@ -57,10 +57,10 @@ A foreign `Origin` gets 403 and `GET`/`DELETE` get 405. A missing or rejected to
 `-32020`. The token is removed from the request before `rmcp`
 sees it, and every call runs under the `CratestackContext` your provider built, through the same
 admission and policy as stdio. Every method answers only a request the guard authenticated. Behind the
-guard, `tools/call`, `resources/read` and every list method (`tools/list`, `prompts/list` and the two
-resource lists) also check for the guard's caller: one that reaches the handler another way (a layer
-mounted around the guard by mistake) is `-32603`, never served anonymously. `server/discover` and
-`completion/complete` make no such check; they answer with static defaults. **Your provider must check
+guard, `server/discover`, `completion/complete`, `tools/call`, `resources/read` and every list method
+(`tools/list`, `prompts/list` and the two resource lists) also check for the guard's caller. A request
+that reaches the handler another way (a layer mounted around the guard by mistake) is `-32603`, never
+served anonymously, even where the answer would not depend on the caller. **Your provider must check
 the token's audience** against the resource identifier: MCP requires it, and CrateStack ships no generic OAuth
 provider in v1 (ADR 0002 Q5).
 `tests/support/token.rs` is an example.
