@@ -14,7 +14,9 @@
 //! let store = std::sync::Arc::new(SqlxIdempotencyStore::new(pool.clone()));
 //! let router = generated_router.layer(IdempotencyLayer::new(store, std::time::Duration::from_secs(24 * 3600)));
 //!
-//! // The default principal fingerprint hashes `Authorization` when present
+//! // The default principal fingerprint keys on a `VerifiedPrincipal`
+//! // extension when one is present (the COSE envelope layer inserts it),
+//! // otherwise hashes `Authorization` when present
 //! // and otherwise falls back to the verified TCP peer address, which
 //! // axum only populates via `ConnectInfo<SocketAddr>` when the server is
 //! // served through `into_make_service_with_connect_info`:

@@ -73,3 +73,27 @@ async fn a_non_cbor_success_is_replaced_by_a_signed_500_never_sent_plain() {
         .expect("verifies");
     assert_eq!(error_code(&payload), "INTERNAL_ERROR");
 }
+
+/// axum serves `HEAD` from the `GET` route; it is still a generated op, so
+/// under `Required` it must be signed too (D3), not pass as "unresolved".
+#[tokio::test]
+async fn head_is_signed_like_get() {
+    let hits = Hits::default();
+    let router = router(&hits);
+    let unsigned = send(&router, plain_request(Method::HEAD, "/widgets/1", b"")).await;
+    assert_eq!(unsigned.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(hits.get(), 0);
+
+    let call = Call::new(Method::HEAD, "/widgets/{id}", &["1"]);
+    let signed = send(
+        &router,
+        cose_request(Method::HEAD, "/widgets/1", call.seal(&[]).await),
+    )
+    .await;
+    assert_eq!(signed.status, StatusCode::OK);
+    assert!(
+        signed.is_sealed(),
+        "sealed, although axum strips a HEAD body"
+    );
+    assert_eq!(hits.get(), 1);
+}

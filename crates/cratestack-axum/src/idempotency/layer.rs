@@ -31,7 +31,9 @@ pub struct IdempotencyLayer {
 }
 
 impl IdempotencyLayer {
-    /// Construct with a default principal fingerprint derived from the
+    /// Construct with a default principal fingerprint derived from a
+    /// `VerifiedPrincipal` request extension when an upstream layer (the
+    /// COSE envelope layer, cratestack#1006) inserted one, otherwise from the
     /// `Authorization` header, falling back to the verified TCP peer address
     /// (via axum's `ConnectInfo<SocketAddr>`, requires serving through
     /// `into_make_service_with_connect_info::<SocketAddr>()`) when it's

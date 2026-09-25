@@ -118,7 +118,14 @@ impl RestBindingResolver {
 impl BindingResolver for RestBindingResolver {
     fn resolve(&self, request: &RouteRequest<'_>) -> Option<ResolvedRoute> {
         let path = mount_prefix::strip(request.matched_path?, &self.prefix)?;
-        let method = request.method.as_str();
+        // axum answers `HEAD` with the `GET` route, which is the only one
+        // the descriptors list; without this a `HEAD` would resolve to
+        // nothing and pass unsigned under `Required` (D3 signs it too). The
+        // binding keeps the real method, `HEAD`.
+        let method = match request.method.as_str() {
+            "HEAD" => "GET",
+            method => method,
+        };
         let route = self
             .routes
             .iter()

@@ -340,6 +340,51 @@ jobs:
               exit 1
             fi
           done
+      - name: COSE crates absent without the cose feature (every facade, and every standalone example)
+        # cratestack#1006 (maintainer decision D7): the envelope layer and
+        # `cratestack-cose` sit behind `cratestack-axum`'s `cose` feature,
+        # which only `cratestack-pg`/`cratestack-api` forward. A facade built
+        # without it must contain neither `cratestack-cose` nor the signature
+        # crates it brings (`p256`/`ecdsa`, `ed25519-dalek`/`curve25519-dalek`;
+        # none of them is in any facade's graph otherwise). Same shape and the
+        # same `set -e` capture discipline as the rmcp step above: the second
+        # loop proves the grep can fail (pg/api do show `cratestack-cose` with
+        # the feature), the third that sqlite/client do not offer it at all.
+        run: |
+          set -euo pipefail
+          crypto='^(cratestack-cose|p256|ecdsa|ed25519-dalek|curve25519-dalek) v'
+          for facade in cratestack-pg cratestack-api cratestack-sqlite cratestack-client; do
+            graph="$(cargo tree --locked -e normal -p "$facade" --prefix none)"
+            if grep -E "$crypto" <<<"$graph"; then
+              echo "::error::expected no COSE or signature crate in $facade's default normal dependency graph"
+              exit 1
+            fi
+          done
+          for facade in cratestack-pg cratestack-api; do
+            graph="$(cargo tree --locked -e normal -p "$facade" --features cose --prefix none)"
+            if ! grep -q '^cratestack-cose v' <<<"$graph"; then
+              echo "::error::expected cratestack-cose in $facade's graph with --features cose"
+              exit 1
+            fi
+          done
+          for facade in cratestack-sqlite cratestack-client; do
+            if refusal="$(cargo tree --locked -e normal -p "$facade" --features cose 2>&1)"; then
+              echo "::error::$facade must not offer a cose feature (the layer is server-side, D7)"
+              exit 1
+            fi
+            if ! grep -q 'does not contain this feature: cose' <<<"$refusal"; then
+              echo "::error::cargo tree failed for $facade, but not for the missing cose feature:"
+              echo "$refusal"
+              exit 1
+            fi
+          done
+          for example in no-database-verification no-database-verification-api client-only-verification db-transaction-verification declarative-query-verification; do
+            graph="$(cd "examples/$example" && cargo tree --locked -e normal --prefix none)"
+            if grep -E "$crypto" <<<"$graph"; then
+              echo "::error::expected no COSE or signature crate in examples/$example's dependency graph"
+              exit 1
+            fi
+          done
       - name: no direct sqlx dependency (db-transaction-verification)
         working-directory: examples/db-transaction-verification
         run: |
