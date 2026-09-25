@@ -78,7 +78,14 @@ own `Cargo.lock`. Run its commands from this directory, not with `-p`.
 - **Postgres.** `DATABASE_URL`, defaulting to the repository's compose database
   (`postgres://cratestack:cratestack@localhost:55432/cratestack_test`; `just pg-up` starts it).
 - **A signing key**, at least 32 bytes, in `MCP_EXAMPLE_SIGNING_KEY`. There is no built-in default:
-  a key compiled into the binary would let anyone mint an editor's token.
+  a key compiled into the binary would let anyone mint an editor's token. The same key verifies and
+  mints (HMAC is symmetric), so whoever holds it can be any caller. Treat it as a secret, even in a
+  demo.
+
+> **Demo only.** This example prints tokens to your terminal and passes the signing key and a token
+> through environment variables and client configuration files. That is fine on your own machine
+> for a demo. A token is a bearer credential, and here the signing key can mint any identity. See
+> [Before you copy this](#before-you-copy-this).
 
 ```bash
 cd examples/mcp-operator
@@ -185,7 +192,23 @@ What carries over to a real provider is the order of the checks: signature, issu
 expiry, and only then a context. The audience check is the one MCP requires. Without it, a token a
 user got for any other service could be replayed here. Only `id` and `role` reach the
 `CratestackContext`, named one by one: copying every claim across would let whoever mints tokens set
-any `auth()` field a policy reads. `tests/token.rs` refuses one broken property per test.
+any `auth()` field a policy reads. `tests/token.rs` refuses one broken property per test, and
+`tests/cli.rs` checks that the binary refuses to start without a key or a valid stdio token.
+
+### Before you copy this
+
+- **Verify with a public key.** HMAC means the verifier can also mint. A real provider verifies the
+  authorization server's signatures against its JWKS, pins the algorithms it accepts (never the
+  token header's `alg`), and holds no key that can issue a token. This matters most over stdio,
+  where the verifying key otherwise sits in the client's configuration next to the token.
+- **Keep the checks and their order.** Signature, issuer, exact audience (a JWT `aud` list must
+  *contain* this resource exactly, never a prefix), `exp`, `nbf`, then only the claims your
+  policies read.
+- **Don't expose plain HTTP.** The server binds `127.0.0.1` by default. On any other address, put
+  TLS in front of it, pass `--resource` with the public `https://` URL tokens are issued for, and
+  replace the default `--allowed-origin` (the Inspector web UI's) with your own origins.
+- **Don't log or print tokens.** `mint-token` prints one because it stands in for an
+  authorization server in this demo.
 
 ## Conformance
 
