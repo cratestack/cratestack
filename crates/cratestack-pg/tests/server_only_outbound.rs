@@ -315,6 +315,33 @@ mod rpc {
         }
     }
 
+    /// `@@subscribe` SSE never composes: the generated
+    /// `model.<X>.subscribe` arm hands `ModelEvent<Model>` (the server
+    /// struct, no computed fields) to this encoder, which goes through
+    /// serde, so `#[serde(skip)]` holds. Driven here with `secret` set,
+    /// which a real event never has (its data is decoded from a serde-built
+    /// envelope), so the encoder itself is what is checked. The route end
+    /// to end is `tests/rpc_subscribe_sse.rs`.
+    #[tokio::test]
+    async fn a_subscribed_model_event_never_carries_a_server_only_field() {
+        let event = cratestack::ModelEvent {
+            event_id: cratestack::uuid::Uuid::nil(),
+            model: "SoOutWidget".to_owned(),
+            operation: cratestack::ModelEventKind::Created,
+            occurred_at: cratestack::chrono::DateTime::UNIX_EPOCH,
+            data: widget(1, LABEL),
+        };
+        let response = cratestack::__private::encode_model_event_sse_response(
+            cratestack::futures::stream::iter([event]),
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the stream ends after one event");
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains(LABEL), "the event was sent: {text}");
+        assert_no_server_only("SSE model event", &bytes);
+    }
+
     pub(super) async fn model_reads(pool: &cratestack::sqlx::PgPool) {
         let derived_only = json!({ "id": 1, "hint": hint_for(WIDGET_SECRET) });
         let cases: [(&str, Json, Option<Json>); 9] = [
