@@ -153,15 +153,21 @@ cratestack-service = 2
 cratestack-outbox = 2
 # `cratestack-cose` (ADR 0006 §11, as amended while scoping P0;
 # cratestack#1005): the COSE_Sign1 / COSE_Mac0 envelope, one implementation
-# shared by the server and every client. Its only normal workspace
-# dependency is `cratestack-core` (L0), verified with `cargo tree -p
-# cratestack-cose -e normal`, which lists no other `cratestack-*` crate; so
-# `dep.layer <= self.layer` holds with no exception. It sits at L2 by the
+# shared by the server and every client. Two normal workspace
+# dependencies: `cratestack-core` (L0) always, and `cratestack-auth` (L1)
+# only behind its off-by-default `auth` feature (the `ServiceSigningKey` /
+# `DeviceKeyResolver` adapters, the Redis nonce bridge and the enrolment
+# code moved out of auth). `cargo tree -p cratestack-cose -e normal` lists
+# only `cratestack-core`; with `--features auth` it adds `cratestack-auth`.
+# This check reads `cargo metadata`, which lists an optional dependency
+# whether or not its feature is on, so it checks the `auth` edge too:
+# `dep.layer <= self.layer` holds for both with no exception. The edge
+# points cose -> auth, never auth -> cose. It sits at L2 by the
 # maintainer's decision (ADR 0006, "Decisions taken while scoping P0"),
 # not by the lowest-supported-layer rule `cratestack-macros` and
 # `cratestack-auth` follow above: it is an adapter over a wire format, like
-# the codecs in this section, and its planned `auth` feature adds an edge to
-# `cratestack-auth` (L1), which L2 admits. Nothing depends on it yet;
+# the codecs in this section, and its `auth` edge to `cratestack-auth`
+# (L1) needs L2 or above. Nothing depends on it yet;
 # its consumers-to-be are `cratestack-axum`, `cratestack-client-rust` and
 # the wasm/napi bindings (all L4), so the upper-bound half of the rule
 # reads 2 <= 4 and needs no allowlist entry.

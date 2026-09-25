@@ -2,6 +2,63 @@
 
 ## Unreleased
 
+### `cratestack-cose`'s `auth` feature; COSE enrolment leaves `cratestack-auth`, and `DeviceKeyResolver` gains a required method — breaking (#1005)
+
+**The second half of #1005.** `cratestack-cose` gains an off-by-default `auth`
+feature, `cratestack_cose::auth`, which is its only edge to `cratestack-auth`
+(L2 -> L1; the edge points cose -> auth, never back). Without the feature the
+crate still depends on `cratestack-core` alone, so clients and the wasm/napi
+builds do not inherit auth's Redis, reqwest and rustls graph. A CI step asserts
+it with `cargo tree`.
+
+**Breaking, `cratestack-auth`:**
+
+- **`build_cose_enroll_response` and `parse_cose_enroll_response` moved** to
+  `cratestack_cose::auth` (enable `cratestack-cose`'s `auth` feature). The code
+  moved unchanged: a golden byte vector, pinned in `cratestack-auth` before the
+  move, passes unchanged after it. Signatures, errors (`AuthError`) and the
+  `CRATESTACK_AUTH_CHALLENGE_SIGNING_KEY` fail-closed rule are the same;
+  `ENROLL_CHALLENGE_COSE_KID`, `CHALLENGE_SIGNING_KEY_ENV` and `EnrollResponse`
+  stay in `cratestack-auth`. Migration: change the import path. The enrolment
+  challenge keeps its legacy shape (alg `-8`, the 35-byte `kid`, empty AAD) on
+  its own `coset` code path; the envelope's strict opener is not loosened for
+  it. `cratestack-auth` no longer depends on `coset` or `minicbor-serde`.
+- **`DeviceKeyResolver` has a new required method,
+  `lookup_device_verifying_keys_by_thumbprint(&self, kid_prefix: &[u8]) ->
+  Result<Vec<VerifyingKey>, AuthError>`**: every active device key whose RFC
+  9679 thumbprint (`cratestack_cose::thumbprint::okp_ed25519_thumbprint`)
+  starts with the 8-byte COSE `kid`, `Ok(vec![])` for none, `Err` only for a
+  backend failure. It has no default on purpose: a provided "no keys" would
+  compile and then refuse every COSE device request without a word.
+  Implementations that serve no COSE traffic return `Ok(Vec::new())`.
+
+**New, `cratestack_cose::auth`:**
+
+- **`ServiceKeySigner`**: a `ServiceSigningKey` as an Ed25519 (`-19`)
+  `CoseSigner`, streaming like `Ed25519Signer` and byte-identical to it. Its
+  COSE `kid` is the thumbprint prefix of the key, not the human JWKS label
+  `ServiceSigningKey::kid()`.
+- **`DeviceKeyCoseResolver`**: a `DeviceKeyResolver` as a
+  `CoseVerifierResolver`. Only Ed25519 is resolved (any other `alg` gets no
+  candidate and no registry lookup); an unknown or revoked device is the coarse
+  `401`; a registry error is a `500` whose detail stays server-side. The
+  opener's per-candidate `kid` check still applies, so a registry that returns
+  extra keys cannot let one device sign as another.
+- **`AuthNonceStore`**: `cratestack-auth`'s nonce store, in-memory or Redis, as
+  core's `NonceStore`, so replicas share `(kid, cti)` replay state through one
+  atomic `SET NX EX`. The key is
+  `cratestack:signature-nonce:cose-envelope:cose:<hex kid>:<hex cti>`. It lives
+  until at least `iat + 2·skew + 1` and at most one second longer (auth's store
+  rounds its TTL down, so the bridge adds a second). A reuse is "seen"; any
+  other store error is a `500`, never "new". `AuthNonceStore::redis("")` is an
+  error rather than a silent in-memory fallback. Tested against a real Redis
+  (testcontainers, in the `tests (redis)` job): a replay is refused within the
+  window and across two replicas, a distinct `cti` is accepted, and the key is
+  gone after its TTL.
+
+`just lint` and `test-ci-host` / `test-ci-redis` now build and run the feature,
+which no workspace member turns on.
+
 ### `cratestack-cose`: unary COSE_Sign1 / COSE_Mac0 envelope, first half (#1005)
 
 **A new L2 crate implements ADR 0006's unary envelope.** `CoseEnvelope`
