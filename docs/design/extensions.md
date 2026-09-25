@@ -188,7 +188,7 @@ chumsky-parsed enum) — `datasource`, `auth`, `mixin`, `model`, `type`,
 `enum` route through `parse_body_block`/`parse_named_config_block`; `mcp {`
 through `parse_simple_config_block` (since cratestack#1036, through its own
 typed parser in `parse/mcp/`, which reads the same `key = value` body shape —
-`mcp { expose = [tools, resources] }`, ADR 0002); bare `transport rpc`/`transport rest`
+`name = "blog"` and `expose = [tools, resources]`, ADR 0002); bare `transport rpc`/`transport rest`
 through a directive parser with no braces at all
 (`crates/cratestack-parser/src/parse/blocks.rs:6`).
 

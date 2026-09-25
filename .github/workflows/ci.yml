@@ -400,6 +400,60 @@ jobs:
           CRATESTACK_REQUIRE_DB: "1"
         run: cargo test --locked -- --test-threads=1
 
+  # ---- MCP operator example + third-party client conformance ----------
+  # cratestack#1041 (ADR 0002 phase 6, the MCP release gate).
+  # `examples/mcp-operator` is its own `[workspace]` root because it turns
+  # on `cratestack-pg`'s `mcp` feature, which a root member would unify
+  # into every `--workspace` build (see its `Cargo.toml`), so nothing else
+  # in CI builds, lints or tests it. This job does all three, then runs
+  # `just mcp-conformance`: the official MCP Inspector CLI
+  # (`@modelcontextprotocol/inspector`, installed by `npm ci` from the
+  # committed `examples/mcp-operator/conformance/package-lock.json`) against
+  # the example over stdio and over Streamable HTTP at protocol 2026-07-28.
+  # Node is pinned to 24 like every other `setup-node` job here; the
+  # client's own floor is 22.19, and the install enforces it.
+  #
+  # It cannot pass silently. The recipe fails when `node`, `npm` or
+  # `docker` is missing, `run.mjs` fails unless all of its expected cases
+  # ran and passed, and the example's own Postgres test runs with
+  # `CRATESTACK_REQUIRE_DB=1`. It needs the npm registry, as every
+  # `setup-node` job here does.
+  mcp-example:
+    timeout-minutes: 45
+    name: mcp (examples/mcp-operator, Inspector conformance)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # `rust-toolchain.toml` pins the channel and brings clippy and rustfmt.
+      - uses: dtolnay/rust-toolchain@stable
+      # Before rust-cache, whose own `cargo metadata` would quietly rewrite
+      # a stale lockfile (the `check` job's reasoning).
+      - name: Assert Cargo.lock is up to date (mcp-operator)
+        working-directory: examples/mcp-operator
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/mcp-operator
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: rustfmt (mcp-operator)
+        working-directory: examples/mcp-operator
+        run: cargo fmt --check
+      - name: clippy (mcp-operator)
+        working-directory: examples/mcp-operator
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: cargo test against real Postgres (mcp-operator)
+        working-directory: examples/mcp-operator
+        env:
+          CRATESTACK_REQUIRE_DB: "1"
+        run: cargo test --locked -- --test-threads=1
+      - name: Conformance with the MCP Inspector CLI (stdio + Streamable HTTP)
+        run: just mcp-conformance
+
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to
   # compile the whole workspace — pulling the tauri/wasm/napi example crates

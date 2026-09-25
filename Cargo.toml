@@ -105,6 +105,11 @@ exclude = [
     # source at all — the SQL lives in `schema.cstack`, where its `$N`
     # references are compile-time checked and an `@allow` is attached to it.
     "examples/declarative-query-verification",
+    # cratestack#1041: the MCP operator example turns on `cratestack-pg`'s
+    # `mcp` feature. As a member it would switch that feature on for the
+    # whole workspace in `cargo test --workspace` (feature unification), and
+    # `cratestack-macros`' `tests/ui_mcp.rs` pins the feature-off refusal.
+    "examples/mcp-operator",
 ]
 
 [workspace.package]
