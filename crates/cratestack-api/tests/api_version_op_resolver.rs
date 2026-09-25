@@ -96,5 +96,8 @@ async fn versioned_procedure_opt_outs_resolve_through_the_mounted_path() {
         OpAdmission::unresolved(),
         "the resolver must find ping's descriptor at /v2/$procs/ping"
     );
-    assert!(admission.idempotent_by_default, "@no_idempotency must apply");
+    assert!(
+        admission.idempotent_by_default,
+        "@no_idempotency must apply"
+    );
 }
