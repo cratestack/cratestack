@@ -70,6 +70,7 @@ jobs:
             -p cratestack-codec-cbor \
             -p cratestack-codec-json \
             -p cratestack-core \
+            -p cratestack-cose \
             -p cratestack-exec \
             -p cratestack-lsp \
             -p cratestack-macros \

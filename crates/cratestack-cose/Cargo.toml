@@ -1,0 +1,106 @@
+[package]
+name = "cratestack-cose"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "CrateStack's COSE envelope (ADR 0006): unary COSE_Mac0 / COSE_Sign1 over the CBOR codec's bytes, bound to the request through external AAD, with nonce replay protection and RFC 9679 thumbprint key ids."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+# No decimal features to forward, unlike `cratestack-exec`: this crate's
+# source never names a decimal type, so it never selects a backend on
+# `cratestack-core`, and a `--features decimal-bigdecimal` build of a
+# consumer is unaffected by it (cratestack#495's bar holds trivially).
+#
+# The `auth` feature (the `ServiceSigningKey` / `DeviceKeyResolver`
+# adapters, the Redis nonce bridge and the enrolment code, ADR 0006 "P0
+# scoping decisions") is added by the second half of cratestack#1005. It is
+# not declared here yet, so that nothing can turn on a feature that does
+# nothing.
+
+[dependencies]
+# The only workspace dependency (ADR 0006 §11 as amended: L2, and
+# `cratestack-core` only without `auth`), so clients and the wasm/napi
+# builds stay free of `cratestack-auth`'s Redis, reqwest and rustls graph.
+cratestack-core.workspace = true
+# `CoseSigner` / `CoseVerifierResolver` are used as `dyn` (a KMS or an HSM
+# signer, a device-key database), so they desugar the way core's
+# `KeyProvider` / `NonceStore` do.
+async-trait.workspace = true
+# The `Cratestack-Nonce` header (16 bytes as unpadded base64url). Its
+# decoder rejects padding and non-zero trailing bits, which the strict
+# 22-character rule relies on.
+base64.workspace = true
+bytes.workspace = true
+# `NonceStore::record_if_unseen` takes a `chrono` expiry, and the default
+# clock is `chrono::Utc::now`, which works on `wasm32-unknown-unknown`
+# (where `std::time::SystemTime::now` panics).
+chrono.workspace = true
+# `S < L` is checked with its `Scalar::from_canonical_bytes` (see
+# `keys/verify.rs`), not left to `ed25519-dalek`, whose
+# `legacy_compatibility` feature weakens that check graph-wide. Not a new
+# crate: `ed25519-dalek` already depends on this same 5.x
+# (`cargo tree -p cratestack-cose -e normal -i curve25519-dalek`), and the
+# workspace entry turns no feature on. The tests also use it to forge the
+# small-order and mixed-order signatures `tests/ed25519_streaming.rs`
+# checks the streamed strict verify against.
+curve25519-dalek.workspace = true
+ed25519-dalek.workspace = true
+getrandom.workspace = true
+hmac.workspace = true
+p256.workspace = true
+# `seal_value` / `seal_*_value` take `T: Serialize` (the encode-in-place
+# hook, cratestack#1005); already a dependency of `cratestack-core`.
+serde.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+zeroize.workspace = true
+
+# Browser wasm (`wasm32-unknown-unknown`, ADR 0006 §11: the wasm and napi
+# builds share this crate): neither crate below knows where randomness comes
+# from on that target unless told. `getrandom` draws this crate's `cti` and
+# `Cratestack-Nonce` bytes and needs its `wasm_js` backend (getrandom 0.4:
+# the feature alone selects it, no `--cfg` flag). getrandom's README advises
+# libraries against enabling `wasm_js`, except for a crate that already
+# depends unconditionally on `wasm-bindgen` or `js-sys` on "unknown" wasm
+# targets. This one does, through `chrono`'s default `wasmbind` feature
+# (`cargo tree -p cratestack-cose --target wasm32-unknown-unknown -i
+# js-sys`), so the feature adds no new crate to that graph. `uuid` is not used here
+# directly, but `cratestack-core` depends on it with `v4`, which fails to
+# compile on this target without a randomness feature; this follows
+# `cratestack-rusqlite`'s precedent for the same edge. `target_os =
+# "unknown"` keeps WASI, which has its own randomness, out of it. CI's
+# `check` job runs `cargo check -p cratestack-cose --target
+# wasm32-unknown-unknown`.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+uuid = { workspace = true, features = ["js"] }
+
+[dev-dependencies]
+# `tests/seal_value_alloc.rs` counts allocations to show `seal_value`
+# keeps the payload in one buffer (cratestack#1005). Its own binary, as it
+# installs a `#[global_allocator]`.
+allocation-counter.workspace = true
+# Independent implementation the wire bytes are checked against: the
+# `Sig_structure` / `MAC_structure`, the tagged message, and the AAD array
+# (through its `ciborium::Value`). Not a normal dependency: `coset` can
+# neither encode the payload in place nor parse strictly, so the crate
+# emits and parses the outer structure itself (see `src/wire.rs`).
+coset.workspace = true
+# Encodes the payment fixture the shared vectors are built on, the way a
+# real service would.
+cratestack-codec-cbor.workspace = true
+# A randomized (non-RFC 6979) ES256 signature for the verify-only test.
+rand.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }
+uuid.workspace = true

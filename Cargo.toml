@@ -18,6 +18,7 @@ members = [
     "crates/cratestack-codec-cbor",
     "crates/cratestack-codec-json",
     "crates/cratestack-core",
+    "crates/cratestack-cose",
     "crates/cratestack-exec",
     "crates/cratestack-lsp",
     "crates/cratestack-macros",
@@ -151,6 +152,25 @@ chumsky = "0.13"
 # `cratestack-auth`'s COSE-signed enrolment challenges (`build_cose_enroll_response`/
 # `parse_cose_enroll_response`).
 coset = "0.4.2"
+# `cratestack-cose`'s random `cti` and `Cratestack-Nonce` (ADR 0006 §5,
+# `nonce` mode). Already in the graph through `uuid` (a `cratestack-core`
+# dependency). No features here, so the workspace default selects no wasm
+# backend: `cratestack-cose` itself turns `wasm_js` on, and only for
+# `wasm32-unknown-unknown` (see its manifest). getrandom's README advises
+# libraries against enabling `wasm_js` (it breaks non-Web wasm and adds
+# `wasm-bindgen` to the lock), with one stated exception: a crate that
+# already depends unconditionally on `wasm-bindgen` or `js-sys` on "unknown"
+# wasm targets may. `cratestack-cose` does, through `chrono`'s default
+# `wasmbind` feature (`cargo tree -p cratestack-cose --target
+# wasm32-unknown-unknown -i js-sys` shows `js-sys` under `chrono`).
+getrandom = "0.4"
+# `cratestack-cose`'s explicit Ed25519 `S < L` check (independent of
+# `ed25519-dalek`'s `legacy_compatibility` feature), and its strictness
+# tests, which build the small-order points and the scalar arithmetic a
+# weak-key or small-order-`R` forgery needs. The same 5.x `ed25519-dalek` 3
+# already pulls in, so this adds a manifest edge, not a crate to the graph;
+# no default features, so it turns on nothing `ed25519-dalek` does not.
+curve25519-dalek = { version = "5", default-features = false }
 # `cratestack-auth`'s challenge/enrollment/service-signing-key ids
 # (`cuid2::create_id()`), same generator every other `@paralleldrive/cuid2`-
 # style id in this workspace's downstream consumers already standardises on.
@@ -211,6 +231,10 @@ cratestack-client-store-sqlite = { path = "crates/cratestack-client-store-sqlite
 cratestack-codec-cbor = { path = "crates/cratestack-codec-cbor", version = "0.12.0", default-features = false }
 cratestack-codec-json = { path = "crates/cratestack-codec-json", version = "0.12.0", default-features = false }
 cratestack-core = { path = "crates/cratestack-core", version = "0.12.0", default-features = false }
+# The COSE envelope (ADR 0006, cratestack#1005). No `default-features =
+# false` here: it has no decimal feature to forward (its source never names
+# a decimal type), and its only feature, `auth`, is off by default.
+cratestack-cose = { path = "crates/cratestack-cose", version = "0.12.0" }
 # `default-features = false` for the same cratestack#495 reason as every
 # other entry in this block: `cratestack-exec` re-exports a decimal-backend
 # choice it forwards to `cratestack-core`, and letting its own default
@@ -355,6 +379,16 @@ regex = "1"
 # ed25519-dalek 3.0 requires `rand_core` 0.10 / `signature` 3 / `sha2` 0.11,
 # so these four cannot move independently without forking the crypto graph.
 rand = "0.10.2"
+# `cratestack-cose`'s ESP256 (-9, RFC 9864) signer and verifier (ADR 0006
+# Q2: EdDSA by default, ES256 opt-in, both from P0). 0.14 is the release
+# built on `signature` 3 / `sha2` 0.11 / `rand_core` 0.10, the same crypto
+# generation as `ed25519-dalek` 3 above, so the graph does not fork. Default
+# features off: `std` pulls `getrandom` in through `elliptic-curve`, and
+# `pem`/`pkcs8` are key-file parsers nothing here needs. `ecdsa` gives
+# signing (RFC 6979 deterministic) and verification; it brings `ecdsa` 0.17
+# transitively, re-exported as `p256::ecdsa`, so `ecdsa` itself is not a
+# direct dependency.
+p256 = { version = "0.14", default-features = false, features = ["ecdsa"] }
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
 sha2 = "0.11"
@@ -367,6 +401,10 @@ rmcp = { version = "3.4.1", default-features = false }
 async-trait = "0.1"
 hmac = "0.13"
 subtle = "2"
+# `cratestack-cose` wipes its HMAC secrets on drop. Already in that crate's
+# graph through `p256` and `ed25519-dalek` (1.9), so this adds an edge, not
+# a crate.
+zeroize = "1"
 base64 = "0.23"
 serde_json = "1"
 # `cratestack-mcp`: names the argument that failed to deserialize in a

@@ -3,6 +3,7 @@
 //! `tests/no_envelope_alloc.rs`, which needs its own `#[global_allocator]`.
 
 mod binding;
+mod provided_methods;
 mod stream_shape;
 
 use std::borrow::Cow;
@@ -18,14 +19,14 @@ use crate::error::CratestackError;
 
 fn request_binding() -> Binding<'static> {
     Binding {
+        audience: Cow::Borrowed("payments"),
         method: Cow::Borrowed("POST"),
         route: Cow::Borrowed("model.Payment.create"),
         path_params: PathParams::EMPTY,
         query: None,
         schema_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
-        request_digest: None,
-        status: None,
+        response: None,
     }
 }
 
@@ -99,7 +100,7 @@ impl CratestackEnvelope for RoutePrefixEnvelope {
         if body.len() < prefix_len || &body[..bind.route.len()] != bind.route.as_bytes() {
             return Err(CratestackError::Unauthorized("invalid envelope".to_owned()));
         }
-        ctx.record_verified_signer(VerifiedSigner::new(&b"toy-kid"[..]));
+        ctx.record_verified_signer(VerifiedSigner::new(&b"toy-kid"[..], [0; 32], 0));
         Ok(body.slice(prefix_len..))
     }
 

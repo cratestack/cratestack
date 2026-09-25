@@ -103,9 +103,9 @@ flattering.
 |---|---|---|---|
 | **L0** | Schema IR | `cratestack-parser`, `cratestack-core::schema` | 9,265 / — |
 | **L1** | Contracts | `cratestack-sql`, `cratestack-core::{store,audit,codec}`, `cratestack-policy`, `cratestack-auth` | 2,799 / — / 822 / 4,438 |
-| **L2** | Adapters | `cratestack-sqlx`, `cratestack-rusqlite`, `cratestack-redis`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}`, `cratestack-outbox`, `cratestack-service` | 10,907 / 4,828 / 2,167 / 59 / 37 / 305 / 245 / 644 / 845 |
+| **L2** | Adapters | `cratestack-sqlx`, `cratestack-rusqlite`, `cratestack-redis`, `cratestack-codec-{cbor,json}`, `cratestack-client-store-{sqlite,redis}`, `cratestack-outbox`, `cratestack-service`, `cratestack-cose` | 10,907 / 4,828 / 2,167 / 59 / 37 / 305 / 245 / 644 / 845 / 2,864 |
 | **L3** | Execution | `cratestack-exec` | 636 |
-| **L4** | Bindings | `cratestack-axum`, `cratestack-client-{rust,dart,typescript,flutter}` | 5,212 / 3,269 / 4,537 / 3,525 / 553 |
+| **L4** | Bindings | `cratestack-axum`, `cratestack-client-{rust,dart,typescript,flutter}`, `cratestack-mcp` | 5,212 / 3,269 / 4,537 / 3,525 / 553 / 1,275 |
 | **L5** | Facades | `cratestack-pg`, `cratestack-api`, `cratestack-sqlite`, `cratestack-client` | 246 / 156 / 75 / 150 |
 | **⊥** | Compiler | `cratestack-macros` | 18,172 |
 

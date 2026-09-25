@@ -2,6 +2,165 @@
 
 ## Unreleased
 
+### `cratestack-cose`: unary COSE_Sign1 / COSE_Mac0 envelope, first half (#1005)
+
+**A new L2 crate implements ADR 0006's unary envelope.** `CoseEnvelope`
+implements `cratestack_core::CratestackEnvelope` (#1004). A signed body is the
+codec's output wrapped as a COSE_Sign1 (tag 18) or COSE_Mac0 (tag 17) and bound
+to its request through external AAD. The AAD is rebuilt on both sides and never
+sent. Nothing calls the envelope yet: the router and client wiring is #1006 and
+#1007, so no service changes behaviour. Its only workspace dependency is
+`cratestack-core`, and it compiles for `wasm32-unknown-unknown` (a CI step
+checks it).
+
+```rust
+let server = CoseEnvelope::server(CoseMode::Sign1, signer, resolver, nonce_store).build()?;
+let opened = server.open_request(body, &binding).await?; // no CratestackContext needed
+let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).await?;
+```
+
+- **Algorithms.** Sign1 uses Ed25519 (`-19`, the default) or ESP256 (`-9`).
+  Mac0 uses HMAC 256/64 (`4`) or 256/256 (`5`), with random secrets of at
+  least 32 bytes. Everything else is refused, including the deprecated
+  `-8`/`-7`. **Each key verifies exactly one algorithm**: an HMAC key carries
+  the algorithm it was configured for, so a secret deployed for 256/256 never
+  accepts a 64-bit tag. **ESP256 signatures are low-`s` only**: the sealer
+  normalises whatever the signer returns (in process, KMS or WebCrypto), and
+  the opener refuses a high `s`, so no third party can re-spell a signed
+  message. **Ed25519 verification is exactly `verify_strict`'s**: canonical
+  `S`, and no small-order `R` or key (mixed-order ones are accepted, as
+  `verify_strict` accepts them). `S < L` is checked by the crate itself, so
+  a build that enables `ed25519-dalek/legacy_compatibility` (which weakens
+  `verify_strict` to accept the `S + L` twin) does not weaken it.
+- **Wire format.** The protected header is `{1: alg, 4: kid, ? 15: {6: iat,
+  7: cti}}`, with claims on requests only. The unprotected header is always
+  empty. The `kid` is the first 8 bytes of the key's RFC 9679 thumbprint, and
+  a key verifies only a message carrying its own `kid`. The parser accepts
+  only the one deterministic encoding it emits. The emitted bytes are
+  compared byte for byte with what `coset` builds for the same inputs, and
+  `coset` parses and verifies them; the strict parser itself is not compared
+  with anything, it is tested directly.
+- **AAD.** `[1, audience, method, route, path_params, query / null,
+  schema_sha, payload_type, ? request_kind, ? request_digest, ? status]`.
+  `audience` is the receiving service's configured id (not the `Host`
+  header): a request sealed for one service is refused by another sharing
+  its schema and route, and a Mac0 request cannot be reflected back to the
+  service that sent it, **provided the service's inbound audience differs
+  from the audience it seals its outbound requests for** (one name for both
+  directions, such as `internal`, gives that up). An empty audience is local
+  misuse (a `500`) when sealing and when opening. An empty query binds as
+  `null`. A response carries `request_kind`, `request_digest` and `status`
+  together; a request carries none of them.
+- **`request_kind` (maintainer decision, 2026-09-25).** The two request
+  digests were not domain-separated: a signed request `C` re-presented as an
+  unsigned request with nonce `C[..16]` and body `C[16..]` has the same
+  digest, and the server's answer to that twin verified at the client as the
+  answer to `C`. The response AAD now binds `0` (unsigned: the digest is
+  `SHA-256(nonce ‖ payload)`) or `1` (signed: `SHA-256(COSE bytes)`), and
+  `request_digest` / `request_digest_unsigned` return the digest together
+  with its kind (core's `RequestDigest`).
+- **Responses to unsigned requests.** A client sends `Cratestack-Nonce` (16
+  random bytes, unpadded base64url, 22 characters) on requests whose response
+  it verifies. For an unsigned request the response is bound to
+  `SHA-256(nonce ‖ payload)`, so a signed answer to one `GET` is not the
+  answer to the next `GET` of that URL. `RequestNonce` parses the header
+  strictly; `request_digest_unsigned` computes the digest. The nonce costs a
+  request header of about 40 bytes and no bytes in the COSE message.
+  Sending and reading the header is #1006/#1007.
+- **Principal.** `open` records a `VerifiedSigner` naming the key that
+  verified: its full thumbprint, its `kid` (a copy, so the context does not
+  keep the body alive) and its algorithm. The typed `open_request` /
+  `open_response` return an `Opened` with the same facts (`thumbprint`,
+  `kid: [u8; 8]`, `alg`, and `iat`/`cti` for a request); its `Debug` prints
+  the payload's length, not its bytes. A resolver that returns more keys
+  than the `kid` names cannot make one key sign as another.
+- **Encoding in place.** `seal_value` (the new provided
+  `CratestackEnvelope` method) and `seal_request_value` /
+  `seal_response_value` encode the payload straight into the message buffer
+  through `CratestackCodec::encode_into`, as ADR 0006 §1 describes. A codec
+  that replaces or rewrites the buffer instead of appending is refused as
+  misuse (a `500`), not a panic. For in-process signers (HMAC, ESP256 and
+  Ed25519) the signature is computed over the to-be-signed structure in
+  pieces, with no copy of the payload; Ed25519 runs both PureEdDSA passes
+  over the pieces through `ed25519-dalek`'s `MultipartSigner` (maintainer
+  decision, 2026-09-25; the same two-pass computation as its `hazmat`
+  streaming, with no `hazmat` feature enabled), and its signatures are byte
+  for byte those of contiguous signing. A KMS or HSM signer keeps the
+  default `sign_chunks` and is handed the structure in one buffer.
+  Verification never builds it contiguously. `seal` with already-encoded
+  bytes copies them in once.
+- **Replay.** `nonce` mode: `iat` within a 300 s skew (configurable), and
+  `(kid, cti)` recorded in core's `NonceStore` only after the signature
+  verifies. Entries are kept for twice the skew plus a second, so a replica
+  whose clock disagrees with the store's cannot reopen a replay window. A
+  skew too large for that expiry to be a valid time is refused by `build()`.
+- **Keys.** `CoseVerifyKey` is opaque (built from and read back as bytes, no
+  `ed25519-dalek`/`p256` types in the API). `KeyProviderMacKeys` loads Mac0
+  keys from core's `KeyProvider` by string key id and precomputes their
+  thumbprints. `HmacSecret` is wiped on drop.
+- **Errors.** Every failed check is the same `401`. A failing key resolver,
+  nonce store or signer is a `500`, and so is local misuse (a binding of the
+  wrong shape, an empty audience, a clock or `cti` source returning
+  nonsense, a codec that breaks `encode_into`'s contract).
+- **Vectors.** `crates/cratestack-cose/tests/vectors/` holds the fixed test
+  keys (one entry per verification key, each with its algorithm), a
+  reconstructed 112-byte payment fixture, 33 unary cases in hex (requests,
+  responses linked to their request, error responses, responses to unsigned
+  `GET`s with their nonce, the empty-query case), each with its protected
+  header, to-be-signed bytes, the key that verifies it and, for requests, the
+  verifier's clock and skew, and 20 must-reject cases (each with its
+  verifier's mode, keys, clock and skew) for the wasm, napi, TypeScript and
+  Dart bindings. ESP256 senders must emit low-`s`. The measured sizes match
+  ADR 0006: 153 / 178 / 210 B for Mac0 64, Mac0 256 and a Sign1 request with
+  a 2-byte `cti`, 167 / 192 / 224 B with the 16-byte `cti` P0 sends, and
+  197 B for a Sign1 response. `audience` and `request_kind` live in the AAD
+  and add no bytes to the message.
+
+Two departures from the ADR's sketch. The outer structure is emitted and
+parsed by hand, because `coset` can neither encode in place nor parse
+strictly. Algorithms are a closed `CoseAlg` rather than
+`coset::iana::Algorithm`.
+
+Not in this entry: the `auth` feature (the `cratestack-auth` adapters, the
+Redis nonce bridge and the move of the enrolment code), which is the second
+half of #1005.
+
+### `Binding` gains `audience` and a `ResponseBinding`, `VerifiedSigner` names the verifying key — breaking; `encode_into` / `seal_value` hooks (#1005)
+
+**Three breaking changes to types #1004 introduced, and two provided trait
+methods**, all from the maintainer's decisions on the #1005 security reviews
+(2026-09-24 and 2026-09-25). They amend the #1004 entry below. Nothing
+outside core and `cratestack-cose` uses these types yet.
+
+- **`Binding` has a new public field, `audience: Cow<'a, str>`**, the
+  configured logical id of the receiving service. Every struct literal needs
+  it. `into_owned()` carries it, and `NoEnvelope` still allocates nothing
+  (its counting-allocator test now borrows an audience too). The
+  `request_digest` of a response to an unsigned request is now documented as
+  SHA-256 of the client's `Cratestack-Nonce` followed by the payload.
+- **`Binding::request_digest` and `Binding::status` are replaced by
+  `response: Option<ResponseBinding>`**, where `ResponseBinding { request:
+  RequestDigest { kind: RequestKind, digest }, status }`. `RequestKind`
+  (`Unsigned` = 0, `Signed` = 1) records how the digest was computed, which
+  the response AAD now binds (see the `cratestack-cose` entry). One `Option`
+  instead of one per field makes a half-built response binding
+  unrepresentable, so the run-time check for it is gone. `NoEnvelope` still
+  allocates nothing, and `Binding` stays covariant.
+- **`VerifiedSigner::new(kid, thumbprint, alg)`** replaces
+  `VerifiedSigner::new(kid)`: a signer is recorded with the full RFC 9679
+  thumbprint of the key that verified and its IANA COSE algorithm value (a
+  raw `i64`, so core does not depend on `cratestack-cose`). New accessors are
+  `thumbprint()` and `alg()`. A principal should key on the thumbprint,
+  because 8-byte `kid`s can collide. The `kid` should be passed as a copy,
+  not a slice of the received body, which would keep the body alive as long
+  as the context.
+- **`CratestackCodec::encode_into(&self, value, out: &mut Vec<u8>)`**, a
+  provided method, appends the encoding to `out`. The default encodes and
+  copies. `CborCodec` and `JsonCodec` override it to write directly.
+- **`CratestackEnvelope::seal_value(&self, codec, value, bind)`**, a provided
+  method, encodes and seals in one call. The default is `codec.encode` then
+  `seal`. `cratestack-cose` overrides it to encode in place.
+
 ### MCP phase 5: `@@mcp(resource: ...)` models are read-only resources, with REST's visibility (#1040)
 
 **With the `mcp` feature of `cratestack-pg` on, `include_server_schema!` now

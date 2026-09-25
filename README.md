@@ -198,7 +198,8 @@ ship together — every request/response feature lands on both.
 [`cratestack-client`](https://crates.io/crates/cratestack-client) ·
 [`cratestack-cli`](https://crates.io/crates/cratestack-cli), plus
 `cratestack-auth` (Ed25519 request signing, SD-JWT identity tokens, multi-issuer
-JWKS), `cratestack-outbox`, `cratestack-service` (env config, health checks,
+JWKS), `cratestack-cose` (COSE_Sign1 / COSE_Mac0 request and response signing,
+ADR 0006), `cratestack-outbox`, `cratestack-service` (env config, health checks,
 graceful shutdown), and `cratestack-migrate`.
 
 `cratestack-exec` is the transport-neutral execution layer (L3) that owns
