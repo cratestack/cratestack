@@ -219,10 +219,12 @@ message is unchanged). The same generated table serves them:
 
   ```cstack
   mcp {
-    name = "blog"                   // required when `expose` lists `resources`
+    name = "blog"
     expose = [tools, resources]
   }
   ```
+
+  `name` is required when `expose` lists `resources`.
 
   `name` is the URI's host, so it is a DNS label: a quoted string of
   lowercase ASCII letters, digits and `-`, 1 to 63 characters, not starting
@@ -574,10 +576,13 @@ cratestack#1036 the block's body was kept as raw text in
 
 The syntax (ADR 0002, decided 2026-09-24):
 
+`name` is only allowed, and then required, when resources are exposed (phase
+5, #1040); `expose` takes `[tools]`, `[resources]` or both:
+
 ```cstack
 mcp {
-  name = "blog"                     // with resources only (phase 5, #1040)
-  expose = [tools, resources]       // or [tools], or [resources]
+  name = "blog"
+  expose = [tools, resources]
 }
 
 model Post {
@@ -588,12 +593,14 @@ model Post {
 
 procedure getFeed(args: FeedArgs): Post[]
   @allow(auth() != null)
-  @mcp(tool)                        // tool name defaults to `getFeed`
+  @mcp(tool)
 
 mutation procedure publishPost(args: PublishArgs): Post
   @allow(auth().role == "admin")
   @mcp(tool: "publish_post", description: "Publish a draft post.")
 ```
+
+A bare `@mcp(tool)` names the tool after its procedure (`getFeed`).
 
 It parses into typed IR: `Schema.mcp: Option<McpConfig>`,
 `Procedure.mcp: Option<ProcedureMcpExposure>`,
