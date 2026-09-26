@@ -164,8 +164,8 @@ async fn a_legacy_initialize_is_refused() {
             },
         }))
         .await;
-    assert!(
-        response.get("error").is_some(),
+    assert_eq!(
+        response["error"]["code"], -32022,
         "no handshake revision is supported, so initialize cannot succeed: {response}"
     );
     // `rmcp` ends a connection whose opening request failed.
