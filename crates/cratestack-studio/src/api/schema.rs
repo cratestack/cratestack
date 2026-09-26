@@ -79,7 +79,7 @@ pub async fn list_models(
             let primary_key = m
                 .fields
                 .iter()
-                .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
+                .find(|f| f.is_primary_key())
                 .map(|f| f.name.clone());
             let fields = m
                 .fields
@@ -94,7 +94,7 @@ pub async fn list_models(
                         name: f.name.clone(),
                         type_name: f.ty.name.clone(),
                         arity: arity_to_str(f.ty.arity),
-                        is_id: f.attributes.iter().any(|a| a.raw.starts_with("@id")),
+                        is_id: f.is_primary_key(),
                         is_relation: model_names.contains(f.ty.name.as_str()),
                         is_enum,
                         enum_variants,

@@ -24,10 +24,7 @@ pub(crate) fn is_computed_field(field: &Field) -> bool {
 }
 
 pub(crate) fn is_primary_key(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@id"))
+    field.is_primary_key()
 }
 
 pub(crate) fn is_paged_model(model: &Model) -> bool {

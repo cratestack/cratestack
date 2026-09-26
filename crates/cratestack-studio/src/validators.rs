@@ -73,7 +73,7 @@ pub fn validate_payload(
 fn field_is_required(field: &Field) -> bool {
     matches!(field.ty.arity, cratestack_core::TypeArity::Required)
         && !has_default(field)
-        && !has_attr(field, "@id")
+        && !field.is_primary_key()
 }
 
 fn field_is_optional(field: &Field) -> bool {
@@ -85,13 +85,6 @@ fn has_default(field: &Field) -> bool {
         .attributes
         .iter()
         .any(|a| a.raw.starts_with("@default"))
-}
-
-fn has_attr(field: &Field, name: &str) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|a| a.raw == name || a.raw.starts_with(&format!("{name}(")))
 }
 
 /// Phase 3 writes only the field set that's scalar and not a
