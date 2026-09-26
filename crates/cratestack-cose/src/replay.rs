@@ -7,7 +7,7 @@
 //! mode (device counters, no time limit) replaces this for device keys.
 
 use chrono::{DateTime, Utc};
-use cratestack_core::CratestackError;
+use cratestack_core::{CratestackError, REQUEST_NONCE_LEN, RequestNonce};
 
 /// The default clock skew, the same 300 s `HmacEnvelope` and the
 /// signed-request verifier use (`ENVELOPE_DEFAULT_CLOCK_SKEW_SECS`).
@@ -76,4 +76,22 @@ pub(crate) fn random_cti() -> Result<Vec<u8>, CratestackError> {
     getrandom::fill(&mut cti)
         .map_err(|error| CratestackError::Internal(format!("cose cti source failed: {error}")))?;
     Ok(cti)
+}
+
+/// A fresh `Cratestack-Nonce`: 16 bytes from the operating system's CSPRNG.
+/// Fails with `CratestackError::Internal` if it is unavailable.
+///
+/// The default nonce source of [`CoseEnvelope::request_nonce`](crate::CoseEnvelope::request_nonce),
+/// for a client that sends an unsigned request it wants a verifiable
+/// response to. Here and not on `RequestNonce` (which `cratestack-core`
+/// defines) since the second #1006 review (decision B-1): drawing it needs
+/// `getrandom`, and only this crate selects that crate's
+/// `wasm32-unknown-unknown` backend. It replaces 0.13.0's
+/// `RequestNonce::random()`.
+pub fn random_request_nonce() -> Result<RequestNonce, CratestackError> {
+    let mut bytes = [0; REQUEST_NONCE_LEN];
+    getrandom::fill(&mut bytes).map_err(|error| {
+        CratestackError::Internal(format!("cose request nonce source failed: {error}"))
+    })?;
+    Ok(RequestNonce::from_bytes(bytes))
 }

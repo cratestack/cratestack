@@ -11,7 +11,7 @@ use crate::alg::CoseMode;
 use crate::keys::{CoseSigner, CoseVerifierResolver};
 use crate::replay::{self, DEFAULT_SKEW_SECS};
 use crate::thumbprint::KID_LEN;
-use cratestack_core::{REQUEST_NONCE_LEN, RequestNonce};
+use cratestack_core::REQUEST_NONCE_LEN;
 
 /// The clock `iat` is read from and checked against: Unix seconds.
 pub(crate) type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
@@ -76,7 +76,7 @@ impl CoseEnvelopeBuilder {
                 skew_secs: DEFAULT_SKEW_SECS,
                 clock: Arc::new(replay::system_clock),
                 cti: Arc::new(replay::random_cti),
-                nonce: Arc::new(|| RequestNonce::random().map(|nonce| *nonce.as_bytes())),
+                nonce: Arc::new(|| replay::random_request_nonce().map(|nonce| *nonce.as_bytes())),
             },
         }
     }

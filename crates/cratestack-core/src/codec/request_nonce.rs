@@ -26,10 +26,18 @@
 //! binding (the axum layer, cratestack#1006) are wired there.
 //!
 //! Moved here from `cratestack-cose` (which re-exports every item under its
-//! old path, so nothing breaks there) by the maintainer's decision after
-//! the cratestack#1006 API review: the axum layer's `envelope` feature
-//! computes these digests for any envelope, and must not pull a COSE or
-//! signature crate to do it. The code is unchanged by the move.
+//! old path) by the maintainer's decision after the cratestack#1006 API
+//! review: the axum layer's `envelope` feature computes these digests for
+//! any envelope, and must not pull a COSE or signature crate to do it.
+//!
+//! Parsing and formatting only. **Drawing a random nonce is not here**
+//! (second-review decision B-1, 2026-09-26): it needs `getrandom`, whose
+//! `wasm32-unknown-unknown` build fails unless someone selects its
+//! `wasm_js` backend, and core is compiled for that target by crates that
+//! never draw a nonce (`cratestack-cbor-wasm`, `cratestack-sqlite`). The
+//! one caller, the client side of `cratestack-cose`, has
+//! `cratestack_cose::random_request_nonce` and
+//! `CoseEnvelope::request_nonce`, and selects the backend itself.
 
 use std::fmt;
 
@@ -55,20 +63,12 @@ pub struct RequestNonce([u8; REQUEST_NONCE_LEN]);
 
 impl RequestNonce {
     /// A nonce with the given bytes: for tests, vectors, and a client with
-    /// its own randomness. Anything else should use
-    /// [`random`](Self::random) or `cratestack_cose::CoseEnvelope::request_nonce`.
+    /// its own randomness (16 bytes from a CSPRNG, fresh per request).
+    /// Anything else should use `cratestack_cose::random_request_nonce` or
+    /// `cratestack_cose::CoseEnvelope::request_nonce` (see the module docs
+    /// for why there is no `random` here).
     pub const fn from_bytes(bytes: [u8; REQUEST_NONCE_LEN]) -> Self {
         Self(bytes)
-    }
-
-    /// 16 bytes from the operating system's CSPRNG. Fails with
-    /// `CratestackError::Internal` if it is unavailable.
-    pub fn random() -> Result<Self, CratestackError> {
-        let mut bytes = [0; REQUEST_NONCE_LEN];
-        getrandom::fill(&mut bytes).map_err(|error| {
-            CratestackError::Internal(format!("cose request nonce source failed: {error}"))
-        })?;
-        Ok(Self(bytes))
     }
 
     /// The nonce's bytes.

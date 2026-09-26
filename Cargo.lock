@@ -1386,7 +1386,6 @@ dependencies = [
  "bigdecimal",
  "bytes",
  "chrono",
- "getrandom 0.4.3",
  "hmac",
  "http",
  "minicbor-serde",

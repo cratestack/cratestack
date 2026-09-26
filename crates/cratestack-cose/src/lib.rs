@@ -104,4 +104,4 @@ pub use keys::{
     KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
 };
 pub use opened::Opened;
-pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN};
+pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN, random_request_nonce};

@@ -126,6 +126,14 @@ jobs:
         # through getrandom, which needs its `wasm_js` backend on this
         # target (cratestack#1005). Nothing else compiles it for wasm32.
         run: cargo check --locked -p cratestack-cose --target wasm32-unknown-unknown
+      - name: cargo check (cratestack-cbor-wasm for wasm32-unknown-unknown)
+        # `@cratestack/cbor-web`'s crate compiles `cratestack-core` for this
+        # target with no crate selecting a getrandom wasm backend. A
+        # randomness dependency added to core (cratestack#1006 once put
+        # `getrandom` 0.4 there) breaks it, and only the wasm-pack job
+        # further down would notice, much later. Decision B-1 of the
+        # second #1006 review.
+        run: cargo check --locked -p cratestack-cbor-wasm --target wasm32-unknown-unknown
       - name: cargo tree (cratestack-cose reaches cratestack-auth only through its `auth` feature)
         # ADR 0006 §11 / cratestack#1005: clients and the wasm/napi builds
         # depend on `cratestack-cose` without `auth`, and must not inherit
