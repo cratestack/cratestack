@@ -217,9 +217,10 @@ just mcp-conformance                        # from the repository root
 ```
 
 The recipe installs `@modelcontextprotocol/inspector` 2.8.0 from
-[`conformance/package-lock.json`](conformance/package-lock.json). It uses `npm ci --ignore-scripts`,
-so every package is checked against its committed integrity hash and no install script runs. The
-install goes into a throwaway directory, part of no workspace. The recipe then builds this example.
+[`conformance/pnpm-lock.yaml`](conformance/pnpm-lock.yaml). It uses
+`pnpm install --frozen-lockfile --ignore-scripts`, so every package is checked against its committed
+integrity hash and no install script runs. The install goes into a throwaway directory, with its own
+store, part of no other workspace. The recipe then builds this example.
 It starts a throwaway `postgres:18-alpine` container, unless `MCP_CONFORMANCE_DATABASE_URL` names a
 database. Then [`conformance/run.mjs`](conformance/run.mjs) drives the Inspector CLI through these
 cases, over stdio and over Streamable HTTP:
@@ -239,8 +240,8 @@ died of something else fails the case. The run fails unless every expected case 
 distinct name, and passed. CI runs it in the `mcp-example` job.
 
 To move to another Inspector version, edit the version in `conformance/package.json`, run
-`npm install --package-lock-only --ignore-scripts` in `conformance/`, and review the lockfile diff
-before committing it.
+`pnpm install --lockfile-only --ignore-scripts` in `conformance/`, and review the
+lockfile diff before committing it.
 
 ## Tests
 

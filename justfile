@@ -357,32 +357,36 @@ test-ci-db-mcp *args='':
 # another audience, a legacy `initialize` client).
 #
 # The client and its whole dependency tree are pinned by
-# `examples/mcp-operator/conformance/package-lock.json` (committed, with an
-# `integrity` hash for every package) and installed with `npm ci`. That
-# refuses a lockfile that disagrees with `package.json`, and a tarball whose
-# hash differs. With `--ignore-scripts`, no package's install script runs.
-# The two files are copied into a throwaway directory and installed there,
-# so nothing lands in the repository, in any workspace, or globally. Bump
-# the client deliberately: edit the version in that `package.json`, run
-# `npm install --package-lock-only --ignore-scripts` next to it, and re-read
-# the lockfile diff and the run's output.
+# `examples/mcp-operator/conformance/pnpm-lock.yaml` (committed, with an
+# `integrity` hash for every package) and installed with
+# `pnpm install --frozen-lockfile`, the repository's package manager at the
+# version its `packageManager` pins (maintainer decision on cratestack#1033;
+# `just verify-pnpm-pins` keeps the two pins equal). That refuses a lockfile
+# that disagrees with `package.json`, and a tarball whose hash differs. With
+# `--ignore-scripts`, no package's install script runs. The two files are
+# copied into a throwaway directory and installed there, with a throwaway
+# store and cache, so nothing lands in the repository, in any workspace, or
+# globally. Bump the client deliberately: edit the version in that
+# `package.json`, run `pnpm install --lockfile-only --ignore-scripts` next
+# to it (its own `pnpm-workspace.yaml` keeps pnpm from resolving at the
+# repository root), and re-read the lockfile diff and the run's output.
 #
 # Nothing here reports anywhere. The Inspector CLI has no telemetry (checked
-# in 2.8.0's bundle). npm's audit, funding and update-notifier requests are
-# off. `conformance/harness.mjs` keeps the client's secret store in memory,
-# away from the OS keychain.
+# in 2.8.0's bundle), and pnpm's update notifier is off.
+# `conformance/harness.mjs` keeps the client's secret store in memory, away
+# from the OS keychain.
 #
 # Postgres: `MCP_CONFORMANCE_DATABASE_URL` if set (an empty database the
 # example may create `posts` in), otherwise a throwaway `postgres:18-alpine`
 # container on a random loopback port, removed on exit even on failure.
 # Needs `node` (>= 22.19, the client's engine floor, enforced at install by
-# `--engine-strict`), `npm`, and `docker` unless a URL is given. On rootless
+# `--engine-strict`), `pnpm`, and `docker` unless a URL is given. On rootless
 # Docker nothing extra is needed: this uses the `docker` CLI, which reads
 # `docker context`.
 mcp-conformance:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	for tool in node npm cargo; do
+	for tool in node pnpm cargo; do
 	  command -v "$tool" >/dev/null || { echo "mcp-conformance: $tool not found on PATH" >&2; exit 1; }
 	done
 	conformance=examples/mcp-operator/conformance
@@ -394,10 +398,11 @@ mcp-conformance:
 	}
 	trap cleanup EXIT
 	mkdir -p "$work/inspector" "$work/home"
-	cp "$conformance/package.json" "$conformance/package-lock.json" "$work/inspector/"
-	echo "installing the MCP Inspector from $conformance/package-lock.json"
-	npm ci --prefix "$work/inspector" --ignore-scripts --engine-strict \
-	  --no-audit --no-fund --no-update-notifier --loglevel=error
+	cp "$conformance/package.json" "$conformance/pnpm-lock.yaml" "$work/inspector/"
+	echo "installing the MCP Inspector from $conformance/pnpm-lock.yaml"
+	pnpm install --dir "$work/inspector" --frozen-lockfile --ignore-scripts --engine-strict \
+	  --store-dir "$work/pnpm-store" --cache-dir "$work/pnpm-cache" \
+	  --config.update-notifier=false --loglevel=error
 	cargo build --locked --manifest-path examples/mcp-operator/Cargo.toml
 	if [ -n "${MCP_CONFORMANCE_DATABASE_URL:-}" ]; then
 	  database_url="$MCP_CONFORMANCE_DATABASE_URL"
