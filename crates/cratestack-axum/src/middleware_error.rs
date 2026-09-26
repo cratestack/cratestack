@@ -108,6 +108,28 @@ pub(crate) fn middleware_error_response_with_status(
     }
 }
 
+/// [`middleware_error_response_with_status`] with the REST body's `code`
+/// set to `rest_code`, for a status no `CratestackError` variant names
+/// (the envelope layer's `405`, cratestack#1006): REST codes name the
+/// status (`NOT_FOUND`, `TOO_MANY_REQUESTS`), so a `405` must not say
+/// `BAD_REQUEST`. The RPC body keeps `error`'s code: that binding's stable
+/// vocabulary (`docs/design/rpc-transport.md` §2) has no wrong-method
+/// entry, and inventing one would be a wire change for every client.
+pub(crate) fn middleware_error_response_with_code(
+    headers: &HeaderMap,
+    path: &str,
+    status: StatusCode,
+    rest_code: &str,
+    error: CratestackError,
+) -> Response {
+    if is_rpc_path(path) {
+        return middleware_error_response_with_status(headers, path, status, error);
+    }
+    let mut body = error.into_response();
+    body.code = rest_code.to_owned();
+    encode_with_status(&middleware_codec(), headers, status, &body)
+}
+
 /// Encode `body` at `status`, negotiating the content type from `Accept`.
 ///
 /// **The status is never rewritten by negotiation** — that is the whole

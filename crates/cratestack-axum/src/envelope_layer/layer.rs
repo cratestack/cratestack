@@ -69,7 +69,7 @@ impl EnvelopeLayer {
             mount_prefix: None,
             unresolved_mode: None,
             allow_unresolved: Vec::new(),
-            principal: Box::new(ThumbprintPrincipal),
+            principal: Box::new(ThumbprintPrincipal::new()),
             seal_policy: Box::new(AcceptNamesEnvelope),
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
         }

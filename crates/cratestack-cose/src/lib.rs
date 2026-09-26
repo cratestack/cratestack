@@ -28,9 +28,9 @@
 //! - [`KeyProviderMacKeys`] turns `cratestack_core::KeyProvider` secrets
 //!   into Mac0 keys.
 //!
-//! **Wire-format preview:** no generated router or client uses this crate
-//! yet (cratestack#1006, #1007). Until the first release that ships them,
-//! the wire format, including binding version 1, may still change; see
+//! **Wire-format preview:** the server layer ships (cratestack#1006), the
+//! Rust client does not yet (#1007), and binding version 1 freezes when
+//! both have shipped. Until then the wire format may still change; see
 //! [`BINDING_VERSION`].
 //!
 //! **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`) for

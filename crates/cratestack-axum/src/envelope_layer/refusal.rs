@@ -10,7 +10,10 @@ use cratestack_core::{CratestackError, UNAUTHENTICATED};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 
 use super::request::BufferError;
-use crate::middleware_error::{middleware_error_response, middleware_error_response_with_status};
+use crate::middleware_error::{
+    middleware_error_response, middleware_error_response_with_code,
+    middleware_error_response_with_status,
+};
 
 /// A signed request that did not verify, an unsigned one under `Required`,
 /// or a signer the principal mapper refused: one coarse `401`, whatever the
@@ -68,12 +71,14 @@ pub(super) fn bad_request(headers: &HeaderMap, path: &str, error: CratestackErro
 /// A generated path, a method the schema did not generate for it, under a
 /// `Required` `unresolved_mode` (decision S2): the `405` the router would
 /// have given, answered here so no hand-written handler for that method
-/// runs unsigned.
+/// runs unsigned. Its REST body's code is `METHOD_NOT_ALLOWED`; over RPC it
+/// is `invalid_argument` (see `middleware_error_response_with_code`).
 pub(super) fn method_not_allowed(headers: &HeaderMap, path: &str, allow: &[Method]) -> Response {
-    let mut response = middleware_error_response_with_status(
+    let mut response = middleware_error_response_with_code(
         headers,
         path,
         StatusCode::METHOD_NOT_ALLOWED,
+        "METHOD_NOT_ALLOWED",
         CratestackError::BadRequest("method not allowed".to_owned()),
     );
     let allow: Vec<&str> = allow.iter().map(Method::as_str).collect();

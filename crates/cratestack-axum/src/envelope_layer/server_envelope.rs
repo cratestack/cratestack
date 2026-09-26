@@ -55,12 +55,94 @@ use super::opened::{OpenedRequest, SealContext, Sealed};
 /// - Return the payload exactly as signed, and the signer that actually
 ///   verified it (for COSE: the key's full thumbprint, never the claimed
 ///   `kid` alone).
+///
+/// # Wrapping another envelope
+///
+/// Delegate through the trait's fully qualified path,
+/// `ServerEnvelope::open_request(&self.inner, ..)`. `CoseEnvelope` also has
+/// inherent `open_request` / `seal_response` methods, its typed API (they
+/// return `Opened` and `Bytes`), and method-call syntax picks those over
+/// the trait's, so `self.inner.open_request(body, bind)` does not type-check
+/// here (second-review item S-3).
+#[cfg_attr(
+    feature = "cose",
+    doc = r#"
+```
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use bytes::Bytes;
+use cratestack_axum::envelope_layer::{
+    OpenedRequest, SealContext, Sealed, ServerEnvelope, async_trait,
+};
+use cratestack_core::{Binding, CratestackError};
+use cratestack_cose::CoseEnvelope;
+
+/// The COSE envelope, counting the requests it opens.
+struct Counted {
+    inner: CoseEnvelope,
+    opened: AtomicUsize,
+}
+
+#[async_trait]
+impl ServerEnvelope for Counted {
+    fn media_type(&self) -> &'static str {
+        ServerEnvelope::media_type(&self.inner)
+    }
+
+    fn is_envelope_content_type(&self, content_type: &str) -> bool {
+        ServerEnvelope::is_envelope_content_type(&self.inner, content_type)
+    }
+
+    async fn open_request(
+        &self,
+        body: Bytes,
+        bind: &Binding<'_>,
+    ) -> Result<OpenedRequest, CratestackError> {
+        self.opened.fetch_add(1, Ordering::Relaxed);
+        ServerEnvelope::open_request(&self.inner, body, bind).await
+    }
+
+    async fn seal_response(
+        &self,
+        payload: &[u8],
+        bind: &Binding<'_>,
+        context: &SealContext,
+    ) -> Result<Sealed, CratestackError> {
+        ServerEnvelope::seal_response(&self.inner, payload, bind, context).await
+    }
+}
+```
+
+The method-call form reaches the inherent method instead, and fails:
+
+```compile_fail,E0308
+# use bytes::Bytes;
+# use cratestack_axum::envelope_layer::OpenedRequest;
+# use cratestack_core::{Binding, CratestackError};
+# use cratestack_cose::CoseEnvelope;
+async fn open(
+    inner: &CoseEnvelope,
+    body: Bytes,
+    bind: &Binding<'_>,
+) -> Result<OpenedRequest, CratestackError> {
+    inner.open_request(body, bind).await
+}
+```
+"#
+)]
 #[async_trait]
 pub trait ServerEnvelope: Send + Sync + 'static {
-    /// The `Content-Type` of a sealed response, e.g.
-    /// `application/cose; cose-type="cose-sign1"`. When the layer is built
-    /// it must be a valid header value, and `application/cose` or a type
-    /// [`is_envelope_content_type`](Self::is_envelope_content_type) claims.
+    /// The envelope type this implementation claims, e.g.
+    /// `application/cose; cose-type="cose-sign1"`, used for detection and
+    /// build validation: `build()` refuses a value that is not a valid
+    /// header value, or that the layer's own detection would not recognise
+    /// on a request (`application/cose`, or a type
+    /// [`is_envelope_content_type`](Self::is_envelope_content_type)
+    /// claims), so a client sending it is always opened, never forwarded.
+    /// The layer detects requests with those two checks, not with this
+    /// value, and does not send it: each response goes out as the
+    /// [`Sealed`]'s own media type, which lets a composite answer Mac0
+    /// with Mac0 (cratestack#1078).
     fn media_type(&self) -> &'static str;
 
     /// Whether `content_type` (a request's `Content-Type`, or one `Accept`

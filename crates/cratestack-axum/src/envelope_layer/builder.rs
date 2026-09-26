@@ -118,7 +118,9 @@ impl EnvelopeLayerBuilder {
         self
     }
 
-    /// Replace [`super::ThumbprintPrincipal`] (`cose:<hex thumbprint>`).
+    /// Replace [`super::ThumbprintPrincipal`] (`cose:<hex thumbprint>`;
+    /// `ThumbprintPrincipal::with_prefix(..)` keeps the thumbprint and
+    /// changes the prefix).
     pub fn principal_mapper(mut self, mapper: impl PrincipalMapper) -> Self {
         self.principal = Box::new(mapper);
         self

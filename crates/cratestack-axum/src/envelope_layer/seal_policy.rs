@@ -57,7 +57,19 @@ impl<'a> UnsignedRequest<'a> {
 }
 
 /// Decides whether the response to an unsigned request is sealed, under
-/// `Optional`. The default is [`AcceptNamesEnvelope`] (D10).
+/// `Optional`. The default is [`AcceptNamesEnvelope`] (D10). A closure is a
+/// policy (second-review nit):
+///
+/// ```
+/// use cratestack_axum::envelope_layer::{EnvelopeLayerBuilder, UnsignedRequest};
+///
+/// fn reads_only(builder: EnvelopeLayerBuilder) -> EnvelopeLayerBuilder {
+///     builder.response_seal_policy(|r: &UnsignedRequest<'_>| {
+///         r.accept_names_envelope() && r.method().as_str() == "GET"
+///     })
+/// }
+/// # let _ = reads_only;
+/// ```
 ///
 /// Such a seal binds the client's `Cratestack-Nonce` and the request
 /// payload, and nothing about the caller: the request was not signed, so

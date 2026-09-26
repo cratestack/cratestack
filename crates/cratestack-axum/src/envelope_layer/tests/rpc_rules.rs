@@ -81,6 +81,8 @@ async fn a_bodiless_preflight_passes_but_an_options_with_a_body_does_not() {
         StatusCode::METHOD_NOT_ALLOWED,
         "the layer's own"
     );
+    // The RPC binding's stable vocabulary has no wrong-method code.
+    assert_eq!(error_code(&with_body.body), "invalid_argument");
     assert_eq!(hits.get(), 1, "not waved through to the handler");
 }
 

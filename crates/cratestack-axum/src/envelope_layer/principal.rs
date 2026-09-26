@@ -1,6 +1,8 @@
 //! [`PrincipalMapper`]: from a verified request to the `VerifiedPrincipal`
 //! the rate limiter and the idempotency layer key on (ADR 0006 §12).
 
+use std::borrow::Cow;
+
 use async_trait::async_trait;
 use cratestack_core::{CratestackError, VerifiedSigner};
 use http::Method;
@@ -80,6 +82,22 @@ impl<'a> VerifiedRequest<'a> {
 /// is an `AuthProvider`'s job (the adapter of cratestack#1077), never this
 /// trait's (decision D2).
 ///
+/// A synchronous mapper is a closure (second-review nit):
+///
+/// ```
+/// use cratestack_axum::envelope_layer::{EnvelopeLayerBuilder, VerifiedRequest};
+///
+/// fn by_kid(builder: EnvelopeLayerBuilder) -> EnvelopeLayerBuilder {
+///     builder.principal_mapper(|v: &VerifiedRequest<'_>| {
+///         Ok(format!("kid:{:x?}", v.signer().kid()))
+///     })
+/// }
+/// # let _ = by_kid;
+/// ```
+///
+/// (That one is for illustration only: a `kid` is 8 bytes and two keys can
+/// share one, which is why the default uses the full thumbprint.)
+///
 /// Async and fallible (API-review decision, 2026-09-26):
 ///
 /// - `Err(CratestackError::Unauthorized(_))` refuses the request with the
@@ -99,10 +117,58 @@ pub trait PrincipalMapper: Send + Sync + 'static {
     async fn principal(&self, verified: &VerifiedRequest<'_>) -> Result<String, CratestackError>;
 }
 
-/// `cose:` followed by the lowercase hex of the verifying key's full RFC
-/// 9679 thumbprint, never its 8-byte `kid` (two keys can share one).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ThumbprintPrincipal;
+/// The prefix, `cose:` by default, followed by the lowercase hex of the
+/// verifying key's full RFC 9679 thumbprint, never its 8-byte `kid` (two
+/// keys can share one).
+///
+/// The prefix is configurable (second-review nit) for an envelope that is
+/// not COSE, or to keep two services' principals apart in a shared store:
+///
+/// ```
+/// use cratestack_axum::envelope_layer::ThumbprintPrincipal;
+///
+/// let mapper = ThumbprintPrincipal::with_prefix("device:");
+/// # let _ = mapper;
+/// ```
+///
+/// Pick one no other source of `VerifiedPrincipal` in the application
+/// uses: the rate limiter and the idempotency layer see only the string,
+/// so two sources that can produce the same one share a bucket and a
+/// namespace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThumbprintPrincipal {
+    prefix: Cow<'static, str>,
+}
+
+impl ThumbprintPrincipal {
+    /// The default prefix.
+    pub const DEFAULT_PREFIX: &'static str = "cose:";
+
+    /// `cose:<hex thumbprint>`.
+    pub const fn new() -> Self {
+        Self {
+            prefix: Cow::Borrowed(Self::DEFAULT_PREFIX),
+        }
+    }
+
+    /// `<prefix><hex thumbprint>`.
+    pub fn with_prefix(prefix: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            prefix: prefix.into(),
+        }
+    }
+
+    /// The prefix in use.
+    pub fn prefix(&self) -> &str {
+        &self.prefix
+    }
+}
+
+impl Default for ThumbprintPrincipal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[async_trait]
 impl PrincipalMapper for ThumbprintPrincipal {
@@ -113,7 +179,7 @@ impl PrincipalMapper for ThumbprintPrincipal {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-        Ok(format!("cose:{hex}"))
+        Ok(format!("{}{hex}", self.prefix))
     }
 }
 

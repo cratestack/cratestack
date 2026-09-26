@@ -86,6 +86,8 @@ async fn another_method_on_a_generated_path_is_the_layers_own_405() {
     assert!(!answer.is_sealed());
     let allow = answer.headers.get(header::ALLOW).expect("Allow");
     assert_eq!(allow, "GET, DELETE");
+    // The body names the status (second-review nit), not `BAD_REQUEST`.
+    assert_eq!(error_code(&answer.body), "METHOD_NOT_ALLOWED");
     assert_eq!(hits.get(), 0);
 }
 

@@ -13,6 +13,12 @@ pub enum EnvelopeMode {
     /// Every request must be signed, `GET`, `HEAD` and `DELETE` included
     /// (they seal an empty payload; decision D3). An unsigned one is refused
     /// with the unsigned `401`. Every response is sealed.
+    ///
+    /// A signed `HEAD` still sends its COSE message as a request body,
+    /// which RFC 9110 §9.3.2 gives no semantics: hyper's server and
+    /// `reqwest` pass it through over HTTP/1.1, but an intermediary may
+    /// drop it (the request then fails verification, `401`) or refuse the
+    /// request. Prefer `GET` under `Required`.
     Required,
     /// A signed request is opened and its response is always sealed, as
     /// under `Required` (decision S3). An unsigned one runs as before; its

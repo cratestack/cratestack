@@ -135,3 +135,32 @@ async fn a_custom_response_seal_policy() {
         "sealed without asking for application/cose"
     );
 }
+
+/// The default mapper's prefix is configurable (second-review nit): a toy,
+/// non-COSE envelope's signers need not be `cose:`.
+#[tokio::test]
+async fn the_thumbprint_principal_takes_another_prefix() {
+    let hits = Hits::default();
+    let toy = Toy {
+        claims_toy: true,
+        ..Toy::default()
+    };
+    let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+        .policy(EnvelopeMode::Required)
+        .principal_mapper(crate::envelope_layer::ThumbprintPrincipal::with_prefix(
+            "toy:",
+        ))
+        .rest("", &REST_ROUTES)
+        .build()
+        .expect("layer");
+    let answer = send(
+        &rest_router(layer, &hits),
+        toy_request(Method::POST, "/widgets", TOY, b"TOY:hello"),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(
+        answer.seen("x-seen-principal"),
+        format!("toy:{}", "42".repeat(32))
+    );
+}
