@@ -18,10 +18,12 @@ header, or `princ:<sha256>` only when your app inserts a `VerifiedPrincipal`)
 could not be matched by MCP in general anyway. A unit test now pins that no MCP
 key is a REST key.
 
-MCP is unreleased, so no released version changes. On a build of `main` with a
-shared store, MCP idempotency records written before this change no longer
-replay (a retry within the TTL runs again), and MCP rate-limit buckets start
-fresh.
+**Upgrading from 0.13.0**, the first release with MCP, where the key held the id
+verbatim: with a shared store, MCP idempotency records written by 0.13.0 no
+longer replay (a retry within the TTL runs again), and MCP rate-limit buckets
+start fresh.
+
+## 0.13.0 (2026-09-26)
 
 ### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
 
@@ -590,7 +592,7 @@ message is unchanged). The same generated table serves them:
 - **Caching and admission.** Every result is `cacheScope: private`, `ttlMs: 0`.
   Reads pass the same rate-limit admission as tool calls, charged to the same
   per-caller bucket (`mcp:<id>` for a user, `mcp-system:<id>` for a system
-  caller; the id is hashed since #1033, above) under the same `StoreErrorPolicy`; a throttled read is `-32603` with
+  caller) under the same `StoreErrorPolicy`; a throttled read is `-32603` with
   `data.code = "TOO_MANY_REQUESTS"`.
 - **New compile errors**, in both feature states: `@@mcp` on a model whose
   `@@internal(...)` hides `get` or `list`; and `@@mcp` on a model whose `@id` is
@@ -810,7 +812,7 @@ cratestack::mcp::StdioServer::new(tools, ctx)?.serve().await?;
   `_meta["dev.cratestack/idempotencyReplayed"]`) instead of running again.
   Without a key nothing is reserved. Both the idempotency namespace and the
   rate-limit bucket are `mcp:<principal id>` (`mcp-system:<principal id>` for a
-  `SystemContext` since #1039, below; the id is hashed since #1033, above), from the context's `id` claim (a
+  `SystemContext` since #1039, below), from the context's `id` claim (a
   string or an integer); a context with no such claim is refused
   (`PRECONDITION_FAILED`) for a keyed or rate-limited call. One rate-limit
   store lookup is bounded at 500ms (`DEFAULT_STORE_TIMEOUT`, as on HTTP; not

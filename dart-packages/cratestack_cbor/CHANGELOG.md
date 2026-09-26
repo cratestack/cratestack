@@ -1,5 +1,17 @@
 ## Unreleased
 
+## 0.13.0 (2026-09-26)
+
+- No functional changes to this package. Version kept in lockstep with the
+  CrateStack workspace, which every published CrateStack artifact shares.
+- The one workspace change that reaches this package's native side is
+  byte-for-byte inert here: `cratestack-codec-cbor`, the codec this package
+  ships through `cratestack-client-flutter`, gained an `encode_into` method
+  for the COSE signing envelope (#1005, #1069), and `encode` now delegates to
+  it. A test pins `encode_into`'s output to exactly what `encode` returns, so
+  the bytes this package produces and accepts are unchanged.
+  `cratestack-client-flutter` itself has no change since 0.12.0.
+
 ## 0.12.0 (2026-09-06)
 
 - No functional changes to this package. Version kept in lockstep with the
