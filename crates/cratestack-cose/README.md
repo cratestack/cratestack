@@ -11,6 +11,13 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 This is P0: unary messages, `nonce` replay, and the shared test vectors. `chain` streams
 (P1) and `window` replay for device keys (P2) come later.
 
+**Wire-format preview.** No generated router or client uses this crate yet: the server layer
+is cratestack#1006 and the Rust client is cratestack#1007. Until the first release that ships
+them, the wire format, including the AAD binding version 1, may still change. For example,
+cratestack#1065 changes how the bound schema identity is derived. From that release on, any
+change to the AAD's elements or to how one is derived bumps `BINDING_VERSION`. Pin an exact
+version if you use the crate directly before then.
+
 Without features the crate depends on `cratestack-core` alone, and compiles for
 `wasm32-unknown-unknown`. The off-by-default `auth` feature adds `cratestack-auth` (see
 below).
