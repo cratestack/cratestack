@@ -1,0 +1,24 @@
+// `@api_version` client/server path agreement: the server mounts a
+// versioned procedure under `/<version>/$procs/<name>`, and every generated
+// client must call that same path. `ping` is versioned; `plain` is the
+// unversioned control, which must keep calling `/$procs/<name>`.
+// `api_version_rpc.cstack` is this schema under `transport rpc`.
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @api_version("v2")
+  @allow(auth() != null)
+
+procedure plain(args: PingArgs): PingReply
+  @allow(auth() != null)

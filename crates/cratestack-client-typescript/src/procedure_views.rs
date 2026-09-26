@@ -81,7 +81,8 @@ pub(crate) fn build_procedure(
         hook_name: to_pascal_case(&procedure.name),
         args_name: procedure_wrapper_name(procedure, occupied_type_names),
         return_type: ts_type(&procedure.return_type, enum_names),
-        route: format!("/$procs/{}", procedure.name),
+        // The server's own derivation, `@api_version` prefix included.
+        route: cratestack_core::procedure_route::procedure_rest_route_path(procedure),
         kind: match procedure.kind {
             ProcedureKind::Query => "query",
             ProcedureKind::Mutation => "mutation",

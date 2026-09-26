@@ -130,7 +130,9 @@ fn generate_generated_procedure_client_method(
 ) -> Result<proc_macro2::TokenStream, String> {
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
-    let route_path = format!("/$procs/{}", procedure.name);
+    // Versioned (`@api_version`) procedures are mounted under their version
+    // prefix; same derivation the server's router uses.
+    let route_path = cratestack_core::procedure_route::procedure_rest_route_path(procedure);
 
     let (output_type, call) = match procedure_output_composition(&procedure.return_type, bearing) {
         Some(ProcedureOutputComposition::List { owner }) => {

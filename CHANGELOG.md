@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+### Fix: generated clients call an `@api_version` procedure at its versioned path — behaviour change for REST clients
+
+**The bug.** A procedure declared `@api_version("v2")` is mounted by the
+generated server at `/v2/$procs/<name>`. The generated TypeScript, Rust and
+Dart clients all called `/$procs/<name>`, which the server never registers,
+so every call to a versioned procedure from a generated client got a `404`.
+The WireMock stub generator (`cratestack generate-wiremock`) had the same
+hardcoded path.
+
+The server's own `RouteTransportDescriptor` (`axum::ROUTE_TRANSPORTS`) was
+also wrong. It named `/$procs/<name>` while the router mounted
+`/v2/$procs/<name>`. The REST idempotency and rate-limit resolvers match
+`MatchedPath` against that descriptor. For a versioned procedure every
+lookup missed and resolved as *unresolved*, which fails closed. So
+`@no_idempotency` had no effect on a versioned REST procedure: it was always
+reserved (`cratestack-api`'s `api_version_op_resolver.rs` proves this through
+the real generated router). `@no_rate_limit` went through the same lookup
+(`build_rest_ops_filter` is a projection of the resolver) and was always
+rate-limited. That follows from the shared lookup; it is not separately
+tested, because `cratestack-api` does not forward the `rate_limit` feature.
+
+**The fix.** There is now one derivation,
+`cratestack_core::procedure_route::procedure_rest_route_path`, alongside
+`procedure_api_version`. The server router, the route descriptor, the Rust,
+TypeScript (fetch client, TanStack, SWR, RTK) and Dart (default and
+riverpod) clients, and the WireMock generator all call it, so the path the
+server mounts and the path a client calls can no longer drift apart. This
+follows the approach cratestack#345 took for model routes
+(`cratestack_core::route_naming`).
+
+**`transport rpc` is unchanged, on purpose.** An RPC procedure is addressed
+by its op id `procedure.<name>`. The server's dispatch arm and every RPC
+client already built that same op id with no version in it, and procedure
+names are unique per schema, so the op id is unambiguous. The RPC side was
+consistent before this fix, and a new end-to-end test now pins that.
+
+**Behaviour change.** Regenerate your TypeScript and Dart clients and
+WireMock stubs, and rebuild crates that use `include_client_schema!`. After
+that, calls to `@api_version` procedures go to `/<version>/$procs/<name>`.
+If you worked around the 404 by serving the unversioned path yourself (a
+proxy rewrite, a hand-mounted alias route, or a stub at `/$procs/<name>`),
+the regenerated client no longer calls that path. Also, on a versioned
+REST procedure, `@no_idempotency` and `@no_rate_limit` now take effect.
+Before this fix they were silently ignored and the protection always
+applied. Unversioned procedures and every RPC path are byte-for-byte
+unchanged, and so are the committed example clients (no example declares
+`@api_version`).
 ### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
 
 One advisory, two issues.
