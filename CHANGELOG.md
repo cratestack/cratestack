@@ -41,9 +41,13 @@ for a custom `ServerEnvelope`; `cose = ["envelope", ..]` adds
 on or off, no `cratestack-cose`, `p256` or `ed25519-dalek` is in any facade's
 graph (CI's `facade-disjointness` job asserts both, and covers
 `cratestack-axum`'s own graphs and `examples/mcp-operator`). docs.rs builds
-both facades with `cose`. Each schema gets a generated
-`cratestack_schema::axum::envelope_layer(envelope, policy, audience)` that picks
-its transport, route descriptors and `SCHEMA_SHA256_BYTES`:
+both facades with `cose`. Each schema compiled through a facade with `envelope`
+gets a generated `cratestack_schema::axum::envelope_layer(envelope, policy,
+audience)` that picks its transport, route descriptors and
+`SCHEMA_SHA256_BYTES`, and returns the builder. Whether a schema gets it
+follows the feature of the facade it is compiled through, not the rest of the
+build: one crate enabling `envelope` changes nothing for another crate's
+schemas.
 
 ```rust,ignore
 let envelope = cratestack::cose::CoseEnvelope::server(mode, signer, keys, nonces).build()?;
@@ -64,9 +68,11 @@ let app = axum::Router::new().nest("/api", router);
   to a signed or nonce-bound request, now run before rate limiting: put an
   IP-level limiter outside the envelope.
 - **Modes, per op.** `Required`: every request is signed, `GET`/`HEAD`/`DELETE`
-  included (an empty payload), and every response is sealed, errors included
-  (a handler's `404`, the rate limiter's `429`, the idempotency layer's
-  `412`/`422`). `Optional`: a signed request is opened and **always** answered
+  included (an empty payload; a signed `HEAD` still sends its COSE message as
+  a body, which an intermediary may drop, so prefer `GET`), and every response
+  is sealed, errors included (a handler's `404`, the rate limiter's `429`,
+  the idempotency layer's `412`/`422`). `Optional`: a signed request is
+  opened and **always** answered
   sealed, exactly as under `Required`, with its `Accept` forced to CBOR; an
   unsigned one runs, and its response is sealed only when it carries a valid
   `Cratestack-Nonce` and asks for `application/cose` (that seal binds the
@@ -74,7 +80,9 @@ let app = axum::Router::new().nest("/api", router);
   every mode a request with an `application/cose` body is opened or refused
   (`415`), never forwarded unverified. The layer's own refusals (`401`,
   `415`, `400`, `413`, and the `500`/`405` below) are unsigned, so a replay
-  cannot earn a signed answer; a key-store or signer outage is a `500` whose
+  cannot earn a signed answer (the one exception is decided after
+  verification: a signed batch whose frames cannot be read is a sealed
+  `400`); a key-store or signer outage is a `500` whose
   detail is only logged. A bodiless `OPTIONS` (CORS preflight) passes on both
   transports.
 - **Fails closed.** Under a `Required` policy, a route the router matched but
@@ -82,10 +90,22 @@ let app = axum::Router::new().nest("/api", router);
   descriptor drift) is an unsigned `500` ("envelope misconfigured", logged,
   throttled) instead of passing unsigned; hand-written routes on the same
   router are listed with `allow_unresolved([..])`, and a method the schema
-  does not generate on a generated path is the layer's own `405`. A
+  does not generate on a generated path is the layer's own `405` (body code
+  `METHOD_NOT_ALLOWED` on REST, `invalid_argument` on RPC). A closure policy
+  fails closed like this by default; `.unresolved_mode(mode)` on the builder
+  is the explicit opt-out. A `HEAD` to a subscription (which axum routes to
+  its `GET` handler) is bound as that op on RPC, as it is on REST. A
   `/rpc/batch` call runs under the strictest mode of `batch` and of every
-  frame's op, read from the (opened or plain) payload, and a batch body the
-  layer cannot read is refused unless every mode is `Off`. `/rpc/{op_id}`
+  frame's op, read from the (opened or plain) payload by its base
+  `Content-Type` (parameters and case ignored, so
+  `application/cbor; charset=binary` cannot hide the frames). A plain batch
+  whose frames the layer cannot read is refused unless the strictest of
+  `batch` and `unresolved_mode` is `Off`: the unsigned `401` when it is
+  `Required`, an unsigned `400` otherwise. A signed batch is opened unless
+  that same pair is `Off`/`Off` (then it is the unsigned `415`); once
+  opened, frames it cannot read are a **sealed** `400`, and a batch whose
+  every answer is `Off` is the unsigned `415`, as a signed unary call to an
+  `Off` op is. `/rpc/{op_id}`
   never binds an op id that is `batch`, contains `/` or has no `.` (on the
   decoded value, so `/rpc/%62atch` is caught): a COSE body there is the
   `415`. A signed subscription is a sealed `406` before its handler runs.
@@ -113,11 +133,17 @@ let app = axum::Router::new().nest("/api", router);
   `#[non_exhaustive]`), the route binding (`BindingResolver`, returning a
   `Resolution`: `RestBindingResolver`, `RpcBindingResolver`), the principal
   (`PrincipalMapper`, async and fallible: `Unauthorized` is the unsigned `401`,
-  any other error a sealed `500`; default `ThumbprintPrincipal`) and the
+  any other error a sealed `500`; default `ThumbprintPrincipal`, whose
+  `cose:` prefix `ThumbprintPrincipal::with_prefix(..)` replaces) and the
   `Optional` sealing rule (`ResponseSealPolicy`, default
   `AcceptNamesEnvelope`). `RouteRequest`, `UnsignedRequest` and
   `PolicyRequest` have public constructors for testing a plug-in;
   `VerifiedRequest` does not. `envelope_layer::async_trait` is re-exported.
+  The builder's calls commute: `.mount_prefix(..)` wins over the prefix
+  given to `rest(..)`/`rpc(..)` in either order. A wrapper around
+  `CoseEnvelope` must call `ServerEnvelope::open_request(&inner, ..)` by its
+  full path (the method-call form reaches `CoseEnvelope`'s typed inherent
+  method).
   The invariants above are the layer's, not the plug-ins': a sealed body whose
   media type is not `application/cose` or one the envelope claims is never
   sent, and `build()` refuses an envelope whose own media type is neither, an
@@ -161,6 +187,12 @@ Custom fingerprints are unaffected.
   `NONCE_HEADER` and its length constants) and `UNAUTHENTICATED` moved to
   `cratestack-core`, so the `envelope` feature needs no COSE crate;
   `cratestack-cose` re-exports every one under its old path.
+- **Breaking, `cratestack-cose`:** `RequestNonce::random()` is gone. Draw a
+  nonce with `cratestack_cose::random_request_nonce()` (or, as before,
+  `CoseEnvelope::request_nonce()`). `cratestack-core` parses and formats the
+  nonce but has no randomness source: the `getrandom` it would need broke
+  `cratestack-cbor-wasm` and `cratestack-sqlite` on `wasm32-unknown-unknown`,
+  and CI's `check` job now builds `cratestack-cbor-wasm` for that target.
 - `cratestack-cose` no longer implements `From` for `CratestackError` on its
   internal rejection type. That impl, public though the type is not, made
   `CratestackError: From<_>` ambiguous in generated Postgres server code, so

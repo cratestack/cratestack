@@ -93,3 +93,15 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   `compile_error!`. Reserved for a future FIPS-validated `aws-lc-rs`
   rustls provider; see `install_fips_crypto_provider()`'s doc comment
   and [#334](https://github.com/cratestack/cratestack/issues/334).
+- `envelope` — the server envelope layer (ADR 0006, cratestack#1006):
+  `cratestack::envelope_layer::EnvelopeLayer` opens signed requests and
+  seals responses in front of the generated REST and RPC routers, through
+  the `ServerEnvelope` trait, and each schema compiled through this facade
+  gets a generated `cratestack_schema::axum::envelope_layer(envelope,
+  policy, audience)`. No crypto crate: for a custom envelope (a KMS or HSM
+  one). The generated function follows *this* facade's feature, not the
+  rest of the build's.
+- `cose` — `envelope` plus the COSE envelope (`cratestack::cose::CoseEnvelope`,
+  a re-export of `cratestack-cose`), the default `ServerEnvelope`. Without
+  it, `envelope` or not, no `cratestack-cose`, `p256` or `ed25519-dalek` is
+  in this crate's graph. docs.rs builds this crate with `cose`.
