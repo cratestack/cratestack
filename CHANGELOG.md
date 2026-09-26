@@ -23,6 +23,27 @@ verbatim: with a shared store, MCP idempotency records written by 0.13.0 no
 longer replay (a retry within the TTL runs again), and MCP rate-limit buckets
 start fresh.
 
+### MCP: a stdio server refuses an anonymous caller — breaking for `cratestack-mcp`'s constructors (#1033)
+
+**Maintainer decision on #1071's second question.** ADR 0002 Q1 says stdio has
+no implicit identity, but the constructors only enforced that in their
+signature: `StdioServer::new(tools, CratestackContext::default())` compiled
+and served every call as nobody. Now `StdioServer::new` and `McpServer::new`
+return `Err(StdioConfigError::AnonymousContext)` for a context that is not
+authenticated, the same rule the Streamable HTTP guard applies to what your
+`AuthProvider` returns. A `SystemContext::for_service(..).into_context()` or a
+`CratestackContext::authenticated(..)` built from a credential you verified is
+accepted, as before.
+
+- **API.** Both constructors now return `Result<_, StdioConfigError>` (was
+  `ToolTableError`). `StdioConfigError` is `#[non_exhaustive]`, with
+  `AnonymousContext` and `Tools(ToolTableError)`, and implements
+  `From<ToolTableError>`. Code that uses `?` into a boxed error, or
+  `.to_string()`, compiles unchanged.
+- MCP first shipped in 0.13.0, so this changes that release's constructors:
+  an application that built a stdio server from an anonymous context no
+  longer starts, and the refusal names what to pass instead.
+
 ### MCP: a legacy `initialize` checks the caller before it is refused (#1033)
 
 **Maintainer decision on #1068's question.** No version this server speaks has
@@ -188,6 +209,7 @@ Before this fix they were silently ignored and the protection always
 applied. Unversioned procedures and every RPC path are byte-for-byte
 unchanged, and so are the committed example clients (no example declares
 `@api_version`).
+
 ### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
 
 One advisory, two issues.

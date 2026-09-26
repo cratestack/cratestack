@@ -4,7 +4,7 @@
 // drives `mcp-operator-example` over stdio and over Streamable HTTP.
 //
 // Run it through `just mcp-conformance`, which installs the client from
-// `package-lock.json`, builds the example and provides Postgres. This file
+// `pnpm-lock.yaml`, builds the example and provides Postgres. This file
 // holds the cases; `harness.mjs` runs the client and keeps the count.
 //
 // Every case asserts on content, not only on an exit code, and the run fails
