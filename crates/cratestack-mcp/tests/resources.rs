@@ -16,7 +16,7 @@ use cratestack_mcp::{OpExecutor, StdioServer};
 use serde_json::{Value, json};
 use support::client::Client;
 use support::resources::{FakeResources, ROWS, visible};
-use support::stores::CountingLimiter;
+use support::stores::{CountingLimiter, bucket};
 use support::{FakeTools, user};
 
 fn client(table: FakeResources) -> Client {
@@ -243,7 +243,10 @@ async fn resource_reads_pass_rate_limit_admission() {
     assert_eq!(throttled["error"]["code"], json!(-32603), "{throttled}");
     assert_eq!(throttled["error"]["data"]["code"], "TOO_MANY_REQUESTS");
     assert_eq!(table.reads(), 1, "the throttled read never ran");
-    assert_eq!(*limiter.keys.lock().unwrap(), ["mcp:u-1", "mcp:u-1"]);
+    assert_eq!(
+        *limiter.keys.lock().unwrap(),
+        [bucket("mcp", "u-1"), bucket("mcp", "u-1")]
+    );
     client.close().await.unwrap();
 }
 

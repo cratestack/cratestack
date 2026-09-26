@@ -12,7 +12,7 @@ use cratestack_core::{CratestackContext, IdempotencyStore, RateLimitConfig, Rate
 use cratestack_mcp::{OpExecutor, StdioServer};
 use serde_json::json;
 use support::client::{Client, envelope};
-use support::stores::{CountingLimiter, MemoryIdempotency};
+use support::stores::{CountingLimiter, MemoryIdempotency, bucket};
 use support::{FakeTools, user};
 
 fn with_store(tools: FakeTools, ctx: CratestackContext) -> Client {
@@ -149,7 +149,10 @@ async fn an_exhausted_budget_is_too_many_requests_and_nothing_runs() {
     assert_eq!(envelope(&throttled)["code"], "TOO_MANY_REQUESTS");
 
     assert_eq!(tools.runs(), 1, "the throttled call never ran");
-    assert_eq!(*limiter.keys.lock().unwrap(), ["mcp:u-1", "mcp:u-1"]);
+    assert_eq!(
+        *limiter.keys.lock().unwrap(),
+        [bucket("mcp", "u-1"), bucket("mcp", "u-1")]
+    );
     client.close().await.unwrap();
 }
 
