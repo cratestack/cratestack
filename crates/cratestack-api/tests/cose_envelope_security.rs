@@ -218,6 +218,28 @@ impl versioned::cratestack_schema::procedures::ProcedureRegistry for Versioned {
     }
 }
 
+fn versioned_router() -> Router {
+    versioned::cratestack_schema::axum::router(
+        versioned::cratestack_schema::Cratestack::builder().build(),
+        Versioned,
+        (),
+        CborCodec,
+        everyone,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
+}
+
+/// A plain `POST` to the versioned procedure, where the router serves it.
+fn versioned_ping() -> Request<Body> {
+    let body = CborCodec
+        .encode(&serde_json::json!({ "args": { "message": "hi" } }))
+        .expect("encode");
+    Request::post("/v2/$procs/ping")
+        .header(header::CONTENT_TYPE, "application/cbor")
+        .body(Body::from(body))
+        .unwrap()
+}
+
 /// API review B1: an `@api_version` route under `Required` is refused
 /// unsigned (the descriptor names the versioned path since #1079).
 #[tokio::test]
@@ -229,25 +251,38 @@ async fn api_b1_a_versioned_procedure_is_not_reachable_unsigned() {
     )
     .build()
     .expect("layer");
-    let router = versioned::cratestack_schema::axum::router(
-        versioned::cratestack_schema::Cratestack::builder().build(),
-        Versioned,
-        (),
-        CborCodec,
-        everyone,
-        cratestack::DEFAULT_BODY_LIMIT_BYTES,
-    )
-    .layer(layer);
-    let body = CborCodec
-        .encode(&serde_json::json!({ "args": { "message": "hi" } }))
-        .expect("encode");
-    let answer = send(
-        &router,
-        Request::post("/v2/$procs/ping")
-            .header(header::CONTENT_TYPE, "application/cbor")
-            .body(Body::from(body))
-            .unwrap(),
-    )
-    .await;
+    let answer = send(&versioned_router().layer(layer), versioned_ping()).await;
     assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
+}
+
+/// The same request against the descriptor as it was before #1079 (the
+/// versioned procedure listed at `/$procs/ping`, served at
+/// `/v2/$procs/ping`): the drift that let it through unsigned now fails
+/// closed (decision S2), instead of passing as "not a generated op".
+#[tokio::test]
+async fn api_b1_descriptor_drift_fails_closed() {
+    let drifted: Vec<_> = versioned::cratestack_schema::axum::ROUTE_TRANSPORTS
+        .iter()
+        .map(|route| {
+            let mut route = *route;
+            if route.path == "/v2/$procs/ping" {
+                route.path = "/$procs/ping";
+            }
+            route
+        })
+        .collect();
+    assert!(drifted.iter().any(|route| route.path == "/$procs/ping"));
+    let drifted: &'static [_] = Box::leak(drifted.into_boxed_slice());
+    let layer = cratestack::envelope_layer::EnvelopeLayer::builder(
+        server_envelope(),
+        AUDIENCE,
+        versioned::cratestack_schema::SCHEMA_SHA256_BYTES,
+    )
+    .policy(EnvelopeMode::Required)
+    .rest("", drifted)
+    .build()
+    .expect("layer");
+    let answer = send(&versioned_router().layer(layer), versioned_ping()).await;
+    assert_eq!(answer.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(!answer.is_sealed());
 }
