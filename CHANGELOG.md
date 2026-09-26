@@ -167,6 +167,7 @@ Before this fix they were silently ignored and the protection always
 applied. Unversioned procedures and every RPC path are byte-for-byte
 unchanged, and so are the committed example clients (no example declares
 `@api_version`).
+
 ### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
 
 One advisory, two issues.
