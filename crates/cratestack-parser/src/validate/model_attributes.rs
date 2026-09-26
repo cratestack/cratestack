@@ -210,11 +210,7 @@ pub(super) fn validate_model_version_field(model: &Model) -> Result<(), SchemaEr
                 version.span,
             ));
         }
-        if version
-            .attributes
-            .iter()
-            .any(|attribute| attribute.raw.starts_with("@id"))
-        {
+        if version.is_primary_key() {
             return Err(span_error(
                 format!(
                     "@version field `{}.{}` must not also be the primary key",

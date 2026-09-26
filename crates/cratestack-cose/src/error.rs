@@ -8,8 +8,10 @@ use cratestack_core::CratestackError;
 /// malformed body, an unknown `kid`, a disallowed algorithm, a tag that does
 /// not match the algorithm, a bad signature, a stale `iat` and a replayed
 /// `cti` all produce `CratestackError::Unauthorized(UNAUTHENTICATED.into())`,
-/// byte for byte (`tests/oracle.rs` asserts it).
-pub const UNAUTHENTICATED: &str = "request could not be authenticated";
+/// byte for byte (`tests/oracle.rs` asserts it). Defined in
+/// `cratestack-core` since the cratestack#1006 API review; this is the same
+/// constant.
+pub use cratestack_core::UNAUTHENTICATED;
 
 /// A verification check failed. Deliberately carries nothing.
 ///
@@ -26,11 +28,12 @@ impl Reject {
     }
 }
 
-impl From<Reject> for CratestackError {
-    fn from(reject: Reject) -> Self {
-        reject.into_error()
-    }
-}
+// Deliberately no `impl From<Reject> for CratestackError`: `Reject` is
+// crate-private, but a trait impl is not, and a second `From` impl for
+// `CratestackError` anywhere in a graph broke type inference in generated
+// server code (`CratestackError: From<_>` became ambiguous) as soon as a
+// facade's `cose` feature put this crate in it (found while remediating
+// cratestack#1006). Conversions go through `Reject::into_error`.
 
 /// The coarse `401`.
 pub(crate) fn rejected() -> CratestackError {

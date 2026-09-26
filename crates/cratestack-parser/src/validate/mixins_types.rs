@@ -13,6 +13,7 @@ use crate::validate::computed_attribute::{
 use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_reserved_identifier,
 };
+use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
 use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
@@ -44,11 +45,7 @@ pub(super) fn validate_mixins_collecting(
                         field.span,
                     ));
                 }
-                if field
-                    .attributes
-                    .iter()
-                    .any(|attribute| attribute.raw.starts_with("@id"))
-                {
+                if field.is_primary_key() {
                     return Err(span_error(
                         format!(
                             "field `{}` on mixin `{}` cannot declare @id",
@@ -93,6 +90,7 @@ pub(super) fn validate_mixins_collecting(
                 validate_default_dbgenerated_no_args(&mixin.name, field)?;
                 validate_removed_field_attributes("mixin", &mixin.name, field)?;
                 validate_misspelled_field_attributes("mixin", &mixin.name, field)?;
+                validate_key_and_relation_attributes("mixin", &mixin.name, field)?;
             }
             Ok(())
         });
@@ -160,6 +158,7 @@ pub(super) fn validate_types_collecting(
                 )?;
                 validate_removed_field_attributes("type", &ty.name, field)?;
                 validate_misspelled_field_attributes("type", &ty.name, field)?;
+                validate_key_and_relation_attributes("type", &ty.name, field)?;
             }
             Ok(())
         });
@@ -245,6 +244,7 @@ pub(super) fn validate_auth(
             )?;
             validate_removed_field_attributes("auth block", &auth.name, field)?;
             validate_misspelled_field_attributes("auth block", &auth.name, field)?;
+            validate_key_and_relation_attributes("auth block", &auth.name, field)?;
         }
     }
     Ok(())

@@ -188,6 +188,30 @@ postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
 # default, and with it off `rmcp` is absent from this crate's normal
 # dependency graph (CI's `facade-disjointness` job asserts it).
 mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
+# The envelope layer (`cratestack::envelope_layer`, ADR 0006,
+# cratestack#1006): opens signed requests and seals responses in front of
+# the generated routers. `envelope` is the layer, its traits and the
+# generated per-schema `cratestack_schema::axum::envelope_layer(..)`
+# convenience, with no crypto crate at all (for a custom `ServerEnvelope`:
+# a KMS/HSM one, the composite of cratestack#1078); `cose` adds the COSE
+# envelope and re-exports `cratestack-cose` as `cratestack::cose` to build
+# it with (maintainer decision D7). Additive: `cose` implies `envelope`
+# (API-review decision, 2026-09-26). Both off by default. Without `cose`,
+# `envelope` or not, no `cratestack-cose`, `p256` or `ed25519-dalek` is in
+# this crate's normal dependency graph (CI's `facade-disjointness` job
+# asserts both). The generated `envelope_layer` follows this facade's own
+# feature, not the build's: `include_server_schema!` calls this crate's
+# `__envelope_layer_fn!` (`src/envelope_fn.rs`), which expands to nothing
+# without `envelope` (second-review decision S-1; there is no
+# `cratestack-macros/envelope` feature any more).
+envelope = ["cratestack-axum/envelope"]
+cose = ["envelope", "cratestack-axum/cose"]
+
+# docs.rs builds default features only, which would leave
+# `cratestack::envelope_layer` and `cratestack::cose` off the published
+# docs (API-review nit, cratestack#1006).
+[package.metadata.docs.rs]
+features = ["cose"]
 
 [dependencies]
 async-stream.workspace = true

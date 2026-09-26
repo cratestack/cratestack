@@ -87,7 +87,9 @@ fn is_quoted(value: &str) -> bool {
     value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'')
 }
 
-/// True for any `@id`-tagged field, with no cap on how many fields on
+/// True for any `@id`-tagged field — the shared, exact
+/// [`Field::is_primary_key`] match every consumer uses (cratestack#1074) —
+/// with no cap on how many fields on
 /// the model this returns true for — `cratestack-parser`'s
 /// `validate_models` is what enforces "at most one field-level `@id`"
 /// (issue #536), before a schema with more than one ever reaches this
@@ -96,10 +98,7 @@ fn is_quoted(value: &str) -> bool {
 /// the same #136 restriction `@@id([...])` is rejected for at macro
 /// expansion.
 fn field_has_id(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw == "@id" || attribute.raw.starts_with("@id("))
+    field.is_primary_key()
 }
 
 pub(super) fn field_has_unique(field: &Field) -> bool {

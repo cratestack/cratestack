@@ -27,6 +27,7 @@ mod extension_gate;
 mod mcp_gate;
 mod parse;
 mod schema_args;
+mod schema_sha;
 mod server;
 
 use proc_macro::TokenStream;

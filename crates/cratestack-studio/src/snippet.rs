@@ -18,7 +18,7 @@ pub fn rust_find_unique(schema: &Schema, model: &str, pk_value: &str) -> Result<
     let pk_field = resolved
         .fields
         .iter()
-        .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
+        .find(|f| f.is_primary_key())
         .expect("resolve_model returns NoPrimaryKey otherwise");
 
     let delegate = snake_case(&resolved.name);

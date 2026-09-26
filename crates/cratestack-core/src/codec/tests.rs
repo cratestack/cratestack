@@ -13,7 +13,7 @@ use std::task::{Context, Poll, Waker};
 
 use bytes::Bytes;
 
-use super::{Binding, BodyShape, CratestackEnvelope, NoEnvelope, PathParams};
+use super::{Binding, BodyShape, BoundHeaders, CratestackEnvelope, NoEnvelope, PathParams};
 use crate::context::{CratestackContext, VerifiedSigner};
 use crate::error::CratestackError;
 
@@ -26,6 +26,7 @@ fn request_binding() -> Binding<'static> {
         query: None,
         schema_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
+        bound_headers: BoundHeaders::NONE,
         response: None,
     }
 }

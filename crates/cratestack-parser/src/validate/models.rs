@@ -15,6 +15,7 @@ use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_list_arity_support,
     validate_field_policy_attributes, validate_field_reserved_identifier,
 };
+use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
 use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::model_relation::validate_field_relation;
@@ -85,10 +86,7 @@ pub(super) fn validate_models_collecting(
                 model.fields.iter().map(|field| {
                     let is_nullable_patch_field = matches!(field.ty.arity, TypeArity::Optional)
                         && !model_names.contains(field.ty.name.as_str())
-                        && !field
-                            .attributes
-                            .iter()
-                            .any(|attribute| attribute.raw.starts_with("@id"));
+                        && !field.is_primary_key();
                     (field.name.as_str(), field.span, is_nullable_patch_field)
                 }),
                 &model.name,
@@ -116,11 +114,7 @@ pub(super) fn validate_models_collecting(
                         field.span,
                     ));
                 }
-                if field
-                    .attributes
-                    .iter()
-                    .any(|attribute| attribute.raw.starts_with("@id"))
-                {
+                if field.is_primary_key() {
                     if let Some(first) = first_id_field {
                         return Err(span_error(
                             format!(
@@ -164,6 +158,7 @@ pub(super) fn validate_models_collecting(
                 validate_default_dbgenerated_no_args(&model.name, field)?;
                 validate_removed_field_attributes("model", &model.name, field)?;
                 validate_misspelled_field_attributes("model", &model.name, field)?;
+                validate_key_and_relation_attributes("model", &model.name, field)?;
                 validate_field_list_arity_support(
                     schema_has_datasource,
                     &model.name,

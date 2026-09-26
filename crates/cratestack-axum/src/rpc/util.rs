@@ -3,7 +3,7 @@
 
 use cratestack_core::CratestackError;
 
-pub(super) fn synthesize_error_for_status(status: axum::http::StatusCode) -> CratestackError {
+pub(crate) fn synthesize_error_for_status(status: axum::http::StatusCode) -> CratestackError {
     let code = status.as_u16();
     let suffix = format!("upstream returned {code}");
     match code {

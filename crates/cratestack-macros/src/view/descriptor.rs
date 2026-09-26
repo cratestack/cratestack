@@ -44,7 +44,7 @@ pub(crate) fn generate_view_descriptor(
         let pk_field = view
             .fields
             .iter()
-            .find(|field| field.attributes.iter().any(|attr| attr.raw == "@id"))
+            .find(|field| field.is_primary_key())
             .ok_or_else(|| {
                 format!(
                     "view `{}` has no @id field and is not @@no_unique (validator should have caught this)",
@@ -63,7 +63,7 @@ pub(crate) fn generate_view_descriptor(
         let pk_field = view
             .fields
             .iter()
-            .find(|field| field.attributes.iter().any(|attr| attr.raw == "@id"))
+            .find(|field| field.is_primary_key())
             .expect("validated view has @id when not @@no_unique");
         crate::shared::rust_type_tokens(&pk_field.ty)
     };

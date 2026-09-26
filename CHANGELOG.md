@@ -23,6 +23,42 @@ verbatim: with a shared store, MCP idempotency records written by 0.13.0 no
 longer replay (a retry within the TTL runs again), and MCP rate-limit buckets
 start fresh.
 
+### `@id` is matched exactly, and a second `@relation` on a field is refused — breaking (#1074)
+
+**`@id` is recognised only as the bare spelling `@id`.** Most of the toolchain
+(the parser, the macros, the Dart, TypeScript and WireMock generators, studio)
+used to test `raw.starts_with("@id")`, so `@identity`, `@idx` and `@id_foo` all
+made their field the primary key, while `cratestack-migrate` matched only
+`@id` and `@id(...)`, so migrate and codegen could disagree on which column is
+the key. Every site now
+calls one helper, `cratestack_core::is_primary_key_attribute` /
+`Field::is_primary_key` (new, in `cratestack_core::schema::attribute_text`).
+What happens to a schema that relied on the prefix:
+
+- `code String @identity` (or `@id_foo`) is an unknown, inert attribute, the
+  same as any other unrecognised name (cratestack#679). A model whose only
+  "key" was spelled that way now fails with `model ... is missing an @id field`.
+  Beside a real `@id` it is no longer counted as a second one, so a model that
+  was refused as "more than one field-level `@id`" now parses, with the extra
+  attribute inert. Likewise a mixin field carrying `@identity` was refused as
+  `cannot declare @id` and now parses with the attribute inert.
+- `@idx` is a near-miss of `@id` and fails with ``did you mean `@id`?``.
+- **`@id` takes no arguments.** `@id(...)` and `@id()` are refused with
+  `` `@id` takes no arguments — write `@id` ``, underlining the attribute. Before,
+  every consumer (migrate included) read `@id(...)` as the primary key and
+  ignored the arguments.
+
+**A field may declare `@relation` at most once.** A second `@relation` (with or
+without arguments) used to report `schema OK` while the parser, macros,
+migrate, LSP and studio all read the first and ignored the second. It is now a
+schema error underlining the second declaration.
+
+**Breaking (pre-1.0):** a schema whose primary key is spelled `@idx`/`@identity`/
+`@id…` or `@id(...)`, or whose field carries two `@relation`s, no longer
+parses. Rename the key attribute to `@id` and delete the extra `@relation`.
+`cratestack check` over every `.cstack` tracked in this repository gives the
+same result before and after this change.
+
 ### MCP: a stdio server refuses an anonymous caller — breaking for `cratestack-mcp`'s constructors (#1033)
 
 **Maintainer decision on #1071's second question.** ADR 0002 Q1 says stdio has
@@ -70,6 +106,182 @@ the cost reveals the id's type, never whether a row exists.
 MCP first shipped in 0.13.0. Against it, only a request below the guard sees a
 different answer (`-32603` instead of `-32022`); every client that passes the
 guard, and every stdio client, sees what 0.13.0 answers.
+
+### The envelope layer for REST and RPC, with pluggable decisions; the AAD binds `Idempotency-Key`/`If-Match`; the idempotency default honours `VerifiedPrincipal` — breaking (#1006)
+
+**New, `cratestack-axum` features `envelope` and `cose` (both forwarded by
+`cratestack-pg` and `cratestack-api`):** `cratestack::envelope_layer::EnvelopeLayer`
+opens signed requests and seals responses in front of the generated routers
+(ADR 0006). `envelope` is the layer and its traits with no crypto crate at all,
+for a custom `ServerEnvelope`; `cose = ["envelope", ..]` adds
+`cratestack_cose::CoseEnvelope` and re-exports `cratestack-cose` as
+`cratestack::cose`. With neither, nothing changes; without `cose`, `envelope`
+on or off, no `cratestack-cose`, `p256` or `ed25519-dalek` is in any facade's
+graph (CI's `facade-disjointness` job asserts both, and covers
+`cratestack-axum`'s own graphs and `examples/mcp-operator`). docs.rs builds
+both facades with `cose`. Each schema compiled through a facade with `envelope`
+gets a generated `cratestack_schema::axum::envelope_layer(envelope, policy,
+audience)` that picks its transport, route descriptors and
+`SCHEMA_SHA256_BYTES`, and returns the builder. Whether a schema gets it
+follows the feature of the facade it is compiled through, not the rest of the
+build: one crate enabling `envelope` changes nothing for another crate's
+schemas.
+
+```rust,ignore
+let envelope = cratestack::cose::CoseEnvelope::server(mode, signer, keys, nonces).build()?;
+let layer = cratestack_schema::axum::envelope_layer(envelope, EnvelopeMode::Required, "payments")
+    .mount_prefix("/api")                  // the router is nested under /api
+    .build()?;
+let router = generated_router.layer(idempotency).layer(rate_limit).layer(layer);
+let app = axum::Router::new().nest("/api", router);
+```
+
+- **Placement.** The envelope must be the **last** `.layer(..)` on the
+  generated router, applied before `nest`/`merge`, so it runs before rate
+  limiting and idempotency. It inserts `VerifiedPrincipal("cose:<hex
+  thumbprint>")`, which both key on, so a COSE-only client (no
+  `Authorization`, no `ConnectInfo`) is charged to its own `princ:` bucket
+  instead of being refused with `412` (ADR 0006 §12). Verification, with its
+  key and nonce lookups, and under `Optional` the signing of every response
+  to a signed or nonce-bound request, now run before rate limiting: put an
+  IP-level limiter outside the envelope.
+- **Modes, per op.** `Required`: every request is signed, `GET`/`HEAD`/`DELETE`
+  included (an empty payload; a signed `HEAD` still sends its COSE message as
+  a body, which an intermediary may drop, so prefer `GET`), and every response
+  is sealed, errors included (a handler's `404`, the rate limiter's `429`,
+  the idempotency layer's `412`/`422`). `Optional`: a signed request is
+  opened and **always** answered
+  sealed, exactly as under `Required`, with its `Accept` forced to CBOR; an
+  unsigned one runs, and its response is sealed only when it carries a valid
+  `Cratestack-Nonce` and asks for `application/cose` (that seal binds the
+  nonce and payload, not the caller). `Off`: plain traffic is untouched. In
+  every mode a request with an `application/cose` body is opened or refused
+  (`415`), never forwarded unverified. The layer's own refusals (`401`,
+  `415`, `400`, `413`, and the `500`/`405` below) are unsigned, so a replay
+  cannot earn a signed answer (the one exception is decided after
+  verification: a signed batch whose frames cannot be read is a sealed
+  `400`); a key-store or signer outage is a `500` whose
+  detail is only logged. A bodiless `OPTIONS` (CORS preflight) passes on both
+  transports.
+- **Fails closed.** Under a `Required` policy, a route the router matched but
+  the layer cannot bind (a wrong or missing mount prefix, `nest_service`,
+  descriptor drift) is an unsigned `500` ("envelope misconfigured", logged,
+  throttled) instead of passing unsigned; hand-written routes on the same
+  router are listed with `allow_unresolved([..])`, and a method the schema
+  does not generate on a generated path is the layer's own `405` (body code
+  `METHOD_NOT_ALLOWED` on REST, `invalid_argument` on RPC). A closure policy
+  fails closed like this by default; `.unresolved_mode(mode)` on the builder
+  is the explicit opt-out. A `HEAD` to a subscription (which axum routes to
+  its `GET` handler) is bound as that op on RPC, as it is on REST. A
+  `/rpc/batch` call runs under the strictest mode of `batch` and of every
+  frame's op, read from the (opened or plain) payload by its base
+  `Content-Type` (parameters and case ignored, so
+  `application/cbor; charset=binary` cannot hide the frames). A plain batch
+  whose frames the layer cannot read is refused unless the strictest of
+  `batch` and `unresolved_mode` is `Off`: the unsigned `401` when it is
+  `Required`, an unsigned `400` otherwise. A signed batch is opened unless
+  that same pair is `Off`/`Off` (then it is the unsigned `415`); once
+  opened, frames it cannot read are a **sealed** `400`, and a batch whose
+  every answer is `Off` is the unsigned `415`, as a signed unary call to an
+  `Off` op is. `/rpc/{op_id}`
+  never binds an op id that is `batch`, contains `/` or has no `.` (on the
+  decoded value, so `/rpc/%62atch` is caught): a COSE body there is the
+  `415`. A signed subscription is a sealed `406` before its handler runs.
+- **What the router sees.** The opened payload, as `application/cbor` (no
+  `Content-Type` for an empty payload), with `Accept: application/cbor`; the
+  `AuthProvider` authenticates that payload. Generated handlers record the
+  `VerifiedSigner` on the context through the new
+  `enrich_context_from_envelope`: a fact, not an authentication.
+- **Binding.** RPC binds the op id (`batch` for `/rpc/batch`, one unary
+  message; `subscribe/<op id>` for a subscription); REST binds the schema's
+  route template and every matched path parameter, a parameterised mount's
+  (`nest("/t/{tenant}", ..)`) included. Both bind the query in
+  `canonical_query` form (distinct keys in any order bind alike, a repeated
+  key's values keep their order) and the `Idempotency-Key` and `If-Match`
+  headers exactly as sent (see below); a request sending either twice is a
+  `400`.
+- **Extension points**, each a trait with the decided default: the envelope
+  (`ServerEnvelope`: `open_request` returns an opaque per-request
+  `SealContext` that comes back to `seal_response`, which returns
+  `Sealed { body, media_type }`, so the composite of #1078 can answer Mac0 with
+  Mac0; implemented by `CoseEnvelope` and by `Arc<T>`), the per-op policy
+  (`EnvelopePolicy`: any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`, which sees
+  the op and a subscription/batch-frame flag but no header; its
+  `unresolved_mode` defaults to `Required`; `EnvelopeMode` is
+  `#[non_exhaustive]`), the route binding (`BindingResolver`, returning a
+  `Resolution`: `RestBindingResolver`, `RpcBindingResolver`), the principal
+  (`PrincipalMapper`, async and fallible: `Unauthorized` is the unsigned `401`,
+  any other error a sealed `500`; default `ThumbprintPrincipal`, whose
+  `cose:` prefix `ThumbprintPrincipal::with_prefix(..)` replaces) and the
+  `Optional` sealing rule (`ResponseSealPolicy`, default
+  `AcceptNamesEnvelope`). `RouteRequest`, `UnsignedRequest` and
+  `PolicyRequest` have public constructors for testing a plug-in;
+  `VerifiedRequest` does not. `envelope_layer::async_trait` is re-exported.
+  The builder's calls commute: `.mount_prefix(..)` wins over the prefix
+  given to `rest(..)`/`rpc(..)` in either order. A wrapper around
+  `CoseEnvelope` must call `ServerEnvelope::open_request(&inner, ..)` by its
+  full path (the method-call form reaches `CoseEnvelope`'s typed inherent
+  method).
+  The invariants above are the layer's, not the plug-ins': a sealed body whose
+  media type is not `application/cose` or one the envelope claims is never
+  sent, and `build()` refuses an envelope whose own media type is neither, an
+  empty `rest(..)` route table, an empty audience, or no policy.
+- **Known limits.** Streams cannot be sealed until ADR 0006 P1. Response
+  headers (`ETag`, `Retry-After`, ...) are not authenticated. A response is
+  re-buffered up to `MAX_RESPONSE_REBUFFER_BYTES` to be sealed (a longer one
+  is a sealed `500`). A `Router::fallback` handler sets no `MatchedPath` and
+  is not protected. The schema digest still hashes the raw `.cstack` text
+  (#1065), so `Required` stays opt-in. The Rust client side is #1007.
+
+**Breaking, binding v1 (not yet frozen, cratestack#1082):** the AAD gains
+`bound_headers: [idempotency_key: tstr / null, if_match: tstr / null]` right
+after `payload_type` (9 elements for a request, 12 for a response), so an
+on-path party can no longer strip `Idempotency-Key` from a re-sealed retry (it
+would run twice) or `If-Match` from an update. `cratestack_core::Binding` gains
+the public field `bound_headers: BoundHeaders` (`BoundHeaders::NONE` for
+neither), and `cratestack-cose`'s shared vectors are regenerated (the message
+sizes are unchanged: the AAD is never sent); each vector's `binding` now names
+`bound_headers`. Every other implementation of the binding must add the
+element.
+
+**Breaking, `cratestack-axum`:** `IdempotencyLayer`'s default principal
+fingerprint now checks a `VerifiedPrincipal` extension first and keys it as
+`princ:<sha256 hex>`, as the rate limiter already did. An application that
+already inserts `VerifiedPrincipal` in front of the idempotency layer moves to
+that namespace: an `Idempotency-Key` whose first attempt landed before the
+deploy and whose retry lands after it runs again. Keep the old namespace for
+the deploy, and drop the call once the idempotency TTL has passed:
+
+```rust,ignore
+let idempotency = IdempotencyLayer::new(store, ttl).with_legacy_principal_fingerprint();
+// or compose it: cratestack::idempotency::legacy_principal_fingerprint(&request)
+```
+
+Custom fingerprints are unaffected.
+
+**Also:**
+
+- `request_digest`, `request_digest_unsigned`, `RequestNonce` (with
+  `NONCE_HEADER` and its length constants) and `UNAUTHENTICATED` moved to
+  `cratestack-core`, so the `envelope` feature needs no COSE crate;
+  `cratestack-cose` re-exports every one under its old path.
+- **Breaking, `cratestack-cose`:** `RequestNonce::random()` is gone. Draw a
+  nonce with `cratestack_cose::random_request_nonce()` (or, as before,
+  `CoseEnvelope::request_nonce()`). `cratestack-core` parses and formats the
+  nonce but has no randomness source: the `getrandom` it would need broke
+  `cratestack-cbor-wasm` and `cratestack-sqlite` on `wasm32-unknown-unknown`,
+  and CI's `check` job now builds `cratestack-cbor-wasm` for that target.
+- `cratestack-cose` no longer implements `From` for `CratestackError` on its
+  internal rejection type. That impl, public though the type is not, made
+  `CratestackError: From<_>` ambiguous in generated Postgres server code, so
+  `cratestack-pg`'s `cose` feature broke the build of some schemas.
+- `canonical_query` moved to `cratestack-core` (`cratestack_core::canonical_query`),
+  so the envelope binds the same bytes as `Authorization: Signature` without
+  depending on `cratestack-auth`. `cratestack_auth::canonical_query` still
+  works (a re-export); `cratestack-auth` no longer depends on `url`.
+- Every `include_*_schema!` module now also emits `SCHEMA_SHA256_BYTES:
+  [u8; 32]`, the same digest as `SCHEMA_SHA256`, as the bytes a binding
+  carries.
 
 ## 0.13.0 (2026-09-26)
 

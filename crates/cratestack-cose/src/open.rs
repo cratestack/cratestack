@@ -56,11 +56,11 @@ pub(crate) async fn open(
     };
     let external_aad = aad::external_aad(bind)?;
 
-    let parts = wire::parse(inner.mode, &body)?;
+    let parts = wire::parse(inner.mode, &body).map_err(Reject::into_error)?;
     let protected_bytes = &body[parts.protected.clone()];
-    let protected = header::parse(protected_bytes)?;
+    let protected = header::parse(protected_bytes).map_err(Reject::into_error)?;
     if protected.alg.mode() != inner.mode || protected.claims.is_some() != request {
-        return Err(Reject.into());
+        return Err(Reject.into_error());
     }
     let base = parts.protected.start;
     // A copy, not a slice of `body`: it outlives the call in `Opened` and
@@ -68,7 +68,7 @@ pub(crate) async fn open(
     // body alive with it. `header::parse` has checked it is 8 bytes.
     let kid: [u8; KID_LEN] = protected_bytes[protected.kid.clone()]
         .try_into()
-        .map_err(|_| Reject)?;
+        .map_err(|_| Reject.into_error())?;
 
     let candidates = inner
         .resolver
@@ -86,21 +86,22 @@ pub(crate) async fn open(
         .iter()
         .find(|key| key.kid() == kid && key.verify(protected.alg, &tbs, signature))
         .map(CoseVerifyKey::thumbprint)
-        .ok_or(Reject)?;
+        .ok_or_else(|| Reject.into_error())?;
 
     let (iat, cti) = match (protected.claims, nonce_store) {
         (Some((iat, cti)), Some(store)) => {
             if !replay::is_fresh((inner.clock)(), iat, inner.skew_secs) {
-                return Err(Reject.into());
+                return Err(Reject.into_error());
             }
             let cti = body.slice(base + cti.start..base + cti.end);
-            let expires_at = replay::nonce_expiry(iat, inner.skew_secs).ok_or(Reject)?;
+            let expires_at =
+                replay::nonce_expiry(iat, inner.skew_secs).ok_or_else(|| Reject.into_error())?;
             let first = store
                 .record_if_unseen(&replay::nonce_key(&kid, &cti), expires_at)
                 .await
                 .map_err(|error| backend("nonce store", error))?;
             if !first {
-                return Err(Reject.into());
+                return Err(Reject.into_error());
             }
             (Some(iat), Some(cti))
         }

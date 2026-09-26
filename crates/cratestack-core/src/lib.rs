@@ -54,8 +54,10 @@ pub use batch::{
     BatchSummary, find_duplicate_position,
 };
 pub use codec::{
-    Binding, BodyShape, CratestackCodec, CratestackEnvelope, NoEnvelope, OpenedFrame, PathParams,
-    RequestDigest, RequestKind, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
+    Binding, BodyShape, BoundHeaders, CratestackCodec, CratestackEnvelope, NONCE_HEADER,
+    NONCE_HEADER_VALUE_LEN, NoEnvelope, OpenedFrame, PathParams, REQUEST_NONCE_LEN, RequestDigest,
+    RequestKind, RequestNonce, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
+    UNAUTHENTICATED, request_digest, request_digest_unsigned,
 };
 pub use context::{
     AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
@@ -96,14 +98,15 @@ pub use projection::ProjectionDecoder;
 pub use schema::{
     Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource, EnumDecl,
     EnumVariant, ExtensionKind, Field, INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName,
-    MixinDecl, Model, ModelMcpExposure, OwnedSchemaSummary, ParsedCompositeUnique,
-    ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure,
-    QUERY_SQL_ATTRIBUTE, Query, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle,
-    TypeArity, TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype,
-    computed_params_type_name, geometry_subtype_names, is_computed_attribute, is_computed_field,
-    model_internal_actions, parse_composite_id_attribute, parse_composite_unique_attribute,
-    parse_computed_params_arg, parse_index_attribute, parse_internal_attribute,
-    scan_sql_placeholders,
+    MixinDecl, Model, ModelMcpExposure, OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE,
+    ParsedCompositeUnique, ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind,
+    ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query, Schema, SchemaSummary, SelectionQuery,
+    SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View, ViewSource,
+    canonical_geometry_subtype, computed_params_type_name, field_attribute_name,
+    geometry_subtype_names, is_computed_attribute, is_computed_field, is_primary_key_attribute,
+    is_relation_attribute, model_internal_actions, parse_composite_id_attribute,
+    parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
+    parse_internal_attribute, scan_sql_placeholders,
 };
 pub use store::{
     BoundedOutcome, BucketBudget, Charged, ClientStateStore, ConsumeRequest, IdempotencyStore,
@@ -111,7 +114,7 @@ pub use store::{
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
 pub use transport::{
-    OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,
+    OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor, canonical_query,
     canonical_request_string,
 };
 pub use validators::{

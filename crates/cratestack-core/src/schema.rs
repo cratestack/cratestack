@@ -3,6 +3,7 @@
 //! positions in the original text.
 
 mod attribute_syntax;
+pub mod attribute_text;
 pub mod composite_key;
 pub mod composite_unique;
 pub mod computed_attribute;
@@ -22,6 +23,9 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+pub use attribute_text::{
+    PRIMARY_KEY_ATTRIBUTE, field_attribute_name, is_primary_key_attribute, is_relation_attribute,
+};
 pub use composite_key::parse_composite_id_attribute;
 pub use composite_unique::{ParsedCompositeUnique, parse_composite_unique_attribute};
 pub use computed_attribute::{

@@ -15,7 +15,7 @@ pub(super) fn validate_field_policy_attributes(
     model_name: &str,
     field: &cratestack_core::Field,
 ) -> Result<(), SchemaError> {
-    let is_id = field.attributes.iter().any(|a| a.raw.starts_with("@id"));
+    let is_id = field.is_primary_key();
     let has_readonly = field.attributes.iter().any(|a| a.raw == "@readonly");
     let has_server_only = field.attributes.iter().any(|a| a.raw == "@server_only");
 

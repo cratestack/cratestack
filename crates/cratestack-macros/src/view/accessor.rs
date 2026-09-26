@@ -33,7 +33,7 @@ pub(crate) fn generate_view_accessor(view: &View) -> proc_macro2::TokenStream {
         let pk_field = view
             .fields
             .iter()
-            .find(|field| field.attributes.iter().any(|attr| attr.raw == "@id"))
+            .find(|field| field.is_primary_key())
             .expect("validated view has @id when not @@no_unique");
         let primary_key_type = rust_type_tokens(&pk_field.ty);
         quote! {

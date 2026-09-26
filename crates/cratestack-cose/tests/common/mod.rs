@@ -16,8 +16,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use cratestack_core::{
-    Binding, CratestackError, InMemoryNonceStore, NonceStore, PathParams, RequestDigest,
-    RequestKind, ResponseBinding,
+    Binding, BoundHeaders, CratestackError, InMemoryNonceStore, NonceStore, PathParams,
+    RequestDigest, RequestKind, ResponseBinding,
 };
 use cratestack_cose::{
     CoseAlg, CoseEnvelope, CoseMode, CoseSigner, CoseVerifierResolver, Ed25519Signer, HmacSigner,
@@ -120,6 +120,7 @@ pub fn rpc_request() -> Binding<'static> {
         query: None,
         schema_sha: schema_sha(),
         payload_media_type: Cow::Borrowed("application/cbor"),
+        bound_headers: BoundHeaders::NONE,
         response: None,
     }
 }
@@ -132,6 +133,12 @@ pub fn rest_request() -> Binding<'static> {
         route: Cow::Borrowed("/accounts/{account_id}/payments/{id}"),
         path_params: PathParams::Borrowed(REST_PATH_PARAMS),
         query: Some(Cow::Borrowed("dry_run=false")),
+        // A keyed, conditional update: the REST vectors carry both bound
+        // headers (S1, cratestack#1006), the RPC ones neither.
+        bound_headers: BoundHeaders {
+            idempotency_key: Some(Cow::Borrowed("idem-7f3a")),
+            if_match: Some(Cow::Borrowed("\"3\"")),
+        },
         ..rpc_request()
     }
 }
@@ -268,6 +275,14 @@ pub fn binding_from_json(json: &serde_json::Value) -> Binding<'static> {
             .map(|query| Cow::Owned(query.to_owned())),
         schema_sha: digest(&json["schema_sha"]).expect("schema_sha"),
         payload_media_type: text("payload_type"),
+        bound_headers: BoundHeaders {
+            idempotency_key: json["bound_headers"]["idempotency_key"]
+                .as_str()
+                .map(|value| Cow::Owned(value.to_owned())),
+            if_match: json["bound_headers"]["if_match"]
+                .as_str()
+                .map(|value| Cow::Owned(value.to_owned())),
+        },
         response: json["status"].as_u64().map(|status| ResponseBinding {
             request: RequestDigest {
                 kind: request_kind(json["request_kind"].as_u64().expect("request_kind")),

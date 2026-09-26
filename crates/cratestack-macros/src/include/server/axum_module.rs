@@ -3,6 +3,7 @@
 //! axum handlers, the `model_router`/`procedure_router`/`router` fns,
 //! plus the RPC sub-module when `transport rpc`.
 
+mod envelope_fn;
 mod model_router;
 mod router_fn;
 #[cfg(test)]
@@ -43,6 +44,7 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
     let model_router_state = model_router::build_state(db);
     let model_router_fn = model_router::build_fn(db, &c.model_axum_routes);
     let router_fn = router_fn::build(db);
+    let envelope_fn = envelope_fn::build(c.is_rpc);
 
     quote! {
         pub mod axum {
@@ -166,6 +168,8 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
             }
 
             #router_fn
+
+            #envelope_fn
 
             #rpc_module
         }
