@@ -1,7 +1,8 @@
 #![cfg(test)]
 
 use crate::{
-    FieldRef, FilterExpr, OrderClause, PolicyExpr, ReadPolicy, ReadPredicate, SortDirection,
+    FieldRef, FilterExpr, OrderClause, PolicyExpr, ReadPolicy, ReadPredicate, RelatedReadScope,
+    SortDirection,
     render::{render_filter_expr_sql, render_order_clause_sql, render_read_policy_sql},
 };
 use cratestack_core::{CratestackContext, Value};
@@ -16,6 +17,7 @@ fn relation_filters_render_explicit_quantifiers() {
         FieldRef::<(), String>::new("label")
             .contains("Revoked")
             .into(),
+        RelatedReadScope::Unscoped,
     );
     let every = FilterExpr::relation_every(
         "users",
@@ -25,6 +27,7 @@ fn relation_filters_render_explicit_quantifiers() {
         FieldRef::<(), String>::new("label")
             .contains("Session")
             .into(),
+        RelatedReadScope::Unscoped,
     );
     let none = FilterExpr::relation_none(
         "users",
@@ -34,14 +37,15 @@ fn relation_filters_render_explicit_quantifiers() {
         FieldRef::<(), Option<String>>::new("revoked_at")
             .is_not_null()
             .into(),
+        RelatedReadScope::Unscoped,
     );
     let mut bind_index = 1usize;
     let mut some_sql = String::new();
-    render_filter_expr_sql(&some, &mut some_sql, &mut bind_index);
+    render_filter_expr_sql(&some, &mut some_sql, &mut bind_index, None);
     let mut every_sql = String::new();
-    render_filter_expr_sql(&every, &mut every_sql, &mut bind_index);
+    render_filter_expr_sql(&every, &mut every_sql, &mut bind_index, None);
     let mut none_sql = String::new();
-    render_filter_expr_sql(&none, &mut none_sql, &mut bind_index);
+    render_filter_expr_sql(&none, &mut none_sql, &mut bind_index, None);
 
     assert_eq!(
         some_sql,
@@ -64,12 +68,13 @@ fn relation_scalar_order_preview_uses_correlated_subquery() {
         "author_id",
         "users",
         "id",
-        "users.email".to_owned(),
+        "email",
+        RelatedReadScope::Unscoped,
         SortDirection::Asc,
     );
     let mut sql = String::new();
     let mut bind_index = 1usize;
-    render_order_clause_sql(&clause, &mut sql, &mut bind_index);
+    render_order_clause_sql(&clause, &mut sql, &mut bind_index, None);
 
     assert_eq!(
         sql,

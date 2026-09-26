@@ -12,11 +12,13 @@
 
 use cratestack_core::Model;
 
-use crate::shared::{model_name_set, scalar_model_fields};
+use crate::shared::{model_name_set, queryable_model_fields};
 
+/// Never a `@server_only` field (`queryable_model_fields`): `?sort=secret`
+/// ordered rows by a value the response never carries.
 pub(crate) fn collect_allowed_sort_keys(model: &Model, models: &[Model]) -> Vec<String> {
     let model_names = model_name_set(models);
-    scalar_model_fields(model, &model_names)
+    queryable_model_fields(model, &model_names)
         .into_iter()
         .map(|field| field.name.clone())
         .collect()

@@ -26,7 +26,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
         descriptor.table_name(),
     );
     let mut bind_index = 1usize;
-    let user_clause = render_filter_sql(filters, &mut bind_index);
+    let user_clause = render_filter_sql(filters, &mut bind_index, Some(ctx));
     let policy_clause = render_read_policy_sql(
         descriptor.read_allow_policies(),
         descriptor.read_deny_policies(),
@@ -53,7 +53,7 @@ pub(crate) fn render_scoped_select_sql<M, PK>(
             if index > 0 {
                 sql.push_str(", ");
             }
-            render_order_clause_sql(clause, &mut sql, &mut bind_index);
+            render_order_clause_sql(clause, &mut sql, &mut bind_index, Some(ctx));
         }
     }
 

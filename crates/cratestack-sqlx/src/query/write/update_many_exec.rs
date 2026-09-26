@@ -81,7 +81,7 @@ where
         query.push(" AND ");
     }
     query.push("(");
-    push_filter_query(&mut query, filters);
+    push_filter_query(&mut query, filters, ctx);
     query.push(") AND ");
     push_action_policy_query(
         &mut query,

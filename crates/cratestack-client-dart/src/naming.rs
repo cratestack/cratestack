@@ -75,6 +75,16 @@ pub(crate) fn is_computed_field(field: &Field) -> bool {
     cratestack_core::is_computed_field(field)
 }
 
+/// Field carries `@server_only`. The server refuses it as a filter or sort
+/// key exactly as an undeclared name, so a `Where` field or `SortField`
+/// variant naming it could only ever fail.
+pub(crate) fn is_server_only_field(field: &Field) -> bool {
+    field
+        .attributes
+        .iter()
+        .any(|attribute| attribute.raw == "@server_only")
+}
+
 pub(crate) fn primary_key_field(model: &Model) -> Option<&Field> {
     model.fields.iter().find(|field| is_primary_key(field))
 }

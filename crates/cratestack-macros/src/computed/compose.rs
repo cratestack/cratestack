@@ -35,13 +35,22 @@
 //! a DAG of calls, never call each other in a loop, and don't need the
 //! `Pin<Box<dyn Future>>` indirection `serialize_<model>_model_value`
 //! uses for models' genuinely-recursive self-relations.
+//!
+//! Because nothing here goes through serde, a model's `@server_only`
+//! fields have to be left out by hand, as `projection_fields` does:
+//! [`generate_compose_helpers`] takes `response_model_fields`. It took
+//! `wire_model_fields` from #719 on, and every procedure output of a model
+//! with a `@computed` field carried its `@server_only` values over REST
+//! and RPC, then MCP tools (`tests/server_only_outbound.rs` in
+//! `cratestack-pg`). A `type`'s fields are taken whole: `@server_only` does
+//! nothing on a `type`, whose struct serializes such a field too.
 
 use std::collections::BTreeSet;
 
 use cratestack_core::{Field, Schema, TypeArity, computed_params_type_name};
 use quote::quote;
 
-use crate::shared::{ident, is_computed_field, wire_model_fields};
+use crate::shared::{ident, is_computed_field, response_model_fields};
 
 use super::bearing::compose_fn_ident;
 use super::resolver_method_name;
@@ -152,7 +161,10 @@ pub(crate) fn generate_compose_helpers(
         if !bearing.contains(&model.name) {
             continue;
         }
-        let fields = wire_model_fields(model, model_names);
+        // Not `wire_model_fields`: this helper copies struct fields straight
+        // into the response, so the struct's `#[serde(skip)]` on a
+        // `@server_only` field never runs, and that list keeps them.
+        let fields = response_model_fields(model, model_names);
         helpers.push(owner_compose_fn(&model.name, &fields, bearing));
     }
 
@@ -166,3 +178,6 @@ pub(crate) fn generate_compose_helpers(
 
     helpers
 }
+
+#[cfg(test)]
+mod tests;

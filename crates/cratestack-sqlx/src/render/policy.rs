@@ -3,13 +3,12 @@
 //! renders to a `TRUE`/`FALSE` constant or a parameterized predicate
 //! based on the per-`ctx` evaluation.
 
-use std::fmt::Write;
-
 use cratestack_core::CratestackContext;
 
 use crate::{PolicyExpr, ReadPolicy, RelationQuantifier};
 
 use super::policy_predicate::render_policy_predicate;
+use super::relation::relation_from_sql;
 
 /// Render a read policy (allow/deny clauses) as a single, fully
 /// parenthesized boolean expression.
@@ -25,16 +24,24 @@ pub(crate) fn render_read_policy_sql(
     ctx: &CratestackContext,
     bind_index: &mut usize,
 ) -> Option<String> {
-    if allow_policies.is_empty() {
-        return Some("(FALSE)".to_owned());
-    }
-
-    let allow_sql = render_allow_policy_sql(allow_policies, ctx, bind_index)?;
+    // Same text, and the same bind order, as `push_action_policy_query`:
+    // deny first (it is emitted first), and an empty allow list is `FALSE`
+    // even when deny rules exist — otherwise a preview's `$n` numbering
+    // drifts from the executed query's whenever both lists bind values.
+    let render_or_false = |policies: &[ReadPolicy], bind_index: &mut usize| {
+        if policies.is_empty() {
+            Some("FALSE".to_owned())
+        } else {
+            render_allow_policy_sql(policies, ctx, bind_index)
+        }
+    };
     if deny_policies.is_empty() {
-        return Some(format!("({})", allow_sql));
+        let allow_sql = render_or_false(allow_policies, bind_index)?;
+        return Some(format!("({allow_sql})"));
     }
 
     let deny_sql = render_allow_policy_sql(deny_policies, ctx, bind_index)?;
+    let allow_sql = render_or_false(allow_policies, bind_index)?;
     Some(format!("(NOT ({deny_sql}) AND ({allow_sql}))"))
 }
 
@@ -85,35 +92,23 @@ pub(super) fn render_relation_policy_sql(
     sql: &mut String,
     bind_index: &mut usize,
 ) {
-    match quantifier {
-        RelationQuantifier::ToOne | RelationQuantifier::Some => {
-            let _ = write!(
-                sql,
-                "EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                related_table, related_table, related_column, parent_table, parent_column,
-            );
-            render_policy_expr_sql(*expr, ctx, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::None => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                related_table, related_table, related_column, parent_table, parent_column,
-            );
-            render_policy_expr_sql(*expr, ctx, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::Every => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND NOT (",
-                related_table, related_table, related_column, parent_table, parent_column,
-            );
-            render_policy_expr_sql(*expr, ctx, sql, bind_index);
-            sql.push_str("))");
-        }
-    }
+    // Same correlation as the executed pusher, self-relations included —
+    // see `super::relation::relation_from_sql`.
+    let (open, negate) = match quantifier {
+        RelationQuantifier::ToOne | RelationQuantifier::Some => ("EXISTS (SELECT 1 ", false),
+        RelationQuantifier::None => ("NOT EXISTS (SELECT 1 ", false),
+        RelationQuantifier::Every => ("NOT EXISTS (SELECT 1 ", true),
+    };
+    sql.push_str(open);
+    sql.push_str(&relation_from_sql(
+        parent_table,
+        parent_column,
+        related_table,
+        related_column,
+    ));
+    sql.push_str(if negate { " AND NOT (" } else { " AND " });
+    render_policy_expr_sql(*expr, ctx, sql, bind_index);
+    sql.push_str(if negate { "))" } else { ")" });
 }
 
 fn render_grouped_policy_sql(

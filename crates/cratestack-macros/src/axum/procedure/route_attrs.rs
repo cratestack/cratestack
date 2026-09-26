@@ -19,23 +19,11 @@ pub(super) fn procedure_axum_route_tokens(procedure: &Procedure) -> proc_macro2:
 /// HTTP route path for a procedure, applying any `@api_version`
 /// prefix. Shape is `/<version>/$procs/<name>` for versioned
 /// procedures and `/$procs/<name>` otherwise, so banks can run v1 + v2
-/// side by side.
+/// side by side. Derived by `cratestack_core::procedure_route`, the same
+/// function the route descriptor and every generated client call, so the
+/// path the router mounts and the path a client calls cannot drift.
 pub(super) fn procedure_route_path(procedure: &Procedure) -> String {
-    if let Some(version) = procedure_api_version(procedure) {
-        format!("/{}/$procs/{}", version, procedure.name)
-    } else {
-        format!("/$procs/{}", procedure.name)
-    }
-}
-
-fn procedure_api_version(procedure: &Procedure) -> Option<String> {
-    procedure.attributes.iter().find_map(|attribute| {
-        attribute
-            .raw
-            .strip_prefix("@api_version(\"")
-            .and_then(|rest| rest.strip_suffix("\")"))
-            .map(|s| s.to_owned())
-    })
+    cratestack_core::procedure_route::procedure_rest_route_path(procedure)
 }
 
 /// The `StatusCode` expression a procedure's `Ok(...)` REST response

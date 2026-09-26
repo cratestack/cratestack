@@ -21,6 +21,7 @@ mod idempotency;
 mod order;
 mod order_catalog;
 mod relation_path;
+mod relation_scope;
 mod values;
 
 pub use descriptor::{
@@ -45,6 +46,7 @@ pub use order_catalog::{
 pub use relation_path::{
     Orderable, RelationHop, Unorderable, is_orderable, order_value_sql, wrap_filter,
 };
+pub use relation_scope::RelatedReadScope;
 pub use values::{
     ConflictTarget, CreateModelInput, DecimalLike, FilterValue, IntoSqlValue, ModelPrimaryKey,
     Projection, RelationInclude, SqlColumnValue, SqlValue, UpdateModelInput, UpsertModelInput,

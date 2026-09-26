@@ -8,7 +8,7 @@ fn covers_geography_renders_st_covers_with_two_binds() {
         .covers_geography(cratestack_sql::point(-122.4194, 37.7749));
     let mut bind_index = 1usize;
     let mut sql = String::new();
-    render_filter_expr_sql(&filter, &mut sql, &mut bind_index);
+    render_filter_expr_sql(&filter, &mut sql, &mut bind_index, None);
     assert_eq!(
         sql,
         "ST_Covers(service_area::geography, ST_MakePoint($1, $2)::geography)",
@@ -22,7 +22,7 @@ fn dwithin_geography_renders_st_dwithin_with_three_binds() {
         .dwithin_geography(cratestack_sql::point(-122.4194, 37.7749), 1500.0);
     let mut bind_index = 1usize;
     let mut sql = String::new();
-    render_filter_expr_sql(&filter, &mut sql, &mut bind_index);
+    render_filter_expr_sql(&filter, &mut sql, &mut bind_index, None);
     assert_eq!(
         sql,
         "ST_DWithin(service_area::geography, ST_MakePoint($1, $2)::geography, $3)",
@@ -42,7 +42,7 @@ fn order_by_distance_to_renders_st_distance_with_two_binds() {
         .order_by_distance_to(cratestack_sql::point(-122.4194, 37.7749));
     let mut bind_index = 1usize;
     let mut sql = String::new();
-    render_order_clause_sql(&clause, &mut sql, &mut bind_index);
+    render_order_clause_sql(&clause, &mut sql, &mut bind_index, None);
     assert_eq!(
         sql,
         "ST_Distance(service_area::geography, ST_MakePoint($1, $2)::geography) ASC NULLS LAST",
@@ -60,7 +60,7 @@ fn distance_to_point_desc_flips_only_the_direction() {
         .desc();
     let mut bind_index = 1usize;
     let mut sql = String::new();
-    render_order_clause_sql(&clause, &mut sql, &mut bind_index);
+    render_order_clause_sql(&clause, &mut sql, &mut bind_index, None);
     assert!(sql.ends_with("DESC NULLS LAST"), "got: {sql}");
     assert!(
         sql.starts_with("ST_Distance(service_area::geography"),

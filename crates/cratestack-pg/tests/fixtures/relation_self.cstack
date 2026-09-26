@@ -1,0 +1,38 @@
+// Self-relations (GHSA-p55v-6xv5-93p3 follow-up): a relation whose
+// related table is its own parent table. A correlated subquery
+// `FROM rf_persons WHERE rf_persons.id = rf_persons.manager_id` binds both
+// sides to the inner row, so relation filters, relation sorts and
+// relation-traversing policies over a self-relation must correlate
+// through the outer row explicitly.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+// `secret` persons are hidden from every caller.
+model RfPerson {
+  id Int @id
+  managerId Int?
+  name String
+  tier String
+  manager RfPerson? @relation(fields:[managerId],references:[id])
+  reports RfPerson[] @relation(fields:[id],references:[managerId])
+
+  @@allow("read", tier != "secret")
+}
+
+// A policy that traverses a self-relation: readable only when the row's
+// boss is named "root".
+model RfMember {
+  id Int @id
+  bossId Int?
+  name String
+  boss RfMember? @relation(fields:[bossId],references:[id])
+
+  @@allow("read", boss.name == "root")
+}

@@ -126,12 +126,15 @@ async fn in_list_renders_one_flat_in_clause_with_a_slot_per_element() {
         .find_unique(1_i64)
         .preview_scoped_sql(&CratestackContext::anonymous());
 
+    // Deny is numbered first because the executed query emits it first
+    // (`push_action_policy_query`: `(NOT (deny) AND (allow))`); the preview
+    // numbered allow first until GHSA-p55v-6xv5-93p3 aligned the two.
     assert!(
-        sql.contains("purpose IN ($1, $2, $3)"),
-        "expected a flat three-slot IN for the allow clause, got: {sql}"
+        sql.contains("purpose NOT IN ($1, $2)"),
+        "expected a flat two-slot NOT IN for the deny clause, got: {sql}"
     );
     assert!(
-        sql.contains("purpose NOT IN ($4, $5)"),
-        "expected the deny clause's NOT IN to continue the bind numbering at $4, got: {sql}"
+        sql.contains("purpose IN ($3, $4, $5)"),
+        "expected the allow clause's IN to continue the bind numbering at $3, got: {sql}"
     );
 }

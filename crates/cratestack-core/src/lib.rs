@@ -28,6 +28,7 @@ pub mod log_throttle;
 pub mod page;
 pub mod pascal_case;
 pub mod patch;
+pub mod procedure_route;
 pub mod projection;
 pub mod route_naming;
 pub mod rpc;

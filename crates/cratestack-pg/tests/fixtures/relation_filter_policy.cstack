@@ -1,0 +1,134 @@
+// GHSA-p55v-6xv5-93p3: relation filters and relation sorts must apply the
+// related model's read policy and soft-delete filter. The test caller's
+// `id` is 1.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+// Readable by nobody the test authenticates as.
+model RfHidden {
+  id Int @id
+  code String
+  score Int
+  note String?
+  secret String @server_only
+  children RfChild[] @relation(fields:[id],references:[hiddenId])
+
+  @@allow("read", auth().id == 999)
+}
+
+// To-many target readable by nobody.
+model RfChild {
+  id Int @id
+  hiddenId Int
+  label String
+  hidden RfHidden @relation(fields:[hiddenId],references:[id])
+
+  @@allow("read", auth().id == 999)
+}
+
+// Readable in general, but denied by an explicit `@@deny`.
+model RfDenied {
+  id Int @id
+  code String
+
+  @@allow("read", auth() != null)
+  @@deny("read", auth() != null)
+}
+
+// Row-scoped by an auth() comparison: row 60 belongs to caller 1, row 61 to 2.
+model RfOwned {
+  id Int @id
+  ownerId Int
+  code String
+
+  @@allow("read", ownerId == auth().id)
+}
+
+// Tombstoned rows must be invisible.
+model RfSoft {
+  id Int @id
+  code String
+
+  @@soft_delete
+  @@allow("read", auth() != null)
+}
+
+// Route-suppressed but readable: `@@internal("read")` only removes the
+// model's own routes; relation paths through it stay governed by its read
+// policy (a maintainer decision, pinned by the tests).
+model RfInternal {
+  id Int @id
+  code String
+
+  @@internal("read")
+  @@allow("read", auth() != null)
+}
+
+// To-many target of RfLink, readable by nobody.
+model RfTag {
+  id Int @id
+  linkId Int
+  label String
+  link RfLink @relation(fields:[linkId],references:[id])
+
+  @@allow("read", auth().id == 999)
+}
+
+// Readable: the positive control for filtering and sorting.
+model RfPublic {
+  id Int @id
+  code String
+
+  @@allow("read", auth() != null)
+}
+
+// The readable parent every check starts from. Writable, so the typed
+// `update_many`/`delete_many` relation filters can be checked too.
+model RfLink {
+  id Int @id
+  hiddenId Int
+  deniedId Int
+  ownedId Int
+  softId Int
+  internalId Int
+  publicId Int
+  hidden RfHidden @relation(fields:[hiddenId],references:[id])
+  denied RfDenied @relation(fields:[deniedId],references:[id])
+  owned RfOwned @relation(fields:[ownedId],references:[id])
+  soft RfSoft @relation(fields:[softId],references:[id])
+  internal RfInternal @relation(fields:[internalId],references:[id])
+  public RfPublic @relation(fields:[publicId],references:[id])
+  tags RfTag[] @relation(fields:[id],references:[linkId])
+
+  @@allow("read", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+// Two hops: RfOuter -> RfLink -> RfHidden, and to-many via RfHidden.children.
+model RfOuter {
+  id Int @id
+  linkId Int
+  link RfLink @relation(fields:[linkId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+// `@@paged`: `total_count` is a COUNT(*) over the same scoped WHERE.
+model RfPagedLink {
+  id Int @id
+  hiddenId Int
+  ownedId Int
+  hidden RfHidden @relation(fields:[hiddenId],references:[id])
+  owned RfOwned @relation(fields:[ownedId],references:[id])
+
+  @@paged
+  @@allow("read", auth() != null)
+}

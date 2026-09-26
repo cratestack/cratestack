@@ -16,7 +16,7 @@ use cratestack_core::Model;
 use quote::quote;
 
 use crate::builder::{BuilderField, generate_builder};
-use crate::shared::{generated_doc_attr, ident, scalar_model_fields, to_snake_case};
+use crate::shared::{generated_doc_attr, ident, queryable_model_fields, to_snake_case};
 
 pub(crate) fn generate_order_by_types(
     model: &Model,
@@ -25,7 +25,9 @@ pub(crate) fn generate_order_by_types(
     let sort_field_ident = ident(&format!("{}SortField", model.name));
     let order_by_ident = ident(&format!("{}OrderByClause", model.name));
     let module_ident = ident(&to_snake_case(&model.name));
-    let fields = scalar_model_fields(model, model_names);
+    // Never a `@server_only` field (`queryable_model_fields`): the variant
+    // is decoded from a client's request body.
+    let fields = queryable_model_fields(model, model_names);
 
     let variant_idents = fields
         .iter()

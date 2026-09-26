@@ -21,7 +21,10 @@ pub(crate) fn generate_procedure_transport_constants(
     procedure: &Procedure,
 ) -> Result<proc_macro2::TokenStream, String> {
     let const_ident = route_transport_const_ident("procedure", &procedure.name, "post");
-    let path = format!("/$procs/{}", procedure.name);
+    // The path the router mounts (`axum::procedure::route_attrs`), version
+    // prefix included: the REST idempotency and rate-limit resolvers match
+    // `MatchedPath` against this, so it must be the same string.
+    let path = cratestack_core::procedure_route::procedure_rest_route_path(procedure);
     let capabilities = procedure_transport_capabilities_tokens(procedure);
     let name = procedure.name.as_str();
     let rate_limited = super::rate_limit::procedure_rate_limited_by_default(procedure);

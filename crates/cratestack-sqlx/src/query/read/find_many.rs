@@ -74,10 +74,16 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
         self
     }
 
+    /// The query's filters, ordering and paging with **no** authorization
+    /// scope: neither this model's read policy nor, inside relation
+    /// filter/sort subqueries, the related model's. Use
+    /// [`Self::preview_scoped_sql`] to see what actually executes.
     pub fn preview_sql(&self) -> String {
         super::find_many_preview::preview_sql(self)
     }
 
+    /// The query as it executes for `ctx`, including the related read
+    /// scope inside every relation filter/sort subquery.
     pub fn preview_scoped_sql(&self, ctx: &CratestackContext) -> String {
         super::find_many_preview::preview_scoped_sql(self, ctx)
     }
@@ -101,7 +107,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             ctx,
             ReadPolicyKind::List,
         );
-        push_order_and_paging(&mut query, &order_by, self.limit, self.offset);
+        push_order_and_paging(&mut query, &order_by, self.limit, self.offset, ctx);
         if self.for_update {
             query.push(" FOR UPDATE");
         }
@@ -138,7 +144,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             ctx,
             ReadPolicyKind::List,
         );
-        push_order_and_paging(&mut query, &order_by, self.limit, self.offset);
+        push_order_and_paging(&mut query, &order_by, self.limit, self.offset, ctx);
         if self.for_update {
             query.push(" FOR UPDATE");
         }

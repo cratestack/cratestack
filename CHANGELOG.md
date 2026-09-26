@@ -89,6 +89,218 @@ fingerprints are unaffected.
   [u8; 32]`, the same digest as `SCHEMA_SHA256`, as the bytes a binding
   carries.
 
+### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
+
+**Affected: 0.2.0 through 0.12.0, Postgres server role
+(`include_server_schema!(db = Postgres)`; `include_schema!` before 0.3.0).** Not
+every surface below existed in 0.2.0; each was affected from the release that
+introduced it.
+A relation filter or relation sort reads the related table in a correlated
+subquery, and that subquery applied neither the related model's
+`@@allow`/`@@deny` read policy nor its `@@soft_delete` filter. Any caller who
+could list a model could therefore test, and order by, column values of related
+rows they are not allowed to read: rows that `?include=` correctly returns as
+`null`, and tombstoned rows. With `startsWith`, a hidden string column could be
+recovered one character at a time. Every surface that builds such a subquery was
+affected: REST list query parameters, `where=`, `or=` and `sort=`; RPC
+`model.<M>.list` (`filters`, `where`, `or`, `sort`); `@@paged` `total_count`; the
+typed Rust builder (`post::author().email().eq(..)`, `.asc()`/`.desc()`); to-one
+paths, to-many `some`/`every`/`none`, multi-hop paths, and every operator.
+
+**Fixed:** every relation subquery now applies the related model's list-slot
+read policy and soft-delete filter, the same scope `find_many` and `?include=`
+apply to that model. **A related row the caller cannot read behaves as if it did
+not exist**, matching `?include=`: a to-one filter never matches it (`ne` and
+`isNull` included), `none` and `every` over only hidden children are vacuously
+true, and a relation sort key through it reads as `NULL` (sorted last). Each hop
+of a multi-hop path applies its own model's scope. `preview_scoped_sql` renders
+the same scope it executes. `update_many` and `delete_many` accept relation
+filters too (in process only, not on the wire), and they now apply the related
+model's **read** scope in those subqueries as well.
+
+**Also fixed: self-relations.** A relation whose related table is its own table
+(`manager User? @relation(fields:[managerId], references:[id])`) rendered as
+`FROM users WHERE users.id = users.manager_id`, which compares the inner row
+with itself instead of with the row being filtered. Relation filters and sorts
+over a self-relation, **and read policies that traverse one** (`@@allow("read",
+manager.name == ...)`), were evaluated uncorrelated: they matched every row or
+none, depending on whether some row referenced itself. On the server role they
+now correlate through the outer row. Audit any policy that traverses a
+self-relation: it may have admitted rows it should not have.
+
+**Breaking changes** (pre-1.0):
+
+- **A relation filter or sort through a model with no read `@@allow` now matches
+  nothing.** Such a model is default-deny for direct reads, and now for relation
+  paths too. If you filter or sort through a model that has no read rule, add
+  the `@@allow("read", ...)` that describes who may see it.
+- **Every public constructor of a relation hop takes the related model's
+  scope**, a new `RelatedReadScope`. There is no default:
+  `FilterExpr::relation`, `relation_some`, `relation_every`, `relation_none`,
+  `RelationFilter::new` and `RelationHop::new` take it as a new last argument,
+  `OrderClause::relation_scalar` just before `direction`. The new `scope` field
+  on `RelationFilter` and `RelationHop` is public, so struct literals must set
+  it too. Pass `<RELATED>_MODEL.related_read_scope()` (a new `const fn` on
+  `ModelDescriptor`). `RelatedReadScope::Unscoped` is the named escape hatch for
+  trusted server code that deliberately reads the raw related table. Never use
+  it for a filter or sort whose values a caller controls.
+- `OrderClause::relation_scalar(parent_table, parent_column, related_table,
+  related_column, column, scope, direction)` takes the terminal **column** instead
+  of a pre-rendered `value_sql` string. Multi-hop sorts use the new
+  `OrderClause::relation_path(&hops, column, direction)`.
+  `OrderTarget::RelationScalar` is now `{ hops, column }`. `order_value_sql` is
+  unchanged but no longer used by generated server code: it renders no scope and
+  mis-correlates self-relations, so do not build a server-side sort from it.
+- `preview_scoped_sql` now numbers binds like the executed query when a policy
+  has both deny and allow rules (deny first), and renders a deny-only policy as
+  `(NOT (...) AND (FALSE))` as it executes. `preview_sql` (without a context)
+  still renders no authorization scope, neither the root model's nor a related
+  model's.
+
+**Unchanged:** `@@internal("read")` only removes a model's own routes. Relation
+paths and `?include=` through an internal model are still governed by its read
+policy. The embedded role (`include_embedded_schema!`) enforces no policy by
+design; its relation subqueries ignore the scope, as before. That includes the
+soft-delete filter: an embedded relation filter or sort still sees tombstoned
+related rows, although embedded `find_*` hides them. The self-relation fix is
+not applied there either: embedded relation filters and sorts over a
+self-relation are still uncorrelated. The client role passes
+`RelatedReadScope::Unscoped`, since it renders no SQL.
+
+**Operator guidance:** upgrade. No schema change is needed unless you filter or
+sort through a model with no read `@@allow` (first breaking change). Afterwards,
+list endpoints that filter or sort through a related model return only what the
+caller could see through `?include=`. Clients that relied on filtering through
+rows they cannot read will see fewer results. That is the fix, not a
+regression. Before upgrading, you can check exposure by searching logs for
+list requests with dotted filter or sort keys (`?author.email=`, `where=`,
+`sort=author.`) against models whose related models have row-level read
+policies or `@@soft_delete`. RPC `model.<M>.list` carries the same keys in its
+POST body, which access logs usually do not record.
+
+### Fix: generated clients call an `@api_version` procedure at its versioned path — behaviour change for REST clients
+
+**The bug.** A procedure declared `@api_version("v2")` is mounted by the
+generated server at `/v2/$procs/<name>`. The generated TypeScript, Rust and
+Dart clients all called `/$procs/<name>`, which the server never registers,
+so every call to a versioned procedure from a generated client got a `404`.
+The WireMock stub generator (`cratestack generate-wiremock`) had the same
+hardcoded path.
+
+The server's own `RouteTransportDescriptor` (`axum::ROUTE_TRANSPORTS`) was
+also wrong. It named `/$procs/<name>` while the router mounted
+`/v2/$procs/<name>`. The REST idempotency and rate-limit resolvers match
+`MatchedPath` against that descriptor. For a versioned procedure every
+lookup missed and resolved as *unresolved*, which fails closed. So
+`@no_idempotency` had no effect on a versioned REST procedure: it was always
+reserved (`cratestack-api`'s `api_version_op_resolver.rs` proves this through
+the real generated router). `@no_rate_limit` went through the same lookup
+(`build_rest_ops_filter` is a projection of the resolver) and was always
+rate-limited. That follows from the shared lookup; it is not separately
+tested, because `cratestack-api` does not forward the `rate_limit` feature.
+
+**The fix.** There is now one derivation,
+`cratestack_core::procedure_route::procedure_rest_route_path`, alongside
+`procedure_api_version`. The server router, the route descriptor, the Rust,
+TypeScript (fetch client, TanStack, SWR, RTK) and Dart (default and
+riverpod) clients, and the WireMock generator all call it, so the path the
+server mounts and the path a client calls can no longer drift apart. This
+follows the approach cratestack#345 took for model routes
+(`cratestack_core::route_naming`).
+
+**`transport rpc` is unchanged, on purpose.** An RPC procedure is addressed
+by its op id `procedure.<name>`. The server's dispatch arm and every RPC
+client already built that same op id with no version in it, and procedure
+names are unique per schema, so the op id is unambiguous. The RPC side was
+consistent before this fix, and a new end-to-end test now pins that.
+
+**Behaviour change.** Regenerate your TypeScript and Dart clients and
+WireMock stubs, and rebuild crates that use `include_client_schema!`. After
+that, calls to `@api_version` procedures go to `/<version>/$procs/<name>`.
+If you worked around the 404 by serving the unversioned path yourself (a
+proxy rewrite, a hand-mounted alias route, or a stub at `/$procs/<name>`),
+the regenerated client no longer calls that path. Also, on a versioned
+REST procedure, `@no_idempotency` and `@no_rate_limit` now take effect.
+Before this fix they were silently ignored and the protection always
+applied. Unversioned procedures and every RPC path are byte-for-byte
+unchanged, and so are the committed example clients (no example declares
+`@api_version`).
+### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
+
+One advisory, two issues.
+
+**1. A procedure returning a model with a `@computed` field sent that model's
+`@server_only` fields.** A procedure whose output is, or contains, a model
+that has a `@computed` field put every `@server_only` field of that model in
+its response. A probe returned
+`{"id":1,"label":"L","name":"n","secret":"HUNTER2"}` for a `secret String
+@server_only`. The output is built field by field by the generated
+`compose_<owner>_value` helper, not by serde, so the struct's `#[serde(skip)]`
+never ran, and the helper's field list kept `@server_only` fields. That
+affected every shape that composes: the model itself, `T?`, `T[]`, `Page<T>`,
+and a `type` that embeds the model, directly or in a list. The transports
+affected are `POST /$procs/<name>` and `POST /rpc/procedure.<name>`, including
+`/rpc/batch`, under every codec. It shipped with `@computed` in #719, so
+**v0.8.11 through v0.12.0 are affected**. MCP `tools/call` shared the path
+(ADR 0002 Q7) but has not been released.
+
+Not affected by this issue: model get and list responses, `?fields=`,
+`?include=` (both directions), MCP resources, and `@@subscribe` events. All of
+these go through serde or already left the field out. `@stream` cannot return
+a model with a `@computed` field. A model without a `@computed` field was
+never affected. `tests/server_only_outbound.rs` and
+`tests/server_only_outbound_mcp.rs` in `cratestack-pg` now pin every path in
+both lists.
+
+**2. Any request could filter and sort by a `@server_only` field, on any
+model.** The value was never sent, but it could be tested. `GET
+/<plural>?secret=HUNTER2` answered the row where `?secret=WRONG` answered `[]`.
+`?secret__startsWith=H`, then `HU`, rebuilt the value one character at a time,
+and `?sort=secret` ordered the rows by it. Every operator the field's type
+offers was open (`__eq`, `__ne`, `__in`, `__lt`, `__lte`, `__gt`, `__gte`,
+`__contains`, `__startsWith`, `__isNull`), and so were the `where=` and `or=`
+grammars, relation paths such as `?owner.secret=` and `?pets.some.token=`, and
+`?sort=owner.secret`. RPC's `model.<Model>.list` re-enters the same parser
+through its `filters`, `where`, `or` and `sort` slots. A `FindMany<Model>`
+procedure argument accepted the field in `where` and `orderBy`. The keys were
+taken from every stored field, `@server_only` included, since `@server_only`
+shipped, so **v0.2.0 through v0.12.0 are affected**: REST lists since v0.2.0,
+RPC lists since v0.3.3, and `FindMany` since v0.7.0. MCP resources pass only
+`limit` and `offset` and were not affected.
+
+Such a key is now refused exactly as a field the model does not declare, so
+the refusal does not reveal that the field exists either: `400 unsupported
+query filter`, `422 unsupported sort field`, a `FindMany` `where` key that is
+ignored, and a `FindMany` sort field that does not decode.
+`tests/server_only_query.rs` in `cratestack-pg` pins 152 cases over REST and
+RPC.
+
+**Behaviour changes:**
+
+- `includeFields[<relation>]` naming a `@server_only` field is now refused, as
+  `?fields=` already was. It never sent the value (it answered `{}`), but it
+  was accepted.
+- The generated `<Model>Where` and `<Model>SortField` no longer have a member
+  for a `@server_only` field. That holds in Rust (`include_server_schema!` and
+  `include_client_schema!`) and in the Dart client; the TypeScript client
+  never had one. Code that set such a member no longer compiles. Server code
+  that needs to filter or sort by the field, such as a lookup by a hashed
+  token, keeps the typed builders: `<model>::<field>().eq(..)` and
+  `.order_by(<model>::<field>().asc())` are unchanged, and read no request.
+
+**Action:** upgrade. Then treat as disclosed every `@server_only` value of a
+model with a `@computed` field, to any caller that could reach a procedure
+returning that model (issue 1). Treat as disclosed every `@server_only` value
+of every model to any caller that could list the model or call a
+`FindMany<Model>` procedure (issue 2). If such a field holds a credential,
+token or hash, rotate it: a rebuilt hash can be attacked offline. The
+generated Dart model class declares and decodes `@server_only` fields too, so a
+value an affected server sent may also be in client-side state or logs. If the
+server runs `IdempotencyLayer`, a response it stored for replay before the
+upgrade still carries the value and is replayed as stored until the record
+expires: clear the idempotency store (SQL table or Redis keys), or wait out its
+TTL, before relying on issue 1 being closed.
+
 ### `cratestack-cose`'s `auth` feature; COSE enrolment leaves `cratestack-auth`, and `DeviceKeyResolver` gains a required method — breaking (#1005)
 
 **The second half of #1005.** `cratestack-cose` gains an off-by-default `auth`

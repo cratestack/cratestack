@@ -15,6 +15,9 @@ pub struct RelationFilter {
     pub related_table: &'static str,
     pub related_column: &'static str,
     pub filter: Box<FilterExpr>,
+    /// The related model's read scope, applied inside the subquery.
+    /// Required, never defaulted: see [`crate::RelatedReadScope`].
+    pub scope: crate::RelatedReadScope,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +65,7 @@ impl RelationFilter {
         related_table: &'static str,
         related_column: &'static str,
         filter: FilterExpr,
+        scope: crate::RelatedReadScope,
     ) -> Self {
         Self {
             quantifier,
@@ -70,6 +74,7 @@ impl RelationFilter {
             related_table,
             related_column,
             filter: Box::new(filter),
+            scope,
         }
     }
 }

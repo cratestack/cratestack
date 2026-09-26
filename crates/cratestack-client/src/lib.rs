@@ -110,9 +110,11 @@ pub use cratestack_macros::include_client_schema;
 // (per-field accessor methods), `FilterExpr`/`IntoSqlValue`/`wrap_filter`
 // (relation-path filter builders, `crates/cratestack-macros/src/relation/
 // filter_builders.rs`), `OrderClause`/`Orderable`/`Unorderable`/
-// `SortDirection`/`order_value_sql` (relation-path ordering,
+// `SortDirection` (relation-path ordering,
 // `crates/cratestack-macros/src/relation/flat.rs`), `RelationHop` (relation
-// edge descriptors threaded through both), and `RelationQuantifier` (the
+// edge descriptors threaded through both), `RelatedReadScope` (every hop
+// carries one; client code passes `RelatedReadScope::Unscoped` because it
+// renders no SQL, GHSA-p55v-6xv5-93p3), and `RelationQuantifier` (the
 // to-many `.some()`/`.every()`/`.none()` quantifiers on `RelToMany` — the
 // same type `cratestack-policy` defines and `cratestack-sql` re-exports
 // verbatim via `pub use cratestack_policy::RelationQuantifier;`, so pulling
@@ -130,6 +132,7 @@ pub use cratestack_sql::{
     IntoSqlValue,
     OrderClause,
     Orderable,
+    RelatedReadScope,
     RelationHop,
     RelationQuantifier,
     SortDirection,
@@ -139,6 +142,9 @@ pub use cratestack_sql::{
     // enum-typed model field (cratestack#928).
     SqlValue,
     Unorderable,
+    // No longer referenced by generated code (relation sorts are built from
+    // hops by `OrderClause::relation_path`); kept so hand-written callers
+    // keep compiling.
     order_value_sql,
     wrap_filter,
 };

@@ -41,7 +41,7 @@ pub(crate) use order_catalog::{generate_model_order_catalog, order_catalog_ident
 pub(crate) use parse::parse_relation_attribute;
 pub(crate) use query_guard::generate_relation_query_guard;
 pub(crate) use root::generate_relation_root_module;
-pub(crate) use types::{RelationLink, relation_link};
+pub(crate) use types::{RelationLink, field_module_scope_tokens, relation_link};
 
 #[cfg(test)]
 mod tests {

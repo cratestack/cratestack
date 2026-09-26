@@ -15,11 +15,10 @@
 //! per-path token duplication.
 //!
 //! Every hop's table/column names are `&'static str` baked in by the macro,
-//! so filter folding allocates nothing; only order rendering builds a
-//! `String`, because the correlated-subquery chain is genuinely
-//! path-dependent.
+//! so filter folding allocates nothing.
 
-use crate::filter::{FilterExpr, RelationQuantifier};
+use crate::filter::{FilterExpr, RelationFilter, RelationQuantifier};
+use crate::relation_scope::RelatedReadScope;
 
 /// Marker for a path whose hops are all to-one, so a scalar at the end of
 /// it can be rendered as a correlated subquery and used for ordering.
@@ -33,9 +32,11 @@ pub struct Orderable;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Unorderable;
 
-/// One traversed relation edge: the FK linkage plus how the related rows
-/// are quantified (`ToOne` for a plain to-one hop, `Some`/`Every`/`None`
-/// for a to-many hop under a quantifier).
+/// One traversed relation edge: the FK linkage, how the related rows are
+/// quantified (`ToOne` for a plain to-one hop, `Some`/`Every`/`None` for a
+/// to-many hop under a quantifier), and the related model's read scope,
+/// which every backend that enforces policy applies inside the subquery
+/// this hop renders to (GHSA-p55v-6xv5-93p3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RelationHop {
     pub parent_table: &'static str,
@@ -43,6 +44,8 @@ pub struct RelationHop {
     pub related_table: &'static str,
     pub related_column: &'static str,
     pub quantifier: RelationQuantifier,
+    /// Required, never defaulted: see [`RelatedReadScope`].
+    pub scope: RelatedReadScope,
 }
 
 impl RelationHop {
@@ -52,6 +55,7 @@ impl RelationHop {
         related_table: &'static str,
         related_column: &'static str,
         quantifier: RelationQuantifier,
+        scope: RelatedReadScope,
     ) -> Self {
         Self {
             parent_table,
@@ -59,6 +63,7 @@ impl RelationHop {
             related_table,
             related_column,
             quantifier,
+            scope,
         }
     }
 
@@ -67,52 +72,44 @@ impl RelationHop {
     pub const fn with_quantifier(self, quantifier: RelationQuantifier) -> Self {
         Self { quantifier, ..self }
     }
+
+    /// Whether the related table is the parent table (`User.manager`). The
+    /// subquery's own `FROM` then shadows the parent's name, so backends
+    /// must correlate through a derived table instead of `related.col =
+    /// parent.col`, which would compare the inner row with itself.
+    pub fn is_self_relation(&self) -> bool {
+        self.parent_table == self.related_table
+    }
 }
 
 /// Fold a scalar `FilterExpr` outward through the traversed path, applying
-/// each hop's quantifier. Mirrors what the macro previously emitted as
-/// nested `FilterExpr::relation*(...)` token trees.
+/// each hop's quantifier and carrying each hop's read scope onto the
+/// relation node it becomes.
 pub fn wrap_filter(hops: &[RelationHop], inner: FilterExpr) -> FilterExpr {
-    hops.iter()
-        .rev()
-        .fold(inner, |acc, hop| match hop.quantifier {
-            RelationQuantifier::ToOne => FilterExpr::relation(
-                hop.parent_table,
-                hop.parent_column,
-                hop.related_table,
-                hop.related_column,
-                acc,
-            ),
-            RelationQuantifier::Some => FilterExpr::relation_some(
-                hop.parent_table,
-                hop.parent_column,
-                hop.related_table,
-                hop.related_column,
-                acc,
-            ),
-            RelationQuantifier::Every => FilterExpr::relation_every(
-                hop.parent_table,
-                hop.parent_column,
-                hop.related_table,
-                hop.related_column,
-                acc,
-            ),
-            RelationQuantifier::None => FilterExpr::relation_none(
-                hop.parent_table,
-                hop.parent_column,
-                hop.related_table,
-                hop.related_column,
-                acc,
-            ),
-        })
+    hops.iter().rev().fold(inner, |acc, hop| {
+        FilterExpr::Relation(RelationFilter::new(
+            hop.quantifier,
+            hop.parent_table,
+            hop.parent_column,
+            hop.related_table,
+            hop.related_column,
+            acc,
+            hop.scope,
+        ))
+    })
 }
 
 /// Build the correlated-subquery expression that yields `column` at the end
 /// of `hops`, relative to the table reached by the *first* hop.
 ///
-/// `hops[0]` is carried on the `OrderClause` itself (it becomes the clause's
-/// parent/related linkage), so only `hops[1..]` are nested here — matching
-/// the shape the macro used to compute at expansion time.
+/// **Unscoped:** this string ignores every hop's [`RelatedReadScope`] and
+/// does not handle self-relation hops. It is only suitable for a backend
+/// that enforces no read policy (the embedded rusqlite renderer); the
+/// Postgres backend renders relation sorts from the hops themselves,
+/// applying each hop's scope.
+///
+/// `hops[0]` is rendered by the caller (it becomes the outermost
+/// subquery's linkage), so only `hops[1..]` are nested here.
 ///
 /// Panics if `hops` is empty; callers only reach this from a generated
 /// accessor that has traversed at least one relation.
@@ -148,56 +145,5 @@ pub fn is_orderable(hops: &[RelationHop]) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const fn to_one(
-        parent_table: &'static str,
-        parent_column: &'static str,
-        related_table: &'static str,
-        related_column: &'static str,
-    ) -> RelationHop {
-        RelationHop::new(
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            RelationQuantifier::ToOne,
-        )
-    }
-
-    #[test]
-    fn single_hop_reads_the_related_table_directly() {
-        let hops = [to_one("posts", "author_id", "users", "id")];
-        assert_eq!(order_value_sql(&hops, "email"), "users.email");
-    }
-
-    #[test]
-    fn two_hops_nest_a_correlated_subquery() {
-        let hops = [
-            to_one("posts", "author_id", "users", "id"),
-            to_one("users", "profile_id", "profiles", "id"),
-        ];
-        assert_eq!(
-            order_value_sql(&hops, "nickname"),
-            "(SELECT profiles.nickname FROM profiles \
-             WHERE profiles.id = users.profile_id LIMIT 1)",
-        );
-    }
-
-    #[test]
-    fn a_to_many_hop_makes_the_path_unorderable() {
-        let hops = [
-            to_one("posts", "author_id", "users", "id"),
-            RelationHop::new(
-                "users",
-                "id",
-                "comments",
-                "user_id",
-                RelationQuantifier::Some,
-            ),
-        ];
-        assert!(!is_orderable(&hops));
-        assert!(is_orderable(&hops[..1]));
-    }
-}
+#[path = "relation_path_tests.rs"]
+mod tests;

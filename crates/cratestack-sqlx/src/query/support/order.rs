@@ -1,10 +1,12 @@
 //! `ORDER BY` + `LIMIT/OFFSET` pushers and the trivial direction/null-
 //! ordering keyword helpers.
 
+use cratestack_core::CratestackContext;
 use cratestack_sql::{OrderTarget, SqlValue};
 
 use crate::{OrderClause, SortDirection, sqlx};
 
+use super::relation_scope::push_relation_value;
 use super::values::push_bind_value;
 
 pub(crate) fn push_order_and_paging(
@@ -12,6 +14,7 @@ pub(crate) fn push_order_and_paging(
     order_by: &[OrderClause],
     limit: Option<i64>,
     offset: Option<i64>,
+    ctx: &CratestackContext,
 ) {
     if !order_by.is_empty() {
         query.push(" ORDER BY ");
@@ -19,7 +22,7 @@ pub(crate) fn push_order_and_paging(
             if index > 0 {
                 query.push(", ");
             }
-            push_order_clause_query(query, clause);
+            push_order_clause_query(query, clause, ctx);
         }
     }
 
@@ -42,7 +45,11 @@ pub(crate) fn push_order_and_paging(
     }
 }
 
-fn push_order_clause_query(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, clause: &OrderClause) {
+fn push_order_clause_query(
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
+    clause: &OrderClause,
+    ctx: &CratestackContext,
+) {
     match &clause.target {
         OrderTarget::Column(column) => {
             query
@@ -52,27 +59,10 @@ fn push_order_clause_query(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, claus
                 .push(" ")
                 .push(null_order_sql(clause.null_order));
         }
-        OrderTarget::RelationScalar {
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            value_sql,
-        } => {
+        OrderTarget::RelationScalar { hops, column } => {
+            push_relation_value(query, hops, column, ctx);
             query
-                .push("(SELECT ")
-                .push(value_sql.as_str())
-                .push(" FROM ")
-                .push(*related_table)
-                .push(" WHERE ")
-                .push(*related_table)
-                .push(".")
-                .push(*related_column)
-                .push(" = ")
-                .push(*parent_table)
-                .push(".")
-                .push(*parent_column)
-                .push(" LIMIT 1) ")
+                .push(" ")
                 .push(sort_direction_sql(clause.direction))
                 .push(" ")
                 .push(null_order_sql(clause.null_order));
