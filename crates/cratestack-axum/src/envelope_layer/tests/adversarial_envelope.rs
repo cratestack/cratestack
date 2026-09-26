@@ -30,7 +30,7 @@ async fn a_verification_failure_is_the_coarse_401_whatever_the_envelope_said() {
         !text.contains("byte 0"),
         "the envelope's detail leaked: {text}"
     );
-    assert!(text.contains(cratestack_cose::UNAUTHENTICATED));
+    assert!(text.contains(cratestack_core::UNAUTHENTICATED));
     assert_eq!(hits.get(), 0);
 }
 

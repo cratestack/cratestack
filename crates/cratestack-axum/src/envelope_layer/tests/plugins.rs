@@ -9,8 +9,8 @@ use super::fixtures::{Hits, REST_ROUTES, rest_router};
 use super::support::*;
 use super::toy::{TOY, Toy, toy_request};
 use crate::envelope_layer::{
-    BindingResolver, EnvelopeLayer, EnvelopeMode, ResolvedRoute, RouteRequest, UnsignedRequest,
-    VerifiedRequest,
+    BindingResolver, EnvelopeLayer, EnvelopeMode, PolicyRequest, Resolution, ResolvedRoute,
+    RouteRequest, UnsignedRequest, VerifiedRequest,
 };
 
 #[tokio::test]
@@ -42,8 +42,8 @@ async fn a_custom_envelope_with_its_own_media_type() {
 #[tokio::test]
 async fn a_per_op_policy_closure() {
     let hits = Hits::default();
-    let policy = |method: &Method, route: &ResolvedRoute| {
-        if method == Method::GET && route.route() == "/widgets/{id}" {
+    let policy = |request: &PolicyRequest<'_>| {
+        if request.method() == Method::GET && request.op() == "/widgets/{id}" {
             EnvelopeMode::Optional
         } else {
             EnvelopeMode::Required
@@ -64,10 +64,11 @@ async fn a_per_op_policy_closure() {
 struct EverythingIsOneOp;
 
 impl BindingResolver for EverythingIsOneOp {
-    fn resolve(&self, request: &RouteRequest<'_>) -> Option<ResolvedRoute> {
-        request
-            .matched_path()
-            .map(|_| ResolvedRoute::new("op.everything", Vec::new()))
+    fn resolve(&self, request: &RouteRequest<'_>) -> Resolution {
+        match request.matched_path() {
+            Some(_) => Resolution::Op(ResolvedRoute::new("op.everything", Vec::new())),
+            None => Resolution::Unresolved,
+        }
     }
 }
 
@@ -96,7 +97,7 @@ async fn a_custom_binding_resolver() {
 async fn a_custom_principal_mapper() {
     let hits = Hits::default();
     let mapper =
-        |verified: &VerifiedRequest<'_>| format!("tenant-a:alg{}", verified.signer().alg());
+        |verified: &VerifiedRequest<'_>| Ok(format!("tenant-a:alg{}", verified.signer().alg()));
     let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)

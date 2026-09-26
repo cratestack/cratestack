@@ -40,7 +40,11 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   only), unprotected always empty. The `kid` is the first 8 bytes of the key's RFC 9679
   thumbprint (`cratestack_cose::thumbprint`), and a key verifies only under its own `kid`.
 - **AAD:** `[1, audience, method, route, path_params, query / null, schema_sha,
-  payload_type, ? request_kind, ? request_digest, ? status]`; see `external_aad`.
+  payload_type, [idempotency_key / null, if_match / null], ? request_kind,
+  ? request_digest, ? status]`; see `external_aad`. The `bound_headers` array carries the
+  request's `Idempotency-Key` and `If-Match` exactly as sent (no trimming), so a proxy
+  can neither strip nor alter them; a response repeats its request's. Response headers
+  (`ETag`, `Retry-After`) are not bound.
   `audience` is the receiving service's configured id. It must not be empty (a `500`), and a
   service's inbound audience must differ from the audience it seals its outbound requests
   for: a name shared by both directions, such as `internal`, gives up reflection
@@ -85,7 +89,10 @@ auth, never the reverse):
 
 `tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture, 33 unary cases
 and 20 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
-themselves against. Each case carries its AAD, protected header and to-be-signed bytes.
+themselves against. Each case carries its AAD, protected header and to-be-signed bytes. A case's `binding` object
+names every AAD input, including `bound_headers: {idempotency_key, if_match}` (each a
+string or `null`; the REST cases carry both, the unsigned `GET` only the key, the RPC
+cases neither).
 The Ed25519 and HMAC cases are byte-exact (`deterministic: true`); ESP256 cases were made
 with RFC 6979 and low-`s`, and another implementation should verify them rather than
 reproduce them. **An ESP256 sender MUST emit low-`s`**: a verifier refuses a high `s`

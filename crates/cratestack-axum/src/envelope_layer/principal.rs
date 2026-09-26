@@ -1,7 +1,8 @@
 //! [`PrincipalMapper`]: from a verified request to the `VerifiedPrincipal`
 //! the rate limiter and the idempotency layer key on (ADR 0006 §12).
 
-use cratestack_core::VerifiedSigner;
+use async_trait::async_trait;
+use cratestack_core::{CratestackError, VerifiedSigner};
 use http::Method;
 
 use super::resolver::ResolvedRoute;
@@ -12,12 +13,12 @@ use super::resolver::ResolvedRoute;
 /// [`super::ServerEnvelope::open_request`] succeeded. A mapper therefore
 /// cannot be handed an unverified signer, by a caller or by mistake:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0451
 /// use cratestack_axum::envelope_layer::VerifiedRequest;
 /// let _ = VerifiedRequest { signer: todo!(), method: todo!(), route: todo!() };
 /// ```
 ///
-/// ```compile_fail
+/// ```compile_fail,E0624
 /// use cratestack_axum::envelope_layer::VerifiedRequest;
 /// let _ = VerifiedRequest::new(todo!(), todo!(), todo!());
 /// ```
@@ -73,17 +74,29 @@ impl<'a> VerifiedRequest<'a> {
 /// layer's default fingerprint (`princ:` namespace) use.
 ///
 /// The default is [`ThumbprintPrincipal`]. Replace it to charge a signer to
-/// something coarser (its device's owner, its tenant); that is also where
-/// the signer-to-principal adapter of cratestack#1077 plugs in.
+/// something coarser (its device's owner, its tenant), looked up
+/// asynchronously if need be. It only names a principal for rate limiting
+/// and idempotency; turning a signer into an *identity* for authorization
+/// is an `AuthProvider`'s job (the adapter of cratestack#1077), never this
+/// trait's (decision D2).
+///
+/// Async and fallible (API-review decision, 2026-09-26):
+///
+/// - `Err(CratestackError::Unauthorized(_))` refuses the request with the
+///   layer's coarse, **unsigned** `401` (a revoked device, say): the same
+///   answer as a failed verification, so the peer learns nothing more.
+/// - Any other `Err` (a lookup that failed) is a **sealed** `500`, since
+///   the request did verify; the detail is logged, never sent.
 ///
 /// **What the layer enforces whatever this returns:** it is called only
 /// with a [`VerifiedRequest`], after verification. An empty principal is
 /// refused (a sealed `500`), since it would put every signer in one bucket
 /// and one idempotency namespace. A constant principal does the same thing
 /// and cannot be detected: choose a mapper that separates callers.
+#[async_trait]
 pub trait PrincipalMapper: Send + Sync + 'static {
     /// The principal to insert for this request.
-    fn principal(&self, verified: &VerifiedRequest<'_>) -> String;
+    async fn principal(&self, verified: &VerifiedRequest<'_>) -> Result<String, CratestackError>;
 }
 
 /// `cose:` followed by the lowercase hex of the verifying key's full RFC
@@ -91,23 +104,26 @@ pub trait PrincipalMapper: Send + Sync + 'static {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ThumbprintPrincipal;
 
+#[async_trait]
 impl PrincipalMapper for ThumbprintPrincipal {
-    fn principal(&self, verified: &VerifiedRequest<'_>) -> String {
+    async fn principal(&self, verified: &VerifiedRequest<'_>) -> Result<String, CratestackError> {
         let hex: String = verified
             .signer
             .thumbprint()
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-        format!("cose:{hex}")
+        Ok(format!("cose:{hex}"))
     }
 }
 
+/// A synchronous mapper is a closure.
+#[async_trait]
 impl<F> PrincipalMapper for F
 where
-    F: Fn(&VerifiedRequest<'_>) -> String + Send + Sync + 'static,
+    F: Fn(&VerifiedRequest<'_>) -> Result<String, CratestackError> + Send + Sync + 'static,
 {
-    fn principal(&self, verified: &VerifiedRequest<'_>) -> String {
+    async fn principal(&self, verified: &VerifiedRequest<'_>) -> Result<String, CratestackError> {
         self(verified)
     }
 }

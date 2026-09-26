@@ -87,7 +87,10 @@ async fn the_batch_route_is_one_unary_message_bound_as_batch() {
     let hits = Hits::default();
     let router = router(&hits);
     let call = Call::new(Method::POST, "batch", &[]);
-    let sealed = call.seal(PAYLOAD).await;
+    // The frames are read once opened (decision B1), so the payload is a
+    // real frame array.
+    let frames = batch_frames(&["procedure.notify"]);
+    let sealed = call.seal(&frames).await;
     let answer = send(
         &router,
         cose_request(Method::POST, "/rpc/batch", sealed.clone()),
@@ -99,7 +102,7 @@ async fn the_batch_route_is_one_unary_message_bound_as_batch() {
         .expect("verifies");
 
     let as_op = Call::new(Method::POST, "procedure.notify", &[])
-        .seal(PAYLOAD)
+        .seal(&frames)
         .await;
     let answer = send(&router, cose_request(Method::POST, "/rpc/batch", as_op)).await;
     assert_eq!(answer.status, StatusCode::UNAUTHORIZED);

@@ -3,7 +3,8 @@
 //! `cratestack-cose/tests/vectors/keys.json`; never use them elsewhere),
 //! and the two stores the §12 placement tests put behind the envelope.
 
-#![allow(dead_code)]
+// Each test binary uses a different subset of these helpers.
+#![allow(dead_code, unused_imports)]
 
 mod stores;
 
@@ -18,7 +19,8 @@ use cratestack::cose::{
 };
 use cratestack::envelope_layer::{EnvelopeLayer, EnvelopeLayerBuilder, EnvelopeMode};
 use cratestack::{
-    Binding, CratestackCodec, CratestackError, InMemoryNonceStore, PathParams, ResponseBinding,
+    Binding, BoundHeaders, CratestackCodec, CratestackError, InMemoryNonceStore, PathParams,
+    ResponseBinding,
 };
 use cratestack_codec_cbor::CborCodec;
 use tower::ServiceExt;
@@ -43,17 +45,21 @@ fn server_signer() -> Ed25519Signer {
     Ed25519Signer::from_seed(&seed(0x80))
 }
 
-pub fn envelope_layer(schema_sha: [u8; 32]) -> EnvelopeLayerBuilder {
+/// The server's envelope, trusting the client's key.
+pub fn server_envelope() -> CoseEnvelope {
     let resolver = StaticVerifierResolver::new().with_key(client_signer().verify_key());
-    let server = CoseEnvelope::server(
+    CoseEnvelope::server(
         CoseMode::Sign1,
         Arc::new(server_signer()),
         Arc::new(resolver),
         Arc::new(InMemoryNonceStore::new()),
     )
     .build()
-    .expect("server envelope");
-    EnvelopeLayer::builder(server, AUDIENCE, schema_sha).policy(EnvelopeMode::Required)
+    .expect("server envelope")
+}
+
+pub fn envelope_layer(schema_sha: [u8; 32]) -> EnvelopeLayerBuilder {
+    EnvelopeLayer::builder(server_envelope(), AUDIENCE, schema_sha).policy(EnvelopeMode::Required)
 }
 
 fn client() -> CoseEnvelope {
@@ -73,8 +79,29 @@ pub struct Call {
     pub schema_sha: [u8; 32],
 }
 
+/// A sealed request as sent: its bytes, and the `Idempotency-Key` /
+/// `If-Match` it carried, which its binding (and its response's) names.
+pub struct Sent {
+    pub bytes: Bytes,
+    idempotency_key: Option<String>,
+    if_match: Option<String>,
+}
+
+impl Sent {
+    fn bound(&self) -> BoundHeaders<'_> {
+        BoundHeaders {
+            idempotency_key: self.idempotency_key.as_deref().map(Cow::Borrowed),
+            if_match: self.if_match.as_deref().map(Cow::Borrowed),
+        }
+    }
+}
+
 impl Call {
-    fn binding(&self, response: Option<ResponseBinding>) -> Binding<'_> {
+    fn binding<'a>(
+        &'a self,
+        bound: BoundHeaders<'a>,
+        response: Option<ResponseBinding>,
+    ) -> Binding<'a> {
         Binding {
             audience: Cow::Borrowed(AUDIENCE),
             method: Cow::Borrowed("POST"),
@@ -83,21 +110,36 @@ impl Call {
             query: None,
             schema_sha: self.schema_sha,
             payload_media_type: Cow::Borrowed("application/cbor"),
+            bound_headers: bound,
             response,
         }
     }
 
-    /// A signed `POST` of `payload` to `uri`, with extra headers.
+    /// A signed `POST` of `payload` to `uri`, with extra headers; an
+    /// `Idempotency-Key` or `If-Match` among them is bound, as a client
+    /// binds what it sends (S1).
     pub async fn request(
         &self,
         uri: &str,
         payload: &[u8],
         extra: &[(&str, &str)],
-    ) -> (Bytes, Request<Body>) {
-        let sealed = client()
-            .seal_request(payload, &self.binding(None))
+    ) -> (Sent, Request<Body>) {
+        let named = |name: &str| {
+            extra
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case(name))
+                .map(|(_, value)| (*value).to_owned())
+        };
+        let mut sent = Sent {
+            bytes: Bytes::new(),
+            idempotency_key: named("idempotency-key"),
+            if_match: named("if-match"),
+        };
+        sent.bytes = client()
+            .seal_request(payload, &self.binding(sent.bound(), None))
             .await
             .expect("seal");
+        let sealed = sent.bytes.clone();
         let mut builder = Request::builder()
             .method(Method::POST)
             .uri(uri)
@@ -106,20 +148,20 @@ impl Call {
         for (name, value) in extra {
             builder = builder.header(*name, *value);
         }
-        (
-            sealed.clone(),
-            builder.body(Body::from(sealed)).expect("request"),
-        )
+        (sent, builder.body(Body::from(sealed)).expect("request"))
     }
 
-    /// Verify a sealed response to the request `sealed`, returning its payload.
-    pub async fn open(&self, sealed: &[u8], answer: &Answer) -> Result<Bytes, CratestackError> {
+    /// Verify a sealed response to the request `sent`, returning its payload.
+    pub async fn open(&self, sent: &Sent, answer: &Answer) -> Result<Bytes, CratestackError> {
         let response = ResponseBinding {
-            request: request_digest(sealed),
+            request: request_digest(&sent.bytes),
             status: answer.status.as_u16(),
         };
         client()
-            .open_response(answer.body.clone(), &self.binding(Some(response)))
+            .open_response(
+                answer.body.clone(),
+                &self.binding(sent.bound(), Some(response)),
+            )
             .await
             .map(|opened| opened.payload)
     }

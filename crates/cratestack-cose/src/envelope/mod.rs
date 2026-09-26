@@ -13,8 +13,8 @@ use serde::Serialize;
 use crate::alg::CoseMode;
 use crate::keys::{CoseSigner, CoseVerifierResolver};
 use crate::opened::Opened;
-use crate::request_nonce::RequestNonce;
 use crate::seal::PAYLOAD_CAPACITY_HINT;
+use cratestack_core::RequestNonce;
 
 pub use builder::CoseEnvelopeBuilder;
 use builder::{Clock, CtiSource, NonceSource};

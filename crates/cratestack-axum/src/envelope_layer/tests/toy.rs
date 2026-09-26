@@ -2,15 +2,22 @@
 //! records how the layer drives it: the plug-in and hostile-plug-in tests
 //! need to see which bindings it was handed and to make it fail on demand.
 
+// Shared with the COSE suites, which the `envelope` feature alone does
+// not compile; what only they use is dead there.
+#![cfg_attr(not(feature = "cose"), allow(dead_code))]
+
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use cratestack_core::{Binding, CratestackError, VerifiedSigner};
 
-use crate::envelope_layer::{OpenedRequest, ServerEnvelope};
+use crate::envelope_layer::{OpenedRequest, SealContext, Sealed, ServerEnvelope};
 
 pub const TOY: &str = "application/x-toy";
+/// What a toy that claims no type of its own seals as: a COSE type, which
+/// the layer recognises without being told.
+pub const TOY_AS_COSE: &str = "application/cose; cose-type=\"toy\"";
 
 #[derive(Clone, Default)]
 pub struct Toy {
@@ -19,6 +26,10 @@ pub struct Toy {
     /// What `open_request` fails with instead of opening, if set.
     pub open_error: Option<fn() -> CratestackError>,
     pub seal_fails: bool,
+    /// A hostile envelope: seal responses as this type instead.
+    pub sealed_as: Option<&'static str>,
+    /// Name this as `media_type()` instead (claimed or not).
+    pub names: Option<&'static str>,
     /// `(route, path params)` of every binding `open_request` saw.
     pub opened: Arc<Mutex<Vec<(String, Vec<String>)>>>,
 }
@@ -32,7 +43,11 @@ impl Toy {
 #[async_trait]
 impl ServerEnvelope for Toy {
     fn media_type(&self) -> &'static str {
-        TOY
+        match (self.names, self.claims_toy) {
+            (Some(names), _) => names,
+            (None, true) => TOY,
+            (None, false) => TOY_AS_COSE,
+        }
     }
 
     fn is_envelope_content_type(&self, content_type: &str) -> bool {
@@ -59,23 +74,31 @@ impl ServerEnvelope for Toy {
             ));
         }
         let signer = VerifiedSigner::new(vec![0; 8], [0x42; 32], 0);
-        Ok(OpenedRequest::new(body.slice(4..), signer))
+        let context = SealContext::new(bind.route.to_string());
+        Ok(OpenedRequest::new(body.slice(4..), signer).with_seal_context(context))
     }
 
     /// `TOYRESP:<route>:<status>:<payload>`, so a test can read what was
-    /// bound.
+    /// bound; opens carry a `SealContext` of the route they opened, which
+    /// must come back.
     async fn seal_response(
         &self,
         payload: &[u8],
         bind: &Binding<'_>,
-    ) -> Result<Bytes, CratestackError> {
+        context: &SealContext,
+    ) -> Result<Sealed, CratestackError> {
         if self.seal_fails {
             return Err(CratestackError::Internal("hsm down".to_owned()));
         }
         let status = bind.response.map_or(0, |response| response.status);
+        let opened_as = context.get::<String>().map_or("-", String::as_str);
         let mut out = format!("TOYRESP:{}:{status}:", bind.route).into_bytes();
+        if opened_as != bind.route {
+            out = format!("TOYRESP:{}!={opened_as}:{status}:", bind.route).into_bytes();
+        }
         out.extend_from_slice(payload);
-        Ok(out.into())
+        let media_type = self.sealed_as.unwrap_or(self.media_type());
+        Ok(Sealed::new(out.into(), media_type))
     }
 }
 

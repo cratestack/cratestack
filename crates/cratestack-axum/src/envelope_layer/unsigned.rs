@@ -2,53 +2,62 @@
 //! its response is sealed only when it carries a valid `Cratestack-Nonce`
 //! and the [`super::ResponseSealPolicy`] asks for it.
 
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
-use cratestack_cose::{NONCE_HEADER, RequestNonce, request_digest_unsigned};
+use cratestack_core::{NONCE_HEADER, RequestNonce, request_digest_unsigned};
 use http::request::Parts;
 
-use super::mode::EnvelopeMode;
+use super::bound::Bound;
+use super::layer::Config;
+use super::opened::SealContext;
+use super::resolver::ResolvedRoute;
 use super::seal::{BindingInputs, Sealer};
 use super::seal_policy::UnsignedRequest;
-use super::service::Inner;
+use super::service::{Inner, call};
 use super::{media, refusal, request};
 
 pub(super) async fn handle<S: Inner>(
+    config: Arc<Config>,
     inner: S,
     mut parts: Parts,
     body: Body,
-    inputs: BindingInputs,
+    route: ResolvedRoute,
 ) -> Response {
-    let config = inputs.config.clone();
     let Some(nonce) = nonce(&parts) else {
-        return super::service::call(inner, Request::from_parts(parts, body)).await;
+        return call(inner, Request::from_parts(parts, body)).await;
     };
-    let view = UnsignedRequest {
-        method: &inputs.method,
-        route: &inputs.route,
-        headers: &parts.headers,
-        accept_names_envelope: media::accept_names_envelope(&parts.headers, &*config.envelope),
-    };
+    let accept_names_envelope = media::accept_names_envelope(&parts.headers, &*config.envelope);
+    let view = UnsignedRequest::new(&parts.method, &route, &parts.headers, accept_names_envelope);
     if !config.seal_policy.seal_unsigned(&view) {
-        return super::service::call(inner, Request::from_parts(parts, body)).await;
+        return call(inner, Request::from_parts(parts, body)).await;
     }
 
     let path = parts.uri.path().to_owned();
-    let Some(payload) = request::buffer(body, config.max_body_bytes).await else {
-        return refusal::too_large(&parts.headers, &path);
+    let bound = match Bound::read(&parts.headers) {
+        Ok(bound) => bound,
+        Err(error) => return refusal::bad_request(&parts.headers, &path, error),
     };
+    let payload = match request::buffer(body, config.max_body_bytes).await {
+        Ok(payload) => payload,
+        Err(error) => return refusal::unbuffered(&parts.headers, &path, error),
+    };
+    // Binds this nonce and this payload, and nothing about who sent them:
+    // the request was not signed (see `ResponseSealPolicy`).
     let digest = request_digest_unsigned(&nonce, &payload);
-    request::rewrite_accept(&mut parts.headers, EnvelopeMode::Optional);
+    request::rewrite_accept(&mut parts.headers, false);
+    let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri, bound);
     let sealer = Sealer {
         inputs,
         request: digest,
-        mode: EnvelopeMode::Optional,
+        context: SealContext::empty(),
+        strict: false,
         headers: parts.headers.clone(),
         path,
     };
-    let response =
-        super::service::call(inner, Request::from_parts(parts, Body::from(payload))).await;
+    let response = call(inner, Request::from_parts(parts, Body::from(payload))).await;
     sealer.finish(response).await
 }
 

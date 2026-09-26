@@ -13,8 +13,8 @@ use super::fixtures::{Hits, REST_ROUTES, rest_router};
 use super::support::*;
 use super::toy::{Toy, toy_request};
 use crate::envelope_layer::{
-    BindingResolver, EnvelopeLayer, EnvelopeMode, ResolvedRoute, RouteRequest, UnsignedRequest,
-    VerifiedRequest,
+    BindingResolver, EnvelopeLayer, EnvelopeMode, PolicyRequest, Resolution, ResolvedRoute,
+    RouteRequest, UnsignedRequest, VerifiedRequest,
 };
 
 fn toy_layer(toy: Toy, mode: EnvelopeMode) -> EnvelopeLayer {
@@ -29,7 +29,7 @@ fn toy_layer(toy: Toy, mode: EnvelopeMode) -> EnvelopeLayer {
 async fn a_policy_saying_off_cannot_let_a_cose_body_through() {
     let (hits, toy) = (Hits::default(), Toy::default());
     let layer = EnvelopeLayer::builder(toy.clone(), AUDIENCE, SCHEMA)
-        .policy(|_: &Method, _: &ResolvedRoute| EnvelopeMode::Off)
+        .policy(|_: &PolicyRequest<'_>| EnvelopeMode::Off)
         .rest("", &REST_ROUTES)
         .build()
         .expect("layer");
@@ -79,10 +79,12 @@ async fn a_second_content_type_header_does_not_smuggle_cose_past_the_opener() {
 struct Fickle(AtomicUsize);
 
 impl BindingResolver for Fickle {
-    fn resolve(&self, request: &RouteRequest<'_>) -> Option<ResolvedRoute> {
-        request.matched_path()?;
+    fn resolve(&self, request: &RouteRequest<'_>) -> Resolution {
+        if request.matched_path().is_none() {
+            return Resolution::Unresolved;
+        }
         let call = self.0.fetch_add(1, Ordering::SeqCst);
-        Some(ResolvedRoute::new(
+        Resolution::Op(ResolvedRoute::new(
             format!("route-{call}"),
             vec![call.to_string()],
         ))
@@ -114,7 +116,7 @@ async fn the_principal_mapper_never_runs_for_an_unverified_request() {
     let counted = calls.clone();
     let mapper = move |_: &VerifiedRequest<'_>| {
         counted.fetch_add(1, Ordering::SeqCst);
-        "p".to_owned()
+        Ok("p".to_owned())
     };
     let (hits, toy) = (Hits::default(), Toy::default());
     let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
@@ -141,7 +143,7 @@ async fn an_empty_principal_is_refused_with_a_sealed_500() {
     let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
-        .principal_mapper(|_: &VerifiedRequest<'_>| String::new())
+        .principal_mapper(|_: &VerifiedRequest<'_>| Ok(String::new()))
         .build()
         .expect("layer");
     let req = toy_request(Method::POST, "/widgets", "application/cose", b"TOY:x");

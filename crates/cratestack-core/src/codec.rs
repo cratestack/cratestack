@@ -8,9 +8,11 @@
 //! `codec.encode → envelope.seal → HTTP body` outbound.
 
 mod binding;
+mod bound_headers;
 mod envelope;
 mod no_envelope;
 mod path_params;
+mod request_nonce;
 mod response_binding;
 mod stream;
 
@@ -21,10 +23,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::CratestackError;
 
+/// The one message every failed envelope verification carries (ADR 0006
+/// §10): the peer must never learn which check failed. A malformed body, an
+/// unknown `kid`, a disallowed algorithm, a bad signature, a stale `iat` and
+/// a replayed `cti` all produce `CratestackError::Unauthorized` with this
+/// text, byte for byte.
+///
+/// Moved here from `cratestack-cose` (which re-exports it) so the axum
+/// envelope layer can answer with it without depending on a COSE crate.
+pub const UNAUTHENTICATED: &str = "request could not be authenticated";
+
 pub use binding::Binding;
+pub use bound_headers::BoundHeaders;
 pub use envelope::{BodyShape, CratestackEnvelope};
 pub use no_envelope::NoEnvelope;
 pub use path_params::PathParams;
+pub use request_nonce::{
+    NONCE_HEADER, NONCE_HEADER_VALUE_LEN, REQUEST_NONCE_LEN, RequestNonce, request_digest,
+    request_digest_unsigned,
+};
 pub use response_binding::{RequestDigest, RequestKind, ResponseBinding};
 pub use stream::{OpenedFrame, SealedItem, StreamEnd, StreamOpener, StreamSealer};
 

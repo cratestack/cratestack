@@ -9,13 +9,31 @@ use super::resolver::ResolvedRoute;
 /// `Cratestack-Nonce`, as a [`ResponseSealPolicy`] sees it.
 #[derive(Debug)]
 pub struct UnsignedRequest<'a> {
-    pub(super) method: &'a Method,
-    pub(super) route: &'a ResolvedRoute,
-    pub(super) headers: &'a HeaderMap,
-    pub(super) accept_names_envelope: bool,
+    method: &'a Method,
+    route: &'a ResolvedRoute,
+    headers: &'a HeaderMap,
+    accept_names_envelope: bool,
 }
 
 impl<'a> UnsignedRequest<'a> {
+    /// A request as the layer describes it; `accept_names_envelope` is the
+    /// layer's own reading of `headers`. Public so a policy can be
+    /// unit-tested (unlike [`super::VerifiedRequest`], nothing here claims a
+    /// verification happened).
+    pub fn new(
+        method: &'a Method,
+        route: &'a ResolvedRoute,
+        headers: &'a HeaderMap,
+        accept_names_envelope: bool,
+    ) -> Self {
+        Self {
+            method,
+            route,
+            headers,
+            accept_names_envelope,
+        }
+    }
+
     /// The request method.
     pub fn method(&self) -> &'a Method {
         self.method
@@ -40,6 +58,11 @@ impl<'a> UnsignedRequest<'a> {
 
 /// Decides whether the response to an unsigned request is sealed, under
 /// `Optional`. The default is [`AcceptNamesEnvelope`] (D10).
+///
+/// Such a seal binds the client's `Cratestack-Nonce` and the request
+/// payload, and nothing about the caller: the request was not signed, so
+/// the response proves only that this server answered this nonce and body,
+/// not who asked. A client must not read it as an authenticated exchange.
 ///
 /// **What the layer enforces whatever this returns:** it is asked only
 /// under `Optional`, only about an unsigned request, and only when that

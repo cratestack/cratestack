@@ -1,7 +1,8 @@
 //! External AAD: the request context a message is bound to, encoded, never
-//! sent (ADR 0006 §4, as amended while scoping P0 and by the maintainer's
+//! sent (ADR 0006 §4, as amended while scoping P0, by the maintainer's
 //! decisions on cratestack#1005: `audience` on 2026-09-24, `request_kind`
-//! on 2026-09-25).
+//! on 2026-09-25, and by decision S1 after the cratestack#1006 security
+//! review: `bound_headers` on 2026-09-26).
 //!
 //! ```cddl
 //! external_aad = bstr .cbor [
@@ -13,16 +14,29 @@
 //!   query: tstr / null,
 //!   schema_sha: bstr .size 32,
 //!   payload_type: tstr,
+//!   bound_headers: [                    ; request headers with semantics,
+//!     idempotency_key: tstr / null,     ;   exactly as sent; null if absent
+//!     if_match: tstr / null,
+//!   ],
 //!   ? request_kind: uint,               ; responses: 0 unsigned request, 1 signed
 //!   ? request_digest: bstr .size 32,    ; responses, see request_digest*
 //!   ? status: uint,                     ; responses
 //! ]
 //! ```
 //!
-//! Neither `audience` nor `request_kind` bumped the binding version:
-//! nothing has been released with version 1 yet, so there is no older
-//! layout to tell them apart from. `audience` sits right after the version
-//! so that every other field keeps its relative position.
+//! Neither `audience`, `request_kind` nor `bound_headers` bumped the
+//! binding version: nothing has been released with version 1 yet, so there
+//! is no older layout to tell them apart from. `audience` sits right after
+//! the version so that every other field keeps its relative position;
+//! `bound_headers` is one fixed-length array, so a request binding is 9
+//! elements and a response binding 12.
+//!
+//! `bound_headers` exists because an on-path party could otherwise strip
+//! or swap those headers on a signed request without breaking its
+//! signature: dropping `Idempotency-Key` from a re-sealed retry runs the
+//! operation twice, and dropping `If-Match` turns a conditional update into
+//! a blind one. Their values are bound as the header carried them, with no
+//! normalisation (see `cratestack_core::BoundHeaders`).
 //!
 //! Three rules the CDDL leaves open are pinned here, because the client and
 //! the server each rebuild this array from their own context and any
@@ -31,19 +45,19 @@
 //! - **`query` is `null` when there is no query *or* it is empty.** A
 //!   router that sees `/x?` and a client that built `/x` must agree, and
 //!   the `?` alone carries nothing to bind.
-//! - **The three response elements travel together**: 11 elements for a
-//!   response, 8 for a request. `Binding` makes anything else
+//! - **The three response elements travel together**: 12 elements for a
+//!   response, 9 for a request. `Binding` makes anything else
 //!   unrepresentable (its response half is one `Option`).
 //! - **An empty `audience` is refused** with a `500`, not encoded: it binds
 //!   no recipient, so it would silently give up the cross-service and
 //!   reflection protection the element exists for.
 //!
-//! Nothing is normalised beyond that: `method`, `route` and the path
-//! parameter values are bound exactly as given. The array encoding keeps
+//! Nothing is normalised beyond that: `method`, `route`, the path
+//! parameter values and the bound header values are bound exactly as given
+//! (an empty header value is bound as `""`, not as `null`). The array encoding keeps
 //! the fields apart, so `["a", "b"]` and `["ab"]` bind differently.
 
-use cratestack_core::{Binding, CratestackError, RequestDigest, RequestKind};
-use sha2::{Digest, Sha256};
+use cratestack_core::{Binding, CratestackError};
 
 use crate::cbor::write::{self, MAJOR_ARRAY, MAJOR_UINT, NULL};
 use crate::error::misuse;
@@ -65,9 +79,19 @@ pub fn external_aad(bind: &Binding<'_>) -> Result<Vec<u8>, CratestackError> {
         ));
     }
     let query = bind.query.as_deref().filter(|query| !query.is_empty());
-    let mut out =
-        Vec::with_capacity(96 + bind.audience.len() + bind.route.len() + bind.method.len());
-    let elements = if bind.response.is_some() { 11 } else { 8 };
+    let headers = &bind.bound_headers;
+    let bound = [&headers.idempotency_key, &headers.if_match];
+    // 3 more than before `bound_headers`: its array head and two `null`s.
+    let mut out = Vec::with_capacity(
+        99 + bind.audience.len()
+            + bind.route.len()
+            + bind.method.len()
+            + bound
+                .iter()
+                .map(|value| value.as_deref().map_or(0, str::len))
+                .sum::<usize>(),
+    );
+    let elements = if bind.response.is_some() { 12 } else { 9 };
     write::head(&mut out, MAJOR_ARRAY, elements);
     write::head(&mut out, MAJOR_UINT, BINDING_VERSION);
     write::tstr(&mut out, &bind.audience);
@@ -87,6 +111,13 @@ pub fn external_aad(bind: &Binding<'_>) -> Result<Vec<u8>, CratestackError> {
     }
     write::bstr(&mut out, &bind.schema_sha);
     write::tstr(&mut out, &bind.payload_media_type);
+    write::head(&mut out, MAJOR_ARRAY, 2);
+    for value in bound {
+        match value {
+            Some(value) => write::tstr(&mut out, value),
+            None => out.push(NULL),
+        }
+    }
     if let Some(response) = &bind.response {
         write::head(
             &mut out,
@@ -97,19 +128,4 @@ pub fn external_aad(bind: &Binding<'_>) -> Result<Vec<u8>, CratestackError> {
         write::head(&mut out, MAJOR_UINT, u64::from(response.status));
     }
     Ok(out)
-}
-
-/// The request digest a response binding carries when the request was
-/// **signed**: SHA-256 over the request body exactly as it travelled, the
-/// whole COSE message (tag, headers, signature and all), marked
-/// [`RequestKind::Signed`]. The caller passes the received body, never a
-/// re-encoding of it.
-///
-/// For an unsigned request, use [`request_digest_unsigned`](crate::request_digest_unsigned),
-/// which also binds the client's `Cratestack-Nonce`.
-pub fn request_digest(signed_request_body: &[u8]) -> RequestDigest {
-    RequestDigest {
-        kind: RequestKind::Signed,
-        digest: Sha256::digest(signed_request_body).into(),
-    }
 }

@@ -214,10 +214,12 @@ lint:
 	# test targets only exist under it, and nothing in the workspace turns
 	# it on.
 	cargo clippy -p cratestack-cose --features auth --all-targets -- -D warnings {{clippy_allow}}
-	# Same blind spot for `cratestack-axum`'s off-by-default `cose` feature
-	# (cratestack#1006): `envelope_layer` and the `cose_envelope_*` targets
-	# of `cratestack-api` only exist under it.
+	# Same blind spot for `cratestack-axum`'s off-by-default `envelope` and
+	# `cose` features (cratestack#1006): `envelope_layer` and the
+	# `cose_envelope_*` targets of `cratestack-api` only exist under them, and
+	# `envelope` alone compiles a different set of the layer's tests.
 	cargo clippy -p cratestack-axum -p cratestack-api --features cratestack-axum/cose,cratestack-api/cose --all-targets -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-axum --features envelope --all-targets -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -608,12 +610,15 @@ test-ci-host *args='':
 	cargo test -p cratestack-cose --features auth --lib --test auth_service_signer --test auth_device_resolver --test auth_nonce_bridge {{args}} || status=1
 	# cratestack#1006: `cratestack_axum::envelope_layer` (its unit tests and
 	# the `VerifiedRequest` compile-fail doctests) only exists under the
-	# off-by-default `cose` feature, and `cratestack-api`'s `cose_envelope_*`
-	# targets are `required-features = ["cose"]`, so the `--workspace` run
-	# above compiles none of it. Whole `cratestack-axum` crate so the
-	# doctests run too. No database needed.
+	# off-by-default `envelope` / `cose` features, and `cratestack-api`'s
+	# `cose_envelope_*` targets are `required-features = ["cose"]`, so the
+	# `--workspace` run above compiles none of it. Whole `cratestack-axum`
+	# crate so the doctests run too, once with `envelope` alone (the toy
+	# envelope's tests, no COSE crate) and once with `cose`. No database
+	# needed.
+	cargo test -p cratestack-axum --features envelope {{args}} || status=1
 	cargo test -p cratestack-axum --features cose {{args}} || status=1
-	cargo test -p cratestack-api --features cose --test cose_envelope_rest --test cose_envelope_rpc {{args}} || status=1
+	cargo test -p cratestack-api --features cose --test cose_envelope_rest --test cose_envelope_rpc --test cose_envelope_security {{args}} || status=1
 	exit "$status"
 
 # Report-only: surfaces the current pass/fail state of every `#[ignore]`d

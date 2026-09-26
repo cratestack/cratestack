@@ -3,6 +3,10 @@
 //! it, plus the odd shapes a real router produces (a CBOR error, a
 //! `text/plain` one, JSON, a stream).
 
+// Shared with the COSE suites, which the `envelope` feature alone does
+// not compile; what only they use is dead there.
+#![cfg_attr(not(feature = "cose"), allow(dead_code))]
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -56,7 +60,7 @@ impl Hits {
         self.0.load(Ordering::SeqCst)
     }
 
-    fn hit(&self) {
+    pub fn hit(&self) {
         self.0.fetch_add(1, Ordering::SeqCst);
     }
 }

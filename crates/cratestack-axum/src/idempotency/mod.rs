@@ -86,6 +86,7 @@
 //!   its protection, and on RPC that is a live path.
 
 mod complete;
+mod fingerprint;
 mod finish;
 mod hash;
 mod headers;
@@ -120,6 +121,7 @@ mod tests_parse;
 #[cfg(test)]
 mod tests_stream_bypass;
 
+pub use fingerprint::legacy_principal_fingerprint;
 pub use hash::{hash_request, is_idempotent_target_method};
 pub use headers::{decode_headers, encode_headers};
 pub use layer::IdempotencyLayer;

@@ -120,8 +120,11 @@ async fn without_a_valid_nonce_or_a_cose_accept_the_answer_is_plain() {
     }
 }
 
+/// Decision S3: the `Accept` of a signed request is forced to CBOR under
+/// `Optional` too (it is not bound, so an on-path party could otherwise
+/// ask for an unsealable stream and get the answer plain).
 #[tokio::test]
-async fn a_signed_request_asking_for_a_stream_keeps_its_accept() {
+async fn a_signed_request_asking_for_a_stream_gets_cbor() {
     let hits = Hits::default();
     let call = Call::new(Method::POST, "/widgets", &[]);
     let mut req = cose_request(Method::POST, "/widgets", call.seal(PAYLOAD).await);
@@ -130,5 +133,6 @@ async fn a_signed_request_asking_for_a_stream_keeps_its_accept() {
         http::HeaderValue::from_static("application/cbor-seq"),
     );
     let answer = send(&router(&hits), req).await;
-    assert_eq!(answer.seen("x-seen-accept"), "application/cbor-seq");
+    assert_eq!(answer.seen("x-seen-accept"), "application/cbor");
+    assert!(answer.is_sealed());
 }

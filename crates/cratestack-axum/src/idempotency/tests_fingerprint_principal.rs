@@ -60,3 +60,25 @@ fn without_a_principal_the_old_refusal_stands() {
     let error = default_principal_fingerprint(&request(None, None)).expect_err("412");
     assert_eq!(error.status_code(), http::StatusCode::PRECONDITION_FAILED);
 }
+
+/// The migration escape hatch keeps the pre-#1006 namespace: it ignores a
+/// `VerifiedPrincipal` and still refuses with the `412` when nothing else
+/// identifies the caller.
+#[test]
+fn the_legacy_fingerprint_ignores_a_verified_principal() {
+    use super::legacy_principal_fingerprint;
+    let with_both = request(Some("cose:abcd"), Some("Bearer t"));
+    let legacy = legacy_principal_fingerprint(&with_both).expect("authorization");
+    assert!(!legacy.starts_with("princ:"));
+    assert_eq!(
+        legacy,
+        legacy_principal_fingerprint(&request(None, Some("Bearer t"))).expect("authorization")
+    );
+    assert!(
+        default_principal_fingerprint(&with_both)
+            .expect("principal")
+            .starts_with("princ:")
+    );
+    let error = legacy_principal_fingerprint(&request(Some("cose:abcd"), None)).expect_err("412");
+    assert_eq!(error.status_code(), http::StatusCode::PRECONDITION_FAILED);
+}

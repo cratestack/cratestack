@@ -13,8 +13,9 @@
 //! - `middleware_error` (private): the shared, codec-negotiated error
 //!   envelope both middleware layers emit (cratestack#846).
 //! - [`ratelimit`]: token-bucket rate-limit middleware and storage trait.
-//! - `envelope_layer` (feature `cose`): the server envelope layer that
-//!   opens signed requests and seals responses (ADR 0006, cratestack#1006).
+//! - `envelope_layer` (feature `envelope`, or `cose` for the COSE envelope
+//!   too): the server envelope layer that opens signed requests and seals
+//!   responses (ADR 0006, cratestack#1006).
 //! - [`schema_fingerprint`]: warn-only client/server schema drift
 //!   detection via the `x-cratestack-schema-sha` header.
 //! - [`trusted_proxy`]: the [`TrustedProxyConfig`] allowlist/hop-count/
@@ -29,7 +30,7 @@ pub use axum;
 pub use cratestack_cose as cose;
 
 pub mod codec;
-#[cfg(feature = "cose")]
+#[cfg(feature = "envelope")]
 pub mod envelope_layer;
 pub mod headers;
 pub mod idempotency;

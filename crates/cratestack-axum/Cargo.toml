@@ -47,13 +47,21 @@ decimal-bigdecimal = [
 ]
 # The server envelope layer (`envelope_layer`, cratestack#1006, ADR 0006
 # §12): opens signed requests and seals responses in front of the generated
-# REST and RPC routers, with `cratestack_cose::CoseEnvelope` as the default
-# envelope (maintainer decision D7). Off by default and forwarded by the
-# `cratestack-pg` / `cratestack-api` facades, so without it no COSE, P-256
-# or Ed25519 crate is in their graphs (CI's `facade-disjointness` job
-# asserts it). L4 -> L2 is a legal edge (ADR 0014); `cratestack-cose`
-# without its `auth` feature depends on `cratestack-core` alone.
-cose = ["dep:cratestack-cose"]
+# REST and RPC routers, through the `ServerEnvelope` trait. `envelope` is
+# the layer and its traits alone, with no crypto crate at all (the request
+# digests and the `Cratestack-Nonce` it needs live in `cratestack-core`),
+# so a custom envelope (a KMS- or HSM-backed one, the composite of
+# cratestack#1078) does not compile `cratestack-cose`. `cose` adds
+# `cratestack_cose::CoseEnvelope` as the default envelope (maintainer
+# decision D7). Additive: `cose` implies `envelope` (API-review decision,
+# 2026-09-26). Both off by default and forwarded by the `cratestack-pg` /
+# `cratestack-api` facades, so without them no COSE, P-256 or Ed25519
+# crate is in their graphs, and with `envelope` alone still none (CI's
+# `facade-disjointness` job asserts both). L4 -> L2 is a legal edge
+# (ADR 0014); `cratestack-cose` without its `auth` feature depends on
+# `cratestack-core` alone.
+envelope = []
+cose = ["envelope", "dep:cratestack-cose"]
 
 # docs.rs builds default features only, which would leave
 # `cratestack_axum::envelope_layer` off the published docs; `rustdoc-pages.yml`

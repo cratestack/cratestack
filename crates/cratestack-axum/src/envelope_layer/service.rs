@@ -1,21 +1,18 @@
-//! [`EnvelopeService`]: the per-request dispatch between the three paths
-//! (signed, unsigned under `Optional`, untouched) and the layer's refusals.
+//! [`EnvelopeService`]: the tower service the layer produces. The
+//! per-request decisions are in `dispatch`.
 
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use axum::extract::Request;
 use axum::response::Response;
 use tower::{Service, ServiceExt};
 
+use super::dispatch::dispatch;
 use super::layer::Config;
-use super::mode::EnvelopeMode;
-use super::resolver::RouteRequest;
-use super::seal::BindingInputs;
-use super::{media, refusal, request, signed, unsigned};
 
 /// What the layer wraps: a route of the generated router.
 pub(super) trait Inner:
@@ -62,71 +59,9 @@ where
     }
 }
 
-async fn dispatch<S: Inner>(config: Arc<Config>, inner: S, req: Request) -> Response {
-    let (mut parts, body) = req.into_parts();
-    let (matched, params) = request::matched_route(&mut parts).await;
-    // Once per request: both bindings are built from this one answer.
-    let resolved = config.resolver.resolve(&RouteRequest {
-        method: &parts.method,
-        path: parts.uri.path(),
-        matched_path: matched.as_deref(),
-        path_params: &params,
-    });
-    // Decided by the layer, not by the policy: a COSE body is opened or
-    // refused, never forwarded.
-    let enveloped = media::is_envelope_request(&parts.headers, &*config.envelope);
-    let Some(route) = resolved else {
-        if enveloped {
-            return refusal::unsupported_envelope(&parts.headers, parts.uri.path());
-        }
-        // Not a generated op (D6): an unmatched path, or a route the schema
-        // did not generate. Untouched.
-        if matched.is_some() {
-            warn_unresolved_once();
-        }
-        return call(inner, Request::from_parts(parts, body)).await;
-    };
-    let mode = config.policy.mode(&parts.method, &route);
-    match (enveloped, mode) {
-        (true, EnvelopeMode::Off) => {
-            refusal::unsupported_envelope(&parts.headers, parts.uri.path())
-        }
-        (true, EnvelopeMode::Required | EnvelopeMode::Optional) => {
-            let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri);
-            signed::handle(inner, parts, body, inputs, mode).await
-        }
-        (false, EnvelopeMode::Required) => {
-            refusal::unauthenticated(&parts.headers, parts.uri.path())
-        }
-        (false, EnvelopeMode::Optional) => {
-            let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri);
-            unsigned::handle(inner, parts, body, inputs).await
-        }
-        (false, EnvelopeMode::Off) => call(inner, Request::from_parts(parts, body)).await,
-    }
-}
-
 pub(super) async fn call<S: Inner>(inner: S, req: Request) -> Response {
     match inner.oneshot(req).await {
         Ok(response) => response,
         Err(never) => match never {},
     }
-}
-
-/// A route axum matched that the resolver does not know. Legitimate for a
-/// hand-written route merged into the generated router before the layer,
-/// but it is also exactly what a missing or wrong mount prefix looks like,
-/// and then plain traffic to every op passes unsigned (D6). Logged once per
-/// process, like the idempotency layer's missing-identity warning.
-fn warn_unresolved_once() {
-    static WARNING: Once = Once::new();
-    WARNING.call_once(|| {
-        tracing::warn!(
-            target: "cratestack",
-            cratestack_operation = "envelope",
-            "the envelope layer saw a matched route its binding resolver does not know, and \
-             let it through unsigned. If the generated router is nested, give the layer the \
-             same prefix (rest(\"/api\", ..) / rpc(\"/api\")). Logged once per process.",
-        );
-    });
 }

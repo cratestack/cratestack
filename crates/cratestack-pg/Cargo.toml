@@ -188,14 +188,28 @@ postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
 # default, and with it off `rmcp` is absent from this crate's normal
 # dependency graph (CI's `facade-disjointness` job asserts it).
 mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
-# The COSE envelope layer (`cratestack::envelope_layer`, ADR 0006,
+# The envelope layer (`cratestack::envelope_layer`, ADR 0006,
 # cratestack#1006): opens signed requests and seals responses in front of
-# the generated routers, and re-exports `cratestack-cose` as
-# `cratestack::cose` to build the envelope with. Forwards
-# `cratestack-axum/cose` (maintainer decision D7). Off by default, and with
-# it off no `cratestack-cose`, `p256` or `ed25519-dalek` is in this crate's
-# normal dependency graph (CI's `facade-disjointness` job asserts it).
-cose = ["cratestack-axum/cose"]
+# the generated routers. `envelope` is the layer, its traits and the
+# generated per-schema `cratestack_schema::axum::envelope_layer(..)`
+# convenience, with no crypto crate at all (for a custom `ServerEnvelope`:
+# a KMS/HSM one, the composite of cratestack#1078); `cose` adds the COSE
+# envelope and re-exports `cratestack-cose` as `cratestack::cose` to build
+# it with (maintainer decision D7). Additive: `cose` implies `envelope`
+# (API-review decision, 2026-09-26). Both off by default. Without `cose`,
+# `envelope` or not, no `cratestack-cose`, `p256` or `ed25519-dalek` is in
+# this crate's normal dependency graph (CI's `facade-disjointness` job
+# asserts both). `cratestack-macros/envelope` is graph-wide like
+# `cratestack-macros/mcp`: turn `envelope` on for every server facade in
+# one build.
+envelope = ["cratestack-axum/envelope", "cratestack-macros/envelope"]
+cose = ["envelope", "cratestack-axum/cose"]
+
+# docs.rs builds default features only, which would leave
+# `cratestack::envelope_layer` and `cratestack::cose` off the published
+# docs (API-review nit, cratestack#1006).
+[package.metadata.docs.rs]
+features = ["cose"]
 
 [dependencies]
 async-stream.workspace = true

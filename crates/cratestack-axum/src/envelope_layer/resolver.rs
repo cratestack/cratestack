@@ -1,13 +1,10 @@
 //! [`BindingResolver`]: which generated op a request addresses, as the
-//! `route` and `path_params` of its binding (ADR 0006 §4).
+//! `route` and `path_params` of its binding (ADR 0006 §4). The built-in
+//! resolvers are in `resolver_rest` and `resolver_rpc`.
 
 use std::borrow::Cow;
 
-use cratestack_core::RouteTransportDescriptor;
-use cratestack_core::rpc::{RPC_BATCH_PATH, RPC_SUBSCRIBE_PATH, RPC_UNARY_PATH};
 use http::Method;
-
-use crate::idempotency::mount_prefix;
 
 /// What a resolver sees of a request: the method, the raw path, the route
 /// template axum matched (`None` when no route matched, or under
@@ -15,13 +12,29 @@ use crate::idempotency::mount_prefix;
 /// order axum reports them (a parameterised mount prefix's first).
 #[derive(Debug, Clone, Copy)]
 pub struct RouteRequest<'a> {
-    pub(super) method: &'a Method,
-    pub(super) path: &'a str,
-    pub(super) matched_path: Option<&'a str>,
-    pub(super) path_params: &'a [(String, String)],
+    method: &'a Method,
+    path: &'a str,
+    matched_path: Option<&'a str>,
+    path_params: &'a [(String, String)],
 }
 
 impl<'a> RouteRequest<'a> {
+    /// A request as the layer describes it. Public so a custom resolver can
+    /// be unit-tested; the layer builds its own from the request.
+    pub fn new(
+        method: &'a Method,
+        path: &'a str,
+        matched_path: Option<&'a str>,
+        path_params: &'a [(String, String)],
+    ) -> Self {
+        Self {
+            method,
+            path,
+            matched_path,
+            path_params,
+        }
+    }
+
     /// The request method.
     pub fn method(&self) -> &'a Method {
         self.method
@@ -50,10 +63,14 @@ pub struct ResolvedRoute {
     path_params: Vec<String>,
 }
 
+/// The route an RPC subscription is bound under: `subscribe/<op id>`.
+const SUBSCRIBE_ROUTE_PREFIX: &str = "subscribe/";
+
 impl ResolvedRoute {
     /// `route` as the client binds it: the RPC op id (`batch` for
-    /// `/rpc/batch`), or the REST route template as the schema declares it,
-    /// without the mount prefix. `path_params` in the order they are bound.
+    /// `/rpc/batch`, `subscribe/<op id>` for a subscription), or the REST
+    /// route template as the schema declares it, without the mount prefix.
+    /// `path_params` in the order they are bound.
     pub fn new(route: impl Into<Cow<'static, str>>, path_params: Vec<String>) -> Self {
         Self {
             route: route.into(),
@@ -70,120 +87,69 @@ impl ResolvedRoute {
     pub fn path_params(&self) -> &[String] {
         &self.path_params
     }
+
+    /// The op an [`super::EnvelopePolicy`] is asked about: the route, or for
+    /// a subscription the bare op id after `subscribe/` (decision B1).
+    pub fn op(&self) -> &str {
+        self.route
+            .strip_prefix(SUBSCRIBE_ROUTE_PREFIX)
+            .unwrap_or(&self.route)
+    }
+
+    /// Bound as `subscribe/<op id>`: an RPC subscription, which streams and
+    /// so can never answer a signed request (the layer refuses it with a
+    /// sealed `406` before the handler runs).
+    pub fn is_subscription(&self) -> bool {
+        self.route.starts_with(SUBSCRIBE_ROUTE_PREFIX)
+    }
+
+    /// Bound as `batch`: the whole `/rpc/batch` call (decision D11), whose
+    /// frames the layer reads to apply the policy to each (B1). No REST
+    /// template (they start with `/`) and no unary op id (the RPC resolver
+    /// never binds one without a `.`, B2) can be `batch`.
+    pub fn is_batch(&self) -> bool {
+        self.route == "batch"
+    }
 }
 
-/// Resolves the op a request addresses. `None` means "not a generated op":
-/// the layer lets a plain request through untouched (decision D6) and
-/// refuses one with a COSE body.
+/// A [`BindingResolver`]'s answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Resolution {
+    /// A generated op: the request is opened, verified, or refused
+    /// according to the policy.
+    Op(ResolvedRoute),
+    /// A route the resolver recognises and knows is not an op, such as an
+    /// RPC op id that no generated op can have (`/rpc/%62atch`, decision
+    /// B2). A plain request passes through (the router answers it, a
+    /// `404`), a COSE one is refused with the unsigned `415`.
+    NotAnOp,
+    /// A generated route, but not for this method: the router answers
+    /// `405` with these methods in `Allow`. Passes through, unless the
+    /// policy's `unresolved_mode` is `Required` and the route is not
+    /// allow-listed: then the layer answers the `405` itself, so a
+    /// hand-written handler for another method on a generated path cannot
+    /// run unsigned (decision S2).
+    MethodNotAllowed(Vec<Method>),
+    /// A route the resolver does not know. With no matched route (a `404`)
+    /// it passes through; with one, under a `Required` `unresolved_mode`
+    /// and not allow-listed, the layer fails closed with a `500` (S2).
+    Unresolved,
+}
+
+/// Resolves the op a request addresses.
 ///
-/// Use [`RestBindingResolver`] or [`RpcBindingResolver`] unless the router
-/// is mounted in a way they cannot see through.
+/// Use [`super::RestBindingResolver`] or [`super::RpcBindingResolver`]
+/// unless the router is mounted in a way they cannot see through.
 ///
 /// **What the layer enforces whatever this returns:** it is called exactly
 /// once per request, and the request and the response are bound with the
 /// same [`ResolvedRoute`], so a resolver cannot make the two disagree. A
 /// wrong answer can only make verification fail (the client bound something
-/// else) or, by returning `None` for a real op, let *plain* traffic to it
-/// through; it can never make an unverified envelope pass.
+/// else), fail closed under `Required` ([`Resolution::Unresolved`]), or, by
+/// returning [`Resolution::NotAnOp`] for a real op, let *plain* traffic to
+/// it through; it can never make an unverified envelope pass.
 pub trait BindingResolver: Send + Sync + 'static {
     /// The op `request` addresses, if it is one.
-    fn resolve(&self, request: &RouteRequest<'_>) -> Option<ResolvedRoute>;
-}
-
-/// REST: the `RouteTransportDescriptor` matching the method and the matched
-/// template (mount prefix stripped), bound by its declared path.
-///
-/// Path parameters are every matched parameter in axum's order, including
-/// those of a parameterised mount (`nest("/t/{tenant}", ..)`), which come
-/// first: binding only the template's would let a signed request for tenant
-/// `a` be replayed at tenant `b`. A client of such a mount binds those
-/// values too.
-#[derive(Debug, Clone)]
-pub struct RestBindingResolver {
-    prefix: String,
-    routes: &'static [RouteTransportDescriptor],
-}
-
-impl RestBindingResolver {
-    /// For a router mounted at `prefix` (`""` at the root; `"/api"` for
-    /// `Router::nest("/api", ..)`), over the generated `ROUTE_TRANSPORTS`.
-    pub fn new(prefix: &str, routes: &'static [RouteTransportDescriptor]) -> Self {
-        Self {
-            prefix: mount_prefix::normalize(prefix),
-            routes,
-        }
-    }
-}
-
-impl BindingResolver for RestBindingResolver {
-    fn resolve(&self, request: &RouteRequest<'_>) -> Option<ResolvedRoute> {
-        let path = mount_prefix::strip(request.matched_path?, &self.prefix)?;
-        // axum answers `HEAD` with the `GET` route, which is the only one
-        // the descriptors list; without this a `HEAD` would resolve to
-        // nothing and pass unsigned under `Required` (D3 signs it too). The
-        // binding keeps the real method, `HEAD`.
-        let method = match request.method.as_str() {
-            "HEAD" => "GET",
-            method => method,
-        };
-        let route = self
-            .routes
-            .iter()
-            .find(|route| route.method == method && route.path == path)?;
-        let params = request
-            .path_params
-            .iter()
-            .map(|(_, value)| value.clone())
-            .collect();
-        Some(ResolvedRoute::new(route.path, params))
-    }
-}
-
-/// RPC: the op id axum decoded from `/rpc/{op_id}`, `batch` for
-/// `/rpc/batch` (decision D11), and `subscribe/<op id>` for a subscription.
-/// The op id and the body digest bind the call, so path parameters are
-/// empty (ADR 0006 §4), except under a parameterised mount
-/// (`nest("/t/{tenant}", ..)`), whose values are bound for the same reason
-/// as [`RestBindingResolver`]'s.
-///
-/// The op id is not looked up in `OPS`: an unknown one is bound anyway, so
-/// the router's `404` for it is sealed like any other error.
-#[derive(Debug, Clone)]
-pub struct RpcBindingResolver {
-    prefix: String,
-}
-
-impl RpcBindingResolver {
-    /// For a router mounted at `prefix`, as for [`RestBindingResolver::new`].
-    pub fn new(prefix: &str) -> Self {
-        Self {
-            prefix: mount_prefix::normalize(prefix),
-        }
-    }
-}
-
-impl BindingResolver for RpcBindingResolver {
-    fn resolve(&self, request: &RouteRequest<'_>) -> Option<ResolvedRoute> {
-        let template = mount_prefix::strip(request.matched_path?, &self.prefix)?;
-        let values = |params: &[(String, String)]| -> Vec<String> {
-            params.iter().map(|(_, value)| value.clone()).collect()
-        };
-        if template == RPC_BATCH_PATH {
-            return Some(ResolvedRoute::new("batch", values(request.path_params)));
-        }
-        // The op id is the last parameter (a parameterised mount's come
-        // first), bound as the router decoded it, which is what it runs.
-        let (op_id, mount) = request.path_params.split_last()?;
-        let op_id = &op_id.1;
-        if template == RPC_UNARY_PATH {
-            Some(ResolvedRoute::new(op_id.clone(), values(mount)))
-        } else if template == RPC_SUBSCRIBE_PATH {
-            Some(ResolvedRoute::new(
-                format!("subscribe/{op_id}"),
-                values(mount),
-            ))
-        } else {
-            None
-        }
-    }
+    fn resolve(&self, request: &RouteRequest<'_>) -> Resolution;
 }

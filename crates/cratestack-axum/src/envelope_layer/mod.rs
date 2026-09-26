@@ -2,10 +2,12 @@
 //! signed requests and seals responses for the generated REST and RPC
 //! routers, before rate limiting and idempotency run.
 //!
-//! Behind this crate's `cose` feature (maintainer decision D7), which the
-//! `cratestack-pg` and `cratestack-api` facades forward. Without it no
-//! COSE, P-256 or Ed25519 code is in their graphs (CI's
-//! `facade-disjointness` job asserts it).
+//! Feature `envelope` (the layer and its traits, no crypto crate), or `cose`
+//! (adds `cratestack_cose::CoseEnvelope` as the [`ServerEnvelope`],
+//! decision D7); the `cratestack-pg` and `cratestack-api` facades forward
+//! both, and each schema gets a generated
+//! `cratestack_schema::axum::envelope_layer(envelope, policy, audience)`
+//! that picks its transport and schema digest.
 //!
 //! # Placement (D12)
 //!
@@ -17,7 +19,7 @@
 //!     .layer(IdempotencyLayer::new(store, ttl))
 //!     .layer(RateLimitLayer::new(buckets, config))
 //!     .layer(envelope_layer); // runs first
-//! let app = axum::Router::new().nest("/api", router); // prefix "/api" on the layer
+//! let app = axum::Router::new().nest("/api", router); // mount_prefix("/api") on the layer
 //! ```
 //!
 //! - Last, so it runs first: the rate limiter and the idempotency layer key
@@ -27,106 +29,136 @@
 //!   sealed afresh for the new request.
 //! - Through `Router::layer`, so `MatchedPath` and the path parameters are
 //!   already in the request; a `ServiceBuilder` around the whole app loses
-//!   them, and `nest_service` never sets `MatchedPath`.
-//! - Verification, including the key resolver and nonce store lookups, now
-//!   runs **before** rate limiting. Put an IP-level limiter outside this
-//!   layer to bound what an unauthenticated flood can cost.
+//!   them, and `nest_service` never sets `MatchedPath` for the outer mount.
+//! - Verification, including the key resolver and nonce store lookups,
+//!   runs **before** rate limiting, and under `Optional` so does signing
+//!   every response to a signed or nonce-bound request. Put an IP-level
+//!   limiter outside this layer to bound what an unauthenticated flood can
+//!   cost.
 //!
 //! # What the layer decides, per request
 //!
-//! 1. The [`BindingResolver`] names the generated op (route and path
-//!    parameters), once. No op (an unmatched path, a route the schema did
-//!    not generate): the request passes through untouched (D6), unless it
-//!    carries a COSE body, which is refused (see invariants).
-//! 2. The [`EnvelopePolicy`] picks [`EnvelopeMode::Required`], `Optional`
-//!    or `Off` for that op. There is no default (D9).
-//! 3. A request whose `Content-Type` is an envelope type is opened. Under
+//! 1. A bodiless `OPTIONS` (a CORS preflight) passes through untouched.
+//! 2. The [`BindingResolver`] names the generated op (route and path
+//!    parameters), once. Not an op: see [`Resolution`] (D6; under a
+//!    `Required` policy a matched route nobody resolved fails closed, S2).
+//! 3. The [`EnvelopePolicy`] picks [`EnvelopeMode::Required`], `Optional`
+//!    or `Off` for the op, seeing a [`PolicyRequest`] (no headers). There
+//!    is no default (D9). A `/rpc/batch` call runs under the strictest mode
+//!    of `batch` and every frame's op (B1).
+//! 4. A request whose `Content-Type` is an envelope type is opened. Under
 //!    `Required` a request that is not is refused. Under `Optional` it runs
 //!    unsigned, and its response is sealed only if it carries a valid
-//!    `Cratestack-Nonce` and the [`ResponseSealPolicy`] agrees (by default,
-//!    its `Accept` names `application/cose`; D10).
-//! 4. An opened request reaches the router as the plain CBOR request it
-//!    wraps: body replaced by the payload, `Content-Type: application/cbor`
-//!    (removed for an empty payload), and `Accept` set to
-//!    `application/cbor`, so the handler produces the one representation
-//!    the response binding names. Its extensions gain the
+//!    `Cratestack-Nonce` and the [`ResponseSealPolicy`] agrees (D10).
+//! 5. An opened request reaches the router as the plain CBOR request it
+//!    wraps, with `Accept: application/cbor`, and gains the
 //!    `cratestack_core::VerifiedSigner` (recorded on the handler's context,
 //!    D2, never an authentication) and the [`PrincipalMapper`]'s
-//!    `VerifiedPrincipal`.
-//! 5. The response is sealed with a binding built from the same values the
+//!    `VerifiedPrincipal` extensions.
+//! 6. The response is sealed with a binding built from the same values the
 //!    request was opened against, plus the request digest and the status.
-//!    Every response of a generated op is sealed, errors included (a
-//!    handler's 404, the rate limiter's 429, the idempotency layer's 412 or
-//!    422), except the layer's own refusals (D4, below).
+//!    Every response to a signed request is sealed, under `Optional` too
+//!    (S3), errors included, except the layer's own refusals (D4).
 //!
 //! # Security invariants, enforced here and not by the plug-ins
 //!
 //! - A request whose `Content-Type` has the base type `application/cose`
 //!   (any case, any parameters), or one [`ServerEnvelope::is_envelope_content_type`]
 //!   claims, is opened and verified before anything else sees it, whatever
-//!   the policy says. If the layer will not open it (policy `Off`, or no
-//!   generated op to bind it to) it is refused with `415`, unsigned: never
-//!   forwarded, so no inner layer, `AuthProvider` or codec ever treats
-//!   unverified COSE bytes as a plain body.
+//!   the policy says, or refused with the unsigned `415`: never forwarded.
 //! - Under `Required`, no unsigned request reaches the inner service, and
-//!   no response goes out plain: one the layer cannot seal (a stream, a
-//!   body that is not CBOR) is replaced by a sealed error.
-//! - A verification failure is always the same coarse `401`, whatever the
-//!   envelope's error said, and it is **unsigned** (D4): a replayed request
-//!   must not earn a signed "401" for a request that already executed. Any
-//!   other envelope error (a key resolver or nonce store outage) is a
-//!   `500` whose detail is only logged.
+//!   no response to a signed request goes out plain: one the layer cannot
+//!   seal (a stream, a body that is not CBOR) is replaced by a sealed error.
+//! - A verification failure is always the same coarse, **unsigned** `401`
+//!   (D4): a replayed request must not earn a signed "401" for a request
+//!   that already executed. Any other envelope error is a `500` whose
+//!   detail is only logged.
 //! - The [`PrincipalMapper`] only ever sees a [`VerifiedRequest`], which
 //!   only this layer can construct, after the envelope verified.
 //! - The resolver and the policy are consulted once per request, and the
 //!   response binding reuses the values the request was opened against,
 //!   so no plug-in can make the two bindings disagree. The audience, the
-//!   schema digest, the method, the canonical query, the payload media type
-//!   and the request digest are the layer's own.
+//!   schema digest, the method, the canonical query, the bound headers, the
+//!   payload media type and the request digest are the layer's own.
+//!
+//! # What is bound, and what is not
+//!
+//! The AAD binds the audience, method, route, path parameters, canonical
+//! query (distinct keys in any order bind alike; one key's repeated values
+//! keep their order), schema digest, payload media type, and the
+//! `Idempotency-Key` and `If-Match` headers exactly as sent (S1; a request
+//! sending either twice is refused with a `400`). For a response: the
+//! request digest and the status. **Response headers** (`ETag`,
+//! `Retry-After`, ...) **are not authenticated.** An `Optional` response
+//! sealed for an *unsigned* request binds its nonce and payload, not the
+//! caller: it proves this server answered, not who asked.
 //!
 //! # Known limits (P0)
 //!
 //! - Streamed responses (`@stream` over `application/cbor-seq`, SSE
-//!   subscriptions) cannot be sealed until `chain` mode (ADR 0006 P1). Under
-//!   `Required` the forced `Accept` makes a `@stream` op answer with one
-//!   buffered, sealed array, and a subscription is refused with a sealed
-//!   `406`; give those ops `Optional` through the policy to keep them.
-//! - Only the body and the status are authenticated. Response headers
-//!   (`ETag`, `Retry-After`, ...) are not.
+//!   subscriptions) cannot be sealed until `chain` mode (ADR 0006 P1). A
+//!   signed request gets `Accept: application/cbor`, so a `@stream` op
+//!   answers with one buffered, sealed array; a signed subscription is
+//!   refused with a sealed `406` before its handler runs. Only an unsigned
+//!   request under `Optional` can stream (plain).
+//! - A response is re-buffered to be sealed, up to
+//!   `cratestack_core::MAX_RESPONSE_REBUFFER_BYTES`; a longer one becomes a
+//!   sealed `500`. A request body is buffered up to the layer's
+//!   `max_body_bytes` (`413` beyond it).
+//! - A fallback handler (`Router::fallback`) sets no `MatchedPath`, so the
+//!   layer treats its traffic as unmatched and lets plain requests through.
 //! - The schema digest hashes the raw `.cstack` text, so a comment-only
 //!   edit changes it and breaks every signed client (cratestack#1065).
 //!   `Required` is opt-in until that is settled.
 //! - One envelope per layer: a router accepting Sign1 devices and Mac0
-//!   services at once needs the composite of cratestack#1078.
+//!   services at once needs the composite of cratestack#1078, which the
+//!   per-request [`SealContext`] and [`Sealed`] media type make possible.
 //! - The response payload is copied once into the sealed message (D1; the
 //!   zero-copy head/tail API is cratestack#1076).
 
+mod batch;
+mod bound;
+mod builder;
+#[cfg(feature = "cose")]
 mod cose_impl;
+mod dispatch;
+mod inputs;
 mod layer;
 mod media;
 mod mode;
+mod opened;
+mod policy_request;
 mod principal;
 mod refusal;
 mod request;
 mod resolver;
+mod resolver_rest;
+mod resolver_rpc;
 mod seal;
 mod seal_policy;
 mod server_envelope;
 mod service;
 mod signed;
+mod unresolved;
 mod unsigned;
 
 #[cfg(test)]
 mod tests;
 
-pub use layer::{EnvelopeLayer, EnvelopeLayerBuilder};
+/// For implementing [`ServerEnvelope`] and [`PrincipalMapper`] without a
+/// direct `async-trait` dependency.
+pub use async_trait::async_trait;
+pub use builder::EnvelopeLayerBuilder;
+pub use layer::EnvelopeLayer;
 pub use mode::{EnvelopeMode, EnvelopePolicy};
+pub use opened::{OpenedRequest, SealContext, Sealed};
+pub use policy_request::PolicyRequest;
 pub use principal::{PrincipalMapper, ThumbprintPrincipal, VerifiedRequest};
-pub use resolver::{
-    BindingResolver, ResolvedRoute, RestBindingResolver, RouteRequest, RpcBindingResolver,
-};
+pub use resolver::{BindingResolver, Resolution, ResolvedRoute, RouteRequest};
+pub use resolver_rest::RestBindingResolver;
+pub use resolver_rpc::RpcBindingResolver;
 pub use seal_policy::{AcceptNamesEnvelope, ResponseSealPolicy, UnsignedRequest};
-pub use server_envelope::{OpenedRequest, ServerEnvelope};
+pub use server_envelope::ServerEnvelope;
 pub use service::EnvelopeService;
 
 /// The media type of every payload inside a sealed message: the AAD binds

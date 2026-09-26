@@ -28,6 +28,14 @@ pub(super) fn is_envelope_request(headers: &HeaderMap, envelope: &dyn ServerEnve
     })
 }
 
+/// Whether `media_type` (the envelope's own, or one a [`super::Sealed`]
+/// names) is an envelope type: `application/cose`, or one the envelope
+/// claims. What the builder checks and every sealed response must pass,
+/// so a response is never labelled as something a client reads as plain.
+pub(super) fn is_envelope_media_type(media_type: &str, envelope: &dyn ServerEnvelope) -> bool {
+    names_cose(media_type.as_bytes()) || envelope.is_envelope_content_type(media_type)
+}
+
 fn names_cose(value: &[u8]) -> bool {
     let base = value.split(|byte| *byte == b';').next().unwrap_or(value);
     base.trim_ascii().eq_ignore_ascii_case(COSE_BASE.as_bytes())

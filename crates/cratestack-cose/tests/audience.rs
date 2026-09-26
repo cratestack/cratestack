@@ -29,8 +29,9 @@ fn is_coarse_401<T: std::fmt::Debug>(result: &Result<T, CratestackError>) -> boo
 #[test]
 fn the_audience_is_the_second_aad_element() {
     let aad = external_aad(&addressed_to("svc-a")).expect("aad");
-    // [1, "svc-a", "POST", ...]: array(8), 1, tstr(5) "svc-a", tstr(4) "POST".
-    assert_eq!(&aad[..13], b"\x88\x01\x65svc-a\x64POST");
+    // [1, "svc-a", "POST", ...]: array(9), 1, tstr(5) "svc-a", tstr(4) "POST".
+    // Nine elements since `bound_headers` (cratestack#1006, S1).
+    assert_eq!(&aad[..13], b"\x89\x01\x65svc-a\x64POST");
     assert_ne!(aad, external_aad(&addressed_to("svc-b")).expect("aad"));
 }
 

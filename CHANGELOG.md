@@ -2,21 +2,26 @@
 
 ## Unreleased
 
-### The COSE envelope layer for REST and RPC, with pluggable decisions; the idempotency default honours `VerifiedPrincipal` — breaking (#1006)
+### The envelope layer for REST and RPC, with pluggable decisions; the AAD binds `Idempotency-Key`/`If-Match`; the idempotency default honours `VerifiedPrincipal` — breaking (#1006)
 
-**New, `cratestack-axum` feature `cose` (forwarded as `cose` by `cratestack-pg`
-and `cratestack-api`):** `cratestack::envelope_layer::EnvelopeLayer` opens
-signed requests and seals responses in front of the generated routers (ADR
-0006). With the feature off nothing changes, and no `cratestack-cose`, `p256`
-or `ed25519-dalek` is in any facade's graph; CI's `facade-disjointness` job
-asserts it. `cratestack::cose` re-exports `cratestack-cose` to build the
-envelope with.
+**New, `cratestack-axum` features `envelope` and `cose` (both forwarded by
+`cratestack-pg` and `cratestack-api`):** `cratestack::envelope_layer::EnvelopeLayer`
+opens signed requests and seals responses in front of the generated routers
+(ADR 0006). `envelope` is the layer and its traits with no crypto crate at all,
+for a custom `ServerEnvelope`; `cose = ["envelope", ..]` adds
+`cratestack_cose::CoseEnvelope` and re-exports `cratestack-cose` as
+`cratestack::cose`. With neither, nothing changes; without `cose`, `envelope`
+on or off, no `cratestack-cose`, `p256` or `ed25519-dalek` is in any facade's
+graph (CI's `facade-disjointness` job asserts both, and covers
+`cratestack-axum`'s own graphs and `examples/mcp-operator`). docs.rs builds
+both facades with `cose`. Each schema gets a generated
+`cratestack_schema::axum::envelope_layer(envelope, policy, audience)` that picks
+its transport, route descriptors and `SCHEMA_SHA256_BYTES`:
 
 ```rust,ignore
 let envelope = cratestack::cose::CoseEnvelope::server(mode, signer, keys, nonces).build()?;
-let layer = EnvelopeLayer::builder(envelope, "payments", cratestack_schema::SCHEMA_SHA256_BYTES)
-    .policy(EnvelopeMode::Required)          // no default (D9)
-    .rest("/api", cratestack_schema::axum::ROUTE_TRANSPORTS) // or .rpc("/api")
+let layer = cratestack_schema::axum::envelope_layer(envelope, EnvelopeMode::Required, "payments")
+    .mount_prefix("/api")                  // the router is nested under /api
     .build()?;
 let router = generated_router.layer(idempotency).layer(rate_limit).layer(layer);
 let app = axum::Router::new().nest("/api", router);
@@ -28,59 +33,111 @@ let app = axum::Router::new().nest("/api", router);
   thumbprint>")`, which both key on, so a COSE-only client (no
   `Authorization`, no `ConnectInfo`) is charged to its own `princ:` bucket
   instead of being refused with `412` (ADR 0006 §12). Verification, with its
-  key and nonce lookups, now runs before rate limiting: put an IP-level
-  limiter outside the envelope. A nested router needs its mount prefix on the
-  layer, as the op resolvers do.
-- **Modes, per op.** `Required`: every request is COSE, `GET`/`HEAD`/`DELETE`
+  key and nonce lookups, and under `Optional` the signing of every response
+  to a signed or nonce-bound request, now run before rate limiting: put an
+  IP-level limiter outside the envelope.
+- **Modes, per op.** `Required`: every request is signed, `GET`/`HEAD`/`DELETE`
   included (an empty payload), and every response is sealed, errors included
   (a handler's `404`, the rate limiter's `429`, the idempotency layer's
-  `412`/`422`); a response the layer cannot seal (a stream, a non-CBOR body)
-  becomes a sealed error, never a plain one. `Optional`: signed requests are
-  opened, unsigned ones run, and an unsigned request's response is sealed
-  when it carries a valid `Cratestack-Nonce` and asks for `application/cose`.
-  `Off`: plain traffic is untouched. In every mode a request with an
-  `application/cose` body is opened or refused (`415`), never forwarded
-  unverified. The layer's own verification-failure `401` is unsigned, so a
-  replay cannot earn a signed answer; a key-store or signer outage is a `500`
-  whose detail is only logged.
+  `412`/`422`). `Optional`: a signed request is opened and **always** answered
+  sealed, exactly as under `Required`, with its `Accept` forced to CBOR; an
+  unsigned one runs, and its response is sealed only when it carries a valid
+  `Cratestack-Nonce` and asks for `application/cose` (that seal binds the
+  nonce and payload, not the caller). `Off`: plain traffic is untouched. In
+  every mode a request with an `application/cose` body is opened or refused
+  (`415`), never forwarded unverified. The layer's own refusals (`401`,
+  `415`, `400`, `413`, and the `500`/`405` below) are unsigned, so a replay
+  cannot earn a signed answer; a key-store or signer outage is a `500` whose
+  detail is only logged. A bodiless `OPTIONS` (CORS preflight) passes on both
+  transports.
+- **Fails closed.** Under a `Required` policy, a route the router matched but
+  the layer cannot bind (a wrong or missing mount prefix, `nest_service`,
+  descriptor drift) is an unsigned `500` ("envelope misconfigured", logged,
+  throttled) instead of passing unsigned; hand-written routes on the same
+  router are listed with `allow_unresolved([..])`, and a method the schema
+  does not generate on a generated path is the layer's own `405`. A
+  `/rpc/batch` call runs under the strictest mode of `batch` and of every
+  frame's op, read from the (opened or plain) payload, and a batch body the
+  layer cannot read is refused unless every mode is `Off`. `/rpc/{op_id}`
+  never binds an op id that is `batch`, contains `/` or has no `.` (on the
+  decoded value, so `/rpc/%62atch` is caught): a COSE body there is the
+  `415`. A signed subscription is a sealed `406` before its handler runs.
 - **What the router sees.** The opened payload, as `application/cbor` (no
   `Content-Type` for an empty payload), with `Accept: application/cbor`; the
   `AuthProvider` authenticates that payload. Generated handlers record the
   `VerifiedSigner` on the context through the new
   `enrich_context_from_envelope`: a fact, not an authentication.
 - **Binding.** RPC binds the op id (`batch` for `/rpc/batch`, one unary
-  message; `subscribe/<op id>` for a subscription); REST binds the
-  schema's route template and every matched path parameter, a
-  parameterised mount's (`nest("/t/{tenant}", ..)`) included. The query is
-  bound in `canonical_query` form.
+  message; `subscribe/<op id>` for a subscription); REST binds the schema's
+  route template and every matched path parameter, a parameterised mount's
+  (`nest("/t/{tenant}", ..)`) included. Both bind the query in
+  `canonical_query` form (distinct keys in any order bind alike, a repeated
+  key's values keep their order) and the `Idempotency-Key` and `If-Match`
+  headers exactly as sent (see below); a request sending either twice is a
+  `400`.
 - **Extension points**, each a trait with the decided default: the envelope
-  itself (`ServerEnvelope`, implemented by `CoseEnvelope`), the per-op policy
-  (`EnvelopePolicy`, any `Fn(&Method, &ResolvedRoute) -> EnvelopeMode`), the
-  route binding (`BindingResolver`: `RestBindingResolver`,
-  `RpcBindingResolver`), the principal (`PrincipalMapper`, default
-  `ThumbprintPrincipal`) and the `Optional` sealing rule
-  (`ResponseSealPolicy`, default `AcceptNamesEnvelope`). The invariants above
-  are the layer's, not the plug-ins': a resolver and a policy are asked once
-  per request and both bindings reuse their answer, and a principal mapper
-  only ever receives a `VerifiedRequest`, which only the layer can build.
-- **Known limits.** Streams cannot be sealed until ADR 0006 P1: under
-  `Required` a `@stream` op answers with one sealed array and an SSE
-  subscription with a sealed `406` (give those ops `Optional`). Response
-  headers are not authenticated. The schema digest still hashes the raw
-  `.cstack` text (#1065), so `Required` stays opt-in. One envelope per layer
-  (the Sign1 + Mac0 composite is #1078). The Rust client side is #1007.
+  (`ServerEnvelope`: `open_request` returns an opaque per-request
+  `SealContext` that comes back to `seal_response`, which returns
+  `Sealed { body, media_type }`, so the composite of #1078 can answer Mac0 with
+  Mac0; implemented by `CoseEnvelope` and by `Arc<T>`), the per-op policy
+  (`EnvelopePolicy`: any `Fn(&PolicyRequest<'_>) -> EnvelopeMode`, which sees
+  the op and a subscription/batch-frame flag but no header; its
+  `unresolved_mode` defaults to `Required`; `EnvelopeMode` is
+  `#[non_exhaustive]`), the route binding (`BindingResolver`, returning a
+  `Resolution`: `RestBindingResolver`, `RpcBindingResolver`), the principal
+  (`PrincipalMapper`, async and fallible: `Unauthorized` is the unsigned `401`,
+  any other error a sealed `500`; default `ThumbprintPrincipal`) and the
+  `Optional` sealing rule (`ResponseSealPolicy`, default
+  `AcceptNamesEnvelope`). `RouteRequest`, `UnsignedRequest` and
+  `PolicyRequest` have public constructors for testing a plug-in;
+  `VerifiedRequest` does not. `envelope_layer::async_trait` is re-exported.
+  The invariants above are the layer's, not the plug-ins': a sealed body whose
+  media type is not `application/cose` or one the envelope claims is never
+  sent, and `build()` refuses an envelope whose own media type is neither, an
+  empty `rest(..)` route table, an empty audience, or no policy.
+- **Known limits.** Streams cannot be sealed until ADR 0006 P1. Response
+  headers (`ETag`, `Retry-After`, ...) are not authenticated. A response is
+  re-buffered up to `MAX_RESPONSE_REBUFFER_BYTES` to be sealed (a longer one
+  is a sealed `500`). A `Router::fallback` handler sets no `MatchedPath` and
+  is not protected. The schema digest still hashes the raw `.cstack` text
+  (#1065), so `Required` stays opt-in. The Rust client side is #1007.
+
+**Breaking, binding v1 (not yet frozen, cratestack#1082):** the AAD gains
+`bound_headers: [idempotency_key: tstr / null, if_match: tstr / null]` right
+after `payload_type` (9 elements for a request, 12 for a response), so an
+on-path party can no longer strip `Idempotency-Key` from a re-sealed retry (it
+would run twice) or `If-Match` from an update. `cratestack_core::Binding` gains
+the public field `bound_headers: BoundHeaders` (`BoundHeaders::NONE` for
+neither), and `cratestack-cose`'s shared vectors are regenerated (the message
+sizes are unchanged: the AAD is never sent); each vector's `binding` now names
+`bound_headers`. Every other implementation of the binding must add the
+element.
 
 **Breaking, `cratestack-axum`:** `IdempotencyLayer`'s default principal
 fingerprint now checks a `VerifiedPrincipal` extension first and keys it as
 `princ:<sha256 hex>`, as the rate limiter already did. An application that
 already inserts `VerifiedPrincipal` in front of the idempotency layer moves to
 that namespace: an `Idempotency-Key` whose first attempt landed before the
-deploy and whose retry lands after it runs again. Drain in-flight keys, or
-keep the old namespace with `with_principal_fingerprint`. Custom
-fingerprints are unaffected.
+deploy and whose retry lands after it runs again. Keep the old namespace for
+the deploy, and drop the call once the idempotency TTL has passed:
+
+```rust,ignore
+let idempotency = IdempotencyLayer::new(store, ttl).with_legacy_principal_fingerprint();
+// or compose it: cratestack::idempotency::legacy_principal_fingerprint(&request)
+```
+
+Custom fingerprints are unaffected.
 
 **Also:**
 
+- `request_digest`, `request_digest_unsigned`, `RequestNonce` (with
+  `NONCE_HEADER` and its length constants) and `UNAUTHENTICATED` moved to
+  `cratestack-core`, so the `envelope` feature needs no COSE crate;
+  `cratestack-cose` re-exports every one under its old path.
+- `cratestack-cose` no longer implements `From` for `CratestackError` on its
+  internal rejection type. That impl, public though the type is not, made
+  `CratestackError: From<_>` ambiguous in generated Postgres server code, so
+  `cratestack-pg`'s `cose` feature broke the build of some schemas.
 - `canonical_query` moved to `cratestack-core` (`cratestack_core::canonical_query`),
   so the envelope binds the same bytes as `Authorization: Signature` without
   depending on `cratestack-auth`. `cratestack_auth::canonical_query` still

@@ -10,8 +10,8 @@ use super::{CoseEnvelope, CoseRole, Inner};
 use crate::alg::CoseMode;
 use crate::keys::{CoseSigner, CoseVerifierResolver};
 use crate::replay::{self, DEFAULT_SKEW_SECS};
-use crate::request_nonce::{REQUEST_NONCE_LEN, RequestNonce};
 use crate::thumbprint::KID_LEN;
+use cratestack_core::{REQUEST_NONCE_LEN, RequestNonce};
 
 /// The clock `iat` is read from and checked against: Unix seconds.
 pub(crate) type Clock = Arc<dyn Fn() -> i64 + Send + Sync>;
