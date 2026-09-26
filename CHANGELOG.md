@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0 (2026-09-26)
+
 ### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
 
 **Affected: 0.2.0 through 0.12.0, Postgres server role
@@ -317,11 +319,9 @@ which no workspace member turns on.
 - **`just mcp-conformance`** drives the example with a real third-party client:
   `@modelcontextprotocol/inspector` 2.8.0, the official Inspector CLI, built on
   `@modelcontextprotocol/client` 2.0.0. The client and its whole dependency
-  tree are pinned by a committed `pnpm-lock.yaml`, with an integrity hash
-  for every package, and installed with
-  `pnpm install --frozen-lockfile --ignore-scripts` into a throwaway directory
-  (npm until the maintainer decision on #1033; the repository's other
-  JavaScript is all pnpm, and `just verify-pnpm-pins` now covers this pin too). Over both transports, the client negotiates protocol
+  tree are pinned by a committed `package-lock.json`, with an integrity hash
+  for every package, and installed with `npm ci --ignore-scripts` into a
+  throwaway directory. Over both transports, the client negotiates protocol
   **2026-07-28** through `server/discover`. The run covers:
   - `tools/list`;
   - a successful `tools/call`;
