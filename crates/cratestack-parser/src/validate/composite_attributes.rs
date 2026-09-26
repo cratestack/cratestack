@@ -25,11 +25,7 @@ pub(super) fn validate_composite_id_attribute(
     let field_names = parse_composite_id_attribute(&attribute.raw)
         .map_err(|message| span_error(message, attribute.span))?;
 
-    if let Some(single_id_field) = model
-        .fields
-        .iter()
-        .find(|field| field.attributes.iter().any(|a| a.raw.starts_with("@id")))
-    {
+    if let Some(single_id_field) = model.fields.iter().find(|field| field.is_primary_key()) {
         return Err(span_error(
             format!(
                 "model `{}` declares both a field-level `@id` on `{}` and `@@id([...])`; use exactly one primary key declaration",

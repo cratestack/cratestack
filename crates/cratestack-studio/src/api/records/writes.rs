@@ -42,7 +42,7 @@ pub async fn create_record(
     let pk_field = model_decl
         .fields
         .iter()
-        .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
+        .find(|f| f.is_primary_key())
         .map(|f| f.name.as_str())
         .unwrap_or("id");
     let pk_value = row.get(pk_field).map(value_to_string);

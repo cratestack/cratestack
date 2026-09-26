@@ -8,15 +8,26 @@
 //! characters, printable ASCII. Absent means no reservation — the same as
 //! REST without the header.
 //!
-//! **The namespace** is `mcp:<principal actor id>` for a user and
-//! `mcp-system:<actor id>` for a `SystemContext`. REST derives its own from
-//! a hash of `Authorization` or the verified peer address; the caller here
-//! *is* a context — the one the application supplied on stdio, or the one
-//! its `AuthProvider` built on Streamable HTTP — so its actor id is the
-//! identity to scope by. With no actor id the call is refused rather than
-//! put in a shared `"anonymous"` namespace, for cratestack#416's reason: two
-//! callers sharing a namespace can replay each other's results. The `mcp`
-//! prefixes keep these rows apart from REST's in a store both share.
+//! **The namespace** is `mcp:<sha256 of the principal actor id>` for a user
+//! and `mcp-system:<sha256 of the actor id>` for a `SystemContext`, in
+//! lowercase hex. REST derives its own from a hash of `Authorization`, a
+//! verified principal or the peer address; the caller here *is* a context —
+//! the one the application supplied on stdio, or the one its `AuthProvider`
+//! built on Streamable HTTP — so its actor id is the identity to scope by.
+//! With no actor id the call is refused rather than put in a shared
+//! `"anonymous"` namespace, for cratestack#416's reason: two callers sharing
+//! a namespace can replay each other's results.
+//!
+//! **Hashed, and never REST's** (maintainer decision on cratestack#1033,
+//! from #1071's questions). The id is hashed for REST's reason
+//! (`cratestack-axum`'s `VerifiedPrincipal`): an identifier never lands in a
+//! store key verbatim. The same string is the rate-limit bucket
+//! (`src/admission.rs`), and there the `mcp` prefixes are the point: a
+//! caller's MCP calls and its REST calls draw on **separate budgets**, one
+//! per transport, because ADR 0002's requirement 13 asks for the same L3
+//! *admission*, not the same bucket. REST's keys start `princ:`, `auth:`,
+//! `peer:` or `ip:`, so no MCP key can equal one; the
+//! `an_mcp_namespace_is_never_a_rest_bucket` test pins that.
 //!
 //! **Why system callers get their own prefix** (maintainer decision on
 //! cratestack#1039): `SystemContext::for_service("svc")`'s id is the string
@@ -26,7 +37,8 @@
 //! user's namespace always starts `mcp:` and a system one `mcp-system:`, so
 //! no user id can produce a system namespace. `is_system()` is the only
 //! input, and it cannot be forged from a request (`cratestack-core`'s
-//! `context/system.rs`). User namespaces are unchanged from phase 3.
+//! `context/system.rs`). The prefix stays outside the hash (below), so
+//! hashing the id keeps this split.
 //!
 //! The id is read by [`principal_id`], not `principal_actor_id`, because
 //! the latter answers only a *string* `id`: an `auth User { id Int }`
@@ -47,6 +59,7 @@ use cratestack_core::idempotency_record::IdempotencyRecord;
 use cratestack_core::{CratestackContext, CratestackError, Value as ClaimValue};
 use rmcp::model::{CallToolResult, RequestMetaObject};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::{IDEMPOTENCY_KEY_META, IDEMPOTENCY_REPLAYED_META};
 
@@ -108,18 +121,27 @@ pub(crate) fn principal_id(ctx: &CratestackContext) -> Option<Cow<'_, str>> {
     }
 }
 
-/// `mcp:<actor id>` for a user, `mcp-system:<actor id>` for a system
-/// caller, or a refusal when the context has no actor id.
+/// `mcp:<sha256 hex of the actor id>` for a user, `mcp-system:<…>` for a
+/// system caller, or a refusal when the context has no actor id.
 pub(crate) fn namespace(ctx: &CratestackContext) -> Result<String, CratestackError> {
     let prefix = if ctx.is_system() { "mcp-system" } else { "mcp" };
     match principal_id(ctx) {
-        Some(id) if !id.is_empty() => Ok(format!("{prefix}:{id}")),
+        Some(id) if !id.is_empty() => Ok(format!("{prefix}:{}", sha256_hex(id.as_bytes()))),
         _ => Err(CratestackError::PreconditionFailed(
             "this server's context has no principal id, so a keyed or rate-limited call has no \
              namespace to be scoped to; build the context with an `id` claim"
                 .to_owned(),
         )),
     }
+}
+
+/// The byte-wise `{:02x}` fold `cratestack-axum`'s bucket keys use: sha2
+/// 0.11's digest implements no `LowerHex`.
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// What `OpExecutor::complete` stores for a finished call.

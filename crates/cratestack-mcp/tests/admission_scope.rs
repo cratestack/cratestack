@@ -17,7 +17,7 @@ use cratestack_mcp::{OpExecutor, StdioServer};
 use serde_json::json;
 use support::client::{Client, envelope, text};
 use support::failing::{FailingLimiter, HungLimiter};
-use support::stores::{CountingLimiter, MemoryIdempotency};
+use support::stores::{CountingLimiter, MemoryIdempotency, bucket};
 use support::{FakeTools, user};
 
 fn key(value: &str) -> Option<serde_json::Value> {
@@ -105,7 +105,7 @@ async fn an_integer_id_claim_scopes_admission() {
     let result = client.call("echo", json!({ "text": "a" }), None).await;
 
     assert_eq!(result["isError"], json!(false), "{result}");
-    assert_eq!(*limiter.keys.lock().unwrap(), ["mcp:7"]);
+    assert_eq!(*limiter.keys.lock().unwrap(), [bucket("mcp", "7")]);
 }
 
 /// `StoreErrorPolicy::default()` on HTTP serves through only a

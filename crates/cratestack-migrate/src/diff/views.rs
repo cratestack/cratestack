@@ -99,7 +99,7 @@ fn project_view(view: &View, dialect: Dialect) -> Option<ViewProjection> {
     let primary_key = view
         .fields
         .iter()
-        .find(|field| field.attributes.iter().any(|attr| attr.raw == "@id"))
+        .find(|field| field.is_primary_key())
         .map(|field| crate::naming::column_name(&field.name))
         .unwrap_or_default();
     Some(ViewProjection {

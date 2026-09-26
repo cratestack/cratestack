@@ -12,6 +12,7 @@ use cratestack_core::idempotency_record::{IdempotencyRecord, ReservationOutcome}
 use cratestack_core::{
     CratestackError, IdempotencyStore, RateLimitConfig, RateLimitDecision, RateLimitStore,
 };
+use sha2::Digest;
 
 #[derive(Default)]
 pub struct MemoryIdempotency {
@@ -127,4 +128,17 @@ impl RateLimitStore for CountingLimiter {
             }
         })
     }
+}
+
+/// The rate-limit bucket (and idempotency namespace) MCP derives for an
+/// `id` claim: `<prefix>:<sha256 hex of id>`, `prefix` being `mcp` for a
+/// user and `mcp-system` for a `SystemContext` (cratestack#1033). Computed
+/// here, not through the crate, so a change to what is hashed fails the
+/// tests that compare against it.
+pub fn bucket(prefix: &str, id: &str) -> String {
+    let hex: String = sha2::Sha256::digest(id.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    format!("{prefix}:{hex}")
 }

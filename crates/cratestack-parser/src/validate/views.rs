@@ -27,6 +27,7 @@ use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
 use crate::validate::fields::validate_field_reserved_identifier;
+use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
 use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
@@ -80,6 +81,7 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
         validate_field_reserved_identifier(field, "view", &view.name)?;
         validate_removed_field_attributes("view", &view.name, field)?;
         validate_misspelled_field_attributes("view", &view.name, field)?;
+        validate_key_and_relation_attributes("view", &view.name, field)?;
         // A view's rows come straight out of its SQL body — there is no
         // response-composition step that could invoke a resolver, so
         // `@computed` on a view field would be inert. Reject it loudly.
@@ -170,7 +172,7 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
         let id_count = view
             .fields
             .iter()
-            .filter(|field| field.attributes.iter().any(|attr| attr.raw == "@id"))
+            .filter(|field| field.is_primary_key())
             .count();
         if id_count == 0 {
             return Err(span_error(

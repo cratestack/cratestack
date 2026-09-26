@@ -23,6 +23,63 @@ starts at 4096. 0.3 validates headers more strictly and caps *new* database file
 **Also:** the wasm-bindgen family moves to 0.2.129 (`js-sys`/`web-sys` 0.3.106), which 0.3's
 `sahpool` feature requires.
 
+### MCP: the admission namespace hashes the principal id; REST and MCP budgets stay separate (#1033)
+
+**Maintainer decision on #1071's first question.** MCP's idempotency namespace
+and rate-limit bucket were `mcp:<id>` / `mcp-system:<id>`, with the `id` claim
+written into the store key verbatim. They are now
+`mcp:<sha256 hex of id>` / `mcp-system:<sha256 hex of id>`, so a principal id
+never lands in a store key, as REST already guarantees for `VerifiedPrincipal`.
+The prefix stays outside the hash, so the #1039 user/system split is unchanged.
+
+A caller's REST and MCP calls keep **separate budgets**, by decision: ADR 0002's
+requirement 13 asks for the same L3 rate-limit *admission*, not the same bucket,
+and REST's default key (`auth:<sha256>` of the unverified `Authorization`
+header, or `princ:<sha256>` only when your app inserts a `VerifiedPrincipal`)
+could not be matched by MCP in general anyway. A unit test now pins that no MCP
+key is a REST key.
+
+**Upgrading from 0.13.0**, the first release with MCP, where the key held the id
+verbatim: with a shared store, MCP idempotency records written by 0.13.0 no
+longer replay (a retry within the TTL runs again), and MCP rate-limit buckets
+start fresh.
+
+### `@id` is matched exactly, and a second `@relation` on a field is refused — breaking (#1074)
+
+**`@id` is recognised only as the bare spelling `@id`.** Most of the toolchain
+(the parser, the macros, the Dart, TypeScript and WireMock generators, studio)
+used to test `raw.starts_with("@id")`, so `@identity`, `@idx` and `@id_foo` all
+made their field the primary key, while `cratestack-migrate` matched only
+`@id` and `@id(...)`, so migrate and codegen could disagree on which column is
+the key. Every site now
+calls one helper, `cratestack_core::is_primary_key_attribute` /
+`Field::is_primary_key` (new, in `cratestack_core::schema::attribute_text`).
+What happens to a schema that relied on the prefix:
+
+- `code String @identity` (or `@id_foo`) is an unknown, inert attribute, the
+  same as any other unrecognised name (cratestack#679). A model whose only
+  "key" was spelled that way now fails with `model ... is missing an @id field`.
+  Beside a real `@id` it is no longer counted as a second one, so a model that
+  was refused as "more than one field-level `@id`" now parses, with the extra
+  attribute inert. Likewise a mixin field carrying `@identity` was refused as
+  `cannot declare @id` and now parses with the attribute inert.
+- `@idx` is a near-miss of `@id` and fails with ``did you mean `@id`?``.
+- **`@id` takes no arguments.** `@id(...)` and `@id()` are refused with
+  `` `@id` takes no arguments — write `@id` ``, underlining the attribute. Before,
+  every consumer (migrate included) read `@id(...)` as the primary key and
+  ignored the arguments.
+
+**A field may declare `@relation` at most once.** A second `@relation` (with or
+without arguments) used to report `schema OK` while the parser, macros,
+migrate, LSP and studio all read the first and ignored the second. It is now a
+schema error underlining the second declaration.
+
+**Breaking (pre-1.0):** a schema whose primary key is spelled `@idx`/`@identity`/
+`@id…` or `@id(...)`, or whose field carries two `@relation`s, no longer
+parses. Rename the key attribute to `@id` and delete the extra `@relation`.
+`cratestack check` over every `.cstack` tracked in this repository gives the
+same result before and after this change.
+
 ### MCP: a stdio server refuses an anonymous caller — breaking for `cratestack-mcp`'s constructors (#1033)
 
 **Maintainer decision on #1071's second question.** ADR 0002 Q1 says stdio has
