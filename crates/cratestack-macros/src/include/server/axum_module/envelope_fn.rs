@@ -4,46 +4,24 @@
 //! `ROUTE_TRANSPORTS` and its `SCHEMA_SHA256_BYTES`, so a REST schema's
 //! layer cannot be built as RPC (or over another schema's descriptors).
 //!
-//! Emitted only when this crate has its `envelope` feature, which the
-//! `cratestack-pg` / `cratestack-api` facades forward from their own
-//! `envelope` (and `cose`) feature: the function names
-//! `::cratestack::envelope_layer`, which only exists then. Same
-//! `cfg!(feature = ..)`-against-this-crate mechanism as `mcp`.
+//! Emitted as a call to the facade's `__envelope_layer_fn!` macro, not as
+//! the function itself (second-review decision S-1, 2026-09-26). This crate
+//! is a proc-macro, so a feature of its own would be unified across the
+//! whole build: one crate turning it on would change what every other
+//! server schema in the build expands to, including one compiled through a
+//! facade without the layer. Each facade (`cratestack-pg`,
+//! `cratestack-api`) defines `__envelope_layer_fn!` under its own
+//! `envelope` feature, expanding to the function or to nothing.
 
 use quote::quote;
 
 pub(super) fn build(is_rpc: bool) -> proc_macro2::TokenStream {
-    if !cfg!(feature = "envelope") {
-        return quote! {};
-    }
     let transport = if is_rpc {
-        quote! { .rpc("") }
+        quote! { rpc }
     } else {
-        quote! { .rest("", ROUTE_TRANSPORTS) }
+        quote! { rest }
     };
     quote! {
-        /// The envelope layer for this schema's router (ADR 0006,
-        /// cratestack#1006): `envelope` opens and seals, `policy` picks
-        /// each op's mode, `audience` is this service's configured id. The
-        /// transport, the route descriptors and the schema digest are this
-        /// schema's; the body cap is the default, which fits the routers'
-        /// default body limit (raise it with `max_body_bytes` if the router
-        /// gets a larger one). Mounted under a prefix, add
-        /// `.mount_prefix("/api")`; then `.build()`, and apply it as the
-        /// router's last `.layer(..)`.
-        pub fn envelope_layer(
-            envelope: impl ::cratestack::envelope_layer::ServerEnvelope,
-            policy: impl ::cratestack::envelope_layer::EnvelopePolicy,
-            audience: impl ::core::convert::Into<::std::string::String>,
-        ) -> ::cratestack::envelope_layer::EnvelopeLayerBuilder {
-            ::cratestack::envelope_layer::EnvelopeLayer::builder(
-                envelope,
-                audience,
-                super::SCHEMA_SHA256_BYTES,
-            )
-            .policy(policy)
-            #transport
-            .max_body_bytes(::cratestack::envelope_layer::DEFAULT_MAX_BODY_BYTES)
-        }
+        ::cratestack::__envelope_layer_fn!(#transport);
     }
 }

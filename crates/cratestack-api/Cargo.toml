@@ -97,10 +97,12 @@ mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
 # (API-review decision, 2026-09-26). Both off by default. Without `cose`,
 # `envelope` or not, no `cratestack-cose`, `p256` or `ed25519-dalek` is in
 # this crate's normal dependency graph (CI's `facade-disjointness` job
-# asserts both). `cratestack-macros/envelope` is graph-wide like
-# `cratestack-macros/mcp`: turn `envelope` on for every server facade in
-# one build.
-envelope = ["cratestack-axum/envelope", "cratestack-macros/envelope"]
+# asserts both). The generated `envelope_layer` follows this facade's own
+# feature, not the build's: `include_server_schema!` calls this crate's
+# `__envelope_layer_fn!` (`src/envelope_fn.rs`), which expands to nothing
+# without `envelope` (second-review decision S-1; there is no
+# `cratestack-macros/envelope` feature any more).
+envelope = ["cratestack-axum/envelope"]
 cose = ["envelope", "cratestack-axum/cose"]
 
 # docs.rs builds default features only, which would leave

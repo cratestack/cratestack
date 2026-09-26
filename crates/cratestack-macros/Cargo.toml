@@ -107,17 +107,6 @@ postgis = []
 # `cratestack-api` (D3), each of which also pulls `cratestack-mcp`, the
 # runtime the generated module names. Off by default.
 mcp = []
-# Emits the per-schema `cratestack_schema::axum::envelope_layer(envelope,
-# policy, audience)` convenience (cratestack#1006): a builder for
-# `cratestack_axum`'s envelope layer set to the schema's transport, route
-# descriptors and `SCHEMA_SHA256_BYTES`. Same `cfg!(feature = ...)`-against-
-# this-crate mechanism as `mcp` above (`src/include/server/axum_module/
-# envelope_fn.rs`). Forwarded only by `cratestack-pg` and `cratestack-api`,
-# from their `envelope` feature, which also turns on the
-# `cratestack_axum::envelope_layer` module the function names. Like `mcp`,
-# it is graph-wide once on: a build that pulls both facades must enable
-# `envelope` on both. Off by default.
-envelope = []
 
 [dependencies]
 cratestack-core.workspace = true

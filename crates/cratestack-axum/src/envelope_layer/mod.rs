@@ -122,6 +122,7 @@ mod builder;
 #[cfg(feature = "cose")]
 mod cose_impl;
 mod dispatch;
+mod generated;
 mod inputs;
 mod layer;
 mod media;
