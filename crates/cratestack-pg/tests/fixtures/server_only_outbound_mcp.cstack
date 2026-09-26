@@ -1,0 +1,62 @@
+// MCP twin of `server_only_outbound.cstack`: every procedure is a tool, so
+// `tools/call` composes the output through the same helpers REST does
+// (ADR 0002 Q7). See that file and `tests/server_only_outbound_mcp.rs`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+mcp {
+  expose = [tools]
+}
+
+model SoOutWidget {
+  id Int @id
+  label String
+  secret String @server_only
+  recovery String? @server_only
+  shout String @computed
+  hint String @computed
+  parts SoOutPart[] @relation(fields:[id],references:[widgetId])
+
+  @@allow("read", auth() != null)
+}
+
+model SoOutPart {
+  id Int @id
+  widgetId Int
+  name String
+  token String @server_only
+  loud String @computed
+  widget SoOutWidget @relation(fields:[widgetId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+type SoOutEnvelope {
+  one SoOutWidget
+  maybe SoOutWidget?
+  many SoOutWidget[]
+  note String
+}
+
+procedure soOutWidget(label: String): SoOutWidget
+  @allow(auth() != null)
+  @mcp(tool)
+
+procedure soOutMaybeWidget(label: String): SoOutWidget?
+  @allow(auth() != null)
+  @mcp(tool)
+
+procedure soOutWidgets(label: String): SoOutWidget[]
+  @allow(auth() != null)
+  @mcp(tool)
+
+procedure soOutWidgetPage(label: String): Page<SoOutWidget>
+  @allow(auth() != null)
+  @mcp(tool)
+
+procedure soOutEnvelope(label: String): SoOutEnvelope
+  @allow(auth() != null)
+  @mcp(tool)

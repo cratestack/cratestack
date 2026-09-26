@@ -49,6 +49,81 @@ Before this fix they were silently ignored and the protection always
 applied. Unversioned procedures and every RPC path are byte-for-byte
 unchanged, and so are the committed example clients (no example declares
 `@api_version`).
+### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
+
+One advisory, two issues.
+
+**1. A procedure returning a model with a `@computed` field sent that model's
+`@server_only` fields.** A procedure whose output is, or contains, a model
+that has a `@computed` field put every `@server_only` field of that model in
+its response. A probe returned
+`{"id":1,"label":"L","name":"n","secret":"HUNTER2"}` for a `secret String
+@server_only`. The output is built field by field by the generated
+`compose_<owner>_value` helper, not by serde, so the struct's `#[serde(skip)]`
+never ran, and the helper's field list kept `@server_only` fields. That
+affected every shape that composes: the model itself, `T?`, `T[]`, `Page<T>`,
+and a `type` that embeds the model, directly or in a list. The transports
+affected are `POST /$procs/<name>` and `POST /rpc/procedure.<name>`, including
+`/rpc/batch`, under every codec. It shipped with `@computed` in #719, so
+**v0.8.11 through v0.12.0 are affected**. MCP `tools/call` shared the path
+(ADR 0002 Q7) but has not been released.
+
+Not affected by this issue: model get and list responses, `?fields=`,
+`?include=` (both directions), MCP resources, and `@@subscribe` events. All of
+these go through serde or already left the field out. `@stream` cannot return
+a model with a `@computed` field. A model without a `@computed` field was
+never affected. `tests/server_only_outbound.rs` and
+`tests/server_only_outbound_mcp.rs` in `cratestack-pg` now pin every path in
+both lists.
+
+**2. Any request could filter and sort by a `@server_only` field, on any
+model.** The value was never sent, but it could be tested. `GET
+/<plural>?secret=HUNTER2` answered the row where `?secret=WRONG` answered `[]`.
+`?secret__startsWith=H`, then `HU`, rebuilt the value one character at a time,
+and `?sort=secret` ordered the rows by it. Every operator the field's type
+offers was open (`__eq`, `__ne`, `__in`, `__lt`, `__lte`, `__gt`, `__gte`,
+`__contains`, `__startsWith`, `__isNull`), and so were the `where=` and `or=`
+grammars, relation paths such as `?owner.secret=` and `?pets.some.token=`, and
+`?sort=owner.secret`. RPC's `model.<Model>.list` re-enters the same parser
+through its `filters`, `where`, `or` and `sort` slots. A `FindMany<Model>`
+procedure argument accepted the field in `where` and `orderBy`. The keys were
+taken from every stored field, `@server_only` included, since `@server_only`
+shipped, so **v0.2.0 through v0.12.0 are affected**: REST lists since v0.2.0,
+RPC lists since v0.3.3, and `FindMany` since v0.7.0. MCP resources pass only
+`limit` and `offset` and were not affected.
+
+Such a key is now refused exactly as a field the model does not declare, so
+the refusal does not reveal that the field exists either: `400 unsupported
+query filter`, `422 unsupported sort field`, a `FindMany` `where` key that is
+ignored, and a `FindMany` sort field that does not decode.
+`tests/server_only_query.rs` in `cratestack-pg` pins 152 cases over REST and
+RPC.
+
+**Behaviour changes:**
+
+- `includeFields[<relation>]` naming a `@server_only` field is now refused, as
+  `?fields=` already was. It never sent the value (it answered `{}`), but it
+  was accepted.
+- The generated `<Model>Where` and `<Model>SortField` no longer have a member
+  for a `@server_only` field. That holds in Rust (`include_server_schema!` and
+  `include_client_schema!`) and in the Dart client; the TypeScript client
+  never had one. Code that set such a member no longer compiles. Server code
+  that needs to filter or sort by the field, such as a lookup by a hashed
+  token, keeps the typed builders: `<model>::<field>().eq(..)` and
+  `.order_by(<model>::<field>().asc())` are unchanged, and read no request.
+
+**Action:** upgrade. Then treat as disclosed every `@server_only` value of a
+model with a `@computed` field, to any caller that could reach a procedure
+returning that model (issue 1). Treat as disclosed every `@server_only` value
+of every model to any caller that could list the model or call a
+`FindMany<Model>` procedure (issue 2). If such a field holds a credential,
+token or hash, rotate it: a rebuilt hash can be attacked offline. The
+generated Dart model class declares and decodes `@server_only` fields too, so a
+value an affected server sent may also be in client-side state or logs. If the
+server runs `IdempotencyLayer`, a response it stored for replay before the
+upgrade still carries the value and is replayed as stored until the record
+expires: clear the idempotency store (SQL table or Redis keys), or wait out its
+TTL, before relying on issue 1 being closed.
 
 ### `cratestack-cose`'s `auth` feature; COSE enrolment leaves `cratestack-auth`, and `DeviceKeyResolver` gains a required method — breaking (#1005)
 

@@ -14,7 +14,7 @@ use quote::quote;
 
 use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{
-    generated_doc_attr, ident, rust_type_tokens, scalar_model_fields, to_snake_case,
+    generated_doc_attr, ident, queryable_model_fields, rust_type_tokens, to_snake_case,
 };
 
 use super::find_many_where_push::build_field_push;
@@ -62,7 +62,10 @@ pub(crate) fn generate_where_struct(
          Used by `FindMany<{}>` procedure arguments.",
         model.name, model.name
     ));
-    let fields = scalar_model_fields(model, model_names)
+    // Decoded from a client's request body, so never a `@server_only`
+    // field (`queryable_model_fields`): `{"secret": {"startsWith": ..}}`
+    // was a value oracle. The key is now ignored like any unknown one.
+    let fields = queryable_model_fields(model, model_names)
         .into_iter()
         .filter(|field| is_filterable_scalar(field, enum_names))
         .collect::<Vec<_>>();
