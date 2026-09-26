@@ -47,6 +47,7 @@
 mod admission;
 mod call;
 mod fingerprint;
+mod fixed_caller;
 mod idempotency;
 mod listing;
 mod resources;
@@ -64,6 +65,7 @@ mod tests_listing;
 /// without a direct `cratestack-exec` dependency. `StoreErrorPolicy` is the
 /// same type `cratestack_axum::ratelimit` re-exports (cratestack#1038).
 pub use cratestack_exec::{DEFAULT_STORE_TIMEOUT, OpExecutor, StoreErrorPolicy};
+pub use fixed_caller::StdioConfigError;
 pub use listing::ToolTableError;
 pub use resources::{DEFAULT_PAGE_SIZE, RESOURCE_SCHEME, ResourceDescriptor};
 pub use server::McpServer;

@@ -13,7 +13,7 @@ use cratestack_mcp::{OpExecutor, StdioServer};
 use serde_json::json;
 use support::client::{Client, envelope};
 use support::stores::{CountingLimiter, MemoryIdempotency};
-use support::{FakeTools, user};
+use support::{FakeTools, user, without_id};
 
 fn with_store(tools: FakeTools, ctx: CratestackContext) -> Client {
     let store: Arc<dyn IdempotencyStore> = Arc::new(MemoryIdempotency::default());
@@ -89,9 +89,9 @@ async fn a_reused_key_with_other_arguments_is_a_conflict() {
 #[tokio::test]
 async fn a_read_tool_never_reserves_even_with_a_key() {
     let tools = FakeTools::default();
-    // Anonymous: if a reservation were attempted, the missing principal id
-    // would refuse the call. It runs, so none was.
-    let mut client = with_store(tools.clone(), CratestackContext::anonymous());
+    // No `id` claim: if a reservation were attempted, the missing principal
+    // id would refuse the call. It runs, so none was.
+    let mut client = with_store(tools.clone(), without_id());
     client
         .call("echo", json!({ "text": "a" }), key("k-1"))
         .await;
@@ -105,7 +105,7 @@ async fn a_read_tool_never_reserves_even_with_a_key() {
 #[tokio::test]
 async fn a_keyed_mutation_without_a_principal_id_is_refused_before_running() {
     let tools = FakeTools::default();
-    let mut client = with_store(tools.clone(), CratestackContext::anonymous());
+    let mut client = with_store(tools.clone(), without_id());
     let result = client
         .call("transfer", json!({ "amount": 5 }), key("k-1"))
         .await;
