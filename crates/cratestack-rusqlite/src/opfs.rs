@@ -30,8 +30,11 @@
 //! registered as the default on first install, so subsequent `Connection::
 //! open()` calls automatically route through it.
 
-use sqlite_wasm_rs as ffi;
-use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfg, install as sahpool_install};
+use sqlite_wasm_vfs::sahpool::{OpfsSAHPoolCfgBuilder, install as sahpool_install};
+
+mod os_callback;
+
+use os_callback::BridgedOsCallback;
 
 /// Options for the OPFS SAH-pool VFS.
 #[derive(Debug, Clone)]
@@ -89,13 +92,14 @@ impl std::error::Error for OpfsInstallError {}
 /// Install the OPFS SAH-pool VFS so that `RusqliteRuntime::open(filename)`
 /// persists across page reloads. Must run inside a Dedicated Worker.
 pub async fn install_opfs_vfs(options: &OpfsOptions) -> Result<(), OpfsInstallError> {
-    let cfg = OpfsSAHPoolCfg {
-        vfs_name: options.vfs_name.clone(),
-        directory: options.directory.clone(),
-        clear_on_init: options.clear_on_init,
-        initial_capacity: options.initial_capacity,
-    };
-    sahpool_install::<ffi::WasmOsCallback>(&cfg, options.set_as_default)
+    let cfg = OpfsSAHPoolCfgBuilder::new()
+        .vfs_name(&options.vfs_name)
+        .directory(&options.directory)
+        .clear_on_init(options.clear_on_init)
+        // `u32` -> `usize` is lossless on wasm32, the only target this module builds for.
+        .initial_capacity(options.initial_capacity as usize)
+        .build();
+    sahpool_install::<BridgedOsCallback>(&cfg, options.set_as_default)
         .await
         .map(|_| ())
         .map_err(|error| {
