@@ -24,7 +24,8 @@ mutation procedure publishPost(args: PublishPostInput): Post
 ```
 
 The schema macro then generates `cratestack_schema::mcp`, whose `tools(db, registry, resolvers)`
-value is the tool table. Serve it over stdio with an explicit caller identity — there is no default:
+value is the tool table. Serve it over stdio with an explicit caller identity — there is no default,
+and an anonymous context is refused when the server is built (`StdioConfigError::AnonymousContext`):
 
 ```text
 let ctx = cratestack::SystemContext::for_service("support-agent").into_context();

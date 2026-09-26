@@ -159,5 +159,5 @@ fn the_envelope_draws_nonces_from_its_injectable_source() {
         default.request_nonce().expect("b"),
     );
     assert_ne!(a, b, "the default source is random");
-    assert_ne!(RequestNonce::random().expect("random"), a);
+    assert_ne!(cratestack_cose::random_request_nonce().expect("random"), a);
 }

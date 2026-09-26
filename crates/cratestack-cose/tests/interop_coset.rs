@@ -48,6 +48,19 @@ fn aad_via_ciborium(bind: &Binding<'_>) -> Vec<u8> {
         },
         Value::Bytes(bind.schema_sha.to_vec()),
         Value::Text(bind.payload_media_type.to_string()),
+        // `bound_headers` (cratestack#1006, S1): always two slots, in order.
+        Value::Array(
+            [
+                &bind.bound_headers.idempotency_key,
+                &bind.bound_headers.if_match,
+            ]
+            .into_iter()
+            .map(|value| match value.as_deref() {
+                Some(value) => Value::Text(value.to_owned()),
+                None => Value::Null,
+            })
+            .collect(),
+        ),
     ];
     if let Some(response) = &bind.response {
         // The ADR's numbers, spelled out here rather than taken from

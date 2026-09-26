@@ -295,6 +295,60 @@ let app = Router::new().nest("/api", router).layer(
 
 Call the same builder once per layer — `IdempotencyLayer::with_op_resolver` and `RateLimitLayer::with_op_resolver` each take their own instance (the builders return an opaque `impl Fn`, which is not `Clone`), and both run the same lookup code. `with_op_resolver` and `with_should_rate_limit_fn` replace each other; install one. The decision itself is made by `cratestack_exec::OpExecutor::admit_rate_limit`; this layer derives the bucket key, bounds the lookup, applies the store-error policy and renders the response.
 
+## Signed Transport (envelope layer, features `envelope` / `cose`)
+
+`envelope_layer::EnvelopeLayer` opens signed requests and seals responses for a generated
+REST or RPC router (ADR 0006, cratestack#1006). Feature `envelope` is the layer and its
+traits with no crypto crate (bring your own `ServerEnvelope`); `cose` adds the COSE envelope
+and re-exports `cratestack-cose` as `cratestack_axum::cose`. `cratestack-pg` /
+`cratestack-api` forward both, and generate `cratestack_schema::axum::envelope_layer`, which
+picks the schema's transport, route descriptors and schema digest.
+
+```rust
+use cratestack_axum::cose::{CoseEnvelope, CoseMode};
+use cratestack_axum::envelope_layer::EnvelopeMode;
+
+let envelope = CoseEnvelope::server(CoseMode::Sign1, signer, device_keys, nonce_store).build()?;
+let envelope_layer = cratestack_schema::axum::envelope_layer(envelope, EnvelopeMode::Required, "payments")
+    .mount_prefix("/api")
+    .build()?;
+
+let router = generated_router
+    .layer(idempotency_layer)
+    .layer(rate_limit_layer)
+    .layer(envelope_layer); // last, so it runs first
+let app = axum::Router::new().nest("/api", router);
+```
+
+- **Order matters.** The envelope must be the last `.layer(..)` on the generated router,
+  applied before `nest`/`merge`. It inserts `VerifiedPrincipal("cose:<hex thumbprint>")`,
+  which the rate limiter and the idempotency layer key on (`princ:`), so a signed client
+  needs neither an `Authorization` header nor `ConnectInfo`. It also means signature
+  verification (and, under `Optional`, signing responses) runs before rate limiting: keep
+  an IP-level limiter outside it.
+- **Modes, per op** (`EnvelopePolicy`, no default; it sees a `PolicyRequest`, never a
+  header): `Required` (everything signed, `GET` included, every response sealed),
+  `Optional` (a signed request is opened and always answered sealed; an unsigned one is
+  sealed only with a valid `Cratestack-Nonce` and `Accept: application/cose`), `Off`. An
+  `application/cose` body is opened or refused in every mode, never forwarded. A
+  `/rpc/batch` call runs under the strictest mode of `batch` and every frame's op.
+- **Fail closed.** Under `Required`, a route the router matched but the layer cannot bind
+  (a wrong or missing mount prefix) is a `500`, logged; list hand-written routes with
+  `allow_unresolved([..])`. A bodiless `OPTIONS` (CORS preflight) always passes.
+- **Bound.** Audience, method, route, path parameters, canonical query, schema digest, and
+  the `Idempotency-Key` / `If-Match` headers exactly as sent. Response headers are not.
+- **Errors.** Every response of a generated op is sealed, including handler errors and this
+  crate's own `429`/`412`/`422`. The layer's own refusals (`401`, `415`, `400`, `413`) are
+  not.
+- **Extension points**, each with a default: `ServerEnvelope` (any verifier/signer, e.g. an
+  HSM-backed one; per-request `SealContext`, per-response media type),
+  `EnvelopePolicy`, `BindingResolver`, `PrincipalMapper` (async, may refuse),
+  `ResponseSealPolicy`. The security invariants are enforced by the layer, not the
+  plug-ins; see the module docs.
+- **Idempotency migration.** The idempotency layer's default fingerprint now prefers a
+  `VerifiedPrincipal`; `IdempotencyLayer::with_legacy_principal_fingerprint()` keeps the old
+  namespace across the deploy.
+
 ## Trusted Proxy / Audit `client_ip`
 
 `Forwarded`/`X-Forwarded-For` are client-suppliable headers. Without a trusted-proxy
@@ -376,6 +430,10 @@ for the full design and decision record.
 bucket) — but that fallback only ever engages when the server is actually served through
 `into_make_service_with_connect_info::<SocketAddr>()`, per the snippet above. Without it,
 every caller without an `Authorization` header still collapses onto one shared bucket.
+
+Both defaults check a `VerifiedPrincipal` request extension first (a `princ:` key; the
+idempotency layer since cratestack#1006), which the envelope layer above inserts for every
+verified request, so signed traffic needs neither fallback.
 
 ## Query Parsing
 

@@ -24,13 +24,29 @@
 //! This module provides the pieces only. Sending the header (the Rust
 //! client, cratestack#1007) and reading it before building the response
 //! binding (the axum layer, cratestack#1006) are wired there.
+//!
+//! Moved here from `cratestack-cose` (which re-exports every item under its
+//! old path) by the maintainer's decision after the cratestack#1006 API
+//! review: the axum layer's `envelope` feature computes these digests for
+//! any envelope, and must not pull a COSE or signature crate to do it.
+//!
+//! Parsing and formatting only. **Drawing a random nonce is not here**
+//! (second-review decision B-1, 2026-09-26): it needs `getrandom`, whose
+//! `wasm32-unknown-unknown` build fails unless someone selects its
+//! `wasm_js` backend, and core is compiled for that target by crates that
+//! never draw a nonce (`cratestack-cbor-wasm`, `cratestack-sqlite`). The
+//! one caller, the client side of `cratestack-cose`, has
+//! `cratestack_cose::random_request_nonce` and
+//! `CoseEnvelope::request_nonce`, and selects the backend itself.
 
 use std::fmt;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use cratestack_core::{CratestackError, RequestDigest, RequestKind};
 use sha2::{Digest, Sha256};
+
+use super::response_binding::{RequestDigest, RequestKind};
+use crate::error::CratestackError;
 
 /// The request header that carries the nonce.
 pub const NONCE_HEADER: &str = "Cratestack-Nonce";
@@ -47,21 +63,12 @@ pub struct RequestNonce([u8; REQUEST_NONCE_LEN]);
 
 impl RequestNonce {
     /// A nonce with the given bytes: for tests, vectors, and a client with
-    /// its own randomness. Anything else should use
-    /// [`random`](Self::random) or
-    /// [`CoseEnvelope::request_nonce`](crate::CoseEnvelope::request_nonce).
+    /// its own randomness (16 bytes from a CSPRNG, fresh per request).
+    /// Anything else should use `cratestack_cose::random_request_nonce` or
+    /// `cratestack_cose::CoseEnvelope::request_nonce` (see the module docs
+    /// for why there is no `random` here).
     pub const fn from_bytes(bytes: [u8; REQUEST_NONCE_LEN]) -> Self {
         Self(bytes)
-    }
-
-    /// 16 bytes from the operating system's CSPRNG. Fails with
-    /// `CratestackError::Internal` if it is unavailable.
-    pub fn random() -> Result<Self, CratestackError> {
-        let mut bytes = [0; REQUEST_NONCE_LEN];
-        getrandom::fill(&mut bytes).map_err(|error| {
-            CratestackError::Internal(format!("cose request nonce source failed: {error}"))
-        })?;
-        Ok(Self(bytes))
     }
 
     /// The nonce's bytes.
@@ -79,9 +86,9 @@ impl RequestNonce {
     /// zero, so each nonce has exactly one spelling.
     ///
     /// Fails with `CratestackError::BadRequest` (whose message is public and
-    /// says only that the header is malformed). How a router answers a
-    /// request whose nonce is missing or malformed depends on its signing
-    /// policy (`Required` / `Optional`), which cratestack#1006 decides.
+    /// says only that the header is malformed). The envelope layer
+    /// (cratestack#1006) treats a missing or malformed nonce as no nonce: the
+    /// unsigned request runs, and its response is not sealed.
     pub fn from_header_value(value: &[u8]) -> Result<Self, CratestackError> {
         let mut bytes = [0; REQUEST_NONCE_LEN];
         if value.len() != NONCE_HEADER_VALUE_LEN {
@@ -127,5 +134,20 @@ pub fn request_digest_unsigned(nonce: &RequestNonce, payload: &[u8]) -> RequestD
     RequestDigest {
         kind: RequestKind::Unsigned,
         digest: digest.finalize().into(),
+    }
+}
+
+/// The request digest a response binding carries when the request was
+/// **signed**: SHA-256 over the request body exactly as it travelled, the
+/// whole COSE message (tag, headers, signature and all), marked
+/// [`RequestKind::Signed`]. The caller passes the received body, never a
+/// re-encoding of it.
+///
+/// For an unsigned request, use [`request_digest_unsigned`], which also
+/// binds the client's `Cratestack-Nonce`.
+pub fn request_digest(signed_request_body: &[u8]) -> RequestDigest {
+    RequestDigest {
+        kind: RequestKind::Signed,
+        digest: Sha256::digest(signed_request_body).into(),
     }
 }

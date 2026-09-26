@@ -4,7 +4,9 @@
 use std::borrow::Cow;
 
 use super::request_binding;
-use crate::codec::{Binding, PathParams, RequestDigest, RequestKind, ResponseBinding};
+use crate::codec::{
+    Binding, BoundHeaders, PathParams, RequestDigest, RequestKind, ResponseBinding,
+};
 
 /// Compile-time guard: `Binding` must stay covariant over `'a`. The trait
 /// takes `&'a Binding<'a>`, so an invariant field (e.g. a
@@ -48,6 +50,7 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
     let params = [account.as_str(), payment.as_str()];
     let query = String::from("a=1&b=2");
     let audience = String::from("payments");
+    let (key, etag) = (String::from("k-1"), String::from("\"3\""));
     let borrowed = Binding {
         audience: Cow::Borrowed(&audience),
         method: Cow::Borrowed("POST"),
@@ -56,6 +59,10 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
         query: Some(Cow::Borrowed(&query)),
         schema_sha: [9; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
+        bound_headers: BoundHeaders {
+            idempotency_key: Some(Cow::Borrowed(&key)),
+            if_match: Some(Cow::Borrowed(&etag)),
+        },
         response: Some(ResponseBinding {
             request: RequestDigest {
                 kind: RequestKind::Signed,
@@ -66,7 +73,7 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
     };
     let owned: Binding<'static> = borrowed.into_owned();
     // Outliving the strings it borrowed from is the point of `into_owned`.
-    drop((route, account, payment, query, audience));
+    drop((route, account, payment, query, audience, key, etag));
     assert!(matches!(owned.audience, Cow::Owned(_)));
     assert_eq!(owned.audience, "payments");
     assert!(matches!(owned.route, Cow::Owned(_)));
@@ -82,6 +89,13 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
     assert_eq!(owned.query.as_deref(), Some("a=1&b=2"));
     assert_eq!(owned.schema_sha, [9; 32]);
     assert_eq!(owned.payload_media_type, "application/cbor");
+    assert!(matches!(
+        owned.bound_headers.idempotency_key,
+        Some(Cow::Owned(_))
+    ));
+    assert_eq!(owned.bound_headers.idempotency_key.as_deref(), Some("k-1"));
+    assert!(matches!(owned.bound_headers.if_match, Some(Cow::Owned(_))));
+    assert_eq!(owned.bound_headers.if_match.as_deref(), Some("\"3\""));
     let response = owned.response.expect("response half kept");
     assert_eq!(response.request.kind, RequestKind::Signed);
     assert_eq!(response.request.digest, [3; 32]);
@@ -94,4 +108,27 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
 fn request_kind_codes_are_the_adr_values() {
     assert_eq!(RequestKind::Unsigned.code(), 0);
     assert_eq!(RequestKind::Signed.code(), 1);
+}
+
+/// `BoundHeaders::NONE` is what `Default` gives, and a request with an
+/// `Idempotency-Key` does not bind like one without (S1, cratestack#1006).
+#[test]
+fn bound_headers_default_to_none_and_distinguish_requests() {
+    assert_eq!(BoundHeaders::default(), BoundHeaders::NONE);
+    let keyed = Binding {
+        bound_headers: BoundHeaders {
+            idempotency_key: Some(Cow::Borrowed("k1")),
+            if_match: None,
+        },
+        ..request_binding()
+    };
+    assert_ne!(keyed, request_binding());
+    let swapped = Binding {
+        bound_headers: BoundHeaders {
+            idempotency_key: None,
+            if_match: Some(Cow::Borrowed("k1")),
+        },
+        ..request_binding()
+    };
+    assert_ne!(keyed, swapped, "the two slots are distinct");
 }

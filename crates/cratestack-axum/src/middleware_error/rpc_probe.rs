@@ -27,7 +27,7 @@
 /// `/accounts/rpc/foo.bar` would be misread. That costs a code string,
 /// not a decode (see [`middleware_error_response`]), which is why this
 /// stays a path test rather than growing a `MatchedPath` dependency.
-pub(super) fn is_rpc_path(path: &str) -> bool {
+pub(crate) fn is_rpc_path(path: &str) -> bool {
     let mut segments = path.split('/').filter(|segment| !segment.is_empty());
     while let Some(segment) = segments.next() {
         if segment != "rpc" {

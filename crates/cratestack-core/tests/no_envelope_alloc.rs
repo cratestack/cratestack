@@ -21,7 +21,7 @@ use std::task::{Context, Poll, Waker};
 use allocation_counter::measure;
 use bytes::Bytes;
 use cratestack_core::{
-    Binding, BodyShape, CratestackContext, CratestackEnvelope, NoEnvelope, PathParams,
+    Binding, BodyShape, BoundHeaders, CratestackContext, CratestackEnvelope, NoEnvelope, PathParams,
 };
 
 /// Every field borrowed, the way a router builds a unary binding. REST
@@ -43,6 +43,8 @@ fn binding<'a>(
         query: query.map(Cow::Borrowed),
         schema_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
+        // Borrowed like the rest: `NONE` is a `const` of two `None`s.
+        bound_headers: BoundHeaders::NONE,
         response: None,
     }
 }

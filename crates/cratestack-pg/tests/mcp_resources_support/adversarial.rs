@@ -5,7 +5,6 @@
 //! one that differs by spelling only teaches the agent which spellings the
 //! parser reached.
 
-use cratestack::CratestackContext;
 use serde_json::{Value, json};
 
 use super::harness::{Mcp, NEVER_SENT, document, item_ids, user};
@@ -120,15 +119,17 @@ pub async fn hidden_rows_promise_no_further_page(db: &Cratestack) {
     assert_eq!(second["items"].as_array().unwrap().len(), 10, "{second}");
     assert!(second.get("nextCursor").is_none(), "{second}");
 
-    let mut anonymous = Mcp::start(db, CratestackContext::anonymous());
-    let response = anonymous.read("cratestack://blog/notes").await;
+    // A caller who authored nothing. Not an anonymous context: stdio refuses
+    // one when the server is built (cratestack#1033).
+    let mut stranger = Mcp::start(db, user("u-3"));
+    let response = stranger.read("cratestack://blog/notes").await;
     let contents = response["result"]["contents"].as_array().unwrap();
     assert_eq!(contents.len(), 1, "never an empty `contents`: {response}");
     assert_eq!(document(&response), json!({ "items": [] }));
-    let posts = document(&anonymous.read("cratestack://blog/posts?limit=200").await);
+    let posts = document(&stranger.read("cratestack://blog/posts?limit=200").await);
     assert!(
         item_ids(&posts).iter().all(|id| id % 3 != 0),
-        "an anonymous caller reads published posts only: {posts}"
+        "a caller who authored nothing reads published posts only: {posts}"
     );
     assert_nothing_hidden(&posts);
 }

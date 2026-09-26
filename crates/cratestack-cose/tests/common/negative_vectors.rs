@@ -8,7 +8,8 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use cratestack_core::{
-    Binding, CratestackError, InMemoryNonceStore, PathParams, RequestDigest, ResponseBinding,
+    Binding, BoundHeaders, CratestackError, InMemoryNonceStore, PathParams, RequestDigest,
+    ResponseBinding,
 };
 use cratestack_cose::{
     CoseAlg, CoseEnvelope, CoseMode, CoseVerifyKey, DEFAULT_SKEW_SECS, Ed25519Signer, Opened,
@@ -433,6 +434,10 @@ pub(super) fn binding_from_json(json: &BindingJson) -> Binding<'static> {
         query: json.query.clone().map(Cow::Owned),
         schema_sha: digest(&json.schema_sha),
         payload_media_type: Cow::Owned(json.payload_type.clone()),
+        bound_headers: BoundHeaders {
+            idempotency_key: json.bound_headers.idempotency_key.clone().map(Cow::Owned),
+            if_match: json.bound_headers.if_match.clone().map(Cow::Owned),
+        },
         response,
     }
 }

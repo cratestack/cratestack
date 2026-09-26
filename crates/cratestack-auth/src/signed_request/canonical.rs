@@ -1,43 +1,17 @@
 //! Canonicalisation of the request onto the exact byte string that gets
 //! signed / verified, and the signing helper built on top of it.
 
-use std::collections::BTreeMap;
-
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer;
 use http::Method;
 use sha2::{Digest, Sha256};
-use url::form_urlencoded;
 
 use super::types::SignRequestParams;
 
-pub fn canonical_query(query: Option<&str>) -> String {
-    let Some(query) = query else {
-        return String::new();
-    };
-
-    let mut grouped = BTreeMap::<String, Vec<String>>::new();
-    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-        grouped
-            .entry(key.into_owned())
-            .or_default()
-            .push(value.into_owned());
-    }
-
-    let mut serializer = form_urlencoded::Serializer::new(String::new());
-    for (key, values) in grouped {
-        if values.is_empty() {
-            serializer.append_pair(&key, "");
-            continue;
-        }
-
-        for value in values {
-            serializer.append_pair(&key, &value);
-        }
-    }
-
-    serializer.finish()
-}
+/// Moved to `cratestack-core` (cratestack#1006) so the COSE envelope layer
+/// binds the same bytes without depending on this crate; re-exported here so
+/// `cratestack_auth::canonical_query` keeps working.
+pub use cratestack_core::canonical_query;
 
 pub fn content_sha256_base64url(body: &[u8]) -> String {
     let digest = Sha256::digest(body);

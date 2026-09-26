@@ -31,7 +31,7 @@ mod error_encode;
 mod sse;
 mod subscription_bridge;
 mod synthesize;
-mod util;
+pub(crate) mod util;
 
 #[cfg(test)]
 mod tests_error;

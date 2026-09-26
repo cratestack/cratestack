@@ -48,7 +48,7 @@ pub(super) fn build_mcp_module(
             //! declaration order. Serve them with
             //! `::cratestack::mcp::StdioServer::new(tools(db, registry,
             //! resolvers), ctx)`, where `ctx` is the caller's identity —
-            //! there is no default.
+            //! there is no default, and an anonymous one is refused.
             //!
             //! Every call reaches its procedure through that procedure's
             //! generated `invoke_with_db`, the same function the REST and
