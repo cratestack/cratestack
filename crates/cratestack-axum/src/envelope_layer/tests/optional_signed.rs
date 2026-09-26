@@ -71,3 +71,62 @@ async fn a_plain_request_still_gets_its_plain_answer() {
     assert_eq!(answer.status, StatusCode::OK);
     assert_eq!(answer.content_type(), "application/json");
 }
+
+/// The RPC twin (second-review nit): a signed call under `Optional` is
+/// answered sealed whatever it asks for; a non-CBOR success becomes a
+/// sealed `500` in the RPC vocabulary, and a stream request gets CBOR.
+#[tokio::test]
+async fn over_rpc_a_signed_call_under_optional_is_always_answered_sealed() {
+    use axum::routing::post;
+    let layer = || {
+        EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+            .policy(EnvelopeMode::Optional)
+            .rpc("")
+            .build()
+            .expect("layer")
+    };
+    let json = axum::Router::new()
+        .route(
+            "/rpc/{op_id}",
+            post(|| async {
+                let mut response = axum::response::Response::new(axum::body::Body::from("{}"));
+                response.headers_mut().insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                response
+            }),
+        )
+        .layer(layer());
+    let call = Call::new(Method::POST, "procedure.json", &[]);
+    let sealed = call.seal(PAYLOAD).await;
+    let answer = send(
+        &json,
+        cose_request(Method::POST, "/rpc/procedure.json", sealed.clone()),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(answer.is_sealed());
+    let body = call
+        .open(request_digest(&sealed), answer.status, answer.body)
+        .await
+        .expect("verifies");
+    assert_eq!(error_code(&body), "internal", "RPC vocabulary");
+
+    let hits = Hits::default();
+    let echo = super::fixtures::rpc_router(layer(), &hits);
+    let call = Call::new(Method::POST, "procedure.notify", &[]);
+    let sealed = call.seal(PAYLOAD).await;
+    let mut req = cose_request(Method::POST, "/rpc/procedure.notify", sealed.clone());
+    req.headers_mut().insert(
+        header::ACCEPT,
+        HeaderValue::from_static("application/cbor-seq"),
+    );
+    let answer = send(&echo, req).await;
+    assert_eq!(answer.seen("x-seen-accept"), "application/cbor");
+    assert_eq!(answer.seen("x-seen-principal"), CLIENT_PRINCIPAL);
+    call.open(request_digest(&sealed), answer.status, answer.body)
+        .await
+        .expect("verifies");
+    assert_eq!(hits.get(), 1);
+}

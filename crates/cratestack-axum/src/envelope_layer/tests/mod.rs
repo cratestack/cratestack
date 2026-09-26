@@ -16,6 +16,8 @@ mod adversarial;
 #[cfg(feature = "cose")]
 mod batch_policy;
 #[cfg(feature = "cose")]
+mod batch_signed;
+#[cfg(feature = "cose")]
 mod bound_headers;
 #[cfg(feature = "cose")]
 mod builder;

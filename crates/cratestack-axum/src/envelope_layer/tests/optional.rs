@@ -136,3 +136,27 @@ async fn a_signed_request_asking_for_a_stream_gets_cbor() {
     assert_eq!(answer.seen("x-seen-accept"), "application/cbor");
     assert!(answer.is_sealed());
 }
+
+/// Two `Cratestack-Nonce` headers count as none (second-review nit): which
+/// one the client hashed is not the layer's to guess, so the request runs
+/// and its answer goes out plain, even when both are well-formed and equal.
+#[tokio::test]
+async fn two_nonce_headers_are_no_nonce() {
+    let first = RequestNonce::from_bytes([9; 16]).to_header_value();
+    let second = RequestNonce::from_bytes([8; 16]).to_header_value();
+    for (a, b) in [(&first, &second), (&first, &first)] {
+        let hits = Hits::default();
+        let mut req = unsigned_get(Some(a), SIGN1);
+        req.headers_mut().append(
+            NONCE_HEADER,
+            http::HeaderValue::from_str(b).expect("nonce"),
+        );
+        let answer = send(&router(&hits), req).await;
+        assert_eq!(answer.status, StatusCode::OK);
+        assert!(!answer.is_sealed(), "{a} / {b}");
+        assert_eq!(hits.get(), 1);
+    }
+    // One of them alone is sealed: the refusal is the duplicate's doing.
+    let answer = send(&router(&Hits::default()), unsigned_get(Some(&first), SIGN1)).await;
+    assert!(answer.is_sealed());
+}
