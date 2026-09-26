@@ -763,13 +763,6 @@ added = "2026-08-29"
 reason = "pre-existing; split by concern (extract inline tests first)"
 
 [[file]]
-path = "crates/cratestack-sql/src/relation_path.rs"
-lines = 203
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-migrate/src/diff/views.rs"
 lines = 202
 issue = "#TBD"
@@ -796,10 +789,3 @@ lines = 201
 issue = "#TBD"
 added = "2026-08-29"
 reason = "test module; split by concern when the module it covers is next touched"
-
-[[file]]
-path = "crates/cratestack-sql/src/order_catalog.rs"
-lines = 201
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"

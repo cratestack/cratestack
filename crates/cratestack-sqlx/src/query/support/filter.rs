@@ -3,28 +3,33 @@
 
 use cratestack_sql::{FilterOp, FilterValue};
 
-use crate::{FilterExpr, RelationFilter, RelationQuantifier, sqlx};
+use cratestack_core::CratestackContext;
+
+use crate::{FilterExpr, sqlx};
 
 use super::filter_subkinds::{
     push_coalesce_filter_query, push_json_filter_query, push_vector_distance_filter_query,
 };
+use super::relation_scope::push_relation_filter_query;
 use super::values::push_bind_value;
 
 pub(crate) fn push_filter_query(
     query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filters: &[FilterExpr],
+    ctx: &CratestackContext,
 ) {
     for (index, filter) in filters.iter().enumerate() {
         if index > 0 {
             query.push(" AND ");
         }
-        push_filter_expr_query(query, filter);
+        push_filter_expr_query(query, filter, ctx);
     }
 }
 
 pub(crate) fn push_filter_expr_query(
     query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filter: &FilterExpr,
+    ctx: &CratestackContext,
 ) {
     match filter {
         FilterExpr::Filter(filter) => match filter.op {
@@ -66,14 +71,14 @@ pub(crate) fn push_filter_expr_query(
                 query.push(")");
             }
         },
-        FilterExpr::All(filters) => push_grouped_filter_query(query, filters, " AND "),
-        FilterExpr::Any(filters) => push_grouped_filter_query(query, filters, " OR "),
+        FilterExpr::All(filters) => push_grouped_filter_query(query, filters, " AND ", ctx),
+        FilterExpr::Any(filters) => push_grouped_filter_query(query, filters, " OR ", ctx),
         FilterExpr::Not(filter) => {
             query.push("NOT (");
-            push_filter_expr_query(query, filter);
+            push_filter_expr_query(query, filter, ctx);
             query.push(")");
         }
-        FilterExpr::Relation(relation) => push_relation_filter_query(query, relation),
+        FilterExpr::Relation(relation) => push_relation_filter_query(query, relation, ctx),
         FilterExpr::Coalesce(coalesce) => push_coalesce_filter_query(query, coalesce),
         FilterExpr::Json(filter) => push_json_filter_query(query, filter),
         #[cfg(feature = "postgis")]
@@ -81,59 +86,6 @@ pub(crate) fn push_filter_expr_query(
             super::filter_subkinds::push_spatial_filter_query(query, filter)
         }
         FilterExpr::VectorDistance(filter) => push_vector_distance_filter_query(query, filter),
-    }
-}
-
-fn push_relation_filter_query(
-    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
-    relation: &RelationFilter,
-) {
-    match relation.quantifier {
-        RelationQuantifier::ToOne | RelationQuantifier::Some => {
-            query.push("EXISTS (SELECT 1 FROM ");
-            query.push(relation.related_table);
-            query.push(" WHERE ");
-            query.push(relation.related_table);
-            query.push(".");
-            query.push(relation.related_column);
-            query.push(" = ");
-            query.push(relation.parent_table);
-            query.push(".");
-            query.push(relation.parent_column);
-            query.push(" AND ");
-            push_filter_expr_query(query, &relation.filter);
-            query.push(")");
-        }
-        RelationQuantifier::None => {
-            query.push("NOT EXISTS (SELECT 1 FROM ");
-            query.push(relation.related_table);
-            query.push(" WHERE ");
-            query.push(relation.related_table);
-            query.push(".");
-            query.push(relation.related_column);
-            query.push(" = ");
-            query.push(relation.parent_table);
-            query.push(".");
-            query.push(relation.parent_column);
-            query.push(" AND ");
-            push_filter_expr_query(query, &relation.filter);
-            query.push(")");
-        }
-        RelationQuantifier::Every => {
-            query.push("NOT EXISTS (SELECT 1 FROM ");
-            query.push(relation.related_table);
-            query.push(" WHERE ");
-            query.push(relation.related_table);
-            query.push(".");
-            query.push(relation.related_column);
-            query.push(" = ");
-            query.push(relation.parent_table);
-            query.push(".");
-            query.push(relation.parent_column);
-            query.push(" AND NOT (");
-            push_filter_expr_query(query, &relation.filter);
-            query.push("))");
-        }
     }
 }
 
@@ -154,13 +106,14 @@ fn push_grouped_filter_query(
     query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     filters: &[FilterExpr],
     joiner: &str,
+    ctx: &CratestackContext,
 ) {
     query.push("(");
     for (index, filter) in filters.iter().enumerate() {
         if index > 0 {
             query.push(joiner);
         }
-        push_filter_expr_query(query, filter);
+        push_filter_expr_query(query, filter, ctx);
     }
     query.push(")");
 }

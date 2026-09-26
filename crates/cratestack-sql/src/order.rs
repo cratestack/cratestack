@@ -28,17 +28,20 @@ pub enum NullOrder {
 #[derive(Debug, Clone, PartialEq)]
 pub enum OrderTarget {
     Column(&'static str),
+    /// Order by `column` at the end of a to-one relation path, rendered
+    /// as nested correlated subqueries — one per hop, each applying that
+    /// hop's [`crate::RelatedReadScope`], so a related row the caller
+    /// cannot read yields `NULL` (GHSA-p55v-6xv5-93p3).
+    ///
+    /// The path is carried as hops rather than a pre-rendered SQL string:
+    /// baking it per path at macro-expansion time is what made codegen
+    /// exponential in relation-graph connectivity (cratestack#252), and a
+    /// raw string cannot carry per-hop scopes. Build it with
+    /// [`OrderClause::relation_scalar`] or [`OrderClause::relation_path`];
+    /// `hops` must not be empty.
     RelationScalar {
-        parent_table: &'static str,
-        parent_column: &'static str,
-        related_table: &'static str,
-        related_column: &'static str,
-        /// Owned rather than `&'static str`: the correlated-subquery chain
-        /// is folded from the traversed relation path at call time (see
-        /// [`crate::order_value_sql`]). It used to be baked in per path at
-        /// macro-expansion time, which is exactly what made codegen
-        /// exponential in relation-graph connectivity (cratestack#252).
-        value_sql: String,
+        hops: Vec<crate::RelationHop>,
+        column: &'static str,
     },
     /// Order by distance to a query vector on a `Vector(n)` column (see
     /// `docs/design/extensions.md` §6/§7, cratestack#163). Built via
@@ -82,24 +85,45 @@ impl OrderClause {
         }
     }
 
-    /// Not `const` (unlike [`OrderClause::column`]): `value_sql` is folded
-    /// from the traversed relation path at call time rather than baked in
-    /// at macro-expansion time. See [`crate::order_value_sql`].
+    /// Order by `related_table.column`, one to-one hop away. `scope` is the
+    /// related model's read scope — `<RELATED>_MODEL.related_read_scope()`,
+    /// or [`crate::RelatedReadScope::Unscoped`] only when ordering by rows
+    /// the caller may not read is the point.
     pub fn relation_scalar(
         parent_table: &'static str,
         parent_column: &'static str,
         related_table: &'static str,
         related_column: &'static str,
-        value_sql: String,
+        column: &'static str,
+        scope: crate::RelatedReadScope,
         direction: SortDirection,
     ) -> Self {
+        let hop = crate::RelationHop::new(
+            parent_table,
+            parent_column,
+            related_table,
+            related_column,
+            crate::RelationQuantifier::ToOne,
+            scope,
+        );
+        Self::relation_path(&[hop], column, direction)
+    }
+
+    /// Order by `column` at the end of `hops` (all to-one), each hop
+    /// carrying its own read scope.
+    ///
+    /// Panics if `hops` is empty: a relation sort traverses at least one
+    /// relation (generated callers always have).
+    pub fn relation_path(
+        hops: &[crate::RelationHop],
+        column: &'static str,
+        direction: SortDirection,
+    ) -> Self {
+        assert!(!hops.is_empty(), "relation_path requires at least one hop");
         Self {
             target: OrderTarget::RelationScalar {
-                parent_table,
-                parent_column,
-                related_table,
-                related_column,
-                value_sql,
+                hops: hops.to_vec(),
+                column,
             },
             direction,
             null_order: NullOrder::Last,

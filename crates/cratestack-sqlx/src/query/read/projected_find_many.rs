@@ -82,7 +82,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
             ctx,
             ReadPolicyKind::List,
         );
-        push_order_and_paging(&mut query, &self.order_by, self.limit, self.offset);
+        push_order_and_paging(&mut query, &self.order_by, self.limit, self.offset, ctx);
         if self.for_update {
             query.push(" FOR UPDATE");
         }

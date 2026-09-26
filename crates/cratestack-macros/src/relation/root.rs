@@ -20,7 +20,7 @@ use crate::shared::{
 };
 
 use super::parse::parse_relation_attribute;
-use super::types::relation_link;
+use super::types::{field_module_scope_tokens, relation_link};
 
 /// Emit `pub mod <relation_field> { pub struct Root; .. }` for a to-one
 /// relation. To-many roots need no module: the model's field fn returns the
@@ -77,6 +77,7 @@ pub(crate) fn generate_relation_root_module(
         });
     }
 
+    let scope = field_module_scope_tokens(kind, &target_model.name, quote! { super::super:: });
     let as_include = match kind {
         FieldModuleKind::Server => generate_as_include_method(model, relation_field, target_model)?,
         FieldModuleKind::Client => None,
@@ -99,6 +100,7 @@ pub(crate) fn generate_relation_root_module(
                                 #related_table,
                                 #related_column,
                                 ::cratestack::RelationQuantifier::ToOne,
+                                #scope,
                             ),
                         ]),
                     )

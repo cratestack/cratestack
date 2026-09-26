@@ -2,6 +2,95 @@
 
 ## Unreleased
 
+### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
+
+**Affected: 0.2.0 through 0.12.0, Postgres server role
+(`include_server_schema!(db = Postgres)`; `include_schema!` before 0.3.0).** Not
+every surface below existed in 0.2.0; each was affected from the release that
+introduced it.
+A relation filter or relation sort reads the related table in a correlated
+subquery, and that subquery applied neither the related model's
+`@@allow`/`@@deny` read policy nor its `@@soft_delete` filter. Any caller who
+could list a model could therefore test, and order by, column values of related
+rows they are not allowed to read: rows that `?include=` correctly returns as
+`null`, and tombstoned rows. With `startsWith`, a hidden string column could be
+recovered one character at a time. Every surface that builds such a subquery was
+affected: REST list query parameters, `where=`, `or=` and `sort=`; RPC
+`model.<M>.list` (`filters`, `where`, `or`, `sort`); `@@paged` `total_count`; the
+typed Rust builder (`post::author().email().eq(..)`, `.asc()`/`.desc()`); to-one
+paths, to-many `some`/`every`/`none`, multi-hop paths, and every operator.
+
+**Fixed:** every relation subquery now applies the related model's list-slot
+read policy and soft-delete filter, the same scope `find_many` and `?include=`
+apply to that model. **A related row the caller cannot read behaves as if it did
+not exist**, matching `?include=`: a to-one filter never matches it (`ne` and
+`isNull` included), `none` and `every` over only hidden children are vacuously
+true, and a relation sort key through it reads as `NULL` (sorted last). Each hop
+of a multi-hop path applies its own model's scope. `preview_scoped_sql` renders
+the same scope it executes. `update_many` and `delete_many` accept relation
+filters too (in process only, not on the wire), and they now apply the related
+model's **read** scope in those subqueries as well.
+
+**Also fixed: self-relations.** A relation whose related table is its own table
+(`manager User? @relation(fields:[managerId], references:[id])`) rendered as
+`FROM users WHERE users.id = users.manager_id`, which compares the inner row
+with itself instead of with the row being filtered. Relation filters and sorts
+over a self-relation, **and read policies that traverse one** (`@@allow("read",
+manager.name == ...)`), were evaluated uncorrelated: they matched every row or
+none, depending on whether some row referenced itself. On the server role they
+now correlate through the outer row. Audit any policy that traverses a
+self-relation: it may have admitted rows it should not have.
+
+**Breaking changes** (pre-1.0):
+
+- **A relation filter or sort through a model with no read `@@allow` now matches
+  nothing.** Such a model is default-deny for direct reads, and now for relation
+  paths too. If you filter or sort through a model that has no read rule, add
+  the `@@allow("read", ...)` that describes who may see it.
+- **Every public constructor of a relation hop takes the related model's
+  scope**, a new `RelatedReadScope`. There is no default:
+  `FilterExpr::relation`, `relation_some`, `relation_every`, `relation_none`,
+  `RelationFilter::new` and `RelationHop::new` take it as a new last argument,
+  `OrderClause::relation_scalar` just before `direction`. The new `scope` field
+  on `RelationFilter` and `RelationHop` is public, so struct literals must set
+  it too. Pass `<RELATED>_MODEL.related_read_scope()` (a new `const fn` on
+  `ModelDescriptor`). `RelatedReadScope::Unscoped` is the named escape hatch for
+  trusted server code that deliberately reads the raw related table. Never use
+  it for a filter or sort whose values a caller controls.
+- `OrderClause::relation_scalar(parent_table, parent_column, related_table,
+  related_column, column, scope, direction)` takes the terminal **column** instead
+  of a pre-rendered `value_sql` string. Multi-hop sorts use the new
+  `OrderClause::relation_path(&hops, column, direction)`.
+  `OrderTarget::RelationScalar` is now `{ hops, column }`. `order_value_sql` is
+  unchanged but no longer used by generated server code: it renders no scope and
+  mis-correlates self-relations, so do not build a server-side sort from it.
+- `preview_scoped_sql` now numbers binds like the executed query when a policy
+  has both deny and allow rules (deny first), and renders a deny-only policy as
+  `(NOT (...) AND (FALSE))` as it executes. `preview_sql` (without a context)
+  still renders no authorization scope, neither the root model's nor a related
+  model's.
+
+**Unchanged:** `@@internal("read")` only removes a model's own routes. Relation
+paths and `?include=` through an internal model are still governed by its read
+policy. The embedded role (`include_embedded_schema!`) enforces no policy by
+design; its relation subqueries ignore the scope, as before. That includes the
+soft-delete filter: an embedded relation filter or sort still sees tombstoned
+related rows, although embedded `find_*` hides them. The self-relation fix is
+not applied there either: embedded relation filters and sorts over a
+self-relation are still uncorrelated. The client role passes
+`RelatedReadScope::Unscoped`, since it renders no SQL.
+
+**Operator guidance:** upgrade. No schema change is needed unless you filter or
+sort through a model with no read `@@allow` (first breaking change). Afterwards,
+list endpoints that filter or sort through a related model return only what the
+caller could see through `?include=`. Clients that relied on filtering through
+rows they cannot read will see fewer results. That is the fix, not a
+regression. Before upgrading, you can check exposure by searching logs for
+list requests with dotted filter or sort keys (`?author.email=`, `where=`,
+`sort=author.`) against models whose related models have row-level read
+policies or `@@soft_delete`. RPC `model.<M>.list` carries the same keys in its
+POST body, which access logs usually do not record.
+
 ### Fix: generated clients call an `@api_version` procedure at its versioned path — behaviour change for REST clients
 
 **The bug.** A procedure declared `@api_version("v2")` is mounted by the

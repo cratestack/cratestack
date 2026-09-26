@@ -1,0 +1,144 @@
+// GHSA-p55v-6xv5-93p3, review follow-up: related read scopes whose policy
+// shapes are harder than a single predicate. The test caller is
+// `{ id: 1, name: "alice" }`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+  name String
+}
+
+// Two hops, each with an auth-bound `@@allow` AND a row-dependent `@@deny`
+// (one of them auth-bound too), so the executed query carries several
+// `auth()` binds at different nesting levels.
+model RvDoc {
+  id Int @id
+  ownerId Int
+  label String
+  code String
+
+  @@allow("read", ownerId == auth().id)
+  @@deny("read", label == auth().name)
+}
+
+model RvFolder {
+  id Int @id
+  ownerId Int
+  docId Int
+  code String
+  doc RvDoc @relation(fields:[docId],references:[id])
+
+  @@allow("read", ownerId == auth().id)
+  @@deny("read", code == "BLOCK")
+}
+
+model RvShelf {
+  id Int @id
+  folderId Int
+  folder RvFolder @relation(fields:[folderId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+// The related model's policy itself traverses a relation.
+model RvTeam {
+  id Int @id
+  ownerId Int
+
+  @@allow("read", auth() != null)
+}
+
+model RvGated {
+  id Int @id
+  teamId Int
+  code String
+  team RvTeam @relation(fields:[teamId],references:[id])
+
+  @@allow("read", team.ownerId == auth().id)
+}
+
+model RvGateLink {
+  id Int @id
+  gatedId Int
+  gated RvGated @relation(fields:[gatedId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+// The related model's policy traverses back into the *outer* query's own
+// table: the policy's `rv_roots` must be the item's root, not the outer row.
+model RvRoot {
+  id Int @id
+  flag String
+  itemId Int
+  item RvItem @relation(fields:[itemId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+model RvItem {
+  id Int @id
+  rootId Int
+  code String
+  root RvRoot @relation(fields:[rootId],references:[id])
+
+  @@allow("read", root.flag == "open")
+}
+
+// The related model's policy traverses a self-relation.
+model RvMember {
+  id Int @id
+  bossId Int?
+  name String
+  boss RvMember? @relation(fields:[bossId],references:[id])
+
+  @@allow("read", boss.name == "root")
+}
+
+model RvMemberLink {
+  id Int @id
+  memberId Int
+  member RvMember @relation(fields:[memberId],references:[id])
+
+  @@allow("read", auth() != null)
+}
+
+// To-many children, some hidden: `every`/`none` must not depend on what the
+// hidden children hold.
+model RvBox {
+  id Int @id
+  tokens RvToken[] @relation(fields:[id],references:[boxId])
+
+  @@allow("read", auth() != null)
+}
+
+model RvToken {
+  id Int @id
+  boxId Int
+  label String
+  shown String
+  box RvBox @relation(fields:[boxId],references:[id])
+
+  @@allow("read", shown == "yes")
+}
+
+// Listable only when LISTED; every row readable through the detail slot.
+model RvSlot {
+  id Int @id
+  code String
+
+  @@allow("list", code == "LISTED")
+  @@allow("detail", auth() != null)
+}
+
+model RvSlotLink {
+  id Int @id
+  slotId Int
+  slot RvSlot @relation(fields:[slotId],references:[id])
+
+  @@allow("read", auth() != null)
+}

@@ -49,10 +49,10 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Orderable, Projection, ReadSource, RelationFilter, RelationHop, RelationInclude,
-    SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput, UpsertModelInput,
-    VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor, WriteSource, coalesce,
-    is_orderable, order_value_sql, wrap_filter,
+    OrderClause, Orderable, Projection, ReadSource, RelatedReadScope, RelationFilter, RelationHop,
+    RelationInclude, SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
+    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor,
+    WriteSource, coalesce, is_orderable, order_value_sql, wrap_filter,
 };
 /// PostGIS query surface (cratestack#842) — gated in
 /// `cratestack-sql` and forwarded through this crate's own

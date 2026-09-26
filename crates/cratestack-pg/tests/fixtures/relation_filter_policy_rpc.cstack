@@ -1,0 +1,38 @@
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+// RPC counterpart of relation_filter_policy.cstack (GHSA-p55v-6xv5-93p3):
+// readable by nobody the test authenticates as (its `id` is 1).
+model RpcRfHidden {
+  id Int @id
+  code String
+  score Int
+
+  @@allow("read", auth().id == 999)
+}
+
+// Readable: the positive control.
+model RpcRfPublic {
+  id Int @id
+  code String
+
+  @@allow("read", auth() != null)
+}
+
+model RpcRfLink {
+  id Int @id
+  hiddenId Int
+  publicId Int
+  hidden RpcRfHidden @relation(fields:[hiddenId],references:[id])
+  public RpcRfPublic @relation(fields:[publicId],references:[id])
+
+  @@allow("read", auth() != null)
+}

@@ -15,18 +15,29 @@ pub(super) fn render_order_clause(clause: &OrderClause, sql: &mut String) {
                 null_order(clause.null_order),
             );
         }
-        OrderTarget::RelationScalar {
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            value_sql,
-        } => {
+        OrderTarget::RelationScalar { hops, column } => {
+            // The embedded backend enforces no read policy, so it renders
+            // the path unscoped via `order_value_sql` (each hop's
+            // `RelatedReadScope` is for the policy-enforcing server path).
+            let Some(root) = hops.first() else {
+                let _ = write!(
+                    sql,
+                    "NULL {} {}",
+                    sort_dir(clause.direction),
+                    null_order(clause.null_order),
+                );
+                return;
+            };
+            let value_sql = cratestack_sql::order_value_sql(hops, column);
             let _ = write!(
                 sql,
-                "(SELECT {value_sql} FROM {related_table} WHERE {related_table}.{related_column} = {parent_table}.{parent_column} LIMIT 1) {} {}",
+                "(SELECT {value_sql} FROM {related} WHERE {related}.{related_column} = {parent}.{parent_column} LIMIT 1) {} {}",
                 sort_dir(clause.direction),
                 null_order(clause.null_order),
+                related = root.related_table,
+                related_column = root.related_column,
+                parent = root.parent_table,
+                parent_column = root.parent_column,
             );
         }
         OrderTarget::VectorDistance { .. } => {

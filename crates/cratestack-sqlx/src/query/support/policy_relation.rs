@@ -1,9 +1,15 @@
 //! Relation-policy pusher (`EXISTS (SELECT 1 FROM ...)`) for
-//! `some`/`every`/`none` quantifiers, plus the reusable `EXISTS`
-//! emitter.
+//! `some`/`every`/`none` quantifiers.
+//!
+//! The correlation (`FROM <related> WHERE <related>.<col> = <parent>.<col>`)
+//! comes from [`crate::render::relation_from_sql`], which correlates a
+//! self-relation (`boss.name == "root"` on a model whose `boss` is itself)
+//! through a derived table: the plain form binds both sides to the inner
+//! row and evaluates the policy uncorrelated with the row being read.
 
 use cratestack_core::CratestackContext;
 
+use crate::render::relation_from_sql;
 use crate::{PolicyExpr, RelationQuantifier, sqlx};
 
 use super::policy::push_policy_expr_query;
@@ -19,71 +25,19 @@ pub(super) fn push_relation_policy_query(
     expr: &'static PolicyExpr,
     ctx: &CratestackContext,
 ) {
-    match quantifier {
-        RelationQuantifier::ToOne | RelationQuantifier::Some => {
-            push_relation_policy_exists_query(
-                query,
-                parent_table,
-                parent_column,
-                related_table,
-                related_column,
-                &|query| push_policy_expr_query(query, *expr, ctx),
-            );
-        }
-        RelationQuantifier::None => {
-            query.push("NOT EXISTS (SELECT 1 FROM ");
-            query.push(related_table);
-            query.push(" WHERE ");
-            query.push(related_table);
-            query.push(".");
-            query.push(related_column);
-            query.push(" = ");
-            query.push(parent_table);
-            query.push(".");
-            query.push(parent_column);
-            query.push(" AND ");
-            push_policy_expr_query(query, *expr, ctx);
-            query.push(")");
-        }
-        RelationQuantifier::Every => {
-            query.push("NOT EXISTS (SELECT 1 FROM ");
-            query.push(related_table);
-            query.push(" WHERE ");
-            query.push(related_table);
-            query.push(".");
-            query.push(related_column);
-            query.push(" = ");
-            query.push(parent_table);
-            query.push(".");
-            query.push(parent_column);
-            query.push(" AND NOT (");
-            push_policy_expr_query(query, *expr, ctx);
-            query.push("))");
-        }
-    }
-}
-
-fn push_relation_policy_exists_query<Render>(
-    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
-    parent_table: &'static str,
-    parent_column: &'static str,
-    related_table: &'static str,
-    related_column: &'static str,
-    render_predicate: &Render,
-) where
-    Render: Fn(&mut sqlx::QueryBuilder<sqlx::Postgres>),
-{
-    query.push("EXISTS (SELECT 1 FROM ");
-    query.push(related_table);
-    query.push(" WHERE ");
-    query.push(related_table);
-    query.push(".");
-    query.push(related_column);
-    query.push(" = ");
-    query.push(parent_table);
-    query.push(".");
-    query.push(parent_column);
-    query.push(" AND ");
-    render_predicate(query);
-    query.push(")");
+    let (open, negate) = match quantifier {
+        RelationQuantifier::ToOne | RelationQuantifier::Some => ("EXISTS (SELECT 1 ", false),
+        RelationQuantifier::None => ("NOT EXISTS (SELECT 1 ", false),
+        RelationQuantifier::Every => ("NOT EXISTS (SELECT 1 ", true),
+    };
+    query.push(open);
+    query.push(relation_from_sql(
+        parent_table,
+        parent_column,
+        related_table,
+        related_column,
+    ));
+    query.push(if negate { " AND NOT (" } else { " AND " });
+    push_policy_expr_query(query, *expr, ctx);
+    query.push(if negate { "))" } else { ")" });
 }

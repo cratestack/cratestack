@@ -19,13 +19,16 @@ use crate::shared::{
     to_snake_case,
 };
 
+use crate::model::FieldModuleKind;
+
 use super::filter_builders;
-use super::types::{RelationLink, relation_link};
+use super::types::{RelationLink, field_module_scope_tokens, relation_link};
 
 /// Tokens for a `RelationHop` const expression describing one edge.
 fn hop_tokens(
     link: &RelationLink,
     quantifier: proc_macro2::TokenStream,
+    scope: proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     let parent_table = link.parent_table.as_str();
     let parent_column = link.parent_column.as_str();
@@ -38,6 +41,7 @@ fn hop_tokens(
             #related_table,
             #related_column,
             #quantifier,
+            #scope,
         )
     }
 }
@@ -47,6 +51,7 @@ fn hop_tokens(
 pub(crate) fn generate_model_path_types(
     model: &Model,
     models: &[Model],
+    kind: FieldModuleKind,
 ) -> Result<proc_macro2::TokenStream, String> {
     let model_names = model_name_set(models);
 
@@ -69,10 +74,17 @@ pub(crate) fn generate_model_path_types(
         let link = relation_link(model, relation_field, models)?;
         let method = ident(&relation_field.name);
         let target_module = ident(&to_snake_case(&relation_field.ty.name));
+        // `RelPath` lives in the model's field module, one level below the
+        // schema root that holds the `*_MODEL` descriptors.
+        let scope = field_module_scope_tokens(kind, &relation_field.ty.name, quote! { super:: });
         if link.is_to_many {
             // Quantifier not chosen yet; record it as ToOne and let
             // `RelToMany::some/every/none` rewrite the last hop.
-            let hop = hop_tokens(&link, quote! { ::cratestack::RelationQuantifier::ToOne });
+            let hop = hop_tokens(
+                &link,
+                quote! { ::cratestack::RelationQuantifier::ToOne },
+                scope,
+            );
             relation_accessors.push(quote! {
                 #[allow(non_snake_case)]
                 pub fn #method(self) -> super::#target_module::RelToMany {
@@ -82,7 +94,11 @@ pub(crate) fn generate_model_path_types(
                 }
             });
         } else {
-            let hop = hop_tokens(&link, quote! { ::cratestack::RelationQuantifier::ToOne });
+            let hop = hop_tokens(
+                &link,
+                quote! { ::cratestack::RelationQuantifier::ToOne },
+                scope,
+            );
             relation_accessors.push(quote! {
                 #[allow(non_snake_case)]
                 pub fn #method(self) -> super::#target_module::RelPath<O> {
@@ -213,15 +229,7 @@ fn generate_scalar_field_module(field: &Field) -> proc_macro2::TokenStream {
                 column: &'static str,
                 direction: ::cratestack::SortDirection,
             ) -> ::cratestack::OrderClause {
-                let root = hops[0];
-                ::cratestack::OrderClause::relation_scalar(
-                    root.parent_table,
-                    root.parent_column,
-                    root.related_table,
-                    root.related_column,
-                    ::cratestack::order_value_sql(hops, column),
-                    direction,
-                )
+                ::cratestack::OrderClause::relation_path(hops, column, direction)
             }
         }
     }
