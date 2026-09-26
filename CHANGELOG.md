@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.0 (2026-09-26)
+
 ### Fix: generated clients call an `@api_version` procedure at its versioned path — behaviour change for REST clients
 
 **The bug.** A procedure declared `@api_version("v2")` is mounted by the
