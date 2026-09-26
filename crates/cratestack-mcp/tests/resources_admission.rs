@@ -120,3 +120,56 @@ async fn a_malformed_page_query_is_never_charged_and_a_bad_id_is_not_found() {
     }
     client.close().await.unwrap();
 }
+
+/// Which bad ids cost a token, kept as it was built (maintainer decision on
+/// cratestack#1033, answering #1068's question). What the URI parser can
+/// refuse on its own (an unknown segment, a raw character outside RFC 3986's
+/// `pchar`, a NUL) is refused before admission and costs nothing. An id
+/// that is a well-formed segment but no key of the model's type (`abc` for
+/// an `Int` key) is only found out inside the generated read, after
+/// admission, so it is charged like a missing row. Every one answers the
+/// same "resource not found", so the difference in cost says something
+/// about the id's type, never about whether a row exists.
+#[tokio::test]
+async fn what_a_bad_id_costs() {
+    let table = FakeResources::default();
+    let limiter = Arc::new(CountingLimiter::new(100));
+    let executor = OpExecutor::new(None, Duration::ZERO).with_rate_limit(
+        limiter.clone() as Arc<dyn RateLimitStore>,
+        RateLimitConfig::new(100, 0.0),
+    );
+    let server = StdioServer::new(table.clone(), user("u-1"))
+        .unwrap()
+        .with_executor(executor);
+    let mut client = Client::start(server);
+    let mut read = async |uri: &str| {
+        client
+            .request("resources/read", json!({ "uri": uri }))
+            .await
+    };
+
+    let missing = read("cratestack://blog/posts/99999").await;
+    assert_eq!(limiter.charged.load(Ordering::SeqCst), 1, "{missing}");
+    for free in [
+        "cratestack://blog/nope/1",
+        "cratestack://blog/posts/a b",
+        "cratestack://blog/posts/1%00",
+    ] {
+        assert_eq!(read(free).await["error"], missing["error"], "{free}");
+    }
+    assert_eq!(
+        limiter.charged.load(Ordering::SeqCst),
+        1,
+        "what the URI parser refuses is never charged"
+    );
+    assert_eq!(table.reads(), 1, "and never reaches the table");
+
+    let unparsable = read("cratestack://blog/posts/abc").await;
+    assert_eq!(unparsable["error"], missing["error"], "{unparsable}");
+    assert_eq!(
+        limiter.charged.load(Ordering::SeqCst),
+        2,
+        "an id only the read can reject is charged like a missing row"
+    );
+    client.close().await.unwrap();
+}

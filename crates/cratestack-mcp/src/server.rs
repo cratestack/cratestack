@@ -10,9 +10,9 @@ use cratestack_core::CratestackContext;
 use cratestack_exec::{OpExecutor, StoreErrorPolicy};
 use rmcp::model::{
     CacheScope, CallToolRequestParams, CallToolResponse, CompleteRequestParams, CompleteResult,
-    DiscoverResult, Implementation, ListPromptsResult, ListResourceTemplatesResult,
-    ListResourcesResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion,
-    ReadResourceRequestParams, ReadResourceResponse, ServerConfig, Tool,
+    DiscoverResult, Implementation, InitializeRequestParams, InitializeResult, ListPromptsResult,
+    ListResourceTemplatesResult, ListResourcesResult, ListToolsResult, PaginatedRequestParams,
+    ProtocolVersion, ReadResourceRequestParams, ReadResourceResponse, ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
@@ -21,6 +21,7 @@ use crate::listing::{ToolTableError, build_listing};
 use crate::streamable_http::caller::Caller;
 use crate::table::McpTools;
 
+mod config;
 mod discovery;
 
 /// An MCP server over one schema's tools.
@@ -70,27 +71,6 @@ impl<T: McpTools> McpServer<T> {
             listing,
             implementation: Implementation::new("cratestack-mcp", env!("CARGO_PKG_VERSION")),
         })
-    }
-
-    /// Opt in to L3 admission: an executor built with an idempotency store
-    /// and/or `with_rate_limit`, as the application would build one for
-    /// `cratestack-axum`'s layers.
-    pub fn with_executor(mut self, executor: OpExecutor) -> Self {
-        self.executor = executor;
-        self
-    }
-
-    /// Choose what a failing rate-limit store does to a call, as
-    /// `RateLimitLayer::with_store_error_policy` does on HTTP; pass the
-    /// same value to both. Defaults to [`StoreErrorPolicy::Allow`], HTTP's
-    /// default: serve through a transport-class failure (`Unavailable`,
-    /// including a lookup that outlives `DEFAULT_STORE_TIMEOUT`), refuse
-    /// every other. [`StoreErrorPolicy::Deny`] refuses them all, for a
-    /// limiter that is a security control rather than a capacity one.
-    /// Unread without a rate limiter on the executor.
-    pub fn with_store_error_policy(mut self, policy: StoreErrorPolicy) -> Self {
-        self.store_error_policy = policy;
-        self
     }
 }
 
@@ -175,6 +155,16 @@ impl<T: McpTools> ServerHandler for McpServer<T> {
         crate::resources::read_resource(self, &caller, &request.uri)
             .await
             .map(ReadResourceResponse::from)
+    }
+
+    /// Refused either way, since no version this server speaks has an
+    /// `initialize`; the caller check comes first (`server/discovery.rs`).
+    async fn initialize(
+        &self,
+        request: InitializeRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<InitializeResult, ErrorData> {
+        self.initialized(&context.extensions, &request)
     }
 
     /// This and `complete` only add the caller check (`server/discovery.rs`).
