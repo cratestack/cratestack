@@ -96,6 +96,19 @@ updates:
     groups:
       cargo-minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # sqlite-wasm-vfs 0.3 is built for sqlite-wasm-rs 0.6, but rusqlite
+      # (0.40.2, the latest) links sqlite-wasm-rs 0.5 on wasm32. Both declare
+      # `links = "wsqlite3"`, so they cannot coexist in one graph, and 0.3's
+      # `sahpool::install` needs an `rsqlite_vfs` 0.2 `OsCallback` that 0.5's
+      # `WasmOsCallback` does not implement. #1048 merged this bump anyway (its
+      # main CI run was cancelled) and broke every wasm32 embedded build; it was
+      # reverted. Lift this when rusqlite moves to sqlite-wasm-rs 0.6: bump
+      # both, enable sqlite-wasm-vfs's `sahpool` feature, and use
+      # `OpfsSAHPoolCfgBuilder` in `cratestack-rusqlite/src/opfs.rs` (0.3 made
+      # the config fields private).
+      - dependency-name: sqlite-wasm-vfs
+        versions: [">= 0.3"]
     commit-message:
       prefix: "chore(cargo)"
 
