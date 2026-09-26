@@ -10,6 +10,7 @@ mod indexes;
 mod partial_index;
 mod pluralization_rename;
 mod postgis;
+mod primary_key;
 mod relation_actions;
 mod relations;
 mod renames;

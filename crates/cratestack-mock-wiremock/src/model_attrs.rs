@@ -12,12 +12,9 @@ use std::collections::BTreeSet;
 
 use cratestack_core::{Field, Model, Schema, TypeArity};
 
-/// Field carries an `@id`-prefixed attribute — the model's primary key.
+/// Field carries the `@id` attribute — the model's primary key.
 pub(crate) fn is_primary_key(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@id"))
+    field.is_primary_key()
 }
 
 /// Field carries `@server_only` — never serialized to a client, so

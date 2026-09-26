@@ -90,10 +90,7 @@ pub(crate) fn primary_key_field(model: &Model) -> Option<&Field> {
 }
 
 pub(crate) fn is_primary_key(field: &Field) -> bool {
-    field
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw.starts_with("@id"))
+    field.is_primary_key()
 }
 
 fn has_default(field: &Field) -> bool {

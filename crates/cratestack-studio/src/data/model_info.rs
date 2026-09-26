@@ -88,10 +88,7 @@ pub(crate) fn resolve_model<'a>(
 }
 
 pub(crate) fn find_pk_field(model: &Model) -> Option<&Field> {
-    model
-        .fields
-        .iter()
-        .find(|f| f.attributes.iter().any(|a| a.raw.starts_with("@id")))
+    model.fields.iter().find(|f| f.is_primary_key())
 }
 
 /// The SQL column name of `model`'s `@version` field, if it declares
