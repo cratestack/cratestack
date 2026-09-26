@@ -25,7 +25,11 @@ well-formed segment but no key of the model's type (`abc` for an `Int` key) is
 charged like a missing row. Every one answers the same "resource not found", so
 the cost reveals the id's type, never whether a row exists.
 
-MCP is unreleased, so no released version changes.
+MCP first shipped in 0.13.0. Against it, only a request below the guard sees a
+different answer (`-32603` instead of `-32022`); every client that passes the
+guard, and every stdio client, sees what 0.13.0 answers.
+
+## 0.13.0 (2026-09-26)
 
 ### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
 
