@@ -32,14 +32,25 @@ struct FrameOp {
 }
 
 /// The frames' op ids, decoded as the generated handler decodes the body:
-/// by exact `Content-Type` (absent means CBOR, as in `decode_rpc_body`),
-/// with the first-party codecs. `None` when it cannot: another type (a
-/// custom codec), or a body that is not a frame array.
+/// by the first `Content-Type` (absent, or not text, means CBOR, as in
+/// `decode_rpc_body`), with the first-party codecs. `None` when it cannot:
+/// another type (a custom codec), or a body that is not a frame array.
+///
+/// Matched on the **base** type, case-insensitively and with parameters
+/// ignored (security finding SF-1 of the second review): the handler's
+/// codecs accept `application/cbor; charset=binary` or `Application/CBOR`,
+/// so an exact match here left the frames unread while the handler ran
+/// them, and under an `unresolved_mode` of `Off` a batch carrying a
+/// `Required` op went through plain.
 fn frame_ops(content_type: Option<&str>, body: &[u8]) -> Option<Vec<String>> {
-    let frames: Vec<FrameOp> = match content_type.unwrap_or(PAYLOAD_MEDIA_TYPE) {
-        "application/cbor" => CborCodec.decode(body).ok()?,
-        "application/json" => JsonCodec.decode(body).ok()?,
-        _ => return None,
+    let content_type = content_type.unwrap_or(PAYLOAD_MEDIA_TYPE);
+    let base = content_type.split(';').next().unwrap_or(content_type).trim();
+    let frames: Vec<FrameOp> = if base.eq_ignore_ascii_case("application/cbor") {
+        CborCodec.decode(body).ok()?
+    } else if base.eq_ignore_ascii_case("application/json") {
+        JsonCodec.decode(body).ok()?
+    } else {
+        return None;
     };
     Some(frames.into_iter().map(|frame| frame.op).collect())
 }

@@ -38,6 +38,8 @@ mod required_rest_errors;
 #[cfg(feature = "cose")]
 mod required_rpc;
 #[cfg(feature = "cose")]
+mod rpc_head;
+#[cfg(feature = "cose")]
 mod rpc_modes;
 #[cfg(feature = "cose")]
 mod rpc_rules;

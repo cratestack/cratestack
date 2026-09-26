@@ -139,3 +139,44 @@ async fn a_subscription_is_shown_to_the_policy_as_its_bare_op_id() {
         vec![("model.Widget.subscribe".to_owned(), true, false)]
     );
 }
+
+/// Security finding SF-1 (second review): the generated batch handler
+/// reads the frames under any spelling of the CBOR media type (case,
+/// parameters), so the layer must too. It used to match the exact string,
+/// found no frames under `application/cbor; charset=binary`, and with an
+/// `unresolved_mode` of `Off` forwarded a batch carrying a `Required` op.
+#[tokio::test]
+async fn a_batch_content_type_with_parameters_or_another_case_is_still_read() {
+    struct TransferOnly;
+    impl crate::envelope_layer::EnvelopePolicy for TransferOnly {
+        fn mode(&self, request: &PolicyRequest<'_>) -> EnvelopeMode {
+            match request.op() {
+                "procedure.transfer" => EnvelopeMode::Required,
+                _ => EnvelopeMode::Off,
+            }
+        }
+        fn unresolved_mode(&self) -> EnvelopeMode {
+            EnvelopeMode::Off
+        }
+    }
+    for content_type in [
+        "application/cbor; charset=binary",
+        "application/cbor;x=1",
+        "Application/CBOR",
+        "application/cbor ",
+    ] {
+        let hits = Hits::default();
+        let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+            .policy(TransferOnly)
+            .rpc("")
+            .build()
+            .expect("layer");
+        let request = http::Request::post("/rpc/batch")
+            .header(http::header::CONTENT_TYPE, content_type)
+            .body(axum::body::Body::from(batch_frames(&["procedure.transfer"])))
+            .expect("request");
+        let answer = send(&rpc_router(layer, &hits), request).await;
+        assert_eq!(answer.status, StatusCode::UNAUTHORIZED, "{content_type:?}");
+        assert_eq!(hits.get(), 0, "{content_type:?}: the handler must not run");
+    }
+}

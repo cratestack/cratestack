@@ -25,7 +25,8 @@ use crate::idempotency::mount_prefix;
 /// a COSE body is refused, a plain one passes to the router, whose `404` it
 /// is. A well-formed but unknown op id is bound anyway, so the router's
 /// `404` for it is sealed like any other error. Only `POST` is an op on the
-/// unary and batch routes, only `GET` on the subscription route.
+/// unary and batch routes, only `GET` (and `HEAD`, which axum routes to
+/// it) on the subscription route.
 #[derive(Debug, Clone)]
 pub struct RpcBindingResolver {
     prefix: String,
@@ -68,7 +69,13 @@ impl BindingResolver for RpcBindingResolver {
         } else {
             return Resolution::Unresolved;
         };
-        if request.method() != expected {
+        // axum answers `HEAD` with the `GET` route, so a `HEAD` to the
+        // subscription route runs its handler: it is that op, bound with
+        // its real method, as in the REST resolver (security finding SF-2
+        // of the second review). As `MethodNotAllowed` it passed unsigned
+        // whenever the policy's `unresolved_mode` was not `Required`.
+        let head_as_get = expected == Method::GET && request.method() == Method::HEAD;
+        if request.method() != expected && !head_as_get {
             return Resolution::MethodNotAllowed(vec![expected]);
         }
         let Some(route_prefix) = route else {
