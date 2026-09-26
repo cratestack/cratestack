@@ -64,6 +64,12 @@ use crate::error::misuse;
 
 /// The binding version, the first array element. Q5's escape hatch: a
 /// future binding scheme gets a new number instead of a new wire format.
+///
+/// Version 1 is frozen at the first release in which generated routers and
+/// clients use the envelope (cratestack#1006 / #1007), not at the first
+/// release of this crate, which has no wire peers. After that release, any
+/// change to the elements or to how one is derived bumps this number, and
+/// verifiers reject versions they do not know (ADR 0006 §4).
 pub const BINDING_VERSION: u64 = 1;
 
 /// Encode the external AAD for `bind`: the bytes that go into the

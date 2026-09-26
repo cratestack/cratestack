@@ -1,0 +1,9 @@
+# The conformance client's own one-package workspace root, like every other
+# example lockfile root, so `pnpm install` run here resolves here and never
+# at the repository root, whose workspace covers only `packages/*`.
+# `just mcp-conformance` copies `package.json` and `pnpm-lock.yaml` into a
+# throwaway directory and installs there; this file is for bumping the
+# client in place (`pnpm install --lockfile-only --ignore-scripts`) and for
+# Dependabot (`.github/dependabot.yml`).
+packages:
+  - "."

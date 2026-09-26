@@ -216,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "chrono",
  "cratestack-client-rust",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-rust"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -253,7 +253,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-cbor"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "cratestack-core",
  "minicbor-serde",
@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-json"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -292,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-macros"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-parser"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "ariadne",
  "chumsky",
@@ -317,7 +317,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-policy"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -325,7 +325,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sql"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "chrono",
  "cratestack-core",

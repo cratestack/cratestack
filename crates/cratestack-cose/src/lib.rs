@@ -28,6 +28,11 @@
 //! - [`KeyProviderMacKeys`] turns `cratestack_core::KeyProvider` secrets
 //!   into Mac0 keys.
 //!
+//! **Wire-format preview:** no generated router or client uses this crate
+//! yet (cratestack#1006, #1007). Until the first release that ships them,
+//! the wire format, including binding version 1, may still change; see
+//! [`BINDING_VERSION`].
+//!
 //! **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`) for
 //! Sign1, HMAC 256/64 (`4`) and 256/256 (`5`) for Mac0. Nothing else is
 //! accepted, including the deprecated `-8` and `-7` (see [`CoseAlg`]).

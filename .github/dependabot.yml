@@ -2,12 +2,12 @@
 #
 # Why this file exists: before it, nothing in this repo refreshed any
 # dependency manifest on a schedule. The npm side is the sharp edge —
-# there are ELEVEN independent `pnpm-lock.yaml` files here, and the root
+# there are TWELVE independent `pnpm-lock.yaml` files here, and the root
 # `pnpm-workspace.yaml` only covers `packages/*`. Every `examples/*` root
 # is deliberately its own disjoint pnpm workspace (see the header comment
 # in `examples/react-vite-swr/pnpm-workspace.yaml` for the rationale), so
 # a single npm entry pointed at `/` would monitor the root workspace and
-# silently leave the ten example lockfiles untouched forever. That is
+# silently leave the eleven example lockfiles untouched forever. That is
 # not hypothetical: it is the direct cause of the HIGH-severity advisory
 # backlog that accumulated in the example apps. Hence the explicit
 # per-directory enumeration below — if you add a new `pnpm-lock.yaml`
@@ -96,11 +96,24 @@ updates:
     groups:
       cargo-minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # sqlite-wasm-vfs 0.3 is built for sqlite-wasm-rs 0.6, but rusqlite
+      # (0.40.2, the latest) links sqlite-wasm-rs 0.5 on wasm32. Both declare
+      # `links = "wsqlite3"`, so they cannot coexist in one graph, and 0.3's
+      # `sahpool::install` needs an `rsqlite_vfs` 0.2 `OsCallback` that 0.5's
+      # `WasmOsCallback` does not implement. #1048 merged this bump anyway (its
+      # main CI run was cancelled) and broke every wasm32 embedded build; it was
+      # reverted. Lift this when rusqlite moves to sqlite-wasm-rs 0.6: bump
+      # both, enable sqlite-wasm-vfs's `sahpool` feature, and use
+      # `OpfsSAHPoolCfgBuilder` in `cratestack-rusqlite/src/opfs.rs` (0.3 made
+      # the config fields private).
+      - dependency-name: sqlite-wasm-vfs
+        versions: [">= 0.3"]
     commit-message:
       prefix: "chore(cargo)"
 
   # ---- npm / pnpm -----------------------------------------------------
-  # Seven of the eleven lockfiles; the other four have their own entries
+  # Seven of the twelve lockfiles; the other five have their own entries
   # below, each for a stated reason. Grouped so a routine week is a handful of PRs
   # rather than dozens; majors still come through individually, because
   # those are the ones that need a human to read a changelog.
@@ -205,3 +218,19 @@ updates:
       # requires Expo 58 and also raises the Node floor to ^22.13, so a lone
       # bump here would be wrong in two directions. Move it with the Expo SDK.
       - dependency-name: react-native
+
+  # `examples/mcp-operator/conformance` — the third-party MCP client
+  # `just mcp-conformance` drives the example with. Its own entry so it
+  # cannot join the weekly group: the client is pinned exactly and each bump
+  # should be read on its own, with the conformance run's output (the
+  # `mcp-example` job runs on the PR). Its `package.json` pins
+  # `packageManager` like the other roots, so Dependabot resolves with the
+  # pnpm CI uses.
+  - package-ecosystem: npm
+    directory: /examples/mcp-operator/conformance
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "chore(npm)"

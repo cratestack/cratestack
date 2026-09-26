@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### MCP: a legacy `initialize` checks the caller before it is refused (#1033)
+
+**Maintainer decision on #1068's question.** No version this server speaks has
+an `initialize` handshake, so `rmcp`'s negotiation refuses every legacy
+`initialize` with `-32022` and the supported-version list. It did so before any
+of this crate's code ran, so over Streamable HTTP a request that reached the
+handler without the guard's caller got that answer too, and widening the
+supported versions later would have answered `serverInfo` below the guard.
+`McpServer` now overrides `initialize` to resolve the caller first:
+
+- **Below the guard**, a legacy `initialize` fails closed with `-32603`, like
+  every other method.
+- **Over stdio**, and **over HTTP with a token your `AuthProvider` accepts**,
+  the answer is unchanged: `-32022`, with the supported-version list. The
+  conformance run's legacy-client case still passes.
+
+The resource-read charging rule is **kept as built**, and a test now pins it.
+An id the URI parser refuses (an unknown segment, a raw non-`pchar` character,
+a NUL) is refused before admission and costs nothing. An id that is a
+well-formed segment but no key of the model's type (`abc` for an `Int` key) is
+charged like a missing row. Every one answers the same "resource not found", so
+the cost reveals the id's type, never whether a row exists.
+
+MCP first shipped in 0.13.0. Against it, only a request below the guard sees a
+different answer (`-32603` instead of `-32022`); every client that passes the
+guard, and every stdio client, sees what 0.13.0 answers.
+
 ### The envelope layer for REST and RPC, with pluggable decisions; the AAD binds `Idempotency-Key`/`If-Match`; the idempotency default honours `VerifiedPrincipal` — breaking (#1006)
 
 **New, `cratestack-axum` features `envelope` and `cose` (both forwarded by
@@ -146,6 +173,8 @@ Custom fingerprints are unaffected.
   [u8; 32]`, the same digest as `SCHEMA_SHA256`, as the bytes a binding
   carries.
 
+## 0.13.0 (2026-09-26)
+
 ### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
 
 **Affected: 0.2.0 through 0.12.0, Postgres server role
@@ -282,6 +311,7 @@ Before this fix they were silently ignored and the protection always
 applied. Unversioned procedures and every RPC path are byte-for-byte
 unchanged, and so are the committed example clients (no example declares
 `@api_version`).
+
 ### Security: `@server_only` fields were sent by `@computed` procedure outputs, and any request could filter or sort by them (GHSA-ch54-jqw2-vpp5)
 
 One advisory, two issues.
