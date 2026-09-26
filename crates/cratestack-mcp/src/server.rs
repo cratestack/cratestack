@@ -17,6 +17,7 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
 
+use crate::fixed_caller::StdioConfigError;
 use crate::listing::{ToolTableError, build_listing};
 use crate::streamable_http::caller::Caller;
 use crate::table::McpTools;
@@ -25,14 +26,13 @@ mod discovery;
 
 /// An MCP server over one schema's tools.
 ///
-/// Over stdio it answers as one caller: the context is a constructor
-/// argument with no default and no `Option` (ADR 0002 Q1), because stdio
-/// has no transport-level identity, so the application states who the
-/// caller is, deliberately — a `SystemContext::for_service(...)`, or
-/// `CratestackContext::authenticated` from a token it verified. Over
-/// Streamable HTTP each request brings its own, built by the application's
-/// `AuthProvider` (`crate::streamable_http`). Either way every tool call runs under
-/// exactly that context, through the procedure's generated policy check.
+/// Over stdio it answers as one caller, a constructor argument with no
+/// default (ADR 0002 Q1) that must not be anonymous (`crate::fixed_caller`):
+/// a `SystemContext::for_service(...)`, or `CratestackContext::authenticated`
+/// from a token the application verified. Over Streamable HTTP each request
+/// brings its own, built by the application's `AuthProvider`. Either way
+/// every tool call runs under exactly that context, through the procedure's
+/// generated policy check.
 pub struct McpServer<T: McpTools> {
     pub(crate) tools: T,
     /// Who a call runs as. Read it through [`Caller::resolve`], never by
@@ -49,10 +49,11 @@ pub struct McpServer<T: McpTools> {
 }
 
 impl<T: McpTools> McpServer<T> {
-    /// Fails only when the table's schemas are not JSON objects or a name
-    /// repeats, which the generated table never produces.
-    pub fn new(tools: T, context: CratestackContext) -> Result<Self, ToolTableError> {
-        Self::with_caller(tools, Caller::Fixed(Box::new(context)))
+    /// Fails when `context` is anonymous (`crate::fixed_caller`), or when
+    /// the table's schemas are not JSON objects or a name repeats, which
+    /// the generated table never produces.
+    pub fn new(tools: T, context: CratestackContext) -> Result<Self, StdioConfigError> {
+        Ok(Self::with_caller(tools, Caller::fixed(context)?)?)
     }
 
     /// `pub(crate)`: only `crate::streamable_http` builds a server whose caller comes
