@@ -15,8 +15,8 @@ importers:
         specifier: ^57.0.7
         version: 57.0.7(expo@57.0.24)(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))
       expo-modules-core:
-        specifier: ^58.0.4
-        version: 58.0.4(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
+        specifier: ^58.0.5
+        version: 58.0.5(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       react:
         specifier: 19.3.0
         version: 19.3.0
@@ -1205,8 +1205,8 @@ packages:
       react-native-worklets:
         optional: true
 
-  expo-modules-core@58.0.4:
-    resolution: {integrity: sha512-oy2ajkhhKUp+cfyy7K2Lk9SMFumBVYiK57MXLW7v8mdizOYk0UXHvCla3snxMXN3jv+N8NC8JP+v4aC7dYKmFg==}
+  expo-modules-core@58.0.5:
+    resolution: {integrity: sha512-lMKSUZdzvVeNktF2D7qBv5AZYBy3lcNuMZFbSwDwb4TEk6a/ehOSOGXOVIzBnJvGLMGBBwFx4Uy7H9yn9ZiTTg==}
     peerDependencies:
       react: '*'
       react-native: '*'
@@ -3639,7 +3639,7 @@ snapshots:
       react: 19.3.0
       react-native: 0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
 
-  expo-modules-core@58.0.4(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0):
+  expo-modules-core@58.0.5(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0):
     dependencies:
       '@expo/expo-modules-macros-plugin': 0.12.0
       expo-modules-jsi: 58.0.3(react-native@0.86.2(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))
