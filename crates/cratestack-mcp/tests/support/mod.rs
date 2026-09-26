@@ -119,3 +119,13 @@ pub fn user(id: &str) -> CratestackContext {
         cratestack_core::Value::String(id.to_owned()),
     )])
 }
+
+/// A caller the application authenticated, but with no `id` claim: stdio
+/// refuses an anonymous context (cratestack#1033), so this is how a test
+/// reaches the "no principal id" refusals of keyed and rate-limited calls.
+pub fn without_id() -> CratestackContext {
+    CratestackContext::authenticated([(
+        "role".to_owned(),
+        cratestack_core::Value::String("reader".to_owned()),
+    )])
+}

@@ -14,7 +14,9 @@
 //!   [`CratestackContext`] every call runs under. There is no default and no
 //!   "local means trusted" path: the spec says stdio credentials come from
 //!   the environment, and turning them into a context is the application's
-//!   job, done deliberately.
+//!   job, done deliberately. An anonymous context is refused when the server
+//!   is built ([`StdioConfigError::AnonymousContext`], cratestack#1033), by
+//!   the rule the HTTP guard applies to an `AuthProvider`'s answer.
 //!
 //! ```no_run
 //! use cratestack_core::{CratestackContext, SystemContext, Value};
@@ -56,7 +58,7 @@ use rmcp::ServiceExt;
 use rmcp::service::{QuitReason, ServerInitializeError};
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::listing::ToolTableError;
+use crate::fixed_caller::StdioConfigError;
 use crate::server::McpServer;
 use crate::table::McpTools;
 
@@ -66,8 +68,9 @@ pub struct StdioServer<T: McpTools> {
 }
 
 impl<T: McpTools> StdioServer<T> {
-    /// `context` is required; see the module doc for why nothing defaults it.
-    pub fn new(tools: T, context: CratestackContext) -> Result<Self, ToolTableError> {
+    /// `context` is required, and an anonymous one is refused
+    /// ([`StdioConfigError::AnonymousContext`]); see the module doc.
+    pub fn new(tools: T, context: CratestackContext) -> Result<Self, StdioConfigError> {
         Ok(Self {
             server: McpServer::new(tools, context)?,
         })

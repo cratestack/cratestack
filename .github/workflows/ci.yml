@@ -126,6 +126,14 @@ jobs:
         # through getrandom, which needs its `wasm_js` backend on this
         # target (cratestack#1005). Nothing else compiles it for wasm32.
         run: cargo check --locked -p cratestack-cose --target wasm32-unknown-unknown
+      - name: cargo check (cratestack-cbor-wasm for wasm32-unknown-unknown)
+        # `@cratestack/cbor-web`'s crate compiles `cratestack-core` for this
+        # target with no crate selecting a getrandom wasm backend. A
+        # randomness dependency added to core (cratestack#1006 once put
+        # `getrandom` 0.4 there) breaks it, and only the wasm-pack job
+        # further down would notice, much later. Decision B-1 of the
+        # second #1006 review.
+        run: cargo check --locked -p cratestack-cbor-wasm --target wasm32-unknown-unknown
       - name: cargo tree (cratestack-cose reaches cratestack-auth only through its `auth` feature)
         # ADR 0006 §11 / cratestack#1005: clients and the wasm/napi builds
         # depend on `cratestack-cose` without `auth`, and must not inherit
@@ -337,6 +345,64 @@ jobs:
             graph="$(cd "examples/$example" && cargo tree --locked -e normal)"
             if grep -q '\brmcp v' <<<"$graph"; then
               echo "::error::expected no rmcp in examples/$example's dependency graph"
+              exit 1
+            fi
+          done
+      - name: COSE crates absent without the cose feature (every facade, cratestack-axum, and every standalone example)
+        # cratestack#1006 (maintainer decision D7, and the API review's
+        # additive split): the envelope layer sits behind `cratestack-axum`'s
+        # `envelope` feature, the COSE envelope and `cratestack-cose` behind
+        # `cose = ["envelope", ...]`; only `cratestack-pg`/`cratestack-api`
+        # forward them. A graph without `cose` must contain neither
+        # `cratestack-cose` nor the signature crates it brings
+        # (`p256`/`ecdsa`, `ed25519-dalek`/`curve25519-dalek`; none of them is
+        # in any facade's graph otherwise), and that includes `envelope` alone:
+        # a custom `ServerEnvelope` must not compile COSE. Same shape and the
+        # same `set -e` capture discipline as the rmcp step above: the
+        # `--features cose` loop proves the grep can fail, the refusal loop
+        # that sqlite/client offer neither feature at all.
+        run: |
+          set -euo pipefail
+          crypto='^(cratestack-cose|p256|ecdsa|ed25519-dalek|curve25519-dalek) v'
+          no_crypto() {
+            local what="$1"; shift
+            local graph
+            graph="$(cargo tree --locked -e normal "$@" --prefix none)"
+            if grep -E "$crypto" <<<"$graph"; then
+              echo "::error::expected no COSE or signature crate in $what's normal dependency graph"
+              exit 1
+            fi
+          }
+          for facade in cratestack-pg cratestack-api cratestack-sqlite cratestack-client; do
+            no_crypto "$facade (default features)" -p "$facade"
+          done
+          no_crypto "cratestack-axum (default features)" -p cratestack-axum
+          no_crypto "cratestack-axum --features envelope" -p cratestack-axum --features envelope
+          for facade in cratestack-pg cratestack-api; do
+            no_crypto "$facade --features envelope" -p "$facade" --features envelope
+            graph="$(cargo tree --locked -e normal -p "$facade" --features cose --prefix none)"
+            if ! grep -q '^cratestack-cose v' <<<"$graph"; then
+              echo "::error::expected cratestack-cose in $facade's graph with --features cose"
+              exit 1
+            fi
+          done
+          for facade in cratestack-sqlite cratestack-client; do
+            for feature in cose envelope; do
+              if refusal="$(cargo tree --locked -e normal -p "$facade" --features "$feature" 2>&1)"; then
+                echo "::error::$facade must not offer a $feature feature (the layer is server-side, D7)"
+                exit 1
+              fi
+              if ! grep -q "does not contain this feature: $feature" <<<"$refusal"; then
+                echo "::error::cargo tree failed for $facade, but not for the missing $feature feature:"
+                echo "$refusal"
+                exit 1
+              fi
+            done
+          done
+          for example in no-database-verification no-database-verification-api client-only-verification db-transaction-verification declarative-query-verification mcp-operator; do
+            graph="$(cd "examples/$example" && cargo tree --locked -e normal --prefix none)"
+            if grep -E "$crypto" <<<"$graph"; then
+              echo "::error::expected no COSE or signature crate in examples/$example's dependency graph"
               exit 1
             fi
           done

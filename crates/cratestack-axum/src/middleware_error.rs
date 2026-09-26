@@ -44,7 +44,7 @@ use serde::Serialize;
 
 use crate::codec::CodecSet;
 
-use self::rpc_probe::is_rpc_path;
+pub(crate) use self::rpc_probe::is_rpc_path;
 use crate::transport::{HttpTransport, select_transport_response_content_type};
 
 /// The codec pair every generated `router()` is wired with by default —
@@ -85,14 +85,51 @@ pub(crate) fn middleware_error_response(
     path: &str,
     error: CratestackError,
 ) -> Response {
-    let codec = middleware_codec();
     let status = error.status_code();
+    middleware_error_response_with_status(headers, path, status, error)
+}
+
+/// [`middleware_error_response`] with an explicit status, for a refusal
+/// whose status has no `CratestackError` variant of its own (the envelope
+/// layer's `413`, cratestack#1006): the body carries `error`'s code and
+/// message, the response the given status.
+pub(crate) fn middleware_error_response_with_status(
+    headers: &HeaderMap,
+    path: &str,
+    status: StatusCode,
+    error: CratestackError,
+) -> Response {
+    let codec = middleware_codec();
     if is_rpc_path(path) {
         let body = RpcErrorBody::from_cratestack(&error);
         encode_with_status(&codec, headers, status, &body)
     } else {
         encode_with_status(&codec, headers, status, &error.into_response())
     }
+}
+
+/// [`middleware_error_response_with_status`] with the REST body's `code`
+/// set to `rest_code`, for a status no `CratestackError` variant names
+/// (the envelope layer's `405`, cratestack#1006): REST codes name the
+/// status (`NOT_FOUND`, `TOO_MANY_REQUESTS`), so a `405` must not say
+/// `BAD_REQUEST`. The RPC body keeps `error`'s code: that binding's stable
+/// vocabulary (`docs/design/rpc-transport.md` §2) has no wrong-method
+/// entry, and inventing one would be a wire change for every client.
+/// Only the envelope layer needs it.
+#[cfg(feature = "envelope")]
+pub(crate) fn middleware_error_response_with_code(
+    headers: &HeaderMap,
+    path: &str,
+    status: StatusCode,
+    rest_code: &str,
+    error: CratestackError,
+) -> Response {
+    if is_rpc_path(path) {
+        return middleware_error_response_with_status(headers, path, status, error);
+    }
+    let mut body = error.into_response();
+    body.code = rest_code.to_owned();
+    encode_with_status(&middleware_codec(), headers, status, &body)
 }
 
 /// Encode `body` at `status`, negotiating the content type from `Accept`.

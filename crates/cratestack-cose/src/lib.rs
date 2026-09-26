@@ -28,9 +28,9 @@
 //! - [`KeyProviderMacKeys`] turns `cratestack_core::KeyProvider` secrets
 //!   into Mac0 keys.
 //!
-//! **Wire-format preview:** no generated router or client uses this crate
-//! yet (cratestack#1006, #1007). Until the first release that ships them,
-//! the wire format, including binding version 1, may still change; see
+//! **Wire-format preview:** the server layer ships (cratestack#1006), the
+//! Rust client does not yet (#1007), and binding version 1 freezes when
+//! both have shipped. Until then the wire format may still change; see
 //! [`BINDING_VERSION`].
 //!
 //! **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`) for
@@ -82,14 +82,21 @@ mod keys;
 mod open;
 mod opened;
 mod replay;
-mod request_nonce;
 mod seal;
 mod tbs;
 pub mod thumbprint;
 mod wire;
 
-pub use aad::{BINDING_VERSION, external_aad, request_digest};
+pub use aad::{BINDING_VERSION, external_aad};
 pub use alg::{CoseAlg, CoseMode};
+/// Defined in `cratestack-core` since the cratestack#1006 API review (so
+/// the axum layer's `envelope` feature needs no COSE crate), and
+/// re-exported here unchanged: every path under `cratestack_cose` keeps
+/// working.
+pub use cratestack_core::{
+    NONCE_HEADER, NONCE_HEADER_VALUE_LEN, REQUEST_NONCE_LEN, RequestNonce, request_digest,
+    request_digest_unsigned,
+};
 pub use envelope::{CoseEnvelope, CoseEnvelopeBuilder, CoseRole};
 pub use error::UNAUTHENTICATED;
 pub use keys::{
@@ -97,7 +104,4 @@ pub use keys::{
     KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
 };
 pub use opened::Opened;
-pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN};
-pub use request_nonce::{
-    NONCE_HEADER, NONCE_HEADER_VALUE_LEN, REQUEST_NONCE_LEN, RequestNonce, request_digest_unsigned,
-};
+pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN, random_request_nonce};

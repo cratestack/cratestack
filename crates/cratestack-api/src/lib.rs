@@ -143,8 +143,16 @@ pub use cratestack_axum::rpc;
 #[cfg(feature = "mcp")]
 pub use cratestack_mcp as mcp;
 
+mod envelope_fn;
+
 #[doc(hidden)]
 pub mod __private {
+    /// The generated `envelope_layer`'s body, which this facade's
+    /// `__envelope_layer_fn!` forwards to under its `envelope` feature
+    /// (`envelope_fn.rs`).
+    #[cfg(feature = "envelope")]
+    pub use cratestack_axum::__envelope_layer_fn_body as envelope_layer_fn_body;
+
     /// Re-exports for the macro-emitted RPC batch dispatcher
     /// (`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`).
     /// Not part of the public API surface — schema authors should never

@@ -54,8 +54,10 @@ pub use batch::{
     BatchSummary, find_duplicate_position,
 };
 pub use codec::{
-    Binding, BodyShape, CratestackCodec, CratestackEnvelope, NoEnvelope, OpenedFrame, PathParams,
-    RequestDigest, RequestKind, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
+    Binding, BodyShape, BoundHeaders, CratestackCodec, CratestackEnvelope, NONCE_HEADER,
+    NONCE_HEADER_VALUE_LEN, NoEnvelope, OpenedFrame, PathParams, REQUEST_NONCE_LEN, RequestDigest,
+    RequestKind, RequestNonce, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
+    UNAUTHENTICATED, request_digest, request_digest_unsigned,
 };
 pub use context::{
     AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
@@ -111,7 +113,7 @@ pub use store::{
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
 pub use transport::{
-    OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor,
+    OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor, canonical_query,
     canonical_request_string,
 };
 pub use validators::{
