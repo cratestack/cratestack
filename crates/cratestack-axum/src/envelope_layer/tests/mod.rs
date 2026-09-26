@@ -13,6 +13,7 @@ mod plugins;
 mod required_rest;
 mod required_rest_errors;
 mod required_rpc;
+mod rpc_modes;
 mod streams;
 mod support;
 mod toy;
