@@ -1,7 +1,8 @@
 {
   "name": "mcp-operator-conformance",
   "private": true,
-  "description": "The third-party MCP client `just mcp-conformance` drives the example with (cratestack#1041). Installed only by that recipe, with `npm ci --ignore-scripts` from the committed package-lock.json into a throwaway directory. Part of no workspace. The version is exact: bump it deliberately, then run `npm install --package-lock-only --ignore-scripts` here.",
+  "description": "The third-party MCP client `just mcp-conformance` drives the example with (cratestack#1041). Installed only by that recipe, with `pnpm install --frozen-lockfile --ignore-scripts` from the committed pnpm-lock.yaml into a throwaway directory. Its own one-package workspace root (pnpm-workspace.yaml), part of no other. The version is exact: bump it deliberately, then run `pnpm install --lockfile-only --ignore-scripts` here.",
+  "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=22.19.0"
   },
