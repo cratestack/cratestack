@@ -85,7 +85,9 @@ pub trait EnvelopePolicy: Send + Sync + 'static {
     /// whose frames it cannot read (B1). Under `Required` the first fails
     /// closed with a `500` unless the route is allow-listed
     /// ([`super::EnvelopeLayerBuilder::allow_unresolved`]), and the second
-    /// is refused.
+    /// is refused. Under a non-`Required` answer, both pass through, and so
+    /// does a method the schema does not generate on a generated path
+    /// (otherwise the layer's `405`), unsigned.
     ///
     /// The default is `Required`, which fails closed: a per-op closure
     /// cannot say what it would have answered for an op nobody can name.

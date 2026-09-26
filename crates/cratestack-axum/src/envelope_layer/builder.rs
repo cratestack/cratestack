@@ -108,7 +108,10 @@ impl EnvelopeLayerBuilder {
     /// always `Required`: with `Optional` or `Off` here, a matched route the
     /// resolver cannot bind passes through plain (warned about once per
     /// process) instead of failing closed with the `500`, and so does
-    /// every route when the mount prefix is wrong. Prefer listing
+    /// every route when the mount prefix is wrong. It also lets through a
+    /// method the schema does not generate on a generated path (normally
+    /// the layer's own `405`), so a hand-written handler for that method
+    /// runs unsigned. Prefer listing
     /// hand-written routes with [`allow_unresolved`](Self::allow_unresolved),
     /// which keeps a misconfiguration loud. The ops' own modes are
     /// unchanged; a `/rpc/batch` whose frames cannot be read uses this
