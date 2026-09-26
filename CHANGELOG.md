@@ -38,6 +38,8 @@ parses. Rename the key attribute to `@id` and delete the extra `@relation`.
 `cratestack check` over every `.cstack` tracked in this repository gives the
 same result before and after this change.
 
+## 0.13.0 (2026-09-26)
+
 ### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
 
 **Affected: 0.2.0 through 0.12.0, Postgres server role
