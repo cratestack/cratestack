@@ -7,13 +7,23 @@ use std::fmt::Write;
 
 use cratestack_sql::{FilterOp, FilterValue};
 
-use crate::{FilterExpr, RelationFilter, RelationQuantifier};
+use cratestack_core::CratestackContext;
+
+use crate::FilterExpr;
 
 use super::filter_subkinds::{
     render_coalesce_filter_sql, render_json_filter_sql, render_vector_distance_filter_sql,
 };
+use super::relation::render_relation_filter_sql;
 
-pub(crate) fn render_filter_sql(filters: &[FilterExpr], bind_index: &mut usize) -> Option<String> {
+/// `ctx`: `Some` renders each relation subquery's related read scope as
+/// it executes; `None` (the ctx-free `preview_sql`) renders no scope. See
+/// `super::relation`.
+pub(crate) fn render_filter_sql(
+    filters: &[FilterExpr],
+    bind_index: &mut usize,
+    ctx: Option<&CratestackContext>,
+) -> Option<String> {
     if filters.is_empty() {
         return None;
     }
@@ -23,7 +33,7 @@ pub(crate) fn render_filter_sql(filters: &[FilterExpr], bind_index: &mut usize) 
         if index > 0 {
             sql.push_str(" AND ");
         }
-        render_filter_expr_sql(filter, &mut sql, bind_index);
+        render_filter_expr_sql(filter, &mut sql, bind_index, ctx);
     }
 
     Some(sql)
@@ -33,6 +43,7 @@ pub(crate) fn render_filter_expr_sql(
     filter: &FilterExpr,
     sql: &mut String,
     bind_index: &mut usize,
+    ctx: Option<&CratestackContext>,
 ) {
     match filter {
         FilterExpr::Filter(filter) => match filter.op {
@@ -76,15 +87,19 @@ pub(crate) fn render_filter_expr_sql(
                 *bind_index += 1;
             }
         },
-        FilterExpr::All(filters) => render_grouped_filter_sql(filters, " AND ", sql, bind_index),
-        FilterExpr::Any(filters) => render_grouped_filter_sql(filters, " OR ", sql, bind_index),
+        FilterExpr::All(filters) => {
+            render_grouped_filter_sql(filters, " AND ", sql, bind_index, ctx)
+        }
+        FilterExpr::Any(filters) => {
+            render_grouped_filter_sql(filters, " OR ", sql, bind_index, ctx)
+        }
         FilterExpr::Not(filter) => {
             sql.push_str("NOT (");
-            render_filter_expr_sql(filter, sql, bind_index);
+            render_filter_expr_sql(filter, sql, bind_index, ctx);
             sql.push(')');
         }
         FilterExpr::Relation(relation) => {
-            render_relation_filter_sql(relation, sql, bind_index);
+            render_relation_filter_sql(relation, sql, bind_index, ctx);
         }
         FilterExpr::Coalesce(coalesce) => {
             render_coalesce_filter_sql(coalesce, sql, bind_index);
@@ -98,54 +113,6 @@ pub(crate) fn render_filter_expr_sql(
         }
         FilterExpr::VectorDistance(vector) => {
             render_vector_distance_filter_sql(vector, sql, bind_index);
-        }
-    }
-}
-
-pub(crate) fn render_relation_filter_sql(
-    relation: &RelationFilter,
-    sql: &mut String,
-    bind_index: &mut usize,
-) {
-    match relation.quantifier {
-        RelationQuantifier::ToOne | RelationQuantifier::Some => {
-            let _ = write!(
-                sql,
-                "EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                relation.related_table,
-                relation.related_table,
-                relation.related_column,
-                relation.parent_table,
-                relation.parent_column,
-            );
-            render_filter_expr_sql(&relation.filter, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::None => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND ",
-                relation.related_table,
-                relation.related_table,
-                relation.related_column,
-                relation.parent_table,
-                relation.parent_column,
-            );
-            render_filter_expr_sql(&relation.filter, sql, bind_index);
-            sql.push(')');
-        }
-        RelationQuantifier::Every => {
-            let _ = write!(
-                sql,
-                "NOT EXISTS (SELECT 1 FROM {} WHERE {}.{} = {}.{} AND NOT (",
-                relation.related_table,
-                relation.related_table,
-                relation.related_column,
-                relation.parent_table,
-                relation.parent_column,
-            );
-            render_filter_expr_sql(&relation.filter, sql, bind_index);
-            sql.push_str("))");
         }
     }
 }
@@ -165,13 +132,14 @@ fn render_grouped_filter_sql(
     joiner: &str,
     sql: &mut String,
     bind_index: &mut usize,
+    ctx: Option<&CratestackContext>,
 ) {
     sql.push('(');
     for (index, filter) in filters.iter().enumerate() {
         if index > 0 {
             sql.push_str(joiner);
         }
-        render_filter_expr_sql(filter, sql, bind_index);
+        render_filter_expr_sql(filter, sql, bind_index, ctx);
     }
     sql.push(')');
 }

@@ -66,7 +66,7 @@ pub enum FilterExpr {
 
 Generated field helpers (e.g. `cratestack_schema::post::published()`) return `FieldRef<M, T>` builders whose terminal methods (`eq`, `ne`, `gt`, `lt`, `is_true`, `like`, `starts_with`, ...) produce a `Filter`. Combine with `FilterExpr::all`/`any`/`not` or the fluent `.and(...)` / `.or(...)` combinators on `FilterExpr`.
 
-`RelationFilter` carries the relation traversal metadata (`quantifier`, `parent_table`, `parent_column`, `related_table`, `related_column`) plus a boxed inner `FilterExpr`. `RelationQuantifier` is re-exported from `cratestack-policy`.
+`RelationFilter` carries the relation traversal metadata (`quantifier`, `parent_table`, `parent_column`, `related_table`, `related_column`), a boxed inner `FilterExpr`, and the related model's `RelatedReadScope` (`scope`). The scope is required: pass `<RELATED>_MODEL.related_read_scope()` so the subquery sees only related rows the caller may read, or `RelatedReadScope::Unscoped` only in trusted code that deliberately reads the raw table. `RelationQuantifier` is re-exported from `cratestack-policy`.
 
 ## Order AST
 

@@ -27,6 +27,7 @@ mod order;
 mod policy;
 mod policy_predicate;
 mod policy_relation;
+mod relation_scope;
 mod unique_violation;
 mod values;
 mod version_probe;

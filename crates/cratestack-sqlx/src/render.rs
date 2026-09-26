@@ -8,9 +8,11 @@ mod filter_subkinds;
 mod order;
 mod policy;
 mod policy_predicate;
+mod relation;
 mod select;
 
 pub(crate) use filter::render_filter_expr_sql;
 pub(crate) use order::render_order_clause_sql;
 pub(crate) use policy::render_read_policy_sql;
+pub(crate) use relation::relation_from_sql;
 pub(crate) use select::render_scoped_select_sql;

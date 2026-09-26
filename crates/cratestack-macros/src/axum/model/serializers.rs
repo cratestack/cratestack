@@ -126,13 +126,9 @@ pub(super) fn build_list_builder(
                                 field_name,
                                 #model_name,
                             )))?;
-                        let root = target.hops[0];
-                        request.order_by(::cratestack::OrderClause::relation_scalar(
-                            root.parent_table,
-                            root.parent_column,
-                            root.related_table,
-                            root.related_column,
-                            ::cratestack::order_value_sql(&target.hops, target.column),
+                        request.order_by(::cratestack::OrderClause::relation_path(
+                            &target.hops,
+                            target.column,
                             if descending {
                                 ::cratestack::SortDirection::Desc
                             } else {

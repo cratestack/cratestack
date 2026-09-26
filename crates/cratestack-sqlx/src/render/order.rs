@@ -3,14 +3,20 @@
 
 use std::fmt::Write;
 
+use cratestack_core::CratestackContext;
 use cratestack_sql::OrderTarget;
 
 use crate::{OrderClause, SortDirection};
 
+use super::relation::render_relation_value_sql;
+
+/// `ctx`: see [`super::filter::render_filter_sql`] — `None` renders relation
+/// sort subqueries without their related read scope.
 pub(crate) fn render_order_clause_sql(
     clause: &OrderClause,
     sql: &mut String,
     bind_index: &mut usize,
+    ctx: Option<&CratestackContext>,
 ) {
     match &clause.target {
         OrderTarget::Column(column) => {
@@ -22,22 +28,11 @@ pub(crate) fn render_order_clause_sql(
                 null_order_sql(clause.null_order),
             );
         }
-        OrderTarget::RelationScalar {
-            parent_table,
-            parent_column,
-            related_table,
-            related_column,
-            value_sql,
-        } => {
+        OrderTarget::RelationScalar { hops, column } => {
+            render_relation_value_sql(hops, column, sql, bind_index, ctx);
             let _ = write!(
                 sql,
-                "(SELECT {} FROM {} WHERE {}.{} = {}.{} LIMIT 1) {} {}",
-                value_sql,
-                related_table,
-                related_table,
-                related_column,
-                parent_table,
-                parent_column,
+                " {} {}",
                 sort_direction_sql(clause.direction),
                 null_order_sql(clause.null_order),
             );

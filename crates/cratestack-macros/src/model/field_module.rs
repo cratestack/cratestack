@@ -84,6 +84,11 @@ fn generate_field_module_with_kind(
                 let parent_column = link.parent_column.as_str();
                 let related_table = link.related_table.as_str();
                 let related_column = link.related_column.as_str();
+                let scope = crate::relation::field_module_scope_tokens(
+                    kind,
+                    &field.ty.name,
+                    quote! { super:: },
+                );
                 Ok(quote! {
                     #[allow(non_snake_case)]
                     pub fn #function_ident() -> super::#target_module::RelToMany {
@@ -95,6 +100,7 @@ fn generate_field_module_with_kind(
                                     #related_table,
                                     #related_column,
                                     ::cratestack::RelationQuantifier::ToOne,
+                                    #scope,
                                 ),
                             ]),
                         )
@@ -118,7 +124,7 @@ fn generate_field_module_with_kind(
         .into_iter()
         .flatten()
         .collect::<Vec<_>>();
-    let path_types = generate_model_path_types(model, models)?;
+    let path_types = generate_model_path_types(model, models, kind)?;
     let selection_module = generate_selection_module(model, model_names, models)?;
 
     Ok(quote! {

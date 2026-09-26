@@ -116,6 +116,14 @@ mod tests_read_policy_predicates;
 #[cfg(test)]
 mod tests_relation;
 #[cfg(test)]
+mod tests_relation_scope;
+#[cfg(test)]
+mod tests_relation_scope_fixtures;
+#[cfg(test)]
+mod tests_relation_scope_parity;
+#[cfg(test)]
+mod tests_relation_scope_self;
+#[cfg(test)]
 mod tests_system_principal_policy;
 #[cfg(test)]
 mod tests_update;
@@ -158,10 +166,10 @@ pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
     JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Orderable, Projection, RelationFilter, RelationHop, RelationInclude,
-    RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
-    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce,
-    is_orderable, order_value_sql, wrap_filter,
+    OrderClause, Orderable, Projection, RelatedReadScope, RelationFilter, RelationHop,
+    RelationInclude, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, Unorderable,
+    UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric,
+    coalesce, is_orderable, order_value_sql, wrap_filter,
 };
 /// PostGIS query surface (cratestack#842), gated in `cratestack-sql`
 /// and forwarded through this crate's own `postgis` feature.

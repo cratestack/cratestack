@@ -18,7 +18,7 @@ use crate::{
 fn order_sql(clause: &OrderClause) -> (String, usize) {
     let mut sql = String::new();
     let mut bind_index = 1usize;
-    render_order_clause_sql(clause, &mut sql, &mut bind_index);
+    render_order_clause_sql(clause, &mut sql, &mut bind_index, None);
     (sql, bind_index)
 }
 
@@ -63,7 +63,7 @@ fn distance_filter_lte_renders_threshold_comparison_with_two_binds() {
         .lte(0.75_f64);
     let mut sql = String::new();
     let mut bind_index = 1usize;
-    render_filter_expr_sql(&filter, &mut sql, &mut bind_index);
+    render_filter_expr_sql(&filter, &mut sql, &mut bind_index, None);
     assert_eq!(sql, "(embedding <-> $1) <= $2");
     assert_eq!(bind_index, 3);
 }
@@ -80,7 +80,7 @@ fn distance_filter_supports_all_three_metrics() {
             .lt(1.0_f64);
         let mut sql = String::new();
         let mut bind_index = 1usize;
-        render_filter_expr_sql(&filter, &mut sql, &mut bind_index);
+        render_filter_expr_sql(&filter, &mut sql, &mut bind_index, None);
         assert_eq!(sql, format!("(embedding {operator} $1) < $2"));
     }
 }
@@ -109,7 +109,13 @@ mod real_bind_path {
         let clause = FieldRef::<(), Vec<f32>>::new("embedding")
             .order_by_distance(VectorMetric::L2, vec![0.1, 0.2, 0.3]);
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT * FROM documents");
-        push_order_and_paging(&mut query, std::slice::from_ref(&clause), None, None);
+        push_order_and_paging(
+            &mut query,
+            std::slice::from_ref(&clause),
+            None,
+            None,
+            &cratestack_core::CratestackContext::anonymous(),
+        );
         assert_eq!(
             query.sql(),
             "SELECT * FROM documents ORDER BY (embedding <-> $1) ASC NULLS LAST",
@@ -122,7 +128,11 @@ mod real_bind_path {
             .distance_to(VectorMetric::Cosine, vec![0.1, 0.2])
             .lte(0.5_f64);
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT * FROM documents WHERE ");
-        push_filter_query(&mut query, std::slice::from_ref(&filter));
+        push_filter_query(
+            &mut query,
+            std::slice::from_ref(&filter),
+            &cratestack_core::CratestackContext::anonymous(),
+        );
         assert_eq!(
             query.sql(),
             "SELECT * FROM documents WHERE (embedding <=> $1) <= $2",

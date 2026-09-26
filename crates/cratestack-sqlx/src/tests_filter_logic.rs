@@ -22,7 +22,7 @@ fn filter_expr_not_wraps_and_unwraps_double_negation() {
     let restored = negated.clone().not();
     let mut bind_index = 1usize;
     let mut sql = String::new();
-    render_filter_expr_sql(&negated, &mut sql, &mut bind_index);
+    render_filter_expr_sql(&negated, &mut sql, &mut bind_index, None);
 
     assert_eq!(sql, "NOT (published = $1)");
     assert_eq!(restored, filter);

@@ -58,7 +58,7 @@ pub(crate) fn push_scoped_conditions<'a, M, PK, Id>(
         if wrote_clause {
             query.push(" AND ");
         }
-        push_filter_query(query, filters);
+        push_filter_query(query, filters, ctx);
         wrote_clause = true;
     }
 

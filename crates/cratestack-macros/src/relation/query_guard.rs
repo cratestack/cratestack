@@ -8,7 +8,7 @@ use quote::quote;
 
 use crate::shared::{find_model, ident, to_snake_case};
 
-use super::types::relation_link;
+use super::types::{related_scope_tokens, relation_link};
 
 pub(crate) fn generate_relation_query_guard(
     model: &Model,
@@ -32,6 +32,7 @@ pub(crate) fn generate_relation_query_guard(
     let parent_column = relation_link.parent_column;
     let related_table = relation_link.related_table;
     let related_column = relation_link.related_column;
+    let scope = related_scope_tokens(&target_model.name, quote! { super:: });
 
     if relation_link.is_to_many {
         let relation_field_name = &relation_field.name;
@@ -52,6 +53,7 @@ pub(crate) fn generate_relation_query_guard(
                         #related_table,
                         #related_column,
                         #target_filter_builder_ident(nested_key, value)?,
+                        #scope,
                     )),
                     "every" => Ok(::cratestack::FilterExpr::relation_every(
                         #parent_table,
@@ -59,6 +61,7 @@ pub(crate) fn generate_relation_query_guard(
                         #related_table,
                         #related_column,
                         #target_filter_builder_ident(nested_key, value)?,
+                        #scope,
                     )),
                     "none" => Ok(::cratestack::FilterExpr::relation_none(
                         #parent_table,
@@ -66,6 +69,7 @@ pub(crate) fn generate_relation_query_guard(
                         #related_table,
                         #related_column,
                         #target_filter_builder_ident(nested_key, value)?,
+                        #scope,
                     )),
                     _ => Err(CratestackError::BadRequest(format!(
                         "unsupported to-many relation operator '{}' for {}.{}; expected some, every, or none",
@@ -86,6 +90,7 @@ pub(crate) fn generate_relation_query_guard(
                 #related_table,
                 #related_column,
                 #target_filter_builder_ident(rest, value)?,
+                #scope,
             ));
         }
     })
