@@ -14,7 +14,9 @@
 //!   2025-03-26, and `ping` answers.
 //! - `SUPPORTED` (`server/discovery.rs`) holds 2026-07-28 alone, so `rmcp`
 //!   refuses a request whose `_meta` names an older version, and
-//!   `initialize` has no version to agree on. Widen it, and both answer.
+//!   `initialize` has no version to agree on. Widen it, and `ping` answers;
+//!   `initialize` no longer would, since it now checks the caller before
+//!   negotiating (cratestack#1033), which this test pins as `-32603`.
 //!
 //! On 2026-07-28 itself, `ping` and every method this server does not
 //! implement are method-not-found. So this sends every method `rmcp`'s
@@ -116,7 +118,17 @@ async fn no_method_answers_below_the_guard_in_any_protocol_version() {
                 reply.get("result").is_none() && reply["error"]["code"].is_i64(),
                 "{method} ({version:?}) answered below the guard: {reply}"
             );
-            if version == Some("2026-07-28") && method != "initialize" {
+            if method == "initialize" {
+                // The caller check runs before `rmcp` negotiates
+                // (cratestack#1033), so below the guard it is never `-32022`.
+                // A request whose header names another version than its
+                // params is `rmcp`'s `-32600` before any handler runs; every
+                // other shape reaches `initialize` and is the caller check's.
+                let code = &reply["error"]["code"];
+                let reaches_handler = matches!(version, None | Some("2025-06-18"));
+                let expected = if reaches_handler { -32603 } else { -32600 };
+                assert_eq!(*code, json!(expected), "{version:?}: {reply}");
+            } else if version == Some("2026-07-28") {
                 // The caller check's refusal, or a method this server
                 // does not implement; nothing in between.
                 let code = &reply["error"]["code"];
@@ -126,5 +138,32 @@ async fn no_method_answers_below_the_guard_in_any_protocol_version() {
                 );
             }
         }
+    }
+}
+
+/// The other half of the `initialize` decision (cratestack#1033, answering
+/// #1068's question): with the guard's caller, the answer is still `rmcp`'s
+/// `-32022` and the supported-version list, so the refusal above is the
+/// caller check's and not a change to what an authenticated client sees.
+#[tokio::test]
+async fn an_authenticated_legacy_initialize_is_told_which_versions_exist() {
+    let http = server();
+    let inner = &http.service().shared.inner;
+    let (method, params) = METHODS[0];
+    assert_eq!(method, "initialize");
+    for version in [None, Some("2025-06-18")] {
+        let (mut parts, body) = raw(method, params, version).into_parts();
+        hand_over(&mut parts, user());
+        let reply = answer(inner.handle(http::Request::from_parts(parts, body)).await).await;
+        assert_eq!(
+            reply["error"]["code"],
+            json!(-32022),
+            "{version:?}: {reply}"
+        );
+        assert_eq!(
+            reply["error"]["data"]["supported"],
+            json!(["2026-07-28"]),
+            "{version:?}: {reply}"
+        );
     }
 }
