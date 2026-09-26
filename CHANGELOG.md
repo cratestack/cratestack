@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.13.1 (2026-09-26)
+
 ### Fixed: `cratestack-rusqlite` 0.13.0 does not build for `wasm32-unknown-unknown` (#1048)
 
 **Affected: 0.13.0 on `wasm32-unknown-unknown` only** (browser and OPFS embedded builds). Native
