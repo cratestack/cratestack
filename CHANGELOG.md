@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Fixed: `cratestack-rusqlite` 0.13.0 does not build for `wasm32-unknown-unknown` (#1048)
+
+**Affected: 0.13.0 on `wasm32-unknown-unknown` only** (browser and OPFS embedded builds). Native
+builds are unaffected. 0.13.0 moved to `sqlite-wasm-vfs` 0.3, which puts the SAH-pool VFS behind a
+`sahpool` Cargo feature and makes its config builder-only. `cratestack-rusqlite` enabled neither, so
+`install_opfs_vfs` failed to compile: `unresolved import sqlite_wasm_vfs::sahpool`.
+
+**Fix: stay on 0.3 and bridge it to the SQLite that rusqlite links.** `sqlite-wasm-vfs` 0.3 is
+generic over `rsqlite-vfs` 0.2's `OsCallback`. rusqlite 0.40 links `sqlite-wasm-rs` 0.5, whose
+`WasmOsCallback` implements 0.1's. A small adapter (`opfs/os_callback.rs`) delegates to 0.5's own
+sleep, randomness and clock, so nothing changes behaviour. 0.3 depends on no `sqlite-wasm-rs`, and
+every SQLite function it calls is exported by 0.5's build, so the VFS registers into the same
+SQLite rusqlite opens. The built example `.wasm` has no unresolved imports.
+
+**Existing OPFS databases:** the SAH-pool file layout is unchanged between `sqlite-wasm-vfs` 0.2
+and 0.3: the filename is NUL-terminated in 512 bytes, flags are a big-endian `u32` at 512, and data
+starts at 4096. 0.3 validates headers more strictly and caps *new* database filenames at 499 bytes.
+
+**Also:** the wasm-bindgen family moves to 0.2.129 (`js-sys`/`web-sys` 0.3.106), which 0.3's
+`sahpool` feature requires.
+
 ### MCP: the admission namespace hashes the principal id; REST and MCP budgets stay separate (#1033)
 
 **Maintainer decision on #1071's first question.** MCP's idempotency namespace

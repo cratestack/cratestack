@@ -60,6 +60,13 @@ bigdecimal = { workspace = true, optional = true }
 # must run **inside a Dedicated Worker** — OPFS SyncAccessHandle is worker-only.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 sqlite-wasm-rs = { version = "0.5", default-features = false }
-sqlite-wasm-vfs = "0.2"
+# 0.3 moved the SAH-pool VFS behind the `sahpool` feature and is generic over
+# `rsqlite-vfs` 0.2's `OsCallback`; rusqlite 0.40's `sqlite-wasm-rs` 0.5
+# implements 0.1's, so `src/opfs/os_callback.rs` bridges them (0.1 is named
+# only to call 0.5's implementation). Drop the bridge and both `rsqlite-vfs`
+# lines when rusqlite moves to `sqlite-wasm-rs` 0.6.
+sqlite-wasm-vfs = { version = "0.3", features = ["sahpool"] }
+rsqlite-vfs = { version = "0.2", default-features = false }
+rsqlite-vfs-01 = { package = "rsqlite-vfs", version = "0.1", default-features = false }
 uuid = { workspace = true, features = ["js"] }
 wasm-bindgen = "0.2"
