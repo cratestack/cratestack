@@ -139,6 +139,7 @@ mod resolver_rpc;
 mod seal;
 mod seal_policy;
 mod server_envelope;
+mod server_envelope_arc;
 mod service;
 mod signed;
 mod unresolved;
