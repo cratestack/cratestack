@@ -83,7 +83,9 @@ pub trait EnvelopePolicy: Send + Sync + 'static {
     ///
     /// The default is `Required`, which fails closed: a per-op closure
     /// cannot say what it would have answered for an op nobody can name.
-    /// An [`EnvelopeMode`] used as the policy answers itself.
+    /// An [`EnvelopeMode`] used as the policy answers itself. For a
+    /// closure, [`super::EnvelopeLayerBuilder::unresolved_mode`] replaces
+    /// it explicitly, without writing a type.
     fn unresolved_mode(&self) -> EnvelopeMode {
         EnvelopeMode::Required
     }
@@ -105,6 +107,23 @@ where
 {
     fn mode(&self, request: &PolicyRequest<'_>) -> EnvelopeMode {
         self(request)
+    }
+}
+
+/// A policy whose `unresolved_mode` the builder replaced
+/// ([`super::EnvelopeLayerBuilder::unresolved_mode`]).
+pub(super) struct WithUnresolved {
+    pub(super) policy: Box<dyn EnvelopePolicy>,
+    pub(super) unresolved: EnvelopeMode,
+}
+
+impl EnvelopePolicy for WithUnresolved {
+    fn mode(&self, request: &PolicyRequest<'_>) -> EnvelopeMode {
+        self.policy.mode(request)
+    }
+
+    fn unresolved_mode(&self) -> EnvelopeMode {
+        self.unresolved
     }
 }
 

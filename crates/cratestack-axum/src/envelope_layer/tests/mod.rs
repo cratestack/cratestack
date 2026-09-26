@@ -18,6 +18,8 @@ mod batch_policy;
 #[cfg(feature = "cose")]
 mod bound_headers;
 #[cfg(feature = "cose")]
+mod builder;
+#[cfg(feature = "cose")]
 mod cose_support;
 #[cfg(feature = "cose")]
 mod fail_closed;

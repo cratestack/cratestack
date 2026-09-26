@@ -118,6 +118,7 @@
 
 mod batch;
 mod bound;
+mod build;
 mod builder;
 #[cfg(feature = "cose")]
 mod cose_impl;

@@ -141,8 +141,8 @@ async fn a_subscription_is_shown_to_the_policy_as_its_bare_op_id() {
 }
 
 /// Security finding SF-1 (second review): the generated batch handler
-/// reads the frames under any spelling of the CBOR media type (case,
-/// parameters), so the layer must too. It used to match the exact string,
+/// reads the frames under a parameterised CBOR media type, so the layer
+/// must too (and it ignores case as well, the fail-closed side). It used to match the exact string,
 /// found no frames under `application/cbor; charset=binary`, and with an
 /// `unresolved_mode` of `Off` forwarded a batch carrying a `Required` op.
 #[tokio::test]

@@ -36,12 +36,14 @@ struct FrameOp {
 /// `decode_rpc_body`), with the first-party codecs. `None` when it cannot:
 /// another type (a custom codec), or a body that is not a frame array.
 ///
-/// Matched on the **base** type, case-insensitively and with parameters
-/// ignored (security finding SF-1 of the second review): the handler's
-/// codecs accept `application/cbor; charset=binary` or `Application/CBOR`,
-/// so an exact match here left the frames unread while the handler ran
-/// them, and under an `unresolved_mode` of `Off` a batch carrying a
-/// `Required` op went through plain.
+/// Matched on the **base** type, with parameters ignored (security finding
+/// SF-1 of the second review): the handler's codecs accept
+/// `application/cbor; charset=binary`, so an exact match here left the
+/// frames unread while the handler ran them, and under an
+/// `unresolved_mode` of `Off` a batch carrying a `Required` op went
+/// through plain. Case is ignored too, which the first-party handler does
+/// not do: it only makes the layer read a body the handler may refuse,
+/// the fail-closed side, and covers a custom codec that is lenient.
 fn frame_ops(content_type: Option<&str>, body: &[u8]) -> Option<Vec<String>> {
     let content_type = content_type.unwrap_or(PAYLOAD_MEDIA_TYPE);
     let base = content_type.split(';').next().unwrap_or(content_type).trim();

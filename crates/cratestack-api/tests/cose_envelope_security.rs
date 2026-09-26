@@ -2,8 +2,9 @@
 //! each the inverse of a reviewer's probe (seen failing before the fixes):
 //! a batch cannot carry a `Required` op unsigned (B1), `/rpc/%62atch` is
 //! never bound as `batch` (B2), a stripped `Idempotency-Key` does not
-//! verify (S1), and an `@api_version` procedure is refused unsigned (the
-//! API review's B1). The generated `envelope_layer` convenience builds
+//! verify (S1), an `@api_version` procedure is refused unsigned (the
+//! API review's B1), and a batch `Content-Type` with parameters cannot
+//! hide its frames from the layer (the second review's SF-1). The generated `envelope_layer` convenience builds
 //! every layer here, so it is exercised on both transports' schemas.
 
 mod cose_support;
@@ -103,6 +104,46 @@ async fn b1_a_batch_cannot_run_a_required_op_unsigned() {
     .await;
     assert_eq!(batch.status, StatusCode::UNAUTHORIZED);
     assert_eq!(procedures.0.load(Ordering::SeqCst), 0, "ping ran unsigned");
+}
+
+/// SF-1 (second review) over the generated batch handler, which runs a
+/// frame sent as `application/cbor; charset=binary` (the all-`Off` run
+/// shows it): the layer reads the same frames, so the `Required` op is
+/// refused even with `unresolved_mode(Off)`, which used to let it through.
+#[tokio::test]
+async fn sf1_a_parameterised_batch_content_type_cannot_hide_a_required_op() {
+    for content_type in ["application/cbor; charset=binary", "application/cbor;x=1"] {
+        let run = |policy: EnvelopeMode| {
+            let procedures = Procedures::default();
+            let ping_required = move |request: &PolicyRequest<'_>| {
+                if request.op() == "procedure.ping" {
+                    policy
+                } else {
+                    EnvelopeMode::Off
+                }
+            };
+            let layer = rpc::cratestack_schema::axum::envelope_layer(
+                server_envelope(),
+                ping_required,
+                AUDIENCE,
+            )
+            .unresolved_mode(EnvelopeMode::Off)
+            .build()
+            .expect("layer");
+            let router = rpc_router(procedures.clone()).layer(layer);
+            let request = Request::post("/rpc/batch")
+                .header(header::CONTENT_TYPE, content_type)
+                .body(Body::from(batch_body("sf1")))
+                .unwrap();
+            async move { (send(&router, request).await.status, procedures) }
+        };
+        let (status, procedures) = run(EnvelopeMode::Off).await;
+        assert_eq!(status, StatusCode::OK, "{content_type}: the handler reads it");
+        assert_eq!(procedures.0.load(Ordering::SeqCst), 1, "{content_type}");
+        let (status, procedures) = run(EnvelopeMode::Required).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{content_type}");
+        assert_eq!(procedures.0.load(Ordering::SeqCst), 0, "{content_type}");
+    }
 }
 
 #[tokio::test]
