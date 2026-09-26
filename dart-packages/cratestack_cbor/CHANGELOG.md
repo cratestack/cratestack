@@ -2,115 +2,15 @@
 
 ## 0.13.0 (2026-09-26)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.12.0..HEAD at 074629d828bc4c3b8d13104b8a4f63e8b33380b2 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- async CratestackEnvelope + Binding (ADR 0006 §1) (#1066)
-- the `auth` feature — cratestack-auth adapters, Redis nonce bridge, enrolment moved in (#1005, part B) (#1072)
-- cratestack-cose — unary COSE_Sign1/COSE_Mac0 envelope, AAD, nonce replay, shared vectors (#1005, part A) (#1069)
-- highlight "part", "part of", and "import" as keyword literals in .cstack grammar (#929)
-- mcp-operator example, third-party MCP conformance, and the MCP security test plan (MCP phase 6) (#1071)
-- move rate-limit admission to the L3 OpExecutor (#995)
-- offer `part` and `import` as reserved keyword completions (#981)
-- generate JSON Schema for procedure I/O from the .cstack IR (MCP phase 2) (#1052)
-- Streamable HTTP transport behind the application's AuthProvider (MCP phase 4) (#1067)
-- read-only resources with REST-identical visibility (MCP phase 5) (#1068)
-- serve @mcp(tool) procedures over stdio through invoke_with_db and L3 admission (MCP phase 3) (#1063)
-- parse and strictly validate the MCP surface into typed IR (MCP phase 1) (#1056)
-- reserve `part` and `import` as .cstack keywords (#935)
-
-#### Fixes
-
-- filter optional scalars by equality (#954)
-- rustls 0.23.45 for RUSTSEC-2026-0285, and make quality failures readable (#969)
-- widen the CLI download retry window and stop the error lying (#982)
-- FindMany Where and SortField never offer a @server_only field
-- give react-nextjs-daisyui a workspace-root manifest and a CI job so its lockfile stays current (#1058)
-- give react-vite-swr a workspace-root manifest so Dependabot maintains its lockfile (#1049)
-- restore react-vite-swr's generated client and sync its lockfile (#1042)
-- never deserialize @server_only model fields (#1051) (#1057)
-- a @computed compose helper never sends a @server_only field
-- a request can no longer filter or sort by a @server_only field
-- generated clients call an @api_version procedure at its versioned path (#1079)
-
-#### Documentation
-
-- amend ADR 0015 — mcp tool dispatch joins L3 as an admission-only caller (#1034)
-- index ADR 0006 (COSE envelope modes), proposed in cratestack-docs (#1031)
-- an idempotency record stored before the upgrade still carries the value
-- cite the advisory, not the MCP epic
-- security entry for @server_only sent by @computed procedure outputs
-- the @server_only security entry covers filter and sort keys
-- the MCP examples use only accepted syntax (#1075)
-- write the v0.12.0 release prose over the seed (#938)
-- ADR 0002 is accepted (#1073)
-- list React Native (Expo) in root examples and roadmap (#908) (#930)
-- ADR 0015 slice 2 has landed (#1032)
-- add React Native package compatibility audit (#955)
-- correct the stale `--all-features` rationale, and fix AGENTS.md's commands (#968)
-- fix stale ROADMAP version statements and reserve.rs slice-2 comment (#1035)
-
-#### Chores
-
-- bump github/codeql-action/upload-sarif (#963)
-- bump github/codeql-action/upload-sarif (#978)
-- bump sqlite-wasm-vfs from 0.2.0 to 0.3.0 (#1048)
-- bump the cargo-minor-patch group across 1 directory with 10 updates (#970)
-- bump the cargo-minor-patch group across 1 directory with 4 updates (#1046)
-- bump the cargo-minor-patch group with 3 updates (#946)
-- bump the cargo-minor-patch group with 5 updates (#979)
-- only run workflows on the files they care about (#951)
-- bump expo in /examples/embedded-expo/app (#940)
-- bump expo in /examples/embedded-expo/app (#959)
-- bump expo in /examples/embedded-expo/app (#974)
-- bump expo-file-system in /examples/embedded-expo/app (#976)
-- bump expo-modules-core from 57.0.18 to 58.0.4 in /examples/embedded-expo/app (#1054)
-- bump expo-modules-core in /examples/embedded-expo/app (#944)
-- bump expo-modules-core in /examples/embedded-expo/app (#977)
-- bump next in /examples/react-nextjs-daisyui/web (#945)
-- bump next in /examples/react-nextjs-daisyui/web (#975)
-- bump react and @types/react (#958)
-- bump react and @types/react in /examples/embedded-expo/app (#960)
-- bump react-dom and @types/react-dom (#956)
-- bump @types/react-dom (#942)
-- bump daisyui in /examples/react-nextjs-daisyui/web (#939)
-- bump daisyui in /examples/react-nextjs-daisyui/web (#957)
-- bump daisyui in /examples/react-nextjs-daisyui/web (#973)
-- bump postcss in /examples/react-nextjs-daisyui/web (#943)
-- bump webpack from 5.111.0 to 5.111.1 in /examples/embedded-browser-webpack/web (#1044)
-- bump webpack in /examples/embedded-browser-webpack/web (#941)
-- bump webpack in /examples/embedded-browser-webpack/web (#972)
-- bump @vscode/vsce from 3.9.2 to 4.0.0 (#1047)
-- bump the npm-minor-patch group across 4 directories with 9 updates (#947)
-- bump the npm-minor-patch group across 5 directories with 6 updates (#1055)
-- bump the npm-minor-patch group across 9 directories with 15 updates (#980)
-- bump tsx from 4.23.13 to 4.23.15 in /examples/react-vite-swr in the npm-minor-patch group (#1053)
-- bump vitest from 4.1.11 to 5.0.0 (#948)
-
-#### Tests
-
-- @server_only must not reach any outbound shape of a model with a @computed field
-- a request must not filter or sort by a @server_only field
-- the @server_only JSON Schema gap closed with #1051 (#1062)
-- de-flake client_recovers_after_waiting_retry_after (#1059)
-- a streamed or subscribed model never carries a @server_only field
-- pin an optional @server_only field on every outbound shape
-
-#### CI
-
-- require a docs & skills parity declaration on user-facing PRs (#966)
-
-#### Other
-
-- Merge commit from fork
+- No functional changes to this package. Version kept in lockstep with the
+  CrateStack workspace, which every published CrateStack artifact shares.
+- The one workspace change that reaches this package's native side is
+  byte-for-byte inert here: `cratestack-codec-cbor`, the codec this package
+  ships through `cratestack-client-flutter`, gained an `encode_into` method
+  for the COSE signing envelope (#1005, #1069), and `encode` now delegates to
+  it. A test pins `encode_into`'s output to exactly what `encode` returns, so
+  the bytes this package produces and accepts are unchanged.
+  `cratestack-client-flutter` itself has no change since 0.12.0.
 
 ## 0.12.0 (2026-09-06)
 
