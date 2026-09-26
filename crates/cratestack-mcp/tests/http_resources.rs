@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use support::client::Client;
 use support::http_app::{RESOURCE, builder, mount, post, resource_read, rpc, send, served, token};
 use support::owned::OwnedResources;
-use support::stores::CountingLimiter;
+use support::stores::{CountingLimiter, bucket};
 
 fn ids(page: &Value) -> Vec<u64> {
     let text = page["contents"][0]["text"]
@@ -93,7 +93,11 @@ async fn each_readers_rate_limit_bucket_is_its_own() {
     }
 
     let keys = limiter.keys.lock().unwrap().clone();
-    assert_eq!(keys, ["mcp:u-a", "mcp:u-b"], "one bucket per caller");
+    assert_eq!(
+        keys,
+        [bucket("mcp", "u-a"), bucket("mcp", "u-b")],
+        "one bucket per caller"
+    );
 }
 
 /// The cratestack#1039 split holds for reads too: a token whose `id` claims
@@ -130,7 +134,13 @@ async fn a_system_reader_and_a_token_claiming_its_id_are_charged_apart() {
     .result();
 
     let keys = limiter.keys.lock().unwrap().clone();
-    assert_eq!(keys, ["mcp-system:system:svc", "mcp:system:svc"]);
+    assert_eq!(
+        keys,
+        [
+            bucket("mcp-system", "system:svc"),
+            bucket("mcp", "system:svc")
+        ]
+    );
 }
 
 #[tokio::test]

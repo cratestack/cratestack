@@ -8,6 +8,7 @@ use cratestack_core::{
 };
 use rmcp::model::RequestMetaObject;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::idempotency::{idempotency_key, namespace, principal_id};
 
@@ -38,7 +39,7 @@ fn a_key_follows_the_idempotency_key_header_rules() {
 #[test]
 fn no_actor_id_means_no_namespace() {
     let string = |value: &str| id(ClaimValue::String(value.to_owned()));
-    assert_eq!(namespace(&string("u-1")).unwrap(), "mcp:u-1");
+    assert_eq!(namespace(&string("u-1")).unwrap(), hashed("mcp", "u-1"));
     assert_eq!(
         namespace(&CratestackContext::anonymous())
             .unwrap_err()
@@ -59,8 +60,44 @@ fn a_user_claiming_a_system_id_is_not_in_the_system_namespace() {
     let system = SystemContext::for_service("svc").into_context();
     let impostor = id(ClaimValue::String("system:svc".to_owned()));
     assert_eq!(principal_id(&system), principal_id(&impostor));
-    assert_eq!(namespace(&system).unwrap(), "mcp-system:system:svc");
-    assert_eq!(namespace(&impostor).unwrap(), "mcp:system:svc");
+    assert_eq!(
+        namespace(&system).unwrap(),
+        hashed("mcp-system", "system:svc")
+    );
+    assert_eq!(namespace(&impostor).unwrap(), hashed("mcp", "system:svc"));
+}
+
+/// The cratestack#1033 decision on #1071's first question: the id is
+/// hashed, so it never reaches a store key verbatim, and a caller's MCP
+/// budget is its own, never one of REST's buckets. REST's default keys
+/// (`cratestack-axum`'s `ratelimit/key_fn.rs`) are `princ:<sha256>`,
+/// `auth:<sha256>`, and peer-address keys; the MCP prefixes differ from
+/// every one, whatever the id.
+#[test]
+fn an_mcp_namespace_is_never_a_rest_bucket() {
+    let user = namespace(&id(ClaimValue::String("u-1".to_owned()))).unwrap();
+    let system = namespace(&SystemContext::for_service("svc").into_context()).unwrap();
+    for key in [&user, &system] {
+        assert!(!key.contains("u-1") && !key.contains("svc"), "{key}");
+        assert_eq!(key.rsplit(':').next().unwrap().len(), 64, "{key}");
+        for rest in ["princ:", "auth:", "peer:", "ip:"] {
+            assert!(!key.starts_with(rest), "{key} is a REST bucket");
+        }
+    }
+    assert_ne!(user, format!("princ:{}", hex("u-1")));
+}
+
+/// `<prefix>:<sha256 hex of id>`, computed here rather than through the
+/// crate's own helper, so a change to what is hashed fails these tests.
+fn hashed(prefix: &str, id: &str) -> String {
+    format!("{prefix}:{}", hex(id))
+}
+
+fn hex(id: &str) -> String {
+    Sha256::digest(id.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn id(value: ClaimValue) -> CratestackContext {

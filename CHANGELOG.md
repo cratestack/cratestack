@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### MCP: the admission namespace hashes the principal id; REST and MCP budgets stay separate (#1033)
+
+**Maintainer decision on #1071's first question.** MCP's idempotency namespace
+and rate-limit bucket were `mcp:<id>` / `mcp-system:<id>`, with the `id` claim
+written into the store key verbatim. They are now
+`mcp:<sha256 hex of id>` / `mcp-system:<sha256 hex of id>`, so a principal id
+never lands in a store key, as REST already guarantees for `VerifiedPrincipal`.
+The prefix stays outside the hash, so the #1039 user/system split is unchanged.
+
+A caller's REST and MCP calls keep **separate budgets**, by decision: ADR 0002's
+requirement 13 asks for the same L3 rate-limit *admission*, not the same bucket,
+and REST's default key (`auth:<sha256>` of the unverified `Authorization`
+header, or `princ:<sha256>` only when your app inserts a `VerifiedPrincipal`)
+could not be matched by MCP in general anyway. A unit test now pins that no MCP
+key is a REST key.
+
+**Upgrading from 0.13.0**, the first release with MCP, where the key held the id
+verbatim: with a shared store, MCP idempotency records written by 0.13.0 no
+longer replay (a retry within the TTL runs again), and MCP rate-limit buckets
+start fresh.
+
 ### `@id` is matched exactly, and a second `@relation` on a field is refused — breaking (#1074)
 
 **`@id` is recognised only as the bare spelling `@id`.** Most of the toolchain
