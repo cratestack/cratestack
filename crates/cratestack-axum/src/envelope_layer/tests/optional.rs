@@ -147,10 +147,8 @@ async fn two_nonce_headers_are_no_nonce() {
     for (a, b) in [(&first, &second), (&first, &first)] {
         let hits = Hits::default();
         let mut req = unsigned_get(Some(a), SIGN1);
-        req.headers_mut().append(
-            NONCE_HEADER,
-            http::HeaderValue::from_str(b).expect("nonce"),
-        );
+        req.headers_mut()
+            .append(NONCE_HEADER, http::HeaderValue::from_str(b).expect("nonce"));
         let answer = send(&router(&hits), req).await;
         assert_eq!(answer.status, StatusCode::OK);
         assert!(!answer.is_sealed(), "{a} / {b}");

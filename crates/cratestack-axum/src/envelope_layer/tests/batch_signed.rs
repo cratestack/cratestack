@@ -96,7 +96,10 @@ async fn a_signed_batch_is_opened_under_the_strictest_of_batch_and_unresolved() 
             cose_request(Method::POST, "/rpc/batch", forged),
         )
         .await;
-        assert_eq!(answer.status, expected, "batch {batch:?}, unresolved {unresolved:?}");
+        assert_eq!(
+            answer.status, expected,
+            "batch {batch:?}, unresolved {unresolved:?}"
+        );
         assert!(!answer.is_sealed());
         assert_eq!(hits.get(), 0);
     }

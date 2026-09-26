@@ -138,7 +138,11 @@ async fn sf1_a_parameterised_batch_content_type_cannot_hide_a_required_op() {
             async move { (send(&router, request).await.status, procedures) }
         };
         let (status, procedures) = run(EnvelopeMode::Off).await;
-        assert_eq!(status, StatusCode::OK, "{content_type}: the handler reads it");
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "{content_type}: the handler reads it"
+        );
         assert_eq!(procedures.0.load(Ordering::SeqCst), 1, "{content_type}");
         let (status, procedures) = run(EnvelopeMode::Required).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{content_type}");

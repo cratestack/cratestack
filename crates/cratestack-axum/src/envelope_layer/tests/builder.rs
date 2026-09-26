@@ -31,11 +31,18 @@ async fn a_mount_prefix_survives_a_later_rest_or_rpc() {
         .rpc("")
         .build()
         .expect("layer");
-    let app = Router::new().nest("/api", rest_router(rest, &hits).merge(rpc_router(rpc, &hits)));
+    let app = Router::new().nest(
+        "/api",
+        rest_router(rest, &hits).merge(rpc_router(rpc, &hits)),
+    );
 
     let call = Call::new(Method::GET, "/widgets/{id}", &["7"]);
     let sealed = call.seal(&[]).await;
-    let answer = send(&app, cose_request(Method::GET, "/api/widgets/7", sealed.clone())).await;
+    let answer = send(
+        &app,
+        cose_request(Method::GET, "/api/widgets/7", sealed.clone()),
+    )
+    .await;
     assert_eq!(answer.status, StatusCode::OK);
     call.open(request_digest(&sealed), answer.status, answer.body)
         .await
@@ -77,8 +84,16 @@ async fn unresolved_mode_overrides_a_closure_policys_default() {
         )
         .layer(layer);
     let health = send(&router, plain_request(Method::GET, "/health", b"")).await;
-    assert_eq!(health.status, StatusCode::OK, "unresolved: Optional, passes");
+    assert_eq!(
+        health.status,
+        StatusCode::OK,
+        "unresolved: Optional, passes"
+    );
     let op = send(&router, plain_request(Method::GET, "/widgets/1", b"")).await;
-    assert_eq!(op.status, StatusCode::UNAUTHORIZED, "the op is still Required");
+    assert_eq!(
+        op.status,
+        StatusCode::UNAUTHORIZED,
+        "the op is still Required"
+    );
     assert_eq!(hits.get(), 0);
 }

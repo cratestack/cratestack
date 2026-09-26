@@ -173,7 +173,9 @@ async fn a_batch_content_type_with_parameters_or_another_case_is_still_read() {
             .expect("layer");
         let request = http::Request::post("/rpc/batch")
             .header(http::header::CONTENT_TYPE, content_type)
-            .body(axum::body::Body::from(batch_frames(&["procedure.transfer"])))
+            .body(axum::body::Body::from(batch_frames(&[
+                "procedure.transfer",
+            ])))
             .expect("request");
         let answer = send(&rpc_router(layer, &hits), request).await;
         assert_eq!(answer.status, StatusCode::UNAUTHORIZED, "{content_type:?}");

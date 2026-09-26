@@ -46,7 +46,11 @@ struct FrameOp {
 /// the fail-closed side, and covers a custom codec that is lenient.
 fn frame_ops(content_type: Option<&str>, body: &[u8]) -> Option<Vec<String>> {
     let content_type = content_type.unwrap_or(PAYLOAD_MEDIA_TYPE);
-    let base = content_type.split(';').next().unwrap_or(content_type).trim();
+    let base = content_type
+        .split(';')
+        .next()
+        .unwrap_or(content_type)
+        .trim();
     let frames: Vec<FrameOp> = if base.eq_ignore_ascii_case("application/cbor") {
         CborCodec.decode(body).ok()?
     } else if base.eq_ignore_ascii_case("application/json") {
