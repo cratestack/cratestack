@@ -329,3 +329,11 @@ required-features = ["mcp"]
 name = "mcp_resources_pg"
 path = "tests/mcp_resources_pg.rs"
 required-features = ["mcp"]
+
+# `@server_only` never reaches a `tools/call` result on a model with a
+# `@computed` field (the MCP side of `tests/server_only_outbound.rs`). No
+# database; runs in `just test-ci-host`.
+[[test]]
+name = "server_only_outbound_mcp"
+path = "tests/server_only_outbound_mcp.rs"
+required-features = ["mcp"]

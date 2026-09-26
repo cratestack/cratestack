@@ -28,7 +28,7 @@ use crate::relation::{
     generate_relation_include_fields_validation_arm, generate_relation_include_path_validation_arm,
     generate_relation_query_guard,
 };
-use crate::shared::{model_name_set, relation_model_fields, scalar_model_fields};
+use crate::shared::{model_name_set, queryable_model_fields, relation_model_fields};
 
 use super::filter_arms::{generate_order_by_arm, generate_query_filter_arm};
 
@@ -45,7 +45,10 @@ pub(crate) fn generate_model_axum_handlers(
     let model_names = model_name_set(models);
     let field_module_ident = &p.field_module_ident;
 
-    let query_filter_arms = scalar_model_fields(model, &model_names)
+    // `queryable_model_fields`, not `scalar_model_fields`: a `@server_only`
+    // key must fall through to the unknown-key refusal (issue 2 of the
+    // `@server_only` advisory; see that helper).
+    let query_filter_arms = queryable_model_fields(model, &model_names)
         .into_iter()
         .filter_map(|field| generate_query_filter_arm(field_module_ident, field, enum_names))
         .collect::<Vec<_>>();
@@ -53,7 +56,7 @@ pub(crate) fn generate_model_axum_handlers(
         .into_iter()
         .map(|field| generate_relation_query_guard(model, field, models))
         .collect::<Result<Vec<_>, String>>()?;
-    let order_by_arms = scalar_model_fields(model, &model_names)
+    let order_by_arms = queryable_model_fields(model, &model_names)
         .into_iter()
         .map(|field| generate_order_by_arm(field_module_ident, field))
         .collect();

@@ -5,7 +5,7 @@
 use cratestack_core::{Field, Model};
 use quote::quote;
 
-use crate::shared::{find_model, ident, model_name_set, to_snake_case, wire_model_fields};
+use crate::shared::{find_model, ident, model_name_set, response_model_fields, to_snake_case};
 
 pub(crate) fn generate_relation_include_path_validation_arm(
     relation_field: &Field,
@@ -49,8 +49,11 @@ pub(crate) fn generate_relation_include_fields_validation_arm(
     let model_names = model_name_set(models);
     // `includeFields[...]` selection on an included relation accepts
     // computed field names too, same as the root model's `?fields=`
-    // (`model/descriptor/columns.rs`'s `allowed_fields`).
-    let allowed_fields = wire_model_fields(target_model, &model_names)
+    // (`model/descriptor/columns.rs`'s `allowed_fields`) — and, like it,
+    // refuses a `@server_only` name. `wire_model_fields` accepted one: the
+    // value was never sent (the relation's serializer omits the field), but
+    // the name was a legal selection that answered with an empty object.
+    let allowed_fields = response_model_fields(target_model, &model_names)
         .into_iter()
         .map(|field| {
             let name = &field.name;
