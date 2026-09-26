@@ -115,6 +115,8 @@ pub(crate) fn middleware_error_response_with_status(
 /// `BAD_REQUEST`. The RPC body keeps `error`'s code: that binding's stable
 /// vocabulary (`docs/design/rpc-transport.md` §2) has no wrong-method
 /// entry, and inventing one would be a wire change for every client.
+/// Only the envelope layer needs it.
+#[cfg(feature = "envelope")]
 pub(crate) fn middleware_error_response_with_code(
     headers: &HeaderMap,
     path: &str,
