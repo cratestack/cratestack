@@ -3,7 +3,8 @@
 // unless every expected case ran and passed. `run.mjs` holds the cases.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 export const env = (name) => {
@@ -16,22 +17,33 @@ const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 /**
  * The installed Inspector, checked against the version `package.json` pins.
- * `npm ci` already refuses a lockfile that disagrees with `package.json`;
- * this catches a run pointed at some other install.
+ * `pnpm install --frozen-lockfile` already refuses a lockfile that disagrees
+ * with `package.json`; this catches a run pointed at some other install.
  */
 export function installedInspector(inspectorDir) {
   const pinned = readJson(new URL("./package.json", import.meta.url)).dependencies[
     "@modelcontextprotocol/inspector"
   ];
-  const pkg = (name) => readJson(join(inspectorDir, "node_modules", name, "package.json"));
-  const inspector = pkg("@modelcontextprotocol/inspector");
+  const inspectorRoot = realpathSync(join(inspectorDir, "node_modules/@modelcontextprotocol/inspector"));
+  // pnpm links only direct dependencies into the top-level `node_modules`,
+  // so the Inspector's own dependencies are found the way Node finds them
+  // when it runs the Inspector: from the Inspector's real path.
+  const require = createRequire(join(inspectorRoot, "package.json"));
+  const pkg = (name) => {
+    const found = (require.resolve.paths(name) ?? [])
+      .map((dir) => join(dir, name, "package.json"))
+      .find(existsSync);
+    if (!found) throw new Error(`${name} is not installed beside the Inspector`);
+    return readJson(found);
+  };
+  const inspector = readJson(join(inspectorRoot, "package.json"));
   if (inspector.version !== pinned) {
     throw new Error(`package.json pins inspector ${pinned}, installed ${inspector.version}`);
   }
   return {
     inspector,
     sdkClient: pkg("@modelcontextprotocol/client"),
-    launcher: join(inspectorDir, "node_modules/@modelcontextprotocol/inspector", inspector.bin["mcp-inspector"]),
+    launcher: join(inspectorRoot, inspector.bin["mcp-inspector"]),
   };
 }
 
