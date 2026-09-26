@@ -29,11 +29,11 @@ pub(super) fn compose_embedded_schema(
     schema_path: &LitStr,
     decimal: Option<DecimalBackend>,
 ) -> TokenStream {
-    let (schema_relative, resolved, schema, schema_sha256) = match parse_schema_literal(schema_path)
-    {
-        Ok(parsed) => parsed,
-        Err(error) => return error,
-    };
+    let (schema_relative, resolved, schema, schema_sha_consts) =
+        match parse_schema_literal(schema_path) {
+            Ok(parsed) => parsed,
+            Err(error) => return error,
+        };
     if let Err(error) = super::mcp_gate::guard_embedded_mcp(schema_path, &schema) {
         return error;
     }
@@ -224,7 +224,7 @@ pub(super) fn compose_embedded_schema(
                 /// schema-fingerprint middleware compares a client-sent copy of
                 /// this value against its own and `tracing::warn!`s on mismatch,
                 /// never rejects. See issue #178.
-                pub const SCHEMA_SHA256: &str = #schema_sha256;
+                #schema_sha_consts
                 pub const MIXINS: &[&str] = &[#(#mixin_names),*];
                 pub const MODELS: &[&str] = &[#(#model_names),*];
                 pub const TYPES: &[&str] = &[#(#type_names),*];

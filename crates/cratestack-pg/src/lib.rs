@@ -235,8 +235,16 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CratestackE
     }
 }
 
+mod envelope_fn;
+
 #[doc(hidden)]
 pub mod __private {
+    /// The generated `envelope_layer`'s body, which this facade's
+    /// `__envelope_layer_fn!` forwards to under its `envelope` feature
+    /// (`envelope_fn.rs`).
+    #[cfg(feature = "envelope")]
+    pub use cratestack_axum::__envelope_layer_fn_body as envelope_layer_fn_body;
+
     #[cfg(feature = "postgres")]
     pub use cratestack_sqlx::SqlxRuntime;
     // Not part of the public API surface — the generated

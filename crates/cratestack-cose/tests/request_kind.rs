@@ -65,7 +65,8 @@ async fn the_answer_to_an_unsigned_twin_is_not_the_answer_to_the_signed_request(
     }
 }
 
-/// The kind is the 9th AAD element, before the digest, `0` or `1`.
+/// The kind is the 10th AAD element (after `bound_headers`, cratestack#1006
+/// S1), before the digest, `0` or `1`.
 #[test]
 fn the_kind_sits_before_the_digest_in_the_aad() {
     let signed = common::answering(&rpc_request(), request_digest(b"request"), 200);
@@ -77,10 +78,15 @@ fn the_kind_sits_before_the_digest_in_the_aad() {
     for (bind, code) in [(signed, 0x01), (unsigned, 0x00)] {
         let aad = external_aad(&bind).expect("aad");
         let digest = bind.response.expect("response").request.digest;
-        assert_eq!(aad[0], 0x8b, "an 11-element array");
-        // ... kind, bstr(32) digest, uint status (200 = 0x18 0xc8).
-        let tail = [&[code, 0x58, 0x20][..], &digest, &[0x18, 0xc8]].concat();
+        assert_eq!(aad[0], 0x8c, "a 12-element array");
+        // ... bound_headers [null, null], kind, bstr(32) digest, uint status (200 = 0x18 0xc8).
+        let tail = [
+            &[0x82, 0xf6, 0xf6, code, 0x58, 0x20][..],
+            &digest,
+            &[0x18, 0xc8],
+        ]
+        .concat();
         assert!(aad.ends_with(&tail), "{aad:02x?}");
     }
-    assert_eq!(external_aad(&rpc_request()).expect("aad")[0], 0x88);
+    assert_eq!(external_aad(&rpc_request()).expect("aad")[0], 0x89);
 }

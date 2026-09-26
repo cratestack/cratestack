@@ -11,12 +11,12 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 This is P0: unary messages, `nonce` replay, and the shared test vectors. `chain` streams
 (P1) and `window` replay for device keys (P2) come later.
 
-**Wire-format preview.** No generated router or client uses this crate yet: the server layer
-is cratestack#1006 and the Rust client is cratestack#1007. Until the first release that ships
-them, the wire format, including the AAD binding version 1, may still change. For example,
-cratestack#1065 changes how the bound schema identity is derived. From that release on, any
-change to the AAD's elements or to how one is derived bumps `BINDING_VERSION`. Pin an exact
-version if you use the crate directly before then.
+**Wire-format preview.** The server layer ships (`cratestack-axum`'s `envelope_layer`,
+cratestack#1006); the Rust client does not yet (cratestack#1007). Binding version 1 freezes
+when both have shipped. Until then the wire format, including the AAD, may still change: for
+example, cratestack#1065 changes how the bound schema identity is derived. From that release
+on, any change to the AAD's elements or to how one is derived bumps `BINDING_VERSION`. Pin an
+exact version if you use the crate directly before then.
 
 Without features the crate depends on `cratestack-core` alone, and compiles for
 `wasm32-unknown-unknown`. The off-by-default `auth` feature adds `cratestack-auth` (see
@@ -47,15 +47,20 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   only), unprotected always empty. The `kid` is the first 8 bytes of the key's RFC 9679
   thumbprint (`cratestack_cose::thumbprint`), and a key verifies only under its own `kid`.
 - **AAD:** `[1, audience, method, route, path_params, query / null, schema_sha,
-  payload_type, ? request_kind, ? request_digest, ? status]`; see `external_aad`.
+  payload_type, [idempotency_key / null, if_match / null], ? request_kind,
+  ? request_digest, ? status]`; see `external_aad`. The `bound_headers` array carries the
+  request's `Idempotency-Key` and `If-Match` exactly as sent (no trimming), so a proxy
+  can neither strip nor alter them; a response repeats its request's. Response headers
+  (`ETag`, `Retry-After`) are not bound.
   `audience` is the receiving service's configured id. It must not be empty (a `500`), and a
   service's inbound audience must differ from the audience it seals its outbound requests
   for: a name shared by both directions, such as `internal`, gives up reflection
   protection. A response to a signed request is bound to `request_digest` (kind `1`,
   SHA-256 of the request's COSE bytes); a response to an unsigned one to
   `request_digest_unsigned` (kind `0`, SHA-256 of the client's `Cratestack-Nonce` and the
-  payload; see `RequestNonce`). Both return the kind with the digest. Sending and reading
-  that header is wired in cratestack#1006/#1007.
+  payload; see `RequestNonce`, and `random_request_nonce` to draw one). Both return the kind
+  with the digest. The server layer reads that header (cratestack#1006); the Rust client that
+  sends it is cratestack#1007.
 - **Errors:** every failed check is the same `401`; a failing key resolver, nonce store or
   signer, and local misuse, is a `500`.
 - **Keys:** `CoseSigner` signs without exporting the key (KMS, HSM); `CoseVerifierResolver`
@@ -92,7 +97,10 @@ auth, never the reverse):
 
 `tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture, 33 unary cases
 and 20 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
-themselves against. Each case carries its AAD, protected header and to-be-signed bytes.
+themselves against. Each case carries its AAD, protected header and to-be-signed bytes. A case's `binding` object
+names every AAD input, including `bound_headers: {idempotency_key, if_match}` (each a
+string or `null`; the REST cases carry both, the unsigned `GET` only the key, the RPC
+cases neither).
 The Ed25519 and HMAC cases are byte-exact (`deterministic: true`); ESP256 cases were made
 with RFC 6979 and low-`s`, and another implementation should verify them rather than
 reproduce them. **An ESP256 sender MUST emit low-`s`**: a verifier refuses a high `s`

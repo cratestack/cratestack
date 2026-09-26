@@ -13,6 +13,9 @@
 //! - `middleware_error` (private): the shared, codec-negotiated error
 //!   envelope both middleware layers emit (cratestack#846).
 //! - [`ratelimit`]: token-bucket rate-limit middleware and storage trait.
+//! - `envelope_layer` (feature `envelope`, or `cose` for the COSE envelope
+//!   too): the server envelope layer that opens signed requests and seals
+//!   responses (ADR 0006, cratestack#1006).
 //! - [`schema_fingerprint`]: warn-only client/server schema drift
 //!   detection via the `x-cratestack-schema-sha` header.
 //! - [`trusted_proxy`]: the [`TrustedProxyConfig`] allowlist/hop-count/
@@ -20,8 +23,15 @@
 //!   `Forwarded`/`X-Forwarded-For` trust explicit (#415).
 
 pub use axum;
+/// The COSE envelope (`CoseEnvelope`, its signers and key resolvers), for
+/// building the layer's envelope without a direct `cratestack-cose`
+/// dependency. Feature `cose`.
+#[cfg(feature = "cose")]
+pub use cratestack_cose as cose;
 
 pub mod codec;
+#[cfg(feature = "envelope")]
+pub mod envelope_layer;
 pub mod headers;
 pub mod idempotency;
 mod middleware_error;
@@ -57,8 +67,8 @@ pub use transport::{
 };
 
 pub use headers::{
-    ClientIpContext, enrich_context_from_headers, parse_client_ip, parse_if_match_version,
-    parse_traceparent, set_version_etag,
+    ClientIpContext, enrich_context_from_envelope, enrich_context_from_headers, parse_client_ip,
+    parse_if_match_version, parse_traceparent, set_version_etag,
 };
 
 pub use projection::ProjectedValue;

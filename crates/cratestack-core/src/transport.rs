@@ -1,6 +1,10 @@
 //! Transport-binding wire shapes shared by every generator (REST,
 //! RPC) and every server emitter.
 
+mod canonical_query;
+
+pub use canonical_query::canonical_query;
+
 /// Wire-level capabilities for one route under a REST binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RouteTransportCapabilities {

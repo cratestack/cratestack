@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 
+use super::bound_headers::BoundHeaders;
 use super::path_params::PathParams;
 use super::response_binding::ResponseBinding;
 
@@ -98,6 +99,14 @@ pub struct Binding<'a> {
     /// so a verifier cannot be tricked into decoding the payload as
     /// something else.
     pub payload_media_type: Cow<'a, str>,
+    /// The request's `Idempotency-Key` and `If-Match`, exactly as sent (see
+    /// [`BoundHeaders`]); [`BoundHeaders::NONE`] for a request with
+    /// neither. A response binding repeats its request's, so a response is
+    /// also bound to the key it was stored and replayed under. Added by the
+    /// maintainer's decision S1 on cratestack#1006 (2026-09-26), before
+    /// binding version 1 was frozen; the AAD encodes it right after
+    /// `payload_media_type`.
+    pub bound_headers: BoundHeaders<'a>,
     /// Responses only: the request answered and the status (see
     /// [`ResponseBinding`]). The request digest is SHA-256 over the request's
     /// COSE bytes when the request was signed; when it was not (a bodiless
@@ -125,6 +134,7 @@ impl Binding<'_> {
             query: self.query.map(|query| Cow::Owned(query.into_owned())),
             schema_sha: self.schema_sha,
             payload_media_type: Cow::Owned(self.payload_media_type.into_owned()),
+            bound_headers: self.bound_headers.into_owned(),
             response: self.response,
         }
     }

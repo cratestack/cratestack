@@ -34,7 +34,7 @@ use common::fixture::payment_bytes;
 use common::{CTI_2, CTI_16, IAT, hex, rest_request, rpc_request, unhex};
 use cratestack_codec_cbor::CborCodec;
 use cratestack_core::rpc::RpcErrorBody;
-use cratestack_core::{Binding, CratestackCodec};
+use cratestack_core::{Binding, BoundHeaders, CratestackCodec};
 use cratestack_cose::{
     CoseAlg, CoseMode, CoseVerifyKey, DEFAULT_SKEW_SECS, Ed25519Signer, RequestNonce, external_aad,
     request_digest, request_digest_unsigned,
@@ -84,10 +84,19 @@ struct BindingJson {
     query: Option<String>,
     schema_sha: String,
     payload_type: String,
+    /// `Idempotency-Key` and `If-Match` exactly as sent, `null` when
+    /// absent: the AAD's `bound_headers` array, in that order.
+    bound_headers: BoundHeadersJson,
     /// Responses: 0 = unsigned request, 1 = signed request.
     request_kind: Option<u8>,
     request_digest: Option<String>,
     status: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct BoundHeadersJson {
+    idempotency_key: Option<String>,
+    if_match: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -121,6 +130,14 @@ fn binding_json(bind: &Binding<'_>) -> BindingJson {
         query: bind.query.as_deref().map(str::to_owned),
         schema_sha: hex(&bind.schema_sha),
         payload_type: bind.payload_media_type.to_string(),
+        bound_headers: BoundHeadersJson {
+            idempotency_key: bind
+                .bound_headers
+                .idempotency_key
+                .as_deref()
+                .map(str::to_owned),
+            if_match: bind.bound_headers.if_match.as_deref().map(str::to_owned),
+        },
         request_kind: bind.response.map(|response| response.request.kind.code()),
         request_digest: bind.response.map(|response| hex(&response.request.digest)),
         status: bind.response.map(|response| response.status),
@@ -152,11 +169,17 @@ fn nonce() -> RequestNonce {
     RequestNonce::from_bytes(unhex(REQUEST_NONCE).try_into().expect("16 bytes"))
 }
 
-/// A bodiless REST `GET` of one payment.
+/// A bodiless REST `GET` of one payment: no query, and of the two bound
+/// headers only `Idempotency-Key`, so the vectors also cover a `null` next
+/// to a string.
 fn rest_get() -> Binding<'static> {
     Binding {
         method: Cow::Borrowed("GET"),
         query: None,
+        bound_headers: BoundHeaders {
+            idempotency_key: Some(Cow::Borrowed("idem-7f3a")),
+            if_match: None,
+        },
         ..rest_request()
     }
 }
@@ -466,7 +489,7 @@ async fn checked_in_vectors_match() {
         negative::check_rejected(vector).await;
     }
     let unary = serde_json::json!({
-        "_comment": "Unary COSE vectors (ADR 0006 §§3-5, and the decisions on cratestack#1005: audience in the AAD and Cratestack-Nonce for unsigned requests, 2026-09-24; request_kind in the response AAD and a non-empty audience, 2026-09-25). Hex throughout. Payload: payment-fixture.json; keys: keys.json. Every case must open with a verifier holding only the key its `key` names (requests: at `verifier_now`, with `skew_secs`). `to_be_signed` is the logical Sig_structure / MAC_structure, even where the implementation computes over it in pieces. ESP256 senders MUST emit low-s: verifiers refuse a high s (neg-esp256-high-s). Every `negative` vector must be refused as `expected` says by a verifier in `mode` holding exactly `verifier_keys`, at `verifier_now` with `skew_secs`.",
+        "_comment": "Unary COSE vectors (ADR 0006 §§3-5, and the decisions on cratestack#1005: audience in the AAD and Cratestack-Nonce for unsigned requests, 2026-09-24; request_kind in the response AAD and a non-empty audience, 2026-09-25; and on cratestack#1006: bound_headers [Idempotency-Key, If-Match] after payload_type, 2026-09-26). Hex throughout. Payload: payment-fixture.json; keys: keys.json. Every case must open with a verifier holding only the key its `key` names (requests: at `verifier_now`, with `skew_secs`). `to_be_signed` is the logical Sig_structure / MAC_structure, even where the implementation computes over it in pieces. ESP256 senders MUST emit low-s: verifiers refuse a high s (neg-esp256-high-s). Every `negative` vector must be refused as `expected` says by a verifier in `mode` holding exactly `verifier_keys`, at `verifier_now` with `skew_secs`.",
         "payload": hex(&payment_bytes()),
         "cases": cases,
         "negative": negatives,

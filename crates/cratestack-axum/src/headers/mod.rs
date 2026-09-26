@@ -9,12 +9,14 @@ mod enrich;
 mod etag;
 mod forwarded;
 mod traceparent;
+mod verified_signer;
 
 pub use client_ip_context::ClientIpContext;
 pub use enrich::enrich_context_from_headers;
 pub use etag::{parse_if_match_version, set_version_etag};
 pub use forwarded::parse_client_ip;
 pub use traceparent::parse_traceparent;
+pub use verified_signer::enrich_context_from_envelope;
 
 #[cfg(test)]
 mod tests_correlation;

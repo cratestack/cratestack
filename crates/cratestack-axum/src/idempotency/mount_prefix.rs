@@ -28,7 +28,7 @@
 
 /// Normalise a caller-supplied mount prefix: `""`, `"/"`, `"/api"` and
 /// `"/api/"` all mean the same thing, and all become `""` or `"/api"`.
-pub(super) fn normalize(prefix: &str) -> String {
+pub(crate) fn normalize(prefix: &str) -> String {
     let trimmed = prefix.trim_end_matches('/');
     if trimmed.is_empty() {
         return String::new();
@@ -46,7 +46,7 @@ pub(super) fn normalize(prefix: &str) -> String {
 /// and the caller must treat that as unresolved (i.e. reserve). Requiring
 /// the boundary is what stops a `/api` prefix from matching `/apiary/...`
 /// and handing back a bogus remainder.
-pub(super) fn strip<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
+pub(crate) fn strip<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
     if prefix.is_empty() {
         return Some(path);
     }
