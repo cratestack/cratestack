@@ -1,7 +1,8 @@
 //! What the server says about itself: the one version it speaks, the
-//! `serverInfo` it reports, `get_info`'s config, and the two methods whose
-//! answer is that config or a constant, `server/discover` and
-//! `completion/complete`. Split from `server.rs` for the file-length ceiling.
+//! `serverInfo` it reports, `get_info`'s config, and the three methods whose
+//! answer is that config, a constant or a refusal: `server/discover`,
+//! `completion/complete` and a legacy `initialize`. Split from `server.rs`
+//! for the file-length ceiling.
 //!
 //! Neither answer depends on who asks, and `rmcp`'s own defaults would
 //! serve both whoever did. Both resolve the caller anyway (maintainer
@@ -19,8 +20,8 @@
 use std::borrow::Cow;
 
 use rmcp::model::{
-    CompleteResult, DiscoverResult, Extensions, Implementation, ProtocolVersion,
-    ResourcesCapability, ServerCapabilities, ServerConfig,
+    CompleteResult, DiscoverResult, Extensions, Implementation, InitializeRequestParams,
+    InitializeResult, ProtocolVersion, ResourcesCapability, ServerCapabilities, ServerConfig,
 };
 use rmcp::{ErrorData, ServerHandler};
 
@@ -58,6 +59,24 @@ impl<T: McpTools> McpServer<T> {
         self.caller.resolve_from(extensions)?;
         let versions = Cow::into_owned(self.supported_protocol_versions());
         Ok(DiscoverResult::from_server_info(versions, self.get_info()))
+    }
+
+    /// A legacy `initialize`, behind the caller check (maintainer decision
+    /// on cratestack#1033, answering #1068's question). `SUPPORTED` holds no
+    /// version with an `initialize` handshake, so `rmcp`'s negotiation
+    /// refuses every one with `-32022` and the version list; checking the
+    /// caller first means a request without the guard's caller is refused
+    /// like any other method, `-32603`, and that widening `SUPPORTED` later
+    /// could never answer `serverInfo` below the guard. Over stdio the
+    /// caller is fixed and the answer stays `-32022`. `rmcp`'s default also
+    /// records the peer's `clientInfo`; nothing is recorded for a refusal.
+    pub(super) fn initialized(
+        &self,
+        extensions: &Extensions,
+        request: &InitializeRequestParams,
+    ) -> Result<InitializeResult, ErrorData> {
+        self.caller.resolve_from(extensions)?;
+        self.negotiate_initialize(request)
     }
 
     /// Nothing here is completed (no prompts, and no resource template
