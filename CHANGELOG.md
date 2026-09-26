@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-## 0.13.1 (2026-09-26)
+## 0.14.0 (2026-09-26)
+
+0.14.0 supersedes 0.13.1. 0.13.1 was published with the changes below, which
+include breaking ones (the entries marked "breaking"), but Cargo treats 0.13.1
+as compatible with 0.13.0, so any `cratestack = "0.13"` dependent would pick
+them up on its next `cargo update`. The 0.13.1 crates are yanked for that
+reason: move to 0.14.0, which carries these changes under a version that
+says it breaks.
 
 ### Fixed: `cratestack-rusqlite` 0.13.0 does not build for `wasm32-unknown-unknown` (#1048)
 
