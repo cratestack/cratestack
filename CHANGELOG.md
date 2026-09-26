@@ -19,7 +19,11 @@ accepted, as before.
   `AnonymousContext` and `Tools(ToolTableError)`, and implements
   `From<ToolTableError>`. Code that uses `?` into a boxed error, or
   `.to_string()`, compiles unchanged.
-- MCP is unreleased, so no released version changes.
+- MCP first shipped in 0.13.0, so this changes that release's constructors:
+  an application that built a stdio server from an anonymous context no
+  longer starts, and the refusal names what to pass instead.
+
+## 0.13.0 (2026-09-26)
 
 ### Security: relation filters and sorting ignored the related model's read policy (GHSA-p55v-6xv5-93p3)
 
