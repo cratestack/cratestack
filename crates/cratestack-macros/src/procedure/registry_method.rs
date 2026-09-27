@@ -17,7 +17,7 @@ use crate::shared::{ident, is_stream_procedure, procedure_isolation, to_snake_ca
 /// tokens to before; see `procedure::tests` for the regression guard.
 ///
 /// Both branches reference the item/output type via the procedure's own
-/// `#module_ident::{Output,Item}` alias (see [`generate_procedure_module`])
+/// `#module_ident::{Output,Item}` alias (see [`generate_procedure_module`](super::generate_procedure_module))
 /// rather than recomputing type tokens here: this trait method is spliced
 /// directly under `pub mod procedures` (see
 /// `include/server.rs`'s `ProcedureRegistry` trait), one nesting level
@@ -25,7 +25,7 @@ use crate::shared::{ident, is_stream_procedure, procedure_isolation, to_snake_ca
 /// path computed for that deeper context would resolve one level too far
 /// up from here. The same reasoning covers the trailing `#module_ident
 /// ::Authorized` parameter (cratestack#512): it's the witness type
-/// [`instrument::authorized_type_tokens`] splices into this same
+/// [`instrument::authorized_type_tokens`](super::instrument::authorized_type_tokens) splices into this same
 /// `#module_ident` module, constructible only by that module's own
 /// `authorize_with_db`/`invoke_with_db` — which is what makes
 /// `registry.<method>(&db, &ctx, args)` (three arguments, the shape that
