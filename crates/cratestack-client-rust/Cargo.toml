@@ -95,18 +95,38 @@ reqwest.workspace = true
 # (not a bare `reqwest-middleware` feature name) so the dependency is
 # never implicitly exposed as a feature of the same name.
 reqwest-middleware = { workspace = true, optional = true }
-# #440: `reqwest`'s `rustls-no-provider` feature (see the workspace
-# `Cargo.toml`'s `reqwest` entry) ships no crypto provider — `CratestackClient::new`
-# installs a `ring` fallback (`client/core.rs`'s `ensure_crypto_provider`) so
-# this crate keeps working out of the box, so this is a real (non-dev)
-# dependency now, not just a test-support one.
-rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_urlencoded.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["sync"] }
 url.workspace = true
+
+# cratestack#1104: the client is target-split so it also builds for
+# `wasm32-unknown-unknown`. Natively `tokio` still inherits the workspace
+# entry, so a native dependency graph is exactly what it was. On wasm32 it
+# cannot: workspace inheritance is additive, so `workspace = true` would
+# carry the root entry's `rt-multi-thread`, which tokio refuses there ("Only
+# features sync,macros,io-util,rt,time are supported on wasm"). wasm32 needs
+# only `sync`, because the streamed-response pump runs on the browser's
+# event loop via `wasm-bindgen-futures` and `RuntimeHandle` is native-only.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# #440: `reqwest`'s `rustls-no-provider` feature (see the workspace
+# `Cargo.toml`'s `reqwest` entry) ships no crypto provider — `CratestackClient::new`
+# installs a `ring` fallback (`client/core.rs`'s `ensure_crypto_provider`) so
+# this crate keeps working out of the box, so this is a real (non-dev)
+# dependency now, not just a test-support one. Native-only: on wasm32
+# reqwest goes through the browser's `fetch`, which does TLS itself.
+rustls.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+
+# `uuid`'s `js` feature: `cratestack-core` depends on `uuid` with `v4` and no
+# wasm32 randomness source, which is a `compile_error!` on this target —
+# the same edge `cratestack-rusqlite` and `cratestack-cbor-wasm` close the
+# same way.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", default-features = false, features = ["sync"] }
+uuid = { workspace = true, features = ["js"] }
+wasm-bindgen-futures = "0.4"
 
 [dev-dependencies]
 async-stream = "0.3"

@@ -554,6 +554,36 @@ the only addition to a schema without `@isolation` is the
 5. Size the pool for the procedures you declare. Each in-flight call holds
    one connection for its whole transaction.
 
+### `include_client_schema!` builds for `wasm32-unknown-unknown` (#1104)
+
+**Before:** `cratestack-sqlite` re-exported `client_rust` only off wasm32, so
+`include_client_schema!` in a browser build failed with ``cannot find `client_rust` in
+`cratestack` ``, and `cratestack-client-rust` itself did not compile there: its `tokio` edge
+inherited the workspace entry's `rt-multi-thread` (``Only features sync,macros,io-util,rt,time
+are supported on wasm``). The gate's stated reason, that reqwest does not build for wasm32, had
+not been true for a long time: reqwest builds there on top of the browser's `fetch`.
+
+**Now** the runtime, the `cratestack-sqlite` facade's `client_rust` re-export and the
+`cratestack-client` facade all build for `wasm32-unknown-unknown`, with and without
+`middleware`. On that target:
+
+- the streamed-response pump (`post_list_streamed`, `RpcClient::call_streaming`) runs through
+  `wasm_bindgen_futures::spawn_local`, and `BatchableCall`'s `IntoFuture` is a non-`Send` boxed
+  future, because `fetch` futures are not `Send`;
+- `rustls` is not in the graph, since the browser does TLS, and `ensure_crypto_provider()` is a
+  no-op kept so shared code compiles for both targets;
+- `RuntimeHandle` is not available. It `block_on`s each request, and a `fetch` future cannot
+  resolve while the thread is blocked; use the async client.
+
+**Native builds are unchanged:** the same API, `tokio::spawn` for the pump, the same `Send`
+future, the `ring` fallback provider, and the same dependency graph. Natively the client still
+inherits the workspace `tokio` entry; only the wasm32 table declares its own (`sync` alone).
+
+CI checks the runtime (default features and `middleware`) and `cratestack-client` for
+wasm32, and runs `cargo check --target wasm32-unknown-unknown` on
+`examples/client-only-verification`, so the macro's expansion is compiled for that target from
+a consumer's own manifest.
+
 ## 0.14.0 (2026-09-26)
 
 0.14.0 supersedes 0.13.1. 0.13.1 was published with the changes below, which

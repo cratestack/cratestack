@@ -34,12 +34,9 @@ default = ["decimal-rust-decimal", "codec-json"]
 # Cargo unifies the feature onto this crate's edges. Off by default.
 postgis = ["cratestack-rusqlite/postgis", "cratestack-sql/postgis"]
 # `cratestack-client-rust/...` (plain, not weak `?`): that dependency is
-# mandatory-but-target-gated (see `[target.'cfg(not(target_arch =
-# "wasm32"))'.dependencies]` below), not `optional = true`, so weak-dep
-# syntax doesn't apply to it — same as `codec-json`'s existing
-# `cratestack-client-rust/codec-json` forward below. On `wasm32`, where
-# that dependency table doesn't apply at all, Cargo simply treats the
-# reference as inapplicable for that target rather than erroring.
+# mandatory on every target (cratestack#1104 dropped its wasm32 gate), not
+# `optional = true`, so weak-dep syntax doesn't apply to it — same as
+# `codec-json`'s `cratestack-client-rust/codec-json` forward below.
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-sql/decimal-rust-decimal",
@@ -61,8 +58,7 @@ decimal-bigdecimal = [
     "cratestack-parser/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. See
-# `cratestack-pg` for rationale. On `wasm32` the client runtime isn't
-# linked (no `reqwest`), so this feature has no effect there.
+# `cratestack-pg` for rationale.
 codec-json = ["cratestack-client-rust/codec-json"]
 # Forwards `cratestack-client-rust`'s pluggable HTTP transport
 # (cratestack#926) so a consumer reaching this facade can hand the
@@ -94,14 +90,12 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-
 # Generated HTTP client runtime — used by `include_client_schema!` on
-# hybrid consumers (e.g. a NAPI / Tauri shell that ships an embedded
-# SQLite DB *and* calls a remote backend over HTTP). Target-gated off
-# `wasm32-unknown-unknown` because the runtime depends on `reqwest`,
-# which doesn't compile to wasm; on wasm the macro's expansion isn't
-# useful anyway (browsers use the JS fetch API directly).
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# hybrid consumers (e.g. a NAPI / Tauri shell, or a browser app, that
+# ships an embedded SQLite DB *and* calls a remote backend over HTTP).
+# Not target-gated: since cratestack#1104 the runtime builds for
+# `wasm32-unknown-unknown` too, where `reqwest` goes through the
+# browser's `fetch`.
 cratestack-client-rust.workspace = true
 
 [dev-dependencies]

@@ -249,6 +249,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "url",
+ "uuid",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@ mod runtime;
 mod state;
 mod streaming;
 mod streaming_callback;
+mod task;
 
 #[cfg(test)]
 mod tests;
@@ -43,6 +44,7 @@ pub use rpc::batch::{BatchBuilder, BatchResults};
 pub use rpc::batch_call::{BatchHandle, BatchableCall};
 pub use rpc::client::RpcClient;
 pub use rpc::error::{RpcClientError, RpcRemoteError, RpcStream};
+#[cfg(not(target_arch = "wasm32"))]
 pub use runtime::handle::RuntimeHandle;
 pub use runtime::wire::{
     RuntimeCodecConfig, RuntimeConfigWire, RuntimeEnvelopeConfig, RuntimeErrorCode,
