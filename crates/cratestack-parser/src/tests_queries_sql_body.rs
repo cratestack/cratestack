@@ -62,27 +62,41 @@ fn rejects_a_bare_sql_attribute_with_no_parentheses() {
   @@sql
   @allow(auth() != null)"#,
     ));
+    // Refused by the attribute-shape rule before the body is read
+    // (GHSA-69g4-xvcm-vm2j): `@@sql` takes an argument list.
     assert!(
-        message.contains("argument is not a quoted string"),
+        message.contains("`@@sql` takes an argument list"),
         "{message}"
     );
 }
 
 #[test]
-fn rejects_a_second_attribute_sharing_the_sql_line() {
-    // Everything up to the LAST `)` on the line is read as the SQL
-    // argument, so this parses as one attribute with a body that does not
-    // end in a quote. The message says so rather than leaving the author
-    // to work out why an apparently well-formed line was refused.
-    let message = error_for(&with_query(
+fn reads_a_second_attribute_sharing_the_sql_line() {
+    // Everything up to the LAST `)` on the line used to be read as the SQL
+    // argument, so this was refused. A query line is now cut into one
+    // attribute per `@name` (GHSA-69g4-xvcm-vm2j), so both are read.
+    let schema = crate::parse_schema(&with_query(
         r#"query totals(userId: String): Totals
   @@sql("SELECT 1 AS total WHERE a = $1") @allow(auth() != null)"#,
-    ));
-    assert!(
-        message.contains("argument is not a quoted string"),
-        "{message}"
+    ))
+    .expect("two attributes on the SQL line are both read");
+    let query = &schema.queries[0];
+    assert_eq!(
+        query.sql().as_deref(),
+        Some("SELECT 1 AS total WHERE a = $1")
     );
-    assert!(message.contains("on its own line"), "{message}");
+    let raws = query
+        .attributes
+        .iter()
+        .map(|a| a.raw.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        raws,
+        [
+            "@@sql(\"SELECT 1 AS total WHERE a = $1\")",
+            "@allow(auth() != null)"
+        ]
+    );
 }
 
 /// The same extractor backs `view`'s `@@server_sql`, where the silent

@@ -23,6 +23,7 @@ use crate::validate::patch_touch_flag_collisions::validate_no_touch_flag_collisi
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::route_collisions::validate_model_route_collisions;
+use crate::validate::server_only_placement as server_only;
 use crate::validate::snake_case_collisions::{
     validate_field_column_collisions, validate_model_name_collisions,
 };
@@ -155,6 +156,7 @@ pub(super) fn validate_models_collecting(
                 reject_type_decl_as_model_field_type(&type_decl_names, &model.name, field)?;
                 validate_validator_attributes(&model.name, field)?;
                 validate_field_policy_attributes(&model.name, field)?;
+                server_only::validate_model_field(schema, model, field, &model_names)?;
                 validate_default_dbgenerated_no_args(&model.name, field)?;
                 validate_removed_field_attributes("model", &model.name, field)?;
                 validate_misspelled_field_attributes("model", &model.name, field)?;

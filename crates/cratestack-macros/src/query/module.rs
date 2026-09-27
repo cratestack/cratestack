@@ -13,8 +13,8 @@ use cratestack_core::{Query, TypeArity, TypeDecl};
 use quote::quote;
 
 use crate::policy::{
-    PolicySubject, generate_procedure_policy, parse_procedure_allow_expression,
-    parse_procedure_deny_expression,
+    PROCEDURE_POLICY_NAMES, PolicySubject, check_attribute, check_count, generate_procedure_policy,
+    parse_procedure_allow_expression, parse_procedure_deny_expression, policy_names_in,
 };
 use crate::procedure::{generate_procedure_args_struct, procedure_output_tokens};
 use crate::shared::{doc_attrs, ident, to_snake_case};
@@ -42,14 +42,26 @@ pub(crate) fn generate_query_module(
     let procedure = as_procedure(query);
     let mut allow_expressions = Vec::new();
     let mut deny_expressions = Vec::new();
+    // GHSA-69g4-xvcm-vm2j: see `crate::policy::attribute_audit`.
+    let owner = format!("query `{}`", query.name);
+    let mut named = 0;
     for attribute in &query.attributes {
+        named += policy_names_in(&attribute.raw, PROCEDURE_POLICY_NAMES);
+        let before = allow_expressions.len() + deny_expressions.len();
         if let Some(expression) = parse_procedure_allow_expression(&attribute.raw) {
             allow_expressions.push(expression?);
         }
         if let Some(expression) = parse_procedure_deny_expression(&attribute.raw) {
             deny_expressions.push(expression?);
         }
+        let after = allow_expressions.len() + deny_expressions.len();
+        check_attribute(&owner, attribute, PROCEDURE_POLICY_NAMES, after - before)?;
     }
+    check_count(
+        &owner,
+        named,
+        allow_expressions.len() + deny_expressions.len(),
+    )?;
     let allow_policies = allow_expressions
         .into_iter()
         .map(|expression| generate_procedure_policy(expression, &subject, types, auth))

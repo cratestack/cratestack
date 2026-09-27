@@ -2,6 +2,356 @@
 
 ## Unreleased
 
+### Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j) — breaking
+
+**Affected:** procedure `@allow` / `@deny` / `@authorize` in every release
+0.2.0–0.14.0; model `@@allow` / `@@deny` in every release 0.2.0–0.14.0, and
+view `@@allow` / `@@deny` from 0.4.2; `query` `@allow` / `@deny` in
+0.11.0–0.14.0.
+
+The comparisons below were measured on 0.13.0. 0.14.0 behaves the same,
+apart from #1074's `@id` and second-`@relation` changes, which this entry
+covers where they meet it.
+
+The generator applied a policy attribute only when its text was exactly
+`@deny(…)` (or `@@deny("action", …)`) and silently skipped anything else,
+while `cratestack check` reported `schema OK`. A skipped `@deny` or
+`@@deny` makes the declaration more permissive than written: measured on
+0.12.0, a procedure with `@deny(hasRole("banned")) // note` answered
+`200 OK` to a `banned` caller where the plain spelling answers `403`; a
+`query` returned rows to that caller on a live database; a model's
+`@@deny("read", …) // note` generated no deny rule. A skipped `@authorize`
+let `authorize_with_db` return `Ok` without consulting the database. The
+spellings that were skipped:
+
+- a space or tab before `(` (`@deny (…)`), a space after `@` (`@ deny(…)`),
+  another case (`@Deny(…)`, `@@DENY(…)`) or a typo (`@deyn(…)`,
+  `@authorise(…)`, `@@deyn(…)`);
+- an invisible character in the name (`@de` + a zero-width space + `ny`,
+  which displays as `@deny`);
+- anything after the closing `)`: a `// comment`, `;`, `,`, a word;
+- the attribute after another one on the same line
+  (`@no_idempotency @deny(…)`, `@deny(…) @deny(…)`);
+- `@deny` with no argument list;
+- a model rule naming an action no slot generates (`@@deny("raed", …)`,
+  `@@deny("read,update", …)`), or a view `@@deny` naming anything but
+  `read` or `all`;
+- a `@deny(…)` written above a procedure's or query's signature after a
+  blank line: it attached to the declaration *before* it.
+
+A rule could also be applied but never match: an invisible character
+inside its string (`@deny(hasRole("ban` + a zero-width space + `ned"))`,
+which displays as `"banned"`) compares against a role no caller has, and
+also answered `200 OK` to a `banned` caller on 0.12.0.
+
+A `// comment` on a field line had the opposite problem: an attribute named
+inside it was applied (`name String @unique // not @readonly` made the field
+read-only).
+
+**What changed.**
+
+- **A trailing `//` comment is a comment on every attribute line** — field,
+  `@@` block attribute, procedure and query — and is dropped before anything
+  reads the attribute. `//` inside a string literal (`"http://…"`, SQL in
+  `"…"` or `"""…"""`) is not a comment. `@@deny("read", …) // note` is now
+  applied, and `@@audit // …` now works.
+- **Procedure and query attributes are a closed list, in one spelling.** A
+  procedure accepts `@allow`, `@deny`, `@authorize`, `@api_version`,
+  `@status`, `@deprecated`, `@stream`, `@no_idempotency`, `@no_rate_limit`,
+  `@isolation` and `@mcp`; a query `@@sql`, `@allow` and `@deny`. Any other
+  name, another case or a typo is an error (with a suggestion); so are
+  whitespace before `(`, anything after the closing `)`, an empty or missing
+  argument list where one is required, and one on `@stream`,
+  `@no_idempotency` or `@no_rate_limit`. `@authorize` must have three
+  arguments and one of the actions `detail`, `read`, `update`, `delete`.
+- **So are a model's and a view's `@@` attributes.** A model accepts
+  `@@allow`, `@@deny`, `@@emit`, `@@paged`, `@@audit`, `@@soft_delete`,
+  `@@retain`, `@@subscribe`, `@@id`, `@@unique`, `@@index`, `@@internal` and
+  `@@rename` (and `@@mcp`, read while parsing); a view `@@allow`, `@@deny`,
+  `@@server_sql`, `@@embedded_sql`, `@@sql`, `@@materialized` and
+  `@@no_unique`. Any other `@@` name — `@@map(…)`, `@@check(…)`, a view-only
+  attribute on a model or the other way round, a typo of any length — is an
+  error (with a suggestion when one is close), where it used to check as
+  `schema OK` and do nothing; so are whitespace before `(`, anything after
+  the closing `)` and an empty argument list, as for procedures.
+- **`@@rename` takes exactly `@@rename(from = "<old_table>")`.** `cratestack
+  migrate` reads no other form and treated anything else as no marker, so
+  `@@rename(from: "documents")` or `@@rename("documents")` checked as `schema
+  OK` and the next migration dropped the old table and created the new one,
+  losing its rows, instead of renaming it. Any other argument text is now an
+  error that shows the accepted form; the name must be a non-empty
+  double-quoted string with no `"` or `\` in it.
+- **A field's `@rename` takes exactly `@rename(from = "<old_column>")`**,
+  checked with the same reader `cratestack migrate` uses
+  (`cratestack_core::schema::rename_marker_from`), so the check accepts
+  exactly what the migrator reads. Only `@@rename` was checked before:
+  `title String @rename(from: "name")` checked as `schema OK` and the next
+  migration dropped `name` and added `title`, losing the column's data. Any
+  other form — another argument spelling, `@rename()`, a bare `@rename`,
+  anything after its `)` — is an error that shows the accepted form. The
+  migrator reads `@rename` only on a model's stored columns (a mixin's
+  included), so on a field of a `view`, a `type` or the `auth` block, or
+  on a relation field, it renamed nothing and checked as `schema OK` on
+  0.13.0; it is now refused there in any form. `rename` also joins the names a typo is checked
+  against, so `@renam(…)` or `@Rename(…)`, which did nothing, is refused
+  with "did you mean `@rename`?".
+- **A second `@rename` on a field, or a second `@@rename` on a model, is
+  refused**, pointing at the second: the migrator reads only the first, so
+  the second was silently ignored, whichever name it carried.
+- **Several attributes on one procedure or query line are each read**
+  (`@no_idempotency @deny(…)`, `@@sql("…") @allow(…)`), where they used to be
+  one unread attribute (or, after `@@sql`, refused). Attributes run together
+  with no space (`@deny(x)@allow(y)`) are refused. This covers `@mcp` too:
+  `@mcp(tool) @allow(…)` on one procedure line, which 0.13.0 refused (its
+  MCP phase 1 entry lists an MCP attribute sharing a line among the
+  refusals), is now read as two attributes. An `@@mcp` sharing a model line
+  with another attribute is still refused.
+- **Model and view `@@allow` / `@@deny`** must be written
+  `@@allow("action", expression)` (either quote) with the line ending at its
+  `)`, and the action must be `all`, `read`, `list`, `detail`, `create`,
+  `update` or `delete` (a view's `@@allow`: `read`; its `@@deny`: `read` or
+  `all`). A case variant, a space, or a name one typo from `allow`/`deny` is
+  refused. A view's `@@allow('read', …)` with single quotes, which 0.13.0
+  and earlier refused while accepting them everywhere else, is now accepted.
+- **Attributes belong to the signature above them, up to the first blank
+  line.** A blank line ends a procedure's or query's attributes, so an
+  attribute after one is refused, with the declarations on either side
+  named. A `//` or `///` comment line does not end them: it may stand
+  between the signature and its first attribute or between two attributes
+  (0.13.0 and earlier refused the attribute after such a comment line as
+  an "unsupported top-level declaration"). An attribute run, comment lines
+  included, followed by another declaration with no blank line between them is refused, since its
+  last lines would read as that declaration's attributes.
+- **A character shown as a line break but not parsed as one is refused**
+  when text follows it on the line: a lone carriage return, a vertical tab,
+  a form feed, NEL, U+2028 or U+2029. After a `//`, such a character made
+  the next line an editor displays part of the comment, dropping a policy
+  written there. Bidirectional text controls (U+202A–U+202E,
+  U+2066–U+2069) are refused anywhere, and so are ESC (U+001B) and the
+  control sequence introducer U+009B, comments included: each starts a
+  terminal escape sequence, which can draw a comment over with what looks
+  like an applied attribute when the schema is shown in a terminal. `\r\n`
+  line endings are unaffected.
+- **An invisible character is refused anywhere in attribute text**,
+  strings and SQL bodies included, on field, `@@`, procedure and query
+  attributes: every Unicode 16.0 `Default_Ignorable_Code_Point` — the
+  characters a renderer shows as nothing, among them the zero-width space,
+  non-joiner and joiner (U+200B–U+200D), the word joiner (U+2060), the
+  byte-order mark (U+FEFF), the soft hyphen (U+00AD), the combining grapheme
+  joiner (U+034F), the Hangul fillers (U+115F, U+1160, U+3164, U+FFA0), the
+  Mongolian free variation selectors, the Khmer inherent vowels
+  (U+17B4/U+17B5), the direction marks and the tag characters — the
+  Braille pattern blank (U+2800) and the musical symbol null notehead
+  (U+1D159), each of which draws as a blank without being whitespace, and
+  the format controls the property leaves out by name: the
+  interlinear annotation controls (U+FFF9–U+FFFB) and the Egyptian
+  hieroglyph format controls (U+13430–U+1343F). Those nineteen have no
+  glyph of their own; `Default_Ignorable_Code_Point` excludes them so that
+  a renderer without support for them is not told to hide them, which
+  leaves whether they are seen up to the viewer, so they are refused too.
+  So are the control characters that are not whitespace (U+0000–U+001F
+  and U+007F–U+009F, except tab, line feed, vertical tab, form feed,
+  carriage return and NEL), which the property leaves out entirely: NUL,
+  BEL or a C1 control has no glyph either, and ESC can conceal the text
+  after it in a terminal. `@deny(hasRole("ban` + U+0080 + `ned"))` checked
+  as `schema OK` on 0.13.0.
+  A variation selector (U+FE00–U+FE0F, U+E0100–U+E01EF) is refused
+  anywhere in a policy attribute (`@allow`, `@deny`, `@authorize`,
+  `@@allow`, `@@deny`, a query's `@allow` / `@deny`), whatever comes
+  before it: `@deny(hasRole("banné` + U+FE0F + `"))` or the same after a
+  CJK role displays exactly like the plain role, yet a caller whose role
+  is `banné` is not denied, and a role or an action has no use for a
+  presentation choice. Outside a policy attribute (an emoji in a
+  `@default`, a SQL body) one is allowed right after a visible non-ASCII
+  character, where it picks a presentation (an emoji, a CJK variant);
+  after an ASCII character, after whitespace, after another selector or at
+  the start it changes nothing on screen and is refused. The error names
+  the code point, the line and the column. Visible non-ASCII text (`é`, CJK, Hangul, Hebrew, Arabic, emoji)
+  is unaffected, and so is a trailing `//` comment. The zero-width joiner and
+  non-joiner stay refused even where text uses them, so some ordinary text is
+  refused, even inside a string: an emoji written with a zero-width joiner
+  (a family, a profession) or with tag characters (the flags of England,
+  Scotland and Wales), a keycap emoji (`1️⃣`, a digit then U+FE0F), and a
+  word spelled with a zero-width non-joiner (common in Persian) or joiner
+  (some Indic scripts). The set is `Default_Ignorable_Code_Point` rather
+  than Unicode category `Cf` (format characters) because `Cf` is wrong both
+  ways: it leaves out the invisible characters above that are not `Cf` —
+  each measured letting a `banned` caller past
+  `@deny(hasRole("ban…ned"))` with `200 OK` when it is not refused — and it
+  takes in visible characters such as the Arabic number signs
+  (U+0600–U+0605, U+06DD, U+08E2), which are accepted. With the additions
+  above, the only `Cf` characters accepted are those number signs and the
+  other prepended concatenation marks (U+070F, U+0890, U+0891, U+110BD,
+  U+110CD).
+  A visible punctuation
+  character inside a policy name (`@@de-ny`) is read through, so the
+  attribute is refused as a misspelled `@@deny` rather than kept as an
+  unknown attribute that nothing reads.
+- **A diagnostic never writes a control or invisible character raw.** An
+  error that quotes the attribute or the line it refuses shows each such
+  character as an escape (`\u{7}` for BEL, `\u{200B}` for a zero-width
+  space, every variation selector too), where it used to write it as it
+  stood: a NUL, a BEL, an ESC that starts a terminal escape sequence able
+  to recolour or hide the rest of the output, or a character that makes
+  the quote look exactly like the accepted spelling. Line feeds and tabs
+  are kept. The code frame under a rendered `cratestack check` error
+  shows such a character as one visible stand-in (`␀`, `␇`, `␛`, or
+  U+FFFD), so the underline still points at it. This holds for
+  `cratestack check`, the language server and the generator's
+  `compile_error!` re-check alike.
+- **The generator re-checks** every attribute whose name reads as `allow`,
+  `deny` or `authorize` in any case or spacing; if the exact reader did not
+  turn it into a rule, or the count of such names differs from the rules
+  generated, or a policy-bearing attribute carries an invisible character,
+  the `include_*_schema!` call fails with a `compile_error!`
+  instead of generating it. The generator decides for itself which
+  attributes are policies, so a variation selector in one is refused
+  there too.
+
+**Breaking changes.** A schema with any spelling listed above no longer
+checks or compiles, nor does one with a `@@` attribute outside its block's
+list, a `@@rename` or field `@rename` in any form but `from = "…"`, a second
+`@@rename` on a model or `@rename` on a field, a `@rename` on a field of a
+`view`, `type` or `auth` block or on a relation field, or an invisible
+character in any attribute — a variation selector anywhere in a policy
+attribute included, even after an emoji. A procedure or
+query with a blank line between its signature and its attributes, or among
+them, no longer checks: remove the blank line. Nor does a procedure or query
+whose attributes (and any comment lines after them) are followed directly
+by the next declaration: add a blank line. Another attribute's argument
+list or trailing text that used to be ignored on a procedure (`@stream()`,
+`@no_idempotency ()`) is refused. `@@sql ("…")` with a space in a `query` is
+refused. An attribute with a trailing comment, which 0.13.0 and earlier
+skipped unvalidated, is now validated like any other, so it can be refused for its
+own reason (`@no_rate_limit // …` without `extension rate_limit`,
+`@@subscribe // …` without `transport rpc`). Every committed schema, example
+and doc in this repository uses the accepted spellings. A `cratestack diff`
+gate whose baseline is a schema this release refuses fails on the baseline:
+fix the baseline in the same change.
+
+**Behaviour that changes with no error.** Some schemas that still check
+now *do* something else, in both directions, so review these before
+deploying:
+
+- **An attribute with a trailing `// comment` now takes effect**, where
+  0.13.0 and earlier read the comment as part of its text and skipped it
+  without an error. On a procedure: `@allow(…)` now grants what it says, `@no_rate_limit`
+  turns rate limiting off, `@no_idempotency` stops taking an idempotency-key
+  reservation, `@stream` makes the procedure stream (a wire change),
+  `@deprecated` adds the deprecation headers. On a model or view:
+  `@@allow(…)` now grants access 0.13.0 and earlier withheld, `@@soft_delete` makes
+  deletes soft and hides soft-deleted rows from reads, `@@audit` starts
+  writing audit rows, `@@subscribe` adds the subscription operation.
+  (0.13.0 and earlier already refused `@status`, `@api_version`,
+  `@isolation`, `@@paged`, `@@index`, `@@unique`, `@@emit` and `@@internal`
+  with a trailing comment, in the releases that had them, so no deployed
+  schema carries those.)
+- **An attribute sharing a procedure or query line with another one now
+  takes effect** the same way (`@no_idempotency @allow(…)`).
+- Of these, **an `@allow(…)` or `@@allow(…)` is the one change that widens
+  access with no error at all**: on an affected release it was skipped,
+  which left that declaration or action closed by default; this release
+  applies it. Confirm each such rule grants what it says.
+- **An attribute named inside a field's `// comment` no longer applies.**
+  On 0.13.0 and earlier, `secret String // was @server_only` kept
+  `secret` off the wire; from this release it is an ordinary field and is returned to
+  clients. The same holds for `@readonly` (the field becomes writable),
+  `@pii` / `@sensitive` (no longer redacted in the audit log) and every
+  other field attribute. Write the attribute outside the comment before
+  upgrading if the field relied on it. `id Int // @id` no longer makes `id`
+  the primary key (a model with no other key is refused as missing an
+  `@id`), and a `@relation(…)` inside a field's comment is not a second
+  `@relation` for the refusal in the `@id` / `@relation` entry below
+  (cratestack#1074), which counts only attributes outside the comment.
+
+**Operator guidance.** Run `cratestack check` from this release over every
+schema, including ones consumed only through `include_client_schema!`. Each
+refusal names the declaration and the attribute; on an affected release that
+attribute was not enforced, or (an invisible character inside its string)
+never matched, so treat the declaration as having run without it and review
+its access history for the callers the rule names. A schema this release
+checks cleanly used none of the refused spellings, but can still be affected
+by the previous paragraph. To find candidates before upgrading, list every
+policy attribute with
+`grep -rnEi --include='*.cstack' '@+\s*(allow|deny|authori[sz]e)' .` and
+review each hit that is not alone on its line in exactly the documented
+form, plus every procedure or query whose attributes contain a blank line
+or sit above its signature; a misspelled name (`@deyn`) or one hiding an
+invisible character does not match that pattern, so only `cratestack check`
+finds it. For the behaviour changes, list every attribute line with a
+trailing comment,
+`grep -rnE --include='*.cstack' '^\s*@.*//|@\w+(\([^)]*\))?\s+//' .`, every
+allow rule with a comment or sharing a line,
+`grep -rnE --include='*.cstack' '@@?allow\(.*\)\s*//|@[a-z_]+(\(.*\))?\s+@allow' .`,
+and every field line whose comment contains an `@`,
+`grep -rnE --include='*.cstack' '//.*@' .`, and check each against the
+list above. For the rename markers, list them with
+`grep -rnEi --include='*.cstack' 'rename' .` (a misspelled one, again, only
+`cratestack check` finds): a marker this release refuses was read as no
+marker, so any migration generated from it dropped and re-created the
+table or column instead of renaming it — check those migrations for a
+`DROP TABLE` or `DROP COLUMN` of the old name.
+
+### `@server_only` is refused where it has no effect, and attributes in spellings no generator reads — breaking
+
+`@server_only` keeps a stored scalar column of a model out of every generated
+input and output. The parser used to accept it in five other positions where it
+changed nothing; each is now a schema error naming the field and the fix:
+
+- **A field of a `type` block.** `type` structs carry no `@server_only`
+  handling, so the attribute did nothing. Leave the value out of the type
+  instead.
+- **A relation field** (a field whose type is another model, to-one or
+  to-many). A relation field is not a column. Mark the individual fields of
+  the related model with `@server_only` instead.
+- **A relation key**: a scalar named in any `@relation`'s `fields: [...]` on
+  its own model, or in the `references: [...]` of a relation on another model
+  that targets its model. The key's value travels with the relation (it is
+  the foreign-key column on one side and the referenced column on the other),
+  so it cannot be kept server-side. Both ends of every relation are checked,
+  so a key is found whichever side declares the relation, including
+  self-relations and fields a model takes from a `mixin`. The attribute did
+  keep the key out of the generated create and update inputs: to keep that,
+  replace it with `@readonly` rather than removing it, or the key becomes
+  settable by clients.
+- **A `@version` field.** Clients need the version for conditional writes.
+- **A field of the `auth` block.** The auth block describes the caller's
+  context for policies; no generator reads the attributes of its fields.
+
+Separately, a known attribute is now accepted only in a spelling the
+generators read. Most of them compare an attribute's text whole, so these
+parsed with `schema OK` and did nothing, in every block kind (`model`,
+`mixin`, `type`, `view`, `auth`):
+
+- **An attribute that takes no arguments, written with an argument list or
+  followed by stray punctuation**: `@server_only()`, `@server_only(true)`,
+  `@readonly()`, `@version()`, `@readonly,`. `@readonly()` left the field
+  settable through the generated create input, and `@version()` left the
+  model without a version field (both checked by compiling a schema). The
+  attributes covered are `@server_only`, `@readonly`, `@version`, `@pii`,
+  `@sensitive`, `@db_enforce`, `@email`, `@uri`, `@iso4217`, `@unique` and
+  `@id` on fields, and `@@audit`, `@@soft_delete`, `@@subscribe`,
+  `@@materialized` and `@@no_unique` on blocks. For `@unique(...)`,
+  `@@materialized(...)` and `@@no_unique(...)` the argument list used to be
+  accepted and ignored; it is refused too. `@id(...)` is refused on every
+  field by the `@id` entry below (cratestack#1074), through this same check
+  and with that entry's message; `@id` followed by punctuation (`@id;`),
+  which that entry refuses as an unknown attribute, is refused here with
+  this entry's message instead. Write the bare attribute. A longer name
+  (`@unique_per_tenant`) is a different attribute and is not affected.
+- **Two attributes with no space between them** (`@server_only@unique`), or
+  **two block attributes on one line** (`@@audit @@soft_delete`, or
+  `@@audit@@soft_delete`): the text was read as one attribute, so what came
+  after the first was not recognised. The error shows the separated form. An
+  `@` inside a string argument (`@default("a@b.c")`, a policy or SQL
+  literal) is not affected. A trailing `// comment` is not part of any
+  attribute: the parser drops it first (see the GHSA-69g4-xvcm-vm2j entry
+  above), so `@@audit // …`, which used to be not recognised, now works.
+
+Breaking only for a schema that carries one of these. Attributes written
+exactly are unchanged. Each error underlines the attribute itself (for a
+block attribute, its line), which is also the range the LSP shows.
+
 ### Security: @isolation is enforced (GHSA-r67q-4qqq-g9gm)
 
 **Affected: 0.2.0 through 0.14.0.** `@isolation("serializable" |

@@ -54,10 +54,9 @@ fn a_second_attribute_on_a_procedure_or_model_line_in_another_case_is_rejected()
         "  @allow(auth() != null)\n  @mcp(tool)\n",
         "  @allow(auth() != null) @MCP(tool)\n",
     );
-    assert_eq!(
-        rejected(&source, NEEDLE),
-        "@allow(auth() != null) @MCP(tool)"
-    );
+    // A procedure line is cut into one attribute per `@name`
+    // (GHSA-69g4-xvcm-vm2j), so the error points at the `@MCP` alone.
+    assert_eq!(rejected(&source, NEEDLE), "@MCP(tool)");
 
     let source = with_second_model("@@deny(\"update\", true) @@Mcp(resource: \"notes\")");
     rejected(&source, NEEDLE);
@@ -77,7 +76,13 @@ fn an_mcp_attribute_sharing_a_view_or_query_line_is_rejected() {
     let query = "type Row {\n  n Int\n}\n\nquery rows(userId: String): Row\n  \
                  @@sql(\"SELECT 1 AS n WHERE a = $1\")\n  @allow(true) @mcp(tool)\n";
     let source = format!("{VALID}\n{query}");
-    assert_eq!(rejected(&source, NEEDLE), "@allow(true) @mcp(tool)");
+    // A query line is cut into one attribute per `@name`
+    // (GHSA-69g4-xvcm-vm2j): the `@mcp` is refused on its own, as it is on
+    // a line of its own (`tests_mcp_placement`).
+    assert_eq!(
+        rejected(&source, "unsupported attribute `@mcp`"),
+        "@mcp(tool)"
+    );
 }
 
 #[test]

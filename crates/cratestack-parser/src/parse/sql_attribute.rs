@@ -11,9 +11,10 @@
 //! newline.
 
 use cratestack_core::SourceSpan;
+use cratestack_core::schema::attribute_text::strip_comment;
 
 use crate::diagnostics::SchemaError;
-use crate::line_helpers::{Line, trimmed_span};
+use crate::line_helpers::{Line, attribute_line, joined_offset_in_source};
 
 /// Attribute names whose value may span multiple physical lines.
 ///
@@ -37,7 +38,10 @@ pub(super) fn collect_attribute_text(
     construct: &str,
 ) -> Result<(String, SourceSpan, usize), SchemaError> {
     let first = &lines[start];
-    let trimmed = first.trimmed;
+    // A trailing `//` comment is not part of the attribute
+    // (GHSA-69g4-xvcm-vm2j). Quote-aware, and `"""` bodies are verbatim,
+    // so a `//` inside the SQL is left alone.
+    let (trimmed, single_line_span) = attribute_line(first);
 
     // Only the SQL-body attributes support multi-line capture. Any other
     // `@@…` attribute is a single line.
@@ -46,7 +50,7 @@ pub(super) fn collect_attribute_text(
         && !single_line_triple_closed(trimmed);
 
     if !opens_multiline_sql {
-        return Ok((trimmed.to_owned(), trimmed_span(first), start + 1));
+        return Ok((trimmed.to_owned(), single_line_span, start + 1));
     }
 
     let mut buffer = first.raw.to_owned();
@@ -56,12 +60,15 @@ pub(super) fn collect_attribute_text(
         buffer.push('\n');
         buffer.push_str(line.raw);
         if line.raw.contains("\"\"\")") {
+            let text = strip_comment(buffer.trim());
+            let lead = leading_ws(first.raw);
+            let (end, _) = joined_offset_in_source(&lines[start..=cursor], lead + text.len());
             let span = SourceSpan {
-                start: first.start + leading_ws(first.raw),
-                end: line.start + line.raw.len(),
+                start: first.start + lead,
+                end,
                 line: first.number,
             };
-            return Ok((buffer.trim().to_owned(), span, cursor + 1));
+            return Ok((text.to_owned(), span, cursor + 1));
         }
         cursor += 1;
     }

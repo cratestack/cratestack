@@ -72,6 +72,10 @@ use crate::diagnostics::{SchemaError, span_error};
 /// necessary and neither is sufficient: `@uri` is accepted by
 /// `validators.rs` but appears in no schema, while `@from` and
 /// `@authorize` appear in schemas and in neither of the first two sets.
+/// `rename` was missing until GHSA-69g4-xvcm-vm2j (its one reader,
+/// `cratestack-migrate`, matches `starts_with("@rename(")`, a form the
+/// derivation missed), so `@renam(from = "x")` was inert and the next
+/// migration dropped the column; it is listed now.
 const KNOWN_ATTRIBUTE_NAMES: &[&str] = &[
     "allow",
     "api_version",
@@ -96,6 +100,7 @@ const KNOWN_ATTRIBUTE_NAMES: &[&str] = &[
     "readonly",
     "regex",
     "relation",
+    "rename",
     "sensitive",
     "server_only",
     "status",
@@ -141,7 +146,7 @@ fn max_distance_for(name: &str) -> usize {
 /// Levenshtein but 1 here. #679's own worked example is exactly that
 /// shape, so without transposition support the canonical case would need
 /// the looser distance-2 threshold and drag in far more noise with it.
-fn optimal_string_alignment(left: &str, right: &str) -> usize {
+pub(super) fn optimal_string_alignment(left: &str, right: &str) -> usize {
     let left: Vec<char> = left.chars().collect();
     let right: Vec<char> = right.chars().collect();
     let mut distances = vec![vec![0usize; right.len() + 1]; left.len() + 1];
@@ -210,6 +215,8 @@ pub(super) fn validate_misspelled_field_attributes(
     owner_name: &str,
     field: &Field,
 ) -> Result<(), SchemaError> {
+    // A known name in a form the generators do not match is inert too.
+    super::attribute_spelling::validate_field_attribute_spelling(owner_kind, owner_name, field)?;
     for attribute in &field.attributes {
         let name = bare_name(&attribute.raw);
         if KNOWN_ATTRIBUTE_NAMES.contains(&name) {

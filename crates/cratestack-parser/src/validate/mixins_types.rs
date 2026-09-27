@@ -17,6 +17,7 @@ use crate::validate::key_relation_attributes::validate_key_and_relation_attribut
 use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
+use crate::validate::server_only_placement as server_only;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
 use crate::validate::type_names::validate_type_ref;
 
@@ -159,6 +160,7 @@ pub(super) fn validate_types_collecting(
                 validate_removed_field_attributes("type", &ty.name, field)?;
                 validate_misspelled_field_attributes("type", &ty.name, field)?;
                 validate_key_and_relation_attributes("type", &ty.name, field)?;
+                server_only::validate_type_field(&ty.name, field)?;
             }
             Ok(())
         });
@@ -245,6 +247,7 @@ pub(super) fn validate_auth(
             validate_removed_field_attributes("auth block", &auth.name, field)?;
             validate_misspelled_field_attributes("auth block", &auth.name, field)?;
             validate_key_and_relation_attributes("auth block", &auth.name, field)?;
+            server_only::validate_auth_field(&auth.name, field)?;
         }
     }
     Ok(())

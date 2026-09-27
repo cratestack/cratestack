@@ -8,6 +8,7 @@ mod primary_key;
 mod projection;
 mod relation_actions;
 mod relations;
+mod renames;
 mod views;
 
 use cratestack_core::Schema;

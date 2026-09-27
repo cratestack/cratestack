@@ -1,0 +1,58 @@
+// GHSA-69g4-xvcm-vm2j: policy attributes in spellings `cratestack check`
+// accepted while the generator dropped them. Each must now be applied.
+// Spellings the parser now refuses outright (`@deny (...)`, `@@Deny(...)`)
+// cannot be compiled at all; `cratestack-parser`'s `tests_*_policy_spelling`
+// cover those.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth SessionUser {
+  id Int
+  role String
+}
+
+model Account {
+  id Int @id
+  owner Int
+  @@allow("all", auth() != null)
+  @@deny("read", auth().role == "banned") // banned users see no accounts
+  @@deny("update", auth().role == "frozen") // it's frozen: see @ops
+}
+
+type TransferInput {
+  accountId Int
+  amount Int
+}
+
+type Receipt {
+  ok Boolean
+}
+
+type Summary {
+  total Int
+}
+
+/// `@authorize` with a trailing comment: must still consult the database.
+mutation procedure transfer(args: TransferInput): Receipt
+  @allow(auth() != null)
+  @authorize(Account, update, args.accountId) // owner only
+
+/// `@authorize` after another attribute on the same line.
+mutation procedure transferShared(args: TransferInput): Receipt
+  @allow(auth() != null)
+  @no_idempotency @authorize(Account, update, args.accountId)
+
+/// The control: the canonical spelling.
+query totalsCanonical(userId: Int): Summary
+  @@sql("SELECT $1::bigint AS \"total\"")
+  @allow(auth() != null)
+  @deny(hasRole("banned"))
+
+/// Trailing comments on the SQL body and on the deny.
+query totalsCommented(userId: Int): Summary
+  @@sql("SELECT $1::bigint AS \"total\"") // echoes the id back
+  @allow(auth() != null)
+  @deny(hasRole("banned")) // banned users see nothing

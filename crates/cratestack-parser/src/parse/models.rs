@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use cratestack_core::{Attribute, Field, MixinDecl, Model};
 
 use crate::diagnostics::SchemaError;
-use crate::line_helpers::{Line, parse_doc_comment, trimmed_span};
+use crate::line_helpers::{Line, attribute_line, parse_doc_comment};
 use crate::parse::fields::parse_field;
+use crate::parse::format_chars::refuse_invisible_characters;
 
 pub(super) fn parse_model_body(
     lines: &[Line<'_>],
@@ -27,9 +28,10 @@ pub(super) fn parse_model_body(
         }
         if line.trimmed.starts_with("@@") || line.trimmed.starts_with("@use(") {
             pending_docs.clear();
+            let (raw, span) = attribute_line(line);
             attributes.push(Attribute {
-                raw: line.trimmed.to_owned(),
-                span: trimmed_span(line),
+                raw: raw.to_owned(),
+                span,
             });
             continue;
         }
@@ -42,6 +44,7 @@ pub(super) fn parse_model_body(
         }
         fields.push(parse_field(line, std::mem::take(&mut pending_docs))?);
     }
+    refuse_invisible_characters(&attributes, lines)?;
     Ok((fields, attributes))
 }
 

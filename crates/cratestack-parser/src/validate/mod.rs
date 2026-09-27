@@ -1,3 +1,6 @@
+mod attribute_shape;
+mod attribute_spelling;
+mod block_attributes;
 mod builder_collisions;
 mod builder_setter_collisions;
 mod client_method_collisions;
@@ -19,6 +22,8 @@ mod model_relation;
 mod models;
 mod no_idempotency;
 mod patch_touch_flag_collisions;
+mod policy_attributes;
+mod procedure_attributes;
 mod procedure_handler_collisions;
 mod procedure_idents;
 mod procedures;
@@ -27,8 +32,10 @@ mod query_attributes;
 mod query_placeholders;
 mod query_signature;
 mod removed_attributes;
+mod rename_attributes;
 mod reserved_idents;
 mod route_collisions;
+mod server_only_placement;
 mod snake_case_collisions;
 mod spatial_type;
 mod stream_attribute;
@@ -309,6 +316,7 @@ fn validate_procedures(
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
         validate_procedure_no_idempotency_attribute(procedure)?;
         validate_procedure_status_attribute(procedure, schema)?;
+        self::procedure_attributes::validate_procedure_attributes(procedure)?;
     }
     Ok(())
 }

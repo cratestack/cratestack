@@ -20,6 +20,7 @@
 //! - [`comparison`]: cross-product of (field | relation | auth |
 //!   literal) on either side of `==`/`!=`.
 
+mod audit;
 mod comparison;
 mod enum_literal;
 mod in_list;
@@ -27,6 +28,8 @@ mod predicates;
 mod relation_path;
 mod term;
 
+#[cfg(test)]
+mod tests_descriptor_audit;
 #[cfg(test)]
 mod tests_enum_literal;
 #[cfg(test)]
@@ -40,6 +43,8 @@ use quote::quote;
 use super::ast::{generate_policy_ast_tokens, parse_policy_ast};
 
 use term::parse_policy_term;
+
+pub(crate) use audit::audit_model_policies;
 
 pub(crate) fn generate_policies_for_action(
     model: &Model,

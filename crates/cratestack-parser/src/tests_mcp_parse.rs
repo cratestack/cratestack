@@ -172,10 +172,22 @@ fn an_attribute_repeated_on_one_declaration_is_rejected() {
 }
 
 #[test]
-fn an_mcp_attribute_sharing_a_line_is_rejected_not_swallowed() {
-    let message = syntax_error(&edit(
+fn an_mcp_attribute_sharing_a_line_is_read_not_swallowed() {
+    // A procedure line is cut into one attribute per `@name`
+    // (GHSA-69g4-xvcm-vm2j), so the `@mcp` on it is read like any other,
+    // and the `@allow` before it is kept as its own attribute.
+    let source = edit(
         "  @allow(auth() != null)\n  @mcp(tool)\n",
         "  @allow(auth() != null) @mcp(tool)\n",
-    ));
-    assert!(message.contains("must be on its own line"), "{message}");
+    );
+    let schema = parse_schema(&source).expect("two attributes on one line are both read");
+    let feed = &schema.procedures[0];
+    let tool = feed.mcp.as_ref().expect("the @mcp on the shared line");
+    assert_eq!(&source[tool.span.start..tool.span.end], "@mcp(tool)");
+    let raws = feed
+        .attributes
+        .iter()
+        .map(|a| a.raw.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(raws, ["@allow(auth() != null)"]);
 }

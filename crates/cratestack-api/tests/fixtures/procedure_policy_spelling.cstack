@@ -1,0 +1,39 @@
+// GHSA-69g4-xvcm-vm2j: the same written policy — any authenticated caller
+// except role "banned" — in the spellings `cratestack check` accepted while
+// the generator dropped the `@deny`. Every procedure must refuse `banned`.
+// (Spellings the parser now refuses outright, like `@deny (...)`, cannot
+// be compiled at all; `cratestack-parser`'s
+// `tests_procedure_policy_spelling` covers those.)
+
+datasource db {
+  provider = "none"
+}
+
+auth SessionUser {
+  id Int
+  role String
+}
+
+type TransferInput {
+  accountId Int
+  amount Int
+}
+
+type Receipt {
+  ok Boolean
+}
+
+/// The control: the canonical spelling.
+mutation procedure transferCanonical(args: TransferInput): Receipt
+  @allow(auth() != null)
+  @deny(hasRole("banned"))
+
+/// A trailing comment after the deny.
+mutation procedure transferCommented(args: TransferInput): Receipt
+  @allow(auth() != null)
+  @deny(hasRole("banned")) // banned users may not move money
+
+/// The deny after another attribute on the same line.
+mutation procedure transferShared(args: TransferInput): Receipt
+  @allow(auth() != null)
+  @no_idempotency @deny(hasRole("banned"))

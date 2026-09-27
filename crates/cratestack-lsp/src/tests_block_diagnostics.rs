@@ -41,3 +41,23 @@ fn block_diagnostics_select_the_name_with_lf_and_crlf() {
         }
     }
 }
+
+/// A refused `@server_only` is underlined where it is written — the text to
+/// remove — not across the whole field line.
+#[test]
+fn refused_server_only_diagnostic_selects_the_attribute() {
+    let Ok(uri) = Uri::from_str("file:///schema.cstack") else {
+        unreachable!("the fixture URI is a literal")
+    };
+    let text = "type Receipt {\n  secret String @server_only\n}\nprocedure p(): Receipt\n";
+    let (_schema, diagnostics) = analyze_document(&uri, text);
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(
+        diagnostics[0].range,
+        Range {
+            start: Position::new(1, 16),
+            end: Position::new(1, 28),
+        }
+    );
+    assert!(diagnostics[0].message.contains("declares @server_only"));
+}

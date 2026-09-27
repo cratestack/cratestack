@@ -14,6 +14,7 @@ pub mod mcp;
 pub mod model;
 pub mod procedure;
 pub mod query;
+pub mod rename_attribute;
 pub mod selection;
 pub mod spatial;
 mod sql_body;
@@ -40,6 +41,7 @@ pub use model::{
 };
 pub use procedure::{Procedure, ProcedureArg, ProcedureKind};
 pub use query::{QUERY_SQL_ATTRIBUTE, Query, scan_sql_placeholders};
+pub use rename_attribute::{RENAME_ARGUMENT_FORM, parse_rename_from, rename_marker_from};
 pub use selection::SelectionQuery;
 pub use spatial::{canonical_geometry_subtype, geometry_subtype_names};
 pub use view::{View, ViewSource};

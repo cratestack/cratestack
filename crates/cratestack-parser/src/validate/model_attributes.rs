@@ -4,10 +4,14 @@ use cratestack_core::{Model, TransportStyle, parse_emit_attribute, parse_interna
 
 use crate::diagnostics::{SchemaError, span_error};
 
+use super::attribute_spelling::{NO_ARGUMENT_MODEL_ATTRIBUTES, validate_block_attribute_spelling};
+use super::block_attributes::validate_model_block_attribute;
 use super::composite_attributes::{
     validate_composite_id_attribute, validate_composite_unique_attribute,
 };
 use super::index_attribute::{SeenIndexAttributes, validate_index_attribute};
+use super::policy_attributes::{MODEL_ACTIONS, validate_policy_attribute};
+use super::rename_attributes::validate_model_rename_count;
 
 pub(super) fn validate_model_attributes(
     model: &Model,
@@ -26,6 +30,15 @@ pub(super) fn validate_model_attributes(
     // `SeenIndexAttributes`'s doc for why `using` is part of the key.
     let mut index_attributes: SeenIndexAttributes = Vec::new();
     for attribute in &model.attributes {
+        // Also refuses `@@audit(...)`, `@@soft_delete(...)`, `@@subscribe(...)`.
+        validate_block_attribute_spelling(
+            "model",
+            &model.name,
+            attribute,
+            NO_ARGUMENT_MODEL_ATTRIBUTES,
+        )?;
+        let owner = format!("model `{}`", model.name);
+        validate_policy_attribute(&owner, attribute, MODEL_ACTIONS, MODEL_ACTIONS)?;
         if attribute.raw.starts_with("@@emit(") {
             if saw_emit_attribute {
                 return Err(span_error(
@@ -59,26 +72,8 @@ pub(super) fn validate_model_attributes(
                 ));
             }
             saw_paged_attribute = true;
-        } else if attribute.raw == "@@audit" {
-            // recognised; no further validation needed at parse time
-        } else if attribute.raw.starts_with("@@audit(") {
-            return Err(span_error(
-                format!(
-                    "model `{}` `@@audit` does not take arguments; use bare `@@audit`",
-                    model.name,
-                ),
-                attribute.span,
-            ));
-        } else if attribute.raw == "@@soft_delete" {
+        } else if attribute.raw == "@@audit" || attribute.raw == "@@soft_delete" {
             // recognised; descriptor wiring lives in the macro
-        } else if attribute.raw.starts_with("@@soft_delete(") {
-            return Err(span_error(
-                format!(
-                    "model `{}` `@@soft_delete` does not take arguments",
-                    model.name,
-                ),
-                attribute.span,
-            ));
         } else if attribute.raw == "@@subscribe" {
             if !matches!(transport, TransportStyle::Rpc) {
                 return Err(span_error(
@@ -92,14 +87,6 @@ pub(super) fn validate_model_attributes(
                 ));
             }
             subscribe_attribute = Some(attribute);
-        } else if attribute.raw.starts_with("@@subscribe(") {
-            return Err(span_error(
-                format!(
-                    "model `{}` `@@subscribe` does not take arguments; use bare `@@subscribe`",
-                    model.name,
-                ),
-                attribute.span,
-            ));
         } else if attribute.raw.starts_with("@@retain(") {
             validate_retain_attribute(model, attribute)?;
         } else if attribute.raw.starts_with("@@id(") {
@@ -127,7 +114,10 @@ pub(super) fn validate_model_attributes(
             parse_internal_attribute(&model.name, &attribute.raw)
                 .map_err(|message| span_error(message, attribute.span))?;
         }
+        // Last, so the specific messages above win (maintainer decision 2).
+        validate_model_block_attribute(&model.name, attribute)?;
     }
+    validate_model_rename_count(model)?;
 
     // A subscription with nothing to subscribe to is a footgun, not a
     // valid empty state: without `@@emit(...)` no model event is ever

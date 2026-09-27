@@ -6,10 +6,15 @@
 mod authorizer;
 mod client_types;
 mod instrument;
+mod policies;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_isolation;
+#[cfg(test)]
+mod tests_policy_audit;
+#[cfg(test)]
+mod tests_policy_audit_selectors;
 mod type_tokens;
 mod types;
 
@@ -18,18 +23,15 @@ use std::collections::BTreeSet;
 use cratestack_core::{Model, Procedure, TypeDecl};
 use quote::quote;
 
-use crate::policy::{
-    PolicySubject, generate_procedure_policy, parse_procedure_allow_expression,
-    parse_procedure_deny_expression,
-};
+use crate::policy::{PolicySubject, generate_procedure_policy};
 use crate::shared::{doc_attrs, ident, is_stream_procedure, procedure_isolation, to_snake_case};
 
-use authorizer::{generate_procedure_model_authorizer, parse_procedure_model_authorizer};
 use client_types::generate_client_procedure_args_struct;
 use instrument::{
     authorize_fn_tokens, authorize_with_db_fn_tokens, authorized_type_tokens, invoke_fn_tokens,
     isolation_and_invoke_with_db_tokens,
 };
+use policies::collect_procedure_policies;
 use types::procedure_stream_item_tokens;
 
 pub(crate) use types::procedure_client_output_item_tokens;
@@ -50,31 +52,16 @@ pub(crate) fn generate_procedure_module(
 ) -> Result<proc_macro2::TokenStream, String> {
     let module_ident = ident(&to_snake_case(&procedure.name));
     let docs = doc_attrs(&procedure.docs);
-    let mut allow_expressions = Vec::new();
-    let mut deny_expressions = Vec::new();
-    let mut model_authorizers = Vec::new();
-    for attribute in &procedure.attributes {
-        if let Some(expression) = parse_procedure_allow_expression(&attribute.raw) {
-            allow_expressions.push(expression?);
-        }
-        if let Some(expression) = parse_procedure_deny_expression(&attribute.raw) {
-            deny_expressions.push(expression?);
-        }
-        if let Some(authorizer) = parse_procedure_model_authorizer(&attribute.raw) {
-            model_authorizers.push(generate_procedure_model_authorizer(
-                authorizer?,
-                procedure,
-                models,
-                types,
-            )?);
-        }
-    }
+    let policies = collect_procedure_policies(procedure, models, types)?;
+    let model_authorizers = policies.authorizers;
     let subject = PolicySubject::procedure(procedure);
-    let allow_policies = allow_expressions
+    let allow_policies = policies
+        .allow
         .into_iter()
         .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
-    let deny_policies = deny_expressions
+    let deny_policies = policies
+        .deny
         .into_iter()
         .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;

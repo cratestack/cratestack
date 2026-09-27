@@ -16,7 +16,9 @@
 use cratestack_core::{EnumDecl, Model, TypeDecl, View};
 use quote::quote;
 
-use crate::policy::{generate_denies_for_actions, generate_policies_for_actions};
+use crate::policy::{
+    audit_model_policies, generate_denies_for_actions, generate_policies_for_actions,
+};
 use crate::shared::{ident, pluralize, to_snake_case};
 
 pub(crate) fn generate_view_descriptor(
@@ -119,6 +121,7 @@ pub(crate) fn generate_view_descriptor(
     // Views only support the `"read"` action (validator-enforced), so
     // detail policies are the same set as read policies.
     let synthetic = view_as_model(view);
+    audit_model_policies(&format!("view `{}`", view.name), &synthetic, &["read"])?;
     let read_allow =
         generate_policies_for_actions(&synthetic, models, types, enums, auth, &["read"])?;
     let read_deny = generate_denies_for_actions(&synthetic, models, types, enums, auth, &["read"])?;

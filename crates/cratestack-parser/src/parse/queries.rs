@@ -16,12 +16,12 @@
 //! that every other attribute-only construct in the language
 //! (`procedure`) already writes unbraced.
 
-use cratestack_core::{Attribute, Query, SourceSpan};
+use cratestack_core::{Query, SourceSpan};
 
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, name_span_in_line};
+use crate::parse::attribute_run::collect_attribute_run;
 use crate::parse::procedures::parse_procedure_args;
-use crate::parse::sql_attribute::collect_attribute_text;
 use crate::parse::types::parse_type_ref;
 
 pub(super) fn parse_query(
@@ -83,7 +83,8 @@ pub(super) fn parse_query(
         ));
     }
 
-    let (attributes, cursor) = collect_query_attributes(lines, start + 1)?;
+    let (attributes, cursor) =
+        collect_attribute_run(lines, start + 1, &format!("query `{name}`"), Some("query"))?;
 
     let name_span = name_span_in_line(line, line.trimmed, "query ")?;
     let result_type_offset = line.raw.rfind(result_src).ok_or_else(|| {
@@ -114,34 +115,4 @@ pub(super) fn parse_query(
         },
         cursor,
     ))
-}
-
-/// Attribute lines following the header, up to the first line that is
-/// neither blank nor `@…`-prefixed.
-///
-/// Same shape as `parse_procedure`'s inline attribute loop, with one
-/// addition: `@@sql("""…""")` may span physical lines, so each attribute
-/// is taken through [`collect_attribute_text`] instead of being read as a
-/// single trimmed line.
-fn collect_query_attributes(
-    lines: &[Line<'_>],
-    start: usize,
-) -> Result<(Vec<Attribute>, usize), SchemaError> {
-    let mut attributes = Vec::new();
-    let mut cursor = start;
-    while cursor < lines.len() {
-        let candidate = &lines[cursor];
-        if candidate.trimmed.starts_with('@') {
-            let (raw, span, next) = collect_attribute_text(lines, cursor, "query")?;
-            attributes.push(Attribute { raw, span });
-            cursor = next;
-            continue;
-        }
-        if candidate.trimmed.is_empty() {
-            cursor += 1;
-            continue;
-        }
-        break;
-    }
-    Ok((attributes, cursor))
 }

@@ -44,6 +44,29 @@ pub(crate) fn trimmed_span(line: &Line<'_>) -> SourceSpan {
     }
 }
 
+/// The attribute text of `line` — trimmed, without a trailing `//`
+/// comment (quote-aware, GHSA-69g4-xvcm-vm2j) — and its span.
+pub(crate) fn attribute_line<'a>(line: &Line<'a>) -> (&'a str, SourceSpan) {
+    let text = cratestack_core::schema::attribute_text::strip_comment(line.trimmed);
+    let mut span = trimmed_span(line);
+    span.end = span.start + text.len();
+    (text, span)
+}
+
+/// The source byte offset and line number of byte `offset` of `lines`'
+/// raw text joined with `\n` — the form a multi-line `"""` SQL body is
+/// stored in. Mapped line by line rather than added to the first line's
+/// start, because a CRLF file has two bytes between lines, not one.
+pub(crate) fn joined_offset_in_source(lines: &[Line<'_>], mut offset: usize) -> (usize, usize) {
+    for (index, line) in lines.iter().enumerate() {
+        if offset <= line.raw.len() || index + 1 == lines.len() {
+            return (line.start + offset, line.number);
+        }
+        offset -= line.raw.len() + 1;
+    }
+    (0, 0)
+}
+
 pub(crate) fn name_span_in_line(
     line: &Line<'_>,
     trimmed: &str,

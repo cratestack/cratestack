@@ -12,8 +12,8 @@ use quote::quote;
 
 use crate::event::model_emitted_events;
 use crate::policy::{
-    generate_denies_for_action, generate_denies_for_actions, generate_policies_for_action,
-    generate_policies_for_actions,
+    audit_model_policies, generate_denies_for_action, generate_denies_for_actions,
+    generate_policies_for_action, generate_policies_for_actions,
 };
 use crate::shared::{ident, is_primary_key, pluralize, rust_type_tokens, to_snake_case};
 
@@ -41,6 +41,10 @@ pub(crate) fn generate_model_descriptor(
     let primary_key_type = rust_type_tokens(&primary_key.ty);
     let primary_key_sql = to_snake_case(&primary_key.name);
 
+    // GHSA-69g4-xvcm-vm2j: every slot below, so a rule no slot takes is an error.
+    let owner = format!("model `{}`", model.name);
+    let slots = ["list", "read", "detail", "create", "update", "delete"];
+    audit_model_policies(&owner, model, &slots)?;
     let read_policies =
         generate_policies_for_actions(model, models, types, enums, auth, &["list", "read"])?;
     let detail_policies =

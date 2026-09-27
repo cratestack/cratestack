@@ -1,8 +1,10 @@
+use cratestack_core::schema::attribute_text::strip_comment;
 use cratestack_core::{Attribute, EnumVariant, Field, SourceSpan};
 
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, parse_doc_comment, trimmed_span};
 use crate::parse::attribute_spacing::split_field_attributes;
+use crate::parse::format_chars::refuse_invisible_characters;
 use crate::parse::types::parse_type_ref;
 
 pub(super) fn parse_fields(lines: &[Line<'_>]) -> Result<Vec<Field>, SchemaError> {
@@ -81,7 +83,11 @@ fn type_token_len(rest: &str) -> usize {
 }
 
 pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, SchemaError> {
-    let mut parts = line.trimmed.splitn(2, char::is_whitespace);
+    // A trailing `//` comment is not part of the field: without this,
+    // `name String @unique // not @readonly` made `@readonly` live
+    // (GHSA-69g4-xvcm-vm2j). Quote-aware, so `"http://…"` is untouched.
+    let content = strip_comment(line.trimmed);
+    let mut parts = content.splitn(2, char::is_whitespace);
     let name = parts.next().ok_or_else(|| {
         SchemaError::new(
             "expected field name",
@@ -91,8 +97,8 @@ pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, S
     })?;
 
     let trimmed_start = line.raw.find(line.trimmed).unwrap_or_default();
-    let name_offset_in_trimmed = line.trimmed.find(name).unwrap_or_default();
-    let after_name = &line.trimmed[name_offset_in_trimmed + name.len()..];
+    let name_offset_in_trimmed = content.find(name).unwrap_or_default();
+    let after_name = &content[name_offset_in_trimmed + name.len()..];
     let whitespace_after_name = after_name.len() - after_name.trim_start().len();
     let ty_offset_in_trimmed = name_offset_in_trimmed + name.len() + whitespace_after_name;
 
@@ -101,7 +107,7 @@ pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, S
     // `Geography(Polygon, 4326)` (cratestack#842). Scan to the first
     // whitespace at paren-depth zero so the whole type — arguments
     // included — stays together, and whatever follows is attributes.
-    let rest = &line.trimmed[ty_offset_in_trimmed..];
+    let rest = &content[ty_offset_in_trimmed..];
     let ty_len = type_token_len(rest);
     let ty = &rest[..ty_len];
     if ty.is_empty() {
@@ -129,24 +135,25 @@ pub(super) fn parse_field(line: &Line<'_>, docs: Vec<String>) -> Result<Field, S
             .find(attrs)
             .unwrap_or(ty_span.end.saturating_sub(line.start))
     };
-    let attribute_spans = split_field_attributes(attrs, attrs_offset, name, line)?;
+    let attributes = split_field_attributes(attrs, attrs_offset, name, line)?
+        .into_iter()
+        .map(|(raw, start, end)| Attribute {
+            raw,
+            span: SourceSpan {
+                start: line.start + start,
+                end: line.start + end,
+                line: line.number,
+            },
+        })
+        .collect::<Vec<_>>();
+    refuse_invisible_characters(&attributes, std::slice::from_ref(line))?;
 
     Ok(Field {
         docs,
         name: name.to_owned(),
         name_span,
         ty: parse_type_ref(ty, line, ty_span.start.saturating_sub(line.start))?,
-        attributes: attribute_spans
-            .into_iter()
-            .map(|(raw, start, end)| Attribute {
-                raw,
-                span: SourceSpan {
-                    start: line.start + start,
-                    end: line.start + end,
-                    line: line.number,
-                },
-            })
-            .collect(),
+        attributes,
         span: SourceSpan {
             start: line.start,
             end: line.start + line.raw.len(),

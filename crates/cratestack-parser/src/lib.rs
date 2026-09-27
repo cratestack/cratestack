@@ -7,9 +7,19 @@ mod relation_helpers;
 mod validate;
 
 #[cfg(test)]
+mod tests_attribute_run_comments;
+#[cfg(test)]
 mod tests_attribute_spacing;
 #[cfg(test)]
+mod tests_attribute_spelling;
+#[cfg(test)]
+mod tests_attribute_spelling_blocks;
+#[cfg(test)]
+mod tests_attribute_spelling_comments;
+#[cfg(test)]
 mod tests_basic;
+#[cfg(test)]
+mod tests_block_attribute_allowlist;
 #[cfg(test)]
 mod tests_block_spans;
 mod tests_builder_add_setter_collisions;
@@ -25,6 +35,8 @@ mod tests_computed_params;
 mod tests_computed_stream;
 mod tests_computed_type_valued;
 #[cfg(test)]
+mod tests_detached_attributes;
+#[cfg(test)]
 mod tests_docs;
 #[cfg(test)]
 mod tests_enums;
@@ -35,9 +47,17 @@ mod tests_extensions;
 #[cfg(test)]
 mod tests_field_attrs;
 #[cfg(test)]
+mod tests_format_characters;
+#[cfg(test)]
+mod tests_format_characters_policy;
+#[cfg(test)]
+mod tests_hidden_breaks;
+#[cfg(test)]
 mod tests_isolation_scope;
 #[cfg(test)]
 mod tests_key_relation_attrs;
+#[cfg(test)]
+mod tests_key_relation_interplay;
 #[cfg(test)]
 mod tests_list_arity;
 #[cfg(test)]
@@ -67,6 +87,8 @@ mod tests_model_index;
 #[cfg(test)]
 mod tests_model_internal;
 #[cfg(test)]
+mod tests_model_policy_spelling;
+#[cfg(test)]
 mod tests_model_unique;
 #[cfg(test)]
 mod tests_multi_error;
@@ -75,6 +97,10 @@ mod tests_multifile_reserved_keywords;
 mod tests_patch_touch_flag_collisions;
 #[cfg(test)]
 mod tests_procedure_handler_collisions;
+#[cfg(test)]
+mod tests_procedure_policy_controls;
+#[cfg(test)]
+mod tests_procedure_policy_spelling;
 #[cfg(test)]
 mod tests_procedures;
 #[cfg(test)]
@@ -88,13 +114,23 @@ mod tests_queries_sql_body;
 #[cfg(test)]
 mod tests_queries_support;
 #[cfg(test)]
+mod tests_query_policy_spelling;
+#[cfg(test)]
 mod tests_relation_actions;
 #[cfg(test)]
 mod tests_relations;
 #[cfg(test)]
 mod tests_relations_policy;
 #[cfg(test)]
+mod tests_rename_attributes;
+#[cfg(test)]
+mod tests_rename_placement;
+#[cfg(test)]
 mod tests_reserved_keywords;
+#[cfg(test)]
+mod tests_server_only_placement;
+#[cfg(test)]
+mod tests_server_only_spelling;
 #[cfg(test)]
 mod tests_snake_case_collisions;
 #[cfg(test)]

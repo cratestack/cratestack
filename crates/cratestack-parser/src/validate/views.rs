@@ -19,6 +19,10 @@ use std::collections::BTreeSet;
 use cratestack_core::{Schema, TypeArity, View};
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::validate::attribute_spelling::{
+    NO_ARGUMENT_VIEW_ATTRIBUTES, validate_block_attribute_spelling,
+};
+use crate::validate::block_attributes::validate_view_block_attribute;
 use crate::validate::builder_setter_collisions::{
     validate_no_add_setter_collision, validate_no_build_setter_collision,
 };
@@ -29,6 +33,9 @@ use crate::validate::computed_attribute::{
 use crate::validate::fields::validate_field_reserved_identifier;
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
 use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
+use crate::validate::policy_attributes::{
+    MODEL_ACTIONS, VIEW_DENY_ACTIONS, validate_policy_attribute,
+};
 use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
@@ -58,6 +65,17 @@ pub(super) fn validate_views_collecting(schema: &Schema, errors: &mut Vec<Schema
 fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), SchemaError> {
     validate_reserved_identifier(&view.name, view.name_span, &format!("view `{}`", view.name))?;
     validate_field_column_collisions(&view.fields, "view", &view.name)?;
+    for attribute in &view.attributes {
+        validate_block_attribute_spelling(
+            "view",
+            &view.name,
+            attribute,
+            NO_ARGUMENT_VIEW_ATTRIBUTES,
+        )?;
+        let owner = format!("view `{}`", view.name);
+        validate_policy_attribute(&owner, attribute, MODEL_ACTIONS, VIEW_DENY_ACTIONS)?;
+        validate_view_block_attribute(&view.name, attribute)?;
+    }
     validate_no_build_setter_collision(
         view.fields
             .iter()
@@ -205,10 +223,13 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
             .and_then(|s| s.trim().strip_prefix('('))
             .and_then(|s| s.rsplit_once(')').map(|(body, _)| body))
             .unwrap_or("");
+        // Either quote, as the generator (`parse_rule_action` in
+        // `cratestack-macros/src/policy/model.rs`) and every other policy
+        // rule accept: `@@allow('read', …)` used to be refused here alone.
         let action = inner
             .split(',')
             .next()
-            .map(|first| first.trim().trim_matches('"'))
+            .map(|first| first.trim().trim_matches(['"', '\'']))
             .unwrap_or("");
         if action != "read" {
             return Err(span_error(

@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
-use cratestack_core::{Attribute, Procedure, ProcedureArg, ProcedureKind, SourceSpan};
+use cratestack_core::{Procedure, ProcedureArg, ProcedureKind, SourceSpan};
 
 use crate::diagnostics::SchemaError;
-use crate::line_helpers::{Line, name_span_in_line, trimmed_span};
+use crate::line_helpers::{Line, name_span_in_line};
 use crate::parse::arg_split::split_top_level_commas;
+use crate::parse::attribute_run::collect_attribute_run;
 use crate::parse::mcp::extract_procedure_mcp;
 use crate::parse::procedure_docs::split_procedure_docs;
 use crate::parse::types::parse_type_ref;
@@ -57,24 +58,8 @@ pub(super) fn parse_procedure(
             )
         })?;
 
-    let mut attributes = Vec::new();
-    let mut cursor = start + 1;
-    while cursor < lines.len() {
-        let candidate = &lines[cursor];
-        if candidate.trimmed.starts_with('@') {
-            attributes.push(Attribute {
-                raw: candidate.trimmed.to_owned(),
-                span: trimmed_span(candidate),
-            });
-            cursor += 1;
-            continue;
-        }
-        if candidate.trimmed.is_empty() {
-            cursor += 1;
-            continue;
-        }
-        break;
-    }
+    let (attributes, cursor) =
+        collect_attribute_run(lines, start + 1, &format!("procedure `{name}`"), None)?;
 
     let (mcp, attributes) = extract_procedure_mcp(name, attributes)?;
     let (procedure_docs, arg_docs) = split_procedure_docs(docs);

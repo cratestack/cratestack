@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use cratestack_core::SourceSpan;
+use cratestack_core::schema::attribute_text::{escape_for_diagnostic, substitute_for_display};
 
 /// A schema error, identified by which file it came from (cratestack#916).
 ///
@@ -46,9 +47,14 @@ impl std::fmt::Debug for SchemaError {
 }
 
 impl SchemaError {
+    /// Every error is built here, so this is where a message that quotes
+    /// attribute text or a source line has its control and invisible
+    /// characters escaped (`\u{7}`), never written raw to a terminal
+    /// (GHSA-69g4-xvcm-vm2j; `cratestack_core::schema::attribute_text::
+    /// escape_for_diagnostic`).
     pub(crate) fn new(message: impl Into<String>, span: Range<usize>, line: usize) -> Self {
         Self {
-            message: message.into(),
+            message: escape_for_diagnostic(&message.into()),
             span,
             line,
             file: Arc::from(""),
@@ -97,9 +103,15 @@ impl SchemaError {
     /// source)` pair supplied by the caller, which had to happen to match the
     /// file the error actually came from — nothing enforced that once more
     /// than one file was involved.
+    ///
+    /// The code frame quotes the source with each control or invisible
+    /// character replaced by one visible stand-in (`␇`, U+FFFD), so the
+    /// spans still line up and nothing the schema carries reaches the
+    /// terminal raw (`substitute_for_display`).
     pub fn render(&self) -> String {
         let mut output = Vec::new();
         let file = self.file.to_string();
+        let shown = substitute_for_display(&self.source_text);
         Report::build(ReportKind::Error, (file.clone(), self.span.clone()))
             .with_message(&self.message)
             .with_label(
@@ -108,7 +120,7 @@ impl SchemaError {
                     .with_color(Color::Red),
             )
             .finish()
-            .write((file, Source::from(self.source_text.as_ref())), &mut output)
+            .write((file, Source::from(shown)), &mut output)
             .expect("diagnostic rendering should succeed");
 
         String::from_utf8(output).expect("ariadne should emit utf-8")

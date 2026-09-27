@@ -74,7 +74,10 @@ fn semantic_error_compile_fail() {
     t.compile_fail(generated_dir.join("semantic_error_duplicate_field.rs"));
 
     // Test 4: include_embedded_schema! with a malformed @@allow policy
-    // expression (unbalanced parens in the predicate) — neither the client
+    // expression (unbalanced parens in the predicate). Since
+    // GHSA-69g4-xvcm-vm2j the parser refuses it (its argument list never
+    // closes) before the policy lowerer sees it — either way it must not
+    // compile. Neither the client
     // macro (no policy codegen at all) nor the server macro (masked by the
     // postgres-feature gate in this sandbox) can exercise this, see the
     // module doc above.

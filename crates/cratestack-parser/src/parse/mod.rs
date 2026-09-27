@@ -1,7 +1,10 @@
 mod arg_split;
+mod attribute_run;
 mod attribute_spacing;
 mod blocks;
 mod fields;
+mod format_chars;
+mod hidden_breaks;
 pub(crate) mod mcp;
 mod models;
 mod procedure_docs;
@@ -23,6 +26,7 @@ use crate::line_helpers::{
     collect_lines, name_span_in_line, parse_doc_comment, split_config_entry,
 };
 
+use self::attribute_run::{declaration_label, detached_group_error};
 use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
 use self::fields::{parse_enum_variants, parse_fields};
 use self::mcp::{extract_model_mcp, parse_mcp_block};
@@ -33,6 +37,7 @@ use self::views::parse_view_block;
 
 pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let lines = collect_lines(source);
+    hidden_breaks::refuse_hidden_breaks(&lines)?;
     let mut cursor = 0usize;
     let mut pending_docs = Vec::new();
 
@@ -49,6 +54,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut transport: Option<TransportStyle> = None;
     let mut transport_line: Option<usize> = None;
     let mut declared_extensions: BTreeSet<ExtensionKind> = BTreeSet::new();
+    let mut previous: Option<String> = None;
 
     while cursor < lines.len() {
         let line = &lines[cursor];
@@ -66,6 +72,14 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             pending_docs.clear();
             cursor += 1;
             continue;
+        }
+        // An attribute no signature directly above claims — see
+        // `attribute_run` (GHSA-69g4-xvcm-vm2j).
+        if line.trimmed.starts_with('@') {
+            return Err(detached_group_error(&lines, cursor, previous.as_deref()));
+        }
+        if let Some(label) = declaration_label(line.trimmed) {
+            previous = Some(label);
         }
 
         if line.trimmed.starts_with("datasource ") {

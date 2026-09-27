@@ -73,15 +73,15 @@ const REJECTED_FIELD_ATTRIBUTES: &[(&str, &str)] = &[
         "@allow",
         "field-level access policy is not supported and never was — it parses but no codegen \
          enforces it; use model-level `@@allow(\"read\", ...)` on the model/view for row \
-         visibility, or `@readonly` / `@server_only` to keep the field out of inputs or out of \
-         client responses",
+         visibility, or `@readonly` / `@server_only` on a model field to keep it out of \
+         inputs or out of client responses",
     ),
     (
         "@deny",
         "field-level access policy is not supported and never was — it parses but no codegen \
          enforces it; use model-level `@@deny(\"read\", ...)` on the model/view for row \
-         visibility, or `@readonly` / `@server_only` to keep the field out of inputs or out of \
-         client responses",
+         visibility, or `@readonly` / `@server_only` on a model field to keep it out of \
+         inputs or out of client responses",
     ),
 ];
 

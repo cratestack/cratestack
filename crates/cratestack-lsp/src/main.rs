@@ -25,6 +25,8 @@ mod type_ref;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
+mod tests_attribute_run_diagnostics;
+#[cfg(test)]
 mod tests_block_diagnostics;
 #[cfg(test)]
 mod tests_completion;

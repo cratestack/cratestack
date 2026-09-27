@@ -1,4 +1,11 @@
-error: unterminated parenthesized policy expression
+error: ␛[31mError:␛[0m model `User` writes `@@allow("read", (banned)`: its argument list is never closed on this line. The generator reads a rule only when it is written `@@allow("action", expression)` and silently skips anything else, so this rule would not be applied; it is refused
+           ␛[38;5;246m╭␛[0m␛[38;5;246m─␛[0m␛[38;5;246m[␛[0m /tmp/cratestack-macros-ui-semantic-420/semantic_error_malformed_policy.cstack:11:3 ␛[38;5;246m]␛[0m
+           ␛[38;5;246m│␛[0m
+        ␛[38;5;246m11 │␛[0m ␛[38;5;249m ␛[0m␛[38;5;249m ␛[0m␛[31m@␛[0m␛[31m@␛[0m␛[31ma␛[0m␛[31ml␛[0m␛[31ml␛[0m␛[31mo␛[0m␛[31mw␛[0m␛[31m(␛[0m␛[31m"␛[0m␛[31mr␛[0m␛[31me␛[0m␛[31ma␛[0m␛[31md␛[0m␛[31m"␛[0m␛[31m,␛[0m␛[31m ␛[0m␛[31m(␛[0m␛[31mb␛[0m␛[31ma␛[0m␛[31mn␛[0m␛[31mn␛[0m␛[31me␛[0m␛[31md␛[0m␛[31m)␛[0m
+        ␛[38;5;240m   │␛[0m   ␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m┬␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m
+        ␛[38;5;240m   │␛[0m               ␛[31m╰␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m␛[31m─␛[0m model `User` writes `@@allow("read", (banned)`: its argument list is never closed on this line. The generator reads a rule only when it is written `@@allow("action", expression)` and silently skips anything else, so this rule would not be applied; it is refused
+       ␛[38;5;246m────╯␛[0m
+
  --> tests/ui/generated/semantic_error_malformed_policy.rs
   |
   | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-semantic-420/semantic_error_malformed_policy.cstack");

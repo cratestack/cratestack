@@ -16,6 +16,7 @@ use cratestack_core::{Attribute, Field, SourceSpan, View, ViewSource};
 use crate::diagnostics::SchemaError;
 use crate::line_helpers::{Line, parse_doc_comment, trimmed_span};
 use crate::parse::fields::parse_field;
+use crate::parse::format_chars::refuse_invisible_characters;
 use crate::parse::sql_attribute::collect_attribute_text;
 
 pub(super) fn parse_view_block<'a>(
@@ -159,6 +160,7 @@ fn parse_view_body(lines: &[Line<'_>]) -> Result<(Vec<Field>, Vec<Attribute>), S
         fields.push(parse_field(line, std::mem::take(&mut pending_docs))?);
         cursor += 1;
     }
+    refuse_invisible_characters(&attributes, lines)?;
     Ok((fields, attributes))
 }
 

@@ -8,26 +8,40 @@
 //!    Postgres-only and has no per-backend split (design §4), so
 //!    accepting the spelling would advertise a backend that does not
 //!    exist.
-//! 3. Only `@@sql`, `@allow` and `@deny` are recognised, so a misspelled
-//!    `@alow` fails loudly instead of silently leaving the query
-//!    deny-by-default with nothing to explain why.
+//! 3. Only `@@sql`, `@allow` and `@deny` are recognised, each spelled
+//!    exactly as the generator reads it (`super::attribute_shape`), so a
+//!    misspelled `@alow` fails loudly instead of silently leaving the
+//!    query deny-by-default — and `@deny (…)`, `@deny(…) banned` or
+//!    `@Deny(…)` no longer pass while the generator drops the deny rule
+//!    (GHSA-69g4-xvcm-vm2j). The name used to be everything before the
+//!    first `(`, trimmed, which let all three through.
 //!
 //! Split from [`super::queries`] for the workspace's 200-line ceiling.
 
 use cratestack_core::{QUERY_SQL_ATTRIBUTE, Query};
 
+use super::attribute_shape::{Arguments, Known, check_shape};
 use crate::diagnostics::{SchemaError, span_error};
 
-/// Attributes a `query` block understands. Anything else is rejected so a
-/// misspelled `@alow` fails loudly instead of silently leaving the query
-/// deny-by-default with no explanation.
-const RECOGNISED_ATTRIBUTES: &[&str] = &[QUERY_SQL_ATTRIBUTE, "@allow", "@deny"];
+/// Attributes a `query` block understands, with their readers:
+/// `@@sql` — `cratestack_core::Query::sql`; `@allow`/`@deny` —
+/// `cratestack-macros/src/query/module.rs`.
+const RECOGNISED_ATTRIBUTES: &[Known] = &[
+    (QUERY_SQL_ATTRIBUTE, Arguments::Required),
+    ("@allow", Arguments::Required),
+    ("@deny", Arguments::Required),
+];
 
 pub(super) fn validate_query_attributes(query: &Query) -> Result<(), SchemaError> {
     let mut sql_bodies = 0usize;
+    let owner = format!("query `{}`", query.name);
     for attribute in &query.attributes {
-        let name = attribute_name(&attribute.raw);
-        if matches!(name, "@@server_sql" | "@@embedded_sql") {
+        let per_backend = ["@@server_sql", "@@embedded_sql"].into_iter().find(|name| {
+            attribute.raw.strip_prefix(name).is_some_and(|rest| {
+                !rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_')
+            })
+        });
+        if let Some(name) = per_backend {
             return Err(span_error(
                 format!(
                     "query `{}` declares `{name}`, but a `query` block has no per-backend SQL \
@@ -39,16 +53,7 @@ pub(super) fn validate_query_attributes(query: &Query) -> Result<(), SchemaError
                 attribute.span,
             ));
         }
-        if !RECOGNISED_ATTRIBUTES.contains(&name) {
-            return Err(span_error(
-                format!(
-                    "query `{}` declares unsupported attribute `{name}` (a query understands \
-                     `@@sql`, `@allow` and `@deny`)",
-                    query.name
-                ),
-                attribute.span,
-            ));
-        }
+        let (name, _) = check_shape(attribute, RECOGNISED_ATTRIBUTES, &owner, "query")?;
         if name == QUERY_SQL_ATTRIBUTE {
             sql_bodies += 1;
         }
@@ -97,13 +102,4 @@ pub(super) fn validate_query_attributes(query: &Query) -> Result<(), SchemaError
     }
 
     Ok(())
-}
-
-/// The attribute's name, i.e. everything before its argument list.
-fn attribute_name(raw: &str) -> &str {
-    let trimmed = raw.trim();
-    match trimmed.find('(') {
-        Some(index) => trimmed[..index].trim_end(),
-        None => trimmed,
-    }
 }
