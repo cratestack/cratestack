@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/cbor-node",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "description": "Native N-API CBOR codec for CrateStack's generated TypeScript clients, wrapping the framework's own cratestack-codec-cbor Rust crate (crates/cratestack-cbor-napi) for byte-identical wire behavior with the server and Rust client.",
   "license": "MIT",
   "repository": {
@@ -60,7 +60,7 @@
     "prepublishOnly": "napi prepublish -t npm --skip-optional-publish"
   },
   "devDependencies": {
-    "@cratestack/ts-types": "0.13.1",
+    "@cratestack/ts-types": "0.14.0",
     "@napi-rs/cli": "^3.10.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
