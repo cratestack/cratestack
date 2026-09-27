@@ -16,7 +16,7 @@
 //! | `@stream`         | none      | `cratestack-macros/src/shared/procedure_attrs.rs` |
 //! | `@no_idempotency` | none      | `cratestack-macros/src/transport/idempotency.rs` |
 //! | `@no_rate_limit`  | none      | `cratestack-macros/src/transport/rate_limit.rs` |
-//! | `@isolation`      | required  | validated by `super::procedures` only: no generator reads it yet |
+//! | `@isolation`      | required  | `super::procedures`; enforced by the generated dispatch (`cratestack-macros` `procedure/instrument/invoke_isolated.rs`) |
 //! | `@mcp`            | required  | `crate::parse::mcp` (moved to `Procedure::mcp` while parsing) |
 //!
 //! Runs after the per-attribute validators, so their more specific
