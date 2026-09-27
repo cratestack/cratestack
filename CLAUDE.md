@@ -31,7 +31,7 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 - **Build:** `cargo build --workspace --exclude embedded_flutter_native` (the Flutter native crate needs
   flutter_rust_bridge-generated glue that isn't checked in — see the test note below).
 - **Plain tests (no DB):** `cargo test --workspace --exclude embedded_flutter_native`. PG-backed
-  integration tests (`banking_*`, `policy_db_*`, `generated_client_rust`) **skip silently** when
+  integration tests (`banking_*` bar `banking_rate_limit`, and `policy_db_*`) **skip silently** when
   `CRATESTACK_TEST_DATABASE_URL` is unset — a green run here does *not* mean full coverage.
   Two flags to avoid: `embedded_flutter_native` needs flutter_rust_bridge-generated glue that isn't
   checked in (hence the `--exclude`, mirroring the `just` recipes), and `--all-features` does not
@@ -123,9 +123,10 @@ a fourth (`cratestack-client`) was added by cratestack#490:
 - `cratestack = { package = "cratestack-client" }` — pure HTTP-client SDK facade; re-exports **only**
   `include_client_schema!` (not the other two entry macros) plus the generated Rust client runtime and
   the handful of type re-exports client codegen references. `cratestack-axum` — and therefore
-  `axum`/`tower`/`hyper`/`tower-http` — is structurally absent from its dependency graph under its
-  default features (proved by `examples/client-only-verification`'s `cargo tree`, re-run by CI's
-  `facade-disjointness` job).
+  `axum` — is structurally absent from its dependency graph under its default features (proved by
+  `examples/client-only-verification`'s `cargo tree`, re-run by CI's `facade-disjointness` job).
+  `tower`/`hyper`/`tower-http` *are* in that graph, through `reqwest`, the HTTP client the runtime
+  builds on; the CI job deliberately asserts only `axum` absent.
 
 **Hard rule (enforced by convention, watch for regressions):** the macro split must stay strictly
 disjoint. `include_server_schema!(db = Postgres)` emits sqlx-only code; `include_server_schema!(db = None)`
