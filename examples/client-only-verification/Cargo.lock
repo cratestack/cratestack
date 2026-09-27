@@ -161,6 +161,7 @@ dependencies = [
 name = "client-only-verification"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "cratestack-client",
  "serde",
  "tokio",

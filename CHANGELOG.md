@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### `RequestAuthorizer` can make a request of its own on wasm32 (#1104 follow-up)
+
+**Before:** 0.14.1 built the client runtime for `wasm32-unknown-unknown`
+(#1104), but `RequestAuthorizer` stayed `Send + Sync` with a `Send` future on
+every target. A browser `fetch` future is never `Send`, so an authorizer that
+refreshes its token through the client, the case the trait was made async for
+(#453), did not compile there (``future cannot be sent between threads
+safely``).
+
+**Now** the trait is target-split. Natively it is exactly what it was. On
+wasm32 it is declared with `#[async_trait(?Send)]` and without the
+`Send + Sync` supertraits, and `CratestackClient` stores it as
+`Arc<dyn RequestAuthorizer>` as before. An implementation that builds for
+both targets uses the same split:
+`#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]` and
+`#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]`; one
+written with a plain `#[async_trait]` keeps compiling natively, and on
+wasm32 now fails with `E0053` (incompatible type for trait) instead of
+being unimplementable. `examples/client-only-verification` gains a
+wasm32-only authorizer that holds a non-`Send` value across an `await`,
+which CI's `facade-disjointness` job compiles for that target.
+
 ## 0.14.1 (2026-09-27)
 
 ### Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j) — breaking

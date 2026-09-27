@@ -32,6 +32,10 @@ cratestack = { package = "cratestack-client", path = "../../crates/cratestack-cl
 serde = { version = "1", features = ["derive"] }
 url = "2"
 
+# Only for `browser_authorizer` (src/lib.rs), which exists on wasm32 alone.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+async-trait = "0.1"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "net"] }
 
