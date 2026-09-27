@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.1 (2026-09-27)
+
 ### Security: policy attributes the generator skipped are refused (GHSA-69g4-xvcm-vm2j) — breaking
 
 **Affected:** procedure `@allow` / `@deny` / `@authorize` in every release
