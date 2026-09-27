@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.14.2 (2026-09-27)
+
 ### `RequestAuthorizer` can make a request of its own on wasm32 (#1104 follow-up)
 
 **Before:** 0.14.1 built the client runtime for `wasm32-unknown-unknown`
