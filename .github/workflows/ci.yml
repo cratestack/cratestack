@@ -461,7 +461,10 @@ jobs:
         # cratestack#1104: proves `include_client_schema!`'s expansion — not
         # just the runtime crate — compiles for the browser target, from a
         # consumer's own Cargo.toml with no workspace feature unification
-        # to lean on. The `check` job covers the runtime and the facades.
+        # to lean on. The `check` job covers the runtime and the facades. Its
+        # wasm32-only `browser_authorizer` module also proves a
+        # `RequestAuthorizer` can hold a non-`Send` value across an `await`
+        # there (#1104 follow-up).
         working-directory: examples/client-only-verification
         run: cargo check --locked --target wasm32-unknown-unknown
       # `--test-threads=1` on both: each test in these crates starts its

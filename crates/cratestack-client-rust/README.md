@@ -226,6 +226,12 @@ facades. There reqwest goes through the browser's `fetch`, so:
   async `CratestackClient` or the generated client instead.
 - `middleware` compiles for wasm32 as well; `reqwest_middleware::Middleware` is
   `?Send` on that target.
+- `RequestAuthorizer` is not `Send + Sync` there, and `authorize` returns a future
+  that need not be `Send`, so an authorizer can make a `fetch` of its own (a token
+  refresh). An implementation that builds for both targets splits the attribute:
+  `#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]` and
+  `#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]`. Native
+  implementations are unchanged.
 - `JsonFileStateStore` compiles but has no filesystem to write to; use
   `InMemoryStateStore` or your own `ClientStateStore`.
 - A `reqwest::Client` you build for `with_http_client` comes from reqwest's wasm32
