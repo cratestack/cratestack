@@ -86,6 +86,55 @@ async fn a_reused_key_with_other_arguments_is_a_conflict() {
     client.close().await.unwrap();
 }
 
+/// GHSA-r67q-4qqq-g9gm: an `@isolation` tool out of retries committed
+/// nothing, so its outcome is not recorded — the same key runs the call
+/// again instead of replaying the error. Any other error is still recorded.
+#[tokio::test]
+async fn an_aborted_transaction_is_not_recorded_under_its_key() {
+    let tools = FakeTools::default();
+    let mut client = with_store(tools.clone(), user("u-1"));
+    let first = client
+        .call("transfer", json!({ "amount": 409 }), key("k-aborted"))
+        .await;
+    assert_eq!(envelope(&first)["code"], "TRANSACTION_ABORTED");
+    let second = client
+        .call("transfer", json!({ "amount": 409 }), key("k-aborted"))
+        .await;
+    assert_eq!(tools.runs(), 2, "the same key ran the call again");
+    assert!(second.get("_meta").is_none(), "not a replay: {second}");
+
+    client
+        .call("transfer", json!({ "amount": -1 }), key("k-other"))
+        .await;
+    let replayed = client
+        .call("transfer", json!({ "amount": -1 }), key("k-other"))
+        .await;
+    assert_eq!(tools.runs(), 3, "another error is recorded and replayed");
+    assert_eq!(
+        replayed["_meta"]["dev.cratestack/idempotencyReplayed"],
+        json!(true)
+    );
+
+    // An abort the tool's own arm did not claim — another procedure's,
+    // propagated by a body that may have committed work — is answered as
+    // INTERNAL_ERROR, never "nothing committed, send it again", and is
+    // recorded.
+    let first = client
+        .call("transfer", json!({ "amount": 408 }), key("k-propagated"))
+        .await;
+    assert_eq!(envelope(&first)["code"], "INTERNAL_ERROR", "{first}");
+    let replayed = client
+        .call("transfer", json!({ "amount": 408 }), key("k-propagated"))
+        .await;
+    assert_eq!(tools.runs(), 4, "a propagated abort is recorded");
+    assert_eq!(envelope(&replayed)["code"], "INTERNAL_ERROR");
+    assert_eq!(
+        replayed["_meta"]["dev.cratestack/idempotencyReplayed"],
+        json!(true)
+    );
+    client.close().await.unwrap();
+}
+
 #[tokio::test]
 async fn a_read_tool_never_reserves_even_with_a_key() {
     let tools = FakeTools::default();

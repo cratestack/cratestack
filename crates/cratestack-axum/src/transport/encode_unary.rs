@@ -75,11 +75,13 @@ where
             .encode_response(content_type, success_status, &value)
             .unwrap_or_else(fallback_error_response),
         Err(error) => {
+            let (error, tag) = crate::idempotency::answered(error);
             let status = error.status_code();
             let body = error.into_response();
-            transport
+            let response = transport
                 .encode_response(content_type, status, &body)
-                .unwrap_or_else(fallback_error_response)
+                .unwrap_or_else(fallback_error_response);
+            crate::idempotency::with_tag(tag, response)
         }
     }
 }

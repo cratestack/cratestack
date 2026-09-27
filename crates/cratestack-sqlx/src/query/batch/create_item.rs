@@ -11,10 +11,10 @@ use sqlx_core::acquire::Acquire as _;
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{
-    apply_create_defaults, classify_unique_violation, evaluate_create_policies, find_column_value,
-    push_bind_value,
+    PolicyDb, apply_create_defaults, classify_unique_violation, evaluate_create_policies,
+    find_column_value, push_bind_value,
 };
-use crate::{CreateModelInput, ModelDescriptor, cratestack_error_from_sqlx, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 /// Returns `(per_item_result, audit_event)`. `audit_event` is `Some`
 /// only when the item succeeded *and* audit is enabled — a savepoint
@@ -28,7 +28,7 @@ use crate::{CreateModelInput, ModelDescriptor, cratestack_error_from_sqlx, sqlx}
 /// loop and dispatches only after `outer` commits.
 pub(super) async fn run_create_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    policy_pool: &sqlx::PgPool,
+    runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
     ctx: &CratestackContext,
@@ -62,7 +62,7 @@ where
             ));
         }
         if !evaluate_create_policies(
-            policy_pool,
+            PolicyDb::of(runtime, &mut item_tx),
             descriptor.create_allow_policies,
             descriptor.create_deny_policies,
             &values,

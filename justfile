@@ -208,7 +208,7 @@ lint:
 	# `cratestack-pg` scoped to its lib and the MCP targets, since every
 	# other test there would re-expand under the feature for no new code.
 	cargo clippy -p cratestack-api --features mcp --all-targets -- -D warnings {{clippy_allow}}
-	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models --test server_only_outbound_mcp -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models --test server_only_outbound_mcp --test procedure_isolation_mcp -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-cose`'s off-by-default `auth` feature
 	# (cratestack#1005): `cratestack_cose::auth` and its `required-features`
 	# test targets only exist under it, and nothing in the workspace turns
@@ -345,14 +345,15 @@ test-ci-db-decimal-bigdecimal *args='':
 # Shard addendum: MCP's database-enforced policy — a delegated
 # `@authorize(...)` denial and an `@@allow`-hidden row reached through a
 # `tools/call` (cratestack#1038, `mcp_policy_pg`), and resources read with
-# REST as the visibility oracle (cratestack#1040, `mcp_resources_pg`).
+# REST as the visibility oracle (cratestack#1040, `mcp_resources_pg`), and an
+# `@isolation` tool running at its declared level (`procedure_isolation_mcp`).
 # `required-features = ["mcp"]`, so `test-ci-db` above, which runs default
-# features, never compiles either. The recipe exports
+# features, never compiles any of them. The recipe exports
 # `CRATESTACK_REQUIRE_DB=1` itself, so a local run with no reachable database
 # fails instead of skipping and printing `ok` (CI's `tests-db` job sets it
 # too; the two agree).
 test-ci-db-mcp *args='':
-	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg {{args}}
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg --test procedure_isolation_mcp {{args}}
 
 # MCP conformance with a real third-party client (cratestack#1041, ADR 0002
 # phase 6): the official MCP Inspector CLI drives `examples/mcp-operator`

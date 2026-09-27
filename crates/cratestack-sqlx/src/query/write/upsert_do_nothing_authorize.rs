@@ -5,7 +5,8 @@
 
 use cratestack_core::{CratestackContext, CratestackError};
 
-use crate::{ModelDescriptor, SqlValue, SqlxRuntime};
+use crate::query::support::PolicyDb;
+use crate::{ModelDescriptor, SqlValue};
 
 use super::upsert_sql::row_passes_update_policy;
 
@@ -20,15 +21,13 @@ use super::upsert_sql::row_passes_update_policy;
 /// `row_passes_update_policy` the DO UPDATE path already used, just
 /// from the DO NOTHING execution path.
 pub(super) async fn authorize_existing_row<M, PK>(
-    runtime: &SqlxRuntime,
+    policy: PolicyDb<'_>,
     descriptor: &'static ModelDescriptor<M, PK>,
     conflict_columns: &[(&'static str, SqlValue)],
     predicate: Option<&'static str>,
     ctx: &CratestackContext,
 ) -> Result<(), CratestackError> {
-    if !row_passes_update_policy(runtime.pool(), descriptor, conflict_columns, predicate, ctx)
-        .await?
-    {
+    if !row_passes_update_policy(policy, descriptor, conflict_columns, predicate, ctx).await? {
         return Err(CratestackError::Forbidden(
             "update policy denied this upsert".to_owned(),
         ));

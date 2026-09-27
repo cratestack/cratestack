@@ -7,11 +7,12 @@ use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{PolicyExpr, ReadPredicate, RelationQuantifier, SqlColumnValue, SqlValue, sqlx};
 
+use super::db::PolicyDb;
 use super::policy::push_policy_expr_query;
 use super::values::{find_column_value, push_bind_value};
 
 pub(super) fn evaluate_create_policy_expr<'a>(
-    pool: &'a sqlx::PgPool,
+    mut db: PolicyDb<'a>,
     expr: PolicyExpr,
     values: &'a [SqlColumnValue],
     ctx: &'a CratestackContext,
@@ -20,11 +21,11 @@ pub(super) fn evaluate_create_policy_expr<'a>(
     Box::pin(async move {
         match expr {
             PolicyExpr::Predicate(predicate) => {
-                evaluate_create_predicate(pool, predicate, values, ctx).await
+                evaluate_create_predicate(db, predicate, values, ctx).await
             }
             PolicyExpr::And(exprs) => {
                 for expr in exprs.iter().copied() {
-                    if !evaluate_create_policy_expr(pool, expr, values, ctx).await? {
+                    if !evaluate_create_policy_expr(db.reborrow(), expr, values, ctx).await? {
                         return Ok(false);
                     }
                 }
@@ -32,7 +33,7 @@ pub(super) fn evaluate_create_policy_expr<'a>(
             }
             PolicyExpr::Or(exprs) => {
                 for expr in exprs.iter().copied() {
-                    if evaluate_create_policy_expr(pool, expr, values, ctx).await? {
+                    if evaluate_create_policy_expr(db.reborrow(), expr, values, ctx).await? {
                         return Ok(true);
                     }
                 }
@@ -43,7 +44,7 @@ pub(super) fn evaluate_create_policy_expr<'a>(
 }
 
 fn evaluate_create_predicate<'a>(
-    pool: &'a sqlx::PgPool,
+    db: PolicyDb<'a>,
     predicate: ReadPredicate,
     values: &'a [SqlColumnValue],
     ctx: &'a CratestackContext,
@@ -74,11 +75,12 @@ fn evaluate_create_predicate<'a>(
                     ctx,
                 );
 
-                let result: (bool,) = query
-                    .build_query_as::<(bool,)>()
-                    .fetch_one(pool)
-                    .await
-                    .map_err(|error| CratestackError::Database(error.to_string()))?;
+                let built = query.build_query_as::<(bool,)>();
+                let result: (bool,) = match db {
+                    PolicyDb::Pool(pool) => built.fetch_one(pool).await,
+                    PolicyDb::Conn(conn) => built.fetch_one(conn).await,
+                }
+                .map_err(crate::error::cratestack_error_from_sqlx)?;
                 Ok(result.0)
             }
             _ => Ok(super::create::evaluate_input_predicate(

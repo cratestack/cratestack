@@ -26,6 +26,37 @@ use crate::computed::{ProcedureOutputComposition, compose_fn_ident};
 pub(crate) fn compose_tail_tokens(
     composition: Option<ProcedureOutputComposition>,
 ) -> proc_macro2::TokenStream {
+    compose_tokens(
+        composition,
+        quote! { &state.db },
+        quote! { &state.resolvers },
+        quote! { &ctx },
+    )
+}
+
+/// The same composition for an `@isolation` procedure, spliced *inside*
+/// its attempt closure instead of after `invoke_with_db` returns
+/// (docs/design/procedure-isolation.md §6): resolvers get `&tx_db.inner`,
+/// a `Cratestack` over the attempt's transaction, so they read the body's
+/// snapshot, and a resolver failure fails the attempt, which is rolled
+/// back. Reads `tx_db`, `resolvers` and `call_ctx`, the closure's names.
+pub(crate) fn isolated_compose_tokens(
+    composition: Option<ProcedureOutputComposition>,
+) -> proc_macro2::TokenStream {
+    compose_tokens(
+        composition,
+        quote! { &tx_db.inner },
+        quote! { &resolvers },
+        quote! { &call_ctx },
+    )
+}
+
+fn compose_tokens(
+    composition: Option<ProcedureOutputComposition>,
+    db: proc_macro2::TokenStream,
+    resolvers: proc_macro2::TokenStream,
+    ctx: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     let Some(composition) = composition else {
         return quote! {};
     };
@@ -37,14 +68,14 @@ pub(crate) fn compose_tail_tokens(
                 quote! {
                     match output {
                         ::core::option::Option::Some(value) => {
-                            #compose_ident(&state.db, &state.resolvers, &ctx, &value).await
+                            #compose_ident(#db, #resolvers, #ctx, &value).await
                         }
                         ::core::option::Option::None => Ok(::cratestack::ProjectedValue::Null),
                     }
                 }
             } else {
                 quote! {
-                    #compose_ident(&state.db, &state.resolvers, &ctx, &output).await
+                    #compose_ident(#db, #resolvers, #ctx, &output).await
                 }
             };
             quote! {
@@ -61,7 +92,7 @@ pub(crate) fn compose_tail_tokens(
                     let items = result?;
                     let mut composed = ::std::vec::Vec::with_capacity(items.len());
                     for item in &items {
-                        composed.push(#compose_ident(&state.db, &state.resolvers, &ctx, item).await?);
+                        composed.push(#compose_ident(#db, #resolvers, #ctx, item).await?);
                     }
                     Ok(composed)
                 }.await;
@@ -74,7 +105,7 @@ pub(crate) fn compose_tail_tokens(
                     let page = result?;
                     let mut items = ::std::vec::Vec::with_capacity(page.items.len());
                     for item in &page.items {
-                        items.push(#compose_ident(&state.db, &state.resolvers, &ctx, item).await?);
+                        items.push(#compose_ident(#db, #resolvers, #ctx, item).await?);
                     }
                     // Mirrors `cratestack_core::Page<T>`'s own
                     // `#[serde(rename_all = "camelCase")]` shape exactly

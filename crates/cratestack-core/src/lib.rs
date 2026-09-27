@@ -79,7 +79,10 @@ pub use decimal::RustDecimal;
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
-pub use error::{CratestackError, CratestackErrorResponse, DbErrorInfo, parse_cuid};
+pub use error::{
+    AbortOwnership, CratestackError, CratestackErrorResponse, DbErrorInfo, TransactionAbort,
+    parse_cuid,
+};
 pub use events::{
     CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEvent, ModelEventKind,
     SubscriptionGuard, SubscriptionHandle, event_topic, parse_emit_attribute,

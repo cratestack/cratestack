@@ -5,6 +5,7 @@
 mod axum_dtos;
 mod axum_module;
 mod collect;
+mod isolated;
 mod mcp_module;
 mod query_guard;
 mod rpc_module;
@@ -51,6 +52,9 @@ pub(super) fn compose_server_schema(
     if let Err(error) = query_guard::guard_no_queries_without_a_database(schema_path, &schema, db) {
         return error;
     }
+    if let Err(error) = isolated::guard_no_isolation_without_a_database(schema_path, &schema, db) {
+        return error;
+    }
     let decimal_backend = match resolve_decimal_backend(schema_path, &schema, decimal) {
         Ok(backend) => backend,
         Err(error) => return error,
@@ -76,6 +80,8 @@ pub(super) fn compose_server_schema(
             schema.auth.is_some(),
             &crate::computed::computed_bearing_names(&schema),
         );
+        let isolated_handle = isolated::isolated_handle_tokens(&schema, db);
+        let computed_resolver_doc = isolated::computed_resolver_doc_tokens(&schema, db);
         let runtime_block = runtime::build_runtime_block(
             db,
             &collected.model_accessors,
@@ -339,6 +345,7 @@ pub(super) fn compose_server_schema(
 
                     pub const FIELD_COUNT: usize = FIELDS.len();
 
+                    #computed_resolver_doc
                     pub trait ComputedFieldResolver: Clone + Send + Sync + 'static {
                         #(#computed_field_resolver_methods)*
                     }
@@ -355,6 +362,7 @@ pub(super) fn compose_server_schema(
                 #mcp_module
 
                 #runtime_block
+                #isolated_handle
             }
         };
 

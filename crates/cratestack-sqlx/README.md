@@ -84,7 +84,7 @@ db.user().delete(user_id).run(&ctx).await?;
 
 ## Transactions Under an Isolation Level
 
-The crate exposes `run_in_isolated_tx` and `run_in_isolated_tx_with_retries` for procedures that need explicit isolation. Both transparently retry on PostgreSQL SQLSTATE `40001` (serialization_failure) and `40P01` (deadlock_detected), including failures detected at COMMIT time.
+The crate exposes `run_in_isolated_tx` and `run_in_isolated_tx_with_retries` for procedures that need explicit isolation. Both transparently retry on PostgreSQL SQLSTATE `40001` (serialization_failure) and `40P01` (deadlock_detected), including failures detected at COMMIT time. Only database errors are retried: an error the body builds itself is returned on the first attempt, even when its text mentions `40001`. A database error that carries a SQLSTATE is retried by that SQLSTATE alone, never by its text, so a `RAISE EXCEPTION` or a failed cast that echoes `40001` from request data is not retried either.
 
 ```rust
 use cratestack::{TransactionIsolation, run_in_isolated_tx};
@@ -100,7 +100,9 @@ let result = run_in_isolated_tx(
 ).await?;
 ```
 
-Schemas declare the requested isolation through `@isolation("serializable")` on a procedure; the macro records the level on the procedure's metadata constant so dispatch code can pass it to these helpers.
+These are the hand-rolled form, for code that owns a pool. A procedure that declares `@isolation("serializable" | "repeatable_read" | "read_committed")` in the schema does not need them: its generated dispatch — REST, RPC (including `/rpc/batch`), MCP `tools/call` and `<procedure>::invoke_with_db` — runs the procedure's authorization and body in one transaction begun at that level, retries on `40001`/`40P01` (3 retries by default, `CratestackBuilder::with_isolation_max_retries(n)`), and answers `409` with code `TRANSACTION_ABORTED` (RPC `aborted`) when the retries run out; nothing was committed, and an idempotency layer does not record that response. One that a caller propagates out of its own body is answered as `500 INTERNAL_ERROR` instead, and recorded as usual: that caller may have written something of its own first. An `@isolation` procedure invoked from inside another's transaction joins it as a savepoint instead of committing on its own, one at a time, and is refused if it declares a stricter level. The procedure's `ProcedureRegistry` method receives an `IsolatedCratestack` whose every operation runs in that transaction; it has no `pool()`. The body must be safe to run more than once. `AuditSink` fan-out and the `@@emit` outbox drain happen once, after the committed attempt. See [`docs/design/procedure-isolation.md`](https://github.com/cratestack/cratestack/blob/main/docs/design/procedure-isolation.md).
+
+In 0.13.0 and earlier (GHSA-r67q-4qqq-g9gm) the attribute was validated and then ignored: declared-serializable procedures ran at the server default, `READ COMMITTED`.
 
 ## Audit Log
 

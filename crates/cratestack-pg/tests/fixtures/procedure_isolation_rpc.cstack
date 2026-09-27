@@ -1,0 +1,88 @@
+// `procedure_isolation.cstack` on `transport rpc` — see that file.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// `IsoAccount`, so its table (`iso_accounts`) collides with nothing else
+// in the shared test database.
+model IsoAccount {
+  id Int @id
+  balance Int
+
+  @@audit
+  @@emit(updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+type Report {
+  level String
+}
+
+type Withdrawal {
+  accountId Int
+  amount Int
+}
+
+type Receipt {
+  before Int
+  after Int
+}
+
+mutation procedure levelSerializable(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure levelRepeatableRead(args: Probe): Report
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+mutation procedure levelReadCommitted(args: Probe): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure levelPlain(args: Probe): Report
+  @allow(auth() != null)
+
+// Read one account, check, debit it — through the ORM. The `@authorize`
+// check runs inside the attempt, on the procedure's transaction.
+mutation procedure withdraw(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+  @authorize(IsoAccount, update, args.accountId)
+
+// The same body with no `@isolation`: the control.
+mutation procedure withdrawPlain(args: Withdrawal): Receipt
+  @allow(auth() != null)
+
+// Check the SUM over every account, debit one: write skew, which row
+// locks alone cannot stop and SERIALIZABLE must.
+mutation procedure withdrawJoint(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// `withdraw`, but the body swallows a failed debit and reports success —
+// the attempt saw 40001, so it must be retried anyway.
+mutation procedure withdrawSwallow(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Writes through every door the handle has, observes them from inside,
+// then fails: nothing may survive.
+mutation procedure writeThenFail(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)

@@ -49,86 +49,89 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
         let emits_event = self.descriptor.emits(ModelEventKind::Deleted);
         let audit_enabled = self.descriptor.audit_enabled;
 
-        let mut tx = self
-            .runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(cratestack_error_from_sqlx)?;
-        if emits_event {
-            ensure_event_outbox_table(&mut *tx).await?;
-        }
-        if audit_enabled {
-            ensure_audit_table(self.runtime).await?;
-        }
-
-        let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");
-        match self.descriptor.soft_delete_column {
-            Some(col) => {
-                query.push("UPDATE ").push(self.descriptor.table_name);
-                query.push(" SET ").push(col).push(" = NOW()");
-                if let Some(version_col) = self.descriptor.version_column {
-                    query
-                        .push(", ")
-                        .push(version_col)
-                        .push(" = ")
-                        .push(version_col)
-                        .push(" + 1");
-                }
-                query.push(" WHERE ").push(col).push(" IS NULL AND ");
-            }
-            None => {
-                query.push("DELETE FROM ").push(self.descriptor.table_name);
-                query.push(" WHERE ");
-            }
-        }
-        query.push(self.descriptor.primary_key).push(" IN (");
-        for (index, id) in self.ids.iter().enumerate() {
-            if index > 0 {
-                query.push(", ");
-            }
-            query.push_bind(id.clone());
-        }
-        query.push(") AND ");
-        push_action_policy_query(
-            &mut query,
-            self.descriptor.delete_allow_policies,
-            self.descriptor.delete_deny_policies,
-            ctx,
-        );
-        query
-            .push(" RETURNING ")
-            .push(self.descriptor.select_projection());
-
-        let deleted: Vec<M> = query
-            .build_query_as::<M>()
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(cratestack_error_from_sqlx)?;
-
-        // The RETURNING row IS the "before" snapshot — DELETE/soft-
-        // delete returns the pre-mutation state.
-        let mut audit_events = Vec::new();
-        for record in &deleted {
+        // A savepoint of the `@isolation` transaction when there is one
+        // (docs/design/procedure-isolation.md §4).
+        let (deleted, audit_events) = crate::bound::in_write_tx!(self.runtime, |tx| async {
             if emits_event {
-                enqueue_event_outbox(
-                    &mut *tx,
-                    self.descriptor.schema_name,
-                    ModelEventKind::Deleted,
-                    record,
-                )
-                .await?;
+                ensure_event_outbox_table(&mut **tx).await?;
             }
             if audit_enabled {
-                let before = serde_json::to_value(record).ok();
-                let event =
-                    build_audit_event(self.descriptor, AuditOperation::Delete, before, None, ctx);
-                enqueue_audit_event(&mut *tx, &event).await?;
-                audit_events.push(event);
+                ensure_audit_table(self.runtime, &mut **tx).await?;
             }
-        }
 
-        tx.commit().await.map_err(cratestack_error_from_sqlx)?;
+            let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");
+            match self.descriptor.soft_delete_column {
+                Some(col) => {
+                    query.push("UPDATE ").push(self.descriptor.table_name);
+                    query.push(" SET ").push(col).push(" = NOW()");
+                    if let Some(version_col) = self.descriptor.version_column {
+                        query
+                            .push(", ")
+                            .push(version_col)
+                            .push(" = ")
+                            .push(version_col)
+                            .push(" + 1");
+                    }
+                    query.push(" WHERE ").push(col).push(" IS NULL AND ");
+                }
+                None => {
+                    query.push("DELETE FROM ").push(self.descriptor.table_name);
+                    query.push(" WHERE ");
+                }
+            }
+            query.push(self.descriptor.primary_key).push(" IN (");
+            for (index, id) in self.ids.iter().enumerate() {
+                if index > 0 {
+                    query.push(", ");
+                }
+                query.push_bind(id.clone());
+            }
+            query.push(") AND ");
+            push_action_policy_query(
+                &mut query,
+                self.descriptor.delete_allow_policies,
+                self.descriptor.delete_deny_policies,
+                ctx,
+            );
+            query
+                .push(" RETURNING ")
+                .push(self.descriptor.select_projection());
+
+            let deleted: Vec<M> = query
+                .build_query_as::<M>()
+                .fetch_all(&mut **tx)
+                .await
+                .map_err(cratestack_error_from_sqlx)?;
+
+            // The RETURNING row IS the "before" snapshot — DELETE/soft-
+            // delete returns the pre-mutation state.
+            let mut audit_events = Vec::new();
+            for record in &deleted {
+                if emits_event {
+                    enqueue_event_outbox(
+                        &mut **tx,
+                        self.descriptor.schema_name,
+                        ModelEventKind::Deleted,
+                        record,
+                    )
+                    .await?;
+                }
+                if audit_enabled {
+                    let before = serde_json::to_value(record).ok();
+                    let event = build_audit_event(
+                        self.descriptor,
+                        AuditOperation::Delete,
+                        before,
+                        None,
+                        ctx,
+                    );
+                    enqueue_audit_event(&mut **tx, &event).await?;
+                    audit_events.push(event);
+                }
+            }
+
+            Ok((deleted, audit_events))
+        })?;
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;

@@ -69,7 +69,7 @@ where
     .execute(executor)
     .await
     .map(|_| ())
-    .map_err(|error| CratestackError::Database(error.to_string()))
+    .map_err(crate::error::cratestack_error_from_sqlx)
 }
 
 /// Derive an [`AuditActor`] from the [`CratestackContext`] active at
@@ -160,7 +160,7 @@ where
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(|error| CratestackError::Database(error.to_string()))
+        .map_err(crate::error::cratestack_error_from_sqlx)
 }
 
 #[cfg(test)]

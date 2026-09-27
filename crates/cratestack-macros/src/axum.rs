@@ -25,5 +25,6 @@ mod shared_support;
 pub(crate) use model::{generate_model_axum_handlers, generate_model_axum_routes};
 pub(crate) use procedure::{
     compose_tail_tokens, generate_procedure_axum_handler, generate_procedure_axum_route,
+    isolated_attempt_body,
 };
 pub(crate) use shared_support::generate_axum_shared_support;

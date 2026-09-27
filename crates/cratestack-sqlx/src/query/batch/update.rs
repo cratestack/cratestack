@@ -8,7 +8,7 @@ use cratestack_core::{BatchResponse, CratestackContext, CratestackError, ModelEv
 
 use crate::audit::{dispatch_audit_sink, ensure_audit_table};
 use crate::descriptor::ensure_event_outbox_table;
-use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
+use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
 
 use super::update_item::run_update_item;
 use super::validate::{reject_duplicate_pks, validate_batch_size};
@@ -47,36 +47,29 @@ where
         let emits_event = self.descriptor.emits(ModelEventKind::Updated);
         let audit_enabled = self.descriptor.audit_enabled;
 
-        let mut tx = self
-            .runtime
-            .pool()
-            .begin()
-            .await
-            .map_err(cratestack_error_from_sqlx)?;
-        if emits_event {
-            ensure_event_outbox_table(&mut *tx).await?;
-        }
-        if audit_enabled {
-            ensure_audit_table(self.runtime).await?;
-        }
+        // A savepoint of the `@isolation` transaction when there is one
+        // (docs/design/procedure-isolation.md §4).
+        let (per_item, audit_events) = crate::bound::in_write_tx!(self.runtime, |tx| async {
+            if emits_event {
+                ensure_event_outbox_table(&mut **tx).await?;
+            }
+            if audit_enabled {
+                ensure_audit_table(self.runtime, &mut **tx).await?;
+            }
 
-        let mut per_item: Vec<Result<M, CratestackError>> = Vec::with_capacity(self.items.len());
-        let mut audit_events = Vec::new();
-        for item in self.items {
-            let (outcome, audit_event) = run_update_item(
-                &mut tx,
-                self.descriptor,
-                item,
-                ctx,
-                emits_event,
-                audit_enabled,
-            )
-            .await?;
-            per_item.push(outcome);
-            audit_events.extend(audit_event);
-        }
+            let mut per_item: Vec<Result<M, CratestackError>> =
+                Vec::with_capacity(self.items.len());
+            let mut audit_events = Vec::new();
+            for item in self.items {
+                let (outcome, audit_event) =
+                    run_update_item(tx, self.descriptor, item, ctx, emits_event, audit_enabled)
+                        .await?;
+                per_item.push(outcome);
+                audit_events.extend(audit_event);
+            }
 
-        tx.commit().await.map_err(cratestack_error_from_sqlx)?;
+            Ok((per_item, audit_events))
+        })?;
 
         if emits_event {
             let _ = self.runtime.drain_event_outbox().await;

@@ -1,0 +1,44 @@
+// GHSA-r67q-4qqq-g9gm × GHSA-ch54: an `@isolation` procedure composes its
+// `@computed` output inside its attempt (docs/design/procedure-isolation.md
+// §6), through a different token path than every other procedure
+// (`isolated_compose_tokens`). A model with both a `@computed` and a
+// `@server_only` field is built field by field by `compose_<owner>_value`,
+// which must leave the `@server_only` value out on that path too. See
+// `tests/procedure_isolation_server_only.rs`;
+// `procedure_isolation_server_only_rpc.cstack` is this file on
+// `transport rpc`. Keep the two in step.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model IsoVault {
+  id Int @id
+  label String
+  secret String @server_only
+  // Derived from `secret`: the value may be sent, the raw field may not.
+  hint String @computed
+
+  @@allow("read", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+mutation procedure openVault(args: Probe): IsoVault
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure openVaults(args: Probe): IsoVault[]
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+// The same output without `@isolation`: the control, composed after the call.
+mutation procedure openVaultPlain(args: Probe): IsoVault
+  @allow(auth() != null)

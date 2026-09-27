@@ -54,9 +54,12 @@ where
         Ok(value) => encode_codec_response(codec, success_status, &value)
             .unwrap_or_else(fallback_error_response),
         Err(error) => {
+            let (error, tag) = crate::idempotency::answered(error);
             let status = error.status_code();
             let body = error.into_response();
-            encode_codec_response(codec, status, &body).unwrap_or_else(fallback_error_response)
+            let response =
+                encode_codec_response(codec, status, &body).unwrap_or_else(fallback_error_response);
+            crate::idempotency::with_tag(tag, response)
         }
     }
 }

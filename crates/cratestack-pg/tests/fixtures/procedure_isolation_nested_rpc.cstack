@@ -1,0 +1,90 @@
+// `procedure_isolation_nested.cstack` on `transport rpc` — see that file.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model NestAccount {
+  id Int @id
+  balance Int
+
+  @@audit
+  @@allow("read", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+type Report {
+  level String
+}
+
+type Transfer {
+  accountId Int
+  peerId Int
+  amount Int
+}
+
+type Joined {
+  accountId Int
+  peerId Int
+  amount Int
+  outerTx String
+  innerTx String @computed
+}
+
+mutation procedure raiseEcho(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure castEcho(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure alwaysConflict(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure propagateAbort(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure debitThenAbort(args: Transfer): Report
+  @allow(auth() != null)
+
+mutation procedure joinOuter(args: Transfer): Joined
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+mutation procedure creditRead(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure creditStrict(args: Transfer): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure creditAfterPeer(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure failAfterPeer(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure debitThenFail(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure cancelTransaction(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)

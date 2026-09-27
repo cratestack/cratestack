@@ -33,7 +33,9 @@ mod selection;
 mod selection_module;
 pub(crate) mod struct_only;
 
-pub(crate) use accessor::{generate_bound_model_accessor, generate_model_accessor};
+pub(crate) use accessor::{
+    generate_bound_model_accessor, generate_isolated_model_accessor, generate_model_accessor,
+};
 pub(crate) use descriptor::generate_model_descriptor;
 pub(crate) use field_module::{
     FieldModuleKind, generate_client_field_module, generate_field_module,

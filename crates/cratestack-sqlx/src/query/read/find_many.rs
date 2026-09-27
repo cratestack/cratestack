@@ -92,6 +92,10 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
     {
+        // Inside an `@isolation` procedure: on its transaction (procedure-isolation.md §4).
+        if let Some(bound) = self.runtime.bound() {
+            return crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx));
+        }
         let order_by = self.effective_order_by();
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
         query
@@ -116,7 +120,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_all(self.runtime.pool())
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))
+            .map_err(crate::error::cratestack_error_from_sqlx)
     }
 
     /// Run inside a caller-supplied transaction. Required when pairing
@@ -153,7 +157,7 @@ impl<'a, M: 'static, PK: 'static> FindMany<'a, M, PK> {
             .build_query_as::<M>()
             .fetch_all(&mut **tx)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))
+            .map_err(crate::error::cratestack_error_from_sqlx)
     }
 
     pub(super) fn effective_order_by(&self) -> Vec<OrderClause> {

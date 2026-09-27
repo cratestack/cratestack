@@ -33,6 +33,7 @@ describe("errorStatus", () => {
     expect(errorStatus("permission_denied")).toBe(403);
     expect(errorStatus("not_found")).toBe(404);
     expect(errorStatus("conflict")).toBe(409);
+    expect(errorStatus("aborted")).toBe(409);
     expect(errorStatus("internal")).toBe(500);
   });
 

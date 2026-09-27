@@ -35,6 +35,8 @@ mod tests_extensions;
 #[cfg(test)]
 mod tests_field_attrs;
 #[cfg(test)]
+mod tests_isolation_scope;
+#[cfg(test)]
 mod tests_key_relation_attrs;
 #[cfg(test)]
 mod tests_list_arity;

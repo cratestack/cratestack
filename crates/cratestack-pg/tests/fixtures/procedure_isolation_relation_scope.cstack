@@ -1,0 +1,61 @@
+// The two advisory fixes compose: a relation filter or sort made by a read
+// inside an `@isolation` procedure (GHSA-r67q-4qqq-g9gm) runs on the
+// procedure's transaction and still applies the related model's read scope
+// (GHSA-p55v-6xv5-93p3). `tests/procedure_isolation_relation_scope.rs`
+// drives it. The test caller's `id` is 1.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+// Readable by nobody the test authenticates as.
+model IrsHidden {
+  id Int @id
+  code String
+
+  @@allow("read", auth().id == 999)
+}
+
+// Readable by its owner: the positive control.
+model IrsMine {
+  id Int @id
+  ownerId Int
+  code String
+
+  @@allow("read", ownerId == auth().id)
+}
+
+model IrsLink {
+  id Int @id
+  hiddenId Int
+  mineId Int
+  hidden IrsHidden @relation(fields:[hiddenId],references:[id])
+  mine IrsMine @relation(fields:[mineId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type Step {
+  id Int
+}
+
+// Comma-joined link ids, and the level the attempt ran at.
+type Seen {
+  byHidden String
+  byMine String
+  sortedByHidden String
+  level String
+}
+
+// Creates link `id` (to hidden row 1 and mine row 1) inside the attempt,
+// then lists links by a hidden row's code, by a readable row's code, and
+// sorted by the hidden row's code.
+mutation procedure probe(args: Step): Seen
+  @isolation("serializable")
+  @allow(auth() != null)

@@ -57,7 +57,8 @@ pub struct RpcErrorBody {
     /// Stable gRPC-style code: `not_found`, `invalid_argument`,
     /// `permission_denied`, `failed_precondition`, `conflict`,
     /// `unauthenticated`, `resource_exhausted` (a rate-limit throttle,
-    /// cratestack#846), `unavailable`, `internal`.
+    /// cratestack#846), `aborted` (an `@isolation` transaction that ran out
+    /// of retries; safe to send again), `unavailable`, `internal`.
     pub code: String,
     /// Public, safe-to-expose message.
     pub message: String,
@@ -137,52 +138,6 @@ impl RpcResponseFrame {
     }
 }
 
-/// Map a [`CratestackError`] to its stable RPC code (gRPC-style snake_case).
-pub const fn rpc_code(error: &CratestackError) -> &'static str {
-    match error {
-        CratestackError::BadRequest(_)
-        | CratestackError::NotAcceptable(_)
-        | CratestackError::UnsupportedMediaType(_)
-        | CratestackError::Codec(_)
-        | CratestackError::Validation(_) => "invalid_argument",
-        CratestackError::Unauthorized(_) => "unauthenticated",
-        CratestackError::Forbidden(_) => "permission_denied",
-        CratestackError::NotFound(_) => "not_found",
-        CratestackError::Conflict(_) | CratestackError::ConflictTyped(_) => "conflict",
-        CratestackError::PreconditionFailed(_) => "failed_precondition",
-        CratestackError::Database(_)
-        | CratestackError::DatabaseTyped(_)
-        | CratestackError::Internal(_) => "internal",
-        CratestackError::Unavailable(_) => "unavailable",
-        // gRPC's canonical code for "the caller exhausted a quota/rate
-        // limit" (google.rpc.Code.RESOURCE_EXHAUSTED = 8). New with
-        // cratestack#846's `TooManyRequests`; no prior variant mapped here.
-        CratestackError::TooManyRequests(_) => "resource_exhausted",
-    }
-}
-
-/// Map a `CratestackErrorResponse.code` string (screaming-snake, REST-
-/// binding vocabulary) to the stable gRPC-style code the RPC binding
-/// emits.
-pub fn cratestack_error_code_to_rpc_code(code: &str) -> &'static str {
-    match code {
-        "BAD_REQUEST"
-        | "NOT_ACCEPTABLE"
-        | "UNSUPPORTED_MEDIA_TYPE"
-        | "VALIDATION_ERROR"
-        | "CODEC_ERROR" => "invalid_argument",
-        "UNAUTHORIZED" => "unauthenticated",
-        "FORBIDDEN" => "permission_denied",
-        "NOT_FOUND" => "not_found",
-        "CONFLICT" => "conflict",
-        "PRECONDITION_FAILED" => "failed_precondition",
-        "DATABASE_ERROR" | "INTERNAL_ERROR" => "internal",
-        "UNAVAILABLE" => "unavailable",
-        "TOO_MANY_REQUESTS" => "resource_exhausted",
-        _ => "internal",
-    }
-}
-
 fn cratestack_value_to_json(value: crate::Value) -> serde_json::Value {
     serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
 }
@@ -198,3 +153,9 @@ fn cratestack_value_to_json(value: crate::Value) -> serde_json::Value {
 mod inputs;
 
 pub use inputs::*;
+
+// The two error-code maps, split out for the ~200-LoC ceiling when
+// `TransactionAborted` (GHSA-r67q-4qqq-g9gm) added an arm to each.
+mod codes;
+
+pub use codes::{cratestack_error_code_to_rpc_code, rpc_code};

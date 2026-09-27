@@ -38,7 +38,7 @@ where
         ensure_event_outbox_table(&mut **tx).await?;
     }
     if audit_enabled {
-        ensure_audit_table(runtime).await?;
+        ensure_audit_table(runtime, &mut **tx).await?;
     }
 
     let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("");

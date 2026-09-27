@@ -17,6 +17,7 @@
 //! facade's `mcp` re-export.
 
 mod dispatch;
+mod isolated_arm;
 mod resources_dispatch;
 mod resources_table;
 mod table;

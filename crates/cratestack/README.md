@@ -38,7 +38,7 @@ All four crates expose their library as `cratestack` (the schema macros emit `::
 
 ## What you get from one `.cstack` file
 
-* **Server** — sqlx + axum CRUD routes, procedures, policies, projections, audit log, idempotency, rate limiting, transaction isolation control, materialized views.
+* **Server** — sqlx + axum CRUD routes, procedures, policies, projections, audit log, idempotency, rate limiting, per-procedure transaction isolation (`@isolation`, with retries on serialization failure — enforced since the GHSA-r67q-4qqq-g9gm fix; 0.13.0 and earlier ignored it), materialized views.
 * **Embedded** — same schema, rusqlite delegate, sync API, identical scalar round-tripping (`Decimal`, `Uuid`, `DateTime`, `Json` through canonical TEXT storage). One source, three targets (native mobile, desktop, wasm).
 * **Typed clients** — generated Rust client (CBOR by default, optional JSON), Dart package, TypeScript package, each consuming the same canonical HTTP contract.
 * **SQL views** — `view <Name> from <Model>, ...` produces a typed Rust struct and `ViewDelegate`, with per-backend SQL bodies and optional `@@materialized` (Postgres only).

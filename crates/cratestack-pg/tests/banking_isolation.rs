@@ -232,3 +232,92 @@ async fn read_committed_can_lose_an_update_when_no_retry_is_configured() {
         final_amount.0,
     );
 }
+
+/// An error the body builds itself is never mistaken for a serialization
+/// failure because of its text (docs/design/procedure-isolation.md §5). A
+/// body echoing request data (`length 40001`) or its own lock manager's
+/// "deadlock detected" used to be retried: the body, with whatever it did
+/// outside the transaction, ran up to four times. Now it runs once and its
+/// error comes back as is. The `Database` case is the control: the same
+/// text on a database error is still retried, so the counter does count
+/// attempts.
+#[tokio::test]
+async fn an_application_error_mentioning_40001_is_returned_once_not_retried() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    type Make = fn(String) -> CratestackError;
+
+    async fn run_failing(
+        pool: &cratestack::sqlx::PgPool,
+        make: Make,
+        text: &'static str,
+    ) -> (u32, CratestackError) {
+        let runs = Arc::new(AtomicU32::new(0));
+        let body_runs = runs.clone();
+        let outcome =
+            run_in_isolated_tx(pool, TransactionIsolation::Serializable, move |mut tx| {
+                let runs = body_runs.clone();
+                async move {
+                    // Stands in for a side effect outside the transaction.
+                    runs.fetch_add(1, Ordering::SeqCst);
+                    cratestack::sqlx::query("UPDATE balance_under_test SET amount = amount + 1")
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| CratestackError::Database(e.to_string()))?;
+                    Err::<((), _), _>(make(text.to_owned()))
+                }
+            })
+            .await;
+        (
+            runs.load(Ordering::SeqCst),
+            outcome.expect_err("body fails"),
+        )
+    }
+
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset(pool).await;
+
+    let cases: [(Make, &'static str); 3] = [
+        (
+            CratestackError::Validation,
+            "field 'memo' length 40001 exceeds maximum 100",
+        ),
+        (
+            CratestackError::Internal,
+            "deadlock detected in my own lock manager",
+        ),
+        (
+            CratestackError::BadRequest,
+            "could not serialize access to the ledger",
+        ),
+    ];
+    for (make, text) in cases {
+        let (runs, returned) = run_failing(pool, make, text).await;
+        let expected = format!("{:?}", make(text.to_owned()));
+        assert_eq!(runs, 1, "{expected} must not be retried");
+        assert_eq!(format!("{returned:?}"), expected, "returned as is");
+    }
+
+    let (runs, _) = run_failing(
+        pool,
+        CratestackError::Database,
+        "could not serialize access (SQLSTATE 40001)",
+    )
+    .await;
+    assert_eq!(
+        runs, 4,
+        "a database 40001 is retried: 1 attempt + 3 retries"
+    );
+
+    let amount: (i64,) =
+        cratestack::sqlx::query_as("SELECT amount FROM balance_under_test WHERE id = 1")
+            .fetch_one(pool)
+            .await
+            .expect("read");
+    assert_eq!(amount.0, 0, "every failed attempt was rolled back");
+}

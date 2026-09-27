@@ -1,0 +1,52 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+model CallerTxOwner {
+  id Int @id
+  ownerId Int
+
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", ownerId == auth().id)
+  @@allow("update", ownerId == auth().id)
+}
+
+// Create policy reads the parent row through a relation: an `EXISTS` probe
+// against `caller_tx_owners`, which is what moved onto the caller's
+// transaction (docs/design/procedure-isolation.md §4.1).
+model CallerTxItem {
+  id Int @id
+  ownerRowId Int
+  owner CallerTxOwner @relation(fields:[ownerRowId],references:[id])
+
+  @@allow("read", owner.ownerId == auth().id)
+  @@allow("create", owner.ownerId == auth().id)
+}
+
+// Self-relation, so one `batch_create` can hold an item and its parent.
+model CallerTxFolder {
+  id Int @id
+  ownerId Int
+  parentId Int
+  parent CallerTxFolder @relation(fields:[parentId],references:[id])
+
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", parent.ownerId == auth().id)
+}
+
+// Versioned, for the update/delete `@version` probe that tells a stale
+// `If-Match` (412) from a policy denial (403).
+model CallerTxDoc {
+  id Int @id
+  body String
+  version Int @version
+
+  @@allow("read", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

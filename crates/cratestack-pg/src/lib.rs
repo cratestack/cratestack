@@ -237,6 +237,10 @@ pub fn install_fips_crypto_provider() -> Result<(), cratestack_core::CratestackE
 
 mod envelope_fn;
 
+// Doctest-only: the compile-time half of the `@isolation` escape test.
+#[cfg(all(doctest, feature = "postgres"))]
+mod isolation_doctests;
+
 #[doc(hidden)]
 pub mod __private {
     /// The generated `envelope_layer`'s body, which this facade's

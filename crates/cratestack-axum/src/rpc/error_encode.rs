@@ -26,9 +26,14 @@ pub fn encode_rpc_error<C>(
 where
     C: HttpTransport,
 {
+    // A `TRANSACTION_ABORTED` this dispatch does not own is answered as
+    // `INTERNAL_ERROR` (`crate::idempotency::unrecorded`).
+    let disowned = crate::idempotency::disowned(error);
+    let error = disowned.as_ref().unwrap_or(error);
     let body = RpcErrorBody::from_cratestack(error);
     let status = error.status_code();
-    encode_rpc_value_response(codec, headers, status, body)
+    let response = encode_rpc_value_response(codec, headers, status, body);
+    crate::idempotency::with_tag(crate::idempotency::unrecorded_tag(error), response)
 }
 
 /// Post-process a handler-emitted response. Success responses pass
@@ -50,7 +55,21 @@ where
     if response.status().is_success() {
         return response;
     }
+    // The re-encoded response keeps the idempotency layer's do-not-record
+    // tag (`crate::idempotency::unrecorded`).
+    let tag = crate::idempotency::tag_of(&response);
+    let converted = convert_error_body(response, codec, headers).await;
+    crate::idempotency::with_tag(tag, converted)
+}
 
+async fn convert_error_body<C>(
+    response: axum::response::Response,
+    codec: &C,
+    headers: &HeaderMap,
+) -> axum::response::Response
+where
+    C: HttpTransport,
+{
     let status = response.status();
     let body_bytes = match axum::body::to_bytes(
         response.into_body(),

@@ -2,6 +2,208 @@
 
 ## Unreleased
 
+### Security: @isolation is enforced (GHSA-r67q-4qqq-g9gm)
+
+**Affected: 0.2.0 through 0.14.0.** `@isolation("serializable" |
+"repeatable_read" | "read_committed")` on a procedure was validated and then
+ignored. No generated code read it: every procedure ran on the pool at the
+server default, normally `READ COMMITTED`, on REST, RPC (including
+`/rpc/batch`) and MCP. A procedure that relied on the declared level for a
+read-check-write was not protected by it. Measured: two concurrent
+declared-serializable withdrawals of 100 from a balance of 100 both
+succeeded, paying out 200. `run_in_isolated_tx`, `db.transaction(..)` and
+the rest of the runtime were not affected. The docs that said a macro
+recorded the level for dispatch were wrong.
+
+A procedure that declares `@isolation(level)` now runs, on every path that
+can execute it, inside one transaction begun with `BEGIN ISOLATION LEVEL
+<level>`: REST, RPC, `/rpc/batch`, MCP `tools/call` and
+`<procedure>::invoke_with_db`. Its authorization (`@allow`/`@deny`, and any
+`@authorize` check), its body, the policy checks of every write it makes,
+and the `@computed` fields of its output all run in that transaction. On
+SQLSTATE `40001` or `40P01`, from a statement or from `COMMIT`, the attempt
+is rolled back and run again: 3 retries by default, with a short jittered
+backoff, configurable with `CratestackBuilder::with_isolation_max_retries(n)`.
+An attempt that saw a retriable error is retried even if the body caught
+that error. An attempt in which a `db.transaction(..)` could not close its
+savepoint, because raw SQL in it failed without the error being returned or
+ended the transaction, is rolled back and fails with `INTERNAL_ERROR` even
+if the body returns `Ok`: Postgres would otherwise answer the `COMMIT` of
+the aborted transaction with a silent `ROLLBACK` behind a success response.
+So is an attempt in which a `db.transaction(..)` was cancelled (a timeout,
+`select!`) or panicked before it finished, rather than committing the part
+of its closure that had run.
+Only database errors count as retriable: an application or validation
+error whose text contains `40001` is returned as is, here and now also in
+the hand-rolled `run_in_isolated_tx` (see the last breaking change). A
+database error that carries a SQLSTATE is retried by that SQLSTATE alone
+(`40001` or `40P01`), never by its text: request data echoed into another
+error's message, such as a body's `RAISE EXCEPTION 'insufficient funds:
+requested %'` (`P0001`) or a failed cast of `"40001x"` (`22P02`), is
+returned once as the real error, not retried into a `409` that released the
+idempotency key. Text matching remains only for the untyped
+`CratestackError::Database(String)`, which has no SQLSTATE. The framework's
+own reads (`find_unique`, `find_many`, projections, aggregates), its
+`@authorize` probe, create-policy lookups and `@@audit` writes now report a
+Postgres error as the typed `DatabaseTyped` (same `DATABASE_ERROR` code and
+500 status, now with `db_sqlstate()`) instead of the untyped variant, so the
+rule reaches them too. An exhausted
+`TRANSACTION_ABORTED` is final: an outer `@isolation` body that propagates
+one does not run again because of it.
+`AuditSink` fan-out and the `@@emit` outbox drain happen once, after the
+attempt that commits. An `@isolation` procedure invoked from inside
+another's attempt, which a `@computed` resolver can do with the
+attempt-bound `&Cratestack` it receives, joins that transaction as a
+savepoint: it commits nothing on its own, it is not retried separately (the
+outermost attempt owns the retries), and it is refused if it declares a
+stricter level than the attempt it would join. Joined calls run one at a
+time: a second one started while another is still running on the same
+attempt (`tokio::join!` in a resolver), or a joined call cancelled or
+panicking half-way, fails the whole attempt with `INTERNAL_ERROR` instead
+of committing part of it.
+Design: [`docs/design/procedure-isolation.md`](docs/design/procedure-isolation.md).
+
+- **Retries exhausted: `409 TRANSACTION_ABORTED`** (RPC code `aborted`), a
+  new `CratestackError::TransactionAborted` variant with the SQLSTATE kept
+  and the fixed message `transaction could not be completed because of
+  concurrent updates; retry the request`. It is not `CONFLICT`: nothing was
+  committed and sending the same request again is expected to succeed.
+  Every generated client knows the code: the TypeScript and Dart RPC
+  runtimes list it, the Rust client maps a batch frame's `aborted` to 409,
+  and `@cratestack/link-batch` does the same.
+- **Not recorded under an `Idempotency-Key`, when it is the procedure's
+  own.** `IdempotencyLayer` (REST and RPC) and MCP's idempotency admission
+  release the reservation for the `TRANSACTION_ABORTED` of the dispatched
+  `@isolation` procedure whose own retries ran out, instead of recording
+  it, so the same key runs the call again. Every other response, errors
+  included, is recorded as before.
+- **Only that procedure answers `TRANSACTION_ABORTED`.** An abort that
+  reaches a response any other way is answered as `500 INTERNAL_ERROR`
+  (RPC `internal`), with the original SQLSTATE and detail in the operator's
+  log, and is recorded under the key. That covers a procedure, with or
+  without `@isolation`, that propagates the abort of another procedure it
+  called, a `@computed` resolver's, and one a hand-written handler returns.
+  `TRANSACTION_ABORTED` tells the client that nothing was committed and to
+  send the request again; a caller that propagated someone else's abort may
+  have committed work of its own first, and a client that believed it and
+  retried under a new key would apply that work twice. The mapping happens
+  in the REST/RPC response encoders (unary, sequence, `/rpc/batch` frames,
+  dispatcher errors) and in MCP's tool-call and resource-read error paths.
+- **Hand-written callers of an `@isolation` procedure's `invoke_with_db`**
+  receive its exhausted abort unclaimed: only the generated REST, RPC and
+  MCP dispatch claims it as the owner. If such a caller returns that error
+  through the framework's encoders, and so through `IdempotencyLayer`, the
+  response is `500 INTERNAL_ERROR` and is recorded under the key, not a
+  `409` whose key is released. Serve the procedure through the generated
+  router, or map the error yourself, to answer it as retryable.
+- **`@computed` output fields resolve inside the transaction.** For an
+  `@isolation` procedure, output composition runs after the body and
+  before `COMMIT`. Resolvers get the same `&Cratestack` argument as before
+  (the `ComputedFieldResolver` trait is unchanged), but it is bound to the
+  attempt: their model reads see the body's writes and snapshot, a resolver
+  error rolls the attempt back, and resolvers re-run with a retried
+  attempt, so they must be re-runnable (the generated trait's doc now says
+  so in every schema that declares an `@isolation` procedure). Their
+  `pool()`, `views()`, `queries()` and `events()` still run on the pool.
+- **Policy checks inside the transaction.** Create policies (with their
+  relation lookups), the `@version` probe and upsert update-policy checks
+  made by a write inside an `@isolation` procedure read through the
+  procedure's transaction, so an in-flight procedure never needs a second
+  pooled connection. Nothing changes for code that does not use
+  `@isolation`: `db.transaction(..)`, `run_in_tx`, `run_in_isolated_tx`,
+  the `batch_*` builders and audited or emitting `.run()` calls read
+  policies on the pool exactly as before.
+
+**Breaking changes.** Procedures without `@isolation` generate the same code
+and behave as before, except that one which calls an `@isolation` procedure
+and propagates its exhausted abort answers `500 INTERNAL_ERROR` (see above),
+and that the read builders report Postgres errors typed (below);
+the only addition to a schema without `@isolation` is the
+`CratestackBuilder::with_isolation_max_retries` method.
+
+- The `ProcedureRegistry` method of an `@isolation` procedure takes
+  `db: &IsolatedCratestack` instead of `db: &Cratestack`. It offers the
+  model accessors, `bind_context`/`bind_auth`, `transaction(..)` (a
+  savepoint inside the procedure's transaction) and `dispatch_audit_sink`
+  (queued until commit). It has no `pool()`, `events()`, `views()` or
+  `queries()`: nothing reachable from it runs outside the transaction. Raw
+  SQL goes through `db.transaction(async |tx| .. &mut ***tx ..)`. Operations
+  on it run one at a time; a concurrent or re-entrant call (`.run(ctx)`
+  inside `db.transaction`) returns an `INTERNAL_ERROR` instead of
+  deadlocking. Inside `db.transaction`, use `run_in_tx(tx, ctx)`.
+- `<procedure>::invoke_with_db` of an `@isolation` procedure takes
+  `FnOnce(IsolatedCratestack, Authorized) -> Fut + Clone` instead of
+  `FnOnce(Authorized) -> Fut`. It is called once per attempt.
+- `@isolation` is refused on a `@stream` procedure, in a
+  `datasource { provider = "none" }` schema, and with
+  `include_server_schema!(.., db = None)`.
+- `CratestackError::TransactionAborted(TransactionAbort)` is a new variant
+  of the `#[non_exhaustive]` error enum, with the new code
+  `TRANSACTION_ABORTED`. `TransactionAbort` carries the SQLSTATE and fixed
+  detail (`info`) and an `AbortOwnership` that decides what a response
+  says and whether an idempotency layer releases the key: only the
+  `Claimed` state, which the generated dispatch of the `@isolation`
+  procedure that ran out of retries sets, is answered as
+  `TRANSACTION_ABORTED` and released; `Exhausted` and `Propagated` are
+  answered as `INTERNAL_ERROR` and recorded. Application code cannot build
+  a `Claimed` abort, because it would release a key after committed work:
+  the `ownership` field is private (read it with `ownership()`), and the
+  only public constructors are `TransactionAbort::exhausted(info)` and
+  `TransactionAbort::propagated(info)`. `Claimed` is set only by the
+  `#[doc(hidden)]` `CratestackError::__generated_claim_transaction_abort`,
+  which generated dispatch calls. Hand-written code that calls it anyway can
+  release only its own request's key; the design doc (§6) records that as
+  a contract, not a boundary.
+- An `@isolation` procedure invoked from inside another's attempt joins it
+  instead of committing in its own transaction, and is refused when it
+  declares a stricter level than that attempt, or when another joined call
+  is still running on that attempt.
+- A Postgres error from a read builder (`find_unique`, `find_many`, the
+  projected reads, the aggregates), the `@authorize` probe, a create-policy
+  relation lookup or an `@@audit` write is now
+  `CratestackError::DatabaseTyped` rather than `CratestackError::Database`,
+  with or without `@isolation`. Code, status and public message are
+  unchanged; code that matched the `Database(_)` variant itself for these
+  errors must also match `DatabaseTyped(_)`, or use `code()` /
+  `db_sqlstate()`.
+- **`run_in_isolated_tx` and `run_in_isolated_tx_with_retries` retry only
+  database errors**, with the same classifier as `@isolation` dispatch.
+  This changes code that never uses `@isolation`. Before, an error the body
+  built itself (`Validation`, `Internal`, `BadRequest`, ...) whose text
+  contained `40001`, `40P01`, `could not serialize access` or `deadlock
+  detected`, for example by echoing request data, was treated as a
+  serialization failure: the body ran again, with anything it did outside
+  the transaction, up to the retry budget, and the caller got the last
+  attempt's error. Now it is returned on the first attempt. The same holds
+  for a typed database error whose SQLSTATE is neither `40001` nor `40P01`
+  (a `RAISE EXCEPTION` or a failed cast echoing `40001`): its text is no
+  longer consulted. A typed `40001`/`40P01`, and an untyped `Database`
+  error whose text says so, are retried as before. This is a correctness
+  fix, not a preference: retrying a body because of what its own error
+  message says is never right.
+
+**What operators should do.**
+
+1. Find the procedures that declare the attribute: `grep -rn '@isolation'`
+   over your `.cstack` files.
+2. Review each body, and the `@computed` resolvers of its output, to make
+   sure they can run more than once. Everything done through the handle is
+   rolled back with a failed attempt. Anything else is repeated: HTTP
+   calls, e-mail, counters kept in `self`. Make those idempotent or move
+   them behind `@@emit`.
+3. Change `db: &Cratestack` to `db: &IsolatedCratestack` in those methods.
+   Replace `db.pool()` with `db.transaction(..)`. Remove any hand-written
+   `run_in_isolated_tx(db.pool(), ..)` wrapper; dispatch provides it now.
+4. Treat `409 TRANSACTION_ABORTED` (RPC `aborted`) from an `@isolation`
+   procedure as retryable: nothing the procedure wrote was committed, and
+   the same `Idempotency-Key` may be reused. A procedure that propagates
+   another procedure's abort does not answer with that code: it answers
+   `500 INTERNAL_ERROR`, recorded under the key and replayed, because it
+   may have committed work of its own; do not retry it blindly under a new
+   key. `409 CONFLICT` keeps its meaning.
+5. Size the pool for the procedures you declare. Each in-flight call holds
+   one connection for its whole transaction.
+
 ## 0.14.0 (2026-09-26)
 
 0.14.0 supersedes 0.13.1. 0.13.1 was published with the changes below, which

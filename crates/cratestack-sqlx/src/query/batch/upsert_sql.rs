@@ -4,7 +4,9 @@
 
 use cratestack_core::{CratestackContext, CratestackError};
 
-use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
+use crate::query::support::{
+    PolicyDb, classify_unique_violation, push_action_policy_query, push_bind_value,
+};
 use crate::{ModelDescriptor, SqlValue, cratestack_error_from_sqlx, sqlx};
 
 pub(super) async fn select_for_update_by_pk_value<'tx, M, PK>(
@@ -35,8 +37,9 @@ where
         .map_err(cratestack_error_from_sqlx)
 }
 
+/// The pool, or the `@isolation` transaction ([`PolicyDb::of`]).
 pub(super) async fn row_passes_update_policy<M, PK>(
-    policy_pool: &sqlx::PgPool,
+    policy: PolicyDb<'_>,
     descriptor: &'static ModelDescriptor<M, PK>,
     pk_value: &SqlValue,
     ctx: &CratestackContext,
@@ -56,11 +59,12 @@ pub(super) async fn row_passes_update_policy<M, PK>(
         ctx,
     );
 
-    let row: Option<(i32,)> = query
-        .build_query_as::<(i32,)>()
-        .fetch_optional(policy_pool)
-        .await
-        .map_err(cratestack_error_from_sqlx)?;
+    let built = query.build_query_as::<(i32,)>();
+    let row: Option<(i32,)> = match policy {
+        PolicyDb::Pool(pool) => built.fetch_optional(pool).await,
+        PolicyDb::Conn(conn) => built.fetch_optional(conn).await,
+    }
+    .map_err(cratestack_error_from_sqlx)?;
     Ok(row.is_some())
 }
 

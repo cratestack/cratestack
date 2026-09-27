@@ -5,16 +5,17 @@ use cratestack_core::{CratestackContext, CratestackError, Value};
 use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::{
-    CreateDefault, CreateDefaultType, ReadPolicy, ReadPredicate, SqlColumnValue, SqlValue, sqlx,
+    CreateDefault, CreateDefaultType, ReadPolicy, ReadPredicate, SqlColumnValue, SqlValue,
 };
 
 use super::create_eval::evaluate_create_policy_expr;
+use super::db::PolicyDb;
 use super::values::{
     auth_value_to_sql, find_column_value, sql_value_matches_literal, value_matches_auth_literal,
 };
 
 pub(crate) async fn evaluate_create_policies(
-    pool: &sqlx::PgPool,
+    mut db: PolicyDb<'_>,
     allow_policies: &[ReadPolicy],
     deny_policies: &[ReadPolicy],
     values: &[SqlColumnValue],
@@ -25,13 +26,13 @@ pub(crate) async fn evaluate_create_policies(
     }
 
     for policy in deny_policies {
-        if evaluate_create_policy_expr(pool, policy.expr, values, ctx).await? {
+        if evaluate_create_policy_expr(db.reborrow(), policy.expr, values, ctx).await? {
             return Ok(false);
         }
     }
 
     for policy in allow_policies {
-        if evaluate_create_policy_expr(pool, policy.expr, values, ctx).await? {
+        if evaluate_create_policy_expr(db.reborrow(), policy.expr, values, ctx).await? {
             return Ok(true);
         }
     }

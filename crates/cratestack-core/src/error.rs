@@ -12,8 +12,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::value::Value;
 
+mod aborted;
+// Doctest-only: `AbortOwnership::Claimed` cannot be forged from outside.
+#[cfg(doctest)]
+mod aborted_doctests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_aborted;
+
+pub use aborted::{AbortOwnership, TransactionAbort};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CratestackErrorResponse {
@@ -69,6 +77,20 @@ pub enum CratestackError {
     /// (`ConflictTyped`).
     #[error("conflict: {}", .0.detail)]
     ConflictTyped(DbErrorInfo),
+    /// 409 — an `@isolation` transaction was rolled back because of
+    /// concurrent updates (SQLSTATE `40001`/`40P01`, kept in
+    /// `info.sqlstate`) and its retries ran out. Nothing that transaction
+    /// wrote was committed, and the same request is expected to succeed when
+    /// sent again — unlike [`Self::Conflict`], which a retry repeats.
+    /// `info.detail` is the fixed public message; the driver's text is never
+    /// carried. It is final: it is never classified as retriable itself, so
+    /// an outer retry loop it propagates into does not run again because of
+    /// it. An idempotency layer releases the key instead of recording it
+    /// only when the dispatch that answered is the `@isolation` procedure
+    /// whose own retries ran out ([`TransactionAbort::ownership`],
+    /// [`Self::is_idempotency_replayable`]).
+    #[error("transaction aborted: {}", .0.info.detail)]
+    TransactionAborted(TransactionAbort),
     #[error("validation: {0}")]
     Validation(String),
     #[error("precondition failed: {0}")]
@@ -126,6 +148,7 @@ impl CratestackError {
             Self::Forbidden(_) => "FORBIDDEN",
             Self::NotFound(_) => "NOT_FOUND",
             Self::Conflict(_) | Self::ConflictTyped(_) => "CONFLICT",
+            Self::TransactionAborted(_) => "TRANSACTION_ABORTED",
             Self::Validation(_) => "VALIDATION_ERROR",
             Self::PreconditionFailed(_) => "PRECONDITION_FAILED",
             Self::Codec(_) => "CODEC_ERROR",
@@ -144,7 +167,9 @@ impl CratestackError {
             Self::UnsupportedMediaType(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Conflict(_) | Self::ConflictTyped(_) => StatusCode::CONFLICT,
+            Self::Conflict(_) | Self::ConflictTyped(_) | Self::TransactionAborted(_) => {
+                StatusCode::CONFLICT
+            }
             Self::Validation(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
             Self::Codec(_) => StatusCode::BAD_REQUEST,
@@ -181,6 +206,7 @@ impl CratestackError {
             // `classify_unique_violation`, which built `Conflict` from
             // `db_err.message()`).
             Self::ConflictTyped(info) => Cow::Borrowed(info.detail.as_str()),
+            Self::TransactionAborted(abort) => Cow::Borrowed(abort.info.detail.as_str()),
         }
     }
 
@@ -210,7 +236,9 @@ impl CratestackError {
                     Some(s.as_str())
                 }
             }
-            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => {
+            Self::DatabaseTyped(info)
+            | Self::ConflictTyped(info)
+            | Self::TransactionAborted(TransactionAbort { info, .. }) => {
                 if info.detail.is_empty() {
                     None
                 } else {
@@ -228,7 +256,9 @@ impl CratestackError {
     /// conversion site.
     pub fn db_sqlstate(&self) -> Option<&str> {
         match self {
-            Self::DatabaseTyped(info) | Self::ConflictTyped(info) => info.sqlstate.as_deref(),
+            Self::DatabaseTyped(info)
+            | Self::ConflictTyped(info)
+            | Self::TransactionAborted(TransactionAbort { info, .. }) => info.sqlstate.as_deref(),
             _ => None,
         }
     }

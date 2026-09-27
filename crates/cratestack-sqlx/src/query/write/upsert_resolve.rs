@@ -47,6 +47,7 @@
 
 use cratestack_core::{CratestackContext, CratestackError};
 
+use crate::query::support::PolicyDb;
 use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, SqlxRuntime, sqlx};
 
 use super::upsert_do_nothing_sql::upsert_returning_record_do_nothing;
@@ -86,7 +87,8 @@ where
     // transaction can turn this into an insert; the prediction is a
     // guarantee and the SQL below is byte-identical to pre-#745.
     if let Some(before) = before_record {
-        gate_update_policy(runtime, descriptor, conflict_columns, conflict_target, ctx).await?;
+        let policy = PolicyDb::of(runtime, tx);
+        gate_update_policy(policy, descriptor, conflict_columns, conflict_target, ctx).await?;
         let record =
             upsert_returning_record(&mut **tx, descriptor, insert_values, conflict_target).await?;
         return Ok(UpsertResolution {
@@ -126,7 +128,8 @@ where
     )
     .await?;
     if before.is_some() {
-        gate_update_policy(runtime, descriptor, conflict_columns, conflict_target, ctx).await?;
+        let policy = PolicyDb::of(runtime, tx);
+        gate_update_policy(policy, descriptor, conflict_columns, conflict_target, ctx).await?;
     }
     let record =
         upsert_returning_record(&mut **tx, descriptor, insert_values, conflict_target).await?;
@@ -159,14 +162,14 @@ where
 /// update a row it has no `update` permission on purely because a
 /// concurrent commit landed at the wrong moment.
 async fn gate_update_policy<M, PK>(
-    runtime: &SqlxRuntime,
+    policy: PolicyDb<'_>,
     descriptor: &'static ModelDescriptor<M, PK>,
     conflict_columns: &[(&'static str, SqlValue)],
     conflict_target: ConflictTarget,
     ctx: &CratestackContext,
 ) -> Result<(), CratestackError> {
     if row_passes_update_policy(
-        runtime.pool(),
+        policy,
         descriptor,
         conflict_columns,
         conflict_target.predicate(),

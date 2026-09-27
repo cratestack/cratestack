@@ -17,7 +17,8 @@ use crate::shared::{ident, to_snake_case};
 use crate::transport::procedure_transport_capabilities_tokens;
 pub(crate) use dispatch_tail::compose_tail_tokens;
 use dispatch_tail::procedure_dispatch_tail_tokens;
-use invoke_call::procedure_invoke_call_tokens;
+pub(crate) use invoke_call::isolated_attempt_body;
+use invoke_call::procedure_invoke_block_tokens;
 use route_attrs::{
     procedure_axum_route_tokens, procedure_deprecation_header_tokens, procedure_route_path,
     procedure_success_status_tokens,
@@ -44,7 +45,8 @@ pub(crate) fn generate_procedure_axum_handler(
     } else {
         quote! { ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, #success_status, result) }
     };
-    let invoke_call = procedure_invoke_call_tokens(procedure, &method_ident);
+    let invoke_block =
+        procedure_invoke_block_tokens(procedure, &module_ident, &method_ident, bearing);
     let dispatch_tail = procedure_dispatch_tail_tokens(
         procedure,
         procedure_name,
@@ -141,20 +143,7 @@ pub(crate) fn generate_procedure_axum_handler(
                     return #result_encoder;
                 }
             };
-            let registry = state.registry.clone();
-            let db = state.db.clone();
-            let auth_db = db.clone();
-            let call_args = args.clone();
-            let call_ctx = ctx.clone();
-            // cratestack#512: `invoke_with_db` hands the closure an
-            // `Authorized` witness only it could construct (via the
-            // `authorize_with_db` call inside it) — `#invoke_call` threads
-            // that witness into the `ProcedureRegistry` method call, which
-            // is the only place a value of that type is allowed to end up.
-            let result = super::procedures::#module_ident::invoke_with_db(&auth_db, &args, &ctx, |authorized| async move {
-                #invoke_call
-            })
-            .await;
+            #invoke_block
 
             #dispatch_tail
         }

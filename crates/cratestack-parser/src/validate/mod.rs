@@ -9,6 +9,7 @@ mod computed_params;
 mod computed_resolver_names;
 mod fields;
 mod index_attribute;
+mod isolation_scope;
 mod key_relation_attributes;
 mod mcp;
 mod misspelled_attributes;
@@ -301,6 +302,7 @@ fn validate_procedures(
             },
         )?;
         validate_procedure_isolation_attribute(procedure)?;
+        isolation_scope::validate_procedure_isolation_scope(procedure, schema)?;
         validate_procedure_api_version_attribute(procedure)?;
         validate_procedure_deprecated_attribute(procedure)?;
         validate_procedure_stream_attribute(procedure)?;

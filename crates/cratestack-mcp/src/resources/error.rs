@@ -46,6 +46,9 @@ pub(crate) fn from_cratestack(uri: &str, error: CratestackError) -> ErrorData {
         cratestack_detail = error.detail().unwrap_or(""),
         "cratestack mcp resource read failed",
     );
+    // A resource read owns no `@isolation` attempt: an abort reaching it is
+    // answered as `INTERNAL_ERROR` (docs/design/procedure-isolation.md §6).
+    let error = error.disowned_transaction_abort().unwrap_or(error);
     match error {
         CratestackError::NotFound(_) | CratestackError::Forbidden(_) => not_found(),
         CratestackError::Validation(_) | CratestackError::BadRequest(_) => {

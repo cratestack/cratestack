@@ -20,6 +20,7 @@
 mod conditions;
 mod create;
 mod create_eval;
+mod db;
 mod decimal_bind;
 mod filter;
 mod filter_subkinds;
@@ -41,6 +42,7 @@ pub(crate) use conditions::{ReadPolicyKind, authorize_record_action, push_scoped
 #[cfg(test)]
 pub(crate) use create::evaluate_input_predicate as evaluate_input_predicate_for_tests;
 pub(crate) use create::{apply_create_defaults, evaluate_create_policies};
+pub(crate) use db::PolicyDb;
 pub(crate) use filter::{push_filter_expr_query, push_filter_query};
 pub(crate) use order::push_order_and_paging;
 pub(crate) use policy::{push_action_policy_query, push_policy_expr_query};
@@ -49,4 +51,4 @@ pub(crate) use values::{
     auth_value_to_sql, find_column_value, push_bind_value, sql_value_matches_literal,
     value_matches_auth_literal,
 };
-pub(crate) use version_probe::probe_current_version;
+pub(crate) use version_probe::no_row_error;

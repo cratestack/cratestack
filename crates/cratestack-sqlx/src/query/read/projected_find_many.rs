@@ -96,12 +96,17 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
     where
         M: crate::FromPartialPgRow,
     {
+        // Inside an `@isolation` procedure: run on its transaction
+        // (docs/design/procedure-isolation.md §4).
+        if let Some(bound) = self.runtime.bound() {
+            return crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx));
+        }
         let mut query = self.build_query(ctx);
         let rows = query
             .build()
             .fetch_all(self.runtime.pool())
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         decode_many::<M>(rows, &self.selected)
     }
 
@@ -118,7 +123,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindMany<'a, M, PK> {
             .build()
             .fetch_all(&mut **tx)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         decode_many::<M>(rows, &self.selected)
     }
 }
@@ -137,7 +142,7 @@ where
                     value,
                     selected: selected.to_vec(),
                 })
-                .map_err(|error| CratestackError::Database(error.to_string()))
+                .map_err(crate::error::cratestack_error_from_sqlx)
         })
         .collect()
 }

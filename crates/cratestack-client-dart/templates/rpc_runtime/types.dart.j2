@@ -128,6 +128,11 @@ class CratestackRpcErrorCodes {
   static const String permissionDenied = 'permission_denied';
   static const String notFound = 'not_found';
   static const String conflict = 'conflict';
+  /// An `@isolation` procedure's transaction was rolled back after
+  /// repeated concurrent-update conflicts. Nothing was committed; sending
+  /// the same call again (even under the same `Idempotency-Key`) is
+  /// expected to succeed. Unlike [conflict], which a retry repeats.
+  static const String aborted = 'aborted';
   static const String failedPrecondition = 'failed_precondition';
   static const String resourceExhausted = 'resource_exhausted';
   static const String unavailable = 'unavailable';

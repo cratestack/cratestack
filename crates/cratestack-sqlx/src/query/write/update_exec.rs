@@ -2,13 +2,19 @@
 //! paths. Builds `UPDATE ... SET ... WHERE pk = $X [AND version = $Y]
 //! AND policy(...) RETURNING ...`, with version-mismatch detection via
 //! a read-policy probe.
+//!
+//! Two entry points, differing only in where that probe runs:
+//! [`update_record_with_executor`] (public; the probe runs on the pool it
+//! is handed) and [`update_record_in_conn`] (the probe runs on the
+//! statement's own connection inside an `@isolation` procedure, on the
+//! pool otherwise; see docs/design/procedure-isolation.md §4.1).
 
 use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{
-    classify_unique_violation, probe_current_version, push_action_policy_query, push_bind_value,
+    PolicyDb, classify_unique_violation, no_row_error, push_action_policy_query, push_bind_value,
 };
-use crate::{ModelDescriptor, UpdateModelInput, sqlx};
+use crate::{ModelDescriptor, SqlColumnValue, SqlxRuntime, UpdateModelInput, sqlx};
 
 pub async fn update_record_with_executor<'e, E, M, PK, I>(
     executor: E,
@@ -25,6 +31,48 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
 {
+    let values = update_values(input)?;
+    let probe_id = id.clone();
+    match update_returning_record(executor, descriptor, id, &values, ctx, if_match).await? {
+        Some(record) => Ok(record),
+        None => Err(no_row_error(policy_pool, descriptor, probe_id, ctx, if_match, "update").await),
+    }
+}
+
+/// [`update_record_with_executor`] for a write that runs on `conn`, with
+/// the version/policy probe wherever [`PolicyDb::of`] puts it.
+pub(crate) async fn update_record_in_conn<M, PK, I>(
+    runtime: &SqlxRuntime,
+    conn: &mut sqlx::PgConnection,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    input: I,
+    ctx: &CratestackContext,
+    if_match: Option<i64>,
+) -> Result<M, CratestackError>
+where
+    I: UpdateModelInput<M>,
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
+    PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+{
+    let values = update_values(input)?;
+    let probe_id = id.clone();
+    match update_returning_record(&mut *conn, descriptor, id, &values, ctx, if_match).await? {
+        Some(record) => Ok(record),
+        None => Err(match PolicyDb::of(runtime, conn) {
+            PolicyDb::Pool(pool) => {
+                no_row_error(pool, descriptor, probe_id, ctx, if_match, "update").await
+            }
+            PolicyDb::Conn(conn) => {
+                no_row_error(conn, descriptor, probe_id, ctx, if_match, "update").await
+            }
+        }),
+    }
+}
+
+fn update_values<M, I: UpdateModelInput<M>>(
+    input: I,
+) -> Result<Vec<SqlColumnValue>, CratestackError> {
     input.validate()?;
     let values = input.sql_values();
     if values.is_empty() {
@@ -32,29 +80,17 @@ where
             "update input must contain at least one changed column".to_owned(),
         ));
     }
-
-    update_returning_record(
-        executor,
-        policy_pool,
-        descriptor,
-        id,
-        &values,
-        ctx,
-        if_match,
-    )
-    .await
+    Ok(values)
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn update_returning_record<'e, E, M, PK>(
     executor: E,
-    policy_pool: &sqlx::PgPool,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
     values: &[crate::SqlColumnValue],
     ctx: &CratestackContext,
     if_match: Option<i64>,
-) -> Result<M, CratestackError>
+) -> Result<Option<M>, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -82,7 +118,6 @@ where
         .push(" WHERE ")
         .push(descriptor.primary_key)
         .push(" = ");
-    let id_for_probe = id.clone();
     query.push_bind(id);
     if let (Some(version_col), Some(expected)) = (version_column, if_match) {
         query.push(" AND ").push(version_col).push(" = ");
@@ -99,32 +134,9 @@ where
         .push(" RETURNING ")
         .push(descriptor.select_projection());
 
-    let outcome = query
+    query
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(classify_unique_violation)?;
-    match outcome {
-        Some(record) => Ok(record),
-        None => {
-            // If this is a versioned update, distinguish "stale
-            // version" from a true policy denial via the read-policy
-            // probe. If the caller can't see the row, we keep
-            // returning Forbidden so policy denials remain
-            // indistinguishable from missing rows.
-            if let (Some(version_col), Some(expected)) = (version_column, if_match)
-                && let Some(current) =
-                    probe_current_version(policy_pool, descriptor, id_for_probe, version_col, ctx)
-                        .await?
-                && current != expected
-            {
-                return Err(CratestackError::PreconditionFailed(format!(
-                    "version mismatch: expected {expected}, found {current}",
-                )));
-            }
-            Err(CratestackError::Forbidden(
-                "update policy denied this operation".to_owned(),
-            ))
-        }
-    }
+        .map_err(classify_unique_violation)
 }

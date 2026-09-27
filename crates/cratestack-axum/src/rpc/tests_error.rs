@@ -27,6 +27,8 @@ fn cratestack_error_code_to_rpc_code_covers_every_cratestack_error_variant() {
         CratestackError::Database("x".into()),
         CratestackError::Internal("x".into()),
         CratestackError::Unavailable("x".into()),
+        CratestackError::TooManyRequests("x".into()),
+        CratestackError::TransactionAborted(Default::default()),
     ] {
         let cratestack_code = variant.code();
         let direct = rpc_code(&variant);
@@ -91,6 +93,12 @@ fn rpc_code_maps_each_cratestack_error_variant() {
         "not_found"
     );
     assert_eq!(rpc_code(&CratestackError::Conflict("x".into())), "conflict");
+    // Its own code, never `conflict`: a client must be able to tell an
+    // exhausted `@isolation` retry (send again) from a unique violation.
+    assert_eq!(
+        rpc_code(&CratestackError::TransactionAborted(Default::default())),
+        "aborted"
+    );
     assert_eq!(
         rpc_code(&CratestackError::Validation("x".into())),
         "invalid_argument"

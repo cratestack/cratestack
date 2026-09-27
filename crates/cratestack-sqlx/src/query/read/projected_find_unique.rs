@@ -45,6 +45,11 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
         M: crate::FromPartialPgRow,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        // Inside an `@isolation` procedure: run on its transaction
+        // (docs/design/procedure-isolation.md §4).
+        if let Some(bound) = self.runtime.bound() {
+            return crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx));
+        }
         let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
         query
             .push(self.descriptor.select_projection_subset(&self.selected))
@@ -67,7 +72,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
             .build()
             .fetch_optional(self.runtime.pool())
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         decode_optional(row, &self.selected)
     }
 
@@ -102,7 +107,7 @@ impl<'a, M: 'static, PK: 'static> ProjectedFindUnique<'a, M, PK> {
             .build()
             .fetch_optional(&mut **tx)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         decode_optional(row, &self.selected)
     }
 }
@@ -117,7 +122,7 @@ where
     match row {
         Some(row) => {
             let value = M::decode_partial_pg_row(&row, selected)
-                .map_err(|error| CratestackError::Database(error.to_string()))?;
+                .map_err(crate::error::cratestack_error_from_sqlx)?;
             Ok(Some(cratestack_sql::Projection {
                 value,
                 selected: selected.to_vec(),

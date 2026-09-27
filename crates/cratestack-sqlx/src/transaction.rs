@@ -91,6 +91,16 @@ use crate::sqlx;
 /// `db.transaction(...)` call site requires it.
 pub struct Tx(sqlx::Transaction<'static, sqlx::Postgres>);
 
+impl Tx {
+    pub(crate) fn new(inner: sqlx::Transaction<'static, sqlx::Postgres>) -> Self {
+        Self(inner)
+    }
+
+    pub(crate) fn into_inner(self) -> sqlx::Transaction<'static, sqlx::Postgres> {
+        self.0
+    }
+}
+
 impl Deref for Tx {
     type Target = sqlx::Transaction<'static, sqlx::Postgres>;
 
@@ -128,10 +138,18 @@ impl SqlxRuntime {
     /// `@@emit` outbox on its own** — see the module doc comment's
     /// "Composing through here does not close the `AuditSink`/outbox gap"
     /// section (cratestack#534) for why that can't be made automatic here.
+    ///
+    /// Inside an `@isolation` procedure (a runtime bound to the procedure's
+    /// transaction) this is a `SAVEPOINT` instead of a new transaction, and
+    /// `body` receives that isolated transaction itself — see
+    /// [`crate::bound`] and docs/design/procedure-isolation.md §7.
     pub async fn transaction<F, T>(&self, body: F) -> Result<T, CratestackError>
     where
         F: AsyncFnOnce(&mut Tx) -> Result<T, CratestackError>,
     {
+        if let Some(bound) = self.bound() {
+            return crate::bound::nested_in_bound(bound, body).await;
+        }
         let inner = self
             .pool()
             .begin()

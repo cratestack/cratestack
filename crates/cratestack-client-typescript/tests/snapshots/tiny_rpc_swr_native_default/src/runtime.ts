@@ -133,6 +133,11 @@ export type RpcErrorCode =
   | "permission_denied"
   | "not_found"
   | "conflict"
+  /** An `@isolation` procedure's transaction was rolled back after
+   *  repeated concurrent-update conflicts. Nothing was committed; sending
+   *  the same call again (even under the same `Idempotency-Key`) is
+   *  expected to succeed. Unlike `conflict`, which a retry repeats. */
+  | "aborted"
   | "failed_precondition"
   | "resource_exhausted"
   | "unavailable"

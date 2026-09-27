@@ -78,6 +78,13 @@ use crate::descriptor::SqlxRuntime;
 /// dispatch's ordering guarantees and per-event error semantics are a
 /// design question of their own, not a cleanup.
 pub async fn dispatch_audit_sink(runtime: &SqlxRuntime, events: &[AuditEvent]) {
+    // Inside an `@isolation` procedure nothing has committed yet, and the
+    // attempt may still be rolled back and retried: dispatch once, after
+    // the committed attempt (docs/design/procedure-isolation.md §6).
+    if let Some(bound) = runtime.bound() {
+        bound.defer_audit(events.iter().cloned());
+        return;
+    }
     for event in events {
         if let Err(error) = runtime.audit_sink().record(event).await {
             tracing::warn!(

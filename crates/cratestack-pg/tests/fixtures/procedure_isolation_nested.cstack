@@ -1,0 +1,106 @@
+// GHSA-r67q-4qqq-g9gm: what an `@isolation` retry loop may treat as its own
+// — which errors are retriable, which aborts are final, a nested
+// `@isolation` call joining the outer attempt, and which dispatch owns an
+// exhausted abort under an `Idempotency-Key`.
+// `tests/procedure_isolation_nested.rs` drives it over REST;
+// `procedure_isolation_nested_rpc.cstack` is the same schema on
+// `transport rpc`. docs/design/procedure-isolation.md §5, §6, §7.1.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model NestAccount {
+  id Int @id
+  balance Int
+
+  @@audit
+  @@allow("read", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+type Report {
+  level String
+}
+
+type Transfer {
+  accountId Int
+  peerId Int
+  amount Int
+}
+
+// `innerTx` is resolved by calling `creditRead` (or `creditStrict`) through
+// its `invoke_with_db`, with the resolver's attempt-bound `&Cratestack`.
+type Joined {
+  accountId Int
+  peerId Int
+  amount Int
+  outerTx String
+  innerTx String @computed
+}
+
+// Echoes `nonce` into `RAISE EXCEPTION` (SQLSTATE P0001).
+mutation procedure raiseEcho(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Casts `nonce` to bigint (SQLSTATE 22P02 for "40001x").
+mutation procedure castEcho(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Every attempt fails with a real SQLSTATE 40001.
+mutation procedure alwaysConflict(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Calls `alwaysConflict` in its own transaction, through a pool-backed
+// handle, and propagates the exhausted abort.
+mutation procedure propagateAbort(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// No `@isolation`: debits `accountId` on the pool (committed), then calls
+// `alwaysConflict` and propagates its exhausted abort.
+mutation procedure debitThenAbort(args: Transfer): Report
+  @allow(auth() != null)
+
+// Debits `accountId`; `innerTx` credits `peerId` through a nested call.
+mutation procedure joinOuter(args: Transfer): Joined
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+mutation procedure creditRead(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure creditStrict(args: Transfer): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Joined concurrently by the `innerTx` resolver (`tokio::join!`): the first
+// credits `peerId` after the second has begun, and the second then fails.
+mutation procedure creditAfterPeer(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure failAfterPeer(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure debitThenFail(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+mutation procedure cancelTransaction(args: Transfer): Report
+  @isolation("read_committed")
+  @allow(auth() != null)

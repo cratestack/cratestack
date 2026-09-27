@@ -84,12 +84,17 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
     where
         T: Send + Unpin + for<'r> sqlx::Decode<'r, sqlx::Postgres> + sqlx::Type<sqlx::Postgres>,
     {
+        // Inside an `@isolation` procedure: run on its transaction
+        // (docs/design/procedure-isolation.md §4).
+        if let Some(bound) = self.runtime.bound() {
+            return crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx));
+        }
         let mut query = self.build_query(ctx);
         let value: (Option<T>,) = query
             .build_query_as::<(Option<T>,)>()
             .fetch_one(self.runtime.pool())
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         Ok(value.0)
     }
 
@@ -106,7 +111,7 @@ impl<'a, M: 'static, PK: 'static> AggregateColumn<'a, M, PK> {
             .build_query_as::<(Option<T>,)>()
             .fetch_one(&mut **tx)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         Ok(value.0)
     }
 }

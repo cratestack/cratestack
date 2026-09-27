@@ -75,16 +75,19 @@ pub mod sqlx {
 }
 
 mod audit;
+mod bound;
 mod delegate;
 mod descriptor;
 mod error;
 mod idempotency;
+mod isolated_run;
 mod isolation;
 mod json;
 mod migrations;
 mod partial_row;
 mod query;
 mod render;
+mod retriable;
 #[cfg(feature = "postgis")]
 mod spatial;
 #[cfg(test)]

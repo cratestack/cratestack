@@ -45,10 +45,97 @@
 //! `crate::axum::procedure::dispatch_tail` for where the two paths
 //! (buffered vs. streamed) fork after this call.
 
+use std::collections::BTreeSet;
+
 use cratestack_core::Procedure;
 use quote::quote;
 
-use crate::shared::is_stream_procedure;
+use crate::computed::procedure_output_composition;
+use crate::shared::{is_stream_procedure, procedure_isolation};
+
+use super::dispatch_tail::isolated_compose_tokens;
+
+/// The body of an `@isolation` procedure's attempt closure, and the
+/// `let resolvers = ..;` it needs outside it. Shared with MCP's `execute`
+/// arm. A computed-bearing output is composed here, inside the attempt
+/// (docs/design/procedure-isolation.md §6); any other output is the
+/// registry call alone, as before.
+pub(crate) fn isolated_attempt_body(
+    procedure: &Procedure,
+    method_ident: &syn::Ident,
+    bearing: &BTreeSet<String>,
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let call = quote! { registry.#method_ident(&tx_db, &call_ctx, call_args, authorized).await };
+    let compose = isolated_compose_tokens(procedure_output_composition(
+        &procedure.return_type,
+        bearing,
+    ));
+    if compose.is_empty() {
+        return (quote! {}, call);
+    }
+    (
+        quote! { let resolvers = state.resolvers.clone(); },
+        quote! {
+            let result = #call;
+            #compose
+            result
+        },
+    )
+}
+
+/// The `let result = ...invoke_with_db(..).await;` block of a procedure's
+/// shared REST/RPC dispatch handler.
+///
+/// Without `@isolation` these are the tokens the handler has always had
+/// (the `PINNED_*_DISPATCH` tests hold them byte-for-byte). With it, the
+/// closure is the `FnOnce(IsolatedCratestack, Authorized) + Clone` the
+/// isolated `invoke_with_db` takes: it receives the transaction-bound
+/// handle — not the pool-backed `state.db` — and is cloned per attempt
+/// because a serialization failure runs it again
+/// (docs/design/procedure-isolation.md §2, §5). `@stream` cannot combine
+/// with `@isolation` (the parser refuses it), so the isolated branch never
+/// needs the stream wrapper.
+pub(super) fn procedure_invoke_block_tokens(
+    procedure: &Procedure,
+    module_ident: &syn::Ident,
+    method_ident: &syn::Ident,
+    bearing: &BTreeSet<String>,
+) -> proc_macro2::TokenStream {
+    if procedure_isolation(procedure).is_some() {
+        let (resolvers, body) = isolated_attempt_body(procedure, method_ident, bearing);
+        return quote! {
+            let registry = state.registry.clone();
+            #resolvers
+            let db = state.db.clone();
+            let call_args = args.clone();
+            let call_ctx = ctx.clone();
+            // Only this dispatch's own exhausted retries may release the
+            // `Idempotency-Key` (docs/design/procedure-isolation.md §6).
+            let result = super::procedures::#module_ident::invoke_with_db(&db, &args, &ctx, move |tx_db, authorized| async move {
+                #body
+            })
+            .await
+            .map_err(::cratestack::CratestackError::__generated_claim_transaction_abort);
+        };
+    }
+    let invoke_call = procedure_invoke_call_tokens(procedure, method_ident);
+    quote! {
+        let registry = state.registry.clone();
+        let db = state.db.clone();
+        let auth_db = db.clone();
+        let call_args = args.clone();
+        let call_ctx = ctx.clone();
+        // cratestack#512: `invoke_with_db` hands the closure an
+        // `Authorized` witness only it could construct (via the
+        // `authorize_with_db` call inside it) — `#invoke_call` threads
+        // that witness into the `ProcedureRegistry` method call, which
+        // is the only place a value of that type is allowed to end up.
+        let result = super::procedures::#module_ident::invoke_with_db(&auth_db, &args, &ctx, |authorized| async move {
+            #invoke_call
+        })
+        .await;
+    }
+}
 
 /// Token stream for the call inside `invoke_with_db`'s closure that
 /// actually invokes the registry method: `registry.<method>(&db, &ctx,
@@ -60,7 +147,7 @@ use crate::shared::is_stream_procedure;
 /// that only its own `authorize_with_db` call could have constructed, and
 /// the sole reason this call site (unlike any code outside the closure)
 /// is allowed to make it at all.
-pub(super) fn procedure_invoke_call_tokens(
+fn procedure_invoke_call_tokens(
     procedure: &Procedure,
     method_ident: &syn::Ident,
 ) -> proc_macro2::TokenStream {

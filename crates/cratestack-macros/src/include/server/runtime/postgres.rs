@@ -164,6 +164,15 @@ pub(super) fn build_runtime_block(
                 self
             }
 
+            /// Retries an `@isolation` procedure gets after a serialization
+            /// failure or deadlock before the call fails with `409
+            /// TRANSACTION_ABORTED` (default 3; `0` disables retry). See
+            /// docs/design/procedure-isolation.md §5.
+            pub fn with_isolation_max_retries(mut self, max_retries: u32) -> Self {
+                self.runtime = self.runtime.with_isolation_max_retries(max_retries);
+                self
+            }
+
             pub fn build(self) -> Cratestack {
                 Cratestack {
                     runtime: self.runtime,

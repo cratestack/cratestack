@@ -14,8 +14,8 @@
 
 use cratestack_core::{CratestackContext, CratestackError};
 
-use crate::query::support::{probe_current_version, push_action_policy_query};
-use crate::{ModelDescriptor, cratestack_error_from_sqlx, sqlx};
+use crate::query::support::{PolicyDb, no_row_error, push_action_policy_query};
+use crate::{ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 pub(super) async fn delete_returning_record<'e, E, M, PK>(
     executor: E,
@@ -25,6 +25,55 @@ pub(super) async fn delete_returning_record<'e, E, M, PK>(
     ctx: &CratestackContext,
     if_match: Option<i64>,
 ) -> Result<M, CratestackError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+    PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+{
+    let probe_id = id.clone();
+    match delete_returning_row(executor, descriptor, id, ctx, if_match).await? {
+        Some(record) => Ok(record),
+        None => Err(no_row_error(policy_pool, descriptor, probe_id, ctx, if_match, "delete").await),
+    }
+}
+
+/// [`delete_returning_record`] for a statement that runs on `conn`, with
+/// the version/policy probe wherever [`PolicyDb::of`] puts it: on `conn`
+/// inside an `@isolation` procedure, on the pool otherwise
+/// (docs/design/procedure-isolation.md §4.1).
+pub(super) async fn delete_record_in_conn<M, PK>(
+    runtime: &SqlxRuntime,
+    conn: &mut sqlx::PgConnection,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    ctx: &CratestackContext,
+    if_match: Option<i64>,
+) -> Result<M, CratestackError>
+where
+    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
+    PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
+{
+    let probe_id = id.clone();
+    match delete_returning_row(&mut *conn, descriptor, id, ctx, if_match).await? {
+        Some(record) => Ok(record),
+        None => Err(match PolicyDb::of(runtime, conn) {
+            PolicyDb::Pool(pool) => {
+                no_row_error(pool, descriptor, probe_id, ctx, if_match, "delete").await
+            }
+            PolicyDb::Conn(conn) => {
+                no_row_error(conn, descriptor, probe_id, ctx, if_match, "delete").await
+            }
+        }),
+    }
+}
+
+async fn delete_returning_row<'e, E, M, PK>(
+    executor: E,
+    descriptor: &'static ModelDescriptor<M, PK>,
+    id: PK,
+    ctx: &CratestackContext,
+    if_match: Option<i64>,
+) -> Result<Option<M>, CratestackError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
@@ -57,7 +106,6 @@ where
             query.push(descriptor.primary_key).push(" = ");
         }
     }
-    let id_for_probe = id.clone();
     query.push_bind(id);
     if let (Some(version_col), Some(expected)) = (version_column, if_match) {
         query.push(" AND ").push(version_col).push(" = ");
@@ -74,31 +122,9 @@ where
         .push(" RETURNING ")
         .push(descriptor.select_projection());
 
-    let outcome = query
+    query
         .build_query_as::<M>()
         .fetch_optional(executor)
         .await
-        .map_err(cratestack_error_from_sqlx)?;
-    match outcome {
-        Some(record) => Ok(record),
-        None => {
-            // Same disambiguation as the update path: a versioned
-            // delete that matched no row might be a stale `If-Match`
-            // rather than a policy denial, so re-probe under the read
-            // policy before falling back to the generic Forbidden.
-            if let (Some(version_col), Some(expected)) = (version_column, if_match)
-                && let Some(current) =
-                    probe_current_version(policy_pool, descriptor, id_for_probe, version_col, ctx)
-                        .await?
-                && current != expected
-            {
-                return Err(CratestackError::PreconditionFailed(format!(
-                    "version mismatch: expected {expected}, found {current}",
-                )));
-            }
-            Err(CratestackError::Forbidden(
-                "delete policy denied this operation".to_owned(),
-            ))
-        }
-    }
+        .map_err(cratestack_error_from_sqlx)
 }

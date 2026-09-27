@@ -83,7 +83,9 @@ serde_json.workspace = true
 sha2.workspace = true
 sqlx-core.workspace = true
 sqlx-postgres.workspace = true
-tokio.workspace = true
+# `sync` for the `@isolation` transaction lock, `time` for its retry
+# backoff (docs/design/procedure-isolation.md).
+tokio = { workspace = true, features = ["sync", "time"] }
 tracing.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }

@@ -110,12 +110,22 @@ where
     push_action_policy_query(&mut query, allow_policies, deny_policies, ctx);
     query.push(" LIMIT 1");
 
-    let authorized = query
-        .build_query_scalar::<i32>()
-        .fetch_optional(runtime.pool())
-        .await
-        .map_err(|error| CratestackError::Database(error.to_string()))?
-        .is_some();
+    let built = query.build_query_scalar::<i32>();
+    // `@authorize` inside an `@isolation` procedure decides on the
+    // procedure's own snapshot (docs/design/procedure-isolation.md §4).
+    let authorized = match runtime.bound() {
+        Some(bound) => crate::bound::in_bound_savepoint!(bound, |sp| async {
+            built
+                .fetch_optional(&mut **sp)
+                .await
+                .map_err(crate::error::cratestack_error_from_sqlx)
+        })?,
+        None => built
+            .fetch_optional(runtime.pool())
+            .await
+            .map_err(crate::error::cratestack_error_from_sqlx)?,
+    }
+    .is_some();
 
     if authorized {
         Ok(())

@@ -1,0 +1,111 @@
+// GHSA-r67q-4qqq-g9gm, second pass: ways an `@isolation` procedure's work
+// could leave, or silently lose, its isolated transaction.
+// `tests/procedure_isolation_escape.rs` drives it.
+// docs/design/procedure-isolation.md.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+// Its own table (`esc_accounts`), so nothing else in a shared test
+// database collides with it.
+model EscAccount {
+  id Int @id
+  balance Int
+
+  @@audit
+  @@emit(updated)
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+type Report {
+  level String
+}
+
+type Withdrawal {
+  accountId Int
+  amount Int
+}
+
+type Transfer {
+  fromId Int
+  toId Int
+  amount Int
+}
+
+type Receipt {
+  before Int
+  after Int
+}
+
+// Debits through the handle, then a nested `transaction` whose raw
+// statement fails and is swallowed inside and outside; reports success.
+mutation procedure swallowBrokenNested(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Debits, then runs a raw `COMMIT` through the nested `tx`.
+mutation procedure rawCommit(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Tries to lower its own level through the nested `tx`.
+mutation procedure downgrade(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Two rows, locked in argument order: two opposite transfers deadlock.
+mutation procedure transferRc(args: Transfer): Receipt
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+// Every door the handle has, in one attempt.
+mutation procedure everything(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+  @authorize(EscAccount, update, args.accountId)
+
+// Debits, then waits until the caller gives up.
+mutation procedure stall(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Read, then debit inside a nested `transaction`, and ignore what that
+// returns: a 40001 the closure returned must still retry the attempt.
+mutation procedure withdrawNestedRr(args: Withdrawal): Receipt
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+// Refuses with a message that happens to contain "40001".
+mutation procedure refuseLoudly(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Every attempt fails with a real SQLSTATE 40001.
+mutation procedure alwaysConflict(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Reads `fromId`, debits `toId`, and on its first attempt waits while the
+// test commits the mirror image: that attempt's COMMIT fails with 40001.
+mutation procedure commitTimeConflict(args: Transfer): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Debits, then a nested `transaction` runs a raw `ROLLBACK` and returns an
+// error the body ignores.
+mutation procedure rawRollbackSwallowed(args: Withdrawal): Receipt
+  @isolation("serializable")
+  @allow(auth() != null)

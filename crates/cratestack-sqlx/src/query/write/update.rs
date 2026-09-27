@@ -9,7 +9,7 @@ use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
 
 use super::preview::render_update_preview_sql;
-use super::update_exec::update_record_with_executor;
+use super::update_exec::update_record_in_conn;
 
 #[derive(Debug, Clone)]
 pub struct UpdateRecord<'a, M: 'static, PK: 'static> {
@@ -86,7 +86,7 @@ where
             ensure_event_outbox_table(&mut **tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(self.runtime).await?;
+            ensure_audit_table(self.runtime, &mut **tx).await?;
         }
         let before_record = if audit_enabled {
             fetch_for_audit(&mut **tx, self.descriptor, self.id.clone()).await?
@@ -96,9 +96,9 @@ where
         let before_snapshot = before_record
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
-        let record = update_record_with_executor(
-            &mut **tx,
-            self.runtime.pool(),
+        let record = update_record_in_conn(
+            self.runtime,
+            tx,
             self.descriptor,
             self.id,
             self.input,
@@ -139,6 +139,16 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        // Inside an `@isolation` procedure: run on its transaction and
+        // defer the post-commit fan-out (docs/design/procedure-isolation.md
+        // §4, §6).
+        if let Some(bound) = self.runtime.bound() {
+            let emits = self
+                .descriptor
+                .emits(cratestack_core::ModelEventKind::Updated);
+            let outcome = crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx))?;
+            return Ok(bound.settle(outcome, emits));
+        }
         super::update_run::run_update(
             self.runtime,
             self.descriptor,

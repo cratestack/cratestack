@@ -76,6 +76,16 @@ where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        // Inside an `@isolation` procedure: run on its transaction and
+        // defer the post-commit fan-out (docs/design/procedure-isolation.md
+        // §4, §6).
+        if let Some(bound) = self.runtime.bound() {
+            let emits = self
+                .descriptor
+                .emits(cratestack_core::ModelEventKind::Created);
+            let outcome = crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx))?;
+            return Ok(bound.settle(outcome, emits));
+        }
         let runtime = self.runtime;
         let mut tx = runtime
             .pool()

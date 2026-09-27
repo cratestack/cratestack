@@ -1,0 +1,97 @@
+// Policy reads inside an `@isolation` procedure run on the procedure's own
+// transaction (docs/design/procedure-isolation.md §4.1, GHSA-r67q-4qqq-g9gm).
+// `tests/procedure_isolation_policy.rs` drives it; the pool-side behaviour
+// every other caller keeps is `tests/policy_db_caller_tx.rs`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+model IsoPolOwner {
+  id Int @id
+  ownerId Int
+
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", ownerId == auth().id)
+  @@allow("update", ownerId == auth().id)
+}
+
+// Create policy reads the parent row through a relation (an `EXISTS` probe).
+model IsoPolItem {
+  id Int @id
+  ownerRowId Int
+  owner IsoPolOwner @relation(fields:[ownerRowId],references:[id])
+
+  @@allow("read", owner.ownerId == auth().id)
+  @@allow("create", owner.ownerId == auth().id)
+}
+
+// The same shape, audited: `.run()` bootstraps `cratestack_audit` first.
+model IsoPolAudited {
+  id Int @id
+  ownerRowId Int
+  owner IsoPolOwner @relation(fields:[ownerRowId],references:[id])
+
+  @@audit
+  @@allow("read", owner.ownerId == auth().id)
+  @@allow("create", owner.ownerId == auth().id)
+}
+
+// Self-relation, so one `batch_create` can hold an item and its parent.
+model IsoPolFolder {
+  id Int @id
+  ownerId Int
+  parentId Int
+  parent IsoPolFolder @relation(fields:[parentId],references:[id])
+
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", parent.ownerId == auth().id)
+}
+
+type Step {
+  id Int
+}
+
+type Done {
+  ok Int
+  err Int
+}
+
+// Creates owner `id` (owned by the caller), then item `id` under it.
+mutation procedure parentThenChild(args: Step): Done
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Hands owner `id` to someone else, then creates item `id` under it.
+mutation procedure handOffThenChild(args: Step): Done
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// `batch_create` of folder `id + 1` (parent 1) and `id + 2` (parent `id + 1`).
+mutation procedure batchChain(args: Step): Done
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Takes the snapshot, has another session revoke owner `id` (first attempt
+// only), then creates item `id` under it. One per level.
+mutation procedure revokeRr(args: Step): Done
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+mutation procedure revokeSer(args: Step): Done
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure revokeRc(args: Step): Done
+  @isolation("read_committed")
+  @allow(auth() != null)
+
+// Creates audited item `id` under the existing owner `id`.
+mutation procedure auditedChild(args: Step): Done
+  @isolation("serializable")
+  @allow(auth() != null)

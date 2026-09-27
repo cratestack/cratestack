@@ -28,6 +28,26 @@ pub(crate) fn generate_model_accessor(model: &Model) -> proc_macro2::TokenStream
     }
 }
 
+/// `IsolatedCratestack`'s accessor for one model: the same `ModelDelegate`
+/// `Cratestack` hands out, built over the handle's transaction-bound
+/// runtime (docs/design/procedure-isolation.md §3).
+pub(crate) fn generate_isolated_model_accessor(model: &Model) -> proc_macro2::TokenStream {
+    let method_ident = ident(&to_snake_case(&model.name));
+    let model_ident = ident(&model.name);
+    let primary_key = model
+        .fields
+        .iter()
+        .find(|field| is_primary_key(field))
+        .expect("validated model must have primary key");
+    let primary_key_type = rust_type_tokens(&primary_key.ty);
+
+    quote! {
+        pub fn #method_ident(&self) -> ::cratestack::ModelDelegate<'_, models::#model_ident, #primary_key_type> {
+            self.inner.#method_ident()
+        }
+    }
+}
+
 pub(crate) fn generate_bound_model_accessor(model: &Model) -> proc_macro2::TokenStream {
     let method_ident = ident(&to_snake_case(&model.name));
     let model_ident = ident(&model.name);

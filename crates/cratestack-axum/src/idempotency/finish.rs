@@ -63,6 +63,13 @@ pub(super) async fn finish_response<E>(
     let Some(token) = token else {
         return response;
     };
+    // An outcome that must not be replayed (`super::unrecorded`: an
+    // `@isolation` procedure out of retries, nothing committed): give the
+    // key back so the same `Idempotency-Key` runs the call again.
+    if super::tag_of(&response).is_some() {
+        executor.release(principal, key, token).await;
+        return response;
+    }
     buffer_and_persist_response(
         executor,
         principal,

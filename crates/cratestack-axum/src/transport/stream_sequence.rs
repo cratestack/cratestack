@@ -137,7 +137,10 @@ fn encode_error_sentinel<C: CratestackCodec>(codec: &C, error: &CratestackError)
     minicbor::Encoder::new(&mut bytes)
         .tag(minicbor::data::Tag::new(RPC_STREAM_ERROR_TAG))
         .expect("writing a CBOR tag header to a Vec<u8> is infallible");
-    let body = RpcErrorBody::from_cratestack(error);
+    // A `@stream` procedure never owns an `@isolation` attempt: an abort
+    // an item carries is answered as `internal` (`crate::idempotency::unrecorded`).
+    let disowned = crate::idempotency::disowned(error);
+    let body = RpcErrorBody::from_cratestack(disowned.as_ref().unwrap_or(error));
     match codec.encode(&body) {
         Ok(encoded) => bytes.extend(encoded),
         Err(_) => {

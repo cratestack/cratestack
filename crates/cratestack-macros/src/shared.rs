@@ -25,7 +25,7 @@ pub(crate) use attrs::{
     is_primary_key, is_readonly_field, is_sensitive_field, is_server_only_field, is_version_field,
     supports_comparison,
 };
-pub(crate) use procedure_attrs::is_stream_procedure;
+pub(crate) use procedure_attrs::{is_stream_procedure, isolation_tokens, procedure_isolation};
 pub(crate) use query_fields::queryable_model_fields;
 pub(crate) use sql::{create_sql_value, sql_value_tokens, update_sql_value};
 pub(crate) use types::{

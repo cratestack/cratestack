@@ -17,7 +17,7 @@ use crate::audit::{
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::{ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
-use super::delete_exec::delete_returning_record;
+use super::delete_exec::{delete_record_in_conn, delete_returning_record};
 
 #[derive(Debug, Clone)]
 pub struct DeleteRecord<'a, M: 'static, PK: 'static> {
@@ -82,7 +82,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
             ensure_event_outbox_table(&mut **tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(self.runtime).await?;
+            ensure_audit_table(self.runtime, &mut **tx).await?;
         }
         // Soft delete is an UPDATE under the hood, so its RETURNING
         // row is the post-tombstone state — the pre-delete "before"
@@ -96,9 +96,9 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         let before_snapshot = before_record
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
-        let record = delete_returning_record(
-            &mut **tx,
-            self.runtime.pool(),
+        let record = delete_record_in_conn(
+            self.runtime,
+            tx,
             self.descriptor,
             self.id,
             ctx,
@@ -137,6 +137,16 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
         PK: Send + Clone + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
     {
+        // Inside an `@isolation` procedure: run on its transaction and
+        // defer the post-commit fan-out (docs/design/procedure-isolation.md
+        // §4, §6).
+        if let Some(bound) = self.runtime.bound() {
+            let emits = self
+                .descriptor
+                .emits(cratestack_core::ModelEventKind::Deleted);
+            let outcome = crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx))?;
+            return Ok(bound.settle(outcome, emits));
+        }
         if self.descriptor.version_column.is_some() && self.if_match.is_none() {
             return Err(CratestackError::PreconditionFailed(
                 "If-Match header required for versioned model".to_owned(),
@@ -158,7 +168,7 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                 ensure_event_outbox_table(&mut *tx).await?;
             }
             if audit_enabled {
-                ensure_audit_table(self.runtime).await?;
+                ensure_audit_table(self.runtime, &mut *tx).await?;
             }
 
             let before_record = if audit_enabled && soft_delete {
@@ -169,9 +179,9 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
             let before_snapshot = before_record
                 .as_ref()
                 .and_then(|m| serde_json::to_value(m).ok());
-            let record = delete_returning_record(
-                &mut *tx,
-                self.runtime.pool(),
+            let record = delete_record_in_conn(
+                self.runtime,
+                &mut tx,
                 self.descriptor,
                 self.id,
                 ctx,

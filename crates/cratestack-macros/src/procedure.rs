@@ -8,6 +8,8 @@ mod client_types;
 mod instrument;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_isolation;
 mod type_tokens;
 mod types;
 
@@ -20,13 +22,13 @@ use crate::policy::{
     PolicySubject, generate_procedure_policy, parse_procedure_allow_expression,
     parse_procedure_deny_expression,
 };
-use crate::shared::{doc_attrs, ident, is_stream_procedure, to_snake_case};
+use crate::shared::{doc_attrs, ident, is_stream_procedure, procedure_isolation, to_snake_case};
 
 use authorizer::{generate_procedure_model_authorizer, parse_procedure_model_authorizer};
 use client_types::generate_client_procedure_args_struct;
 use instrument::{
     authorize_fn_tokens, authorize_with_db_fn_tokens, authorized_type_tokens, invoke_fn_tokens,
-    invoke_with_db_fn_tokens,
+    isolation_and_invoke_with_db_tokens,
 };
 use types::procedure_stream_item_tokens;
 
@@ -97,7 +99,7 @@ pub(crate) fn generate_procedure_module(
     let authorize_fn = authorize_fn_tokens();
     let authorize_with_db_fn = authorize_with_db_fn_tokens(&model_authorizers);
     let invoke_fn = invoke_fn_tokens();
-    let invoke_with_db_fn = invoke_with_db_fn_tokens();
+    let (isolation_const, invoke_with_db_fn) = isolation_and_invoke_with_db_tokens(procedure);
     // cratestack#512: the witness type `authorize_with_db`/`invoke_with_db`
     // are the only source of — see `instrument::authorized_type_tokens`'s
     // doc comment for why its private field, not any convention, is what
@@ -111,6 +113,7 @@ pub(crate) fn generate_procedure_module(
             pub const NAME: &str = #procedure_name;
             pub const ALLOW_POLICIES: &[::cratestack::ProcedurePolicy] = &[#(#allow_policies),*];
             pub const DENY_POLICIES: &[::cratestack::ProcedurePolicy] = &[#(#deny_policies),*];
+            #isolation_const
 
             #args_struct
 
@@ -201,10 +204,37 @@ pub(crate) fn generate_procedure_registry_method(
         });
     }
 
+    // `@isolation`: the handle bound to the procedure's transaction, which
+    // has no `pool()` (docs/design/procedure-isolation.md §3).
+    // The implementor sees this doc on the trait method it writes: the body
+    // is re-run on a serialization failure, so what it does outside `db`
+    // happens once per attempt (§5).
+    let (db_type, retry_doc) = match procedure_isolation(procedure) {
+        Some(level) => {
+            let doc = format!(
+                " Runs inside one `{}` transaction; on a serialization failure or \
+                 deadlock (`40001`/`40P01`) the whole body runs again, up to the retry \
+                 budget. Everything done through `db` is rolled back with a failed \
+                 attempt; anything else (HTTP calls, e-mail, state in `self`) is \
+                 repeated, so make it idempotent or move it behind `@@emit`. The \
+                 `ComputedFieldResolver` methods that compose this procedure's output \
+                 run inside the same attempt, after the body and before `COMMIT`, and \
+                 re-run with it, so they must be re-runnable too. See \
+                 docs/design/procedure-isolation.md.",
+                level.as_sql(),
+            );
+            (
+                quote! { super::IsolatedCratestack },
+                quote! { #[doc = #doc] },
+            )
+        }
+        None => (quote! { super::Cratestack }, quote! {}),
+    };
     Ok(quote! {
+        #retry_doc
         fn #method_ident(
             &self,
-            db: &super::Cratestack,
+            db: &#db_type,
             ctx: &::cratestack::CratestackContext,
             args: #module_ident::Args,
             _authorized: #module_ident::Authorized,

@@ -5,7 +5,7 @@
 
 use cratestack_core::{CratestackContext, CratestackError};
 
-use crate::query::support::{push_action_policy_query, push_bind_value};
+use crate::query::support::{PolicyDb, push_action_policy_query, push_bind_value};
 use crate::{ModelDescriptor, SqlValue, cratestack_error_from_sqlx, sqlx};
 
 /// Probe-with-lock. Bypasses read policies — we need the raw row to
@@ -62,7 +62,8 @@ where
 }
 
 /// Re-evaluate the update policy against an existing row, using the
-/// read pool so the policy predicates can resolve auth/tenancy.
+/// read pool so the policy predicates can resolve auth/tenancy — or,
+/// inside an `@isolation` procedure, its transaction ([`PolicyDb::of`]).
 ///
 /// `predicate` carries the same partial-index predicate as
 /// [`select_for_update_by_conflict_target`] and for the same reason:
@@ -70,7 +71,7 @@ where
 /// partial index's uniqueness domain, letting the wrong row's policy
 /// gate this call.
 pub(super) async fn row_passes_update_policy<M, PK>(
-    policy_pool: &sqlx::PgPool,
+    policy: PolicyDb<'_>,
     descriptor: &'static ModelDescriptor<M, PK>,
     conflict: &[(&'static str, SqlValue)],
     predicate: Option<&'static str>,
@@ -97,10 +98,11 @@ pub(super) async fn row_passes_update_policy<M, PK>(
         ctx,
     );
 
-    let row: Option<(i32,)> = query
-        .build_query_as::<(i32,)>()
-        .fetch_optional(policy_pool)
-        .await
-        .map_err(cratestack_error_from_sqlx)?;
+    let built = query.build_query_as::<(i32,)>();
+    let row: Option<(i32,)> = match policy {
+        PolicyDb::Pool(pool) => built.fetch_optional(pool).await,
+        PolicyDb::Conn(conn) => built.fetch_optional(conn).await,
+    }
+    .map_err(cratestack_error_from_sqlx)?;
     Ok(row.is_some())
 }

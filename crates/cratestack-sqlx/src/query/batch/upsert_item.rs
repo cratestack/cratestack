@@ -11,8 +11,10 @@ use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
-use crate::query::support::{apply_create_defaults, evaluate_create_policies, find_column_value};
-use crate::{ModelDescriptor, UpsertModelInput, cratestack_error_from_sqlx, sqlx};
+use crate::query::support::{
+    PolicyDb, apply_create_defaults, evaluate_create_policies, find_column_value,
+};
+use crate::{ModelDescriptor, SqlxRuntime, UpsertModelInput, cratestack_error_from_sqlx, sqlx};
 
 use super::upsert_sql::{
     row_passes_update_policy, select_for_update_by_pk_value, upsert_one_in_savepoint,
@@ -25,7 +27,7 @@ use super::upsert_sql::{
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run_upsert_item<'tx, M, PK, I>(
     outer: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    policy_pool: &sqlx::PgPool,
+    runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
     ctx: &CratestackContext,
@@ -59,7 +61,7 @@ where
             ));
         }
         if !evaluate_create_policies(
-            policy_pool,
+            PolicyDb::of(runtime, &mut item_tx),
             descriptor.create_allow_policies,
             descriptor.create_deny_policies,
             &insert_values,
@@ -79,7 +81,15 @@ where
             select_for_update_by_pk_value(&mut item_tx, descriptor, &pk_value).await?;
         let inserted = before_record.is_none();
 
-        if !inserted && !row_passes_update_policy(policy_pool, descriptor, &pk_value, ctx).await? {
+        if !inserted
+            && !row_passes_update_policy(
+                PolicyDb::of(runtime, &mut item_tx),
+                descriptor,
+                &pk_value,
+                ctx,
+            )
+            .await?
+        {
             return Err(CratestackError::Forbidden(
                 "update policy denied this upsert".to_owned(),
             ));

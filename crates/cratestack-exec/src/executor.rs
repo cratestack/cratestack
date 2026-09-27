@@ -141,6 +141,12 @@ impl OpExecutor {
     /// Give up a reservation without recording an outcome, so a retry can
     /// re-acquire it instead of seeing `InFlight` until the TTL lapses.
     /// Best-effort for the same reason as [`Self::complete`].
+    ///
+    /// Transports also call this instead of [`Self::complete`] for an
+    /// outcome that must not be replayed —
+    /// `CratestackError::is_idempotency_replayable` is `false` only when an
+    /// `@isolation` procedure's own dispatch answers that its retries ran
+    /// out, which committed nothing — so the same key runs the call again.
     pub async fn release(&self, principal: &str, key: &str, token: uuid::Uuid) {
         let Some(store) = self.idempotency.as_ref() else {
             return;

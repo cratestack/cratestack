@@ -361,3 +361,10 @@ required-features = ["mcp"]
 name = "server_only_outbound_mcp"
 path = "tests/server_only_outbound_mcp.rs"
 required-features = ["mcp"]
+
+# GHSA-r67q-4qqq-g9gm: an `@isolation` tool runs at its declared level over
+# MCP `tools/call`. Postgres-backed; runs in `just test-ci-db-mcp`.
+[[test]]
+name = "procedure_isolation_mcp"
+path = "tests/procedure_isolation_mcp.rs"
+required-features = ["mcp"]

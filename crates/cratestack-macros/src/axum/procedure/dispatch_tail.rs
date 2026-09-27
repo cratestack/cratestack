@@ -31,10 +31,10 @@ use std::collections::BTreeSet;
 use cratestack_core::Procedure;
 use quote::quote;
 
-pub(crate) use compose_tail::compose_tail_tokens;
+pub(crate) use compose_tail::{compose_tail_tokens, isolated_compose_tokens};
 
 use crate::computed::procedure_output_composition;
-use crate::shared::is_stream_procedure;
+use crate::shared::{is_stream_procedure, procedure_isolation};
 
 pub(super) fn procedure_dispatch_tail_tokens(
     procedure: &Procedure,
@@ -66,10 +66,16 @@ pub(super) fn procedure_dispatch_tail_tokens(
             response
         }
     } else {
-        let compose_tail = compose_tail_tokens(procedure_output_composition(
-            &procedure.return_type,
-            bearing,
-        ));
+        // An `@isolation` procedure composed its output inside its attempt
+        // (`super::invoke_call`), before COMMIT; nothing is left to do here.
+        let compose_tail = if procedure_isolation(procedure).is_some() {
+            quote! {}
+        } else {
+            compose_tail_tokens(procedure_output_composition(
+                &procedure.return_type,
+                bearing,
+            ))
+        };
         let tracing_tail =
             result_tracing_tokens(procedure_name, "cratestack procedure route completed");
         quote! {

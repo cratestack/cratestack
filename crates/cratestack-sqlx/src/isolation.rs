@@ -1,11 +1,16 @@
 //! Helpers for running banking-grade multi-row mutations under explicit
 //! transaction isolation, with retry on serialization failure.
 //!
-//! Procedures opt in via `@isolation("serializable")` in the schema; the
-//! macro records the requested level on a `ProcedureMetadata` const and
-//! handler code can wrap its body in [`run_in_isolated_tx`] to actually
-//! enforce it. A follow-up will auto-wrap procedure dispatch so opting in
-//! requires only the attribute.
+//! These are the hand-rolled form, for code that owns a pool. A
+//! *procedure* declaring `@isolation("...")` in the schema does not need
+//! them: its generated dispatch runs the procedure's authorization and
+//! body inside a transaction at the declared level, with its own retry
+//! loop, on every transport (REST, RPC, RPC batch, MCP and
+//! `invoke_with_db`) — see `SqlxRuntime::run_isolated` and
+//! docs/design/procedure-isolation.md. Before GHSA-r67q-4qqq-g9gm was
+//! fixed, this comment claimed a `ProcedureMetadata` constant recorded
+//! the level for dispatch to use; no such constant ever existed and the
+//! attribute had no effect.
 //!
 //! Like `db.transaction(...)` (see `crate::transaction`'s module doc,
 //! cratestack#534), composing write-builder `run_in_tx` calls inside
@@ -22,15 +27,16 @@ use cratestack_core::{CratestackError, TransactionIsolation};
 
 use crate::error::cratestack_error_from_sqlx;
 
-const MAX_RETRIES_DEFAULT: u32 = 3;
-const PG_SERIALIZATION_FAILURE_SQLSTATE: &str = "40001";
-const PG_DEADLOCK_DETECTED_SQLSTATE: &str = "40P01";
+pub(crate) const MAX_RETRIES_DEFAULT: u32 = 3;
 
 /// Begin a transaction at the requested isolation level, run `body` against
 /// the live transaction, and commit. On `40001` (serialization_failure) or
 /// `40P01` (deadlock_detected) the transaction is rolled back and the body
 /// runs again, up to `MAX_RETRIES_DEFAULT` times. Other errors propagate
-/// immediately.
+/// immediately. Only a database error is retried: an error `body` builds
+/// itself (`Validation`, `Internal`, …) is returned as is even when its
+/// text contains `40001` or `deadlock detected`, and a typed database error
+/// is retried by its SQLSTATE alone, never by its text.
 ///
 /// `body` receives a mutable transaction reference; it should run all of
 /// its SQL through that reference so the writes participate in the same
@@ -109,24 +115,17 @@ where
     }
 }
 
+/// The same classifier as an `@isolation` procedure's dispatch
+/// ([`crate::retriable::retriable_sqlstate`]): the SQLSTATE of a typed
+/// database error — authoritative, its text never consulted — else the
+/// driver's text of the untyped `Database(String)` variant. Only database
+/// errors: an application or validation error whose message happens to
+/// contain `40001` (a body echoing request data) is not a serialization
+/// failure, and neither is a typed `P0001`/`22P02` whose message echoes it;
+/// retrying either re-ran `body` with its side effects and returned the
+/// wrong error (docs/design/procedure-isolation.md §5).
 fn is_retriable(error: &CratestackError) -> bool {
-    // Fast path: typed variant surfaces the SQLSTATE directly. Only treat
-    // it as authoritative when the code matches a known retriable state;
-    // an unrecognized SQLSTATE falls through so the substring fallback
-    // still has a chance (drivers may surface retriable conditions in
-    // ways the typed path doesn't capture).
-    if let Some(code) = error.db_sqlstate()
-        && (code == PG_SERIALIZATION_FAILURE_SQLSTATE || code == PG_DEADLOCK_DETECTED_SQLSTATE)
-    {
-        return true;
-    }
-    // Fallback: legacy `Database(String)` variant — substring-match the detail
-    // string the way the original code did, so existing behaviour is preserved.
-    let detail = error.detail().unwrap_or_default();
-    detail.contains(PG_SERIALIZATION_FAILURE_SQLSTATE)
-        || detail.contains(PG_DEADLOCK_DETECTED_SQLSTATE)
-        || detail.contains("could not serialize access")
-        || detail.contains("deadlock detected")
+    crate::retriable::retriable_sqlstate(error).is_some()
 }
 
 #[cfg(test)]
@@ -181,6 +180,16 @@ mod tests {
                 .to_owned(),
         );
         assert!(is_retriable(&err));
+    }
+
+    #[test]
+    fn not_retriable_on_an_application_error_that_mentions_40001() {
+        for err in [
+            CratestackError::Validation("field 'memo' length 40001 exceeds maximum 100".to_owned()),
+            CratestackError::Internal("deadlock detected in my own lock manager".to_owned()),
+        ] {
+            assert!(!is_retriable(&err), "{err:?}");
+        }
     }
 
     #[test]
@@ -251,20 +260,34 @@ mod tests {
     }
 
     #[test]
-    fn typed_variant_with_unknown_sqlstate_falls_through_to_detail_match() {
-        // A driver reports an unfamiliar SQLSTATE but the detail still
-        // contains a known retriable substring. The typed fast path must
-        // not short-circuit — the substring fallback must run.
+    fn typed_variant_sqlstate_is_authoritative_over_its_detail() {
+        // A typed error's SQLSTATE decides; its text is never consulted.
+        // The text of other SQLSTATEs echoes request data: a body's
+        // `RAISE EXCEPTION 'insufficient funds: requested %'` (P0001), a
+        // cast of `'40001x'` (22P02). Matching it re-ran the body (and, in
+        // `@isolation` dispatch, answered 409 and released the idempotency
+        // key) — request-triggerable. An unknown SQLSTATE is not retried
+        // either, whatever its detail says.
         use cratestack_core::DbErrorInfo;
-        let err = CratestackError::DatabaseTyped(DbErrorInfo {
-            detail: "could not serialize access due to read/write dependencies".to_owned(),
-            sqlstate: Some("XX999".to_owned()),
-            constraint: None,
-        });
-        assert!(
-            is_retriable(&err),
-            "unknown sqlstate must fall through to detail-substring fallback",
-        );
+        for (sqlstate, detail) in [
+            (
+                "XX999",
+                "could not serialize access due to read/write dependencies",
+            ),
+            ("P0001", "insufficient funds: requested 40001"),
+            ("22P02", "invalid input syntax for type bigint: \"40001x\""),
+            ("55P03", "deadlock detected while waiting for 40P01"),
+        ] {
+            let err = CratestackError::DatabaseTyped(DbErrorInfo {
+                detail: detail.to_owned(),
+                sqlstate: Some(sqlstate.to_owned()),
+                constraint: None,
+            });
+            assert!(
+                !is_retriable(&err),
+                "typed {sqlstate} must not be retried because of its text",
+            );
+        }
     }
 
     #[test]

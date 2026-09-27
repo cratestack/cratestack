@@ -12,7 +12,7 @@ use crate::audit::{
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
 
-use super::update_exec::update_record_with_executor;
+use super::update_exec::{update_record_in_conn, update_record_with_executor};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run_update<'a, M, PK, I>(
@@ -47,7 +47,7 @@ where
             ensure_event_outbox_table(&mut *tx).await?;
         }
         if audit_enabled {
-            ensure_audit_table(runtime).await?;
+            ensure_audit_table(runtime, &mut *tx).await?;
         }
         // Before-snapshot under row lock so concurrent mutations
         // can't race.
@@ -59,16 +59,8 @@ where
         let before_snapshot = before_record
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
-        let record = update_record_with_executor(
-            &mut *tx,
-            runtime.pool(),
-            descriptor,
-            id,
-            input,
-            ctx,
-            if_match,
-        )
-        .await?;
+        let record =
+            update_record_in_conn(runtime, &mut tx, descriptor, id, input, ctx, if_match).await?;
         if emits_event {
             enqueue_event_outbox(
                 &mut *tx,

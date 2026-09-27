@@ -20,9 +20,13 @@ use serde_json::Value;
 
 use crate::fingerprint::fingerprint;
 use crate::idempotency::{namespace, record, replay};
-use crate::result::{failure, success};
+use crate::result::failure;
 use crate::server::McpServer;
 use crate::table::{McpTools, ToolDescriptor};
+
+mod run;
+
+use run::run;
 
 pub(crate) async fn admit_and_run<T: McpTools>(
     server: &McpServer<T>,
@@ -42,7 +46,7 @@ pub(crate) async fn admit_and_run<T: McpTools>(
         // No key, no store, or an op that does not participate: `admit`
         // would answer `Bypass` for each, so no namespace is derived and
         // nothing is reserved (ADR 0002 Q6: "when absent, no reservation").
-        _ => return run(server, ctx, descriptor, call).await.0,
+        _ => return run(server, ctx, descriptor, call).await.result,
     };
     let principal = match namespace(ctx) {
         Ok(principal) => principal,
@@ -55,15 +59,22 @@ pub(crate) async fn admit_and_run<T: McpTools>(
         fingerprint(descriptor.name, arguments),
     );
     match server.executor.admit(&input).await {
-        Ok(Admission::Bypass) => run(server, ctx, descriptor, call).await.0,
+        Ok(Admission::Bypass) => run(server, ctx, descriptor, call).await.result,
         Ok(Admission::Reserved { token }) => {
-            let (result, status) = run(server, ctx, descriptor, call).await;
-            let (status, body) = record(&result, status);
-            server
-                .executor
-                .complete(&principal, key, token, status, &[], &body)
-                .await;
-            result
+            let ran = run(server, ctx, descriptor, call).await;
+            if ran.replayable {
+                let (status, body) = record(&ran.result, ran.status);
+                server
+                    .executor
+                    .complete(&principal, key, token, status, &[], &body)
+                    .await;
+            } else {
+                // Nothing was committed (an `@isolation` tool out of
+                // retries): give the key back so the same one runs the call
+                // again, as HTTP's `IdempotencyLayer` does.
+                server.executor.release(&principal, key, token).await;
+            }
+            ran.result
         }
         Ok(Admission::Replay(recorded)) => {
             replay(&recorded).unwrap_or_else(|error| failure(descriptor, error))
@@ -161,29 +172,5 @@ pub(crate) async fn rate_limit<T: McpTools>(
             Ok(())
         }
         Err(error) => Err(error),
-    }
-}
-
-/// Execute, and render the outcome with the status its record carries.
-async fn run<T: McpTools>(
-    server: &McpServer<T>,
-    ctx: &CratestackContext,
-    descriptor: &ToolDescriptor,
-    call: T::Call,
-) -> (CallToolResult, u16) {
-    match server.tools.execute(call, ctx).await {
-        Ok(value) => {
-            tracing::info!(
-                target: "cratestack",
-                cratestack_operation = "mcp_tool_call",
-                cratestack_tool = descriptor.name,
-                "cratestack mcp tool call completed",
-            );
-            (success(descriptor, value), 200)
-        }
-        Err(error) => {
-            let status = error.status_code().as_u16();
-            (failure(descriptor, error), status)
-        }
     }
 }

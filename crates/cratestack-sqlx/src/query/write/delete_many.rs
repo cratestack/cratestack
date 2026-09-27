@@ -71,6 +71,16 @@ impl<'a, M: 'static, PK: 'static> DeleteMany<'a, M, PK> {
     where
         for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
     {
+        // Inside an `@isolation` procedure: run on its transaction and
+        // defer the post-commit fan-out (docs/design/procedure-isolation.md
+        // §4, §6).
+        if let Some(bound) = self.runtime.bound() {
+            let emits = self
+                .descriptor
+                .emits(cratestack_core::ModelEventKind::Deleted);
+            let outcome = crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx))?;
+            return Ok(bound.settle(outcome, emits));
+        }
         let runtime = self.runtime;
         let descriptor = self.descriptor;
         let mut tx = runtime

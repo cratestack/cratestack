@@ -10,7 +10,7 @@ use cratestack_core::{
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
 use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
-use crate::query::support::evaluate_create_policies;
+use crate::query::support::{PolicyDb, evaluate_create_policies};
 use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
 
 use super::upsert_predicate_probe::incoming_row_satisfies_predicate;
@@ -42,7 +42,7 @@ where
     // than "evaluate the path that runs," but pre-flighting a read
     // just to pick the policy slot would leak row existence.
     if !evaluate_create_policies(
-        runtime.pool(),
+        PolicyDb::of(runtime, tx),
         descriptor.create_allow_policies,
         descriptor.create_deny_policies,
         &insert_values,
@@ -63,7 +63,7 @@ where
         ensure_event_outbox_table(&mut **tx).await?;
     }
     if audit_enabled {
-        ensure_audit_table(runtime).await?;
+        ensure_audit_table(runtime, &mut **tx).await?;
     }
 
     // Probe the conflict target under a row-level lock. If a row

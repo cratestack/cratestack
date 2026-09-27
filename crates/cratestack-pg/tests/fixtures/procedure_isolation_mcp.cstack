@@ -1,0 +1,93 @@
+// GHSA-r67q-4qqq-g9gm over MCP: a `tools/call` of an `@isolation` tool
+// runs in a transaction at the declared level, like REST and RPC; its
+// exhausted retries carry `TRANSACTION_ABORTED` and are not recorded under an
+// idempotency key; its `@computed` output is resolved inside the attempt.
+// `tests/procedure_isolation_mcp.rs` runs it against real Postgres.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+mcp {
+  expose = [tools]
+}
+
+auth Caller {
+  id String
+}
+
+model McpIsoAccount {
+  id Int @id
+  balance Int
+
+  @@allow("read", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+type Report {
+  level String
+}
+
+type Debit {
+  accountId Int
+  amount Int
+}
+
+// A model with a `@computed` and a `@server_only` field: the isolated
+// arm composes it inside the attempt, and must still leave `secret` out.
+model McpIsoVault {
+  id Int @id
+  label String
+  secret String @server_only
+  hint String @computed
+
+  @@allow("read", auth() != null)
+}
+
+// `checked` is resolved by a resolver the test can make fail.
+type Debited {
+  accountId Int
+  after Int
+  checked Int @computed
+}
+
+mutation procedure levelSerializable(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+  @mcp(tool)
+
+mutation procedure levelRepeatableRead(args: Probe): Report
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+  @mcp(tool)
+
+mutation procedure levelPlain(args: Probe): Report
+  @allow(auth() != null)
+  @mcp(tool)
+
+// Every attempt fails with a real SQLSTATE 40001.
+mutation procedure alwaysConflict(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+  @mcp(tool)
+
+// Every attempt fails with an ordinary validation error.
+mutation procedure refuse(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+  @mcp(tool)
+
+mutation procedure debitChecked(args: Debit): Debited
+  @isolation("serializable")
+  @allow(auth() != null)
+  @mcp(tool)
+
+mutation procedure openVault(args: Probe): McpIsoVault
+  @isolation("serializable")
+  @allow(auth() != null)
+  @mcp(tool)

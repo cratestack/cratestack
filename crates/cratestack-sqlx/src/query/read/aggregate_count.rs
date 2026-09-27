@@ -97,12 +97,17 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
     }
 
     pub async fn run(self, ctx: &CratestackContext) -> Result<i64, CratestackError> {
+        // Inside an `@isolation` procedure: run on its transaction
+        // (docs/design/procedure-isolation.md §4).
+        if let Some(bound) = self.runtime.bound() {
+            return crate::bound::in_bound_savepoint!(bound, |sp| self.run_in_tx(sp, ctx));
+        }
         let mut query = self.build_query(ctx);
         let value: (i64,) = query
             .build_query_as::<(i64,)>()
             .fetch_one(self.runtime.pool())
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         Ok(value.0)
     }
 
@@ -116,7 +121,7 @@ impl<'a, M: 'static, PK: 'static> AggregateCount<'a, M, PK> {
             .build_query_as::<(i64,)>()
             .fetch_one(&mut **tx)
             .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
+            .map_err(crate::error::cratestack_error_from_sqlx)?;
         Ok(value.0)
     }
 }

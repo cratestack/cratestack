@@ -111,6 +111,24 @@ fn error_sentinel_tag_header_matches_rfc_8949_two_byte_form() {
     assert_eq!(&sentinel[..3], &[0xD9, 0xBF, 0x04]);
 }
 
+/// A `@stream` procedure owns no `@isolation` attempt, so an abort one of
+/// its items propagates is sent as `internal`, never `aborted` ("nothing was
+/// written, send it again").
+#[test]
+fn an_abort_in_a_stream_is_sent_as_internal() {
+    let abort = CratestackError::TransactionAborted(cratestack_core::TransactionAbort::propagated(
+        cratestack_core::DbErrorInfo {
+            detail: "retry the request".to_owned(),
+            sqlstate: Some("40001".to_owned()),
+            constraint: None,
+        },
+    ));
+    let sentinel = encode_error_sentinel(&CborCodec, &abort);
+    let body: cratestack_core::rpc::RpcErrorBody =
+        cratestack_core::CratestackCodec::decode(&CborCodec, &sentinel[3..]).unwrap();
+    assert_eq!(body.code, "internal");
+}
+
 fn starts_with_error_tag_header(item: &[u8]) -> bool {
     item.starts_with(&[0xD9, 0xBF, 0x04])
 }

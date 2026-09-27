@@ -75,6 +75,9 @@ pub(crate) fn http_status_for_rpc_code(code: &str) -> StatusCode {
         "permission_denied" => StatusCode::FORBIDDEN,
         "not_found" => StatusCode::NOT_FOUND,
         "conflict" => StatusCode::CONFLICT,
+        // An `@isolation` procedure that ran out of retries: 409 on the
+        // wire, like `conflict`, but its own code (GHSA-r67q-4qqq-g9gm).
+        "aborted" => StatusCode::CONFLICT,
         "failed_precondition" => StatusCode::PRECONDITION_FAILED,
         // cratestack#846: emitted by `RateLimitLayer` on a throttled
         // request. Without this arm a batched throttle would surface to

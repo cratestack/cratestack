@@ -1,0 +1,36 @@
+// `procedure_isolation_server_only.cstack` on `transport rpc` — see that file.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model IsoVault {
+  id Int @id
+  label String
+  secret String @server_only
+  hint String @computed
+
+  @@allow("read", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+mutation procedure openVault(args: Probe): IsoVault
+  @isolation("serializable")
+  @allow(auth() != null)
+
+mutation procedure openVaults(args: Probe): IsoVault[]
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+mutation procedure openVaultPlain(args: Probe): IsoVault
+  @allow(auth() != null)

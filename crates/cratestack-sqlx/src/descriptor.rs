@@ -35,6 +35,11 @@ pub struct SqlxRuntime {
     // from `crate::audit::dispatch_audit_sink` after the owning
     // transaction commits.
     audit_sink: Arc<dyn AuditSink>,
+    // `Some` only on the per-attempt runtime `run_isolated` builds for an
+    // `@isolation` procedure: every executing path then runs on this
+    // transaction instead of the pool (docs/design/procedure-isolation.md §4).
+    pub(crate) bound: Option<Arc<crate::bound::BoundTx>>,
+    pub(crate) isolation_max_retries: u32,
 }
 
 // `dyn AuditSink` has no `Debug` bound (matching `IdempotencyStore` /
@@ -46,6 +51,8 @@ impl std::fmt::Debug for SqlxRuntime {
         f.debug_struct("SqlxRuntime")
             .field("pool", &self.pool)
             .field("events", &self.events)
+            .field("bound", &self.bound.is_some())
+            .field("isolation_max_retries", &self.isolation_max_retries)
             .field(
                 "audit_table_ensured",
                 &self
@@ -63,6 +70,8 @@ impl SqlxRuntime {
             events: CratestackEventBus::default(),
             audit_table_ensured: Arc::new(AtomicBool::new(false)),
             audit_sink: Arc::new(NoopAuditSink),
+            bound: None,
+            isolation_max_retries: crate::isolation::MAX_RETRIES_DEFAULT,
         }
     }
 
@@ -113,6 +122,12 @@ impl SqlxRuntime {
 
     #[doc(hidden)]
     pub async fn drain_event_outbox(&self) -> Result<usize, CratestackError> {
+        // Inside an `@isolation` procedure the outbox rows are still
+        // uncommitted: remember to drain once the attempt commits.
+        if let Some(bound) = self.bound() {
+            bound.request_drain();
+            return Ok(0);
+        }
         ensure_event_outbox_table(&self.pool).await?;
 
         let rows = sqlx::query_as::<_, EventOutboxRow>(

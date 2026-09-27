@@ -26,8 +26,10 @@
 
 use quote::quote;
 
+mod invoke_isolated;
 mod invoke_with_db;
 
+pub(super) use invoke_isolated::isolation_and_invoke_with_db_tokens;
 pub(super) use invoke_with_db::invoke_with_db_fn_tokens;
 
 /// See the module doc's cratestack#512 note. Spliced into every

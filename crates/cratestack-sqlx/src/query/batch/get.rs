@@ -59,11 +59,21 @@ impl<'a, M: 'static, PK: 'static> BatchGet<'a, M, PK> {
             ctx,
         );
 
-        let rows: Vec<M> = query
-            .build_query_as::<M>()
-            .fetch_all(self.runtime.pool())
-            .await
-            .map_err(cratestack_error_from_sqlx)?;
+        let built = query.build_query_as::<M>();
+        // Inside an `@isolation` procedure the read runs on its
+        // transaction (docs/design/procedure-isolation.md §4).
+        let rows: Vec<M> = match self.runtime.bound() {
+            Some(bound) => crate::bound::in_bound_savepoint!(bound, |sp| async {
+                built
+                    .fetch_all(&mut **sp)
+                    .await
+                    .map_err(cratestack_error_from_sqlx)
+            })?,
+            None => built
+                .fetch_all(self.runtime.pool())
+                .await
+                .map_err(cratestack_error_from_sqlx)?,
+        };
 
         // Walk-and-match: pair each input PK back to its row, or
         // NotFound when the read policy / soft-delete excluded it.

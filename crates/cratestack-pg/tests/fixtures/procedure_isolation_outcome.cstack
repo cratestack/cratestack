@@ -1,0 +1,65 @@
+// GHSA-r67q-4qqq-g9gm: how an `@isolation` procedure's outcome leaves it —
+// the `TRANSACTION_ABORTED` code and the idempotency layer, and `@computed`
+// output fields resolved inside the attempt. `tests/procedure_isolation_outcome.rs`
+// drives it over REST; `procedure_isolation_outcome_rpc.cstack` is the same
+// schema on `transport rpc`. docs/design/procedure-isolation.md §5, §6.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model OutAccount {
+  id Int @id
+  balance Int
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+type Probe {
+  nonce String
+}
+
+type Report {
+  level String
+}
+
+type Transfer {
+  accountId Int
+  peerId Int
+  amount Int
+}
+
+// `peerBalance` is resolved by reading account `peerId`.
+type Statement {
+  accountId Int
+  after Int
+  peerId Int
+  peerBalance Int @computed
+}
+
+// Every attempt fails with a real SQLSTATE 40001.
+mutation procedure alwaysConflict(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Every attempt fails with an ordinary validation error.
+mutation procedure refuse(args: Probe): Report
+  @isolation("serializable")
+  @allow(auth() != null)
+
+// Debits `accountId`, then (when the test asks) waits for it before the
+// output is composed.
+mutation procedure debitStatement(args: Transfer): Statement
+  @isolation("repeatable_read")
+  @allow(auth() != null)
+
+// The same body without `@isolation`: the control.
+mutation procedure debitStatementPlain(args: Transfer): Statement
+  @allow(auth() != null)

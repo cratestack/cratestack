@@ -107,6 +107,26 @@ impl McpTools for FakeTools {
             Call::Transfer(args) if args.amount < 0 => Err(CratestackError::Database(
                 "operator-only detail: relation \"ledger\" is locked".to_owned(),
             )),
+            // What an `@isolation` tool's generated arm returns when its own
+            // retries ran out (claimed); 408: another procedure's abort that
+            // a tool body propagated (recorded).
+            Call::Transfer(args) if args.amount == 409 || args.amount == 408 => {
+                let info = cratestack_core::DbErrorInfo {
+                    detail: "retry the request".to_owned(),
+                    sqlstate: Some("40001".to_owned()),
+                    constraint: None,
+                };
+                Err(if args.amount == 409 {
+                    CratestackError::TransactionAborted(
+                        cratestack_core::TransactionAbort::exhausted(info),
+                    )
+                    .__generated_claim_transaction_abort()
+                } else {
+                    CratestackError::TransactionAborted(
+                        cratestack_core::TransactionAbort::propagated(info),
+                    )
+                })
+            }
             // The run number makes a replay distinguishable from a rerun.
             Call::Transfer(args) => Ok(json!([args.amount, run, ctx.principal_actor_id()])),
         }

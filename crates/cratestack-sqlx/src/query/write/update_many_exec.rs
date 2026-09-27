@@ -47,7 +47,7 @@ where
         ensure_event_outbox_table(&mut **tx).await?;
     }
     if audit_enabled {
-        ensure_audit_table(runtime).await?;
+        ensure_audit_table(runtime, &mut **tx).await?;
     }
 
     // We always read back the mutated rows via RETURNING so

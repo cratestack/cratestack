@@ -17,6 +17,23 @@ use sha2::Digest;
 #[derive(Default)]
 pub struct MemoryIdempotency {
     rows: Mutex<HashMap<(String, String), Row>>,
+    /// Every store call, in order, as `(verb, namespace, key)`: `reserve`,
+    /// `complete` or `release`. Lets a test pin which namespace a
+    /// reservation was taken, recorded or given back under.
+    pub journal: Mutex<Vec<(&'static str, String, String)>>,
+}
+
+impl MemoryIdempotency {
+    fn log(&self, verb: &'static str, principal: &str, key: &str) {
+        let entry = (verb, principal.to_owned(), key.to_owned());
+        self.journal.lock().unwrap().push(entry);
+    }
+
+    /// Whether a row — pending or recorded — is held under this pair.
+    pub fn holds(&self, principal: &str, key: &str) -> bool {
+        let slot = (principal.to_owned(), key.to_owned());
+        self.rows.lock().unwrap().contains_key(&slot)
+    }
 }
 
 struct Row {
@@ -34,6 +51,7 @@ impl IdempotencyStore for MemoryIdempotency {
         request_hash: [u8; 32],
         expires_at: SystemTime,
     ) -> Result<ReservationOutcome, CratestackError> {
+        self.log("reserve", principal, key);
         let mut rows = self.rows.lock().unwrap();
         let slot = (principal.to_owned(), key.to_owned());
         if let Some(row) = rows.get(&slot) {
@@ -71,6 +89,7 @@ impl IdempotencyStore for MemoryIdempotency {
         _headers: &[u8],
         body: &[u8],
     ) -> Result<(), CratestackError> {
+        self.log("complete", principal, key);
         let mut rows = self.rows.lock().unwrap();
         if let Some(row) = rows.get_mut(&(principal.to_owned(), key.to_owned()))
             && row.token == token
@@ -86,6 +105,7 @@ impl IdempotencyStore for MemoryIdempotency {
         key: &str,
         _token: uuid::Uuid,
     ) -> Result<(), CratestackError> {
+        self.log("release", principal, key);
         let mut rows = self.rows.lock().unwrap();
         rows.remove(&(principal.to_owned(), key.to_owned()));
         Ok(())

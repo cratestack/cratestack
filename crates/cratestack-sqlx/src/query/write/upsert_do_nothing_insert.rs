@@ -9,6 +9,7 @@ use cratestack_core::{
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
+use crate::query::support::PolicyDb;
 use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, SqlxRuntime, sqlx};
 
 use super::upsert_do_nothing_authorize::authorize_existing_row;
@@ -94,7 +95,7 @@ where
                 ))
             })?;
             authorize_existing_row(
-                runtime,
+                PolicyDb::of(runtime, tx),
                 descriptor,
                 conflict_columns,
                 conflict_target.predicate(),

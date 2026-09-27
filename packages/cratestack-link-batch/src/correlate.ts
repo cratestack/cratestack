@@ -79,6 +79,10 @@ export function errorStatus(code: string): number {
     case "not_found":
       return 404;
     case "conflict":
+    // An `@isolation` procedure out of retries: 409 on the wire, like
+    // `conflict`, but its own code so a caller can tell "send it again"
+    // from a unique violation.
+    case "aborted":
       return 409;
     // cratestack#846: emitted by the server's RateLimitLayer on a
     // throttled request. Without this arm a batched throttle surfaced as

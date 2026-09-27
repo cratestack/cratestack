@@ -24,7 +24,7 @@ use quote::quote;
 use crate::axum::compose_tail_tokens;
 use crate::computed::{ProcedureOutputComposition, compose_fn_ident, procedure_output_composition};
 use crate::include::mcp_gate::ToolPlan;
-use crate::shared::{ident, is_stream_procedure, to_snake_case};
+use crate::shared::{ident, is_stream_procedure, procedure_isolation, to_snake_case};
 
 pub(super) fn dispatch_tokens(
     tools: &[ToolPlan],
@@ -142,6 +142,14 @@ fn execute_arm(
             tool.procedure.name
         );
         return quote! { Call::#variant(_) => ::core::compile_error!(#message), };
+    }
+    if procedure_isolation(&tool.procedure).is_some() {
+        return super::isolated_arm::isolated_execute_arm(
+            &tool.procedure,
+            variant,
+            module,
+            bearing,
+        );
     }
     let compose_tail = compose_tail_tokens(procedure_output_composition(
         &tool.procedure.return_type,

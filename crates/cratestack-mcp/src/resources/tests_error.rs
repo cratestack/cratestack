@@ -38,3 +38,25 @@ fn an_internal_failure_carries_only_the_public_envelope() {
     assert!(!text.contains("mcp_res_posts"), "{text}");
     assert!(!text.contains("posts/3"), "{text}");
 }
+
+/// A resource read owns no `@isolation` attempt, so an abort reaching it (a
+/// `@computed` resolver's propagated one, say) is `INTERNAL_ERROR`, never
+/// `TRANSACTION_ABORTED`'s "nothing was written, send it again".
+#[test]
+fn an_abort_reaching_a_resource_read_is_an_internal_error() {
+    let info = || cratestack_core::DbErrorInfo {
+        detail: "retry the request".to_owned(),
+        sqlstate: Some("40001".to_owned()),
+        constraint: None,
+    };
+    for abort in [
+        cratestack_core::TransactionAbort::exhausted(info()),
+        cratestack_core::TransactionAbort::propagated(info()),
+    ] {
+        let abort = CratestackError::TransactionAborted(abort);
+        let answered =
+            serde_json::to_value(from_cratestack("cratestack://blog/posts/3", abort)).unwrap();
+        assert_eq!(answered["code"], -32603, "{answered}");
+        assert_eq!(answered["data"]["code"], "INTERNAL_ERROR", "{answered}");
+    }
+}

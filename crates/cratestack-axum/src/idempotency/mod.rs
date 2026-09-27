@@ -101,6 +101,7 @@ mod rpc_op_resolver;
 mod service;
 mod store;
 mod stream_bypass;
+mod unrecorded;
 
 #[cfg(test)]
 mod tests_error_body;
@@ -120,6 +121,8 @@ mod tests_op_resolver_nested;
 mod tests_parse;
 #[cfg(test)]
 mod tests_stream_bypass;
+#[cfg(test)]
+mod tests_unrecorded;
 
 pub use fingerprint::legacy_principal_fingerprint;
 pub use hash::{hash_request, is_idempotent_target_method};
@@ -131,6 +134,7 @@ pub use rest_op_resolver::{build_rest_op_resolver, build_rest_op_resolver_with_p
 pub use rpc_op_resolver::{build_rpc_op_resolver, build_rpc_op_resolver_with_prefix};
 pub use service::IdempotencyService;
 pub use store::{IDEMPOTENCY_TABLE_DDL, IdempotencyStore};
+pub(crate) use unrecorded::{answered, disowned, tag_of, unrecorded_tag, with_tag};
 
 /// Re-exported so `with_op_resolver` callers can name the type a custom
 /// resolver returns without adding a `cratestack-exec` dependency of
