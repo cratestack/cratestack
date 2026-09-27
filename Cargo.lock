@@ -1303,6 +1303,8 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "url",
+ "uuid",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

@@ -6,11 +6,12 @@
 //! `wasm32-unknown-unknown` (via rusqlite's transparent FFI switch to
 //! `sqlite-wasm-rs`).
 //!
-//! It deliberately does **not** depend on `cratestack-sqlx`,
-//! `cratestack-axum`, or `cratestack-client-rust`. None of those compile
-//! on `wasm32`, and keeping them out of the dep graph also lets backend
-//! services depend on the official `sqlx` umbrella crate alongside the
-//! server facade without `libsqlite3-sys` collisions.
+//! It deliberately does **not** depend on `cratestack-sqlx` or
+//! `cratestack-axum`. Neither compiles on `wasm32`, and keeping them out of
+//! the dep graph also lets backend services depend on the official `sqlx`
+//! umbrella crate alongside the server facade without `libsqlite3-sys`
+//! collisions. It does re-export the generated HTTP client runtime
+//! (`client_rust`), which builds for native and `wasm32` alike.
 //!
 //! For backend services on Postgres, depend on
 //! [`cratestack-pg`](../cratestack-pg) instead. The two crates are
@@ -25,12 +26,12 @@
 //! ```
 
 pub use chrono;
-// Generated HTTP client runtime — available on native targets so that
-// hybrid consumers (e.g. a NAPI / Tauri shell that ships an embedded
-// SQLite DB *and* calls a remote backend over HTTP) can use
-// `include_client_schema!` alongside `include_embedded_schema!`.
-// Target-gated off `wasm32` because `reqwest` doesn't compile there.
-#[cfg(not(target_arch = "wasm32"))]
+// Generated HTTP client runtime — so that hybrid consumers (e.g. a NAPI /
+// Tauri shell, or a browser app, that ships an embedded SQLite DB *and*
+// calls a remote backend over HTTP) can use `include_client_schema!`
+// alongside `include_embedded_schema!`. On every target, `wasm32`
+// included (cratestack#1104): there `reqwest` goes through `fetch`, and
+// only the blocking `RuntimeHandle` is left out.
 pub use cratestack_client_rust as client_rust;
 pub use cratestack_core::*;
 pub use cratestack_macros::{

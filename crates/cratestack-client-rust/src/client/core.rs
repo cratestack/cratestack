@@ -39,7 +39,13 @@ use crate::state::{ClientStateStore, InMemoryStateStore, PersistedClientState};
 /// those paths need a way to say "install the fallback now", and this
 /// is it — idempotent, safe to call from anywhere, and a no-op once any
 /// provider is installed.
+///
+/// On `wasm32` this does nothing (cratestack#1104): reqwest goes through
+/// the browser's `fetch` there, which does TLS itself, so there is no
+/// `rustls` provider to install. It still exists so a caller's code
+/// compiles unchanged for both targets.
 pub fn ensure_crypto_provider() {
+    #[cfg(not(target_arch = "wasm32"))]
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 

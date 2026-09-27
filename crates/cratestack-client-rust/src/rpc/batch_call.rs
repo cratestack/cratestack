@@ -98,7 +98,7 @@ where
     O: serde::de::DeserializeOwned + Send + 'static,
 {
     type Output = Result<O, RpcClientError>;
-    type IntoFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Self::Output> + Send>>;
+    type IntoFuture = crate::task::BoxFuture<'static, Self::Output>;
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {

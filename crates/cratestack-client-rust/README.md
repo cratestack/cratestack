@@ -208,6 +208,30 @@ let runtime = runtime.with_state_store(store);
 
 For a Redis-backed store, see `cratestack-client-store-redis`. For a SQLite-backed store, see `cratestack-client-store-sqlite`.
 
+## WebAssembly (`wasm32-unknown-unknown`)
+
+The runtime also builds for the browser target (issue #1104), and so does
+`include_client_schema!` through the `cratestack-sqlite` and `cratestack-client`
+facades. There reqwest goes through the browser's `fetch`, so:
+
+- TLS is the browser's. `rustls` is not in the wasm32 graph, and
+  `ensure_crypto_provider()` is a no-op there (it still exists, so shared code
+  compiles for both targets).
+- Streamed responses (`post_list_streamed`, `RpcClient::call_streaming`) run their
+  pump on the browser event loop via `wasm-bindgen-futures`, and a queued RPC call
+  awaited directly (`BatchableCall`'s `IntoFuture`) is not `Send`. On native targets
+  both are exactly what they were: a `tokio::spawn`ed pump and a `Send` future.
+- `RuntimeHandle`, the blocking FFI surface, is native-only: it `block_on`s each
+  request, and a browser `fetch` cannot resolve while the thread is blocked. Use the
+  async `CratestackClient` or the generated client instead.
+- `middleware` compiles for wasm32 as well; `reqwest_middleware::Middleware` is
+  `?Send` on that target.
+- `JsonFileStateStore` compiles but has no filesystem to write to; use
+  `InMemoryStateStore` or your own `ClientStateStore`.
+- A `reqwest::Client` you build for `with_http_client` comes from reqwest's wasm32
+  builder, which offers only `user_agent` and `default_headers` — no timeouts,
+  proxy or TLS identity.
+
 ## See Also
 
 - [Client Runtime](https://cratestack.dev/architecture/client-runtime)

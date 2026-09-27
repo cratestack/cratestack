@@ -16,12 +16,13 @@ strictly disjoint by design — `cratestack-sqlite` does not pull in
 `sqlx` or `axum`, so it stays compatible with
 `wasm32-unknown-unknown` builds.
 
-On **native** targets `cratestack-sqlite` does re-export
-`cratestack-client-rust` so hybrid consumers (NAPI / Tauri shells
-that ship an embedded SQLite DB *and* call a remote backend over
-HTTP) can use `include_client_schema!` alongside
-`include_embedded_schema!`. The re-export is target-gated off
-`wasm32` so it doesn't pull `reqwest` into browser builds.
+`cratestack-sqlite` also re-exports `cratestack-client-rust` so
+hybrid consumers (NAPI / Tauri shells, or browser apps, that ship an
+embedded SQLite DB *and* call a remote backend over HTTP) can use
+`include_client_schema!` alongside `include_embedded_schema!`. Since
+issue #1104 that holds on `wasm32-unknown-unknown` too, where reqwest
+goes through the browser's `fetch`; only the blocking `RuntimeHandle`
+is native-only. See `cratestack-client-rust`'s README, "WebAssembly".
 
 ## Installation
 
@@ -71,5 +72,4 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   the full picture and the TypeScript `swr` preset scope note that still
   applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
-  client runtime, alongside CBOR. On `wasm32` the client runtime isn't
-  linked (no `reqwest`), so this feature has no effect there.
+  client runtime, alongside CBOR, on every target.

@@ -120,6 +120,20 @@ jobs:
         # step verifies the wasm32 surface in isolation (without Postgres
         # features that would drag in sqlx/rust_decimal).
         run: cargo check --locked -p cratestack-sqlite --target wasm32-unknown-unknown
+      - name: cargo check (Rust client runtime for wasm32-unknown-unknown)
+        # cratestack#1104: `include_client_schema!` emits
+        # `::cratestack::client_rust::…`, which the embedded facade above now
+        # re-exports on wasm32 too. The runtime needs its own target-split
+        # `tokio` (the workspace entry's `rt-multi-thread` is refused on
+        # wasm), `spawn_local` for the streamed-response pump and a non-`Send`
+        # boxed future, none of which a host-target check exercises. Default
+        # features carry `codec-json`; `middleware` is off by default, so it
+        # gets its own line, and the pure-client facade rides on the same
+        # runtime.
+        run: |
+          cargo check --locked -p cratestack-client-rust --target wasm32-unknown-unknown
+          cargo check --locked -p cratestack-client-rust --features middleware --target wasm32-unknown-unknown
+          cargo check --locked -p cratestack-client --target wasm32-unknown-unknown
       - name: cargo check (cratestack-cose for wasm32-unknown-unknown)
         # The COSE envelope is shared by the wasm and napi client builds
         # (ADR 0006 §11), and it draws randomness (`cti`, `Cratestack-Nonce`)
@@ -443,6 +457,13 @@ jobs:
       - name: cargo test (client-only-verification)
         working-directory: examples/client-only-verification
         run: cargo test --locked
+      - name: cargo check for wasm32-unknown-unknown (client-only-verification)
+        # cratestack#1104: proves `include_client_schema!`'s expansion — not
+        # just the runtime crate — compiles for the browser target, from a
+        # consumer's own Cargo.toml with no workspace feature unification
+        # to lean on. The `check` job covers the runtime and the facades.
+        working-directory: examples/client-only-verification
+        run: cargo check --locked --target wasm32-unknown-unknown
       # `--test-threads=1` on both: each test in these crates starts its
       # own testcontainer, and concurrent starts hit a port-bind race that
       # fails as `RootlessKit PortManager.AddPort(): address already in

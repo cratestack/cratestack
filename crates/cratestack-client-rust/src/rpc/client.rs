@@ -182,7 +182,7 @@ where
         // Bounded channel — 16 in-flight items matches the REST
         // `post_list_streamed` shape and keeps consumer memory tight.
         let (tx, rx) = tokio::sync::mpsc::channel(16);
-        tokio::spawn(pump_streamed_response_typed::<C, O, RpcClientError, _>(
+        crate::task::spawn(pump_streamed_response_typed::<C, O, RpcClientError, _>(
             self.inner.codec.clone(),
             response,
             tx,

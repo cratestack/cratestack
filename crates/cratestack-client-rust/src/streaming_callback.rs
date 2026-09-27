@@ -40,6 +40,9 @@ pub enum RuntimeChunkWire {
 /// clear message naming what was received instead of letting a
 /// non-cbor-seq body (e.g. negotiation picked buffered `application/cbor`)
 /// crash the frame decoder on the first chunk.
+///
+/// Its only caller, `RuntimeHandle`, is native-only (cratestack#1104).
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(crate) async fn pump_streamed_response_callback<F>(
     response: reqwest::Response,
     mut on_chunk: F,

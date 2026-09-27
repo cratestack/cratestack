@@ -83,7 +83,7 @@ where
         // Bounded channel keeps memory tight on the consumer side —
         // 16 items in flight is plenty for a single subscriber.
         let (tx, rx) = tokio::sync::mpsc::channel(16);
-        tokio::spawn(pump_streamed_response_typed::<C, Output, ClientError, _>(
+        crate::task::spawn(pump_streamed_response_typed::<C, Output, ClientError, _>(
             self.codec.clone(),
             response,
             tx,
