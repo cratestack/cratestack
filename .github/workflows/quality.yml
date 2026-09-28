@@ -270,7 +270,7 @@ jobs:
         # formally deprecated (retires December 2026) and whose last
         # releases still declare the node20 runtime that GitHub removes
         # from the runners on 2026-09-23.
-        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2
         with:
           sarif_file: .ci/quality/reports/quality.sarif
           category: quality-offline-pipeline
