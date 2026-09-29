@@ -51,7 +51,7 @@ pub(super) struct CDatasource<'a> {
 pub(super) struct CModel<'a> {
     pub(super) attributes: Vec<String>,
     pub(super) fields: Vec<CField<'a>>,
-    pub(super) mcp: Option<CModelMcp>,
+    pub(super) mcp: Option<CModelMcp<'a>>,
     pub(super) name: &'a str,
 }
 
@@ -117,9 +117,9 @@ pub(super) struct CMcpConfig<'a> {
 }
 
 #[derive(Serialize)]
-pub(super) struct CModelMcp {
+pub(super) struct CModelMcp<'a> {
     pub(super) max_page_size: Option<u32>,
-    pub(super) resource: String,
+    pub(super) resource: &'a str,
 }
 
 #[derive(Serialize)]

@@ -172,7 +172,7 @@ pub(super) fn mcp_config(c: &McpConfig) -> CMcpConfig<'_> {
     }
 }
 
-pub(super) fn model_mcp(m: &ModelMcpExposure) -> CModelMcp {
+pub(super) fn model_mcp(m: &ModelMcpExposure) -> CModelMcp<'_> {
     let ModelMcpExposure {
         resource,
         max_page_size,
@@ -180,7 +180,7 @@ pub(super) fn model_mcp(m: &ModelMcpExposure) -> CModelMcp {
     } = m;
     CModelMcp {
         max_page_size: *max_page_size,
-        resource: resource.clone(),
+        resource,
     }
 }
 
