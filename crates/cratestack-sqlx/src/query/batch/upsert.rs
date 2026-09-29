@@ -61,7 +61,6 @@ where
             for input in self.inputs {
                 let (outcome, audit_event) = run_upsert_item(
                     tx,
-                    self.runtime,
                     self.descriptor,
                     input,
                     ctx,

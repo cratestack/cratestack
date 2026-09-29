@@ -61,9 +61,9 @@ where
         .map_err(cratestack_error_from_sqlx)
 }
 
-/// Re-evaluate the update policy against an existing row, using the
-/// read pool so the policy predicates can resolve auth/tenancy — or,
-/// inside an `@isolation` procedure, its transaction ([`PolicyDb::of`]).
+/// Re-evaluate the update policy against an existing row on the
+/// connection the write runs on ([`PolicyDb::Conn`]), so the policy
+/// predicates can resolve auth/tenancy and see the caller's own writes.
 ///
 /// `predicate` carries the same partial-index predicate as
 /// [`select_for_update_by_conflict_target`] and for the same reason:

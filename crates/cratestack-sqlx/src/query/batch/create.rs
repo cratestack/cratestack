@@ -54,16 +54,9 @@ where
                 Vec::with_capacity(self.inputs.len());
             let mut audit_events = Vec::new();
             for input in self.inputs {
-                let (outcome, audit_event) = run_create_item(
-                    tx,
-                    self.runtime,
-                    self.descriptor,
-                    input,
-                    ctx,
-                    emits_event,
-                    audit_enabled,
-                )
-                .await?;
+                let (outcome, audit_event) =
+                    run_create_item(tx, self.descriptor, input, ctx, emits_event, audit_enabled)
+                        .await?;
                 per_item.push(outcome);
                 audit_events.extend(audit_event);
             }

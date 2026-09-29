@@ -10,7 +10,7 @@ use cratestack_core::{
 use crate::audit::{build_audit_event, enqueue_audit_event};
 use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::PolicyDb;
-use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, SqlxRuntime, sqlx};
+use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, sqlx};
 
 use super::upsert_do_nothing_authorize::authorize_existing_row;
 use super::upsert_do_nothing_sql::upsert_returning_record_do_nothing;
@@ -27,7 +27,6 @@ use super::upsert_sql::select_for_update_by_conflict_target;
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn run_insert_branch<'tx, M, PK>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     insert_values: &[SqlColumnValue],
     conflict_target: ConflictTarget,
@@ -95,7 +94,7 @@ where
                 ))
             })?;
             authorize_existing_row(
-                PolicyDb::of(runtime, tx),
+                PolicyDb::Conn(tx),
                 descriptor,
                 conflict_columns,
                 conflict_target.predicate(),

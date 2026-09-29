@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### Policy reads run on the caller's transaction, not a second pooled connection (#1117) — behaviour change
+
+**Before:** a write inside a caller's transaction (`db.transaction(..)`,
+`run_in_tx`, `run_in_isolated_tx`, `batch_*`, or the transaction an audited or
+emitting `.run()` opens for itself) evaluated its policies on the pool. That
+covers create policies and their relation `EXISTS` lookups, the update/delete
+`@version` probe that tells a 412 from a 403, the upsert update-policy gate and
+the `cratestack_audit` bootstrap. Only a procedure with `@isolation` read them
+on its own transaction (docs/design/procedure-isolation.md §4.1).
+
+**Now** every write reads its policies on the connection it runs on. Four
+things a caller can see change, and a fifth is subtler:
+
+1. No second connection. `N` concurrent writers on an `N`-connection pool, each
+   holding a row lock, no longer wait for a connection none of them can
+   release until `acquire_timeout`.
+2. The probe sees the caller's own uncommitted writes: a parent created earlier
+   in the transaction authorises its child, a parent handed to another owner
+   earlier refuses it, and a later `batch_create` item is authorised by an
+   earlier one. Before, the opposite in each case.
+3. Under `REPEATABLE READ` and `SERIALIZABLE` the probe reads the caller's
+   snapshot, so a revocation committed by another session after the snapshot
+   no longer refuses the write (the same as `@isolation`); `READ COMMITTED` is
+   unchanged.
+4. A stale `If-Match` after the caller's own version bump inside one
+   transaction is `412 PRECONDITION_FAILED`, not `403 FORBIDDEN`, and an upsert
+   of a row the caller handed away earlier in the transaction is refused.
+5. A probe that errors, for example a `40001` under `SERIALIZABLE`, aborts the
+   caller's transaction as the write itself would, instead of failing on a side
+   connection and leaving the transaction usable.
+
+The public `create_record_with_executor` and `update_record_with_executor` are
+unchanged: they evaluate on the pool their caller passes. Passing a pool there
+while `executor` is a transaction takes a second connection; prefer the
+builder's `run_in_tx`. No public signature changes.
+
 ## 0.14.2 (2026-09-27)
 
 ### `RequestAuthorizer` can make a request of its own on wasm32 (#1104 follow-up)

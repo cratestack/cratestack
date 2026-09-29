@@ -96,15 +96,8 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         let before_snapshot = before_record
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
-        let record = delete_record_in_conn(
-            self.runtime,
-            tx,
-            self.descriptor,
-            self.id,
-            ctx,
-            self.if_match,
-        )
-        .await?;
+        let record =
+            delete_record_in_conn(tx, self.descriptor, self.id, ctx, self.if_match).await?;
         if emits_event {
             enqueue_event_outbox(
                 &mut **tx,
@@ -179,15 +172,9 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
             let before_snapshot = before_record
                 .as_ref()
                 .and_then(|m| serde_json::to_value(m).ok());
-            let record = delete_record_in_conn(
-                self.runtime,
-                &mut tx,
-                self.descriptor,
-                self.id,
-                ctx,
-                self.if_match,
-            )
-            .await?;
+            let record =
+                delete_record_in_conn(&mut tx, self.descriptor, self.id, ctx, self.if_match)
+                    .await?;
             if emits_event {
                 enqueue_event_outbox(
                     &mut *tx,

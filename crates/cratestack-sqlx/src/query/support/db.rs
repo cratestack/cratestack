@@ -7,14 +7,14 @@
 //! copied; a `&mut PgConnection` can only be reborrowed. This enum lets
 //! one evaluator serve both.
 //!
-//! Which one a write uses is [`PolicyDb::of`]'s decision
-//! (docs/design/procedure-isolation.md §4.1): inside an `@isolation`
-//! procedure the policy reads run on the procedure's own transaction, so
-//! the decision is made on the same snapshot as the write and never needs
-//! a second pooled connection; everywhere else they run on the pool, as
-//! they always have.
+//! A write that runs on a connection reads its policies on that same
+//! connection, for every caller (docs/design/procedure-isolation.md §4.1,
+//! cratestack#1117): the decision is made on the caller's transaction, sees
+//! its own earlier writes, and never needs a second pooled connection.
+//! [`PolicyDb::Pool`] exists only for the public `*_with_executor` helpers,
+//! whose caller names the pool explicitly.
 
-use crate::{SqlxRuntime, sqlx};
+use crate::sqlx;
 
 pub(crate) enum PolicyDb<'a> {
     Pool(&'a sqlx::PgPool),
@@ -22,18 +22,6 @@ pub(crate) enum PolicyDb<'a> {
 }
 
 impl<'a> PolicyDb<'a> {
-    /// Where a write running on `conn` reads its policies: `conn` itself
-    /// when `runtime` is bound to an `@isolation` attempt (`conn` is then
-    /// that attempt's transaction, or a savepoint of it), otherwise the
-    /// pool — a second connection, outside any caller's transaction, which
-    /// is what every caller without `@isolation` has always had.
-    pub(crate) fn of(runtime: &'a SqlxRuntime, conn: &'a mut sqlx::PgConnection) -> Self {
-        match runtime.bound() {
-            Some(_) => PolicyDb::Conn(conn),
-            None => PolicyDb::Pool(runtime.pool()),
-        }
-    }
-
     /// A shorter-lived handle onto the same executor, for one statement.
     pub(crate) fn reborrow(&mut self) -> PolicyDb<'_> {
         match self {

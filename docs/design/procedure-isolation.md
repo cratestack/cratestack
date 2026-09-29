@@ -126,50 +126,46 @@ violation from one `create` and carries on behaves exactly as it did on
 the pool. (The cost is one `SAVEPOINT`/`RELEASE` round trip pair per
 operation.)
 
-### 4.1 Policy reads inside an attempt run on the attempt's transaction
+### 4.1 A write reads its policies on the connection it runs on
 
-Several `run_in_tx` paths evaluate policies on the pool rather than on the
-connection the write runs on: create policies (including their relation
-`EXISTS` lookups), the update/delete `@version` probe that tells a 412 from
-a 403, and the upsert update-policy checks. For an isolated procedure that
-would be an isolation hole (a policy decision made on data outside the
-snapshot) and a pool-starvation deadlock (each in-flight procedure holds
-one connection and waits for a second; with `N` concurrent procedures on
-an `N`-connection pool nothing progresses until `acquire_timeout`).
+Several `run_in_tx` paths evaluate policies while a write holds a connection:
+create policies (including their relation `EXISTS` lookups), the update/delete
+`@version` probe that tells a 412 from a 403, and the upsert update-policy
+checks. Read on the pool, each is a policy decision made on data outside the
+caller's transaction (an isolation hole under `@isolation`) and a
+pool-starvation deadlock (each in-flight write holds one connection and waits
+for a second; with `N` concurrent writers on an `N`-connection pool nothing
+progresses until `acquire_timeout`).
 
-So on a runtime **bound to an `@isolation` attempt**, those reads use the
-attempt's transaction (`PolicyDb::of` in `cratestack-sqlx`): they see the
-attempt's own earlier writes, read its snapshot, and never take a second
-connection. This covers `.run()` through the handle, `run_in_tx(tx, ..)`
-inside the handle's `transaction(..)`, and the `batch_*` builders called
-through the handle. `tests/procedure_isolation_policy.rs` pins it.
+So those reads use the connection the write runs on, for **every** caller
+(`PolicyDb::Conn` in `cratestack-sqlx`): an `@isolation` attempt's
+transaction, a `db.transaction(..)`, `run_in_tx`, `run_in_isolated_tx`,
+`batch_*`, or the transaction an audited or emitting `.run()` opens for
+itself. They see the caller's own earlier writes, read its snapshot, and never
+take a second connection. `tests/procedure_isolation_policy.rs` pins it for an
+`@isolation` attempt and `tests/policy_db_caller_tx.rs` for every other
+caller. A probe that errors (for example a `40001` under `SERIALIZABLE`)
+therefore aborts the caller's transaction, as the write itself would, instead
+of failing on a side connection.
 
-**Every other caller is unchanged** (maintainer decision): a
-`db.transaction(..)`, `run_in_tx`, `run_in_isolated_tx`, `batch_*` or
-audited/emitting `.run()` on a pool-backed runtime reads policies on the
-pool exactly as before this change, and `tests/policy_db_caller_tx.rs`
-passes unchanged on the parent commit. That keeps three pre-existing
-limitations for those callers, recorded here rather than changed:
+*Record.* Through 0.14.2 only a runtime bound to an `@isolation` attempt did
+this; every other caller read policies on the pool, recorded here as a
+maintainer decision ("every other caller is unchanged"), and
+`tests/policy_db_caller_tx.rs` pinned its three limitations: the probe did not
+see the caller's own uncommitted writes, under `REPEATABLE READ`/`SERIALIZABLE`
+it read the latest committed data rather than the caller's snapshot, and it
+needed a second pooled connection while the caller's transaction held one.
+The last one bit a downstream service whose row-locked writes outnumbered its
+pool (cratestack#1117), and the maintainer reversed the decision on
+2026-09-29. The public `create_record_with_executor` and
+`update_record_with_executor` still evaluate on the pool they are handed,
+because the caller names it.
 
-- the probe does not see the caller's own uncommitted writes (a parent
-  created earlier in the same transaction does not authorise its child; a
-  parent handed to another owner earlier still does; a later `batch_create`
-  item is not authorised by an earlier one);
-- under `REPEATABLE READ`/`SERIALIZABLE` the probe reads the latest
-  committed data, not the caller's snapshot;
-- the probe needs a second pooled connection while the caller's
-  transaction holds one. With `N` concurrent such writers on an
-  `N`-connection pool — including audited or emitting `.run()` calls whose
-  create policy has a relation lookup, since their framework transaction
-  holds a connection while the probe asks for another — nothing progresses
-  until `acquire_timeout`.
-
-The one-time `cratestack_audit` bootstrap follows the same split. Inside an
-attempt it first asks the attempt's transaction whether the table and the
-three indexes `AUDIT_TABLE_DDL` creates exist (`to_regclass`) and takes a
-pool connection for the DDL only when one is missing, so a table created
-without its indexes still gets them. Everywhere else it runs the DDL on the
-pool once per runtime, as before.
+The one-time `cratestack_audit` bootstrap follows the same rule. It first asks
+the write's own transaction whether the table and the three indexes
+`AUDIT_TABLE_DDL` creates exist (`to_regclass`) and takes a pool connection
+for the DDL only when one is missing, so a table created without its indexes
+still gets them.
 
 ### 4.2 One statement at a time
 
@@ -556,9 +552,11 @@ Token-identical generated code: same registry signature, same
 `find_many_procedure`, `computed_fields_rpc` and `mcp_policy_pg`: the only
 difference is the `CratestackBuilder::with_isolation_max_retries` method).
 At runtime, every executing builder checks `SqlxRuntime::bound()` first (a
-`None` on the pool-backed runtime) and then runs exactly the code, and the
-policy reads, it ran before (§4.1). The changes a caller without
-`@isolation` can observe are the new error variant, which it never
+`None` on the pool-backed runtime) and then runs exactly the code it ran
+before. The one exception is where a write reads its policies, which is now
+the connection the write runs on for every caller (§4.1, cratestack#1117).
+The other changes a caller without `@isolation` can observe are the new error
+variant, which it never
 receives from its own procedures (it can receive, and propagate, another
 procedure's; its dispatch never claims it, so the response encoders answer
 it as a 500 `INTERNAL_ERROR`, recorded under a key like any other 500, §6),
@@ -629,6 +627,3 @@ attempt instead of being retried.
   code must not issue transaction control through `tx`.
 - `@isolation` does not make an RPC batch atomic: each frame is its own
   transaction, as each frame was its own call before.
-- Callers without `@isolation` keep reading policies on the pool, with the
-  limitations listed in §4.1, including the pool-starvation wait for audited
-  writes whose create policy has a relation lookup.

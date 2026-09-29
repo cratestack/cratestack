@@ -77,8 +77,7 @@ where
         if audit_enabled {
             ensure_audit_table(self.runtime, &mut **tx).await?;
         }
-        let record =
-            create_record_in_conn(self.runtime, tx, self.descriptor, self.input, ctx).await?;
+        let record = create_record_in_conn(tx, self.descriptor, self.input, ctx).await?;
         if emits_event {
             enqueue_event_outbox(
                 &mut **tx,
@@ -133,9 +132,7 @@ where
             if audit_enabled {
                 ensure_audit_table(self.runtime, &mut *tx).await?;
             }
-            let record =
-                create_record_in_conn(self.runtime, &mut tx, self.descriptor, self.input, ctx)
-                    .await?;
+            let record = create_record_in_conn(&mut tx, self.descriptor, self.input, ctx).await?;
             if emits_event {
                 enqueue_event_outbox(
                     &mut *tx,

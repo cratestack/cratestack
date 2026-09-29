@@ -14,8 +14,8 @@
 
 use cratestack_core::{CratestackContext, CratestackError};
 
-use crate::query::support::{PolicyDb, no_row_error, push_action_policy_query};
-use crate::{ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
+use crate::query::support::{no_row_error, push_action_policy_query};
+use crate::{ModelDescriptor, cratestack_error_from_sqlx, sqlx};
 
 pub(super) async fn delete_returning_record<'e, E, M, PK>(
     executor: E,
@@ -38,11 +38,9 @@ where
 }
 
 /// [`delete_returning_record`] for a statement that runs on `conn`, with
-/// the version/policy probe wherever [`PolicyDb::of`] puts it: on `conn`
-/// inside an `@isolation` procedure, on the pool otherwise
+/// the version/policy probe on `conn` too
 /// (docs/design/procedure-isolation.md §4.1).
 pub(super) async fn delete_record_in_conn<M, PK>(
-    runtime: &SqlxRuntime,
     conn: &mut sqlx::PgConnection,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
@@ -56,14 +54,7 @@ where
     let probe_id = id.clone();
     match delete_returning_row(&mut *conn, descriptor, id, ctx, if_match).await? {
         Some(record) => Ok(record),
-        None => Err(match PolicyDb::of(runtime, conn) {
-            PolicyDb::Pool(pool) => {
-                no_row_error(pool, descriptor, probe_id, ctx, if_match, "delete").await
-            }
-            PolicyDb::Conn(conn) => {
-                no_row_error(conn, descriptor, probe_id, ctx, if_match, "delete").await
-            }
-        }),
+        None => Err(no_row_error(conn, descriptor, probe_id, ctx, if_match, "delete").await),
     }
 }
 

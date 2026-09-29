@@ -17,13 +17,25 @@ model CallerTxOwner {
 }
 
 // Create policy reads the parent row through a relation: an `EXISTS` probe
-// against `caller_tx_owners`, which is what moved onto the caller's
-// transaction (docs/design/procedure-isolation.md §4.1).
+// against `caller_tx_owners`, which runs on the connection the write runs on,
+// for every caller (docs/design/procedure-isolation.md §4.1, cratestack#1117).
 model CallerTxItem {
   id Int @id
   ownerRowId Int
   owner CallerTxOwner @relation(fields:[ownerRowId],references:[id])
 
+  @@allow("read", owner.ownerId == auth().id)
+  @@allow("create", owner.ownerId == auth().id)
+}
+
+// Audited, with a relation create rule: `.run()` opens its own transaction,
+// bootstraps `cratestack_audit` and probes the relation on it.
+model CallerTxAudited {
+  id Int @id
+  ownerRowId Int
+  owner CallerTxOwner @relation(fields:[ownerRowId],references:[id])
+
+  @@audit
   @@allow("read", owner.ownerId == auth().id)
   @@allow("create", owner.ownerId == auth().id)
 }
