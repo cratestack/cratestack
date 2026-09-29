@@ -1,0 +1,6 @@
+model   Widget   {
+    id     Int    @id
+
+    name   String
+    active Boolean @default( false )
+}

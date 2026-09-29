@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 
 use crate::cli_support::{
-    hash_schema_source, into_generated_files, json_check_failure, json_check_success,
-    parse_schema_or_render, render_schema_error, write_generated_files,
+    into_generated_files, json_check_failure, json_check_success, parse_schema_or_render,
+    render_schema_error, write_generated_files,
 };
 use crate::cli_types::{Cli, Command, DartPresetArg, MigrateAction, OutputFormat, StudioCmd};
 use crate::drift::check_drift;
@@ -144,7 +144,7 @@ fn handle_generate_dart(
     native_cbor: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
-    let schema_sha256 = hash_schema_source(&schema)?;
+    let schema_sha256 = cratestack_core::schema_digest_hex(&parsed);
     let package = cratestack_client_dart::generate_package(
         &parsed,
         &cratestack_client_dart::DartGeneratorConfig {
@@ -192,7 +192,7 @@ fn handle_generate_typescript(
     rtk: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
-    let schema_sha256 = hash_schema_source(&schema)?;
+    let schema_sha256 = cratestack_core::schema_digest_hex(&parsed);
     let package = cratestack_client_typescript::generate_package(
         &parsed,
         &cratestack_client_typescript::TypeScriptGeneratorConfig {

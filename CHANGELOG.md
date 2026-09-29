@@ -38,6 +38,29 @@ unchanged: they evaluate on the pool their caller passes. Passing a pool there
 while `executor` is a transaction takes a second connection; prefer the
 builder's `run_in_tx`. No public signature changes.
 
+### The schema digest identifies the schema, not its text (#1065)
+
+**Before:** `SCHEMA_SHA256` and `SCHEMA_SHA256_BYTES`, the digest a signed
+request binds into its AAD as `schema_sha`, were the SHA-256 of the raw
+`.cstack` bytes, computed twice (in `cratestack-macros` and in the CLI). A
+comment, a `///` doc or a re-indent changed it, so two builds of one contract
+disagreed, and with signing on that is a 401 on every request.
+
+**Now** both come from `cratestack_core::schema_digest`: SHA-256 of
+`b"cratestack/schema-identity/v1\0"` followed by a canonical JSON form of the
+parsed schema. Source spans, `///` docs and the whitespace of attribute text
+(outside string literals) are dropped; top-level declarations and
+model/type/mixin/view fields are sorted by name; enum variants, attributes and
+procedure arguments keep declared order (the first variant is the `Default`,
+and Postgres orders an enum by declaration). The whole IR is hashed, so a
+server-only edit (a policy, an `@@index`, a view's SQL) still changes it.
+`cratestack generate-dart` and `generate-typescript` bake the same value.
+`cratestack-macros` and `cratestack-cli` no longer depend on `sha2`.
+
+**Breaking, binding v1 (not yet frozen):** every existing `SCHEMA_SHA256`
+changes once. Regenerate clients and rebuild servers together; the committed
+example clients are regenerated. `Required` no longer waits on this issue.
+
 ## 0.14.2 (2026-09-27)
 
 ### `RequestAuthorizer` can make a request of its own on wasm32 (#1104 follow-up)

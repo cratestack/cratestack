@@ -107,9 +107,12 @@
 //!   `max_body_bytes` (`413` beyond it).
 //! - A fallback handler (`Router::fallback`) sets no `MatchedPath`, so the
 //!   layer treats its traffic as unmatched and lets plain requests through.
-//! - The schema digest hashes the raw `.cstack` text, so a comment-only
-//!   edit changes it and breaks every signed client (cratestack#1065).
-//!   `Required` is opt-in until that is settled.
+//! - The schema digest is the canonical identity of the parsed schema
+//!   (`cratestack_core::schema_digest`, cratestack#1065), not a hash of its
+//!   text: comments, docs, whitespace and declaration order do not move it.
+//!   It still covers the whole IR, so a server-only edit (a policy, an
+//!   index, a view's SQL) changes it and a client built before the edit
+//!   is refused.
 //! - One envelope per layer: a router accepting Sign1 devices and Mac0
 //!   services at once needs the composite of cratestack#1078, which the
 //!   per-request [`SealContext`] and [`Sealed`] media type make possible.

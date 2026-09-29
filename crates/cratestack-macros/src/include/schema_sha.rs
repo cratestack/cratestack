@@ -26,16 +26,10 @@ pub(super) struct SchemaShaConsts {
 }
 
 impl SchemaShaConsts {
-    /// `hex` is `parse::hash_schema_source`'s output: 64 lowercase hex
-    /// digits. Anything else is a bug in this crate, so it panics at
-    /// expansion time rather than emitting a wrong digest.
-    pub(super) fn from_hex(hex: String) -> Self {
-        assert_eq!(hex.len(), 64, "a SHA-256 is 64 hex digits");
-        let mut bytes = [0u8; 32];
-        for (index, byte) in bytes.iter_mut().enumerate() {
-            let pair = &hex[index * 2..index * 2 + 2];
-            *byte = u8::from_str_radix(pair, 16).expect("hash_schema_source emits hex");
-        }
+    /// `bytes` is `cratestack_core::schema_digest`'s output, the schema's
+    /// canonical identity; the hex constant is derived from it here.
+    pub(super) fn from_digest(bytes: [u8; 32]) -> Self {
+        let hex = bytes.iter().map(|b| format!("{b:02x}")).collect();
         Self { hex, bytes }
     }
 }
@@ -48,8 +42,9 @@ impl ToTokens for SchemaShaConsts {
             pub const SCHEMA_SHA256: &str = #hex;
             /// `SCHEMA_SHA256` as its 32 raw bytes: the `schema_sha` a COSE
             /// envelope binds into every signed message's AAD (ADR 0006 §4,
-            /// cratestack#1006). It hashes the raw `.cstack` text, so a
-            /// comment-only edit changes it (cratestack#1065).
+            /// cratestack#1006). It is the schema's canonical identity, not
+            /// a hash of its text: a comment or whitespace edit leaves it
+            /// unchanged (cratestack#1065).
             pub const SCHEMA_SHA256_BYTES: [u8; 32] = [#(#bytes),*];
         });
     }
@@ -58,21 +53,21 @@ impl ToTokens for SchemaShaConsts {
 #[cfg(test)]
 mod tests {
     use super::SchemaShaConsts;
-    use crate::include::parse::hash_schema_source;
 
     #[test]
-    fn the_bytes_are_the_hex_digest_decoded() {
-        let hex = hash_schema_source("model Widget { id Int @id }");
-        let consts = SchemaShaConsts::from_hex(hex.clone());
-        let reencoded: String = consts.bytes.iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(reencoded, hex);
-        assert_eq!(consts.bytes[0], 0x50);
-        assert_eq!(consts.bytes[31], 0x3e);
+    fn the_hex_is_the_digest_bytes_encoded() {
+        let mut bytes = [0u8; 32];
+        bytes[0] = 0x50;
+        bytes[31] = 0x3e;
+        let consts = SchemaShaConsts::from_digest(bytes);
+        assert!(consts.hex.starts_with("5000"), "{}", consts.hex);
+        assert!(consts.hex.ends_with("3e"), "{}", consts.hex);
+        assert_eq!(consts.hex.len(), 64);
     }
 
     #[test]
     fn both_constants_are_emitted() {
-        let consts = SchemaShaConsts::from_hex(hash_schema_source(""));
+        let consts = SchemaShaConsts::from_digest([0xe3; 32]);
         let emitted = quote::quote!(#consts).to_string();
         assert!(
             emitted.contains("pub const SCHEMA_SHA256 : & str"),
@@ -82,10 +77,6 @@ mod tests {
             emitted.contains("pub const SCHEMA_SHA256_BYTES : [u8 ; 32]"),
             "{emitted}"
         );
-        // SHA-256 of the empty string starts e3 b0 c4 42.
-        assert!(
-            emitted.contains("[227u8 , 176u8 , 196u8 , 66u8"),
-            "{emitted}"
-        );
+        assert!(emitted.contains("[227u8 , 227u8"), "{emitted}");
     }
 }

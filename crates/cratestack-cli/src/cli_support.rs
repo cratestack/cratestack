@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow};
-use sha2::{Digest, Sha256};
+use anyhow::{Result, anyhow};
 
 /// Renders a `SchemaError` produced by parsing `schema` earlier in the same
 /// call. Takes no `schema` argument (cratestack#916 removed it): the error
@@ -50,52 +49,32 @@ pub(crate) fn parse_schema_or_render(schema: &PathBuf) -> Result<cratestack_core
         .map_err(|error| anyhow!(render_schema_error(&error)))
 }
 
-/// Hex-encoded SHA-256 of the schema file's raw bytes — the *same*
-/// computation `cratestack-macros::include::parse::hash_schema_source`
-/// does for `include_server_schema!`/`include_client_schema!` (issue
-/// #178), so a Rust server, a Rust client, and a generated Dart/TypeScript
-/// client all agree on one hash for one schema file. Deliberately
-/// duplicated rather than shared via a dependency: this crate can't
-/// depend on `cratestack-macros` (a proc-macro crate), and the
-/// computation is five lines, not worth a shared crate for.
-pub(crate) fn hash_schema_source(schema: &Path) -> Result<String> {
-    let source = std::fs::read_to_string(schema)
-        .with_context(|| format!("failed to read '{}'", schema.display()))?;
-    let mut hasher = Sha256::new();
-    hasher.update(source.as_bytes());
-    // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
-    // digest 0.10's `GenericArray`) implements no `LowerHex`. The
-    // byte-wise `{:02x}` fold below is this repo's existing hex idiom
-    // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
-    // `format!("{:x}", …)` produced — this string is persisted/keyed on,
-    // so it must not change shape.
-    Ok(hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect())
-}
-
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    const WIDGET: &str = "model Widget {\n  id Int @id\n}\n";
 
-    use tempfile::NamedTempFile;
-
-    use super::hash_schema_source;
+    /// The value `cratestack-core`'s own golden test pins, reached here
+    /// through the real parser: the CLI's generated clients bake in the
+    /// same identity `include_*_schema!` computes (cratestack#1065).
+    #[test]
+    fn the_cli_hashes_the_canonical_identity_of_the_parsed_schema() {
+        let schema = cratestack_parser::parse_schema(WIDGET).expect("schema should parse");
+        assert_eq!(
+            cratestack_core::schema_digest_hex(&schema),
+            "95c11ca292e854994d452dcc0d88c7de6ab309b0422fc1e30ab46e56a7757a5f"
+        );
+    }
 
     #[test]
-    fn matches_the_same_known_sha256_the_macros_crate_test_uses() {
-        // Same fixture string and expected digest as
-        // `cratestack-macros::include::parse::tests::
-        // hash_schema_source_matches_a_known_sha256` — the whole point is
-        // that these two independent implementations agree.
-        let mut file = NamedTempFile::new().expect("tempfile");
-        write!(file, "model Widget {{ id Int @id }}").expect("write fixture");
-        let hash = hash_schema_source(file.path()).expect("hash should succeed");
+    fn a_comment_does_not_change_the_identity_the_cli_bakes_in() {
+        let plain = cratestack_parser::parse_schema(WIDGET).unwrap();
+        let commented = cratestack_parser::parse_schema(
+            "// note\n/// doc\nmodel   Widget {\n  /// pk\n  id  Int  @id\n}",
+        )
+        .unwrap();
         assert_eq!(
-            hash,
-            "50fa300ea14f963f4573be7bfff0fb95b58d728f2431afbecb43578370af6e3e"
+            cratestack_core::schema_digest_hex(&plain),
+            cratestack_core::schema_digest_hex(&commented)
         );
     }
 }

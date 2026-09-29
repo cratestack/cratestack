@@ -1,6 +1,6 @@
 //! Drift-detection middleware for the `x-cratestack-schema-sha` header
 //! (issue #178). Every generated client stamps its own `SCHEMA_SHA256`
-//! constant (`SHA-256` of the `.cstack` source it was compiled against)
+//! constant (the schema's canonical identity, `cratestack_core::schema_digest`)
 //! onto every request; this middleware compares that value against the
 //! server's own constant and `tracing::warn!`s on a mismatch — nothing
 //! more. It never rejects a request: a missing header (a client not yet

@@ -40,9 +40,10 @@ pub struct DartGeneratorConfig {
     pub base_path: String,
     pub template_dir: Option<PathBuf>,
     pub preset: DartPreset,
-    /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
-    /// computed once by the CLI (`cli_support::hash_schema_source`, the
-    /// same computation `cratestack-macros` does for `include_*_schema!`)
+    /// Hex-encoded canonical schema identity (issue #178, cratestack#1065) —
+    /// `cratestack_core::schema_digest_hex` of the parsed schema, computed
+    /// once by the CLI, the same function `cratestack-macros` calls for
+    /// `include_*_schema!`; comments and whitespace do not change it,
     /// and baked into the generated client as `Client.schemaSha256`, sent
     /// as `x-cratestack-schema-sha` on every request so a drifted Dart
     /// client shows up as a server-side `tracing::warn!`, not a silent
