@@ -94,7 +94,9 @@ turns the client into a `Required` one, on both transports:
 - redirects are never followed: `CratestackClient::new` builds its client with
   `redirect::Policy::none()` under `cose`, and a sealed call whose answer came
   from a URL other than the one it was sealed for (a caller-supplied client that
-  follows redirects) is `EnvelopeError::Unverified`;
+  follows redirects) is `EnvelopeError::Unverified`. On `wasm32` the browser's
+  `fetch` follows the redirect first (reqwest 0.13 cannot set `redirect:
+  "error"`), so the check detects it only after the redirected request was sent;
 - a duplicated `Idempotency-Key` / `If-Match`, or one with leading or trailing
   whitespace, is `BadInput` locally; detail-route ids are percent-encoded on the
   path (`encode_path_segment`) while the seal binds the decoded value;

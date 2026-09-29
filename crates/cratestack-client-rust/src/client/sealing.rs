@@ -97,6 +97,15 @@ where
     /// that turned the call into a plain `GET`, but not a hop that already
     /// received the sealed bytes.
     ///
+    /// **On `wasm32` the redirect is followed by the browser.** reqwest
+    /// 0.13's wasm client cannot set `fetch`'s `redirect: "error"` mode (it
+    /// exposes only `no-cors`), and `fetch` follows a redirect before this
+    /// client sees the response. The `response.url()` check therefore
+    /// detects the redirect only after the redirected request has been
+    /// sent: it stops the answer being accepted, not the request being
+    /// re-sent. Do not put a redirecting hop in front of a browser client.
+    ///
+    ///
     /// **Streams** ([`RpcClient::call_streaming`](crate::RpcClient), the
     /// `*_streamed` methods, subscriptions) are refused with
     /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError) until
