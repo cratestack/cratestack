@@ -6,16 +6,18 @@
 //! Two entry points, differing only in where that probe runs:
 //! [`update_record_with_executor`] (public; the probe runs on the pool it
 //! is handed) and [`update_record_in_conn`] (the probe runs on the
-//! statement's own connection inside an `@isolation` procedure, on the
-//! pool otherwise; see docs/design/procedure-isolation.md §4.1).
+//! statement's own connection, for every caller; see
+//! docs/design/procedure-isolation.md §4.1).
 
 use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::{
-    PolicyDb, classify_unique_violation, no_row_error, push_action_policy_query, push_bind_value,
+    classify_unique_violation, no_row_error, push_action_policy_query, push_bind_value,
 };
-use crate::{ModelDescriptor, SqlColumnValue, SqlxRuntime, UpdateModelInput, sqlx};
+use crate::{ModelDescriptor, SqlColumnValue, UpdateModelInput, sqlx};
 
+/// Passing a pool as `policy_pool` while `executor` is a transaction takes a
+/// second connection; prefer the builder's `run_in_tx`.
 pub async fn update_record_with_executor<'e, E, M, PK, I>(
     executor: E,
     policy_pool: &sqlx::PgPool,
@@ -40,9 +42,8 @@ where
 }
 
 /// [`update_record_with_executor`] for a write that runs on `conn`, with
-/// the version/policy probe wherever [`PolicyDb::of`] puts it.
+/// the version/policy probe on `conn` too.
 pub(crate) async fn update_record_in_conn<M, PK, I>(
-    runtime: &SqlxRuntime,
     conn: &mut sqlx::PgConnection,
     descriptor: &'static ModelDescriptor<M, PK>,
     id: PK,
@@ -59,14 +60,7 @@ where
     let probe_id = id.clone();
     match update_returning_record(&mut *conn, descriptor, id, &values, ctx, if_match).await? {
         Some(record) => Ok(record),
-        None => Err(match PolicyDb::of(runtime, conn) {
-            PolicyDb::Pool(pool) => {
-                no_row_error(pool, descriptor, probe_id, ctx, if_match, "update").await
-            }
-            PolicyDb::Conn(conn) => {
-                no_row_error(conn, descriptor, probe_id, ctx, if_match, "update").await
-            }
-        }),
+        None => Err(no_row_error(conn, descriptor, probe_id, ctx, if_match, "update").await),
     }
 }
 

@@ -48,7 +48,7 @@
 use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::query::support::PolicyDb;
-use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, SqlxRuntime, sqlx};
+use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, sqlx};
 
 use super::upsert_do_nothing_sql::upsert_returning_record_do_nothing;
 use super::upsert_do_update_sql::upsert_returning_record;
@@ -72,7 +72,6 @@ pub(super) struct UpsertResolution<M> {
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn resolve_upsert<'tx, M, PK>(
     tx: &mut sqlx::Transaction<'tx, sqlx::Postgres>,
-    runtime: &SqlxRuntime,
     descriptor: &'static ModelDescriptor<M, PK>,
     insert_values: &[SqlColumnValue],
     conflict_target: ConflictTarget,
@@ -87,7 +86,7 @@ where
     // transaction can turn this into an insert; the prediction is a
     // guarantee and the SQL below is byte-identical to pre-#745.
     if let Some(before) = before_record {
-        let policy = PolicyDb::of(runtime, tx);
+        let policy = PolicyDb::Conn(&mut **tx);
         gate_update_policy(policy, descriptor, conflict_columns, conflict_target, ctx).await?;
         let record =
             upsert_returning_record(&mut **tx, descriptor, insert_values, conflict_target).await?;
@@ -128,7 +127,7 @@ where
     )
     .await?;
     if before.is_some() {
-        let policy = PolicyDb::of(runtime, tx);
+        let policy = PolicyDb::Conn(&mut **tx);
         gate_update_policy(policy, descriptor, conflict_columns, conflict_target, ctx).await?;
     }
     let record =

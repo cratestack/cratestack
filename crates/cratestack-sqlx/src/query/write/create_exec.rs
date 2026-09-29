@@ -9,8 +9,10 @@ use crate::query::support::{
     PolicyDb, apply_create_defaults, classify_unique_violation, evaluate_create_policies,
     find_column_value, push_bind_value,
 };
-use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, sqlx};
+use crate::{CreateModelInput, ModelDescriptor, sqlx};
 
+/// Passing a pool as `policy_pool` while `executor` is a transaction takes a
+/// second connection; prefer the builder's `run_in_tx`.
 pub async fn create_record_with_executor<'e, E, M, PK, I>(
     executor: E,
     policy_pool: &sqlx::PgPool,
@@ -29,11 +31,9 @@ where
 }
 
 /// [`create_record_with_executor`] for a write that runs on `conn`, with
-/// the create-policy evaluation wherever [`PolicyDb::of`] puts it: on
-/// `conn` inside an `@isolation` procedure, on the pool otherwise
+/// the create-policy evaluation on `conn` too
 /// (docs/design/procedure-isolation.md §4.1).
 pub(crate) async fn create_record_in_conn<M, PK, I>(
-    runtime: &SqlxRuntime,
     conn: &mut sqlx::PgConnection,
     descriptor: &'static ModelDescriptor<M, PK>,
     input: I,
@@ -44,7 +44,7 @@ where
     for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow> + serde::Serialize,
 {
     let values =
-        authorized_create_values(PolicyDb::of(runtime, &mut *conn), descriptor, input, ctx).await?;
+        authorized_create_values(PolicyDb::Conn(&mut *conn), descriptor, input, ctx).await?;
     insert_returning_record(&mut *conn, descriptor, &values).await
 }
 

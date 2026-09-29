@@ -42,7 +42,7 @@ where
     // than "evaluate the path that runs," but pre-flighting a read
     // just to pick the policy slot would leak row existence.
     if !evaluate_create_policies(
-        PolicyDb::of(runtime, tx),
+        PolicyDb::Conn(&mut **tx),
         descriptor.create_allow_policies,
         descriptor.create_deny_policies,
         &insert_values,
@@ -143,7 +143,6 @@ where
     // `ON CONFLICT DO NOTHING` rather than `RETURNING (xmax = 0)`.
     let resolved = resolve_upsert(
         tx,
-        runtime,
         descriptor,
         &insert_values,
         conflict_target,

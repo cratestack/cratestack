@@ -58,15 +58,14 @@ const AUDIT_OBJECTS_EXIST: &str = "SELECT to_regclass('cratestack_audit') IS NOT
 /// DDL entirely after the first successful run avoids taking that
 /// lock at all on every subsequent call.
 ///
-/// `probe` is the transaction the audited write runs in. Inside an
-/// `@isolation` procedure (`runtime` bound to its attempt), which already
-/// holds one pooled connection for its whole transaction, the bootstrap
-/// first asks that transaction whether the table *and every index the DDL
-/// creates* already exist — the normal case wherever migrations created
-/// them — so it does not need a second connection just to learn that
-/// (docs/design/procedure-isolation.md §4.1). A table created without
-/// those indexes still gets them from the DDL. Every other caller runs the
-/// DDL on the pool exactly as before, and `probe` is unused.
+/// `probe` is the transaction the audited write runs in, which already
+/// holds one pooled connection for its whole life. For every caller the
+/// bootstrap first asks that transaction whether the table *and every index
+/// the DDL creates* already exist — the normal case wherever migrations
+/// created them — so it does not need a second connection just to learn
+/// that (docs/design/procedure-isolation.md §4.1, cratestack#1117). A
+/// table created without those indexes still gets them from the DDL, which
+/// runs on the pool.
 pub(crate) async fn ensure_audit_table<'e, E>(
     runtime: &SqlxRuntime,
     probe: E,
@@ -77,15 +76,13 @@ where
     if runtime.audit_table_ensured().load(Ordering::Acquire) {
         return Ok(());
     }
-    if runtime.bound().is_some() {
-        let exists: bool = sqlx::query_scalar(AUDIT_OBJECTS_EXIST)
-            .fetch_one(probe)
-            .await
-            .map_err(|error| CratestackError::Database(error.to_string()))?;
-        if exists {
-            runtime.audit_table_ensured().store(true, Ordering::Release);
-            return Ok(());
-        }
+    let exists: bool = sqlx::query_scalar(AUDIT_OBJECTS_EXIST)
+        .fetch_one(probe)
+        .await
+        .map_err(|error| CratestackError::Database(error.to_string()))?;
+    if exists {
+        runtime.audit_table_ensured().store(true, Ordering::Release);
+        return Ok(());
     }
 
     // `raw_sql` sends the whole DDL block as one batch over PG's

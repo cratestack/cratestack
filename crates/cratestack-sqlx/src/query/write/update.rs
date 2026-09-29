@@ -96,16 +96,9 @@ where
         let before_snapshot = before_record
             .as_ref()
             .and_then(|m| serde_json::to_value(m).ok());
-        let record = update_record_in_conn(
-            self.runtime,
-            tx,
-            self.descriptor,
-            self.id,
-            self.input,
-            ctx,
-            self.if_match,
-        )
-        .await?;
+        let record =
+            update_record_in_conn(tx, self.descriptor, self.id, self.input, ctx, self.if_match)
+                .await?;
         if emits_event {
             enqueue_event_outbox(
                 &mut **tx,

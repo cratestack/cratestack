@@ -37,7 +37,7 @@ where
         .map_err(cratestack_error_from_sqlx)
 }
 
-/// The pool, or the `@isolation` transaction ([`PolicyDb::of`]).
+/// Evaluated on the connection the write runs on ([`PolicyDb::Conn`]).
 pub(super) async fn row_passes_update_policy<M, PK>(
     policy: PolicyDb<'_>,
     descriptor: &'static ModelDescriptor<M, PK>,
