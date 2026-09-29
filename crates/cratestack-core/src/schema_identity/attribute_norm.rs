@@ -3,7 +3,7 @@
 //!
 //! Outside quoted string literals, each whitespace run collapses to one
 //! space, and a space next to a punctuation character is dropped. String
-//! literal contents (`"…"`, with `\` escapes, and `"""…"""`) stay verbatim,
+//! literal contents (`"…"` and `'…'`, with `\` escapes, and `"""…"""`) stay verbatim,
 //! because they carry SQL bodies and regexes where whitespace is meaning.
 
 /// Characters a space beside is never significant.
@@ -19,14 +19,14 @@ pub fn normalize_attribute_text(raw: &str) -> String {
             pending_space = true;
             continue;
         }
-        let is_quote = c == '"';
+        let is_quote = c == '"' || c == '\'';
         if pending_space && !is_punct(out.chars().last()) && !(is_punct(Some(c))) {
             out.push(' ');
         }
         pending_space = false;
         out.push(c);
         if is_quote {
-            copy_literal(&mut chars, &mut out);
+            copy_literal(c, &mut chars, &mut out);
         }
     }
     out
@@ -38,9 +38,13 @@ fn is_punct(c: Option<char>) -> bool {
 
 /// Copies a string literal's body and closing quote verbatim; the opening
 /// quote is already in `out`.
-fn copy_literal(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, out: &mut String) {
+fn copy_literal(
+    open: char,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    out: &mut String,
+) {
     let mut lookahead = chars.clone();
-    let triple = lookahead.next() == Some('"') && lookahead.next() == Some('"');
+    let triple = open == '"' && lookahead.next() == Some('"') && lookahead.next() == Some('"');
     if triple {
         out.push_str("\"\"");
         chars.next();
@@ -63,7 +67,7 @@ fn copy_literal(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, out: &mut 
                     out.push(escaped);
                 }
             }
-            '"' => return,
+            c if c == open => return,
             _ => {}
         }
     }

@@ -8,10 +8,12 @@
 //! cannot make two builds of one contract disagree — a disagreement that
 //! signing turns into a 401 at deploy.
 //!
-//! The digest is `SHA-256(DOMAIN || canonical JSON)`. The JSON is built
-//! node by node in [`nodes`] rather than by serialising [`Schema`]: a new IR
-//! field must be added there on purpose, never leak into every digest
-//! through a `#[serde(default)]`. What is dropped: source spans, `///` docs
+//! The digest is `SHA-256(DOMAIN || canonical JSON)`. The JSON is written
+//! by private structs in [`nodes`] (fields declared in lexicographic order,
+//! so the bytes do not depend on `serde_json`'s `preserve_order` feature)
+//! and every IR node is destructured exhaustively there: a new IR field
+//! is a compile error until it is encoded or dropped on purpose, and never
+//! leaks into every digest through a `#[serde(default)]`. What is dropped: source spans, `///` docs
 //! and the whitespace of attribute text ([`attribute_norm`]). What is
 //! sorted: top-level declarations and model/type/mixin/view fields, by name.
 //! What keeps declared order: enum variants (the first is the `Default`,
@@ -20,9 +22,13 @@
 //! digest: the IR is hashed whole, so a wire mismatch can never slip through.
 
 mod attribute_norm;
+mod canon;
+mod members;
 mod nodes;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_bytes;
 
 use sha2::{Digest, Sha256};
 
@@ -45,12 +51,15 @@ pub const SCHEMA_IDENTITY_DOMAIN: &[u8] = b"cratestack/schema-identity/v1\0";
 /// assert_eq!(cratestack_core::schema_digest(&schema).len(), 32);
 /// ```
 pub fn schema_digest(schema: &Schema) -> [u8; 32] {
-    let canonical = nodes::canonical_schema(schema);
-    let json = serde_json::to_vec(&canonical).expect("a JSON value always serializes");
     let mut hasher = Sha256::new();
     hasher.update(SCHEMA_IDENTITY_DOMAIN);
-    hasher.update(&json);
+    hasher.update(nodes::canonical_bytes(schema));
     hasher.finalize().into()
+}
+
+#[cfg(test)]
+pub(crate) fn canonical_bytes(schema: &Schema) -> Vec<u8> {
+    nodes::canonical_bytes(schema)
 }
 
 /// [`schema_digest`] as 64 lowercase hex digits (the `SCHEMA_SHA256` string).

@@ -12,7 +12,7 @@
 // provably non-null for this one generated instance — narrowing it would
 // break the no-hash case, which is a real, exercised code path.
 // ignore: unnecessary_nullable_for_final_variable_declarations
-const String? cratestackSchemaSha256 = '898f7c4524089409c9d23e952fb9cef04ffe3879193ddb32ea11abcf16ef33f3';
+const String? cratestackSchemaSha256 = '217ba18873787830e1ff660ecce902cfba0cec5a007b8773e512ec2be0a622f3';
 
 abstract final class BoardFieldNames {
   static const String id = 'id';

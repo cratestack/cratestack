@@ -78,7 +78,7 @@ fn empty() -> Schema {
 }
 
 /// `model Widget { id Int @id }`, the parser's IR for it.
-fn widget(at: usize) -> Schema {
+pub(super) fn widget(at: usize) -> Schema {
     let mut schema = empty();
     schema.models.push(model(
         "Widget",
