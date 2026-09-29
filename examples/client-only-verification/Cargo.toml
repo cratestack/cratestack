@@ -23,6 +23,11 @@ description = "Standalone crate (cratestack#490) that is NOT a workspace member 
 [lints]
 workspace = true
 
+[features]
+# cratestack#1007: the signed client, for the wasm32 `?Send` signer proof in
+# `src/lib.rs`. Off by default, so the default graph proves what it always did.
+cose = ["cratestack/cose"]
+
 [dependencies]
 cratestack = { package = "cratestack-client", path = "../../crates/cratestack-client" }
 # Generated model/input/procedure structs derive `serde::Serialize`/

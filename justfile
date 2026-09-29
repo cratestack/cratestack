@@ -220,6 +220,13 @@ lint:
 	# `envelope` alone compiles a different set of the layer's tests.
 	cargo clippy -p cratestack-axum -p cratestack-api --features cratestack-axum/cose,cratestack-api/cose --all-targets -- -D warnings {{clippy_allow}}
 	cargo clippy -p cratestack-axum --features envelope --all-targets -- -D warnings {{clippy_allow}}
+	# Same blind spot for the signed client (cratestack#1007): `cose` is off by
+	# default, so `--workspace` never lint-checks the sealing code in
+	# `cratestack-client-rust` (with `middleware` too, for its retry test), and
+	# `cratestack-pg`'s `cose_client_models` is `required-features = ["cose"]`.
+	# `cratestack-api`'s `cose_client_*` targets ride on the line above.
+	cargo clippy -p cratestack-client-rust --features cose,middleware --all-targets -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-pg --features cose --lib --test cose_client_models -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -354,6 +361,14 @@ test-ci-db-decimal-bigdecimal *args='':
 # too; the two agree).
 test-ci-db-mcp *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg --test procedure_isolation_mcp {{args}}
+
+# The signed Rust client over real models (cratestack#1007): create, get, a
+# bound query, `If-Match`, delete and `/rpc/batch`, over REST and RPC, through
+# the real envelope layer. `required-features = ["cose"]`, so `test-ci-db`
+# above never builds it. Exports `CRATESTACK_REQUIRE_DB=1` itself, like its
+# MCP sibling, so a missing database fails instead of skipping.
+test-ci-db-cose *args='':
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features cose --test cose_client_models {{args}}
 
 # MCP conformance with a real third-party client (cratestack#1041, ADR 0002
 # phase 6): the official MCP Inspector CLI drives `examples/mcp-operator`
@@ -625,6 +640,15 @@ test-ci-host *args='':
 	cargo test -p cratestack-axum --features envelope {{args}} || status=1
 	cargo test -p cratestack-axum --features cose {{args}} || status=1
 	cargo test -p cratestack-api --features cose --test cose_envelope_rest --test cose_envelope_rpc --test cose_envelope_security {{args}} || status=1
+	# cratestack#1007: the signed client. `cose` is off by default, so the
+	# sealing code, `tests/cose_sealed_idempotency.rs` (which also needs
+	# `middleware`) and the doctests behind it are compiled away above. Whole
+	# `cratestack-client-rust` crate for those; then `cratestack-api`'s
+	# `cose_client_*` targets, which serve the generated routers on real
+	# listeners and need no database. The model-backed half is
+	# `test-ci-db-cose`.
+	cargo test -p cratestack-client-rust --features cose,middleware {{args}} || status=1
+	cargo test -p cratestack-api --features cose --test cose_client_rest --test cose_client_rpc --test cose_client_failures --test cose_client_runtime {{args}} || status=1
 	exit "$status"
 
 # Report-only: surfaces the current pass/fail state of every `#[ignore]`d

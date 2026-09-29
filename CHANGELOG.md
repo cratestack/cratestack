@@ -61,6 +61,78 @@ server-only edit (a policy, an `@@index`, a view's SQL) still changes it.
 changes once. Regenerate clients and rebuild servers together; the committed
 example clients are regenerated. `Required` no longer waits on this issue.
 
+### The Rust client seals requests and opens responses: REST and RPC, COSE_Sign1 and COSE_Mac0 (#1007)
+
+**Before:** the server layer of 0.14.0 could open signed requests and seal its
+answers, but no client could send one: `RuntimeEnvelopeConfig::CoseSign1` was
+rejected with "COSE envelope support is not implemented yet" and the generated
+Rust client sent plain CBOR.
+
+**Now**, behind the new `cose` feature of `cratestack-client-rust` (forwarded
+by the `cratestack-client`, `cratestack-pg` and `cratestack-api` facades; off
+by default, no `axum` in the graph),
+`CratestackClient::with_envelope(ClientEnvelope::new(envelope, audience)?)`
+turns the client into a `Required` one, on both transports:
+
+- every request is sealed, and every response must be a COSE message that
+  verifies against the request it answers: its digest, its status, its route
+  and its `Idempotency-Key` / `If-Match`. A response sealed for another
+  request, or with its status rewritten, is `EnvelopeError::Unverified`;
+- an answer that is not sealed at all is `EnvelopeError::Unsigned { status }`
+  and its body is never read, so a proxy that strips the seal, or a server
+  that would not sign, cannot downgrade the client (the layer's own
+  refusals, an unsigned `401` for a wrong audience, arrive the same way);
+- a sealed error body is the usual `ClientError::Remote`;
+- generated REST code names each call's route template through the new
+  `CratestackClient::at(RouteRef)`, from the same derivation as the server's
+  `ROUTE_TRANSPORTS` (so the two cannot disagree); the RPC client binds the op
+  id, and `batch` for `/rpc/batch`;
+- streams, `@stream` ops and subscriptions fail locally with
+  `EnvelopeError::StreamsUnsupported` (sealed streams are ADR 0006 P1);
+- a `JsonCodec` client refuses an envelope (`BadInput`);
+- `RequestAuthorizer` still runs, over the inner payload with
+  `Content-Type: application/cbor`, which is what the server's `AuthProvider`
+  sees once it has opened the seal;
+- a sealed request carries a fresh `cti`, so it is marked
+  `RequestIdempotency::new(false)` for `reqwest-middleware`; a retry layer must
+  send the call again through the client, not replay the bytes.
+
+`ExternalSigner::esp256(public_key_sec1, callback)` signs with a key that
+lives outside the process, the Android Keystore or an iOS `SecKey`: the
+callback is async, receives the full to-be-signed bytes (the keystore hashes
+them itself), and may answer in DER, which is converted to the 64-byte form
+the envelope needs (a raw `r || s` is accepted too). The `kid` is computed from
+the public key.
+
+`RuntimeHandle::with_envelope(config, envelope, schema_sha)` seals over the
+FFI, with `RuntimeEnvelopeConfig::CoseMac0` added next to `CoseSign1`;
+`RuntimeHandle::new` refuses a config that names an envelope it was not given,
+and a mismatched pair. Raw requests must be RPC ones. An envelope failure
+reaches the host as an existing error code with an `envelope_*`
+`remote_code`. The Flutter mirror in `cratestack-client-flutter` stays guarded
+until P1.
+
+**Breaking:** `CoseSigner` and `CoseVerifierResolver` are target-split like
+`RequestAuthorizer`: unchanged natively, and on `wasm32` they carry no
+`Send + Sync` and their futures need not be `Send`. An implementation that
+builds for both targets uses `#[cfg_attr(not(target_arch = "wasm32"),
+async_trait::async_trait)]` and `#[cfg_attr(target_arch = "wasm32",
+async_trait::async_trait(?Send))]`; a plain `#[async_trait]` keeps compiling
+natively and fails with `E0053` on wasm32. `impl CratestackEnvelope for
+CoseEnvelope` is native only, and `CoseEnvelope`'s typed methods are the wasm32
+surface. `ClientError` and `RpcClientError` (both `#[non_exhaustive]`) gain an
+`Envelope` variant, and `RuntimeEnvelopeConfig` a `CoseMac0` variant.
+
+**The Dart and TypeScript clients do not sign,** by ADR 0006 §11's decision:
+they use the Rust runtime (FRB, wasm and napi) instead of a second
+implementation, so their generated code is unchanged.
+
+**Binding version 1 freezes with this release** (#1082): it is the first in
+which generated routers and a client both put the envelope on the wire, so
+the AAD (including how the schema identity is derived, #1065, already landed)
+no longer changes without a `BINDING_VERSION` bump. The
+`cratestack-cose` README, crate docs and `BINDING_VERSION` docs say so.
+
 ## 0.14.2 (2026-09-27)
 
 ### `RequestAuthorizer` can make a request of its own on wasm32 (#1104 follow-up)

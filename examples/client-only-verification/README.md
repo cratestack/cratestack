@@ -56,6 +56,18 @@ cargo tree --locked | grep -i axum   # -> no output
 cargo test --locked
 ```
 
+## The signed client (`--features cose`)
+
+`cratestack-client` also offers `cose` (cratestack#1007), the client half of the signed
+transport. It adds `cratestack-cose` and still no `axum`; CI asserts both, and compiles the
+`--features cose` build for `wasm32-unknown-unknown`, where `src/lib.rs`'s `browser_signer` module
+signs through a callback that holds a non-`Send` value across an `await`.
+
+```bash
+cargo tree --locked --features cose | grep -i axum   # -> no output
+cargo check --locked --target wasm32-unknown-unknown --features cose
+```
+
 ## The mechanism
 
 `crates/cratestack-client/Cargo.toml` simply has no `cratestack-axum` entry
