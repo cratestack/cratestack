@@ -1,7 +1,8 @@
 // Policy reads inside an `@isolation` procedure run on the procedure's own
 // transaction (docs/design/procedure-isolation.md §4.1, GHSA-r67q-4qqq-g9gm).
-// `tests/procedure_isolation_policy.rs` drives it; the pool-side behaviour
-// every other caller keeps is `tests/policy_db_caller_tx.rs`.
+// `tests/procedure_isolation_policy.rs` drives it; the same holds for every
+// caller's transaction, which `tests/policy_db_caller_tx.rs` drives
+// (cratestack#1117).
 
 datasource db {
   provider = "postgresql"

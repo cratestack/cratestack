@@ -325,8 +325,9 @@ async fn policy_reads_use_the_attempts_snapshot() {
 
 /// An audited write whose create policy looks up a relation, on a
 /// one-connection pool: the policy read and the audit bootstrap both use the
-/// attempt's connection, so nothing waits for a second one. Pool-side, this
-/// is the starvation `policy_db_caller_tx.rs` pins.
+/// attempt's connection, so nothing waits for a second one. Before
+/// cratestack#1117 only an `@isolation` attempt had this; every other caller's
+/// transaction is now covered by `policy_db_caller_tx.rs`.
 #[tokio::test]
 async fn an_audited_write_with_a_relation_policy_needs_one_connection() {
     let _guard = pg::serial_guard().await;
