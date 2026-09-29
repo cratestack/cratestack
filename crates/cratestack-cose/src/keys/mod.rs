@@ -1,6 +1,7 @@
 //! Keys: the signing and resolution traits, verification keys, and the
 //! in-process implementations.
 
+mod external;
 mod hmac;
 mod key_provider;
 mod signers;
@@ -9,6 +10,7 @@ mod traits;
 mod verify;
 mod verify_key;
 
+pub use external::ExternalSigner;
 pub use hmac::{HmacSecret, HmacSigner, MIN_HMAC_SECRET_LEN};
 pub use key_provider::KeyProviderMacKeys;
 pub use signers::{Ed25519Signer, P256Signer};

@@ -4,8 +4,17 @@ use cratestack_core::CratestackError;
 
 use super::verify_key::CoseVerifyKey;
 use crate::alg::CoseAlg;
+use crate::maybe_send::MaybeSendSync;
 
 /// Produces signatures (or MAC tags) without handing out the key.
+///
+/// **Target-split** (cratestack#1007, the same split as the client's
+/// `RequestAuthorizer`): natively the trait is `Send + Sync` and its futures
+/// are `Send`, exactly as before. On `wasm32` it is neither, because a
+/// signer there is a WebCrypto call or a JS callback, and a `JsFuture` is
+/// never `Send`. An implementation that builds for both targets writes
+/// `#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]` and
+/// `#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]`.
 ///
 /// `KeyProvider::resolve_signing_key` returns raw key bytes, which fits
 /// HMAC but not an asymmetric key that lives in an HSM or a KMS (§1: "keys
@@ -21,8 +30,9 @@ use crate::alg::CoseAlg;
 /// an algorithm that does not fit the envelope's mode, or a signature whose
 /// length is not [`CoseAlg::signature_len`] is refused with a `500` before
 /// anything reaches the wire. An ESP256 signature is normalised to low-`s`.
-#[async_trait::async_trait]
-pub trait CoseSigner: Send + Sync + 'static {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+pub trait CoseSigner: MaybeSendSync + 'static {
     /// The algorithm every signature from this signer uses.
     fn alg(&self) -> CoseAlg;
 
@@ -81,8 +91,9 @@ pub trait CoseSigner: Send + Sync + 'static {
 /// active key of a tenant) cannot let one key sign as another, or an HMAC
 /// secret stand in for a public key. It only costs a thumbprint comparison
 /// per extra candidate, and a lookup that should have been indexed.
-#[async_trait::async_trait]
-pub trait CoseVerifierResolver: Send + Sync + 'static {
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+pub trait CoseVerifierResolver: MaybeSendSync + 'static {
     /// Every key whose `kid` is `kid` and which verifies `alg`; `Ok(vec![])`
     /// if there is none. `Err` only for a backend failure.
     async fn resolve(

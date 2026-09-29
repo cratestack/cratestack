@@ -113,7 +113,8 @@ fn invalid(message: impl Into<String>) -> CratestackError {
 /// `Ok(vec![])`, as the resolver contract requires. Never `Err`: the
 /// secrets were resolved at construction, so there is no backend left to
 /// fail.
-#[async_trait::async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 impl CoseVerifierResolver for KeyProviderMacKeys {
     async fn resolve(
         &self,

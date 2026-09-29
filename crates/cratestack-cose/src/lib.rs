@@ -79,6 +79,7 @@ mod envelope;
 mod error;
 mod header;
 mod keys;
+mod maybe_send;
 mod open;
 mod opened;
 mod replay;
@@ -100,8 +101,9 @@ pub use cratestack_core::{
 pub use envelope::{CoseEnvelope, CoseEnvelopeBuilder, CoseRole};
 pub use error::UNAUTHENTICATED;
 pub use keys::{
-    CoseSigner, CoseVerifierResolver, CoseVerifyKey, Ed25519Signer, HmacSecret, HmacSigner,
-    KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
+    CoseSigner, CoseVerifierResolver, CoseVerifyKey, Ed25519Signer, ExternalSigner, HmacSecret,
+    HmacSigner, KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
 };
+pub use maybe_send::{MaybeSend, MaybeSendSync};
 pub use opened::Opened;
 pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN, random_request_nonce};
