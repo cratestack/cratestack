@@ -84,11 +84,14 @@ where
             HeaderValue::from_static(envelope.media_type()),
         );
 
+        // The response binds the digest of exactly these bytes, so take it
+        // before the body is handed to the transport.
+        let sealed_digest = request_digest(&sealed);
         let response = self
             .http
             .request(method.clone(), url.clone())
             .headers(header_map)
-            .body(sealed.clone())
+            .body(sealed)
             // A replay carries the same `cti`, which the server refuses.
             .with_extension(RequestIdempotency::new(false))
             .send()
@@ -111,7 +114,7 @@ where
         }
         let answer = Binding {
             response: Some(ResponseBinding {
-                request: request_digest(&sealed),
+                request: sealed_digest,
                 status: status.as_u16(),
             }),
             ..binding
