@@ -5,6 +5,7 @@ mod attrs;
 pub(crate) mod bytes_serde;
 pub(crate) mod decimal_backend;
 mod enum_query_parser;
+mod model_routes;
 mod procedure_attrs;
 mod query_fields;
 mod sql;
@@ -187,3 +188,4 @@ pub(crate) fn find_model<'a>(models: &'a [Model], name: &str) -> Option<&'a Mode
 // same implementation instead of reimplementing it. Do not redefine these
 // locally.
 pub(crate) use cratestack_core::route_naming::{pluralize, to_snake_case};
+pub(crate) use model_routes::{detail_path_of, model_detail_path, model_list_path};

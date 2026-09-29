@@ -10,7 +10,7 @@ mod tests_idempotency;
 use cratestack_core::{Model, Procedure};
 use quote::quote;
 
-use crate::shared::{ident, pluralize, to_snake_case};
+use crate::shared::{ident, model_detail_path, model_list_path, to_snake_case};
 
 pub(crate) use capabilities::{
     model_read_transport_capabilities_tokens, model_write_transport_capabilities_tokens,
@@ -51,8 +51,8 @@ pub(crate) fn generate_procedure_transport_entries(
 
 pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::TokenStream {
     let model_name = &model.name;
-    let list_path = format!("/{}", pluralize(&to_snake_case(model_name)));
-    let detail_path = format!("/{}/{{id}}", pluralize(&to_snake_case(model_name)));
+    let list_path = model_list_path(model_name);
+    let detail_path = model_detail_path(model_name);
 
     let list_ident = route_transport_const_ident("model", model_name, "list_get");
     let create_ident = route_transport_const_ident("model", model_name, "list_post");

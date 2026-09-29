@@ -18,14 +18,13 @@ use cratestack_core::Model;
 use quote::quote;
 
 use crate::client::model_output_type_tokens;
-use crate::shared::{
-    ident, is_paged_model, is_primary_key, pluralize, rust_type_tokens, to_snake_case,
-};
+use crate::shared::{ident, is_paged_model, is_primary_key, model_list_path, rust_type_tokens};
 
 mod computed;
 mod context;
 mod groups_read;
 mod groups_write;
+mod routes;
 mod with_response;
 use context::ModelRestClientContext;
 
@@ -36,7 +35,7 @@ pub(super) fn generate_generated_model_client(
 ) -> Result<proc_macro2::TokenStream, String> {
     let internal = cratestack_core::model_internal_actions(model);
     let client_ident = ident(&format!("{}Client", model.name));
-    let route_path = format!("/{}", pluralize(&to_snake_case(&model.name)));
+    let route_path = model_list_path(&model.name);
     let paged = is_paged_model(model);
     let primary_key = model
         .fields
@@ -55,15 +54,16 @@ pub(super) fn generate_generated_model_client(
     } else {
         quote! { Vec<P::Output> }
     };
+    let list_runtime = routes::list_runtime(&route_path);
     let list_view_call = if paged {
         quote! {
-            self.runtime
+            #list_runtime
                 .list_view_paged(#route_path, projection, query, headers)
                 .await
         }
     } else {
         quote! {
-            self.runtime
+            #list_runtime
                 .list_view(#route_path, projection, query, headers)
                 .await
         }
