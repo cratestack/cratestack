@@ -192,6 +192,26 @@ The extension is only observable under the `middleware` feature: reqwest 0.13 ke
 `Request::extensions_mut()` `pub(crate)`, so a bare `reqwest::Client` has no extension
 map a caller can write to or read from.
 
+## Signed transport (`cose` feature)
+
+With the off-by-default `cose` feature, `CratestackClient::with_envelope` seals every request
+and opens every response as COSE_Sign1 or COSE_Mac0 (ADR 0006), over REST and RPC alike:
+
+```text
+let runtime = CratestackClient::new(config, CborCodec)
+    .with_envelope(ClientEnvelope::new(envelope, "payments")?)?;
+let client = cratestack_schema::client::Client::new(runtime); // generated code adds the route and digest
+```
+
+The client is then a `Required` one: a response that is not the sealed answer to *this* request
+(another request's, a rewritten status) is `EnvelopeError::Unverified`, and one that is not sealed
+at all is `EnvelopeError::Unsigned { status }` with its body unread, so nothing downgrades to
+plain. Streams are refused with `EnvelopeError::StreamsUnsupported`. A key in a platform keystore
+signs through `ExternalSigner::esp256`, which takes a DER answer. Sealed requests are marked
+non-idempotent for `reqwest-middleware`, because a replay carries the same `cti`. On
+`wasm32-unknown-unknown` the signer need not be `Send`. See the
+[signed transport guide](https://cratestack.dev/guides/signed-transport#the-rust-client).
+
 ## State Persistence
 
 Journal requests for replay or offline recovery. The bundled implementations are `InMemoryStateStore` and `JsonFileStateStore`; the trait is `ClientStateStore`.
