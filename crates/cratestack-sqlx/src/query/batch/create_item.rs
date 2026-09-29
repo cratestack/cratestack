@@ -61,7 +61,7 @@ where
             ));
         }
         if !evaluate_create_policies(
-            PolicyDb::Conn(&mut *item_tx),
+            PolicyDb::Conn(&mut item_tx),
             descriptor.create_allow_policies,
             descriptor.create_deny_policies,
             &values,

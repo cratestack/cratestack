@@ -55,7 +55,7 @@ where
     // policy applies unconditionally, same as `.create()` / the DO
     // UPDATE upsert.
     if !evaluate_create_policies(
-        PolicyDb::Conn(&mut **tx),
+        PolicyDb::Conn(tx),
         descriptor.create_allow_policies,
         descriptor.create_deny_policies,
         &insert_values,
@@ -87,7 +87,7 @@ where
     .await?;
     if let Some(existing) = pre_probe {
         authorize_existing_row(
-            PolicyDb::Conn(&mut **tx),
+            PolicyDb::Conn(tx),
             descriptor,
             &conflict_columns,
             conflict_target.predicate(),

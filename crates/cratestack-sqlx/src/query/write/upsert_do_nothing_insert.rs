@@ -94,7 +94,7 @@ where
                 ))
             })?;
             authorize_existing_row(
-                PolicyDb::Conn(&mut **tx),
+                PolicyDb::Conn(tx),
                 descriptor,
                 conflict_columns,
                 conflict_target.predicate(),

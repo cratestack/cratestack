@@ -60,7 +60,7 @@ where
             ));
         }
         if !evaluate_create_policies(
-            PolicyDb::Conn(&mut *item_tx),
+            PolicyDb::Conn(&mut item_tx),
             descriptor.create_allow_policies,
             descriptor.create_deny_policies,
             &insert_values,
@@ -81,7 +81,7 @@ where
         let inserted = before_record.is_none();
 
         if !inserted
-            && !row_passes_update_policy(PolicyDb::Conn(&mut *item_tx), descriptor, &pk_value, ctx)
+            && !row_passes_update_policy(PolicyDb::Conn(&mut item_tx), descriptor, &pk_value, ctx)
                 .await?
         {
             return Err(CratestackError::Forbidden(

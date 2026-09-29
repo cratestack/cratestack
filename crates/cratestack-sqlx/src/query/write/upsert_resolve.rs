@@ -86,7 +86,7 @@ where
     // transaction can turn this into an insert; the prediction is a
     // guarantee and the SQL below is byte-identical to pre-#745.
     if let Some(before) = before_record {
-        let policy = PolicyDb::Conn(&mut **tx);
+        let policy = PolicyDb::Conn(tx);
         gate_update_policy(policy, descriptor, conflict_columns, conflict_target, ctx).await?;
         let record =
             upsert_returning_record(&mut **tx, descriptor, insert_values, conflict_target).await?;
@@ -127,7 +127,7 @@ where
     )
     .await?;
     if before.is_some() {
-        let policy = PolicyDb::Conn(&mut **tx);
+        let policy = PolicyDb::Conn(tx);
         gate_update_policy(policy, descriptor, conflict_columns, conflict_target, ctx).await?;
     }
     let record =

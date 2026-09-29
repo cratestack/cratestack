@@ -42,7 +42,7 @@ where
     // than "evaluate the path that runs," but pre-flighting a read
     // just to pick the policy slot would leak row existence.
     if !evaluate_create_policies(
-        PolicyDb::Conn(&mut **tx),
+        PolicyDb::Conn(tx),
         descriptor.create_allow_policies,
         descriptor.create_deny_policies,
         &insert_values,
