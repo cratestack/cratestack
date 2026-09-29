@@ -8,6 +8,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use super::routes::{bind_id, detail_runtime, detail_url};
+
 /// Same call as `get`, but returns the status and response headers
 /// alongside the record (issue #493) — read `TypedResponse::header("etag")`
 /// off the result to get the value `update_with_response` needs as
@@ -19,6 +21,11 @@ pub(super) fn build_get_with_response_method(
     primary_key_type: &TokenStream,
     model_output_type: &TokenStream,
 ) -> TokenStream {
+    let (bind_id, runtime, url) = (
+        bind_id(),
+        detail_runtime(route_path),
+        detail_url(route_path),
+    );
     quote! {
         pub async fn get_with_response(
             &self,
@@ -28,7 +35,8 @@ pub(super) fn build_get_with_response_method(
             ::cratestack::client_rust::TypedResponse<#model_output_type>,
             ::cratestack::client_rust::ClientError,
         > {
-            self.runtime.get_with_response(&format!("{}/{}", #route_path, id), &[], headers).await
+            #bind_id
+            #runtime.get_with_response(#url, &[], headers).await
         }
     }
 }
@@ -43,6 +51,11 @@ pub(super) fn build_update_with_response_method(
     update_input_ident: &syn::Ident,
     model_output_type: &TokenStream,
 ) -> TokenStream {
+    let (bind_id, runtime, url) = (
+        bind_id(),
+        detail_runtime(route_path),
+        detail_url(route_path),
+    );
     quote! {
         pub async fn update_with_response(
             &self,
@@ -53,7 +66,8 @@ pub(super) fn build_update_with_response_method(
             ::cratestack::client_rust::TypedResponse<#model_output_type>,
             ::cratestack::client_rust::ClientError,
         > {
-            self.runtime.patch_with_response(&format!("{}/{}", #route_path, id), input, headers).await
+            #bind_id
+            #runtime.patch_with_response(#url, input, headers).await
         }
     }
 }
@@ -72,6 +86,11 @@ pub(super) fn build_delete_with_response_method(
     primary_key_type: &TokenStream,
     model_output_type: &TokenStream,
 ) -> TokenStream {
+    let (bind_id, runtime, url) = (
+        bind_id(),
+        detail_runtime(route_path),
+        detail_url(route_path),
+    );
     quote! {
         pub async fn delete_with_response(
             &self,
@@ -81,7 +100,8 @@ pub(super) fn build_delete_with_response_method(
             ::cratestack::client_rust::TypedResponse<#model_output_type>,
             ::cratestack::client_rust::ClientError,
         > {
-            self.runtime.delete_with_response(&format!("{}/{}", #route_path, id), headers).await
+            #bind_id
+            #runtime.delete_with_response(#url, headers).await
         }
     }
 }

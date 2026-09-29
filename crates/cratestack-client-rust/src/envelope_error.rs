@@ -1,0 +1,57 @@
+//! Why a signed call failed (ADR 0006, cratestack#1007).
+
+use cratestack_core::CratestackError;
+
+/// A failure that belongs to the signed transport, not to the call.
+///
+/// A client that has an envelope never falls back to a plain call: every one
+/// of these is an error, and none of them carries a decoded body. In
+/// particular an answer that arrives without a seal is
+/// [`Unsigned`](Self::Unsigned) whatever its status, so a proxy that strips
+/// the envelope, or a server that was never asked to sign, cannot turn a
+/// `Required` client into a plain one.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum EnvelopeError {
+    /// The response was not a COSE message. Nothing in its body was read.
+    ///
+    /// The layer's own refusals (a wrong audience or schema digest, a stale
+    /// `iat`, an unsupported media type, an oversized body) are always
+    /// unsigned (ADR 0006 D4), so a `401` here usually means the server did
+    /// not accept the request, not that a proxy tampered with the answer.
+    #[error("the server answered {status} without a COSE envelope; the body was not read")]
+    Unsigned { status: u16 },
+    /// The response is a COSE message that failed verification: a bad
+    /// signature or tag, an unknown key, or an answer sealed for a different
+    /// request, status, route or key. The reason is deliberately not
+    /// reported (ADR 0006 §10).
+    #[error("the response failed COSE verification")]
+    Unverified,
+    /// Sealing the request failed: the signer (a keystore, a KMS) refused or
+    /// failed, or the envelope was misconfigured. Nothing was sent.
+    #[error("sealing the request failed: {0}")]
+    Seal(#[source] CratestackError),
+    /// Opening the response failed for a reason that is not the message's:
+    /// the key resolver's backend is down.
+    #[error("opening the response failed: {0}")]
+    Open(#[source] CratestackError),
+    /// Streams and subscriptions cannot be sealed yet (ADR 0006 P1); the
+    /// call was refused locally instead of being sent in plain.
+    #[error("sealed streams are not supported yet; call a unary operation")]
+    StreamsUnsupported,
+}
+
+impl EnvelopeError {
+    /// A stable identifier, for a caller that must tell the failures apart
+    /// without matching on this enum (the FFI bridge reports it as the
+    /// error's `remote_code`).
+    pub const fn code(&self) -> &'static str {
+        match self {
+            EnvelopeError::Unsigned { .. } => "envelope_unsigned",
+            EnvelopeError::Unverified => "envelope_unverified",
+            EnvelopeError::Seal(_) => "envelope_seal",
+            EnvelopeError::Open(_) => "envelope_open",
+            EnvelopeError::StreamsUnsupported => "envelope_streams_unsupported",
+        }
+    }
+}

@@ -130,6 +130,7 @@ where
             request_authorizer: None,
             schema_sha: None,
             idempotency: None,
+            sealing: Default::default(),
         }
     }
 }

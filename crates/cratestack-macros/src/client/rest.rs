@@ -75,7 +75,9 @@ pub(super) fn generate_generated_client_module(
                     // `CratestackClient::cbor(config)` call site needs no
                     // changes.
                     Self {
-                        runtime: runtime.with_schema_sha(super::SCHEMA_SHA256),
+                        runtime: runtime
+                            .with_schema_sha(super::SCHEMA_SHA256)
+                            .with_schema_sha_bytes(&super::SCHEMA_SHA256_BYTES),
                     }
                 }
 
@@ -133,6 +135,10 @@ fn generate_generated_procedure_client_method(
     // Versioned (`@api_version`) procedures are mounted under their version
     // prefix; same derivation the server's router uses.
     let route_path = cratestack_core::procedure_route::procedure_rest_route_path(procedure);
+    // A procedure route has no path parameters, so its template is its path.
+    let runtime = quote! {
+        self.runtime.at(::cratestack::client_rust::RouteRef::new(#route_path, &[]))
+    };
 
     let (output_type, call) = match procedure_output_composition(&procedure.return_type, bearing) {
         Some(ProcedureOutputComposition::List { owner }) => {
@@ -140,7 +146,7 @@ fn generate_generated_procedure_client_method(
             let item_type = quote! { super::wire::#owner_ident };
             (
                 quote! { Vec<#item_type> },
-                quote! { self.runtime.post_list::<_, #item_type>(#route_path, args, headers).await },
+                quote! { #runtime.post_list::<_, #item_type>(#route_path, args, headers).await },
             )
         }
         Some(ProcedureOutputComposition::Unary { owner, optional }) => {
@@ -153,14 +159,14 @@ fn generate_generated_procedure_client_method(
             };
             (
                 output_type,
-                quote! { self.runtime.post(#route_path, args, headers).await },
+                quote! { #runtime.post(#route_path, args, headers).await },
             )
         }
         Some(ProcedureOutputComposition::Page { owner }) => {
             let owner_ident = ident(&owner);
             (
                 quote! { ::cratestack::Page<super::wire::#owner_ident> },
-                quote! { self.runtime.post(#route_path, args, headers).await },
+                quote! { #runtime.post(#route_path, args, headers).await },
             )
         }
         None => {
@@ -169,9 +175,9 @@ fn generate_generated_procedure_client_method(
                 cratestack_core::TypeArity::List
             ) {
                 let item_type = procedure_client_output_item_tokens(&procedure.return_type);
-                quote! { self.runtime.post_list::<_, #item_type>(#route_path, args, headers).await }
+                quote! { #runtime.post_list::<_, #item_type>(#route_path, args, headers).await }
             } else {
-                quote! { self.runtime.post(#route_path, args, headers).await }
+                quote! { #runtime.post(#route_path, args, headers).await }
             };
             (quote! { super::procedures::#module_ident::Output }, call)
         }

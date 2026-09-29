@@ -1,0 +1,25 @@
+// The RPC twin of `cose_client_models.cstack` (cratestack#1007), without
+// `@version`: an RPC update carries no `If-Match`, and the model-backed calls
+// (create, get, list with a query, update, delete) are what this proves.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model SealedLedger {
+  id Int @id
+  label String
+  balance Int
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}

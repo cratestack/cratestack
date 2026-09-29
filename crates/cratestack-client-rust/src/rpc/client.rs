@@ -4,7 +4,7 @@ use reqwest::Method;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::client::CratestackClient;
+use crate::client::{CratestackClient, RouteRef};
 use crate::codec::HttpClientCodec;
 use crate::config::ClientConfig;
 use crate::idempotency::RequestIdempotency;
@@ -104,6 +104,7 @@ where
         let path = format!("/rpc/{}", op_id);
         let response = self
             .inner
+            .at(RouteRef::rpc(op_id))
             .request_raw_with_query_and_accept(Method::POST, &path, Some(body), None, &[], None)
             .await
             .map_err(client_error_to_rpc)?;
@@ -124,6 +125,7 @@ where
             .map_err(RpcClientError::Codec)?;
         let response = self
             .inner
+            .at(RouteRef::rpc("batch"))
             .request_raw_with_query_and_accept(
                 Method::POST,
                 RPC_BATCH_PATH_PLAIN,

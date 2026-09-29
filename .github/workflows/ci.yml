@@ -134,6 +134,8 @@ jobs:
           cargo check --locked -p cratestack-client-rust --target wasm32-unknown-unknown
           cargo check --locked -p cratestack-client-rust --features middleware --target wasm32-unknown-unknown
           cargo check --locked -p cratestack-client --target wasm32-unknown-unknown
+          # cratestack#1007: the signed client, whose signer is `?Send` here.
+          cargo check --locked -p cratestack-client-rust --features cose --target wasm32-unknown-unknown
       - name: cargo check (cratestack-cose for wasm32-unknown-unknown)
         # The COSE envelope is shared by the wasm and napi client builds
         # (ADR 0006 §11), and it draws randomness (`cti`, `Cratestack-Nonce`)
@@ -306,6 +308,12 @@ jobs:
             cargo tree --locked | grep -i axum
             exit 1
           fi
+          # cratestack#1007: and still absent with the signed client on.
+          if cargo tree --locked --features cose | grep -qi axum; then
+            echo "::error::expected no axum/cratestack-axum with cratestack-client's cose feature on"
+            cargo tree --locked --features cose | grep -i axum
+            exit 1
+          fi
       - name: rmcp absent without the mcp feature (every facade, and every standalone example)
         # cratestack#1038 (ADR 0002 § Crate layout, "Disjointness"): MCP's
         # dependencies live in `cratestack-mcp` behind the `mcp` feature of
@@ -402,6 +410,13 @@ jobs:
           done
           for facade in cratestack-sqlite cratestack-client; do
             for feature in cose envelope; do
+              # `cratestack-client` offers `cose` since cratestack#1007: the
+              # signed *client*, which seals and opens with `cratestack-cose`
+              # and never sees the server layer, so it has no `envelope`. The
+              # next step asserts it brings the COSE crates and still no axum.
+              if [ "$facade" = cratestack-client ] && [ "$feature" = cose ]; then
+                continue
+              fi
               if refusal="$(cargo tree --locked -e normal -p "$facade" --features "$feature" 2>&1)"; then
                 echo "::error::$facade must not offer a $feature feature (the layer is server-side, D7)"
                 exit 1
@@ -413,6 +428,18 @@ jobs:
               fi
             done
           done
+          # cratestack#1007: the client half. `cose` brings the COSE crates and
+          # the client runtime that uses them, and still no axum (the
+          # `facade-disjointness` claim for this facade).
+          graph="$(cargo tree --locked -e normal -p cratestack-client --features cose --prefix none)"
+          if ! grep -q '^cratestack-cose v' <<<"$graph"; then
+            echo "::error::expected cratestack-cose in cratestack-client's graph with --features cose"
+            exit 1
+          fi
+          if grep -E '^(axum|cratestack-axum) v' <<<"$graph"; then
+            echo "::error::cratestack-client --features cose must not pull axum"
+            exit 1
+          fi
           for example in no-database-verification no-database-verification-api client-only-verification db-transaction-verification declarative-query-verification mcp-operator; do
             graph="$(cd "examples/$example" && cargo tree --locked -e normal --prefix none)"
             if grep -E "$crypto" <<<"$graph"; then
@@ -466,7 +493,10 @@ jobs:
         # `RequestAuthorizer` can hold a non-`Send` value across an `await`
         # there (#1104 follow-up).
         working-directory: examples/client-only-verification
-        run: cargo check --locked --target wasm32-unknown-unknown
+        run: |
+          cargo check --locked --target wasm32-unknown-unknown
+          # cratestack#1007: a `?Send` (keystore-callback) signer compiles.
+          cargo check --locked --target wasm32-unknown-unknown --features cose
       # `--test-threads=1` on both: each test in these crates starts its
       # own testcontainer, and concurrent starts hit a port-bind race that
       # fails as `RootlessKit PortManager.AddPort(): address already in
@@ -595,6 +625,14 @@ jobs:
         # above never builds it; `CRATESTACK_REQUIRE_DB` (job env) makes a
         # missing database fail rather than skip.
         run: just test-ci-db-mcp --locked -- --test-threads=1
+      - name: cargo test (signed Rust client over models, testcontainers Postgres)
+        # cratestack#1007: the generated client seals model calls and opens
+        # their answers over REST and RPC, through the real envelope layer and
+        # a real database (`If-Match` on an `@version` model, a bound list
+        # query, `/rpc/batch`). Gated `required-features = ["cose"]`, so the
+        # default-feature step above never builds it; the recipe sets
+        # `CRATESTACK_REQUIRE_DB` itself.
+        run: just test-ci-db-cose --locked -- --test-threads=1
       - name: cargo test (cratestack-outbox, testcontainers Postgres)
         # A 2026-08 CI-coverage audit found `cratestack-outbox`'s 5
         # transactional-outbox tests (atomic persist/rollback, cursor-

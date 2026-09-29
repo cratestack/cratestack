@@ -28,9 +28,9 @@
 //! - [`KeyProviderMacKeys`] turns `cratestack_core::KeyProvider` secrets
 //!   into Mac0 keys.
 //!
-//! **Wire-format preview:** the server layer ships (cratestack#1006), the
-//! Rust client does not yet (#1007), and binding version 1 freezes when
-//! both have shipped. Until then the wire format may still change; see
+//! **Wire format:** the server layer (cratestack#1006) and the Rust client
+//! (cratestack#1007) ship together in the release that freezes binding
+//! version 1 (#1082); from it on the wire format changes only with a new
 //! [`BINDING_VERSION`].
 //!
 //! **Algorithms:** Ed25519 (`-19`, the default) and ESP256 (`-9`) for
@@ -79,6 +79,7 @@ mod envelope;
 mod error;
 mod header;
 mod keys;
+mod maybe_send;
 mod open;
 mod opened;
 mod replay;
@@ -100,8 +101,9 @@ pub use cratestack_core::{
 pub use envelope::{CoseEnvelope, CoseEnvelopeBuilder, CoseRole};
 pub use error::UNAUTHENTICATED;
 pub use keys::{
-    CoseSigner, CoseVerifierResolver, CoseVerifyKey, Ed25519Signer, HmacSecret, HmacSigner,
-    KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
+    CoseSigner, CoseVerifierResolver, CoseVerifyKey, Ed25519Signer, ExternalSigner, HmacSecret,
+    HmacSigner, KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
 };
+pub use maybe_send::{MaybeSend, MaybeSendSync};
 pub use opened::Opened;
 pub use replay::{DEFAULT_SKEW_SECS, RANDOM_CTI_LEN, random_request_nonce};

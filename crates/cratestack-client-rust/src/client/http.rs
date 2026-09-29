@@ -74,7 +74,7 @@ impl HttpRequestBuilder {
         }
     }
 
-    pub(crate) fn body(self, body: Vec<u8>) -> Self {
+    pub(crate) fn body(self, body: impl Into<reqwest::Body>) -> Self {
         match self {
             Self::Plain(builder) => Self::Plain(builder.body(body)),
             #[cfg(feature = "middleware")]

@@ -7,5 +7,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub mod handle;
 #[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod sealing;
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod transport;
 pub mod wire;

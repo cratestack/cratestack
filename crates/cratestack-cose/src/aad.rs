@@ -65,10 +65,10 @@ use crate::error::misuse;
 /// The binding version, the first array element. Q5's escape hatch: a
 /// future binding scheme gets a new number instead of a new wire format.
 ///
-/// Version 1 freezes when both wire peers have shipped: the server layer
-/// ships (cratestack#1006), the Rust client does not yet (#1007). It did
+/// Version 1 froze in the first release with both wire peers: the server
+/// layer (cratestack#1006) and the Rust client (cratestack#1007). It did
 /// not freeze at the first release of this crate, which had no wire peers.
-/// After that release, any change to the elements or to how one is derived
+/// From that release on, any change to the elements or to how one is derived
 /// bumps this number, and verifiers reject versions they do not know
 /// (ADR 0006 §4).
 pub const BINDING_VERSION: u64 = 1;

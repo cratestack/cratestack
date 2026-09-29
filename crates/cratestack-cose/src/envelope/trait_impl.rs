@@ -1,4 +1,10 @@
 //! `CratestackEnvelope` for [`CoseEnvelope`].
+//!
+//! Native only (cratestack#1007): the trait is `Send + Sync` with `Send`
+//! futures, which a `wasm32` signer (`?Send`) cannot be. The typed methods
+//! on `CoseEnvelope` are the whole surface there.
+
+#![cfg(not(target_arch = "wasm32"))]
 
 use std::future::Future;
 

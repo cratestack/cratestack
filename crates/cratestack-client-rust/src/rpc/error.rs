@@ -3,6 +3,7 @@ use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 
 use crate::codec::HttpClientCodec;
+use crate::envelope_error::EnvelopeError;
 use crate::error::{ClientError, TransportError};
 use crate::runtime::wire::RuntimeResponseWire;
 
@@ -51,6 +52,9 @@ pub enum RpcClientError {
     InvalidResponse(String),
     #[error("bad input: {0}")]
     BadInput(String),
+    /// The signed transport failed (cratestack#1007).
+    #[error("signed transport: {0}")]
+    Envelope(#[from] EnvelopeError),
     #[error("{0}")]
     Remote(RpcRemoteError),
 }
@@ -96,6 +100,7 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
         ClientError::Codec(error) => RpcClientError::Codec(error),
         ClientError::InvalidResponse(message) => RpcClientError::InvalidResponse(message),
         ClientError::BadInput(message) => RpcClientError::BadInput(message),
+        ClientError::Envelope(error) => RpcClientError::Envelope(error),
         ClientError::State(message) => RpcClientError::InvalidResponse(message),
         ClientError::Remote {
             status,

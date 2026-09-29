@@ -1,0 +1,36 @@
+// cratestack#1007: the model-backed half of the signed Rust client's tests
+// (`cose_client_models.rs`): a versioned model, so `If-Match` and the ETag
+// round trip, plus collection, detail and query routes over real Postgres.
+// The RPC twin is `cose_client_models_rpc.cstack`; they declare the same
+// model on purpose, so the pair proves transport parity.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model SealedLedger {
+  id Int @id
+  label String
+  balance Int
+  version Int @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+// A String primary key: its detail path must be percent-encoded while the seal
+// binds the decoded value (REST only; RPC carries ids in the body).
+model Note {
+  id String @id
+  body String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

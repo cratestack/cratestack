@@ -9,6 +9,7 @@ use quote::quote;
 
 use super::computed::{build_get_method, build_list_method};
 use super::context::ModelRestClientContext;
+use super::routes::{bind_id, detail_runtime, detail_url};
 use super::with_response::build_get_with_response_method;
 
 pub(super) fn list_group(ctx: &ModelRestClientContext) -> proc_macro2::TokenStream {
@@ -48,6 +49,11 @@ pub(super) fn get_group(ctx: &ModelRestClientContext) -> proc_macro2::TokenStrea
         primary_key_type,
         model_output_type,
     );
+    let (bind_id, runtime, url) = (
+        bind_id(),
+        detail_runtime(route_path),
+        detail_url(route_path),
+    );
     let get_with_response_method =
         build_get_with_response_method(route_path, primary_key_type, model_output_type);
     quote! {
@@ -64,8 +70,9 @@ pub(super) fn get_group(ctx: &ModelRestClientContext) -> proc_macro2::TokenStrea
         where
             P: ::cratestack::ProjectionDecoder,
         {
-            self.runtime
-                .get_view(&format!("{}/{}", #route_path, id), projection, headers)
+            #bind_id
+            #runtime
+                .get_view(#url, projection, headers)
                 .await
         }
     }

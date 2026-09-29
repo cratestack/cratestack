@@ -4,6 +4,7 @@ use cratestack_codec_cbor::CborCodec;
 
 use crate::auth::RequestAuthorizer;
 use crate::client::http::HttpClient;
+use crate::client::sealing::Sealing;
 use crate::codec::HttpClientCodec;
 use crate::config::ClientConfig;
 use crate::error::ClientError;
@@ -70,6 +71,11 @@ pub struct CratestackClient<C = CborCodec> {
     /// REST CRUD route and the wrong one for RPC (all `POST`) and for
     /// `@query` procedures. See [`RequestIdempotency`].
     pub(crate) idempotency: Option<RequestIdempotency>,
+    /// The signed transport (cratestack#1007): the envelope, the schema
+    /// digest it binds and the route of the call in flight. Empty, and
+    /// inert, unless the `cose` feature is on and `with_envelope` was called.
+    #[cfg_attr(not(feature = "cose"), allow(dead_code))]
+    pub(crate) sealing: Sealing,
 }
 
 impl CratestackClient<CborCodec> {
@@ -85,13 +91,14 @@ where
     pub fn new(config: ClientConfig, codec: C) -> Self {
         ensure_crypto_provider();
         Self {
-            http: HttpClient::Plain(reqwest::Client::new()),
+            http: HttpClient::Plain(default_http_client()),
             config,
             codec,
             state_store: Arc::new(InMemoryStateStore::default()),
             request_authorizer: None,
             schema_sha: None,
             idempotency: None,
+            sealing: Sealing::default(),
         }
     }
 
@@ -111,6 +118,7 @@ where
             request_authorizer: None,
             schema_sha: None,
             idempotency: None,
+            sealing: Sealing::default(),
         }
     }
 
@@ -158,3 +166,19 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// The client [`CratestackClient::new`] sends through. With `cose` it never
+/// follows a redirect: a sealed request is bound to one route, so a `303`
+/// that turned it into a plain authenticated `GET` elsewhere, or a `307`
+/// that re-sent the sealed bytes to another `Location`, is an attack and not
+/// a convenience (cratestack#1007). A caller-supplied client
+/// ([`CratestackClient::with_http_client`]) is checked after the fact instead.
+fn default_http_client() -> reqwest::Client {
+    #[cfg(all(feature = "cose", not(target_arch = "wasm32")))]
+    return reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    #[cfg(not(all(feature = "cose", not(target_arch = "wasm32"))))]
+    reqwest::Client::new()
+}

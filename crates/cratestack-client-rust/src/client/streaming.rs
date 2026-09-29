@@ -104,17 +104,19 @@ where
             .iter()
             .map(|header| (header.name.as_str(), header.value.as_str()))
             .collect::<Vec<_>>();
-        self.request_raw_with_query(
-            method,
-            &request.path,
-            if request.body.is_empty() {
-                None
-            } else {
-                Some(request.body)
-            },
-            request.canonical_query.as_deref(),
-            &header_pairs,
-        )
-        .await
+        let scoped = self.scoped_for_raw_path(&request.path)?;
+        scoped
+            .request_raw_with_query(
+                method,
+                &request.path,
+                if request.body.is_empty() {
+                    None
+                } else {
+                    Some(request.body)
+                },
+                request.canonical_query.as_deref(),
+                &header_pairs,
+            )
+            .await
     }
 }

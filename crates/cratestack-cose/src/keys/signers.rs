@@ -59,7 +59,8 @@ impl fmt::Debug for Ed25519Signer {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 impl CoseSigner for Ed25519Signer {
     fn alg(&self) -> CoseAlg {
         CoseAlg::Ed25519
@@ -135,7 +136,8 @@ impl fmt::Debug for P256Signer {
     }
 }
 
-#[async_trait::async_trait]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
 impl CoseSigner for P256Signer {
     fn alg(&self) -> CoseAlg {
         CoseAlg::Esp256
