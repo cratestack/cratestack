@@ -11,12 +11,12 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 This is P0: unary messages, `nonce` replay, and the shared test vectors. `chain` streams
 (P1) and `window` replay for device keys (P2) come later.
 
-**Wire-format preview.** The server layer ships (`cratestack-axum`'s `envelope_layer`,
-cratestack#1006); the Rust client does not yet (cratestack#1007). Binding version 1 freezes
-when both have shipped. Until then the wire format, including the AAD, may still change: for
-example, cratestack#1065 changes how the bound schema identity is derived. From that release
-on, any change to the AAD's elements or to how one is derived bumps `BINDING_VERSION`. Pin an
-exact version if you use the crate directly before then.
+**Wire format.** Binding version 1 freezes with the release that ships both the server layer
+(`cratestack-axum`'s `envelope_layer`, cratestack#1006) and the Rust client
+(`cratestack-client-rust`'s `cose` feature, cratestack#1007) (cratestack#1082). The change to how
+the bound schema identity is derived (cratestack#1065) has already landed, so from that release on
+any change to the AAD's elements or to how one is derived bumps `BINDING_VERSION`. Pin an exact
+version if you use the crate directly with an earlier release.
 
 Without features the crate depends on `cratestack-core` alone, and compiles for
 `wasm32-unknown-unknown`. The off-by-default `auth` feature adds `cratestack-auth` (see
@@ -59,8 +59,8 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   SHA-256 of the request's COSE bytes); a response to an unsigned one to
   `request_digest_unsigned` (kind `0`, SHA-256 of the client's `Cratestack-Nonce` and the
   payload; see `RequestNonce`, and `random_request_nonce` to draw one). Both return the kind
-  with the digest. The server layer reads that header (cratestack#1006); the Rust client that
-  sends it is cratestack#1007.
+  with the digest. The server layer reads that header (cratestack#1006); the Rust client
+  (cratestack#1007) binds a signed request's digest and does not need the header.
 - **Errors:** every failed check is the same `401`; a failing key resolver, nonce store or
   signer, and local misuse, is a `500`.
 - **Keys:** `CoseSigner` signs without exporting the key (KMS, HSM); `CoseVerifierResolver`

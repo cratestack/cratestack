@@ -100,6 +100,10 @@
 // place (`cratestack-core`, so both the client's decoded `Selection` and
 // the server's SQL-backed projection speak one shared contract).
 pub use cratestack_client_rust as client_rust;
+/// The COSE envelope (`CoseEnvelope`, its signers and key resolvers), to
+/// build the client's envelope with. Feature `cose`.
+#[cfg(feature = "cose")]
+pub use cratestack_client_rust::cose;
 pub use cratestack_core::*;
 // The *only* schema macro this facade offers — see this module's doc for
 // why `include_server_schema!`/`include_embedded_schema!` are deliberately

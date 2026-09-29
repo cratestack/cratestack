@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::envelope_error::EnvelopeError;
 use crate::error::ClientError;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -15,7 +16,11 @@ pub enum RuntimeCodecConfig {
 pub enum RuntimeEnvelopeConfig {
     #[default]
     None,
+    /// Seal requests and open responses as COSE_Sign1 (cratestack#1007).
+    /// Needs `RuntimeHandle::with_envelope` (feature `cose`).
     CoseSign1,
+    /// The same with COSE_Mac0 (an HMAC key shared with the server).
+    CoseMac0,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -119,6 +124,27 @@ impl From<ClientError> for RuntimeErrorWire {
                 http_status: None,
                 message,
                 remote_code: None,
+                remote_body: None,
+            },
+            // cratestack#1007. No new `RuntimeErrorCode` (see the
+            // middleware arm above): a response that was not sealed or did
+            // not verify is an invalid response, a refused stream is bad
+            // input, and a signer that failed means the call never left
+            // (`Transport`). `EnvelopeError::code` tells them apart.
+            ClientError::Envelope(error) => Self {
+                code: match &error {
+                    EnvelopeError::Unsigned { .. }
+                    | EnvelopeError::Unverified
+                    | EnvelopeError::Open(_) => RuntimeErrorCode::InvalidResponse,
+                    EnvelopeError::StreamsUnsupported => RuntimeErrorCode::BadInput,
+                    _ => RuntimeErrorCode::Transport,
+                },
+                http_status: match &error {
+                    EnvelopeError::Unsigned { status } => Some(*status),
+                    _ => None,
+                },
+                remote_code: Some(error.code().to_owned()),
+                message: error.to_string(),
                 remote_body: None,
             },
             ClientError::Remote {

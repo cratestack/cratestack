@@ -40,6 +40,14 @@ codec-json = ["dep:cratestack-codec-json"]
 # extension is only observable through `reqwest_middleware`'s own
 # `http::Extensions` bag, which only exists on this path.
 middleware = ["dep:reqwest-middleware"]
+# The signed transport (ADR 0006, cratestack#1007): `with_envelope` seals
+# every request and opens every response as COSE_Sign1 / COSE_Mac0, over REST
+# and RPC. Off by default and additive: `cratestack-cose` (and with it `p256`,
+# `ed25519-dalek`, `hmac`) is a `dep:`-gated optional dependency, so a build
+# without the feature resolves exactly what it did before. It never pulls
+# `axum`: `cratestack-cose` depends on `cratestack-core` only, so the
+# `facade-disjointness` proof for `cratestack-client` still holds.
+cose = ["dep:cratestack-cose"]
 # `cratestack-core`'s dependency edge has `default-features = false` at the
 # workspace root (cratestack#495), so this crate — a real, non-macro
 # consumer of `cratestack_core::Decimal` in its own generated-code support
@@ -87,6 +95,7 @@ cratestack-codec-cbor = { workspace = true, default-features = false }
 # independent of which backend this crate itself selected.
 cratestack-codec-json = { workspace = true, optional = true, default-features = false }
 cratestack-core.workspace = true
+cratestack-cose = { workspace = true, optional = true }
 futures-util.workspace = true
 minicbor.workspace = true
 minicbor-serde.workspace = true

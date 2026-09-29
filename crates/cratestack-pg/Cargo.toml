@@ -205,7 +205,10 @@ mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
 # without `envelope` (second-review decision S-1; there is no
 # `cratestack-macros/envelope` feature any more).
 envelope = ["cratestack-axum/envelope"]
-cose = ["envelope", "cratestack-axum/cose"]
+# `cratestack-client-rust/cose` (cratestack#1007) turns on the signed
+# *client* in the same facade, so one `cose` feature covers both halves of the
+# transport: `CratestackClient::with_envelope` on the generated clients.
+cose = ["envelope", "cratestack-axum/cose", "cratestack-client-rust/cose"]
 
 # docs.rs builds default features only, which would leave
 # `cratestack::envelope_layer` and `cratestack::cose` off the published
@@ -266,6 +269,9 @@ minicbor-serde.workspace = true
 # explicitly).
 reqwest.workspace = true
 rustls.workspace = true
+# The keystore stand-in of `tests/cose_client_models.rs`, through the shared
+# harness in `cratestack-api/tests/cose_client_support`. Dev-only.
+p256.workspace = true
 testcontainers.workspace = true
 testcontainers-modules.workspace = true
 # `io-util`: `tests/mcp_policy_pg.rs` (cratestack#1038) drives the MCP stdio
@@ -278,6 +284,15 @@ url.workspace = true
 # Only compiled/run under `--features pgvector` — the fixture schema
 # declares `extension pgvector { }`, which is a `compile_error!`
 # without the feature (see the `pgvector` feature doc comment above).
+# cratestack#1007: the generated Rust client's model calls, signed, over REST
+# and RPC, against real Postgres. `cratestack-api`'s `cose_client_*` tests
+# carry the procedure half and the failure paths; the harness is shared with
+# them by `#[path]`.
+[[test]]
+name = "cose_client_models"
+path = "tests/cose_client_models.rs"
+required-features = ["cose"]
+
 [[test]]
 name = "pgvector_feature_forwarding"
 path = "tests/pgvector_feature_forwarding.rs"

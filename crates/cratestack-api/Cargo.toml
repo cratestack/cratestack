@@ -103,7 +103,10 @@ mcp = ["dep:cratestack-mcp", "cratestack-macros/mcp"]
 # without `envelope` (second-review decision S-1; there is no
 # `cratestack-macros/envelope` feature any more).
 envelope = ["cratestack-axum/envelope"]
-cose = ["envelope", "cratestack-axum/cose"]
+# `cratestack-client-rust/cose` (cratestack#1007) turns on the signed
+# *client* in the same facade, so one `cose` feature covers both halves of the
+# transport: `CratestackClient::with_envelope` on the generated clients.
+cose = ["envelope", "cratestack-axum/cose", "cratestack-client-rust/cose"]
 
 # docs.rs builds default features only, which would leave
 # `cratestack::envelope_layer` and `cratestack::cose` off the published
@@ -146,6 +149,10 @@ async-trait.workspace = true
 # check --all-targets`.
 cratestack-codec-cbor.workspace = true
 cratestack-codec-json.workspace = true
+# The keystore stand-in of `tests/cose_client_*.rs`: a P-256 key that answers
+# with a DER signature, as Android and iOS keystores do. Dev-only, so the
+# facade's normal graph is untouched (CI's "COSE crates absent" step).
+p256.workspace = true
 # cratestack#1037: validates the generated JSON Schemas against serde's
 # real output in `tests/json_schema_*.rs`. Dev-only, so no facade graph
 # gains it (`cargo tree -p cratestack-api -e normal | grep -c jsonschema`
@@ -239,6 +246,26 @@ required-features = ["mcp"]
 # with the rate limiter and the idempotency layer behind it (ADR 0006 §12).
 # `just test-ci-host` runs them with the feature on; without it Cargo skips
 # them rather than compiling them to zero tests.
+# cratestack#1007: the generated Rust client seals and opens over both
+# transports, against the real generated server on a real listener, with a
+# tampering proxy between them for the failure paths. The model-backed half
+# (list, `If-Match`, path parameters) needs Postgres and lives in
+# `cratestack-pg`'s `cose_client_models`.
+[[test]]
+name = "cose_client_rest"
+path = "tests/cose_client_rest.rs"
+required-features = ["cose"]
+
+[[test]]
+name = "cose_client_rpc"
+path = "tests/cose_client_rpc.rs"
+required-features = ["cose"]
+
+[[test]]
+name = "cose_client_failures"
+path = "tests/cose_client_failures.rs"
+required-features = ["cose"]
+
 [[test]]
 name = "cose_envelope_rest"
 path = "tests/cose_envelope_rest.rs"

@@ -55,6 +55,13 @@ where
         headers: &[HeaderPair<'_>],
         accept_override: Option<&'static str>,
     ) -> Result<RuntimeResponseWire, ClientError> {
+        #[cfg(feature = "cose")]
+        if let Some(envelope) = &self.sealing.envelope {
+            // A sealed call names its own `Accept`: only the seal is asked for.
+            return self
+                .request_sealed(envelope, method, path, body, canonical_query, headers)
+                .await;
+        }
         let url = build_url(&self.config.base_url, path, canonical_query)?;
         let accept = accept_override.unwrap_or_else(|| self.codec.accept_header_value());
         let header_map = self
@@ -122,6 +129,13 @@ where
         headers: &[HeaderPair<'_>],
         accept: &'static str,
     ) -> Result<reqwest::Response, ClientError> {
+        // Every stream and subscription goes through here. Sealed streams are
+        // ADR 0006 P1; until then a client with an envelope refuses them
+        // instead of sending a plain request.
+        #[cfg(feature = "cose")]
+        if self.sealing.envelope.is_some() {
+            return Err(crate::envelope_error::EnvelopeError::StreamsUnsupported.into());
+        }
         let url = build_url(&self.config.base_url, path, canonical_query)?;
         let header_map = self
             .build_header_map(

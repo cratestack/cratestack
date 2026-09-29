@@ -59,6 +59,12 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# The signed transport, client half (ADR 0006, cratestack#1007): adds
+# `CratestackClient::with_envelope` and re-exports `cratestack-cose` as
+# `cratestack::cose` to build the envelope with. Off by default and additive;
+# `cratestack-cose` depends on `cratestack-core` only, so `axum` stays out of
+# the graph (the `facade-disjointness` job builds this feature too).
+cose = ["cratestack-client-rust/cose"]
 # Extension-declaration gates (cratestack#161). These forward *only* to
 # `cratestack-macros`, never to a runtime crate, and that asymmetry with
 # `cratestack-pg` is the whole point.

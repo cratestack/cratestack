@@ -1,4 +1,6 @@
 use cratestack_core::{CratestackError, CratestackErrorResponse};
+
+use crate::envelope_error::EnvelopeError;
 use reqwest::StatusCode;
 
 pub type HeaderPair<'a> = (&'a str, &'a str);
@@ -67,6 +69,9 @@ pub enum ClientError {
     InvalidResponse(String),
     #[error("bad input: {0}")]
     BadInput(String),
+    /// The signed transport failed (cratestack#1007). Never a decoded body.
+    #[error("signed transport: {0}")]
+    Envelope(#[from] EnvelopeError),
     #[error("remote call failed with status {status}: {message}")]
     Remote {
         status: StatusCode,

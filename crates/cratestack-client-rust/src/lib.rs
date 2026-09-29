@@ -2,6 +2,9 @@ mod auth;
 mod client;
 mod codec;
 mod config;
+#[cfg(feature = "cose")]
+mod envelope;
+mod envelope_error;
 mod error;
 mod idempotency;
 #[cfg(feature = "middleware")]
@@ -24,7 +27,7 @@ pub use cratestack_core::rpc::{
 };
 
 pub use auth::{AuthorizationRequest, RequestAuthorizer};
-pub use client::{CratestackClient, TypedResponse, ensure_crypto_provider};
+pub use client::{CratestackClient, RouteRef, TypedResponse, ensure_crypto_provider};
 pub use codec::HttpClientCodec;
 pub use config::ClientConfig;
 pub use cratestack_core::ProjectionDecoder;
@@ -36,6 +39,11 @@ pub use cratestack_core::ProjectionDecoder;
     note = "use `cratestack::ProjectionDecoder` (moved to cratestack-core) instead"
 )]
 pub use cratestack_core::ProjectionDecoder as Projection;
+#[cfg(feature = "cose")]
+pub use cratestack_cose as cose;
+#[cfg(feature = "cose")]
+pub use envelope::ClientEnvelope;
+pub use envelope_error::EnvelopeError;
 pub use error::{ClientError, HeaderPair, QueryPair};
 pub use idempotency::RequestIdempotency;
 #[cfg(feature = "middleware")]

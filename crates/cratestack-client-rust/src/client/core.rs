@@ -4,6 +4,7 @@ use cratestack_codec_cbor::CborCodec;
 
 use crate::auth::RequestAuthorizer;
 use crate::client::http::HttpClient;
+use crate::client::sealing::Sealing;
 use crate::codec::HttpClientCodec;
 use crate::config::ClientConfig;
 use crate::error::ClientError;
@@ -70,6 +71,11 @@ pub struct CratestackClient<C = CborCodec> {
     /// REST CRUD route and the wrong one for RPC (all `POST`) and for
     /// `@query` procedures. See [`RequestIdempotency`].
     pub(crate) idempotency: Option<RequestIdempotency>,
+    /// The signed transport (cratestack#1007): the envelope, the schema
+    /// digest it binds and the route of the call in flight. Empty, and
+    /// inert, unless the `cose` feature is on and `with_envelope` was called.
+    #[cfg_attr(not(feature = "cose"), allow(dead_code))]
+    pub(crate) sealing: Sealing,
 }
 
 impl CratestackClient<CborCodec> {
@@ -92,6 +98,7 @@ where
             request_authorizer: None,
             schema_sha: None,
             idempotency: None,
+            sealing: Sealing::default(),
         }
     }
 
@@ -111,6 +118,7 @@ where
             request_authorizer: None,
             schema_sha: None,
             idempotency: None,
+            sealing: Sealing::default(),
         }
     }
 
