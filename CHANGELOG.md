@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.15.0 (2026-09-29)
+
 ### Policy reads run on the caller's transaction, not a second pooled connection (#1117) — behaviour change
 
 **Before:** a write inside a caller's transaction (`db.transaction(..)`,
