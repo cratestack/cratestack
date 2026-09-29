@@ -33,7 +33,7 @@ impl AuthProvider for PassThroughAuth {
 }
 
 async fn reset(pool: &cratestack::sqlx::PgPool, versioned: bool) {
-    query("DROP TABLE IF EXISTS cratestack_event_outbox, ledgers, notes")
+    query("DROP TABLE IF EXISTS cratestack_event_outbox, sealed_ledgers, notes")
         .execute(pool)
         .await
         .expect("drop tables");
@@ -44,18 +44,18 @@ async fn reset(pool: &cratestack::sqlx::PgPool, versioned: bool) {
     // Two literals rather than a formatted string: sqlx audits dynamic SQL.
     if versioned {
         query(
-            "CREATE TABLE ledgers (id BIGINT PRIMARY KEY, label TEXT NOT NULL, \
+            "CREATE TABLE sealed_ledgers (id BIGINT PRIMARY KEY, label TEXT NOT NULL, \
              balance BIGINT NOT NULL, version BIGINT NOT NULL DEFAULT 0)",
         )
     } else {
         query(
-            "CREATE TABLE ledgers (id BIGINT PRIMARY KEY, label TEXT NOT NULL, \
+            "CREATE TABLE sealed_ledgers (id BIGINT PRIMARY KEY, label TEXT NOT NULL, \
              balance BIGINT NOT NULL)",
         )
     }
     .execute(pool)
     .await
-    .expect("create ledgers");
+    .expect("create sealed_ledgers");
 }
 
 mod rest {
@@ -100,11 +100,11 @@ mod rest {
                 addr,
                 client_envelope(kind, AUDIENCE),
             ));
-            let ledgers = client.ledgers();
+            let ledgers = client.sealed_ledgers();
 
             let created = ledgers
                 .create(
-                    &client::cratestack_schema::CreateLedgerInput {
+                    &client::cratestack_schema::CreateSealedLedgerInput {
                         id: 1,
                         label: "gl-1".to_owned(),
                         balance: 0,
@@ -129,7 +129,7 @@ mod rest {
                 .unwrap_or_else(|error| panic!("{kind:?} list: {error}"));
             assert_eq!(listed.len(), 1, "{kind:?}");
 
-            let patch = client::cratestack_schema::UpdateLedgerInput {
+            let patch = client::cratestack_schema::UpdateSealedLedgerInput {
                 label: None,
                 balance: Some(7),
             };
@@ -245,9 +245,9 @@ mod rpc {
                 addr,
                 client_envelope(kind, AUDIENCE),
             ));
-            let ledgers = client.ledgers();
+            let ledgers = client.sealed_ledgers();
 
-            let create = |id: i64| client::cratestack_schema::CreateLedgerInput {
+            let create = |id: i64| client::cratestack_schema::CreateSealedLedgerInput {
                 id,
                 label: format!("gl-{id}"),
                 balance: 0,
@@ -262,7 +262,7 @@ mod rpc {
                 .unwrap_or_else(|error| panic!("{kind:?} get: {error}"));
             assert_eq!(got.label, "gl-1");
 
-            let patch = client::cratestack_schema::UpdateLedgerInput {
+            let patch = client::cratestack_schema::UpdateSealedLedgerInput {
                 label: None,
                 balance: Some(7),
             };

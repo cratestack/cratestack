@@ -13,7 +13,7 @@ auth Operator {
   id Int
 }
 
-model Ledger {
+model SealedLedger {
   id Int @id
   label String
   balance Int
