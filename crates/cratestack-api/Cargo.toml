@@ -262,6 +262,11 @@ path = "tests/cose_client_rpc.rs"
 required-features = ["cose"]
 
 [[test]]
+name = "cose_client_runtime"
+path = "tests/cose_client_runtime.rs"
+required-features = ["cose"]
+
+[[test]]
 name = "cose_client_failures"
 path = "tests/cose_client_failures.rs"
 required-features = ["cose"]
