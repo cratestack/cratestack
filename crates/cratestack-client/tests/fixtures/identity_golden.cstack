@@ -1,0 +1,3 @@
+model Widget {
+  id Int @id
+}

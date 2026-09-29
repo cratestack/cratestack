@@ -124,7 +124,6 @@ cratestack-sqlx.workspace = true
 cratestack-studio = { workspace = true, default-features = false, features = ["embed-ui"] }
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 sqlx-core.workspace = true
 sqlx-postgres.workspace = true
 thiserror.workspace = true

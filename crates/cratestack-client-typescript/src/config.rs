@@ -87,9 +87,10 @@ pub struct TypeScriptGeneratorConfig {
     /// when unset: see [`DEFAULT_TANSTACK`], the single place that decision
     /// lives.
     pub tanstack: bool,
-    /// Hex-encoded SHA-256 of the schema file's raw bytes (issue #178) —
-    /// computed once by the CLI (`cli_support::hash_schema_source`, the
-    /// same computation `cratestack-macros` does for `include_*_schema!`)
+    /// Hex-encoded canonical schema identity (issue #178, cratestack#1065) —
+    /// `cratestack_core::schema_digest_hex` of the parsed schema, computed
+    /// once by the CLI, the same function `cratestack-macros` calls for
+    /// `include_*_schema!`; comments and whitespace do not change it,
     /// and baked into the generated client as `SCHEMA_SHA256`, sent as
     /// `x-cratestack-schema-sha` on every request so a drifted TypeScript
     /// client shows up as a server-side `tracing::warn!`, not a silent

@@ -1,0 +1,9 @@
+// A leading line comment.
+/// A doc comment on the model.
+model Widget {
+  /// The primary key.
+  id Int @id
+  // The display name.
+  name String
+  active Boolean @default(false)
+}

@@ -88,10 +88,9 @@ pub struct Binding<'a> {
     pub query: Option<Cow<'a, str>>,
     /// The schema's SHA-256 as raw bytes. It is the same digest that
     /// generated code bakes in as the hex string `SCHEMA_SHA256` and sends
-    /// in `x-cratestack-schema-sha`. That digest hashes the raw `.cstack`
-    /// text today, so a comment-only edit changes it; what the AAD should
-    /// bind is settled before `Required` mode ships (ADR 0006, P0 scoping
-    /// decisions).
+    /// in `x-cratestack-schema-sha`: `cratestack_core::schema_digest`, the
+    /// canonical identity of the parsed schema (cratestack#1065), so a
+    /// comment or whitespace edit leaves it unchanged.
     pub schema_sha: [u8; 32],
     /// Media type of the payload *inside* the envelope, e.g.
     /// `"application/cbor"`. It is bound here instead of being sent in a

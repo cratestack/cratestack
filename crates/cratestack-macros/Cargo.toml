@@ -118,7 +118,6 @@ quote.workspace = true
 # cratestack#1037). Adds no package to any facade's graph: `cratestack-core`
 # already depends on `serde_json` unconditionally.
 serde_json.workspace = true
-sha2.workspace = true
 syn.workspace = true
 
 [dev-dependencies]

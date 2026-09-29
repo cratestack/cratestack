@@ -6,7 +6,6 @@
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
-use sha2::{Digest, Sha256};
 use syn::LitStr;
 
 pub(super) use super::schema_args::{SchemaPathArgs, ServerDb, ServerSchemaArgs};
@@ -37,35 +36,9 @@ pub(super) fn parse_schema_literal(
 
     reject_composite_primary_keys(schema_path, &schema)?;
 
-    let schema_sha = SchemaShaConsts::from_hex(hash_schema_source(&source));
+    let schema_sha = SchemaShaConsts::from_digest(cratestack_core::schema_digest(&schema));
 
     Ok((schema_relative, resolved, schema, schema_sha))
-}
-
-/// Raw SHA-256 of the schema's source bytes, hex-encoded — deliberately not
-/// a canonicalized/semantic hash of the parsed IR. Two byte-identical
-/// schema files always agree; two schemas that differ only cosmetically
-/// (whitespace, comments) will disagree even though nothing meaningful
-/// changed. That's an accepted tradeoff, not an oversight: the value only
-/// ever feeds a `tracing::warn!` on the server side (`cratestack-axum`'s
-/// schema-fingerprint middleware) — never a rejection — so a false-positive
-/// warning on a cosmetic diff costs a stray log line, while the simplicity
-/// of "hash the bytes, no parsing required to compare" is worth more than
-/// perfect precision here.
-pub(super) fn hash_schema_source(source: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(source.as_bytes());
-    // sha2 0.11 / digest 0.11 return `hybrid_array::Array`, which (unlike
-    // digest 0.10's `GenericArray`) implements no `LowerHex`. The
-    // byte-wise `{:02x}` fold below is this repo's existing hex idiom
-    // (`cratestack-core/src/transport.rs`) and is byte-for-byte what
-    // `format!("{:x}", …)` produced — this string is persisted/keyed on,
-    // so it must not change shape.
-    hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 /// `@@id([...])` composite primary keys are parsed and validated by
@@ -104,25 +77,7 @@ fn find_composite_id_model(schema: &cratestack_core::Schema) -> Option<&cratesta
 
 #[cfg(test)]
 mod tests {
-    use super::{find_composite_id_model, hash_schema_source};
-
-    #[test]
-    fn hash_schema_source_matches_a_known_sha256() {
-        // printf '%s' 'model Widget { id Int @id }' | shasum -a 256
-        assert_eq!(
-            hash_schema_source("model Widget { id Int @id }"),
-            "50fa300ea14f963f4573be7bfff0fb95b58d728f2431afbecb43578370af6e3e"
-        );
-    }
-
-    #[test]
-    fn hash_schema_source_is_deterministic_and_content_sensitive() {
-        let a = hash_schema_source("model A { id Int @id }");
-        let b = hash_schema_source("model A { id Int @id }");
-        let c = hash_schema_source("model B { id Int @id }");
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-    }
+    use super::find_composite_id_model;
 
     #[test]
     fn flags_model_with_composite_id_attribute() {

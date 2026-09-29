@@ -34,6 +34,7 @@ pub mod route_naming;
 pub mod rpc;
 pub mod rust_keywords;
 pub mod schema;
+pub mod schema_identity;
 pub mod store;
 pub mod transport;
 pub mod validators;
@@ -111,6 +112,7 @@ pub use schema::{
     parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
     parse_internal_attribute, scan_sql_placeholders,
 };
+pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{
     BoundedOutcome, BucketBudget, Charged, ClientStateStore, ConsumeRequest, IdempotencyStore,
     InMemoryStateStore, JsonFileStateStore, MAX_TTL_SECS, PersistedClientState, RateLimitConfig,
