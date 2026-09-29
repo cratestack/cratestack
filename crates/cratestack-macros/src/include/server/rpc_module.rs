@@ -144,8 +144,11 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
         async fn rpc_dispatch<R, CR, C, Auth>(
             ::cratestack::axum::extract::State(state):
                 ::cratestack::axum::extract::State<RpcRouterState<R, CR, C, Auth>>,
-            ::cratestack::axum::extract::Path(op_id):
-                ::cratestack::axum::extract::Path<String>,
+            // Every path parameter, the op id last: a router nested under a
+            // parameterised mount (`/t/{tenant}`) has more than one, and a
+            // single-`String` extractor would answer 500 (cratestack#1007).
+            ::cratestack::axum::extract::Path(mut op_params):
+                ::cratestack::axum::extract::Path<Vec<String>>,
             headers: ::cratestack::axum::http::HeaderMap,
             client_ip_ctx: ClientIpContext,
             body: ::cratestack::axum::body::Bytes,
@@ -156,6 +159,7 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
+            let op_id = op_params.pop().unwrap_or_default();
             rpc_dispatch_inner(state, headers, &op_id, body, client_ip_ctx).await
         }
     }

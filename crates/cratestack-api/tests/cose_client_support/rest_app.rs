@@ -70,6 +70,16 @@ impl cratestack::AuthProvider for AllowAllAuth {
 
 /// The generated server behind the envelope layer, for `kind`.
 pub async fn server(kind: Kind) -> std::net::SocketAddr {
+    server_at(kind, None).await
+}
+
+/// The same server nested under `mount` (`"/api"`, `"/t/{tenant}"`), its
+/// layer told where it is mounted.
+pub async fn server_mounted(kind: Kind, mount: &'static str) -> std::net::SocketAddr {
+    server_at(kind, Some(mount)).await
+}
+
+async fn server_at(kind: Kind, mount: Option<&'static str>) -> std::net::SocketAddr {
     let router = srv::axum::router(
         srv::Cratestack::builder().build(),
         Procedures,
@@ -79,9 +89,16 @@ pub async fn server(kind: Kind) -> std::net::SocketAddr {
         cratestack::DEFAULT_BODY_LIMIT_BYTES,
     )
     .layer(layer(kind, |envelope, policy, audience| {
-        srv::axum::envelope_layer(envelope, policy, audience)
+        let builder = srv::axum::envelope_layer(envelope, policy, audience);
+        match mount {
+            Some(mount) => builder.mount_prefix(mount),
+            None => builder,
+        }
     }));
-    serve(router).await
+    match mount {
+        Some(mount) => serve(cratestack::axum::Router::new().nest(mount, router)).await,
+        None => serve(router).await,
+    }
 }
 
 pub fn client_for(

@@ -154,3 +154,69 @@ fn a_public_key_that_is_not_on_the_curve_is_refused() {
         ExternalSigner::esp256(&[4; 65], |_tbs| async { Ok(Vec::new()) }).expect_err("not a point");
     assert!(matches!(error, CratestackError::Validation(_)), "{error:?}");
 }
+
+/// Fixed DER encodings a keystore may return, each converted to the 64-byte
+/// `r ‖ s` COSE carries.
+mod der_vectors {
+    use super::*;
+
+    async fn raw_of(answer: Vec<u8>) -> Vec<u8> {
+        let signer = ExternalSigner::esp256(&public_sec1(), move |_tbs| {
+            let answer = answer.clone();
+            async move { Ok(answer) }
+        })
+        .expect("signer");
+        signer.sign(b"tbs").await.expect("converted")
+    }
+
+    fn padded(value: &[u8]) -> Vec<u8> {
+        let mut out = vec![0; 32 - value.len()];
+        out.extend_from_slice(value);
+        out
+    }
+
+    #[tokio::test]
+    async fn a_high_bit_r_and_s_lose_their_zero_padding() {
+        // INTEGERs whose top bit is set carry a leading 0x00 in DER: 33 bytes.
+        let (mut r, mut s) = (vec![0x80], vec![0xC0]);
+        r.extend([0x11; 31]);
+        s.extend([0x22; 31]);
+        let mut der = vec![0x30, 0x46, 0x02, 0x21, 0x00];
+        der.extend(&r);
+        der.extend([0x02, 0x21, 0x00]);
+        der.extend(&s);
+        assert_eq!(raw_of(der).await, [r, s].concat());
+    }
+
+    #[tokio::test]
+    async fn a_short_r_and_s_are_left_padded_to_32_bytes() {
+        // r = 0x0102 and s = 0x7f: DER drops the leading zeros.
+        let der = vec![0x30, 0x07, 0x02, 0x02, 0x01, 0x02, 0x02, 0x01, 0x7f];
+        assert_eq!(
+            raw_of(der).await,
+            [padded(&[0x01, 0x02]), padded(&[0x7f])].concat()
+        );
+    }
+
+    #[tokio::test]
+    async fn garbage_is_refused() {
+        let signer = ExternalSigner::esp256(&public_sec1(), |_tbs| async { Ok(vec![0x30, 0x01]) })
+            .expect("signer");
+        assert!(matches!(
+            signer.sign(b"tbs").await,
+            Err(CratestackError::Internal(_))
+        ));
+    }
+}
+
+#[test]
+fn a_compressed_sec1_key_gives_the_same_kid() {
+    // SEC1 compression by hand: the parity of y picks 0x02 or 0x03, then x.
+    let uncompressed = public_sec1();
+    let mut compressed = vec![0x02 | (uncompressed[64] & 1)];
+    compressed.extend_from_slice(&uncompressed[1..33]);
+    assert_eq!(compressed.len(), 33);
+    let signer = ExternalSigner::esp256(&compressed, |_tbs| async { Ok(Vec::new()) })
+        .expect("a compressed key is accepted");
+    assert_eq!(signer.kid(), der_signer().kid());
+}

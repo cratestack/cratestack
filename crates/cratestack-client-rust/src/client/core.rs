@@ -91,7 +91,7 @@ where
     pub fn new(config: ClientConfig, codec: C) -> Self {
         ensure_crypto_provider();
         Self {
-            http: HttpClient::Plain(reqwest::Client::new()),
+            http: HttpClient::Plain(default_http_client()),
             config,
             codec,
             state_store: Arc::new(InMemoryStateStore::default()),
@@ -166,3 +166,19 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// The client [`CratestackClient::new`] sends through. With `cose` it never
+/// follows a redirect: a sealed request is bound to one route, so a `303`
+/// that turned it into a plain authenticated `GET` elsewhere, or a `307`
+/// that re-sent the sealed bytes to another `Location`, is an attack and not
+/// a convenience (cratestack#1007). A caller-supplied client
+/// ([`CratestackClient::with_http_client`]) is checked after the fact instead.
+fn default_http_client() -> reqwest::Client {
+    #[cfg(all(feature = "cose", not(target_arch = "wasm32")))]
+    return reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    #[cfg(not(all(feature = "cose", not(target_arch = "wasm32"))))]
+    reqwest::Client::new()
+}

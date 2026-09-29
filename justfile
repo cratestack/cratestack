@@ -648,7 +648,7 @@ test-ci-host *args='':
 	# listeners and need no database. The model-backed half is
 	# `test-ci-db-cose`.
 	cargo test -p cratestack-client-rust --features cose,middleware {{args}} || status=1
-	cargo test -p cratestack-api --features cose --test cose_client_rest --test cose_client_rpc --test cose_client_failures --test cose_client_runtime {{args}} || status=1
+	cargo test -p cratestack-api --features cose --test cose_client_rest --test cose_client_rpc --test cose_client_failures --test cose_client_mount --test cose_client_runtime {{args}} || status=1
 	exit "$status"
 
 # Report-only: surfaces the current pass/fail state of every `#[ignore]`d

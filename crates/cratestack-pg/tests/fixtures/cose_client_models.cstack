@@ -24,3 +24,13 @@ model Ledger {
   @@allow("update", auth() != null)
   @@allow("delete", auth() != null)
 }
+
+// A String primary key: its detail path must be percent-encoded while the seal
+// binds the decoded value (REST only; RPC carries ids in the body).
+model Note {
+  id String @id
+  body String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

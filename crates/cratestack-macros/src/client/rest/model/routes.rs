@@ -35,5 +35,7 @@ pub(super) fn bind_id() -> TokenStream {
 
 /// The concrete detail URL path, for the `id_text` [`bind_id`] defines.
 pub(super) fn detail_url(route_path: &str) -> TokenStream {
-    quote! { &format!("{}/{}", #route_path, id_text) }
+    // The path carries the id percent-encoded; the seal binds `id_text` raw,
+    // which is what the server decodes the segment back to.
+    quote! { &format!("{}/{}", #route_path, ::cratestack::client_rust::encode_path_segment(&id_text)) }
 }

@@ -1,3 +1,5 @@
+#[cfg(feature = "cose")]
+mod bound_headers;
 mod core;
 mod crud;
 pub(crate) mod decode;
@@ -6,6 +8,8 @@ mod envelope_call;
 mod headers;
 pub(crate) mod helpers;
 pub(crate) mod http;
+#[cfg(feature = "cose")]
+pub(crate) mod raw_path;
 mod response;
 pub(crate) mod route;
 pub(crate) mod sealing;
@@ -15,4 +19,4 @@ mod views;
 
 pub use core::{CratestackClient, ensure_crypto_provider};
 pub use response::TypedResponse;
-pub use route::RouteRef;
+pub use route::{RouteRef, encode_path_segment};

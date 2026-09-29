@@ -86,6 +86,14 @@ graph). It lets you hand the client a `reqwest_middleware::ClientWithMiddleware`
 instead of a bare `reqwest::Client`, so retries, tracing spans, caching, or any other
 `reqwest_middleware::Middleware` run under every request the generated client makes.
 
+> **With the `cose` feature, do not put a stock retry layer in front of a sealed client.**
+> `RetryTransientMiddleware` ignores `RequestIdempotency` and replays the request's bytes;
+> a sealed request carries a fresh `cti`, so the replay is refused with an unsigned `401`.
+> Sealed calls are marked
+> non-idempotent, so a retry layer that honours the marker leaves them alone; retry by
+> calling the client again, which seals afresh. The middleware chain must not follow
+> redirects either.
+
 ```toml
 [dependencies]
 cratestack-client-rust = { version = "0.11", features = ["middleware"] }
@@ -208,7 +216,7 @@ The client is then a `Required` one: a response that is not the sealed answer to
 at all is `EnvelopeError::Unsigned { status }` with its body unread, so nothing downgrades to
 plain. Streams are refused with `EnvelopeError::StreamsUnsupported`. A key in a platform keystore
 signs through `ExternalSigner::esp256`, which takes a DER answer. Sealed requests are marked
-non-idempotent for `reqwest-middleware`, because a replay carries the same `cti`. On
+non-idempotent for `reqwest-middleware`, because a replay carries the same `cti`. Redirects are never followed (a supplied `reqwest::Client` must not follow them either), and a router mounted under a path with parameters needs `ClientEnvelope::with_mount_params`. On
 `wasm32-unknown-unknown` the signer need not be `Send`. See the
 [signed transport guide](https://cratestack.dev/guides/signed-transport#the-rust-client).
 

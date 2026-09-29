@@ -11,8 +11,8 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
         async fn rpc_subscribe_dispatch<R, CR, C, Auth>(
             ::cratestack::axum::extract::State(state):
                 ::cratestack::axum::extract::State<RpcRouterState<R, CR, C, Auth>>,
-            ::cratestack::axum::extract::Path(op_id):
-                ::cratestack::axum::extract::Path<String>,
+            ::cratestack::axum::extract::Path(mut op_params):
+                ::cratestack::axum::extract::Path<Vec<String>>,
             headers: ::cratestack::axum::http::HeaderMap,
             client_ip_ctx: ClientIpContext,
         ) -> ::cratestack::axum::response::Response
@@ -22,6 +22,7 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
             C: HttpTransport,
             Auth: ::cratestack::AuthProvider,
         {
+            let op_id = op_params.pop().unwrap_or_default();
             match op_id.as_str() {
                 #(#arms)*
                 other => {

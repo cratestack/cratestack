@@ -12,6 +12,7 @@ mod rpc_app;
 
 use cose_client_support::{
     AUDIENCE, KINDS, Kind, Outcome, Proxy, Tamper, client_envelope, proxy, runtime,
+    runtime_following_redirects,
 };
 use cratestack::CratestackCodec;
 use cratestack_client_rust::{CborCodec, CratestackClient, EnvelopeError};
@@ -116,6 +117,51 @@ macro_rules! failure_suite {
             }
         }
 
+        // A redirect is never followed: a `303` would turn the sealed POST
+        // into a plain authenticated GET elsewhere, a `307` would re-send the
+        // sealed bytes to another `Location`.
+        #[tokio::test]
+        async fn a_redirect_is_not_followed() {
+            for kind in KINDS {
+                for code in [303, 307] {
+                    let (proxy, client) = through_proxy(kind, AUDIENCE).await;
+                    proxy.tamper(Tamper::Redirect(code));
+                    assert_eq!(
+                        $app::ping(&client, "a", &[]).await,
+                        Outcome::Unsigned(code),
+                        "{kind:?} {code}"
+                    );
+                    assert_eq!(
+                        proxy.request_content_types().len(),
+                        1,
+                        "{kind:?} {code}: the Location was requested"
+                    );
+                }
+            }
+        }
+
+        // A caller-supplied client that does follow redirects is caught after
+        // the fact: the answer did not come from the URL that was sealed for.
+        #[tokio::test]
+        async fn an_answer_from_a_redirected_url_is_rejected() {
+            for kind in KINDS {
+                for code in [303, 307] {
+                    let upstream = $app::server(kind).await;
+                    let proxy = proxy(upstream).await;
+                    let client = $app::Client::new(runtime_following_redirects(
+                        proxy.addr,
+                        client_envelope(kind, AUDIENCE),
+                    ));
+                    proxy.tamper(Tamper::Redirect(code));
+                    assert_eq!(
+                        $app::ping(&client, "a", &[]).await,
+                        Outcome::Unverified,
+                        "{kind:?} {code}"
+                    );
+                }
+            }
+        }
+
         // 7. Streams are refused locally, before anything is sent.
         #[tokio::test]
         async fn a_stream_is_refused_locally() {
@@ -149,6 +195,44 @@ mod rest {
                 "{kind:?}"
             );
         }
+    }
+
+    // `If-Match` is bound the same way.
+    #[tokio::test]
+    async fn a_stripped_if_match_fails_verification() {
+        for kind in KINDS {
+            let (proxy, client) = through_proxy(kind, AUDIENCE).await;
+            let matched = [("If-Match", "\"v1\"")];
+            assert!(matches!(
+                rest_app::ping(&client, "a", &matched).await,
+                Outcome::Ok(_)
+            ));
+            proxy.tamper(Tamper::DropRequestHeader("if-match"));
+            assert_eq!(
+                rest_app::ping(&client, "b", &matched).await,
+                Outcome::Unsigned(401),
+                "{kind:?}"
+            );
+        }
+    }
+
+    // Two values, or one with padding, cannot be sealed faithfully: refused
+    // before anything is sent.
+    #[tokio::test]
+    async fn an_unsealable_bound_header_is_refused_locally() {
+        let (proxy, client) = through_proxy(Kind::Ed25519, AUDIENCE).await;
+        for headers in [
+            &[("Idempotency-Key", "a"), ("Idempotency-Key", "b")][..],
+            &[("Idempotency-Key", " padded")][..],
+            &[("If-Match", "\"v1\" ")][..],
+        ] {
+            let outcome = rest_app::ping(&client, "a", headers).await;
+            assert!(
+                matches!(&outcome, Outcome::Other(text) if text.contains("cannot be sealed")),
+                "{headers:?}: {outcome:?}"
+            );
+        }
+        assert!(proxy.request_content_types().is_empty(), "nothing was sent");
     }
 }
 

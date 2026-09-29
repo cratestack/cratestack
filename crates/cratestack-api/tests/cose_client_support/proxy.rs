@@ -25,6 +25,10 @@ pub enum Tamper {
     Plain(Vec<u8>),
     /// Remove this request header before forwarding.
     DropRequestHeader(&'static str),
+    /// Answer every request but one for `/redirected` with this redirect
+    /// status (`303`, `307`) and `Location: /redirected`, without asking the
+    /// server: a hop that would move a sealed request somewhere else.
+    Redirect(u16),
 }
 
 #[derive(Clone)]
@@ -93,6 +97,15 @@ async fn forward(State(state): State<Arc<State_>>, request: Request<Body>) -> Re
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned),
     );
+    if let Tamper::Redirect(code) = &tamper
+        && parts.uri.path() != "/redirected"
+    {
+        return Response::builder()
+            .status(StatusCode::from_u16(*code).expect("a status"))
+            .header("location", "/redirected")
+            .body(Body::empty())
+            .expect("response");
+    }
     let url = format!(
         "http://{}{}",
         state.upstream,
@@ -124,7 +137,7 @@ async fn forward(State(state): State<Arc<State_>>, request: Request<Body>) -> Re
             content_type: Some("application/cbor".to_owned()),
             body: Bytes::from(body),
         },
-        Tamper::Pass | Tamper::DropRequestHeader(_) => current,
+        Tamper::Pass | Tamper::DropRequestHeader(_) | Tamper::Redirect(_) => current,
     };
     let mut response = Response::builder().status(sent.status);
     if let Some(content_type) = sent.content_type {

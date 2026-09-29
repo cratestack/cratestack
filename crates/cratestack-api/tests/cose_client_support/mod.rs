@@ -160,11 +160,26 @@ pub async fn serve(router: Router) -> SocketAddr {
 
 /// A signing client for `addr`; the caller wraps it in the generated `Client`.
 pub fn runtime(addr: SocketAddr, envelope: ClientEnvelope) -> CratestackClient {
+    runtime_at(addr, "", envelope)
+}
+
+/// A signing client for `addr` whose base URL carries `path` (a mount).
+pub fn runtime_at(addr: SocketAddr, path: &str, envelope: ClientEnvelope) -> CratestackClient {
     // `reqwest`'s `rustls-no-provider` feature needs a provider installed
     // before the first `Client` is built, even for plain `http://`.
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let base = reqwest::Url::parse(&format!("http://{addr}")).unwrap();
+    let base = reqwest::Url::parse(&format!("http://{addr}{path}")).unwrap();
     CratestackClient::new(ClientConfig::new(base), CborCodec)
+        .with_envelope(envelope)
+        .expect("CBOR client takes an envelope")
+}
+
+/// A signing client for `addr` that goes through a caller-supplied
+/// `reqwest::Client`, which follows redirects (reqwest's default policy).
+pub fn runtime_following_redirects(addr: SocketAddr, envelope: ClientEnvelope) -> CratestackClient {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let base = reqwest::Url::parse(&format!("http://{addr}")).unwrap();
+    CratestackClient::with_http_client(ClientConfig::new(base), CborCodec, reqwest::Client::new())
         .with_envelope(envelope)
         .expect("CBOR client takes an envelope")
 }

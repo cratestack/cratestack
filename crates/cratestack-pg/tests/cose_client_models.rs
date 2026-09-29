@@ -33,10 +33,14 @@ impl AuthProvider for PassThroughAuth {
 }
 
 async fn reset(pool: &cratestack::sqlx::PgPool, versioned: bool) {
-    query("DROP TABLE IF EXISTS cratestack_event_outbox, ledgers")
+    query("DROP TABLE IF EXISTS cratestack_event_outbox, ledgers, notes")
         .execute(pool)
         .await
         .expect("drop tables");
+    query("CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT NOT NULL)")
+        .execute(pool)
+        .await
+        .expect("create notes");
     // Two literals rather than a formatted string: sqlx audits dynamic SQL.
     if versioned {
         query(
@@ -147,6 +151,54 @@ mod rest {
                 .delete_with_response(&1, &[("If-Match", etag.as_str())])
                 .await
                 .unwrap_or_else(|error| panic!("{kind:?} delete: {error}"));
+        }
+    }
+
+    // The id is percent-encoded on the wire and bound raw: `50%off` used to
+    // be a permanent 401, and `a/b` a different route.
+    #[tokio::test]
+    async fn a_string_id_with_reserved_characters_round_trips_signed() {
+        let _guard = pg::serial_guard().await;
+        let Some(test_pg) = pg::connect_or_skip().await else {
+            return;
+        };
+        for kind in KINDS {
+            reset(&test_pg.pool, true).await;
+            let router = srv::axum::router(
+                srv::Cratestack::builder(test_pg.pool.clone()).build(),
+                NoProcedures,
+                (),
+                cratestack_codec_cbor::CborCodec,
+                PassThroughAuth,
+                cratestack::DEFAULT_BODY_LIMIT_BYTES,
+            )
+            .layer(layer(kind, |envelope, policy, audience| {
+                srv::axum::envelope_layer(envelope, policy, audience)
+            }));
+            let addr = serve(router).await;
+            let client = client::cratestack_schema::client::Client::<CborCodec>::new(runtime(
+                addr,
+                client_envelope(kind, AUDIENCE),
+            ));
+            for id in ["50%off", "a/b c", "plain-1", "q?x=1#f"] {
+                client
+                    .notes()
+                    .create(
+                        &client::cratestack_schema::CreateNoteInput {
+                            id: id.to_owned(),
+                            body: format!("body of {id}"),
+                        },
+                        &[],
+                    )
+                    .await
+                    .unwrap_or_else(|error| panic!("{kind:?} create {id}: {error}"));
+                let got = client
+                    .notes()
+                    .get(&id.to_owned(), &[])
+                    .await
+                    .unwrap_or_else(|error| panic!("{kind:?} get {id}: {error}"));
+                assert_eq!(got.body, format!("body of {id}"), "{kind:?} {id}");
+            }
         }
     }
 }

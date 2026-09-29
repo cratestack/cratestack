@@ -7,13 +7,14 @@
 //! `Remote` error mapping, cbor-seq lists, RPC frames) is the code a plain
 //! call runs, with no second path to keep in step with it.
 
-use cratestack_core::{Binding, BoundHeaders, CratestackError, ResponseBinding, canonical_query};
+use cratestack_core::{Binding, CratestackError, ResponseBinding, canonical_query};
 use cratestack_cose::request_digest;
 use reqwest::Method;
 use reqwest::header::{
     CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue, TRANSFER_ENCODING,
 };
 
+use crate::client::bound_headers::{bound_headers, refuse_duplicates};
 use crate::client::core::CratestackClient;
 use crate::client::helpers::{build_url, headers_to_runtime};
 use crate::codec::HttpClientCodec;
@@ -22,9 +23,6 @@ use crate::envelope_error::EnvelopeError;
 use crate::error::{ClientError, HeaderPair};
 use crate::idempotency::RequestIdempotency;
 use crate::runtime::wire::{RuntimeHeader, RuntimeResponseWire};
-
-const IDEMPOTENCY_KEY: &str = "idempotency-key";
-const IF_MATCH: &str = "if-match";
 
 impl<C> CratestackClient<C>
 where
@@ -52,6 +50,7 @@ where
                     .to_owned(),
             )
         })?;
+        refuse_duplicates(headers)?;
         let url = build_url(&self.config.base_url, path, canonical)?;
         // The authorizer runs over the inner payload, exactly what the
         // server's `AuthProvider` will see once it has opened the seal.
@@ -87,13 +86,18 @@ where
 
         let response = self
             .http
-            .request(method.clone(), url)
+            .request(method.clone(), url.clone())
             .headers(header_map)
             .body(sealed.clone())
             // A replay carries the same `cti`, which the server refuses.
             .with_extension(RequestIdempotency::new(false))
             .send()
             .await?;
+        // A client that follows redirects (a caller-supplied one) may have
+        // answered from somewhere the request was never sealed for.
+        if response.url() != &url {
+            return Err(EnvelopeError::Unverified.into());
+        }
         let status = response.status();
         let response_headers = response.headers().clone();
         let bytes = response.bytes().await?;
@@ -123,26 +127,6 @@ where
             body: opened.payload.to_vec(),
         })
     }
-}
-
-/// `Idempotency-Key` and `If-Match` exactly as the request will carry them.
-fn bound_headers(headers: &HeaderMap) -> Result<BoundHeaders<'static>, ClientError> {
-    let one = |name: &str| -> Result<Option<std::borrow::Cow<'static, str>>, ClientError> {
-        let mut values = headers.get_all(name).iter();
-        let Some(value) = values.next() else {
-            return Ok(None);
-        };
-        let text = value.to_str().map_err(|_| {
-            ClientError::BadInput(format!(
-                "header '{name}' must be visible ASCII to be sealed"
-            ))
-        })?;
-        Ok(Some(std::borrow::Cow::Owned(text.to_owned())))
-    };
-    Ok(BoundHeaders {
-        idempotency_key: one(IDEMPOTENCY_KEY)?,
-        if_match: one(IF_MATCH)?,
-    })
 }
 
 /// Whether the response names exactly one content type, an

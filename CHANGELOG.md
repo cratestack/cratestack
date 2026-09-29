@@ -87,8 +87,17 @@ turns the client into a `Required` one, on both transports:
   `CratestackClient::at(RouteRef)`, from the same derivation as the server's
   `ROUTE_TRANSPORTS` (so the two cannot disagree); the RPC client binds the op
   id, and `batch` for `/rpc/batch`;
-- streams, `@stream` ops and subscriptions fail locally with
-  `EnvelopeError::StreamsUnsupported` (sealed streams are ADR 0006 P1);
+- the streamed entry points (`*_streamed`, `RpcClient::call_streaming`) and
+  subscriptions fail locally with `EnvelopeError::StreamsUnsupported` (sealed
+  streams are ADR 0006 P1); a `@stream` procedure called through `post_list`
+  is sealed and works, as one buffered array;
+- redirects are never followed: `CratestackClient::new` builds its client with
+  `redirect::Policy::none()` under `cose`, and a sealed call whose answer came
+  from a URL other than the one it was sealed for (a caller-supplied client that
+  follows redirects) is `EnvelopeError::Unverified`;
+- a duplicated `Idempotency-Key` / `If-Match`, or one with leading or trailing
+  whitespace, is `BadInput` locally; detail-route ids are percent-encoded on the
+  path (`encode_path_segment`) while the seal binds the decoded value;
 - a `JsonCodec` client refuses an envelope (`BadInput`);
 - `RequestAuthorizer` still runs, over the inner payload with
   `Content-Type: application/cbor`, which is what the server's `AuthProvider`

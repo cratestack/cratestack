@@ -55,3 +55,27 @@ impl<'a> RouteRef<'a> {
         self.params
     }
 }
+
+/// `segment` as one URL path segment: everything but the RFC 3986 unreserved
+/// characters is percent-encoded, so an id such as `50%off` or `a/b` reaches
+/// the server as the value the seal binds.
+///
+/// ```
+/// use cratestack_client_rust::encode_path_segment;
+///
+/// assert_eq!(encode_path_segment("abc-1.2_3~"), "abc-1.2_3~");
+/// assert_eq!(encode_path_segment("50%off"), "50%25off");
+/// assert_eq!(encode_path_segment("a/b c"), "a%2Fb%20c");
+/// ```
+pub fn encode_path_segment(segment: &str) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(segment.len());
+    for byte in segment.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
+        } else {
+            let _ = write!(out, "%{byte:02X}");
+        }
+    }
+    out
+}

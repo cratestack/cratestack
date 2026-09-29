@@ -87,8 +87,18 @@ where
     /// for `reqwest-middleware` whatever their method, and a retry layer
     /// must re-enter the client, not replay the bytes.
     ///
-    /// **Streams** ([`RpcClient::call_streaming`](crate::RpcClient), sequence
-    /// streams, subscriptions) are refused with
+    /// **Redirects.** A sealed request is bound to one route, so the client
+    /// never follows a redirect: [`CratestackClient::new`] builds its
+    /// `reqwest::Client` with `redirect::Policy::none()`, and an answer from
+    /// any URL other than the one sealed for is
+    /// [`EnvelopeError::Unverified`](crate::EnvelopeError). A client supplied
+    /// through `with_http_client` or `with_middleware_client` **must not
+    /// follow redirects** either; the check after the fact catches a `303`
+    /// that turned the call into a plain `GET`, but not a hop that already
+    /// received the sealed bytes.
+    ///
+    /// **Streams** ([`RpcClient::call_streaming`](crate::RpcClient), the
+    /// `*_streamed` methods, subscriptions) are refused with
     /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError) until
     /// ADR 0006 P1.
     ///
@@ -149,15 +159,12 @@ where
     ) -> Result<std::borrow::Cow<'_, Self>, crate::error::ClientError> {
         #[cfg(feature = "cose")]
         if self.sealing.envelope.is_some() {
-            let op = path
-                .strip_prefix("/rpc/")
-                .filter(|op| !op.is_empty() && !op.contains('/'))
-                .ok_or_else(|| {
-                    crate::error::ClientError::BadInput(format!(
-                        "a sealed raw request must be an RPC one (/rpc/{{op_id}} or /rpc/batch); \
+            let op = crate::client::raw_path::rpc_op(path).ok_or_else(|| {
+                crate::error::ClientError::BadInput(format!(
+                    "a sealed raw request must be an RPC one (/rpc/{{op_id}} or /rpc/batch); \
                          '{path}' has no route template to bind"
-                    ))
-                })?;
+                ))
+            })?;
             return Ok(std::borrow::Cow::Owned(self.at(RouteRef::rpc(op))));
         }
         let _ = path;

@@ -272,6 +272,11 @@ path = "tests/cose_client_failures.rs"
 required-features = ["cose"]
 
 [[test]]
+name = "cose_client_mount"
+path = "tests/cose_client_mount.rs"
+required-features = ["cose"]
+
+[[test]]
 name = "cose_envelope_rest"
 path = "tests/cose_envelope_rest.rs"
 required-features = ["cose"]

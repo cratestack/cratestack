@@ -107,8 +107,9 @@ impl CoseSigner for ExternalSigner {
 ///
 /// DER is tried first when the bytes start a DER `SEQUENCE` (`0x30`) and
 /// parse as one; a raw signature that happens to start with `0x30` does not
-/// parse as a DER signature of the same length, so the two cannot be mixed
-/// up.
+/// parse as a DER signature of the same length except with a probability that
+/// is negligible for a real signature, so in practice the two are not
+/// confused; anything that is neither is refused.
 fn raw_signature(signature: &[u8]) -> Result<Vec<u8>, CratestackError> {
     let parsed = match signature {
         [0x30, ..] => Signature::from_der(signature).ok(),
