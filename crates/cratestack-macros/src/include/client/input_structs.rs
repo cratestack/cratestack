@@ -31,13 +31,17 @@ pub(super) fn client_input_structs(
     let create_input_structs = schema
         .models
         .iter()
-        .filter(|&model| !cratestack_core::model_internal_actions(model).contains("create"))
+        .filter(|&model| {
+            cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Create)
+        })
         .map(|model| generate_client_create_input_struct(model, model_name_set, enum_name_set))
         .collect();
     let update_input_structs = schema
         .models
         .iter()
-        .filter(|&model| !cratestack_core::model_internal_actions(model).contains("update"))
+        .filter(|&model| {
+            cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Update)
+        })
         .map(|model| generate_client_update_input_struct(model, model_name_set, enum_name_set))
         .collect();
     (create_input_structs, update_input_structs)

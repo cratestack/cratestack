@@ -11,6 +11,7 @@ mod tests;
 #[cfg(test)]
 mod tests_idempotency;
 
+use cratestack_core::ModelVerb;
 use cratestack_core::{Model, Procedure, TypeArity};
 use quote::quote;
 
@@ -24,10 +25,6 @@ pub(crate) fn generate_model_op_descriptors(
     let create_input = format!("Create{model_name}Input");
     let update_input = format!("Update{model_name}Input");
 
-    let create_id = format!("model.{model_name}.create");
-    let update_id = format!("model.{model_name}.update");
-    let delete_id = format!("model.{model_name}.delete");
-
     // Model CRUD ops have no `@no_rate_limit`-equivalent opt-out today
     // (that attribute is procedure-only, per docs/design/extensions.md §5),
     // so every one of them always participates in rate limiting.
@@ -36,21 +33,20 @@ pub(crate) fn generate_model_op_descriptors(
     // cratestack#743: a suppressed verb (`@@internal(...)`) advertises
     // no `OpDescriptor` at all — nothing tells an RPC client the op is
     // callable, matching REST's omitted route (design doc §3, RPC
-    // unary row). `model_internal_actions` is the one shared source of
-    // truth every surface consults; this is this surface's single call
-    // site.
-    let internal = cratestack_core::model_internal_actions(model);
+    // unary row). `model_verbs` is the one op list every surface
+    // consumes (cratestack#1123); this is this surface's single call site.
+    let verbs = cratestack_core::model_verbs(model);
 
     let mut descriptors = Vec::new();
-    if !internal.contains("list") {
+    if verbs.contains(&ModelVerb::List) {
         descriptors.push(model_list_op_descriptor(model, auth_required));
     }
-    if !internal.contains("get") {
+    if verbs.contains(&ModelVerb::Get) {
         descriptors.push(model_get_op_descriptor(model, auth_required));
     }
-    if !internal.contains("create") {
+    if verbs.contains(&ModelVerb::Create) {
         descriptors.push(op_descriptor(
-            &create_id,
+            &ModelVerb::Create.rpc_op_id(model_name),
             quote! { ::cratestack::OpKind::Unary },
             &create_input,
             model_name,
@@ -59,9 +55,9 @@ pub(crate) fn generate_model_op_descriptors(
             auth_required,
         ));
     }
-    if !internal.contains("update") {
+    if verbs.contains(&ModelVerb::Update) {
         descriptors.push(op_descriptor(
-            &update_id,
+            &ModelVerb::Update.rpc_op_id(model_name),
             quote! { ::cratestack::OpKind::Unary },
             &update_input,
             model_name,
@@ -70,9 +66,9 @@ pub(crate) fn generate_model_op_descriptors(
             auth_required,
         ));
     }
-    if !internal.contains("delete") {
+    if verbs.contains(&ModelVerb::Delete) {
         descriptors.push(op_descriptor(
-            &delete_id,
+            &ModelVerb::Delete.rpc_op_id(model_name),
             quote! { ::cratestack::OpKind::Unary },
             "",
             model_name,
@@ -95,15 +91,11 @@ pub(crate) fn generate_model_subscribe_op_descriptor(
     model: &Model,
     auth_required: bool,
 ) -> Option<proc_macro2::TokenStream> {
-    if !model
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw == "@@subscribe")
-    {
+    if !cratestack_core::model_verbs(model).contains(&ModelVerb::Subscribe) {
         return None;
     }
     let model_name = model.name.as_str();
-    let op_id = format!("model.{model_name}.subscribe");
+    let op_id = ModelVerb::Subscribe.rpc_op_id(model_name);
     let output_ty = format!("ModelEvent<{model_name}>");
     Some(op_descriptor(
         &op_id,
@@ -123,7 +115,7 @@ pub(crate) fn generate_procedure_op_descriptor(
     procedure: &Procedure,
     auth_required: bool,
 ) -> proc_macro2::TokenStream {
-    let op_id = format!("procedure.{}", procedure.name);
+    let op_id = cratestack_core::procedure_op_key(procedure, true);
     let kind = if matches!(procedure.return_type.arity, TypeArity::List) {
         quote! { ::cratestack::OpKind::Sequence }
     } else {

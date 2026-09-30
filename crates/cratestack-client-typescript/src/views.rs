@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
+use cratestack_core::ModelVerb;
 use cratestack_core::route_naming;
 use cratestack_core::{EnumDecl, Field, Model, TypeArity};
 use serde::Serialize;
@@ -193,7 +194,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let route = format!("/{}", route_naming::model_route_segment(&model.name));
     let accessor = pluralize(&to_camel_case(&model.name));
     let is_paged = is_paged_model(model);
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
     let rtk_names = rtk_endpoint_names(&model.name);
     ModelApiView {
         name: model.name.clone(),
@@ -203,11 +204,11 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         route,
         primary_key_type: ts_type(&primary_key.ty, &BTreeSet::new()),
         primary_key_name: ts_identifier(&primary_key.name),
-        allows_list: !internal.contains("list"),
-        allows_get: !internal.contains("get"),
-        allows_create: model_allows_create(model) && !internal.contains("create"),
-        allows_update: !internal.contains("update"),
-        allows_delete: !internal.contains("delete"),
+        allows_list: verbs.contains(&ModelVerb::List),
+        allows_get: verbs.contains(&ModelVerb::Get),
+        allows_create: model_allows_create(model) && verbs.contains(&ModelVerb::Create),
+        allows_update: verbs.contains(&ModelVerb::Update),
+        allows_delete: verbs.contains(&ModelVerb::Delete),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
         list_return_type: if is_paged {

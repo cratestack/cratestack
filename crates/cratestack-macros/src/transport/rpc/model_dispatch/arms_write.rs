@@ -8,7 +8,7 @@ use super::ModelRpcContext;
 
 pub(super) fn create_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let m = &ctx.m;
-    let create_id = format!("model.{m}.create");
+    let create_id = cratestack_core::ModelVerb::Create.rpc_op_id(m);
     let create_path = format!("/rpc/{create_id}");
     let create_dispatch = &ctx.create_dispatch;
     quote! {
@@ -38,7 +38,7 @@ pub(super) fn create_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
 
 pub(super) fn update_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let m = &ctx.m;
-    let update_id = format!("model.{m}.update");
+    let update_id = cratestack_core::ModelVerb::Update.rpc_op_id(m);
     let update_path = format!("/rpc/{update_id}");
     let update_dispatch = &ctx.update_dispatch;
     let update_input_ident = &ctx.update_input_ident;
@@ -89,7 +89,7 @@ pub(super) fn update_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
 
 pub(super) fn delete_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let m = &ctx.m;
-    let delete_id = format!("model.{m}.delete");
+    let delete_id = cratestack_core::ModelVerb::Delete.rpc_op_id(m);
     let delete_path = format!("/rpc/{delete_id}");
     let delete_dispatch = &ctx.delete_dispatch;
     let pk_type = &ctx.pk_type;

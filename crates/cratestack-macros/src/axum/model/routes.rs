@@ -21,6 +21,7 @@
 mod tests;
 
 use cratestack_core::Model;
+use cratestack_core::ModelVerb;
 use quote::quote;
 
 use crate::shared::{ident, pluralize, to_snake_case};
@@ -28,23 +29,23 @@ use crate::shared::{ident, pluralize, to_snake_case};
 pub(crate) fn generate_model_axum_routes(model: &Model) -> proc_macro2::TokenStream {
     let snake = to_snake_case(&model.name);
     let plural = pluralize(&snake);
-    let list_route = format!("/{}", plural);
-    let detail_route = format!("/{}/{{id}}", plural);
+    let list_route = cratestack_core::model_list_route(&model.name);
+    let detail_route = cratestack_core::model_detail_route(&model.name);
     let list_handler_ident = ident(&format!("handle_list_{}", plural));
     let create_handler_ident = ident(&format!("handle_create_{}", plural));
     let get_handler_ident = ident(&format!("handle_get_{}", snake));
     let update_handler_ident = ident(&format!("handle_update_{}", snake));
     let delete_handler_ident = ident(&format!("handle_delete_{}", snake));
 
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
 
     let list_router = merge_method_routes(&[
         (
-            !internal.contains("list"),
+            verbs.contains(&ModelVerb::List),
             quote! { axum::routing::get(#list_handler_ident) },
         ),
         (
-            !internal.contains("create"),
+            verbs.contains(&ModelVerb::Create),
             quote! { axum::routing::post(#create_handler_ident) },
         ),
     ])
@@ -53,15 +54,15 @@ pub(crate) fn generate_model_axum_routes(model: &Model) -> proc_macro2::TokenStr
 
     let detail_router = merge_method_routes(&[
         (
-            !internal.contains("get"),
+            verbs.contains(&ModelVerb::Get),
             quote! { axum::routing::get(#get_handler_ident) },
         ),
         (
-            !internal.contains("update"),
+            verbs.contains(&ModelVerb::Update),
             quote! { axum::routing::patch(#update_handler_ident) },
         ),
         (
-            !internal.contains("delete"),
+            verbs.contains(&ModelVerb::Delete),
             quote! { axum::routing::delete(#delete_handler_ident) },
         ),
     ])

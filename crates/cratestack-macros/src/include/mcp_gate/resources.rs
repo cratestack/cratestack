@@ -9,7 +9,7 @@
 //! each names a case the ADR does not cover, and the report on #1040 lists
 //! them for the maintainer.
 
-use cratestack_core::{Field, MCP_MAX_PAGE_SIZE, Model, Schema, TypeArity, model_internal_actions};
+use cratestack_core::{Field, MCP_MAX_PAGE_SIZE, Model, Schema, TypeArity, model_verbs};
 
 use crate::shared::is_primary_key;
 
@@ -43,10 +43,10 @@ pub(super) fn resource_plans(schema: &Schema) -> Result<Vec<ResourcePlan>, Strin
 
 fn plan(model: &Model, authority: &str) -> Result<ResourcePlan, String> {
     let exposure = model.mcp.as_ref().expect("filtered on `mcp`");
-    let internal = model_internal_actions(model);
+    let verbs = model_verbs(model);
     if let Some(verb) = ["get", "list"]
         .into_iter()
-        .find(|verb| internal.contains(*verb))
+        .find(|verb| !verbs.iter().any(|v| v.as_str() == *verb))
     {
         return Err(format!(
             "`@@mcp(resource: \"{}\")` on model `{}` contradicts its `@@internal(...)`, which \

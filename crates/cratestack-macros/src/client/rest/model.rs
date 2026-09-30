@@ -12,6 +12,7 @@
 //! (split the same way `transport::rpc::model_dispatch` splits into
 //! `arms_read`/`arms_write`, for the 200-LoC file convention).
 
+use cratestack_core::ModelVerb;
 use std::collections::BTreeSet;
 
 use cratestack_core::Model;
@@ -33,7 +34,7 @@ pub(super) fn generate_generated_model_client(
     bearing: &BTreeSet<String>,
     computed_params_ident: Option<&syn::Ident>,
 ) -> Result<proc_macro2::TokenStream, String> {
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
     let client_ident = ident(&format!("{}Client", model.name));
     let route_path = model_list_path(&model.name);
     let paged = is_paged_model(model);
@@ -91,27 +92,27 @@ pub(super) fn generate_generated_model_client(
     // — cratestack#743's REST client gate. `list`/`get` also cover their
     // `*_view` projection siblings, since both hit the same suppressed
     // route.
-    let list_group = if !internal.contains("list") {
+    let list_group = if verbs.contains(&ModelVerb::List) {
         groups_read::list_group(&ctx)
     } else {
         Default::default()
     };
-    let get_group = if !internal.contains("get") {
+    let get_group = if verbs.contains(&ModelVerb::Get) {
         groups_read::get_group(&ctx)
     } else {
         Default::default()
     };
-    let create_group = if !internal.contains("create") {
+    let create_group = if verbs.contains(&ModelVerb::Create) {
         groups_write::create_group(&ctx)
     } else {
         Default::default()
     };
-    let update_group = if !internal.contains("update") {
+    let update_group = if verbs.contains(&ModelVerb::Update) {
         groups_write::update_group(&ctx)
     } else {
         Default::default()
     };
-    let delete_group = if !internal.contains("delete") {
+    let delete_group = if verbs.contains(&ModelVerb::Delete) {
         groups_write::delete_group(&ctx)
     } else {
         Default::default()

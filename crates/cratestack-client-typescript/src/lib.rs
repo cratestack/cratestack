@@ -14,6 +14,8 @@ mod rtk;
 mod swr;
 mod tanstack_collisions;
 mod templates;
+#[cfg(test)]
+mod tests_op_list;
 mod types;
 mod views;
 mod wire_shapes;

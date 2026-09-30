@@ -1,9 +1,10 @@
 //! Builds an op's canonical contract (see the parent module).
 
 use super::canon::{COpContract, CWireProcedure};
-use super::ops::{ClientOp, ModelVerb, OpTarget};
+use super::ops::{ClientOp, OpTarget};
 use super::project;
 use crate::events::{ModelEventKind, parse_emit_attribute};
+use crate::op_list::ModelVerb;
 use crate::schema::{Procedure, ProcedureKind, Schema, TransportStyle, TypeArity};
 use crate::schema_identity::members::{args, type_ref};
 

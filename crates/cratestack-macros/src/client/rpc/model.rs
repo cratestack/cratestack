@@ -2,6 +2,7 @@
 //! `BatchableCall<C, Output>` so callers can either `.await` them or
 //! `.queue(&mut batch)` into a multiplexed `/rpc/batch` round-trip.
 
+use cratestack_core::ModelVerb;
 use std::collections::BTreeSet;
 
 use cratestack_core::Model;
@@ -26,7 +27,7 @@ pub(super) fn generate_generated_rpc_model_client(
     // shared source of truth, `cratestack_core::model_internal_actions`,
     // consulted once here for every RPC client method this function
     // emits.
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
     let model_name = &model.name;
     let client_ident = ident(&format!("{}Client", model.name));
     let create_input_ident = ident(&format!("Create{}Input", model.name));
@@ -48,11 +49,11 @@ pub(super) fn generate_generated_rpc_model_client(
         quote! { Vec<#model_output_type> }
     };
 
-    let list_op = format!("model.{model_name}.list");
-    let get_op = format!("model.{model_name}.get");
-    let create_op = format!("model.{model_name}.create");
-    let update_op = format!("model.{model_name}.update");
-    let delete_op = format!("model.{model_name}.delete");
+    let list_op = cratestack_core::ModelVerb::List.rpc_op_id(model_name);
+    let get_op = cratestack_core::ModelVerb::Get.rpc_op_id(model_name);
+    let create_op = cratestack_core::ModelVerb::Create.rpc_op_id(model_name);
+    let update_op = cratestack_core::ModelVerb::Update.rpc_op_id(model_name);
+    let delete_op = cratestack_core::ModelVerb::Delete.rpc_op_id(model_name);
 
     // `computed_params_ident` gates `list`/`get` on whether this model
     // declares at least one parameterized `@computed` field
@@ -64,12 +65,12 @@ pub(super) fn generate_generated_rpc_model_client(
     // Builders live in `model/computed.rs` (200-LoC file convention).
     // Each verb group below is emitted only when `!internal.contains(...)`
     // — cratestack#743's RPC client gate, mirroring the REST client's.
-    let list_group = if !internal.contains("list") {
+    let list_group = if verbs.contains(&ModelVerb::List) {
         build_list_method(computed_params_ident, &list_op, &list_output_type)
     } else {
         Default::default()
     };
-    let get_group = if !internal.contains("get") {
+    let get_group = if verbs.contains(&ModelVerb::Get) {
         {
             let get_method = build_get_method(
                 computed_params_ident,
@@ -87,7 +88,7 @@ pub(super) fn generate_generated_rpc_model_client(
     } else {
         Default::default()
     };
-    let create_group = if !internal.contains("create") {
+    let create_group = if verbs.contains(&ModelVerb::Create) {
         {
             quote! {
                 /// `POST /rpc/model.X.create` — body is the create input
@@ -108,7 +109,7 @@ pub(super) fn generate_generated_rpc_model_client(
     } else {
         Default::default()
     };
-    let update_group = if !internal.contains("update") {
+    let update_group = if verbs.contains(&ModelVerb::Update) {
         {
             quote! {
                 /// `POST /rpc/model.X.update` — wraps `id` + `patch` in
@@ -135,7 +136,7 @@ pub(super) fn generate_generated_rpc_model_client(
     } else {
         Default::default()
     };
-    let delete_group = if !internal.contains("delete") {
+    let delete_group = if verbs.contains(&ModelVerb::Delete) {
         {
             quote! {
                 /// `POST /rpc/model.X.delete` — wraps `id` in `RpcPkInput { id }`.

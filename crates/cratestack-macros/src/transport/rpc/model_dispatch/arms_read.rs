@@ -8,7 +8,7 @@ use super::ModelRpcContext;
 
 pub(super) fn list_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let m = &ctx.m;
-    let list_id = format!("model.{m}.list");
+    let list_id = cratestack_core::ModelVerb::List.rpc_op_id(m);
     let list_path = format!("/rpc/{list_id}");
     let list_dispatch = &ctx.list_dispatch;
     quote! {
@@ -45,7 +45,7 @@ pub(super) fn list_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
 
 pub(super) fn get_arm(ctx: &ModelRpcContext) -> proc_macro2::TokenStream {
     let m = &ctx.m;
-    let get_id = format!("model.{m}.get");
+    let get_id = cratestack_core::ModelVerb::Get.rpc_op_id(m);
     let get_path = format!("/rpc/{get_id}");
     let get_dispatch = &ctx.get_dispatch;
     let pk_type = &ctx.pk_type;

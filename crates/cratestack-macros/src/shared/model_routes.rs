@@ -5,16 +5,14 @@
 //! the same string: a request sealed for `/widgets/{id}` is refused by a
 //! server that registered `/widgets/{widget_id}`. So both call these.
 
-use super::{pluralize, to_snake_case};
-
 /// `/widgets`: the collection route.
 pub(crate) fn model_list_path(model_name: &str) -> String {
-    format!("/{}", pluralize(&to_snake_case(model_name)))
+    cratestack_core::model_list_route(model_name)
 }
 
 /// `/widgets/{id}`: the detail route.
 pub(crate) fn model_detail_path(model_name: &str) -> String {
-    detail_path_of(&model_list_path(model_name))
+    cratestack_core::model_detail_route(model_name)
 }
 
 /// The detail route of the collection route `list_path`.

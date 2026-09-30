@@ -7,6 +7,7 @@ mod tests;
 #[cfg(test)]
 mod tests_idempotency;
 
+use cratestack_core::ModelVerb;
 use cratestack_core::{Model, Procedure};
 use quote::quote;
 
@@ -89,9 +90,9 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
     // (`cratestack-axum/src/ratelimit/rest_ops_filter.rs`) already
     // fails closed (rate-limits) on a lookup miss, so omitting the
     // entry changes nothing about that filter's behavior.
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
 
-    let list_const = (!internal.contains("list")).then(|| {
+    let list_const = (verbs.contains(&ModelVerb::List)).then(|| {
         quote! {
             pub const #list_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
                 name: #model_name,
@@ -103,7 +104,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
             };
         }
     });
-    let create_const = (!internal.contains("create")).then(|| {
+    let create_const = (verbs.contains(&ModelVerb::Create)).then(|| {
         quote! {
             pub const #create_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
                 name: #model_name,
@@ -115,7 +116,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
             };
         }
     });
-    let get_const = (!internal.contains("get")).then(|| {
+    let get_const = (verbs.contains(&ModelVerb::Get)).then(|| {
         quote! {
             pub const #get_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
                 name: #model_name,
@@ -127,7 +128,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
             };
         }
     });
-    let update_const = (!internal.contains("update")).then(|| {
+    let update_const = (verbs.contains(&ModelVerb::Update)).then(|| {
         quote! {
             pub const #update_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
                 name: #model_name,
@@ -139,7 +140,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
             };
         }
     });
-    let delete_const = (!internal.contains("delete")).then(|| {
+    let delete_const = (verbs.contains(&ModelVerb::Delete)).then(|| {
         quote! {
             pub const #delete_ident: ::cratestack::RouteTransportDescriptor = ::cratestack::RouteTransportDescriptor {
                 name: #model_name,
@@ -167,17 +168,17 @@ pub(crate) fn generate_model_transport_entries(model: &Model) -> Vec<proc_macro2
     // above — an entry referencing a const that was never emitted for a
     // suppressed verb would be a compile error, not merely a stale
     // listing.
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
 
     [
-        ("list_get", "list"),
-        ("list_post", "create"),
-        ("detail_get", "get"),
-        ("detail_patch", "update"),
-        ("detail_delete", "delete"),
+        ("list_get", ModelVerb::List),
+        ("list_post", ModelVerb::Create),
+        ("detail_get", ModelVerb::Get),
+        ("detail_patch", ModelVerb::Update),
+        ("detail_delete", ModelVerb::Delete),
     ]
     .into_iter()
-    .filter(|(_, verb)| !internal.contains(verb))
+    .filter(|(_, verb)| verbs.contains(verb))
     .map(|(suffix, _)| {
         let id = route_transport_const_ident("model", model_name, suffix);
         quote! { #id }

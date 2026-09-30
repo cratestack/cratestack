@@ -21,6 +21,7 @@ mod arms_write;
 mod tests;
 
 use cratestack_core::Model;
+use cratestack_core::ModelVerb;
 use quote::quote;
 
 use crate::shared::{ident, is_primary_key, pluralize, rust_type_tokens, to_snake_case};
@@ -44,7 +45,7 @@ pub(super) struct ModelRpcContext {
 
 /// Emit `model.<X>.{list,get,create,update,delete}` dispatch arms.
 pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2::TokenStream> {
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
     let m = model.name.as_str();
     let pk_field = model.fields.iter().find(|field| is_primary_key(field));
 
@@ -52,11 +53,11 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
     // dispatch (no id to extract). The parser already rejects PK-less
     // models for REST; be defensive here too.
     let Some(pk) = pk_field else {
-        return ["list", "get", "create", "update", "delete"]
+        return ModelVerb::CRUD
             .into_iter()
-            .filter(|verb| !internal.contains(verb))
+            .filter(|verb| verbs.contains(verb))
             .map(|verb| {
-                let op_id = format!("model.{m}.{verb}");
+                let op_id = verb.rpc_op_id(m);
                 quote! {
                     #op_id => {
                         rpc_dispatch_error(
@@ -91,19 +92,19 @@ pub(crate) fn generate_model_rpc_dispatch_arms(model: &Model) -> Vec<proc_macro2
     };
 
     let mut arms = Vec::new();
-    if !internal.contains("list") {
+    if verbs.contains(&ModelVerb::List) {
         arms.push(arms_read::list_arm(&ctx));
     }
-    if !internal.contains("get") {
+    if verbs.contains(&ModelVerb::Get) {
         arms.push(arms_read::get_arm(&ctx));
     }
-    if !internal.contains("create") {
+    if verbs.contains(&ModelVerb::Create) {
         arms.push(arms_write::create_arm(&ctx));
     }
-    if !internal.contains("update") {
+    if verbs.contains(&ModelVerb::Update) {
         arms.push(arms_write::update_arm(&ctx));
     }
-    if !internal.contains("delete") {
+    if verbs.contains(&ModelVerb::Delete) {
         arms.push(arms_write::delete_arm(&ctx));
     }
     arms

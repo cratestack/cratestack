@@ -18,6 +18,8 @@ mod release_line;
 mod riverpod;
 mod templates;
 mod templates_fragments;
+#[cfg(test)]
+mod tests_op_list;
 mod views;
 mod wire_decode;
 mod wire_encode;

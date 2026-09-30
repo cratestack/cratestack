@@ -181,9 +181,9 @@ pub(crate) fn build_stateful_rest_mappings(
     // sorts the final file list by name for deterministic output.
     mappings.push(("get".to_owned(), get_mapping));
 
-    // `cratestack_core::model_internal_actions` — the same single
-    // source of truth `axum/model/routes.rs` and
-    // `transport/op_descriptors.rs` consult (cratestack#743,
+    // `cratestack_core::model_verbs` — the one op list
+    // `axum/model/routes.rs` and `transport/op_descriptors.rs` consume
+    // (cratestack#743, #1123,
     // `docs/design/route-suppression.md`) — is consulted here too: a
     // suppressed verb's mock would otherwise advertise a working
     // response (e.g. `201 Created`) for a request the real server
@@ -193,10 +193,10 @@ pub(crate) fn build_stateful_rest_mappings(
     // verb — the text before the first `-` — so suppressing `"update"`
     // drops all five of its gated stubs, not just the bare `"update"`
     // one.
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
     mappings.retain(|(verb, _)| {
         let canonical = verb.split('-').next().unwrap_or(verb);
-        !internal.contains(canonical)
+        verbs.iter().any(|verb| verb.as_str() == canonical)
     });
 
     Ok(mappings)

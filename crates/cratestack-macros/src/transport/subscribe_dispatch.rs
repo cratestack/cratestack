@@ -39,7 +39,7 @@ pub(crate) fn generate_model_subscribe_dispatch_arm(
     let model_name = model.name.as_str();
     let model_snake = to_snake_case(model_name);
     let event_alias = ident(&format!("{model_name}CreatedEvent"));
-    let op_id = format!("model.{model_name}.subscribe");
+    let op_id = cratestack_core::ModelVerb::Subscribe.rpc_op_id(model_name);
     let canonical_path = format!("/rpc/subscribe/{op_id}");
 
     let registrations = emitted.iter().map(|operation| {

@@ -20,6 +20,7 @@ use crate::package_floors::{
     CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR, requirement,
 };
 use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
+use cratestack_core::ModelVerb;
 
 pub(crate) fn build_template_context(
     schema: &Schema,
@@ -83,7 +84,7 @@ pub(crate) fn build_template_context(
         // so emitting the input class anyway would be exactly the
         // "unreferenced Create<M>Input" the acceptance criteria forbid.
         // One shared source of truth, consulted once per class here.
-        let internal = cratestack_core::model_internal_actions(model);
+        let verbs = cratestack_core::model_verbs(model);
 
         let create_name = format!("Create{}Input", model.name);
         let create_fields = scalar_fields
@@ -96,7 +97,7 @@ pub(crate) fn build_template_context(
             .filter(|field| !is_computed_field(field))
             .filter(|field| !is_generated_on_create(field))
             .collect::<Vec<_>>();
-        if !internal.contains("create") {
+        if verbs.contains(&ModelVerb::Create) {
             data_classes.push(build_data_class(
                 &create_name,
                 &create_fields,
@@ -115,7 +116,7 @@ pub(crate) fn build_template_context(
             // — same reasoning as `create_fields` above.
             .filter(|field| !is_computed_field(field))
             .collect::<Vec<_>>();
-        if !internal.contains("update") {
+        if verbs.contains(&ModelVerb::Update) {
             data_classes.push(build_data_class(
                 &update_name,
                 &update_fields,

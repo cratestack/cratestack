@@ -1,3 +1,4 @@
+use cratestack_core::ModelVerb;
 use cratestack_core::{Field, Schema};
 use serde::Serialize;
 
@@ -220,8 +221,8 @@ pub(crate) fn build_template_context(
         // `allows_create` already folds in `model_allows_create`, so
         // this preserves that pre-existing gate unchanged and only adds
         // the new suppression check on top (see `ModelApiView`'s doc).
-        let internal = cratestack_core::model_internal_actions(model);
-        if model_allows_create(model) && !internal.contains("create") {
+        let verbs = cratestack_core::model_verbs(model);
+        if model_allows_create(model) && verbs.contains(&ModelVerb::Create) {
             interfaces.push(build_interface(
                 &format!("Create{}Input", model.name),
                 &scalar_fields
@@ -238,7 +239,7 @@ pub(crate) fn build_template_context(
                 &enum_names,
             ));
         }
-        if !internal.contains("update") {
+        if verbs.contains(&ModelVerb::Update) {
             interfaces.push(build_interface(
                 &format!("Update{}Input", model.name),
                 &scalar_fields

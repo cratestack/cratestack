@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use cratestack_core::ModelVerb;
 use cratestack_core::route_naming;
 use cratestack_core::{Model, Procedure, TypeArity, computed_params_type_name};
 
@@ -115,7 +116,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     let paged = is_paged_model(model);
     // cratestack#743: one shared source of truth, consulted once here
     // for every verb this view gates.
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
     // The typed client computedParams surface — see
     // `docs/design/computed-fields.md`'s "Downstream" section: the typed
     // `{Model}ComputedParams` class replaces the v1 untyped
@@ -182,11 +183,11 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         has_parameterized_computed_fields: !computed_params_fields.is_empty(),
         computed_params_class_name,
         computed_params_fields,
-        allows_list: !internal.contains("list"),
-        allows_get: !internal.contains("get"),
-        allows_create: !internal.contains("create"),
-        allows_update: !internal.contains("update"),
-        allows_delete: !internal.contains("delete"),
+        allows_list: verbs.contains(&ModelVerb::List),
+        allows_get: verbs.contains(&ModelVerb::Get),
+        allows_create: verbs.contains(&ModelVerb::Create),
+        allows_update: verbs.contains(&ModelVerb::Update),
+        allows_delete: verbs.contains(&ModelVerb::Delete),
     }
 }
 

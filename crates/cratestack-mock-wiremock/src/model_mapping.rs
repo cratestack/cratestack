@@ -71,22 +71,21 @@ fn build_static_rpc_mappings(
     // Same order as `routes`: list, get, create, update, delete.
     let bodies = [&list_body, &record, &record, &record, &record];
 
-    // `cratestack_core::model_internal_actions` — the same single
-    // source of truth `axum/model/routes.rs` and
-    // `transport/op_descriptors.rs` consult (cratestack#743,
+    // `cratestack_core::model_verbs` — the one op list
+    // `axum/model/routes.rs` and `transport/op_descriptors.rs` consume
+    // (cratestack#743, #1123,
     // `docs/design/route-suppression.md`) — is consulted here too: a
     // stub advertising a stateful, working response for a verb the
     // real server suppresses (405/404) would hand a mock consumer a
     // contract the server does not honor. `rpc_routes`'s verb names
-    // (`"list"`/`"get"`/`"create"`/`"update"`/`"delete"`) already match
-    // `model_internal_actions`'s wire-verb vocabulary exactly, so no
-    // translation is needed.
-    let internal = cratestack_core::model_internal_actions(model);
+    // (`"list"`/`"get"`/`"create"`/`"update"`/`"delete"`) are
+    // `ModelVerb::as_str`'s, so no translation is needed.
+    let verbs = cratestack_core::model_verbs(model);
 
     Ok(routes
         .into_iter()
         .zip(bodies)
-        .filter(|(route, _)| !internal.contains(route.verb))
+        .filter(|(route, _)| verbs.iter().any(|verb| verb.as_str() == route.verb))
         .map(|(route, body)| {
             (
                 route.verb.to_owned(),
