@@ -6,7 +6,7 @@
 //! so the two surfaces cannot disagree about whether a read is rate
 //! limited (cratestack#474's lesson, as for tools).
 
-use cratestack_core::Model;
+use cratestack_core::{Model, ModelVerb};
 use quote::quote;
 
 /// Reads are safe to retry without a key (`idempotent_by_default`), and
@@ -21,7 +21,7 @@ pub(crate) fn model_list_op_descriptor(
 ) -> proc_macro2::TokenStream {
     let model_name = model.name.as_str();
     super::op_descriptor(
-        &format!("model.{model_name}.list"),
+        &ModelVerb::List.rpc_op_id(model_name),
         quote! { ::cratestack::OpKind::Unary },
         "",
         &format!("Page<{model_name}>"),
@@ -37,7 +37,7 @@ pub(crate) fn model_get_op_descriptor(
 ) -> proc_macro2::TokenStream {
     let model_name = model.name.as_str();
     super::op_descriptor(
-        &format!("model.{model_name}.get"),
+        &ModelVerb::Get.rpc_op_id(model_name),
         quote! { ::cratestack::OpKind::Unary },
         "",
         model_name,

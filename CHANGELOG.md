@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### One op list for every surface (#1123) — additive, no behaviour change
+
+`cratestack_core::op_list` (`ModelVerb`, `model_verbs`, `model_op_key`,
+`procedure_op_key`, `model_list_route`, `model_detail_route`,
+`detail_route_of`, `ModelOpIds`) is now the one place a model's verbs, an op's
+key and its REST routes are derived. The contract digests' op list, the RPC
+`OPS` and REST `ROUTE_TRANSPORTS` descriptors, RPC dispatch (model,
+procedure and subscribe arms), axum route registration, the generated Rust
+clients, the TypeScript and Dart generators (their RPC templates print op ids
+handed in from `op_list` instead of spelling `model.<Name>.<verb>`), the
+WireMock stubs and the MCP resource gate all ask it, where each used to
+combine `model_internal_actions` with its own list of verb names. Emitted
+code, routes, op ids and generated clients are byte-identical for every
+existing schema. Pinned as literals by `op_list_golden`, the TypeScript and
+Dart `op_ids_golden` tests and `cratestack-pg`'s `op_contract_parity`. The
+studio's direct-SQL write guard stays off the list on purpose
+(docs/design/route-suppression.md §8b).
+
+### Six more wire-neutral attributes leave the op contract (#1123) — digests change
+
+`@pii`, `@sensitive`, `@db_enforce`, field `@unique`, a view field's `@from`
+and a procedure's `@deprecated` join `DROPPED_ATTRIBUTES`: the audit writer,
+the migration emitter, the `Deprecation` response headers and view parsing
+are their only readers, and none shapes a wire type, route or client (a
+test pins every reader of `pii_columns`, `sensitive_columns` and
+`redact_snapshot`, so redaction reaching a response body forces this
+review again). Adding,
+removing or editing one no longer moves any op digest. **The digests of a
+schema that uses any of them change once** relative to the previous
+Unreleased build; nothing binds a per-op digest yet (binding v1 still carries
+the whole-IR `schema_sha`, unchanged), so no signed client is affected.
+
 ### Per-op contract digests and `cratestack contract digest|print` (#1123) — additive
 
 `cratestack_core::client_contract` computes, for every op a schema exposes, a

@@ -142,7 +142,7 @@ fn a_default_on_a_create_input_field_moves_that_model_only() {
 
 #[test]
 fn a_field_attribute_off_the_drop_list_moves_its_ops() {
-    let source = edit("body String\n}", "body String @unique\n}");
+    let source = edit("body String\n}", "body String @readonly\n}");
     assert_eq!(moved(&source), ops_of(&["Note"]));
 }
 

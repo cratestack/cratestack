@@ -57,7 +57,7 @@ export async function {{ procedure.method_name }}(
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ procedure.return_type }}> {
   return runtime.call<{{ procedure.args_name }}, unknown>(
-    "procedure.{{ procedure.name }}",
+    "{{ procedure.op_id }}",
     args,
     options,
   ).then((value) => reviveWireScalar(value, "{{ procedure.revival_scalar_kind }}") as {{ procedure.return_type }});
@@ -69,7 +69,7 @@ export async function {{ procedure.method_name }}(
   options: CratestackRpcCallOptions = {},
 ): Promise<{{ procedure.return_type }}> {
   return runtime.call<{{ procedure.args_name }}, unknown>(
-    "procedure.{{ procedure.name }}",
+    "{{ procedure.op_id }}",
     args,
     options,
   ).then((value) => {% if procedure.revival_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ procedure.revival_shape_name }}') as {{ procedure.return_type }});

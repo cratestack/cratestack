@@ -10,7 +10,7 @@
 //! unchanged), a suppressed `create`/`update` here has no other
 //! consumer: `client/rest/model.rs` and `client/rpc/model.rs` already
 //! omit the method that would have referenced the input type (same
-//! `model_internal_actions` gate), so emitting the type anyway would be
+//! `model_verbs` gate), so emitting the type anyway would be
 //! exactly the "unreferenced Create<M>Input" the acceptance criteria
 //! forbid.
 
@@ -21,7 +21,7 @@ use cratestack_core::Schema;
 use crate::model::{generate_client_create_input_struct, generate_client_update_input_struct};
 
 /// `(create_input_structs, update_input_structs)`, each already filtered
-/// against `cratestack_core::model_internal_actions` — the one shared
+/// against `cratestack_core::model_verbs` — the one shared
 /// source of truth every codegen surface consults.
 pub(super) fn client_input_structs(
     schema: &Schema,
@@ -31,13 +31,17 @@ pub(super) fn client_input_structs(
     let create_input_structs = schema
         .models
         .iter()
-        .filter(|&model| !cratestack_core::model_internal_actions(model).contains("create"))
+        .filter(|&model| {
+            cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Create)
+        })
         .map(|model| generate_client_create_input_struct(model, model_name_set, enum_name_set))
         .collect();
     let update_input_structs = schema
         .models
         .iter()
-        .filter(|&model| !cratestack_core::model_internal_actions(model).contains("update"))
+        .filter(|&model| {
+            cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Update)
+        })
         .map(|model| generate_client_update_input_struct(model, model_name_set, enum_name_set))
         .collect();
     (create_input_structs, update_input_structs)

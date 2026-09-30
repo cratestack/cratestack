@@ -12,6 +12,9 @@ use serde::Serialize;
 pub(crate) struct ModelApiView {
     pub(crate) api_class_name: String,
     pub(crate) model_name: String,
+    /// The model's RPC op ids (`cratestack_core::op_list`), printed by the RPC
+    /// templates instead of spelling `model.<Name>.<verb>` themselves.
+    pub(crate) op_ids: cratestack_core::ModelOpIds,
     pub(crate) create_input_name: String,
     pub(crate) update_input_name: String,
     pub(crate) route: String,
@@ -54,7 +57,7 @@ pub(crate) struct ModelApiView {
     pub(crate) computed_params_fields: Vec<ComputedParamsFieldView>,
     /// cratestack#743: whether each verb's stub is emitted at all —
     /// `false` exactly when the schema declares `@@internal(...)` for
-    /// that verb (`cratestack_core::model_internal_actions`, the one
+    /// that verb (`cratestack_core::model_verbs`, the one
     /// shared source of truth every codegen surface, including this
     /// one, consults). `listView`/`getView` (the `*_view` projection
     /// siblings) share their base verb's gate: they hit the same

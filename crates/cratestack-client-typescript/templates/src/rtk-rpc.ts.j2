@@ -53,7 +53,7 @@ export function createCratestackRtkApi(
       {{ model.rtk_list_key }}: builder.query<{{ model.list_return_type }}, CratestackRpcListQuery | void>({
         queryFn: async (query, _api, _extraOptions, baseQuery) => {
           const result = await baseQuery({
-            opId: "model.{{ model.name }}.list",
+            opId: "{{ model.op_ids.list }}",
             input: toRpcListInput(query ?? {}),
           });
           if (result.error) {
@@ -86,7 +86,7 @@ export function createCratestackRtkApi(
 {% if model.allows_get %}
       {{ model.rtk_get_key }}: builder.query<{{ model.name }}, {{ model.primary_key_type }}>({
         queryFn: async (id, _api, _extraOptions, baseQuery) => {
-          const result = await baseQuery({ opId: "model.{{ model.name }}.get", input: { id } });
+          const result = await baseQuery({ opId: "{{ model.op_ids.get }}", input: { id } });
           if (result.error) {
             return { error: result.error as RpcBaseQueryError };
           }
@@ -98,7 +98,7 @@ export function createCratestackRtkApi(
 {% if model.allows_create %}
       {{ model.rtk_create_key }}: builder.mutation<{{ model.name }}, {{ model.create_input_name }}>({
         queryFn: async (input, _api, _extraOptions, baseQuery) => {
-          const result = await baseQuery({ opId: "model.{{ model.name }}.create", input });
+          const result = await baseQuery({ opId: "{{ model.op_ids.create }}", input });
           if (result.error) {
             return { error: result.error as RpcBaseQueryError };
           }
@@ -111,7 +111,7 @@ export function createCratestackRtkApi(
       {{ model.rtk_update_key }}: builder.mutation<{{ model.name }}, { id: {{ model.primary_key_type }}; input: {{ model.update_input_name }} }>({
         queryFn: async ({ id, input }, _api, _extraOptions, baseQuery) => {
           const result = await baseQuery({
-            opId: "model.{{ model.name }}.update",
+            opId: "{{ model.op_ids.update }}",
             input: { id, patch: input },
           });
           if (result.error) {
@@ -128,7 +128,7 @@ export function createCratestackRtkApi(
 {% if model.allows_delete %}
       {{ model.rtk_delete_key }}: builder.mutation<void, { id: {{ model.primary_key_type }} }>({
         queryFn: async ({ id }, _api, _extraOptions, baseQuery) => {
-          const result = await baseQuery({ opId: "model.{{ model.name }}.delete", input: { id } });
+          const result = await baseQuery({ opId: "{{ model.op_ids.delete }}", input: { id } });
           if (result.error) {
             return { error: result.error as RpcBaseQueryError };
           }
@@ -144,7 +144,7 @@ export function createCratestackRtkApi(
 {% for procedure in query_procedures %}
       {{ procedure.method_name }}: builder.query<{{ procedure.return_type }}, {{ procedure.args_name }}>({
         queryFn: async (args, _api, _extraOptions, baseQuery) => {
-          const result = await baseQuery({ opId: "procedure.{{ procedure.name }}", input: args });
+          const result = await baseQuery({ opId: "{{ procedure.op_id }}", input: args });
           if (result.error) {
             return { error: result.error as RpcBaseQueryError };
           }
@@ -168,7 +168,7 @@ export function createCratestackRtkApi(
 {% for procedure in mutation_procedures %}
       {{ procedure.method_name }}: builder.mutation<{{ procedure.return_type }}, {{ procedure.args_name }}>({
         queryFn: async (args, _api, _extraOptions, baseQuery) => {
-          const result = await baseQuery({ opId: "procedure.{{ procedure.name }}", input: args });
+          const result = await baseQuery({ opId: "{{ procedure.op_id }}", input: args });
           if (result.error) {
             return { error: result.error as RpcBaseQueryError };
           }

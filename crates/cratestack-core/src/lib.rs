@@ -26,6 +26,7 @@ pub mod json;
 pub mod lenient_bytes;
 pub mod limits;
 pub mod log_throttle;
+pub mod op_list;
 pub mod page;
 pub mod pascal_case;
 pub mod patch;
@@ -101,6 +102,10 @@ pub use lenient_bytes::{
     deserialize_optional_bytes, deserialize_optional_bytes_list,
 };
 pub use limits::{DEFAULT_BODY_LIMIT_BYTES, MAX_RESPONSE_REBUFFER_BYTES};
+pub use op_list::{
+    ModelOpIds, ModelVerb, detail_route_of, model_detail_route, model_list_route, model_op_key,
+    model_verbs, procedure_op_key,
+};
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;

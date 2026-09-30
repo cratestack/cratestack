@@ -37,6 +37,8 @@ mod tests_ops;
 #[cfg(test)]
 mod tests_readers;
 #[cfg(test)]
+mod tests_readers_symbols;
+#[cfg(test)]
 mod tests_readers_table;
 
 use sha2::{Digest, Sha256};

@@ -23,7 +23,7 @@ pub(super) fn generate_generated_rpc_procedure_client_method(
 ) -> Result<proc_macro2::TokenStream, String> {
     let method_ident = ident(&to_snake_case(&procedure.name));
     let module_ident = ident(&to_snake_case(&procedure.name));
-    let op_id = format!("procedure.{}", procedure.name);
+    let op_id = cratestack_core::procedure_op_key(procedure, true);
 
     let composition = procedure_output_composition(&procedure.return_type, bearing);
 

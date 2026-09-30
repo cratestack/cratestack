@@ -8,43 +8,45 @@
 //! and, not incidentally, nothing `request.path`-shaped to key a
 //! per-record state context off of either).
 
+use cratestack_core::ModelVerb;
+
 use super::VerbRoute;
 
 pub(crate) fn rpc_routes(base: &str, model_name: &str) -> [VerbRoute; 5] {
-    let op_path = |verb: &str| format!("{base}/rpc/model.{model_name}.{verb}");
+    let op_path = |verb: ModelVerb| format!("{base}/rpc/{}", verb.rpc_op_id(model_name));
 
     [
         VerbRoute {
-            verb: "list",
+            verb: ModelVerb::List.as_str(),
             method: "POST",
-            url: op_path("list"),
+            url: op_path(ModelVerb::List),
             status: 200,
         },
         VerbRoute {
-            verb: "get",
+            verb: ModelVerb::Get.as_str(),
             method: "POST",
-            url: op_path("get"),
+            url: op_path(ModelVerb::Get),
             status: 200,
         },
         VerbRoute {
-            verb: "create",
+            verb: ModelVerb::Create.as_str(),
             method: "POST",
-            url: op_path("create"),
+            url: op_path(ModelVerb::Create),
             // Same `StatusCode::CREATED` as REST create — RPC dispatch
             // calls the identical `*_dispatch` fn, just with a different
             // `CanonicalRequest` path (see `handlers_crud.rs`).
             status: 201,
         },
         VerbRoute {
-            verb: "update",
+            verb: ModelVerb::Update.as_str(),
             method: "POST",
-            url: op_path("update"),
+            url: op_path(ModelVerb::Update),
             status: 200,
         },
         VerbRoute {
-            verb: "delete",
+            verb: ModelVerb::Delete.as_str(),
             method: "POST",
-            url: op_path("delete"),
+            url: op_path(ModelVerb::Delete),
             status: 200,
         },
     ]

@@ -16,6 +16,9 @@ use crate::wire_shapes::{ProcedureRevival, procedure_revival};
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ProcedureView {
     pub(crate) name: String,
+    /// `procedure.<name>` from `cratestack_core::op_list`, printed by the RPC
+    /// templates.
+    pub(crate) op_id: String,
     pub(crate) method_name: String,
     pub(crate) hook_name: String,
     pub(crate) args_name: String,
@@ -77,6 +80,7 @@ pub(crate) fn build_procedure(
         };
     ProcedureView {
         name: procedure.name.clone(),
+        op_id: cratestack_core::procedure_op_key(procedure, true),
         method_name: to_camel_case(&procedure.name),
         hook_name: to_pascal_case(&procedure.name),
         args_name: procedure_wrapper_name(procedure, occupied_type_names),

@@ -40,6 +40,8 @@ pub(crate) struct PackageTestFileContext {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct OverrideProofView {
     pub(crate) model_name: String,
+    /// `model.<Name>.list` from `cratestack_core::op_list`.
+    pub(crate) list_op_id: String,
     /// The full `...Provider` variable name — `{{ list_function_name }}Provider`
     /// — not just the bare function name, since the template reads
     /// `<name>.future` directly off the generated provider instance.
@@ -66,6 +68,7 @@ pub(crate) fn build_package_test_file(
         .filter(|(_, _, is_paged)| !is_paged)
         .map(|(model_name, list_function_name, _)| OverrideProofView {
             model_name: model_name.to_owned(),
+            list_op_id: cratestack_core::ModelVerb::List.rpc_op_id(model_name),
             list_provider_name: format!("{list_function_name}Provider"),
             adapter_provider_name: format!("{provider_prefix}AdapterProvider"),
         });

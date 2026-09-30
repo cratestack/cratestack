@@ -19,11 +19,11 @@ import type { CratestackRpcListQuery } from "./queries.js";
 
 export const cratestackQueryKeys = {
 {% for model in models %}
-  {{ model.list_query_key }}: (query?: CratestackRpcListQuery) => ["model.{{ model.name }}.list", query] as const,
-  {{ model.get_query_key }}: (id: {{ model.primary_key_type }}) => ["model.{{ model.name }}.get", id] as const,
+  {{ model.list_query_key }}: (query?: CratestackRpcListQuery) => ["{{ model.op_ids.list }}", query] as const,
+  {{ model.get_query_key }}: (id: {{ model.primary_key_type }}) => ["{{ model.op_ids.get }}", id] as const,
 {% endfor %}
 {% for procedure in query_procedures %}
-  {{ procedure.query_key }}: (args: {{ procedure.args_name }}) => ["procedure.{{ procedure.name }}", args] as const,
+  {{ procedure.query_key }}: (args: {{ procedure.args_name }}) => ["{{ procedure.op_id }}", args] as const,
 {% endfor %}
 };
 

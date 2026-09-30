@@ -8,6 +8,7 @@
 //! `Selection`/`IncludeSelection` (REST only) stay in `queries.dart`
 //! instead — see `crate::riverpod::views::QueriesFileContext`'s doc for
 //! why (a real cross-file Dart privacy bug, not a style choice).
+use cratestack_core::ModelVerb;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cratestack_core::{EnumDecl, Model, Schema, TypeDecl};
@@ -85,7 +86,7 @@ pub(crate) fn build_model_file(
     // own `create()`/`update()` methods (gated below via
     // `build_riverpod_model_api`'s `allows_create`/`allows_update`)
     // omitted, so the input class would otherwise be unreferenced.
-    let internal = cratestack_core::model_internal_actions(model);
+    let verbs = cratestack_core::model_verbs(model);
 
     let create_fields = scalar_fields
         .iter()
@@ -95,7 +96,7 @@ pub(crate) fn build_model_file(
         .filter(|field| !is_computed_field(field))
         .filter(|field| !is_generated_on_create(field))
         .collect::<Vec<_>>();
-    if !internal.contains("create") {
+    if verbs.contains(&ModelVerb::Create) {
         data_classes.push(build_data_class(
             &format!("Create{}Input", model.name),
             &create_fields,
@@ -113,7 +114,7 @@ pub(crate) fn build_model_file(
         // same reasoning as `create_fields` above.
         .filter(|field| !is_computed_field(field))
         .collect::<Vec<_>>();
-    if !internal.contains("update") {
+    if verbs.contains(&ModelVerb::Update) {
         data_classes.push(build_data_class(
             &format!("Update{}Input", model.name),
             &update_fields,

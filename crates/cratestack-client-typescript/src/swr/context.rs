@@ -5,6 +5,7 @@
 //! `model_summary.rs` — both split out to keep this file under this
 //! repo's ~200-LoC convention.
 
+use cratestack_core::ModelVerb;
 use cratestack_core::Schema;
 
 use crate::config::TypeScriptGeneratorConfig;
@@ -190,9 +191,9 @@ pub(crate) fn build_model_file_contexts(
             // (`crate::swr::hooks`, gated on
             // `ModelApiView::allows_create`/`allows_update`) omitted, so
             // the input interface would otherwise be unreferenced.
-            let internal = cratestack_core::model_internal_actions(model);
-            let create_input =
-                (model_allows_create(model) && !internal.contains("create")).then(|| {
+            let verbs = cratestack_core::model_verbs(model);
+            let create_input = (model_allows_create(model) && verbs.contains(&ModelVerb::Create))
+                .then(|| {
                     build_interface(
                         &format!("Create{}Input", model.name),
                         &scalar_fields
@@ -208,7 +209,7 @@ pub(crate) fn build_model_file_contexts(
                         &enum_names,
                     )
                 });
-            let update_input = (!internal.contains("update")).then(|| {
+            let update_input = (verbs.contains(&ModelVerb::Update)).then(|| {
                 build_interface(
                     &format!("Update{}Input", model.name),
                     &scalar_fields

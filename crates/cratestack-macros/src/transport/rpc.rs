@@ -13,7 +13,7 @@
 //! stay under this crate's 200-LoC file convention — five verb arms,
 //! each carrying its own decode/dispatch shape, don't fit in one file
 //! alongside the orchestration that filters them by
-//! `cratestack_core::model_internal_actions`, cratestack#743).
+//! `cratestack_core::model_verbs`, cratestack#743).
 
 mod model_dispatch;
 
@@ -27,7 +27,7 @@ use crate::shared::{ident, to_snake_case};
 pub(crate) fn generate_procedure_rpc_dispatch_arm(
     procedure: &Procedure,
 ) -> proc_macro2::TokenStream {
-    let op_id = format!("procedure.{}", procedure.name);
+    let op_id = cratestack_core::procedure_op_key(procedure, true);
     let canonical_path = format!("/rpc/{op_id}");
     let dispatch_ident = ident(&format!(
         "handle_{}_dispatch",

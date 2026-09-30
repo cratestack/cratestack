@@ -127,11 +127,32 @@ fn a_views_sql_attributes_move_nothing() {
 
 #[test]
 fn a_view_cannot_be_an_ops_type() {
-    let source = format!(
-        "{BASE}{}\nprocedure body(args: PingArgs): NoteBody\n  @allow(auth() != null)\n",
-        VIEWED.replace("@@SQL@@", "@@sql(\"SELECT 1\")")
-    );
-    assert!(cratestack_parser::parse_schema(&source).is_err());
+    let viewed = format!("{BASE}{}", VIEWED.replace("@@SQL@@", "@@sql(\"SELECT 1\")"));
+    assert!(cratestack_parser::parse_schema(&viewed).is_ok());
+    for (what, extra) in [
+        (
+            "return type",
+            "\nprocedure body(args: PingArgs): NoteBody\n  @allow(auth() != null)\n",
+        ),
+        (
+            "argument type",
+            "\nprocedure body(args: NoteBody): PingReply\n  @allow(auth() != null)\n",
+        ),
+        (
+            "list return type",
+            "\nprocedure bodies(args: PingArgs): NoteBody[]\n  @allow(auth() != null)\n",
+        ),
+        ("type field", "\ntype Holder {\n  body NoteBody\n}\n"),
+        (
+            "model field",
+            "\nmodel Holder {\n  id Int @id\n  body NoteBody\n}\n",
+        ),
+    ] {
+        assert!(
+            cratestack_parser::parse_schema(&format!("{viewed}{extra}")).is_err(),
+            "a view as a {what} must be refused"
+        );
+    }
 }
 
 #[test]
@@ -144,4 +165,51 @@ fn rename_markers_move_nothing() {
         "  body String\n}",
         "  body String\n\n  @@rename(from = \"Memo\")\n}",
     ));
+}
+
+#[test]
+fn pii_sensitive_and_unique_fields_move_nothing() {
+    for attrs in ["@pii", "@sensitive", "@unique", "@pii @sensitive @unique"] {
+        assert_unchanged(&edit(
+            "  body String\n}",
+            &format!("  body String {attrs}\n}}"),
+        ));
+    }
+}
+
+#[test]
+fn db_enforce_moves_nothing() {
+    assert_unchanged(&edit(
+        "total     Int\n",
+        "total     Int @range(min: 0, max: 9) @db_enforce\n",
+    ));
+}
+
+#[test]
+fn deprecated_procedures_keep_their_digest() {
+    let plain = digest_of(BASE, "procedure.ping");
+    for attr in ["@deprecated", "@deprecated(\"use pong\")"] {
+        let source = BASE.replace(
+            "procedure ping(args: PingArgs): PingReply\n  @allow(auth() != null)",
+            &format!(
+                "procedure ping(args: PingArgs): PingReply\n  @allow(auth() != null)\n  {attr}"
+            ),
+        );
+        assert_ne!(source, BASE);
+        assert_eq!(digest_of(&source, "procedure.ping"), plain, "{attr}");
+    }
+}
+
+#[test]
+fn a_view_fields_source_moves_nothing() {
+    let viewed = |from: &str| {
+        format!(
+            "{BASE}{}",
+            VIEWED
+                .replace("@@SQL@@", "@@sql(\"SELECT id, body FROM notes\")")
+                .replace("@from(Note.body)", from)
+        )
+    };
+    assert_unchanged(&viewed("@from(Note.body)"));
+    assert_unchanged(&viewed("@from(Note.id)"));
 }

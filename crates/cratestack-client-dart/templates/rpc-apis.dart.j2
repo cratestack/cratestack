@@ -68,7 +68,7 @@ class {{ model.api_class_name }} {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'model.{{ model.model_name }}.list',
+      '{{ model.op_ids.list }}',
 {% if model.has_parameterized_computed_fields %}
       cratestackWithRpcComputedParams(input, computedParams?.toWire()),
 {% else %}
@@ -96,7 +96,7 @@ class {{ model.api_class_name }} {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'model.{{ model.model_name }}.get',
+      '{{ model.op_ids.get }}',
 {% if model.has_parameterized_computed_fields %}
       cratestackWithRpcComputedParams({'id': id}, computedParams?.toWire()),
 {% else %}
@@ -113,7 +113,7 @@ class {{ model.api_class_name }} {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'model.{{ model.model_name }}.create',
+      '{{ model.op_ids.create }}',
       input.toWire(),
       options: options,
     );
@@ -126,7 +126,7 @@ class {{ model.api_class_name }} {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'model.{{ model.model_name }}.update',
+      '{{ model.op_ids.update }}',
       {'id': id, 'patch': patch.toWire()},
       options: options,
     );
@@ -139,7 +139,7 @@ class {{ model.api_class_name }} {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'model.{{ model.model_name }}.delete',
+      '{{ model.op_ids.delete }}',
       {'id': id},
       options: options,
     );
@@ -160,7 +160,7 @@ class ProceduresApi {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'procedure.{{ procedure.name }}',
+      '{{ procedure.op_id }}',
       args.toWire(),
       options: options,
     );

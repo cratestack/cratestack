@@ -189,6 +189,8 @@ pub(crate) struct ProcedureView {
     /// the server-side op id `procedure.<name>` in RPC mode and to
     /// build the REST URL `/$procs/<name>` in REST mode.
     pub(crate) name: String,
+    /// `procedure.<name>`, from `cratestack_core::op_list`.
+    pub(crate) op_id: String,
     pub(crate) method_name: String,
     pub(crate) args_name: String,
     pub(crate) return_type: String,
