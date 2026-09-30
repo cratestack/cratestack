@@ -115,7 +115,7 @@ pub use schema::{
 };
 pub use client_contract::{
     CLIENT_CONTRACT_DOMAIN, DROPPED_ATTRIBUTES, OP_CONTRACT_DOMAIN, client_contract_digest,
-    op_contract_digest, op_contract_digests, op_contract_json,
+    digest_hex, op_contract_digest, op_contract_digests, op_contract_json,
 };
 pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{

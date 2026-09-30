@@ -1,0 +1,45 @@
+// Fixture for `op_contract_parity.rs` (cratestack#1123): a REST schema whose
+// op list has a suppressed verb, a fully suppressed model, an underscored
+// model name (route segment derivation) and a versioned procedure.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+  @@internal("create")
+}
+
+model Gadget {
+  id Int @id
+
+  @@allow("read", auth() != null)
+  @@internal("all")
+}
+
+model Bank_Account {
+  id Int @id
+  label String
+
+  @@allow("read", auth() != null)
+}
+
+type PingArgs {
+  message String
+}
+
+procedure ping(args: PingArgs): PingArgs
+  @api_version("v2")
+  @allow(auth() != null)
+
+mutation procedure bump(args: PingArgs): PingArgs
+  @allow(auth() != null)
