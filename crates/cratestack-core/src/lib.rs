@@ -57,9 +57,11 @@ pub use batch::{
     BatchSummary, find_duplicate_position,
 };
 pub use codec::{
-    Binding, BodyShape, BoundHeaders, CratestackCodec, CratestackEnvelope, NONCE_HEADER,
-    NONCE_HEADER_VALUE_LEN, NoEnvelope, OpenedFrame, PathParams, REQUEST_NONCE_LEN, RequestDigest,
-    RequestKind, RequestNonce, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
+    Binding, BodyShape, BoundHeaders, CONTRACT_HEADER, CONTRACT_HEADER_VALUE_LEN,
+    CONTRACT_SELECTOR_LEN, CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE,
+    ContractSelector, CratestackCodec, CratestackEnvelope, NONCE_HEADER, NONCE_HEADER_VALUE_LEN,
+    NoEnvelope, OpenedFrame, PathParams, REQUEST_NONCE_LEN, RequestDigest, RequestKind,
+    RequestNonce, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
     UNAUTHENTICATED, request_digest, request_digest_unsigned,
 };
 pub use context::{
@@ -71,8 +73,9 @@ pub use context::{
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
 pub use client_contract::{
-    CLIENT_CONTRACT_DOMAIN, OP_CONTRACT_DOMAIN, client_contract_digest, digest_hex,
-    op_contract_digest, op_contract_digests, op_contract_json, op_keys,
+    AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, OP_CONTRACT_DOMAIN, OpContracts,
+    bound_contracts, client_contract_digest, digest_hex, find_contract, op_contract_digest,
+    op_contract_digests, op_contract_json, op_keys,
 };
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;

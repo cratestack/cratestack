@@ -1,7 +1,7 @@
 //! The body of the generated per-schema `envelope_layer(envelope, policy,
 //! audience)` (cratestack#1006): an [`super::EnvelopeLayerBuilder`] already
 //! set to the schema's transport, its `ROUTE_TRANSPORTS` and its
-//! `SCHEMA_SHA256_BYTES`, so a REST schema's layer cannot be built as RPC
+//! `ACCEPTED_CONTRACTS`, so a REST schema's layer cannot be built as RPC
 //! (or over another schema's descriptors).
 //!
 //! **Who decides whether it is emitted** (second-review decision S-1,
@@ -17,7 +17,7 @@
 //! facade only forwards here when its `envelope` feature is on, which
 //! turns this crate's on too.
 //!
-//! `ROUTE_TRANSPORTS` and `super::SCHEMA_SHA256_BYTES` resolve where the
+//! `ROUTE_TRANSPORTS` and `super::ACCEPTED_CONTRACTS` resolve where the
 //! macro is invoked (the generated `axum` module): `macro_rules!` hygiene
 //! is call-site for everything but local variables, labels and `$crate`.
 
@@ -35,8 +35,8 @@ macro_rules! __envelope_layer_fn_body {
         /// The envelope layer for this schema's router (ADR 0006,
         /// cratestack#1006): `envelope` opens and seals, `policy` picks
         /// each op's mode, `audience` is this service's configured id. The
-        /// transport, the route descriptors and the schema digest are this
-        /// schema's; the body cap is the default, which fits the routers'
+        /// transport, the route descriptors and the accepted op-contract
+        /// digests are this schema's; the body cap is the default, which fits the routers'
         /// default body limit (raise it with `max_body_bytes` if the router
         /// gets a larger one). Mounted under a prefix, add
         /// `.mount_prefix("/api")`; then `.build()`, and apply it as the
@@ -49,7 +49,7 @@ macro_rules! __envelope_layer_fn_body {
             $crate::envelope_layer::EnvelopeLayer::builder(
                 envelope,
                 audience,
-                super::SCHEMA_SHA256_BYTES,
+                super::ACCEPTED_CONTRACTS,
             )
             .policy(policy)
             $($transport)*

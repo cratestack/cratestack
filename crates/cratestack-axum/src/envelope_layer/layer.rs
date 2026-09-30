@@ -3,9 +3,9 @@
 use std::fmt;
 use std::sync::Arc;
 
+use cratestack_core::AcceptedContracts;
 use tower::Layer;
 
-use super::DEFAULT_MAX_BODY_BYTES;
 use super::builder::{EnvelopeLayerBuilder, Transport};
 use super::mode::EnvelopePolicy;
 use super::principal::{PrincipalMapper, ThumbprintPrincipal};
@@ -13,6 +13,7 @@ use super::resolver::BindingResolver;
 use super::seal_policy::{AcceptNamesEnvelope, ResponseSealPolicy};
 use super::server_envelope::ServerEnvelope;
 use super::service::EnvelopeService;
+use super::{DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_CONTRACT_TRIALS};
 
 pub(super) struct Config {
     pub(super) envelope: Arc<dyn ServerEnvelope>,
@@ -21,7 +22,9 @@ pub(super) struct Config {
     pub(super) principal: Box<dyn PrincipalMapper>,
     pub(super) seal_policy: Box<dyn ResponseSealPolicy>,
     pub(super) audience: String,
-    pub(super) schema_sha: [u8; 32],
+    /// Per op key, the digests a request may bind (`contract.rs`).
+    pub(super) contracts: AcceptedContracts,
+    pub(super) max_contract_trials: usize,
     pub(super) max_body_bytes: usize,
     /// Normalised (`""` or `"/api"`), for the allow-list.
     pub(super) mount_prefix: String,
@@ -46,7 +49,13 @@ impl EnvelopeLayer {
     /// - `audience`: this service's configured logical id, which every
     ///   binding carries. Not the `Host` header, and distinct from the
     ///   audience this service seals its own outbound requests for.
-    /// - `schema_sha`: the generated `cratestack_schema::SCHEMA_SHA256_BYTES`.
+    /// - `contracts`: the generated `cratestack_schema::ACCEPTED_CONTRACTS`,
+    ///   per op, the op-contract digests a request may bind (binding
+    ///   version 2, cratestack#1123). Which one a request used is told by
+    ///   its `Cratestack-Contract` header (see [`EnvelopeLayerBuilder::max_contract_trials`]).
+    ///   The table is `&'static`: a deployer who loads history at runtime
+    ///   has to `Box::leak` it, which the generated table (PR 3's lock)
+    ///   never needs; accepting a `Cow`/`Arc` is a later, compatible change.
     ///
     /// Then name the transport ([`EnvelopeLayerBuilder::rest`],
     /// [`EnvelopeLayerBuilder::rpc`] or a custom
@@ -57,12 +66,13 @@ impl EnvelopeLayer {
     pub fn builder(
         envelope: impl ServerEnvelope,
         audience: impl Into<String>,
-        schema_sha: [u8; 32],
+        contracts: AcceptedContracts,
     ) -> EnvelopeLayerBuilder {
         EnvelopeLayerBuilder {
             envelope: Arc::new(envelope),
             audience: audience.into(),
-            schema_sha,
+            contracts,
+            max_contract_trials: DEFAULT_MAX_CONTRACT_TRIALS,
             policy: None,
             transport: Transport::None,
             transport_prefix: None,

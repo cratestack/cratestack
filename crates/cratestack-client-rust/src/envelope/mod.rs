@@ -101,7 +101,7 @@ impl ClientEnvelope {
         route: &'a str,
         route_params: &'a [String],
         query: Option<String>,
-        schema_sha: [u8; 32],
+        contract_sha: [u8; 32],
         bound_headers: BoundHeaders<'a>,
     ) -> Binding<'a> {
         let params = self
@@ -116,7 +116,7 @@ impl ClientEnvelope {
             route: Cow::Borrowed(route),
             path_params: PathParams::Owned(params),
             query: query.map(Cow::Owned),
-            schema_sha,
+            contract_sha,
             payload_media_type: Cow::Borrowed(PAYLOAD_MEDIA_TYPE),
             bound_headers,
             response: None,

@@ -35,7 +35,7 @@ fn router(hits: &Hits, seen: &Seen, unresolved: EnvelopeMode) -> axum::Router {
             self.1
         }
     }
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(PerOp(seen.clone(), unresolved))
         .rpc("")
         .build()
@@ -81,7 +81,7 @@ async fn an_unreadable_plain_batch_is_refused_unless_everything_is_off() {
         assert_eq!(answer.status, expected, "{unresolved:?}");
     }
     assert_eq!(hits.get(), 0);
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Off)
         .rpc("")
         .build()
@@ -166,7 +166,7 @@ async fn a_batch_content_type_with_parameters_or_another_case_is_still_read() {
         "application/cbor ",
     ] {
         let hits = Hits::default();
-        let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+        let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
             .policy(TransferOnly)
             .rpc("")
             .build()

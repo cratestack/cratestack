@@ -1,6 +1,8 @@
-//! The canonical schema identity: the 32 bytes both ends of a signed
-//! exchange bind into the COSE AAD as `schema_sha` (ADR 0006 §4,
-//! cratestack#1065).
+//! The canonical schema identity (cratestack#1065): the whole-IR digest.
+//! Binding version 1 bound it into the COSE AAD as `schema_sha`; binding
+//! version 2 binds the per-op `contract_sha` of [`crate::client_contract`]
+//! instead (ADR 0006 §4, cratestack#1123), and this digest is now the
+//! identity the warn-only `x-cratestack-schema-sha` drift header carries.
 //!
 //! It identifies the schema's *meaning*, not its source text. The macros,
 //! the CLI generators and every runtime take it from [`schema_digest`], so a
@@ -19,9 +21,9 @@
 //! What keeps declared order: enum variants (the first is the `Default`,
 //! and Postgres orders an enum by declaration), attributes and arguments.
 //! A server-only edit (a policy, an index, a view's SQL) still changes the
-//! digest: the IR is hashed whole, so a wire mismatch can never slip through.
-//! The per-op digests in [`crate::client_contract`] are the ones that ignore
-//! such edits (cratestack#1123); they are not bound into the AAD yet.
+//! digest: the IR is hashed whole. The per-op digests in
+//! [`crate::client_contract`] are the ones that ignore such edits, which is
+//! why the AAD binds them and not this.
 
 mod attribute_norm;
 pub(crate) mod canon;

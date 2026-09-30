@@ -11,15 +11,16 @@ use super::response_binding::ResponseBinding;
 /// §4). It is **never sent**: the router and the client each rebuild it
 /// from context they already hold, so the binding costs 0 bytes on the
 /// wire. A body sealed for one `(audience, method, route, path_params,
-/// query, schema)` fails to open under any other, which defeats
+/// query, op contract)` fails to open under any other, which defeats
 /// cross-service and cross-endpoint replay; a response is bound to its
 /// request (the digest and how it was computed) and its status, which
 /// defeats response swapping; a signed REST response is bound to the
-/// resource it answers, not only to the route's shape; and a client built
-/// against another `.cstack` fails closed on `schema_sha`.
+/// resource it answers, not only to the route's shape; and a client whose
+/// wire shape for the op differs from the server's fails closed on
+/// `contract_sha` (binding version 2: per op, not per schema).
 ///
 /// This type carries the **inputs** only. Encoding them into the AAD's CBOR
-/// array, including the leading binding-version field (currently `1`, the
+/// array, including the leading binding-version field (currently `2`, the
 /// escape hatch ADR 0006 Q5 reserves), belongs to `cratestack-cose`
 /// (cratestack#1005). Core has no CBOR dependency (the CBOR backend lives
 /// in `cratestack-codec-cbor`), and every crate depends on core, so it
@@ -32,7 +33,7 @@ use super::response_binding::ResponseBinding;
 ///
 /// **Deviation from the ADR 0006 §1 sketch**, which uses `&'a str`,
 /// `&'a [&'a str]` and `&'a [u8; 32]`: the string fields are [`Cow`],
-/// `path_params` is the `Cow`-like [`PathParams`], and `schema_sha` is held
+/// `path_params` is the `Cow`-like [`PathParams`], and `contract_sha` is held
 /// by value. The unary path still borrows everything and allocates nothing.
 /// The stream path can also produce the `Binding<'static>` that
 /// [`CratestackEnvelope::stream_sealer`](super::CratestackEnvelope::stream_sealer)
@@ -86,12 +87,20 @@ pub struct Binding<'a> {
     /// `cratestack-auth`'s `canonical_query` produces), or `None` when the
     /// request has none.
     pub query: Option<Cow<'a, str>>,
-    /// The schema's SHA-256 as raw bytes. It is the same digest that
-    /// generated code bakes in as the hex string `SCHEMA_SHA256` and sends
-    /// in `x-cratestack-schema-sha`: `cratestack_core::schema_digest`, the
-    /// canonical identity of the parsed schema (cratestack#1065), so a
-    /// comment or whitespace edit leaves it unchanged.
-    pub schema_sha: [u8; 32],
+    /// The digest of the **op** this message calls, as raw bytes:
+    /// `cratestack_core::op_contract_digest`, the SHA-256 over the op's
+    /// wire closure (its input and output shapes and every model, type and
+    /// enum reachable from them, without policies, indexes, SQL, validators
+    /// or `@server_only` fields; cratestack#1123). It moves only when this
+    /// op's wire shape does, so a server-only schema edit, or an edit to
+    /// another op, leaves every other op's signed messages valid.
+    ///
+    /// Generated code bakes the digests in as `OP_CONTRACTS`; a signed
+    /// `/rpc/batch` binds the whole-contract `client_contract_digest`
+    /// instead (`BATCH_CONTRACT_KEY`). Binding version 2 replaced the
+    /// whole-IR `schema_sha` of version 1; the AAD encodes it in the same
+    /// position.
+    pub contract_sha: [u8; 32],
     /// Media type of the payload *inside* the envelope, e.g.
     /// `"application/cbor"`. It is bound here instead of being sent in a
     /// COSE header (label 3 would cost bytes on every message; ADR 0006 §2),
@@ -131,7 +140,7 @@ impl Binding<'_> {
             route: Cow::Owned(self.route.into_owned()),
             path_params: self.path_params.into_owned(),
             query: self.query.map(|query| Cow::Owned(query.into_owned())),
-            schema_sha: self.schema_sha,
+            contract_sha: self.contract_sha,
             payload_media_type: Cow::Owned(self.payload_media_type.into_owned()),
             bound_headers: self.bound_headers.into_owned(),
             response: self.response,

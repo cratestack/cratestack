@@ -104,6 +104,8 @@ pub(crate) struct SwrSchemaContext {
     pub(crate) package_name: String,
     pub(crate) base_path: String,
     pub(crate) schema_sha256: String,
+    pub(crate) op_contracts: Vec<[String; 2]>,
+    pub(crate) client_contract_sha256: String,
     pub(crate) shared: SwrSharedView,
     pub(crate) models: Vec<SwrModelSummary>,
     pub(crate) procedures_file: SwrProceduresView,

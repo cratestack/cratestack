@@ -32,6 +32,7 @@ pub(super) fn compose_server_schema(
             Ok(parsed) => parsed,
             Err(error) => return error,
         };
+    let accepted_contracts = schema_sha_consts.accepted();
     let mcp_plan = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
         Ok(plan) => plan,
         Err(error) => return error,
@@ -247,6 +248,7 @@ pub(super) fn compose_server_schema(
                 /// this value against its own and `tracing::warn!`s on mismatch,
                 /// never rejects. See issue #178.
                 #schema_sha_consts
+                #accepted_contracts
                 pub const MIXINS: &[&str] = &[#(#mixin_names),*];
                 pub const MODELS: &[&str] = &[#(#model_names),*];
                 pub const TYPES: &[&str] = &[#(#type_names),*];

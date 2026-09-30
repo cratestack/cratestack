@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::body::Body;
+use cratestack_core::AcceptedContracts;
 use http::{Method, StatusCode, header};
 
 use super::fixtures::{Hits, REST_ROUTES, rest_router};
@@ -18,7 +19,7 @@ use crate::envelope_layer::{
 };
 
 fn toy_layer(toy: Toy, mode: EnvelopeMode) -> EnvelopeLayer {
-    EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+    EnvelopeLayer::builder(toy, AUDIENCE, CONTRACTS)
         .policy(mode)
         .rest("", &REST_ROUTES)
         .build()
@@ -28,7 +29,7 @@ fn toy_layer(toy: Toy, mode: EnvelopeMode) -> EnvelopeLayer {
 #[tokio::test]
 async fn a_policy_saying_off_cannot_let_a_cose_body_through() {
     let (hits, toy) = (Hits::default(), Toy::default());
-    let layer = EnvelopeLayer::builder(toy.clone(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(toy.clone(), AUDIENCE, CONTRACTS)
         .policy(|_: &PolicyRequest<'_>| EnvelopeMode::Off)
         .rest("", &REST_ROUTES)
         .build()
@@ -94,7 +95,9 @@ impl BindingResolver for Fickle {
 #[tokio::test]
 async fn a_fickle_resolver_cannot_split_the_request_and_response_bindings() {
     let (hits, toy) = (Hits::default(), Toy::default());
-    let layer = EnvelopeLayer::builder(toy.clone(), AUDIENCE, SCHEMA)
+    // Only `route-0` is a row: the first answer the resolver gives.
+    static FICKLE: AcceptedContracts = &[("route-0", &[CONTRACT])];
+    let layer = EnvelopeLayer::builder(toy.clone(), AUDIENCE, FICKLE)
         .policy(EnvelopeMode::Required)
         .binding_resolver(Fickle(AtomicUsize::new(0)))
         .build()
@@ -119,7 +122,7 @@ async fn the_principal_mapper_never_runs_for_an_unverified_request() {
         Ok("p".to_owned())
     };
     let (hits, toy) = (Hits::default(), Toy::default());
-    let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(toy, AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Optional)
         .rest("", &REST_ROUTES)
         .principal_mapper(mapper)
@@ -140,7 +143,7 @@ async fn the_principal_mapper_never_runs_for_an_unverified_request() {
 #[tokio::test]
 async fn an_empty_principal_is_refused_with_a_sealed_500() {
     let (hits, toy) = (Hits::default(), Toy::default());
-    let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(toy, AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
         .principal_mapper(|_: &VerifiedRequest<'_>| Ok(String::new()))
@@ -162,7 +165,7 @@ async fn the_seal_policy_is_asked_only_about_nonce_bound_unsigned_requests() {
         true
     };
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Optional)
         .rest("", &REST_ROUTES)
         .response_seal_policy(always)

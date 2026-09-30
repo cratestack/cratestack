@@ -29,7 +29,7 @@ use reqwest::{Request, Response};
 use reqwest_middleware::{ClientBuilder, Middleware, Next};
 use url::Url;
 
-static SCHEMA_SHA: [u8; 32] = [7; 32];
+const CONTRACT: [u8; 32] = [7; 32];
 
 /// Retries a `503`, but only a request marked idempotent.
 struct RetryIfIdempotent {
@@ -96,7 +96,7 @@ async fn a_sealed_get_is_not_replayed_by_a_retry_layer() {
     )
     .with_envelope(ClientEnvelope::new(envelope, "payments").unwrap())
     .unwrap()
-    .with_schema_sha_bytes(&SCHEMA_SHA);
+    .with_contract_sha(CONTRACT);
 
     let error = client
         .at(RouteRef::new("/widgets", &[]))

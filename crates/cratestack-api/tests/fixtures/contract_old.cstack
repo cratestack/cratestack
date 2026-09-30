@@ -1,0 +1,27 @@
+// EXT-14 (cratestack#1123): the schema an already-shipped client was built
+// from. `contract_new.cstack` is this schema after server-only edits (a
+// policy, a validator, `@deprecated`, a new procedure) and one wire-shape
+// edit (`retyped`'s argument), for the old-client-against-new-server test.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)
+
+procedure retyped(args: PingArgs): PingReply
+  @allow(auth() != null)
+
+procedure untouched(args: PingArgs): PingReply
+  @allow(auth() != null)

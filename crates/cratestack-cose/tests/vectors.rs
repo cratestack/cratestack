@@ -82,7 +82,7 @@ struct BindingJson {
     route: String,
     path_params: Vec<String>,
     query: Option<String>,
-    schema_sha: String,
+    contract_sha: String,
     payload_type: String,
     /// `Idempotency-Key` and `If-Match` exactly as sent, `null` when
     /// absent: the AAD's `bound_headers` array, in that order.
@@ -128,7 +128,7 @@ fn binding_json(bind: &Binding<'_>) -> BindingJson {
         route: bind.route.to_string(),
         path_params: bind.path_params.iter().map(str::to_owned).collect(),
         query: bind.query.as_deref().map(str::to_owned),
-        schema_sha: hex(&bind.schema_sha),
+        contract_sha: hex(&bind.contract_sha),
         payload_type: bind.payload_media_type.to_string(),
         bound_headers: BoundHeadersJson {
             idempotency_key: bind
@@ -489,7 +489,7 @@ async fn checked_in_vectors_match() {
         negative::check_rejected(vector).await;
     }
     let unary = serde_json::json!({
-        "_comment": "Unary COSE vectors (ADR 0006 §§3-5, and the decisions on cratestack#1005: audience in the AAD and Cratestack-Nonce for unsigned requests, 2026-09-24; request_kind in the response AAD and a non-empty audience, 2026-09-25; and on cratestack#1006: bound_headers [Idempotency-Key, If-Match] after payload_type, 2026-09-26). Hex throughout. Payload: payment-fixture.json; keys: keys.json. Every case must open with a verifier holding only the key its `key` names (requests: at `verifier_now`, with `skew_secs`). `to_be_signed` is the logical Sig_structure / MAC_structure, even where the implementation computes over it in pieces. ESP256 senders MUST emit low-s: verifiers refuse a high s (neg-esp256-high-s). Every `negative` vector must be refused as `expected` says by a verifier in `mode` holding exactly `verifier_keys`, at `verifier_now` with `skew_secs`.",
+        "_comment": "Unary COSE vectors (ADR 0006 §§3-5, and the decisions on cratestack#1005: audience in the AAD and Cratestack-Nonce for unsigned requests, 2026-09-24; request_kind in the response AAD and a non-empty audience, 2026-09-25; and on cratestack#1006: bound_headers [Idempotency-Key, If-Match] after payload_type, 2026-09-26; and on cratestack#1123: binding version 2, where element 7 is `contract_sha`, the called op's contract digest, in place of version 1's whole-schema `schema_sha`, 2026-09-30). Hex throughout. Payload: payment-fixture.json; keys: keys.json. Every case must open with a verifier holding only the key its `key` names (requests: at `verifier_now`, with `skew_secs`). `to_be_signed` is the logical Sig_structure / MAC_structure, even where the implementation computes over it in pieces. ESP256 senders MUST emit low-s: verifiers refuse a high s (neg-esp256-high-s). Every `negative` vector must be refused as `expected` says by a verifier in `mode` holding exactly `verifier_keys`, at `verifier_now` with `skew_secs`.",
         "payload": hex(&payment_bytes()),
         "cases": cases,
         "negative": negatives,

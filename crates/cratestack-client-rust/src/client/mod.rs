@@ -1,10 +1,14 @@
 #[cfg(feature = "cose")]
 mod bound_headers;
+#[cfg(feature = "cose")]
+pub(crate) mod contract;
 mod core;
 mod crud;
 pub(crate) mod decode;
 #[cfg(feature = "cose")]
 mod envelope_call;
+#[cfg(feature = "cose")]
+mod envelope_refusal;
 mod headers;
 pub(crate) mod helpers;
 pub(crate) mod http;

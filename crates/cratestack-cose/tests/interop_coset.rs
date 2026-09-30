@@ -32,7 +32,7 @@ fn coset_alg(alg: CoseAlg) -> Algorithm {
 /// The AAD as `ciborium` encodes the same array.
 fn aad_via_ciborium(bind: &Binding<'_>) -> Vec<u8> {
     let mut items = vec![
-        Value::Integer(1.into()),
+        Value::Integer(2.into()),
         Value::Text(bind.audience.to_string()),
         Value::Text(bind.method.to_string()),
         Value::Text(bind.route.to_string()),
@@ -46,7 +46,7 @@ fn aad_via_ciborium(bind: &Binding<'_>) -> Vec<u8> {
             Some(query) if !query.is_empty() => Value::Text(query.to_owned()),
             _ => Value::Null,
         },
-        Value::Bytes(bind.schema_sha.to_vec()),
+        Value::Bytes(bind.contract_sha.to_vec()),
         Value::Text(bind.payload_media_type.to_string()),
         // `bound_headers` (cratestack#1006, S1): always two slots, in order.
         Value::Array(

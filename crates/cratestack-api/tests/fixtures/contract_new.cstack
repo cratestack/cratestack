@@ -1,0 +1,37 @@
+// `contract_old.cstack` after a server-only edit and one wire-shape edit:
+//
+// - `ping`: its policy changed, and its argument type gained a validator;
+// - `untouched`: only gained `@deprecated`;
+// - `brandNew`: a procedure that did not exist;
+// - `retyped`: its argument type changed, which is a wire-shape edit.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String @length(min: 1, max: 200)
+}
+
+type RetypedArgs {
+  message Int
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null || auth() == null)
+
+procedure retyped(args: RetypedArgs): PingReply
+  @allow(auth() != null)
+
+procedure untouched(args: PingArgs): PingReply
+  @allow(auth() != null)
+  @deprecated("use ping")
+
+procedure brandNew(args: PingArgs): PingReply
+  @allow(auth() != null)

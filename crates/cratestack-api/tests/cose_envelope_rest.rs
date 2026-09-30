@@ -75,7 +75,7 @@ fn generated(procedures: Procedures, auth: RecordingAuth) -> Router {
 }
 
 fn envelope() -> cratestack::envelope_layer::EnvelopeLayer {
-    envelope_layer(cratestack_schema::SCHEMA_SHA256_BYTES)
+    envelope_layer(cratestack_schema::ACCEPTED_CONTRACTS)
         .rest("", cratestack_schema::axum::ROUTE_TRANSPORTS)
         .build()
         .expect("layer")
@@ -83,7 +83,7 @@ fn envelope() -> cratestack::envelope_layer::EnvelopeLayer {
 
 const PING: Call = Call {
     route: "/$procs/ping",
-    schema_sha: cratestack_schema::SCHEMA_SHA256_BYTES,
+    contracts: cratestack_schema::OP_CONTRACTS,
 };
 
 fn ping_payload(message: &str) -> Vec<u8> {

@@ -12,7 +12,7 @@ use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
 
 async fn answer_with(toy: Toy, body: &[u8]) -> (Answer, Hits) {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(toy, AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
         .build()
@@ -74,7 +74,7 @@ async fn a_failing_signer_is_an_unsigned_500_never_a_plain_success() {
 #[tokio::test]
 async fn a_body_over_the_layers_cap_is_refused_unsigned() {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(Toy::default(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(Toy::default(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
         .max_body_bytes(8)
@@ -89,17 +89,18 @@ async fn a_body_over_the_layers_cap_is_refused_unsigned() {
 #[test]
 fn the_builder_refuses_a_layer_that_would_bind_nothing() {
     let base = || {
-        EnvelopeLayer::builder(Toy::default(), AUDIENCE, SCHEMA)
+        EnvelopeLayer::builder(Toy::default(), AUDIENCE, CONTRACTS)
             .policy(EnvelopeMode::Required)
             .rest("", &REST_ROUTES)
     };
     assert!(base().build().is_ok());
-    let empty_audience = EnvelopeLayer::builder(Toy::default(), "", SCHEMA)
+    let empty_audience = EnvelopeLayer::builder(Toy::default(), "", CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES);
-    let no_policy = EnvelopeLayer::builder(Toy::default(), AUDIENCE, SCHEMA).rest("", &REST_ROUTES);
+    let no_policy =
+        EnvelopeLayer::builder(Toy::default(), AUDIENCE, CONTRACTS).rest("", &REST_ROUTES);
     let no_transport =
-        EnvelopeLayer::builder(Toy::default(), AUDIENCE, SCHEMA).policy(EnvelopeMode::Required);
+        EnvelopeLayer::builder(Toy::default(), AUDIENCE, CONTRACTS).policy(EnvelopeMode::Required);
     for builder in [
         empty_audience,
         no_policy,

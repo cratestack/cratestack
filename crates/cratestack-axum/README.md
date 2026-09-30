@@ -302,7 +302,7 @@ REST or RPC router (ADR 0006, cratestack#1006). Feature `envelope` is the layer 
 traits with no crypto crate (bring your own `ServerEnvelope`); `cose` adds the COSE envelope
 and re-exports `cratestack-cose` as `cratestack_axum::cose`. `cratestack-pg` /
 `cratestack-api` forward both, and generate `cratestack_schema::axum::envelope_layer`, which
-picks the schema's transport, route descriptors and schema digest.
+picks the schema's transport, route descriptors and accepted op-contract digests.
 
 ```rust
 use cratestack_axum::cose::{CoseEnvelope, CoseMode};
@@ -335,8 +335,18 @@ let app = axum::Router::new().nest("/api", router);
 - **Fail closed.** Under `Required`, a route the router matched but the layer cannot bind
   (a wrong or missing mount prefix) is a `500`, logged; list hand-written routes with
   `allow_unresolved([..])`. A bodiless `OPTIONS` (CORS preflight) always passes.
-- **Bound.** Audience, method, route, path parameters, canonical query, schema digest, and
-  the `Idempotency-Key` / `If-Match` headers exactly as sent. Response headers are not.
+- **Bound.** Audience, method, route, path parameters, canonical query, the called op's
+  contract digest (binding version 2), and the `Idempotency-Key` / `If-Match` headers
+  exactly as sent. Response headers are not.
+- **Contract digests.** The digest is per op (`cratestack_core::op_contract_digest`), so a
+  server-only schema edit, or an edit to another op, leaves an older client working. The
+  client names the digest it used in the unbound `Cratestack-Contract` header (8 bytes of it);
+  the layer verifies under the accepted digest that header selects, answers an unknown one
+  with the unsigned `426 contract_unsupported` before any key lookup, and without the header
+  tries the op's accepted digests newest first, at most `max_contract_trials` (default 4).
+  The response is sealed under the digest the request used. A binding version 1 message is
+  refused. A signed `/rpc/batch` binds the whole-contract digest until batch frames carry
+  their own.
 - **Errors.** Every response of a generated op is sealed, including handler errors and this
   crate's own `429`/`412`/`422`. The layer's own refusals (`401`, `415`, `400`, `413`) are
   not.

@@ -81,7 +81,7 @@ fn generated(procedures: Procedures, auth: RecordingAuth) -> Router {
 }
 
 fn envelope() -> cratestack::envelope_layer::EnvelopeLayer {
-    envelope_layer(cratestack_schema::SCHEMA_SHA256_BYTES)
+    envelope_layer(cratestack_schema::ACCEPTED_CONTRACTS)
         .rpc("")
         .build()
         .expect("layer")
@@ -89,7 +89,7 @@ fn envelope() -> cratestack::envelope_layer::EnvelopeLayer {
 
 const PING: Call = Call {
     route: "procedure.ping",
-    schema_sha: cratestack_schema::SCHEMA_SHA256_BYTES,
+    contracts: cratestack_schema::OP_CONTRACTS,
 };
 
 fn ping_payload(nonce: &str) -> Vec<u8> {
@@ -133,7 +133,7 @@ async fn the_batch_route_is_one_signed_message() {
     }];
     let batch = Call {
         route: "batch",
-        schema_sha: cratestack_schema::SCHEMA_SHA256_BYTES,
+        contracts: cratestack_schema::OP_CONTRACTS,
     };
     let (sealed, req) = batch
         .request(

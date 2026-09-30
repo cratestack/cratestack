@@ -3,6 +3,7 @@
 //! `tests/no_envelope_alloc.rs`, which needs its own `#[global_allocator]`.
 
 mod binding;
+mod contract_selector;
 mod provided_methods;
 mod stream_shape;
 
@@ -24,7 +25,7 @@ fn request_binding() -> Binding<'static> {
         route: Cow::Borrowed("model.Payment.create"),
         path_params: PathParams::EMPTY,
         query: None,
-        schema_sha: [7; 32],
+        contract_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
         bound_headers: BoundHeaders::NONE,
         response: None,

@@ -22,6 +22,12 @@ mod bound_headers;
 #[cfg(feature = "cose")]
 mod builder;
 #[cfg(feature = "cose")]
+mod contracts;
+#[cfg(feature = "cose")]
+mod contracts_history;
+#[cfg(feature = "cose")]
+mod contracts_support;
+#[cfg(feature = "cose")]
 mod cose_support;
 #[cfg(feature = "cose")]
 mod fail_closed;

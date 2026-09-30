@@ -36,7 +36,7 @@ pub(super) fn parse_schema_literal(
 
     reject_composite_primary_keys(schema_path, &schema)?;
 
-    let schema_sha = SchemaShaConsts::from_digest(cratestack_core::schema_digest(&schema));
+    let schema_sha = SchemaShaConsts::from_schema(&schema);
 
     Ok((schema_relative, resolved, schema, schema_sha))
 }

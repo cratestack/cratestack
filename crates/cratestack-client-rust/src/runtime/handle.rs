@@ -35,9 +35,9 @@ impl RuntimeHandle {
     /// A handle that seals every request and opens every response
     /// (cratestack#1007). `config.transport.envelope` must name `envelope`'s
     /// mode (`CoseSign1` for Sign1, `CoseMac0` for Mac0) and its codec must
-    /// be CBOR. `schema_sha` is the generated client schema's
-    /// `SCHEMA_SHA256_BYTES`: the raw bridge has no generated `Client` to
-    /// stamp it, and every binding needs it.
+    /// be CBOR. `contracts` is the generated client schema's
+    /// `OP_CONTRACTS`: the raw bridge has no generated `Client` to stamp
+    /// them, and every binding needs its op's digest.
     ///
     /// Raw requests must be RPC ones (`/rpc/{op_id}`, `/rpc/batch`); a raw
     /// REST path has no route template to bind. Streams are refused
@@ -46,9 +46,9 @@ impl RuntimeHandle {
     pub fn with_envelope(
         config: RuntimeConfigWire,
         envelope: crate::envelope::ClientEnvelope,
-        schema_sha: &'static [u8; 32],
+        contracts: cratestack_core::OpContracts,
     ) -> Result<Self, RuntimeErrorWire> {
-        Self::build(config, Sealing::Cose(envelope, schema_sha))
+        Self::build(config, Sealing::Cose(envelope, contracts))
     }
 
     fn build(config: RuntimeConfigWire, sealing: Sealing) -> Result<Self, RuntimeErrorWire> {

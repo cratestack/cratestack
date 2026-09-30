@@ -20,6 +20,7 @@
 //! role.
 
 mod client;
+mod contracts;
 mod datasource_guard;
 mod decimal_arg;
 mod embedded;

@@ -29,7 +29,7 @@ impl EnvelopePolicy for RequiredOps {
 
 fn subscription_router(unresolved: EnvelopeMode, hits: &Hits) -> Router {
     let counted = hits.clone();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(RequiredOps(unresolved))
         .rpc("")
         .build()

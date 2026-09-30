@@ -19,8 +19,8 @@ use cratestack::cose::{
 };
 use cratestack::envelope_layer::{EnvelopeLayer, EnvelopeLayerBuilder, EnvelopeMode};
 use cratestack::{
-    Binding, BoundHeaders, CratestackCodec, CratestackError, InMemoryNonceStore, PathParams,
-    ResponseBinding,
+    AcceptedContracts, Binding, BoundHeaders, CratestackCodec, CratestackError, InMemoryNonceStore,
+    OpContracts, PathParams, ResponseBinding, find_contract,
 };
 use cratestack_codec_cbor::CborCodec;
 use tower::ServiceExt;
@@ -58,8 +58,8 @@ pub fn server_envelope() -> CoseEnvelope {
     .expect("server envelope")
 }
 
-pub fn envelope_layer(schema_sha: [u8; 32]) -> EnvelopeLayerBuilder {
-    EnvelopeLayer::builder(server_envelope(), AUDIENCE, schema_sha).policy(EnvelopeMode::Required)
+pub fn envelope_layer(contracts: AcceptedContracts) -> EnvelopeLayerBuilder {
+    EnvelopeLayer::builder(server_envelope(), AUDIENCE, contracts).policy(EnvelopeMode::Required)
 }
 
 fn client() -> CoseEnvelope {
@@ -76,7 +76,8 @@ fn client() -> CoseEnvelope {
 /// One call, as the client binds it.
 pub struct Call {
     pub route: &'static str,
-    pub schema_sha: [u8; 32],
+    /// The generated client's `OP_CONTRACTS`: the call binds its own op's.
+    pub contracts: OpContracts,
 }
 
 /// A sealed request as sent: its bytes, and the `Idempotency-Key` /
@@ -108,7 +109,8 @@ impl Call {
             route: Cow::Borrowed(self.route),
             path_params: PathParams::EMPTY,
             query: None,
-            schema_sha: self.schema_sha,
+            contract_sha: *find_contract(self.contracts, "POST", self.route)
+                .unwrap_or_else(|| panic!("no contract digest for POST {}", self.route)),
             payload_media_type: Cow::Borrowed("application/cbor"),
             bound_headers: bound,
             response,

@@ -11,6 +11,7 @@ use cratestack_core::{NONCE_HEADER, RequestNonce, request_digest_unsigned};
 use http::request::Parts;
 
 use super::bound::Bound;
+use super::contract::{self, Unsigned};
 use super::layer::Config;
 use super::opened::SealContext;
 use super::resolver::ResolvedRoute;
@@ -36,6 +37,13 @@ pub(super) async fn handle<S: Inner>(
     }
 
     let path = parts.uri.path().to_owned();
+    // Looked up before the body is buffered, as `signed.rs` does: a route
+    // the table does not cover is refused without reading a byte of it.
+    let contract = match contract::for_unsigned(&config, &parts.method, &route, &parts.headers) {
+        Unsigned::Under(digest) => digest,
+        Unsigned::Unsupported => return refusal::contract_unsupported(&parts.headers, &path),
+        Unsigned::Misconfigured => return refusal::no_contract(&parts.headers, &path, &route),
+    };
     let bound = match Bound::read(&parts.headers) {
         Ok(bound) => bound,
         Err(error) => return refusal::bad_request(&parts.headers, &path, error),
@@ -48,7 +56,15 @@ pub(super) async fn handle<S: Inner>(
     // the request was not signed (see `ResponseSealPolicy`).
     let digest = request_digest_unsigned(&nonce, &payload);
     request::rewrite_accept(&mut parts.headers, false);
-    let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri, bound);
+    let inputs = BindingInputs::new(
+        config,
+        // `parts` goes on to the router, so the layer keeps its own copy.
+        parts.method.clone(),
+        route,
+        &parts.uri,
+        bound,
+        contract,
+    );
     let sealer = Sealer {
         inputs,
         request: digest,

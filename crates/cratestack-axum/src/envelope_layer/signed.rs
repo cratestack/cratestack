@@ -12,6 +12,7 @@ use http::StatusCode;
 use http::request::Parts;
 
 use super::bound::Bound;
+use super::contract::{self, Choice};
 use super::layer::Config;
 use super::mode::EnvelopeMode;
 use super::principal::VerifiedRequest;
@@ -33,22 +34,25 @@ pub(super) async fn handle<S: Inner>(
         Ok(bound) => bound,
         Err(error) => return refusal::bad_request(&parts.headers, &path, error),
     };
+    let candidates = match contract::choose(&config, &parts.method, &route, &parts.headers) {
+        Choice::Try(candidates) => candidates,
+        Choice::Unsupported => return refusal::contract_unsupported(&parts.headers, &path),
+        Choice::Malformed(error) => return refusal::bad_request(&parts.headers, &path, error),
+        Choice::Misconfigured => return refusal::no_contract(&parts.headers, &path, &route),
+    };
     let raw = match request::buffer(body, config.max_body_bytes).await {
         Ok(raw) => raw,
         Err(error) => return refusal::unbuffered(&parts.headers, &path, error),
     };
-    let inputs = BindingInputs::new(
+    let mut inputs = BindingInputs::new(
         config.clone(),
         parts.method.clone(),
         route,
         &parts.uri,
         bound,
+        candidates[0],
     );
-    let opened = {
-        let params = inputs.params();
-        let bind = inputs.binding(&params, None);
-        config.envelope.open_request(raw.clone(), &bind).await
-    };
+    let opened = contract::open_under(&config, &raw, &mut inputs, &candidates).await;
     let opened = match opened {
         Ok(opened) => opened,
         // Whatever the envelope said, the peer learns only "401" (§10).

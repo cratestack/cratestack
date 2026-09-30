@@ -17,6 +17,23 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export const SCHEMA_SHA256: string = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
+// Per-op contract digests (binding version 2, cratestack#1123): what a signed
+// request to each op binds into its COSE AAD, keyed like the Rust client's
+// `OP_CONTRACTS` (the RPC op id, or "<METHOD> <route template>" on REST, plus
+// `batch` for `transport rpc`). Computed by the same `cratestack_core`
+// function the Rust macros call, so the two cannot disagree. Not used by the
+// unsigned runtime below: the sealers (ADR 0006 §11) read them.
+export const OP_CONTRACTS: Readonly<Record<string, string>> = {
+  "DELETE /widgets/{id}": "fa4fcc1604b1a248dda5422e4817349055142f492e0da601991ab6b4f7fc37d0",
+  "GET /widgets": "8fb5d4c6c0e57ae9943ccfe35d455b7e4021492ad99f10e71acc625379f12308",
+  "GET /widgets/{id}": "040f17b26529134ec0234511a5835ad9af3d15f6728a54e5459ac0ad65845773",
+  "PATCH /widgets/{id}": "2242eec071cd19773d5c4c0691782b0a2ae977c12e697eb343d9f27e313b429c",
+  "POST /$procs/echoName": "ca08efdfe4184532e926c9fd91541c94d3cabec1aaa3a789bc307dd2a91ae410",
+  "POST /widgets": "aef796cfb63c2d74a8de9ce3fefff9212ca226a3968c37c9fa2feb4b79b9c00b",
+};
+// Hex of the whole-contract digest: moves when any op's contract does.
+export const CLIENT_CONTRACT_SHA256: string = "0a3e98e53e970f4d8ed97572a9a21dcec8bcd12726fa4e7144084031f62148ed";
+
 export interface CratestackClientOptions {
   basePath?: string;
   fetch?: typeof fetch;

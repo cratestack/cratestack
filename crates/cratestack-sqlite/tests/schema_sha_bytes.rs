@@ -1,6 +1,6 @@
-//! `include_embedded_schema!` emits `SCHEMA_SHA256_BYTES` (cratestack#1006),
-//! the same digest as the hex `SCHEMA_SHA256`, as the bytes a signed
-//! request's binding carries.
+//! `SCHEMA_SHA256_BYTES` is the whole-IR identity as raw bytes (the drift
+//! header's value). It is not bound into a signed message since binding
+//! version 2; the called op's `OP_CONTRACTS` digest is (cratestack#1123).
 
 cratestack::include_embedded_schema!("tests/fixtures/builder_pattern.cstack");
 

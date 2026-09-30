@@ -32,6 +32,20 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 export const SCHEMA_SHA256: string = "{{ schema_sha256 }}";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
+// Per-op contract digests (binding version 2, cratestack#1123): what a signed
+// request to each op binds into its COSE AAD, keyed like the Rust client's
+// `OP_CONTRACTS` (the RPC op id, or "<METHOD> <route template>" on REST, plus
+// `batch` for `transport rpc`). Computed by the same `cratestack_core`
+// function the Rust macros call, so the two cannot disagree. Not used by the
+// unsigned runtime below: the sealers (ADR 0006 §11) read them.
+export const OP_CONTRACTS: Readonly<Record<string, string>> = {
+{% for row in op_contracts %}
+  "{{ row[0] }}": "{{ row[1] }}",
+{% endfor %}
+};
+// Hex of the whole-contract digest: moves when any op's contract does.
+export const CLIENT_CONTRACT_SHA256: string = "{{ client_contract_sha256 }}";
+
 /** Plugs into {@link CratestackRpcRuntime} to control how request bodies
  *  are encoded and response bodies are decoded. `contentType` is sent as
  *  both the request `Content-Type` and the response `Accept` header, so

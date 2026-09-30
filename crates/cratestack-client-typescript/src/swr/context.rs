@@ -152,6 +152,8 @@ pub(crate) fn build_shared_context(
         package_name: config.package_name.clone(),
         base_path: config.base_path.clone(),
         schema_sha256: config.schema_sha256.clone(),
+        op_contracts: crate::context::op_contract_rows(schema),
+        client_contract_sha256: crate::context::client_contract_hex(schema),
         shared,
         models,
         procedures_file,

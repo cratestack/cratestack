@@ -11,12 +11,14 @@ typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ C
 This is P0: unary messages, `nonce` replay, and the shared test vectors. `chain` streams
 (P1) and `window` replay for device keys (P2) come later.
 
-**Wire format.** Binding version 1 freezes with the release that ships both the server layer
-(`cratestack-axum`'s `envelope_layer`, cratestack#1006) and the Rust client
-(`cratestack-client-rust`'s `cose` feature, cratestack#1007) (cratestack#1082). The change to how
-the bound schema identity is derived (cratestack#1065) has already landed, so from that release on
-any change to the AAD's elements or to how one is derived bumps `BINDING_VERSION`. Pin an exact
-version if you use the crate directly with an earlier release.
+**Wire format.** Binding version 1 froze with 0.15.0, the release that shipped both the server
+layer (`cratestack-axum`'s `envelope_layer`, cratestack#1006) and the Rust client
+(`cratestack-client-rust`'s `cose` feature, cratestack#1007). **Binding version 2**
+(cratestack#1123) replaces element 7, the whole-schema `schema_sha`, with `contract_sha`, the
+digest of the wire closure of the op being called, so a schema edit that leaves an op's wire shape
+alone no longer invalidates the signed clients that call it. It is a breaking wire change: a
+version 2 verifier refuses version 1 (`neg-binding-v1`). Any further change to the AAD's elements
+or to how one is derived bumps `BINDING_VERSION` again.
 
 Without features the crate depends on `cratestack-core` alone, and compiles for
 `wasm32-unknown-unknown`. The off-by-default `auth` feature adds `cratestack-auth` (see
@@ -46,7 +48,7 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
 - **Header:** protected `{1: alg, 4: kid, ? 15: {6: iat, 7: cti}}` (claims on requests
   only), unprotected always empty. The `kid` is the first 8 bytes of the key's RFC 9679
   thumbprint (`cratestack_cose::thumbprint`), and a key verifies only under its own `kid`.
-- **AAD:** `[1, audience, method, route, path_params, query / null, schema_sha,
+- **AAD:** `[2, audience, method, route, path_params, query / null, contract_sha,
   payload_type, [idempotency_key / null, if_match / null], ? request_kind,
   ? request_digest, ? status]`; see `external_aad`. The `bound_headers` array carries the
   request's `Idempotency-Key` and `If-Match` exactly as sent (no trimming), so a proxy
@@ -96,7 +98,7 @@ auth, never the reverse):
 ## Shared vectors
 
 `tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture, 33 unary cases
-and 20 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
+and 22 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check
 themselves against. Each case carries its AAD, protected header and to-be-signed bytes. A case's `binding` object
 names every AAD input, including `bound_headers: {idempotency_key, if_match}` (each a
 string or `null`; the REST cases carry both, the unsigned `GET` only the key, the RPC

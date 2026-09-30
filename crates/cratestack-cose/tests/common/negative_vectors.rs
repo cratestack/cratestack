@@ -88,6 +88,12 @@ fn ed25519_with_kid(kid: &[u8], aad: &[u8]) -> Vec<u8> {
     forge::ed25519_request(&protected, aad, &common::fixture::payment_bytes())
 }
 
+/// `digest` with its last bit flipped.
+fn flipped_digest(mut digest: [u8; 32]) -> [u8; 32] {
+    digest[31] ^= 0x01;
+    digest
+}
+
 /// `body` with the byte at `at` XORed with 1.
 fn flipped(body: &[u8], at: usize) -> Vec<u8> {
     let mut out = body.to_vec();
@@ -116,7 +122,27 @@ pub(super) async fn derive() -> Vec<Negative> {
     let ed = common::sealed_request(CoseAlg::Ed25519, &rpc).await;
     let ed_layout = forge::layout(&ed);
     let rpc_aad = external_aad(&rpc).expect("aad");
+    let refund = Binding {
+        route: Cow::Borrowed("model.Payment.refund"),
+        contract_sha: common::other_contract_sha(),
+        ..rpc.clone()
+    };
     let victim_kid = common::ed25519().verify_key().kid();
+    // Positive control: the same forge over the version 2 AAD is the valid
+    // `ed` request byte for byte, so `binding-v1` differs only in the version.
+    assert_eq!(
+        ed25519_with_kid(&victim_kid, &rpc_aad),
+        ed,
+        "binding-v1 control"
+    );
+    // The same AAD under binding version 1: element 0 is `1`, not `2`.
+    let mut v1_aad = rpc_aad.clone();
+    assert_eq!(
+        v1_aad[..2],
+        [0x89, 0x02],
+        "a 9-element array led by version 2"
+    );
+    v1_aad[1] = 0x01;
     let impostor = CoseEnvelope::client(
         CoseMode::Sign1,
         Arc::new(KidOf(
@@ -313,16 +339,45 @@ pub(super) async fn derive() -> Vec<Negative> {
             "a valid request for model.Payment.create, opened as model.Payment.refund",
         ),
         negative(
-            "schema-sha-mismatch",
+            "contract-sha",
             "request",
             sign1,
-            &Binding {
-                schema_sha: [0; 32],
-                ..rpc.clone()
-            },
+            &rpc,
             &["ed25519"],
-            &ed,
-            "a valid request, opened by a verifier built against another schema (schema_sha all zero)",
+            &common::sealed_request(
+                CoseAlg::Ed25519,
+                &Binding {
+                    contract_sha: flipped_digest(rpc.contract_sha),
+                    ..rpc.clone()
+                },
+            )
+            .await,
+            "a valid request whose op contract digest has one bit flipped: sealed for another wire shape of model.Payment.create",
+        ),
+        negative(
+            "contract-cross-op",
+            "request",
+            sign1,
+            &refund,
+            &["ed25519"],
+            &common::sealed_request(
+                CoseAlg::Ed25519,
+                &Binding {
+                    contract_sha: rpc.contract_sha,
+                    ..refund.clone()
+                },
+            )
+            .await,
+            "a request to model.Payment.refund sealed under the digest of model.Payment.create: the route matches, only the op's contract digest is another op's",
+        ),
+        negative(
+            "binding-v1",
+            "request",
+            sign1,
+            &rpc,
+            &["ed25519"],
+            &ed25519_with_kid(&victim_kid, &v1_aad),
+            "correctly signed over the binding version 1 AAD (the same elements, version 1 in place of 2, schema_sha where contract_sha sits): a version 2 verifier refuses version 1",
         ),
         negative(
             "request-digest-mismatch",
@@ -432,7 +487,7 @@ pub(super) fn binding_from_json(json: &BindingJson) -> Binding<'static> {
         route: Cow::Owned(json.route.clone()),
         path_params: PathParams::Owned(json.path_params.clone()),
         query: json.query.clone().map(Cow::Owned),
-        schema_sha: digest(&json.schema_sha),
+        contract_sha: digest(&json.contract_sha),
         payload_media_type: Cow::Owned(json.payload_type.clone()),
         bound_headers: BoundHeaders {
             idempotency_key: json.bound_headers.idempotency_key.clone().map(Cow::Owned),

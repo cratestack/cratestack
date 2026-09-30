@@ -1,20 +1,25 @@
-//! The two schema-digest constants every `include_*_schema!` module emits.
+//! The digest constants every `include_*_schema!` module emits.
 //!
 //! `SCHEMA_SHA256` (hex) predates signing and feeds the warn-only drift
-//! header (#178). `SCHEMA_SHA256_BYTES` is the same digest as the raw 32
-//! bytes a COSE envelope binds as the AAD's `schema_sha` element (ADR 0006
-//! §4; `cratestack_core::Binding::schema_sha`). It is emitted by all three
-//! macros (cratestack#1006) because both ends of a signed exchange must
-//! rebuild the same binding: the server's envelope layer, and the client
-//! (#1007) and embedded builds that seal requests for it. Emitting the
-//! bytes, rather than having each consumer hex-decode `SCHEMA_SHA256` at
-//! runtime, keeps a decode error (and a second place to get it wrong) out of
-//! the signing path.
+//! header (#178); `SCHEMA_SHA256_BYTES` is the same whole-IR digest as raw
+//! bytes. Neither is bound into a signed message any more: binding version
+//! 2 binds the digest of the op being called (cratestack#1123, ADR 0006
+//! §4), which [`ContractConsts`] emits as `OP_CONTRACTS`, with
+//! `CLIENT_CONTRACT_SHA256(_BYTES)` the whole-contract build identity.
+//! All are emitted by all three macros because both ends of a signed
+//! exchange must rebuild the same binding: the server's envelope layer, and
+//! the client (#1007) and embedded builds that seal requests for it.
+//! Emitting bytes, rather than having each consumer hex-decode at runtime,
+//! keeps a decode error (and a second place to get it wrong) out of the
+//! signing path.
 //!
-//! Both come from one value here, so they cannot disagree.
+//! Each pair comes from one value here, so the two spellings cannot
+//! disagree.
 
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
+
+use super::contracts::ContractConsts;
 
 /// Emits `pub const SCHEMA_SHA256: &str` and `pub const SCHEMA_SHA256_BYTES:
 /// [u8; 32]` when interpolated with `#`. A doc comment written just before
@@ -23,14 +28,32 @@ use quote::{ToTokens, quote};
 pub(super) struct SchemaShaConsts {
     hex: String,
     bytes: [u8; 32],
+    contracts: ContractConsts,
 }
 
 impl SchemaShaConsts {
-    /// `bytes` is `cratestack_core::schema_digest`'s output, the schema's
-    /// canonical identity; the hex constant is derived from it here.
-    pub(super) fn from_digest(bytes: [u8; 32]) -> Self {
+    /// Every digest of `schema`: the whole-IR `schema_digest` (the drift
+    /// header's identity) and the per-op contract table.
+    pub(super) fn from_schema(schema: &cratestack_core::Schema) -> Self {
+        let mut consts = Self::from_digest(cratestack_core::schema_digest(schema));
+        consts.contracts = ContractConsts::from_schema(schema);
+        consts
+    }
+
+    /// `bytes` is `cratestack_core::schema_digest`'s output; the hex
+    /// constant is derived from it here.
+    fn from_digest(bytes: [u8; 32]) -> Self {
         let hex = bytes.iter().map(|b| format!("{b:02x}")).collect();
-        Self { hex, bytes }
+        Self {
+            hex,
+            bytes,
+            contracts: ContractConsts::default(),
+        }
+    }
+
+    /// `ACCEPTED_CONTRACTS`, for the server module only.
+    pub(super) fn accepted(&self) -> TokenStream {
+        self.contracts.accepted()
     }
 }
 
@@ -40,13 +63,15 @@ impl ToTokens for SchemaShaConsts {
         let bytes = self.bytes.iter();
         tokens.extend(quote! {
             pub const SCHEMA_SHA256: &str = #hex;
-            /// `SCHEMA_SHA256` as its 32 raw bytes: the `schema_sha` a COSE
-            /// envelope binds into every signed message's AAD (ADR 0006 §4,
-            /// cratestack#1006). It is the schema's canonical identity, not
-            /// a hash of its text: a comment or whitespace edit leaves it
-            /// unchanged (cratestack#1065).
+            /// `SCHEMA_SHA256` as its 32 raw bytes: the schema's canonical
+            /// whole-IR identity, not a hash of its text (a comment or
+            /// whitespace edit leaves it unchanged, cratestack#1065). It
+            /// is **not** what a signed message binds since binding
+            /// version 2: that is the called op's digest in
+            /// `OP_CONTRACTS`.
             pub const SCHEMA_SHA256_BYTES: [u8; 32] = [#(#bytes),*];
         });
+        self.contracts.to_tokens(tokens);
     }
 }
 

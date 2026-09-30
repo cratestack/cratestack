@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use cratestack_core::RouteTransportDescriptor;
+use cratestack_core::{AcceptedContracts, RouteTransportDescriptor};
 
 use super::mode::{EnvelopeMode, EnvelopePolicy};
 use super::principal::PrincipalMapper;
@@ -24,7 +24,8 @@ pub(super) enum Transport {
 pub struct EnvelopeLayerBuilder {
     pub(super) envelope: Arc<dyn ServerEnvelope>,
     pub(super) audience: String,
-    pub(super) schema_sha: [u8; 32],
+    pub(super) contracts: AcceptedContracts,
+    pub(super) max_contract_trials: usize,
     pub(super) policy: Option<Box<dyn EnvelopePolicy>>,
     pub(super) transport: Transport,
     /// The prefix given to `rest(..)` / `rpc(..)`.
@@ -132,6 +133,20 @@ impl EnvelopeLayerBuilder {
     /// Replace [`super::AcceptNamesEnvelope`] (decision D10).
     pub fn response_seal_policy(mut self, policy: impl ResponseSealPolicy) -> Self {
         self.seal_policy = Box::new(policy);
+        self
+    }
+
+    /// How many accepted digests the layer tries for a request that names
+    /// none (no `Cratestack-Contract` header: a hand-built client), newest
+    /// first. Default [`super::DEFAULT_MAX_CONTRACT_TRIALS`]; at least 1.
+    /// A request that does name one is verified under it alone, so an
+    /// up-to-date generated client costs one verification however long an
+    /// op's accepted list grows, and a forged request without the header
+    /// costs at most this many parse, key-resolution and verification
+    /// passes (one each per trial until the envelope resolves keys once).
+    /// A failed trial records no nonce.
+    pub fn max_contract_trials(mut self, trials: usize) -> Self {
+        self.max_contract_trials = trials;
         self
     }
 

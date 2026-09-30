@@ -61,6 +61,7 @@ impl<'a> RouteRequest<'a> {
 pub struct ResolvedRoute {
     route: Cow<'static, str>,
     path_params: Vec<String>,
+    contract_key: Option<Cow<'static, str>>,
 }
 
 /// The route an RPC subscription is bound under: `subscribe/<op id>`.
@@ -75,7 +76,27 @@ impl ResolvedRoute {
         Self {
             route: route.into(),
             path_params,
+            contract_key: None,
         }
+    }
+
+    /// The op whose contract digest this route is bound under, when the
+    /// route a custom resolver binds (a versioned `/v1/...` path, say) is
+    /// not itself the op's key: the RPC `op_id`, or `"<METHOD> <template>"`
+    /// on REST, as the generated `ACCEPTED_CONTRACTS` spells it. Without
+    /// it the layer looks the route up as given (the op id, or the method
+    /// and template), and a route with no row is a `500` for a signed
+    /// request: the layer cannot tell which shape the request was
+    /// signed under.
+    #[must_use]
+    pub fn with_contract_key(mut self, key: impl Into<Cow<'static, str>>) -> Self {
+        self.contract_key = Some(key.into());
+        self
+    }
+
+    /// The key set by [`with_contract_key`](Self::with_contract_key).
+    pub fn contract_key(&self) -> Option<&str> {
+        self.contract_key.as_deref()
     }
 
     /// The route.

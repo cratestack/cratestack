@@ -40,11 +40,18 @@ pub const CTI_16: &str = "3c9a5e71d20b48f6a1c7e4029b6d5f83";
 /// The 2-byte counter-shaped `cti` (the ADR's §3 measurements).
 pub const CTI_2: &str = "002a";
 
-/// The schema SHA of every binding: SHA-256 of the ASCII text
-/// `cratestack-cose test schema`.
-pub fn schema_sha() -> [u8; 32] {
+/// The op contract digest of every binding: SHA-256 of the ASCII text
+/// `cratestack-cose test contract`.
+pub fn contract_sha() -> [u8; 32] {
     use sha2::Digest;
-    sha2::Sha256::digest(b"cratestack-cose test schema").into()
+    sha2::Sha256::digest(b"cratestack-cose test contract").into()
+}
+
+/// The digest of another op: SHA-256 of `cratestack-cose test contract
+/// (another op)`.
+pub fn other_contract_sha() -> [u8; 32] {
+    use sha2::Digest;
+    sha2::Sha256::digest(b"cratestack-cose test contract (another op)").into()
 }
 
 const fn seq(start: u8) -> [u8; 32] {
@@ -118,7 +125,7 @@ pub fn rpc_request() -> Binding<'static> {
         route: Cow::Borrowed("model.Payment.create"),
         path_params: PathParams::EMPTY,
         query: None,
-        schema_sha: schema_sha(),
+        contract_sha: contract_sha(),
         payload_media_type: Cow::Borrowed("application/cbor"),
         bound_headers: BoundHeaders::NONE,
         response: None,
@@ -273,7 +280,7 @@ pub fn binding_from_json(json: &serde_json::Value) -> Binding<'static> {
         query: json["query"]
             .as_str()
             .map(|query| Cow::Owned(query.to_owned())),
-        schema_sha: digest(&json["schema_sha"]).expect("schema_sha"),
+        contract_sha: digest(&json["contract_sha"]).expect("contract_sha"),
         payload_media_type: text("payload_type"),
         bound_headers: BoundHeaders {
             idempotency_key: json["bound_headers"]["idempotency_key"]

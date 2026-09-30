@@ -14,7 +14,7 @@ use cratestack_client_rust::{
     RuntimeErrorWire, RuntimeHandle, RuntimeHeader, RuntimeRequestWire, RuntimeStateStoreConfig,
     RuntimeTransportConfig,
 };
-use rpc_app::server::cratestack_schema::SCHEMA_SHA256_BYTES;
+use rpc_app::server::cratestack_schema::OP_CONTRACTS;
 
 fn config(addr: std::net::SocketAddr, envelope: RuntimeEnvelopeConfig) -> RuntimeConfigWire {
     RuntimeConfigWire {
@@ -58,7 +58,7 @@ async fn a_handle_with_an_envelope_completes_a_signed_round_trip() {
             let handle = RuntimeHandle::with_envelope(
                 config(addr, named(kind)),
                 client_envelope(kind, AUDIENCE),
-                &SCHEMA_SHA256_BYTES,
+                OP_CONTRACTS,
             )
             .expect("handle");
             handle.execute(ping("/rpc/procedure.ping"))
@@ -102,7 +102,7 @@ async fn an_envelope_the_config_does_not_name_is_refused() {
             RuntimeHandle::with_envelope(
                 config(addr, envelope),
                 client_envelope(kind, AUDIENCE),
-                &SCHEMA_SHA256_BYTES,
+                OP_CONTRACTS,
             )
             .err()
         })
@@ -124,7 +124,7 @@ async fn a_raw_rest_path_has_no_route_to_bind_and_a_stream_is_refused() {
         let handle = RuntimeHandle::with_envelope(
             config(addr, RuntimeEnvelopeConfig::CoseSign1),
             client_envelope(Kind::Ed25519, AUDIENCE),
-            &SCHEMA_SHA256_BYTES,
+            OP_CONTRACTS,
         )
         .expect("handle");
         let rest = handle.execute(ping("/v2/$procs/ping")).err();
