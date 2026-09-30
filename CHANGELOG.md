@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.15.3 (2026-09-30)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.15.2..HEAD at a035948af7f988fc73df38ccc18dce09d7b3e2b3 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+- No changes since last release
 ## 0.15.2 (2026-09-30)
 
 ### BREAKING: signed transport binds the called op's contract digest, binding version 2 (#1123, #1030)
