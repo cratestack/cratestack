@@ -39,6 +39,8 @@ let db = cratestack_schema::Cratestack::builder(pool).build();
 
 `db = Postgres` and `db = None` are currently accepted. The parser is wired so adding `MySql` / `Sqlite`-via-sqlx in a future release is non-breaking at call sites that already pass `db = Postgres`.
 
+Optional trailing arguments, in either order, each at most once: `decimal = RustDecimal | BigDecimal`, and `contracts = "schema.contracts.lock"` (cratestack#1123), a compatible-contract lock kept by `cratestack contract lock|check|prune`. With it, the emitted `ACCEPTED_CONTRACTS` lists per op the current op-contract digest then the locked older ones a signed client may still bind, newest first; the file is read at compile time and tracked with `include_bytes!`. A missing file, a stored contract whose digest does not match (a hand edit) and a locked contract the current schema breaks are all compile errors (the last names the op and the reason and points at `cratestack contract prune --op`).
+
 For `db = Postgres`, the macro emits, inside a `cratestack_schema` module:
 
 - model structs + `sqlx::FromRow<PgRow>` impls for each `model`

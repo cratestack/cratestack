@@ -9,7 +9,8 @@
 //!    allowlist (`header::parse`), belong to the envelope's mode (so the
 //!    tag and the algorithm agree), and carry claims exactly when a request
 //!    is expected;
-//! 3. resolve candidate keys by `(kid, alg)`;
+//! 3. resolve candidate keys by `(kid, alg)` (once, however many bindings
+//!    are tried: see [`open_any`]);
 //! 4. verify over the **received** protected bytes, trying each candidate
 //!    whose own `kid` (computed from the key, never taken from the
 //!    resolver's word) is the header's `kid` and whose algorithm is the
@@ -42,19 +43,53 @@ pub(crate) async fn open(
     bind: &Binding<'_>,
     request: bool,
 ) -> Result<Opened, CratestackError> {
-    if request == bind.response.is_some() {
-        return Err(misuse(if request {
-            "opening a request with a response binding"
-        } else {
-            "opening a response with a request binding"
-        }));
+    open_any(inner, body, std::slice::from_ref(bind), request)
+        .await
+        .map(|(opened, _)| opened)
+}
+
+/// [`open`] against several candidate bindings that differ only in the
+/// values the AAD carries (for the layer, the op-contract digest): the
+/// message is parsed once and its key resolved once, then the signature is
+/// verified under each candidate's AAD in order until one holds. Returns
+/// the opened message and the index of the binding that verified. Steps 5
+/// and 6 run once, for that binding only, so a failed candidate burns no
+/// nonce. An empty list is refused like any failed verification, before
+/// anything is parsed or resolved, and candidates that differ in anything
+/// but `contract_sha` are local misuse (a `500`): "accept either audience"
+/// or "either route" would quietly widen what a signature proves.
+pub(crate) async fn open_any(
+    inner: &Inner,
+    body: Bytes,
+    binds: &[Binding<'_>],
+    request: bool,
+) -> Result<(Opened, usize), CratestackError> {
+    let Some((first, rest)) = binds.split_first() else {
+        return Err(Reject.into_error());
+    };
+    if rest.iter().any(|bind| differs_beyond_digest(first, bind)) {
+        return Err(misuse(
+            "candidate bindings may differ only in `contract_sha`",
+        ));
+    }
+    for bind in binds {
+        if request == bind.response.is_some() {
+            return Err(misuse(if request {
+                "opening a request with a response binding"
+            } else {
+                "opening a response with a request binding"
+            }));
+        }
     }
     let nonce_store = match (&inner.nonce_store, request) {
         (Some(store), true) => Some(store),
         (None, true) => return Err(misuse("opening a request needs a nonce store")),
         (_, false) => None,
     };
-    let external_aad = aad::external_aad(bind)?;
+    let external_aads = binds
+        .iter()
+        .map(aad::external_aad)
+        .collect::<Result<Vec<_>, _>>()?;
 
     let parts = wire::parse(inner.mode, &body).map_err(Reject::into_error)?;
     let protected_bytes = &body[parts.protected.clone()];
@@ -76,16 +111,22 @@ pub(crate) async fn open(
         .await
         .map_err(|error| backend("key resolver", error))?;
     let signature = &body[parts.signature.clone()];
-    let tbs = Tbs {
-        mode: inner.mode,
-        protected: protected_bytes,
-        external_aad: &external_aad,
-        payload: &body[parts.payload.clone()],
-    };
-    let thumbprint = candidates
+    let payload = &body[parts.payload.clone()];
+    let (index, thumbprint) = external_aads
         .iter()
-        .find(|key| key.kid() == kid && key.verify(protected.alg, &tbs, signature))
-        .map(CoseVerifyKey::thumbprint)
+        .enumerate()
+        .find_map(|(index, external_aad)| {
+            let tbs = Tbs {
+                mode: inner.mode,
+                protected: protected_bytes,
+                external_aad,
+                payload,
+            };
+            candidates
+                .iter()
+                .find(|key| key.kid() == kid && key.verify(protected.alg, &tbs, signature))
+                .map(|key| (index, CoseVerifyKey::thumbprint(key)))
+        })
         .ok_or_else(|| Reject.into_error())?;
 
     let (iat, cti) = match (protected.claims, nonce_store) {
@@ -108,12 +149,25 @@ pub(crate) async fn open(
         _ => (None, None),
     };
 
-    Ok(Opened {
+    let opened = Opened {
         payload: body.slice(parts.payload),
         kid,
         alg: protected.alg,
         thumbprint,
         iat,
         cti,
-    })
+    };
+    Ok((opened, index))
+}
+
+/// Whether two bindings differ in any element but the contract digest.
+fn differs_beyond_digest(a: &Binding<'_>, b: &Binding<'_>) -> bool {
+    a.audience != b.audience
+        || a.method != b.method
+        || a.route != b.route
+        || a.path_params != b.path_params
+        || a.query != b.query
+        || a.payload_media_type != b.payload_media_type
+        || a.bound_headers != b.bound_headers
+        || a.response != b.response
 }

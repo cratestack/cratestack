@@ -1,0 +1,159 @@
+{
+  "format": 1,
+  "domain": "cratestack/op-contract/v1",
+  "contracts": {
+    "3929bebd40e4fbd0619ac73e03b52327bb334fe30b3f390d8c170e1d14b2205e": {
+      "closure": {
+        "enums": [],
+        "models": [],
+        "types": [
+          {
+            "fields": [
+              {
+                "attributes": [],
+                "name": "message",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              }
+            ],
+            "name": "PingArgs"
+          },
+          {
+            "fields": [
+              {
+                "attributes": [],
+                "name": "echo",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              }
+            ],
+            "name": "PingReply"
+          }
+        ],
+        "views": []
+      },
+      "events": null,
+      "key": "procedure.untouched",
+      "kind": "unary",
+      "model": null,
+      "procedure": {
+        "args": [
+          {
+            "name": "args",
+            "ty": {
+              "arity": "required",
+              "generic_args": [],
+              "ident_args": [],
+              "int_args": [],
+              "name": "PingArgs"
+            }
+          }
+        ],
+        "attributes": [],
+        "kind": "query",
+        "name": "untouched",
+        "return_type": {
+          "arity": "required",
+          "generic_args": [],
+          "ident_args": [],
+          "int_args": [],
+          "name": "PingReply"
+        }
+      },
+      "transport": "rpc",
+      "verb": "query"
+    },
+    "a1269fb1839a019eb28cd2e013f0a6ee6396773e0e9788d5482057eb820a6486": {
+      "closure": {
+        "enums": [],
+        "models": [],
+        "types": [
+          {
+            "fields": [
+              {
+                "attributes": [],
+                "name": "message",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              }
+            ],
+            "name": "PingArgs"
+          },
+          {
+            "fields": [
+              {
+                "attributes": [],
+                "name": "echo",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              }
+            ],
+            "name": "PingReply"
+          }
+        ],
+        "views": []
+      },
+      "events": null,
+      "key": "procedure.ping",
+      "kind": "unary",
+      "model": null,
+      "procedure": {
+        "args": [
+          {
+            "name": "args",
+            "ty": {
+              "arity": "required",
+              "generic_args": [],
+              "ident_args": [],
+              "int_args": [],
+              "name": "PingArgs"
+            }
+          }
+        ],
+        "attributes": [],
+        "kind": "query",
+        "name": "ping",
+        "return_type": {
+          "arity": "required",
+          "generic_args": [],
+          "ident_args": [],
+          "int_args": [],
+          "name": "PingReply"
+        }
+      },
+      "transport": "rpc",
+      "verb": "query"
+    }
+  },
+  "generations": [
+    {
+      "client_contract": "f0721f3b6157e593e4007bac184f3bfc72014ac43c6ef21ffdb82a00d5e85696",
+      "locked_at": "2026-10-01",
+      "note": "store 1.0",
+      "ops": {
+        "procedure.ping": "a1269fb1839a019eb28cd2e013f0a6ee6396773e0e9788d5482057eb820a6486",
+        "procedure.untouched": "3929bebd40e4fbd0619ac73e03b52327bb334fe30b3f390d8c170e1d14b2205e"
+      }
+    }
+  ]
+}

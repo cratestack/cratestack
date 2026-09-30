@@ -26,12 +26,20 @@ pub(super) fn compose_server_schema(
     schema_path: &LitStr,
     db: ServerDb,
     decimal: Option<DecimalBackend>,
+    contracts: Option<&LitStr>,
 ) -> TokenStream {
     let (schema_relative, resolved, schema, schema_sha_consts) =
         match parse_schema_literal(schema_path) {
             Ok(parsed) => parsed,
             Err(error) => return error,
         };
+    let (schema_sha_consts, lock_track) = match contracts {
+        None => (schema_sha_consts, quote! {}),
+        Some(lock_path) => match super::lock_arg::accepted_from_lock(lock_path, &schema) {
+            Ok((table, track)) => (schema_sha_consts.with_accepted(table), track),
+            Err(error) => return error.to_compile_error().into(),
+        },
+    };
     let accepted_contracts = schema_sha_consts.accepted();
     let mcp_plan = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
         Ok(plan) => plan,
@@ -249,6 +257,7 @@ pub(super) fn compose_server_schema(
                 /// never rejects. See issue #178.
                 #schema_sha_consts
                 #accepted_contracts
+                #lock_track
                 pub const MIXINS: &[&str] = &[#(#mixin_names),*];
                 pub const MODELS: &[&str] = &[#(#model_names),*];
                 pub const TYPES: &[&str] = &[#(#type_names),*];

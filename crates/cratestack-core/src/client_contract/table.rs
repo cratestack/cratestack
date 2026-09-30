@@ -4,9 +4,9 @@
 //! version 2). The client holds one digest per op ([`OpContracts`]); a
 //! server holds, per op, every digest it accepts ([`AcceptedContracts`]),
 //! current first and then any older ones still wire-compatible with it,
-//! newest first. Today the list has one member; the compatible-contract
-//! lock (cratestack#1123, PR 3) only adds members, so nothing that reads
-//! this table changes when it lands.
+//! newest first. Without a contract lock the list has one member; the lock
+//! (`ContractLock`, cratestack#1123) only adds members, so nothing that
+//! reads this table depends on it.
 //!
 //! Both tables are keyed by the op key of [`crate::op_list`] (the RPC
 //! `op_id`, or `"<METHOD> <route template>"` on REST), plus one extra row

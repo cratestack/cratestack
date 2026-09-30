@@ -1,4 +1,5 @@
 use super::*;
+use cratestack_core::Schema;
 
 const SCHEMA: &str = "transport rpc\n\nmodel Widget {\n  id Int @id\n}\n\n\
     type Ping {\n  note String\n}\n\nprocedure ping(args: Ping): Ping\n";
@@ -9,7 +10,7 @@ fn schema(source: &str) -> Schema {
 
 #[test]
 fn digest_lists_every_op_and_the_client_contract() {
-    let out = digest_report(&schema(SCHEMA), false);
+    let out = digest_report(&schema(SCHEMA), false).unwrap();
     assert!(out.starts_with("client contract  "));
     for key in ["model.Widget.list", "model.Widget.delete", "procedure.ping"] {
         assert!(out.contains(key), "{out}");
@@ -19,11 +20,11 @@ fn digest_lists_every_op_and_the_client_contract() {
 
 #[test]
 fn json_digest_is_a_stable_document() {
-    let out = digest_report(&schema(SCHEMA), true);
+    let out = digest_report(&schema(SCHEMA), true).unwrap();
     let doc: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(doc["client_contract"].as_str().unwrap().len(), 64);
     assert_eq!(doc["ops"]["procedure.ping"].as_str().unwrap().len(), 64);
-    assert_eq!(digest_report(&schema(SCHEMA), true), out);
+    assert_eq!(digest_report(&schema(SCHEMA), true).unwrap(), out);
 }
 
 #[test]
@@ -33,8 +34,8 @@ fn a_policy_edit_leaves_the_printed_digests_alone() {
         "model Widget {\n  id Int @id\n\n  @@allow(\"read\", true)\n",
     );
     assert_eq!(
-        digest_report(&schema(SCHEMA), false),
-        digest_report(&schema(&edited), false)
+        digest_report(&schema(SCHEMA), false).unwrap(),
+        digest_report(&schema(&edited), false).unwrap()
     );
 }
 

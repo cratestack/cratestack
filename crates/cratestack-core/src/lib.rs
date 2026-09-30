@@ -73,9 +73,10 @@ pub use context::{
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
 pub use client_contract::{
-    AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, OP_CONTRACT_DOMAIN, OpContracts,
-    bound_contracts, client_contract_digest, digest_hex, find_contract, op_contract_digest,
-    op_contract_digests, op_contract_json, op_keys,
+    AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ContractLock, Generation,
+    Incompatible, LOCK_FORMAT, LockError, OP_CONTRACT_DOMAIN, OpContracts, Pruned, Verdict,
+    bound_contracts, classify, client_contract_digest, digest_hex, find_contract,
+    op_contract_digest, op_contract_digests, op_contract_json, op_keys,
 };
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;

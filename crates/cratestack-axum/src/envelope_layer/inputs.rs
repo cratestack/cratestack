@@ -65,13 +65,23 @@ impl BindingInputs {
         params: &'a [&'a str],
         response: Option<ResponseBinding>,
     ) -> Binding<'a> {
+        self.binding_for(self.contract, params, response)
+    }
+
+    /// The binding under `contract`, for one of several candidate digests.
+    pub(super) fn binding_for<'a>(
+        &'a self,
+        contract: [u8; 32],
+        params: &'a [&'a str],
+        response: Option<ResponseBinding>,
+    ) -> Binding<'a> {
         Binding {
             audience: Cow::Borrowed(&self.config.audience),
             method: Cow::Borrowed(self.method.as_str()),
             route: Cow::Borrowed(self.route.route()),
             path_params: PathParams::Borrowed(params),
             query: self.query.as_deref().map(Cow::Borrowed),
-            contract_sha: self.contract,
+            contract_sha: contract,
             payload_media_type: Cow::Borrowed(PAYLOAD_MEDIA_TYPE),
             bound_headers: self.bound.borrowed(),
             response,

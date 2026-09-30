@@ -38,10 +38,15 @@ pub(super) fn parse_optional_decimal_arg(
         ));
     }
     input.parse::<syn::Token![=]>()?;
+    parse_decimal_value(input).map(Some)
+}
+
+/// The `RustDecimal` / `BigDecimal` after `decimal =`.
+pub(super) fn parse_decimal_value(input: ParseStream<'_>) -> syn::Result<DecimalBackend> {
     let value: syn::Ident = input.parse()?;
     match value.to_string().as_str() {
-        "RustDecimal" => Ok(Some(DecimalBackend::RustDecimal)),
-        "BigDecimal" => Ok(Some(DecimalBackend::BigDecimal)),
+        "RustDecimal" => Ok(DecimalBackend::RustDecimal),
+        "BigDecimal" => Ok(DecimalBackend::BigDecimal),
         other => Err(syn::Error::new(
             value.span(),
             format!("unsupported decimal backend `{other}`. supported: RustDecimal, BigDecimal"),

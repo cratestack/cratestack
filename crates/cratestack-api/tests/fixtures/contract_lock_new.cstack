@@ -1,0 +1,32 @@
+// `contract_lock_old.cstack` after a policy edit, two additive optional
+// fields (`PingArgs.hint`, `PingReply.extra`) and one breaking edit
+// (`retyped`'s argument). See the old fixture's header.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+  hint String?
+}
+
+type RetypedArgs {
+  message Int
+}
+
+type PingReply {
+  echo String
+  extra String?
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null || auth() == null)
+
+procedure retyped(args: RetypedArgs): PingReply
+  @allow(auth() != null)
+
+procedure untouched(args: PingArgs): PingReply
+  @allow(auth() != null)

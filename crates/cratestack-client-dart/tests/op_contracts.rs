@@ -81,3 +81,52 @@ fn the_package_constants_are_the_core_ones_for_rest_and_rpc() {
         }
     }
 }
+
+/// The cross-language vector (`cratestack-cose/tests/vectors/contract.json`,
+/// written and checked by `cratestack-parser`'s `contract_vectors`): the
+/// constants the generated package carries are the vector's digests.
+#[test]
+fn the_package_constants_are_the_cross_language_vectors() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../cratestack-cose/tests/vectors/contract.json"
+    );
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).expect("vectors")).unwrap();
+    for case in doc["cases"].as_array().unwrap() {
+        let schema =
+            cratestack_parser::parse_schema(case["schema"].as_str().unwrap()).expect("parses");
+        let package = generate_package(
+            &schema,
+            &DartGeneratorConfig {
+                library_name: "client".to_owned(),
+                ..Default::default()
+            },
+        )
+        .expect("renders");
+        let file = package
+            .files
+            .iter()
+            .find(|file| file.file_name.ends_with("constants.dart"))
+            .expect("constants.dart");
+        let (rows, whole) = constants(&file.contents);
+        let expected: Vec<(String, String)> = case["bound"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row[0].as_str().unwrap().to_owned(),
+                    row[1].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(rows, expected, "{}", case["name"]);
+        assert_eq!(
+            whole,
+            case["client_contract"].as_str().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+}

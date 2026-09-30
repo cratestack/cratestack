@@ -1,6 +1,7 @@
 //! [`CoseEnvelope`]: the COSE implementation of `CratestackEnvelope`.
 
 mod builder;
+mod open_api;
 mod trait_impl;
 
 use std::fmt;
@@ -12,7 +13,6 @@ use serde::Serialize;
 
 use crate::alg::CoseMode;
 use crate::keys::{CoseSigner, CoseVerifierResolver};
-use crate::opened::Opened;
 use crate::seal::PAYLOAD_CAPACITY_HINT;
 use cratestack_core::RequestNonce;
 
@@ -170,26 +170,6 @@ impl CoseEnvelope {
             codec.encode_into(value, out)
         })
         .await
-    }
-
-    /// Verify a request and run the replay checks, without a
-    /// `CratestackContext` (the #1006 axum layer runs before one exists).
-    /// Needs a nonce store; without one it is local misuse (a `500`).
-    pub async fn open_request(
-        &self,
-        body: Bytes,
-        bind: &Binding<'_>,
-    ) -> Result<Opened, CratestackError> {
-        crate::open::open(&self.inner, body, bind, true).await
-    }
-
-    /// Verify a response against the request it answers.
-    pub async fn open_response(
-        &self,
-        body: Bytes,
-        bind: &Binding<'_>,
-    ) -> Result<Opened, CratestackError> {
-        crate::open::open(&self.inner, body, bind, false).await
     }
 }
 

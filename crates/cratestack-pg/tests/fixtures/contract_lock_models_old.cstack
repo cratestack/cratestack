@@ -1,0 +1,24 @@
+// EXT-14 (cratestack#1123), the compatible-contract lock on a model's ops:
+// the schema an already-shipped client was built from.
+// `contract_lock_models_new.cstack` adds an optional field to the model and
+// edits its policy; `contract_lock_models_new.contracts.lock` is this
+// generation, written by `cratestack contract lock`.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id Int @id
+  body String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

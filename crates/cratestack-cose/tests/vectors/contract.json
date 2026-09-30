@@ -1,0 +1,138 @@
+{
+  "cases": [
+    {
+      "bound": [
+        [
+          "DELETE /widgets/{id}",
+          "efbc2fa610ea106da629ac999db6927662b115537678853ff59864e45d551658"
+        ],
+        [
+          "GET /widgets",
+          "64c02b8276a4d1bf232b826f247f6fbc8bbfab7d37064de16df4a7430b0d9cfe"
+        ],
+        [
+          "GET /widgets/{id}",
+          "26004b4b5c637fc83d8dd0217d22b2385120f1d7413eaec4f778cf877cab34ee"
+        ],
+        [
+          "PATCH /widgets/{id}",
+          "bfef6b9b1fe6e9b30baa6165c5a9e636a10a04a500cae9c30afe32dc973a6af9"
+        ],
+        [
+          "POST /$procs/ping",
+          "e33ea481aca55bcf4d1910c3b35e9bf7c4299fe5f84a1d180b615c5ddfe356ce"
+        ],
+        [
+          "POST /widgets",
+          "c5aa1e7a473c2a2e2360b486bc90172aa84b90cb39d8605fc110261865f83b9d"
+        ]
+      ],
+      "client_contract": "0386a3bc7e43ced8d21d690bbc08b2467bf2ddc6a623accb52bd629ab24decd2",
+      "name": "rest",
+      "ops": [
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"DELETE /widgets/{id}\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rest\",\"verb\":\"delete\"}",
+          "digest": "efbc2fa610ea106da629ac999db6927662b115537678853ff59864e45d551658",
+          "key": "DELETE /widgets/{id}"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"GET /widgets\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rest\",\"verb\":\"list\"}",
+          "digest": "64c02b8276a4d1bf232b826f247f6fbc8bbfab7d37064de16df4a7430b0d9cfe",
+          "key": "GET /widgets"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"GET /widgets/{id}\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rest\",\"verb\":\"get\"}",
+          "digest": "26004b4b5c637fc83d8dd0217d22b2385120f1d7413eaec4f778cf877cab34ee",
+          "key": "GET /widgets/{id}"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"PATCH /widgets/{id}\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rest\",\"verb\":\"update\"}",
+          "digest": "bfef6b9b1fe6e9b30baa6165c5a9e636a10a04a500cae9c30afe32dc973a6af9",
+          "key": "PATCH /widgets/{id}"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[],\"models\":[],\"types\":[{\"fields\":[{\"attributes\":[],\"name\":\"message\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}}],\"name\":\"PingArgs\"},{\"fields\":[{\"attributes\":[],\"name\":\"echo\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}}],\"name\":\"PingReply\"}],\"views\":[]},\"events\":null,\"key\":\"POST /$procs/ping\",\"kind\":\"unary\",\"model\":null,\"procedure\":{\"args\":[{\"name\":\"args\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"PingArgs\"}}],\"attributes\":[],\"kind\":\"query\",\"name\":\"ping\",\"return_type\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"PingReply\"}},\"transport\":\"rest\",\"verb\":\"query\"}",
+          "digest": "e33ea481aca55bcf4d1910c3b35e9bf7c4299fe5f84a1d180b615c5ddfe356ce",
+          "key": "POST /$procs/ping"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"POST /widgets\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rest\",\"verb\":\"create\"}",
+          "digest": "c5aa1e7a473c2a2e2360b486bc90172aa84b90cb39d8605fc110261865f83b9d",
+          "key": "POST /widgets"
+        }
+      ],
+      "schema": "\nenum Kind {\n  Small\n  Large\n}\n\nmodel Widget {\n  id Int @id\n  name String @length(min: 1, max: 40)\n  note String?\n  tier Int @default(1)\n  kind Kind\n  secret String @server_only\n\n  @@allow(\"read\", auth() != null)\n  @@allow(\"create\", auth() != null)\n  @@index([name])\n}\n\ntype PingArgs {\n  message String\n}\n\ntype PingReply {\n  echo String\n}\n\nprocedure ping(args: PingArgs): PingReply\n  @allow(auth() != null)\n"
+    },
+    {
+      "bound": [
+        [
+          "batch",
+          "347ffc36503fc3adfe7914825e743bc5890a5b035bec99c2e80d903b1930ac69"
+        ],
+        [
+          "model.Widget.create",
+          "a6c40fce8b466b058fcc03a847deb550a61117ce7453e41176f37322a91f5837"
+        ],
+        [
+          "model.Widget.delete",
+          "43aeee65c08a6f247d0d41c1fa07ef514e48d6d60e87fb7c694549d006f23842"
+        ],
+        [
+          "model.Widget.get",
+          "f01e1b2d234af5dc718c0df07c8bc65fcb6cc71db066a8589a5ea6478af43b5d"
+        ],
+        [
+          "model.Widget.list",
+          "d55836d9444a34135d8f350824eadb84b43d96ff055ea81036d5c3cc48b0583e"
+        ],
+        [
+          "model.Widget.update",
+          "1e06fa7be9835f4174cc8243000297082034cea3466c64b4156c1e287d333279"
+        ],
+        [
+          "procedure.ping",
+          "a1269fb1839a019eb28cd2e013f0a6ee6396773e0e9788d5482057eb820a6486"
+        ]
+      ],
+      "client_contract": "347ffc36503fc3adfe7914825e743bc5890a5b035bec99c2e80d903b1930ac69",
+      "name": "rpc",
+      "ops": [
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"model.Widget.create\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rpc\",\"verb\":\"create\"}",
+          "digest": "a6c40fce8b466b058fcc03a847deb550a61117ce7453e41176f37322a91f5837",
+          "key": "model.Widget.create"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"model.Widget.delete\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rpc\",\"verb\":\"delete\"}",
+          "digest": "43aeee65c08a6f247d0d41c1fa07ef514e48d6d60e87fb7c694549d006f23842",
+          "key": "model.Widget.delete"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"model.Widget.get\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rpc\",\"verb\":\"get\"}",
+          "digest": "f01e1b2d234af5dc718c0df07c8bc65fcb6cc71db066a8589a5ea6478af43b5d",
+          "key": "model.Widget.get"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"model.Widget.list\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rpc\",\"verb\":\"list\"}",
+          "digest": "d55836d9444a34135d8f350824eadb84b43d96ff055ea81036d5c3cc48b0583e",
+          "key": "model.Widget.list"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[{\"name\":\"Kind\",\"variants\":[\"Small\",\"Large\"]}],\"models\":[{\"attributes\":[],\"fields\":[{\"attributes\":[\"@id\"],\"name\":\"id\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}},{\"attributes\":[],\"name\":\"kind\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Kind\"}},{\"attributes\":[],\"name\":\"name\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[],\"name\":\"note\",\"ty\":{\"arity\":\"optional\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}},{\"attributes\":[\"@default(1)\"],\"name\":\"tier\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"Int\"}}],\"name\":\"Widget\"}],\"types\":[],\"views\":[]},\"events\":null,\"key\":\"model.Widget.update\",\"kind\":\"unary\",\"model\":\"Widget\",\"procedure\":null,\"transport\":\"rpc\",\"verb\":\"update\"}",
+          "digest": "1e06fa7be9835f4174cc8243000297082034cea3466c64b4156c1e287d333279",
+          "key": "model.Widget.update"
+        },
+        {
+          "canonical": "{\"closure\":{\"enums\":[],\"models\":[],\"types\":[{\"fields\":[{\"attributes\":[],\"name\":\"message\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}}],\"name\":\"PingArgs\"},{\"fields\":[{\"attributes\":[],\"name\":\"echo\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"String\"}}],\"name\":\"PingReply\"}],\"views\":[]},\"events\":null,\"key\":\"procedure.ping\",\"kind\":\"unary\",\"model\":null,\"procedure\":{\"args\":[{\"name\":\"args\",\"ty\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"PingArgs\"}}],\"attributes\":[],\"kind\":\"query\",\"name\":\"ping\",\"return_type\":{\"arity\":\"required\",\"generic_args\":[],\"ident_args\":[],\"int_args\":[],\"name\":\"PingReply\"}},\"transport\":\"rpc\",\"verb\":\"query\"}",
+          "digest": "a1269fb1839a019eb28cd2e013f0a6ee6396773e0e9788d5482057eb820a6486",
+          "key": "procedure.ping"
+        }
+      ],
+      "schema": "transport rpc\n\nenum Kind {\n  Small\n  Large\n}\n\nmodel Widget {\n  id Int @id\n  name String @length(min: 1, max: 40)\n  note String?\n  tier Int @default(1)\n  kind Kind\n  secret String @server_only\n\n  @@allow(\"read\", auth() != null)\n  @@allow(\"create\", auth() != null)\n  @@index([name])\n}\n\ntype PingArgs {\n  message String\n}\n\ntype PingReply {\n  echo String\n}\n\nprocedure ping(args: PingArgs): PingReply\n  @allow(auth() != null)\n"
+    }
+  ],
+  "client_contract_domain": "cratestack/client-contract/v1\\0",
+  "description": "Op contract digests (cratestack#1123, binding version 2). `canonical` is the exact byte string an op digest is taken over: SHA-256(op_contract_domain || canonical). `client_contract` is SHA-256(client_contract_domain || JSON([[key, digest hex] sorted by key])). `bound` is what a client stamps: each op's digest plus, for `transport rpc`, a `batch` row holding `client_contract`.",
+  "domain_note": "Both domain tags end with one NUL byte, written `\\0` here.",
+  "op_contract_domain": "cratestack/op-contract/v1\\0"
+}

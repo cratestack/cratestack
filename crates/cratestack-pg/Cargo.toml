@@ -293,6 +293,13 @@ name = "cose_client_models"
 path = "tests/cose_client_models.rs"
 required-features = ["cose"]
 
+# EXT-14 (cratestack#1123): the compatible-contract lock on a model's ops,
+# against a pool that never connects (no Postgres needed).
+[[test]]
+name = "cose_contract_lock_models"
+path = "tests/cose_contract_lock_models.rs"
+required-features = ["cose"]
+
 [[test]]
 name = "pgvector_feature_forwarding"
 path = "tests/pgvector_feature_forwarding.rs"

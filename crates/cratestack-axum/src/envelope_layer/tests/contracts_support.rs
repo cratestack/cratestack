@@ -2,21 +2,13 @@
 //! table with one op holding an older digest, the routers, and the client
 //! side of a request.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-
 use bytes::Bytes;
-use cratestack_core::{
-    AcceptedContracts, Binding, CONTRACT_HEADER, ContractSelector, CratestackError,
-};
-use cratestack_cose::CoseEnvelope;
+use cratestack_core::{AcceptedContracts, CONTRACT_HEADER, ContractSelector};
 use http::{HeaderValue, Method};
 
 use super::fixtures::{Hits, REST_ROUTES, rest_router, rpc_router};
 use super::support::*;
-use crate::envelope_layer::{
-    EnvelopeLayer, EnvelopeMode, OpenedRequest, SealContext, Sealed, ServerEnvelope, async_trait,
-};
+use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode, ServerEnvelope};
 
 pub(super) const NEW: [u8; 32] = [0x11; 32];
 pub(super) const OLD: [u8; 32] = [0x22; 32];
@@ -36,24 +28,7 @@ pub(super) fn rest(table: AcceptedContracts, trials: Option<usize>, hits: &Hits)
     rest_under(server_envelope(), table, trials, hits)
 }
 
-/// [`rest`] over an envelope that counts every `open_request` it is asked
-/// for: the number of parse, key-resolution and verification passes, which
-/// `Hits` (the router behind the layer) cannot see, since a refusal never
-/// reaches it.
-pub(super) fn rest_counting(
-    table: AcceptedContracts,
-    trials: Option<usize>,
-    hits: &Hits,
-) -> (axum::Router, Arc<AtomicUsize>) {
-    let opens = Arc::new(AtomicUsize::new(0));
-    let envelope = CountingEnvelope {
-        inner: server_envelope(),
-        opens: opens.clone(),
-    };
-    (rest_under(envelope, table, trials, hits), opens)
-}
-
-fn rest_under(
+pub(super) fn rest_under(
     envelope: impl ServerEnvelope,
     table: AcceptedContracts,
     trials: Option<usize>,
@@ -66,41 +41,6 @@ fn rest_under(
         builder = builder.max_contract_trials(trials);
     }
     rest_router(builder.build().expect("layer"), hits)
-}
-
-/// The COSE envelope, counting the requests it is asked to open.
-struct CountingEnvelope {
-    inner: CoseEnvelope,
-    opens: Arc<AtomicUsize>,
-}
-
-#[async_trait]
-impl ServerEnvelope for CountingEnvelope {
-    fn media_type(&self) -> &'static str {
-        ServerEnvelope::media_type(&self.inner)
-    }
-
-    fn is_envelope_content_type(&self, content_type: &str) -> bool {
-        ServerEnvelope::is_envelope_content_type(&self.inner, content_type)
-    }
-
-    async fn open_request(
-        &self,
-        body: Bytes,
-        bind: &Binding<'_>,
-    ) -> Result<OpenedRequest, CratestackError> {
-        self.opens.fetch_add(1, Ordering::SeqCst);
-        ServerEnvelope::open_request(&self.inner, body, bind).await
-    }
-
-    async fn seal_response(
-        &self,
-        payload: &[u8],
-        bind: &Binding<'_>,
-        context: &SealContext,
-    ) -> Result<Sealed, CratestackError> {
-        ServerEnvelope::seal_response(&self.inner, payload, bind, context).await
-    }
 }
 
 pub(super) fn rpc(hits: &Hits) -> axum::Router {

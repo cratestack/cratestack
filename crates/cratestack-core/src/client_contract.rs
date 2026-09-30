@@ -22,11 +22,27 @@
 //! version 2; ADR 0006 §4); [`table`] holds the tables generated code
 //! carries and how a route finds its row. `cratestack contract
 //! digest|print` shows the digests.
+//!
+//! A server may keep accepting older contracts of an op: [`ContractLock`]
+//! records the ones in the field, [`classify`] decides which are still
+//! wire-compatible with the current one, and `include_server_schema!`'s
+//! `contracts =` argument turns the survivors into `ACCEPTED_CONTRACTS`
+//! (an incompatible entry is a compile error). `cratestack contract
+//! lock|check|prune` maintain the file.
 
 mod attrs;
 mod build;
 mod canon;
+mod canonical_json;
+mod compat;
+mod compat_decl;
+mod compat_op;
+mod lock;
+mod lock_date;
+mod lock_ops;
+mod lock_prune;
 mod ops;
+mod owned;
 mod project;
 mod table;
 #[cfg(test)]
@@ -34,7 +50,19 @@ mod tests;
 #[cfg(test)]
 mod tests_bytes;
 #[cfg(test)]
+mod tests_compat;
+#[cfg(test)]
+mod tests_compat_default;
+#[cfg(test)]
+mod tests_compat_table;
+#[cfg(test)]
 mod tests_drop;
+#[cfg(test)]
+mod tests_lock;
+#[cfg(test)]
+mod tests_lock_dates;
+#[cfg(test)]
+mod tests_lock_format;
 #[cfg(test)]
 mod tests_ops;
 #[cfg(test)]
@@ -52,6 +80,10 @@ use crate::schema::Schema;
 use build::canonical;
 use ops::ops;
 
+pub use compat::{Verdict, classify};
+pub use lock::{ContractLock, Generation, LOCK_FORMAT, LockError};
+pub use lock_ops::Incompatible;
+pub use lock_prune::Pruned;
 pub use ops::op_keys;
 pub use table::{
     AcceptedContracts, BATCH_CONTRACT_KEY, OpContracts, bound_contracts, find_contract,
@@ -74,7 +106,8 @@ fn digest_of(bytes: &[u8]) -> [u8; 32] {
 pub fn op_contract_json(schema: &Schema, key: &str) -> Option<String> {
     let all = ops(schema);
     let op = all.iter().find(|op| op.key == key)?;
-    Some(String::from_utf8(canonical(schema, op)).expect("JSON is UTF-8"))
+    // `canonical` is serde_json's output, always UTF-8: lossy never alters it.
+    Some(String::from_utf8_lossy(&canonical(schema, op)).into_owned())
 }
 
 /// The digest of the op `key` (an RPC `op_id`, or `"<METHOD> <route>"` on
@@ -118,6 +151,7 @@ pub fn client_contract_digest(schema: &Schema) -> [u8; 32] {
         .collect();
     let mut hasher = Sha256::new();
     hasher.update(CLIENT_CONTRACT_DOMAIN);
+    // Infallible: a list of string pairs is always valid JSON.
     hasher.update(serde_json::to_vec(&table).expect("strings always serialize"));
     hasher.finalize().into()
 }

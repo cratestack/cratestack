@@ -47,3 +47,4 @@ thiserror.workspace = true
 # Plain edge: see the `decimal-rust-decimal`/`decimal-bigdecimal` feature
 # forwards above.
 cratestack-parser.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,35 @@
+// EXT-14 (cratestack#1123): every edit `cratestack_core::classify` calls
+// compatible, in one op, against `contract_roundtrip_new.cstack`. The
+// round-trip test encodes values of the old shapes and decodes them as the
+// new ones (and the new reply as the old one), so each Compatible rule is
+// backed by the real generated types, not by the classifier's own say-so.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+enum Shade {
+  Light
+  Dark
+}
+
+enum Tone {
+  Warm
+  Cool
+}
+
+type Paint {
+  shade Shade
+  note String
+  size Int
+}
+
+type Receipt {
+  total Int
+  tone Tone
+}
+
+procedure paint(args: Paint, coat: Int, gloss: Int): Receipt
+  @allow(auth() != null)

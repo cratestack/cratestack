@@ -5,7 +5,7 @@
 use async_trait::async_trait;
 use bytes::Bytes;
 use cratestack_core::{Binding, CratestackError, VerifiedSigner};
-use cratestack_cose::CoseEnvelope;
+use cratestack_cose::{CoseEnvelope, Opened};
 
 use super::opened::{OpenedRequest, SealContext, Sealed};
 use super::server_envelope::ServerEnvelope;
@@ -28,12 +28,18 @@ impl ServerEnvelope for CoseEnvelope {
         bind: &Binding<'_>,
     ) -> Result<OpenedRequest, CratestackError> {
         let opened = CoseEnvelope::open_request(self, body, bind).await?;
-        let signer = VerifiedSigner::new(
-            Bytes::copy_from_slice(&opened.kid),
-            opened.thumbprint,
-            opened.alg.id(),
-        );
-        Ok(OpenedRequest::new(opened.payload, signer))
+        Ok(into_request(opened))
+    }
+
+    /// Parse and key resolution happen once; only the signature check runs
+    /// per candidate binding.
+    async fn open_request_any(
+        &self,
+        body: Bytes,
+        binds: &[Binding<'_>],
+    ) -> Result<(OpenedRequest, usize), CratestackError> {
+        let (opened, index) = CoseEnvelope::open_request_any(self, body, binds).await?;
+        Ok((into_request(opened), index))
     }
 
     /// One copy of the payload into the message (D1), sent as this
@@ -47,4 +53,13 @@ impl ServerEnvelope for CoseEnvelope {
         let body = CoseEnvelope::seal_response(self, payload, bind).await?;
         Ok(Sealed::new(body, self.mode().media_type()))
     }
+}
+
+fn into_request(opened: Opened) -> OpenedRequest {
+    let signer = VerifiedSigner::new(
+        Bytes::copy_from_slice(&opened.kid),
+        opened.thumbprint,
+        opened.alg.id(),
+    );
+    OpenedRequest::new(opened.payload, signer)
 }

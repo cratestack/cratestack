@@ -1,0 +1,31 @@
+// EXT-14 (cratestack#1123), the compatible-contract lock: the schema an
+// already-shipped client was built from. `contract_lock_new.cstack` is this
+// schema after a policy edit (server-only), an optional field on the args
+// type and on the reply type (both additive, so wire-compatible: they move
+// `ping`'s and `untouched`'s digests), and a retyped argument on `retyped`
+// (breaking). `contract_lock_new.contracts.lock` is this generation, locked
+// with `cratestack contract lock` and then `prune --op procedure.retyped`,
+// which is the deliberate way to ship the breaking edit.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+type PingReply {
+  echo String
+}
+
+procedure ping(args: PingArgs): PingReply
+  @allow(auth() != null)
+
+procedure retyped(args: PingArgs): PingReply
+  @allow(auth() != null)
+
+procedure untouched(args: PingArgs): PingReply
+  @allow(auth() != null)

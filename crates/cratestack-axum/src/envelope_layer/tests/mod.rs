@@ -24,6 +24,8 @@ mod builder;
 #[cfg(feature = "cose")]
 mod contracts;
 #[cfg(feature = "cose")]
+mod contracts_counting;
+#[cfg(feature = "cose")]
 mod contracts_history;
 #[cfg(feature = "cose")]
 mod contracts_support;
