@@ -1,19 +1,24 @@
 # `Int` and `BigInt`: 32-bit and 64-bit integers on every surface
 
-Status: **proposed** (2026-09-30), the design behind
-[ADR 0019](../adr/0019-int-and-bigint-built-in-types.md). Not implemented.
+Status: **accepted** (2026-09-30, by the maintainer), the design behind
+[ADR 0019](../adr/0019-int-and-bigint-built-in-types.md). Not implemented. The ADR records the
+decisions this document was waiting on: D2 (CBOR carries `BigInt` as a text string) decided
+explicitly, D3 (the `cratestack::BigInt` newtype), D4 (the codemod) and D5 (closed field
+attributes) accepted on the ADR's recommendations, and the release: all three pull requests of §7
+ship in **0.16.0**.
 Scope: every place a `.cstack` integer scalar reaches: parser, the three schema macros, the
 sqlx and rusqlite runtimes, `cratestack-migrate`, both codecs, JSON Schema, MCP, the Rust,
 TypeScript and Dart clients and their presets, the CBOR bridges, studio, WireMock, the contract
 digests, the LSP and the VS Code grammar.
 Tracking: ADR 0019; the field-attribute half is [cratestack#679](https://github.com/cratestack/cratestack/issues/679)'s
-deferred option (a).
+option (a), decided in ADR 0019 D5, which supersedes the narrow route #679 took for field
+attributes.
 
 **Evidence convention.** Every `path:line` below was READ on `origin/main` at `67100917`
 (v0.15.1). `main` has since moved to `4c7e25cb` (#1127); lines in `client_contract.rs`,
 `schema_identity.rs`, `rest-runtime.ts.j2` and `rpc-runtime.ts.j2` shift there, and the
 implementing PRs re-anchor. Every behaviour marked RAN was executed for this document; the
-command and its output are in §9, keyed `E1` to `E11`. Upstream library claims are READ from the
+command and its output are in §9, keyed `E1` to `E12`. Upstream library claims are READ from the
 linked source on 2026-09-30. Nothing here is a claim about CI.
 
 ## 1. What is wrong today
@@ -63,7 +68,7 @@ schema digest (RAN, E1, E4). ADR 0019 D5 closes that hole.
 | JSON | a JSON number | a JSON string holding the canonical decimal form |
 | CBOR | major type 0/1 integer | major type 3 text string, the same canonical decimal form |
 | JSON input | a JSON integer in range; `1.0`, `3000000000` and strings are refused | a canonical decimal string in range; a JSON number is refused |
-| CBOR input | an integer in range | a canonical decimal text string in range; a CBOR integer is refused |
+| CBOR input | an integer in range | a canonical decimal text string in range; a CBOR integer or a bignum (tag 2 or 3) is refused |
 | JSON Schema | `{"type":"integer","minimum":-2147483648,"maximum":2147483647}` | `{"type":"string","pattern":"^(0\|-?[1-9][0-9]{0,18})$"}`, the `i64` bound enforced by the server only |
 | TypeScript | `number` | `bigint` |
 | Dart | `int` (exact on VM, dart2js and dart2wasm) | `BigInt` from `dart:core` |
@@ -79,7 +84,15 @@ may already have been rounded by a JavaScript producer, and the server cannot te
 the fail-closed answer, and it is the rule `Decimal` already follows: `rust_decimal` with
 `serde-str` (root `Cargo.toml:405`) refuses a JSON number (`scalar.rs:38-41`, RAN, E5).
 
-**Why the same string on CBOR.** Four reasons, each READ in the tree:
+**The CBOR form, decided.** The maintainer decided this on 2026-09-30, in substance: CBOR is the
+primary codec for these projects, so a decision for it is mandatory, and `BigInt` as a string is
+fine (ADR 0019 D2). A `BigInt` is a CBOR text string (major type 3,
+[RFC 8949 §3.1](https://www.rfc-editor.org/rfc/rfc8949#section-3.1)) holding the canonical decimal
+form above, with the same grammar and the same rejection rules as JSON: no leading `+`, no leading
+zeros, no `-0`, no number form accepted, range-checked to `i64`. `i64::MAX` is the initial byte
+`0x73` and 19 ASCII digits, where today's `Int` is `1b7fffffffffffffff` (RAN, E5).
+
+**Why the same string on CBOR, and not a native integer.** Three reasons, each READ in the tree:
 
 1. `POST /rpc/batch` carries every frame's input and output as `serde_json::Value`
    (`crates/cratestack-core/src/rpc.rs:107`, `:118`). Any encoding that branches on
@@ -92,13 +105,33 @@ the fail-closed answer, and it is the rule `Decimal` already follows: `rust_deci
    (`dart-packages/cratestack_cbor/lib/src/cbor_codec.dart:17-31`), and on the web that text goes
    through JS `JSON.parse`/`JSON.stringify` (`lib/src/web/web_cbor_codec.dart:75`, `:95`), which
    rounds a large number token and throws on a JS `bigint`. A string survives both.
-3. The two JS bridges disagree about large integers today (§1). A string needs neither changed.
-4. `Decimal` is already a text string on CBOR (`crates/cratestack-client-flutter/src/cbor/mod.rs:48-49`,
-   RAN: `rust_decimal` `1.50` encodes as `64312e3530`, E5).
+3. The two JS bridges disagree about large integers today (§1): `@cratestack/cbor-node` returns a
+   `number` or a `bigint` by magnitude, `@cratestack/cbor-web` refuses to decode. A string needs
+   neither changed.
 
-The cost is size: `i64::MAX` is 20 bytes as CBOR text against 9 as a CBOR integer (E5 prints the
-frame lengths). ADR 0019 records native CBOR integers as a rejected alternative and names what
-would have to change first.
+`Decimal` is already a text string on CBOR (`crates/cratestack-client-flutter/src/cbor/mod.rs:48-49`,
+RAN: `rust_decimal` `1.50` encodes as `64312e3530`, E5), so the shape is not new.
+
+**Why not an RFC 8949 bignum (tag 2 or 3).**
+[§3.4.3](https://www.rfc-editor.org/rfc/rfc8949#section-3.4.3) defines bignums for integers that do
+not fit major types 0 and 1, and its preferred serialization never uses one for a value that does;
+every `i64` fits. A tagged byte string would be a second, non-preferred spelling of a number that
+already has a native form, and the RFC's security considerations
+([§10](https://www.rfc-editor.org/rfc/rfc8949#section-10)) warn that a decoder in the basic data
+model gives the two spellings different semantics. Accepting both is the parallel path the
+maintainer's rule excludes; emitting only the tag makes every value non-preferred. It also has
+nowhere to go: a `serde_json::Value` frame and the Dart JSON-text boundary carry no tag, and both
+JS bridges decode into `cratestack_core::Value`, which is `Null`, `Bool`, `Int(i64)`, `Float`,
+`String`, `Bytes`, `List` and `Map` and nothing tagged (`crates/cratestack-cbor-wasm/src/wasm.rs:16`,
+`crates/cratestack-cbor-napi/src/js_value/napi_conversions.rs:50`,
+`crates/cratestack-core/src/value.rs:20-29`, READ). RFC text READ on 2026-09-30.
+
+**The consequence: one wire form on every codec.** A value decodes identically whichever codec a
+client negotiates, and no client needs a codec-specific branch for it. The cost is size: `i64::MAX`
+is 20 bytes as CBOR text against 9 as a CBOR integer (E5 prints the frame lengths). ADR 0019
+records native CBOR integers and bignum tags as rejected alternatives and names what would have to
+change first: the batch frames, the Dart JSON-text boundary and the bridges' value model, in an ADR
+that supersedes D2.
 
 ## 3. Per-target changes
 
@@ -122,8 +155,13 @@ would have to change first.
 all four facades) with `Serialize` writing `collect_str` and `Deserialize` taking a canonical
 string only; the prototype in §9 E5 is the whole of the serde part. It is `Copy`, `Eq`, `Ord`,
 `Hash`, `Default`, `Display`, `FromStr`, `From<i64>` and `From<BigInt> for i64`, and exposes
-`new`/`get`. It deliberately has no arithmetic operators: money code does its arithmetic on `i64`
-with checked operations and wraps the result.
+`new`/`get`. Arithmetic is checked methods only (`checked_add`, `checked_sub`, `checked_mul`, each
+returning `Option<BigInt>`; PR B fixes the final list): there are no `Add`, `Sub`, `Mul` or `Neg`
+operator impls, which would have to panic, wrap or invent an error path on a 64-bit money value,
+and no `Deref`, which would let `i64` methods and `&BigInt` to `&i64` coercions keep compiling at a
+call site nobody updated. The rationale is that a missed call site becomes a compile error instead
+of silent precision loss. The name stays (decided, ADR 0019 D3): it is namespaced and matches the
+schema type, and the rustdoc says it is 64-bit, not arbitrary precision.
 
 A newtype, not a raw `i64` with `#[serde(with = ...)]`, because the value is serialized along
 paths that never see a struct field's attributes:
@@ -282,7 +320,7 @@ warn-only `x-cratestack-schema-sha` header; it moves too, for the same reason.
 ### 4.4 CHANGELOG
 
 Three `### ` entries under `## Unreleased` in `CHANGELOG.md`, one per PR of §7: A's and C's end
-`breaking`, B's is additive and C folds it into its own narrative before the release. All in the
+`breaking`, B's is additive and C folds it into its own narrative before 0.16.0. All in the
 voice of the 0.14.1 GHSA-69g4-xvcm-vm2j entry (`CHANGELOG.md:229-300`): what was measured, what
 changed, what to run. The `Int` entry leads with the command and the regenerate-together
 instruction from #1065. `dart-packages/cratestack_cbor/CHANGELOG.md` gets nothing: that package
@@ -397,12 +435,16 @@ in §3.3; the codemod is §4.1; the decode failure is §4.2; the narrowing is `e
 
 ## 7. Implementation plan
 
-Three pull requests. B and C ship in the same release: no release is cut between them, because a
+Three pull requests, **all shipping in 0.16.0**, one breaking release with no compatibility path
+(decided, ADR 0019 Release). No release is cut between them. B and C must ship together, because a
 release with `BigInt` and the old `Int` would make every hand edit from `Int` to `BigInt` a `Lossy`
-`ALTER` to the same type, and would give users two upgrades instead of one. A can ship in any
-release; it is independent.
+`ALTER` to the same type, and would give users two upgrades instead of one. A is technically
+independent of B and C, and ships in the same 0.16.0 anyway, so the first 0.16.0 a user runs
+carries the closed attribute list, `BigInt` and the 32-bit `Int` at once. The workspace is at
+0.15.1 and #1127 (breaking) is already under `## Unreleased`, so 0.16.0 is the next minor.
 
-**PR A. Field attributes are a closed list** (the issue drafted with this ADR; #679 option (a)).
+**PR A. Field attributes are a closed list** (the issue drafted with this ADR; #679 option (a),
+decided in ADR 0019 D5). Ships in 0.16.0 with B and C, not in an earlier release.
 
 - Parser: §5. LSP: the attribute completions read the same tables (`completion.rs:11-42` is a
   hand-written list today).
@@ -413,7 +455,7 @@ release; it is independent.
   near-miss and `removed_attributes` tests keep passing with their messages.
 - CHANGELOG: breaking.
 
-**PR B. `BigInt` end to end.** One PR, because the transport-parity rule in `CLAUDE.md` puts
+**PR B. `BigInt` end to end** (0.16.0). One PR, because the transport-parity rule in `CLAUDE.md` puts
 server dispatch and every generated client in the same change.
 
 - `cratestack::BigInt` and its serde (§3.2); `SqlValue::BigInt`/`NullBigInt`; the parser, macro,
@@ -423,8 +465,10 @@ server dispatch and every generated client in the same change.
 - Tests:
   - `cratestack-core`: `BigInt` round trip through `JsonCodec` and `CborCodec` for `i64::MAX`,
     `i64::MIN`, `2^53 + 1`, `0`, `-1`, also through `serde_json::Value` (the batch path);
-    refusal of a JSON number, a CBOR integer, `+5`, `007`, `-0`, `" 1"`, `9223372036854775808`,
-    `-9223372036854775809`.
+    refusal of a JSON number, a CBOR integer (major type 0 and 1), a CBOR bignum (tag 2 and 3),
+    `+5`, `007`, `-0`, `" 1"`, `9223372036854775808`, `-9223372036854775809`, on both codecs, each
+    with a message naming the field; the CBOR encoding of each boundary value asserted byte for
+    byte as a major type 3 text string.
   - `cratestack-pg` (testcontainers, run with `CRATESTACK_REQUIRE_DB=1` because a skipped PG
     binary reports `ok`, per `CLAUDE.md`): create, get, list with `?fields=`, update with
     `If-Match`, `gt`/`in` filters, over REST and RPC unary and batch, JSON and CBOR, at the three
@@ -445,9 +489,9 @@ server dispatch and every generated client in the same change.
   - Cross-language: bytes encoded by Rust decode in TS and Dart to the exact value, and bytes
     those clients encode decode in Rust to the same value, for all three boundary values, on
     both codecs.
-- CHANGELOG: additive entry, folded into the breaking narrative by C before the release.
+- CHANGELOG: additive entry, folded into the breaking narrative by C before 0.16.0.
 
-**PR C. `Int` is 32-bit: the cutover.**
+**PR C. `Int` is 32-bit: the cutover** (0.16.0).
 
 - `Int` to `i32`, `SqlValue::Int(i32)`, `INTEGER`, introspection `int4`/`int8`, JSON Schema
   `int32`, snapshot format 3, `cratestack upgrade int-to-bigint`, digest domains `v2`; fixtures
@@ -523,7 +567,7 @@ The worktree build (`cargo run -p cratestack-cli`, 0.15.1) prints the same.
 copy with the four attributes removed: `diff -r` reports one line, `SCHEMA_SHA256`; both declare
 `amountE8: number`.
 
-**E5. Rust encodings, and a prototype of the proposed `BigInt`.** A scratch crate depending on this
+**E5. Rust encodings, and a prototype of `BigInt`.** A scratch crate depending on this
 worktree's `cratestack-codec-json` and `cratestack-codec-cbor` (output abridged: the `reject` lines
 drop the `codec: failed to decode JSON body:` prefix, the column positions and the rest of the
 body):
@@ -612,3 +656,25 @@ tokens in all, outside full-line comments; none contains `BigInt`.
 `npx -y @mermaid-js/mermaid-cli@11 -p <puppeteer config> -i <file>.mmd -o <file>.svg`
 (mermaid-cli 11.17.0): exit 0 for each, 42,005 and 40,206 bytes of SVG, and neither SVG contains
 mermaid's `Syntax error` text.
+
+**E12. What the near-miss route catches and what it does not.** RAN on 2026-09-30, after the ADR
+was accepted, on the worktree's `target/debug/cratestack` (`cratestack 0.15.1`). One schema per
+run, `model Note { id Int @id  body String <attribute> }`, then `cratestack check --schema`; the
+output is reduced to one line per attribute (the refusals name `@readonly` in their suggestion):
+
+```text
+@raedonly      refused, did you mean `@readonly`
+@read_only     refused, did you mean `@readonly`
+@readOnly      refused, did you mean `@readonly`
+@Readonly      refused, did you mean `@readonly`
+@rdonly        refused, did you mean `@readonly`
+@readnoly      refused, did you mean `@readonly`
+@read-only     refused, did you mean `@readonly`
+@immutable     schema OK
+@string        schema OK
+@wire(string)  schema OK
+```
+
+So today a typo of a known name is caught, and a protection named by a word that is not close to
+one is not. ADR 0019 D5 closes that. That `@immutable` is inert follows from the E4 mechanism
+(nothing reads it); this run establishes only that `check` accepts it.

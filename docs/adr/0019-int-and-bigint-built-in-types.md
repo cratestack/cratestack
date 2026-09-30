@@ -2,7 +2,18 @@
 
 ## Status
 
-Proposed
+Accepted
+
+Accepted 2026-09-30 by the maintainer; D2 decided explicitly, D3 to D5 and the release decided on
+the ADR's recommendations. Every question this ADR left open is now a recorded decision:
+
+| Decision | Recorded outcome | Basis |
+|---|---|---|
+| D2, CBOR | `BigInt` is a CBOR text string (major type 3) holding the canonical decimal form, with JSON's grammar and rejection rules. Native CBOR integers and RFC 8949 bignum tags 2 and 3 are rejected. | Explicit: CBOR is the primary codec for these projects, so a decision for it is mandatory; `BigInt` as a string is fine |
+| D3, Rust type | `cratestack::BigInt`, a newtype over `i64`: `get`/`new`, `From<i64>`, `From<BigInt> for i64`, checked arithmetic only, no `Deref`. The name stays. | The ADR's recommendation, accepted |
+| D4, upgrade | `cratestack upgrade int-to-bigint` rewrites every `Int` to `BigInt` by parser span; no DDL. Narrowing to `Int` is a per-field edit, `Lossy` in `migrate diff`, behind `--allow-destructive`. | The ADR's recommendation, accepted |
+| D5, field attributes | Closed list per declaration kind; supersedes the narrow route taken on cratestack#679 for field attributes. | The ADR's recommendation, accepted |
+| Release | PR A (D5), PR B (`BigInt` end to end) and PR C (the `Int` cutover) all ship in **0.16.0**, one breaking release, no compatibility path. | The ADR's recommendation, accepted |
 
 > **Placement note.** `docs/adr/README.md` sends decisions about the user-visible surface
 > (`.cstack` grammar, transport semantics, migration behaviour) to `cratestack-docs/internals/`.
@@ -14,15 +25,16 @@ Proposed
 
 ## Date
 
-2026-09-30 (proposed, this PR). Decision requested by the maintainer on 2026-09-30: "Fix
-CrateStack. Propose Int and BigInt as built-in types."
+2026-09-30 (proposed, this PR); 2026-09-30 (accepted by the maintainer, this PR). Decision
+requested by the maintainer on 2026-09-30: "Fix CrateStack. Propose Int and BigInt as built-in
+types."
 
 Context doc: [`docs/design/int-and-bigint.md`](../design/int-and-bigint.md), which carries the
 per-target changes with `path:line` citations, the sequence and state diagrams, the implementation
 plan and the evidence. Every `path:line` here and there was READ on `origin/main` at `67100917`
 (v0.15.1; `main` has since gained #1127 at `4c7e25cb`, which shifts a few of those lines); every
 behaviour marked RAN was executed for this ADR and is reproduced in the context
-doc's §9 under the key given (E1 to E11).
+doc's §9 under the key given (E1 to E12).
 
 ## Context
 
@@ -91,36 +103,104 @@ procedure arguments and returns, `query` parameters, `@version`, `@range`, `@def
 literals, find-many filters, MCP resource keys), and has its own filter type on every client.
 The full per-target table is the context doc's §3.
 
-**D2. A `BigInt` travels as a canonical decimal string on every codec, and only that form is
-accepted.** `0`, or an optional `-`, a non-zero digit and up to 18 more digits, inside `i64`.
-Emitted by `Display`, so the server only writes the canonical form. A JSON number, a CBOR
-integer, `+5`, `007`, `-0` and anything outside `i64` are refused with a message naming the
-field (prototype RAN, E5). A number is refused because a value above 2^53 may already have been
-rounded by the JavaScript that produced it, and the server cannot tell; that is also the rule
-`Decimal` follows today (`rust_decimal` with `serde-str`, root `Cargo.toml:405`, refuses a JSON
-number; RAN, E5). The same string on CBOR, rather than a native integer, because the batch
-envelope carries frames as `serde_json::Value` (`crates/cratestack-core/src/rpc.rs:107`, `:118`),
-because the `cratestack_cbor` Dart codec crosses a JSON-text boundary on both its platforms, and
-through JS `JSON.parse` on the web (`dart-packages/cratestack_cbor/lib/src/cbor_codec.dart:17-31`,
-`lib/src/web/web_cbor_codec.dart:75`, `:95`), because the two JS bridges disagree about large
-integers today, and because `Decimal` already does it (RAN: `1.50` encodes as `64312e3530`, E5).
-A string needs none of those paths changed. The cost is size: 20 bytes for `i64::MAX` against 9.
+**D2. A `BigInt` travels as a canonical decimal string on every codec, JSON and CBOR alike, and
+only that form is accepted.** Decided by the maintainer on 2026-09-30, in substance: CBOR is the
+primary codec for these projects, so a decision for it is mandatory, and `BigInt` as a string is
+fine. CBOR's encoding is therefore part of this decision in full, not a note on the JSON one.
 
-**D3. The Rust type is a newtype, `cratestack::BigInt`, in `cratestack-core`.** Its `Serialize`
-writes the decimal string and its `Deserialize` accepts only D2's form. A raw `i64` with a
-`#[serde(with = ...)]` attribute was the alternative, and it fails silently on every path that
-does not see the struct field's attributes: `?fields=` projections serialize each field as a
-type-erased leaf (`crates/cratestack-macros/src/axum/model/serializers/projection_fields.rs:24`,
+- **The form.** `0`, or an optional `-`, a non-zero digit and up to 18 more digits, inside `i64`.
+  Emitted by `Display`, so the server only writes the canonical form.
+- **JSON.** A JSON string holding that form.
+- **CBOR.** A text string (major type 3, [RFC 8949 §3.1](https://www.rfc-editor.org/rfc/rfc8949#section-3.1))
+  holding that same form, with the same grammar and the same rejection rules as JSON: no leading
+  `+`, no leading zeros, no `-0`, no surrounding whitespace, range-checked to `i64`, and no number
+  form accepted. `i64::MAX` is the initial byte `0x73` (major type 3, length 19) and its 19 ASCII
+  digits, 20 bytes, where today's `Int` takes 9 (`1b7fffffffffffffff`, RAN, E5). `Decimal` already
+  has this shape: `1.50` encodes as `64312e3530` (RAN, E5).
+- **Refused on both codecs, with a message naming the field.** A JSON number; a CBOR integer
+  (major type 0 or 1); a CBOR bignum (tag 2 or 3); `+5`, `007`, `-0`, `" 1"`; anything outside
+  `i64`. The prototype's `Deserialize` implements only `visit_str`, so every other item is refused
+  by construction on either codec; the JSON refusals RAN (E5), and PR B's tests pin the CBOR ones
+  (design doc §7). A number is refused because a value above 2^53 may already have been rounded by
+  the JavaScript that produced it, and the server cannot tell. That is also the rule `Decimal`
+  follows today (`rust_decimal` with `serde-str`, root `Cargo.toml:405`, refuses a JSON number;
+  RAN, E5).
+
+**Why a text string on CBOR, and not a native integer.** A native integer is smaller and is what
+CBOR is for. Three facts in the tree, all READ, rule it out:
+
+1. *Batch frames.* `POST /rpc/batch` carries every frame's input and output as `serde_json::Value`
+   (`crates/cratestack-core/src/rpc.rs:107`, `:118`), so a batched value passes through JSON's
+   data model on its way to CBOR. An encoding that wrote a string for JSON and an integer for CBOR
+   would branch on `is_human_readable()`; a batch frame takes the JSON branch and lands on CBOR as
+   the JSON string, so one field would have two CBOR forms depending on the route. That is the
+   `Uuid` defect `ProjectedValue` was built to avoid on the unary path
+   (`crates/cratestack-axum/src/projection.rs:1-17`). A string on both codecs has no branch to take
+   (prototype RAN through `serde_json::Value` then CBOR, E5).
+2. *The Dart codec.* The `cratestack_cbor` codec, the default
+   (`crates/cratestack-client-dart/src/config.rs:17`), crosses a JSON-text boundary on both of its
+   platforms (`dart-packages/cratestack_cbor/lib/src/cbor_codec.dart:17-31`), and on the web that
+   text goes through JS `JSON.parse` and `JSON.stringify`
+   (`lib/src/web/web_cbor_codec.dart:75`, `:95`), which round a number above 2^53 and throw on a
+   `bigint`. A string survives both.
+3. *The two JS bridges disagree about large integers.* `@cratestack/cbor-node` returns a `number`
+   up to 2^53 - 1 and a `bigint` above it
+   (`crates/cratestack-cbor-napi/src/js_value/napi_conversions.rs:99-106`), so one field arrives as
+   two JS types depending on its value; `@cratestack/cbor-web` refuses to decode the response at
+   all (serde-wasm-bindgen 0.6.5 `src/ser.rs:329-346`, called from
+   `crates/cratestack-cbor-wasm/src/wasm.rs:86-88`). A string needs neither bridge changed.
+
+**Why a text string, and not an RFC 8949 bignum (tag 2 or 3).**
+[RFC 8949 §3.4.3](https://www.rfc-editor.org/rfc/rfc8949#section-3.4.3) defines bignums for
+integers that do not fit major types 0 and 1, and its preferred serialization never uses one for a
+value that does; every `i64` fits. A tagged byte string would be a second, non-preferred spelling
+of a number that already has a native form, and the RFC's security considerations
+([§10](https://www.rfc-editor.org/rfc/rfc8949#section-10)) warn that a decoder in the basic data
+model gives the two spellings different semantics. Accepting both is the two-forms path this
+decision excludes; emitting only the tag makes every value a non-preferred encoding. It also has
+nowhere to go on the paths above: `serde_json::Value` frames and the Dart JSON-text boundary have
+no tag, and both JS bridges decode into `cratestack_core::Value`, which has `Int(i64)`, `String`
+and `Bytes` and no tag or bignum variant (`crates/cratestack-cbor-wasm/src/wasm.rs:16`,
+`crates/cratestack-cbor-napi/src/js_value/napi_conversions.rs:50`,
+`crates/cratestack-core/src/value.rs:20-29`). RFC text READ on 2026-09-30.
+
+**Consequence: one wire form on every codec.** A value decodes identically whichever codec a
+client negotiates: the same field is the same string in a JSON body, a CBOR body, a batch frame and
+a `?fields=` projection, and no client needs a codec-specific branch for it. The cost is size: 20
+bytes for `i64::MAX` against 9. Native CBOR integers or bignums come back only through a new ADR
+that reworks those three paths first and supersedes this decision, never as a flag or as a second
+accepted form.
+
+**D3. The Rust type is a newtype, `cratestack::BigInt`, in `cratestack-core`.** Accepted on the
+ADR's recommendation. Its `Serialize` writes the decimal string and its `Deserialize` accepts only
+D2's form. A raw `i64` with a `#[serde(with = ...)]` attribute was the alternative, and it fails
+silently on every path that does not see the struct field's attributes: `?fields=` projections
+serialize each field as a type-erased leaf
+(`crates/cratestack-macros/src/axum/model/serializers/projection_fields.rs:24`,
 `crates/cratestack-axum/src/projection.rs:72`), a bare procedure return is the value itself,
 `FieldFilterInput<T>` is generic, and audit snapshots are `serde_json::to_value(&record)`
 (`crates/cratestack-sqlx/src/query/write/create.rs:92`). With a newtype each of those is right
 by construction, and a place that still expects `i64` is a compile error. The database boundary
 converts in generated code (`try_get::<i64>` then `BigInt::new`; `SqlValue::BigInt(i64)`), so the
 newtype needs no sqlx or rusqlite impls and `cratestack-core` keeps zero workspace dependencies.
-It has `new`, `get`, `From<i64>`, `Display`, `FromStr` and the comparison traits, and no
-arithmetic operators: money arithmetic stays explicit on `i64`.
 
-**D4. The change ships as one breaking release, with a codemod and no compatibility path.**
+The decided surface: `new` and `get`, `From<i64>` and `From<BigInt> for i64`, `Display`, `FromStr`
+and the comparison traits, and arithmetic as checked methods only (`checked_add`, `checked_sub`
+and `checked_mul`, each returning `Option<BigInt>`; PR B fixes the final list). There are no
+`Add`, `Sub`, `Mul` or `Neg` operator impls, because an operator on a 64-bit money value must
+panic, wrap or invent an error path. There is no `Deref`: with one, `i64` methods and a `&BigInt`
+passed where a `&i64` is expected would keep compiling at a call site nobody updated, which is the
+silent path the newtype exists to close. The rationale is one sentence: a missed call site becomes
+a compile error instead of silent precision loss. The name stays. It is namespaced
+(`cratestack::BigInt`, so it does not collide with `num_bigint::BigInt` unless a file imports
+both) and it matches the schema type; the rustdoc says it is 64-bit, not arbitrary precision.
+
+**D4. The change ships as one breaking release, 0.16.0, with a codemod and no compatibility
+path.** Accepted on the ADR's recommendation: `cratestack upgrade int-to-bigint` rewrites every
+`Int` to `BigInt` by parser span, so storage and wire width are preserved and no DDL is emitted.
+Narrowing a field to `Int` is a deliberate per-field edit that `migrate diff` treats as lossy,
+behind `--allow-destructive`. Owners narrow at their own pace; the tool never schedules a table
+rewrite for them.
 
 - **`cratestack upgrade int-to-bigint --schema <file>... [--migrations <dir>] [--check]`**
   rewrites every type reference named `Int` to `BigInt` by its parser span (so comments, strings
@@ -162,17 +242,35 @@ arithmetic operators: money arithmetic stays explicit on `i64`.
 - **CHANGELOG.** Breaking entries under `## Unreleased`, in the voice of the 0.14.1
   GHSA-69g4-xvcm-vm2j entry, the command first.
 
-**D5. Field attributes become a closed list, per declaration kind.** The companion decision, and
-#679's option (a). Each of `model`, `view`, `mixin`, `type` and `auth` gets a table of the field
-attributes it accepts, checked by the same `check_shape`
-(`crates/cratestack-parser/src/validate/attribute_shape.rs:38`) that already closes block,
-procedure and query attributes, so an unknown name, another case or a stray argument list is an
-error, with a suggestion when a known name is close. The union the readers use today is 19 names (context doc §5), and no
-field attribute outside it appears in any of the 265 committed schemas that parse or in the five
-downstream schemas (RAN, E9). That census is the migration story #679 asked for, and the answer to
-the objection recorded at `misspelled_attributes.rs:17-25`. This is what turns `@string` from a
-silent no-op into the error that sends its author to `BigInt`. It is independent of D1 to D4 and
-can ship in any release.
+**D5. Field attributes become a closed list, per declaration kind.** Accepted on the ADR's
+recommendation. The companion decision, and #679's option (a): it supersedes the narrow route
+(option (b), shipped in #810) that #679 took for field attributes. Each of `model`, `view`,
+`mixin`, `type` and `auth` gets a table of the field attributes it accepts, checked by the same
+`check_shape` (`crates/cratestack-parser/src/validate/attribute_shape.rs:38`) that already closes
+block, procedure and query attributes, so an unknown name, another case or a stray argument list
+is an error, with a suggestion when a known name is close. The union the readers use today is 19
+names (context doc §5), and no field attribute outside it appears in any of the 265 committed
+schemas that parse or in the five downstream schemas (RAN, E9), so the migration cost is nil for
+every schema counted. That census is the migration story #679 asked for, and the answer to the
+objection recorded at `misspelled_attributes.rs:17-25`. This is what turns `@string` from a
+silent no-op into the error that sends its author to `BigInt`.
+
+The concern that decided it is a mistyped protection, `@readonly` above all, leaving a field
+writable. Exactly which mistakes do that, on the 0.15.1 build: a near-miss of `@readonly` is
+refused (seven variants, RAN, E12), because #679's option (b) catches a typo of a known name. What
+option (b) cannot catch is an attribute that is not close to any known name. `@immutable`,
+`@string` and `@wire(string)` each report `schema OK` (RAN, E12) and nothing reads them (E4 shows
+it for `@string`), so the protection the author believes they wrote is absent and the field stays
+writable. A closed list turns each of those into an error. D5 does not depend on D1 to D4
+technically, and it ships in the same release as PR A (Release, below).
+
+**Release: 0.16.0, all three pull requests together.** PR A (closed field attributes, D5), PR B
+(`BigInt` end to end, D2 and D3) and PR C (the `Int` cutover, D4) ship in **0.16.0**, as one
+breaking release, with no compatibility path and no release cut between them. The workspace is at
+0.15.1 and #1127 already sits under `## Unreleased` as a breaking change, so 0.16.0 is the next
+minor, which is where a pre-1.0 breaking change goes (ADR 0017, ADR 0018). A user takes one
+upgrade: the closed attribute list, `BigInt`, the 32-bit `Int` and `cratestack upgrade
+int-to-bigint` arrive together, and the command is deleted in 0.17.0.
 
 **How this honours the request.** `Int` and `BigInt` are both built-in, first-class scalars with
 their own type on every target, their own column type, their own filter type and their own wire
@@ -185,6 +283,9 @@ not survive the release anywhere.
 
 - No integer a `.cstack` schema can declare is corrupted in transit to JavaScript or Dart. `Int`
   cannot exceed what a JS number holds; `BigInt` never travels as a number.
+- **One wire form on every codec (D2).** A `BigInt` is the same decimal string in a JSON body, a
+  CBOR body, a batch frame and a projection, so a value decodes identically whichever codec a
+  client negotiates, and CBOR, the primary codec for these projects, has a decision of its own.
 - The grammar means what a Prisma user expects (`Int` 32-bit, `BigInt` 64-bit and a JS `bigint`),
   and `int4` columns finally have a scalar. vpay's schema documents widening `int4` columns to
   `BIGINT` only because `Int` could only mean `int8` (`schemas/vpay.cstack` on `origin/master`,
@@ -216,7 +317,8 @@ not survive the release anywhere.
 - **The name `BigInt` means a 64-bit integer, not arbitrary precision** as `num_bigint::BigInt`
   does in Rust. It follows SQL's `BIGINT` and Prisma; the rustdoc says so.
 - **CBOR payloads grow** by up to 12 bytes per `BigInt` value (21 bytes for `i64::MIN` as text
-  against 9 as an integer).
+  against 9 as an integer). This is the price D2 pays for one wire form, accepted by the
+  maintainer with CBOR as the primary codec.
 - **D5 rejects schemas that parse today** if they carry an attribute nothing reads. The census
   found none; an unseen schema that has one learns about it at `check` time, which is the point.
 
@@ -255,10 +357,17 @@ field, and adds no scalar. Rejected: it does not do what was asked (there is no 
 every counter, page size and version into a `bigint` in TypeScript with no way back to `number`,
 and it leaves `int4` unmapped.
 
-**`BigInt` as a native CBOR integer.** Smaller, and what CBOR is for. Rejected for now: the batch
-envelope's `serde_json::Value` frames would put the JSON string on CBOR anyway, the Dart web codec
-would round or throw at its JS JSON-text boundary, and both JS bridges would need changing (D2).
-Revisiting it means reworking those three paths first, as its own ADR, not a flag.
+**`BigInt` as a native CBOR integer (major type 0 or 1).** Smaller, and what CBOR is for.
+Rejected, and the maintainer confirmed it: the batch envelope's `serde_json::Value` frames would
+put the JSON string on CBOR anyway, the Dart web codec would round or throw at its JS JSON-text
+boundary, and both JS bridges would need changing (D2). Revisiting it means reworking those three
+paths first, as its own ADR that supersedes D2, not a flag.
+
+**`BigInt` as an RFC 8949 bignum (tag 2 or 3).** The CBOR-native form for large integers. Rejected
+in D2: every `i64` already has a native integer form, so a bignum is a second, non-preferred
+spelling of the same value ([RFC 8949 §3.4.3](https://www.rfc-editor.org/rfc/rfc8949#section-3.4.3),
+[§10](https://www.rfc-editor.org/rfc/rfc8949#section-10)), and neither the batch frames, the Dart
+JSON-text boundary nor the bridges' `cratestack_core::Value` has a place for a tag.
 
 **A raw `i64` with a serde `with` attribute.** Keeps Rust ergonomics. Rejected in D3: it is wrong,
 silently, on every path that does not see the field's attributes.
@@ -285,8 +394,9 @@ are answered by GHSA-69g4-xvcm-vm2j's reader tables and by the census in E9.
 ## Related
 
 - [`docs/design/int-and-bigint.md`](../design/int-and-bigint.md): per-target changes, diagrams,
-  implementation plan (three PRs, with the cross-language `i64::MAX`, `i64::MIN` and `2^53 + 1`
-  round trips in Rust, TypeScript and Dart on both codecs), downstream table, evidence.
+  implementation plan (three PRs, all in 0.16.0, with the cross-language `i64::MAX`, `i64::MIN`
+  and `2^53 + 1` round trips in Rust, TypeScript and Dart on both codecs), downstream table,
+  evidence.
 - [cratestack#679](https://github.com/cratestack/cratestack/issues/679) (field attributes, option
   (b) shipped in #810), GHSA-69g4-xvcm-vm2j (closed lists for the other positions, 0.14.1),
   [cratestack#1065](https://github.com/cratestack/cratestack/issues/1065) (digest precedent),
@@ -296,3 +406,5 @@ are answered by GHSA-69g4-xvcm-vm2j's reader tables and by the census in E9.
   [cratestack#1128](https://github.com/cratestack/cratestack/issues/1128) (`autoincrement()`,
   whose identity column type follows the scalar either way).
 - ADR 0017 and ADR 0018 for the pre-1.0 compatibility posture this relies on.
+- [RFC 8949](https://www.rfc-editor.org/rfc/rfc8949), CBOR: §3.1 (major types), §3.4.3 (bignums)
+  and §10 (security considerations), the basis for D2's CBOR text-string form (READ, 2026-09-30).

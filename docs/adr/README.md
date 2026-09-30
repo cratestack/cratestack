@@ -46,7 +46,7 @@ not a promise about content.
 | [0016](0016-store-spi-scope.md) | Store SPI scope | Proposed |
 | [0017](0017-remove-grpc-protobuf.md) | Remove gRPC/protobuf support | Accepted |
 | [0018](0018-orm-posture.md) | CrateStack as an ORM is a supported posture | Accepted |
-| [0019](0019-int-and-bigint-built-in-types.md) | `Int` and `BigInt` as built-in integer types | Proposed |
+| [0019](0019-int-and-bigint-built-in-types.md) | `Int` and `BigInt` as built-in integer types | Accepted |
 
 Context for 0011–0016: [docs/design/layering.md](../design/layering.md).
 Context for 0019: [docs/design/int-and-bigint.md](../design/int-and-bigint.md).
