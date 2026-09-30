@@ -54,13 +54,24 @@ pub(crate) async fn open(
 /// verified under each candidate's AAD in order until one holds. Returns
 /// the opened message and the index of the binding that verified. Steps 5
 /// and 6 run once, for that binding only, so a failed candidate burns no
-/// nonce. An empty list is refused like any failed verification.
+/// nonce. An empty list is refused like any failed verification, before
+/// anything is parsed or resolved, and candidates that differ in anything
+/// but `contract_sha` are local misuse (a `500`): "accept either audience"
+/// or "either route" would quietly widen what a signature proves.
 pub(crate) async fn open_any(
     inner: &Inner,
     body: Bytes,
     binds: &[Binding<'_>],
     request: bool,
 ) -> Result<(Opened, usize), CratestackError> {
+    let Some((first, rest)) = binds.split_first() else {
+        return Err(Reject.into_error());
+    };
+    if rest.iter().any(|bind| differs_beyond_digest(first, bind)) {
+        return Err(misuse(
+            "candidate bindings may differ only in `contract_sha`",
+        ));
+    }
     for bind in binds {
         if request == bind.response.is_some() {
             return Err(misuse(if request {
@@ -147,4 +158,16 @@ pub(crate) async fn open_any(
         cti,
     };
     Ok((opened, index))
+}
+
+/// Whether two bindings differ in any element but the contract digest.
+fn differs_beyond_digest(a: &Binding<'_>, b: &Binding<'_>) -> bool {
+    a.audience != b.audience
+        || a.method != b.method
+        || a.route != b.route
+        || a.path_params != b.path_params
+        || a.query != b.query
+        || a.payload_media_type != b.payload_media_type
+        || a.bound_headers != b.bound_headers
+        || a.response != b.response
 }

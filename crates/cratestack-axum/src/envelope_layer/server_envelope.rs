@@ -163,12 +163,14 @@ pub trait ServerEnvelope: Send + Sync + 'static {
     ) -> Result<OpenedRequest, CratestackError>;
 
     /// [`open_request`](Self::open_request) against several candidate
-    /// bindings that differ only in the op-contract digest: the opened
-    /// request and the index of the binding that verified. The default
-    /// tries each in turn, moving on only after the coarse `401`, so it
-    /// repeats parse and key resolution per candidate; the COSE envelope
-    /// overrides it to do both once and repeat only the verification
-    /// (at most `max_contract_trials`). An empty `binds` is `Unauthorized`.
+    /// bindings that **must** differ only in `contract_sha`, the op-contract
+    /// digest; any other difference (audience, route, method, path params,
+    /// query, payload type, bound headers) would widen what a signature
+    /// proves (the COSE envelope refuses it as misuse). Returns the opened
+    /// request and the index that verified. The default tries each in turn,
+    /// moving on only after the coarse `401`, so it repeats parse and key
+    /// resolution per candidate; the COSE envelope overrides it to do both
+    /// once and repeat only the verification. Empty `binds` is `Unauthorized`.
     async fn open_request_any(
         &self,
         body: Bytes,
