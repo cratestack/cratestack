@@ -162,6 +162,30 @@ pub trait ServerEnvelope: Send + Sync + 'static {
         bind: &Binding<'_>,
     ) -> Result<OpenedRequest, CratestackError>;
 
+    /// [`open_request`](Self::open_request) against several candidate
+    /// bindings that differ only in the op-contract digest: the opened
+    /// request and the index of the binding that verified. The default
+    /// tries each in turn, moving on only after the coarse `401`, so it
+    /// repeats parse and key resolution per candidate; the COSE envelope
+    /// overrides it to do both once and repeat only the verification
+    /// (at most `max_contract_trials`). An empty `binds` is `Unauthorized`.
+    async fn open_request_any(
+        &self,
+        body: Bytes,
+        binds: &[Binding<'_>],
+    ) -> Result<(OpenedRequest, usize), CratestackError> {
+        let mut refused = CratestackError::Unauthorized(String::new());
+        for (index, bind) in binds.iter().enumerate() {
+            // A refcount bump: the next candidate needs the body again.
+            match self.open_request(body.clone(), bind).await {
+                Ok(opened) => return Ok((opened, index)),
+                Err(error @ CratestackError::Unauthorized(_)) => refused = error,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(refused)
+    }
+
     /// Seal `payload` (the response body the router produced, CBOR) for
     /// `bind`, a response binding, with the `context` its request's
     /// `open_request` returned.

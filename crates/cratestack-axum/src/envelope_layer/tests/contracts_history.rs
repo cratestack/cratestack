@@ -4,17 +4,14 @@
 //! are tried newest first when the client names none, and the trial cap
 //! holds. Single-digest behaviour is `contracts.rs`.
 
-use std::sync::atomic::Ordering;
-
 use axum::body::Body;
 use cratestack_core::{
     AcceptedContracts, NONCE_HEADER, RequestNonce, request_digest, request_digest_unsigned,
 };
 use http::{Method, StatusCode, header};
 
-use super::contracts_support::{
-    NEW, OLD, WITH_HISTORY, post_widgets, rest, rest_counting, selecting,
-};
+use super::contracts_counting::rest_counting;
+use super::contracts_support::{NEW, OLD, WITH_HISTORY, post_widgets, rest, selecting};
 use super::fixtures::{Hits, REST_ROUTES, rest_router};
 use super::support::*;
 use crate::envelope_layer::{DEFAULT_MAX_CONTRACT_TRIALS, EnvelopeLayer, EnvelopeMode};
@@ -41,10 +38,16 @@ async fn an_older_accepted_digest_opens_and_the_response_is_sealed_under_it_not_
 async fn without_a_selector_the_accepted_digests_are_tried_newest_first() {
     let hits = Hits::default();
     let (call, sealed, req) = post_widgets(OLD, None).await;
-    let (router, opens) = rest_counting(WITH_HISTORY, None, &hits);
+    let (router, counts) = rest_counting(WITH_HISTORY, None, &hits);
     let answer = send(&router, req).await;
     assert_eq!(answer.status, StatusCode::OK, "NEW fails, OLD verifies");
-    assert_eq!(opens.load(Ordering::SeqCst), 2, "NEW, then OLD");
+    assert_eq!(counts.passes(), 1, "one parse pass for both digests");
+    assert_eq!(counts.candidates(), 2, "NEW, then OLD");
+    assert_eq!(
+        counts.resolves(),
+        1,
+        "the key is resolved once, not per digest"
+    );
     call.open(request_digest(&sealed), answer.status, answer.body)
         .await
         .expect("sealed under OLD");
@@ -63,7 +66,7 @@ async fn without_a_selector_the_accepted_digests_are_tried_newest_first() {
 async fn the_trial_cap_is_honoured() {
     let hits = Hits::default();
     let (_, _, req) = post_widgets(OLD, None).await;
-    let (router, opens) = rest_counting(WITH_HISTORY, Some(1), &hits);
+    let (router, counts) = rest_counting(WITH_HISTORY, Some(1), &hits);
     let answer = send(&router, req).await;
     assert_eq!(
         answer.status,
@@ -71,25 +74,32 @@ async fn the_trial_cap_is_honoured() {
         "only NEW was tried; OLD is beyond the cap"
     );
     assert_eq!(hits.get(), 0);
-    assert_eq!(opens.load(Ordering::SeqCst), 1, "one trial, not two");
+    assert_eq!(counts.candidates(), 1, "one trial, not two");
+    assert_eq!(counts.resolves(), 1);
 }
 
 #[tokio::test]
-async fn a_forged_request_without_the_header_costs_the_default_cap_in_opens() {
+async fn a_forged_request_without_the_header_costs_one_parse_one_resolve_and_the_cap_in_verifications()
+ {
     static FIVE: AcceptedContracts = &[(
         "POST /widgets",
         &[NEW, OLD, [0x23; 32], [0x24; 32], [0x25; 32]],
     )];
     let hits = Hits::default();
     let (_, _, req) = post_widgets([0x44; 32], None).await;
-    let (router, opens) = rest_counting(FIVE, None, &hits);
+    let (router, counts) = rest_counting(FIVE, None, &hits);
     let answer = send(&router, req).await;
     assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
     assert_eq!(hits.get(), 0);
     assert_eq!(
-        opens.load(Ordering::SeqCst),
+        (counts.passes(), counts.resolves()),
+        (1, 1),
+        "one parse and one key resolution, however many digests"
+    );
+    assert_eq!(
+        counts.candidates(),
         DEFAULT_MAX_CONTRACT_TRIALS,
-        "five accepted digests, four opens"
+        "five accepted digests, four verifications"
     );
     assert_eq!(DEFAULT_MAX_CONTRACT_TRIALS, 4);
 }

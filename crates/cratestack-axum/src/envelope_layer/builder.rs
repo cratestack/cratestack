@@ -142,9 +142,11 @@ impl EnvelopeLayerBuilder {
     /// A request that does name one is verified under it alone, so an
     /// up-to-date generated client costs one verification however long an
     /// op's accepted list grows, and a forged request without the header
-    /// costs at most this many parse, key-resolution and verification
-    /// passes (one each per trial until the envelope resolves keys once).
-    /// A failed trial records no nonce.
+    /// costs one parse, one key resolution and at most this many signature
+    /// verifications (the COSE envelope's `open_request_any`; a custom
+    /// [`ServerEnvelope`](super::ServerEnvelope) that keeps the default
+    /// pays the parse and the resolution per trial). A failed trial records
+    /// no nonce.
     pub fn max_contract_trials(mut self, trials: usize) -> Self {
         self.max_contract_trials = trials;
         self

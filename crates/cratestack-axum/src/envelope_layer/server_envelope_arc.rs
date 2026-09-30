@@ -30,6 +30,14 @@ impl<T: ServerEnvelope + ?Sized> ServerEnvelope for Arc<T> {
         (**self).open_request(body, bind).await
     }
 
+    async fn open_request_any(
+        &self,
+        body: Bytes,
+        binds: &[Binding<'_>],
+    ) -> Result<(OpenedRequest, usize), CratestackError> {
+        (**self).open_request_any(body, binds).await
+    }
+
     async fn seal_response(
         &self,
         payload: &[u8],

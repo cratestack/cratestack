@@ -17,20 +17,20 @@
 //!    it as a hint and never as proof.
 //! 3. Without the header (a hand-built client) the accepted digests are
 //!    tried newest first, at most [`EnvelopeLayerBuilder::max_contract_trials`]
-//!    of them. A message's nonce is recorded only once it verifies, so a
-//!    failed trial burns nothing; a forged message costs at most that many
-//!    parse, key-resolution and verification passes (one each per trial
-//!    until the envelope resolves keys once).
+//!    of them. The envelope parses the message and resolves its key once
+//!    ([`ServerEnvelope::open_request_any`]) and only the signature check
+//!    repeats, so a forged message costs one parse, one key resolution and at
+//!    most that many verifications. A message's nonce is recorded only once
+//!    it verifies, so a failed trial burns nothing.
 //!
 //! The response is sealed under the digest the request opened under, never
 //! the server's current one.
 //!
 //! [`EnvelopeLayerBuilder::max_contract_trials`]: super::EnvelopeLayerBuilder::max_contract_trials
+//! [`ServerEnvelope::open_request_any`]: super::ServerEnvelope::open_request_any
 
 use bytes::Bytes;
-use cratestack_core::{
-    CONTRACT_HEADER, ContractSelector, CratestackError, UNAUTHENTICATED, find_contract,
-};
+use cratestack_core::{CONTRACT_HEADER, ContractSelector, CratestackError, find_contract};
 use http::{HeaderMap, Method};
 
 use super::layer::Config;
@@ -141,26 +141,30 @@ pub(super) fn for_unsigned(
 }
 
 /// Open `raw` under each candidate in turn, leaving `inputs` holding the
-/// digest that verified, so the response seals under it. Only the coarse
-/// `401` moves on to the next candidate; any other failure (a key backend
-/// down) ends the search.
+/// digest that verified, so the response seals under it. The envelope is
+/// offered every candidate binding at once
+/// ([`ServerEnvelope::open_request_any`]): the COSE envelope then parses the
+/// message and resolves its key once and only repeats the signature
+/// verification. Only the coarse `401` means "none verified"; any other
+/// failure (a key backend down) ends the search.
+///
+/// [`ServerEnvelope::open_request_any`]: super::ServerEnvelope::open_request_any
 pub(super) async fn open_under(
     config: &Config,
     raw: &Bytes,
     inputs: &mut BindingInputs,
     candidates: &[[u8; 32]],
 ) -> Result<OpenedRequest, CratestackError> {
-    let mut refused = CratestackError::Unauthorized(UNAUTHENTICATED.to_owned());
-    for digest in candidates {
-        inputs.contract = *digest;
-        let params = inputs.params();
-        let bind = inputs.binding(&params, None);
-        // A refcount bump: `open_request` takes the body by value and the
-        // next candidate needs it again.
-        match config.envelope.open_request(raw.clone(), &bind).await {
-            Err(error @ CratestackError::Unauthorized(_)) => refused = error,
-            other => return other,
-        }
-    }
-    Err(refused)
+    let params = inputs.params();
+    let binds: Vec<_> = candidates
+        .iter()
+        .map(|digest| inputs.binding_for(*digest, &params, None))
+        .collect();
+    let (opened, index) = config
+        .envelope
+        .open_request_any(raw.clone(), &binds)
+        .await?;
+    drop(binds);
+    inputs.contract = candidates[index];
+    Ok(opened)
 }

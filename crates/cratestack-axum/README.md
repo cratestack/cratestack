@@ -343,8 +343,14 @@ let app = axum::Router::new().nest("/api", router);
   client names the digest it used in the unbound `Cratestack-Contract` header (8 bytes of it);
   the layer verifies under the accepted digest that header selects, answers an unknown one
   with the unsigned `426 contract_unsupported` before any key lookup, and without the header
-  tries the op's accepted digests newest first, at most `max_contract_trials` (default 4).
-  The response is sealed under the digest the request used. A binding version 1 message is
+  tries the op's accepted digests newest first, at most `max_contract_trials` (default 4):
+  the COSE envelope parses the message and resolves its key **once** (`open_request_any`) and
+  repeats only the signature verification, so a forged header-less request costs one parse, one
+  key resolution and at most that many verifications. The accepted digests are the current one
+  plus, with `include_server_schema!(.., contracts = "<schema>.contracts.lock")`, the older ones
+  a committed lock keeps and the compile-time classifier judged wire-compatible (see
+  `cratestack contract lock|check|prune`). The response is sealed under the digest the request
+  used. A binding version 1 message is
   refused. A signed `/rpc/batch` binds the whole-contract digest until batch frames carry
   their own.
 - **Errors.** Every response of a generated op is sealed, including handler errors and this

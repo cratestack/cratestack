@@ -118,7 +118,9 @@
 //!   leaves it alone, and a wire-shape edit makes the old client's op
 //!   answer the unsigned `426 contract_unsupported`. Semantic changes that
 //!   leave every shape alone (an `Int` switching units) are not caught, as
-//!   before. A signed `/rpc/batch` binds the whole-contract digest until
+//!   before. A server built with `contracts = "..."` also accepts the
+//!   older per-op digests its lock holds while they stay wire-compatible
+//!   with the current one. A signed `/rpc/batch` binds the whole-contract digest until
 //!   batch frames carry their own, so any client-facing change refuses it.
 //!   Binding version 1 messages are refused.
 //! - One envelope per layer: a router accepting Sign1 devices and Mac0

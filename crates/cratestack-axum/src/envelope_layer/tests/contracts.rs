@@ -4,11 +4,10 @@
 //! under the digest the request used. Several accepted digests for one op
 //! are `contracts_history.rs`.
 
-use std::sync::atomic::Ordering;
-
 use cratestack_core::{AcceptedContracts, CONTRACT_HEADER, request_digest};
 use http::{HeaderValue, Method, StatusCode};
 
+use super::contracts_counting::rest_counting;
 use super::contracts_support::*;
 use super::fixtures::{Hits, REST_ROUTES};
 use super::support::*;
@@ -18,10 +17,12 @@ use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
 async fn a_header_selected_request_is_opened_once_however_long_the_history() {
     let hits = Hits::default();
     let (_, _, req) = post_widgets(OLD, Some(OLD)).await;
-    let (router, opens) = rest_counting(WITH_HISTORY, None, &hits);
+    let (router, counts) = rest_counting(WITH_HISTORY, None, &hits);
     let answer = send(&router, req).await;
     assert_eq!(answer.status, StatusCode::OK);
-    assert_eq!(opens.load(Ordering::SeqCst), 1, "one verification, not two");
+    assert_eq!(counts.passes(), 1, "one pass, not two");
+    assert_eq!(counts.candidates(), 1, "one verification at most");
+    assert_eq!(counts.resolves(), 1, "one key resolution");
 }
 
 #[tokio::test]
@@ -41,13 +42,14 @@ async fn a_selector_naming_no_accepted_digest_is_the_unsigned_426_before_any_key
     let hits = Hits::default();
     let stale = [0x44; 32];
     let (_, _, req) = post_widgets(stale, Some(stale)).await;
-    let (router, opens) = rest_counting(WITH_HISTORY, None, &hits);
+    let (router, counts) = rest_counting(WITH_HISTORY, None, &hits);
     let answer = send(&router, req).await;
     assert_eq!(answer.status, StatusCode::UPGRADE_REQUIRED);
     assert!(!answer.is_sealed(), "unsigned: a hint, never proof");
     assert_eq!(error_code(&answer.body), "CONTRACT_UNSUPPORTED");
     assert_eq!(hits.get(), 0);
-    assert_eq!(opens.load(Ordering::SeqCst), 0, "no key was looked up");
+    assert_eq!(counts.passes(), 0, "never opened");
+    assert_eq!(counts.resolves(), 0, "no key was looked up");
 }
 
 #[tokio::test]
@@ -102,7 +104,7 @@ async fn another_ops_digest_is_refused_even_with_a_matching_route_and_selector()
 #[tokio::test]
 async fn a_malformed_or_repeated_selector_is_a_400() {
     let hits = Hits::default();
-    let (router, opens) = rest_counting(WITH_HISTORY, None, &hits);
+    let (router, counts) = rest_counting(WITH_HISTORY, None, &hits);
     for values in [&["not-a-selector"][..], &["AAAAAAAAAAA", "AAAAAAAAAAA"][..]] {
         let (_, _, mut req) = post_widgets(NEW, None).await;
         for value in values {
@@ -113,7 +115,7 @@ async fn a_malformed_or_repeated_selector_is_a_400() {
         assert_eq!(answer.status, StatusCode::BAD_REQUEST, "{values:?}");
     }
     assert_eq!(hits.get(), 0);
-    assert_eq!(opens.load(Ordering::SeqCst), 0, "refused before any open");
+    assert_eq!(counts.passes(), 0, "refused before any open");
 }
 
 #[tokio::test]
@@ -121,12 +123,12 @@ async fn a_route_with_no_contract_row_is_a_500_for_a_signed_request() {
     static EMPTY: AcceptedContracts = &[("GET /widgets/{id}", &[NEW])];
     let hits = Hits::default();
     let (_, _, req) = post_widgets(NEW, Some(NEW)).await;
-    let (router, opens) = rest_counting(EMPTY, None, &hits);
+    let (router, counts) = rest_counting(EMPTY, None, &hits);
     let answer = send(&router, req).await;
     assert_eq!(answer.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(!answer.is_sealed());
     assert_eq!(hits.get(), 0);
-    assert_eq!(opens.load(Ordering::SeqCst), 0, "refused before any open");
+    assert_eq!(counts.passes(), 0, "refused before any open");
 }
 
 #[tokio::test]
