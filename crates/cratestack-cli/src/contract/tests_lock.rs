@@ -2,6 +2,7 @@
 
 use super::lock_cmd::{Prune, check, lock, prune};
 use super::*;
+use cratestack_core::{Schema, client_contract_digest, digest_hex};
 
 const V1: &str = "transport rpc\n\nmodel Widget {\n  id Int @id\n  name String\n}\n\n\
     type Ping {\n  note String\n}\n\nprocedure ping(args: Ping): Ping\n";

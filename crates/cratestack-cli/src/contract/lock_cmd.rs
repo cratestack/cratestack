@@ -9,10 +9,44 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use cratestack_core::{ContractLock, Schema, client_contract_digest, digest_hex};
 
-/// A report and the exit verdict.
+/// A report and the exit verdict: exit 0 when `ok`, 2 when `tool_error`
+/// (the tool could not do its job), 1 otherwise (a failed verdict).
 pub(super) struct Outcome {
     pub(super) text: String,
     pub(super) ok: bool,
+    pub(super) tool_error: bool,
+}
+
+impl Outcome {
+    fn verdict(text: String, ok: bool) -> Self {
+        Self {
+            text,
+            ok,
+            tool_error: false,
+        }
+    }
+
+    pub(super) fn exit_code(&self) -> i32 {
+        match (self.ok, self.tool_error) {
+            (true, _) => 0,
+            (false, true) => 2,
+            (false, false) => 1,
+        }
+    }
+}
+
+/// `check --json` for a tool error: the same document shape, `ok: false`
+/// and an `error`, so a CI parser never meets an empty stdout.
+pub(super) fn json_tool_error(error: &anyhow::Error, client: Option<String>) -> Outcome {
+    let doc = serde_json::json!({
+        "ok": false, "error": format!("{error:#}"), "client_contract": client,
+        "locked": false, "incompatible": [],
+    });
+    Outcome {
+        text: format!("{doc:#}\n"),
+        ok: false,
+        tool_error: true,
+    }
 }
 
 pub(super) enum Prune {
@@ -52,10 +86,10 @@ pub(super) fn lock(schema: &Schema, path: &Path, note: &str, date: &str) -> Resu
         broken
             .iter()
             .for_each(|b| text.push_str(&format!("  {b}\n")));
-        return Ok(Outcome { text, ok: false });
+        return Ok(Outcome::verdict(text, false));
     }
     let client = digest_hex(&client_contract_digest(schema));
-    let text = if lock.lock_generation(schema, date, note) {
+    let text = if lock.lock_generation(schema, date, note)? {
         write(path, &lock)?;
         format!(
             "locked generation {} ({} generation{} in {})\n",
@@ -67,17 +101,21 @@ pub(super) fn lock(schema: &Schema, path: &Path, note: &str, date: &str) -> Resu
     } else {
         format!("already locked: {}\n", short(&client))
     };
-    Ok(Outcome { text, ok: true })
+    Ok(Outcome::verdict(text, true))
 }
 
 /// The CI gate: fails when the current contract is not a locked generation
 /// or breaks a locked one.
 pub(super) fn check(schema: &Schema, path: &Path, json: bool) -> Result<Outcome> {
-    let lock = read(path)?;
+    let client = digest_hex(&client_contract_digest(schema));
+    let lock = match read(path) {
+        Ok(lock) => lock,
+        Err(error) if json => return Ok(json_tool_error(&error, Some(client))),
+        Err(error) => return Err(error),
+    };
     let locked = lock.is_locked(schema);
     let broken = lock.incompatible(schema);
     let ok = locked && broken.is_empty();
-    let client = digest_hex(&client_contract_digest(schema));
     if json {
         let broken: Vec<_> = broken
             .iter()
@@ -87,7 +125,7 @@ pub(super) fn check(schema: &Schema, path: &Path, json: bool) -> Result<Outcome>
             "ok": ok, "client_contract": client, "locked": locked, "incompatible": broken,
         });
         let text = format!("{}\n", serde_json::to_string_pretty(&doc)?);
-        return Ok(Outcome { text, ok });
+        return Ok(Outcome::verdict(text, ok));
     }
     let mut text = String::new();
     if !locked {
@@ -106,7 +144,7 @@ pub(super) fn check(schema: &Schema, path: &Path, json: bool) -> Result<Outcome>
             if lock.generations.len() == 1 { "" } else { "s" }
         );
     }
-    Ok(Outcome { text, ok })
+    Ok(Outcome::verdict(text, ok))
 }
 
 pub(super) fn prune(path: &Path, what: Prune) -> Result<Outcome> {
@@ -119,7 +157,7 @@ pub(super) fn prune(path: &Path, what: Prune) -> Result<Outcome> {
             }
             pruned
         }
-        Prune::Before(date) => lock.prune_before(&date),
+        Prune::Before(date) => lock.prune_before(&date)?,
         Prune::Keep(keep) => lock.prune_keep(keep),
         Prune::Generation(prefix) => lock.prune_generation(&prefix)?,
     };
@@ -131,5 +169,5 @@ pub(super) fn prune(path: &Path, what: Prune) -> Result<Outcome> {
         if pruned.entries == 1 { "y" } else { "ies" },
         pruned.contracts
     );
-    Ok(Outcome { text, ok: true })
+    Ok(Outcome::verdict(text, true))
 }
