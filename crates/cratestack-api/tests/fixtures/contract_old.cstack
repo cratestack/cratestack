@@ -1,6 +1,6 @@
 // EXT-14 (cratestack#1123): the schema an already-shipped client was built
-// from. `contract_new.cstack` is this schema after a server-only edit
-// (a policy, an index, a validator, a new procedure) and one wire-shape
+// from. `contract_new.cstack` is this schema after server-only edits (a
+// policy, a validator, `@deprecated`, a new procedure) and one wire-shape
 // edit (`retyped`'s argument), for the old-client-against-new-server test.
 
 transport rpc

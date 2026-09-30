@@ -38,7 +38,7 @@ pub use binding::Binding;
 pub use bound_headers::BoundHeaders;
 pub use contract_selector::{
     CONTRACT_HEADER, CONTRACT_HEADER_VALUE_LEN, CONTRACT_SELECTOR_LEN, CONTRACT_UNSUPPORTED_CODE,
-    ContractSelector,
+    CONTRACT_UNSUPPORTED_REST_CODE, ContractSelector,
 };
 pub use envelope::{BodyShape, CratestackEnvelope};
 pub use no_envelope::NoEnvelope;

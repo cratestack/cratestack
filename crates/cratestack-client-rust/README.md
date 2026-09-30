@@ -219,8 +219,10 @@ hands over the schema's `OP_CONTRACTS` through `with_contracts` (`with_contract_
 for a hand-built client), a call to an op the table lacks fails with `BadInput` and is never sent,
 and the first 8 bytes of the digest travel in the unbound `Cratestack-Contract` header. When the
 server no longer accepts this client's shape for the op it answers the **unsigned** `426`, surfaced
-as `EnvelopeError::ContractUnsupported { op }`: a hint to offer "update the app" for that feature,
-never proof of anything, and other ops are unaffected. Streams are refused with
+as `EnvelopeError::ContractUnsupported { op }` (recognised by the body's `contract_unsupported` /
+`CONTRACT_UNSUPPORTED` code, so a proxy's own `426` stays `Unsigned`; it carries no `Upgrade`
+header, which HTTP/2 forbids): a hint to offer "update the app" for that feature, never proof of
+anything, and other ops are unaffected. Streams are refused with
 `EnvelopeError::StreamsUnsupported`. A key in a platform keystore
 signs through `ExternalSigner::esp256`, which takes a DER answer. Sealed requests are marked
 non-idempotent for `reqwest-middleware`, because a replay carries the same `cti`. Redirects are never followed (a supplied `reqwest::Client` must not follow them either), and a router mounted under a path with parameters needs `ClientEnvelope::with_mount_params`. On

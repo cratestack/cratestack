@@ -19,7 +19,8 @@
 //!    tried newest first, at most [`EnvelopeLayerBuilder::max_contract_trials`]
 //!    of them. A message's nonce is recorded only once it verifies, so a
 //!    failed trial burns nothing; a forged message costs at most that many
-//!    verifications.
+//!    parse, key-resolution and verification passes (one each per trial
+//!    until the envelope resolves keys once).
 //!
 //! The response is sealed under the digest the request opened under, never
 //! the server's current one.
@@ -104,23 +105,39 @@ pub(super) fn choose(
     }
 }
 
+/// What an unsigned (nonce-bound) request's response is sealed under.
+pub(super) enum Unsigned {
+    /// Seal under this digest.
+    Under([u8; 32]),
+    /// A well-formed selector names no accepted digest: the same unsigned
+    /// `426` the signed path answers.
+    Unsupported,
+    /// No digest is known for the route: the layer is misconfigured.
+    Misconfigured,
+}
+
 /// The digest an unsigned request's sealed response binds: the one its
-/// selector names if that is accepted, else the op's current digest (the
-/// unsigned request proves nothing, so a bad selector is not an error).
+/// selector names if that is accepted, else the op's current digest when
+/// there is no selector or it is malformed (the unsigned request proves
+/// nothing, so a garbled header is not worth a `400`). A well-formed
+/// selector that names nothing is [`Unsigned::Unsupported`], so both paths
+/// tell a client the same thing.
 pub(super) fn for_unsigned(
     config: &Config,
     method: &Method,
     route: &ResolvedRoute,
     headers: &HeaderMap,
-) -> Option<[u8; 32]> {
-    let accepted = accepted(config, method, route)?;
-    let named = selector(headers).ok().flatten().and_then(|selector| {
-        accepted
+) -> Unsigned {
+    let Some(accepted @ [current, ..]) = accepted(config, method, route) else {
+        return Unsigned::Misconfigured;
+    };
+    match selector(headers) {
+        Ok(Some(selector)) => accepted
             .iter()
             .find(|digest| selector.matches(digest))
-            .copied()
-    });
-    named.or_else(|| accepted.first().copied())
+            .map_or(Unsigned::Unsupported, |digest| Unsigned::Under(*digest)),
+        _ => Unsigned::Under(*current),
+    }
 }
 
 /// Open `raw` under each candidate in turn, leaving `inputs` holding the
@@ -138,6 +155,8 @@ pub(super) async fn open_under(
         inputs.contract = *digest;
         let params = inputs.params();
         let bind = inputs.binding(&params, None);
+        // A refcount bump: `open_request` takes the body by value and the
+        // next candidate needs it again.
         match config.envelope.open_request(raw.clone(), &bind).await {
             Err(error @ CratestackError::Unauthorized(_)) => refused = error,
             other => return other,

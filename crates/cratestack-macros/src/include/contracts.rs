@@ -3,7 +3,7 @@
 //!
 //! - `OP_CONTRACTS`: the digest each call binds, keyed by op key (the RPC
 //!   `op_id`, `"<METHOD> <route template>"` on REST, plus `batch` for
-//!   `transport rpc`), sorted by key. What the generated client stamps, and
+//!   `transport rpc`), in key order (nothing relies on it). What the generated client stamps, and
 //!   what the layer's accepted table starts from.
 //! - `CLIENT_CONTRACT_SHA256(_BYTES)`: the whole-contract build identity.
 //! - `ACCEPTED_CONTRACTS` (server module only): per key, the digests a
@@ -60,7 +60,8 @@ impl ToTokens for ContractConsts {
             /// The digest each call binds into a signed message (binding
             /// version 2; ADR 0006 §4, cratestack#1123): per op key (the RPC
             /// `op_id`, or `"<METHOD> <route template>"` on REST, plus
-            /// `batch` for `transport rpc`), sorted by key. It moves only
+            /// `batch` for `transport rpc`), in key order (nothing relies on it).
+            /// It moves only
             /// when that op's wire shape does.
             pub const OP_CONTRACTS: &[(&str, [u8; 32])] = &[#(#rows),*];
             /// Hex of [`CLIENT_CONTRACT_SHA256_BYTES`]: a hash over every

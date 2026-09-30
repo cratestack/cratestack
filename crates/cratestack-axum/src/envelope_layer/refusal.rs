@@ -6,7 +6,9 @@
 //! headers like every other middleware error.
 
 use axum::response::Response;
-use cratestack_core::{CONTRACT_UNSUPPORTED_CODE, CratestackError, UNAUTHENTICATED};
+use cratestack_core::{
+    CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE, CratestackError, UNAUTHENTICATED,
+};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 
 use super::request::BufferError;
@@ -28,22 +30,28 @@ pub(super) fn unauthenticated(headers: &HeaderMap, path: &str) -> Response {
     )
 }
 
-/// A COSE body the layer will not open (policy `Off`, or no generated op to
-/// bind it to). Refused rather than forwarded, so nothing behind the layer
-/// ever reads unverified COSE bytes as a plain body.
 /// The unsigned `426` for a `Cratestack-Contract` selector that names no
 /// accepted digest (cratestack#1123): the client's shape for this op is no
 /// longer served. Unsigned on purpose, so it is a hint and never proof.
+///
+/// Deliberately sent without `Upgrade`: RFC 9110 §15.5.22 asks for one, but
+/// `Upgrade` is connection-specific (§7.8), forbidden on HTTP/2 (RFC 9113
+/// §8.2.2) and stripped by proxies, and no protocol token names an op
+/// contract; 426 is kept because every other 4xx already means something
+/// else here. The client therefore reads the body's code, not a header.
 pub(super) fn contract_unsupported(headers: &HeaderMap, path: &str) -> Response {
     middleware_coded_response(
         headers,
         path,
         StatusCode::UPGRADE_REQUIRED,
-        (CONTRACT_UNSUPPORTED_CODE, "CONTRACT_UNSUPPORTED"),
+        (CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE),
         "this client's contract for the operation is not supported; update the client",
     )
 }
 
+/// A COSE body the layer will not open (policy `Off`, or no generated op to
+/// bind it to). Refused rather than forwarded, so nothing behind the layer
+/// ever reads unverified COSE bytes as a plain body.
 pub(super) fn unsupported_envelope(headers: &HeaderMap, path: &str) -> Response {
     middleware_error_response(
         headers,
@@ -122,7 +130,6 @@ pub(super) fn internal(
     plain_internal(headers, path)
 }
 
-/// The public half of [`internal`], for a caller that logged already.
 /// No digest is known for the route a request resolved to: the layer was
 /// given a contract table (or a custom resolver) that does not cover it.
 /// Fail closed, and say which route in the log.
@@ -135,6 +142,7 @@ pub(super) fn no_contract(headers: &HeaderMap, path: &str, route: &ResolvedRoute
     internal(headers, path, "contract", &error)
 }
 
+/// The public half of [`internal`], for a caller that logged already.
 pub(super) fn plain_internal(headers: &HeaderMap, path: &str) -> Response {
     middleware_error_response(headers, path, CratestackError::Internal(String::new()))
 }

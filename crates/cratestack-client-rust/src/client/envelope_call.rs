@@ -20,6 +20,7 @@ use reqwest::header::{
 
 use crate::client::bound_headers::{bound_headers, refuse_duplicates};
 use crate::client::core::CratestackClient;
+use crate::client::envelope_refusal::refused_op;
 use crate::client::helpers::{build_url, headers_to_runtime};
 use crate::codec::HttpClientCodec;
 use crate::envelope::ClientEnvelope;
@@ -111,11 +112,13 @@ where
         self.record_request(method.as_str(), path, status, &response_headers)?;
 
         if !is_cose(&response_headers) {
-            // The server's unsigned "this op's shape is not served": a
-            // hint, never proof, and its body is still not read.
-            if status == StatusCode::UPGRADE_REQUIRED {
+            // The unsigned "this op's shape is not served": a hint, never
+            // proof. Only its body's code says it is not a proxy's own 426.
+            if status == StatusCode::UPGRADE_REQUIRED
+                && self.is_contract_refusal(&response_headers, &bytes)
+            {
                 return Err(EnvelopeError::ContractUnsupported {
-                    op: route.template.clone(),
+                    op: refused_op(&method, &route.template),
                 }
                 .into());
             }

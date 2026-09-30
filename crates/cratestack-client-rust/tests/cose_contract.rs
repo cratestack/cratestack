@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::Bytes;
+use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::get;
 use cratestack_client_rust::cose::{
@@ -25,6 +26,7 @@ use cratestack_core::{
     Binding, BoundHeaders, CONTRACT_HEADER, ContractSelector, InMemoryNonceStore, OpContracts,
     PathParams,
 };
+use cratestack_core::{CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE, CratestackCodec};
 use url::Url;
 
 const GET_WIDGETS: [u8; 32] = [0x11; 32];
@@ -65,6 +67,15 @@ fn server_envelope() -> CoseEnvelope {
 
 /// A stub answering `status` (unsigned, with `body`), and what it saw.
 async fn stub(status: StatusCode, body: &'static str) -> (std::net::SocketAddr, Seen) {
+    stub_with(status, "text/plain", body.as_bytes().to_vec()).await
+}
+
+/// [`stub`] with an explicit `Content-Type` and raw body bytes.
+async fn stub_with(
+    status: StatusCode,
+    content_type: &'static str,
+    body: Vec<u8>,
+) -> (std::net::SocketAddr, Seen) {
     ensure_crypto_provider();
     let seen: Seen = Arc::default();
     let recorded = seen.clone();
@@ -74,7 +85,7 @@ async fn stub(status: StatusCode, body: &'static str) -> (std::net::SocketAddr, 
             let recorded = recorded.clone();
             async move {
                 recorded.lock().unwrap().push((headers, bytes));
-                (status, body)
+                (status, [(CONTENT_TYPE, content_type)], body)
             }
         }),
     );
@@ -168,20 +179,79 @@ async fn a_client_with_no_digests_is_bad_input() {
     assert!(seen.lock().unwrap().is_empty());
 }
 
+/// The layer's own unsigned `426` body, in the codec the client asked for.
+fn refusal_body(code: &str) -> Vec<u8> {
+    CborCodec
+        .encode(&serde_json::json!({ "code": code, "message": "update the client" }))
+        .unwrap()
+}
+
+async fn answer_426(code: &str) -> ClientError {
+    let (addr, _) = stub_with(
+        StatusCode::UPGRADE_REQUIRED,
+        "application/cbor",
+        refusal_body(code),
+    )
+    .await;
+    get_widgets(&client(addr).with_contracts(TABLE))
+        .await
+        .expect_err("426")
+}
+
 #[tokio::test]
-async fn an_unsigned_426_is_contract_unsupported_and_its_body_is_not_read() {
-    let (addr, _) = stub(StatusCode::UPGRADE_REQUIRED, "\u{0}not cbor, not read").await;
-    let client = client(addr).with_contracts(TABLE);
-    let error = get_widgets(&client).await.expect_err("426");
-    match error {
+async fn an_unsigned_426_with_the_rest_code_is_contract_unsupported() {
+    match answer_426(CONTRACT_UNSUPPORTED_REST_CODE).await {
         ClientError::Envelope(EnvelopeError::ContractUnsupported { op }) => {
-            assert_eq!(op, "/widgets");
+            assert_eq!(
+                op, "GET /widgets",
+                "a REST op is named by method and template"
+            );
         }
         other => panic!("expected ContractUnsupported, got {other:?}"),
     }
     assert_eq!(
         EnvelopeError::ContractUnsupported { op: String::new() }.code(),
         "envelope_contract_unsupported"
+    );
+}
+
+#[tokio::test]
+async fn an_unsigned_426_with_the_rpc_code_is_contract_unsupported() {
+    let error = answer_426(CONTRACT_UNSUPPORTED_CODE).await;
+    assert!(
+        matches!(
+            error,
+            ClientError::Envelope(EnvelopeError::ContractUnsupported { .. })
+        ),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_unsigned_426_with_any_other_code_stays_unsigned() {
+    // A proxy's own 426 (it wants TLS or h2) is not a contract refusal.
+    let error = answer_426("upgrade_required").await;
+    assert!(
+        matches!(
+            error,
+            ClientError::Envelope(EnvelopeError::Unsigned { status: 426 })
+        ),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn an_unsigned_426_whose_body_is_not_a_refusal_stays_unsigned() {
+    let (addr, _) = stub(StatusCode::UPGRADE_REQUIRED, "\u{0}not cbor, not json").await;
+    let error = get_widgets(&client(addr).with_contracts(TABLE))
+        .await
+        .expect_err("426");
+    assert!(
+        matches!(
+            error,
+            ClientError::Envelope(EnvelopeError::Unsigned { status: 426 })
+        ),
+        "{error:?}"
     );
 }
 

@@ -53,6 +53,9 @@ impl EnvelopeLayer {
     ///   per op, the op-contract digests a request may bind (binding
     ///   version 2, cratestack#1123). Which one a request used is told by
     ///   its `Cratestack-Contract` header (see [`EnvelopeLayerBuilder::max_contract_trials`]).
+    ///   The table is `&'static`: a deployer who loads history at runtime
+    ///   has to `Box::leak` it, which the generated table (PR 3's lock)
+    ///   never needs; accepting a `Cow`/`Arc` is a later, compatible change.
     ///
     /// Then name the transport ([`EnvelopeLayerBuilder::rest`],
     /// [`EnvelopeLayerBuilder::rpc`] or a custom

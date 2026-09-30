@@ -13,7 +13,13 @@ that op's wire shape does. Server-only edits and edits to other ops leave every
 older client working; a wire-shape edit makes that op, and only that op, answer
 the **unsigned `426 contract_unsupported`** (`CONTRACT_UNSUPPORTED` on REST),
 which the client surfaces as `EnvelopeError::ContractUnsupported { op }`
-(`envelope_contract_unsupported`; unsigned, so a hint and never proof).
+(`envelope_contract_unsupported`; unsigned, so a hint and never proof). The
+client reads the `426` body for its code alone and maps only
+`contract_unsupported` / `CONTRACT_UNSUPPORTED` to it; any other unsigned `426`
+(a proxy's) stays `EnvelopeError::Unsigned`. The `426` is deliberately sent
+without `Upgrade` (connection-specific, forbidden on HTTP/2, stripped by
+proxies, and no protocol token names an op contract). On REST `op` is
+`"METHOD /template"`.
 
 **Wire.** `BINDING_VERSION` is `2`; AAD element 7 is `contract_sha` in the
 position `schema_sha` held, so the array lengths (9 and 12) are unchanged, and
@@ -24,7 +30,8 @@ used in a new **unbound** header, `Cratestack-Contract: <first 8 bytes of the
 digest, unpadded base64url>` (`ContractSelector`), which only selects among the
 digests the server already accepts for the op; the signature covers all 32
 bytes, so a lie is a `401`. A selector that names no accepted digest is the
-unsigned `426`, answered before any key lookup. Without the header the layer
+unsigned `426`, answered before any key lookup (an unsigned, nonce-bound request
+whose well-formed selector names nothing gets the same `426`). Without the header the layer
 tries the op's accepted digests newest first, at most
 `EnvelopeLayerBuilder::max_contract_trials` (default 4); a failed trial burns no
 nonce. The response is sealed under the digest the request opened under. A
@@ -54,7 +61,7 @@ a follow-up. The whole-IR `SCHEMA_SHA256(_BYTES)` stays, for the warn-only
   module, `ACCEPTED_CONTRACTS`: per op, the digests a request may bind (one, the
   current, for now).
 - New in `cratestack_core`: `ContractSelector`, `CONTRACT_HEADER`,
-  `CONTRACT_UNSUPPORTED_CODE`, `OpContracts`, `AcceptedContracts`,
+  `CONTRACT_UNSUPPORTED_CODE`, `CONTRACT_UNSUPPORTED_REST_CODE`, `OpContracts`, `AcceptedContracts`,
   `BATCH_CONTRACT_KEY`, `bound_contracts`, `find_contract`.
 
 The shared vectors are regenerated at version 2 (`binding.contract_sha`

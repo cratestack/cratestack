@@ -127,6 +127,14 @@ pub(super) async fn derive() -> Vec<Negative> {
         contract_sha: common::other_contract_sha(),
         ..rpc.clone()
     };
+    let victim_kid = common::ed25519().verify_key().kid();
+    // Positive control: the same forge over the version 2 AAD is the valid
+    // `ed` request byte for byte, so `binding-v1` differs only in the version.
+    assert_eq!(
+        ed25519_with_kid(&victim_kid, &rpc_aad),
+        ed,
+        "binding-v1 control"
+    );
     // The same AAD under binding version 1: element 0 is `1`, not `2`.
     let mut v1_aad = rpc_aad.clone();
     assert_eq!(
@@ -135,7 +143,6 @@ pub(super) async fn derive() -> Vec<Negative> {
         "a 9-element array led by version 2"
     );
     v1_aad[1] = 0x01;
-    let victim_kid = common::ed25519().verify_key().kid();
     let impostor = CoseEnvelope::client(
         CoseMode::Sign1,
         Arc::new(KidOf(

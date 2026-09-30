@@ -1,7 +1,6 @@
-//! `include_client_schema!` emits `SCHEMA_SHA256_BYTES` (cratestack#1006):
-//! the digest a signed request's binding carries, the same value as the hex
-//! `SCHEMA_SHA256`. The Rust client (#1007) seals with it, and it must equal
-//! what the server's module emits for the same file.
+//! `SCHEMA_SHA256_BYTES` is the whole-IR identity as raw bytes (the drift
+//! header's value). It is not bound into a signed message since binding
+//! version 2; the called op's `OP_CONTRACTS` digest is (cratestack#1123).
 
 mod schema {
     cratestack::include_client_schema!("tests/fixtures/builder_pattern.cstack");

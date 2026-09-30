@@ -27,13 +27,17 @@ pub enum EnvelopeError {
     /// reported (ADR 0006 §10).
     #[error("the response failed COSE verification")]
     Unverified,
-    /// The server answered the unsigned `426 contract_unsupported`: it no
+    /// The server answered the unsigned `426` whose body code is
+    /// `contract_unsupported` (RPC) or `CONTRACT_UNSUPPORTED` (REST): it no
     /// longer serves the wire shape this client has for `op` (a breaking
     /// change to that op since this client was built), so the call was
     /// refused before any key was looked up. **The answer is unsigned**, so
     /// it is a hint and never proof: anyone on the path could send it, and a
     /// caller should offer "update the app" for that feature, not treat the
-    /// server's contract as known. Calls to other ops are unaffected.
+    /// server's contract as known. Its body is read only for that code,
+    /// which is unauthenticated; a `426` with any other code is
+    /// [`Unsigned`](Self::Unsigned). Calls to other ops are unaffected. `op`
+    /// is `"METHOD /template"` on REST and the op id on RPC.
     #[error("the server no longer accepts this client's contract for `{op}`; update the client")]
     ContractUnsupported { op: String },
     /// Sealing the request failed: the signer (a keystore, a KMS) refused or

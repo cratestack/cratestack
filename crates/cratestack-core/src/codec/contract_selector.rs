@@ -37,6 +37,10 @@ pub const CONTRACT_HEADER_VALUE_LEN: usize = 11;
 /// `426` a verifier answers when the selector names no accepted digest.
 pub const CONTRACT_UNSUPPORTED_CODE: &str = "contract_unsupported";
 
+/// [`CONTRACT_UNSUPPORTED_CODE`]'s REST twin: the `CratestackErrorResponse`
+/// code of the same unsigned `426`.
+pub const CONTRACT_UNSUPPORTED_REST_CODE: &str = "CONTRACT_UNSUPPORTED";
+
 /// The first [`CONTRACT_SELECTOR_LEN`] bytes of an op contract digest.
 ///
 /// ```

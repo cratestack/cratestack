@@ -21,7 +21,9 @@ use super::{client_contract_digest, op_contract_digests};
 /// The row of a signed `/rpc/batch`: the route the AAD already binds.
 pub const BATCH_CONTRACT_KEY: &str = "batch";
 
-/// What a client stamps: one digest per op (and `batch`), sorted by key.
+/// What a client stamps: one digest per op (and `batch`), emitted in key order for a
+/// stable diff. Lookup ([`find_contract`]) is a linear scan: nothing relies
+/// on the order.
 pub type OpContracts = &'static [(&'static str, [u8; 32])];
 
 /// What a server accepts: per op (and `batch`), the digests a request may
@@ -30,7 +32,7 @@ pub type AcceptedContracts = &'static [(&'static str, &'static [[u8; 32]])];
 
 /// The digest a call to `method route` binds, for every key of `schema`
 /// (what the macros emit as `OP_CONTRACTS`): each op's digest, plus the
-/// `batch` row for `transport rpc`. Sorted by key.
+/// `batch` row for `transport rpc`. In key order, which nothing relies on.
 pub fn bound_contracts(schema: &Schema) -> Vec<(String, [u8; 32])> {
     let mut table = op_contract_digests(schema);
     if schema.transport == TransportStyle::Rpc {

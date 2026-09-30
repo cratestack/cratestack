@@ -4,16 +4,20 @@
 //! are tried newest first when the client names none, and the trial cap
 //! holds. Single-digest behaviour is `contracts.rs`.
 
+use std::sync::atomic::Ordering;
+
 use axum::body::Body;
 use cratestack_core::{
     AcceptedContracts, NONCE_HEADER, RequestNonce, request_digest, request_digest_unsigned,
 };
 use http::{Method, StatusCode, header};
 
-use super::contracts_support::{NEW, OLD, WITH_HISTORY, post_widgets, rest, selecting};
+use super::contracts_support::{
+    NEW, OLD, WITH_HISTORY, post_widgets, rest, rest_counting, selecting,
+};
 use super::fixtures::{Hits, REST_ROUTES, rest_router};
 use super::support::*;
-use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
+use crate::envelope_layer::{DEFAULT_MAX_CONTRACT_TRIALS, EnvelopeLayer, EnvelopeMode};
 
 #[tokio::test]
 async fn an_older_accepted_digest_opens_and_the_response_is_sealed_under_it_not_the_current() {
@@ -37,9 +41,10 @@ async fn an_older_accepted_digest_opens_and_the_response_is_sealed_under_it_not_
 async fn without_a_selector_the_accepted_digests_are_tried_newest_first() {
     let hits = Hits::default();
     let (call, sealed, req) = post_widgets(OLD, None).await;
-    let router = rest(WITH_HISTORY, None, &hits);
+    let (router, opens) = rest_counting(WITH_HISTORY, None, &hits);
     let answer = send(&router, req).await;
     assert_eq!(answer.status, StatusCode::OK, "NEW fails, OLD verifies");
+    assert_eq!(opens.load(Ordering::SeqCst), 2, "NEW, then OLD");
     call.open(request_digest(&sealed), answer.status, answer.body)
         .await
         .expect("sealed under OLD");
@@ -58,13 +63,35 @@ async fn without_a_selector_the_accepted_digests_are_tried_newest_first() {
 async fn the_trial_cap_is_honoured() {
     let hits = Hits::default();
     let (_, _, req) = post_widgets(OLD, None).await;
-    let answer = send(&rest(WITH_HISTORY, Some(1), &hits), req).await;
+    let (router, opens) = rest_counting(WITH_HISTORY, Some(1), &hits);
+    let answer = send(&router, req).await;
     assert_eq!(
         answer.status,
         StatusCode::UNAUTHORIZED,
         "only NEW was tried; OLD is beyond the cap"
     );
     assert_eq!(hits.get(), 0);
+    assert_eq!(opens.load(Ordering::SeqCst), 1, "one trial, not two");
+}
+
+#[tokio::test]
+async fn a_forged_request_without_the_header_costs_the_default_cap_in_opens() {
+    static FIVE: AcceptedContracts = &[(
+        "POST /widgets",
+        &[NEW, OLD, [0x23; 32], [0x24; 32], [0x25; 32]],
+    )];
+    let hits = Hits::default();
+    let (_, _, req) = post_widgets([0x44; 32], None).await;
+    let (router, opens) = rest_counting(FIVE, None, &hits);
+    let answer = send(&router, req).await;
+    assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(hits.get(), 0);
+    assert_eq!(
+        opens.load(Ordering::SeqCst),
+        DEFAULT_MAX_CONTRACT_TRIALS,
+        "five accepted digests, four opens"
+    );
+    assert_eq!(DEFAULT_MAX_CONTRACT_TRIALS, 4);
 }
 
 #[tokio::test]
@@ -93,15 +120,9 @@ async fn an_unsigned_request_is_answered_under_the_digest_its_selector_names() {
     };
     let call = Call::new(Method::GET, "/widgets/{id}", &["1"]);
     let digest = request_digest_unsigned(&nonce, &[]);
-    // A selector naming an accepted digest picks it; none, or one the op
-    // does not accept, falls back to the op's current digest, and is not an
-    // error: an unsigned request proves nothing.
-    for (selector, sealed_under) in [
-        (Some(OLD), OLD),
-        (Some(NEW), NEW),
-        (None, NEW),
-        (Some([0x55; 32]), NEW),
-    ] {
+    // A selector naming an accepted digest picks it, and none falls back to
+    // the op's current digest: an unsigned request proves nothing.
+    for (selector, sealed_under) in [(Some(OLD), OLD), (Some(NEW), NEW), (None, NEW)] {
         let answer = send(&router, get(selector)).await;
         assert_eq!(answer.status, StatusCode::OK);
         call.clone_with_contract(sealed_under)
@@ -109,4 +130,10 @@ async fn an_unsigned_request_is_answered_under_the_digest_its_selector_names() {
             .await
             .unwrap_or_else(|error| panic!("{selector:?}: {error}"));
     }
+    // A well-formed selector naming nothing is the same unsigned 426 the
+    // signed path answers, not a response sealed under a digest the client
+    // cannot open.
+    let answer = send(&router, get(Some([0x55; 32]))).await;
+    assert_eq!(answer.status, StatusCode::UPGRADE_REQUIRED);
+    assert!(!answer.is_sealed());
 }
