@@ -109,6 +109,65 @@ shared schema across services (`import`). Blocked at the front on
 `import` semantics before any parser work — including one product decision
 (whether imported `model`s create tables) reserved for the maintainer.
 
+### 🆕 `Int` and `BigInt` as built-in integer types: the breaking 0.16.0 release ([#1130](https://github.com/cratestack/cratestack/pull/1130))
+
+Accepted on 2026-09-30 as [ADR 0019](docs/adr/0019-int-and-bigint-built-in-types.md),
+with the per-target changes, diagrams and the three-PR plan in
+[`docs/design/int-and-bigint.md`](docs/design/int-and-bigint.md) (§7). The
+implementation has not started; #1130 is the draft PR carrying the ADR.
+
+The problem is precise: a schema `Int` is a Rust `i64` and a JSON number that
+carries every digit, and no JavaScript consumer can hold that range. TypeScript
+rounds anything above 2^53 without an error, `@cratestack/cbor-web` refuses to
+decode it, and Dart on dart2js rounds it. skyport-billing, which stores money as
+`i64` e8 units, is the reported victim. There is no per-field fix today: an
+attribute such as `@string` reports `schema OK` and changes nothing.
+
+What the ADR decides:
+
+- **`Int` becomes `i32`** (`INTEGER`), exact in every client by construction.
+- **`BigInt` is the new built-in `i64`**: `cratestack::BigInt` in Rust, `bigint`
+  in TypeScript, `BigInt` in Dart. It travels as a canonical decimal string on
+  JSON **and** on CBOR (a text string, major type 3), so there is one wire form
+  on every codec, and a JSON number or a CBOR integer at a `BigInt` key is
+  refused.
+- **Field attributes become a closed list** per declaration kind, so an unknown
+  name is a `check` error instead of a silent no-op.
+- **`cratestack upgrade int-to-bigint`** rewrites every `Int` to `BigInt` by
+  parser span and moves snapshots to format 3, with no DDL. Narrowing a field
+  back to `Int` is a deliberate per-field edit, `Lossy` in `migrate diff`. The
+  command ships in 0.16.0 and is deleted in 0.17.0.
+
+All three PRs ship together in **0.16.0**, one breaking release with no
+compatibility path and no release cut between them. A user regenerates every
+client and rebuilds every server in one upgrade.
+
+| PR | Scope | Status |
+| --- | --- | --- |
+| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)) | planned |
+| B | `BigInt` end to end: core type and serde on both codecs, SQL, migrate, JSON Schema, MCP, TypeScript and Dart clients | planned |
+| C | `Int` becomes 32-bit: snapshot format 3, digest domains `v2`, the `int-to-bigint` codemod | planned |
+
+B and C must ship together, or a hand edit from `Int` to `BigInt` would be a
+`Lossy` `ALTER` to the same type. A is technically independent and rides the
+same release.
+
+Ruled out in the ADR, so it isn't proposed again:
+
+- **`BigInt` as a native CBOR integer.** Batch frames pass through
+  `serde_json::Value`, the Dart web codec rounds at its JS JSON boundary, and the
+  two JS CBOR bridges disagree about large integers. Coming back means a new ADR
+  that reworks those three paths first.
+- **`BigInt` as an RFC 8949 bignum (tag 2 or 3).** Every `i64` already has a
+  native integer form, so a bignum is a second, non-preferred spelling of it, and
+  batch frames, the Dart boundary and the bridges have nowhere to put a tag.
+- **A 53-bit `Int`** (a 64-bit column constrained to ±(2^53 - 1)). It makes
+  correctness depend on validation at every boundary, and no column type has that
+  range.
+- **A string-encoded `Int`** (keep `i64`, change only its encoding). There would
+  be no `BigInt`, every counter and page size becomes a `bigint` in TypeScript,
+  and `int4` stays unmapped.
+
 ### 🐞 Open bugs
 
 - [#879](https://github.com/cratestack/cratestack/issues/879) — the governance
