@@ -10,9 +10,8 @@ use cratestack::include_server_schema;
 
 fn op_keys(path: &str) -> BTreeSet<String> {
     let schema = cratestack_parser::parse_schema_file(path).expect("fixture parses");
-    cratestack_core::client_contract::ops(&schema)
+    cratestack_core::client_contract::op_keys(&schema)
         .into_iter()
-        .map(|op| op.key)
         .collect()
 }
 
@@ -66,6 +65,36 @@ mod rpc_suppressed {
         let emitted = rpc_keys(cratestack_schema::axum::OPS);
         assert_eq!(
             op_keys("tests/fixtures/internal_suppression_rpc.cstack"),
+            emitted
+        );
+    }
+}
+
+mod rpc_no_database {
+    use super::*;
+    include_server_schema!("tests/fixtures/op_contract_none_rpc.cstack", db = None);
+
+    #[test]
+    fn a_schema_with_no_database_has_only_procedure_ops() {
+        let emitted = rpc_keys(cratestack_schema::axum::OPS);
+        assert_eq!(emitted.len(), 2);
+        assert_eq!(
+            op_keys("tests/fixtures/op_contract_none_rpc.cstack"),
+            emitted
+        );
+    }
+}
+
+mod rest_no_database {
+    use super::*;
+    include_server_schema!("tests/fixtures/op_contract_none_rest.cstack", db = None);
+
+    #[test]
+    fn a_schema_with_no_database_has_only_procedure_routes() {
+        let emitted = rest_keys(cratestack_schema::axum::ROUTE_TRANSPORTS);
+        assert_eq!(emitted.len(), 2);
+        assert_eq!(
+            op_keys("tests/fixtures/op_contract_none_rest.cstack"),
             emitted
         );
     }

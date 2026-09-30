@@ -1,7 +1,9 @@
-//! One check per drop-list entry: adding it to a field, a model or a
-//! procedure leaves every op digest where it was.
+//! Name matching and the projections' structural rules. Per-entry
+//! invariance over parsed source is `cratestack-parser/tests/op_contract_dropped.rs`;
+//! who reads each name is pinned by `tests_readers.rs`.
 
-use super::tests::{attr, sample};
+use super::attrs::{DROPPED_ATTRIBUTES, attribute_name, is_dropped};
+use super::tests::sample;
 use super::*;
 
 #[test]
@@ -15,22 +17,6 @@ fn attribute_names_are_exact() {
         "a case variant is unknown, so it stays in"
     );
     assert!(!is_dropped("@allow2(x)"));
-}
-
-#[test]
-fn every_dropped_attribute_is_wire_neutral() {
-    let base = sample();
-    let table = op_contract_digests(&base);
-    for (name, reason) in DROPPED_ATTRIBUTES {
-        assert!(!reason.is_empty(), "{name} needs a reason");
-        let raw = format!("{name}(x)");
-        let mut schema = base.clone();
-        schema.models[0].attributes.push(attr(&raw));
-        schema.models[0].fields[1].attributes.push(attr(&raw));
-        schema.types[0].fields[0].attributes.push(attr(&raw));
-        schema.procedures[0].attributes.push(attr(&raw));
-        assert_eq!(op_contract_digests(&schema), table, "{name} moved a digest");
-    }
 }
 
 #[test]
@@ -62,4 +48,24 @@ fn an_unrelated_new_model_procedure_or_type_moves_no_existing_digest() {
         assert_eq!(&now.1, digest, "{key}");
     }
     assert!(after.len() > before.len());
+}
+
+#[test]
+fn every_dropped_attribute_has_a_reason_and_a_unique_name() {
+    let mut names: Vec<_> = DROPPED_ATTRIBUTES.iter().map(|(n, _)| *n).collect();
+    assert!(
+        DROPPED_ATTRIBUTES
+            .iter()
+            .all(|(_, reason)| !reason.is_empty())
+    );
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), DROPPED_ATTRIBUTES.len());
+}
+
+#[test]
+fn attributes_with_no_semantics_today_are_not_pre_approved() {
+    for raw in ["@@map(\"t\")", "@map(\"c\")", "@@mcp(x)", "@mcp(x)"] {
+        assert!(!is_dropped(raw), "{raw} must stay in until it is reviewed");
+    }
 }

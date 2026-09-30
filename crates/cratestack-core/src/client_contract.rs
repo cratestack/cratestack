@@ -12,7 +12,7 @@
 //! Out entirely: the datasource, config blocks, `extension` blocks, the
 //! `auth` block, the schema-level MCP config, mixins (the parser expands
 //! them into fields), queries, every other op, docs and spans. Attributes
-//! on the reviewed [`DROPPED_ATTRIBUTES`] list are filtered; every other
+//! on the reviewed `DROPPED_ATTRIBUTES` list are filtered; every other
 //! attribute, known or not, stays in, so a new one moves digests until it is
 //! reviewed onto that list. The digest is
 //! `SHA-256(OP_CONTRACT_DOMAIN || canonical JSON)`; if the derivation rules
@@ -22,6 +22,7 @@
 //! identity (binding v1). `cratestack contract digest|print` shows them.
 
 mod attrs;
+mod build;
 mod canon;
 mod ops;
 mod project;
@@ -31,113 +32,25 @@ mod tests;
 mod tests_bytes;
 #[cfg(test)]
 mod tests_drop;
+#[cfg(test)]
+mod tests_ops;
+#[cfg(test)]
+mod tests_readers;
+#[cfg(test)]
+mod tests_readers_table;
 
 use sha2::{Digest, Sha256};
 
-use crate::events::{ModelEventKind, parse_emit_attribute};
-use crate::schema::{Procedure, ProcedureKind, Schema, TransportStyle, TypeArity};
-use crate::schema_identity::members::args;
-use crate::schema_identity::members::type_ref;
+use crate::schema::Schema;
+use build::canonical;
+use ops::ops;
 
-pub use attrs::{DROPPED_ATTRIBUTES, attribute_name, is_dropped};
-pub use ops::{ClientOp, ModelVerb, OpTarget, ops};
-
-use canon::{COpContract, CWireProcedure};
+pub use ops::op_keys;
 
 /// Domain-separation tag of an op digest.
 pub const OP_CONTRACT_DOMAIN: &[u8] = b"cratestack/op-contract/v1\0";
 /// Domain-separation tag of [`client_contract_digest`].
 pub const CLIENT_CONTRACT_DOMAIN: &[u8] = b"cratestack/client-contract/v1\0";
-
-fn contract<'a>(schema: &'a Schema, op: &'a ClientOp<'a>) -> COpContract<'a> {
-    let transport = match schema.transport {
-        TransportStyle::Rpc => "rpc",
-        TransportStyle::Rest => "rest",
-    };
-    match op.target {
-        OpTarget::Model(model, verb) => COpContract {
-            closure: project::closure(schema, &[&model.name]),
-            events: (verb == ModelVerb::Subscribe).then(|| emitted(model)),
-            key: &op.key,
-            kind: if verb == ModelVerb::Subscribe {
-                "subscription"
-            } else {
-                "unary"
-            },
-            model: Some(&model.name),
-            procedure: None,
-            transport,
-            verb: verb.as_str(),
-        },
-        OpTarget::Procedure(p) => procedure_contract(schema, op, p, transport),
-    }
-}
-
-fn procedure_contract<'a>(
-    schema: &'a Schema,
-    op: &'a ClientOp<'a>,
-    p: &'a Procedure,
-    transport: &'static str,
-) -> COpContract<'a> {
-    let Procedure {
-        docs: _,
-        name,
-        name_span: _,
-        kind,
-        args: procedure_args,
-        return_type,
-        attributes,
-        span: _,
-        mcp: _,
-    } = p;
-    let mut roots: Vec<&str> = vec![&return_type.name];
-    roots.extend(return_type.generic_args.iter().map(|g| g.name.as_str()));
-    for arg in procedure_args {
-        roots.push(&arg.ty.name);
-        roots.extend(arg.ty.generic_args.iter().map(|g| g.name.as_str()));
-    }
-    let kind = match kind {
-        ProcedureKind::Query => "query",
-        ProcedureKind::Mutation => "mutation",
-    };
-    COpContract {
-        closure: project::closure(schema, &roots),
-        events: None,
-        key: &op.key,
-        kind: if return_type.arity == TypeArity::List {
-            "sequence"
-        } else {
-            "unary"
-        },
-        model: None,
-        procedure: Some(CWireProcedure {
-            args: args(procedure_args),
-            attributes: project::wire_attributes(attributes),
-            kind,
-            name,
-            return_type: type_ref(return_type),
-        }),
-        transport,
-        verb: kind,
-    }
-}
-
-fn emitted(model: &crate::schema::Model) -> Vec<&'static str> {
-    let mut kinds: Vec<ModelEventKind> = model
-        .attributes
-        .iter()
-        .filter(|a| a.raw.starts_with("@@emit("))
-        .filter_map(|a| parse_emit_attribute(&a.raw).ok())
-        .flatten()
-        .collect();
-    kinds.sort_by_key(|k| k.as_str());
-    kinds.dedup();
-    kinds.into_iter().map(ModelEventKind::as_str).collect()
-}
-
-fn canonical(schema: &Schema, op: &ClientOp<'_>) -> Vec<u8> {
-    serde_json::to_vec(&contract(schema, op)).expect("plain structs always serialize")
-}
 
 fn digest_of(bytes: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();

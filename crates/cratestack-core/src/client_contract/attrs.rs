@@ -7,10 +7,14 @@
 //! Matching is by exact name (`@Deny` is not `@deny`), so an unknown or
 //! misspelled attribute is kept.
 
-/// `(attribute name, why it is wire-neutral)`. Each entry is checked by
-/// `tests_drop.rs`, which adds it to a field, a model and a procedure and
-/// asserts no op digest moves.
-pub const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
+/// `(attribute name, why it is wire-neutral)`. Each entry needs a parsed-source
+/// invariance test (`cratestack-parser/tests/op_contract_dropped.rs`) and a
+/// pinned reader list (`tests_readers.rs`): a new reader of the name anywhere
+/// fails that test and forces this decision to be reviewed again. Names with
+/// no semantics today (`@map`, `@@map`) and MCP markers (lifted into the IR's
+/// `mcp` node before attributes are read) are deliberately absent, so giving
+/// one a meaning later moves digests.
+pub(crate) const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
     (
         "@@allow",
         "policy: decides who may call, not how bytes decode",
@@ -24,8 +28,6 @@ pub const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
         "@@unique",
         "storage: upsert targets are unsupported, so no input shape depends on it",
     ),
-    ("@@map", "storage: table name"),
-    ("@map", "storage: column name"),
     ("@@sql", "a view's or query's SQL body"),
     ("@@server_sql", "a view's Postgres body"),
     ("@@embedded_sql", "a view's SQLite body"),
@@ -52,8 +54,6 @@ pub const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
         "the event kinds belong to the `subscribe` op's own contract; \
          `ModelEvent<T>` and its kind enum are fixed",
     ),
-    ("@@mcp", "MCP exposure"),
-    ("@mcp", "MCP exposure"),
     ("@no_idempotency", "retry policy, not a shape"),
     ("@no_rate_limit", "rate-limit participation"),
     ("@isolation", "transaction isolation of the handler"),
@@ -68,7 +68,7 @@ pub const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
 /// The exact name of an attribute's text: `@@allow("read", x)` is
 /// `@@allow`, `@length(min: 1)` is `@length`. The sigil is part of the
 /// name, so `@allow` and `@@allow` stay distinct.
-pub fn attribute_name(raw: &str) -> &str {
+pub(crate) fn attribute_name(raw: &str) -> &str {
     let end = raw
         .find(|c: char| !(c == '@' || c == '_' || c.is_ascii_alphanumeric()))
         .unwrap_or(raw.len());
@@ -76,7 +76,7 @@ pub fn attribute_name(raw: &str) -> &str {
 }
 
 /// Whether `raw` is on the drop list.
-pub fn is_dropped(raw: &str) -> bool {
+pub(crate) fn is_dropped(raw: &str) -> bool {
     let name = attribute_name(raw);
     DROPPED_ATTRIBUTES
         .iter()

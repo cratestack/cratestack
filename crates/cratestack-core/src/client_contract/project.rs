@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 use super::attrs::{is_dropped, is_server_only};
 use super::canon::{CClosure, CWireModel};
 use crate::schema::{
-    Attribute, EnumDecl, Field, Model, Schema, TypeDecl, TypeRef, View, computed_params_type_name,
+    Attribute, EnumDecl, EnumVariant, Field, Model, Schema, TypeDecl, TypeRef, View,
+    computed_params_type_name,
 };
 use crate::schema_identity::canon::{CEnum, CField, CFields};
 use crate::schema_identity::members::type_ref;
@@ -104,14 +105,22 @@ fn wire_enum(e: &EnumDecl) -> CEnum<'_> {
         variants,
         span: _,
     } = e;
-    CEnum {
-        name,
-        variants: variants.iter().map(|v| v.name.as_str()).collect(),
-    }
+    let variants = variants
+        .iter()
+        .map(|v| {
+            let EnumVariant {
+                docs: _,
+                name,
+                span: _,
+            } = v;
+            name.as_str()
+        })
+        .collect();
+    CEnum { name, variants }
 }
 
 /// Collects every type name a type ref mentions, generic arguments included.
-fn type_names<'a>(ty: &'a TypeRef, out: &mut Vec<&'a str>) {
+pub(super) fn type_names<'a>(ty: &'a TypeRef, out: &mut Vec<&'a str>) {
     out.push(&ty.name);
     ty.generic_args.iter().for_each(|arg| type_names(arg, out));
 }

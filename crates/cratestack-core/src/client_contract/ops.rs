@@ -1,7 +1,7 @@
 //! The ops a schema exposes to a client, keyed the way the generated
 //! routers and clients key them: the RPC `op_id`, or `"<METHOD> <route>"`
 //! on REST. One list, asserted equal to the macro's `OPS` and
-//! `ROUTE_TRANSPORTS` by `cratestack-api/tests/op_contract_parity.rs`.
+//! `ROUTE_TRANSPORTS` by `cratestack-pg/tests/op_contract_parity.rs`.
 
 use crate::procedure_route::procedure_rest_route_path;
 use crate::route_naming::model_route_segment;
@@ -9,7 +9,7 @@ use crate::schema::{Model, Procedure, Schema, TransportStyle, model_internal_act
 
 /// What an op does to its target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ModelVerb {
+pub(crate) enum ModelVerb {
     List,
     Get,
     Create,
@@ -19,7 +19,7 @@ pub enum ModelVerb {
 }
 
 impl ModelVerb {
-    pub const fn as_str(self) -> &'static str {
+    pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::List => "list",
             Self::Get => "get",
@@ -46,14 +46,14 @@ impl ModelVerb {
 
 /// The declaration an op is about.
 #[derive(Debug, Clone, Copy)]
-pub enum OpTarget<'a> {
+pub(crate) enum OpTarget<'a> {
     Model(&'a Model, ModelVerb),
     Procedure(&'a Procedure),
 }
 
 /// One client-facing op.
 #[derive(Debug, Clone)]
-pub struct ClientOp<'a> {
+pub(crate) struct ClientOp<'a> {
     pub key: String,
     pub target: OpTarget<'a>,
 }
@@ -68,7 +68,7 @@ const VERBS: [ModelVerb; 5] = [
 
 /// Every op `schema` exposes, sorted by key. `@@internal` verbs are
 /// absent; `subscribe` is present for `@@subscribe` models.
-pub fn ops(schema: &Schema) -> Vec<ClientOp<'_>> {
+pub(crate) fn ops(schema: &Schema) -> Vec<ClientOp<'_>> {
     let rpc = schema.transport == TransportStyle::Rpc;
     let mut out = Vec::new();
     for model in &schema.models {
@@ -116,4 +116,11 @@ fn model_key(model: &str, verb: ModelVerb, rpc: bool) -> Option<String> {
         format!("/{segment}")
     };
     Some(format!("{method} {path}"))
+}
+
+/// The key of every op `schema` exposes, sorted. This is the list the
+/// generated routers and clients expose, asserted equal to the macro's
+/// `OPS` / `ROUTE_TRANSPORTS` by the parity test.
+pub fn op_keys(schema: &Schema) -> Vec<String> {
+    ops(schema).into_iter().map(|op| op.key).collect()
 }
