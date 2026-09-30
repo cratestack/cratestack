@@ -99,9 +99,11 @@ auth, never the reverse):
 
 `tests/vectors/contract.json` is the op-contract vector: a fixture schema (REST and RPC), the
 canonical JSON of every op's contract, each op's digest, the `batch` row and the client contract
-digest, with the derivation in its `description`, so a non-Rust implementation can check that it
+digest, with the derivation in its `description`, so a future non-Rust sealer can check that it
 derives the same 32 bytes the AAD binds. `cratestack-parser`'s `contract_vectors` test writes and
-checks it and the TypeScript and Dart generators' tests compare their constants to it.
+checks it, and recomputes the digests from the canonical strings alone with plain SHA-256 (the one
+independent check). The generated TypeScript and Dart constants are compared to it too, but both
+generators are Rust and call the same core function, so that is parity, not independent proof.
 
 `tests/vectors/*.json` hold the fixed keys, the 112-byte payment fixture, 33 unary cases
 and 22 must-reject cases in hex, for the wasm, napi, TypeScript and Dart bindings to check

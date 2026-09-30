@@ -387,14 +387,20 @@ generated `ACCEPTED_CONTRACTS` lists, per op, the current digest then the
 locked ones (newest first). `lock` records the current contracts as a
 generation (creating the file; idempotent; run it before shipping a client
 build; it refuses while the current contract breaks a locked one, and `--date`
-defaults to today in UTC). `check` is the CI gate: exit 1 if the current
-contract is not a locked generation, or breaks a locked one (the op and the
-reason are printed; `--json` gives `{ok, client_contract, locked,
-incompatible: [{op, digest, reasons}]}`). An incompatible locked entry is also
+is a real `YYYY-MM-DD` date, today in UTC when omitted). `check` is the CI
+gate: exit 1 if the current contract is not a locked generation, or breaks a
+locked one (the op and the reason are printed; `--json` gives `{ok,
+client_contract, locked, incompatible: [{op, digest, reasons}]}`). Exit codes
+for the whole group: 0 ok, 1 a failed verdict, 2 a tool error (an unreadable
+schema or lock, a bad date or flag value); with `--json`, `check` prints one
+JSON document on every path, a tool error being `{ok: false, error,
+client_contract, locked: false, incompatible: []}` (`client_contract` is `null`
+when the schema did not parse). An incompatible locked entry is also
 a compile error in the server crate. `prune` drops history: `--op` stops
 accepting older clients of one op (the deliberate way to ship a breaking
 change to it: those clients get the unsigned `426` for that op only),
-`--before` / `--keep` / `--generation` drop whole generations; a stored
+`--before` (a real date, compared as a date) / `--keep` / `--generation` drop
+whole generations; a stored
 contract no generation references any more goes with them. A missing or
 hand-edited lock is an error, never a pass (cratestack#1123).
 
