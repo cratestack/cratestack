@@ -63,6 +63,34 @@ pub(crate) const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
     ("@email", "validator"),
     ("@uri", "validator"),
     ("@iso4217", "validator"),
+    (
+        "@pii",
+        "audit redaction: only `ModelDescriptor::pii_columns`, read by the audit writer; \
+         no wire struct, route or client carries it",
+    ),
+    (
+        "@sensitive",
+        "audit redaction (`sensitive_columns`), same as `@pii`",
+    ),
+    (
+        "@db_enforce",
+        "migration: emits the validator as a `CHECK` constraint, nothing at decode",
+    ),
+    (
+        "@unique",
+        "storage: a unique index in the DDL (`cratestack-migrate`); the wire input \
+         structs take no conflict target, so no shape depends on it",
+    ),
+    (
+        "@from",
+        "a view field's source column. Views have no route and the parser refuses one \
+         as an argument, return or field type, so it is on no op's closure",
+    ),
+    (
+        "@deprecated",
+        "a procedure's `Deprecation` / `X-Deprecation` response headers: headers, \
+         not the decoded body",
+    ),
 ];
 
 /// The exact name of an attribute's text: `@@allow("read", x)` is

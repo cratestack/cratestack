@@ -93,7 +93,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@@subscribe",
         &[
-            "cratestack-macros/src/transport/op_descriptors.rs",
+            "cratestack-core/src/op_list.rs",
             "cratestack-macros/src/transport/subscribe_dispatch.rs",
         ],
     ),
@@ -163,5 +163,21 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-migrate/src/convert/checks.rs",
             "cratestack-studio/src/validators/predicates.rs",
         ],
+    ),
+    ("@pii", &["cratestack-macros/src/shared/attrs.rs"]),
+    ("@sensitive", &["cratestack-macros/src/shared/attrs.rs"]),
+    ("@db_enforce", &["cratestack-migrate/src/convert/checks.rs"]),
+    (
+        "@unique",
+        &[
+            "cratestack-lsp/src/completion.rs",
+            "cratestack-migrate/src/convert/fields.rs",
+            "cratestack-migrate/src/convert/renames.rs",
+        ],
+    ),
+    ("@from", &[]),
+    (
+        "@deprecated",
+        &["cratestack-macros/src/axum/procedure/route_attrs.rs"],
     ),
 ];

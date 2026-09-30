@@ -145,3 +145,50 @@ fn rename_markers_move_nothing() {
         "  body String\n\n  @@rename(from = \"Memo\")\n}",
     ));
 }
+
+#[test]
+fn pii_sensitive_and_unique_fields_move_nothing() {
+    for attrs in ["@pii", "@sensitive", "@unique", "@pii @sensitive @unique"] {
+        assert_unchanged(&edit(
+            "  body String\n}",
+            &format!("  body String {attrs}\n}}"),
+        ));
+    }
+}
+
+#[test]
+fn db_enforce_moves_nothing() {
+    assert_unchanged(&edit(
+        "total     Int\n",
+        "total     Int @range(min: 0, max: 9) @db_enforce\n",
+    ));
+}
+
+#[test]
+fn deprecated_procedures_keep_their_digest() {
+    let plain = digest_of(BASE, "procedure.ping");
+    for attr in ["@deprecated", "@deprecated(\"use pong\")"] {
+        let source = BASE.replace(
+            "procedure ping(args: PingArgs): PingReply\n  @allow(auth() != null)",
+            &format!(
+                "procedure ping(args: PingArgs): PingReply\n  @allow(auth() != null)\n  {attr}"
+            ),
+        );
+        assert_ne!(source, BASE);
+        assert_eq!(digest_of(&source, "procedure.ping"), plain, "{attr}");
+    }
+}
+
+#[test]
+fn a_view_fields_source_moves_nothing() {
+    let viewed = |from: &str| {
+        format!(
+            "{BASE}{}",
+            VIEWED
+                .replace("@@SQL@@", "@@sql(\"SELECT id, body FROM notes\")")
+                .replace("@from(Note.body)", from)
+        )
+    };
+    assert_unchanged(&viewed("@from(Note.body)"));
+    assert_unchanged(&viewed("@from(Note.id)"));
+}

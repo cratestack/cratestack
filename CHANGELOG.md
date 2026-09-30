@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### One op list for every surface (#1123) — additive, no behaviour change
+
+`cratestack_core::op_list` (`ModelVerb`, `model_verbs`, `model_op_key`,
+`procedure_op_key`, `model_list_route`, `model_detail_route`) is now the one
+place a model's verbs and an op's key are derived. The contract digests' op
+list, the RPC `OPS` and REST `ROUTE_TRANSPORTS` descriptors, RPC dispatch,
+axum route registration, the generated Rust clients, the TypeScript and Dart
+generators, the WireMock stubs and the MCP resource gate all ask it, where
+each used to combine `model_internal_actions` with its own list of verb
+names. Emitted code, routes and op ids are byte-identical for every existing
+schema. Parity tests pin the TypeScript and Dart verb gates and the op keys
+over every `.cstack` in the repository. The studio's direct-SQL write guard
+stays off the list on purpose (docs/design/route-suppression.md §8b).
+
+### Six more wire-neutral attributes leave the op contract (#1123) — digests change
+
+`@pii`, `@sensitive`, `@db_enforce`, field `@unique`, a view field's `@from`
+and a procedure's `@deprecated` join `DROPPED_ATTRIBUTES`: the audit writer,
+the migration emitter, the `Deprecation` response headers and view parsing
+are their only readers, and none shapes a wire type, route or client. Adding,
+removing or editing one no longer moves any op digest. **The digests of a
+schema that uses any of them change once** relative to the previous
+Unreleased build; nothing binds a per-op digest yet (binding v1 still carries
+the whole-IR `schema_sha`, unchanged), so no signed client is affected.
+
 ### Per-op contract digests and `cratestack contract digest|print` (#1123) — additive
 
 `cratestack_core::client_contract` computes, for every op a schema exposes, a
