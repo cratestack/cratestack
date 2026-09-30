@@ -6,7 +6,7 @@
 //! cratestack#743 (`docs/design/route-suppression.md`): a suppressed
 //! verb (`@@internal(...)`) gets no client method at all — calling it
 //! becomes a compile error for the SDK consumer, not a runtime 403
-//! (design doc §4/§5). `cratestack_core::model_internal_actions`, the
+//! (design doc §4/§5). `cratestack_core::model_verbs`, the
 //! one shared source of truth, is consulted once below; each verb
 //! group's own builder lives in [`groups_read`]/[`groups_write`]
 //! (split the same way `transport::rpc::model_dispatch` splits into

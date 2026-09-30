@@ -19,6 +19,7 @@ pub(super) fn build_model_summary(model: &Model) -> SwrModelSummary {
     let hooks = model_hook_names(&model.name);
     SwrModelSummary {
         name: model.name.clone(),
+        op_ids: cratestack_core::ModelOpIds::rpc(&model.name),
         file_stem: to_kebab_case(&model.name),
         accessor: api.accessor,
         route: api.route,

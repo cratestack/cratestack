@@ -10,8 +10,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::shared::detail_path_of;
-
 /// The runtime for a call on the collection route.
 pub(super) fn list_runtime(route_path: &str) -> TokenStream {
     quote! {
@@ -22,7 +20,7 @@ pub(super) fn list_runtime(route_path: &str) -> TokenStream {
 /// The runtime for a call on the detail route. The call must be preceded by
 /// [`bind_id`], which defines `id_text`.
 pub(super) fn detail_runtime(route_path: &str) -> TokenStream {
-    let template = detail_path_of(route_path);
+    let template = cratestack_core::detail_route_of(route_path);
     quote! {
         self.runtime.at(::cratestack::client_rust::RouteRef::new(#template, &[id_text.as_str()]))
     }

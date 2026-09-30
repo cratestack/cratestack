@@ -15,11 +15,6 @@ pub(crate) fn model_detail_path(model_name: &str) -> String {
     cratestack_core::model_detail_route(model_name)
 }
 
-/// The detail route of the collection route `list_path`.
-pub(crate) fn detail_path_of(list_path: &str) -> String {
-    format!("{list_path}/{{id}}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

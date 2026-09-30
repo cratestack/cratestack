@@ -92,7 +92,13 @@ pub fn model_list_route(model: &str) -> String {
 
 /// The detail route of a model on REST: `/widgets/{id}`.
 pub fn model_detail_route(model: &str) -> String {
-    format!("{}/{{id}}", model_list_route(model))
+    detail_route_of(&model_list_route(model))
+}
+
+/// The detail route of the collection route `list_route`, for a caller that
+/// holds the route and not the model name.
+pub fn detail_route_of(list_route: &str) -> String {
+    format!("{list_route}/{{id}}")
 }
 
 /// The op key of a model verb: the RPC op id, or `"<METHOD> <route>"` on
@@ -117,5 +123,36 @@ pub fn procedure_op_key(procedure: &Procedure, rpc: bool) -> String {
         format!("procedure.{}", procedure.name)
     } else {
         format!("POST {}", procedure_rest_route_path(procedure))
+    }
+}
+
+/// The five RPC op ids of a model, for a generator's template context, so a
+/// template never spells `"model.<Name>.list"` itself. A verb `@@internal`
+/// suppresses still has an id here: the template only reads the ones its own
+/// `allows_*` gate admits.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ModelOpIds {
+    pub list: String,
+    pub get: String,
+    pub create: String,
+    pub update: String,
+    pub delete: String,
+}
+
+impl ModelOpIds {
+    /// ```
+    /// let ids = cratestack_core::ModelOpIds::rpc("Widget");
+    /// assert_eq!(ids.list, "model.Widget.list");
+    /// assert_eq!(ids.delete, "model.Widget.delete");
+    /// ```
+    pub fn rpc(model: &str) -> Self {
+        let id = |verb: ModelVerb| verb.rpc_op_id(model);
+        Self {
+            list: id(ModelVerb::List),
+            get: id(ModelVerb::Get),
+            create: id(ModelVerb::Create),
+            update: id(ModelVerb::Update),
+            delete: id(ModelVerb::Delete),
+        }
     }
 }

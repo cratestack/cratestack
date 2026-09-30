@@ -29,7 +29,7 @@ class ProceduresApi {
     CratestackRpcCallOptions? options,
   }) async {
     final body = await _client.adapter.call(
-      'procedure.{{ procedure.name }}',
+      '{{ procedure.op_id }}',
       args.toWire(),
       options: options,
     );

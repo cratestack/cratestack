@@ -56,6 +56,7 @@ pub(crate) struct SwrSharedView {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SwrModelSummary {
     pub(crate) name: String,
+    pub(crate) op_ids: cratestack_core::ModelOpIds,
     pub(crate) file_stem: String,
     pub(crate) accessor: String,
     pub(crate) route: String,

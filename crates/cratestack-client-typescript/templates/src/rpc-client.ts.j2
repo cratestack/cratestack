@@ -51,7 +51,7 @@ export class {{ model.api_name }} {
 {% if model.allows_list %}
   list(query: CratestackRpcListQuery{% if model.computed_params_interface %}<{{ model.computed_params_interface }}>{% endif %} = {}, options: CratestackRpcCallOptions = {}): Promise<{{ model.list_return_type }}> {
     return this.runtime.call<Record<string, unknown>, unknown>(
-      "model.{{ model.name }}.list",
+      "{{ model.op_ids.list }}",
       toRpcListInput(query),
       options,
     ).then((value) => {% if model.is_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ model.revival_shape_name }}') as {{ model.list_return_type }});
@@ -78,7 +78,7 @@ export class {{ model.api_name }} {
     }
 {% endif %}
     return this.runtime.call<Record<string, unknown>, unknown>(
-      "model.{{ model.name }}.get",
+      "{{ model.op_ids.get }}",
       input,
       options,
     ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model.name }});
@@ -88,7 +88,7 @@ export class {{ model.api_name }} {
 {% if model.allows_create %}
   create(input: {{ model.create_input_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ model.name }}> {
     return this.runtime.call<{{ model.create_input_name }}, unknown>(
-      "model.{{ model.name }}.create",
+      "{{ model.op_ids.create }}",
       input,
       options,
     ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model.name }});
@@ -102,7 +102,7 @@ export class {{ model.api_name }} {
     options: CratestackRpcCallOptions = {},
   ): Promise<{{ model.name }}> {
     return this.runtime.call<{ id: {{ model.primary_key_type }}; patch: {{ model.update_input_name }} }, unknown>(
-      "model.{{ model.name }}.update",
+      "{{ model.op_ids.update }}",
       { id, patch },
       options,
     ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model.name }});
@@ -112,7 +112,7 @@ export class {{ model.api_name }} {
 {% if model.allows_delete %}
   delete(id: {{ model.primary_key_type }}, options: CratestackRpcCallOptions = {}): Promise<void> {
     return this.runtime.call<{ id: {{ model.primary_key_type }} }, void>(
-      "model.{{ model.name }}.delete",
+      "{{ model.op_ids.delete }}",
       { id },
       options,
     );
@@ -128,7 +128,7 @@ export class ProceduresApi {
 {% if procedure.revival_kind == "scalar" %}
   {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
     return this.runtime.call<{{ procedure.args_name }}, unknown>(
-      "procedure.{{ procedure.name }}",
+      "{{ procedure.op_id }}",
       args,
       options,
     ).then((value) => reviveWireScalar(value, "{{ procedure.revival_scalar_kind }}") as {{ procedure.return_type }});
@@ -136,7 +136,7 @@ export class ProceduresApi {
 {% else %}
   {{ procedure.method_name }}(args: {{ procedure.args_name }}, options: CratestackRpcCallOptions = {}): Promise<{{ procedure.return_type }}> {
     return this.runtime.call<{{ procedure.args_name }}, unknown>(
-      "procedure.{{ procedure.name }}",
+      "{{ procedure.op_id }}",
       args,
       options,
     ).then((value) => {% if procedure.revival_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ procedure.revival_shape_name }}') as {{ procedure.return_type }});

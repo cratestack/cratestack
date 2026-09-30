@@ -5,7 +5,7 @@
 //! (cratestack#743, `docs/design/route-suppression.md`).
 //!
 //! cratestack#743: a suppressed verb
-//! (`cratestack_core::model_internal_actions` — the one shared source
+//! (`cratestack_core::model_verbs` — the one shared source
 //! of truth this surface consults) gets no arm at all, so
 //! `rpc_dispatch_inner`'s `match op_id` falls through to its
 //! pre-existing `other => ...` catch-all, which already returns

@@ -127,11 +127,32 @@ fn a_views_sql_attributes_move_nothing() {
 
 #[test]
 fn a_view_cannot_be_an_ops_type() {
-    let source = format!(
-        "{BASE}{}\nprocedure body(args: PingArgs): NoteBody\n  @allow(auth() != null)\n",
-        VIEWED.replace("@@SQL@@", "@@sql(\"SELECT 1\")")
-    );
-    assert!(cratestack_parser::parse_schema(&source).is_err());
+    let viewed = format!("{BASE}{}", VIEWED.replace("@@SQL@@", "@@sql(\"SELECT 1\")"));
+    assert!(cratestack_parser::parse_schema(&viewed).is_ok());
+    for (what, extra) in [
+        (
+            "return type",
+            "\nprocedure body(args: PingArgs): NoteBody\n  @allow(auth() != null)\n",
+        ),
+        (
+            "argument type",
+            "\nprocedure body(args: NoteBody): PingReply\n  @allow(auth() != null)\n",
+        ),
+        (
+            "list return type",
+            "\nprocedure bodies(args: PingArgs): NoteBody[]\n  @allow(auth() != null)\n",
+        ),
+        ("type field", "\ntype Holder {\n  body NoteBody\n}\n"),
+        (
+            "model field",
+            "\nmodel Holder {\n  id Int @id\n  body NoteBody\n}\n",
+        ),
+    ] {
+        assert!(
+            cratestack_parser::parse_schema(&format!("{viewed}{extra}")).is_err(),
+            "a view as a {what} must be refused"
+        );
+    }
 }
 
 #[test]

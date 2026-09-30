@@ -40,7 +40,10 @@ pub(crate) fn build_procedure_mapping(
         // hit `/rpc/procedure.ping`, never `/rpc/ping`). Omitting the
         // `procedure.` prefix here would make every RPC-transport stub
         // silently never match a real client's request.
-        TransportStyle::Rpc => format!("/rpc/procedure.{}", procedure.name),
+        TransportStyle::Rpc => format!(
+            "/rpc/{}",
+            cratestack_core::procedure_op_key(procedure, true)
+        ),
         // REST is the schema default and the only other transport this
         // generator supports. The route is `/$procs/{name}`, or
         // `/{version}/$procs/{name}` under `@api_version`, whether

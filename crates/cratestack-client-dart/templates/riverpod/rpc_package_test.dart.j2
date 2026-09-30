@@ -112,7 +112,7 @@ void main() {
       // `{{ override_proof.list_provider_name }}()`, not read bare.
       final result = await container.read({{ override_proof.list_provider_name }}().future);
 
-      expect(fakeAdapter.calls, ['model.{{ override_proof.model_name }}.list']);
+      expect(fakeAdapter.calls, ['{{ override_proof.list_op_id }}']);
       expect(result, hasLength(1));
     },
   );
@@ -134,7 +134,7 @@ void main() {
 
       final result = await container.read({{ override_proof.list_provider_name }}(input: input).future);
 
-      expect(fakeAdapter.calls, ['model.{{ override_proof.model_name }}.list']);
+      expect(fakeAdapter.calls, ['{{ override_proof.list_op_id }}']);
       expect(fakeAdapter.inputs.single, {'where': 'published=true', 'limit': 5});
       expect(result, hasLength(1));
     },

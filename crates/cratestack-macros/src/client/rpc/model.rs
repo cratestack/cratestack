@@ -24,7 +24,7 @@ pub(super) fn generate_generated_rpc_model_client(
     // cratestack#743: a suppressed verb (`@@internal(...)`) gets no
     // client method at all on RPC either — REST and RPC ship suppression
     // together, never one transport first (design doc §3/§4/§5). One
-    // shared source of truth, `cratestack_core::model_internal_actions`,
+    // shared source of truth, `cratestack_core::model_verbs`,
     // consulted once here for every RPC client method this function
     // emits.
     let verbs = cratestack_core::model_verbs(model);

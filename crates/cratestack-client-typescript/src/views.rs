@@ -1,7 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
 use cratestack_core::ModelVerb;
-use cratestack_core::route_naming;
 use cratestack_core::{EnumDecl, Field, Model, TypeArity};
 use serde::Serialize;
 
@@ -37,6 +36,9 @@ pub(crate) struct FieldView {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ModelApiView {
     pub(crate) name: String,
+    /// The model's RPC op ids (`cratestack_core::op_list`), which the RPC
+    /// templates print instead of spelling `model.<Name>.<verb>` themselves.
+    pub(crate) op_ids: cratestack_core::ModelOpIds,
     pub(crate) api_name: String,
     pub(crate) accessor: String,
     /// Issue #610: `README.md.j2`'s `--swr` section needs this model's
@@ -56,7 +58,7 @@ pub(crate) struct ModelApiView {
     pub(crate) primary_key_name: String,
     /// cratestack#743: extends the pre-existing (create-only)
     /// `model_allows_create`-based gate to all five CRUD verbs, sourced
-    /// from `cratestack_core::model_internal_actions` — the one shared
+    /// from `cratestack_core::model_verbs` — the one shared
     /// source of truth every codegen surface consults. `allows_create`
     /// keeps its original `model_allows_create(model)` half (a model
     /// with no `@@allow("create", ...)`/`@@allow("all", ...)` rule at
@@ -191,13 +193,14 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     // this crate's own `to_snake_case`/`pluralize` (which exist for
     // client-only identifier naming — accessor/hook/method names below —
     // and are not wire-format contracts).
-    let route = format!("/{}", route_naming::model_route_segment(&model.name));
+    let route = cratestack_core::model_list_route(&model.name);
     let accessor = pluralize(&to_camel_case(&model.name));
     let is_paged = is_paged_model(model);
     let verbs = cratestack_core::model_verbs(model);
     let rtk_names = rtk_endpoint_names(&model.name);
     ModelApiView {
         name: model.name.clone(),
+        op_ids: cratestack_core::ModelOpIds::rpc(&model.name),
         api_name: format!("{}Api", model.name),
         accessor,
         file_stem: to_kebab_case(&model.name),

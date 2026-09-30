@@ -54,7 +54,11 @@ pub struct ModelDescriptor<M, PK> {
     /// SQL column names of fields declared `@pii`. The audit-log writer
     /// replaces these values with `"[redacted-pii]"` in the persisted JSON
     /// snapshots; a follow-up will extend the same redaction to error
-    /// detail and tracing.
+    /// detail and tracing. `@pii` and `@sensitive` are off the per-op
+    /// client contract (`cratestack_core`'s `DROPPED_ATTRIBUTES`) only while
+    /// this stays audit-only: redacting a response, error or event body
+    /// retypes a field on the wire, and must put both back on it (the
+    /// `redaction_stays_in_the_audit_writer` test pins the readers).
     pub pii_columns: &'static [&'static str],
     /// SQL column names of fields declared `@sensitive`. Redacted in audit
     /// snapshots as `"[redacted-sensitive]"`.

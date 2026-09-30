@@ -2,7 +2,7 @@
 //! `model.rs` for the 200-LoC file convention — mirrors
 //! `transport::rpc::model_dispatch::arms_write`'s split (also
 //! cratestack#743). Each builder is only called when the corresponding
-//! verb survives `model_internal_actions` filtering; see `model.rs`'s
+//! verb survives `model_verbs` filtering; see `model.rs`'s
 //! orchestrator for the call sites.
 
 use quote::quote;

@@ -94,6 +94,7 @@ mod tests {
         let rtk_names = crate::rtk::naming::rtk_endpoint_names(name);
         ModelApiView {
             name: name.to_owned(),
+            op_ids: cratestack_core::ModelOpIds::rpc(name),
             api_name: format!("{name}Api"),
             accessor: name.to_lowercase(),
             file_stem: name.to_lowercase(),
@@ -133,6 +134,7 @@ mod tests {
         let models = vec![model("Widget")];
         let procedure = crate::procedure_views::ProcedureView {
             name: "list_widget".to_owned(),
+            op_id: format!("procedure.{}", "list_widget".to_owned()),
             method_name: "listWidget".to_owned(),
             hook_name: "ListWidget".to_owned(),
             args_name: "ListWidgetArgs".to_owned(),
@@ -161,6 +163,7 @@ mod tests {
         let models = vec![model("Widget")];
         let procedure = crate::procedure_views::ProcedureView {
             name: "sync_inventory".to_owned(),
+            op_id: format!("procedure.{}", "sync_inventory".to_owned()),
             method_name: "syncInventory".to_owned(),
             hook_name: "SyncInventory".to_owned(),
             args_name: "SyncInventoryArgs".to_owned(),

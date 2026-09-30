@@ -7,7 +7,7 @@
 //! fragment and the survivors for a path are folded together with
 //! `.merge()`, rather than one fused `.get(..).post(..)` chain. This
 //! is what lets a suppressed verb (`@@internal(...)`,
-//! `cratestack_core::model_internal_actions`) be omitted from the
+//! `cratestack_core::model_verbs`) be omitted from the
 //! merge instead of routed to a handler that would have to reject it
 //! at runtime — suppression here is *emitting nothing*, not a new
 //! runtime branch (design doc §3, §4). When every verb on a path is

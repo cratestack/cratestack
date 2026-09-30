@@ -22,11 +22,7 @@ use crate::shared::{ident, to_snake_case};
 pub(crate) fn generate_model_subscribe_dispatch_arm(
     model: &Model,
 ) -> Result<Option<proc_macro2::TokenStream>, String> {
-    if !model
-        .attributes
-        .iter()
-        .any(|attribute| attribute.raw == "@@subscribe")
-    {
+    if !cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Subscribe) {
         return Ok(None);
     }
 

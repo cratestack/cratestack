@@ -78,7 +78,7 @@ pub(crate) fn generate_model_transport_constants(model: &Model) -> proc_macro2::
     let read_idempotent = true;
     let write_idempotent = false;
 
-    // `cratestack_core::model_internal_actions` — the same single
+    // `cratestack_core::model_verbs` — the same single
     // source of truth `axum/model/routes.rs`,
     // `transport/op_descriptors.rs`, `transport/rpc/model_dispatch.rs`
     // and `client/rest/model.rs` already consult (cratestack#743,

@@ -90,13 +90,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/include/mcp_gate/resources.rs",
         ],
     ),
-    (
-        "@@subscribe",
-        &[
-            "cratestack-core/src/op_list.rs",
-            "cratestack-macros/src/transport/subscribe_dispatch.rs",
-        ],
-    ),
+    ("@@subscribe", &["cratestack-core/src/op_list.rs"]),
     (
         "@@emit",
         &[

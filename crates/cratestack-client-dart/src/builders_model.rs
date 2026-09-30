@@ -153,6 +153,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
     ModelApiView {
         api_class_name: format!("{}Api", model.name),
         model_name: model.name.clone(),
+        op_ids: cratestack_core::ModelOpIds::rpc(&model.name),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
         // cratestack#345: must match the server's real Axum route
@@ -198,6 +199,7 @@ pub(crate) fn build_procedure(
 ) -> ProcedureView {
     ProcedureView {
         name: procedure.name.clone(),
+        op_id: cratestack_core::procedure_op_key(procedure, true),
         method_name: to_camel_case(&procedure.name),
         args_name: procedure_wrapper_name(procedure, occupied_type_names),
         return_type: dart_type(&procedure.return_type, false),

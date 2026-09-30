@@ -11,6 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use super::attrs::DROPPED_ATTRIBUTES;
+use super::tests_readers_symbols::SYMBOL_READERS;
 use super::tests_readers_table::READERS;
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -93,6 +94,24 @@ fn no_dropped_attribute_has_a_new_reader() {
             "{name}: its set of readers changed. Decide whether the new reader shapes a wire \
              type, route or client; if so take the attribute off DROPPED_ATTRIBUTES, else \
              update tests_readers_table.rs"
+        );
+    }
+}
+
+#[test]
+fn redaction_stays_in_the_audit_writer() {
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crates = crates.canonicalize().expect("crates dir");
+    if !crates.join("cratestack-macros/src").is_dir() {
+        return;
+    }
+    for (name, pinned) in SYMBOL_READERS {
+        assert_eq!(
+            readers_of(name, &crates),
+            *pinned,
+            "{name}: its set of readers changed. `@pii` and `@sensitive` are off the op \
+             contract because they only redact the audit log; if this reader redacts a \
+             response, error or event body, take both off DROPPED_ATTRIBUTES"
         );
     }
 }
