@@ -36,7 +36,7 @@ pub(super) fn field(f: &Field) -> CField<'_> {
     }
 }
 
-pub(super) fn type_ref(t: &TypeRef) -> CTypeRef<'_> {
+pub(crate) fn type_ref(t: &TypeRef) -> CTypeRef<'_> {
     let TypeRef {
         name,
         name_span: _,
@@ -58,7 +58,7 @@ pub(super) fn type_ref(t: &TypeRef) -> CTypeRef<'_> {
     }
 }
 
-pub(super) fn attributes(attrs: &[Attribute]) -> Vec<String> {
+pub(crate) fn attributes(attrs: &[Attribute]) -> Vec<String> {
     attrs
         .iter()
         .map(|a| {
@@ -68,7 +68,7 @@ pub(super) fn attributes(attrs: &[Attribute]) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn args(args: &[ProcedureArg]) -> Vec<CArg<'_>> {
+pub(crate) fn args(args: &[ProcedureArg]) -> Vec<CArg<'_>> {
     args.iter()
         .map(|a| {
             let ProcedureArg {

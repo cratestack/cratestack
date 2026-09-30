@@ -12,6 +12,7 @@
 pub mod audit;
 pub mod batch;
 pub mod builder;
+pub mod client_contract;
 pub mod codec;
 pub mod composite_id;
 pub mod context;
@@ -68,6 +69,10 @@ pub use context::{
 // active; `RustDecimal`/`BigDecimal` each only exist under their own
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
+pub use client_contract::{
+    CLIENT_CONTRACT_DOMAIN, OP_CONTRACT_DOMAIN, client_contract_digest, digest_hex,
+    op_contract_digest, op_contract_digests, op_contract_json, op_keys,
+};
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;
 #[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]

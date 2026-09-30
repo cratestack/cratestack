@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Per-op contract digests and `cratestack contract digest|print` (#1123) — additive
+
+`cratestack_core::client_contract` computes, for every op a schema exposes, a
+digest that moves only when the wire shape of *that op* changes: its transport,
+key and kind, its input and output roots, and every model, type, enum and view
+reachable from them, each with its `@server_only` fields removed. A policy, an
+`@@index`, a view's SQL, a validator, the `auth` block or a new model or
+procedure leaves every existing op's digest where it was; a retype, an arity
+change, an enum edit or a `@@paged` toggle moves exactly the ops that reach it.
+An attribute the reviewed `DROPPED_ATTRIBUTES` list does not name stays in the
+contract, so an attribute added later moves digests until it is reviewed onto
+the list. `ops`, `op_contract_digest`, `op_contract_digests`,
+`op_contract_json` and `client_contract_digest` are exported, and
+`cratestack contract digest --schema <file> [--json]` and
+`cratestack contract print --schema <file> --op <key>` print them.
+
+Nothing binds these yet: a signed request still carries the whole-IR
+`schema_sha` (binding v1, unchanged). This is the first step of the per-op
+binding that lets a signed client survive a server-only schema edit (#1123).
+
 ## 0.15.0 (2026-09-29)
 
 ### Policy reads run on the caller's transaction, not a second pooled connection (#1117) — behaviour change

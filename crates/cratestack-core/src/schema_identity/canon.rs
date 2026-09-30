@@ -24,9 +24,9 @@ pub(super) struct CSchema<'a> {
 
 /// A named node that is only a field list (mixin, type, auth block).
 #[derive(Serialize)]
-pub(super) struct CFields<'a> {
-    pub(super) fields: Vec<CField<'a>>,
-    pub(super) name: &'a str,
+pub(crate) struct CFields<'a> {
+    pub(crate) fields: Vec<CField<'a>>,
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
@@ -56,31 +56,31 @@ pub(super) struct CModel<'a> {
 }
 
 #[derive(Serialize)]
-pub(super) struct CEnum<'a> {
-    pub(super) name: &'a str,
-    pub(super) variants: Vec<&'a str>,
+pub(crate) struct CEnum<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) variants: Vec<&'a str>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CField<'a> {
-    pub(super) attributes: Vec<String>,
-    pub(super) name: &'a str,
-    pub(super) ty: CTypeRef<'a>,
+pub(crate) struct CField<'a> {
+    pub(crate) attributes: Vec<String>,
+    pub(crate) name: &'a str,
+    pub(crate) ty: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CTypeRef<'a> {
-    pub(super) arity: &'static str,
-    pub(super) generic_args: Vec<CTypeRef<'a>>,
-    pub(super) ident_args: &'a [String],
-    pub(super) int_args: &'a [u32],
-    pub(super) name: &'a str,
+pub(crate) struct CTypeRef<'a> {
+    pub(crate) arity: &'static str,
+    pub(crate) generic_args: Vec<CTypeRef<'a>>,
+    pub(crate) ident_args: &'a [String],
+    pub(crate) int_args: &'a [u32],
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CArg<'a> {
-    pub(super) name: &'a str,
-    pub(super) ty: CTypeRef<'a>,
+pub(crate) struct CArg<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) ty: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]

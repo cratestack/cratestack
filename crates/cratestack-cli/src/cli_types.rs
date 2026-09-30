@@ -242,6 +242,12 @@ pub(crate) enum Command {
         #[arg(long)]
         schema: PathBuf,
     },
+    /// Per-op contract digests: the wire-shape identity of each op, which
+    /// ignores policies, indexes, SQL and every other op (cratestack#1123).
+    Contract {
+        #[command(subcommand)]
+        action: crate::contract::ContractAction,
+    },
     Migrate {
         #[command(subcommand)]
         action: MigrateAction,

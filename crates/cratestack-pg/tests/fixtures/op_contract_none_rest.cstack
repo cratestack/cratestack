@@ -1,0 +1,18 @@
+// Fixture for `op_contract_parity.rs` (cratestack#1123): the op list of a
+// schema with no database, where only procedures exist.
+
+
+datasource db {
+  provider = "none"
+}
+
+type PingArgs {
+  message String
+}
+
+procedure ping(args: PingArgs): PingArgs
+  @allow(auth() != null)
+
+mutation procedure bump(args: PingArgs): PingArgs
+  @api_version("v2")
+  @allow(auth() != null)

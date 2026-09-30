@@ -2,6 +2,7 @@ mod build_runner;
 mod cli_handlers;
 mod cli_support;
 mod cli_types;
+mod contract;
 mod drift;
 mod migrate;
 mod schema_diff;

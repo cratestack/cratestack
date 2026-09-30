@@ -20,10 +20,12 @@
 //! and Postgres orders an enum by declaration), attributes and arguments.
 //! A server-only edit (a policy, an index, a view's SQL) still changes the
 //! digest: the IR is hashed whole, so a wire mismatch can never slip through.
+//! The per-op digests in [`crate::client_contract`] are the ones that ignore
+//! such edits (cratestack#1123); they are not bound into the AAD yet.
 
 mod attribute_norm;
-mod canon;
-mod members;
+pub(crate) mod canon;
+pub(crate) mod members;
 mod nodes;
 #[cfg(test)]
 mod tests;

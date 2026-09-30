@@ -362,6 +362,22 @@ Flags:
 cratestack print-ir --schema schemas/catalog.cstack
 ```
 
+### `contract` — per-op contract digests
+
+```bash
+cratestack contract digest --schema schemas/catalog.cstack [--json]
+cratestack contract print --schema schemas/catalog.cstack --op procedure.ping
+```
+
+`digest` prints one SHA-256 per op (keyed by the RPC `op_id`, or
+`"<METHOD> <route>"` on REST) plus the client contract digest. An op's digest
+moves only when that op's wire shape moves: policies, indexes, SQL bodies,
+validators, the `auth` block, `@server_only` fields, other ops and new
+declarations leave it alone. `print` shows the canonical JSON the digest is
+taken over, for "why did this op's digest move". `--op` takes the same key
+`digest` prints; a miss lists the known keys. Read-only: no signed transport
+binds these digests yet (cratestack#1123).
+
 ## Build Integration
 
 ```rust

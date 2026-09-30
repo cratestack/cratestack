@@ -80,6 +80,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
         } => handle_generate_wiremock(schema, out, base_path, check)?,
         Command::Studio { cmd } => handle_studio(cmd)?,
         Command::PrintIr { schema } => handle_print_ir(schema)?,
+        Command::Contract { action } => crate::contract::run(action)?,
         Command::Migrate { action } => match action {
             MigrateAction::Diff {
                 schema,
