@@ -1,0 +1,250 @@
+{
+  "format": 1,
+  "domain": "cratestack/op-contract/v1",
+  "contracts": {
+    "1d76197e2550527e91ce3af89280abbcdde8bda6d205f882da50871eb3f3141e": {
+      "closure": {
+        "enums": [],
+        "models": [
+          {
+            "attributes": [],
+            "fields": [
+              {
+                "attributes": [],
+                "name": "body",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              },
+              {
+                "attributes": [
+                  "@id"
+                ],
+                "name": "id",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "Int"
+                }
+              }
+            ],
+            "name": "Note"
+          }
+        ],
+        "types": [],
+        "views": []
+      },
+      "events": null,
+      "key": "model.Note.get",
+      "kind": "unary",
+      "model": "Note",
+      "procedure": null,
+      "transport": "rpc",
+      "verb": "get"
+    },
+    "4c8c4dfacff89ac03f57886505f2caaaba74d3c6f929acf758ddbf7de0c8cb3e": {
+      "closure": {
+        "enums": [],
+        "models": [
+          {
+            "attributes": [],
+            "fields": [
+              {
+                "attributes": [],
+                "name": "body",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              },
+              {
+                "attributes": [
+                  "@id"
+                ],
+                "name": "id",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "Int"
+                }
+              }
+            ],
+            "name": "Note"
+          }
+        ],
+        "types": [],
+        "views": []
+      },
+      "events": null,
+      "key": "model.Note.delete",
+      "kind": "unary",
+      "model": "Note",
+      "procedure": null,
+      "transport": "rpc",
+      "verb": "delete"
+    },
+    "94945de873ca2fa9a564838c87f7b4693fb4a4d54881e21b32334a331b17bdc5": {
+      "closure": {
+        "enums": [],
+        "models": [
+          {
+            "attributes": [],
+            "fields": [
+              {
+                "attributes": [],
+                "name": "body",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              },
+              {
+                "attributes": [
+                  "@id"
+                ],
+                "name": "id",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "Int"
+                }
+              }
+            ],
+            "name": "Note"
+          }
+        ],
+        "types": [],
+        "views": []
+      },
+      "events": null,
+      "key": "model.Note.list",
+      "kind": "unary",
+      "model": "Note",
+      "procedure": null,
+      "transport": "rpc",
+      "verb": "list"
+    },
+    "a39612cfbe4c21bed203d947c72336c1ba2f449e91e25875c9dc7e5542144e97": {
+      "closure": {
+        "enums": [],
+        "models": [
+          {
+            "attributes": [],
+            "fields": [
+              {
+                "attributes": [],
+                "name": "body",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              },
+              {
+                "attributes": [
+                  "@id"
+                ],
+                "name": "id",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "Int"
+                }
+              }
+            ],
+            "name": "Note"
+          }
+        ],
+        "types": [],
+        "views": []
+      },
+      "events": null,
+      "key": "model.Note.create",
+      "kind": "unary",
+      "model": "Note",
+      "procedure": null,
+      "transport": "rpc",
+      "verb": "create"
+    },
+    "c293b4931dd2436f38eb4bafefd03f5870a0c99c3a8222b482a07388d82e1608": {
+      "closure": {
+        "enums": [],
+        "models": [
+          {
+            "attributes": [],
+            "fields": [
+              {
+                "attributes": [],
+                "name": "body",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "String"
+                }
+              },
+              {
+                "attributes": [
+                  "@id"
+                ],
+                "name": "id",
+                "ty": {
+                  "arity": "required",
+                  "generic_args": [],
+                  "ident_args": [],
+                  "int_args": [],
+                  "name": "Int"
+                }
+              }
+            ],
+            "name": "Note"
+          }
+        ],
+        "types": [],
+        "views": []
+      },
+      "events": null,
+      "key": "model.Note.update",
+      "kind": "unary",
+      "model": "Note",
+      "procedure": null,
+      "transport": "rpc",
+      "verb": "update"
+    }
+  },
+  "generations": [
+    {
+      "client_contract": "8eb99dde624169e9a953c8a34a2133e49733b2521725c092320af00252919278",
+      "locked_at": "2026-10-01",
+      "note": "store 1.0",
+      "ops": {
+        "model.Note.create": "a39612cfbe4c21bed203d947c72336c1ba2f449e91e25875c9dc7e5542144e97",
+        "model.Note.delete": "4c8c4dfacff89ac03f57886505f2caaaba74d3c6f929acf758ddbf7de0c8cb3e",
+        "model.Note.get": "1d76197e2550527e91ce3af89280abbcdde8bda6d205f882da50871eb3f3141e",
+        "model.Note.list": "94945de873ca2fa9a564838c87f7b4693fb4a4d54881e21b32334a331b17bdc5",
+        "model.Note.update": "c293b4931dd2436f38eb4bafefd03f5870a0c99c3a8222b482a07388d82e1608"
+      }
+    }
+  ]
+}

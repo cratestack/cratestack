@@ -58,8 +58,9 @@ a follow-up. The whole-IR `SCHEMA_SHA256(_BYTES)` stays, for the warn-only
   `OpContracts` where it took `&'static [u8; 32]`.
 - Every `include_*_schema!` module also emits `OP_CONTRACTS` (per op key, plus
   `batch` for `transport rpc`), `CLIENT_CONTRACT_SHA256(_BYTES)`, and, the server
-  module, `ACCEPTED_CONTRACTS`: per op, the digests a request may bind (one, the
-  current, for now).
+  module, `ACCEPTED_CONTRACTS`: per op, the digests a request may bind (the
+  current one, plus the locked compatible ones when the server names a
+  `contracts =` lock).
 - New in `cratestack_core`: `ContractSelector`, `CONTRACT_HEADER`,
   `CONTRACT_UNSUPPORTED_CODE`, `CONTRACT_UNSUPPORTED_REST_CODE`, `OpContracts`, `AcceptedContracts`,
   `BATCH_CONTRACT_KEY`, `bound_contracts`, `find_contract`.
@@ -68,6 +69,81 @@ The shared vectors are regenerated at version 2 (`binding.contract_sha`
 replaces `binding.schema_sha`) with the negatives `neg-binding-v1`,
 `neg-contract-sha` and `neg-contract-cross-op`; any non-Rust implementation must
 update with them. `cratestack-axum` and the clients need no schema change.
+
+### The compatible-contract lock: a server keeps accepting older signed clients (#1123, #1030) — additive
+
+Binding version 2 already keeps a client working across every edit that leaves
+its op's wire shape alone. This finishes EXT-14 for the edits that do change a
+shape but stay *compatible* with it (an optional field added to a model or an
+args type): the server can keep accepting the contract an installed app was
+built against.
+
+**The lock** is a committed JSON file next to the schema, made and kept by the
+CLI. `contracts` holds each distinct op contract once, under its own digest (the
+canonical JSON `cratestack contract print` shows); `generations` (oldest first)
+records, per locked moment, the client contract digest, a `locked_at` date, a
+free-text `note` and each op's digest then:
+
+```json
+{ "format": 1, "domain": "cratestack/op-contract/v1",
+  "contracts": { "<op digest hex>": { "...canonical op contract..." } },
+  "generations": [ { "client_contract": "<hex>", "locked_at": "2026-10-02",
+                     "note": "store 1.4.7", "ops": { "procedure.placeOrder": "<op digest hex>" } } ] }
+```
+
+`include_server_schema!("s.cstack", db = Postgres, contracts = "s.contracts.lock")`
+(the argument may come before or after `decimal`) reads it at compile time,
+tracks it with `include_bytes!`, recomputes every stored contract's digest (a
+hand edit is a compile error) and emits `ACCEPTED_CONTRACTS` as
+`[current, ...locked, newest first]` per op. Every locked contract of an op the
+schema still has is judged by `cratestack_core::classify(old, new)`, a
+conservative classifier: anything it does not recognise is `Breaking`, and **an
+incompatible locked entry is a compile error naming the op and the reason**.
+Shipping a breaking change to one op is then deliberate:
+`cratestack contract prune --op <key>`, after which older clients of that op
+get the `426` and nothing else is touched. `batch` never takes history.
+
+**What `classify` accepts** (old is the signer's shape): identical transport,
+key, kind, verb, model, events, procedure name and kind, return type and kept
+attributes; an argument or field added only as optional (or, for a field, with
+`@default`); a required argument or input-only field becoming optional; enum
+variants appended to an input-only enum; and, in a declaration only the output
+reaches, any added field (decoders ignore keys they do not know). Everything
+else is `Breaking`: removing an argument or field (the signed value would be
+silently ignored), any retype or arity change in a direction that reads it, a
+variant added to an enum an old client decodes, inserting, removing or
+reordering variants, reordering arguments, adding, removing or changing an
+attribute on a kept declaration or field (so `@default` is never added to an
+existing field: a `@default` field is not in the create input). Where the plan
+left a choice open the classifier refuses: an added `@readonly` field must still
+be optional or defaulted, variants may only be appended, and a model op's model
+counts as both input and output.
+
+**CLI.** `cratestack contract lock --schema S --lock L [--note T] [--date D]`
+records the current contracts as a generation (creating the file, idempotent,
+refusing to write while the current contract breaks a locked one);
+`contract check --schema S --lock L [--json]` exits 1 when the current contract
+is not a locked generation or breaks a locked one, for CI;
+`contract prune --lock L (--op K | --before D | --keep N | --generation H)`
+drops history and any contract no generation still references. No clock is read
+at build time.
+
+**Parse once.** `ServerEnvelope::open_request_any(body, binds)` (a provided
+method that loops `open_request`; `Arc<T>` forwards it) and
+`CoseEnvelope::open_request_any` parse the message and resolve its key once and
+repeat only the signature verification per candidate digest, so a forged
+request without the `Cratestack-Contract` header costs one parse, one key
+resolution and at most `max_contract_trials` verifications (it used to re-run
+all three per trial).
+
+**Vectors.** `cratestack-cose/tests/vectors/contract.json`: a fixture schema
+(REST and RPC), the canonical contract of every op, its digest, the `batch` row
+and the client contract digest. `cratestack-parser`'s `contract_vectors` writes
+and checks it; the TypeScript and Dart generators' `op_contracts` tests compare
+their constants to it.
+
+New in `cratestack_core`: `ContractLock`, `Generation`, `LockError`,
+`Incompatible`, `Pruned`, `LOCK_FORMAT`, `Verdict`, `classify`.
 
 ## 0.15.1 (2026-09-30)
 

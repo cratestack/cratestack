@@ -1,0 +1,41 @@
+// `contract_roundtrip_old.cstack` after every compatible edit:
+//
+// - `Shade` (input-only) gains a variant at the end;
+// - `Paint.note` (input-only) goes from required to optional;
+// - `Paint` gains an optional field, `label`;
+// - `Receipt` (output-only) gains a required field, `tax`;
+// - `paint`'s `gloss` argument goes from required to optional;
+// - `paint` gains an optional argument, `finish`.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+enum Shade {
+  Light
+  Dark
+  Mid
+}
+
+enum Tone {
+  Warm
+  Cool
+}
+
+type Paint {
+  shade Shade
+  note String?
+  size Int
+  label String?
+}
+
+type Receipt {
+  total Int
+  tone Tone
+  tax Int
+}
+
+procedure paint(args: Paint, coat: Int, gloss: Int?, finish: String?): Receipt
+  @allow(auth() != null)

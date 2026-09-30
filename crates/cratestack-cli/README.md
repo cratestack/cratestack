@@ -362,11 +362,14 @@ Flags:
 cratestack print-ir --schema schemas/catalog.cstack
 ```
 
-### `contract` — per-op contract digests
+### `contract` — per-op contract digests and the compatible-contract lock
 
 ```bash
 cratestack contract digest --schema schemas/catalog.cstack [--json]
 cratestack contract print --schema schemas/catalog.cstack --op procedure.ping
+cratestack contract lock  --schema schemas/catalog.cstack --lock schemas/catalog.contracts.lock --note "store 1.4.7"
+cratestack contract check --schema schemas/catalog.cstack --lock schemas/catalog.contracts.lock [--json]
+cratestack contract prune --lock schemas/catalog.contracts.lock (--op KEY | --before YYYY-MM-DD | --keep N | --generation HEX)
 ```
 
 `digest` prints one SHA-256 per op (keyed by the RPC `op_id`, or
@@ -375,8 +378,25 @@ moves only when that op's wire shape moves: policies, indexes, SQL bodies,
 validators, the `auth` block, `@server_only` fields, other ops and new
 declarations leave it alone. `print` shows the canonical JSON the digest is
 taken over, for "why did this op's digest move". `--op` takes the same key
-`digest` prints; a miss lists the known keys. Read-only: no signed transport
-binds these digests yet (cratestack#1123).
+`digest` prints; a miss lists the known keys. Both are read-only.
+
+A server can keep accepting the contract an installed client was built
+against, while it stays wire-compatible with the current one: pass
+`contracts = "catalog.contracts.lock"` to `include_server_schema!`, and the
+generated `ACCEPTED_CONTRACTS` lists, per op, the current digest then the
+locked ones (newest first). `lock` records the current contracts as a
+generation (creating the file; idempotent; run it before shipping a client
+build; it refuses while the current contract breaks a locked one, and `--date`
+defaults to today in UTC). `check` is the CI gate: exit 1 if the current
+contract is not a locked generation, or breaks a locked one (the op and the
+reason are printed; `--json` gives `{ok, client_contract, locked,
+incompatible: [{op, digest, reasons}]}`). An incompatible locked entry is also
+a compile error in the server crate. `prune` drops history: `--op` stops
+accepting older clients of one op (the deliberate way to ship a breaking
+change to it: those clients get the unsigned `426` for that op only),
+`--before` / `--keep` / `--generation` drop whole generations; a stored
+contract no generation references any more goes with them. A missing or
+hand-edited lock is an error, never a pass (cratestack#1123).
 
 ## Build Integration
 

@@ -25,6 +25,7 @@ mod datasource_guard;
 mod decimal_arg;
 mod embedded;
 mod extension_gate;
+mod lock_arg;
 mod mcp_gate;
 mod parse;
 mod schema_args;
@@ -38,7 +39,12 @@ use parse::{SchemaPathArgs, ServerSchemaArgs};
 
 pub(crate) fn include_server_schema(input: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as ServerSchemaArgs);
-    server::compose_server_schema(&args.schema_path, args.db, args.decimal)
+    server::compose_server_schema(
+        &args.schema_path,
+        args.db,
+        args.decimal,
+        args.contracts.as_ref(),
+    )
 }
 
 pub(crate) fn include_embedded_schema(input: TokenStream) -> TokenStream {

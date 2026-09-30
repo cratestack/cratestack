@@ -51,6 +51,12 @@ impl SchemaShaConsts {
         }
     }
 
+    /// Accept the digests a contract lock keeps, not just the current ones.
+    pub(super) fn with_accepted(mut self, table: Vec<(String, Vec<[u8; 32]>)>) -> Self {
+        self.contracts = self.contracts.with_accepted(table);
+        self
+    }
+
     /// `ACCEPTED_CONTRACTS`, for the server module only.
     pub(super) fn accepted(&self) -> TokenStream {
         self.contracts.accepted()

@@ -22,11 +22,26 @@
 //! version 2; ADR 0006 §4); [`table`] holds the tables generated code
 //! carries and how a route finds its row. `cratestack contract
 //! digest|print` shows the digests.
+//!
+//! A server may keep accepting older contracts of an op: [`ContractLock`]
+//! records the ones in the field, [`classify`] decides which are still
+//! wire-compatible with the current one, and `include_server_schema!`'s
+//! `contracts =` argument turns the survivors into `ACCEPTED_CONTRACTS`
+//! (an incompatible entry is a compile error). `cratestack contract
+//! lock|check|prune` maintain the file.
 
 mod attrs;
 mod build;
 mod canon;
+mod canonical_json;
+mod compat;
+mod compat_decl;
+mod compat_op;
+mod lock;
+mod lock_ops;
+mod lock_prune;
 mod ops;
+mod owned;
 mod project;
 mod table;
 #[cfg(test)]
@@ -34,7 +49,13 @@ mod tests;
 #[cfg(test)]
 mod tests_bytes;
 #[cfg(test)]
+mod tests_compat;
+#[cfg(test)]
+mod tests_compat_table;
+#[cfg(test)]
 mod tests_drop;
+#[cfg(test)]
+mod tests_lock;
 #[cfg(test)]
 mod tests_ops;
 #[cfg(test)]
@@ -52,6 +73,10 @@ use crate::schema::Schema;
 use build::canonical;
 use ops::ops;
 
+pub use compat::{Verdict, classify};
+pub use lock::{ContractLock, Generation, LOCK_FORMAT, LockError};
+pub use lock_ops::Incompatible;
+pub use lock_prune::Pruned;
 pub use ops::op_keys;
 pub use table::{
     AcceptedContracts, BATCH_CONTRACT_KEY, OpContracts, bound_contracts, find_contract,

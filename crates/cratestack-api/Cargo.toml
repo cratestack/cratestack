@@ -281,6 +281,12 @@ name = "cose_envelope_contract"
 path = "tests/cose_envelope_contract.rs"
 required-features = ["cose"]
 
+# EXT-14 (cratestack#1123): the compatible-contract lock, end to end.
+[[test]]
+name = "cose_envelope_contract_lock"
+path = "tests/cose_envelope_contract_lock.rs"
+required-features = ["cose"]
+
 [[test]]
 name = "cose_envelope_rest"
 path = "tests/cose_envelope_rest.rs"
