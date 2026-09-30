@@ -11,7 +11,7 @@ pub(super) fn closure(old: &OpContract, new: &OpContract, reasons: &mut Vec<Stri
     for kind in Kind::ALL {
         for was in old.closure.decls(kind) {
             match new.closure.decls(kind).iter().find(|d| d.name == was.name) {
-                Some(now) => decl(kind, was, now, &dirs, reasons),
+                Some(now) => decl(kind, was, now, &dirs, old.model.as_deref(), reasons),
                 None => reasons.push(format!(
                     "the {} `{}` left the op's contract",
                     kind.word(),
@@ -28,7 +28,14 @@ pub(super) fn closure(old: &OpContract, new: &OpContract, reasons: &mut Vec<Stri
     }
 }
 
-fn decl(kind: Kind, old: &Decl, new: &Decl, dirs: &Directions, reasons: &mut Vec<String>) {
+fn decl(
+    kind: Kind,
+    old: &Decl,
+    new: &Decl,
+    dirs: &Directions,
+    op_model: Option<&str>,
+    reasons: &mut Vec<String>,
+) {
     let name = format!("{} `{}`", kind.word(), old.name);
     attributes(&name, &old.attributes, &new.attributes, reasons);
     for was in &old.fields {
@@ -45,15 +52,19 @@ fn decl(kind: Kind, old: &Decl, new: &Decl, dirs: &Directions, reasons: &mut Vec
         .iter()
         .filter(|n| old.fields.iter().all(|o| o.name != n.name))
     {
-        let admissible = dirs.output_only(&old.name)
-            || added.ty.arity == "optional"
-            || added
+        // `@default` is honoured only by a model's own create input, which
+        // leaves the field out; a `type`, or a model reached as a procedure
+        // argument, decodes it as required and fails on the old message.
+        let defaulted = matches!(kind, Kind::Model)
+            && op_model == Some(old.name.as_str())
+            && added
                 .attributes
                 .iter()
                 .any(|a| attribute_name(a) == "@default");
+        let admissible = dirs.output_only(&old.name) || added.ty.arity == "optional" || defaulted;
         if !admissible {
             reasons.push(format!(
-                "the new field `{}.{}` is {} with no `@default`: an old client cannot send it",
+                "the new field `{}.{}` is {} and is neither optional nor `@default` on the op's own model: an old client cannot send it",
                 old.name,
                 added.name,
                 show(&added.ty)

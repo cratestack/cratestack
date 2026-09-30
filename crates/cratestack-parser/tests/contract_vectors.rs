@@ -1,9 +1,11 @@
 //! `cratestack-cose/tests/vectors/contract.json` (cratestack#1123): a fixture
 //! schema, the canonical op-contract JSON of every op, each op's digest and
-//! the client contract digest, so a non-Rust implementation (the TypeScript
-//! and Dart generators today, a sealer tomorrow) can check its own
-//! derivation against this one. The TypeScript and Dart generators' tests
-//! read the same file.
+//! the client contract digest, so a future non-Rust sealer can check its own
+//! derivation against this one. The generated TypeScript and Dart constants
+//! are checked against the same file, but both generators are Rust and call
+//! the same core function, so that is parity, not an independent check; the
+//! only independent recomputation is
+//! `the_digests_follow_from_the_canonical_strings_alone` below.
 //!
 //! Regenerate with `CRATESTACK_CONTRACT_WRITE_VECTORS=1 cargo test -p
 //! cratestack-parser --test contract_vectors`; any diff in the file is a

@@ -1,5 +1,7 @@
 // `contract_lock_models_old.cstack` after an optional field (`tag`, additive
-// and so wire-compatible, but it moves every `Note` op's digest) and a
+// and so wire-compatible, but it moves every `Note` op's digest), a field
+// with `@default` (`rank`: the model op's own model, whose create input omits
+// it; it is the one place `@default` is admitted, see the classifier) and a
 // widened read policy (server-only).
 
 transport rpc
@@ -17,6 +19,7 @@ model Note {
   id Int @id
   body String
   tag String?
+  rank Int @default(1)
 
   @@allow("read", auth() != null || auth() == null)
   @@allow("create", auth() != null)

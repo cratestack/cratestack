@@ -69,7 +69,8 @@ mod tests {
 
     fn locked(source: &str) -> ContractLock {
         let mut lock = ContractLock::new();
-        lock.lock_generation(&schema(source), "2026-10-01", "store 1.0");
+        lock.lock_generation(&schema(source), "2026-10-01", "store 1.0")
+            .expect("a real date");
         lock
     }
 
@@ -120,5 +121,26 @@ mod tests {
             .to_string();
         assert!(error.contains("contract lock"), "{error}");
         assert!(error.contains("cratestack contract lock"), "{error}");
+    }
+
+    /// The documented UX is "the error points at the `contracts` literal":
+    /// every failure carries that literal's span. (Outside a proc macro the
+    /// spans are the fallback's, so this pins the plumbing, not the
+    /// rendering.)
+    #[test]
+    fn every_failure_points_at_the_contracts_literal() {
+        let span_of = |error: &syn::Error| format!("{:?}", error.span());
+        let missing = syn::LitStr::new("/nonexistent/vaam.contracts.lock", Span::call_site());
+        let hand_edited = write("span-edited", "{ not a lock");
+        let broken = write("span-broken", &locked(V1).to_json());
+        let cases = [
+            (&missing, schema(V1)),
+            (&hand_edited, schema(V1)),
+            (&broken, schema(&V1.replace("  name String\n", ""))),
+        ];
+        for (lit, current) in cases {
+            let error = accepted_from_lock(lit, &current).expect_err("refused");
+            assert_eq!(span_of(&error), format!("{:?}", lit.span()));
+        }
     }
 }

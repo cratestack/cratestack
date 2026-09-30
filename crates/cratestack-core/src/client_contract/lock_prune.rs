@@ -3,6 +3,7 @@
 //! generation references any more is dropped with it.
 
 use super::lock::{ContractLock, LockError};
+use super::lock_date::parse_date;
 
 /// What a prune removed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -28,10 +29,14 @@ impl ContractLock {
         self.settle(entries, 0)
     }
 
-    /// Remove the generations locked before `date` (`YYYY-MM-DD`, compared
-    /// as text).
-    pub fn prune_before(&mut self, date: &str) -> Pruned {
-        self.retain_generations(|g| g.locked_at.as_str() >= date)
+    /// Remove the generations locked before `date` (a real `YYYY-MM-DD`
+    /// date, compared as a date; [`LockError::Date`] and nothing removed
+    /// otherwise).
+    pub fn prune_before(&mut self, date: &str) -> Result<Pruned, LockError> {
+        let cutoff = parse_date(date)?;
+        // A `locked_at` that does not parse cannot come from `parse` or
+        // `lock_generation`; a hand-built lock keeps it rather than guess.
+        Ok(self.retain_generations(|g| parse_date(&g.locked_at).map_or(true, |d| d >= cutoff)))
     }
 
     /// Keep only the newest `keep` generations.

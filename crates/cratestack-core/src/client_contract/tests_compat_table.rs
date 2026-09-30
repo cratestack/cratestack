@@ -33,7 +33,7 @@ fn a_model_gaining_an_optional_or_defaulted_field_is_compatible() {
 
 #[test]
 fn a_model_gaining_a_required_field_is_breaking() {
-    breaking(CREATE, "no `@default`", |s| {
+    breaking(CREATE, "`@default` on the op's own model", |s| {
         s.models[0].fields.push(field("tier", "Int", &[]));
     });
 }

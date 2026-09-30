@@ -16,6 +16,17 @@ mod new {
     cratestack::include_server_schema!("tests/fixtures/contract_roundtrip_new.cstack", db = None);
 }
 
+mod default_old {
+    cratestack::include_client_schema!("tests/fixtures/contract_roundtrip_default_old.cstack");
+}
+
+mod default_new {
+    cratestack::include_server_schema!(
+        "tests/fixtures/contract_roundtrip_default_new.cstack",
+        db = None
+    );
+}
+
 fn schema(path: &str) -> cratestack_core::Schema {
     let source = std::fs::read_to_string(format!(
         "{}/tests/fixtures/{path}",
@@ -99,4 +110,31 @@ fn the_new_reply_decodes_as_the_old_one_ignoring_the_added_field() {
         assert_eq!(format!("{:?}", decoded.tone), "Cool");
     }
     assert_eq!(serde_json::to_value(&reply).unwrap()["tax"], json!(7));
+}
+
+/// The refused edit: a required `type` field with `@default` is not
+/// defaulted on decode, so the classifier and the generated code must agree
+/// that an old client's message cannot be honoured (B1 of the #1132 review).
+#[test]
+fn a_type_gaining_a_defaulted_required_field_is_refused_and_does_not_decode() {
+    let verdict = cratestack_core::classify(
+        &contract(&schema("contract_roundtrip_default_old.cstack")),
+        &contract(&schema("contract_roundtrip_default_new.cstack")),
+    );
+    assert!(
+        verdict.reasons().iter().any(|r| r.contains("@default")),
+        "{verdict:?}"
+    );
+    use default_old::cratestack_schema as o;
+    let args = o::procedures::paint::Args {
+        args: o::Paint { size: 3 },
+    };
+    let cbor = CborCodec.encode(&args).expect("encodes");
+    let json_bytes = serde_json::to_vec(&args).expect("encodes");
+    let cbor_result: Result<default_new::cratestack_schema::procedures::paint::Args, _> =
+        CborCodec.decode(&cbor);
+    let json_result: Result<default_new::cratestack_schema::procedures::paint::Args, _> =
+        serde_json::from_slice(&json_bytes);
+    assert!(cbor_result.is_err(), "CBOR decoded without `level`");
+    assert!(json_result.is_err(), "JSON decoded without `level`");
 }

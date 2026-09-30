@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::canonical_json::canonical_bytes;
+use super::lock_date::parse_date;
 use super::{OP_CONTRACT_DOMAIN, digest_hex, digest_of};
 
 /// The lock file format this build reads and writes.
@@ -100,6 +101,9 @@ pub enum LockError {
     /// A digest that is not 64 lowercase hex digits.
     #[error("`{0}` is not a 64-digit lowercase hex digest")]
     NotHex(String),
+    /// A date that is not a real `YYYY-MM-DD` calendar date.
+    #[error("`{0}` is not a date: use a real calendar date as YYYY-MM-DD")]
+    Date(String),
     /// `prune --generation` matched no generation, or several.
     #[error("{0}")]
     Generation(String),
@@ -135,10 +139,18 @@ impl ContractLock {
     /// present. It does not judge compatibility (see
     /// [`ContractLock::accepted`]).
     pub fn parse(text: &str) -> Result<Self, LockError> {
-        let lock: Self = serde_json::from_str(text)?;
-        if lock.format != LOCK_FORMAT {
-            return Err(LockError::Format(lock.format));
+        // Read the format alone first: a newer format may carry keys this
+        // build's strict shape rejects, and should say "format N", not
+        // "unknown field".
+        #[derive(Deserialize)]
+        struct Head {
+            format: u32,
         }
+        let head: Head = serde_json::from_str(text)?;
+        if head.format != LOCK_FORMAT {
+            return Err(LockError::Format(head.format));
+        }
+        let lock: Self = serde_json::from_str(text)?;
         if lock.domain != Self::new().domain {
             return Err(LockError::Domain(lock.domain));
         }
@@ -155,6 +167,7 @@ impl ContractLock {
             }
         }
         for generation in &lock.generations {
+            parse_date(&generation.locked_at)?;
             if !is_hex_digest(&generation.client_contract) {
                 return Err(LockError::NotHex(generation.client_contract.clone()));
             }
@@ -173,6 +186,7 @@ impl ContractLock {
 
     /// The file's text: pretty JSON ending in a newline.
     pub fn to_json(&self) -> String {
+        // Infallible: string-keyed maps, strings, integers and `Value`s only.
         let mut text = serde_json::to_string_pretty(self).expect("a lock always serializes");
         text.push('\n');
         text

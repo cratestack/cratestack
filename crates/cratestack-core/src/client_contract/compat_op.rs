@@ -66,11 +66,10 @@ pub(super) fn show(ty: &TypeRef) -> String {
 pub(super) fn widens(old: &TypeRef, new: &TypeRef) -> bool {
     old.arity == "required"
         && new.arity == "optional"
-        && *old
-            == TypeRef {
-                arity: "required".to_owned(),
-                ..new.clone()
-            }
+        && old.name == new.name
+        && old.generic_args == new.generic_args
+        && old.ident_args == new.ident_args
+        && old.int_args == new.int_args
 }
 
 fn same<T: PartialEq + std::fmt::Debug>(what: &str, old: &T, new: &T, reasons: &mut Vec<String>) {
@@ -134,19 +133,24 @@ fn args(old: &[Arg], new: &[Arg], reasons: &mut Vec<String>) {
             ));
         }
     }
-    let names = |list: &'_ [Arg], other: &'_ [Arg]| -> Vec<String> {
+    /// The names of `list`'s arguments that `other` also has, in order.
+    fn shared<'a>(list: &'a [Arg], other: &[Arg]) -> Vec<&'a str> {
         list.iter()
             .filter(|a| other.iter().any(|b| b.name == a.name))
-            .map(|a| a.name.clone())
+            .map(|a| a.name.as_str())
             .collect()
-    };
-    if names(old, new) != names(new, old) {
+    }
+    if shared(old, new) != shared(new, old) {
         reasons.push("the declared order of the existing arguments changed".to_owned());
     }
     for added in new.iter().filter(|a| old.iter().all(|o| o.name != a.name)) {
-        if added.ty.arity != "optional" {
+        // `Page<T>`/`FindMany<T>` are emitted as bare fields with no
+        // `serde(default)` whatever their arity, so `FindMany<T>?` cannot be
+        // omitted by an old client (the parser refuses `Page<T>` here).
+        let builtin = matches!(added.ty.name.as_str(), "Page" | "FindMany");
+        if added.ty.arity != "optional" || builtin {
             reasons.push(format!(
-                "the new argument `{}` is {}, not optional: an old client cannot send it",
+                "the new argument `{}` is {}, not a plain optional: an old client cannot send it",
                 added.name,
                 show(&added.ty)
             ));

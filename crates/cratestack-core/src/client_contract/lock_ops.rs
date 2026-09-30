@@ -7,6 +7,7 @@ use serde_json::Value;
 
 use super::build::canonical;
 use super::lock::{ContractLock, Generation, LockError, is_hex_digest};
+use super::lock_date::parse_date;
 use super::ops::ops;
 use super::{bound_contracts, classify, client_contract_digest, digest_hex, digest_of};
 use crate::schema::Schema;
@@ -43,6 +44,7 @@ fn current(schema: &Schema) -> Vec<(String, [u8; 32], Value)> {
         .iter()
         .map(|op| {
             let bytes = canonical(schema, op);
+            // Infallible: `canonical` just wrote these bytes as JSON.
             let value = serde_json::from_slice(&bytes).expect("canonical JSON parses");
             (op.key.clone(), digest_of(&bytes), value)
         })
@@ -69,10 +71,17 @@ impl ContractLock {
 
     /// Record the schema's current contracts as a new generation. Returns
     /// `false`, changing nothing, when that client contract is already a
-    /// generation (locking is idempotent).
-    pub fn lock_generation(&mut self, schema: &Schema, locked_at: &str, note: &str) -> bool {
+    /// generation (locking is idempotent). `locked_at` must be a real
+    /// `YYYY-MM-DD` date, or [`LockError::Date`] and nothing changes.
+    pub fn lock_generation(
+        &mut self,
+        schema: &Schema,
+        locked_at: &str,
+        note: &str,
+    ) -> Result<bool, LockError> {
+        parse_date(locked_at)?;
         if self.is_locked(schema) {
-            return false;
+            return Ok(false);
         }
         let mut generation = Generation {
             client_contract: digest_hex(&client_contract_digest(schema)),
@@ -86,7 +95,7 @@ impl ContractLock {
             generation.ops.insert(key, hex);
         }
         self.generations.push(generation);
-        true
+        Ok(true)
     }
 
     /// Every locked contract of a still-existing op whose digest is not the

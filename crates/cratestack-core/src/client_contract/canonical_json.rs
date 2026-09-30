@@ -16,6 +16,7 @@ pub(super) fn canonical_bytes(value: &Value) -> Vec<u8> {
                     if i > 0 {
                         out.push(b',');
                     }
+                    // Infallible: a `String` is always valid JSON.
                     out.extend(serde_json::to_vec(key).expect("strings serialize"));
                     out.push(b':');
                     write(&map[key], out);
@@ -32,7 +33,8 @@ pub(super) fn canonical_bytes(value: &Value) -> Vec<u8> {
                 }
                 out.push(b']');
             }
-            other => out.extend(serde_json::to_vec(other).expect("scalars serialize")),
+            // `Display` of a `Value` is its compact JSON and cannot fail.
+            other => out.extend(other.to_string().into_bytes()),
         }
     }
     let mut out = Vec::new();

@@ -38,6 +38,7 @@ mod compat;
 mod compat_decl;
 mod compat_op;
 mod lock;
+mod lock_date;
 mod lock_ops;
 mod lock_prune;
 mod ops;
@@ -51,11 +52,17 @@ mod tests_bytes;
 #[cfg(test)]
 mod tests_compat;
 #[cfg(test)]
+mod tests_compat_default;
+#[cfg(test)]
 mod tests_compat_table;
 #[cfg(test)]
 mod tests_drop;
 #[cfg(test)]
 mod tests_lock;
+#[cfg(test)]
+mod tests_lock_dates;
+#[cfg(test)]
+mod tests_lock_format;
 #[cfg(test)]
 mod tests_ops;
 #[cfg(test)]
@@ -99,7 +106,8 @@ fn digest_of(bytes: &[u8]) -> [u8; 32] {
 pub fn op_contract_json(schema: &Schema, key: &str) -> Option<String> {
     let all = ops(schema);
     let op = all.iter().find(|op| op.key == key)?;
-    Some(String::from_utf8(canonical(schema, op)).expect("JSON is UTF-8"))
+    // `canonical` is serde_json's output, always UTF-8: lossy never alters it.
+    Some(String::from_utf8_lossy(&canonical(schema, op)).into_owned())
 }
 
 /// The digest of the op `key` (an RPC `op_id`, or `"<METHOD> <route>"` on
@@ -143,6 +151,7 @@ pub fn client_contract_digest(schema: &Schema) -> [u8; 32] {
         .collect();
     let mut hasher = Sha256::new();
     hasher.update(CLIENT_CONTRACT_DOMAIN);
+    // Infallible: a list of string pairs is always valid JSON.
     hasher.update(serde_json::to_vec(&table).expect("strings always serialize"));
     hasher.finalize().into()
 }

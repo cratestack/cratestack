@@ -16,7 +16,8 @@
 //! - **input direction** (old client to new server): an existing argument
 //!   keeps its name, its relative order and its type, except that a
 //!   required one may become optional; an argument may be added only as an
-//!   optional one; removing an argument or field the old side could send is
+//!   optional one (never a `Page<T>`/`FindMany<T>`, which the generated
+//!   `Args` struct never makes optional); removing an argument or field the old side could send is
 //!   `Breaking` even though the server would decode the message, because
 //!   the signed value would be silently ignored (the structs do not
 //!   `deny_unknown_fields`), a meaning the signer never produced;
@@ -32,15 +33,18 @@
 //!   `@default` field is not in the create input, so the value an old client
 //!   sent would be dropped), and the same type, except required becomes
 //!   optional when the declaration is input-only. A field may be added if
-//!   its type is optional or it carries `@default(...)`; when the
-//!   declaration is reachable in the output only, any added field is fine,
-//!   since a decoder ignores keys it does not know;
+//!   its type is optional, or it carries `@default(...)` **and** the
+//!   declaration is the model of a model op (only a model's own create
+//!   input omits a `@default` field; a `type`, or a model reached as a
+//!   procedure argument, decodes it as required); when the declaration is
+//!   reachable in the output only, any added field is fine, since a decoder
+//!   ignores keys it does not know;
 //! - enums keep their variants in order; variants may be appended to an
 //!   enum that is input-only.
 //!
 //! Choices the plan left open, all resolved toward refusing: attributes on
 //! an existing field or declaration may not be added, removed or changed;
-//! an added field must be optional or defaulted even when it is `@readonly`;
+//! an added field must be optional (or defaulted on a model op's own model) even when it is `@readonly`;
 //! enum variants may only be appended, never inserted; a declaration leaving
 //! the closure is `Breaking`.
 

@@ -267,7 +267,8 @@ fn the_checked_in_lock_is_the_old_generation_minus_the_breaking_op() {
     .expect("old fixture");
     let schema = cratestack_parser::parse_schema(&source).expect("parses");
     let mut lock = cratestack::ContractLock::new();
-    lock.lock_generation(&schema, "2026-10-01", "store 1.0");
+    lock.lock_generation(&schema, "2026-10-01", "store 1.0")
+        .expect("a real date");
     lock.prune_op("procedure.retyped");
     let path = format!("{manifest}/tests/fixtures/contract_lock_new.contracts.lock");
     if std::env::var("CRATESTACK_CONTRACT_WRITE_LOCK").as_deref() == Ok("1") {

@@ -94,6 +94,8 @@ mod tests_model_unique;
 mod tests_multi_error;
 #[cfg(test)]
 mod tests_multifile_reserved_keywords;
+#[cfg(test)]
+mod tests_optional_builtin_args;
 mod tests_patch_touch_flag_collisions;
 #[cfg(test)]
 mod tests_procedure_handler_collisions;

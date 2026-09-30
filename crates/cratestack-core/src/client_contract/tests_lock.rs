@@ -14,7 +14,7 @@ const PAINT: &str = "procedure.paint";
 
 fn locked(schema: &crate::schema::Schema, date: &str, note: &str) -> ContractLock {
     let mut lock = ContractLock::new();
-    assert!(lock.lock_generation(schema, date, note));
+    assert!(lock.lock_generation(schema, date, note).unwrap());
     lock
 }
 
@@ -29,7 +29,11 @@ fn widened() -> crate::schema::Schema {
 #[test]
 fn locking_is_idempotent_and_the_file_round_trips() {
     let mut lock = locked(&base(), "2026-10-01", "store 1.0");
-    assert!(!lock.lock_generation(&base(), "2026-10-09", "again"));
+    assert!(
+        !lock
+            .lock_generation(&base(), "2026-10-09", "again")
+            .unwrap()
+    );
     assert_eq!(lock.generations.len(), 1);
     assert!(lock.is_locked(&base()));
     assert!(!lock.is_locked(&widened()));
@@ -46,7 +50,7 @@ fn locking_is_idempotent_and_the_file_round_trips() {
 fn a_contract_is_stored_once_however_many_generations_carry_it() {
     let mut lock = locked(&base(), "2026-10-01", "");
     let first = lock.contracts.len();
-    assert!(lock.lock_generation(&widened(), "2026-10-02", ""));
+    assert!(lock.lock_generation(&widened(), "2026-10-02", "").unwrap());
     // Only the model's ops moved; the procedures' contracts are shared.
     let moved = lock.generations[1]
         .ops
@@ -64,7 +68,7 @@ fn the_accepted_table_is_current_then_locked_newest_first() {
     mid.models[0]
         .fields
         .push(optional(field("note", "String", &[])));
-    lock.lock_generation(&mid, "2026-10-02", "b");
+    lock.lock_generation(&mid, "2026-10-02", "b").unwrap();
     let mut now = mid.clone();
     now.models[0]
         .fields
@@ -159,25 +163,17 @@ fn a_hand_edited_lock_is_refused() {
 }
 
 #[test]
-fn the_stored_contract_hashes_the_way_the_macro_does() {
-    // `parse` recomputes from the stored JSON value, so this is the proof
-    // the canonical form survives a parse and print unchanged.
-    let lock = locked(&widened(), "2026-10-01", "");
-    assert!(ContractLock::parse(&lock.to_json()).is_ok());
-}
-
-#[test]
 fn prune_drops_history_and_the_contracts_only_it_held() {
     let mut lock = locked(&base(), "2026-10-01", "a");
-    lock.lock_generation(&widened(), "2026-10-05", "b");
+    lock.lock_generation(&widened(), "2026-10-05", "b").unwrap();
     let mut newest = widened();
     newest.models[0]
         .fields
         .push(optional(field("tag", "String", &[])));
-    lock.lock_generation(&newest, "2026-10-09", "c");
+    lock.lock_generation(&newest, "2026-10-09", "c").unwrap();
 
     let mut by_date = lock.clone();
-    assert_eq!(by_date.prune_before("2026-10-05").generations, 1);
+    assert_eq!(by_date.prune_before("2026-10-05").unwrap().generations, 1);
     assert_eq!(by_date.generations.len(), 2);
 
     let mut keep = lock.clone();

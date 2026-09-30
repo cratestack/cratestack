@@ -11,8 +11,9 @@
 //! server whose `Note` gained an optional field:
 //!
 //! - with the lock, `create` gets a sealed error (verified under the old
-//!   digest: opened; the new optional field decoded as absent, because a
-//!   decode failure would be a `400`) and not `ContractUnsupported`;
+//!   digest: opened; the new optional field decoded as absent and the new
+//!   `@default` field left to its default, because a decode failure would
+//!   be a `400`) and not `ContractUnsupported`;
 //! - without the lock, `create` is the unsigned `426`.
 //!
 //! The end-to-end success path of a locked model op (a row written and read
