@@ -69,6 +69,8 @@ replaces `binding.schema_sha`) with the negatives `neg-binding-v1`,
 `neg-contract-sha` and `neg-contract-cross-op`; any non-Rust implementation must
 update with them. `cratestack-axum` and the clients need no schema change.
 
+## 0.15.1 (2026-09-30)
+
 ### One op list for every surface (#1123) — additive, no behaviour change
 
 `cratestack_core::op_list` (`ModelVerb`, `model_verbs`, `model_op_key`,
