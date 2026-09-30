@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.15.1 (2026-09-30)
+
 ### One op list for every surface (#1123) — additive, no behaviour change
 
 `cratestack_core::op_list` (`ModelVerb`, `model_verbs`, `model_op_key`,
