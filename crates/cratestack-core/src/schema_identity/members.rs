@@ -10,7 +10,7 @@ use crate::schema::{
 };
 
 /// Maps `items` in name order.
-pub(super) fn sorted<'a, T, N>(
+pub(crate) fn sorted<'a, T, N>(
     items: &'a [T],
     name: impl Fn(&T) -> &String,
     node: impl Fn(&'a T) -> N,
@@ -20,7 +20,7 @@ pub(super) fn sorted<'a, T, N>(
     refs.into_iter().map(node).collect()
 }
 
-pub(super) fn field(f: &Field) -> CField<'_> {
+pub(crate) fn field(f: &Field) -> CField<'_> {
     let Field {
         docs: _,
         name,
@@ -36,7 +36,7 @@ pub(super) fn field(f: &Field) -> CField<'_> {
     }
 }
 
-pub(super) fn type_ref(t: &TypeRef) -> CTypeRef<'_> {
+pub(crate) fn type_ref(t: &TypeRef) -> CTypeRef<'_> {
     let TypeRef {
         name,
         name_span: _,
@@ -58,7 +58,7 @@ pub(super) fn type_ref(t: &TypeRef) -> CTypeRef<'_> {
     }
 }
 
-pub(super) fn attributes(attrs: &[Attribute]) -> Vec<String> {
+pub(crate) fn attributes(attrs: &[Attribute]) -> Vec<String> {
     attrs
         .iter()
         .map(|a| {
@@ -68,7 +68,7 @@ pub(super) fn attributes(attrs: &[Attribute]) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn args(args: &[ProcedureArg]) -> Vec<CArg<'_>> {
+pub(crate) fn args(args: &[ProcedureArg]) -> Vec<CArg<'_>> {
     args.iter()
         .map(|a| {
             let ProcedureArg {
@@ -86,7 +86,7 @@ pub(super) fn args(args: &[ProcedureArg]) -> Vec<CArg<'_>> {
         .collect()
 }
 
-pub(super) fn procedure(p: &Procedure) -> CProcedure<'_> {
+pub(crate) fn procedure(p: &Procedure) -> CProcedure<'_> {
     let Procedure {
         docs: _,
         name,
@@ -111,7 +111,7 @@ pub(super) fn procedure(p: &Procedure) -> CProcedure<'_> {
     }
 }
 
-pub(super) fn view(v: &View) -> CView<'_> {
+pub(crate) fn view(v: &View) -> CView<'_> {
     let View {
         docs: _,
         name,
@@ -136,7 +136,7 @@ pub(super) fn view(v: &View) -> CView<'_> {
     }
 }
 
-pub(super) fn query(q: &Query) -> CQuery<'_> {
+pub(crate) fn query(q: &Query) -> CQuery<'_> {
     let Query {
         docs: _,
         name,
@@ -154,7 +154,7 @@ pub(super) fn query(q: &Query) -> CQuery<'_> {
     }
 }
 
-pub(super) fn mcp_config(c: &McpConfig) -> CMcpConfig<'_> {
+pub(crate) fn mcp_config(c: &McpConfig) -> CMcpConfig<'_> {
     let McpConfig {
         docs: _,
         expose_tools,
@@ -172,7 +172,7 @@ pub(super) fn mcp_config(c: &McpConfig) -> CMcpConfig<'_> {
     }
 }
 
-pub(super) fn model_mcp(m: &ModelMcpExposure) -> CModelMcp<'_> {
+pub(crate) fn model_mcp(m: &ModelMcpExposure) -> CModelMcp<'_> {
     let ModelMcpExposure {
         resource,
         max_page_size,
@@ -184,7 +184,7 @@ pub(super) fn model_mcp(m: &ModelMcpExposure) -> CModelMcp<'_> {
     }
 }
 
-pub(super) fn procedure_mcp(p: &ProcedureMcpExposure) -> CProcedureMcp<'_> {
+pub(crate) fn procedure_mcp(p: &ProcedureMcpExposure) -> CProcedureMcp<'_> {
     let ProcedureMcpExposure {
         tool_name,
         tool_name_defaulted,

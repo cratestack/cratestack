@@ -34,6 +34,7 @@ pub mod route_naming;
 pub mod rpc;
 pub mod rust_keywords;
 pub mod schema;
+pub mod client_contract;
 pub mod schema_identity;
 pub mod store;
 pub mod transport;
@@ -111,6 +112,10 @@ pub use schema::{
     is_relation_attribute, model_internal_actions, parse_composite_id_attribute,
     parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
     parse_internal_attribute, scan_sql_placeholders,
+};
+pub use client_contract::{
+    CLIENT_CONTRACT_DOMAIN, DROPPED_ATTRIBUTES, OP_CONTRACT_DOMAIN, client_contract_digest,
+    op_contract_digest, op_contract_digests, op_contract_json,
 };
 pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{

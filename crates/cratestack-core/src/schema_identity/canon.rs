@@ -6,125 +6,125 @@
 use serde::Serialize;
 
 #[derive(Serialize)]
-pub(super) struct CSchema<'a> {
-    pub(super) auth: Option<CAuth<'a>>,
-    pub(super) config_blocks: Vec<CConfigBlock<'a>>,
-    pub(super) datasource: Option<CDatasource<'a>>,
-    pub(super) enums: Vec<CEnum<'a>>,
-    pub(super) extensions: Vec<&'a str>,
-    pub(super) mcp: Option<CMcpConfig<'a>>,
-    pub(super) mixins: Vec<CFields<'a>>,
-    pub(super) models: Vec<CModel<'a>>,
-    pub(super) procedures: Vec<CProcedure<'a>>,
-    pub(super) queries: Vec<CQuery<'a>>,
-    pub(super) transport: &'a str,
-    pub(super) types: Vec<CFields<'a>>,
-    pub(super) views: Vec<CView<'a>>,
+pub(crate) struct CSchema<'a> {
+    pub(crate) auth: Option<CAuth<'a>>,
+    pub(crate) config_blocks: Vec<CConfigBlock<'a>>,
+    pub(crate) datasource: Option<CDatasource<'a>>,
+    pub(crate) enums: Vec<CEnum<'a>>,
+    pub(crate) extensions: Vec<&'a str>,
+    pub(crate) mcp: Option<CMcpConfig<'a>>,
+    pub(crate) mixins: Vec<CFields<'a>>,
+    pub(crate) models: Vec<CModel<'a>>,
+    pub(crate) procedures: Vec<CProcedure<'a>>,
+    pub(crate) queries: Vec<CQuery<'a>>,
+    pub(crate) transport: &'a str,
+    pub(crate) types: Vec<CFields<'a>>,
+    pub(crate) views: Vec<CView<'a>>,
 }
 
 /// A named node that is only a field list (mixin, type, auth block).
 #[derive(Serialize)]
-pub(super) struct CFields<'a> {
-    pub(super) fields: Vec<CField<'a>>,
-    pub(super) name: &'a str,
+pub(crate) struct CFields<'a> {
+    pub(crate) fields: Vec<CField<'a>>,
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CAuth<'a> {
-    pub(super) fields: Vec<CField<'a>>,
-    pub(super) name: &'a str,
+pub(crate) struct CAuth<'a> {
+    pub(crate) fields: Vec<CField<'a>>,
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CConfigBlock<'a> {
-    pub(super) entries: &'a [String],
-    pub(super) name: &'a str,
+pub(crate) struct CConfigBlock<'a> {
+    pub(crate) entries: &'a [String],
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CDatasource<'a> {
-    pub(super) entries: Vec<[&'a str; 2]>,
-    pub(super) name: &'a str,
+pub(crate) struct CDatasource<'a> {
+    pub(crate) entries: Vec<[&'a str; 2]>,
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CModel<'a> {
-    pub(super) attributes: Vec<String>,
-    pub(super) fields: Vec<CField<'a>>,
-    pub(super) mcp: Option<CModelMcp<'a>>,
-    pub(super) name: &'a str,
+pub(crate) struct CModel<'a> {
+    pub(crate) attributes: Vec<String>,
+    pub(crate) fields: Vec<CField<'a>>,
+    pub(crate) mcp: Option<CModelMcp<'a>>,
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CEnum<'a> {
-    pub(super) name: &'a str,
-    pub(super) variants: Vec<&'a str>,
+pub(crate) struct CEnum<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) variants: Vec<&'a str>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CField<'a> {
-    pub(super) attributes: Vec<String>,
-    pub(super) name: &'a str,
-    pub(super) ty: CTypeRef<'a>,
+pub(crate) struct CField<'a> {
+    pub(crate) attributes: Vec<String>,
+    pub(crate) name: &'a str,
+    pub(crate) ty: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CTypeRef<'a> {
-    pub(super) arity: &'static str,
-    pub(super) generic_args: Vec<CTypeRef<'a>>,
-    pub(super) ident_args: &'a [String],
-    pub(super) int_args: &'a [u32],
-    pub(super) name: &'a str,
+pub(crate) struct CTypeRef<'a> {
+    pub(crate) arity: &'static str,
+    pub(crate) generic_args: Vec<CTypeRef<'a>>,
+    pub(crate) ident_args: &'a [String],
+    pub(crate) int_args: &'a [u32],
+    pub(crate) name: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CArg<'a> {
-    pub(super) name: &'a str,
-    pub(super) ty: CTypeRef<'a>,
+pub(crate) struct CArg<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) ty: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CProcedure<'a> {
-    pub(super) args: Vec<CArg<'a>>,
-    pub(super) attributes: Vec<String>,
-    pub(super) kind: &'static str,
-    pub(super) mcp: Option<CProcedureMcp<'a>>,
-    pub(super) name: &'a str,
-    pub(super) return_type: CTypeRef<'a>,
+pub(crate) struct CProcedure<'a> {
+    pub(crate) args: Vec<CArg<'a>>,
+    pub(crate) attributes: Vec<String>,
+    pub(crate) kind: &'static str,
+    pub(crate) mcp: Option<CProcedureMcp<'a>>,
+    pub(crate) name: &'a str,
+    pub(crate) return_type: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CView<'a> {
-    pub(super) attributes: Vec<String>,
-    pub(super) fields: Vec<CField<'a>>,
-    pub(super) name: &'a str,
-    pub(super) sources: Vec<&'a str>,
+pub(crate) struct CView<'a> {
+    pub(crate) attributes: Vec<String>,
+    pub(crate) fields: Vec<CField<'a>>,
+    pub(crate) name: &'a str,
+    pub(crate) sources: Vec<&'a str>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CQuery<'a> {
-    pub(super) args: Vec<CArg<'a>>,
-    pub(super) attributes: Vec<String>,
-    pub(super) name: &'a str,
-    pub(super) result_type: CTypeRef<'a>,
+pub(crate) struct CQuery<'a> {
+    pub(crate) args: Vec<CArg<'a>>,
+    pub(crate) attributes: Vec<String>,
+    pub(crate) name: &'a str,
+    pub(crate) result_type: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CMcpConfig<'a> {
-    pub(super) expose_resources: bool,
-    pub(super) expose_tools: bool,
-    pub(super) name: Option<&'a str>,
+pub(crate) struct CMcpConfig<'a> {
+    pub(crate) expose_resources: bool,
+    pub(crate) expose_tools: bool,
+    pub(crate) name: Option<&'a str>,
 }
 
 #[derive(Serialize)]
-pub(super) struct CModelMcp<'a> {
-    pub(super) max_page_size: Option<u32>,
-    pub(super) resource: &'a str,
+pub(crate) struct CModelMcp<'a> {
+    pub(crate) max_page_size: Option<u32>,
+    pub(crate) resource: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CProcedureMcp<'a> {
-    pub(super) description: &'a Option<String>,
-    pub(super) tool_name: &'a str,
-    pub(super) tool_name_defaulted: bool,
+pub(crate) struct CProcedureMcp<'a> {
+    pub(crate) description: &'a Option<String>,
+    pub(crate) tool_name: &'a str,
+    pub(crate) tool_name_defaulted: bool,
 }
