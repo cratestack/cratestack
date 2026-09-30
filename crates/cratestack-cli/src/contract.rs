@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use clap::Subcommand;
-use cratestack_core::{Schema, client_contract_digest, digest_hex, op_contract_digests, op_contract_json};
+use cratestack_core::{
+    Schema, client_contract_digest, digest_hex, op_contract_digests, op_contract_json,
+};
 
 use crate::cli_support::parse_schema_or_render;
 
@@ -69,7 +71,10 @@ fn print_report(schema: &Schema, op: &str) -> Result<String> {
     match op_contract_json(schema, op) {
         Some(json) => Ok(json),
         None => {
-            let known: Vec<String> = op_contract_digests(schema).into_iter().map(|(k, _)| k).collect();
+            let known: Vec<String> = op_contract_digests(schema)
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect();
             bail!("no op `{op}` in this schema; ops: {}", known.join(", "))
         }
     }

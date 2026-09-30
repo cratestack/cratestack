@@ -12,6 +12,7 @@
 pub mod audit;
 pub mod batch;
 pub mod builder;
+pub mod client_contract;
 pub mod codec;
 pub mod composite_id;
 pub mod context;
@@ -34,7 +35,6 @@ pub mod route_naming;
 pub mod rpc;
 pub mod rust_keywords;
 pub mod schema;
-pub mod client_contract;
 pub mod schema_identity;
 pub mod store;
 pub mod transport;
@@ -69,6 +69,10 @@ pub use context::{
 // active; `RustDecimal`/`BigDecimal` each only exist under their own
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
+pub use client_contract::{
+    CLIENT_CONTRACT_DOMAIN, DROPPED_ATTRIBUTES, OP_CONTRACT_DOMAIN, client_contract_digest,
+    digest_hex, op_contract_digest, op_contract_digests, op_contract_json,
+};
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;
 #[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
@@ -112,10 +116,6 @@ pub use schema::{
     is_relation_attribute, model_internal_actions, parse_composite_id_attribute,
     parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
     parse_internal_attribute, scan_sql_placeholders,
-};
-pub use client_contract::{
-    CLIENT_CONTRACT_DOMAIN, DROPPED_ATTRIBUTES, OP_CONTRACT_DOMAIN, client_contract_digest,
-    digest_hex, op_contract_digest, op_contract_digests, op_contract_json,
 };
 pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{

@@ -28,14 +28,22 @@ fn json_digest_is_a_stable_document() {
 
 #[test]
 fn a_policy_edit_leaves_the_printed_digests_alone() {
-    let edited = SCHEMA.replace("model Widget {\n  id Int @id\n", "model Widget {\n  id Int @id\n\n  @@allow(\"read\", true)\n");
-    assert_eq!(digest_report(&schema(SCHEMA), false), digest_report(&schema(&edited), false));
+    let edited = SCHEMA.replace(
+        "model Widget {\n  id Int @id\n",
+        "model Widget {\n  id Int @id\n\n  @@allow(\"read\", true)\n",
+    );
+    assert_eq!(
+        digest_report(&schema(SCHEMA), false),
+        digest_report(&schema(&edited), false)
+    );
 }
 
 #[test]
 fn print_shows_the_canonical_json_and_names_the_ops_on_a_miss() {
     let json = print_report(&schema(SCHEMA), "procedure.ping").unwrap();
     assert!(json.contains(r#""key":"procedure.ping""#));
-    let err = print_report(&schema(SCHEMA), "procedure.nope").unwrap_err().to_string();
+    let err = print_report(&schema(SCHEMA), "procedure.nope")
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("procedure.ping"), "{err}");
 }

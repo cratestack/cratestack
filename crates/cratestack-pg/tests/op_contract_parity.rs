@@ -21,7 +21,10 @@ fn rpc_keys(ops: &[cratestack::OpDescriptor]) -> BTreeSet<String> {
 }
 
 fn rest_keys(routes: &[cratestack::RouteTransportDescriptor]) -> BTreeSet<String> {
-    routes.iter().map(|r| format!("{} {}", r.method, r.path)).collect()
+    routes
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.path))
+        .collect()
 }
 
 mod rest {
@@ -53,7 +56,10 @@ mod rpc {
 
 mod rpc_suppressed {
     use super::*;
-    include_server_schema!("tests/fixtures/internal_suppression_rpc.cstack", db = Postgres);
+    include_server_schema!(
+        "tests/fixtures/internal_suppression_rpc.cstack",
+        db = Postgres
+    );
 
     #[test]
     fn internal_verbs_are_absent_from_both_lists() {

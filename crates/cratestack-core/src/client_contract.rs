@@ -59,7 +59,11 @@ fn contract<'a>(schema: &'a Schema, op: &'a ClientOp<'a>) -> COpContract<'a> {
             closure: project::closure(schema, &[&model.name]),
             events: (verb == ModelVerb::Subscribe).then(|| emitted(model)),
             key: &op.key,
-            kind: if verb == ModelVerb::Subscribe { "subscription" } else { "unary" },
+            kind: if verb == ModelVerb::Subscribe {
+                "subscription"
+            } else {
+                "unary"
+            },
             model: Some(&model.name),
             procedure: None,
             transport,
@@ -100,7 +104,11 @@ fn procedure_contract<'a>(
         closure: project::closure(schema, &roots),
         events: None,
         key: &op.key,
-        kind: if return_type.arity == TypeArity::List { "sequence" } else { "unary" },
+        kind: if return_type.arity == TypeArity::List {
+            "sequence"
+        } else {
+            "unary"
+        },
         model: None,
         procedure: Some(CWireProcedure {
             args: args(procedure_args),

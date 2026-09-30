@@ -14,7 +14,11 @@ use crate::schema_identity::canon::{CEnum, CField, CFields};
 use crate::schema_identity::members::type_ref;
 
 pub(super) fn wire_attributes(attrs: &[Attribute]) -> Vec<String> {
-    let kept: Vec<Attribute> = attrs.iter().filter(|a| !is_dropped(&a.raw)).cloned().collect();
+    let kept: Vec<Attribute> = attrs
+        .iter()
+        .filter(|a| !is_dropped(&a.raw))
+        .cloned()
+        .collect();
     crate::schema_identity::members::attributes(&kept)
 }
 

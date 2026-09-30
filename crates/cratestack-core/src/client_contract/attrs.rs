@@ -11,13 +11,19 @@
 /// `tests_drop.rs`, which adds it to a field, a model and a procedure and
 /// asserts no op digest moves.
 pub const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
-    ("@@allow", "policy: decides who may call, not how bytes decode"),
+    (
+        "@@allow",
+        "policy: decides who may call, not how bytes decode",
+    ),
     ("@@deny", "policy"),
     ("@allow", "procedure policy"),
     ("@deny", "procedure policy"),
     ("@authorize", "procedure policy re-check"),
     ("@@index", "storage: a database index"),
-    ("@@unique", "storage: upsert targets are unsupported, so no input shape depends on it"),
+    (
+        "@@unique",
+        "storage: upsert targets are unsupported, so no input shape depends on it",
+    ),
     ("@@map", "storage: table name"),
     ("@map", "storage: column name"),
     ("@@sql", "a view's or query's SQL body"),
@@ -27,14 +33,20 @@ pub const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
     ("@@no_unique", "a view's key opt-out"),
     ("@@audit", "audit logging"),
     ("@@retain", "retention of audit rows"),
-    ("@@soft_delete", "a stored `deleted_at` column that is on no wire shape"),
+    (
+        "@@soft_delete",
+        "a stored `deleted_at` column that is on no wire shape",
+    ),
     ("@@rename", "migration marker"),
     ("@rename", "migration marker"),
     (
         "@@internal",
         "decides whether an op exists, which is the op key",
     ),
-    ("@@subscribe", "decides whether `subscribe` exists, which is its key"),
+    (
+        "@@subscribe",
+        "decides whether `subscribe` exists, which is its key",
+    ),
     (
         "@@emit",
         "the event kinds belong to the `subscribe` op's own contract; \
@@ -66,7 +78,9 @@ pub fn attribute_name(raw: &str) -> &str {
 /// Whether `raw` is on the drop list.
 pub fn is_dropped(raw: &str) -> bool {
     let name = attribute_name(raw);
-    DROPPED_ATTRIBUTES.iter().any(|(dropped, _)| *dropped == name)
+    DROPPED_ATTRIBUTES
+        .iter()
+        .any(|(dropped, _)| *dropped == name)
 }
 
 /// Whether a field is `@server_only`: on no wire since 0.13.0, so out of

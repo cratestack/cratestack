@@ -111,7 +111,10 @@ fn an_index_audit_and_soft_delete_move_nothing() {
 
 #[test]
 fn a_validator_edit_moves_nothing() {
-    assert_unchanged(&edit("@length(min: 1, max: 40)", "@length(min: 2, max: 400)"));
+    assert_unchanged(&edit(
+        "@length(min: 1, max: 40)",
+        "@length(min: 2, max: 400)",
+    ));
 }
 
 #[test]
@@ -171,7 +174,10 @@ fn a_retype_moves_the_model_and_whatever_reaches_it() {
 
 #[test]
 fn a_field_add_moves_only_that_models_ops() {
-    let source = edit("body String\n}", "body String\n  pinned Boolean @default(false)\n}");
+    let source = edit(
+        "body String\n}",
+        "body String\n  pinned Boolean @default(false)\n}",
+    );
     assert_eq!(moved(&source), ops_of(&["Note"]));
 }
 
@@ -208,7 +214,10 @@ fn paged_moves_its_models_ops_only() {
 #[test]
 fn an_argument_rename_moves_only_that_procedure() {
     let source = edit("message String", "text String");
-    assert_eq!(moved(&source), BTreeSet::from(["procedure.ping".to_owned()]));
+    assert_eq!(
+        moved(&source),
+        BTreeSet::from(["procedure.ping".to_owned()])
+    );
 }
 
 #[test]
@@ -231,7 +240,10 @@ fn subscribe_carries_its_event_kinds_and_nothing_else_does() {
             &format!("  body String\n\n  @@emit({events})\n  @@subscribe\n}}"),
         )
     };
-    let (one, two) = (digests(&with("created")), digests(&with("created, deleted")));
+    let (one, two) = (
+        digests(&with("created")),
+        digests(&with("created, deleted")),
+    );
     let changed: BTreeSet<_> = one
         .iter()
         .filter(|(k, d)| two[*k] != **d)

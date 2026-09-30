@@ -5,11 +5,18 @@ use super::*;
 use crate::schema::{Attribute, Field, Model, SourceSpan, TypeRef};
 
 fn span() -> SourceSpan {
-    SourceSpan { start: 0, end: 1, line: 1 }
+    SourceSpan {
+        start: 0,
+        end: 1,
+        line: 1,
+    }
 }
 
 pub(super) fn attr(raw: &str) -> Attribute {
-    Attribute { raw: raw.to_owned(), span: span() }
+    Attribute {
+        raw: raw.to_owned(),
+        span: span(),
+    }
 }
 
 pub(super) fn ty(name: &str) -> TypeRef {
@@ -90,7 +97,9 @@ pub(super) fn sample() -> Schema {
         fields: vec![field("note", "String", &[])],
         span: span(),
     });
-    schema.procedures.push(procedure("ping", "Ping", "Ping", &[]));
+    schema
+        .procedures
+        .push(procedure("ping", "Ping", "Ping", &[]));
     schema
 }
 
@@ -133,7 +142,9 @@ fn rest_ops_are_method_and_route_template() {
 #[test]
 fn an_api_version_is_part_of_a_rest_key() {
     let mut schema = sample();
-    schema.procedures[0].attributes.push(attr("@api_version(\"v2\")"));
+    schema.procedures[0]
+        .attributes
+        .push(attr("@api_version(\"v2\")"));
     assert!(keys(&schema).contains(&"POST /v2/$procs/ping".to_owned()));
 }
 

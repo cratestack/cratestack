@@ -17,7 +17,10 @@ const PING_JSON: &str = concat!(
 
 #[test]
 fn canonical_json_of_a_procedure_is_pinned() {
-    assert_eq!(op_contract_json(&sample(), "POST /$procs/ping").unwrap(), PING_JSON);
+    assert_eq!(
+        op_contract_json(&sample(), "POST /$procs/ping").unwrap(),
+        PING_JSON
+    );
 }
 
 #[test]
@@ -27,5 +30,8 @@ fn digest_is_the_domain_tagged_hash_of_those_bytes() {
     hasher.update(OP_CONTRACT_DOMAIN);
     hasher.update(PING_JSON.as_bytes());
     let expected: [u8; 32] = hasher.finalize().into();
-    assert_eq!(op_contract_digest(&sample(), "POST /$procs/ping"), Some(expected));
+    assert_eq!(
+        op_contract_digest(&sample(), "POST /$procs/ping"),
+        Some(expected)
+    );
 }
