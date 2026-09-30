@@ -35,7 +35,7 @@ impl EnvelopePolicy for Modes {
 }
 
 fn router(policy: Modes, hits: &Hits) -> axum::Router {
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(policy)
         .rpc("")
         .build()
@@ -50,7 +50,7 @@ fn router(policy: Modes, hits: &Hits) -> axum::Router {
 async fn a_signed_batch_whose_every_answer_is_off_is_the_unsigned_415() {
     let hits = Hits::default();
     let off = |_: &PolicyRequest<'_>| EnvelopeMode::Off;
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(off)
         .rpc("")
         .build()

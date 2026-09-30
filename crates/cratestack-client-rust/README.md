@@ -208,13 +208,20 @@ and opens every response as COSE_Sign1 or COSE_Mac0 (ADR 0006), over REST and RP
 ```text
 let runtime = CratestackClient::new(config, CborCodec)
     .with_envelope(ClientEnvelope::new(envelope, "payments")?)?;
-let client = cratestack_schema::client::Client::new(runtime); // generated code adds the route and digest
+let client = cratestack_schema::client::Client::new(runtime); // generated code adds the route and the op's contract digest
 ```
 
 The client is then a `Required` one: a response that is not the sealed answer to *this* request
 (another request's, a rewritten status) is `EnvelopeError::Unverified`, and one that is not sealed
 at all is `EnvelopeError::Unsigned { status }` with its body unread, so nothing downgrades to
-plain. Streams are refused with `EnvelopeError::StreamsUnsupported`. A key in a platform keystore
+plain. Each call binds the digest of *its own op* (binding version 2): the generated `Client::new`
+hands over the schema's `OP_CONTRACTS` through `with_contracts` (`with_contract_sha` pins one digest
+for a hand-built client), a call to an op the table lacks fails with `BadInput` and is never sent,
+and the first 8 bytes of the digest travel in the unbound `Cratestack-Contract` header. When the
+server no longer accepts this client's shape for the op it answers the **unsigned** `426`, surfaced
+as `EnvelopeError::ContractUnsupported { op }`: a hint to offer "update the app" for that feature,
+never proof of anything, and other ops are unaffected. Streams are refused with
+`EnvelopeError::StreamsUnsupported`. A key in a platform keystore
 signs through `ExternalSigner::esp256`, which takes a DER answer. Sealed requests are marked
 non-idempotent for `reqwest-middleware`, because a replay carries the same `cti`. Redirects are never followed (a supplied `reqwest::Client` must not follow them either), and a router mounted under a path with parameters needs `ClientEnvelope::with_mount_params`. On
 `wasm32-unknown-unknown` the signer need not be `Send`. See the

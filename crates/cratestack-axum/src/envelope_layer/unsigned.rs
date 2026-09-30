@@ -11,6 +11,7 @@ use cratestack_core::{NONCE_HEADER, RequestNonce, request_digest_unsigned};
 use http::request::Parts;
 
 use super::bound::Bound;
+use super::contract;
 use super::layer::Config;
 use super::opened::SealContext;
 use super::resolver::ResolvedRoute;
@@ -46,9 +47,20 @@ pub(super) async fn handle<S: Inner>(
     };
     // Binds this nonce and this payload, and nothing about who sent them:
     // the request was not signed (see `ResponseSealPolicy`).
+    let Some(contract) = contract::for_unsigned(&config, &parts.method, &route, &parts.headers)
+    else {
+        return refusal::no_contract(&parts.headers, &path, &route);
+    };
     let digest = request_digest_unsigned(&nonce, &payload);
     request::rewrite_accept(&mut parts.headers, false);
-    let inputs = BindingInputs::new(config, parts.method.clone(), route, &parts.uri, bound);
+    let inputs = BindingInputs::new(
+        config,
+        parts.method.clone(),
+        route,
+        &parts.uri,
+        bound,
+        contract,
+    );
     let sealer = Sealer {
         inputs,
         request: digest,

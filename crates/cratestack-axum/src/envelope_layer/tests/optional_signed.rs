@@ -11,7 +11,7 @@ use super::support::*;
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
 
 fn optional(hits: &Hits) -> axum::Router {
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Optional)
         .rest("", &REST_ROUTES)
         .build()
@@ -79,7 +79,7 @@ async fn a_plain_request_still_gets_its_plain_answer() {
 async fn over_rpc_a_signed_call_under_optional_is_always_answered_sealed() {
     use axum::routing::post;
     let layer = || {
-        EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+        EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
             .policy(EnvelopeMode::Optional)
             .rpc("")
             .build()

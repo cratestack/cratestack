@@ -6,12 +6,13 @@
 //! headers like every other middleware error.
 
 use axum::response::Response;
-use cratestack_core::{CratestackError, UNAUTHENTICATED};
+use cratestack_core::{CONTRACT_UNSUPPORTED_CODE, CratestackError, UNAUTHENTICATED};
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 
 use super::request::BufferError;
+use super::resolver::ResolvedRoute;
 use crate::middleware_error::{
-    middleware_error_response, middleware_error_response_with_code,
+    middleware_coded_response, middleware_error_response, middleware_error_response_with_code,
     middleware_error_response_with_status,
 };
 
@@ -30,6 +31,19 @@ pub(super) fn unauthenticated(headers: &HeaderMap, path: &str) -> Response {
 /// A COSE body the layer will not open (policy `Off`, or no generated op to
 /// bind it to). Refused rather than forwarded, so nothing behind the layer
 /// ever reads unverified COSE bytes as a plain body.
+/// The unsigned `426` for a `Cratestack-Contract` selector that names no
+/// accepted digest (cratestack#1123): the client's shape for this op is no
+/// longer served. Unsigned on purpose, so it is a hint and never proof.
+pub(super) fn contract_unsupported(headers: &HeaderMap, path: &str) -> Response {
+    middleware_coded_response(
+        headers,
+        path,
+        StatusCode::UPGRADE_REQUIRED,
+        (CONTRACT_UNSUPPORTED_CODE, "CONTRACT_UNSUPPORTED"),
+        "this client's contract for the operation is not supported; update the client",
+    )
+}
+
 pub(super) fn unsupported_envelope(headers: &HeaderMap, path: &str) -> Response {
     middleware_error_response(
         headers,
@@ -109,6 +123,18 @@ pub(super) fn internal(
 }
 
 /// The public half of [`internal`], for a caller that logged already.
+/// No digest is known for the route a request resolved to: the layer was
+/// given a contract table (or a custom resolver) that does not cover it.
+/// Fail closed, and say which route in the log.
+pub(super) fn no_contract(headers: &HeaderMap, path: &str, route: &ResolvedRoute) -> Response {
+    let error = CratestackError::Internal(format!(
+        "no accepted contract digest for route {:?}: the contract table does not cover it \
+         (ResolvedRoute::with_contract_key names the op a custom route maps to)",
+        route.route()
+    ));
+    internal(headers, path, "contract", &error)
+}
+
 pub(super) fn plain_internal(headers: &HeaderMap, path: &str) -> Response {
     middleware_error_response(headers, path, CratestackError::Internal(String::new()))
 }

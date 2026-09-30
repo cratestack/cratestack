@@ -57,7 +57,7 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
         route: Cow::Borrowed(&route),
         path_params: PathParams::Borrowed(&params),
         query: Some(Cow::Borrowed(&query)),
-        schema_sha: [9; 32],
+        contract_sha: [9; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
         bound_headers: BoundHeaders {
             idempotency_key: Some(Cow::Borrowed(&key)),
@@ -87,7 +87,7 @@ fn into_owned_keeps_every_field_and_detaches_the_borrow() {
     assert!(matches!(owned.query, Some(Cow::Owned(_))));
     assert_eq!(owned.method, "POST");
     assert_eq!(owned.query.as_deref(), Some("a=1&b=2"));
-    assert_eq!(owned.schema_sha, [9; 32]);
+    assert_eq!(owned.contract_sha, [9; 32]);
     assert_eq!(owned.payload_media_type, "application/cbor");
     assert!(matches!(
         owned.bound_headers.idempotency_key,

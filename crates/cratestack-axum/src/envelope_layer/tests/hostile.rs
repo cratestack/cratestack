@@ -16,7 +16,7 @@ use super::toy::{Toy, toy_request};
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode, ServerEnvelope, VerifiedRequest};
 
 fn layer(envelope: impl ServerEnvelope) -> crate::envelope_layer::EnvelopeLayerBuilder {
-    EnvelopeLayer::builder(envelope, AUDIENCE, SCHEMA)
+    EnvelopeLayer::builder(envelope, AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
 }
@@ -146,7 +146,7 @@ fn the_builder_refuses_an_unclaimed_media_type_and_an_empty_route_table() {
         ..Toy::default()
     };
     assert!(layer(bad_header).build().is_err(), "not a header value");
-    let empty = EnvelopeLayer::builder(Toy::default(), AUDIENCE, SCHEMA)
+    let empty = EnvelopeLayer::builder(Toy::default(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &[])
         .build();

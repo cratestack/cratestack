@@ -25,7 +25,10 @@ pub(super) fn bad_input(message: String) -> RuntimeErrorWire {
 pub(super) enum Sealing {
     None,
     #[cfg(feature = "cose")]
-    Cose(crate::envelope::ClientEnvelope, &'static [u8; 32]),
+    Cose(
+        crate::envelope::ClientEnvelope,
+        cratestack_core::OpContracts,
+    ),
 }
 
 impl Sealing {
@@ -66,9 +69,9 @@ impl Sealing {
         match self {
             Sealing::None => Ok(client),
             #[cfg(feature = "cose")]
-            Sealing::Cose(envelope, schema_sha) => client
+            Sealing::Cose(envelope, contracts) => client
                 .with_envelope(envelope)
-                .map(|client| client.with_schema_sha_bytes(schema_sha))
+                .map(|client| client.with_contracts(contracts))
                 .map_err(RuntimeErrorWire::from),
         }
     }

@@ -100,7 +100,7 @@ pub(super) fn generate_generated_rpc_client_module(
                         rpc: ::cratestack::client_rust::RpcClient::new(
                             runtime
                                 .with_schema_sha(super::SCHEMA_SHA256)
-                                .with_schema_sha_bytes(&super::SCHEMA_SHA256_BYTES),
+                                .with_contracts(super::OP_CONTRACTS),
                         ),
                     }
                 }

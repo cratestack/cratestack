@@ -14,7 +14,7 @@ use cratestack_core::{
 use cratestack_cose::{CoseEnvelope, CoseMode, Ed25519Signer, StaticVerifierResolver};
 use http::{Method, StatusCode, header};
 
-use super::support::{AUDIENCE, SCHEMA, SIGN1};
+use super::support::{AUDIENCE, CONTRACT, SIGN1};
 
 /// `keys.json`'s `ed25519` (the client) and `ed25519_other` (the server).
 fn seed(start: u8) -> [u8; 32] {
@@ -65,6 +65,8 @@ pub struct Call {
     /// `bound_headers`: `Idempotency-Key`, `If-Match`, as the client binds
     /// them.
     pub bound: (Option<&'static str>, Option<&'static str>),
+    /// The op-contract digest the client binds.
+    pub contract: [u8; 32],
 }
 
 impl Call {
@@ -75,7 +77,13 @@ impl Call {
             params: params.to_vec(),
             query: None,
             bound: (None, None),
+            contract: CONTRACT,
         }
+    }
+
+    /// The same call, bound under another op-contract digest.
+    pub fn contract(self, contract: [u8; 32]) -> Self {
+        Self { contract, ..self }
     }
 
     /// The same call, binding `Idempotency-Key` and `If-Match`.
@@ -90,6 +98,16 @@ impl Call {
         }
     }
 
+    /// This call again, under another op-contract digest.
+    pub fn clone_with_contract(&self, contract: [u8; 32]) -> Call {
+        Call {
+            method: self.method.clone(),
+            params: self.params.clone(),
+            contract,
+            ..*self
+        }
+    }
+
     pub fn binding(&self, response: Option<ResponseBinding>) -> Binding<'_> {
         Binding {
             audience: Cow::Borrowed(AUDIENCE),
@@ -97,7 +115,7 @@ impl Call {
             route: Cow::Borrowed(self.route),
             path_params: PathParams::Borrowed(&self.params),
             query: self.query.map(Cow::Borrowed),
-            schema_sha: SCHEMA,
+            contract_sha: self.contract,
             payload_media_type: Cow::Borrowed("application/cbor"),
             bound_headers: BoundHeaders {
                 idempotency_key: self.bound.0.map(Cow::Borrowed),

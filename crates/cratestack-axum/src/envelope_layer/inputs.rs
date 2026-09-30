@@ -18,6 +18,9 @@ pub(super) struct BindingInputs {
     pub(super) config: Arc<Config>,
     pub(super) method: Method,
     pub(super) route: ResolvedRoute,
+    /// The op-contract digest the binding carries: the one the request
+    /// opened under, which its response is sealed under too.
+    pub(super) contract: [u8; 32],
     query: Option<String>,
     bound: Bound,
 }
@@ -29,6 +32,7 @@ impl BindingInputs {
         route: ResolvedRoute,
         uri: &Uri,
         bound: Bound,
+        contract: [u8; 32],
     ) -> Self {
         // `canonical_query` decodes the pairs, orders them by key (a
         // repeated key's values keep their order) and re-encodes them, so
@@ -42,6 +46,7 @@ impl BindingInputs {
             config,
             method,
             route,
+            contract,
             query,
             bound,
         }
@@ -66,7 +71,7 @@ impl BindingInputs {
             route: Cow::Borrowed(self.route.route()),
             path_params: PathParams::Borrowed(params),
             query: self.query.as_deref().map(Cow::Borrowed),
-            schema_sha: self.config.schema_sha,
+            contract_sha: self.contract,
             payload_media_type: Cow::Borrowed(PAYLOAD_MEDIA_TYPE),
             bound_headers: self.bound.borrowed(),
             response,

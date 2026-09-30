@@ -156,7 +156,7 @@ async fn b2_percent_encoded_batch_over_the_generated_router() {
     let router = rpc_router(procedures.clone()).layer(rpc_required());
     let batch = Call {
         route: "batch",
-        schema_sha: rpc::cratestack_schema::SCHEMA_SHA256_BYTES,
+        contracts: rpc::cratestack_schema::OP_CONTRACTS,
     };
     let (sealed, req) = batch.request("/rpc/%62atch", &batch_body("b2"), &[]).await;
     let answer = send(&router, req).await;
@@ -196,7 +196,7 @@ async fn s1_a_stripped_idempotency_key_does_not_verify() {
         .layer(rpc_required());
     let ping = Call {
         route: "procedure.ping",
-        schema_sha: rpc::cratestack_schema::SCHEMA_SHA256_BYTES,
+        contracts: rpc::cratestack_schema::OP_CONTRACTS,
     };
     let keyed = [("idempotency-key", "k1")];
     let (sent, first) = ping
@@ -321,7 +321,7 @@ async fn api_b1_descriptor_drift_fails_closed() {
     let layer = cratestack::envelope_layer::EnvelopeLayer::builder(
         server_envelope(),
         AUDIENCE,
-        versioned::cratestack_schema::SCHEMA_SHA256_BYTES,
+        versioned::cratestack_schema::ACCEPTED_CONTRACTS,
     )
     .policy(EnvelopeMode::Required)
     .rest("", drifted)

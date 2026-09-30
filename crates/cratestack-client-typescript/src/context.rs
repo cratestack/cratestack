@@ -38,6 +38,12 @@ pub(crate) struct TemplateContext {
     /// doc comment for the scope decision. Baked into `runtime.ts` as
     /// `SCHEMA_SHA256`; empty when the CLI wasn't given a schema fingerprint.
     schema_sha256: String,
+    /// `[op key, hex digest]` per op (and `batch` for `transport rpc`):
+    /// `cratestack_core::bound_contracts`, what the Rust macros emit as
+    /// `OP_CONTRACTS` (binding version 2, cratestack#1123). Baked into
+    /// `runtime.ts` for the sealers EXT-13 will add.
+    op_contracts: Vec<[String; 2]>,
+    client_contract_sha256: String,
     enums: Vec<EnumView>,
     interfaces: Vec<InterfaceView>,
     models: Vec<ModelApiView>,
@@ -361,6 +367,8 @@ pub(crate) fn build_template_context(
         client_class_name,
         base_path: config.base_path.clone(),
         schema_sha256: config.schema_sha256.clone(),
+        op_contracts: op_contract_rows(schema),
+        client_contract_sha256: client_contract_hex(schema),
         enums,
         interfaces,
         models,
@@ -407,4 +415,17 @@ pub(crate) fn build_template_context(
             .any(|model| version_field(model).is_some()),
         models_import_path: "./models.js",
     })
+}
+
+/// `[key, hex]` rows of the bound contract table, for a template.
+pub(crate) fn op_contract_rows(schema: &Schema) -> Vec<[String; 2]> {
+    cratestack_core::bound_contracts(schema)
+        .into_iter()
+        .map(|(key, digest)| [key, cratestack_core::digest_hex(&digest)])
+        .collect()
+}
+
+/// The whole-contract digest, in hex.
+pub(crate) fn client_contract_hex(schema: &Schema) -> String {
+    cratestack_core::digest_hex(&cratestack_core::client_contract_digest(schema))
 }

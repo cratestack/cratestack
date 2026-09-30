@@ -15,7 +15,7 @@ use cratestack_core::CratestackError;
 pub enum EnvelopeError {
     /// The response was not a COSE message. Nothing in its body was read.
     ///
-    /// The layer's own refusals (a wrong audience or schema digest, a stale
+    /// The layer's own refusals (a wrong audience, a stale
     /// `iat`, an unsupported media type, an oversized body) are always
     /// unsigned (ADR 0006 D4), so a `401` here usually means the server did
     /// not accept the request, not that a proxy tampered with the answer.
@@ -27,6 +27,15 @@ pub enum EnvelopeError {
     /// reported (ADR 0006 §10).
     #[error("the response failed COSE verification")]
     Unverified,
+    /// The server answered the unsigned `426 contract_unsupported`: it no
+    /// longer serves the wire shape this client has for `op` (a breaking
+    /// change to that op since this client was built), so the call was
+    /// refused before any key was looked up. **The answer is unsigned**, so
+    /// it is a hint and never proof: anyone on the path could send it, and a
+    /// caller should offer "update the app" for that feature, not treat the
+    /// server's contract as known. Calls to other ops are unaffected.
+    #[error("the server no longer accepts this client's contract for `{op}`; update the client")]
+    ContractUnsupported { op: String },
     /// Sealing the request failed: the signer (a keystore, a KMS) refused or
     /// failed, or the envelope was misconfigured. Nothing was sent.
     #[error("sealing the request failed: {0}")]
@@ -49,6 +58,7 @@ impl EnvelopeError {
         match self {
             EnvelopeError::Unsigned { .. } => "envelope_unsigned",
             EnvelopeError::Unverified => "envelope_unverified",
+            EnvelopeError::ContractUnsupported { .. } => "envelope_contract_unsupported",
             EnvelopeError::Seal(_) => "envelope_seal",
             EnvelopeError::Open(_) => "envelope_open",
             EnvelopeError::StreamsUnsupported => "envelope_streams_unsupported",

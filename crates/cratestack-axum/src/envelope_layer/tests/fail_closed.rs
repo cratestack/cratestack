@@ -12,7 +12,7 @@ use super::support::*;
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeLayerBuilder, EnvelopeMode, PolicyRequest};
 
 fn required() -> EnvelopeLayerBuilder {
-    EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA).policy(EnvelopeMode::Required)
+    EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS).policy(EnvelopeMode::Required)
 }
 
 async fn assert_misconfigured(router: &Router, method: Method, path: &str, hits: &Hits) {
@@ -65,7 +65,7 @@ async fn descriptor_drift_fails_closed() {
 #[tokio::test]
 async fn a_closure_policy_fails_closed_by_default() {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(|_: &PolicyRequest<'_>| EnvelopeMode::Optional)
         .rest("/wrong", &REST_ROUTES)
         .build()

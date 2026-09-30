@@ -13,7 +13,7 @@ use super::support::*;
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
 
 fn builder() -> crate::envelope_layer::EnvelopeLayerBuilder {
-    EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA).policy(EnvelopeMode::Required)
+    EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS).policy(EnvelopeMode::Required)
 }
 
 #[tokio::test]
@@ -148,7 +148,7 @@ async fn an_allow_listed_hand_written_route_passes_plain_but_never_cose() {
 #[tokio::test]
 async fn under_optional_an_unresolved_route_still_passes() {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Optional)
         .rest("", &REST_ROUTES)
         .build()

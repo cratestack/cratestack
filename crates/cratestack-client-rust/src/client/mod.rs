@@ -1,5 +1,7 @@
 #[cfg(feature = "cose")]
 mod bound_headers;
+#[cfg(feature = "cose")]
+pub(crate) mod contract;
 mod core;
 mod crud;
 pub(crate) mod decode;

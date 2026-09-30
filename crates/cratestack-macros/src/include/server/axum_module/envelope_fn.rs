@@ -1,7 +1,7 @@
 //! The generated `envelope_layer(envelope, policy, audience)` convenience
 //! (cratestack#1006, API-review decision 2026-09-26): an
 //! `EnvelopeLayerBuilder` already set for this schema's transport, its
-//! `ROUTE_TRANSPORTS` and its `SCHEMA_SHA256_BYTES`, so a REST schema's
+//! `ROUTE_TRANSPORTS` and its `ACCEPTED_CONTRACTS`, so a REST schema's
 //! layer cannot be built as RPC (or over another schema's descriptors).
 //!
 //! Emitted as a call to the facade's `__envelope_layer_fn!` macro, not as

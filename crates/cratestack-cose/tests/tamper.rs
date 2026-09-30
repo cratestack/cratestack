@@ -139,7 +139,7 @@ async fn aad_binds_every_request_field() {
     aad_mismatch(|b| b.path_params = PathParams::EMPTY, "path dropped").await;
     aad_mismatch(|b| b.query = Some(Cow::Borrowed("dry_run=true")), "query").await;
     aad_mismatch(|b| b.query = None, "query dropped").await;
-    aad_mismatch(|b| b.schema_sha[31] ^= 0x01, "schema_sha").await;
+    aad_mismatch(|b| b.contract_sha[31] ^= 0x01, "contract_sha").await;
     aad_mismatch(
         |b| b.payload_media_type = Cow::Borrowed("application/json"),
         "payload_type",

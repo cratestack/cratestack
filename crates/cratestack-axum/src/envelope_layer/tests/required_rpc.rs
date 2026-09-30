@@ -10,7 +10,7 @@ use super::support::*;
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
 
 fn router(hits: &Hits) -> axum::Router {
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rpc("")
         .build()

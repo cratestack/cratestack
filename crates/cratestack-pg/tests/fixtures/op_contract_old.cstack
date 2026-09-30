@@ -1,0 +1,30 @@
+// EXT-14 (cratestack#1123): the model schema a shipped client was built
+// from; `op_contract_new.cstack` is it after server-only edits to `Note`
+// (an index, a policy, a validator) and a wire-shape edit to `Tag` (a new
+// required field).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id    Int    @id
+  title String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model Tag {
+  id    Int    @id
+  label String
+
+  @@allow("read", auth() != null)
+}

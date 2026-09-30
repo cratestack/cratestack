@@ -18,14 +18,17 @@
 //! `SHA-256(OP_CONTRACT_DOMAIN || canonical JSON)`; if the derivation rules
 //! change, the domain tag moves to `op-contract/v2`.
 //!
-//! Nothing binds these yet: the COSE AAD still carries the whole-IR
-//! identity (binding v1). `cratestack contract digest|print` shows them.
+//! The COSE AAD binds the digest of the op a message calls (binding
+//! version 2; ADR 0006 §4); [`table`] holds the tables generated code
+//! carries and how a route finds its row. `cratestack contract
+//! digest|print` shows the digests.
 
 mod attrs;
 mod build;
 mod canon;
 mod ops;
 mod project;
+mod table;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -40,6 +43,8 @@ mod tests_readers;
 mod tests_readers_symbols;
 #[cfg(test)]
 mod tests_readers_table;
+#[cfg(test)]
+mod tests_table;
 
 use sha2::{Digest, Sha256};
 
@@ -48,6 +53,9 @@ use build::canonical;
 use ops::ops;
 
 pub use ops::op_keys;
+pub use table::{
+    AcceptedContracts, BATCH_CONTRACT_KEY, OpContracts, bound_contracts, find_contract,
+};
 
 /// Domain-separation tag of an op digest.
 pub const OP_CONTRACT_DOMAIN: &[u8] = b"cratestack/op-contract/v1\0";

@@ -7,11 +7,15 @@
 //! `Remote` error mapping, cbor-seq lists, RPC frames) is the code a plain
 //! call runs, with no second path to keep in step with it.
 
-use cratestack_core::{Binding, CratestackError, ResponseBinding, canonical_query};
+use cratestack_core::{
+    Binding, CONTRACT_HEADER, CratestackError, ResponseBinding, canonical_query,
+};
 use cratestack_cose::request_digest;
 use reqwest::Method;
+use reqwest::StatusCode;
 use reqwest::header::{
-    CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderValue, TRANSFER_ENCODING,
+    CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue,
+    TRANSFER_ENCODING,
 };
 
 use crate::client::bound_headers::{bound_headers, refuse_duplicates};
@@ -43,13 +47,7 @@ where
                     .to_owned(),
             )
         })?;
-        let schema_sha = *self.sealing.schema_sha.ok_or_else(|| {
-            ClientError::BadInput(
-                "a sealed call needs the schema digest: use the generated client, or \
-                 `with_schema_sha_bytes`"
-                    .to_owned(),
-            )
-        })?;
+        let (contract_sha, selector) = self.contract_for(method.as_str(), &route.template)?;
         refuse_duplicates(headers)?;
         let url = build_url(&self.config.base_url, path, canonical)?;
         // The authorizer runs over the inner payload, exactly what the
@@ -64,6 +62,12 @@ where
                 envelope.media_type(),
             )
             .await?;
+        header_map.insert(
+            HeaderName::from_static("cratestack-contract"),
+            HeaderValue::from_str(&selector).map_err(|error| {
+                ClientError::BadInput(format!("invalid {CONTRACT_HEADER} value: {error}"))
+            })?,
+        );
         let bound = bound_headers(&header_map)?;
         let query = Some(canonical_query(canonical)).filter(|query| !query.is_empty());
         let binding = envelope.binding(
@@ -71,7 +75,7 @@ where
             &route.template,
             &route.params,
             query,
-            schema_sha,
+            contract_sha,
             bound,
         );
         let sealed = envelope
@@ -107,6 +111,14 @@ where
         self.record_request(method.as_str(), path, status, &response_headers)?;
 
         if !is_cose(&response_headers) {
+            // The server's unsigned "this op's shape is not served": a
+            // hint, never proof, and its body is still not read.
+            if status == StatusCode::UPGRADE_REQUIRED {
+                return Err(EnvelopeError::ContractUnsupported {
+                    op: route.template.clone(),
+                }
+                .into());
+            }
             return Err(EnvelopeError::Unsigned {
                 status: status.as_u16(),
             }

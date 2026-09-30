@@ -11,6 +11,7 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
 use bytes::Bytes;
+use cratestack_core::AcceptedContracts;
 use http::{HeaderMap, Method, StatusCode, header};
 use tower::ServiceExt;
 
@@ -18,7 +19,26 @@ use tower::ServiceExt;
 pub use super::cose_support::*;
 
 pub const AUDIENCE: &str = "payments";
-pub const SCHEMA: [u8; 32] = [7; 32];
+/// The op-contract digest every test op is accepted under.
+pub const CONTRACT: [u8; 32] = [7; 32];
+/// Every route the suites call, each accepting [`CONTRACT`] alone (the
+/// table a generated schema emits, with one member per op).
+pub static CONTRACTS: AcceptedContracts = &[
+    ("batch", &[CONTRACT]),
+    ("procedure.busy", &[CONTRACT]),
+    ("procedure.json", &[CONTRACT]),
+    ("procedure.notify", &[CONTRACT]),
+    ("procedure.read", &[CONTRACT]),
+    ("procedure.transfer", &[CONTRACT]),
+    ("procedure.x", &[CONTRACT]),
+    ("model.Widget.subscribe", &[CONTRACT]),
+    ("POST /widgets", &[CONTRACT]),
+    ("GET /widgets/{id}", &[CONTRACT]),
+    ("DELETE /widgets/{id}", &[CONTRACT]),
+    ("GET /text-error", &[CONTRACT]),
+    ("GET /json", &[CONTRACT]),
+    ("GET /stream", &[CONTRACT]),
+];
 pub const SIGN1: &str = "application/cose; cose-type=\"cose-sign1\"";
 /// `{"a": 1}` in CBOR.
 pub const PAYLOAD: &[u8] = &[0xa1, 0x61, 0x61, 0x01];

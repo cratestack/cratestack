@@ -7,7 +7,7 @@
 //! decision D7); the `cratestack-pg` and `cratestack-api` facades forward
 //! both, and each schema gets a generated
 //! `cratestack_schema::axum::envelope_layer(envelope, policy, audience)`
-//! that picks its transport and schema digest.
+//! that picks its transport and accepted op-contract digests.
 //!
 //! # Placement (D12)
 //!
@@ -46,6 +46,10 @@
 //!    or `Off` for the op, seeing a [`PolicyRequest`] (no headers). There
 //!    is no default (D9). A `/rpc/batch` call runs under the strictest mode
 //!    of `batch` and every frame's op (B1).
+//!    The op's row in the accepted-contract table is found from it, and the
+//!    `Cratestack-Contract` header picks which accepted digest the request
+//!    is opened under; one that names none is an unsigned `426` (see
+//!    `contract.rs` for the rules).
 //! 4. A request whose `Content-Type` is an envelope type is opened. Under
 //!    `Required` a request that is not is refused. Under `Optional` it runs
 //!    unsigned, and its response is sealed only if it carries a valid
@@ -78,14 +82,14 @@
 //! - The resolver and the policy are consulted once per request, and the
 //!   response binding reuses the values the request was opened against,
 //!   so no plug-in can make the two bindings disagree. The audience, the
-//!   schema digest, the method, the canonical query, the bound headers, the
+//!   op-contract digest, the method, the canonical query, the bound headers, the
 //!   payload media type and the request digest are the layer's own.
 //!
 //! # What is bound, and what is not
 //!
 //! The AAD binds the audience, method, route, path parameters, canonical
 //! query (distinct keys in any order bind alike; one key's repeated values
-//! keep their order), schema digest, payload media type, and the
+//! keep their order), op-contract digest, payload media type, and the
 //! `Idempotency-Key` and `If-Match` headers exactly as sent (S1; a request
 //! sending either twice is refused with a `400`). For a response: the
 //! request digest and the status. **Response headers** (`ETag`,
@@ -107,12 +111,16 @@
 //!   `max_body_bytes` (`413` beyond it).
 //! - A fallback handler (`Router::fallback`) sets no `MatchedPath`, so the
 //!   layer treats its traffic as unmatched and lets plain requests through.
-//! - The schema digest is the canonical identity of the parsed schema
-//!   (`cratestack_core::schema_digest`, cratestack#1065), not a hash of its
-//!   text: comments, docs, whitespace and declaration order do not move it.
-//!   It still covers the whole IR, so a server-only edit (a policy, an
-//!   index, a view's SQL) changes it and a client built before the edit
-//!   is refused.
+//! - The bound digest is the called op's contract digest
+//!   (`cratestack_core::op_contract_digest`, binding version 2,
+//!   cratestack#1123), so it moves only when that op's wire shape does: a
+//!   policy, an index, SQL, a validator, another op or a new procedure
+//!   leaves it alone, and a wire-shape edit makes the old client's op
+//!   answer the unsigned `426 contract_unsupported`. Semantic changes that
+//!   leave every shape alone (an `Int` switching units) are not caught, as
+//!   before. A signed `/rpc/batch` binds the whole-contract digest until
+//!   batch frames carry their own, so any client-facing change refuses it.
+//!   Binding version 1 messages are refused.
 //! - One envelope per layer: a router accepting Sign1 devices and Mac0
 //!   services at once needs the composite of cratestack#1078, which the
 //!   per-request [`SealContext`] and [`Sealed`] media type make possible.
@@ -123,6 +131,7 @@ mod batch;
 mod bound;
 mod build;
 mod builder;
+mod contract;
 #[cfg(feature = "cose")]
 mod cose_impl;
 mod dispatch;
@@ -170,6 +179,10 @@ pub use service::EnvelopeService;
 /// The media type of every payload inside a sealed message: the AAD binds
 /// it (ADR 0006 §4), and it is fixed to CBOR in P0.
 pub const PAYLOAD_MEDIA_TYPE: &str = "application/cbor";
+
+/// The default cap on the accepted digests tried for a request that names
+/// none ([`EnvelopeLayerBuilder::max_contract_trials`]).
+pub const DEFAULT_MAX_CONTRACT_TRIALS: usize = 4;
 
 /// The default cap on a request body the layer buffers: the generated
 /// routers' default body limit plus 16 KiB of envelope overhead (a header,

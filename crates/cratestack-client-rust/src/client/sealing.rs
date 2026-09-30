@@ -10,6 +10,8 @@ use crate::client::route::RouteRef;
 use crate::codec::HttpClientCodec;
 
 #[cfg(feature = "cose")]
+use crate::client::contract::Contracts;
+#[cfg(feature = "cose")]
 use crate::envelope::ClientEnvelope;
 #[cfg(feature = "cose")]
 use crate::error::ClientError;
@@ -26,9 +28,9 @@ pub(crate) struct OwnedRoute {
 pub(crate) struct Sealing {
     #[cfg(feature = "cose")]
     pub(crate) envelope: Option<ClientEnvelope>,
-    /// The generating schema's digest as raw bytes, which the binding needs.
+    /// The op contract digests the binding needs (`client/contract.rs`).
     #[cfg(feature = "cose")]
-    pub(crate) schema_sha: Option<&'static [u8; 32]>,
+    pub(crate) contracts: Option<Contracts>,
     /// The route of the call in flight, set by [`CratestackClient::at`].
     #[cfg(feature = "cose")]
     pub(crate) route: Option<OwnedRoute>,
@@ -74,9 +76,9 @@ where
     /// never accepts a plain response (ADR 0006 `Required` mode): an answer
     /// without a seal is [`EnvelopeError::Unsigned`](crate::EnvelopeError).
     ///
-    /// Needs the schema's digest, which the generated `Client::new` supplies
-    /// ([`with_schema_sha_bytes`](Self::with_schema_sha_bytes)); a bare
-    /// client fails its first call with `BadInput`.
+    /// Needs the op contract digests, which the generated `Client::new`
+    /// supplies ([`with_contracts`](Self::with_contracts)); a bare client
+    /// fails its first call with `BadInput`.
     ///
     /// The envelope is CBOR: fails with `BadInput` for a codec whose body is
     /// not `application/cbor` (`JsonCodec`).
@@ -125,12 +127,22 @@ where
         Ok(self)
     }
 
-    /// The generating schema's `SCHEMA_SHA256_BYTES`, bound into every sealed
-    /// request. Called by the generated `Client::new`, next to
-    /// [`with_schema_sha`](Self::with_schema_sha).
+    /// The generating schema's `OP_CONTRACTS`: the digest of each op's wire
+    /// shape, looked up per call and bound into the sealed request (binding
+    /// version 2, cratestack#1123). Called by the generated `Client::new`,
+    /// next to [`with_schema_sha`](Self::with_schema_sha). A call to an op
+    /// the table lacks fails with `BadInput` and is never sent.
     #[must_use]
-    pub fn with_schema_sha_bytes(mut self, schema_sha: &'static [u8; 32]) -> Self {
-        self.sealing.schema_sha = Some(schema_sha);
+    pub fn with_contracts(mut self, contracts: cratestack_core::OpContracts) -> Self {
+        self.sealing.contracts = Some(Contracts::Table(contracts));
+        self
+    }
+
+    /// Bind one digest in every sealed call, for a hand-built client of a
+    /// single op (raw calls, tests). Prefer [`with_contracts`](Self::with_contracts).
+    #[must_use]
+    pub fn with_contract_sha(mut self, digest: [u8; 32]) -> Self {
+        self.sealing.contracts = Some(Contracts::Pinned(digest));
         self
     }
 }
@@ -144,8 +156,8 @@ where
 {
     #[doc(hidden)]
     #[must_use]
-    pub fn with_schema_sha_bytes(self, schema_sha: &'static [u8; 32]) -> Self {
-        let _ = schema_sha;
+    pub fn with_contracts(self, contracts: cratestack_core::OpContracts) -> Self {
+        let _ = contracts;
         self
     }
 }

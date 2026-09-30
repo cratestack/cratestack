@@ -1,18 +1,19 @@
 //! External AAD: the request context a message is bound to, encoded, never
 //! sent (ADR 0006 §4, as amended while scoping P0, by the maintainer's
 //! decisions on cratestack#1005: `audience` on 2026-09-24, `request_kind`
-//! on 2026-09-25, and by decision S1 after the cratestack#1006 security
-//! review: `bound_headers` on 2026-09-26).
+//! on 2026-09-25, by decision S1 after the cratestack#1006 security
+//! review: `bound_headers` on 2026-09-26, and by the maintainer's decision
+//! of 2026-09-30 on cratestack#1123: binding version 2, `contract_sha`).
 //!
 //! ```cddl
 //! external_aad = bstr .cbor [
-//!   1,                                  ; binding version
+//!   2,                                  ; binding version
 //!   audience: tstr,                     ; the recipient's configured id, non-empty
 //!   method: tstr,
 //!   route: tstr,                        ; RPC op_id; REST route template
 //!   path_params: [* tstr],              ; REST: matched values in template order; RPC: []
 //!   query: tstr / null,
-//!   schema_sha: bstr .size 32,
+//!   contract_sha: bstr .size 32,       ; the called op's contract digest
 //!   payload_type: tstr,
 //!   bound_headers: [                    ; request headers with semantics,
 //!     idempotency_key: tstr / null,     ;   exactly as sent; null if absent
@@ -24,12 +25,25 @@
 //! ]
 //! ```
 //!
-//! Neither `audience`, `request_kind` nor `bound_headers` bumped the
-//! binding version: nothing has been released with version 1 yet, so there
-//! is no older layout to tell them apart from. `audience` sits right after
-//! the version so that every other field keeps its relative position;
-//! `bound_headers` is one fixed-length array, so a request binding is 9
-//! elements and a response binding 12.
+//! **Binding version 2** (cratestack#1123, EXT-14) replaced version 1's
+//! element 7, `schema_sha` (`cratestack_core::schema_digest`, the whole
+//! IR), with `contract_sha`: `cratestack_core::op_contract_digest`, the
+//! digest of the wire closure of the op being called. Every other element
+//! keeps its position and meaning, so the array lengths (9 for a request,
+//! 12 for a response) are unchanged; the version number is the domain
+//! separation, because the same 32 bytes under version 1 and version 2
+//! never produce the same AAD. A version 2 verifier does not accept a
+//! version 1 message (it would need a second trial verification on every
+//! failure, and a downgrade path kept open).
+//!
+//! The element is the digest the *sender* used, and the verifier may accept
+//! several for one op, so the sender names it in the unbound
+//! `Cratestack-Contract` header (see `cratestack_core::ContractSelector`);
+//! it selects, it never widens: the AAD carries all 32 bytes.
+//!
+//! `audience` sits right after the version so that every other field keeps
+//! its relative position; `bound_headers` is one fixed-length array, so a
+//! request binding is 9 elements and a response binding 12.
 //!
 //! `bound_headers` exists because an on-path party could otherwise strip
 //! or swap those headers on a signed request without breaking its
@@ -65,13 +79,14 @@ use crate::error::misuse;
 /// The binding version, the first array element. Q5's escape hatch: a
 /// future binding scheme gets a new number instead of a new wire format.
 ///
-/// Version 1 froze in the first release with both wire peers: the server
-/// layer (cratestack#1006) and the Rust client (cratestack#1007). It did
-/// not freeze at the first release of this crate, which had no wire peers.
-/// From that release on, any change to the elements or to how one is derived
-/// bumps this number, and verifiers reject versions they do not know
+/// Version 1 froze in 0.15.0, the first release with both wire peers: the
+/// server layer (cratestack#1006) and the Rust client (cratestack#1007).
+/// Version 2 (cratestack#1123) binds the per-op `contract_sha` where version
+/// 1 bound the whole-IR `schema_sha`. From 0.15.0 on, any change to the
+/// elements or to how one is derived bumps this number, and verifiers
+/// reject versions they do not accept: a version 2 verifier accepts only 2
 /// (ADR 0006 §4).
-pub const BINDING_VERSION: u64 = 1;
+pub const BINDING_VERSION: u64 = 2;
 
 /// Encode the external AAD for `bind`: the bytes that go into the
 /// `Sig_structure` / `MAC_structure` as `external_aad`. Fails with
@@ -116,7 +131,7 @@ pub fn external_aad(bind: &Binding<'_>) -> Result<Vec<u8>, CratestackError> {
         Some(query) => write::tstr(&mut out, query),
         None => out.push(NULL),
     }
-    write::bstr(&mut out, &bind.schema_sha);
+    write::bstr(&mut out, &bind.contract_sha);
     write::tstr(&mut out, &bind.payload_media_type);
     write::head(&mut out, MAJOR_ARRAY, 2);
     for value in bound {

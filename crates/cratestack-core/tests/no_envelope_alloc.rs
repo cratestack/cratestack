@@ -41,7 +41,7 @@ fn binding<'a>(
         route: Cow::Borrowed(route),
         path_params: PathParams::Borrowed(path_params),
         query: query.map(Cow::Borrowed),
-        schema_sha: [7; 32],
+        contract_sha: [7; 32],
         payload_media_type: Cow::Borrowed("application/cbor"),
         // Borrowed like the rest: `NONE` is a `const` of two `None`s.
         bound_headers: BoundHeaders::NONE,

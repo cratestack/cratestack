@@ -14,7 +14,7 @@ use super::support::*;
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode};
 
 fn layer() -> EnvelopeLayer {
-    EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rpc("")
         .build()
@@ -91,7 +91,7 @@ async fn a_signed_subscription_is_a_sealed_406_before_its_handler_runs() {
     for mode in [EnvelopeMode::Required, EnvelopeMode::Optional] {
         let hits = Hits::default();
         let counted = hits.clone();
-        let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+        let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
             .policy(mode)
             .rpc("")
             .build()
@@ -137,7 +137,7 @@ async fn a_replayed_call_is_refused() {
 #[tokio::test]
 async fn a_call_over_the_layers_cap_is_the_rpc_413_unsigned() {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rpc("")
         .max_body_bytes(8)

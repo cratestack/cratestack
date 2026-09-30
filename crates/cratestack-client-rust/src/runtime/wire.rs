@@ -134,6 +134,7 @@ impl From<ClientError> for RuntimeErrorWire {
             ClientError::Envelope(error) => Self {
                 code: match &error {
                     EnvelopeError::Unsigned { .. }
+                    | EnvelopeError::ContractUnsupported { .. }
                     | EnvelopeError::Unverified
                     | EnvelopeError::Open(_) => RuntimeErrorCode::InvalidResponse,
                     EnvelopeError::StreamsUnsupported => RuntimeErrorCode::BadInput,
@@ -141,6 +142,7 @@ impl From<ClientError> for RuntimeErrorWire {
                 },
                 http_status: match &error {
                     EnvelopeError::Unsigned { status } => Some(*status),
+                    EnvelopeError::ContractUnsupported { .. } => Some(426),
                     _ => None,
                 },
                 remote_code: Some(error.code().to_owned()),

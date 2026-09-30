@@ -257,6 +257,20 @@ pub(crate) fn build_template_context(
         provider_prefix,
         base_path_literal: escape_dart_string(&config.base_path),
         schema_sha256,
+        op_contracts: cratestack_core::bound_contracts(schema)
+            .into_iter()
+            .map(|(key, digest)| {
+                [
+                    // `$` starts an interpolation in a Dart string: the REST
+                    // keys of procedures carry `/$procs/`.
+                    escape_dart_string(&key).replace('$', "\\$"),
+                    cratestack_core::digest_hex(&digest),
+                ]
+            })
+            .collect(),
+        client_contract_sha256: cratestack_core::digest_hex(
+            &cratestack_core::client_contract_digest(schema),
+        ),
         enum_types,
         data_classes,
         selection_groups,

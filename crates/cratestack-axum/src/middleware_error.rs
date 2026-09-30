@@ -44,6 +44,8 @@ use serde::Serialize;
 
 use crate::codec::CodecSet;
 
+#[cfg(feature = "envelope")]
+pub(crate) use self::coded::middleware_coded_response;
 pub(crate) use self::rpc_probe::is_rpc_path;
 use crate::transport::{HttpTransport, select_transport_response_content_type};
 
@@ -182,6 +184,8 @@ fn last_resort_response(status: StatusCode) -> Response {
     response
 }
 
+#[cfg(feature = "envelope")]
+mod coded;
 mod rpc_probe;
 
 #[cfg(test)]

@@ -12,7 +12,7 @@ use super::support::*;
 use crate::envelope_layer::{EnvelopeLayer, EnvelopeMode, PolicyRequest};
 
 fn required() -> crate::envelope_layer::EnvelopeLayerBuilder {
-    EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA).policy(EnvelopeMode::Required)
+    EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS).policy(EnvelopeMode::Required)
 }
 
 /// `mount_prefix` first, then the transport with the root prefix the
@@ -66,7 +66,7 @@ async fn a_mount_prefix_survives_a_later_rest_or_rpc() {
 async fn unresolved_mode_overrides_a_closure_policys_default() {
     let policy = |_: &PolicyRequest<'_>| EnvelopeMode::Required;
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .unresolved_mode(EnvelopeMode::Optional)
         .policy(policy)
         .rest("", &REST_ROUTES)

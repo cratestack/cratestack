@@ -20,7 +20,7 @@ async fn a_custom_envelope_with_its_own_media_type() {
         claims_toy: true,
         ..Toy::default()
     };
-    let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(toy, AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
         .build()
@@ -49,7 +49,7 @@ async fn a_per_op_policy_closure() {
             EnvelopeMode::Required
         }
     };
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(policy)
         .rest("", &REST_ROUTES)
         .build()
@@ -66,7 +66,10 @@ struct EverythingIsOneOp;
 impl BindingResolver for EverythingIsOneOp {
     fn resolve(&self, request: &RouteRequest<'_>) -> Resolution {
         match request.matched_path() {
-            Some(_) => Resolution::Op(ResolvedRoute::new("op.everything", Vec::new())),
+            Some(_) => Resolution::Op(
+                ResolvedRoute::new("op.everything", Vec::new())
+                    .with_contract_key("procedure.notify"),
+            ),
             None => Resolution::Unresolved,
         }
     }
@@ -75,7 +78,7 @@ impl BindingResolver for EverythingIsOneOp {
 #[tokio::test]
 async fn a_custom_binding_resolver() {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .binding_resolver(EverythingIsOneOp)
         .build()
@@ -98,7 +101,7 @@ async fn a_custom_principal_mapper() {
     let hits = Hits::default();
     let mapper =
         |verified: &VerifiedRequest<'_>| Ok(format!("tenant-a:alg{}", verified.signer().alg()));
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .rest("", &REST_ROUTES)
         .principal_mapper(mapper)
@@ -116,7 +119,7 @@ async fn a_custom_principal_mapper() {
 #[tokio::test]
 async fn a_custom_response_seal_policy() {
     let hits = Hits::default();
-    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(server_envelope(), AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Optional)
         .rest("", &REST_ROUTES)
         .response_seal_policy(|request: &UnsignedRequest<'_>| request.method() == Method::GET)
@@ -145,7 +148,7 @@ async fn the_thumbprint_principal_takes_another_prefix() {
         claims_toy: true,
         ..Toy::default()
     };
-    let layer = EnvelopeLayer::builder(toy, AUDIENCE, SCHEMA)
+    let layer = EnvelopeLayer::builder(toy, AUDIENCE, CONTRACTS)
         .policy(EnvelopeMode::Required)
         .principal_mapper(crate::envelope_layer::ThumbprintPrincipal::with_prefix(
             "toy:",

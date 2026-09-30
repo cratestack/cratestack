@@ -1,0 +1,31 @@
+// `op_contract_old.cstack` after server-only edits to `Note` and a
+// wire-shape edit to `Tag`.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id    Int    @id
+  title String @length(min: 1, max: 200)
+
+  @@index([title])
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+model Tag {
+  id     Int    @id
+  label  String
+  colour String
+
+  @@allow("read", auth() != null)
+}
