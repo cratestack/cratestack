@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.15.2 (2026-09-30)
+
 ### BREAKING: signed transport binds the called op's contract digest, binding version 2 (#1123, #1030)
 
 A signed message used to bind `schema_sha`, the digest of the whole schema IR, so
