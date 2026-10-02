@@ -41,8 +41,8 @@
 #    by the registry and is being processed. Retrying can only ever get
 #    the same 409, and the version may appear minutes later. So: exit 0
 #    with a loud `::warning::`, and leave it to the caller's post-publish
-#    registry verification (publish-npm-cbor-node's "Verify every
-#    subpackage is visible on the registry" step) to decide whether the
+#    registry verification (the verify-npm-cbor-node job, which no
+#    other publish depends on) to decide whether the
 #    release is actually complete. This is the same posture as (2): npm
 #    already holds the tarball; there is nothing this script can add.
 #

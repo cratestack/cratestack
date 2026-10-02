@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### A slow npm registry can no longer skip the `@cratestack/cbor` publish (#1134)
+
+On the v0.15.1 release the npm registry was slow to show the freshly published `@cratestack/cbor-node`
+family. The 6-minute "is it visible yet" step inside `publish-npm-cbor-node` timed out, failing that
+job, and `publish-npm-cbor` (which `needs:` it) was skipped, so `@cratestack/cbor` 0.15.1 was not
+published until someone re-ran the failed jobs. Nothing about the publish itself had failed.
+
+The registry check is now its own job, `verify-npm-cbor-node`, that nothing depends on. It records
+which names were published, then polls for up to 45 minutes with backoff, and still goes red if the
+packages never appear. A slow registry now costs a red verification job, never a skipped publish.
+Publishing was already idempotent (`npm-publish.sh` treats "previously published" as success), so
+re-running a release stays safe. CI-only change; no published-package behaviour changes.
+
 ## 0.15.3 (2026-09-30)
 
 <!-- TODO: edit this section from the seed below -->
