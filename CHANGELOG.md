@@ -17,16 +17,13 @@ re-running a release stays safe. CI-only change; no published-package behaviour 
 
 ## 0.15.3 (2026-09-30)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.15.2..HEAD at a035948af7f988fc73df38ccc18dce09d7b3e2b3 -->
+### Version-only release: 0.15.2's content, republished (#1133)
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+0.15.3 changes no source. The only commit between `v0.15.2` and `v0.15.3` is the workspace version
+bump (#1133), which moves every Rust crate, npm package, Dart package and lockfile to 0.15.3 and adds
+the per-package changelog stubs for the Dart packages. Everything described under 0.15.2 below, the
+op-contract digest binding and binding version 2 included, is what 0.15.3 ships, unchanged.
 
-### Changes
-
-- No changes since last release
 ## 0.15.2 (2026-09-30)
 
 ### BREAKING: signed transport binds the called op's contract digest, binding version 2 (#1123, #1030)
