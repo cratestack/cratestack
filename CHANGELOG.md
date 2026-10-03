@@ -2,18 +2,28 @@
 
 ## Unreleased
 
+### A slow npm registry can no longer skip the `@cratestack/cbor` publish (#1134)
+
+On the v0.15.1 release the npm registry was slow to show the freshly published `@cratestack/cbor-node`
+family. The 6-minute "is it visible yet" step inside `publish-npm-cbor-node` timed out, failing that
+job, and `publish-npm-cbor` (which `needs:` it) was skipped, so `@cratestack/cbor` 0.15.1 was not
+published until someone re-ran the failed jobs. Nothing about the publish itself had failed.
+
+The registry check is now its own job, `verify-npm-cbor-node`, that nothing depends on. It records
+which names were published, then polls for up to 45 minutes with backoff, and still goes red if the
+packages never appear. A slow registry now costs a red verification job, never a skipped publish.
+Publishing was already idempotent (`npm-publish.sh` treats "previously published" as success), so
+re-running a release stays safe. CI-only change; no published-package behaviour changes.
+
 ## 0.15.3 (2026-09-30)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.15.2..HEAD at a035948af7f988fc73df38ccc18dce09d7b3e2b3 -->
+### Version-only release: 0.15.2's content, republished (#1133)
 
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
+0.15.3 changes no source. The only commit between `v0.15.2` and `v0.15.3` is the workspace version
+bump (#1133), which moves every Rust crate, npm package, Dart package and lockfile to 0.15.3 and adds
+the per-package changelog stubs for the Dart packages. Everything described under 0.15.2 below, the
+op-contract digest binding and binding version 2 included, is what 0.15.3 ships, unchanged.
 
-### Changes
-
-- No changes since last release
 ## 0.15.2 (2026-09-30)
 
 ### BREAKING: signed transport binds the called op's contract digest, binding version 2 (#1123, #1030)

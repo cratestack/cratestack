@@ -875,6 +875,11 @@ jobs:
     if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'
     needs: [prepare, build-cbor-node, preflight, publish-crates]
     runs-on: ubuntu-latest
+    # Read by `verify-npm-cbor-node` below — the names are only known here,
+    # because `napi create-npm-dirs` generates `npm/<platform>/` in this job.
+    outputs:
+      version: ${{ steps.published.outputs.version }}
+      names: ${{ steps.published.outputs.names }}
     permissions:
       contents: read
       id-token: write
@@ -1033,39 +1038,26 @@ jobs:
         run: |
           npm config set provenance true
           .github/scripts/npm-publish.sh packages/cratestack-cbor-node --access public
-      # v0.11.1 (run 33808493207): two subpackages exited 0 with "+ name@ver
-      # ... being processed" and were still absent from the registry an
-      # hour later, while a third was "staged" upstream after a 401 — a
-      # green exit code told us nothing about what a consumer could
-      # install. So ask the registry, the only thing that can answer.
-      # Skipped on rehearsal (nothing was published, so nothing can be
-      # visible) — this step reads; it never writes.
-      - name: Verify every subpackage is visible on the registry
+      # Records WHAT was published for `verify-npm-cbor-node`, which asks the
+      # registry whether it became installable. That check used to be a step
+      # right here, and a registry that was merely slow failed THIS job —
+      # which made `publish-npm-cbor` (it `needs:` this job) skip, so
+      # @cratestack/cbor 0.15.1 was never published by the tag push
+      # (cratestack#1134). Reading the registry is a verification, not a
+      # publish; it must never gate another package's publish. This step
+      # only reads local package.json files, so it cannot fail on the network.
+      - name: Record the published package names for the visibility check
+        id: published
         if: needs.prepare.outputs.rehearsal != 'true'
         run: |
-          set -uo pipefail
+          set -euo pipefail
           version=$(node -p "require('./packages/cratestack-cbor-node/package.json').version")
-          names=("@cratestack/cbor-node")
+          names="@cratestack/cbor-node"
           for dir in packages/cratestack-cbor-node/npm/*/; do
-            names+=("$(node -p "require('./${dir}package.json').name")")
+            names+=" $(node -p "require('./${dir}package.json').name")"
           done
-          deadline=$((SECONDS + 360))
-          missing=("${names[@]}")
-          while [ "${#missing[@]}" -gt 0 ] && [ "$SECONDS" -lt "$deadline" ]; do
-            still=()
-            for name in "${missing[@]}"; do
-              code=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/${name}/${version}" || echo 000)
-              if [ "$code" = "200" ]; then echo "✓ ${name}@${version} visible"; else still+=("$name"); fi
-            done
-            missing=("${still[@]+"${still[@]}"}")
-            [ "${#missing[@]}" -gt 0 ] && sleep 30
-          done
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::error::not visible on registry.npmjs.org after 6 minutes at ${version}: ${missing[*]} — the publish was accepted (or staged) upstream but has not become installable. Check https://status.npmjs.org/ first; re-check with 'curl -s https://registry.npmjs.org/<name>/${version}' before deciding between waiting and cutting a new version."
-            echo "SUBPACKAGE_NOT_VISIBLE=${missing[*]}" >> "$GITHUB_ENV"
-            exit 1
-          fi
-          echo "all ${#names[@]} packages visible on the registry at ${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "names=${names}" >> "$GITHUB_OUTPUT"
       - name: Fail the job if any platform subpackage did not publish
         if: always()
         run: |
@@ -1073,11 +1065,68 @@ jobs:
             echo "::error::these platform subpackages did not publish: $SUBPACKAGE_PUBLISH_FAILED"
             exit 1
           fi
-          if [ -n "${SUBPACKAGE_NOT_VISIBLE:-}" ]; then
-            echo "::error::these packages were accepted but are not visible on the registry: $SUBPACKAGE_NOT_VISIBLE"
+          echo "all platform subpackages published"
+
+  # Registry-visibility check for the @cratestack/cbor-node family, split out
+  # of `publish-npm-cbor-node` (cratestack#1134).
+  #
+  # WHY A SEPARATE JOB. v0.11.1 (run 33808493207) showed that a publish which
+  # exits 0 can still be absent from the registry, so asking the registry is
+  # worth doing. But as a step inside the publish job, a slow registry failed
+  # the job, and `publish-npm-cbor` depends on that job: on v0.15.1 (run
+  # 36722066174, attempt 1) all eight names were still not visible after the
+  # fixed 6 minutes, `publish-npm-cbor-node` failed, and `publish-npm-cbor`
+  # was SKIPPED. `@cratestack/cbor` 0.15.1 only shipped after someone re-ran
+  # the failed jobs. Nothing in the publish itself had failed.
+  #
+  # Nothing `needs:` this job, so no outcome here can skip a publish. It is
+  # still a red job when the registry never shows the packages, which is the
+  # signal the old step existed to give. It waits much longer (45 minutes,
+  # polling every 30s then backing off to 2 minutes) and writes nothing.
+  # Only on a real tag push: a rehearsal publishes nothing, so nothing could
+  # become visible. Skipped when `publish-npm-cbor-node` failed (a platform
+  # subpackage that did not publish is already reported there).
+  verify-npm-cbor-node:
+    name: verify @cratestack/cbor-node is visible on npm
+    if: github.event_name == 'push'
+    needs: [publish-npm-cbor-node]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Wait until every package is visible on the registry
+        env:
+          VERSION: ${{ needs.publish-npm-cbor-node.outputs.version }}
+          NAMES: ${{ needs.publish-npm-cbor-node.outputs.names }}
+        run: |
+          set -uo pipefail
+          if [ -z "$VERSION" ] || [ -z "$NAMES" ]; then
+            echo "::error::publish-npm-cbor-node recorded no version/package names, so there is nothing to verify"
             exit 1
           fi
-          echo "all platform subpackages published and visible on the registry"
+          read -r -a missing <<< "$NAMES"
+          total=${#missing[@]}
+          deadline=$((SECONDS + 2700))
+          delay=30
+          while [ "${#missing[@]}" -gt 0 ] && [ "$SECONDS" -lt "$deadline" ]; do
+            still=()
+            for name in "${missing[@]}"; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/${name}/${VERSION}" || echo 000)
+              if [ "$code" = "200" ]; then echo "✓ ${name}@${VERSION} visible"; else still+=("$name"); fi
+            done
+            missing=("${still[@]+"${still[@]}"}")
+            if [ "${#missing[@]}" -gt 0 ]; then
+              echo "still waiting for ${#missing[@]}/${total}: ${missing[*]} (next check in ${delay}s)"
+              sleep "$delay"
+              delay=$((delay * 2 > 120 ? 120 : delay * 2))
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::not visible on registry.npmjs.org after 45 minutes at ${VERSION}: ${missing[*]} — the publish was accepted (or staged) upstream but has not become installable. Check https://status.npmjs.org/ first; re-check with 'curl -s https://registry.npmjs.org/<name>/${VERSION}' before deciding between waiting and cutting a new version. Dependent publishes (@cratestack/cbor) are NOT blocked by this job."
+            exit 1
+          fi
+          echo "all ${total} packages visible on the registry at ${VERSION}"
 
   # Same rationale as js-cbor-wasm in ci.yml: needs a real Rust wasm32
   # toolchain (the package's `prebuild` hook runs `wasm-pack build` against
