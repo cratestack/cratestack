@@ -41,7 +41,7 @@
     "@cratestack/ts-types": "0.15.3"
   },
   "peerDependencies": {
-    "@reduxjs/toolkit": "^2.0.0"
+    "@reduxjs/toolkit": "^2.13.0"
   },
   "peerDependenciesMeta": {
     "@reduxjs/toolkit": {
@@ -49,9 +49,9 @@
     }
   },
   "devDependencies": {
-    "@reduxjs/toolkit": "^2.0.0",
+    "@reduxjs/toolkit": "^2.13.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   },
   "engines": {
     "node": ">=24"

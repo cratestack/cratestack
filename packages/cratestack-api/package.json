@@ -73,11 +73,11 @@
     "@cratestack/adapter-rtk": "0.15.3"
   },
   "devDependencies": {
-    "@reduxjs/toolkit": "^2.0.0",
-    "@tanstack/query-core": "^5.103.2",
+    "@reduxjs/toolkit": "^2.13.0",
+    "@tanstack/query-core": "^5.104.0",
     "axios": "^1.7.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "yup": "^1.4.0",
     "zod": "^4.6.5"
   },
