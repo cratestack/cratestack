@@ -43,6 +43,8 @@ rules:
         # other common convention.
         - "**/tests.rs"
         - "**/*_test.rs"
+        # Third convention: `src/tests_*.rs` test-module files (e.g. `tests_transport.rs`).
+        - "**/tests_*.rs"
     metadata:
       category: reliability
       cwe: "CWE-252: Unchecked Return Value"
