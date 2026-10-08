@@ -59,6 +59,14 @@
 pub use async_stream;
 pub use chrono;
 pub use cratestack_client_rust as client_rust;
+// The wire codecs, at the facade root so a consumer never adds
+// `cratestack-codec-cbor` / `cratestack-codec-json` just to name one
+// (`envelope_layer`/`rpc_router` callers and `CratestackClient::new` take a
+// codec). They are the same types as `client_rust::CborCodec` /
+// `client_rust::JsonCodec`; this only makes the path discoverable.
+pub use cratestack_client_rust::CborCodec;
+#[cfg(feature = "codec-json")]
+pub use cratestack_client_rust::JsonCodec;
 pub use cratestack_core::*;
 // Re-exported (renamed from the `futures-util` crate, which is what
 // actually implements it) so `@stream` procedures' generated

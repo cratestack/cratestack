@@ -29,6 +29,14 @@ what goes is `axum` and `cratestack-axum` on top.) See
 [cratestack#490](https://github.com/cratestack/cratestack/issues/490) for
 the measured impact this fixes.
 
+## Wire codecs
+
+`cratestack::CborCodec` (and `cratestack::JsonCodec`, behind the default
+`codec-json` feature) are re-exported at the root, the same types as
+`cratestack::client_rust::CborCodec` / `JsonCodec`. A consumer needs no
+direct `cratestack-codec-cbor` or `cratestack-codec-json` dependency to
+name a codec for `CratestackClient::new` or `rpc_router`.
+
 ## Installation
 
 Schema macros emit `::cratestack::*` paths. Alias this crate as
