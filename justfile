@@ -24,6 +24,16 @@ PG_URL := "postgres://cratestack:cratestack@localhost:55432/cratestack_test"
 #     verified they compile clean under the forbid.
 clippy_allow := "-A clippy::too_many_arguments -A clippy::type_complexity -A clippy::manual_async_fn -A clippy::missing_safety_doc"
 
+# The sealed request of the shared COSE vector `rpc-request-sign1-ed25519-cti16`
+# (crates/cratestack-cose/tests/vectors/unary.json, `cose`), which the
+# cratestack_cbor example app seals at start-up and prints in its marker line
+# (`example/lib/cose_vector.dart`, cratestack#1026). The five
+# `cbor-example-verify*` recipes grep for it; it lives here once. If the
+# vector's `cose` changes, this and `expectedSealedHex` in that Dart file
+# change with it (the app compares its own copy with its sealed bytes, so a
+# stale one fails loudly).
+cose_vector_sealed_hex := "d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+
 default:
   @just --list
 
@@ -231,12 +241,9 @@ lint:
 	# `cratestack-client-flutter`'s `cose` module and its vector test, and
 	# `cratestack-cbor-wasm`'s `ClientEnvelope`, are behind off-by-default
 	# features. The wasm crate's code is wasm32-only, so it is linted for that
-	# target (its tests included). `arc_with_non_send_sync` is allowed on that
-	# one line only: `cratestack-cose` is compiled for wasm32 too, where its
-	# signers are `?Send` by design (a browser future is never `Send`, see
-	# `maybe_send.rs`), so its `Arc<Inner>` is non-`Send` there on purpose.
+	# target (its tests included).
 	cargo clippy -p cratestack-client-flutter --features cose --all-targets -- -D warnings {{clippy_allow}}
-	cargo clippy -p cratestack-cbor-wasm --features cose --target wasm32-unknown-unknown --all-targets -- -D warnings {{clippy_allow}} -A clippy::arc_with_non_send_sync
+	cargo clippy -p cratestack-cbor-wasm --features cose --target wasm32-unknown-unknown --all-targets -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -2514,7 +2521,7 @@ cbor-verify-package:
 	# the suite its path. REQUIRE_LIVE turns the suite's "no server, skip"
 	# into a failure, so a broken build step here cannot read as a pass.
 	echo "=== cargo build --example cose_roundtrip_server (the COSE live test's server) ==="
-	cargo build -p cratestack-api --features cose --example cose_roundtrip_server
+	cargo build --locked -p cratestack-api --features cose --example cose_roundtrip_server
 	target_dir="$(cargo metadata --no-deps --format-version=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
 	export CRATESTACK_COSE_SERVER="$target_dir/debug/examples/cose_roundtrip_server"
 	export CRATESTACK_COSE_REQUIRE_LIVE=1
@@ -2524,6 +2531,19 @@ cbor-verify-package:
 	(cd "$pkg" && dart test)
 	echo "=== dart test -p chrome (web backend, @TestOn('browser')): $pkg ==="
 	(cd "$pkg" && dart test -p chrome)
+	# The wasm half of the COSE bridge (cratestack#1026): `ClientEnvelope`'s own
+	# `wasm-bindgen-test`s, the only place the web ESP256 request bytes and the
+	# wasm misuse cases are checked. Nothing else runs `wasm-pack test`, so
+	# without this leg they never run in CI. The suite is configured for the
+	# browser (`run_in_browser`), so it needs Chrome and a matching
+	# chromedriver: GitHub's ubuntu runners ship both; elsewhere point
+	# CRATESTACK_CHROMEDRIVER at a driver of Chrome's version.
+	echo "=== wasm-pack test --headless --chrome (cratestack-cbor-wasm, cose) ==="
+	chromedriver_args=()
+	if [ -n "${CRATESTACK_CHROMEDRIVER:-}" ]; then
+	  chromedriver_args=(--chromedriver "$CRATESTACK_CHROMEDRIVER")
+	fi
+	(cd crates/cratestack-cbor-wasm && wasm-pack test --headless --chrome "${chromedriver_args[@]}" -- --features cose)
 	# The same VM suite again, under a DIFFERENT runtime — not redundant
 	# (cratestack#794). `flutter test` runs on `flutter_tester`, where
 	# `Isolate.resolvePackageUriSync` is unimplemented, so the dev-mode
@@ -2591,7 +2611,7 @@ cbor-example-verify:
 	# and answers by opening the vector's response. The marker is
 	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
 	# that does not prints `FAILED`, which no grep below accepts.
-	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_cose_hex="{{cose_vector_sealed_hex}}"
 	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 
@@ -2964,7 +2984,7 @@ cbor-example-verify-android-emulator:
 	# and answers by opening the vector's response. The marker is
 	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
 	# that does not prints `FAILED`, which no grep below accepts.
-	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_cose_hex="{{cose_vector_sealed_hex}}"
 	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 
@@ -3068,7 +3088,7 @@ cbor-example-verify-windows:
 	# and answers by opening the vector's response. The marker is
 	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
 	# that does not prints `FAILED`, which no grep below accepts.
-	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_cose_hex="{{cose_vector_sealed_hex}}"
 	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 
@@ -3253,7 +3273,7 @@ cbor-example-verify-macos:
 	# and answers by opening the vector's response. The marker is
 	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
 	# that does not prints `FAILED`, which no grep below accepts.
-	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_cose_hex="{{cose_vector_sealed_hex}}"
 	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 	framework=CratestackCborNative
@@ -3425,7 +3445,7 @@ cbor-example-verify-ios:
 	# and answers by opening the vector's response. The marker is
 	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
 	# that does not prints `FAILED`, which no grep below accepts.
-	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_cose_hex="{{cose_vector_sealed_hex}}"
 	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 	framework=CratestackCborNative

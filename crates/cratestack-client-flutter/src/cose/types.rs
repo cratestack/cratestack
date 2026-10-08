@@ -29,7 +29,10 @@ pub enum FlutterCoseMode {
 }
 
 /// A key the server's responses verify with, pinned at enrolment.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Debug` shows the algorithm and the length of `bytes`, never `bytes`:
+/// for a COSE_Mac0 server it holds the shared secret.
+#[derive(Clone, PartialEq, Eq)]
 pub struct FlutterServerKey {
     /// The algorithm this key verifies, and only it.
     pub alg: FlutterCoseAlg,
@@ -85,6 +88,15 @@ pub struct FlutterSealOptions {
 
 /// `CoseAlg` is `#[non_exhaustive]` (a reserved hybrid algorithm), so a
 /// value this bridge has no name for is misuse, never a guess.
+impl std::fmt::Debug for FlutterServerKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FlutterServerKey")
+            .field("alg", &self.alg)
+            .field("bytes", &format_args!("<{} bytes>", self.bytes.len()))
+            .finish()
+    }
+}
+
 impl TryFrom<CoseAlg> for FlutterCoseAlg {
     type Error = FlutterCoseError;
 

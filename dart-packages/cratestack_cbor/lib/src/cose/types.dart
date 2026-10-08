@@ -38,7 +38,13 @@ sealed class CoseSigner {
 /// Signs a COSE_Mac0 with a shared secret of at least 32 random bytes.
 ///
 /// The secret lives in this process's memory: for service credentials and
-/// tests, never for an end user's device.
+/// tests, never for an end user's device. The object keeps its copy
+/// ([secret]) for as long as it is reachable, and Dart cannot wipe memory,
+/// so drop the signer once the [ClientEnvelope] is built. The Rust side wipes
+/// its own copy when the envelope is dropped. [secret] is public only because
+/// the backends, in other libraries, read it.
+///
+/// Throws [ArgumentError] if [alg] is not an HMAC algorithm.
 final class HmacSigner extends CoseSigner {
   /// [alg] must be [CoseAlg.hmac256x64] or [CoseAlg.hmac256x256].
   HmacSigner(this.alg, Uint8List secret) : secret = Uint8List.fromList(secret) {
@@ -58,7 +64,11 @@ final class HmacSigner extends CoseSigner {
 ///
 /// **In memory only: never a device key.** The seed is held in this
 /// process's memory, so use it for tests and service credentials. A key
-/// that must survive on a phone belongs in the platform keystore.
+/// that must survive on a phone belongs in the platform keystore. The object
+/// keeps its copy ([seed]) for as long as it is reachable (Dart cannot wipe
+/// memory), so drop the signer once the [ClientEnvelope] is built; [seed] is
+/// public only because the backends, in other libraries, read it. A seed of
+/// the wrong length is [CoseMisuse] when the envelope is created.
 final class Ed25519Signer extends CoseSigner {
   /// The key derived from [seed] (32 bytes).
   Ed25519Signer.fromSeed(Uint8List seed) : seed = Uint8List.fromList(seed);
@@ -79,7 +89,8 @@ final class CoseServerKey {
   factory CoseServerKey.p256Sec1(Uint8List sec1) =>
       CoseServerKey._(CoseAlg.esp256, Uint8List.fromList(sec1));
 
-  /// The shared secret of a COSE_Mac0 server, for [alg] (an HMAC algorithm).
+  /// The shared secret of a COSE_Mac0 server, for [alg] (an HMAC algorithm);
+  /// throws [ArgumentError] otherwise.
   factory CoseServerKey.hmac(CoseAlg alg, Uint8List secret) {
     if (!alg.isHmac) {
       throw ArgumentError.value(alg, 'alg', 'must be an HMAC algorithm');
@@ -96,17 +107,24 @@ final class CoseServerKey {
 
 /// The inputs a call's signature is bound to (ADR 0006 §4). The audience is
 /// the envelope's, not the call's.
+///
+/// Dart-side argument errors ([ArgumentError]: a digest that is not 32 bytes,
+/// an HMAC type given a non-HMAC algorithm) are thrown by the constructors,
+/// before any bridge call. Everything the Rust side refuses is a
+/// [CoseException].
 final class CallBinding {
-  /// [contractSha] is the op's contract digest, 32 bytes.
+  /// [contractSha] is the op's contract digest, 32 bytes; throws
+  /// [ArgumentError] otherwise. [pathParams] is copied.
   CallBinding({
     required this.method,
     required this.route,
-    this.pathParams = const [],
+    List<String> pathParams = const [],
     this.query,
     required Uint8List contractSha,
     this.idempotencyKey,
     this.ifMatch,
-  }) : contractSha = Uint8List.fromList(contractSha) {
+  })  : pathParams = List.unmodifiable(pathParams),
+        contractSha = Uint8List.fromList(contractSha) {
     if (contractSha.length != 32) {
       throw ArgumentError.value(
         contractSha.length,
@@ -123,6 +141,12 @@ final class CallBinding {
   final String route;
 
   /// REST path parameter values in template order; empty for RPC.
+  ///
+  /// If the server's router is mounted under a path with parameters
+  /// (`Router::nest("/t/{tenant}", ..)`), the mount's values come **first**,
+  /// then the route's own, as in the Rust client
+  /// (`cratestack-client-rust`'s envelope binding): the binding is the list
+  /// the server's router matched, in order.
   final List<String> pathParams;
 
   /// The query string in any spelling; it is canonicalised before it binds.

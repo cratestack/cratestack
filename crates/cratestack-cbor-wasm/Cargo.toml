@@ -52,7 +52,7 @@ decimal-bigdecimal = [
 # and opens responses with `cratestack-cose` (cratestack#1026, ADR 0006
 # §11). The Promise-returning methods need `js-sys` and
 # `wasm-bindgen-futures`, which only exist on the wasm target.
-cose = ["dep:bytes", "dep:cratestack-cose", "dep:js-sys", "dep:wasm-bindgen-futures"]
+cose = ["dep:bytes", "dep:cratestack-cose", "dep:js-sys", "dep:wasm-bindgen-futures", "dep:zeroize"]
 
 [dependencies]
 # `cose` only: the type `open_response` takes.
@@ -61,6 +61,8 @@ cratestack-codec-cbor = { workspace = true, default-features = false }
 cratestack-core.workspace = true
 # `cose` only: the one implementation of the envelope.
 cratestack-cose = { workspace = true, optional = true }
+# `cose` only: the seed copy this layer makes is wiped on drop.
+zeroize = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 

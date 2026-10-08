@@ -58,14 +58,15 @@ pub(super) fn alg(name: &str) -> Result<CoseAlg, Fail> {
     }
 }
 
-/// The inverse of [`alg`].
-pub(super) fn alg_name(alg: CoseAlg) -> &'static str {
+/// The inverse of [`alg`]. `CoseAlg` is non-exhaustive (a reserved hybrid
+/// algorithm), so a value this API has no name for is misuse, never a guess.
+pub(super) fn alg_name(alg: CoseAlg) -> Result<&'static str, Fail> {
     match alg {
-        CoseAlg::Ed25519 => "ed25519",
-        CoseAlg::Esp256 => "esp256",
-        CoseAlg::Hmac256_64 => "hmac256-64",
-        // `CoseAlg` is non-exhaustive; the other value this crate can see.
-        _ => "hmac256-256",
+        CoseAlg::Ed25519 => Ok("ed25519"),
+        CoseAlg::Esp256 => Ok("esp256"),
+        CoseAlg::Hmac256_64 => Ok("hmac256-64"),
+        CoseAlg::Hmac256_256 => Ok("hmac256-256"),
+        _ => Err(misuse("an algorithm this API has no name for")),
     }
 }
 

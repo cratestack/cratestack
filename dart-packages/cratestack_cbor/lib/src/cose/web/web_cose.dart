@@ -47,6 +47,9 @@ extension type _JsEnvelope._(JSObject _) implements JSObject {
   );
 }
 
+@JS('window.__cratestackCborWasmBridge.ClientEnvelope')
+external JSAny? get _clientEnvelopeExport;
+
 @JS('window.__cratestackCborWasmBridge.contractHeaderValue')
 external String _contractHeaderValue(JSUint8Array contractSha);
 
@@ -58,6 +61,7 @@ Future<ClientEnvelope> createEnvelope({
   SealPin? pin,
 }) async {
   await createCborCodec();
+  _requireCoseBuild();
   final keys = [for (final key in serverKeys) _serverKey(key)].toJS;
   final options = pin == null ? null : _options(pin);
   try {
@@ -82,6 +86,19 @@ Future<ClientEnvelope> createEnvelope({
   }
 }
 
+/// The vendored wasm may be a codec-only build (`@cratestack/cbor-web`'s, or a
+/// copy hosted by the app): then `ClientEnvelope` is not exported at all, and
+/// calling into it would be an obscure `undefined` error.
+void _requireCoseBuild() {
+  if (_clientEnvelopeExport.isUndefinedOrNull) {
+    throw const CoseMisuse(
+      'the loaded cratestack-cbor-wasm was built without the `cose` feature '
+      '(no ClientEnvelope export): use the wasm vendored by cratestack_cbor, '
+      'built by `just cbor-vendor-web`',
+    );
+  }
+}
+
 String contractHeaderValue(Uint8List contractSha) {
   if (!isCborRuntimeInitialized) {
     throw StateError(
@@ -89,6 +106,7 @@ String contractHeaderValue(Uint8List contractSha) {
       '(await ClientEnvelope.create(...) or createCborCodec()).',
     );
   }
+  _requireCoseBuild();
   try {
     return _contractHeaderValue(Uint8List.fromList(contractSha).toJS);
   } catch (error) {

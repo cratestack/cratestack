@@ -9,6 +9,7 @@ use cratestack_cose::{
 use js_sys::{Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
+use zeroize::Zeroizing;
 
 use super::convert;
 use super::error::{from_error, misuse};
@@ -54,9 +55,11 @@ impl ClientEnvelope {
         audience: &str,
         options: &JsValue,
     ) -> Result<ClientEnvelope, JsValue> {
-        let seed: [u8; 32] = seed
-            .try_into()
-            .map_err(|_| misuse("an Ed25519 seed is 32 bytes"))?;
+        // The copy is wiped on drop.
+        let seed: Zeroizing<[u8; 32]> = Zeroizing::new(
+            seed.try_into()
+                .map_err(|_| misuse("an Ed25519 seed is 32 bytes"))?,
+        );
         Self::build(
             Arc::new(Ed25519Signer::from_seed(&seed)),
             server_keys,
@@ -129,7 +132,7 @@ impl ClientEnvelope {
                 .open_response(body, &call.response(&sealed_request, status))
                 .await
                 .map_err(from_error)?;
-            Ok(opened_object(&opened))
+            opened_object(&opened)
         })
     }
 }
@@ -166,7 +169,7 @@ impl ClientEnvelope {
     }
 }
 
-fn opened_object(opened: &Opened) -> JsValue {
+fn opened_object(opened: &Opened) -> Result<JsValue, JsValue> {
     let object = Object::new();
     let set = |name: &str, value: JsValue| {
         // Setting a property on a fresh plain object cannot fail.
@@ -174,12 +177,12 @@ fn opened_object(opened: &Opened) -> JsValue {
     };
     set("payload", Uint8Array::from(opened.payload.as_ref()).into());
     set("kid", Uint8Array::from(&opened.kid[..]).into());
-    set("alg", convert::alg_name(opened.alg).into());
+    set("alg", convert::alg_name(opened.alg)?.into());
     set(
         "thumbprint",
         Uint8Array::from(&opened.thumbprint[..]).into(),
     );
-    object.into()
+    Ok(object.into())
 }
 
 /// The `Cratestack-Contract` header value for a 32-byte op contract digest

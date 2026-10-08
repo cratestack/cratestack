@@ -169,9 +169,19 @@ final reply = codec.decodeJson(opened.payload);
   comes with the callback signer of a later release (`CoseSignerCancelled`,
   `CoseSignerTimedOut` and `CoseSignerFailed` are already in the exception
   hierarchy for it).
+- **Mount parameters come first.** `CallBinding.pathParams` are the values the
+  server's router matched, in order: if it is mounted under a path with
+  parameters (`nest("/t/{tenant}", ..)`), the mount's values precede the
+  route's own, as in the Rust client.
 - **Required only,** like the Rust client: every request is sealed, and only
   a response to a sealed request opens.
-- **Errors:** every failure is a `CoseException`. `CoseRejected` is any
+- **Errors:** every failure the Rust side reports is a `CoseException`; the
+  constructors of the key and binding types throw `ArgumentError` for what can
+  never be right (a digest that is not 32 bytes, a non-HMAC algorithm for an
+  HMAC type), and `contractHeaderValue` before the backend started is a
+  `StateError`. The in-memory signers keep their key bytes for as long as they
+  are reachable (Dart cannot wipe memory): drop them once the envelope exists.
+  `CoseRejected` is any
   failed verification and carries no detail, so the client is no more of an
   oracle than the server; `CoseMisuse` is a key or binding that is wrong
   locally.

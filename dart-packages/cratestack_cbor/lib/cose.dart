@@ -17,6 +17,13 @@
 /// );
 /// ```
 ///
+/// **Errors.** Everything the Rust side refuses is a [CoseException] (a sealed
+/// class: `CoseRejected`, `CoseMisuse`, and the signer variants). Dart-side
+/// argument checks that cannot be right are [ArgumentError], thrown by the
+/// constructors of the key and binding types before any bridge call, and
+/// `ClientEnvelope.contractHeaderValue` before the backend has started is a
+/// [StateError].
+///
 /// This client is Required-only, like the Rust client: it seals every
 /// request and opens only responses to a sealed request.
 library;

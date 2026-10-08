@@ -43,8 +43,10 @@ final opened = await envelope.openResponse(body, binding: binding, sealedRequest
   in-memory ESP256 signer.
 - The vendored artifacts of `cratestack_cbor` now carry `cratestack-cose`: the stripped Linux x86_64
   library grows from 956,096 to 1,417,784 bytes and the web `.wasm` from 130,810 to 403,503 bytes
-  (gzipped 48,667 to 168,114). `.ci/affected-components.py` now counts a crate's optional dependency
-  edges, so a change to `cratestack-cose` alone runs the `cbor` jobs.
+  (gzipped 48,667 to 168,114). `.ci/affected-components.py` now counts the `cose` feature edge of
+  `cratestack-client-flutter` and `cratestack-cbor-wasm` (and no other optional edge), so a change to
+  `cratestack-cose` alone now sets the `cbor`, `dart` and `ts` components, the three that list those bridge
+  crates as roots. No other crate's result changes.
 
 ### `RegistryVerifierResolver`: signed-transport keys that can be registered and revoked at run time (#1149)
 

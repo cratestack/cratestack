@@ -1,3 +1,9 @@
+// THIS IS A VECTOR CHECK, NOT A USAGE PATTERN. It pins `iat` and `cti` through
+// `cose_testing.dart` so the sealed bytes can be compared with the vector's,
+// and a pinned `cti` is a replayed request: never do this in an app. For real
+// use (a real clock and fresh randomness) see "Signed transport (COSE)" in
+// the package README and `ClientEnvelope.create`.
+//
 // One shared COSE vector (`crates/cratestack-cose/tests/vectors/unary.json`:
 // `rpc-request-sign1-ed25519-cti16` and its response
 // `rpc-response-sign1-ed25519`), checked at app start the way the codec's

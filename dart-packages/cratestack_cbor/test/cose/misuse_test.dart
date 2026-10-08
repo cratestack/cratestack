@@ -82,6 +82,19 @@ void main() {
     );
   });
 
+  test('a CallBinding copies what it is given', () {
+    final params = ['a'];
+    final call = CallBinding(
+      method: 'GET',
+      route: 'r',
+      pathParams: params,
+      contractSha: bytes(32),
+    );
+    params.add('b');
+    expect(call.pathParams, ['a']);
+    expect(() => call.pathParams.add('c'), throwsUnsupportedError);
+  });
+
   test('the envelope describes itself', () async {
     final sign1 = await ed25519();
     expect(sign1.mode, CoseMode.sign1);

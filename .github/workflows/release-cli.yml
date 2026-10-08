@@ -1215,15 +1215,7 @@ jobs:
       # nobody documented to every npm consumer: look in what is about to be
       # published, the JS glue and the module's own export names.
       - name: Assert the published wasm is codec-only (no COSE)
-        run: |
-          set -euo pipefail
-          dist=packages/cratestack-cbor-web/dist/wasm-pkg
-          test -s "$dist/cratestack_cbor_wasm.js"
-          test -s "$dist/cratestack_cbor_wasm_bg.wasm"
-          if grep -aEq 'sealRequest|openResponse|ClientEnvelope|clientenvelope_' "$dist/cratestack_cbor_wasm.js" "$dist/cratestack_cbor_wasm_bg.wasm"; then
-            echo "::error::@cratestack/cbor-web's wasm exports the COSE ClientEnvelope — it must stay codec-only. Is the cratestack-cbor-wasm 'cose' feature on in this build? — DO NOT PUBLISH." >&2
-            exit 1
-          fi
+        run: .ci/cbor-web-codec-only.sh packages/cratestack-cbor-web/dist/wasm-pkg
       # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
       # `publish-npm-cbor-node` job's own comment on this same step for why
       # (a real npm 12.x regression broke @napi-rs/cli's release-package

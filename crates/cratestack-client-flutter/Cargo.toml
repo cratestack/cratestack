@@ -70,7 +70,7 @@ frb-glue = ["dep:flutter_rust_bridge", "cose"]
 # (CI's "COSE crates absent" step); `frb-glue` implies it, because the
 # vendored `cratestack_cbor` library is built from that feature and must
 # carry the glue Dart calls.
-cose = ["dep:cratestack-cose", "dep:bytes"]
+cose = ["dep:cratestack-cose", "dep:bytes", "dep:zeroize"]
 # The Flutter bridge surface exposes `FlutterRuntimeCodec::Json` as a
 # selectable transport, so the JSON codec has to be linked in or
 # `RuntimeHandle::new` rejects the Json variant at runtime. Keep it
@@ -119,6 +119,8 @@ cratestack-core.workspace = true
 # open methods take.
 bytes = { workspace = true, optional = true }
 cratestack-cose = { workspace = true, optional = true }
+# `cose` only: the seed and key copies this layer makes are wiped on drop.
+zeroize = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 # Optional + feature-gated (`frb-glue`, above): pins the same version as

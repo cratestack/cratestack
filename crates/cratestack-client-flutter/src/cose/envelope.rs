@@ -8,6 +8,8 @@ use cratestack_cose::{
     CoseEnvelope, CoseSigner, Ed25519Signer, HmacSigner, StaticVerifierResolver,
 };
 
+use zeroize::{Zeroize, Zeroizing};
+
 use super::error::FlutterCoseError;
 use super::types::{
     FlutterCallBinding, FlutterCoseAlg, FlutterCoseMode, FlutterOpened, FlutterSealOptions,
@@ -52,12 +54,14 @@ impl FlutterClientEnvelope {
         audience: String,
         options: Option<FlutterSealOptions>,
     ) -> Result<Self, FlutterCoseError> {
-        let seed: [u8; 32] = seed
-            .as_slice()
-            .try_into()
-            .map_err(|_| CratestackError::Validation("an Ed25519 seed is 32 bytes".to_owned()))?;
+        // Both copies of the seed are wiped on drop.
+        let seed = Zeroizing::new(seed);
+        let key: Zeroizing<[u8; 32]> =
+            Zeroizing::new(seed.as_slice().try_into().map_err(|_| {
+                CratestackError::Validation("an Ed25519 seed is 32 bytes".to_owned())
+            })?);
         Self::from_signer(
-            Arc::new(Ed25519Signer::from_seed(&seed)),
+            Arc::new(Ed25519Signer::from_seed(&key)),
             server_keys,
             audience,
             options,
@@ -69,7 +73,7 @@ impl FlutterClientEnvelope {
     #[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(ignore))]
     pub fn from_signer(
         signer: Arc<dyn CoseSigner>,
-        server_keys: Vec<FlutterServerKey>,
+        mut server_keys: Vec<FlutterServerKey>,
         audience: String,
         options: Option<FlutterSealOptions>,
     ) -> Result<Self, FlutterCoseError> {
@@ -79,6 +83,11 @@ impl FlutterClientEnvelope {
         let mut resolver = StaticVerifierResolver::new();
         for key in &server_keys {
             resolver = resolver.with_key(key.to_verify_key()?);
+        }
+        // A Mac0 server key is the shared secret: the resolver holds its own
+        // (wiped) copy now.
+        for key in &mut server_keys {
+            key.bytes.zeroize();
         }
         let kid = signer.kid().to_vec();
         let mut builder = CoseEnvelope::client(signer.alg().mode(), signer, Arc::new(resolver));

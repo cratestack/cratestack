@@ -2481,6 +2481,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, test, lint @cratestack/cbor-web
         run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-web'
+      # cratestack#1026: the npm package stays codec-only; the COSE class is
+      # behind a cargo feature only the Dart package's web artifact enables.
+      # The same script gates the release publish.
+      - name: Assert @cratestack/cbor-web is codec-only (no COSE ClientEnvelope)
+        run: .ci/cbor-web-codec-only.sh packages/cratestack-cbor-web/dist/wasm-pkg
 
   # ---- @cratestack/refine (dataProvider over a generated TS client) -----
   # Same rationale as js-cbor-napi/js-cbor-wasm above, for the third

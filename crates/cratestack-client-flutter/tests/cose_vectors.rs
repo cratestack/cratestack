@@ -356,3 +356,18 @@ fn the_contract_header_value_is_the_unbound_selector() {
     );
     assert!(cose_contract_header_value(digest[..5].to_vec()).is_err());
 }
+
+#[test]
+fn a_server_key_never_prints_its_bytes() {
+    // For a Mac0 server the bytes are the shared secret.
+    let key = FlutterServerKey {
+        alg: FlutterCoseAlg::Hmac256_64,
+        bytes: vec![0xAB; 40],
+    };
+    let shown = format!("{key:?}");
+    assert!(shown.contains("<40 bytes>"), "{shown}");
+    assert!(
+        !shown.contains("171") && !shown.to_lowercase().contains("ab,"),
+        "{shown}"
+    );
+}

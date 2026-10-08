@@ -34,6 +34,15 @@ CallBinding binding(Json json) => CallBinding(
       ifMatch: (json['bound_headers'] as Json)['if_match'] as String?,
     );
 
+/// The algorithm a vector's `alg_id` (the IANA COSE value) names.
+CoseAlg algOf(int id) => switch (id) {
+      -19 => CoseAlg.ed25519,
+      -9 => CoseAlg.esp256,
+      4 => CoseAlg.hmac256x64,
+      5 => CoseAlg.hmac256x256,
+      _ => throw ArgumentError.value(id, 'alg_id'),
+    };
+
 /// The signer a `keys.json` entry names, or `null` for ESP256 (see above).
 CoseSigner? signerFor(String name, Json key) => switch (name) {
       'ed25519' => Ed25519Signer.fromSeed(unhex(key['seed'] as String)),
@@ -129,7 +138,7 @@ void defineVectorTests(Future<(Json, Json)> Function() load) {
       expect(result.payload, unhex(c['payload'] as String), reason: name);
       expect(result.kid, unhex(key['kid'] as String), reason: name);
       expect(result.thumbprint, unhex(key['thumbprint'] as String));
-      expect(result.alg.index, isNotNull);
+      expect(result.alg, algOf(c['alg_id'] as int), reason: name);
       opened++;
     }
     expect((opened, skipped), (12, 4));

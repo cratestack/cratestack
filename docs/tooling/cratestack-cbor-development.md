@@ -269,11 +269,16 @@ implementation, reached over the bridge the codec already uses. Nothing in `lib/
   builds with `--features cose`; `@cratestack/cbor-web` on npm does not, and `release-cli.yml` asserts its
   wasm has no `ClientEnvelope`.
 - **Both glues map into `cratestack_cose::CallBinding`**, so the canonical query and the AAD inputs live
-  once. The shared vectors (`crates/cratestack-cose/tests/vectors`) are read in place by every suite and
-  copied nowhere: `cargo test -p cratestack-client-flutter --features cose`, `wasm-pack test --headless
-  --chrome -- --features cose` (run in `crates/cratestack-cbor-wasm`; with a Chromium whose chromedriver
-  matches), and `dart test` / `dart test -p chrome` in the package (the browser reads the JSON through
-  `spawnHybridUri`).
+  once. The shared vectors (`crates/cratestack-cose/tests/vectors`) are read in place by every test suite,
+  never copied into a package: `cargo test -p cratestack-client-flutter --features cose`, `wasm-pack test
+  --headless --chrome -- --features cose` (in `crates/cratestack-cbor-wasm`; `just cbor-verify-package`
+  runs it, and needs a chromedriver matching Chrome, `CRATESTACK_CHROMEDRIVER` if it is not on `PATH`),
+  and `dart test` / `dart test -p chrome` in the package (the browser reads the JSON through
+  `spawnHybridUri`). One vector's bytes **are** copied, on purpose, because a built app has no repository
+  to read them from: `example/lib/cose_vector.dart` holds the sealed request, its response and the payload
+  of `rpc-request-sign1-ed25519-cti16`, and the justfile's `cose_vector_sealed_hex` holds the sealed hex the
+  five `cbor-example-verify*` recipes grep for. The app compares its own copy with the bytes it seals, and a
+  recipe compares the variable with what the app printed, so a stale copy fails loudly instead of passing.
 - **The live test** (`test/cose/live_test.dart`, tag `live`) spawns the `cose_roundtrip_server` example of
   `cratestack-api` from `CRATESTACK_COSE_SERVER`. `just cbor-verify-package` builds it, sets the variable
   and sets `CRATESTACK_COSE_REQUIRE_LIVE=1`, which turns "no server" from a skip into a failure.
