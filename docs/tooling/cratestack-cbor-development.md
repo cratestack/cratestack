@@ -254,6 +254,33 @@ building this check:
   bin/llvm-strip`) rather than the host `strip` binary Linux vendoring uses — GNU `strip`'s
   `--strip-unneeded` does not list an AArch64 Android target among its supported output formats.
 
+## The COSE signed transport (`cose.dart`, cratestack#1026)
+
+`package:cratestack_cbor/cose.dart` seals requests and opens responses with `cratestack-cose`, one Rust
+implementation, reached over the bridge the codec already uses. Nothing in `lib/` implements COSE.
+
+- **Native:** `crates/cratestack-client-flutter/src/cose/` (feature `cose`, implied by `frb-glue`). The
+  codegen input is `crate::cbor,crate::cose` (`flutter_rust_bridge.yaml` and `just cbor-vendor-glue`: keep
+  the two in step). Two constraints are visible in the Rust types: an enum with fields becomes a `freezed`
+  class (so `FlutterCoseError` is a kind and a message), and a `[u8; 32]` becomes a generated class that
+  imports `package:collection` (so digests are `Vec<u8>`). The package declares neither dependency, and
+  CI's `cbor-glue` job fails if the generated Dart imports one.
+- **Web:** `crates/cratestack-cbor-wasm/src/cose/` (feature `cose`, wasm32-only). `just cbor-vendor-web`
+  builds with `--features cose`; `@cratestack/cbor-web` on npm does not, and `release-cli.yml` asserts its
+  wasm has no `ClientEnvelope`.
+- **Both glues map into `cratestack_cose::CallBinding`**, so the canonical query and the AAD inputs live
+  once. The shared vectors (`crates/cratestack-cose/tests/vectors`) are read in place by every suite and
+  copied nowhere: `cargo test -p cratestack-client-flutter --features cose`, `wasm-pack test --headless
+  --chrome -- --features cose` (run in `crates/cratestack-cbor-wasm`; with a Chromium whose chromedriver
+  matches), and `dart test` / `dart test -p chrome` in the package (the browser reads the JSON through
+  `spawnHybridUri`).
+- **The live test** (`test/cose/live_test.dart`, tag `live`) spawns the `cose_roundtrip_server` example of
+  `cratestack-api` from `CRATESTACK_COSE_SERVER`. `just cbor-verify-package` builds it, sets the variable
+  and sets `CRATESTACK_COSE_REQUIRE_LIVE=1`, which turns "no server" from a skip into a failure.
+- **Size:** it is paid by every app, COSE or not (the vendored binaries are built once): +461,688 bytes on
+  the stripped Linux x86_64 library, +272,693 bytes on the web `.wasm`. Re-measure with the two `cbor-vendor`
+  recipes when `cratestack-cose` changes.
+
 ## Verifying a change
 
 ```bash

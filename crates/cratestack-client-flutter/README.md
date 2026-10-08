@@ -207,6 +207,19 @@ what that means for a future generator seam.
 Round-trip tests: [`tests/cbor_bridge.rs`](tests/cbor_bridge.rs). Benchmark against pure-Dart `package:cbor`, with
 real measured numbers (not carried over from another project): [`benches/cbor_bridge/README.md`](benches/cbor_bridge/README.md).
 
+## COSE signed transport (`cose` feature, cratestack#1026)
+
+With `--features cose` (implied by `frb-glue`; off by default, so a default build has no
+`cratestack-cose` and no signature crate) the crate carries the signed transport of ADR 0006 for
+`package:cratestack_cbor/cose.dart`. `cose::FlutterClientEnvelope` is an opaque handle built on
+`CoseEnvelope::client` with `hmac(..)` (COSE_Mac0) and `ed25519_seed(..)` (COSE_Sign1) constructors, async
+`seal_request` / `open_response`, and `mode`, `media_type`, `kid` getters. It only maps types: the
+canonical query and the AAD inputs come from `cratestack_cose::CallBinding`, and the key never leaves
+Rust. `FlutterCoseError` is a kind and a message because an enum with fields would make
+`flutter_rust_bridge` generate a `freezed` class; a failed verification is always `Rejected` with no
+message. `tests/cose_vectors.rs` drives the shared vectors through these types, ESP256 included
+(`from_signer`, not bridged). The glue is generated from `crate::cbor,crate::cose`.
+
 ## See Also
 
 - `cratestack-client-rust` — underlying runtime

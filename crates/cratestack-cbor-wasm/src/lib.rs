@@ -12,8 +12,12 @@
 //! produces the real `.wasm` artifact this package ships.
 mod value_bridge;
 
+#[cfg(all(target_arch = "wasm32", feature = "cose"))]
+mod cose;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
+#[cfg(all(target_arch = "wasm32", feature = "cose"))]
+pub use cose::*;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::*;

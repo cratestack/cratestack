@@ -125,6 +125,78 @@ against, using the **same** hex fixtures `cratestack-cbor-napi`,
 `cratestack-cbor-wasm`, and `crates/cratestack-client-flutter`'s own test
 suites assert (three independent bindings agreeing on the same wire bytes).
 
+## Signed transport (COSE) — `package:cratestack_cbor/cose.dart`
+
+A server behind CrateStack's envelope layer (ADR 0006) accepts only
+`COSE_Sign1` or `COSE_Mac0` bodies, bound to the call by an AAD neither side
+sends. This package seals and opens them through the **one** Rust
+implementation, `cratestack-cose`, over the same backends as the codec —
+flutter_rust_bridge natively, the `cratestack-cbor-wasm` build on the web.
+There is **no Dart reimplementation** of COSE, the canonical query or the
+AAD, and no crypto in `lib/`. Codec-only apps import nothing new: the
+runtime is the codec's, started once.
+
+```dart
+import 'package:cratestack_cbor/cose.dart';
+
+final envelope = await ClientEnvelope.create(
+  signer: Ed25519Signer.fromSeed(seed), // in memory: never a device key
+  serverKeys: [CoseServerKey.ed25519(serverPublicKey)], // pinned at enrolment
+  audience: 'payments', // the configured service name, never the host
+);
+
+final binding = CallBinding(
+  method: 'POST',
+  route: 'procedure.echo', // the RPC op id, or the REST route template
+  contractSha: opContractDigest, // 32 bytes, the generated client's OP_CONTRACTS
+);
+final sealed = await envelope.sealRequest(cborPayload, binding);
+// POST `sealed` with Content-Type and Accept: envelope.mediaType and
+// Cratestack-Contract: ClientEnvelope.contractHeaderValue(opContractDigest)
+final opened = await envelope.openResponse(
+  responseBody,
+  binding: binding,
+  sealedRequest: sealed,
+  status: 200,
+);
+final reply = codec.decodeJson(opened.payload);
+```
+
+- **Signers (this release):** `HmacSigner(CoseAlg, secret)` for `COSE_Mac0`
+  (at least 32 random bytes) and `Ed25519Signer.fromSeed(seed)` for
+  `COSE_Sign1`. Both hold the key in memory, so they are for service
+  credentials and tests. A key in the Android Keystore or the Secure Enclave
+  comes with the callback signer of a later release (`CoseSignerCancelled`,
+  `CoseSignerTimedOut` and `CoseSignerFailed` are already in the exception
+  hierarchy for it).
+- **Required only,** like the Rust client: every request is sealed, and only
+  a response to a sealed request opens.
+- **Errors:** every failure is a `CoseException`. `CoseRejected` is any
+  failed verification and carries no detail, so the client is no more of an
+  oracle than the server; `CoseMisuse` is a key or binding that is wrong
+  locally.
+- **Headers you set yourself:** a bound `Idempotency-Key` or `If-Match` goes
+  into `CallBinding` *and* onto the request, byte for byte, or the server
+  answers `401`.
+- **Binding version 2.** The sealed bytes are the shared vectors'
+  (`crates/cratestack-cose/tests/vectors`), which `test/cose/` checks through
+  this public API on both backends, with no copy of the files.
+- **`cose_testing.dart`** pins `iat` and `cti` for those vectors
+  (`ClientEnvelopeForVectors.forVectors`). A pinned `cti` is a replayed
+  request: never in production code.
+- **Size:** `cratestack-cose` and its crypto add about 460 KB to the stripped
+  Linux x86_64 library (956,096 to 1,417,784 bytes) and about 270 KB to the
+  web `.wasm` (130,810 to 403,503 bytes after `wasm-opt`; gzipped 48,667 to
+  168,114). Both artifacts carry it for every app, COSE or not, because the
+  vendored binaries are built once. `@cratestack/cbor-web` on npm is built
+  without it and stays codec-only.
+
+`test/cose/live_test.dart` (tag `live`) runs a real round trip against the
+example server of `crates/cratestack-api`, with the real clock and
+randomness: `CRATESTACK_COSE_SERVER=<path of the built cose_roundtrip_server
+example> dart test test/cose/live_test.dart`. `just cbor-verify-package`
+builds the server and sets the variable.
+
 ## Why a JSON-text boundary, not a native Dart value type
 
 flutter_rust_bridge has no dynamic "any JSON value" wire type the way napi's

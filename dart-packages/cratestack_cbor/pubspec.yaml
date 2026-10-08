@@ -116,6 +116,12 @@ dev_dependencies:
   # left on `^5.0.0`, which was drift rather than a decision.
   lints: ^6.0.0
   test: ^1.25.0
+  # `test/cose/live_test.dart` POSTs sealed requests to the example server of
+  # `crates/cratestack-api` (cratestack#1026); `vectors_hybrid.dart` is a
+  # `spawnHybridUri` entry point, which `package:test` runs over a
+  # `StreamChannel`. Neither is a dependency of the published library.
+  http: ^1.2.0
+  stream_channel: ^2.1.0
 
 # Declared even though this package has no Flutter-framework Dart code of
 # its own (no widgets, no `package:flutter` import) — cratestack#563's

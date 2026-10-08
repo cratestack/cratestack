@@ -1194,15 +1194,18 @@ dependencies = [
 name = "cratestack-cbor-wasm"
 version = "0.15.3"
 dependencies = [
+ "bytes",
  "console_error_panic_hook",
  "cratestack-codec-cbor",
  "cratestack-core",
+ "cratestack-cose",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "uuid",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
 ]
 
@@ -1272,6 +1275,7 @@ dependencies = [
  "cratestack-client-rust",
  "cratestack-codec-cbor",
  "cratestack-core",
+ "cratestack-cose",
  "flutter_rust_bridge",
  "serde",
  "serde_json",

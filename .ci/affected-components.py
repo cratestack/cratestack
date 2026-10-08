@@ -163,6 +163,19 @@ def reverse_closure(changed_names, meta):
             if dep in workspace_ids:
                 reverse[dep].add(nid)
     id_by_name = {p["name"]: p["id"] for p in meta["packages"] if p["source"] is None}
+    # `resolve` holds the graph for the default features only, so an
+    # optional edge behind an off-by-default feature (`cratestack-client-
+    # flutter`'s and `cratestack-cbor-wasm`'s `cose`, cratestack#1026) is not
+    # in it, and a change to the crate behind the feature would not reach the
+    # component built from it: a diff touching only `cratestack-cose` would
+    # skip `cbor`, whose vendored artifacts carry it. Declared optional
+    # dependencies are real edges, so they are added.
+    for pkg in meta["packages"]:
+        if pkg["source"] is not None:
+            continue
+        for dep in pkg["dependencies"]:
+            if dep.get("optional") and dep["name"] in id_by_name:
+                reverse[id_by_name[dep["name"]]].add(pkg["id"])
 
     affected = set()
     stack = []

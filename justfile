@@ -227,6 +227,16 @@ lint:
 	# `cratestack-api`'s `cose_client_*` targets ride on the line above.
 	cargo clippy -p cratestack-client-rust --features cose,middleware --all-targets -- -D warnings {{clippy_allow}}
 	cargo clippy -p cratestack-pg --features cose --lib --test cose_client_models -- -D warnings {{clippy_allow}}
+	# Same blind spot for the Dart and web COSE bindings (cratestack#1026):
+	# `cratestack-client-flutter`'s `cose` module and its vector test, and
+	# `cratestack-cbor-wasm`'s `ClientEnvelope`, are behind off-by-default
+	# features. The wasm crate's code is wasm32-only, so it is linted for that
+	# target (its tests included). `arc_with_non_send_sync` is allowed on that
+	# one line only: `cratestack-cose` is compiled for wasm32 too, where its
+	# signers are `?Send` by design (a browser future is never `Send`, see
+	# `maybe_send.rs`), so its `Arc<Inner>` is non-`Send` there on purpose.
+	cargo clippy -p cratestack-client-flutter --features cose --all-targets -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-cbor-wasm --features cose --target wasm32-unknown-unknown --all-targets -- -D warnings {{clippy_allow}} -A clippy::arc_with_non_send_sync
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -1861,7 +1871,7 @@ cbor-vendor-glue:
 	pkg=dart-packages/cratestack_cbor
 	echo "=== flutter_rust_bridge_codegen generate -> $pkg/lib/src/native/rust ==="
 	(cd crates/cratestack-client-flutter && flutter_rust_bridge_codegen generate \
-	  --rust-input crate::cbor \
+	  --rust-input crate::cbor,crate::cose \
 	  --rust-root ./ \
 	  --rust-output src/frb_generated.rs \
 	  --rust-features frb-glue \
@@ -2346,7 +2356,10 @@ cbor-vendor-web:
 	out_dir="$(pwd)/$pkg/lib/src/web/wasm-pkg"
 	rm -rf "$out_dir"
 	mkdir -p "$out_dir"
-	(cd crates/cratestack-cbor-wasm && wasm-pack build --target web --out-dir "$out_dir")
+	# `--features cose`: this artifact, unlike @cratestack/cbor-web, carries
+	# the `ClientEnvelope` class `cratestack_cbor/cose.dart` drives
+	# (cratestack#1026). The npm build must stay codec-only, byte for byte.
+	(cd crates/cratestack-cbor-wasm && wasm-pack build --target web --out-dir "$out_dir" -- --features cose)
 	# Only the .js glue + .wasm binary ship in the package — wasm-pack's
 	# own package.json/README/.gitignore/TS types are npm-package
 	# scaffolding this Dart package doesn't use.
@@ -2496,6 +2509,15 @@ cbor-verify-package:
 	  exit 1
 	fi
 	pkg=dart-packages/cratestack_cbor
+	# The COSE live round trip (`test/cose/live_test.dart`, cratestack#1026)
+	# spawns the example server of `cratestack-api`: build it here and hand
+	# the suite its path. REQUIRE_LIVE turns the suite's "no server, skip"
+	# into a failure, so a broken build step here cannot read as a pass.
+	echo "=== cargo build --example cose_roundtrip_server (the COSE live test's server) ==="
+	cargo build -p cratestack-api --features cose --example cose_roundtrip_server
+	target_dir="$(cargo metadata --no-deps --format-version=1 | python3 -c "import json,sys;print(json.load(sys.stdin)['target_directory'])")"
+	export CRATESTACK_COSE_SERVER="$target_dir/debug/examples/cose_roundtrip_server"
+	export CRATESTACK_COSE_REQUIRE_LIVE=1
 	echo "=== dart pub get: $pkg ==="
 	(cd "$pkg" && dart pub get)
 	echo "=== dart test (native backend, @TestOn('vm')): $pkg ==="
@@ -2563,6 +2585,14 @@ cbor-example-verify:
 	fi
 	example=dart-packages/cratestack_cbor/example
 	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	# The COSE half of the same marker line (cratestack#1026): the sealed
+	# request of the shared vector `rpc-request-sign1-ed25519-cti16`, which
+	# `example/lib/cose_vector.dart` seals with pinned `iat`/`cti`, compares
+	# and answers by opening the vector's response. The marker is
+	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
+	# that does not prints `FAILED`, which no grep below accepts.
+	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 
 	# `flutter clean` before anything else: Flutter's incremental-build file
@@ -2674,7 +2704,7 @@ cbor-example-verify:
 	found=0
 	poll_started="$(date +%s)"
 	for _ in $(seq 1 "$poll_budget"); do
-	  if grep -q "$marker OK $expected_hex" "$linux_log"; then
+	  if grep -q "$marker $expected_ok" "$linux_log"; then
 	    found=1
 	    break
 	  fi
@@ -2782,7 +2812,7 @@ cbor-example-verify:
 	# before this and the in-process watchdog were added.
 	(cd "$example" && timeout 300 dart run tool/verify_web_console.dart \
 	  --url "http://127.0.0.1:$port/index.html" \
-	  --expect-hex "$expected_hex")
+	  --expect-hex "$expected_ok")
 	kill "$server_pid" 2>/dev/null || true
 
 	echo ""
@@ -2928,6 +2958,14 @@ cbor-example-verify-android-emulator:
 	fi
 	appId="dev.cratestack.examples.cratestack_cbor_example"
 	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	# The COSE half of the same marker line (cratestack#1026): the sealed
+	# request of the shared vector `rpc-request-sign1-ed25519-cti16`, which
+	# `example/lib/cose_vector.dart` seals with pinned `iat`/`cti`, compares
+	# and answers by opening the vector's response. The marker is
+	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
+	# that does not prints `FAILED`, which no grep below accepts.
+	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 
 	echo "=== installing $apk ==="
@@ -2951,7 +2989,7 @@ cbor-example-verify-android-emulator:
 	  exit 1
 	fi
 	echo "$found"
-	if ! echo "$found" | grep -q "$marker OK $expected_hex"; then
+	if ! echo "$found" | grep -q "$marker $expected_ok"; then
 	  echo "FAIL: app did not report the expected round-trip marker. Captured:" >&2
 	  echo "$found" >&2
 	  exit 1
@@ -3024,6 +3062,14 @@ cbor-example-verify-windows:
 	fi
 	example=dart-packages/cratestack_cbor/example
 	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	# The COSE half of the same marker line (cratestack#1026): the sealed
+	# request of the shared vector `rpc-request-sign1-ed25519-cti16`, which
+	# `example/lib/cose_vector.dart` seals with pinned `iat`/`cti`, compares
+	# and answers by opening the vector's response. The marker is
+	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
+	# that does not prints `FAILED`, which no grep below accepts.
+	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 
 	echo "=== flutter clean: $example ==="
@@ -3097,7 +3143,7 @@ cbor-example-verify-windows:
 	found=0
 	poll_started="$(date +%s)"
 	for _ in $(seq 1 "$poll_budget"); do
-	  if grep -q "$marker OK $expected_hex" "$win_log"; then
+	  if grep -q "$marker $expected_ok" "$win_log"; then
 	    found=1
 	    break
 	  fi
@@ -3201,6 +3247,14 @@ cbor-example-verify-macos:
 	fi
 	example=dart-packages/cratestack_cbor/example
 	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	# The COSE half of the same marker line (cratestack#1026): the sealed
+	# request of the shared vector `rpc-request-sign1-ed25519-cti16`, which
+	# `example/lib/cose_vector.dart` seals with pinned `iat`/`cti`, compares
+	# and answers by opening the vector's response. The marker is
+	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
+	# that does not prints `FAILED`, which no grep below accepts.
+	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 	framework=CratestackCborNative
 
@@ -3282,7 +3336,7 @@ cbor-example-verify-macos:
 	  sleep 1
 	done
 	kill "$bin_pid" 2>/dev/null || true
-	if [ "$found" -ne 1 ] || ! grep -q "$marker OK $expected_hex" "$macos_log"; then
+	if [ "$found" -ne 1 ] || ! grep -q "$marker $expected_ok" "$macos_log"; then
 	  echo "FAIL: built macOS app did not print the expected round-trip marker. Captured output:" >&2
 	  cat "$macos_log" >&2
 	  rm -f "$macos_log"
@@ -3365,6 +3419,14 @@ cbor-example-verify-ios:
 	fi
 	example=dart-packages/cratestack_cbor/example
 	expected_hex="a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5"
+	# The COSE half of the same marker line (cratestack#1026): the sealed
+	# request of the shared vector `rpc-request-sign1-ed25519-cti16`, which
+	# `example/lib/cose_vector.dart` seals with pinned `iat`/`cti`, compares
+	# and answers by opening the vector's response. The marker is
+	# `OK <cbor hex> COSE OK <sealed hex>`; a codec that works with a COSE
+	# that does not prints `FAILED`, which no grep below accepts.
+	expected_cose_hex="d2845827a301320448be5de2f4bcdc383a0fa2061a6ab13b8007503c9a5e71d20b48f6a1c7e4029b6d5f83a05870a7626964500192f5a87c3e7b219d4f6a1e2c3b4d5e6570617965726d416d696e61205463686f75706f66616d6f756e741a0001e8486863757272656e6379635841466673746174757367736574746c65646a637265617465645f61741a6ab13b80646e6f74656972656e742073657074584068a4d23aa86784147bb8b16ee3d211e9640276f91605e3f9fccacb55030e7035683022a74d972b171c8b60a3eb7167a4a7fa72acdb2a71e36c8a46158ba27c06"
+	expected_ok="OK $expected_hex COSE OK $expected_cose_hex"
 	marker="CRATESTACK_CBOR_EXAMPLE_RESULT:"
 	framework=CratestackCborNative
 	# Derived by `flutter create --platforms=ios .` from this example's
@@ -3851,7 +3913,7 @@ cbor-example-verify-ios:
 	# app printing the same string four ways: `print` reached the unified log
 	# only, `stdout.writeln`/`stderr.writeln` reached the pty only.
 
-	if [ "$found" -ne 1 ] || ! grep -qs "$marker OK $expected_hex" "$stream_log" "$store_log"; then
+	if [ "$found" -ne 1 ] || ! grep -qs "$marker $expected_ok" "$stream_log" "$store_log"; then
 	  echo "FAIL: built iOS simulator app did not print the expected round-trip marker." >&2
 	  # Diagnostics, because the first failure of this recipe produced an
 	  # empty log and therefore told us nothing about which half broke.
@@ -3872,7 +3934,7 @@ cbor-example-verify-ios:
 	  echo "--- harness ---" >&2
 	  if [ "$found" -eq 1 ]; then
 	    echo "the marker WAS captured, but its payload did not match — this is a genuine round-trip failure, not a timeout" >&2
-	    echo "expected: $marker OK $expected_hex" >&2
+	    echo "expected: $marker $expected_ok" >&2
 	    echo "captured: $(grep -hs "$marker" "$stream_log" "$store_log" | head -1)" >&2
 	    if [ "$stream_missed" -eq 1 ]; then
 	      echo "(recovered from the log store, not the live capture — see the fallback above)" >&2

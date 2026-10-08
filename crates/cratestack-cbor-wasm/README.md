@@ -27,7 +27,7 @@ host toolchain this crate compiles to effectively nothing. The
 null-encoding correctness tests in `src/json_bridge.rs` are plain Rust and
 run on the host via `cargo test -p cratestack-cbor-wasm`; the
 `wasm_bindgen_test` suite in `src/wasm.rs` needs the wasm32 target and
-runs via `wasm-pack test --node crates/cratestack-cbor-wasm`.
+runs via `wasm-pack test --node crates/cratestack-cbor-wasm` (with `--features cose` the suite is configured for the browser: `wasm-pack test --headless --chrome -- --features cose`).
 
 ## Public JS surface
 
@@ -36,6 +36,20 @@ runs via `wasm-pack test --node crates/cratestack-cbor-wasm`.
   a wasm trap) on values that can't be represented.
 - `decode(bytes: Uint8Array): unknown` — throws (catchable `Error`, never
   a wasm trap) on malformed CBOR input.
+
+With the **`cose` feature** (off by default; only the `cratestack_cbor` Dart package's web artifact is
+built with it, `just cbor-vendor-web`; `@cratestack/cbor-web` is not, and CI asserts it) the module also
+exports the COSE signed transport of ADR 0006 (cratestack#1026), over `cratestack-cose`:
+
+- `ClientEnvelope.hmac(alg, secret, serverKeys, audience, options?)` and
+  `ClientEnvelope.ed25519Seed(seed, serverKeys, audience, options?)` — `alg` is `"hmac256-64"` or
+  `"hmac256-256"`, `serverKeys` is `[{ alg, bytes }]`, `options` (tests only) is `{ fixedIat?, fixedCti? }`.
+  They throw `{ code, message }`.
+- `envelope.sealRequest(payload, binding): Promise<Uint8Array>` and
+  `envelope.openResponse(body, binding, sealedRequest, status): Promise<{ payload, kid, alg, thumbprint }>`,
+  with `binding` = `{ method, route, pathParams, query?, contractSha, idempotencyKey?, ifMatch? }`.
+  Rejections are `{ code, message }`: `"rejected"` (every failed verification, empty message) or `"misuse"`.
+- `envelope.mode`, `envelope.mediaType`, `envelope.kid`, and `contractHeaderValue(contractSha): string`.
 
 `packages/cratestack-cbor-web` wraps these into an async
 `createCborCodec()` factory that performs the one-time wasm module
