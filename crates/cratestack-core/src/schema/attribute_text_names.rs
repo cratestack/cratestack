@@ -105,8 +105,9 @@ mod tests {
     // The two name readers of this module disagree by design: the loose
     // one (policy re-check, GHSA-69g4-xvcm-vm2j) reads every spelling
     // below as `id`/`relation`, the matchers here do not. The parser
-    // refuses each of these on a field except the case variants (`@Id`,
-    // `@ID`), which stay inert unknown attributes and never a key.
+    // refuses each of these on a field (the case variants, `@Id` and `@ID`,
+    // as names the closed field lists do not contain, ADR 0019 D5), so
+    // none is ever a key.
     #[test]
     fn the_loose_reader_takes_more_spellings_than_the_matchers() {
         use super::super::loose_attribute_names;

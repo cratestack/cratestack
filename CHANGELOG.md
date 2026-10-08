@@ -2,6 +2,86 @@
 
 ## Unreleased
 
+### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)
+
+Part of ADR 0019, which ships as 0.16.0 with the `BigInt` and 32-bit `Int` entries that follow it in
+this release.
+
+**Affected:** every release before 0.16.0, on every field of a `model`, `view`, `mixin`, `type` and
+the `auth` block. The comparisons below were measured on 0.15.3.
+
+A field attribute is parsed as opaque text and each reader matches the text itself, so a name no
+reader knows had no effect, and `cratestack check` still said `schema OK`. #679's fix (#810) refused
+only a typo of a known name: `@raedonly` failed, while `@immutable`, `@string` and `@wire(string)`
+passed and changed nothing but the schema digest. `amountE8 Int @string` generated the same
+`amountE8: number` as the field without it, and an `@immutable` that its author read as a protection
+left the field writable. Model and view `@@` attributes, procedure attributes and query attributes
+were closed in 0.14.1 (GHSA-69g4-xvcm-vm2j); field attributes were the last open position.
+
+**What changed.**
+
+- **A field accepts only the attributes its declaration kind lists**, each in the one spelling its
+  readers take. Any other name, another case or a typo is an error that names the attribute, the
+  kind and the whole accepted list, with "did you mean" when a name is close. It is the check
+  procedures, queries and `@@` attributes already use, so the rules and the wording match.
+
+  | Declaration | Accepts |
+  |---|---|
+  | `model` | `@id`, `@unique`, `@default(…)`, `@relation(…)`, `@computed`, `@readonly`, `@server_only`, `@version`, `@pii`, `@sensitive`, `@db_enforce`, `@email`, `@uri`, `@iso4217`, `@length(…)`, `@range(…)`, `@regex(…)`, `@rename(from = "…")` |
+  | `view` | `@id`, `@server_only`, `@from(Model.field)` |
+  | `mixin` | what a `model` accepts except `@id` and `@computed` (a mixin's fields are copied into each model that `@use`s it) |
+  | `type` | `@computed`, `@default(…)`, `@length(…)` |
+  | `auth` | none |
+
+- **Each name is checked in its shape too.** `@readonly()`, `@id(…)`, `@unique(x)` and the other
+  no-argument names refuse an argument list; `@default`, `@relation`, `@length`, `@range`, `@regex`
+  and `@rename` refuse a missing or empty one; text after an attribute (`@readonly,`) or a second
+  attribute run into it (`@readonly@unique`) is refused. Most of these were refused already, in
+  other words. Two were not, and both were inert: a bare `@default` or `@default()` (the generators
+  left the field out of the create input while the migrator emitted no `DEFAULT`), and a bare
+  `@relation` on a scalar field.
+- **`@allow`, `@deny`, `@pb` and `@custom` keep their own messages**, which say what replaced them,
+  and are checked first.
+- **The editor completions read the same lists.** Inside a block `cratestack-lsp` offers exactly
+  that block's field attributes (it offered five of them and `@allow`, which a field refuses);
+  elsewhere it offers every list's names once. `cratestack_parser::field_attribute_names(FieldHost)`
+  returns a list.
+
+**Names that were inert on a kind are refused there.** The lists come from the readers, and a name
+no reader reads on a kind is not on that kind's list. These parse on 0.15.3 and fail now:
+
+- on a `view` field: `@unique`, `@default`, `@relation`, `@readonly`, `@version`, `@pii`,
+  `@sensitive`, `@db_enforce`, `@email`, `@uri`, `@iso4217`, `@length`, `@range`, `@regex`;
+- on a `type` field: `@id`, `@unique`, `@relation`, `@readonly`, `@version`, `@pii`, `@sensitive`,
+  `@db_enforce`, `@email`, `@uri`, `@iso4217`, `@range`, `@regex`, `@from`;
+- on an `auth` field: every attribute (the macros read an auth field's name and type, nothing else);
+- on a `model` or `mixin` field: `@from`.
+
+`@server_only`, `@computed` and `@rename` on the kinds that do not read them, and `@id` on a mixin,
+were refused already. Three names are on a list although no code reads them there, because a
+committed schema, the documentation or the ADR writes them there: `@from` on a view field (a
+documented source annotation), and `@default` and `@length` on a `type` field. Neither of those two
+does anything on a `type`: the generated code decodes a `type`'s `@default` as a required field, and
+only a model's create and update inputs run validators, so a `@length` on a procedure's `type`
+argument checks nothing. This release does not change that; it only stops pretending the other
+validators work there. They are marked in `field_attribute_tables.rs` as a decision to revisit.
+
+**Migration.**
+
+- `cratestack check` over every `.cstack` tracked in this repository gives the same result before
+  and after: 285 files, 277 parse, and the 8 fixtures that are refused on purpose are refused with
+  the same messages. `cratestack-parser`'s `tests/committed_schemas.rs` walks the tree and keeps it
+  that way; it holds no file count, so a new fixture needs no edit.
+- Of 75 distinct downstream schemas found outside this repository, 68 parse on 0.15.3 and 67 parse
+  now. None uses a name outside the 19 above. The one that fails is a demo whose `auth` block
+  carries `@id`, `@unique` and `@default`, all inert there. The other seven do not parse on 0.15.3
+  either (the blank line a procedure's attributes need; one is not `.cstack` syntax at all); a text
+  scan of the field attributes of the six that are found none outside the lists.
+- An attribute that was silently inert now fails `cratestack check`, underlined, and has to be
+  deleted: it did nothing. Do not swap it for the nearest accepted name unless you want that
+  behaviour (`@immutable` meant `@readonly`; `@string` on an `Int` is the case ADR 0019 answers with
+  `BigInt`).
+
 ### `RegistryVerifierResolver`: signed-transport keys that can be registered and revoked at run time (#1149)
 
 `StaticVerifierResolver` is fixed at construction (`with_key` consumes the resolver), and the `auth`

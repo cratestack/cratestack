@@ -1,6 +1,7 @@
 //! A closed list of attributes, each in the one spelling its reader takes
-//! (GHSA-69g4-xvcm-vm2j), for the constructs whose attributes carry
-//! authorization: `procedure` and `query`.
+//! (GHSA-69g4-xvcm-vm2j): the attributes of a `procedure` and a `query`,
+//! the `@@` attributes of a `model` and a `view`, and, since ADR 0019 D5,
+//! the field attributes of every field-bearing declaration.
 //!
 //! The generators recognise these attributes by exact text — `@deny(`
 //! with nothing between the name and the `(`, a line that ends at the
@@ -9,13 +10,14 @@
 //! `cratestack check` and generated a procedure with no deny rule. Here
 //! every attribute must be a known name, spelled exactly, with an
 //! argument list exactly when the name takes one, and nothing after it.
-//! The rules match the field-attribute ones in `super::attribute_spelling`.
+//! A name outside the list is refused by `super::unsupported_attribute`,
+//! whose suggestion comes from `super::misspelled_attributes`.
 
 use cratestack_core::Attribute;
 use cratestack_core::schema::attribute_text::{attribute_starts, group_end};
 
 use super::attribute_spelling::scan::separated;
-use super::misspelled_attributes::optimal_string_alignment;
+use super::unsupported_attribute::{article, unsupported_attribute};
 use crate::diagnostics::{SchemaError, span_error};
 
 /// Whether an attribute takes an argument list.
@@ -38,6 +40,20 @@ pub(super) type Known = (&'static str, Arguments);
 pub(super) fn check_shape<'a>(
     attribute: &'a Attribute,
     known: &[Known],
+    owner: &str,
+    construct: &str,
+) -> Result<(&'static str, Option<&'a str>), SchemaError> {
+    check_shape_hinted(attribute, known, &[], owner, construct)
+}
+
+/// [`check_shape`], whose "did you mean" may also name an attribute that
+/// `known` does not list but `elsewhere` does: a typo of `@readonly` on a
+/// `type` field is pointed at `@readonly` even though a `type` does not
+/// accept it, which the refusal then says.
+pub(super) fn check_shape_hinted<'a>(
+    attribute: &'a Attribute,
+    known: &[Known],
+    elsewhere: &[&str],
     owner: &str,
     construct: &str,
 ) -> Result<(&'static str, Option<&'a str>), SchemaError> {
@@ -69,30 +85,7 @@ pub(super) fn check_shape<'a>(
         .unwrap_or(after.len());
     let written = &raw[..sigils + name_len];
     let Some(&(name, arguments)) = known.iter().find(|(name, _)| *name == written) else {
-        let list = known
-            .iter()
-            .map(|(name, _)| format!("`{name}`"))
-            .collect::<Vec<_>>();
-        let hint = suggestion(written, known)
-            .map(|name| format!(" (did you mean `{name}`?)"))
-            .unwrap_or_default();
-        let policies = known
-            .iter()
-            .map(|(name, _)| *name)
-            .filter(|name| matches!(name.trim_start_matches('@'), "allow" | "deny" | "authorize"))
-            .map(|name| format!("`{name}`"))
-            .collect::<Vec<_>>();
-        let policies = match policies.split_last() {
-            Some((last, [])) => last.clone(),
-            Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
-            None => "policy attribute".to_owned(),
-        };
-        return refuse(format!(
-            "unsupported attribute `{written}` on a {construct}{hint}. A {construct} accepts only \
-             {}, spelled exactly so, and an attribute nothing reads would have no effect — \
-             for a misspelled {policies}, a silently missing authorization rule",
-            list.join(", ")
-        ));
+        return refuse(unsupported_attribute(written, known, elsewhere, construct));
     };
     let rest = &raw[written.len()..];
     let expects_list = !matches!(arguments, Arguments::None);
@@ -122,8 +115,9 @@ pub(super) fn check_shape<'a>(
         ));
     }
     let Some(end) = group_end(raw, written.len()) else {
+        let a = article(construct);
         return refuse(format!(
-            "the argument list of `{name}` is never closed on this line (a {construct}'s \
+            "the argument list of `{name}` is never closed on this line ({a} {construct}'s \
              attribute must fit on one line)"
         ));
     };
@@ -140,23 +134,4 @@ pub(super) fn check_shape<'a>(
         return refuse(format!("`{name}()` has an empty argument list"));
     }
     Ok((name, Some(inner)))
-}
-
-/// The known name `written` most likely means: the same name in another
-/// case or with other sigils, or one a typo away.
-fn suggestion(written: &str, known: &[Known]) -> Option<&'static str> {
-    let bare = written.trim_start_matches('@').to_ascii_lowercase();
-    if bare.chars().count() < 3 {
-        return None;
-    }
-    let limit = if bare.chars().count() <= 5 { 1 } else { 2 };
-    known
-        .iter()
-        .map(|(name, _)| {
-            let distance = optimal_string_alignment(&bare, name.trim_start_matches('@'));
-            (*name, distance)
-        })
-        .filter(|(_, distance)| *distance <= limit)
-        .min_by_key(|(name, distance)| (*distance, name.len()))
-        .map(|(name, _)| name)
 }

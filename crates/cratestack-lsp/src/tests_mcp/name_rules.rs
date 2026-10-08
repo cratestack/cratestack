@@ -11,7 +11,7 @@ use crate::text::range_from_offsets;
 
 #[test]
 fn the_mcp_name_reserved_form_and_all_digit_names_are_diagnostics() {
-    let items = completion_items(None);
+    let items = completion_items(None, None);
     let name = items.iter().find(|item| item.label == "name = \"...\"");
     let detail = name.and_then(|item| item.detail.as_deref()).unwrap_or("");
     assert!(detail.contains("IDNA's reserved form"), "{detail}");

@@ -237,10 +237,11 @@ auth User {
 
 /// The match is on `@pb` exactly and `@pb(...)`, not on a `@pb` *prefix* —
 /// an unrelated attribute that merely starts with those characters must
-/// still fall through the generic unrecognised-attribute path untouched.
+/// not draw the `@pb` removal guidance. It is an unsupported name like any
+/// other, refused by the closed list (ADR 0019 D5).
 #[test]
 fn removed_attribute_matching_does_not_swallow_longer_names() {
-    parse_schema(
+    let err = parse_schema(
         r#"
 model User {
   id Int @id
@@ -248,7 +249,14 @@ model User {
 }
 "#,
     )
-    .expect("only `@pb` itself and `@pb(...)` were removed");
+    .expect_err("an attribute no list names is refused");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("unsupported attribute `@pbkdf2_rounds` on a model field"),
+        "{message}"
+    );
+    assert!(!message.contains("removed in 0.8.5"), "{message}");
 }
 
 /// cratestack#679 (half 1 of 2 — see the module doc on
@@ -436,9 +444,11 @@ model User {
 
 /// cratestack#679's typo half. Mirrors
 /// `pb_field_attribute_is_rejected_on_every_field_bearing_declaration`:
-/// a missed call site in `validate::misspelled_attributes` fails
-/// *silently* — the typo goes back to being an inert no-op, which is the
-/// exact bug — so this covers all five field-bearing declarations.
+/// a missed call site in `validate::field_attributes` would let the typo go
+/// back to being an inert no-op, which is the exact bug — so this covers all
+/// five field-bearing declarations. The suggestion is the attribute the
+/// author meant even where that kind does not accept it (a `type`, a `view`
+/// or the `auth` block has no `@readonly`), and the refusal says so.
 #[test]
 fn a_misspelled_field_attribute_is_rejected_on_every_field_bearing_declaration() {
     for (kind, source) in [
@@ -486,7 +496,7 @@ view WidgetSummary from Widget {
             "auth block",
             r#"
 auth User {
-  id String @id
+  id String
   label String @raedonly
 }
 "#,
@@ -506,17 +516,13 @@ auth User {
     }
 }
 
-/// The other half of cratestack#679's option (b), and the reason it was
-/// chosen over a closed attribute set: an attribute that resembles nothing
-/// is left inert rather than becoming a parse error. This is the ticket's
-/// own `@totallyBogusAttribute` example.
-///
-/// Without this, "reject every unrecognised attribute" would satisfy the
-/// test above while being a different — and much larger — language change
-/// than the one that was decided.
+/// The other half of cratestack#679's option (b), reversed by ADR 0019 D5:
+/// an attribute that resembles nothing used to stay inert and now fails
+/// like any other name outside the kind's list. This is the ticket's own
+/// `@totallyBogusAttribute` example, with no suggestion to offer.
 #[test]
-fn an_unknown_attribute_that_resembles_nothing_still_parses() {
-    parse_schema(
+fn an_unknown_attribute_that_resembles_nothing_is_refused() {
+    let err = parse_schema(
         r#"
 model Asset {
   id Int @id
@@ -524,14 +530,21 @@ model Asset {
 }
 "#,
     )
-    .expect("an attribute that is not a near-miss of a known name stays inert (option (b))");
+    .expect_err("an attribute that is on no list is refused");
+
+    let message = err.to_string();
+    assert!(
+        message.contains("unsupported attribute `@totallyBogusAttribute` on a model field"),
+        "{message}"
+    );
+    assert!(!message.contains("did you mean"), "{message}");
 }
 
-/// Guards against the near-miss check over-rejecting real, supported
+/// Guards against the closed list over-rejecting real, supported
 /// attributes — the failure mode that made option (a) too risky to take.
 /// Every one of these must keep parsing exactly as before.
 #[test]
-fn supported_field_attributes_are_unaffected_by_the_near_miss_check() {
+fn supported_field_attributes_are_unaffected_by_the_closed_list() {
     parse_schema(
         r#"
 model Widget {
@@ -549,5 +562,5 @@ model Widget {
 }
 "#,
     )
-    .expect("every supported field attribute must survive the near-miss check");
+    .expect("every supported field attribute must survive the closed list");
 }

@@ -164,7 +164,6 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@unique",
         &[
-            "cratestack-lsp/src/completion.rs",
             "cratestack-migrate/src/convert/fields.rs",
             "cratestack-migrate/src/convert/renames.rs",
         ],

@@ -10,6 +10,8 @@ mod computed;
 mod computed_attribute;
 mod computed_params;
 mod computed_resolver_names;
+mod field_attribute_tables;
+mod field_attributes;
 mod fields;
 mod index_attribute;
 mod isolation_scope;
@@ -40,6 +42,7 @@ mod snake_case_collisions;
 mod spatial_type;
 mod stream_attribute;
 mod type_names;
+mod unsupported_attribute;
 mod validator_args;
 mod validators;
 mod views;
@@ -49,6 +52,8 @@ use std::collections::BTreeSet;
 use cratestack_core::Schema;
 
 use crate::diagnostics::{SchemaError, span_error};
+
+pub use self::field_attributes::{FieldHost, field_attribute_names};
 
 use self::builder_collisions::validate_builder_name_collisions;
 use self::client_method_collisions::validate_client_method_collisions;

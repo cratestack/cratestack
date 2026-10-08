@@ -30,13 +30,12 @@ use crate::validate::collect::record;
 use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
+use crate::validate::field_attributes::{FieldHost, validate_field_attributes};
 use crate::validate::fields::validate_field_reserved_identifier;
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
-use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::policy_attributes::{
     MODEL_ACTIONS, VIEW_DENY_ACTIONS, validate_policy_attribute,
 };
-use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
 
@@ -97,18 +96,18 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
 
     for field in &view.fields {
         validate_field_reserved_identifier(field, "view", &view.name)?;
-        validate_removed_field_attributes("view", &view.name, field)?;
-        validate_misspelled_field_attributes("view", &view.name, field)?;
-        validate_key_and_relation_attributes("view", &view.name, field)?;
         // A view's rows come straight out of its SQL body — there is no
         // response-composition step that could invoke a resolver, so
-        // `@computed` on a view field would be inert. Reject it loudly.
+        // `@computed` on a view field would be inert. Reject it loudly,
+        // before the closed list gives the generic message.
         validate_computed_field_attribute(
             field,
             "view",
             &view.name,
             ComputedFieldSupport::Rejected,
         )?;
+        validate_field_attributes(FieldHost::View, &view.name, field)?;
+        validate_key_and_relation_attributes("view", &view.name, field)?;
     }
 
     // Rule 2: every source resolves to a model.

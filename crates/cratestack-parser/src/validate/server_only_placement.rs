@@ -17,10 +17,12 @@
 //! exactly `@server_only`, so any other spelling that still parses —
 //! `@server_only()`, `@server_only(true)`, or `@server_only@unique` with the
 //! separating space missing — is inert on every field, including a plain
-//! model scalar. `super::attribute_spelling` refuses those, together with
-//! the same spellings of every other attribute that takes no arguments, for
-//! every kind of field-bearing block. The rules here match only the exact
-//! spelling; every other one is refused there.
+//! model scalar. The closed field lists (`super::field_attributes`) refuse
+//! those, together with the same spellings of every other attribute that
+//! takes no arguments, for every kind of field-bearing block. The rules here
+//! match only the exact spelling; every other one is refused there. They
+//! run before the lists at the `type` and `auth` call sites, so the message
+//! above wins where the lists would also refuse the name.
 //!
 //! The primary-key and `@readonly` combinations are refused separately, in
 //! [`super::fields::validate_field_policy_attributes`].

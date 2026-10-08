@@ -26,7 +26,7 @@ The binary speaks LSP over stdio.
 |---------------------------|---------------------|
 | Text document sync        | Full                |
 | `textDocument/hover`      | Supported           |
-| `textDocument/completion` | Supported (defaults)|
+| `textDocument/completion` | Supported (field attributes are the cursor's block's list) |
 | `textDocument/definition` | Supported           |
 | `textDocument/documentSymbol` | Supported       |
 | `textDocument/publishDiagnostics` | Supported (on open and change) |

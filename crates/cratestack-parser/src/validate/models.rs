@@ -11,16 +11,15 @@ use crate::validate::collect::record;
 use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
+use crate::validate::field_attributes::{FieldHost, validate_field_attributes};
 use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_list_arity_support,
     validate_field_policy_attributes, validate_field_reserved_identifier,
 };
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
-use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
 use crate::validate::model_relation::validate_field_relation;
 use crate::validate::patch_touch_flag_collisions::validate_no_touch_flag_collision;
-use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::route_collisions::validate_model_route_collisions;
 use crate::validate::server_only_placement as server_only;
@@ -158,8 +157,7 @@ pub(super) fn validate_models_collecting(
                 validate_field_policy_attributes(&model.name, field)?;
                 server_only::validate_model_field(schema, model, field, &model_names)?;
                 validate_default_dbgenerated_no_args(&model.name, field)?;
-                validate_removed_field_attributes("model", &model.name, field)?;
-                validate_misspelled_field_attributes("model", &model.name, field)?;
+                validate_field_attributes(FieldHost::Model, &model.name, field)?;
                 validate_key_and_relation_attributes("model", &model.name, field)?;
                 validate_field_list_arity_support(
                     schema_has_datasource,

@@ -103,6 +103,11 @@ See [Field Attributes](https://cratestack.dev/reference/field-attributes) for th
 - `@@audit`, `@@soft_delete`
 - `@@emit(created, updated, deleted)`
 
+A field accepts only the attributes its declaration kind lists (`model`,
+`view`, `mixin`, `type`, `auth`), and any other name is an error:
+`cratestack_parser::field_attribute_names(host)` returns a kind's list, and
+the editor completions read the same one.
+
 ## See Also
 
 - [Mixins reference](https://cratestack.dev/reference/mixins)

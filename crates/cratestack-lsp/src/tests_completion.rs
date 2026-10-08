@@ -12,7 +12,7 @@ use crate::completion::completion_items;
 /// together so a future drift fails the suite instead of shipping.
 #[test]
 fn builtin_type_completions_match_parser_list_minus_page() {
-    let labels: std::collections::BTreeSet<String> = completion_items(None)
+    let labels: std::collections::BTreeSet<String> = completion_items(None, None)
         .into_iter()
         .filter(|item| item.kind == Some(CompletionItemKind::TYPE_PARAMETER))
         .map(|item| item.label)
@@ -41,7 +41,7 @@ fn builtin_type_completions_match_parser_list_minus_page() {
 /// reserved set.
 #[test]
 fn multi_file_keywords_are_offered_as_completions_with_reserved_detail() {
-    let labels: std::collections::BTreeSet<String> = completion_items(None)
+    let labels: std::collections::BTreeSet<String> = completion_items(None, None)
         .into_iter()
         .filter(|item| item.kind == Some(CompletionItemKind::KEYWORD))
         .map(|item| item.label)
@@ -55,7 +55,7 @@ fn multi_file_keywords_are_offered_as_completions_with_reserved_detail() {
         );
     }
 
-    for item in completion_items(None) {
+    for item in completion_items(None, None) {
         if cratestack_parser::reserved_multi_file_keywords().contains(&item.label.as_str()) {
             let detail = item.detail.as_deref().unwrap_or_default();
             assert!(
@@ -74,7 +74,7 @@ fn multi_file_keywords_are_offered_as_completions_with_reserved_detail() {
 /// is now a parse error everywhere it's spelled.
 #[test]
 fn computed_attribute_is_offered_and_custom_is_gone() {
-    let labels: std::collections::BTreeSet<String> = completion_items(None)
+    let labels: std::collections::BTreeSet<String> = completion_items(None, None)
         .into_iter()
         .filter(|item| item.kind == Some(CompletionItemKind::KEYWORD))
         .map(|item| item.label)
@@ -96,7 +96,7 @@ fn computed_attribute_is_offered_and_custom_is_gone() {
 /// wrong, since it looks like one but isn't.
 #[test]
 fn internal_attribute_is_offered_with_a_detail_string() {
-    let items = completion_items(None);
+    let items = completion_items(None, None);
     let internal = items
         .iter()
         .find(|item| item.label == "@@internal")
@@ -117,7 +117,7 @@ fn internal_attribute_is_offered_with_a_detail_string() {
 /// alongside the existing `"postgresql"`/`"sqlite"` provider values.
 #[test]
 fn datasource_provider_completions_include_none_alongside_postgresql_and_sqlite() {
-    let labels: std::collections::BTreeSet<String> = completion_items(None)
+    let labels: std::collections::BTreeSet<String> = completion_items(None, None)
         .into_iter()
         .filter(|item| item.kind == Some(CompletionItemKind::ENUM_MEMBER))
         .map(|item| item.label)
@@ -131,4 +131,70 @@ fn datasource_provider_completions_include_none_alongside_postgresql_and_sqlite(
             "\"none\"".to_owned(),
         ])
     );
+}
+
+/// ADR 0019 D5: the field attributes offered inside a block are exactly the
+/// list the parser checks that block against (`cratestack_parser::
+/// field_attribute_names`), so completion and validation cannot drift. The
+/// check is run through the cursor placement the server uses.
+#[test]
+fn field_attribute_completions_are_exactly_the_blocks_list() {
+    use cratestack_parser::{FieldHost, field_attribute_names};
+    use std::collections::BTreeSet;
+
+    let every_field_attribute: BTreeSet<&str> = FieldHost::ALL
+        .into_iter()
+        .flat_map(field_attribute_names)
+        .collect();
+    for (host, header) in [
+        (FieldHost::Model, "model Note"),
+        (FieldHost::View, "view Summary from Note"),
+        (FieldHost::Mixin, "mixin Audited"),
+        (FieldHost::Type, "type Args"),
+        (FieldHost::Auth, "auth Caller"),
+    ] {
+        let text = format!("{header} {{\n  id Int \n}}\n");
+        let offset = text.find("Int ").unwrap() + "Int ".len();
+        let placed = crate::field_host::enclosing_field_host(&text, offset);
+        assert_eq!(placed, Some(host), "{header}");
+
+        let labels: BTreeSet<String> = completion_items(None, placed)
+            .into_iter()
+            .map(|item| item.label)
+            .collect();
+        let offered: BTreeSet<&str> = every_field_attribute
+            .iter()
+            .copied()
+            .filter(|name| labels.contains(*name))
+            .collect();
+        assert_eq!(
+            offered,
+            field_attribute_names(host).into_iter().collect(),
+            "{header}: the offered field attributes must be the block's list"
+        );
+        assert!(
+            !labels.contains("@allow"),
+            "{header} refuses a field `@allow`"
+        );
+    }
+}
+
+/// With no block to go by, every list's names are offered once, and the
+/// procedure-position `@allow` too.
+#[test]
+fn outside_a_block_every_field_attribute_is_offered_once() {
+    use cratestack_parser::{FieldHost, field_attribute_names};
+
+    let labels: Vec<String> = completion_items(None, None)
+        .into_iter()
+        .map(|item| item.label)
+        .collect();
+    for name in FieldHost::ALL.into_iter().flat_map(field_attribute_names) {
+        assert_eq!(
+            labels.iter().filter(|label| label.as_str() == name).count(),
+            1,
+            "{name}"
+        );
+    }
+    assert!(labels.iter().any(|label| label == "@allow"));
 }

@@ -161,7 +161,7 @@ fn a_query_parameter_resolves_to_its_own_declaration() {
 #[test]
 fn the_query_name_is_offered_in_completions() {
     let schema = parse();
-    let items = completion_items(Some(&schema));
+    let items = completion_items(Some(&schema), None);
     let query = items
         .iter()
         .find(|item| item.label == "loyaltyFeeSummary")

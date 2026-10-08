@@ -26,7 +26,7 @@ fn a_relation_in_a_trailing_comment_is_not_a_second_one() {
 
 #[test]
 fn a_second_relation_outside_the_comment_is_still_refused() {
-    let error = parse_schema(&post(&format!("{RELATION} @relation // note")))
+    let error = parse_schema(&post(&format!("{RELATION} {RELATION} // note")))
         .expect_err("two `@relation`s outside the comment");
     assert!(
         error
@@ -48,9 +48,9 @@ fn an_id_in_a_trailing_comment_is_not_a_key() {
     );
 }
 
-// `@id` is an entry of the no-argument spelling table, which runs before
-// cratestack#1074's key/relation check: `@id(...)` gets #1074's wording
-// from there, and punctuation after `@id` is refused by the same rule.
+// `@id` takes no arguments in the field lists, which run before
+// cratestack#1074's key/relation check: `@id(...)` and punctuation after
+// `@id` are refused by the one shape check every closed list shares.
 #[test]
 fn every_misspelled_id_is_refused_by_the_one_spelling_check() {
     for (block, field) in [
@@ -61,19 +61,10 @@ fn every_misspelled_id_is_refused_by_the_one_spelling_check() {
         ),
     ] {
         for (raw, needle) in [
-            ("@id()", "but `@id` takes no arguments — write `@id`"),
-            (
-                "@id(sort: Desc)",
-                "but `@id` takes no arguments — write `@id`",
-            ),
-            (
-                "@id;",
-                "`@id` is recognised only when written exactly `@id`",
-            ),
-            (
-                "@id-x",
-                "`@id` is recognised only when written exactly `@id`",
-            ),
+            ("@id()", "`@id` does not take arguments"),
+            ("@id(sort: Desc)", "`@id` does not take arguments"),
+            ("@id;", "`;` after `@id` is not part of any attribute"),
+            ("@id-x", "`-x` after `@id` is not part of any attribute"),
         ] {
             let source = format!("{block}{raw}{field}");
             let error = parse_schema(&source).expect_err(raw);
@@ -84,18 +75,17 @@ fn every_misspelled_id_is_refused_by_the_one_spelling_check() {
     }
 }
 
-// Open question, pinned as it stands on main: a case variant of `@id` is
-// read as `id` by the loose policy reader but is neither a key nor
-// refused (the near-miss check does not flag it).
+// A case variant of `@id` is read as `id` by the loose policy reader but is
+// no key; it is not a near-miss either (two characters sit under the
+// suggestion floor), so the closed list refuses it without a suggestion.
 #[test]
-fn a_case_variant_of_id_beside_the_key_is_inert() {
-    let schema = parse_schema("model Account {\n  id Int @id\n  code String @Id\n}\n")
-        .expect("`@Id` is an unknown, inert attribute");
-    let keys: Vec<&str> = schema.models[0]
-        .fields
-        .iter()
-        .filter(|field| field.is_primary_key())
-        .map(|field| field.name.as_str())
-        .collect();
-    assert_eq!(keys, ["id"]);
+fn a_case_variant_of_id_beside_the_key_is_refused() {
+    let error = parse_schema("model Account {\n  id Int @id\n  code String @Id\n}\n")
+        .expect_err("`@Id` is on no list");
+    let message = error.to_string();
+    assert!(
+        message.contains("unsupported attribute `@Id` on a model field"),
+        "{message}"
+    );
+    assert!(!message.contains("did you mean"), "{message}");
 }

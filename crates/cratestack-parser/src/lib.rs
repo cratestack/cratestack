@@ -45,6 +45,10 @@ mod tests_error_file_identity;
 #[cfg(test)]
 mod tests_extensions;
 #[cfg(test)]
+mod tests_field_attribute_lists;
+#[cfg(test)]
+mod tests_field_attribute_lists_accepted;
+#[cfg(test)]
 mod tests_field_attrs;
 #[cfg(test)]
 mod tests_format_characters;
@@ -161,6 +165,7 @@ pub use entry::{
     ANONYMOUS_SCHEMA, parse_schema, parse_schema_diagnostics, parse_schema_file,
     parse_schema_named, parse_schema_unvalidated,
 };
+pub use validate::{FieldHost, field_attribute_names};
 
 /// Canonical scalar type names built into the `.cstack` language (e.g.
 /// `String`, `Int`, `Decimal`, ...), including `Page` (which is valid only
