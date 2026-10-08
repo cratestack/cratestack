@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### The facades re-export `CborCodec` and `JsonCodec` at the root (#1147)
+
+`cratestack-api`, `cratestack-pg`, `cratestack-sqlite` and `cratestack-client` now re-export the wire
+codecs at the crate root: `cratestack::CborCodec`, and `cratestack::JsonCodec` behind the default
+`codec-json` feature. They were already reachable as `cratestack::client_rust::CborCodec`, which is why
+nothing was missing in capability, but nothing pointed there, so a `db = None` server that needed a codec
+for `envelope_layer`, `rpc_router` or `CratestackClient::new` added `cratestack-codec-cbor` as a direct
+dependency (as the fespalier full-stack COSE example did). It no longer has to. They are the same types as
+before, so this is purely additive. The client facade stays axum-free: a codec pulls in nothing new.
+
+Not changed here: generated code still derives with a bare `serde::Serialize`, which the derive resolves
+in the consumer's own crate, so a schema crate still lists `serde` directly even though the facades
+re-export it. Routing that through `::cratestack::serde` (with `#[serde(crate = ...)]` on every derive)
+is a larger change, tracked as a follow-up.
+
 ### A slow npm registry can no longer skip the `@cratestack/cbor` publish (#1134)
 
 On the v0.15.1 release the npm registry was slow to show the freshly published `@cratestack/cbor-node`

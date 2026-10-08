@@ -28,6 +28,14 @@ out of. See
 [`docs/design/no-database-mode.md`](../../docs/design/no-database-mode.md)
 for the full design and both entry points.
 
+## Wire codecs
+
+`cratestack::CborCodec` (and `cratestack::JsonCodec`, behind the default
+`codec-json` feature) are re-exported at the root, the same types as
+`cratestack::client_rust::CborCodec` / `JsonCodec`. A consumer needs no
+direct `cratestack-codec-cbor` or `cratestack-codec-json` dependency to
+name a codec for `CratestackClient::new` or `rpc_router`.
+
 ## Installation
 
 Schema macros emit `::cratestack::*` paths. Alias this crate as
