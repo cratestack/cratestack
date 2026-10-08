@@ -301,3 +301,9 @@ required-features = ["cose"]
 name = "cose_envelope_security"
 path = "tests/cose_envelope_security.rs"
 required-features = ["cose"]
+
+# cratestack#1149: a run-time key registry behind the envelope layer.
+[[test]]
+name = "cose_envelope_registry"
+path = "tests/cose_envelope_registry.rs"
+required-features = ["cose"]

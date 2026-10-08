@@ -66,10 +66,12 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
 - **Errors:** every failed check is the same `401`; a failing key resolver, nonce store or
   signer, and local misuse, is a `500`.
 - **Keys:** `CoseSigner` signs without exporting the key (KMS, HSM); `CoseVerifierResolver`
-  returns every candidate for a `kid`; `CoseVerifyKey` is opaque and typed, so an Ed25519
-  public key can never be used as an HMAC secret; `KeyProviderMacKeys` loads Mac0 keys from
-  core's `KeyProvider`. HMAC secrets must be random: a Mac0 `kid` publishes 64 bits of the
-  secret's thumbprint, so a guessable secret can be found offline.
+  returns every candidate for a `kid` (`StaticVerifierResolver` for a fixed set,
+  `RegistryVerifierResolver` for keys registered and revoked while the server runs);
+  `CoseVerifyKey` is opaque and typed, so an Ed25519 public key can never be used as an
+  HMAC secret; `KeyProviderMacKeys` loads Mac0 keys from core's `KeyProvider`. HMAC secrets
+  must be random: a Mac0 `kid` publishes 64 bits of the secret's thumbprint, so a guessable
+  secret can be found offline.
 
 ## The `auth` feature
 
