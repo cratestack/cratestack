@@ -167,7 +167,7 @@ impl FlutterServerKey {
 
 impl FlutterCallBinding {
     /// The owned binding, addressed to `audience`.
-    pub(crate) fn with_audience(&self, audience: &str) -> Result<CallBinding, FlutterCoseError> {
+    pub(crate) fn with_audience(self, audience: &str) -> Result<CallBinding, FlutterCoseError> {
         let contract_sha = self
             .contract_sha
             .as_slice()
@@ -175,13 +175,13 @@ impl FlutterCallBinding {
             .map_err(|_| FlutterCoseError::misuse("the op contract digest is 32 bytes"))?;
         Ok(CallBinding {
             audience: audience.to_owned(),
-            method: self.method.clone(),
-            route: self.route.clone(),
-            path_params: self.path_params.clone(),
-            query: self.query.clone(),
+            method: self.method,
+            route: self.route,
+            path_params: self.path_params,
+            query: self.query,
             contract_sha,
-            idempotency_key: self.idempotency_key.clone(),
-            if_match: self.if_match.clone(),
+            idempotency_key: self.idempotency_key,
+            if_match: self.if_match,
         })
     }
 }
