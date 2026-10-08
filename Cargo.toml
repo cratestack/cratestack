@@ -431,7 +431,7 @@ serde_path_to_error = "0.1"
 # Never enable `arbitrary-precision`: it would switch `serde_json` itself
 # to arbitrary-precision numbers across the whole test build and change
 # the very output under test.
-jsonschema = { version = "0.57", default-features = false }
+jsonschema = { version = "0.58", default-features = false }
 serde_urlencoded = "0.7.1"
 http = "1"
 # `cratestack-mcp`'s Streamable HTTP guard (cratestack#1039) buffers a request
