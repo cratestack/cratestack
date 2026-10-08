@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### `RegistryVerifierResolver`: signed-transport keys that can be registered and revoked at run time (#1149)
+
+`StaticVerifierResolver` is fixed at construction (`with_key` consumes the resolver), and the `auth`
+feature's `DeviceKeyResolver` is Ed25519 only, so a server that enrols devices after start-up had to
+write its own `CoseVerifierResolver`. `cratestack_cose::RegistryVerifierResolver` is that resolver,
+thread-safe and shared as an `Arc`, for every key the verifier accepts (Ed25519, ESP256 and both HMAC
+algorithms):
+
+- `register(key)` returns the `kid` (the first 8 bytes of the key's RFC 9679 thumbprint, computed from
+  the key). Registering a key that is already present changes nothing and succeeds.
+- `revoke(kid)` removes every key filed under that `kid` and returns how many: both algorithms of one
+  HMAC secret, and any unrelated key whose 8-byte `kid` collides. To revoke one device, use
+  `revoke_key(&key)`, which removes exactly that key.
+- `with_max_keys(n)` bounds the number of keys; a new key past it is a `Conflict` and a repeat is not.
+- A `register` or `revoke` is atomic with respect to `resolve`; a request whose `resolve` already
+  returned a key still finishes with it. An unknown `kid` is `Ok(vec![])`, so a revoked and a never
+  registered key give the same unsigned `401`.
+
+Additive: no existing type, trait or wire format changes. The registry is per process; replicas each
+need the same registrations. Transport parity does not apply (key lookup is below both transports).
+
 ### A slow npm registry can no longer skip the `@cratestack/cbor` publish (#1134)
 
 On the v0.15.1 release the npm registry was slow to show the freshly published `@cratestack/cbor-node`
