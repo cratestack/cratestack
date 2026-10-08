@@ -102,7 +102,8 @@ pub use envelope::{CoseEnvelope, CoseEnvelopeBuilder, CoseRole};
 pub use error::UNAUTHENTICATED;
 pub use keys::{
     CoseSigner, CoseVerifierResolver, CoseVerifyKey, Ed25519Signer, ExternalSigner, HmacSecret,
-    HmacSigner, KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, StaticVerifierResolver,
+    HmacSigner, KeyProviderMacKeys, MIN_HMAC_SECRET_LEN, P256Signer, RegistryVerifierResolver,
+    StaticVerifierResolver,
 };
 pub use maybe_send::{MaybeSend, MaybeSendSync};
 pub use opened::Opened;

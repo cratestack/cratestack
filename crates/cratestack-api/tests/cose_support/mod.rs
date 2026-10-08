@@ -45,13 +45,26 @@ fn server_signer() -> Ed25519Signer {
     Ed25519Signer::from_seed(&seed(0x80))
 }
 
+/// The client's verification key, for a test that registers it itself.
+pub fn client_verify_key() -> cratestack::cose::CoseVerifyKey {
+    client_signer().verify_key()
+}
+
 /// The server's envelope, trusting the client's key.
 pub fn server_envelope() -> CoseEnvelope {
-    let resolver = StaticVerifierResolver::new().with_key(client_signer().verify_key());
+    server_envelope_with(Arc::new(
+        StaticVerifierResolver::new().with_key(client_verify_key()),
+    ))
+}
+
+/// The server's envelope over a resolver of the test's choosing.
+pub fn server_envelope_with(
+    resolver: Arc<dyn cratestack::cose::CoseVerifierResolver>,
+) -> CoseEnvelope {
     CoseEnvelope::server(
         CoseMode::Sign1,
         Arc::new(server_signer()),
-        Arc::new(resolver),
+        resolver,
         Arc::new(InMemoryNonceStore::new()),
     )
     .build()
@@ -59,7 +72,15 @@ pub fn server_envelope() -> CoseEnvelope {
 }
 
 pub fn envelope_layer(contracts: AcceptedContracts) -> EnvelopeLayerBuilder {
-    EnvelopeLayer::builder(server_envelope(), AUDIENCE, contracts).policy(EnvelopeMode::Required)
+    envelope_layer_over(server_envelope(), contracts)
+}
+
+/// As [`envelope_layer`], over `envelope`.
+pub fn envelope_layer_over(
+    envelope: CoseEnvelope,
+    contracts: AcceptedContracts,
+) -> EnvelopeLayerBuilder {
+    EnvelopeLayer::builder(envelope, AUDIENCE, contracts).policy(EnvelopeMode::Required)
 }
 
 fn client() -> CoseEnvelope {

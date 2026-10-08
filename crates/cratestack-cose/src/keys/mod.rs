@@ -4,6 +4,7 @@
 mod external;
 mod hmac;
 mod key_provider;
+mod registry_resolver;
 mod signers;
 mod static_resolver;
 mod traits;
@@ -13,6 +14,7 @@ mod verify_key;
 pub use external::ExternalSigner;
 pub use hmac::{HmacSecret, HmacSigner, MIN_HMAC_SECRET_LEN};
 pub use key_provider::KeyProviderMacKeys;
+pub use registry_resolver::RegistryVerifierResolver;
 pub use signers::{Ed25519Signer, P256Signer};
 pub use static_resolver::StaticVerifierResolver;
 pub use traits::{CoseSigner, CoseVerifierResolver};
