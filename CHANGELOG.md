@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Dart clients can seal and open COSE through cratestack_cbor (#<ticket>, #1026)
+### Dart clients can seal and open COSE through cratestack_cbor (#1151, #1026)
 
 A Dart or Flutter app can now call a server behind the COSE envelope layer (ADR 0006). The new
 `package:cratestack_cbor/cose.dart` seals a request and opens a response with `cratestack-cose`, the
