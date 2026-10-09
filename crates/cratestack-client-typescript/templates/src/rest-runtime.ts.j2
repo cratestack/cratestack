@@ -121,7 +121,9 @@ export class CratestackRuntime {
       // `encodeBinaryAsJson` rewrites every `Uint8Array` (a `Bytes`
       // field's client-side type) into the integer array the wire uses —
       // `JSON.stringify` alone turns one into an index-keyed object no
-      // server-side `Vec<u8>` can decode. Unconditional here, unlike the
+      // server-side `Vec<u8>` can decode — and every `bigint` (a `BigInt`
+      // field) into its canonical decimal string, which `JSON.stringify`
+      // alone refuses to serialize at all. Unconditional here, unlike the
       // RPC transport's codec-dependent handling, because a REST request
       // body is always JSON.
       body = JSON.stringify(encodeBinaryAsJson(options.body));
@@ -229,7 +231,10 @@ function appendQueryValue(searchParams: URLSearchParams, key: string, value: unk
   }
 
   if (typeof value === "object") {
-    searchParams.set(key, JSON.stringify(value));
+    // The same walk the body gets: an object-valued query entry
+    // (`computedParams`) may hold a `bigint`, which `JSON.stringify` throws
+    // on. A scalar `bigint` below needs nothing: `String(7n)` is `"7"`.
+    searchParams.set(key, JSON.stringify(encodeBinaryAsJson(value)));
     return;
   }
 

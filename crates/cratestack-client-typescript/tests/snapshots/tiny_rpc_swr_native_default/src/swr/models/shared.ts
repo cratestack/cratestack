@@ -28,6 +28,7 @@ export type Decimal = DecimalJs;
  *  `models.ts`, which doesn't exist in this preset's per-file layout). */
 export interface WireShape {
   readonly decimalKeys: readonly string[];
+  readonly bigintKeys: readonly string[];
   readonly bytesKeys: readonly string[];
   readonly bytesListKeys: readonly string[];
   readonly nested: Readonly<Record<string, string>>;
@@ -37,7 +38,7 @@ export interface WireShape {
  *  why this is keyed by structural path (via `nested`) rather than a
  *  single flat, schema-wide field-name set. */
 export const wireShapes: Readonly<Record<string, WireShape>> = {
-  Widget: { decimalKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  Widget: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
 };
 
 export function reviveWireFields(value: unknown, shapeName: string): unknown {
@@ -45,7 +46,7 @@ export function reviveWireFields(value: unknown, shapeName: string): unknown {
   if (!shape) {
     return value;
   }
-  return reviveShaped(value, shape);
+  return reviveShaped(value, shape, shapeName);
 }
 
 /** See the default preset's `models.ts.j2`'s identical function for the
@@ -56,12 +57,12 @@ export function revivePagedWireFields(value: unknown, shapeName: string): unknow
     return value;
   }
   const page = value as { items: unknown };
-  return { ...page, items: reviveShaped(page.items, shape) };
+  return { ...page, items: reviveShaped(page.items, shape, shapeName) };
 }
 
-function reviveShaped(value: unknown, shape: WireShape): unknown {
+function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => reviveShaped(item, shape));
+    return value.map((item) => reviveShaped(item, shape, shapeName));
   }
   if (value !== null && typeof value === "object") {
     const result: Record<string, unknown> = {};
@@ -69,9 +70,11 @@ function reviveShaped(value: unknown, shape: WireShape): unknown {
       const nestedShapeName = shape.nested[key];
       if (nestedShapeName !== undefined) {
         const nestedShape = wireShapes[nestedShapeName];
-        result[key] = nestedShape ? reviveShaped(entry, nestedShape) : entry;
+        result[key] = nestedShape ? reviveShaped(entry, nestedShape, nestedShapeName) : entry;
       } else if (shape.decimalKeys.includes(key) && typeof entry === "string") {
         result[key] = new Decimal(entry);
+      } else if (shape.bigintKeys.includes(key)) {
+        result[key] = toBigInt(entry, `${shapeName}.${key}`);
       } else if (shape.bytesKeys.includes(key)) {
         result[key] = toBytes(entry);
       } else if (shape.bytesListKeys.includes(key)) {
@@ -83,6 +86,32 @@ function reviveShaped(value: unknown, shape: WireShape): unknown {
     return result;
   }
   return value;
+}
+
+/** See the default preset's `models.ts.j2` for the full doc comment on
+ *  the canonical `BigInt` grammar and why anything else throws — identical
+ *  implementation. */
+const CANONICAL_BIGINT = /^(0|-?[1-9][0-9]{0,18})$/;
+const I64_MIN = -(2n ** 63n);
+const I64_MAX = 2n ** 63n - 1n;
+
+function toBigInt(value: unknown, where: string): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => toBigInt(item, where));
+  }
+  if (typeof value === "string" && CANONICAL_BIGINT.test(value)) {
+    const parsed = BigInt(value);
+    if (parsed >= I64_MIN && parsed <= I64_MAX) {
+      return parsed;
+    }
+  }
+  const found = typeof value === "object" ? "an object" : `${typeof value} ${String(value)}`;
+  throw new TypeError(
+    `BigInt field ${where}: expected a canonical decimal string, got ${found}`,
+  );
 }
 
 /** See the default preset's `models.ts.j2` for the full doc comment on
@@ -102,6 +131,9 @@ export function reviveWireScalar(value: unknown, kind: string): unknown {
   }
   if (kind === "bytesList") {
     return Array.isArray(value) ? value.map(toBytes) : value;
+  }
+  if (kind === "bigint") {
+    return toBigInt(value, "procedure return");
   }
   if (kind !== "decimal") {
     return value;
@@ -167,6 +199,8 @@ export interface StringFilter extends ComparableFilter<string> {
 }
 
 export type NumberFilter = ComparableFilter<number>;
+// ADR 0019: `bigint`, see the default preset's `models.ts.j2`.
+export type BigIntFilter = ComparableFilter<bigint>;
 export type BooleanFilter = EqualityFilter<boolean>;
 export type UuidFilter = ComparableFilter<string>;
 export type DateTimeFilter = ComparableFilter<string>;

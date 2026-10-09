@@ -121,7 +121,7 @@ fn rpc_client_uses_typed_list_query_builder() {
     let client = package_file(&package, "src/client.ts");
     assert!(
         client.contains(
-            "import { toRpcListInput, type CratestackRpcListQuery } from \"./queries.js\";"
+            "import { encodeComputedParams, toRpcListInput, type CratestackRpcListQuery } from \"./queries.js\";"
         ),
         "client.ts does not import the typed list-query builder:\n{client}"
     );

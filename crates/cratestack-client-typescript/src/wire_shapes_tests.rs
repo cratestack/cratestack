@@ -283,6 +283,11 @@ fn procedure_scalar_returns_are_classified_by_type_and_arity() {
 
     assert_eq!(kind("Decimal", TypeArity::Required), "decimal");
     assert_eq!(kind("Decimal", TypeArity::List), "decimal");
+    // `BigInt` has no arity split: a leaf is a string and a list is an array
+    // of strings, which the runtime tells apart structurally.
+    assert_eq!(kind("BigInt", TypeArity::Required), "bigint");
+    assert_eq!(kind("BigInt", TypeArity::Optional), "bigint");
+    assert_eq!(kind("BigInt", TypeArity::List), "bigint");
     assert_eq!(kind("Bytes", TypeArity::Required), "bytes");
     assert_eq!(kind("Bytes", TypeArity::Optional), "bytes");
     // The one case that needs its own kind: a list of byte arrays is
@@ -301,6 +306,13 @@ fn scalar_revival_strings_match_the_runtime_contract() {
     // switches on them. Drift here is a silent no-op revival, not a
     // compile error, so pin them.
     assert_eq!(ScalarRevival::Decimal.as_str(), "decimal");
+    assert_eq!(ScalarRevival::BigInt.as_str(), "bigint");
     assert_eq!(ScalarRevival::Bytes.as_str(), "bytes");
     assert_eq!(ScalarRevival::BytesList.as_str(), "bytesList");
 }
+
+// `BigInt` (ADR 0019) shape tests, in their own file to keep this one from
+// growing further past the repo's ~200-LoC convention. A child module, so it
+// reuses this file's `schema`/`model`/`field`/`span` builders.
+#[path = "wire_shapes_bigint_tests.rs"]
+mod bigint;

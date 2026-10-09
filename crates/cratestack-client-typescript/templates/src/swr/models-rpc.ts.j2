@@ -16,7 +16,7 @@
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "../runtime.js";
-import { toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
+import { encodeComputedParams, toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
 // cratestack#498: see `models-rest.ts.j2`'s identical import for why
 // `Decimal` is unconditional and `reviveWireFields` is a real (not
 // type-only) import.
@@ -107,7 +107,7 @@ export async function {{ get_fn }}(
   return runtime.call<Record<string, unknown>, unknown>(
     "{{ model.op_ids.get }}",
     options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0
-      ? { id, computedParams: JSON.stringify(options.computedParams) }
+      ? { id, computedParams: encodeComputedParams(options.computedParams) }
       : { id },
     options,
   ).then((value) => reviveWireFields(value, '{{ model.revival_shape_name }}') as {{ model_interface.name }});

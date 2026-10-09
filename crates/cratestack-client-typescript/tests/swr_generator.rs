@@ -120,7 +120,7 @@ fn swr_rpc_list_uses_typed_query_builder() {
     let widget = file(&package, "src/swr/models/widget.ts");
     assert!(
         widget.contains(
-            "import { toRpcListInput, type CratestackRpcListQuery } from \"../queries.js\";"
+            "import { encodeComputedParams, toRpcListInput, type CratestackRpcListQuery } from \"../queries.js\";"
         ),
         "src/swr/models/widget.ts does not import the typed list-query builder:\n{widget}"
     );

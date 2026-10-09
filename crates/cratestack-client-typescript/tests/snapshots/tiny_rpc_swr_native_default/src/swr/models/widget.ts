@@ -16,12 +16,12 @@
 // import cycle, only a type-only one, which TypeScript tolerates fine.
 
 import type { CratestackRpcRuntime, CratestackRpcCallOptions } from "../runtime.js";
-import { toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
+import { encodeComputedParams, toRpcListInput, type CratestackRpcListQuery } from "../queries.js";
 // cratestack#498: see `models-rest.ts.j2`'s identical import for why
 // `Decimal` is unconditional and `reviveWireFields` is a real (not
 // type-only) import.
 import { reviveWireFields, revivePagedWireFields, type Decimal } from "./shared.js";
-import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
+import type { BigIntFilter, BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 
 export type WidgetSortField = 'id' | 'name' | 'weight';
 export const WidgetSortFieldValues = [

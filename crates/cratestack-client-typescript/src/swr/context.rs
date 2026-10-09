@@ -284,6 +284,7 @@ pub(crate) fn build_model_file_contexts(
                     "ComparableFilter".to_owned(),
                     "StringFilter".to_owned(),
                     "NumberFilter".to_owned(),
+                    "BigIntFilter".to_owned(),
                     "BooleanFilter".to_owned(),
                     "UuidFilter".to_owned(),
                     "DateTimeFilter".to_owned(),

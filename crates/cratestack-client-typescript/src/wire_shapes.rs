@@ -70,6 +70,27 @@
 //! `Uint8Array` or an empty list of them. Recording the arity here removes
 //! the guess rather than letting the runtime infer it wrong at the one
 //! input that matters least and surprises most.
+//!
+//! ## Why this carries `BigInt` too (ADR 0019)
+//!
+//! A `BigInt` field is a `bigint` in a generated client and a canonical
+//! decimal *string* on the wire, on JSON and CBOR alike. Like `Decimal`, the
+//! wire form is not self-identifying: `"9007199254740993"` is the same
+//! string a `String` field would hold, so only the schema can say which
+//! keys to revive, and only per type, for the collision reason above.
+//!
+//! Unlike `Decimal`, the key list is **not** split by arity. A leaf is a
+//! string and a `BigInt[]` is an array of strings, which the runtime tells
+//! apart structurally; and the one ambiguous input, `[]`, needs no
+//! conversion either way.
+//!
+//! The runtime side is strict where `Decimal`'s is lenient: a `BigInt` key
+//! holding anything but a canonical decimal string (a JSON number, or a
+//! `number`/`bigint` that `@cratestack/cbor-node` decoded from a CBOR
+//! integer) **throws**, naming the type and field, rather than passing the
+//! value through or coercing it. A number there means a server from before
+//! the cutover, whose value may already have been rounded above 2^53;
+//! reading it as the integer it appears to be would be a silent wrong answer.
 use std::collections::BTreeSet;
 
 use cratestack_core::{Field, Schema, TypeArity, TypeRef};
@@ -84,6 +105,11 @@ pub(crate) struct WireShapeView {
     /// This type's own direct `Decimal` field wire names, as a JS
     /// array-literal source fragment (e.g. `['amount']`, or `[]`).
     pub(crate) decimal_keys_js: String,
+    /// This type's own direct `BigInt` field wire names, at every arity, as a
+    /// JS array-literal source fragment. Each decodes from a canonical
+    /// decimal string (or an array of them) into a `bigint`; see this
+    /// module's doc for why one list serves all arities.
+    pub(crate) bigint_keys_js: String,
     /// This type's own direct `Bytes` field wire names at `Required`/
     /// `Optional` arity — each decodes from a wire integer array into one
     /// `Uint8Array`.
@@ -132,6 +158,7 @@ fn build_shape(
     model_and_type_names: &BTreeSet<&str>,
 ) -> WireShapeView {
     let mut decimal_keys = Vec::new();
+    let mut bigint_keys = Vec::new();
     let mut bytes_keys = Vec::new();
     let mut bytes_list_keys = Vec::new();
     let mut nested = Vec::new();
@@ -144,6 +171,8 @@ fn build_shape(
         }
         if field.ty.name == "Decimal" {
             decimal_keys.push(field.name.clone());
+        } else if field.ty.name == "BigInt" {
+            bigint_keys.push(field.name.clone());
         } else if field.ty.name == "Bytes" {
             // Split by arity — see the module doc for why `[]` cannot be
             // classified structurally at runtime.
@@ -159,6 +188,7 @@ fn build_shape(
     WireShapeView {
         name: name.to_owned(),
         decimal_keys_js: crate::views::js_string_array(&decimal_keys),
+        bigint_keys_js: crate::views::js_string_array(&bigint_keys),
         bytes_keys_js: crate::views::js_string_array(&bytes_keys),
         bytes_list_keys_js: crate::views::js_string_array(&bytes_list_keys),
         nested_js: js_string_map(&nested),
@@ -203,8 +233,8 @@ fn js_string_map(entries: &[(String, String)]) -> String {
 /// (cratestack#498 F2) — see `ProcedureView::revival_kind`'s doc
 /// comment (`crate::procedure_views`) for the generated-code side of this.
 pub(crate) enum ProcedureRevival {
-    /// The return type is a bare scalar needing revival — `Decimal` or
-    /// `Bytes`, at any arity. `Page<T>` is not a validated shape for
+    /// The return type is a bare scalar needing revival — `Decimal`,
+    /// `BigInt` or `Bytes`, at any arity. `Page<T>` is not a validated shape for
     /// either (`Page<T>`'s item must be a declared model or `type`,
     /// `cratestack-parser::validate::type_names`), so this can only ever
     /// be the bare name, `?`, or `[]`.
@@ -231,6 +261,9 @@ pub(crate) enum ScalarRevival {
     /// `Decimal` / `Decimal?` / `Decimal[]` — a wire string (or array of
     /// them) becomes a `Decimal` instance.
     Decimal,
+    /// `BigInt` / `BigInt?` / `BigInt[]` — a canonical decimal wire string
+    /// (or array of them) becomes a `bigint`; anything else throws.
+    BigInt,
     /// `Bytes` / `Bytes?` — one wire integer array becomes one
     /// `Uint8Array`.
     Bytes,
@@ -245,6 +278,7 @@ impl ScalarRevival {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             ScalarRevival::Decimal => "decimal",
+            ScalarRevival::BigInt => "bigint",
             ScalarRevival::Bytes => "bytes",
             ScalarRevival::BytesList => "bytesList",
         }
@@ -257,6 +291,7 @@ pub(crate) fn procedure_revival(return_type: &TypeRef) -> ProcedureRevival {
     let base = return_type.page_item().unwrap_or(return_type);
     match base.name.as_str() {
         "Decimal" => ProcedureRevival::Scalar(ScalarRevival::Decimal),
+        "BigInt" => ProcedureRevival::Scalar(ScalarRevival::BigInt),
         "Bytes" if matches!(base.arity, TypeArity::List) => {
             ProcedureRevival::Scalar(ScalarRevival::BytesList)
         }

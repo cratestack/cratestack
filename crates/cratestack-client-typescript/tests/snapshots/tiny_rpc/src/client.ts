@@ -3,7 +3,7 @@ import {
   type CratestackRpcCallOptions,
   type CratestackRpcClientOptions,
 } from "./runtime.js";
-import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
+import { encodeComputedParams, toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
 import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
   Widget,

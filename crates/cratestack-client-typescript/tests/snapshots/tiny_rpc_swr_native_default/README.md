@@ -121,6 +121,30 @@ This parses correctly regardless of which `Decimal` backend built the server
 plain positional notation (`"0.0000001"`) and the scientific notation `bigdecimal` emits
 past `rust_decimal`'s ~28-29 significant-digit capacity (`"1E-7"`) decode to the identical
 value, and this package always re-encodes in plain notation.
+
+## BigInt Fields
+
+A `BigInt`-typed schema field is a real `bigint` (ADR 0019), exact over the whole signed
+64-bit range, where a `number` is exact only to 2^53 - 1. On the wire it is always a
+canonical decimal **string**, on JSON and CBOR alike, so this client converts at the edges
+and your code never sees the string:
+
+```ts
+const item = await client.widgets.get(id);
+console.log(item.balanceField); // a bigint, e.g. 9007199254740993n
+const next = item.balanceField + 1n; // exact: 9007199254740994n, sent as "9007199254740994"
+```
+
+- **Decoding** turns the string (or each string of a `BigInt[]`) into a `bigint`. A JSON
+  number, or a CBOR integer, at a `BigInt` field **throws** a `TypeError` naming the field,
+  instead of being read as a number: a value that arrives that way may already have been
+  rounded by the server or a proxy.
+- **Encoding** turns every `bigint` in a request into its string, on every path this client
+  owns: REST bodies and query values, RPC unary, batch and stream inputs, `computedParams`,
+  and `@cratestack/link-batch`. Do not pass `Number(x)`; it throws away what `bigint` keeps.
+- **Filters** are `BigIntFilter`, i.e. `ComparableFilter<bigint>`.
+- `JSON.stringify` throws on a `bigint`. If you serialise one yourself (a log line, a cache
+  key), convert it with `.toString()` first.
 ## SWR (file-per-model layout + hooks)
 
 This package also carries the `swr` layout under `src/swr/` — one file per model (types
