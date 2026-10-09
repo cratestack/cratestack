@@ -1,17 +1,17 @@
 //! Scalar `ReadPredicate` token emitters + the relation-wrapping
 //! helper that lifts a scalar predicate up through nested relation
-//! quantifiers. Also hosts the small shared lookups (model field,
-//! auth field, literal parsing) used across [`term`] and [`comparison`].
+//! quantifiers. Also hosts the small shared lookups (model field and
+//! auth field resolution) used across [`term`] and [`comparison`].
+//! Literal parsing lives in [`literal`](super::literal).
 //!
 //! [`term`]: super::term
 //! [`comparison`]: super::comparison
 
-use cratestack_core::{EnumDecl, Field, TypeArity, TypeDecl};
+use cratestack_core::{Field, TypeDecl};
 use quote::quote;
 
-use crate::policy::auth::{find_auth_field, parse_string_literal};
+use crate::policy::auth::find_auth_field;
 
-use super::enum_literal::parse_enum_policy_literal;
 use super::relation_path::RelationPolicyField;
 
 pub(super) fn generate_scalar_bool_predicate(column: &str) -> proc_macro2::TokenStream {
@@ -160,37 +160,4 @@ pub(super) fn validate_auth_field_matches_model_field(
         ));
     }
     Ok(())
-}
-
-pub(super) fn parse_policy_literal(
-    rhs: &str,
-    field: &Field,
-    enums: &[EnumDecl],
-) -> Result<proc_macro2::TokenStream, String> {
-    match field.ty.name.as_str() {
-        "Boolean" if field.ty.arity == TypeArity::Required => match rhs {
-            "true" => Ok(quote! { ::cratestack::PolicyLiteral::Bool(true) }),
-            "false" => Ok(quote! { ::cratestack::PolicyLiteral::Bool(false) }),
-            _ => Err(format!(
-                "expected boolean literal for field `{}`",
-                field.name
-            )),
-        },
-        "Int" if field.ty.arity == TypeArity::Required => rhs
-            .parse::<i64>()
-            .map(|value| quote! { ::cratestack::PolicyLiteral::Int(#value) })
-            .map_err(|_| format!("expected integer literal for field `{}`", field.name)),
-        "String" if field.ty.arity == TypeArity::Required => {
-            let value = parse_string_literal(rhs)
-                .ok_or_else(|| format!("expected string literal for field `{}`", field.name))?;
-            Ok(quote! { ::cratestack::PolicyLiteral::String(#value) })
-        }
-        type_name if enums.iter().any(|enum_decl| enum_decl.name == type_name) => {
-            parse_enum_policy_literal(rhs, field, enums)
-        }
-        _ => Err(format!(
-            "literal read policy support is currently limited to required Boolean, Int, String, and required Enum fields; `{}` is unsupported",
-            field.name
-        )),
-    }
 }

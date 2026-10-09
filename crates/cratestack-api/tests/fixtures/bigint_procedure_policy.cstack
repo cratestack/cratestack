@@ -1,0 +1,35 @@
+// ADR 0019 (PR B, risk 2): a `BigInt` procedure argument is a real value to a
+// policy. Each procedure's rule is one that FAILED OPEN while the argument
+// lowered to `Value::Null`: a negated comparison against a null passes, and
+// two nulls are equal. The allow/deny sides of `==` and `!=` are both here
+// so a regression on either cannot hide behind the other.
+
+datasource db {
+  provider = "none"
+}
+
+type Receipt {
+  ok Boolean
+}
+
+/// Allowed only when `owner` is not 7. Fail-open before: `Null != 7`.
+mutation procedure notSeven(owner: BigInt): Receipt
+  @allow(owner != 7)
+
+/// Refused when `owner` is 7. Fail-open before: `Null == 7` is false.
+mutation procedure denySeven(owner: BigInt): Receipt
+  @allow(auth() != null)
+  @deny(owner == 7)
+
+/// 2^53 + 1, the smallest integer a JavaScript number cannot hold. A
+/// comparison that went through `f64` would call 2^53 and 2^53 + 1 equal.
+mutation procedure notBeyondTwoPow53(owner: BigInt): Receipt
+  @allow(owner != 9007199254740993)
+
+/// Two arguments compared with each other. Fail-open before: `Null == Null`.
+mutation procedure sameOwner(a: BigInt, b: BigInt): Receipt
+  @allow(a == b)
+
+/// Fail-closed before for every pair: `Null != Null` is false.
+mutation procedure otherOwner(a: BigInt, b: BigInt): Receipt
+  @allow(a != b)

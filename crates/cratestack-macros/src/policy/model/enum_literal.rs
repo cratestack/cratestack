@@ -1,5 +1,5 @@
-//! The enum arm of [`super::predicates::parse_policy_literal`] (issue
-//! #666) — split into its own file to keep `predicates.rs` under this
+//! The enum arm of [`super::literal::parse_policy_literal`] (issue
+//! #666) — split into its own file to keep `literal.rs` under this
 //! crate's 200-LoC file convention.
 
 use cratestack_core::{EnumDecl, Field, TypeArity};

@@ -96,7 +96,7 @@ fn emit_one(
 }
 
 // Dispatches on the field's scalar the same way `emit_range` dispatches
-// `Int`/`Decimal` — see cratestack#572. `String` and `Bytes` are the only
+// `Int`/`BigInt`/`Decimal` — see cratestack#572. `String` and `Bytes` are the only
 // scalars the parser accepts `@length` on
 // (`crates/cratestack-parser/src/validate/validators.rs::check_length`);
 // `Bytes` generates as `Vec<u8>` and needs `&[u8]`, not `&str`, so a
@@ -129,6 +129,12 @@ fn emit_range(name: &TokenStream, scalar: &str, min: Option<i64>, max: Option<i6
         "Int" => quote! {
             ::cratestack::validate_range_i64(#name, *value, #min_tok, #max_tok)?;
         },
+        // `BigInt` is checked on its `i64`, against the same `i64` bounds the
+        // parser reads. Without this arm the old catch-all emitted nothing,
+        // so `@range` on a `BigInt` was accepted and enforced nothing.
+        "BigInt" => quote! {
+            ::cratestack::validate_range_i64(#name, value.get(), #min_tok, #max_tok)?;
+        },
         // Decimal bounds in `.cstack` are specified as integers (the
         // parser only accepts i64 literals); the runtime helper promotes
         // them to Decimal for comparison. That's enough for banking use
@@ -137,10 +143,18 @@ fn emit_range(name: &TokenStream, scalar: &str, min: Option<i64>, max: Option<i6
         "Decimal" => quote! {
             ::cratestack::validate_range_decimal(#name, value, #min_tok, #max_tok)?;
         },
-        // Unknown scalar: the parser shouldn't have accepted the attribute
-        // in the first place; we'd rather emit nothing than a type-
-        // confused call.
-        _ => quote! {},
+        // Unknown scalar: the parser refuses `@range` anywhere else
+        // (`cratestack-parser`'s `check_range`), so this is a scalar it began
+        // accepting without teaching the emitter. Emitting nothing would
+        // leave the attribute accepted and enforcing nothing, which is the
+        // `BigInt` defect this arm replaces, so refuse to expand instead.
+        other => {
+            let message = format!(
+                "@range on a `{other}` field has no generated check; \
+                 the validator emitter needs an arm for it"
+            );
+            quote! { compile_error!(#message); }
+        }
     }
 }
 
@@ -177,3 +191,6 @@ fn optional_i64(value: Option<i64>) -> TokenStream {
         None => quote! { None },
     }
 }
+
+#[cfg(test)]
+mod tests_bigint;

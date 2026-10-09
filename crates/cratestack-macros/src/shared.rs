@@ -9,6 +9,8 @@ mod model_routes;
 mod procedure_attrs;
 mod query_fields;
 mod sql;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod types;
 mod value;
 mod wire_types;

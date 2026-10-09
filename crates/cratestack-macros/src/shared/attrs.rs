@@ -4,11 +4,14 @@
 
 use cratestack_core::{Field, Model, TypeArity};
 
+/// Whether the untyped `?where=` route offers `lt`/`lte`/`gt`/`gte` on this
+/// field. `BigInt` is ordered like `Int`: the comparison runs on the column
+/// (`INT8`), and the operand is parsed by the canonical `BigInt` grammar.
 pub(crate) fn supports_comparison(field: &Field) -> bool {
     field.ty.arity == TypeArity::Required
         && matches!(
             field.ty.name.as_str(),
-            "String" | "Cuid" | "Int" | "Float" | "DateTime" | "Decimal" | "Uuid"
+            "String" | "Cuid" | "Int" | "BigInt" | "Float" | "DateTime" | "Decimal" | "Uuid"
         )
 }
 

@@ -47,6 +47,7 @@ pub(crate) fn rust_type_tokens_with_wire_scope(
         "String" => quote! { String },
         "Cuid" => quote! { String },
         "Int" => quote! { i64 },
+        "BigInt" => quote! { ::cratestack::BigInt },
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },

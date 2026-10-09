@@ -97,6 +97,15 @@ fn sqlite_row_field_decode_expr(
         ("Boolean", TypeArity::Optional) => quote! {
             row.get::<_, Option<i64>>(#field_name)?.map(|value| value != 0)
         },
+        // An SQLite integer is already an `i64`; the newtype is applied here
+        // rather than through a `FromSql` impl on `BigInt`, so the embedded
+        // facade needs no driver feature on `cratestack-core`.
+        ("BigInt", TypeArity::Required) => {
+            quote! { ::cratestack::BigInt::new(row.get::<_, i64>(#field_name)?) }
+        }
+        ("BigInt", TypeArity::Optional) => quote! {
+            row.get::<_, Option<i64>>(#field_name)?.map(::cratestack::BigInt::new)
+        },
         ("Uuid", TypeArity::Required) => {
             quote! { row.get::<_, ::cratestack::UuidColumn>(#field_name)?.0 }
         }

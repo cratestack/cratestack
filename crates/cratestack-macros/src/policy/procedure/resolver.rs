@@ -124,6 +124,15 @@ pub(super) fn parse_procedure_literal(
             .parse::<i64>()
             .map(|value| quote! { ::cratestack::ProcedurePolicyLiteral::Int(#value) })
             .map_err(|_| format!("expected integer literal for {construct} field `{field_name}`")),
+        // `BigInt` compares as the `i64` the generated `Args` turns it into
+        // (`Value::Int`, see `shared::value_tokens`), so its literal is the
+        // same `ProcedurePolicyLiteral::Int`. Without this arm a `BigInt`
+        // argument could not be named in a policy at all. A separate arm
+        // from `Int` so that the two scalars' literal ranges can differ.
+        "BigInt" if arity == TypeArity::Required => rhs
+            .parse::<i64>()
+            .map(|value| quote! { ::cratestack::ProcedurePolicyLiteral::Int(#value) })
+            .map_err(|_| format!("expected integer literal for {construct} field `{field_name}`")),
         "String" | "auth" if arity == TypeArity::Required => {
             let value = parse_string_literal(rhs).ok_or_else(|| {
                 format!("expected string literal for {construct} field `{field_name}`")
@@ -132,7 +141,7 @@ pub(super) fn parse_procedure_literal(
         }
         _ => Err(format!(
             "{construct} policy literal support is currently limited to required Boolean, Int, \
-             and String fields; `{field_name}` is unsupported"
+             BigInt, and String fields; `{field_name}` is unsupported"
         )),
     }
 }
@@ -144,3 +153,6 @@ pub(super) fn ensure_auth_field(
 ) -> Result<(), String> {
     find_auth_field(auth, types, field).map(|_| ())
 }
+
+#[cfg(test)]
+mod tests_bigint;

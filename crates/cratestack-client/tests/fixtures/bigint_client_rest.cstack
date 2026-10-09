@@ -1,0 +1,37 @@
+// ADR 0019 PR B (B4): the Rust client surface for `BigInt`, REST transport.
+// A `BigInt @id` (the path segment), a required, an optional and a list
+// `BigInt` on a model and on a `type`, `@version` on a `BigInt` (the ETag),
+// and a procedure with a bare `BigInt` argument. Driven by
+// `bigint_client.rs` against a mock server, so the bytes on the wire are the
+// ones asserted.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Ledger {
+  id BigInt @id
+  label String
+  balance BigInt
+  fee BigInt?
+  revision BigInt @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type Quote {
+  amount BigInt
+  maybe BigInt?
+  many BigInt[]
+}
+
+procedure lookup(owner: BigInt): Quote
+  @allow(auth() != null)

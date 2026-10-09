@@ -6,9 +6,12 @@
 //! Five submodules carve up the work:
 //! - [`predicates`]: scalar `ReadPredicate` emitters + relation
 //!   wrapping + shared field/literal helpers.
+//! - [`literal`]: literal parsing (`field == <literal>`, each element of
+//!   an `in` list), split out of `predicates.rs` under this crate's
+//!   200-LoC file convention.
 //! - [`enum_literal`]: the required-enum-field arm of
-//!   [`predicates::parse_policy_literal`] (issue #666), split out to
-//!   keep `predicates.rs` under this crate's 200-LoC file convention.
+//!   [`literal::parse_policy_literal`] (issue #666), split out to
+//!   keep `literal.rs` under the same convention.
 //! - [`in_list`]: `field in [A, B, C]` / `field not in [...]` set
 //!   membership (issue #666), lowering to a flat `column IN (...)`
 //!   rather than a nested `Or` of equalities.
@@ -24,6 +27,7 @@ mod audit;
 mod comparison;
 mod enum_literal;
 mod in_list;
+mod literal;
 mod predicates;
 mod relation_path;
 mod term;
@@ -34,6 +38,8 @@ mod tests_descriptor_audit;
 mod tests_enum_literal;
 #[cfg(test)]
 mod tests_in_list;
+#[cfg(test)]
+mod tests_literal;
 #[cfg(test)]
 mod tests_system_principal;
 

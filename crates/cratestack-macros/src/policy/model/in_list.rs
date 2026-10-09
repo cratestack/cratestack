@@ -2,7 +2,7 @@
 //! for model `@@allow`/`@@deny` read policies (issue #666).
 //!
 //! The element type is whatever [`parse_policy_literal`] already
-//! accepts — required `Boolean`/`Int`/`String`/enum fields — so this is
+//! accepts — required `Boolean`/`Int`/`BigInt`/`String`/enum fields — so this is
 //! a new *shape*, not a new literal kind. Enum variants are the
 //! motivating case (`purpose in [product_image, product_thumbnail]`),
 //! which is what #666 asked for; restricting the shape to enums would
@@ -20,7 +20,8 @@
 use cratestack_core::{EnumDecl, Model};
 use quote::quote;
 
-use super::predicates::{find_model_field, generate_scalar_in_predicate, parse_policy_literal};
+use super::literal::parse_policy_literal;
+use super::predicates::{find_model_field, generate_scalar_in_predicate};
 use super::relation_path::resolve_relation_policy_field;
 use crate::shared::to_snake_case;
 
