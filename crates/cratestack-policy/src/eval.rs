@@ -2,9 +2,9 @@
 
 use cratestack_core::{CratestackContext, CratestackError, Value};
 
-use crate::procedure_types::{
-    ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr, ProcedurePolicyLiteral, ProcedurePredicate,
-};
+use crate::predicate::procedure_predicate_truth;
+use crate::procedure_types::{ProcedureArgs, ProcedurePolicy, ProcedurePolicyExpr};
+use crate::truth::Truth;
 
 /// Evaluate a procedure-dialect policy. Deny-by-default: an empty
 /// `allow_policies` refuses everyone.
@@ -51,16 +51,20 @@ fn authorize_with_construct<A: ProcedureArgs + ?Sized>(
         return Err(denied());
     }
 
+    // A `@deny` stays silent only when its expression is definitely false. A
+    // comparison that cannot be decided (a claim that is not a number against
+    // a number, see `crate::compare`) is not false, so the deny fires.
     if deny_policies
         .iter()
-        .any(|policy| procedure_policy_expr_matches(policy.expr, args, ctx))
+        .any(|policy| !procedure_policy_expr_truth(policy.expr, args, ctx).is_false())
     {
         return Err(denied());
     }
 
+    // An `@allow` grants only when its expression is definitely true.
     if allow_policies
         .iter()
-        .any(|policy| procedure_policy_expr_matches(policy.expr, args, ctx))
+        .any(|policy| procedure_policy_expr_truth(policy.expr, args, ctx).is_true())
     {
         Ok(())
     } else {
@@ -79,91 +83,24 @@ pub fn context_in_tenant(ctx: &CratestackContext, tenant_id: &str) -> bool {
         .is_some_and(|value| matches!(value, Value::String(candidate) if candidate == tenant_id))
 }
 
-fn procedure_policy_expr_matches<A: ProcedureArgs + ?Sized>(
+fn procedure_policy_expr_truth<A: ProcedureArgs + ?Sized>(
     expr: ProcedurePolicyExpr,
     args: &A,
     ctx: &CratestackContext,
-) -> bool {
+) -> Truth {
     match expr {
         ProcedurePolicyExpr::Predicate(predicate) => {
-            procedure_predicate_matches(predicate, args, ctx)
+            procedure_predicate_truth(predicate, args, ctx)
         }
-        ProcedurePolicyExpr::And(exprs) => exprs
-            .iter()
-            .copied()
-            .all(|expr| procedure_policy_expr_matches(expr, args, ctx)),
-        ProcedurePolicyExpr::Or(exprs) => exprs
-            .iter()
-            .copied()
-            .any(|expr| procedure_policy_expr_matches(expr, args, ctx)),
-    }
-}
-
-fn procedure_predicate_matches<A: ProcedureArgs + ?Sized>(
-    predicate: ProcedurePredicate,
-    args: &A,
-    ctx: &CratestackContext,
-) -> bool {
-    match predicate {
-        ProcedurePredicate::Literal(value) => value,
-        ProcedurePredicate::AuthNotNull => ctx.is_authenticated(),
-        ProcedurePredicate::AuthIsNull => !ctx.is_authenticated(),
-        ProcedurePredicate::AuthIsSystem => ctx.is_system(),
-        ProcedurePredicate::HasRole { role } => context_has_role(ctx, role),
-        ProcedurePredicate::InTenant { tenant_id } => context_in_tenant(ctx, tenant_id),
-        ProcedurePredicate::AuthFieldEqLiteral { auth_field, value } => ctx
-            .auth_field(auth_field)
-            .is_some_and(|candidate| value_matches_literal(candidate, value)),
-        ProcedurePredicate::AuthFieldNeLiteral { auth_field, value } => ctx
-            .auth_field(auth_field)
-            .is_some_and(|candidate| !value_matches_literal(candidate, value)),
-        ProcedurePredicate::InputFieldIsTrue { field } => args
-            .procedure_arg_value(field)
-            .is_some_and(|value| value == Value::Bool(true)),
-        ProcedurePredicate::InputFieldEqLiteral { field, value } => args
-            .procedure_arg_value(field)
-            .is_some_and(|candidate| value_matches_literal(&candidate, value)),
-        ProcedurePredicate::InputFieldNeLiteral { field, value } => args
-            .procedure_arg_value(field)
-            .is_some_and(|candidate| !value_matches_literal(&candidate, value)),
-        ProcedurePredicate::InputFieldEqAuth { field, auth_field } => {
-            match (args.procedure_arg_value(field), ctx.auth_field(auth_field)) {
-                (Some(left), Some(right)) => &left == right,
-                _ => false,
-            }
-        }
-        ProcedurePredicate::InputFieldNeAuth { field, auth_field } => {
-            match (args.procedure_arg_value(field), ctx.auth_field(auth_field)) {
-                (Some(left), Some(right)) => &left != right,
-                _ => false,
-            }
-        }
-        ProcedurePredicate::InputFieldEqInput { field, other_field } => {
-            match (
-                args.procedure_arg_value(field),
-                args.procedure_arg_value(other_field),
-            ) {
-                (Some(left), Some(right)) => left == right,
-                _ => false,
-            }
-        }
-        ProcedurePredicate::InputFieldNeInput { field, other_field } => {
-            match (
-                args.procedure_arg_value(field),
-                args.procedure_arg_value(other_field),
-            ) {
-                (Some(left), Some(right)) => left != right,
-                _ => false,
-            }
-        }
-    }
-}
-
-fn value_matches_literal(value: &Value, literal: ProcedurePolicyLiteral) -> bool {
-    match (value, literal) {
-        (Value::Bool(left), ProcedurePolicyLiteral::Bool(right)) => *left == right,
-        (Value::Int(left), ProcedurePolicyLiteral::Int(right)) => *left == right,
-        (Value::String(left), ProcedurePolicyLiteral::String(right)) => left == right,
-        _ => false,
+        ProcedurePolicyExpr::And(exprs) => Truth::all(
+            exprs
+                .iter()
+                .map(|expr| procedure_policy_expr_truth(*expr, args, ctx)),
+        ),
+        ProcedurePolicyExpr::Or(exprs) => Truth::any(
+            exprs
+                .iter()
+                .map(|expr| procedure_policy_expr_truth(*expr, args, ctx)),
+        ),
     }
 }

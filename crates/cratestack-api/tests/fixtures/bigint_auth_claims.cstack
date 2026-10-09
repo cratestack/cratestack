@@ -1,0 +1,37 @@
+// ADR 0019 (PR B, risk 2): a `BigInt` argument is an integer to a policy, and
+// the claim it is compared with comes from the identity provider, as a JSON
+// integer or (above 2^53, to survive a JavaScript issuer) as a string. An
+// integer and a string are undecidable: neither equal nor different, so every
+// comparison below refuses a string claim, `!=` and `==` alike. Before, the
+// string was "different" from its own value and each negated policy passed.
+//
+// `auth().accountId != 7` cannot be written: the procedure dialect takes an
+// integer literal only on the argument side (`policy::procedure::resolver::
+// parse_procedure_literal`), so the claim is compared with an argument. The
+// literal form is covered where it can be built, in `cratestack-policy`.
+
+datasource db {
+  provider = "none"
+}
+
+auth Session {
+  accountId BigInt
+}
+
+type Receipt {
+  ok Boolean
+}
+
+/// Allowed only for an `owner` that is not the caller. Fail-open before: a
+/// string claim was always different.
+mutation procedure notMine(owner: BigInt): Receipt
+  @allow(owner != auth().accountId)
+
+/// Allowed only for the caller's own `owner`. Fail-closed before for a string.
+mutation procedure mine(owner: BigInt): Receipt
+  @allow(owner == auth().accountId)
+
+/// The same refusal written as a deny. Fail-open before for a string claim.
+mutation procedure notMineDeny(owner: BigInt): Receipt
+  @allow(auth() != null)
+  @deny(owner == auth().accountId)
