@@ -505,6 +505,28 @@ plain positional notation (`"0.0000001"`) and the scientific notation `bigdecima
 past `rust_decimal`'s ~28-29 significant-digit capacity (`"1E-7"`) decode to the identical
 value, and this package always re-encodes in plain notation.
 
+## BigInt Fields
+
+A `BigInt`-typed schema field is generated as `dart:core`'s `BigInt`, never `int`
+(ADR 0019). It crosses the wire as a canonical decimal string (`"9223372036854775807"`),
+because a JSON or CBOR number above 2^53 is rounded to a double on dart2js (Flutter web's
+JavaScript build):
+
+```dart
+final account = await client.accounts.get(id);
+print(account.balanceE8); // 9007199254740993, exact on the VM, dart2js and dart2wasm
+final next = account.balanceE8! + BigInt.one; // real arbitrary-precision arithmetic
+```
+
+Decoding goes through `BigInt.parse`, which is exact on every Dart target; encoding uses
+`toString()`. `BigIntFilter`'s `eq`/`ne`/`lt`/`lte`/`gt`/`gte`/`in` take `BigInt` values.
+A number, or a string that is not canonical (`+5`, `007`, `-0`, whitespace), at a `BigInt`
+key throws a `FormatException` naming the field, so a server from before the `BigInt`
+cutover cannot hand this client a silently rounded value. A `BigInt` outside the `i64`
+range is refused by the server, not by this client.
+
+`Int` stays Dart's `int`; only fields declared `BigInt` in the schema change type.
+
 ## Generated APIs
 
 Model entry points:

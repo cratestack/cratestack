@@ -71,6 +71,13 @@ fn encode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "DateTime" => format!("{expr}.toUtc().toIso8601String()"),
         "Bytes" | "Geography" | "Geometry" => format!("{expr}.toList(growable: false)"),
         "Json" | "String" | "Cuid" | "Uuid" | "Int" | "Float" | "Boolean" => expr.to_owned(),
+        // ADR 0019: a `BigInt` goes on the wire as its canonical decimal
+        // string. `BigInt.toString()` is base 10, never signed zero, never
+        // scientific, and exact on every Dart target. It must not be left
+        // as a bare `BigInt`: `jsonEncode` throws on one, and `package:cbor`
+        // would write a CBOR integer or bignum, never the text string the
+        // server requires.
+        "BigInt" => format!("{expr}.toString()"),
         // cratestack#498: `Decimal.toString()` (unlike `bigdecimal`'s
         // `Display`) never switches to scientific notation, so a value
         // this client decoded off a `decimal-bigdecimal` server's
@@ -95,7 +102,7 @@ fn encode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         "DateTime" => format!("{expr}?.toUtc().toIso8601String()"),
         "Bytes" | "Geography" | "Geometry" => format!("{expr}?.toList(growable: false)"),
         "Json" | "String" | "Cuid" | "Uuid" | "Int" | "Float" | "Boolean" => expr.to_owned(),
-        "Decimal" => format!("{expr}?.toString()"),
+        "BigInt" | "Decimal" => format!("{expr}?.toString()"),
         _ => format!("{expr}?.toWire()"),
     }
 }

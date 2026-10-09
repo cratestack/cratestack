@@ -36,6 +36,13 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
     let base = match type_ref.name.as_str() {
         "String" | "Cuid" | "Uuid" => "String".to_owned(),
         "Int" => "int".to_owned(),
+        // ADR 0019: `BigInt` is `dart:core`'s `BigInt`, never `int`. On
+        // dart2js an `int` is a JS double, so `jsonDecode` and `int.parse`
+        // round `9007199254740993` to `9007199254740992`; `BigInt.parse` is
+        // exact on the VM, dart2js and dart2wasm. The wire form is a
+        // canonical decimal string, so the type stays right on every Dart
+        // target. `dart:core` needs no import (see `dart_scalar_import`).
+        "BigInt" => "BigInt".to_owned(),
         "Float" => "double".to_owned(),
         "Boolean" => "bool".to_owned(),
         "DateTime" => "DateTime".to_owned(),
@@ -80,7 +87,7 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
 
 /// The Dart `import` line a schema scalar's mapped type needs, if any —
 /// `None` for every scalar `dart_type` above maps to a `dart:core` name
-/// (`String`/`int`/`double`/`bool`/`DateTime`/`Object?`) or to a
+/// (`String`/`int`/`BigInt`/`double`/`bool`/`DateTime`/`Object?`) or to a
 /// generator-declared class that lives in this package already.
 ///
 /// **This lives next to `dart_type`'s `match` deliberately.** Two of that

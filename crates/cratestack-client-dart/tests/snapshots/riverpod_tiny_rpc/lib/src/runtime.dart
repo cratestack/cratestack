@@ -69,6 +69,35 @@ Object cratestackRequireWireValue(String ownerName, String fieldName, Object? va
   return value;
 }
 
+/// Decodes a `BigInt` wire value (ADR 0019): a canonical decimal string such
+/// as `"9223372036854775807"`, never a number. `BigInt.parse` is exact on the
+/// VM, dart2js and dart2wasm; `int.parse` and `jsonDecode` round past 2^53 on
+/// dart2js, which is why the wire form is a string at all.
+///
+/// A number at a `BigInt` key throws rather than being coerced: it means a
+/// server from before the `BigInt` cutover, whose value may already have been
+/// rounded, so accepting it would hide the corruption. [site] names the
+/// `Model.field` the value was read for. A string that is not canonical
+/// (`+5`, `007`, `-0`, whitespace, `0x1F`) is refused too, because
+/// `BigInt.parse` would silently turn some of those into a different number.
+BigInt cratestackDecodeBigInt(Object? value, String site) {
+  if (value is! String) {
+    throw FormatException(
+      '$site: expected a BigInt as a canonical decimal string, '
+      'got ${value.runtimeType} ($value)',
+    );
+  }
+  if (!_cratestackCanonicalBigInt.hasMatch(value)) {
+    throw FormatException(
+      '$site: expected a BigInt as a canonical decimal string',
+      value,
+    );
+  }
+  return BigInt.parse(value);
+}
+
+final RegExp _cratestackCanonicalBigInt = RegExp(r'^(0|-?[1-9][0-9]*)$');
+
 /// Folds a typed computed-params class's already-`.toWire()`'d map
 /// (same call-site convention as `rest-runtime.dart.j2`'s
 /// `cratestackWithComputedParams`) into an RPC `model.<X>.get`/

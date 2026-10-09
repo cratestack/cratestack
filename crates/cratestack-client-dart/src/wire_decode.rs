@@ -20,6 +20,9 @@ pub(crate) fn decode_value_expr(
     owner_name: &str,
     field_name: &str,
 ) -> String {
+    // Names the field in a `BigInt` decode error (`cratestackDecodeBigInt`),
+    // so a number where a canonical string belongs says where it was.
+    let site = format!("{owner_name}.{field_name}");
     match ty.arity {
         TypeArity::List => {
             if force_nullable {
@@ -34,6 +37,7 @@ pub(crate) fn decode_value_expr(
                         ident_args: Vec::new(),
                     },
                     enum_names,
+                    &site,
                 );
                 format!(
                     "{expr} == null ? null : cratestackAsValueList({expr}).map((item) => {item}).toList(growable: false)"
@@ -50,6 +54,7 @@ pub(crate) fn decode_value_expr(
                         ident_args: Vec::new(),
                     },
                     enum_names,
+                    &site,
                 );
                 let list_expr =
                     format!("cratestackRequireWireValue('{owner_name}', '{field_name}', {expr})");
@@ -58,7 +63,7 @@ pub(crate) fn decode_value_expr(
                 )
             }
         }
-        TypeArity::Optional => decode_optional_scalar(expr, ty, enum_names),
+        TypeArity::Optional => decode_optional_scalar(expr, ty, enum_names, &site),
         TypeArity::Required => {
             if force_nullable {
                 decode_optional_scalar(
@@ -72,22 +77,28 @@ pub(crate) fn decode_value_expr(
                         ident_args: Vec::new(),
                     },
                     enum_names,
+                    &site,
                 )
             } else {
                 let required_expr =
                     format!("cratestackRequireWireValue('{owner_name}', '{field_name}', {expr})");
-                decode_required_scalar(&required_expr, ty, enum_names)
+                decode_required_scalar(&required_expr, ty, enum_names, &site)
             }
         }
     }
 }
 
-fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>) -> String {
+fn decode_required_scalar(
+    expr: &str,
+    ty: &TypeRef,
+    enum_names: &BTreeSet<&str>,
+    site: &str,
+) -> String {
     if ty.is_page() {
         let item = ty
             .page_item()
             .expect("validated Page<T> should include an item type");
-        let item_decode = decode_required_scalar("item", item, enum_names);
+        let item_decode = decode_required_scalar("item", item, enum_names, site);
         return format!(
             "Page<{}>.fromWire(cratestackAsValueMap({expr}), decodeItem: (item) => {item_decode})",
             dart_type(item, false),
@@ -111,6 +122,12 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
     match ty.name.as_str() {
         "String" | "Cuid" | "Uuid" => format!("{expr} as String"),
         "Int" => format!("({expr} as num).toInt()"),
+        // ADR 0019: the wire form is a canonical decimal string, decoded by
+        // the runtime's `cratestackDecodeBigInt` (a `FormatException` naming
+        // `site` for a number or a non-canonical string, then `BigInt.parse`,
+        // which is exact on the VM, dart2js and dart2wasm). Never `int.parse`
+        // or `(x as num).toInt()`: both round past 2^53 on dart2js.
+        "BigInt" => format!("cratestackDecodeBigInt({expr}, '{site}')"),
         "Float" => format!("({expr} as num).toDouble()"),
         "Boolean" => format!("{expr} as bool"),
         "DateTime" => format!("DateTime.parse({expr} as String)"),
@@ -129,7 +146,12 @@ fn decode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
     }
 }
 
-fn decode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>) -> String {
+fn decode_optional_scalar(
+    expr: &str,
+    ty: &TypeRef,
+    enum_names: &BTreeSet<&str>,
+    site: &str,
+) -> String {
     if ty.name == "Json" {
         return expr.to_owned();
     }
@@ -145,6 +167,7 @@ fn decode_optional_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
             ident_args: Vec::new(),
         },
         enum_names,
+        site,
     );
     format!("{expr} == null ? null : {required}")
 }

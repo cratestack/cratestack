@@ -25,6 +25,22 @@ fn an_enum_named_after_a_builtin_filter_does_not_duplicate_it() {
     assert!(!BUILTIN_FILTER_CLASSES.contains(&chosen.as_str()));
 }
 
+/// ADR 0019: `BigIntFilter` is hand-written in `models.dart.j2` and
+/// `riverpod/shared_types.dart.j2` beside `NumberFilter`/`DecimalFilter`, so
+/// it must be reserved here too. The parser keeps a user enum from being
+/// called `BigInt`, which is why this drives the resolver directly: the
+/// reservation is what keeps the list in step with the templates, whatever
+/// the parser later allows.
+#[test]
+fn the_bigint_filter_class_is_reserved_like_the_other_builtins() {
+    assert!(BUILTIN_FILTER_CLASSES.contains(&"BigIntFilter"));
+    let chosen = enum_filter_class_name("BigInt", &names(&["BigInt"]), &enums(&["BigInt"]));
+    assert_ne!(
+        chosen, "BigIntFilter",
+        "must not collide with the built-in BigIntFilter in models.dart.j2"
+    );
+}
+
 /// Case (a) — two enums racing for one fallback. `Kind` fell back to
 /// `KindEnumFilter`, which is also `KindEnum`'s base name.
 #[test]

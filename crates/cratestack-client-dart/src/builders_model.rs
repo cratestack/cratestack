@@ -16,6 +16,7 @@ use crate::views::{
     SelectionModelView,
 };
 use crate::wire_decode::decode_value_expr;
+use crate::wire_encode::encode_value_expr;
 
 pub(crate) fn build_selection_group(
     model: &Model,
@@ -164,6 +165,7 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         route: format!("/{}", route_naming::model_route_segment(&model.name)),
         detail_route: format!("/{}/$id", route_naming::model_route_segment(&model.name)),
         primary_key_type: dart_type(&primary_key.ty, false),
+        primary_key_wire_expr: encode_value_expr("id", &primary_key.ty, &BTreeSet::new(), false),
         is_paged: paged,
         list_return_type: if paged {
             format!("Page<{}>", model.name)
