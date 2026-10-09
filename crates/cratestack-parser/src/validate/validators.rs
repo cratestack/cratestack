@@ -1,6 +1,10 @@
 use crate::diagnostics::{SchemaError, span_error};
 use crate::validate::validator_args::{parse_length_args, parse_range_args, parse_regex_arg};
 
+mod bigint_default;
+
+use self::bigint_default::check_bigint_default;
+
 /// Recognise the validation attribute family (`@length`, `@range`, `@regex`,
 /// `@email`, `@uri`, `@iso4217`) and reject combinations that don't match the
 /// field's scalar type. This is parse-time only — runtime enforcement happens
@@ -26,6 +30,7 @@ pub(super) fn validate_validator_attributes(
             "email" | "uri" | "iso4217" => {
                 check_string_only(model_name, field, scalar, name, has_args)?
             }
+            "default" => check_bigint_default(model_name, field, scalar, raw)?,
             _ => {} // unknown attribute; left to other validators
         }
     }
@@ -82,10 +87,10 @@ fn check_range(
             field.span,
         ));
     }
-    if scalar != "Int" && scalar != "Decimal" {
+    if !matches!(scalar, "Int" | "BigInt" | "Decimal") {
         return Err(span_error(
             format!(
-                "@range on `{}.{}` is only valid on Int or Decimal fields",
+                "@range on `{}.{}` is only valid on Int, BigInt or Decimal fields",
                 model_name, field.name,
             ),
             field.span,

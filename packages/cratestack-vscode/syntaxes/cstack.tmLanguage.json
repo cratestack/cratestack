@@ -80,7 +80,7 @@
       "patterns": [
         {
           "name": "support.type.builtin.cstack",
-          "match": "\\b(?:String|Cuid|Int|Float|Boolean|DateTime|Json|Bytes|Uuid)\\b"
+          "match": "\\b(?:String|Cuid|Int|BigInt|Float|Boolean|DateTime|Decimal|Json|Bytes|Uuid|Vector|Geography|Geometry)\\b"
         }
       ]
     },
