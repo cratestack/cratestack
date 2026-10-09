@@ -2,11 +2,17 @@
 //! Most predicates resolve synchronously against the prospective
 //! input values + `ctx`; the relation variant fires an `EXISTS` probe
 //! to verify the FK target satisfies the related model's policy.
+//!
+//! The result is a three-valued [`Truth`], combined by Kleene's `and` / `or`
+//! (see [`super::comparison`]): `False` decides an `and` and `True` an `or`,
+//! so the evaluation still stops there, but `Unknown` does not stop it.
 
 use cratestack_core::{CratestackContext, CratestackError};
 
 use crate::{PolicyExpr, ReadPredicate, RelationQuantifier, SqlColumnValue, SqlValue, sqlx};
 
+use super::comparison::Truth;
+use super::create::evaluate_input_truth;
 use super::db::PolicyDb;
 use super::policy::push_policy_expr_query;
 use super::values::{find_column_value, push_bind_value};
@@ -16,28 +22,37 @@ pub(super) fn evaluate_create_policy_expr<'a>(
     expr: PolicyExpr,
     values: &'a [SqlColumnValue],
     ctx: &'a CratestackContext,
-) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CratestackError>> + Send + 'a>>
-{
+) -> core::pin::Pin<
+    Box<dyn core::future::Future<Output = Result<Truth, CratestackError>> + Send + 'a>,
+> {
     Box::pin(async move {
         match expr {
             PolicyExpr::Predicate(predicate) => {
                 evaluate_create_predicate(db, predicate, values, ctx).await
             }
             PolicyExpr::And(exprs) => {
+                let mut result = Truth::True;
                 for expr in exprs.iter().copied() {
-                    if !evaluate_create_policy_expr(db.reborrow(), expr, values, ctx).await? {
-                        return Ok(false);
+                    let operand =
+                        evaluate_create_policy_expr(db.reborrow(), expr, values, ctx).await?;
+                    result = result.and(operand);
+                    if result.is_false() {
+                        break;
                     }
                 }
-                Ok(true)
+                Ok(result)
             }
             PolicyExpr::Or(exprs) => {
+                let mut result = Truth::False;
                 for expr in exprs.iter().copied() {
-                    if evaluate_create_policy_expr(db.reborrow(), expr, values, ctx).await? {
-                        return Ok(true);
+                    let operand =
+                        evaluate_create_policy_expr(db.reborrow(), expr, values, ctx).await?;
+                    result = result.or(operand);
+                    if result.is_true() {
+                        break;
                     }
                 }
-                Ok(false)
+                Ok(result)
             }
         }
     })
@@ -48,8 +63,9 @@ fn evaluate_create_predicate<'a>(
     predicate: ReadPredicate,
     values: &'a [SqlColumnValue],
     ctx: &'a CratestackContext,
-) -> core::pin::Pin<Box<dyn core::future::Future<Output = Result<bool, CratestackError>> + Send + 'a>>
-{
+) -> core::pin::Pin<
+    Box<dyn core::future::Future<Output = Result<Truth, CratestackError>> + Send + 'a>,
+> {
     Box::pin(async move {
         match predicate {
             ReadPredicate::Relation {
@@ -61,7 +77,7 @@ fn evaluate_create_predicate<'a>(
                 ..
             } => {
                 let Some(parent_value) = find_column_value(values, parent_column) else {
-                    return Ok(false);
+                    return Ok(Truth::False);
                 };
 
                 let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
@@ -81,11 +97,11 @@ fn evaluate_create_predicate<'a>(
                     PolicyDb::Conn(conn) => built.fetch_one(conn).await,
                 }
                 .map_err(crate::error::cratestack_error_from_sqlx)?;
-                Ok(result.0)
+                // `EXISTS` is never NULL, so a relation is decided: its own
+                // policy expression is three-valued inside the subquery.
+                Ok(result.0.into())
             }
-            _ => Ok(super::create::evaluate_input_predicate(
-                predicate, values, ctx,
-            )),
+            _ => Ok(evaluate_input_truth(predicate, values, ctx)),
         }
     })
 }

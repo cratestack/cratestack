@@ -14,10 +14,28 @@
 //! between `SqlValue::BigInt(7)` and an auth `SqlValue::Int(7)`, and a
 //! canonical-string claim that matches neither (ADR 0019 PR B, risk 2).
 //!
-//! [`Comparison`] keeps the third outcome apart. `==` and `in` succeed only
-//! on [`Comparison::Equal`]; `!=` and `not in` succeed only on
-//! [`Comparison::Different`]; an [`Comparison::Undecidable`] pair denies
-//! both, which is what SQL's own three-valued logic does with it.
+//! [`Comparison`] keeps the third outcome apart. `==` and `in` are true only
+//! on [`Comparison::Equal`]; `!=` and `not in` only on
+//! [`Comparison::Different`]; an [`Comparison::Undecidable`] pair is neither,
+//! as in SQL, so an `@allow` built on either does not grant.
+//!
+//! # A deny fires on Undecidable
+//!
+//! Reading that as plain `false` fails open for a `@deny`: SQL refuses with
+//! `NOT (unknown)`, while a two-valued create path stayed silent. The create
+//! evaluator therefore carries a [`Truth`]: an `@allow` grants only on `True`;
+//! a `@deny` fires on anything that is not `False`.
+//! `and` / `or` combine per Kleene: `False` decides an `and`, `True` decides
+//! an `or`, otherwise `Unknown` survives. `in` is the `or` of its `==`, `not
+//! in` the `and` of its `!=`.
+//!
+//! The procedure evaluator states the same rule in
+//! `crates/cratestack-policy/src/truth.rs`; its `Truth` is private to that
+//! crate, so this module mirrors it. Change one, change the others.
+//!
+//! An absent operand (no such column in the input, no such claim, a claim that
+//! lowers to no `SqlValue`) is not a pair: it stays `False`, as the
+//! pushed-down form's `FALSE` constant does.
 //!
 //! # What is and is not decided
 //!
@@ -53,14 +71,65 @@ impl Comparison {
         if equal { Self::Equal } else { Self::Different }
     }
 
-    /// `==` and `in`.
-    pub(crate) fn is_equal(self) -> bool {
-        self == Self::Equal
+    /// The truth of `left == right`.
+    pub(crate) fn for_eq(self) -> Truth {
+        match self {
+            Self::Equal => Truth::True,
+            Self::Different => Truth::False,
+            Self::Undecidable => Truth::Unknown,
+        }
     }
 
-    /// `!=` and `not in`. Never true for [`Self::Undecidable`].
-    pub(crate) fn is_different(self) -> bool {
-        self == Self::Different
+    /// The truth of `left != right`.
+    pub(crate) fn for_ne(self) -> Truth {
+        match self {
+            Self::Equal => Truth::False,
+            Self::Different => Truth::True,
+            Self::Undecidable => Truth::Unknown,
+        }
+    }
+}
+
+/// Kleene's three values, mirroring `cratestack_policy`'s private `Truth`. An
+/// `@allow` needs `True`; a `@deny` stays silent only on `False`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Truth {
+    True,
+    False,
+    Unknown,
+}
+
+impl From<bool> for Truth {
+    fn from(value: bool) -> Self {
+        if value { Self::True } else { Self::False }
+    }
+}
+
+impl Truth {
+    /// `&&`: decided by a `False` whatever stands beside it.
+    pub(crate) fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::False, _) | (_, Self::False) => Self::False,
+            (Self::True, Self::True) => Self::True,
+            _ => Self::Unknown,
+        }
+    }
+
+    /// `||`: decided by a `True` whatever stands beside it.
+    pub(crate) fn or(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::True, _) | (_, Self::True) => Self::True,
+            (Self::False, Self::False) => Self::False,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub(crate) fn is_true(self) -> bool {
+        self == Self::True
+    }
+
+    pub(crate) fn is_false(self) -> bool {
+        self == Self::False
     }
 }
 
@@ -110,22 +179,12 @@ pub(crate) fn column_vs_claim(candidate: &SqlValue, claim: &SqlValue) -> Compari
     }
 }
 
-/// `field == <literal>` and each element of `field in [..]`.
-pub(crate) fn sql_value_matches_literal(value: &SqlValue, literal: PolicyLiteral) -> bool {
-    column_vs_literal(value, literal).is_equal()
-}
-
-/// `field != <literal>` and each element of `field not in [..]`.
-pub(crate) fn sql_value_differs_from_literal(value: &SqlValue, literal: PolicyLiteral) -> bool {
-    column_vs_literal(value, literal).is_different()
-}
-
 /// `auth().x == <literal>`.
 pub(crate) fn value_matches_auth_literal(value: &Value, literal: PolicyLiteral) -> bool {
-    claim_vs_literal(value, literal).is_equal()
+    claim_vs_literal(value, literal).for_eq().is_true()
 }
 
 /// `auth().x != <literal>`.
 pub(crate) fn value_differs_from_auth_literal(value: &Value, literal: PolicyLiteral) -> bool {
-    claim_vs_literal(value, literal).is_different()
+    claim_vs_literal(value, literal).for_ne().is_true()
 }

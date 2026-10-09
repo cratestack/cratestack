@@ -4,6 +4,9 @@
 //!   `not in` on a `BigInt` must DENY the matching value (risk 2: they used
 //!   to be satisfied by a `_ => false` fallthrough and by derived equality
 //!   between `BigInt(7)` and `Int(7)`).
+//! - `create_deny`, `create_deny_literals`, `create_deny_groups`: the create
+//!   path is three-valued; an `@deny` fires on a comparison that cannot be
+//!   decided, an `@allow` does not grant on one, and `and` / `or` follow Kleene.
 //! - `create_defaults`: `@default(auth().x)` into a `BigInt` column.
 //! - `read_policies`: the pushed-down form (read, update, delete) and the
 //!   preview renderer agree, with no database.
@@ -16,6 +19,9 @@ mod audit_snapshot;
 mod binds;
 mod create_claims;
 mod create_defaults;
+mod create_deny;
+mod create_deny_groups;
+mod create_deny_literals;
 mod create_policies;
 mod pg;
 mod pg_support;
