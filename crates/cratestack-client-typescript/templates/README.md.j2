@@ -164,6 +164,28 @@ export const store = configureStore({
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(api.middleware),
 });
 ```
+
+**`BigInt` fields (ADR 0019).** A `BigInt` field is a `bigint`, so a `get` id or a procedure
+argument can be one. RTK Query serialises a `bigint` argument for the cache key itself
+(`{ "$bigint": "<digits>" }`, from `@reduxjs/toolkit` 2.2.4; this package declares `^2.2.7`, the
+first release whose generated `rtk-api.ts` builds), and a model with a `BigInt` key is tagged by
+the key's decimal string. RTK's development-only serializability check does not know `bigint`,
+though, and logs it once per argument and per revived field. Tell it:
+
+```tsx
+import { configureStore, isPlain } from "@reduxjs/toolkit";
+
+export const store = configureStore({
+  reducer: { [api.reducerPath]: api.reducer },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: {
+        isSerializable: (value: unknown) => typeof value === "bigint" || isPlain(value),
+      },
+    }).concat(api.middleware),
+});
+```
+
 {% if models %}
 ```tsx
 function {{ models[0].name }}List() {

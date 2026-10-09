@@ -4,8 +4,8 @@
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)
 
-Part of ADR 0019, which ships as 0.16.0 with the `BigInt` and 32-bit `Int` entries that follow it in
-this release.
+Part of ADR 0019, which ships as 0.16.0 with the `BigInt` entry that follows it and the 32-bit `Int`
+entry, which has not landed yet.
 
 **Affected:** every release before 0.16.0, on every field of a `model`, `view`, `mixin`, `type` and
 the `auth` block. The comparisons below were measured on 0.15.3.
@@ -174,6 +174,188 @@ procedure that takes a `model` with a validator directly as an argument; a `mode
   deleted: it did nothing. Do not swap it for the nearest accepted name unless you want that
   behaviour (`@immutable` meant `@readonly`; `@string` on an `Int` is the case ADR 0019 answers with
   `BigInt`).
+
+### `BigInt`: an exact 64-bit integer on every codec and client (ADR 0019 D2, D3), additive
+
+Part of ADR 0019, after the closed-attribute entry above. `BigInt` is a built-in scalar beside `Int`,
+valid wherever `Int` is: a model, view, mixin or `type` field, a procedure argument or return, a
+`query` parameter, `@version`, `@range`, a numeric `@default`, a policy literal, a find-many filter
+and an MCP resource key. It exists because a JSON number past 2^53 is rounded to an IEEE double by
+every JavaScript and dart2js consumer without an error: `JSON.parse('{"amountE8":9007199254740993}')`
+gives `9007199254740992`, typed `number`. A `BigInt` never travels as a number.
+
+**`Int` does not change in this release.** The cutover that makes `Int` a 32-bit integer (PR C of
+the ADR: `Int` to `i32` and `INTEGER`, the `cratestack upgrade int-to-bigint` codemod, snapshot
+format 3, digest domains `v2`) has not landed. Until it does, `Int` is still an `i64`, still
+`BIGINT`, and still a JSON number, and a schema that does not declare a `BigInt` generates what it
+generated before, apart from the behaviour changes listed at the end.
+
+**The Rust type.** `cratestack::BigInt`, in `cratestack-core` and re-exported by the facades, is a
+`Copy` newtype over `i64`: `new` and `get`, `MIN` and `MAX`, `From<i64>`, `From<BigInt> for i64`,
+`Display`, `FromStr`, `Ord`, `Hash`, `Default`, and `checked_add`, `checked_sub` and `checked_mul`
+returning `Option<BigInt>`. There are no operator impls and no `Deref`, so a call site that still
+expects an `i64` is a compile error rather than a silent precision loss. It is 64-bit, not
+arbitrary precision (`num_bigint::BigInt` is a different type). Generated models, inputs, wire
+types, procedure arguments and returns, and the Rust client use it, and `<Model>Where` gains the
+`BigInt` filters (`eq`, `ne`, `lt`, `lte`, `gt`, `gte`, `in`).
+
+- **Two optional features on `cratestack-core`, `sqlx-postgres` and `rusqlite`,** carry the driver
+  impls (`Type`, `Encode`, `Decode` and `PgHasArrayType` for `INT8`; `ToSql` and `FromSql` for an
+  SQLite integer), so a `BigInt @id` or foreign key meets the generic `PK: Type<Postgres> +
+  Encode<Postgres>` bounds of the generated delegates. The orphan rule puts them in `cratestack-core`.
+  `cratestack-sqlx` turns on the first and `cratestack-rusqlite` the second; nothing else does, so the
+  four facades stay disjoint (`cratestack-api` and `cratestack-client` have no sqlx in `cargo tree`,
+  `cratestack-pg` has no `libsqlite3-sys`).
+
+**The wire form.** A `BigInt` is a canonical decimal string on every codec: `0`, or an optional `-`,
+a non-zero digit and at most 18 more digits, inside `i64`. On JSON it is a JSON string; on CBOR it is
+a text string (major type 3), the same bytes, never an integer or a bignum tag (tags 2 and 3).
+`i64::MAX` is the initial byte `0x73` and its 19 digits, 20 bytes where a CBOR integer takes 9. One
+form on both codecs is what lets the value survive `serde_json::Value` (the `/rpc/batch` frames) on
+its way to CBOR, the Dart codec's JSON-text boundary, and both JS bridges, which disagree about
+large integers.
+
+- **Refused on both codecs:** a JSON number, a CBOR integer (major type 0 or 1), a CBOR bignum,
+  `+5`, `007`, `-0`, `" 1"`, and anything outside `i64`, on a request body, a query-string filter
+  and `?computedParams=`. A number is refused because a value above 2^53 may already have been
+  rounded by the JavaScript that produced it, and the server cannot tell. This is the rule `Decimal`
+  already follows.
+- **Codec decode errors name the field.** `JsonCodec` and `CborCodec` decode through
+  `serde_path_to_error`, so `CratestackError::Codec`'s `detail()` reads `failed to decode JSON body:
+  amountE8: ...` (`CBOR` for the other codec), with the whole path for a nested field. The public
+  message stays generic; the path reaches operators through `detail()` only. It applies to every
+  field type, not only `BigInt`.
+- Not changed by this entry: the CBOR codec still ignores bytes after the first item
+  (cratestack#1153), as before.
+
+**Storage and tooling.**
+
+- **SQL.** Postgres `BIGINT` (bound as `INT8`); SQLite an integer, as `Int`. `SqlValue` gains
+  `BigInt` and `NullBigInt`. `@version` and `@range` accept a `BigInt` (`@range ... @db_enforce`
+  emits the `CHECK`; bounds parse as `i64`), the `ETag` of a `BigInt @version` round-trips above
+  2^53, and a numeric `@default` on a `BigInt` must fit `i64`.
+- **`cratestack-migrate`** emits `BIGINT` for `BigInt` and now fails a test if any built-in scalar
+  falls through to the `TEXT` default. Introspection still maps `int8` to `Int`; that flips with PR C.
+  Until then, editing a field from `Int` to `BigInt` makes `migrate diff` emit `ALTER COLUMN ... TYPE
+  BIGINT` on a column that already is one (classified `Lossy`, so it needs `--allow-destructive`);
+  it changes no data.
+- **Studio** binds a canonical `BigInt` string as an integer on Postgres and SQLite, enforces
+  `@range` on it, and copies Rust keys as `cratestack::BigInt`. **WireMock** stubs quote `BigInt`
+  values, ids and versions.
+- **JSON Schema** describes a `BigInt` as `{"type":"string","pattern":"^(0|-?[1-9][0-9]{0,18})$"}`
+  in every arity, never `integer`; the `i64` bound is enforced by the server only. **MCP** tools take
+  and return a `BigInt` through the same string, and a `BigInt` can key an MCP resource
+  (`cratestack://ledger/notes/9007199254740993`); every non-canonical spelling answers like a missing
+  row.
+- The VS Code grammar gains `BigInt`, and the four built-ins it already lacked (`Decimal`, `Vector`,
+  `Geography`, `Geometry`). A user `type`, `model` or `enum` named `BigInt` is now a duplicate-name
+  error; none exists in this repository or in the downstream schemas we could find.
+
+**TypeScript.** A `BigInt` is a `bigint`, with `BigIntFilter` (`ComparableFilter<bigint>`).
+
+- **Revival is strict.** A response revives only a canonical decimal string inside `i64`, and a
+  number, a non-canonical string or a value outside `i64` at a `BigInt` key throws a `TypeError`
+  naming the field, because a number there means a server from before `BigInt` whose value may
+  already be rounded. It covers model fields, `BigInt[]`, bare procedure returns and `type`s.
+- **Every `bigint` is stringified before it reaches a codec,** on every path the generated client
+  owns: REST bodies and query values, RPC unary, batch and stream inputs, `computedParams`, the
+  native `@cratestack/cbor-node` and `@cratestack/cbor-web` wrapper, and `@cratestack/link-batch`.
+  This is required, not cosmetic: `JSON.stringify` throws on a `bigint`, and the CBOR bridges would
+  write a raw `bigint` as a CBOR integer, which the server refuses. A custom `options.codec` is not
+  wrapped; encode with `encodeWireFields` first.
+- **Query keys do not throw.** The generated TanStack `cratestackQueryKeys` and
+  `@cratestack/adapter-tanstack-query`'s `rpcQueryKey` store a `bigint` as its string, so
+  `2n ** 53n` and `2n ** 53n + 1n` are two keys. RTK Query tags a `BigInt` key by its decimal string
+  and serialises a `bigint` argument itself. SWR's `stableHash` already renders a `bigint` as its
+  digits. A refine record whose id is a `bigint` works at runtime (see the follow-ups in
+  `ROADMAP.md`).
+- RTK's development-only serializability check does not know `bigint`; the generated README and the
+  doc comment on `createCratestackRtkApi` show the `serializableCheck` option that tells it.
+
+**Dart.** A `BigInt` is `dart:core`'s `BigInt`, exact on the VM, dart2js and dart2wasm, with a
+`BigIntFilter`.
+
+- Decode goes through a generated `cratestackDecodeBigInt(value, 'Owner.field')`: the type and the
+  canonical grammar are checked first, then `BigInt.parse`, and a `FormatException` names the field.
+  There is no `i64` range check in the client; the server refuses a value outside `i64`.
+- Encode writes `toString()`. **RPC `get`, `update` and `delete` send a `BigInt` key as a string**
+  (`{'id': id.toString()}`), as does the Riverpod preset, because a bare `BigInt` is not JSON.
+- Proven through pure `package:cbor` and the native `cratestack_cbor` codec on the Dart VM, and on
+  dart2js and dart2wasm; `just verify-dart` generates and analyses the `bigint_scalar` and
+  `bigint_scalar_rpc` fixtures.
+
+**Policies fail closed.** Adding a scalar showed that a negated policy could pass for a value the
+evaluator could not compare. A `BigInt` procedure argument was a `Null` policy value, a `BigInt`
+column compared with an integer claim fell through a `_ => false` arm, and a derived `==` called
+`BigInt(7)` and `Int(7)` different, so `!=` and `not in` passed. Comparisons are now three-valued
+(equal, different, undecidable):
+
+- `!=` and `not in` pass **only on a decided difference**, and so do `==` and `in` on a decided
+  equality. An undecidable pair satisfies neither, which is what SQL does with a `NULL`, and a
+  `@deny` on it fires. This is `cratestack-sqlx`'s `query/support/comparison.rs` for the create
+  path and `auth().x` literals, and `cratestack-policy` for procedure policies.
+- **A string auth claim in a numeric comparison denies** (`==`, `!=`, `in`, `not in`, ordering). A
+  predicate carries no column type, so the evaluator cannot tell a `BigInt` string from a `String`
+  one, and Postgres has no `bigint = text` operator; reading the string as a number would make the
+  same claim pass in a procedure and fail in a model. A `BigInt` claim must be a JSON integer in a
+  policy comparison. `@default(auth().x)` also accepts the canonical string. Coercing it in policies
+  is left for a follow-up.
+- **Create-time policy evaluation is three-valued** (Kleene `and` and `or`). An `@allow` grants only
+  on a decided true. A `@deny` fires on anything but a decided false, so it fires on an undecidable
+  comparison, such as a `BigInt` column against a string or boolean claim. On read, update and
+  delete, a `@deny` on `auth().x <op> <literal>` whose claim is undecidable renders `NULL` instead
+  of `FALSE`, so it fires there too.
+- The model pairs that existed before `BigInt` keep their old answers (derived equality), so a
+  `NULL` `Int?` column against a claim still satisfies a create-path `!=`, where SQL would deny.
+  And an absent or unbindable claim (null, float, bytes, list, map) still makes a column comparison
+  false on create, read, update and delete, so `@deny(owner != auth().accountId)` stays silent for a
+  caller whose claim is null. Neither is unified yet; see `ROADMAP.md`.
+
+**Behaviour changes for a schema that does not use `BigInt`.**
+
+- **The RTK floor rises from `^2.0.0` to `^2.2.7`** for a client generated with `--rtk`. Two facts
+  set it. RTK Query's default `serializeQueryArgs` throws on a `bigint` before 2.2.4, which would
+  break every hook that takes a `BigInt` id (measured on the published tarballs). And the generated
+  `rtk-api.ts` does not build with `declaration: true` before 2.2.7 (`TS2527`, an inaccessible
+  `unique symbol`), so the old floor could not build at its own lowest version; `npm install` takes
+  the newest 2.x, which hid it. Regenerate the client and raise the dependency. `packages/cratestack-adapter-rtk` still declares `^2.0.0`.
+- **`SqlValue` gains `BigInt` and `NullBigInt`, and `CreateDefaultType` gains `BigInt`.** An
+  exhaustive `match` on either outside this repository stops compiling; add the arm.
+- **`auth().x != <int>` with a wrong-typed claim now denies.** A `"7"` claim used to satisfy
+  `auth().tenantId != 7`, because a string is not equal to an integer. It satisfies neither `==` nor
+  `!=` now. In a model policy any claim whose type does not match the literal is undecidable; in a
+  procedure policy only an integer against a string is (in either order), and a `Bool`, `Float` or
+  `Null` operand still passes `!=` (a known gap, see `ROADMAP.md`). Check any `!=` or `not in`
+  policy fed by a claim your identity provider may issue as a string.
+- **A pushed-down policy renders a string claim as `$N::text`** (`col = $1::text`,
+  `col != $1::text`), where it was a bare `$1`. sqlx caches a prepared statement by its SQL text, so
+  an integer claim and a later string claim shared one statement and the string's bytes were read as
+  a binary `int8`: an 8-byte claim `"12345678"` was read as the integer `0x3132333435363738`, and
+  `!=` admitted every row (measured against Postgres). Each claim type has its own statement text now. A
+  string claim compared with a non-text column is an `operator does not exist` error, which is the
+  intended denial.
+- **A generated TypeScript REST request body, and an object-valued query entry such as
+  `computedParams`, no longer turns a `Decimal` into an object.** The walk that rewrites `Uint8Array`
+  rebuilt a `Decimal` instance field by field; it is now its decimal string, as on RPC.
+- An unhandled scalar in the `@range` validator generator is a compile error instead of a silent
+  no-op, and the "every built-in scalar" guard tests iterate the parser's list, so the next scalar
+  cannot be added to the parser alone.
+
+**What to run.** Nothing, for a schema that does not use `BigInt`, beyond regenerating clients to
+pick up the RTK floor. To use it, write `BigInt` where a column needs more than 2^53 and regenerate
+every client and rebuild every server together: a client from before this release has no `bigint`.
+The `Int` fields of an existing schema are not touched; the codemod that converts them belongs to the
+cutover.
+
+Covered by `cratestack-core`'s `BigInt` unit tests and the `bigint_codec` suites of both codec crates;
+`cratestack-pg`'s `bigint_end_to_end`, `bigint_end_to_end_rpc`, `bigint_policies` and
+`bigint_wire_shapes` (REST and RPC, unary and batch, JSON and CBOR, at `i64::MAX`, `i64::MIN` and
+`2^53 + 1`, on a real Postgres); `cratestack-sqlite`'s `bigint_round_trip`; the TypeScript
+`bigint_round_trip` and `bigint_query_keys` suites; and the Dart `bigint_round_trip` harness. The
+end-to-end suites found two defects that predate `BigInt` and are not fixed here: the migrate emitter
+copies `@default(auth().x)` into the column as `DEFAULT auth().x` (invalid SQL, SQLSTATE 42601, for
+any scalar), and a foreign-key violation (SQLSTATE 23503) answers `500`, for an `Int` key as much as
+a `BigInt` one. Both are listed in `ROADMAP.md`.
 
 ### `RegistryVerifierResolver`: signed-transport keys that can be registered and revoked at run time (#1149)
 
