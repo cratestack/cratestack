@@ -14,6 +14,22 @@ use crate::alg::CoseAlg;
 use crate::tbs::Tbs;
 
 impl CoseVerifyKey {
+    /// Whether `signature` is `alg`'s signature by this key over the
+    /// contiguous `message`, under the same rules as [`verify`](Self::verify).
+    /// `false` for a MAC algorithm: a callback cannot be checked against a
+    /// secret it does not hold. What a signer outside the process is held to
+    /// (`ExternalSigner`).
+    pub(crate) fn verify_message(&self, alg: CoseAlg, message: &[u8], signature: &[u8]) -> bool {
+        if alg != self.alg() || signature.len() != alg.signature_len() {
+            return false;
+        }
+        match &self.repr {
+            Repr::Ed25519(key) => ed25519_strict(key, &[message], signature),
+            Repr::P256(key) => p256_low_s(key, &[message], signature),
+            Repr::Hmac { .. } => false,
+        }
+    }
+
     /// Check `signature` over the to-be-signed structure for `alg`. `false`
     /// for any other algorithm than the key's own, a signature of the wrong
     /// length, or a bad signature. Every algorithm reads the structure in
@@ -34,27 +50,31 @@ impl CoseVerifyKey {
         }
         match &self.repr {
             Repr::Ed25519(key) => tbs.with_chunks(|chunks| ed25519_strict(key, chunks, signature)),
-            Repr::P256(key) => p256::ecdsa::Signature::from_slice(signature).is_ok_and(|sig| {
-                sig.normalize_s() == sig
-                    && tbs.with_chunks(|chunks| {
-                        key.verify_digest(
-                            |digest: &mut Sha256| {
-                                for chunk in chunks {
-                                    Digest::update(digest, chunk);
-                                }
-                                Ok(())
-                            },
-                            &sig,
-                        )
-                        .is_ok()
-                    })
-            }),
+            Repr::P256(key) => tbs.with_chunks(|chunks| p256_low_s(key, chunks, signature)),
             Repr::Hmac { secret, .. } => {
                 let expected = tbs.with_chunks(|chunks| hmac_tag(secret, alg, chunks));
                 bool::from(expected.as_slice().ct_eq(signature))
             }
         }
     }
+}
+
+/// ESP256 over the message in pieces, low `S` only (see [`CoseVerifyKey::verify`]).
+fn p256_low_s(key: &p256::ecdsa::VerifyingKey, chunks: &[&[u8]], signature: &[u8]) -> bool {
+    p256::ecdsa::Signature::from_slice(signature).is_ok_and(|sig| {
+        sig.normalize_s() == sig
+            && key
+                .verify_digest(
+                    |digest: &mut Sha256| {
+                        for chunk in chunks {
+                            Digest::update(digest, chunk);
+                        }
+                        Ok(())
+                    },
+                    &sig,
+                )
+                .is_ok()
+    })
 }
 
 /// Ed25519, as strict as `VerifyingKey::verify_strict` in its default

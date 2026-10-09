@@ -9,9 +9,10 @@ use std::future::Future;
 use std::sync::Arc;
 
 use cratestack_core::CratestackError;
-use p256::ecdsa::Signature;
 
+use super::external_signature::{ed25519_signature, raw_signature};
 use super::traits::CoseSigner;
+use super::verify::esp256_low_s;
 use super::verify_key::CoseVerifyKey;
 use crate::alg::CoseAlg;
 use crate::maybe_send::{BoxFuture, MaybeSend, MaybeSendSync};
@@ -67,6 +68,10 @@ type SignFn = dyn Fn(Vec<u8>) -> BoxFuture<'static, Result<Vec<u8>, CratestackEr
 pub struct ExternalSigner {
     alg: CoseAlg,
     kid: [u8; KID_LEN],
+    /// The public half the callback is held to: a signature it returns that
+    /// does not verify under it is refused here, not left to fail at the
+    /// peer as the coarse, unexplained `401`.
+    key: CoseVerifyKey,
     sign: Arc<SignFn>,
 }
 
@@ -81,7 +86,9 @@ impl ExternalSigner {
     /// on iOS: both hash for you, so pass the bytes as given, never a
     /// digest). It may return the signature DER encoded, which is what both
     /// platform keystores produce, or as the raw 64-byte `r ‖ s`. A DER
-    /// signature is converted; the envelope then normalises to low-`s`.
+    /// signature is converted; the envelope then normalises to low-`s`. A
+    /// signature that does not verify under `public_key_sec1` is refused
+    /// here, on every call, instead of failing at the peer as the coarse `401`.
     ///
     /// Fails with `CratestackError::Validation` if `public_key_sec1` is not a
     /// point on the curve.
@@ -95,6 +102,7 @@ impl ExternalSigner {
         Ok(Self {
             alg: CoseAlg::Esp256,
             kid,
+            key,
             sign: Arc::new(move |tbs| Box::pin(sign(tbs))),
         })
     }
@@ -107,7 +115,9 @@ impl ExternalSigner {
     /// 64-byte Ed25519 signature over exactly those bytes (pure Ed25519, as
     /// RFC 8032 defines it, never a pre-hash of them), which is what a Node
     /// `crypto.sign(null, tbs, key)` or a KMS `ED25519` key produces. Any
-    /// other length is refused as the signer's failure.
+    /// other length is refused as the signer's failure, and so is a
+    /// signature that does not verify under `public_key`, which is checked
+    /// here on every call instead of failing at the peer as the coarse `401`.
     ///
     /// Fails with `CratestackError::Validation` if `public_key` is not a
     /// point encoding.
@@ -121,6 +131,7 @@ impl ExternalSigner {
         Ok(Self {
             alg: CoseAlg::Ed25519,
             kid,
+            key,
             sign: Arc::new(move |tbs| Box::pin(sign(tbs))),
         })
     }
@@ -148,44 +159,24 @@ impl CoseSigner for ExternalSigner {
 
     async fn sign(&self, to_be_signed: &[u8]) -> Result<Vec<u8>, CratestackError> {
         let signature = (self.sign)(to_be_signed.to_vec()).await?;
-        match self.alg {
-            CoseAlg::Ed25519 => ed25519_signature(signature),
-            _ => raw_signature(&signature),
+        let signature = match self.alg {
+            CoseAlg::Ed25519 => ed25519_signature(signature)?,
+            _ => raw_signature(&signature)?,
+        };
+        // ESP256 is checked as the envelope will send it, with a low `s`.
+        let checked = match self.alg {
+            CoseAlg::Ed25519 => Some(signature.clone()),
+            _ => esp256_low_s(&signature),
+        };
+        match checked {
+            Some(checked) if self.key.verify_message(self.alg, to_be_signed, &checked) => {
+                Ok(signature)
+            }
+            _ => Err(CratestackError::Internal(
+                "the external signer's signature does not verify under the public key it was \
+                 built with"
+                    .to_owned(),
+            )),
         }
     }
-}
-
-/// An Ed25519 signature is exactly 64 bytes: anything else is the
-/// callback's failure, not the message's.
-fn ed25519_signature(signature: Vec<u8>) -> Result<Vec<u8>, CratestackError> {
-    if signature.len() == 64 {
-        Ok(signature)
-    } else {
-        Err(CratestackError::Internal(
-            "the external signer did not return a 64-byte Ed25519 signature".to_owned(),
-        ))
-    }
-}
-
-/// The 64-byte `r ‖ s` for a signature that is either that or DER.
-///
-/// DER is tried first when the bytes start a DER `SEQUENCE` (`0x30`) and
-/// parse as one; a raw signature that happens to start with `0x30` does not
-/// parse as a DER signature of the same length except with a probability that
-/// is negligible for a real signature, so in practice the two are not
-/// confused; anything that is neither is refused.
-fn raw_signature(signature: &[u8]) -> Result<Vec<u8>, CratestackError> {
-    let parsed = match signature {
-        [0x30, ..] => Signature::from_der(signature).ok(),
-        _ => None,
-    }
-    .or_else(|| Signature::from_slice(signature).ok());
-    parsed
-        .map(|signature| signature.to_bytes().to_vec())
-        .ok_or_else(|| {
-            CratestackError::Internal(
-                "the external signer returned neither DER nor a raw 64-byte P-256 signature"
-                    .to_owned(),
-            )
-        })
 }
