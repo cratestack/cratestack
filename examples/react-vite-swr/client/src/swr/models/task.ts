@@ -33,7 +33,7 @@ import {
 // every function below that decodes a server response calls it, same as
 // the `default` preset's `rest-client.ts.j2`.
 import { reviveWireFields, revivePagedWireFields, type Decimal } from "./shared.js";
-import type { BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
+import type { BigIntFilter, BooleanFilter, ComparableFilter, DateTimeFilter, DecimalFilter, EqualityFilter, NumberFilter, SortDirection, StringFilter, UuidFilter } from "./shared.js";
 import type { Board } from "./board.js";
 
 export type TaskSortField = 'id' | 'title' | 'done' | 'boardId';

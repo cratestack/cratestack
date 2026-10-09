@@ -256,6 +256,54 @@ class NumberFilter with NumberFilterMappable {
   }
 }
 
+// ADR 0019: `BigInt` (`dart:core`), not `num`. A `num` operand is a JS
+// double on dart2js, so `9007199254740993` would round before it ever
+// reached the wire. Every operand is a real `BigInt`, decoded by the
+// runtime's `cratestackDecodeBigInt` (a number or a non-canonical string
+// throws a `FormatException` naming the key) and encoded as its canonical
+// decimal string, the form the server accepts at a `BigInt` key.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+class BigIntFilter with BigIntFilterMappable {
+  const BigIntFilter({this.eq, this.ne, this.in$, this.lt, this.lte, this.gt, this.gte, this.isNull});
+
+  final BigInt? eq;
+  final BigInt? ne;
+  final List<BigInt>? in$;
+  final BigInt? lt;
+  final BigInt? lte;
+  final BigInt? gt;
+  final BigInt? gte;
+  final bool? isNull;
+
+  factory BigIntFilter.fromWire(CratestackValueMap value) {
+    return BigIntFilter(
+      eq: value['eq'] == null ? null : cratestackDecodeBigInt(value['eq'], 'BigIntFilter.eq'),
+      ne: value['ne'] == null ? null : cratestackDecodeBigInt(value['ne'], 'BigIntFilter.ne'),
+      in$: value['in'] == null
+          ? null
+          : cratestackAsValueList(value['in']).map((item) => cratestackDecodeBigInt(item, 'BigIntFilter.in')).toList(growable: false),
+      lt: value['lt'] == null ? null : cratestackDecodeBigInt(value['lt'], 'BigIntFilter.lt'),
+      lte: value['lte'] == null ? null : cratestackDecodeBigInt(value['lte'], 'BigIntFilter.lte'),
+      gt: value['gt'] == null ? null : cratestackDecodeBigInt(value['gt'], 'BigIntFilter.gt'),
+      gte: value['gte'] == null ? null : cratestackDecodeBigInt(value['gte'], 'BigIntFilter.gte'),
+      isNull: value['isNull'] as bool?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'eq': eq?.toString(),
+      'ne': ne?.toString(),
+      'in': in$?.map((item) => item.toString()).toList(growable: false),
+      'lt': lt?.toString(),
+      'lte': lte?.toString(),
+      'gt': gt?.toString(),
+      'gte': gte?.toString(),
+      'isNull': isNull,
+    };
+  }
+}
+
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
 class BooleanFilter with BooleanFilterMappable {
   const BooleanFilter({this.eq, this.ne, this.in$, this.isNull});
