@@ -93,7 +93,7 @@ pub(super) async fn negated_policies_deny_on_read(pool: &PgPool) {
         let seen = visible(pool, descriptor(allow, deny), &claim(Value::Int(0)))
             .await
             .unwrap();
-        assert_eq!(seen, all_except(&[value]), "`@@deny amount == {value}`");
+        assert_eq!(seen, all_except(&[value]), "`deny amount == {value}`");
     }
     let not_in = leak(ReadPredicate::FieldNotInLiterals {
         column: "amount",

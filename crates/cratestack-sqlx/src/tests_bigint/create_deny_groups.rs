@@ -64,12 +64,12 @@ async fn unknown_propagates_through_and_or_by_kleene_logic() {
                 assert_eq!(
                     deny_fires(expr, &values, &ctx).await,
                     expected != T3::False,
-                    "@deny {left:?} {name} {right:?} is {expected:?}"
+                    "deny {left:?} {name} {right:?} is {expected:?}"
                 );
                 assert_eq!(
                     allow_grants(expr, &values, &ctx).await,
                     expected == T3::True,
-                    "@allow {left:?} {name} {right:?} is {expected:?}"
+                    "allow {left:?} {name} {right:?} is {expected:?}"
                 );
             }
         }

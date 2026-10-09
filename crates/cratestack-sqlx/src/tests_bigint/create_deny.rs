@@ -97,7 +97,7 @@ async fn a_deny_on_a_bigint_column_fires_for_a_claim_it_cannot_compare() {
             for (name, deny) in [("==", EQ_AUTH), ("!=", NE_AUTH)] {
                 assert!(
                     deny_fires(leaf(deny), &values, &ctx).await,
-                    "`@deny amount {name} auth().tenant` must refuse BigInt({value}) \
+                    "`deny amount {name} auth().tenant` must refuse BigInt({value}) \
                      for the claim {claim_value:?}"
                 );
             }

@@ -52,7 +52,7 @@ fn a_validator_on_the_wrong_scalar_is_refused_as_on_a_model() {
         ),
         (
             "String @range(min: 1)",
-            "@range on `T.f` is only valid on Int or Decimal",
+            "@range on `T.f` is only valid on Int, BigInt or Decimal",
         ),
         (
             "Int @regex(\"a\")",
