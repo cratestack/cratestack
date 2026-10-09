@@ -61,6 +61,17 @@ rules:
       Panics should be reserved for truly unrecoverable situations.
     languages: [rust]
     severity: WARNING
+    # Same test-file exclusions as `rust-unwrap-in-lib` above (see its
+    # comment for the rationale): a `panic!("expected X, got Y")` in a test
+    # is how the test fails with a useful message, not a library defect.
+    # `examples/` and `**/*/bin/` are deliberately NOT excluded here —
+    # this ticket is about test files only (cratestack#989).
+    paths:
+      exclude:
+        - "**/*/tests/"
+        - "**/tests.rs"
+        - "**/*_test.rs"
+        - "**/tests_*.rs"
     metadata:
       category: reliability
       cwe: "CWE-248: Uncaught Exception"
@@ -135,6 +146,17 @@ rules:
       Cloning can hide performance issues in hot paths.
     languages: [rust]
     severity: WARNING
+    # Same test-file exclusions as `rust-unwrap-in-lib` above (see its
+    # comment for the rationale): a `.clone()` on a test fixture is not a
+    # performance problem anyone will fix. `examples/` and `**/*/bin/` are
+    # deliberately NOT excluded here — this ticket is about test files
+    # only (cratestack#989).
+    paths:
+      exclude:
+        - "**/*/tests/"
+        - "**/tests.rs"
+        - "**/*_test.rs"
+        - "**/tests_*.rs"
     metadata:
       category: performance
       references:
@@ -148,5 +170,16 @@ rules:
       Prefer .into() for generic context or format!() for formatting.
     languages: [rust]
     severity: INFO
+    # Same test-file exclusions as `rust-unwrap-in-lib` above (see its
+    # comment for the rationale): a `.to_string()` on a test fixture is
+    # not a style problem anyone will fix. `examples/` and `**/*/bin/` are
+    # deliberately NOT excluded here — this ticket is about test files
+    # only (cratestack#989).
+    paths:
+      exclude:
+        - "**/*/tests/"
+        - "**/tests.rs"
+        - "**/*_test.rs"
+        - "**/tests_*.rs"
     metadata:
       category: style
