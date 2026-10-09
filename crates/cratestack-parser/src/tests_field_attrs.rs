@@ -122,6 +122,69 @@ model Article {
     );
 }
 
+/// cratestack#1128: `autoincrement()` is not a real database function, so
+/// `migrate diff` used to pass it through into `DEFAULT autoincrement()`
+/// — DDL both Postgres and SQLite reject at apply time, after `check` had
+/// already said `schema OK`. It must be refused at the field, pointing at
+/// the marker that means "the database generates this value".
+#[test]
+fn rejects_autoincrement_default_pointing_at_dbgenerated() {
+    let error = parse_schema(
+        r#"
+model Widget {
+  id Int @id @default(autoincrement())
+}
+"#,
+    )
+    .expect_err("@default(autoincrement()) should be refused");
+
+    let message = error.to_string();
+    assert!(
+        message.contains("autoincrement()"),
+        "error names the spelling: {message}",
+    );
+    assert!(
+        message.contains("dbgenerated()"),
+        "error points at the marker to use instead: {message}",
+    );
+    assert!(
+        message.contains("Widget.id"),
+        "error names the field: {message}",
+    );
+}
+
+#[test]
+fn rejects_autoincrement_default_with_argument() {
+    let error = parse_schema(
+        r#"
+model Widget {
+  id Int @id @default(autoincrement(1))
+}
+"#,
+    )
+    .expect_err("@default(autoincrement(1)) should be refused");
+
+    assert!(
+        error.to_string().contains("autoincrement(1)"),
+        "error echoes the argument form: {error}",
+    );
+}
+
+/// The refusal must not swallow the legal spellings around it.
+#[test]
+fn autoincrement_refusal_leaves_dbgenerated_and_now_untouched() {
+    parse_schema(
+        r#"
+model Article {
+  id String @id @default(dbgenerated())
+  createdAt DateTime @default(now())
+  status String @default('pending')
+}
+"#,
+    )
+    .expect("dbgenerated(), now() and literal defaults must stay valid");
+}
+
 #[test]
 fn accepts_pii_and_sensitive_field_attributes() {
     let schema = parse_schema(

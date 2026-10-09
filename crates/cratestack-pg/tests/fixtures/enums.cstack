@@ -12,7 +12,7 @@ type RoleFilter {
 }
 
 model User {
-  id Int @id @default(autoincrement())
+  id Int @id @default(dbgenerated())
   role Role
 
   @@allow("read", auth() != null)
