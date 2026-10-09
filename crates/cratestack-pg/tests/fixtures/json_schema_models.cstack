@@ -28,7 +28,7 @@ model Author {
 
 /// A published piece.
 model Post {
-  id Int @id @default(autoincrement())
+  id Int @id @default(dbgenerated())
   title String
   body String?
   price Decimal
