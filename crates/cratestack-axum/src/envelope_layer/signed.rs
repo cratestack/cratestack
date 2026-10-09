@@ -19,7 +19,7 @@ use super::principal::VerifiedRequest;
 use super::resolver::ResolvedRoute;
 use super::seal::{BindingInputs, Sealer, stream_refused};
 use super::service::{Inner, call};
-use super::{batch, refusal, request};
+use super::{batch, payload, refusal, request};
 use crate::ratelimit::VerifiedPrincipal;
 
 pub(super) async fn handle<S: Inner>(
@@ -33,6 +33,11 @@ pub(super) async fn handle<S: Inner>(
     let bound = match Bound::read(&parts.headers) {
         Ok(bound) => bound,
         Err(error) => return refusal::bad_request(&parts.headers, &path, error),
+    };
+    // Before any key is looked up, any signature checked or any nonce spent.
+    let negotiated = match payload::negotiate(&config, &route, &parts.headers, true) {
+        Ok(negotiated) => negotiated,
+        Err(error) => return refusal::payload_types(&parts.headers, &path, error),
     };
     let candidates = match contract::choose(&config, &parts.method, &route, &parts.headers) {
         Choice::Try(candidates) => candidates,
@@ -51,6 +56,7 @@ pub(super) async fn handle<S: Inner>(
         &parts.uri,
         bound,
         candidates[0],
+        negotiated,
     );
     let opened = contract::open_under(&config, &raw, &mut inputs, &candidates).await;
     let opened = match opened {
@@ -67,8 +73,8 @@ pub(super) async fn handle<S: Inner>(
     drop(raw);
 
     let (payload, signer, context) = opened.into_parts();
-    request::rewrite_opened(&mut parts.headers, &payload);
-    request::rewrite_accept(&mut parts.headers, true);
+    request::rewrite_opened(&mut parts.headers, &payload, &inputs.payload.request);
+    request::rewrite_accept(&mut parts.headers, true, &inputs.payload.accept());
     let sealer = Sealer {
         inputs,
         request: digest,

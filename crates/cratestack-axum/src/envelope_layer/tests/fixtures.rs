@@ -15,41 +15,16 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::response::Response;
 use axum::routing::{get, post};
-use cratestack_core::{
-    CratestackError, RouteTransportCapabilities, RouteTransportDescriptor, VerifiedSigner,
-};
+use cratestack_core::{CratestackError, VerifiedSigner};
 use http::{HeaderValue, StatusCode, header};
 
+pub use super::fixtures_routes::REST_ROUTES;
 use crate::envelope_layer::EnvelopeLayer;
 use crate::ratelimit::VerifiedPrincipal;
 use crate::transport::StreamedResponseMarker;
 
-const CAPS: RouteTransportCapabilities = RouteTransportCapabilities {
-    request_types: &["application/cbor"],
-    response_types: &["application/cbor"],
-    default_response_type: "application/cbor",
-    supports_sequence_response: false,
-};
-
-const fn route(method: &'static str, path: &'static str) -> RouteTransportDescriptor {
-    RouteTransportDescriptor {
-        name: path,
-        method,
-        path,
-        capabilities: CAPS,
-        idempotent_by_default: false,
-        rate_limited_by_default: true,
-    }
-}
-
-pub static REST_ROUTES: [RouteTransportDescriptor; 6] = [
-    route("POST", "/widgets"),
-    route("GET", "/widgets/{id}"),
-    route("DELETE", "/widgets/{id}"),
-    route("GET", "/text-error"),
-    route("GET", "/json"),
-    route("GET", "/stream"),
-];
+/// What a handler answers when JSON is asked for.
+pub const JSON_ANSWER: &str = "{\"ok\":true}";
 
 /// Counts how often the router behind the layer actually ran.
 #[derive(Clone, Default)]
@@ -78,6 +53,16 @@ async fn echo(hits: Hits, req: Request) -> Response {
     hits.hit();
     let content_type = header_or_absent(&req, header::CONTENT_TYPE);
     let accept = header_or_absent(&req, header::ACCEPT);
+    let payload_type = header_or_absent(
+        &req,
+        cratestack_core::PAYLOAD_TYPE_HEADER.parse().expect("name"),
+    );
+    let payload_accept = header_or_absent(
+        &req,
+        cratestack_core::PAYLOAD_ACCEPT_HEADER
+            .parse()
+            .expect("name"),
+    );
     let principal = req
         .extensions()
         .get::<VerifiedPrincipal>()
@@ -94,15 +79,31 @@ async fn echo(hits: Hits, req: Request) -> Response {
             CratestackError::NotFound("no such widget".to_owned()),
         );
     }
+    let wants_json = accept.to_str().is_ok_and(|accept| {
+        accept
+            .split(", ")
+            .next()
+            .is_some_and(|first| first == "application/json")
+    });
     let body = axum::body::to_bytes(req.into_body(), usize::MAX)
         .await
         .expect("body");
-    let mut response = Response::new(Body::from(body));
+    // A JSON answer when the first thing asked for is JSON, with a charset
+    // as a real handler would add; CBOR (the request's bytes) otherwise.
+    let mut response = match wants_json {
+        true => Response::new(Body::from(JSON_ANSWER)),
+        false => Response::new(Body::from(body)),
+    };
     let headers = response.headers_mut();
     headers.insert(
         header::CONTENT_TYPE,
-        HeaderValue::from_static("application/cbor"),
+        HeaderValue::from_static(match wants_json {
+            true => "application/json; charset=utf-8",
+            false => "application/cbor",
+        }),
     );
+    headers.insert("x-seen-payload-type", payload_type);
+    headers.insert("x-seen-payload-accept", payload_accept);
     headers.insert("x-seen-content-type", content_type);
     headers.insert("x-seen-accept", accept);
     headers.insert(
@@ -146,6 +147,16 @@ pub fn rest_router(layer: EnvelopeLayer, hits: &Hits) -> Router {
             get(|| async { with_type(StatusCode::OK, "application/json", "{}") }),
         )
         .route("/stream", get(|| async { streamed() }))
+        .route("/pay", post(echo_route(hits.clone())))
+        .route("/either", post(echo_route(hits.clone())))
+        .route(
+            "/html",
+            get(|| async { with_type(StatusCode::OK, "text/html", "<p>hi</p>") }),
+        )
+        .route(
+            "/plain-error",
+            get(|| async { with_type(StatusCode::NOT_FOUND, "text/plain", "gone") }),
+        )
         .route("/unlisted", get(echo_route(hits.clone())))
         .layer(layer)
 }

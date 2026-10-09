@@ -60,7 +60,10 @@ impl BindingResolver for RestBindingResolver {
                 .iter()
                 .map(|(_, value)| value.clone())
                 .collect();
-            return Resolution::Op(ResolvedRoute::new(route.path, params));
+            return Resolution::Op(ResolvedRoute::new(route.path, params).with_payload_types(
+                route.capabilities.request_types,
+                route.capabilities.response_types,
+            ));
         }
         // A generated path, another method: the router's `405` (S2 no
         // longer warns about it as a misconfiguration).

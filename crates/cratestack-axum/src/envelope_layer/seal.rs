@@ -4,7 +4,8 @@
 use axum::body::Body;
 use axum::response::Response;
 use cratestack_core::{
-    CratestackError, MAX_RESPONSE_REBUFFER_BYTES, RequestDigest, ResponseBinding,
+    CratestackError, MAX_RESPONSE_REBUFFER_BYTES, PAYLOAD_TYPE_HEADER, RequestDigest,
+    ResponseBinding,
 };
 use http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue, StatusCode};
@@ -21,18 +22,21 @@ pub(super) struct Sealer {
     pub(super) context: SealContext,
     /// A signed request, or `Required`: nothing leaves unsealed (S3).
     pub(super) strict: bool,
-    /// The headers the router saw (`Accept: application/cbor` when
-    /// strict), for encoding an error the layer seals itself.
+    /// The headers the router saw (the negotiated `Accept` when strict), for
+    /// encoding an error the layer seals itself.
     pub(super) headers: HeaderMap,
     pub(super) path: String,
 }
 
 impl Sealer {
     /// Seal `response`. A stream cannot be sealed (P1): when strict it is
-    /// replaced by a sealed `406`, otherwise it passes plain. A non-CBOR
-    /// error (axum's own `413`, a `text/plain` fallback) is re-encoded as the
-    /// transport's CBOR error with the same status first. A non-CBOR
-    /// success is a sealed `500` when strict and passes plain otherwise.
+    /// replaced by a sealed `406`, otherwise it passes plain. A response whose
+    /// `Content-Type` is one of the negotiated payload types is sealed as is,
+    /// bound under that type. An error in any other type (axum's own `413`, a
+    /// `text/plain` fallback) is re-encoded as the transport's error, in the
+    /// client's first choice of CBOR or JSON, with the same status first. A
+    /// success in any other type is a sealed `500` when strict and passes
+    /// plain otherwise.
     ///
     /// The body is re-buffered up to `MAX_RESPONSE_REBUFFER_BYTES`; a
     /// longer one is replaced by a sealed `500`.
@@ -59,8 +63,11 @@ impl Sealer {
                     .await;
             }
         };
-        if media::is_cbor_response(&parts.headers) {
-            return self.seal(parts, payload.as_ref()).await;
+        let negotiated = media::response_media_type(&parts.headers)
+            .and_then(|media_type| self.inputs.payload.response_type(media_type))
+            .map(str::to_owned);
+        if let Some(payload_type) = negotiated {
+            return self.seal(parts, payload.as_ref(), &payload_type).await;
         }
         if !parts.status.is_success() {
             let error = crate::rpc::util::synthesize_error_for_status(parts.status);
@@ -69,13 +76,15 @@ impl Sealer {
         if !self.strict {
             return Response::from_parts(parts, Body::from(payload));
         }
-        let error = CratestackError::Internal("a success response that is not CBOR".to_owned());
+        let error = CratestackError::Internal(
+            "a success response in a payload type the request did not negotiate".to_owned(),
+        );
         self.seal_error(StatusCode::INTERNAL_SERVER_ERROR, error)
             .await
     }
 
     /// Seal an error the layer raises itself, in the transport's error
-    /// shape, CBOR-encoded, at `status`.
+    /// shape, encoded in the client's first choice of CBOR or JSON, at `status`.
     pub(super) async fn seal_error(&self, status: StatusCode, error: CratestackError) -> Response {
         if status.is_server_error() {
             tracing::error!(
@@ -86,29 +95,41 @@ impl Sealer {
                 "envelope layer replaced a response with a sealed error",
             );
         }
+        let error_type = self.inputs.payload.error_type().to_owned();
         let mut headers = self.headers.clone();
-        headers.insert(http::header::ACCEPT, media::cbor_header_value());
+        if let Ok(value) = HeaderValue::from_str(&error_type) {
+            headers.insert(http::header::ACCEPT, value);
+        }
         let encoded = crate::middleware_error::middleware_error_response_with_status(
             &headers, &self.path, status, error,
         );
         let (parts, body) = encoded.into_parts();
+        let encoded_in_type = media::response_media_type(&parts.headers)
+            .is_some_and(|media_type| media_type.eq_ignore_ascii_case(&error_type));
         match axum::body::to_bytes(body, MAX_RESPONSE_REBUFFER_BYTES).await {
-            Ok(payload) if media::is_cbor_response(&parts.headers) => {
-                self.seal(parts, payload.as_ref()).await
-            }
+            Ok(payload) if encoded_in_type => self.seal(parts, payload.as_ref(), &error_type).await,
             _ => self.unsigned_internal(&CratestackError::Internal(
                 "encode a sealed error".to_owned(),
             )),
         }
     }
 
-    async fn seal(&self, mut parts: http::response::Parts, payload: &[u8]) -> Response {
+    /// Seal `payload`, bound under `payload_type`, which is also what the
+    /// response says it is in `Cratestack-Payload-Type`.
+    async fn seal(
+        &self,
+        mut parts: http::response::Parts,
+        payload: &[u8],
+        payload_type: &str,
+    ) -> Response {
         let params = self.inputs.params();
         let response = ResponseBinding {
             request: self.request,
             status: parts.status.as_u16(),
         };
-        let bind = self.inputs.binding(&params, Some(response));
+        let bind = self
+            .inputs
+            .response_binding(&params, response, payload_type);
         let config = &self.inputs.config;
         let sealed = match config
             .envelope
@@ -131,6 +152,11 @@ impl Sealer {
         };
         parts.headers.remove(CONTENT_LENGTH);
         parts.headers.insert(CONTENT_TYPE, content_type);
+        // Not authenticated by itself: it only tells the client which string
+        // to rebuild the AAD with, and a wrong one fails verification.
+        if let Ok(value) = HeaderValue::from_str(payload_type) {
+            parts.headers.insert(PAYLOAD_TYPE_HEADER, value);
+        }
         Response::from_parts(parts, Body::from(body))
     }
 

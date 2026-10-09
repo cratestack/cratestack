@@ -3,6 +3,7 @@
 use axum::body::{Body, HttpBody};
 use axum::extract::{FromRequestParts, MatchedPath, RawPathParams};
 use bytes::Bytes;
+use cratestack_core::{PAYLOAD_ACCEPT_HEADER, PAYLOAD_TYPE_HEADER};
 use futures_util::StreamExt;
 use http::header::{ACCEPT, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING};
 use http::request::Parts;
@@ -77,35 +78,45 @@ pub(super) fn is_bodiless(body: &Body) -> bool {
     HttpBody::size_hint(body).exact() == Some(0)
 }
 
-/// Make an opened request look like the plain CBOR request it wraps: the
-/// payload's length and type, and nothing left that would make a layer or
-/// handler behind this one re-interpret it (a stale length, a chunked or
-/// compressed encoding that no longer applies).
-pub(super) fn rewrite_opened(headers: &mut HeaderMap, payload: &Bytes) {
+/// Make an opened request look like the plain request it wraps: the
+/// payload's length and its type (`request_type`, the one the binding
+/// names), and nothing left that would make a layer or handler behind this
+/// one re-interpret it (a stale length, a chunked or compressed encoding
+/// that no longer applies).
+pub(super) fn rewrite_opened(headers: &mut HeaderMap, payload: &Bytes, request_type: &str) {
     headers.remove(CONTENT_TYPE);
     headers.remove(CONTENT_ENCODING);
     headers.remove(TRANSFER_ENCODING);
     headers.insert(CONTENT_LENGTH, HeaderValue::from(payload.len()));
     // A bodiless request (`GET`, `DELETE`) seals an empty payload (D3); it
     // reaches the router bodiless, as the unsigned one would have.
-    if !payload.is_empty() {
-        headers.insert(CONTENT_TYPE, media::cbor_header_value());
+    if !payload.is_empty()
+        && let Ok(value) = HeaderValue::from_str(request_type)
+    {
+        headers.insert(CONTENT_TYPE, value);
     }
 }
 
-/// Ask the router for the one representation the response binding names.
+/// Ask the router for the representations the response binding may name:
+/// `accept`, the negotiated response types in the client's order, and the
+/// layer's own selector headers removed, so a handler never sees them.
 ///
 /// For a signed request (under `Required` or `Optional`, decision S3) and
-/// under `Required`, always `application/cbor`: a `@stream` op then answers
-/// with one buffered array, and every response can be sealed. A client
-/// asking a signed request for a stream does not get a plain one. For an
-/// unsigned, nonce-bound request under `Optional`, a client that asks for a
-/// stream (`application/cbor-seq`, `text/event-stream`) keeps its `Accept`:
-/// streams cannot be sealed until ADR 0006 P1, and there it may go plain.
-pub(super) fn rewrite_accept(headers: &mut HeaderMap, strict: bool) {
+/// under `Required`, `Accept` is the negotiated list, which holds nothing
+/// that cannot be sealed: a `@stream` op then answers with one buffered
+/// array, and every response can be sealed. A client asking a signed request
+/// for a stream does not get a plain one. For an unsigned, nonce-bound
+/// request under `Optional`, a client that asks for a stream
+/// (`application/cbor-seq`, `text/event-stream`) keeps its `Accept`: streams
+/// cannot be sealed until ADR 0006 P1, and there it may go plain.
+pub(super) fn rewrite_accept(headers: &mut HeaderMap, strict: bool, accept: &str) {
+    headers.remove(PAYLOAD_TYPE_HEADER);
+    headers.remove(PAYLOAD_ACCEPT_HEADER);
     if !strict && media::accept_names_stream(headers) {
         return;
     }
     headers.remove(ACCEPT);
-    headers.insert(ACCEPT, media::cbor_header_value());
+    if let Ok(value) = HeaderValue::from_str(accept) {
+        headers.insert(ACCEPT, value);
+    }
 }
