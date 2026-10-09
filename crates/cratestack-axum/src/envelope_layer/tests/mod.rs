@@ -55,6 +55,8 @@ mod payload_types_optional;
 #[cfg(feature = "cose")]
 mod payload_types_reads;
 #[cfg(feature = "cose")]
+mod payload_types_reads_checked;
+#[cfg(feature = "cose")]
 mod payload_types_refusals;
 #[cfg(feature = "cose")]
 mod payload_types_rpc;
