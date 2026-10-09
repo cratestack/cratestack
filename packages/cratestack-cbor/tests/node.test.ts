@@ -127,6 +127,32 @@ describe.skipIf(!cborNodeIsBuilt)(
       expect(bytesToHex(bytes)).toBe("8264636f6f6c65737461636b");
     });
 
+    it("cross-language: BigInt decimal strings (ADR 0019 D2) are byte-exact CBOR text strings", async () => {
+      // `{"amountE8": "<decimal>"}` with the value a major type 3 text
+      // string. The same five hex strings @cratestack/cbor-node's suite
+      // asserts (packages/cratestack-cbor-node/tests/codec.test.ts, which
+      // documents the derivation and the other copies); this proves the
+      // umbrella's Node path carries them identically, in both directions.
+      const { createCborCodec } = await import("@cratestack/cbor");
+      const codec = await createCborCodec();
+
+      const fixtures: ReadonlyArray<readonly [string, string]> = [
+        ["9223372036854775807", "a168616d6f756e7445387339323233333732303336383534373735383037"],
+        ["-9223372036854775808", "a168616d6f756e744538742d39323233333732303336383534373735383038"],
+        ["9007199254740993", "a168616d6f756e7445387039303037313939323534373430393933"],
+        ["0", "a168616d6f756e7445386130"],
+        ["-1", "a168616d6f756e744538622d31"],
+      ];
+      for (const [decimal, hex] of fixtures) {
+        const bytes = codec.encode({ amountE8: decimal }) as Uint8Array;
+        expect(bytesToHex(bytes)).toBe(hex);
+
+        const wire = Uint8Array.from(hex.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+        expect(codec.decode(wire)).toEqual({ amountE8: decimal });
+      }
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it("throws a catchable JS error on malformed CBOR input", async () => {
       const { createCborCodec } = await import("@cratestack/cbor");
       const codec = await createCborCodec();

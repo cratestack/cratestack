@@ -22,6 +22,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cbor/simple.dart' as pure_dart_cbor;
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'package:cratestack_cbor_frb_verification/src/rust/frb_generated.dart';
@@ -38,6 +39,34 @@ void expect(bool condition, String message) {
 
 String hex(List<int> bytes) =>
     bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+List<int> unhex(String hex) => [
+  for (var i = 0; i < hex.length; i += 2)
+    int.parse(hex.substring(i, i + 2), radix: 16),
+];
+
+/// ADR 0019 D2: a `BigInt` travels as a CBOR text string (major type 3)
+/// holding the canonical decimal form. Records are `(decimal, exact CBOR
+/// hex of {"amountE8": <decimal>})`, the same five strings as the other
+/// copies of this table (`../src/cbor/mod.rs`, `../tests/cbor_bridge.rs`,
+/// `cratestack-cbor-napi`'s `lib.rs` which documents every copy and how
+/// the hex was derived by hand from RFC 8949).
+const bigIntFixtures = <(String, String)>[
+  (
+    '9223372036854775807',
+    'a168616d6f756e7445387339323233333732303336383534373735383037',
+  ),
+  (
+    '-9223372036854775808',
+    'a168616d6f756e744538742d39323233333732303336383534373735383038',
+  ),
+  (
+    '9007199254740993',
+    'a168616d6f756e7445387039303037313939323534373430393933',
+  ),
+  ('0', 'a168616d6f756e7445386130'),
+  ('-1', 'a168616d6f756e744538622d31'),
+];
 
 Future<void> main() async {
   final libPath = Platform.environment['CRATESTACK_CLIENT_FLUTTER_NATIVE_LIB'] ??
@@ -78,6 +107,48 @@ Future<void> main() async {
         'a36a6372617465737461636b8264636f6f6c65737461636b616e182a626f6bf5',
     'encodeJson(object) matches the shared cross-binding fixture',
   );
+
+  // 2b. `BigInt` text strings (ADR 0019 D2), through the frb bridge AND
+  // through pure-Dart `package:cbor` (the `--no-native-cbor` codec of a
+  // generated client). A text string is just a string to both, so each
+  // must produce the fixture bytes and read them back as the exact same
+  // decimal string; agreeing with each other is the cross-implementation
+  // proof, not just agreeing with a constant.
+  for (final (decimal, expectedHex) in bigIntFixtures) {
+    final bridged = cbor.encodeJson(json: jsonEncode({'amountE8': decimal}));
+    expect(
+      hex(bridged) == expectedHex,
+      'encodeJson(BigInt $decimal) matches the shared cross-binding fixture',
+    );
+    expect(
+      bridged[10] >> 5 == 3,
+      'BigInt $decimal is a major type 3 text string',
+    );
+
+    final viaBridge = jsonDecode(
+      cbor.decodeJson(bytes: unhex(expectedHex)),
+    ) as Map<String, dynamic>;
+    expect(
+      viaBridge['amountE8'] == decimal,
+      'decodeJson(BigInt $decimal) returns the exact decimal string',
+    );
+    expect(
+      BigInt.parse(viaBridge['amountE8'] as String).toString() == decimal,
+      'BigInt $decimal parses back losslessly in Dart',
+    );
+
+    final pureBytes = pure_dart_cbor.cbor.encode({'amountE8': decimal});
+    expect(
+      hex(pureBytes) == expectedHex,
+      'pure package:cbor encodes BigInt $decimal to the same fixture bytes',
+    );
+    final pureDecoded =
+        pure_dart_cbor.cbor.decode(unhex(expectedHex)) as Map<dynamic, dynamic>;
+    expect(
+      pureDecoded['amountE8'] == decimal,
+      'pure package:cbor decodes BigInt $decimal to the exact decimal string',
+    );
+  }
 
   // 3. Errors surface as catchable Dart exceptions, not crashes/panics —
   // `FlutterRuntimeError implements FrbException` (generated

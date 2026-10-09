@@ -66,7 +66,7 @@ use uuid::Uuid;
 
 use cratestack_client_flutter::cbor;
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::{CratestackCodec, Decimal};
+use cratestack_core::{BigInt, CratestackCodec, Decimal};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct NestedObject {
@@ -178,6 +178,139 @@ fn decimal_scalar_round_trips_as_a_json_string_and_matches_direct_codec_bytes() 
     let decoded_json = cbor::decode_json(reference_bytes).expect("bridge decode");
     let decoded: DecimalOnly = serde_json::from_str(&decoded_json).expect("deserialize");
     assert_eq!(decoded, fixture);
+}
+
+/// ADR 0019 D2: a `BigInt` travels as a CBOR text string (major type 3)
+/// holding the canonical decimal form. Tuples are
+/// `(decimal, exact CBOR hex of {"amountE8": <decimal>})`, the same five
+/// strings as the other copies of this table (see the doc comment on
+/// `BIGINT_FIXTURES` in `crates/cratestack-cbor-napi/src/lib.rs` for where
+/// each lives and how the hex was derived by hand from RFC 8949).
+const BIGINT_FIXTURES: [(&str, &str); 5] = [
+    (
+        "9223372036854775807",
+        "a168616d6f756e7445387339323233333732303336383534373735383037",
+    ),
+    (
+        "-9223372036854775808",
+        "a168616d6f756e744538742d39323233333732303336383534373735383038",
+    ),
+    (
+        "9007199254740993",
+        "a168616d6f756e7445387039303037313939323534373430393933",
+    ),
+    ("0", "a168616d6f756e7445386130"),
+    ("-1", "a168616d6f756e744538622d31"),
+];
+
+fn unhex(hex: &str) -> Vec<u8> {
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+        .collect()
+}
+
+#[test]
+fn bigint_text_string_round_trips_exactly_and_matches_the_fixture_bytes() {
+    // Same single-field shape as the `Decimal` case above, so the
+    // byte-identical claim is genuine (one key, one possible order). The
+    // field is a plain `String` here on purpose: this is the bridge's
+    // claim, independent of the `BigInt` newtype (checked in the next
+    // test), and it is the shape a Dart `BigInt.toString()` hands over.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct AmountOnly {
+        #[serde(rename = "amountE8")]
+        amount_e8: String,
+    }
+
+    for (decimal, expected_hex) in BIGINT_FIXTURES {
+        let expected = unhex(expected_hex);
+        let fixture = AmountOnly {
+            amount_e8: decimal.to_owned(),
+        };
+
+        let json_text = serde_json::to_string(&fixture).unwrap();
+        assert_eq!(json_text, format!(r#"{{"amountE8":"{decimal}"}}"#));
+
+        let bridged = cbor::encode_json(json_text.clone()).expect("bridge encode");
+        assert_eq!(bridged, expected, "bridge encode {decimal}");
+        assert_eq!(
+            bridged,
+            CborCodec.encode(&fixture).expect("direct encode"),
+            "bridge must match the direct codec byte for byte for {decimal}"
+        );
+        assert_eq!(bridged[10] >> 5, 3, "{decimal} must be a text string");
+
+        let decoded: AmountOnly = CborCodec.decode(&expected).expect("direct decode");
+        assert_eq!(decoded, fixture, "direct decode {decimal}");
+
+        // And back out through the bridge: the same JSON text, with the
+        // value still a JSON string, never a number.
+        let decoded_json = cbor::decode_json(expected).expect("bridge decode");
+        assert_eq!(decoded_json, json_text, "bridge decode {decimal}");
+        let parsed: serde_json::Value = serde_json::from_str(&decoded_json).unwrap();
+        assert!(
+            parsed["amountE8"].is_string(),
+            "{decimal} must stay a string"
+        );
+    }
+}
+
+#[test]
+fn bigint_native_type_encodes_to_the_fixture_bytes_the_bridge_carries() {
+    // The native-typed half of the claim: a Rust struct with a real
+    // `cratestack_core::BigInt` field encodes (through `CborCodec`) to the
+    // exact bytes the bridge and every other binding assert, and the
+    // bridge's output decodes back into it. `cratestack-core`'s own tests
+    // pin the encoding byte for byte; this binds the bridge to it.
+    #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+    struct BigIntOnly {
+        #[serde(rename = "amountE8")]
+        amount_e8: BigInt,
+    }
+
+    for (decimal, expected_hex) in BIGINT_FIXTURES {
+        let expected = unhex(expected_hex);
+        let fixture = BigIntOnly {
+            amount_e8: BigInt::new(decimal.parse::<i64>().expect("fixture fits i64")),
+        };
+
+        assert_eq!(
+            CborCodec.encode(&fixture).expect("direct encode"),
+            expected,
+            "native BigInt encode {decimal}"
+        );
+
+        let json_text = serde_json::to_string(&fixture).unwrap();
+        assert_eq!(json_text, format!(r#"{{"amountE8":"{decimal}"}}"#));
+        let bridged = cbor::encode_json(json_text).expect("bridge encode");
+        assert_eq!(bridged, expected, "bridge encode {decimal}");
+
+        let decoded: BigIntOnly = CborCodec.decode(&bridged).expect("direct decode");
+        assert_eq!(decoded, fixture, "native BigInt decode {decimal}");
+    }
+}
+
+#[test]
+fn bigint_text_string_and_native_integer_stay_distinct_through_the_bridge() {
+    // The bridge carries whatever JSON it is handed, so a JSON number
+    // reaches the wire as a CBOR integer (major type 0) and a JSON string
+    // as a text string (major type 3). They must never be conflated: that
+    // is what lets the Rust codec refuse a number at a `BigInt` key
+    // (`cratestack-core`'s tests) instead of the bridge guessing.
+    let as_number =
+        cbor::encode_json(r#"{"amountE8":9223372036854775807}"#.to_owned()).expect("bridge encode");
+    assert_eq!(
+        as_number,
+        unhex("a168616d6f756e7445381b7fffffffffffffff"),
+        "a JSON number is a CBOR unsigned integer (0x1b, 8 bytes)"
+    );
+    assert_ne!(as_number, unhex(BIGINT_FIXTURES[0].1));
+
+    let decoded_number = cbor::decode_json(as_number).expect("bridge decode");
+    assert_eq!(decoded_number, r#"{"amountE8":9223372036854775807}"#);
+    let decoded_string = cbor::decode_json(unhex(BIGINT_FIXTURES[0].1)).expect("bridge decode");
+    assert_eq!(decoded_string, r#"{"amountE8":"9223372036854775807"}"#);
 }
 
 #[test]

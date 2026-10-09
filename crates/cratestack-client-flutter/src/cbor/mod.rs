@@ -227,6 +227,55 @@ mod tests {
         );
     }
 
+    /// ADR 0019 D2: a `BigInt` travels as a CBOR text string (major type
+    /// 3) holding the canonical decimal form. Tuples are
+    /// `(decimal, exact CBOR hex of {"amountE8": <decimal>})`, the same
+    /// five strings as `cratestack-cbor-napi`'s `lib.rs` (which documents
+    /// where every copy lives and how the hex was derived).
+    const BIGINT_FIXTURES: [(&str, &str); 5] = [
+        (
+            "9223372036854775807",
+            "a168616d6f756e7445387339323233333732303336383534373735383037",
+        ),
+        (
+            "-9223372036854775808",
+            "a168616d6f756e744538742d39323233333732303336383534373735383038",
+        ),
+        (
+            "9007199254740993",
+            "a168616d6f756e7445387039303037313939323534373430393933",
+        ),
+        ("0", "a168616d6f756e7445386130"),
+        ("-1", "a168616d6f756e744538622d31"),
+    ];
+
+    fn unhex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
+    #[test]
+    fn bigint_text_string_fixtures_stay_byte_exact_through_the_json_text_boundary() {
+        // The Dart side hands this bridge `jsonEncode(...)` text, so the
+        // boundary is exercised exactly as `cratestack_cbor` does: JSON
+        // text in, bytes out, bytes in, JSON text out. A decimal string
+        // must stay a string at every hop.
+        for (decimal, expected_hex) in BIGINT_FIXTURES {
+            let json_text = format!(r#"{{"amountE8":"{decimal}"}}"#);
+
+            let bytes = encode_json(json_text.clone()).expect("encode");
+            assert_eq!(hex(&bytes), expected_hex, "encode {decimal}");
+            // `0xa1` (map of one), `0x68` + 8 key bytes, then the value
+            // header at index 10: major type 3, never 0/1 (integer).
+            assert_eq!(bytes[10] >> 5, 3, "{decimal} must be a text string");
+
+            let decoded = decode_json(unhex(expected_hex)).expect("decode");
+            assert_eq!(decoded, json_text, "decode {decimal}");
+        }
+    }
+
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }

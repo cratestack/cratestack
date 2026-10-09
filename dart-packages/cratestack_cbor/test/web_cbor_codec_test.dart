@@ -56,6 +56,41 @@ void main() {
     );
   }
 
+  for (final fixture in sharedFixtures) {
+    test(
+      'decodeJson(bytes of ${fixture.json}) matches the shared cross-binding '
+      'fixture',
+      () {
+        expect(
+          jsonDecode(codec.decodeJson(unhex(fixture.hex))),
+          jsonDecode(fixture.json),
+        );
+      },
+    );
+  }
+
+  // ADR 0019 D2: a `BigInt` is a CBOR text string (major type 3) holding
+  // the canonical decimal form, so this backend must hand the decimal back
+  // as the exact same string, never a number (a double cannot hold 2^53+1
+  // on dart2js, and `jsonDecode` would round it).
+  for (final fixture in bigIntFixtures) {
+    test('BigInt ${fixture.json} is an exact text string both ways', () {
+      final decimal =
+          (jsonDecode(fixture.json) as Map<String, dynamic>)['amountE8'];
+      expect(decimal, isA<String>());
+
+      final bytes = codec.encodeJson(fixture.json);
+      // Index 10 is the value header after `a1` and the `68` + 8-byte key;
+      // its top three bits are the major type (3 = text, never 0/1 = int).
+      expect(bytes[10] >> 5, 3);
+
+      final decoded =
+          jsonDecode(codec.decodeJson(bytes)) as Map<String, dynamic>;
+      expect(decoded['amountE8'], decimal);
+      expect(BigInt.parse(decoded['amountE8'] as String).toString(), decimal);
+    });
+  }
+
   test('malformed CBOR bytes throw CratestackCborCodecError, not a crash', () {
     expect(
       () => codec.decodeJson([0x1b]),
