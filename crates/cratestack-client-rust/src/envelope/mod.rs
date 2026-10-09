@@ -7,15 +7,21 @@
 //! values of a parameterised mount. The sealing itself lives in
 //! `client::envelope_call`, next to the transport it wraps.
 
+mod pending;
+mod seal_call;
+mod seal_input;
+
 use std::borrow::Cow;
 
 use cratestack_core::{Binding, BoundHeaders, PathParams};
 use cratestack_cose::{CoseEnvelope, CoseMode, CoseRole};
 
+pub(crate) use self::pending::is_cose;
+pub use self::pending::{OpenedResponse, PendingResponse};
+pub use self::seal_call::SealedCall;
+pub(crate) use self::seal_call::check_payload_types;
+pub use self::seal_input::SealCall;
 use crate::error::ClientError;
-
-/// The `payload_media_type` every binding names: what is inside the seal.
-const PAYLOAD_MEDIA_TYPE: &str = "application/cbor";
 
 /// A client-role COSE envelope, addressed to one service.
 ///
@@ -95,20 +101,22 @@ impl ClientEnvelope {
     }
 
     /// The request's binding: everything the server rebuilds on its side.
+    /// `payload_media_type` is the type of the request payload.
     pub(crate) fn binding<'a>(
         &'a self,
         method: &'a str,
         route: &'a str,
-        route_params: &'a [String],
+        route_params: &[&str],
         query: Option<String>,
         contract_sha: [u8; 32],
         bound_headers: BoundHeaders<'a>,
+        payload_media_type: &'a str,
     ) -> Binding<'a> {
         let params = self
             .mount_params
             .iter()
-            .chain(route_params)
             .cloned()
+            .chain(route_params.iter().map(|param| (*param).to_owned()))
             .collect();
         Binding {
             audience: Cow::Borrowed(&self.audience),
@@ -117,7 +125,7 @@ impl ClientEnvelope {
             path_params: PathParams::Owned(params),
             query: query.map(Cow::Owned),
             contract_sha,
-            payload_media_type: Cow::Borrowed(PAYLOAD_MEDIA_TYPE),
+            payload_media_type: Cow::Borrowed(payload_media_type),
             bound_headers,
             response: None,
         }

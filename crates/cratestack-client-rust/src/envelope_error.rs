@@ -48,6 +48,13 @@ pub enum EnvelopeError {
     /// the key resolver's backend is down.
     #[error("opening the response failed: {0}")]
     Open(#[source] CratestackError),
+    /// The response was sealed under a payload type the call did not ask
+    /// for (its `Cratestack-Payload-Type`, absent meaning
+    /// `application/cbor`, is not among the types the request advertised).
+    /// The body was not opened, let alone decoded: a client never decodes a
+    /// type it did not request. `got` is what the server named, truncated.
+    #[error("the response was sealed as `{got}`, a payload type this call did not ask for")]
+    UnexpectedPayloadType { got: String },
     /// Streams and subscriptions cannot be sealed yet (ADR 0006 P1); the
     /// call was refused locally instead of being sent in plain.
     #[error("sealed streams are not supported yet; call a unary operation")]
@@ -65,6 +72,7 @@ impl EnvelopeError {
             EnvelopeError::ContractUnsupported { .. } => "envelope_contract_unsupported",
             EnvelopeError::Seal(_) => "envelope_seal",
             EnvelopeError::Open(_) => "envelope_open",
+            EnvelopeError::UnexpectedPayloadType { .. } => "envelope_unexpected_payload_type",
             EnvelopeError::StreamsUnsupported => "envelope_streams_unsupported",
         }
     }
