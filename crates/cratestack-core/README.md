@@ -15,6 +15,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 - **Event bus**: `CratestackEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CratestackEventEnvelope`
 - **Transaction isolation**: `TransactionIsolation`
 - **Decimal scalar**: `Decimal` (compile-time backend)
+- **BigInt scalar**: `BigInt`, a `Copy` newtype over `i64` that travels as a canonical decimal string on every codec (see below)
 - **Validators**: `validate_length`, `validate_range_i64`, `validate_range_decimal`, `validate_email`, `validate_uri`, `validate_iso4217`
 
 ## Installation
@@ -27,6 +28,27 @@ cratestack-core = "0.7"
 Either or both of `decimal-rust-decimal` (`Copy`, fixed 96-bit precision) and `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`) may be selected — as of cratestack#505 Direction 2, they are **not** mutually exclusive. Each exposes its concrete type under its own name, `RustDecimal`/`BigDecimal`, independently of the other. The legacy `Decimal` alias (still exported for hand-written code) only exists when *exactly one* is selected — same treatment as selecting neither (cratestack#521): rather than pick one silently, an ambiguous or absent name simply isn't exported, and code that tries to use it gets rustc's own "cannot find type `Decimal`" instead of a clearer message from this crate. Generated code (`cratestack-macros`) never uses the bare alias — a schema picks its concrete backend via the `decimal = RustDecimal | BigDecimal` argument on its `include_*_schema!` macro call, not a Cargo feature, so two schemas in the same build can each get the backend they asked for.
 
 **This closes what used to be a graph-wide invariant (cratestack#505):** previously, "selecting both is a compile error" wasn't something *your* `Cargo.toml` alone controlled — Cargo features are additive and unify across a whole dependency graph, so two independent dependents that each picked a different backend, both individually well-formed, could force that error into a combined build that neither one could fix on its own. See `crates/cratestack-core/src/decimal.rs`'s module doc and `docs/design/decimal-backend-additivity.md` for the full detail, including why `SqlValue::Decimal` (`cratestack-sql`) needed to stop naming one fixed concrete type too.
+
+## `BigInt`
+
+`cratestack::BigInt` is the schema's 64-bit integer scalar (`totalE8 BigInt`). It is a `Copy` newtype over `i64`, not an arbitrary-precision integer.
+
+```rust
+use cratestack_core::BigInt;
+
+let amount = BigInt::new(9_007_199_254_740_993);
+assert_eq!(amount.get(), 9_007_199_254_740_993);
+assert_eq!(amount.to_string(), "9007199254740993");
+assert_eq!("-1".parse::<BigInt>(), Ok(BigInt::new(-1)));
+assert_eq!(BigInt::MAX.checked_add(BigInt::new(1)), None);
+assert_eq!(serde_json::to_string(&amount).unwrap(), "\"9007199254740993\"");
+```
+
+- **Wire form.** A canonical decimal string on every codec: `0`, or an optional `-`, a non-zero digit and up to 18 more digits, inside `i64`. JSON writes a JSON string; CBOR writes a text string (major type 3), never an integer or a bignum tag. Nothing else is accepted back: a JSON number, a CBOR integer, CBOR tags 2 and 3, `+5`, `007`, `-0`, `" 1"` and anything outside `i64` are refused. A decode error names the field in its operator-only `detail()` (`amountE8: invalid type ...`), while the public message stays `invalid request payload`.
+- **Arithmetic.** `checked_add`, `checked_sub` and `checked_mul` only, each returning `Option<BigInt>`. No operator impls and no `Deref`, so a call site that still expects `i64` is a compile error.
+- **Optional driver impls.** The `sqlx-postgres` feature adds sqlx `Type`, `Encode`, `Decode` and `PgHasArrayType` (as `INT8`), and the `rusqlite` feature adds `ToSql` and `FromSql`. Both are off by default and are enabled by the backend runtime that needs them (`cratestack-sqlx`, `cratestack-rusqlite`), so `cratestack-api` and `cratestack-client` stay free of sqlx and `cratestack-pg` stays free of `libsqlite3-sys`. A `BigInt @id` or foreign key needs them: the orphan rule lets only this crate or the driver implement them.
+
+See [ADR 0019](../../docs/adr/0019-int-and-bigint-built-in-types.md) for the decision.
 
 ## Error Handling
 

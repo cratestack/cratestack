@@ -30,6 +30,7 @@ decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
 cratestack-core.workspace = true
 minicbor-serde.workspace = true
 serde.workspace = true
+serde_path_to_error.workspace = true
 
 [dev-dependencies]
 # `tests/encode_into_alloc.rs` counts allocations to prove `encode_into`

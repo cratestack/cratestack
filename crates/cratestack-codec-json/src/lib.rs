@@ -26,10 +26,21 @@ impl CratestackCodec for JsonCodec {
         })
     }
 
+    /// Same as `serde_json::from_slice` (including its trailing-data check),
+    /// wrapped in `serde_path_to_error` so the error's detail names the field
+    /// that failed (`failed to decode JSON body: amountE8: invalid type ...`).
+    /// The public message of `CratestackError::Codec` stays generic; the path
+    /// reaches operators through `detail()` only.
     fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError> {
-        serde_json::from_slice(bytes)
-            .map_err(|error| CratestackError::Codec(format!("failed to decode JSON body: {error}")))
+        let mut deserializer = serde_json::Deserializer::from_slice(bytes);
+        let value = serde_path_to_error::deserialize(&mut deserializer).map_err(decode_error)?;
+        deserializer.end().map_err(decode_error)?;
+        Ok(value)
     }
+}
+
+fn decode_error(error: impl std::fmt::Display) -> CratestackError {
+    CratestackError::Codec(format!("failed to decode JSON body: {error}"))
 }
 
 #[cfg(test)]

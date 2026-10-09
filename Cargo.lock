@@ -1358,6 +1358,7 @@ dependencies = [
  "minicbor-serde",
  "serde",
  "serde_json",
+ "serde_path_to_error",
 ]
 
 [[package]]
@@ -1367,6 +1368,7 @@ dependencies = [
  "cratestack-core",
  "serde",
  "serde_json",
+ "serde_path_to_error",
 ]
 
 [[package]]
@@ -1382,10 +1384,13 @@ dependencies = [
  "hmac",
  "http",
  "minicbor-serde",
+ "rusqlite",
  "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlx-core",
+ "sqlx-postgres",
  "subtle",
  "thiserror 2.0.21",
  "tokio",

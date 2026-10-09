@@ -40,6 +40,20 @@ decimal-rust-decimal = ["dep:rust_decimal"]
 # monetary/precision requirements can exceed 28-29 significant digits, at
 # the cost of an allocation per value.
 decimal-bigdecimal = ["dep:bigdecimal"]
+# Driver trait impls for `BigInt` (ADR 0019 D3, amended in PR B). Off by default
+# and enabled only by the backend runtime that needs it: `cratestack-sqlx`
+# turns on `sqlx-postgres`, `cratestack-rusqlite` turns on `rusqlite`. They
+# live in this crate, behind optional dependencies, because the orphan rule
+# lets only the crate that owns `BigInt` or the crate that owns the driver
+# traits implement them, and a `BigInt @id` or foreign key reaches the sqlx
+# delegates' `PK: Type<Postgres> + Encode<Postgres>` bounds directly. They are
+# optional so that no facade other than the one that opts in pulls a driver:
+# `cratestack-api` and `cratestack-client` stay free of sqlx, and
+# `cratestack-pg` stays free of `libsqlite3-sys` (`facade-disjointness`).
+# `sqlx-core` and `sqlx-postgres` are the pair `cratestack-sqlx` already
+# depends on, not the `sqlx` umbrella, for the same `links = "sqlite3"` reason.
+sqlx-postgres = ["dep:sqlx-core", "dep:sqlx-postgres"]
+rusqlite = ["dep:rusqlite"]
 
 [dependencies]
 async-trait.workspace = true
@@ -57,6 +71,9 @@ url.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }
 bigdecimal = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
+sqlx-core = { workspace = true, optional = true }
+sqlx-postgres = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Installs a counting `#[global_allocator]`. It is linked only into the test

@@ -522,6 +522,7 @@ dependencies = [
  "cratestack-core",
  "minicbor-serde",
  "serde",
+ "serde_path_to_error",
 ]
 
 [[package]]
@@ -531,6 +532,7 @@ dependencies = [
  "cratestack-core",
  "serde",
  "serde_json",
+ "serde_path_to_error",
 ]
 
 [[package]]

@@ -11,6 +11,7 @@
 
 pub mod audit;
 pub mod batch;
+pub mod bigint;
 pub mod builder;
 pub mod client_contract;
 pub mod codec;
@@ -56,6 +57,7 @@ pub use batch::{
     BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest, BatchResponse,
     BatchSummary, find_duplicate_position,
 };
+pub use bigint::{BigInt, ParseBigIntError};
 pub use codec::{
     Binding, BodyShape, BoundHeaders, CONTRACT_HEADER, CONTRACT_HEADER_VALUE_LEN,
     CONTRACT_SELECTOR_LEN, CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE,
