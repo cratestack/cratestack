@@ -14,16 +14,31 @@ import type {
 {% endfor %}
   Page,
 } from "./models.js";
+import { encodeWireFields } from "./models.js";
 import type { CratestackRpcCallOptions } from "./runtime.js";
 import type { CratestackRpcListQuery } from "./queries.js";
 
+/**
+ * The key of every query hook below. Each caller-controlled part (an id, a
+ * query, a procedure's args) goes through `encodeWireFields`, the encoder the
+ * request bodies use: a `BigInt` field is a `bigint` here (ADR 0019), and
+ * TanStack Query hashes a key with `JSON.stringify`, which throws "Do not know
+ * how to serialize a BigInt". A `bigint` is stored in the key as its canonical
+ * decimal string, so two different values (`2n ** 53n` and `2n ** 53n + 1n`)
+ * are two keys, and the same value is the same key.
+ *
+ * Build the key you pass to `invalidateQueries`, `setQueryData` and the like
+ * with these functions as well: a hand-written key holding a raw `bigint`
+ * neither hashes nor matches the stored one. The parts are typed `unknown`
+ * because they are no longer the argument's own type once encoded.
+ */
 export const cratestackQueryKeys = {
 {% for model in models %}
-  {{ model.list_query_key }}: (query?: CratestackRpcListQuery) => ["{{ model.op_ids.list }}", query] as const,
-  {{ model.get_query_key }}: (id: {{ model.primary_key_type }}) => ["{{ model.op_ids.get }}", id] as const,
+  {{ model.list_query_key }}: (query?: CratestackRpcListQuery) => ["{{ model.op_ids.list }}", encodeWireFields(query)] as const,
+  {{ model.get_query_key }}: (id: {{ model.primary_key_type }}) => ["{{ model.op_ids.get }}", encodeWireFields(id)] as const,
 {% endfor %}
 {% for procedure in query_procedures %}
-  {{ procedure.query_key }}: (args: {{ procedure.args_name }}) => ["{{ procedure.op_id }}", args] as const,
+  {{ procedure.query_key }}: (args: {{ procedure.args_name }}) => ["{{ procedure.op_id }}", encodeWireFields(args)] as const,
 {% endfor %}
 };
 

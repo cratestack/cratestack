@@ -195,6 +195,86 @@ fn composes_with_swr_and_refine_in_every_combination() {
     }
 }
 
+/// ADR 0019: `hashKey` is `JSON.stringify`, which throws on a `bigint`, so a
+/// key part the caller controls must go through `encodeWireFields` (a `bigint`
+/// becomes its canonical decimal string). The runtime proof, with real hooks and
+/// a real `QueryClient`, is `tests/bigint_query_keys.rs`; this pins the text so
+/// a key entry added later without the call is caught without Node.
+#[test]
+fn every_query_key_encodes_the_parts_a_caller_controls() {
+    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
+        let package = generate(
+            fixture,
+            Flags {
+                tanstack: true,
+                ..Flags::default()
+            },
+        );
+        assert_keys_are_encoded(fixture, file(&package, "src/react-query.ts"), 3);
+    }
+    for rpc in [false, true] {
+        let package = generate_bigint_keys(rpc);
+        let react_query = file(&package, "src/react-query.ts");
+        assert_keys_are_encoded("bigint_query_keys", react_query, 6);
+        for needle in [
+            "counterDetail: (id: bigint",
+            "encodeWireFields(id)",
+            "balanceProcedure: (args: BalanceArgs)",
+            "searchCountersProcedure: (args: SearchCountersArgs)",
+        ] {
+            assert!(
+                react_query.contains(needle),
+                "rpc={rpc}: expected `{needle}` in the generated keys:\n{react_query}"
+            );
+        }
+    }
+}
+
+fn assert_keys_are_encoded(fixture: &str, react_query: &str, entries: usize) {
+    assert!(
+        react_query.contains("import { encodeWireFields } from \"./models.js\";"),
+        "{fixture}: react-query.ts must import encodeWireFields as a value:\n{react_query}"
+    );
+    let start = react_query
+        .find("export const cratestackQueryKeys = {")
+        .unwrap_or_else(|| panic!("{fixture}: no cratestackQueryKeys object:\n{react_query}"));
+    let keys = &react_query[start..];
+    let keys = &keys[..keys.find("\n};").expect("the keys object ends")];
+    let key_lines: Vec<&str> = keys.lines().filter(|line| line.contains("=> [")).collect();
+    assert_eq!(
+        key_lines.len(),
+        entries,
+        "{fixture}: expected {entries} key entries:\n{keys}"
+    );
+    for line in key_lines {
+        assert!(
+            line.contains("encodeWireFields("),
+            "{fixture}: a query key entry passes its arguments through unencoded, so a bigint \
+             in one would throw in hashKey:\n{line}"
+        );
+    }
+}
+
+fn generate_bigint_keys(rpc: bool) -> GeneratedTypeScriptPackage {
+    let source = std::fs::read_to_string("tests/fixtures/bigint_query_keys.cstack")
+        .expect("read the fixture");
+    let source = if rpc {
+        source.replacen("model Counter {", "transport rpc\n\nmodel Counter {", 1)
+    } else {
+        source
+    };
+    let schema = cratestack_parser::parse_schema(&source).expect("fixture should parse");
+    generate_package(
+        &schema,
+        &TypeScriptGeneratorConfig {
+            package_name: "bigint-keys-fixture-client".to_owned(),
+            tanstack: true,
+            ..TypeScriptGeneratorConfig::default()
+        },
+    )
+    .expect("--tanstack should render")
+}
+
 #[derive(Default)]
 struct Flags {
     swr: bool,

@@ -1,0 +1,44 @@
+// ADR 0019: a `BigInt` reaches the cache keys of every TypeScript preset.
+// One REST schema; `tests/bigint_query_keys.rs` derives the RPC one from it by
+// adding `transport rpc`, so both transports' templates get the same coverage.
+//
+//   * `Counter` has a `BigInt @id`: `get(id)`, an update and a delete take a
+//     `bigint`, which is a TanStack key part, an RTK Query argument, an RTK
+//     tag id and an SWR key part;
+//   * `Counter.hitsE8` is a filterable `BigInt`, so `searchCounters` takes a
+//     `BigIntFilter` inside a `FindMany<Counter>` argument, the one place a
+//     filter value is a `bigint` rather than a query-string text;
+//   * `balance` and `bump` take a `BigInt` procedure argument, a query and a
+//     mutation;
+//   * `Ledger` has a `Cuid` key and a `BigInt` field, so a model whose key is
+//     not a `bigint` still returns revived `bigint`s through the same hooks.
+//
+// No `@computed(params:)` here on purpose: with `--swr` it makes the hooks
+// file reference `<Model>ComputedParams` without importing it (a `tsc` error
+// that has nothing to do with `BigInt`), and this schema is compiled under
+// every preset at once.
+
+model Counter {
+  id BigInt @id
+  label String
+  hitsE8 BigInt
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@allow("update", true)
+  @@allow("delete", true)
+}
+
+model Ledger {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountE8 BigInt
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@paged
+}
+
+procedure balance(counterId: BigInt): BigInt
+procedure searchCounters(query: FindMany<Counter>): Counter[]
+mutation procedure bump(counterId: BigInt, byE8: BigInt): Counter
