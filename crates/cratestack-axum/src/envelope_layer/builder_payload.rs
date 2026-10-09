@@ -8,8 +8,11 @@ impl EnvelopeLayerBuilder {
     /// The payload media types the layer allows inside the seal: `request`
     /// for what a client seals, `response` for what the layer seals back.
     /// **Default: `application/cbor` for both**, so a layer that never calls
-    /// this changes nothing for anyone, and a message that names no type is
-    /// byte-identical to what 0.15.3 produced.
+    /// this changes nothing for anyone: a request that names no type is
+    /// bound and opened with the bytes 0.15.3 used (AAD and body), and
+    /// answered by a response whose AAD and body are 0.15.3's too. The one
+    /// difference a 0.15.3 client can see is a new response header,
+    /// `Cratestack-Payload-Type`, which it ignores.
     ///
     /// A client names the type of its request in the unbound
     /// `Cratestack-Payload-Type` header and the response types it reads, in
@@ -25,7 +28,18 @@ impl EnvelopeLayerBuilder {
     /// What an op allows is this set intersected with the route's declared
     /// types ([`ResolvedRoute::with_payload_types`], filled from the schema's
     /// capabilities by [`RestBindingResolver`] and [`RpcBindingResolver`]).
-    /// `/rpc/batch` stays CBOR both ways.
+    /// `/rpc/batch` stays CBOR both ways. An empty route list (the generated
+    /// reads and deletes, which take no payload) constrains nothing, and a
+    /// `GET`, `HEAD` or `DELETE` is not checked for the type its **empty**
+    /// payload names (bound as sent, never refused): a payload that is not
+    /// empty is held to this set and the route's once opened, and refused as
+    /// a sealed `415`.
+    ///
+    /// A retry under the same `Idempotency-Key` must repeat its
+    /// `Cratestack-Payload-Accept`: the idempotency layer fingerprints the
+    /// request's content type and body, not the types it reads, so a
+    /// response stored for the first attempt in a type the retry did not
+    /// negotiate is never sealed for it (a sealed `500`, fail closed).
     ///
     /// Refusals are unsigned and made before any key is looked up or nonce
     /// spent: a selector header sent twice or malformed is a `400`, a request

@@ -8,8 +8,9 @@ The COSE envelope's inner payload was fixed to CBOR on both sides, so a service 
 not CBOR (a Stripe-shaped API: form-encoded requests, JSON responses) could not move to signed requests
 without changing them. The payload type is already bound once in the AAD (element 8, `payload_type`),
 never in a COSE header, so only *which string* goes in is now negotiable. **No binding-version change, no
-COSE header change, and a message that names no type is byte-identical to 0.15.3's** (a golden-bytes test
-pins the CBOR AAD).
+COSE header change, and a request that names no type is bound and opened with 0.15.3's bytes, AAD and body
+(a golden-bytes test pins the CBOR AAD)**; a response gains one header, `Cratestack-Payload-Type`, which a
+0.15.3 client ignores.
 
 - Two unbound selector headers, the same pattern as `Cratestack-Contract`: `Cratestack-Payload-Type` (the
   type of the sealed request) and `Cratestack-Payload-Accept` (the response types the client reads, in
@@ -41,6 +42,17 @@ pins the CBOR AAD).
   (`EnvelopeError` is `#[non_exhaustive]`). A sealed `/rpc/batch` over a non-CBOR codec is `BadInput`, never
   sent.
 
+- A request that carries no payload is never refused over its type. The generated model reads and deletes
+  (`list_get`, `detail_get`, `detail_delete`) declare `request_types: &[]`, which means "no constraint"
+  everywhere else; an empty list is read that way here, and a `GET`, `HEAD` or `DELETE` is checked for its
+  payload's type once opened, only if the payload is not empty (a sealed `415`, before the handler). An empty
+  payload's type is bound as sent and not checked, so a 0.15.3 client's signed REST reads work, and a form or
+  JSON client's bodiless call does not have to be declared on its route.
+- A handler's response labelled with a `charset` other than UTF-8 is not sealed as the negotiated type (a
+  sealed `500`): the type carries no parameters and clients decode it as UTF-8.
+- A retry under the same `Idempotency-Key` must repeat its `Cratestack-Payload-Accept`; a response stored in a
+  type the retry did not negotiate is a sealed `500`, never sent.
+
 Additive: 0.15.3 clients and servers interoperate unchanged (a server that does not call
 `payload_media_types` answers a request naming a foreign type `415` instead of `401`, and sends one new
 response header). REST and RPC change together; Dart and TypeScript have no sealing client, so nothing
@@ -61,7 +73,9 @@ repository. It is public now, and the generated clients run on it, so there is o
   did not ask for `UnexpectedPayloadType`, a failed verification `Unverified`.
 - `cratestack_cose::ExternalSigner::ed25519(&public_key, sign)` beside `esp256`: an Ed25519 key behind a
   callback (a Node `KeyObject` that cannot be exported, a KMS) signs the to-be-signed bytes and returns the
-  64-byte signature.
+  64-byte signature. The signature is verified under the declared public key on every call (ESP256 as the
+  envelope will send it, low `s`), so a callback signing with another key is a local error instead of a
+  coarse `401` at the peer.
 
 Additive. Transport parity does not apply to a client-side sealing helper that takes the route as given.
 

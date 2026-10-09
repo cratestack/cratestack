@@ -101,6 +101,9 @@ impl ClientEnvelope {
             .map_err(|error| ClientError::from(EnvelopeError::Seal(error)))?;
         let headers = headers(self.media_type(), &call)?;
         // The response binds the digest of exactly these bytes.
+        // The pending answer is handed to the caller and outlives `&self`, so
+        // it owns a copy of the envelope: the COSE handle inside is shared,
+        // the audience and mount values are a few short strings.
         let pending = PendingResponse::new(
             self.clone(),
             binding.into_owned(),
@@ -158,7 +161,7 @@ fn headers(
         (name(CONTRACT_HEADER)?, value(&selector)?),
     ];
     // CBOR is what an absent header means, so a CBOR call sends neither and
-    // is byte-identical on the wire to what 0.15.3 sent.
+    // sends the request headers 0.15.3 sent (the response gains one).
     if call.payload_type != DEFAULT_PAYLOAD_MEDIA_TYPE {
         headers.push((name(PAYLOAD_TYPE_HEADER)?, value(call.payload_type)?));
     }

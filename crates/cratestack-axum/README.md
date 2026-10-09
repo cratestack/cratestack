@@ -341,13 +341,16 @@ let app = axum::Router::new().nest("/api", router);
 - **Payload types.** A payload is CBOR unless the client names another type in the unbound
   `Cratestack-Payload-Type` (the sealed request's type) and `Cratestack-Payload-Accept` (the
   response types it reads, in order) headers, both defaulting to `application/cbor`; a message
-  that carries neither is byte-identical to 0.15.3's. The binding stays version 2: a request
+  that carries neither is bound and opened with 0.15.3's bytes (AAD and body; a response also
+  gains the `Cratestack-Payload-Type` header, which a 0.15.3 client ignores). The binding stays version 2: a request
   binding names the request payload's type, a response binding names the **response's own** type
   (form in, JSON out is fine), and the response repeats it in `Cratestack-Payload-Type`. A layer
   opts in with `.payload_media_types(request, response)` (CBOR alone by default), and an op
   allows that set intersected with the types its route declares (`capabilities.request_types` /
   `response_types`, which both resolvers read; `ResolvedRoute::with_payload_types` for a custom
-  one). Fail closed, all unsigned and before any key lookup or nonce: a repeated or malformed
+  one; an empty list, as on the generated reads and deletes, constrains nothing, and a `GET`,
+  `HEAD` or `DELETE` is checked for its payload's type only when that payload is not empty, as
+  a sealed `415`). Fail closed, all unsigned and before any key lookup or nonce: a repeated or malformed
   selector is a `400`, a request type the op does not accept a `415` (`payload_type_unsupported`),
   no acceptable response type a `406` (`payload_type_not_acceptable`); a header that lies about
   the request fails the signature (the coarse `401`); a handler's success in a type the request

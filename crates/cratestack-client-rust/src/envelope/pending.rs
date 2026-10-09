@@ -71,14 +71,14 @@ impl PendingResponse {
             return Err(EnvelopeError::Unsigned { status }.into());
         }
         let payload_type = self.response_type(headers)?;
-        let answer = Binding {
-            payload_media_type: Cow::Borrowed(&payload_type),
-            response: Some(ResponseBinding {
-                request: self.request,
-                status,
-            }),
-            ..self.binding.clone()
-        };
+        // `self` is spent by this call, so its binding is turned into the
+        // answer's in place.
+        let mut answer = self.binding;
+        answer.payload_media_type = Cow::Borrowed(&payload_type);
+        answer.response = Some(ResponseBinding {
+            request: self.request,
+            status,
+        });
         let opened = self
             .envelope
             .cose()
