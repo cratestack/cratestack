@@ -224,7 +224,23 @@ as `EnvelopeError::ContractUnsupported { op }` (recognised by the body's `contra
 header, which HTTP/2 forbids): a hint to offer "update the app" for that feature, never proof of
 anything, and other ops are unaffected. Streams are refused with
 `EnvelopeError::StreamsUnsupported`. A key in a platform keystore
-signs through `ExternalSigner::esp256`, which takes a DER answer. Sealed requests are marked
+signs through `ExternalSigner::esp256`, which takes a DER answer; an Ed25519 key behind a
+callback (a Node `KeyObject`, a KMS) through `ExternalSigner::ed25519`.
+
+**Payload types.** The codec's `CONTENT_TYPE` is the type of every sealed request and its
+`HttpClientCodec::payload_accept` (default: the same type) the types it reads back, so a
+`JsonCodec` client can take an envelope, and so can a hand-written form-in/JSON-out codec that
+overrides `payload_accept`. CBOR sends nothing extra, so its wire is unchanged; any other type
+travels in the unbound `Cratestack-Payload-Type` / `Cratestack-Payload-Accept` headers and is bound
+in the seal, which needs a server layer that opted in (`payload_media_types`). A response sealed
+under a type the call did not ask for is `EnvelopeError::UnexpectedPayloadType { got }` and is never
+opened, let alone decoded. A sealed `/rpc/batch` is CBOR both ways (`BadInput` otherwise).
+
+**Doing your own HTTP.** `ClientEnvelope::seal_call(SealCall::new(method, route, contract_sha)
+.payload(bytes, type).accept(..))` returns the sealed body, every header the seal depends on, and
+a `PendingResponse`; send them with any HTTP client and hand the answer (status, headers, body) to
+`PendingResponse::open`, which returns the verified payload and its type. The generated clients
+run on the same pair. Sealed requests are marked
 non-idempotent for `reqwest-middleware`, because a replay carries the same `cti`. Redirects are never followed (a supplied `reqwest::Client` must not follow them either), and a router mounted under a path with parameters needs `ClientEnvelope::with_mount_params`. On
 `wasm32-unknown-unknown` the signer need not be `Send`. See the
 [signed transport guide](https://cratestack.dev/guides/signed-transport#the-rust-client).

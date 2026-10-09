@@ -240,21 +240,19 @@ mod rpc {
     failure_suite!(rpc_app);
 }
 
+/// Relaxed by cratestack#1168: the envelope carries the codec's own payload
+/// type, so a JSON client takes one (it is `cose_client_payload_types.rs`
+/// that proves it round-trips).
 #[tokio::test]
-async fn a_json_client_cannot_take_an_envelope() {
+async fn a_json_client_can_take_an_envelope() {
     let base = reqwest::Url::parse("http://127.0.0.1:1").unwrap();
     let client = CratestackClient::new(
         cratestack_client_rust::ClientConfig::new(base),
         cratestack_client_rust::JsonCodec,
     );
-    let error = client
+    client
         .with_envelope(client_envelope(Kind::Ed25519, AUDIENCE))
-        .err()
-        .expect("an envelope wraps CBOR");
-    assert!(
-        matches!(error, cratestack_client_rust::ClientError::BadInput(_)),
-        "{error:?}"
-    );
+        .expect("a JSON payload can be sealed");
 }
 
 #[tokio::test]

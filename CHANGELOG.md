@@ -2,6 +2,69 @@
 
 ## Unreleased
 
+### Signed transport carries non-CBOR payloads, negotiated and bound in the AAD; CBOR stays the default (#1168)
+
+The COSE envelope's inner payload was fixed to CBOR on both sides, so a service whose public payloads are
+not CBOR (a Stripe-shaped API: form-encoded requests, JSON responses) could not move to signed requests
+without changing them. The payload type is already bound once in the AAD (element 8, `payload_type`),
+never in a COSE header, so only *which string* goes in is now negotiable. **No binding-version change, no
+COSE header change, and a message that names no type is byte-identical to 0.15.3's** (a golden-bytes test
+pins the CBOR AAD).
+
+- Two unbound selector headers, the same pattern as `Cratestack-Contract`: `Cratestack-Payload-Type` (the
+  type of the sealed request) and `Cratestack-Payload-Accept` (the response types the client reads, in
+  order, `", "`-joined). Absent means `application/cbor`. A type is a lowercase `type/subtype` of token
+  characters with no parameters or wildcards (`cratestack_core::parse_payload_type`,
+  `parse_payload_accept`, `is_sealable_payload_type`).
+- A request binding names the request payload's type; a **response binding names the response's own
+  type**, and the server echoes it in `Cratestack-Payload-Type`. A header that lies about a request fails
+  the signature (the coarse `401`); a lying echo fails the client's verification.
+- A layer opts in with `EnvelopeLayerBuilder::payload_media_types(request, response)` (CBOR only by
+  default). An op allows that set intersected with the types its route declares: both
+  `RestBindingResolver` (the descriptor's `capabilities.request_types` / `response_types`) and
+  `RpcBindingResolver` fill `ResolvedRoute::with_payload_types`; a custom resolver that sets none does not
+  narrow. `/rpc/batch` stays CBOR. `build()` refuses `application/cose*`, `application/cbor-seq`,
+  `text/event-stream`, `multipart/*`, anything outside the grammar, an empty request set, and a response set
+  without CBOR or JSON (the layer's own errors are sealed in one of them).
+- New refusals, all unsigned and made before any key lookup or nonce: a repeated or malformed selector is a
+  `400`, a request type the op does not accept a `415` (`payload_type_unsupported`), and no acceptable
+  response type a `406` (`payload_type_not_acceptable`). A handler's success in a type the request did not
+  negotiate is a sealed `500` (it was already one for a non-CBOR success); its **error** in such a type is
+  re-encoded in the transport's error shape, in the client's first choice of CBOR or JSON, and sealed. The
+  layer's own sealed errors use the same choice instead of forcing CBOR.
+- `cratestack-client-rust`: `with_envelope` accepts any codec whose types can be sealed (it used to refuse
+  everything but CBOR, so a `JsonCodec` client can now take an envelope). A CBOR codec sends neither header;
+  any other sends `Cratestack-Payload-Type: <CONTENT_TYPE>` and `Cratestack-Payload-Accept:
+  <payload_accept()>`. `HttpClientCodec::payload_accept` is a **provided** method (default: the codec's
+  `CONTENT_TYPE`), so an asymmetric codec (form in, JSON out) overrides it. A response sealed under a type the
+  call did not ask for is the new `EnvelopeError::UnexpectedPayloadType { got }` and is never opened or decoded
+  (`EnvelopeError` is `#[non_exhaustive]`). A sealed `/rpc/batch` over a non-CBOR codec is `BadInput`, never
+  sent.
+
+Additive: 0.15.3 clients and servers interoperate unchanged (a server that does not call
+`payload_media_types` answers a request naming a foreign type `415` instead of `401`, and sends one new
+response header). REST and RPC change together; Dart and TypeScript have no sealing client, so nothing
+changes there.
+
+### Seal a call over your own HTTP client; an Ed25519 external signer (#1168)
+
+`request_sealed` assembled the binding and sealed the request privately, so a caller that does its own HTTP
+(a Node SDK over wasm, a stripe-node adapter, a Rust SDK with its own transport) had to copy that into its own
+repository. It is public now, and the generated clients run on it, so there is one sealing path:
+
+- `ClientEnvelope::seal_call(SealCall::new(method, route, contract_sha).payload(bytes, type).accept(..)...)`
+  returns a `SealedCall { body, headers, pending }`: the COSE body, every header the seal depends on
+  (`Content-Type`, `Accept`, `Cratestack-Contract`, the payload-type selectors when not the CBOR default, the
+  bound `Idempotency-Key` / `If-Match`) and a `PendingResponse`.
+- `PendingResponse::open(status, &headers, body)` verifies the answer against the request and returns an
+  `OpenedResponse { payload_type, body }`; an unsealed answer is `EnvelopeError::Unsigned`, a type the call
+  did not ask for `UnexpectedPayloadType`, a failed verification `Unverified`.
+- `cratestack_cose::ExternalSigner::ed25519(&public_key, sign)` beside `esp256`: an Ed25519 key behind a
+  callback (a Node `KeyObject` that cannot be exported, a KMS) signs the to-be-signed bytes and returns the
+  64-byte signature.
+
+Additive. Transport parity does not apply to a client-side sealing helper that takes the route as given.
+
 ### `RegistryVerifierResolver`: signed-transport keys that can be registered and revoked at run time (#1149)
 
 `StaticVerifierResolver` is fixed at construction (`with_key` consumes the resolver), and the `auth`

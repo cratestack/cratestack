@@ -338,6 +338,23 @@ let app = axum::Router::new().nest("/api", router);
 - **Bound.** Audience, method, route, path parameters, canonical query, the called op's
   contract digest (binding version 2), and the `Idempotency-Key` / `If-Match` headers
   exactly as sent. Response headers are not.
+- **Payload types.** A payload is CBOR unless the client names another type in the unbound
+  `Cratestack-Payload-Type` (the sealed request's type) and `Cratestack-Payload-Accept` (the
+  response types it reads, in order) headers, both defaulting to `application/cbor`; a message
+  that carries neither is byte-identical to 0.15.3's. The binding stays version 2: a request
+  binding names the request payload's type, a response binding names the **response's own** type
+  (form in, JSON out is fine), and the response repeats it in `Cratestack-Payload-Type`. A layer
+  opts in with `.payload_media_types(request, response)` (CBOR alone by default), and an op
+  allows that set intersected with the types its route declares (`capabilities.request_types` /
+  `response_types`, which both resolvers read; `ResolvedRoute::with_payload_types` for a custom
+  one). Fail closed, all unsigned and before any key lookup or nonce: a repeated or malformed
+  selector is a `400`, a request type the op does not accept a `415` (`payload_type_unsupported`),
+  no acceptable response type a `406` (`payload_type_not_acceptable`); a header that lies about
+  the request fails the signature (the coarse `401`); a handler's success in a type the request
+  did not negotiate is a sealed `500`, and its error in one is re-encoded in the transport's
+  error shape (CBOR or JSON, the client's first choice) and sealed. `/rpc/batch` stays CBOR, and
+  `build()` refuses `application/cose*`, `application/cbor-seq`, `text/event-stream` and
+  `multipart/*`.
 - **Contract digests.** The digest is per op (`cratestack_core::op_contract_digest`), so a
   server-only schema edit, or an edit to another op, leaves an older client working. The
   client names the digest it used in the unbound `Cratestack-Contract` header (8 bytes of it);

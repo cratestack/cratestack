@@ -236,7 +236,7 @@ async fn a_call_that_cannot_be_sealed_is_refused_before_anything_is_signed() {
         SealCall::new("POST", batch, CONTRACT).accept(JSON),
     ];
     for (index, refused) in refused.into_iter().enumerate() {
-        let error = envelope().seal_call(refused).await.err().expect("refused");
+        let error = envelope().seal_call(refused).await.expect_err("refused");
         assert!(
             matches!(error, ClientError::BadInput(_)),
             "#{index}: {error:?}"

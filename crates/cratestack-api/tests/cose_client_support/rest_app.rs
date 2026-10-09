@@ -155,3 +155,35 @@ pub async fn stream(client: &Client) -> crate::cose_client_support::Outcome {
         Err(other) => crate::cose_client_support::Outcome::Other(other.to_string()),
     }
 }
+
+/// As [`server`], but taking JSON as well as CBOR, and with the layer
+/// allowing both inside the seal (cratestack#1168).
+pub async fn server_json(kind: Kind) -> std::net::SocketAddr {
+    let router = srv::axum::router(
+        srv::Cratestack::builder().build(),
+        Procedures,
+        (),
+        cratestack::CodecSet::new(cratestack_codec_cbor::CborCodec, cratestack::JsonCodec),
+        AllowAllAuth,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
+    .layer(layer(kind, |envelope, policy, audience| {
+        srv::axum::envelope_layer(envelope, policy, audience).payload_media_types(
+            crate::cose_client_support::CBOR_AND_JSON,
+            crate::cose_client_support::CBOR_AND_JSON,
+        )
+    }));
+    serve(router).await
+}
+
+/// The generated client with a JSON codec, sealing JSON.
+pub fn json_client_for(
+    addr: std::net::SocketAddr,
+    kind: Kind,
+) -> client::cratestack_schema::client::Client<cratestack_client_rust::JsonCodec> {
+    client::cratestack_schema::client::Client::new(crate::cose_client_support::runtime_with(
+        addr,
+        cratestack_client_rust::JsonCodec,
+        client_envelope(kind, crate::cose_client_support::AUDIENCE),
+    ))
+}
