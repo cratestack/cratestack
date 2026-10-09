@@ -1,29 +1,31 @@
 //! One sealed call: seal the request, send it, open the response
 //! (ADR 0006, cratestack#1007).
 //!
+//! The sealing and the opening are [`ClientEnvelope::seal_call`] and
+//! [`PendingResponse::open`](crate::PendingResponse::open), the same pair a
+//! caller doing its own HTTP uses: this file is the transport around them.
+//!
 //! The result is a [`RuntimeResponseWire`] whose body is the *opened*
-//! payload and whose `Content-Type` is `application/cbor`, so everything
+//! payload and whose `Content-Type` is the type it was sealed under (CBOR
+//! unless the codec says otherwise), so everything
 //! downstream of `request_raw_with_query_and_accept` (typed decoding, the
 //! `Remote` error mapping, cbor-seq lists, RPC frames) is the code a plain
 //! call runs, with no second path to keep in step with it.
 
-use cratestack_core::{
-    Binding, CONTRACT_HEADER, CratestackError, ResponseBinding, canonical_query,
-};
-use cratestack_cose::request_digest;
+use cratestack_core::PAYLOAD_TYPE_HEADER;
 use reqwest::Method;
 use reqwest::StatusCode;
 use reqwest::header::{
-    CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue,
-    TRANSFER_ENCODING,
+    CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, TRANSFER_ENCODING,
 };
 
 use crate::client::bound_headers::{bound_headers, refuse_duplicates};
 use crate::client::core::CratestackClient;
 use crate::client::envelope_refusal::refused_op;
 use crate::client::helpers::{build_url, headers_to_runtime};
+use crate::client::route::RouteRef;
 use crate::codec::HttpClientCodec;
-use crate::envelope::ClientEnvelope;
+use crate::envelope::{ClientEnvelope, SealCall, SealedCall, is_cose};
 use crate::envelope_error::EnvelopeError;
 use crate::error::{ClientError, HeaderPair};
 use crate::idempotency::RequestIdempotency;
@@ -48,7 +50,7 @@ where
                     .to_owned(),
             )
         })?;
-        let (contract_sha, selector) = self.contract_for(method.as_str(), &route.template)?;
+        let (contract_sha, _) = self.contract_for(method.as_str(), &route.template)?;
         refuse_duplicates(headers)?;
         let url = build_url(&self.config.base_url, path, canonical)?;
         // The authorizer runs over the inner payload, exactly what the
@@ -63,35 +65,34 @@ where
                 envelope.media_type(),
             )
             .await?;
-        header_map.insert(
-            HeaderName::from_static("cratestack-contract"),
-            HeaderValue::from_str(&selector).map_err(|error| {
-                ClientError::BadInput(format!("invalid {CONTRACT_HEADER} value: {error}"))
-            })?,
-        );
+        // What is bound is what the request carries: the caller's headers
+        // and the authorizer's included.
         let bound = bound_headers(&header_map)?;
-        let query = Some(canonical_query(canonical)).filter(|query| !query.is_empty());
-        let binding = envelope.binding(
+        let params: Vec<&str> = route.params.iter().map(String::as_str).collect();
+        let mut call = SealCall::new(
             method.as_str(),
-            &route.template,
-            &route.params,
-            query,
+            RouteRef::new(&route.template, &params),
             contract_sha,
-            bound,
-        );
-        let sealed = envelope
-            .cose()
-            .seal_request(body.as_deref().unwrap_or_default(), &binding)
-            .await
-            .map_err(|error| ClientError::from(EnvelopeError::Seal(error)))?;
-        header_map.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_static(envelope.media_type()),
-        );
+        )
+        .query(canonical)
+        .payload(body.as_deref().unwrap_or_default(), C::CONTENT_TYPE)
+        .accept(self.codec.payload_accept());
+        if let Some(key) = bound.idempotency_key.as_deref() {
+            call = call.idempotency_key(key);
+        }
+        if let Some(if_match) = bound.if_match.as_deref() {
+            call = call.if_match(if_match);
+        }
+        let SealedCall {
+            body: sealed,
+            headers: sealed_headers,
+            pending,
+        } = envelope.seal_call(call).await?;
+        // The seal's own headers win over whatever built them first.
+        for (name, value) in sealed_headers {
+            header_map.insert(name, value);
+        }
 
-        // The response binds the digest of exactly these bytes, so take it
-        // before the body is handed to the transport.
-        let sealed_digest = request_digest(&sealed);
         let response = self
             .http
             .request(method.clone(), url.clone())
@@ -127,74 +128,41 @@ where
             }
             .into());
         }
-        let answer = Binding {
-            response: Some(ResponseBinding {
-                request: sealed_digest,
-                status: status.as_u16(),
-            }),
-            ..binding
-        };
-        let opened = envelope
-            .cose()
-            .open_response(bytes, &answer)
-            .await
-            .map_err(open_error)?;
+        let opened = pending
+            .open(status.as_u16(), &response_headers, bytes)
+            .await?;
         Ok(RuntimeResponseWire {
             status_code: status.as_u16(),
-            headers: opened_headers(&response_headers),
-            body: opened.payload.to_vec(),
+            headers: opened_headers(&response_headers, &opened.payload_type),
+            body: opened.body.to_vec(),
         })
     }
-}
-
-/// Whether the response names exactly one content type, an
-/// `application/cose` one.
-fn is_cose(headers: &HeaderMap) -> bool {
-    let mut values = headers.get_all(CONTENT_TYPE).iter();
-    let (Some(value), None) = (values.next(), values.next()) else {
-        return false;
-    };
-    value.to_str().is_ok_and(|value| {
-        value
-            .split(';')
-            .next()
-            .unwrap_or(value)
-            .trim()
-            .eq_ignore_ascii_case("application/cose")
-    })
 }
 
 /// The response's headers as the plain call would have seen them: the body
-/// is the opened CBOR payload, so its framing headers go and its type is
-/// `application/cbor`. Everything else (`ETag`, `Retry-After`,
-/// `Idempotency-Replayed`) is passed on, and stays unauthenticated.
-fn opened_headers(headers: &HeaderMap) -> Vec<RuntimeHeader> {
+/// is the opened payload, so its framing headers (and the layer's own
+/// `Cratestack-Payload-Type`) go and its type is the one it was sealed under.
+/// Everything else (`ETag`, `Retry-After`, `Idempotency-Replayed`) is passed
+/// on, and stays unauthenticated.
+fn opened_headers(headers: &HeaderMap, payload_type: &str) -> Vec<RuntimeHeader> {
+    let dropped = |name: &str| {
+        [
+            CONTENT_TYPE.as_str(),
+            CONTENT_LENGTH.as_str(),
+            CONTENT_ENCODING.as_str(),
+            TRANSFER_ENCODING.as_str(),
+            PAYLOAD_TYPE_HEADER,
+        ]
+        .iter()
+        .any(|dropped| name.eq_ignore_ascii_case(dropped))
+    };
     let mut kept: Vec<RuntimeHeader> = headers_to_runtime(headers)
         .into_iter()
-        .filter(|header| {
-            ![
-                CONTENT_TYPE,
-                CONTENT_LENGTH,
-                CONTENT_ENCODING,
-                TRANSFER_ENCODING,
-            ]
-            .iter()
-            .any(|name| header.name.eq_ignore_ascii_case(name.as_str()))
-        })
+        .filter(|header| !dropped(&header.name))
         .collect();
     kept.push(RuntimeHeader {
         name: CONTENT_TYPE.as_str().to_owned(),
-        value: "application/cbor".to_owned(),
+        value: payload_type.to_owned(),
     });
     kept
-}
-
-/// Verification failures are the coarse `401` (ADR 0006 §10); anything else
-/// is a backend, not the message.
-fn open_error(error: CratestackError) -> ClientError {
-    match error {
-        CratestackError::Unauthorized(_) => EnvelopeError::Unverified,
-        other => EnvelopeError::Open(other),
-    }
-    .into()
 }

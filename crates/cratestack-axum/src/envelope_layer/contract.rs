@@ -158,7 +158,7 @@ pub(super) async fn open_under(
     let params = inputs.params();
     let binds: Vec<_> = candidates
         .iter()
-        .map(|digest| inputs.binding_for(*digest, &params, None))
+        .map(|digest| inputs.request_binding(*digest, &params))
         .collect();
     let (opened, index) = config
         .envelope

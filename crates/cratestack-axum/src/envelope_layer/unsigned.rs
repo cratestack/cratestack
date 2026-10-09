@@ -18,7 +18,7 @@ use super::resolver::ResolvedRoute;
 use super::seal::{BindingInputs, Sealer};
 use super::seal_policy::UnsignedRequest;
 use super::service::{Inner, call};
-use super::{media, refusal, request};
+use super::{media, payload, refusal, request};
 
 pub(super) async fn handle<S: Inner>(
     config: Arc<Config>,
@@ -44,6 +44,11 @@ pub(super) async fn handle<S: Inner>(
         Unsigned::Unsupported => return refusal::contract_unsupported(&parts.headers, &path),
         Unsigned::Misconfigured => return refusal::no_contract(&parts.headers, &path, &route),
     };
+    let negotiated = match payload::negotiate(&config, &route, &parts.method, &parts.headers, false)
+    {
+        Ok(negotiated) => negotiated,
+        Err(error) => return refusal::payload_types(&parts.headers, &path, error),
+    };
     let bound = match Bound::read(&parts.headers) {
         Ok(bound) => bound,
         Err(error) => return refusal::bad_request(&parts.headers, &path, error),
@@ -55,7 +60,7 @@ pub(super) async fn handle<S: Inner>(
     // Binds this nonce and this payload, and nothing about who sent them:
     // the request was not signed (see `ResponseSealPolicy`).
     let digest = request_digest_unsigned(&nonce, &payload);
-    request::rewrite_accept(&mut parts.headers, false);
+    request::rewrite_accept(&mut parts.headers, false, &negotiated.accept());
     let inputs = BindingInputs::new(
         config,
         // `parts` goes on to the router, so the layer keeps its own copy.
@@ -64,6 +69,7 @@ pub(super) async fn handle<S: Inner>(
         &parts.uri,
         bound,
         contract,
+        negotiated,
     );
     let sealer = Sealer {
         inputs,

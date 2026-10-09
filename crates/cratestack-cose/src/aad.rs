@@ -14,7 +14,8 @@
 //!   path_params: [* tstr],              ; REST: matched values in template order; RPC: []
 //!   query: tstr / null,
 //!   contract_sha: bstr .size 32,       ; the called op's contract digest
-//!   payload_type: tstr,
+//!   payload_type: tstr,                 ; request: the request payload's type;
+//!                                       ;   response: the response payload's own type
 //!   bound_headers: [                    ; request headers with semantics,
 //!     idempotency_key: tstr / null,     ;   exactly as sent; null if absent
 //!     if_match: tstr / null,

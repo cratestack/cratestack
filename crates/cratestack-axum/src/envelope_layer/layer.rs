@@ -13,7 +13,7 @@ use super::resolver::BindingResolver;
 use super::seal_policy::{AcceptNamesEnvelope, ResponseSealPolicy};
 use super::server_envelope::ServerEnvelope;
 use super::service::EnvelopeService;
-use super::{DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_CONTRACT_TRIALS};
+use super::{DEFAULT_MAX_BODY_BYTES, DEFAULT_MAX_CONTRACT_TRIALS, PAYLOAD_MEDIA_TYPE};
 
 pub(super) struct Config {
     pub(super) envelope: Arc<dyn ServerEnvelope>,
@@ -31,6 +31,9 @@ pub(super) struct Config {
     /// Route templates, relative to the mount prefix, that may be matched
     /// without resolving (decision S2).
     pub(super) allow_unresolved: Vec<String>,
+    /// The payload types the layer allows inside the seal (`payload.rs`).
+    pub(super) payload_request: Vec<String>,
+    pub(super) payload_response: Vec<String>,
 }
 
 /// Opens signed requests and seals responses for a generated router; see
@@ -82,6 +85,8 @@ impl EnvelopeLayer {
             principal: Box::new(ThumbprintPrincipal::new()),
             seal_policy: Box::new(AcceptNamesEnvelope),
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
+            payload_request: vec![PAYLOAD_MEDIA_TYPE.to_owned()],
+            payload_response: vec![PAYLOAD_MEDIA_TYPE.to_owned()],
         }
     }
 }

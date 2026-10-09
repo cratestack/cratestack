@@ -38,6 +38,9 @@ pub struct EnvelopeLayerBuilder {
     pub(super) principal: Box<dyn PrincipalMapper>,
     pub(super) seal_policy: Box<dyn ResponseSealPolicy>,
     pub(super) max_body_bytes: usize,
+    /// `payload_media_types(..)`; CBOR alone by default.
+    pub(super) payload_request: Vec<String>,
+    pub(super) payload_response: Vec<String>,
 }
 
 impl EnvelopeLayerBuilder {

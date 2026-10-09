@@ -163,6 +163,23 @@ pub fn runtime(addr: SocketAddr, envelope: ClientEnvelope) -> CratestackClient {
     runtime_at(addr, "", envelope)
 }
 
+/// As [`runtime`], for a client whose codec is `codec` (cratestack#1168: the
+/// envelope carries the codec's own payload type).
+pub fn runtime_with<C: cratestack_client_rust::HttpClientCodec>(
+    addr: SocketAddr,
+    codec: C,
+    envelope: ClientEnvelope,
+) -> CratestackClient<C> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let base = reqwest::Url::parse(&format!("http://{addr}")).unwrap();
+    CratestackClient::new(ClientConfig::new(base), codec)
+        .with_envelope(envelope)
+        .expect("this codec's payload type can be sealed")
+}
+
+/// The payload types a layer that opted in to JSON allows, both ways.
+pub const CBOR_AND_JSON: [&str; 2] = ["application/cbor", "application/json"];
+
 /// A signing client for `addr` whose base URL carries `path` (a mount).
 pub fn runtime_at(addr: SocketAddr, path: &str, envelope: ClientEnvelope) -> CratestackClient {
     // `reqwest`'s `rustls-no-provider` feature needs a provider installed

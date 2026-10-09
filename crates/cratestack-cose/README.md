@@ -1,8 +1,10 @@
 # cratestack-cose
 
-**L2 — Adapters.** The COSE envelope of ADR 0006: a signed body is the CBOR codec's output
-wrapped as a COSE_Sign1 or COSE_Mac0, bound to its request through external AAD that both
-sides rebuild and nobody sends.
+**L2 — Adapters.** The COSE envelope of ADR 0006: a signed body is the codec's output (CBOR by
+default, any sealable media type when the peers negotiate one) wrapped as a COSE_Sign1 or
+COSE_Mac0, bound to its request through external AAD that both sides rebuild and nobody sends.
+The payload's media type is element 8 of that AAD: a request binds its own type, a response
+binds the response's.
 
 ```text
 typed value ──CborCodec──▶ payload bytes ──CoseEnvelope──▶ COSE_Sign1 / COSE_Mac0

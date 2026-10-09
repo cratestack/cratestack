@@ -13,6 +13,7 @@ mod contract_selector;
 mod envelope;
 mod no_envelope;
 mod path_params;
+mod payload_type;
 mod request_nonce;
 mod response_binding;
 mod stream;
@@ -43,6 +44,13 @@ pub use contract_selector::{
 pub use envelope::{BodyShape, CratestackEnvelope};
 pub use no_envelope::NoEnvelope;
 pub use path_params::PathParams;
+pub use payload_type::{
+    DEFAULT_PAYLOAD_MEDIA_TYPE, MAX_PAYLOAD_ACCEPT_ENTRIES, MAX_PAYLOAD_TYPE_LEN,
+    PAYLOAD_ACCEPT_HEADER, PAYLOAD_TYPE_HEADER, PAYLOAD_TYPE_NOT_ACCEPTABLE_CODE,
+    PAYLOAD_TYPE_NOT_ACCEPTABLE_REST_CODE, PAYLOAD_TYPE_UNSUPPORTED_CODE,
+    PAYLOAD_TYPE_UNSUPPORTED_REST_CODE, is_sealable_payload_type, parse_payload_accept,
+    parse_payload_type, payload_accept_header_value,
+};
 pub use request_nonce::{
     NONCE_HEADER, NONCE_HEADER_VALUE_LEN, REQUEST_NONCE_LEN, RequestNonce, request_digest,
     request_digest_unsigned,

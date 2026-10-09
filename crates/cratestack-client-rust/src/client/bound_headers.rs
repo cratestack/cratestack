@@ -26,6 +26,18 @@ pub(super) fn refuse_duplicates(headers: &[HeaderPair<'_>]) -> Result<(), Client
     Ok(())
 }
 
+/// A bound header's value must survive a hop untouched: whitespace at either
+/// end is trimmed by hops and parsers, so what was sealed would differ from
+/// what arrives.
+pub(crate) fn check_bound_value(name: &str, text: &str) -> Result<(), ClientError> {
+    if text != text.trim() {
+        return Err(ClientError::BadInput(format!(
+            "header '{name}' has leading or trailing whitespace and cannot be sealed"
+        )));
+    }
+    Ok(())
+}
+
 /// `Idempotency-Key` and `If-Match` exactly as the request will carry them.
 pub(super) fn bound_headers(headers: &HeaderMap) -> Result<BoundHeaders<'static>, ClientError> {
     let one = |name: &str| -> Result<Option<std::borrow::Cow<'static, str>>, ClientError> {
@@ -45,13 +57,7 @@ pub(super) fn bound_headers(headers: &HeaderMap) -> Result<BoundHeaders<'static>
                 "header '{name}' must be visible ASCII to be sealed"
             ))
         })?;
-        // Whitespace at either end is trimmed by hops and parsers, so what
-        // was sealed would differ from what arrives.
-        if text != text.trim() {
-            return Err(ClientError::BadInput(format!(
-                "header '{name}' has leading or trailing whitespace and cannot be sealed"
-            )));
-        }
+        check_bound_value(name, text)?;
         Ok(Some(std::borrow::Cow::Owned(text.to_owned())))
     };
     Ok(BoundHeaders {

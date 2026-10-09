@@ -59,10 +59,15 @@ pub use batch::{
 pub use codec::{
     Binding, BodyShape, BoundHeaders, CONTRACT_HEADER, CONTRACT_HEADER_VALUE_LEN,
     CONTRACT_SELECTOR_LEN, CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE,
-    ContractSelector, CratestackCodec, CratestackEnvelope, NONCE_HEADER, NONCE_HEADER_VALUE_LEN,
-    NoEnvelope, OpenedFrame, PathParams, REQUEST_NONCE_LEN, RequestDigest, RequestKind,
-    RequestNonce, ResponseBinding, SealedItem, StreamEnd, StreamOpener, StreamSealer,
-    UNAUTHENTICATED, request_digest, request_digest_unsigned,
+    ContractSelector, CratestackCodec, CratestackEnvelope, DEFAULT_PAYLOAD_MEDIA_TYPE,
+    MAX_PAYLOAD_ACCEPT_ENTRIES, MAX_PAYLOAD_TYPE_LEN, NONCE_HEADER, NONCE_HEADER_VALUE_LEN,
+    NoEnvelope, OpenedFrame, PAYLOAD_ACCEPT_HEADER, PAYLOAD_TYPE_HEADER,
+    PAYLOAD_TYPE_NOT_ACCEPTABLE_CODE, PAYLOAD_TYPE_NOT_ACCEPTABLE_REST_CODE,
+    PAYLOAD_TYPE_UNSUPPORTED_CODE, PAYLOAD_TYPE_UNSUPPORTED_REST_CODE, PathParams,
+    REQUEST_NONCE_LEN, RequestDigest, RequestKind, RequestNonce, ResponseBinding, SealedItem,
+    StreamEnd, StreamOpener, StreamSealer, UNAUTHENTICATED, is_sealable_payload_type,
+    parse_payload_accept, parse_payload_type, payload_accept_header_value, request_digest,
+    request_digest_unsigned,
 };
 pub use context::{
     AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
