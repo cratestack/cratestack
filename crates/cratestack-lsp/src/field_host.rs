@@ -28,12 +28,11 @@ pub(crate) fn enclosing_field_host(text: &str, offset: usize) -> Option<FieldHos
     let mut open: Vec<Option<FieldHost>> = Vec::new();
     let mut in_string = false;
     for line in before.lines() {
-        let quotes_odd = line.matches("\"\"\"").count() % 2 == 1;
-        if in_string {
-            in_string ^= quotes_odd;
+        let starts_in_string = in_string;
+        in_string = ends_in_string(line, in_string);
+        if starts_in_string {
             continue;
         }
-        in_string ^= quotes_odd;
         let line = line.split("//").next().unwrap_or_default().trim();
         if line == "}" {
             open.pop();
@@ -42,6 +41,34 @@ pub(crate) fn enclosing_field_host(text: &str, offset: usize) -> Option<FieldHos
         }
     }
     open.last().copied().flatten()
+}
+
+/// Whether a `"""` string is still open at the end of `line`, which begins
+/// inside one when `in_string`. Outside a string a `//` starts a comment, so
+/// a `"""` after it opens nothing (`// why """ is quoted`), while a `//`
+/// inside a string is SQL text (`'http://x'`) and hides nothing.
+fn ends_in_string(line: &str, mut in_string: bool) -> bool {
+    let mut rest = line;
+    loop {
+        if in_string {
+            let Some(at) = rest.find("\"\"\"") else {
+                return true;
+            };
+            in_string = false;
+            rest = &rest[at + 3..];
+        } else {
+            let quote = rest.find("\"\"\"");
+            let comment = rest.find("//");
+            match quote {
+                Some(at) if comment.is_none_or(|comment| at < comment) => {
+                    in_string = true;
+                    rest = &rest[at + 3..];
+                }
+                // No opener, or a comment starts first: the rest is not code.
+                _ => return false,
+            }
+        }
+    }
 }
 
 /// The declaration a header line opens, `None` for any other block.
@@ -105,5 +132,27 @@ mod tests {
         assert_eq!(host_at(&in_view), Some(FieldHost::View));
         let comment = "model A {\n  // type T {\n  |\n}\n";
         assert_eq!(host_at(comment), Some(FieldHost::Model));
+    }
+
+    /// A `"""` inside a `//` comment opens no string. Counting it first
+    /// treated everything after as SQL, so the `}` below closed nothing and
+    /// the cursor in `type T` was still read as inside `model A`.
+    #[test]
+    fn a_triple_quote_in_a_comment_does_not_open_a_string() {
+        let source =
+            "model A {\n  // why \"\"\" is quoted\n  id Int @id\n}\ntype T {\n  x String\n  |\n}\n";
+        assert_eq!(host_at(source), Some(FieldHost::Type));
+        // Two of them in one comment are no better.
+        let twice = "model A {\n  // \"\"\" and \"\"\"\n}\ntype T {\n  |\n}\n";
+        assert_eq!(host_at(twice), Some(FieldHost::Type));
+    }
+
+    /// The other direction: a `//` inside a string is SQL, not a comment, so
+    /// a one-line `"""` string that holds a URL still closes on its line.
+    #[test]
+    fn a_double_slash_inside_a_string_is_not_a_comment() {
+        let body = format!("@@{}(\"\"\"SELECT 'http://x' \"\"\")", "sql");
+        let source = format!("view V from A {{\n  id Int @id\n  {body}\n}}\ntype T {{\n  |\n}}\n");
+        assert_eq!(host_at(&source), Some(FieldHost::Type));
     }
 }

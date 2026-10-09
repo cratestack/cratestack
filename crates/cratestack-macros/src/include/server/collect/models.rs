@@ -16,6 +16,7 @@ use crate::model::{
     generate_update_input_struct, generate_upsert_input_struct,
 };
 use crate::transport::{generate_model_transport_constants, generate_model_transport_entries};
+use crate::validators::{Validating, generate_model_validate_impl};
 
 use super::{Ts, compile_error};
 
@@ -43,11 +44,19 @@ pub(super) fn collect_models(
     model_name_set: &BTreeSet<&str>,
     enum_name_set: &BTreeSet<&str>,
     auth: Option<&cratestack_core::AuthBlock>,
+    validating: &Validating,
 ) -> Result<ModelCollected, TokenStream> {
+    // A model sent as a value (a procedure argument, or a field of a `type`)
+    // is validated by this impl, beside the struct it is for.
     let structs = schema
         .models
         .iter()
-        .map(|model| generate_model_struct_only(model, model_name_set, enum_name_set))
+        .flat_map(|model| {
+            [
+                generate_model_struct_only(model, model_name_set, enum_name_set),
+                generate_model_validate_impl(model, model_name_set, validating),
+            ]
+        })
         .collect();
     let pg_from_row_impls = schema
         .models
@@ -103,7 +112,7 @@ pub(super) fn collect_models(
     let axum_handler_defs = schema
         .models
         .iter()
-        .map(|model| generate_model_axum_handlers(model, &schema.models, enum_name_set))
+        .map(|model| generate_model_axum_handlers(model, &schema.models, enum_name_set, validating))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| compile_error(schema_path, e))?;
     let axum_routes = schema

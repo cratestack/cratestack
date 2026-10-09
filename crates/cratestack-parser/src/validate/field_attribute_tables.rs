@@ -23,11 +23,11 @@
 //! | `@server_only` | none | model, view: `shared/attrs.rs:46`, `model/struct_only/field_definition.rs:71` (a view's struct is emitted through it, `view/struct_only.rs:27`); model also `cratestack-client-typescript/src/types.rs:140` |
 //! | `@version` | none | model: `shared/attrs.rs:93`, `model/descriptor.rs:169`, `axum/model/prep.rs:80` |
 //! | `@pii`, `@sensitive` | none | model: `shared/attrs.rs:54`, `:62`, `model/descriptor/columns.rs:66`, `:74` (audit redaction) |
-//! | `@db_enforce` | none | model: `cratestack-migrate/src/convert/checks.rs:12` |
-//! | `@email`, `@uri`, `@iso4217` | none | model: `cratestack-macros/src/validators.rs:105` to `:107`, `cratestack-studio/src/validators/predicates.rs`; `@iso4217` also `cratestack-migrate/src/convert/checks.rs:31`; type: `cratestack-macros/src/validators/types.rs:37` through the same `validators.rs` arms |
-//! | `@length`, `@range`, `@regex` | required | model: `cratestack-macros/src/validators.rs:90` to `:104`; `@length` and `@range` also `cratestack-migrate/src/convert/checks.rs:25`; type: `cratestack-macros/src/validators/types.rs:37`, through the same arms |
+//! | `@db_enforce` | none | model: `cratestack-migrate/src/convert/checks.rs:8` and `:23`; only beside `@range`, `@length` or `@iso4217`, the validators with a SQL form, see `super::db_enforce` |
+//! | `@email`, `@uri`, `@iso4217` | none | model: `cratestack-macros/src/validators.rs:113` to `:115`, `cratestack-studio/src/validators/predicates.rs`; `@iso4217` also `cratestack-migrate/src/convert/checks.rs:33`; type and model: `cratestack-macros/src/validators/types.rs:84` and `:117` through the same `validators.rs` arms |
+//! | `@length`, `@range`, `@regex` | required | model: `cratestack-macros/src/validators.rs:98` to `:112`; `@length` and `@range` also `cratestack-migrate/src/convert/checks.rs:27` and `:30`; type and model: `cratestack-macros/src/validators/types.rs:84` and `:117`, through the same arms |
 //! | `@rename` | required, exactly `from = "<old>"` (`super::rename_attributes`) | model: `cratestack-migrate/src/convert/renames.rs:25` |
-//! | `@from` | required | view: none reads it; see below |
+//! | `@from` | required | view: no generator reads it; its shape and target are checked, `super::view_from` |
 //!
 //! A mixin's fields are copied into every model that `@use`s it, attributes
 //! included (`crate::parse::models::expand_model_mixins`), so a mixin
@@ -37,12 +37,13 @@
 //! read only its name (`cratestack-macros/src/policy/auth.rs:11`), and
 //! `@server_only` and `@computed` on it already had refusals of their own.
 //!
-//! One entry is accepted although nothing reads it, because the
+//! One entry is accepted although no generator reads it, because the
 //! documentation and the ADR say it is written there, and refusing it is a
 //! decision for the maintainer: `@from(Model.field)` on a view field is
-//! documented as an unchecked source annotation (`cratestack-docs`
-//! `reference/views.md`), is named by ADR 0019 D5, and appears 11 times in
-//! this repository.
+//! documented as a source annotation (`cratestack-docs` `reference/views.md`),
+//! is named by ADR 0019 D5, and appears 11 times in this repository. What it
+//! says must be true, though: `super::view_from` requires the `Model.field`
+//! shape and a model and a field the schema declares.
 //!
 //! A `type` field is the case the first cut of these lists got wrong, and the
 //! reason there is no such entry for it. It listed `@default` and `@length`
@@ -54,11 +55,14 @@
 //! is what D5 closes, and downstream schemas (skyport-billing, the vaam p2p
 //! and mobile-v3 schemas) wrote `@length` on `type`s used as procedure
 //! arguments believing it checked them. So the validator family is accepted
-//! on a `type` field and enforced on procedure arguments
+//! on a `type` field and enforced on procedure arguments and `?computedParams=`
 //! (`cratestack-macros/src/validators/types.rs`), and the two names with no
 //! reader are refused, each with its own message
 //! (`super::type_field_attributes`): `@default`, and `@db_enforce`, since a
-//! `type` has no table. A validator on a list field is refused there too.
+//! `type` has no table. A validator on a list field is refused there too, and
+//! so is a validator on a `type` that no client input reaches
+//! (`super::type_validator_reach`): a return-only `type` is built by the
+//! server, so its validators would never run.
 //!
 //! The other attributes, `@pii`, `@unique` and the rest, are refused on a
 //! `type` or `view` field, where they were inert.

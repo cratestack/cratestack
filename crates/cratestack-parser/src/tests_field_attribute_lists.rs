@@ -38,7 +38,17 @@ pub(crate) fn declaration(host: FieldHost, ty: &str, attribute: &str) -> String 
              @@sql(\"SELECT id FROM a\")\n}}\n"
         ),
         FieldHost::Mixin => format!("mixin M {{\n  f {ty} {attribute}\n}}\n"),
-        FieldHost::Type => format!("type T {{\n  f {ty} {attribute}\n}}\nprocedure p(): T\n"),
+        FieldHost::Type => {
+            // A validator needs client input to run on, so the procedure takes
+            // the `type`; a `@computed` field cannot be taken as input, so
+            // every other attribute is checked on a `type` the procedure
+            // only returns.
+            let validator = ["@length", "@range", "@regex", "@email", "@uri", "@iso4217"]
+                .iter()
+                .any(|name| attribute.starts_with(name));
+            let args = if validator { "args: T" } else { "" };
+            format!("type T {{\n  f {ty} {attribute}\n}}\nprocedure p({args}): T\n")
+        }
         FieldHost::Auth => format!("auth Ctx {{\n  id Int\n  f {ty} {attribute}\n}}\n"),
     }
 }

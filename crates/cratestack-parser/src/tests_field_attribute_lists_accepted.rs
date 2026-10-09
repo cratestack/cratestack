@@ -17,6 +17,8 @@ fn every_listed_name_is_accepted_on_its_kind() {
                 "@id" => continue, // is the declaration's own key; see below
                 "@relation" => continue,
                 "@default" => ("String", "@default(\"x\")"),
+                // Only a validator with a SQL form gives it something to enforce.
+                "@db_enforce" => ("String", "@length(min: 1) @db_enforce"),
                 "@version" => ("Int", "@version"),
                 "@length" => ("String", "@length(min: 1, max: 5)"),
                 "@range" => ("Int", "@range(min: 0, max: 5)"),

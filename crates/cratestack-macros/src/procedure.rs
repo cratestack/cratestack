@@ -16,6 +16,8 @@ mod tests_isolation;
 mod tests_policy_audit;
 #[cfg(test)]
 mod tests_policy_audit_selectors;
+#[cfg(test)]
+mod tests_validation;
 mod type_tokens;
 mod types;
 
@@ -26,7 +28,7 @@ use quote::quote;
 
 use crate::policy::{PolicySubject, generate_procedure_policy};
 use crate::shared::{doc_attrs, ident, is_stream_procedure, to_snake_case};
-use crate::validators::procedure_validates_args;
+use crate::validators::Validating;
 
 use client_types::generate_client_procedure_args_struct;
 use instrument::{
@@ -52,6 +54,7 @@ pub(crate) fn generate_procedure_module(
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,
     auth: Option<&cratestack_core::AuthBlock>,
+    validating: &Validating,
 ) -> Result<proc_macro2::TokenStream, String> {
     let module_ident = ident(&to_snake_case(&procedure.name));
     let docs = doc_attrs(&procedure.docs);
@@ -69,7 +72,8 @@ pub(crate) fn generate_procedure_module(
         .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
     let procedure_name = &procedure.name;
-    let args_struct = generate_procedure_args_struct(procedure, types, enum_names, "procedure");
+    let args_struct =
+        generate_procedure_args_struct(procedure, types, enum_names, "procedure", validating);
     let output_type = procedure_output_tokens(&procedure.return_type, types, enum_names);
     // `@stream` procedures additionally get a `pub type Item = T;` alias
     // (the list's element type, not `Vec<T>`) alongside `Output` — the
@@ -87,10 +91,7 @@ pub(crate) fn generate_procedure_module(
     };
 
     let authorize_fn = authorize_fn_tokens();
-    let authorize_with_db_fn = authorize_with_db_fn_tokens(
-        &model_authorizers,
-        procedure_validates_args(procedure, types),
-    );
+    let authorize_with_db_fn = authorize_with_db_fn_tokens(&model_authorizers);
     let invoke_fn = invoke_fn_tokens();
     let (isolation_const, invoke_with_db_fn) = isolation_and_invoke_with_db_tokens(procedure);
     // cratestack#512: the witness type `authorize_with_db`/`invoke_with_db`

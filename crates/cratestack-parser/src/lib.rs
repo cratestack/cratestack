@@ -35,6 +35,8 @@ mod tests_computed_params;
 mod tests_computed_stream;
 mod tests_computed_type_valued;
 #[cfg(test)]
+mod tests_db_enforce_eligibility;
+#[cfg(test)]
 mod tests_detached_attributes;
 #[cfg(test)]
 mod tests_docs;
@@ -154,11 +156,15 @@ mod tests_type_field_validators;
 #[cfg(test)]
 mod tests_types;
 #[cfg(test)]
+mod tests_unreachable_validators;
+#[cfg(test)]
 mod tests_validators;
 #[cfg(test)]
 mod tests_vector;
 #[cfg(test)]
 mod tests_version;
+#[cfg(test)]
+mod tests_view_from;
 #[cfg(test)]
 mod tests_views;
 

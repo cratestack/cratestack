@@ -188,7 +188,7 @@ is a compile error rather than a silent JSON number.
 | Comparison and find-many | `Int` in `supports_comparison` (`shared/attrs.rs:11`) and `find_many_where.rs:37` | adds `BigInt`; `FieldFilterInput<i32>` and `FieldFilterInput<BigInt>` |
 | Procedure-arg policy values | `Value::Int` (`shared/value.rs:44-50`) | `Int`: `Value::Int(i64::from(v))`; `BigInt`: `Value::Int(v.get())` (in-process only, never serialized to a client) |
 | Policy literals | `PolicyLiteral::Int(i64)` (`crates/cratestack-policy/src/read_types.rs:14`), parsed as `i64` (`policy/model/predicates.rs:179-182`, `policy/procedure/resolver.rs:123-126`), compared at `cratestack-sqlx/src/query/support/values.rs:142`, `:151` | literal container unchanged; `BigInt` fields accepted; on `Int` a literal outside `i32` is a macro error; comparison arms for both `SqlValue` variants |
-| Validators | `validate_range_i64` (`crates/cratestack-core/src/validators.rs:73`), emitted for `Int` only (`validators/emit.rs:106`) | both scalars, through `i64` |
+| Validators | `validate_range_i64` (`crates/cratestack-core/src/validators.rs:84`), emitted for `Int` only (`validators/emit.rs:129`) | both scalars, through `i64` |
 | Auth-derived defaults | `CreateDefaultType::Int` (`model/descriptor/defaults.rs:30`, `cratestack-sqlx/src/query/support/create.rs:106`, `:145`) | `Int` and `BigInt` kinds; a `BigInt` claim is accepted as a JSON integer or a canonical string, because claims are parsed server-side by `serde_json` and never pass through a JS number (§2's single form governs the request and response codecs; an identity provider's token is not one of them) |
 | `@version` seed | `SqlValue::Int(0)` at `write/create_exec.rs:72`, `write/upsert_prepare.rs:45`, `batch/create_item.rs:55`, `batch/upsert_item.rs:54` | the descriptor records the version column's scalar; the seed is `Int(0)` or `BigInt(0)` |
 | `If-Match` | parsed as `i64` (`crates/cratestack-axum/src/headers/etag.rs:8`) | unchanged; compared after widening the column value |
@@ -205,7 +205,7 @@ is a compile error rather than a silent JSON number.
 | Snapshot | format 2 (`snapshot.rs:43`), other versions refused (`snapshot.rs:102-108`) | format 3; a format-2 snapshot is refused with a message naming `cratestack upgrade int-to-bigint` (§4) |
 | `BigInt` to `Int` | n/a | `ALTER COLUMN ... TYPE INTEGER USING (col::INTEGER)` (`emit/postgres/columns.rs:46-57`), `Lossy` (`ir.rs:93`), so `migrate diff` needs `--allow-destructive` (`crates/cratestack-cli/src/migrate/diff_cmd.rs:56`). Postgres rewrites the table under an `ACCESS EXCLUSIVE` lock ([ALTER TABLE, Notes](https://www.postgresql.org/docs/current/sql-altertable.html)) and raises `22003` `numeric_value_out_of_range` ([error codes](https://www.postgresql.org/docs/current/errcodes-appendix.html)) if a row does not fit, which aborts the migration |
 | Introspection | `int8` to `Int`, `int4` unmapped (`introspect/postgres/types.rs:32`, `:53-60`) | `int4` to `Int`, `int8` to `BigInt` |
-| `@range ... @db_enforce` | bounds parsed as `i64` (`convert/checks.rs:66`) | unchanged |
+| `@range ... @db_enforce` | bounds parsed as `i64` (`convert/checks.rs:68`) | unchanged |
 | `@default(autoincrement())` | emitted verbatim, cratestack#1128 | not decided here; whichever fix #1128 takes, the identity column's type follows the scalar |
 
 ### 3.4 Codecs, JSON Schema, MCP
@@ -358,37 +358,67 @@ in `misspelled_attributes.rs:17-25` (no spec to derive the set from, five declar
 too-narrow list breaks users) is answered by that census plus the reader table, which is how
 GHSA-69g4-xvcm-vm2j closed the other positions.
 
-**Validators on a `type` field are enforced, not tolerated.** The first cut of the lists kept
-`@default` and `@length` on a `type` field because committed schemas wrote them, although
+**Validators on a `type` or `model` field are enforced, not tolerated.** The first cut of the lists
+kept `@default` and `@length` on a `type` field because committed schemas wrote them, although
 `@length` validated nothing there (only a model's create and update inputs run validators,
 `crates/cratestack-macros/src/validators.rs`) and `@default` is not applied on decode
 (`crates/cratestack-core/src/client_contract/compat_decl.rs`, pinned by
 `crates/cratestack-api/tests/contract_roundtrip.rs`). That is the silent failure D5 exists to
 close, and downstream schemas (skyport-billing's `ProjectRef.project_id`, the vaam p2p and
 mobile-v3 argument types) wrote `@length` on `type`s used as procedure arguments believing it
-checked them. So the validator family is accepted on a `type` field and run on procedure
-arguments, and the two names with no reader are refused:
+checked them. So the validator family is accepted on a `type` field and run on everything a client
+sends that is not a model's create or update input, and the names with no reader are refused:
 
-- the macros emit `impl ValidateFields` for each `type` that holds a validator, directly or
-  through a nested `type` (a fixpoint over the stored fields; optional and list fields recurse),
-  and for the `Args` of each procedure that takes one
+- the macros emit `impl ValidateFields` (`cratestack::ValidateFields`, with `validate_at(&self,
+  path: &FieldPath<'_>)` and a provided `validate()`) for each `type` and each `model` that holds a
+  validator on a field a client fills, directly or through a nested `type` (a fixpoint over the
+  stored fields, computed once per schema, `crates/cratestack-macros/src/validators/validating.rs`;
+  optional and list fields recurse; a `@server_only` field is `#[serde(skip)]` and always holds its
+  default, a relation is another row and a `@computed` field is resolved on the way out, so none of
+  the three is validated), and for the `Args` of each procedure that takes one
   (`crates/cratestack-macros/src/validators/types.rs`); the emitter is the one model inputs use,
-  with the field named by its request-body path (`args.owner.tags[1].label`);
-- the call is the first statement of the generated `authorize_with_db`, the one function REST,
-  RPC unary, RPC batch, MCP and every non-HTTP caller of `invoke_with_db` pass through to get an
-  `Authorized` witness, so no transport can omit it (the transport-parity rule in `CLAUDE.md`
-  satisfied by construction, not by three call sites); it precedes `@allow`, as a model input's
-  `validate` precedes its create policy;
+  with the field named by its request-body path (`args.owner.tags[1].label`). The path is a chain of
+  borrowed `FieldPath` segments on the stack, written only by the validator that fails, so a valid
+  request allocates nothing for it;
+- a `model` sent as a procedure argument, or held by a `type` that is one, is validated like a
+  `type`: `procedure takeUser(args: User)` with `name: "x"` is the same `422` as `POST /users`;
+- the call is `ProcedureArgs::validate_fields`, the first statement of all four generated
+  helpers, `authorize`, `authorize_with_db`, `invoke` and `invoke_with_db`
+  (`crates/cratestack-macros/src/procedure/instrument.rs`), so no choice of helper skips it. REST,
+  RPC unary, RPC batch, MCP and every non-HTTP caller reach one of them (the transport-parity rule
+  in `CLAUDE.md` satisfied by construction, not by three call sites). It precedes `@allow`, as a
+  model input's `validate` precedes its create policy. An `@isolation` procedure validates once,
+  before `run_isolated`: an invalid request takes no pooled connection and opens no transaction,
+  and a retried attempt does not validate again (authorization runs inside the attempt through a
+  private function without the validation, so no caller can obtain an `Authorized` that skipped it);
+- `?computedParams=` is client input too: when the params `type` of a model's `@computed` field
+  holds a validator, its value is decoded and validated in `parse_<model>_computed_params`, before
+  any database read, over REST (get and list) and, since RPC re-enters the same parser, over RPC
+  unary and batch. The error names the field `computedParams.proxyUrl.width`;
 - the error is `CratestackError::Validation`, the variant a failed model validator returns:
   `422 VALIDATION_ERROR` on REST, `invalid_argument` on RPC;
 - return values are not validated, `query` arguments cannot be a `type` (the parser binds
-  scalars only), and the embedded composer has no procedures, so none of them has a call site;
-- `@default` is refused on a `type` field (make the field optional), `@db_enforce` is refused
-  (a `type` has no table), and a validator on a list field is refused (declare a `type` with the
-  validated field and take a list of it).
+  scalars only), and the embedded composer has no procedures, so none of them has a call site. So a
+  validator on a `type` that no client input reaches (a return-only `type`, or the params `type` of
+  a `type`'s own `@computed` field, on which no params travel) would be inert, and is refused:
+  `crates/cratestack-parser/src/validate/type_validator_reach.rs` walks procedure arguments and
+  the params `type`s of model `@computed` fields, through nested `type`s;
+- `@default` is refused on a `type` field (make the field optional), `@db_enforce` is refused (a
+  `type` has no table), and a validator on a list field is refused (declare a `type` with the
+  validated field and take a list of it);
+- `@db_enforce` on a `model` or `mixin` field is refused unless the field also carries `@range`,
+  `@length` or `@iso4217`, the validators `migrate diff` turns into a `CHECK`
+  (`crates/cratestack-parser/src/validate/db_enforce.rs`): `email String @email @db_enforce` and a
+  bare `@db_enforce` emitted nothing;
+- `@from(Model.field)` on a view field is checked for the `Model.field` shape and for a model and
+  a field the schema declares (`crates/cratestack-parser/src/validate/view_from.rs`). No generator
+  reads it, so this is the whole of what it can mean.
 
 Tests: `crates/cratestack-api/tests/type_validators_{rest,rpc}.rs` drive one case table over
 REST, RPC unary and RPC batch, each in JSON and CBOR, and `mcp_tools.rs` covers an MCP call;
+`crates/cratestack-pg/tests/model_argument_validators_{rest,rpc}.rs` do the same for a `model`
+argument against a pool that cannot connect, including an `@isolation` procedure;
+`computed_fields_router.rs` and `computed_fields_rpc_model.rs` cover `?computedParams=`;
 `crates/cratestack-pg/tests/procedure_isolation.rs` covers an `@isolation` procedure on Postgres.
 
 ## 6. Diagrams
@@ -691,7 +721,12 @@ count; `cargo test -p cratestack-parser --test committed_schemas -- --nocapture`
 counts and the attribute tally per declaration kind. At the commit that made validators on a
 `type` field enforced it reads 287 committed `.cstack` files, 279 that parse and 8 negative
 fixtures (285, 277 and 8 one commit earlier, before that change added the two `type_validators_*`
-fixtures).
+fixtures), and 289, 281 and 8 at the commit that closed the remaining inert-validator paths
+(models as arguments, `?computedParams=`, the plain helpers, `@db_enforce`, unreachable `type`s,
+`@from`), which adds the two `model_argument_validators_*` fixtures. Of 75 distinct downstream
+schemas on disk, 65 pass `check` there, 3 fewer than on 0.15.3: the `auth` block with `@id`, and two
+copies of vaam mobile-v3's `schemas/vaam.cstack` whose view `VendorSettlement` annotates
+`@from(Vendor.verificationStatus)`, a column `Vendor` does not have.
 
 **E10. In-repo churn.** `git ls-files '*.cstack'` lists 273 files; 225 contain an `Int` token, 736
 tokens in all, outside full-line comments; none contains `BigInt`.

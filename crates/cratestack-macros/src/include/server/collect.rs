@@ -27,7 +27,7 @@ use crate::transport::{
     generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
 };
 use crate::types::{generate_enum_type, generate_type_struct};
-use crate::validators::{generate_type_validate_impl, validating_type_names};
+use crate::validators::{Validating, generate_type_validate_impl};
 
 pub(super) type Ts = proc_macro2::TokenStream;
 
@@ -124,10 +124,12 @@ pub(super) fn collect_server_schema(
         .map(|p| schema_lit(&p.name))
         .collect();
     let view_names = schema.views.iter().map(|v| schema_lit(&v.name)).collect();
-    // The server composer alone adds `ValidateFields` to a `type`: only
-    // it has procedures to run them on (the embedded composer has none,
-    // the client composer never validates what it sends).
-    let validating = validating_type_names(&schema.types);
+    // The server composer alone adds `ValidateFields` to a `type` or a
+    // `model`: only it has procedures and `?computedParams=` to run them on
+    // (the embedded composer has none, the client composer never validates
+    // what it sends). Computed once here and handed to every generator that
+    // needs it, not rebuilt by each.
+    let validating = Validating::of(&schema.types, &schema.models);
     let type_structs = schema
         .types
         .iter()
@@ -172,8 +174,22 @@ pub(super) fn collect_server_schema(
     let compose_helpers = generate_compose_helpers(schema, &model_name_set, &bearing);
     let wire_structs = generate_wire_structs(schema, &model_name_set, &enum_name_set, &bearing);
 
-    let mc = models::collect_models(schema, schema_path, &model_name_set, &enum_name_set, auth)?;
-    let pc = procedures::collect_procedures(schema, schema_path, &enum_name_set, auth, &bearing)?;
+    let mc = models::collect_models(
+        schema,
+        schema_path,
+        &model_name_set,
+        &enum_name_set,
+        auth,
+        &validating,
+    )?;
+    let pc = procedures::collect_procedures(
+        schema,
+        schema_path,
+        &enum_name_set,
+        auth,
+        &bearing,
+        &validating,
+    )?;
 
     // RPC op descriptors + dispatch arms — see docs/design/rpc-transport.md.
     // Both `OPS` and `ROUTE_TRANSPORTS` consts are always emitted (for uniform

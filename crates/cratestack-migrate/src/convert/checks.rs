@@ -15,9 +15,11 @@ pub(super) fn field_has_db_enforce(field: &Field) -> bool {
 /// Collect every eligible validator attribute on `field` as a
 /// [`CheckKind`]. Eligibility matches the ADR 0004 list: `@range`,
 /// `@length`, `@iso4217`. Validators that don't translate cleanly to
-/// SQL (`@email`, `@uri`, `@regex`) are skipped silently here — a
-/// future parser-level validation slice can promote `@db_enforce` on
-/// an ineligible validator to a parse-time error.
+/// SQL (`@email`, `@uri`, `@regex`) are skipped here beside an eligible
+/// one, where `@db_enforce` still has something to enforce. The parser
+/// refuses `@db_enforce` on a field with no eligible validator at all
+/// (`cratestack-parser/src/validate/db_enforce.rs`, ADR 0019 D5), so
+/// this is never asked for a field that would yield nothing.
 pub(super) fn collect_check_kinds(field: &Field) -> Vec<CheckKind> {
     let mut out = Vec::new();
     for attribute in &field.attributes {

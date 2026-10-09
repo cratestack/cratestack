@@ -27,21 +27,21 @@ pub(super) fn emit_field_validators(
     let nullable = matches!(field.ty.arity, TypeArity::Optional);
 
     // What the error names the field by: the schema name on a model input,
-    // the request-body path (`args.items[2].name`) on a `type`, whose value
-    // can sit anywhere in a procedure's arguments.
+    // the request-body path (`args.items[2].name`) on a `type` or a `model`
+    // sent as a value, which can sit anywhere in a procedure's arguments.
+    // The path is a borrowed `FieldPath`, written only by a validator that
+    // fails: building the `String` here would cost an allocation per field
+    // on every valid request.
     let field_name = &field.name;
-    let (prelude, name) = match scope {
-        FieldScope::Input => (quote! {}, quote! { #field_name }),
-        FieldScope::Nested => (
-            quote! { let field_path = ::std::format!("{}{}", path, #field_name); },
-            quote! { &field_path },
-        ),
+    let name = match scope {
+        FieldScope::Input => quote! { #field_name },
+        FieldScope::Nested => quote! { &path.field(#field_name) },
     };
     let calls = validators
         .iter()
         .enumerate()
         .map(|(idx, v)| emit_one(field, scalar, idx, v, &name));
-    let calls = quote! { #prelude #(#calls)* };
+    let calls = quote! { #(#calls)* };
 
     match (treat_as_optional, nullable) {
         (true, true) => quote! {

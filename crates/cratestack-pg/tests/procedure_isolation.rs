@@ -285,12 +285,15 @@ async fn nothing_a_failed_isolated_procedure_wrote_survives() {
 }
 
 /// ADR 0019 D5 (PR A): a validator on an argument `type` refuses the call
-/// from inside `authorize_with_db`, which an `@isolation` procedure reaches
-/// in its attempt's transaction and a plain one reaches on the pool. Either
-/// way the answer is the 422 a failed model validator gives (`VALIDATION_ERROR`
-/// on REST, `invalid_argument` on RPC), never the `TRANSACTION_ABORTED` a
-/// retried attempt ends in, and the body never runs. `withdraw` also carries
-/// an `@authorize` model check, which validation precedes.
+/// before the procedure does anything. An `@isolation` procedure validates
+/// before `run_isolated`, so an invalid request takes no pooled connection and
+/// opens no transaction (`model_argument_validators_*.rs` proves that without
+/// a database: its pool cannot connect), and a plain one validates before it
+/// authorizes. Either way the answer is the 422 a failed model validator gives
+/// (`VALIDATION_ERROR` on REST, `invalid_argument` on RPC), never the
+/// `TRANSACTION_ABORTED` a retried attempt ends in, and the body never runs.
+/// `withdraw` also carries an `@authorize` model check, which validation
+/// precedes.
 #[tokio::test]
 async fn a_type_validator_refuses_an_isolated_procedures_arguments_before_it_runs() {
     let _guard = pg::serial_guard().await;

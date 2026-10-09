@@ -1,0 +1,53 @@
+// ADR 0019 D5 (PR A): a `model` sent as a procedure argument runs its field
+// validators, as its create input does. RPC twin of
+// `model_argument_validators_rest.cstack`; the two declare the same models and
+// procedures so one table of cases holds for both transports.
+//
+// Names prefixed `Arg` so nothing collides with another fixture's tables.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model ArgUser {
+  id Int @id
+  name String @length(min: 3)
+  // `@readonly` keeps a model's create input from setting it, but a client
+  // that sends the whole model as an argument still sends it: validated.
+  slug String @readonly @length(max: 5)
+  // `#[serde(skip)]`: always the default, never the client's. A validator on
+  // it would judge a value no client sent, so it is not run.
+  secret String @server_only @length(min: 8)
+  nick String? @length(max: 6)
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+// A model held by a `type`.
+type Wrap {
+  owner ArgUser
+}
+
+type Reply {
+  ok Boolean
+}
+
+procedure takeUser(args: ArgUser): Reply
+  @allow(auth() != null)
+
+procedure takeWrap(args: Wrap): Reply
+  @allow(auth() != null)
+
+// A list of models and an optional one, beside a plain scalar: each is
+// reported under its own argument name.
+procedure takeMany(id: String, owners: ArgUser[], extra: ArgUser?): Reply
+  @allow(auth() != null)
+
+// An invalid argument must cost no connection and no transaction.
+procedure takeIsolated(args: ArgUser): Reply
+  @isolation("serializable")
+  @allow(auth() != null)

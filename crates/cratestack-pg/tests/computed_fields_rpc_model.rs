@@ -305,6 +305,83 @@ async fn rpc_get_rejects_malformed_computed_params_json() {
     );
 }
 
+// ----- Case 3b: the params type's validators, before any database read -----
+//
+// `?computedParams=` is client input, so the params `type`'s `@range` runs on
+// it (ADR 0019 D5). The pool in these tests cannot connect, so a frame that
+// reached the database would answer with a database error, not the 422 below.
+
+fn unreachable_router() -> cratestack::axum::Router {
+    let pool = cratestack::sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_millis(500))
+        .connect_lazy("postgres://nobody:none@127.0.0.1:1/none")
+        .expect("a lazy pool never connects up front");
+    test_router(&pool)
+}
+
+const OUT_OF_RANGE: &str = r#"{"proxyUrl":{"width":999999}}"#;
+const OUT_OF_RANGE_MESSAGE: &str = "field 'computedParams.proxyUrl.width' exceeds maximum 4000";
+
+#[tokio::test]
+async fn rpc_get_validates_computed_params_before_any_database_read() {
+    let input = RpcGetInput {
+        id: 1i64,
+        computed_params: Some(OUT_OF_RANGE.to_owned()),
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("get input should encode");
+    let (status, value) = rpc_unary(unreachable_router(), "model.CompRpcPhoto.get", body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}");
+    assert_eq!(value["code"], "invalid_argument");
+    assert_eq!(value["message"], OUT_OF_RANGE_MESSAGE);
+}
+
+#[tokio::test]
+async fn rpc_list_validates_computed_params_before_any_database_read() {
+    let input = RpcListInput {
+        computed_params: Some(OUT_OF_RANGE.to_owned()),
+        ..Default::default()
+    };
+    let body = JsonCodec.encode(&input).expect("list input should encode");
+    let (status, value) = rpc_unary(unreachable_router(), "model.CompRpcPhoto.list", body).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{value}");
+    assert_eq!(value["code"], "invalid_argument");
+    assert_eq!(value["message"], OUT_OF_RANGE_MESSAGE);
+}
+
+/// A batch frame goes through the same parser as the unary op, per frame.
+#[tokio::test]
+async fn rpc_batch_frame_validates_computed_params_before_any_database_read() {
+    let frames = vec![RpcRequest {
+        id: 7,
+        op: "model.CompRpcPhoto.get".to_owned(),
+        input: cratestack::serde_json::json!({ "id": 1, "computedParams": OUT_OF_RANGE }),
+        idem: None,
+    }];
+    let body = JsonCodec.encode(&frames).expect("batch body should encode");
+    let response = unreachable_router()
+        .oneshot(
+            Request::post("/rpc/batch")
+                .header("content-type", JsonCodec::CONTENT_TYPE)
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .body(Body::from(body))
+                .expect("request should build"),
+        )
+        .await
+        .expect("batch request should succeed");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let responses: Vec<RpcResponseFrame> = JsonCodec
+        .decode(&bytes)
+        .expect("batch response should decode");
+    let error = responses[0].error.as_ref().expect("frame 7 is refused");
+    assert_eq!(responses[0].id, 7);
+    assert_eq!(error.code, "invalid_argument");
+    assert_eq!(error.message, OUT_OF_RANGE_MESSAGE);
+}
+
 // ----- Case 4: batch, two frames with different computedParams -----
 
 #[tokio::test]

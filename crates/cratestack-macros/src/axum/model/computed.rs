@@ -9,12 +9,16 @@
 //! Validation happens once, before any DB access (called from the GET/
 //! LIST dispatch fns right after selection validation) — see
 //! `docs/design/computed-fields.md`'s "Parameterized resolvers on the
-//! wire" section for the exact error taxonomy this enforces.
+//! wire" section for the exact error taxonomy this enforces. A key's value
+//! is client input, so when its params `type` carries validators (ADR 0019
+//! D5) it is decoded and validated here too, under the path
+//! `computedParams.<field>`; the resolver never sees a value that failed.
 
 use cratestack_core::{Model, computed_params_type_name};
 use quote::quote;
 
 use crate::shared::{computed_model_fields, ident, to_snake_case};
+use crate::validators::Validating;
 
 use super::prep::ModelHandlerPrep;
 
@@ -29,9 +33,15 @@ pub(super) struct ModelComputedField {
     /// escaping (`ident()`'s `r#...` path) still reports its real,
     /// unescaped schema name in generated error messages.
     pub(super) params_type_name: Option<String>,
+    /// The params `type` has a validator, directly or nested: its value is
+    /// validated in `parse_<model>_computed_params`.
+    pub(super) validates_params: bool,
 }
 
-pub(super) fn model_computed_fields(model: &Model) -> Vec<ModelComputedField> {
+pub(super) fn model_computed_fields(
+    model: &Model,
+    validating: &Validating,
+) -> Vec<ModelComputedField> {
     computed_model_fields(model)
         .into_iter()
         .map(|field| {
@@ -42,11 +52,15 @@ pub(super) fn model_computed_fields(model: &Model) -> Vec<ModelComputedField> {
             ));
             let params_type_name = computed_params_type_name(field).map(str::to_owned);
             let params_type_ident = params_type_name.as_deref().map(ident);
+            let validates_params = params_type_name
+                .as_deref()
+                .is_some_and(|name| validating.contains(name));
             ModelComputedField {
                 name: field.name.clone(),
                 resolver_method_ident,
                 params_type_ident,
                 params_type_name,
+                validates_params,
             }
         })
         .collect()
@@ -94,6 +108,7 @@ pub(super) fn build_parse_computed_params_fn(
 
     let legal_arms = parameterized.iter().map(|field| {
         let name = &field.name;
+        let validate_value = validate_params_value(field);
         quote! {
             #name => {
                 if let Some(fields) = &selection.fields {
@@ -105,6 +120,7 @@ pub(super) fn build_parse_computed_params_fn(
                         )));
                     }
                 }
+                #validate_value
             }
         }
     });
@@ -118,7 +134,7 @@ pub(super) fn build_parse_computed_params_fn(
                 return Ok(ComputedParamsQuery::new());
             };
             let object = ::cratestack::parse_computed_params_object(raw)?;
-            for key in object.keys() {
+            for (key, value) in &object {
                 match key.as_str() {
                     #(#legal_arms)*
                     other => {
@@ -132,5 +148,34 @@ pub(super) fn build_parse_computed_params_fn(
             }
             Ok(object)
         }
+    }
+}
+
+/// Decode and validate one key's value, for a params `type` that validates:
+/// the error names the field as the client wrote it
+/// (`computedParams.proxyUrl.width`). Nothing for a params `type` with no
+/// validator, whose value is decoded when the resolver is called.
+fn validate_params_value(field: &ModelComputedField) -> proc_macro2::TokenStream {
+    let (true, Some(params_type_ident), Some(params_type_name)) = (
+        field.validates_params,
+        &field.params_type_ident,
+        &field.params_type_name,
+    ) else {
+        return quote! {};
+    };
+    let name = &field.name;
+    quote! {
+        let params: super::#params_type_ident =
+            ::cratestack::serde_json::from_value(value.clone()).map_err(|error| {
+                CratestackError::Validation(format!(
+                    "invalid computedParams for field '{}' (expected {}): {}",
+                    #name,
+                    #params_type_name,
+                    error,
+                ))
+            })?;
+        let root = ::cratestack::FieldPath::Root;
+        let computed = root.field("computedParams");
+        ::cratestack::ValidateFields::validate_at(&params, &computed.field(#name))?;
     }
 }

@@ -156,7 +156,7 @@ fn accepts_at_signs_in_strings_and_correct_spellings() {
          @@allow('update', auth().email == 'ops@b.io')\n}\n\
          auth Ctx {\n  id Int\n  email String\n}\n\
          type R {\n  s String @length(min: 1)\n}\n\
-         procedure p(): R\n",
+         procedure p(args: R): R\n",
     )
     .expect("correctly spelled attributes stay accepted");
 }

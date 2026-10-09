@@ -10,6 +10,7 @@ use cratestack_core::{Attribute, Schema};
 use super::generate_procedure_module;
 use crate::policy::audit_model_policies;
 use crate::query::generate_query_module;
+use crate::validators::Validating;
 
 const SCHEMA: &str = r#"
 auth SessionUser {
@@ -67,6 +68,7 @@ pub(super) fn procedure_result(raw: &str) -> Result<String, String> {
         &schema.types,
         &enums,
         schema.auth.as_ref(),
+        &Validating::none(),
     )
     .map(|tokens| tokens.to_string())
 }

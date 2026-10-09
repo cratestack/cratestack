@@ -59,32 +59,76 @@ no reader reads on a kind is not on that kind's list. These parse on 0.15.3 and 
 - on a `model` or `mixin` field: `@from`.
 
 `@server_only`, `@computed` and `@rename` on the kinds that do not read them, and `@id` on a mixin,
-were refused already. One name is on a list although no code reads it there, because the
+were refused already. One name is on a list although no generator reads it there, because the
 documentation and the ADR write it there: `@from` on a view field (a documented source annotation).
-It is marked in `field_attribute_tables.rs` as a decision to revisit.
+Its shape and target are checked, below. It is marked in `field_attribute_tables.rs` as a decision
+to revisit.
 
-**Validators on a `type` field now run on procedure arguments — breaking.** This release found
-that `@length` was accepted on a `type` field and validated nothing, because only a model's create
-and update inputs ran validators. The skyport-billing and vaam schemas put it on `type`s used as
-procedure arguments, believing it checked them. Accepting an attribute that does nothing is the
-failure this entry closes, so it is enforced instead of tolerated:
+**Validators on a `type` or `model` field now run on everything a client sends — breaking.** This
+release found that `@length` was accepted on a `type` field and validated nothing, because only a
+model's create and update inputs ran validators. The skyport-billing and vaam schemas put it on
+`type`s used as procedure arguments, believing it checked them. Accepting an attribute that does
+nothing is the failure this entry closes, so it is enforced instead of tolerated, at every position
+a client can put a value:
 
-- A `type` field accepts the whole validator family: `@length`, `@range`, `@regex`, `@email`,
+- **A new public trait, `cratestack::ValidateFields`** (`validate_at(&self, path: &FieldPath<'_>)`
+  and a provided `validate()`), with `cratestack::FieldPath`, the position of a value in the request
+  body. The macros generate `validate_at` and `validate()` for every `type` and every `model` that
+  holds a validator on a field a client fills, directly or through a nested `type` (optional and
+  list fields recurse, to any depth, through cycles), and for the `Args` of every procedure that
+  takes one. `ProcedureArgs` gains `validate_fields()`, which returns `Ok(())` unless the generated
+  `Args` overrides it. The field validators `validate_length`, `validate_range_i64`,
+  `validate_email` and the rest now take any `Display` as the field name instead of a `&'static
+  str`; every call that passed a string still compiles. A worker that holds one of these values can
+  call `value.validate()` without a request.
+- **A `type` field accepts the whole validator family**: `@length`, `@range`, `@regex`, `@email`,
   `@uri` and `@iso4217`, with the same scalar rules as a model field (`@length` on `String` or
   `Bytes`, `@range` on `Int` or `Decimal`, the others on `String`).
-- The check runs on every procedure argument that is, or holds, such a `type`, directly, in a list
-  or optionally, nested to any depth. It is one call in the generated `authorize_with_db`, which
-  every transport reaches, so REST, RPC unary, RPC batch and MCP are validated by the same code
-  and cannot disagree; so is a worker that calls `invoke_with_db`. It runs before `@allow`, as a
-  model input's `validate` runs before its create policy.
+- **Procedure arguments.** The check runs on every argument that is, or holds, such a `type` or
+  `model`, directly, in a list or optionally, nested to any depth. It is the first statement of all
+  four generated helpers, `authorize`, `authorize_with_db`, `invoke` and `invoke_with_db`, so no
+  choice of helper skips it: REST, RPC unary, RPC batch, MCP and a worker are validated by the same
+  code and cannot disagree. The plain `authorize` and `invoke`, which the repository's own tests
+  call, validate too. It runs before `@allow`, as a model input's `validate` runs before its create
+  policy. An `@isolation` procedure validates once, before it takes a pooled connection or opens
+  its transaction, and not again on a retried attempt.
+- **A `model` sent as an argument** (`procedure takeUser(args: User)`, or a `User` held by a
+  `type`) runs the validators of its stored fields, as `POST /users` does. Before, `name: "x"`
+  against `User.name @length(min: 3)` was accepted by the procedure and refused by the create
+  route. A `@server_only` field is never validated (it is `#[serde(skip)]` and always holds its
+  default, not a client's value), nor is a relation or a `@computed` field; a `@readonly` field a
+  client sent is.
+- **`?computedParams=`.** The params `type` of a model's `@computed` field is client input. When it
+  holds a validator, its value is decoded and validated before any database read, over REST (get and
+  list) and RPC (unary and batch): `width Int? @range(min: 1, max: 4000)` with `computedParams=
+  {"proxyUrl":{"width":999999}}` was `200` with the resolver run, and is now `422`
+  `field 'computedParams.proxyUrl.width' exceeds maximum 4000`.
 - **A request that used to pass with an invalid argument now fails.** The answer is the one a
   failed model validator gives: `422` with `VALIDATION_ERROR` over REST, `invalid_argument` over
   RPC (an error frame inside `/rpc/batch`), and the message names the field by its path in the
   request body and never echoes the value: `field 'args.owner.tags[1].label' length 9 exceeds
   maximum 8`.
-- Return values are not validated: the server produced them. A validator on a `type` that is only
-  ever returned does nothing, as before. Generated clients (Rust, TypeScript, Dart) do not
-  validate before sending, as they do not for model inputs; the server answers.
+- **A validator on a `type` that no client input reaches is refused.** A `type` that a procedure
+  only returns is built by the server, so its validators would never run: `@length` on one passed
+  `cratestack check` and the invalid value was returned with `200`. `check` now refuses it, naming
+  the `type` and saying that validators run only on procedure arguments and `@computed` params. A
+  `type` used both as an argument and as a return is reached and keeps them; so is one nested in an
+  argument, and the params `type` of a `model`'s `@computed` field. The params `type` of a `type`'s
+  own `@computed` field is not: no params travel on a procedure output. Generated clients (Rust,
+  TypeScript, Dart) do not validate before sending, as they do not for model inputs; the server
+  answers.
+- **`@db_enforce` is refused where it emits nothing.** It turns `@range`, `@length` or `@iso4217`
+  on the same field into a database `CHECK`. `email String @email @db_enforce` and a bare `x String
+  @db_enforce` passed `check` and `migrate diff` emitted no constraint for either. A `model` or
+  `mixin` field that carries `@db_enforce` without one of those three validators is now an error
+  that names them. `@db_enforce` beside an eligible validator and an application-only one
+  (`@email @length(max: 80) @db_enforce`) is accepted, as before.
+- **`@from(Model.field)` on a view field is checked.** `@from(!!!not a path)` and `@from(Nope.nothing)`
+  passed `check`. It must now be `Model.field`, two identifiers and one dot, and name a model and a
+  field the schema declares; the messages list the models, or the fields of the model, to choose
+  from. No generator reads it, so this is the whole of what it means. The 11 uses in this
+  repository still parse.
+- Return values are not validated: the server produced them.
 - `@default` on a `type` field is refused. It never did anything there: a `type` is decoded as
   the client sent it, so a missing field fails to decode and no default is applied
   (`cratestack-api/tests/contract_roundtrip.rs`), where a model's create input leaves the field
@@ -101,22 +145,31 @@ attribute. The `@length` attributes that start enforcing in the downstream schem
 in skyport-billing (`ProjectRef.project_id`, `UsageWindow.project_id`, `min: 1, max: 64`), 3 in the
 vaam p2p schemas (`PublishPairingSlotArgs`: `payload`, `writerPubkey`, `signature`, in three
 copies), and 7 in vaam mobile-v3's WhatsApp and assistant arguments. No schema found writes
-`@default`, `@db_enforce` or a validator on a list on a `type` field.
+`@default`, `@db_enforce` or a validator on a list on a `type` field. Among the 65 downstream
+schemas that parse, none writes a validator on a `type` that no client input reaches or a
+`@db_enforce` with nothing to enforce (`check` accepts them all), and a text scan found no
+procedure that takes a `model` with a validator directly as an argument; a `model` held inside a
+`type` argument was not scanned.
 
 **Migration.**
 
 - `cratestack check` over every `.cstack` tracked in this repository gives the same result before
-  and after for the 285 files that were there: 277 parse, and the 8 fixtures that are refused on
-  purpose are refused with the same messages. One fixture pair was rewritten: it wrote
+  and after for the 287 files that were there before this change: 279 parse, and the 8 fixtures
+  that are refused on purpose are refused with the same messages (289, 281 and 8 with the two
+  fixtures this change adds). One fixture pair was rewritten earlier in this release: it wrote
   `@default(1)` on a `type` field to prove the contract classifier refuses an added required
   field, and now writes the field without it (`contract_roundtrip_required_{old,new}.cstack`).
   `cratestack-parser`'s `tests/committed_schemas.rs` walks the tree and keeps it that way; it
   holds no file count, so a new fixture needs no edit.
-- Of 75 distinct downstream schemas found outside this repository, 68 parse on 0.15.3 and 67 parse
-  now. None uses a name outside the 19 above. The one that fails is a demo whose `auth` block
-  carries `@id`, `@unique` and `@default`, all inert there. The other seven do not parse on 0.15.3
-  either (the blank line a procedure's attributes need; one is not `.cstack` syntax at all); a text
-  scan of the field attributes of the six that are found none outside the lists.
+- Of 75 distinct downstream schemas found outside this repository, 68 parse on 0.15.3 and 65 parse
+  now. None uses a name outside the 19 above. Three fail that parsed. One is a demo whose `auth`
+  block carries `@id`, `@unique` and `@default`, all inert there. Two are the same vaam mobile-v3
+  `schemas/vaam.cstack` (the checkout and a worktree of it): the view `VendorSettlement` writes
+  `verificationStatus VerificationStatus @from(Vendor.verificationStatus)`, and `Vendor` has no such
+  field; the column is `VendorStanding.verificationStatus`, which the view's SQL reads. Change the
+  annotation to `@from(VendorStanding.verificationStatus)`. The other seven do not parse on 0.15.3
+  either (the blank line a procedure's attributes need; one is not `.cstack` syntax at all). The
+  skyport-billing, vpay and tenant-provisioner schemas still pass.
 - An attribute that was silently inert now fails `cratestack check`, underlined, and has to be
   deleted: it did nothing. Do not swap it for the nearest accepted name unless you want that
   behaviour (`@immutable` meant `@readonly`; `@string` on an `Int` is the case ADR 0019 answers with

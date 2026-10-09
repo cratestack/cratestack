@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Model, Procedure};
 
 use super::{generate_model_axum_handlers, generate_procedure_axum_handler};
+use crate::validators::Validating;
 
 /// Every `async fn <name>` item in a generated token stream.
 fn emitted_fn_names(generated: &proc_macro2::TokenStream) -> BTreeSet<String> {
@@ -68,9 +69,13 @@ procedure placeholder(orderId: String): String
 #[test]
 fn model_crud_and_procedure_handlers_share_an_emitted_fn_name() {
     let model = order_model("Order");
-    let model_handlers =
-        generate_model_axum_handlers(&model, std::slice::from_ref(&model), &BTreeSet::new())
-            .expect("model handler emission should succeed");
+    let model_handlers = generate_model_axum_handlers(
+        &model,
+        std::slice::from_ref(&model),
+        &BTreeSet::new(),
+        &Validating::none(),
+    )
+    .expect("model handler emission should succeed");
     let procedure_handler =
         generate_procedure_axum_handler(&procedure("getOrder"), &BTreeSet::new())
             .expect("procedure handler emission should succeed");
@@ -98,9 +103,13 @@ fn model_crud_and_procedure_handlers_share_an_emitted_fn_name() {
 #[test]
 fn a_renamed_procedure_shares_no_emitted_fn_name() {
     let model = order_model("Order");
-    let model_handlers =
-        generate_model_axum_handlers(&model, std::slice::from_ref(&model), &BTreeSet::new())
-            .expect("model handler emission should succeed");
+    let model_handlers = generate_model_axum_handlers(
+        &model,
+        std::slice::from_ref(&model),
+        &BTreeSet::new(),
+        &Validating::none(),
+    )
+    .expect("model handler emission should succeed");
     let procedure_handler =
         generate_procedure_axum_handler(&procedure("orderDetail"), &BTreeSet::new())
             .expect("procedure handler emission should succeed");

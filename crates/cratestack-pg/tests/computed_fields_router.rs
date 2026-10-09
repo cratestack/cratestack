@@ -303,6 +303,118 @@ async fn invalid_computed_params_returns_unprocessable_entity() {
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// `?computedParams=` is client input: the params `type`'s `@range` runs on it
+/// (ADR 0019 D5) before the row is fetched, so the resolver never sees a
+/// width the schema forbids. Percent-encoded `{"proxyUrl":{"width":N}}`.
+fn computed_params_uri(path: &str, width: i64) -> String {
+    format!("{path}?computedParams=%7B%22proxyUrl%22%3A%7B%22width%22%3A{width}%7D%7D")
+}
+
+async fn get_status_and_message(
+    router: &cratestack::axum::Router,
+    uri: String,
+) -> (StatusCode, String) {
+    let response = router
+        .clone()
+        .oneshot(
+            Request::get(uri)
+                .header("accept", JsonCodec::CONTENT_TYPE)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("request should succeed");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body should read");
+    let value: cratestack::serde_json::Value =
+        cratestack::serde_json::from_slice(&body).unwrap_or_default();
+    let code = value.get("code").and_then(|v| v.as_str()).unwrap_or("");
+    let message = value.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    (status, format!("{code}: {message}"))
+}
+
+#[tokio::test]
+async fn computed_params_failing_their_validators_are_refused_before_the_resolver_runs() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = &test_pg.pool;
+    reset_schema(pool).await;
+    seed(pool).await;
+
+    let resolver = CountingResolver::new();
+    let invocations = resolver.invocations.clone();
+    let router =
+        cratestack_schema::axum::model_router(test_db(pool), resolver, JsonCodec, PassThroughAuth);
+
+    for (path, width, expected) in [
+        (
+            "/comp_router_photos/1",
+            999_999,
+            "VALIDATION_ERROR: field 'computedParams.proxyUrl.width' exceeds maximum 4000",
+        ),
+        (
+            "/comp_router_photos/1",
+            0,
+            "VALIDATION_ERROR: field 'computedParams.proxyUrl.width' is below minimum 1",
+        ),
+        (
+            "/comp_router_photos",
+            999_999,
+            "VALIDATION_ERROR: field 'computedParams.proxyUrl.width' exceeds maximum 4000",
+        ),
+    ] {
+        let (status, message) =
+            get_status_and_message(&router, computed_params_uri(path, width)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{path} {width}");
+        assert_eq!(message, expected, "{path} {width}");
+    }
+    assert_eq!(
+        invocations.load(Ordering::SeqCst),
+        0,
+        "the resolver ran for a computedParams value the schema forbids"
+    );
+
+    // The bound itself is allowed, and then the resolver runs.
+    let (status, _) =
+        get_status_and_message(&router, computed_params_uri("/comp_router_photos/1", 4000)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(invocations.load(Ordering::SeqCst), 1);
+}
+
+/// The refusal comes before any database read: the pool here cannot connect,
+/// so a request that reached `find_unique` or the list query would answer with
+/// a database error and not the 422 asserted.
+#[tokio::test]
+async fn computed_params_are_validated_before_any_database_read() {
+    let pool = cratestack::sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_millis(500))
+        .connect_lazy("postgres://nobody:none@127.0.0.1:1/none")
+        .expect("a lazy pool never connects up front");
+    let router = cratestack_schema::axum::model_router(
+        test_db(&pool),
+        CountingResolver::new(),
+        JsonCodec,
+        PassThroughAuth,
+    );
+    for path in ["/comp_router_photos/1", "/comp_router_photos"] {
+        let (status, message) =
+            get_status_and_message(&router, computed_params_uri(path, 999_999)).await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{path}: {message}"
+        );
+        assert_eq!(
+            message,
+            "VALIDATION_ERROR: field 'computedParams.proxyUrl.width' exceeds maximum 4000"
+        );
+    }
+}
+
 #[tokio::test]
 async fn create_response_includes_the_resolved_computed_field() {
     let _guard = pg::serial_guard().await;

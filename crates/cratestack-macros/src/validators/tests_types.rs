@@ -1,125 +1,87 @@
-//! Which `type`s and procedure `Args` get a `ValidateFields` impl, and what
-//! the impl names. The behaviour on the wire is
-//! `cratestack-api/tests/type_validators_{rest,rpc}.rs`.
+//! Which `type`s get a `ValidateFields` impl, and what the impl names. The
+//! behaviour on the wire is `cratestack-api/tests/type_validators_{rest,rpc}.rs`.
 
-use super::{
-    generate_args_validate_impl, generate_type_validate_impl, procedure_validates_args,
-    validating_type_names,
-};
-
-const SCHEMA: &str = r#"
-datasource db {
-  provider = "none"
-}
-
-type Tag {
-  label String @length(min: 2)
-}
-
-type Owner {
-  tags Tag[]
-  backup Tag?
-}
-
-type Account {
-  owner Owner
-}
-
-type Plain {
-  note String
-}
-
-// Refers to itself and holds no validator: the fixpoint must terminate and
-// must not call it validating.
-type Chain {
-  next Chain?
-}
-
-type Reply {
-  ok Boolean
-}
-
-procedure open(args: Account): Reply
-  @allow(true)
-
-procedure echo(args: Plain, count: Int): Reply
-  @allow(true)
-
-procedure many(id: String, tags: Tag[], extra: Tag?): Reply
-  @allow(true)
-"#;
-
-fn schema() -> cratestack_core::Schema {
-    cratestack_parser::parse_schema(SCHEMA).expect("fixture parses")
-}
-
-fn procedure<'a>(
-    schema: &'a cratestack_core::Schema,
-    name: &str,
-) -> &'a cratestack_core::Procedure {
-    schema
-        .procedures
-        .iter()
-        .find(|p| p.name == name)
-        .expect("procedure")
-}
+use super::generate_type_validate_impl;
+use super::tests_fixture::{schema, validating};
 
 #[test]
-fn a_type_validates_when_it_holds_a_validator_directly_or_through_another_type() {
+fn a_declaration_validates_when_it_holds_a_validator_directly_or_through_another() {
     let schema = schema();
-    let validating = validating_type_names(&schema.types);
     assert_eq!(
-        validating.iter().map(String::as_str).collect::<Vec<_>>(),
-        ["Account", "Owner", "Tag"]
+        validating(&schema).names(),
+        [
+            "Account", "Inner", "Left", "Middle", "Node", "Outer", "Owner", "Post", "Right",
+            "Shouter", "Tag", "User", "Wrap"
+        ]
     );
+}
+
+/// `Chain { next Chain? }` cannot compile (E0072, infinite size), so it
+/// proved nothing; a list cycle compiles. The fixpoint finishes on every
+/// shape of cycle and calls none of them validating without a validator.
+#[test]
+fn a_cycle_through_a_list_terminates_and_validation_recurses() {
+    let schema = schema();
+    let validating = validating(&schema);
+    let names = validating.names();
+    // Self cycle with a validator; mutual cycle with a validator on one side.
+    assert!(names.contains(&"Node"), "{names:?}");
+    assert!(
+        names.contains(&"Left") && names.contains(&"Right"),
+        "{names:?}"
+    );
+    // No validator anywhere in the cycle.
+    assert!(!names.contains(&"Loop"), "{names:?}");
+
+    let impl_of = |name: &str| {
+        let ty = schema.types.iter().find(|t| t.name == name).expect("type");
+        generate_type_validate_impl(ty, &validating).to_string()
+    };
+    // `Node` validates its own label, then every child, which is a `Node`
+    // again: the generated body calls `validate_at` on each element.
+    let node = impl_of("Node");
+    assert!(node.contains("validate_length"), "{node}");
+    assert!(
+        node.contains("self . children . iter () . enumerate ()"),
+        "{node}"
+    );
+    assert!(node.contains("item . validate_at"), "{node}");
+    // `Left` has no validator of its own and reaches one only through `Right`.
+    assert!(impl_of("Left").contains("item . validate_at"));
+    assert_eq!(impl_of("Loop"), "");
 }
 
 #[test]
 fn only_a_validating_type_gets_an_impl() {
     let schema = schema();
-    let validating = validating_type_names(&schema.types);
+    let validating = validating(&schema);
     let impl_of = |name: &str| {
         let ty = schema.types.iter().find(|t| t.name == name).expect("type");
         generate_type_validate_impl(ty, &validating).to_string()
     };
     assert!(impl_of("Tag").contains("validate_length"));
-    // A list recurses element by element under `name[index].`; an optional
-    // only when present.
+    // A list recurses element by element under `name[index]`; an optional
+    // only when present; a required field under its own name.
     let owner = impl_of("Owner");
     assert!(owner.contains("enumerate"), "{owner}");
-    assert!(owner.contains("\"{}{}[{}].\""), "{owner}");
+    assert!(owner.contains("list_path . index (index)"), "{owner}");
     assert!(owner.contains("if let Some (inner)"), "{owner}");
-    assert!(impl_of("Account").contains("\"{}{}.\""));
+    assert!(impl_of("Account").contains("path . field (\"owner\")"));
+    // A `model` held by a `type` is validated in place, like a `type`.
+    assert!(impl_of("Wrap").contains("self . owner . validate_at"));
     assert_eq!(impl_of("Plain"), "");
-    assert_eq!(impl_of("Chain"), "");
     assert_eq!(impl_of("Reply"), "");
 }
 
+/// A valid request must not build a path string: a path is a `FieldPath`
+/// on the stack and is written only by the validator that fails.
 #[test]
-fn args_validate_only_when_an_argument_is_or_holds_a_validated_type() {
+fn no_impl_formats_a_path_on_the_success_path() {
     let schema = schema();
-    let check = |name: &str| {
-        let p = procedure(&schema, name);
-        (
-            procedure_validates_args(p, &schema.types),
-            generate_args_validate_impl(p, &schema.types).to_string(),
-        )
-    };
-    let (validates, tokens) = check("open");
-    assert!(validates);
-    assert!(tokens.contains("ValidateFields for Args"), "{tokens}");
-    assert!(tokens.contains("\"args\""), "{tokens}");
-
-    // Plain arguments, beside a scalar: no impl and no call.
-    assert_eq!(check("echo"), (false, String::new()));
-
-    // Each validated argument is named by its own argument name; the scalar
-    // `id` beside them is not mentioned.
-    let (validates, tokens) = check("many");
-    assert!(validates);
-    assert!(
-        tokens.contains("\"tags\"") && tokens.contains("\"extra\""),
-        "{tokens}"
-    );
-    assert!(!tokens.contains("\"id\""), "{tokens}");
+    let validating = validating(&schema);
+    for ty in &schema.types {
+        let tokens = generate_type_validate_impl(ty, &validating).to_string();
+        assert!(!tokens.contains("format"), "{}: {tokens}", ty.name);
+        assert!(!tokens.contains("to_string"), "{}: {tokens}", ty.name);
+    }
 }

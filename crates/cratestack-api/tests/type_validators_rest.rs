@@ -41,6 +41,9 @@ impl p::ProcedureRegistry for Procedures {
     reply!(open_account);
     reply!(relabel);
     reply!(plain);
+    reply!(walk);
+    reply!(meet);
+    reply!(deep);
 }
 
 #[derive(Clone)]
@@ -165,6 +168,76 @@ async fn a_non_http_caller_is_validated_before_policy() {
     ));
     assert!(matches!(
         call(&db, "hello", &anonymous).await.unwrap_err(),
+        CratestackError::Forbidden(_)
+    ));
+}
+
+/// The check is the first statement of all four lifecycle helpers, not only of
+/// the two that take a `db`: the repository's own tests call `authorize` and
+/// `invoke` (`cratestack-pg/tests/include_schema.rs`), and a helper that skips
+/// validation hands the registry an argument the schema says is invalid. For
+/// each helper an invalid argument is refused before `@allow` is evaluated
+/// (an anonymous caller still learns it is invalid, not that it is
+/// forbidden) and before the body runs.
+#[tokio::test]
+async fn every_lifecycle_helper_validates_not_only_the_ones_that_take_a_db() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let db = cratestack_schema::Cratestack::builder().build();
+    let signed_in = CratestackContext::authenticated([("id".into(), cratestack::Value::Int(1))]);
+    let anonymous = CratestackContext::anonymous();
+    let args = |message: &str| p::greet::Args {
+        args: cratestack_schema::Greeting {
+            message: message.to_owned(),
+        },
+    };
+    let (invalid, valid) = (args("hi"), args("hello"));
+    let is_invalid = |error: CratestackError| {
+        matches!(&error, CratestackError::Validation(m)
+            if m == "field 'args.message' length 2 is below minimum 3")
+    };
+
+    for ctx in [&signed_in, &anonymous] {
+        let ran = AtomicBool::new(false);
+        assert!(is_invalid(p::greet::authorize(&invalid, ctx).unwrap_err()));
+        assert!(is_invalid(
+            p::greet::invoke(&invalid, ctx, || async {
+                ran.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .await
+            .unwrap_err()
+        ));
+        assert!(
+            !ran.load(Ordering::SeqCst),
+            "the body ran for an invalid argument"
+        );
+        assert!(is_invalid(
+            p::greet::authorize_with_db(&db, &invalid, ctx)
+                .await
+                .unwrap_err()
+        ));
+        assert!(is_invalid(
+            p::greet::invoke_with_db(&db, &invalid, ctx, |_| async { Ok(()) })
+                .await
+                .unwrap_err()
+        ));
+    }
+
+    // Valid arguments pass all four for a caller `@allow` admits.
+    p::greet::authorize(&valid, &signed_in).expect("authorize");
+    p::greet::invoke(&valid, &signed_in, || async { Ok(()) })
+        .await
+        .expect("invoke");
+    p::greet::authorize_with_db(&db, &valid, &signed_in)
+        .await
+        .expect("authorize_with_db");
+    p::greet::invoke_with_db(&db, &valid, &signed_in, |_| async { Ok(()) })
+        .await
+        .expect("invoke_with_db");
+    // ...and `@allow` still decides after validation.
+    assert!(matches!(
+        p::greet::authorize(&valid, &anonymous).unwrap_err(),
         CratestackError::Forbidden(_)
     ));
 }

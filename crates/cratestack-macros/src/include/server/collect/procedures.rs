@@ -13,6 +13,7 @@ use crate::procedure::{generate_procedure_module, generate_procedure_registry_me
 use crate::transport::{
     generate_procedure_transport_constants, generate_procedure_transport_entries,
 };
+use crate::validators::Validating;
 
 use super::{Ts, compile_error};
 
@@ -31,6 +32,7 @@ pub(super) fn collect_procedures(
     enum_name_set: &BTreeSet<&str>,
     auth: Option<&cratestack_core::AuthBlock>,
     bearing: &BTreeSet<String>,
+    validating: &Validating,
 ) -> Result<ProcedureCollected, TokenStream> {
     let modules = schema
         .procedures
@@ -42,6 +44,7 @@ pub(super) fn collect_procedures(
                 &schema.types,
                 enum_name_set,
                 auth,
+                validating,
             )
         })
         .collect::<Result<Vec<_>, _>>()

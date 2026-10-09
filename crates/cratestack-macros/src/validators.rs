@@ -4,14 +4,19 @@
 //!
 //! The same field validators run in two places, one emitter for both
 //! ([`FieldScope`] only changes how an error names the field): a model's
-//! create and update inputs, and the `type`s that procedures take as
-//! arguments ([`types`]).
+//! create and update inputs, and the `type`s and `model`s that a client
+//! sends as procedure arguments or `@computed` params ([`types`]).
 
 mod emit;
 mod parse;
 #[cfg(test)]
+mod tests_fixture;
+#[cfg(test)]
+mod tests_models;
+#[cfg(test)]
 mod tests_types;
 mod types;
+mod validating;
 
 use cratestack_core::Field;
 use proc_macro2::TokenStream;
@@ -21,9 +26,10 @@ use emit::emit_field_validators;
 use parse::{parse_length_args, parse_range_args, parse_regex_arg};
 
 pub(crate) use types::{
-    generate_args_validate_impl, generate_type_validate_impl, procedure_validates_args,
-    validating_type_names,
+    generate_args_validate_impl, generate_model_validate_impl, generate_type_validate_impl,
+    procedure_validates_args,
 };
+pub(crate) use validating::Validating;
 
 /// How an error message names the field that failed.
 #[derive(Debug, Clone, Copy)]
@@ -31,8 +37,8 @@ pub(super) enum FieldScope {
     /// By its schema name: a model's input struct is the whole payload.
     Input,
     /// By its path in the request body (`args.items[2].name`): a `type`
-    /// value sits anywhere in a procedure's arguments, and the generated
-    /// `validate_at` receives where.
+    /// or `model` value sits anywhere in a procedure's arguments, and the
+    /// generated `validate_at` receives where as a `FieldPath`.
     Nested,
 }
 

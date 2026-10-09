@@ -1,85 +1,58 @@
-//! `ValidateFields` impls for `type` declarations and procedure `Args`: the
-//! validators a `type` field declares, enforced on the arguments a client
+//! `ValidateFields` impls for `type` and `model` declarations and procedure
+//! `Args`: the validators a field declares, enforced on the values a client
 //! sends (ADR 0019 D5, PR A).
 //!
 //! Before this, `@length` on a `type` field was accepted and validated
 //! nothing: only a model's create and update inputs ran validators. A
-//! procedure argument is a `type` (or a list or optional of one), so its
-//! validators run here, through the same field emitter models use.
+//! procedure argument is a `type` or a `model` (or a list or optional of
+//! one), and so is a `@computed` params type, so their validators run here,
+//! through the same field emitter model inputs use.
 //!
-//! Only arguments are validated. A `type` that a procedure only returns is
-//! built by the server, and validating the server's own output would turn a
-//! server bug into a client-visible failure after the work is done: the only
-//! call site is the generated `authorize_with_db`, which sees arguments and
-//! nothing else. A return-only `type` with a validator still gets its impl
-//! (it is cheap, and no analysis of which `type`s are arguments is needed);
-//! nothing calls it.
+//! Only what a client sends is validated. A `type` that a procedure only
+//! returns is built by the server, and validating the server's own output
+//! would turn a server bug into a client-visible failure after the work is
+//! done; `cratestack check` refuses a validator on such a `type`
+//! (`cratestack-parser/src/validate/type_validator_reach.rs`), so none is
+//! silently inert. The call sites are the generated procedure helpers, which
+//! see arguments and nothing else (`crate::procedure::instrument`), and the
+//! `?computedParams=` parser (`crate::axum::model::computed`).
+//!
+//! The field path is a chain of borrowed segments (`FieldPath`) rendered
+//! only when a validator fails, so a valid request allocates nothing for it.
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{Procedure, TypeArity, TypeDecl, TypeRef};
+use cratestack_core::{Model, Procedure, TypeArity, TypeDecl, TypeRef};
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::shared::{ident, is_computed_field};
+use crate::shared::ident;
 
 use super::emit::emit_field_validators;
-use super::{FieldScope, parse_field_validators};
+use super::validating::{stored_model_fields, stored_type_fields};
+use super::{FieldScope, Validating, parse_field_validators};
 
-/// The fields the server-side struct of `ty` holds: a `@computed` field is
-/// resolved on the way out and never decoded from a client.
-fn stored_fields(ty: &TypeDecl) -> impl Iterator<Item = &cratestack_core::Field> {
-    ty.fields.iter().filter(|field| !is_computed_field(field))
-}
-
-/// The `type`s whose values need validating: one with a validator on a
-/// stored field, and any `type` with a stored field of such a `type`
-/// (a fixpoint, so nesting of any depth and a cycle are both handled).
-pub(crate) fn validating_type_names(types: &[TypeDecl]) -> BTreeSet<String> {
-    let mut validating: BTreeSet<String> = types
-        .iter()
-        .filter(|ty| stored_fields(ty).any(|field| !parse_field_validators(field).is_empty()))
-        .map(|ty| ty.name.clone())
-        .collect();
-    loop {
-        let before = validating.len();
-        for ty in types {
-            if !validating.contains(&ty.name)
-                && stored_fields(ty).any(|field| validating.contains(&field.ty.name))
-            {
-                validating.insert(ty.name.clone());
-            }
-        }
-        if validating.len() == before {
-            return validating;
-        }
-    }
-}
-
-/// The call that validates `value`, a field of `ty` named `name`, when its
-/// `type` needs one; its path extends `path` by the field name, by
-/// `[index]` for an element of a list.
-fn nested(
-    name: &str,
-    ty: &TypeRef,
-    value: TokenStream,
-    validating: &BTreeSet<String>,
-) -> TokenStream {
+/// The call that validates `value`, a field `name` of the value at `path`,
+/// when its `type` or `model` needs one.
+fn nested(name: &str, ty: &TypeRef, value: TokenStream, validating: &Validating) -> TokenStream {
     if !validating.contains(&ty.name) {
         return quote! {};
     }
     match ty.arity {
         TypeArity::Required => quote! {
-            #value.validate_at(&::std::format!("{}{}.", path, #name))?;
+            #value.validate_at(&path.field(#name))?;
         },
         TypeArity::Optional => quote! {
             if let Some(inner) = #value.as_ref() {
-                inner.validate_at(&::std::format!("{}{}.", path, #name))?;
+                inner.validate_at(&path.field(#name))?;
             }
         },
         TypeArity::List => quote! {
-            for (index, item) in #value.iter().enumerate() {
-                item.validate_at(&::std::format!("{}{}[{}].", path, #name, index))?;
+            {
+                let list_path = path.field(#name);
+                for (index, item) in #value.iter().enumerate() {
+                    item.validate_at(&list_path.index(index))?;
+                }
             }
         },
     }
@@ -88,7 +61,10 @@ fn nested(
 fn validate_impl(target: TokenStream, body: TokenStream) -> TokenStream {
     quote! {
         impl ::cratestack::ValidateFields for #target {
-            fn validate_at(&self, path: &str) -> ::std::result::Result<(), ::cratestack::CratestackError> {
+            fn validate_at(
+                &self,
+                path: &::cratestack::FieldPath<'_>,
+            ) -> ::std::result::Result<(), ::cratestack::CratestackError> {
                 use ::cratestack::ValidateFields as _;
                 let _ = path;
                 #body
@@ -100,14 +76,11 @@ fn validate_impl(target: TokenStream, body: TokenStream) -> TokenStream {
 
 /// `impl ValidateFields for <ty>`, or nothing when `ty` has no validator
 /// anywhere inside it.
-pub(crate) fn generate_type_validate_impl(
-    ty: &TypeDecl,
-    validating: &BTreeSet<String>,
-) -> TokenStream {
+pub(crate) fn generate_type_validate_impl(ty: &TypeDecl, validating: &Validating) -> TokenStream {
     if !validating.contains(&ty.name) {
         return quote! {};
     }
-    let fields = stored_fields(ty).map(|field| {
+    let fields = stored_type_fields(ty).map(|field| {
         let own = parse_field_validators(field);
         let scalar = if own.is_empty() {
             quote! {}
@@ -127,10 +100,31 @@ pub(crate) fn generate_type_validate_impl(
     validate_impl(quote! { #type_ident }, quote! { #(#fields)* })
 }
 
-/// Whether any argument of `procedure` is, or holds, a validated `type`:
-/// `Args` then implements `ValidateFields` and `authorize_with_db` calls it.
-pub(crate) fn procedure_validates_args(procedure: &Procedure, types: &[TypeDecl]) -> bool {
-    let validating = validating_type_names(types);
+/// `impl ValidateFields for <model>`, or nothing when no stored field of
+/// the model carries a validator. This is the model sent as a value, not the
+/// model's create or update input (`generate_input_validate_body` runs
+/// those): a procedure argument of the model's type, or a field of a `type`
+/// holding one, was decoded with no validator run on it.
+pub(crate) fn generate_model_validate_impl(
+    model: &Model,
+    model_names: &BTreeSet<&str>,
+    validating: &Validating,
+) -> TokenStream {
+    if !validating.contains(&model.name) {
+        return quote! {};
+    }
+    let fields = stored_model_fields(model, model_names).filter_map(|field| {
+        let own = parse_field_validators(field);
+        (!own.is_empty()).then(|| emit_field_validators(field, &own, false, FieldScope::Nested))
+    });
+    let model_ident = ident(&model.name);
+    validate_impl(quote! { #model_ident }, quote! { #(#fields)* })
+}
+
+/// Whether any argument of `procedure` is, or holds, a validated `type` or
+/// `model`: `Args` then implements `ValidateFields` and the generated
+/// helpers call it.
+pub(crate) fn procedure_validates_args(procedure: &Procedure, validating: &Validating) -> bool {
     procedure
         .args
         .iter()
@@ -142,19 +136,14 @@ pub(crate) fn procedure_validates_args(procedure: &Procedure, types: &[TypeDecl]
 /// where the client wrote it.
 pub(crate) fn generate_args_validate_impl(
     procedure: &Procedure,
-    types: &[TypeDecl],
+    validating: &Validating,
 ) -> TokenStream {
-    let validating = validating_type_names(types);
-    if !procedure
-        .args
-        .iter()
-        .any(|arg| validating.contains(&arg.ty.name))
-    {
+    if !procedure_validates_args(procedure, validating) {
         return quote! {};
     }
     let checks = procedure.args.iter().map(|arg| {
         let arg_ident = ident(&arg.name);
-        nested(&arg.name, &arg.ty, quote! { self.#arg_ident }, &validating)
+        nested(&arg.name, &arg.ty, quote! { self.#arg_ident }, validating)
     });
     validate_impl(quote! { Args }, quote! { #(#checks)* })
 }

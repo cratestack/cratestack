@@ -84,6 +84,20 @@ pub fn cases() -> Vec<Case> {
             json!({"args": {"note": ""}}),
             None,
         ),
+        case(
+            "a cycle through a list, valid at every depth",
+            "walk",
+            json!({"args": {"label": "a", "children": [
+                {"label": "b", "children": [{"label": "c", "children": []}]}
+            ]}}),
+            None,
+        ),
+        case(
+            "a validator three types down, valid",
+            "deep",
+            json!({"args": {"middle": {"inner": {"code": "ok"}}}}),
+            None,
+        ),
         // Rejected, each named by its path in the request body.
         case(
             "length on an argument type",
@@ -150,6 +164,28 @@ pub fn cases() -> Vec<Case> {
             "openAccount",
             account(json!({"digest": [1, 2, 3]})),
             Some("field 'args.digest' length 3 is below minimum 4"),
+        ),
+        case(
+            "a grandchild in a cycle through a list",
+            "walk",
+            json!({"args": {"label": "a", "children": [
+                {"label": "b", "children": [{"label": "", "children": []}]}
+            ]}}),
+            Some("field 'args.children[0].children[0].label' length 0 is below minimum 1"),
+        ),
+        case(
+            "a cycle through two types",
+            "meet",
+            json!({"args": {"rights": [{"name": "r", "lefts": [
+                {"rights": [{"name": "", "lefts": []}]}
+            ]}]}}),
+            Some("field 'args.rights[0].lefts[0].rights[0].name' length 0 is below minimum 1"),
+        ),
+        case(
+            "a validator three types down, declared outermost first",
+            "deep",
+            json!({"args": {"middle": {"inner": {"code": "x"}}}}),
+            Some("field 'args.middle.inner.code' length 1 is below minimum 2"),
         ),
         case(
             "a list argument, by its own name",

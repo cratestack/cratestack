@@ -38,6 +38,7 @@ use crate::validate::policy_attributes::{
 };
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
+use crate::validate::view_from::validate_view_field_from;
 
 /// Each view is checked independently so one bad view does not hide the next.
 pub(super) fn validate_views_collecting(schema: &Schema, errors: &mut Vec<SchemaError>) {
@@ -56,12 +57,16 @@ pub(super) fn validate_views_collecting(schema: &Schema, errors: &mut Vec<Schema
                     view.span,
                 ));
             }
-            validate_view(view, &model_names)
+            validate_view(schema, view, &model_names)
         });
     }
 }
 
-fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), SchemaError> {
+fn validate_view(
+    schema: &Schema,
+    view: &View,
+    model_names: &BTreeSet<&str>,
+) -> Result<(), SchemaError> {
     validate_reserved_identifier(&view.name, view.name_span, &format!("view `{}`", view.name))?;
     validate_field_column_collisions(&view.fields, "view", &view.name)?;
     for attribute in &view.attributes {
@@ -130,6 +135,13 @@ fn validate_view(view: &View, model_names: &BTreeSet<&str>) -> Result<(), Schema
             ),
             view.span,
         ));
+    }
+
+    // `@from(Model.field)` names a column of a model the schema declares;
+    // after the sources, so a view that names a model that does not exist
+    // is told about its `from` first.
+    for field in &view.fields {
+        validate_view_field_from(schema, view, field)?;
     }
 
     // Rule 3: at least one SQL body — and, when one is written, it has to

@@ -10,6 +10,7 @@ mod computed;
 mod computed_attribute;
 mod computed_params;
 mod computed_resolver_names;
+mod db_enforce;
 mod field_attribute_tables;
 mod field_attributes;
 mod fields;
@@ -43,9 +44,11 @@ mod spatial_type;
 mod stream_attribute;
 mod type_field_attributes;
 mod type_names;
+mod type_validator_reach;
 mod unsupported_attribute;
 mod validator_args;
 mod validators;
+mod view_from;
 mod views;
 
 use std::collections::BTreeSet;
@@ -210,6 +213,9 @@ pub(crate) fn validate_schema_collecting(
     collect::record(&mut errors, || {
         self::computed_resolver_names::validate_computed_resolver_name_collisions(schema)
     });
+    // Needs every procedure argument and `@computed` params type to be known
+    // good, as it walks them.
+    self::type_validator_reach::validate_type_validator_reach(schema, &mut errors);
 
     let _ = (path, source);
     errors

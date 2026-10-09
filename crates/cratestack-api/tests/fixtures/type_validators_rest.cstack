@@ -36,6 +36,37 @@ type Plain {
   note String
 }
 
+// A list cycle: a `Node` holds `Node`s, so validation has to recurse through
+// the children to any depth. `Left` and `Right` are the same cycle through two
+// types, the validator on one side only.
+type Node {
+  label    String @length(min: 1)
+  children Node[]
+}
+
+type Left {
+  rights Right[]
+}
+
+type Right {
+  lefts Left[]
+  name  String @length(min: 1)
+}
+
+// Declared outermost first: only a fixpoint over the declarations, not one
+// pass in this order, finds that `Outer` holds a validator three levels down.
+type Outer {
+  middle Middle
+}
+
+type Middle {
+  inner Inner
+}
+
+type Inner {
+  code String @length(min: 2)
+}
+
 type Reply {
   ok Boolean
 }
@@ -52,4 +83,13 @@ procedure relabel(id: String, tags: Tag[], extra: Tag?): Reply
   @allow(auth() != null)
 
 procedure plain(args: Plain): Reply
+  @allow(auth() != null)
+
+procedure walk(args: Node): Reply
+  @allow(auth() != null)
+
+procedure meet(args: Left): Reply
+  @allow(auth() != null)
+
+procedure deep(args: Outer): Reply
   @allow(auth() != null)

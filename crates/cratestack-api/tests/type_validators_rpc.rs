@@ -42,6 +42,9 @@ impl p::ProcedureRegistry for Procedures {
     reply!(open_account);
     reply!(relabel);
     reply!(plain);
+    reply!(walk);
+    reply!(meet);
+    reply!(deep);
 }
 
 #[derive(Clone)]

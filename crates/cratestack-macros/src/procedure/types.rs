@@ -11,7 +11,7 @@ use quote::quote;
 
 use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{bytes_serde_attr, doc_attrs, ident, value_tokens};
-use crate::validators::generate_args_validate_impl;
+use crate::validators::{Validating, generate_args_validate_impl, procedure_validates_args};
 
 use super::type_tokens::procedure_type_tokens;
 
@@ -83,6 +83,7 @@ pub(crate) fn generate_procedure_args_struct(
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,
     construct: &str,
+    validating: &Validating,
 ) -> proc_macro2::TokenStream {
     let args_ident = ident("Args");
     let definitions = procedure.args.iter().map(|arg| {
@@ -136,10 +137,21 @@ pub(crate) fn generate_procedure_args_struct(
     };
 
     let struct_doc = format!("Generated argument payload for this {construct}.");
-    // Empty unless an argument is, or holds, a `type` with a validator. A
-    // `query`'s arguments are bindable scalars (the parser refuses a `type`
-    // there), so it never has one.
-    let validate_impl = generate_args_validate_impl(procedure, types);
+    // Empty unless an argument is, or holds, a `type` or `model` with a
+    // validator. A `query`'s arguments are bindable scalars (the parser
+    // refuses a `type` there), so it is given `Validating::none()`.
+    let validate_impl = generate_args_validate_impl(procedure, validating);
+    // `ProcedureArgs::validate_fields` is what the generated helpers call;
+    // its default is `Ok(())`, so only `Args` that validate override it.
+    let validate_fields = if procedure_validates_args(procedure, validating) {
+        quote! {
+            fn validate_fields(&self) -> ::std::result::Result<(), ::cratestack::CratestackError> {
+                ::cratestack::ValidateFields::validate(self)
+            }
+        }
+    } else {
+        quote! {}
+    };
 
     quote! {
         #[doc = #struct_doc]
@@ -157,6 +169,8 @@ pub(crate) fn generate_procedure_args_struct(
                     #nested_arg_match
                 }
             }
+
+            #validate_fields
         }
 
         #validate_impl
