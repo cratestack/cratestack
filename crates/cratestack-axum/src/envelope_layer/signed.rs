@@ -35,7 +35,8 @@ pub(super) async fn handle<S: Inner>(
         Err(error) => return refusal::bad_request(&parts.headers, &path, error),
     };
     // Before any key is looked up, any signature checked or any nonce spent.
-    let negotiated = match payload::negotiate(&config, &route, &parts.headers, true) {
+    let negotiated = match payload::negotiate(&config, &route, &parts.method, &parts.headers, true)
+    {
         Ok(negotiated) => negotiated,
         Err(error) => return refusal::payload_types(&parts.headers, &path, error),
     };
@@ -83,6 +84,24 @@ pub(super) async fn handle<S: Inner>(
         headers: parts.headers.clone(),
         path,
     };
+    // A read or delete names a type its empty payload need not have been
+    // checked for; one that carries a payload is checked now, before the
+    // handler, and answered sealed under the binding it was sent with.
+    if payload::check_opened(
+        &config,
+        &sealer.inputs.route,
+        &sealer.inputs.payload,
+        &payload,
+    )
+    .is_err()
+    {
+        let error = CratestackError::UnsupportedMediaType(
+            "the request payload's type is not accepted for this operation".to_owned(),
+        );
+        return sealer
+            .seal_error(StatusCode::UNSUPPORTED_MEDIA_TYPE, error)
+            .await;
+    }
     // A subscription streams, which cannot be sealed yet: refused before
     // its handler runs (API-review decision), not after.
     if sealer.inputs.route.is_subscription() {

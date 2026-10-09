@@ -11,8 +11,17 @@
 //! ([`EnvelopeLayerBuilder::payload_media_types`], CBOR alone by default)
 //! intersected with the route's declared set
 //! ([`ResolvedRoute::with_payload_types`], which the built-in resolvers
-//! fill from the schema's descriptors). `/rpc/batch` is CBOR whatever either
+//! fill from the schema's descriptors; an empty declared list is "no
+//! constraint", as everywhere else). `/rpc/batch` is CBOR whatever either
 //! says: its frames are CBOR.
+//!
+//! **An empty payload has no type to refuse.** A `GET`, `HEAD` or `DELETE`
+//! seals an empty payload, and what it names (a JSON or form client names
+//! its own codec there) is bound as sent but not checked: the check would
+//! need the payload opened, and opening costs a key lookup and a nonce.
+//! Such a request is let through [`negotiate`] and [`check_opened`] judges
+//! it once opened: an empty payload passes, a payload that is not empty is
+//! held to the layer's set and the route's, before the handler sees it.
 //!
 //! [`EnvelopeLayerBuilder::payload_media_types`]: super::EnvelopeLayerBuilder::payload_media_types
 
@@ -20,7 +29,7 @@ use cratestack_core::{
     CratestackError, DEFAULT_PAYLOAD_MEDIA_TYPE, PAYLOAD_ACCEPT_HEADER, PAYLOAD_TYPE_HEADER,
     parse_payload_accept, parse_payload_type,
 };
-use http::HeaderMap;
+use http::{HeaderMap, Method};
 
 use super::layer::Config;
 use super::resolver::ResolvedRoute;
@@ -36,6 +45,9 @@ pub(super) struct Negotiated {
     /// preference. Never empty, and always holds one the transport's error
     /// codec can write ([`Self::error_type`]).
     pub(super) response: Vec<String>,
+    /// Whether the request's type was left for [`check_opened`]: a method
+    /// that carries no payload of its own.
+    deferred: bool,
 }
 
 impl Negotiated {
@@ -99,7 +111,14 @@ fn permits(layer: &[String], route: Option<&[&str]>, batch: bool, media_type: &s
         return false;
     }
     layer.iter().any(|allowed| allowed == media_type)
-        && route.is_none_or(|declared| declared.contains(&media_type))
+        && route.is_none_or(|declared| declared.is_empty() || declared.contains(&media_type))
+}
+
+/// Whether `method` carries a payload of its own. `GET`, `HEAD` and
+/// `DELETE` do not (RFC 9110 §9.3), and the routes generated for them
+/// declare no request type.
+fn carries_no_payload(method: &Method) -> bool {
+    matches!(*method, Method::GET | Method::HEAD | Method::DELETE)
 }
 
 /// Negotiate `headers` for `route`. `signed` is false for an unsigned,
@@ -108,6 +127,7 @@ fn permits(layer: &[String], route: Option<&[&str]>, batch: bool, media_type: &s
 pub(super) fn negotiate(
     config: &Config,
     route: &ResolvedRoute,
+    method: &Method,
     headers: &HeaderMap,
     signed: bool,
 ) -> Result<Negotiated, Refusal> {
@@ -124,7 +144,9 @@ pub(super) fn negotiate(
         None => vec![DEFAULT_PAYLOAD_MEDIA_TYPE],
         Some(value) => parse_payload_accept(value).map_err(Refusal::Malformed)?,
     };
+    let deferred = signed && carries_no_payload(method);
     if signed
+        && !deferred
         && !permits(
             &config.payload_request,
             declared.map(|types| types.request),
@@ -149,6 +171,7 @@ pub(super) fn negotiate(
     let negotiated = Negotiated {
         request: request.to_owned(),
         response,
+        deferred,
     };
     // Nothing to answer in, or nothing an error could be sealed in either.
     let writable = negotiated
@@ -159,4 +182,28 @@ pub(super) fn negotiate(
         true => Ok(negotiated),
         false => Err(Refusal::NotAcceptable),
     }
+}
+
+/// The check [`negotiate`] left for a request that carries no payload of
+/// its own, made once its payload is open: an empty one has no type to
+/// refuse, and one that is not empty is held to the same sets as any other.
+pub(super) fn check_opened(
+    config: &Config,
+    route: &ResolvedRoute,
+    negotiated: &Negotiated,
+    payload: &[u8],
+) -> Result<(), Refusal> {
+    let declared = route.payload_types();
+    if !negotiated.deferred
+        || payload.is_empty()
+        || permits(
+            &config.payload_request,
+            declared.map(|types| types.request),
+            route.is_batch(),
+            &negotiated.request,
+        )
+    {
+        return Ok(());
+    }
+    Err(Refusal::RequestType)
 }

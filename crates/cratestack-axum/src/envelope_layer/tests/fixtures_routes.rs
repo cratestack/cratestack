@@ -36,6 +36,17 @@ const CAPS_FORM_JSON: RouteTransportCapabilities = RouteTransportCapabilities {
     supports_sequence_response: false,
 };
 
+/// What the generated model reads declare: `list_get`, `detail_get` and
+/// `detail_delete` take no payload, so their `request_types` is empty, and
+/// everywhere else an empty list means "no constraint". (A fixture that
+/// gave a GET a request type hid the 415 a CBOR client got from them.)
+const CAPS_READ: RouteTransportCapabilities = RouteTransportCapabilities {
+    request_types: &[],
+    response_types: &["application/cbor", "application/json"],
+    default_response_type: "application/cbor",
+    supports_sequence_response: false,
+};
+
 const fn route(method: &'static str, path: &'static str) -> RouteTransportDescriptor {
     route_with(method, path, CAPS)
 }
@@ -55,10 +66,12 @@ const fn route_with(
     }
 }
 
-pub static REST_ROUTES: [RouteTransportDescriptor; 10] = [
+pub static REST_ROUTES: [RouteTransportDescriptor; 12] = [
     route("POST", "/widgets"),
-    route("GET", "/widgets/{id}"),
-    route("DELETE", "/widgets/{id}"),
+    route_with("GET", "/widgets/{id}", CAPS_READ),
+    route_with("DELETE", "/widgets/{id}", CAPS_READ),
+    route_with("GET", "/notes", CAPS_READ),
+    route_with("GET", "/form-read", CAPS_FORM_JSON),
     route("GET", "/text-error"),
     route("GET", "/json"),
     route_with("GET", "/stream", CAPS_ANY),

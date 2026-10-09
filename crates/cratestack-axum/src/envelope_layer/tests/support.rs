@@ -35,6 +35,8 @@ pub static CONTRACTS: AcceptedContracts = &[
     ("POST /widgets", &[CONTRACT]),
     ("GET /widgets/{id}", &[CONTRACT]),
     ("DELETE /widgets/{id}", &[CONTRACT]),
+    ("GET /notes", &[CONTRACT]),
+    ("GET /form-read", &[CONTRACT]),
     ("GET /text-error", &[CONTRACT]),
     ("GET /json", &[CONTRACT]),
     ("GET /stream", &[CONTRACT]),

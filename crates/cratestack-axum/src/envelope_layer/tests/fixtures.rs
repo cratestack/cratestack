@@ -147,6 +147,8 @@ pub fn rest_router(layer: EnvelopeLayer, hits: &Hits) -> Router {
             get(|| async { with_type(StatusCode::OK, "application/json", "{}") }),
         )
         .route("/stream", get(|| async { streamed() }))
+        .route("/notes", get(echo_route(hits.clone())))
+        .route("/form-read", get(echo_route(hits.clone())))
         .route("/pay", post(echo_route(hits.clone())))
         .route("/either", post(echo_route(hits.clone())))
         .route(

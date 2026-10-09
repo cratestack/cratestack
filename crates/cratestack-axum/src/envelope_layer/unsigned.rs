@@ -44,7 +44,8 @@ pub(super) async fn handle<S: Inner>(
         Unsigned::Unsupported => return refusal::contract_unsupported(&parts.headers, &path),
         Unsigned::Misconfigured => return refusal::no_contract(&parts.headers, &path, &route),
     };
-    let negotiated = match payload::negotiate(&config, &route, &parts.headers, false) {
+    let negotiated = match payload::negotiate(&config, &route, &parts.method, &parts.headers, false)
+    {
         Ok(negotiated) => negotiated,
         Err(error) => return refusal::payload_types(&parts.headers, &path, error),
     };
