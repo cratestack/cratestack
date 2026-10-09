@@ -74,3 +74,35 @@ fn extract_filter_value_reads_field_from_row() {
     let value = extract_filter_value(&row, &info, &resolved).expect("extracts");
     assert_eq!(value, "user-7");
 }
+
+const LEDGER_SCHEMA: &str = r#"
+    model Account {
+      id BigInt @id
+      name String
+      entries Entry[] @relation(fields: [id], references: [accountId])
+    }
+
+    model Entry {
+      id String @id
+      accountId BigInt
+      account Account @relation(fields: [accountId], references: [id])
+    }
+"#;
+
+/// Both directions of a `BigInt` foreign key must resolve to the
+/// integer cast; a key type with no arm would answer "relation target
+/// column has an unsupported scalar type" and drop key navigation.
+#[test]
+fn bigint_foreign_key_resolves_in_both_directions() {
+    let schema = parse(LEDGER_SCHEMA);
+
+    let entry = schema.models.iter().find(|m| m.name == "Entry").unwrap();
+    let outgoing = resolve_relation(&schema, entry, "account").expect("outgoing resolves");
+    assert_eq!(outgoing.filter_column, "id");
+    assert_eq!(outgoing.filter_cast, PkCast::BigInt);
+
+    let account = schema.models.iter().find(|m| m.name == "Account").unwrap();
+    let inbound = resolve_relation(&schema, account, "entries").expect("inbound resolves");
+    assert_eq!(inbound.filter_column, "account_id");
+    assert_eq!(inbound.filter_cast, PkCast::BigInt);
+}

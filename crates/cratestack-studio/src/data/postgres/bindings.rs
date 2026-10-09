@@ -77,15 +77,33 @@ fn json_to_typed(scalar: &str, value: &serde_json::Value) -> TypedValue {
                 .as_i64()
                 .unwrap_or_else(|| value.as_f64().map(|f| f as i64).unwrap_or(0)),
         ),
+        // `BigInt` is a canonical decimal string on every wire, so it must
+        // reach Postgres as an integer parameter: falling through to the
+        // `Text` arm below would bind TEXT against a BIGINT column. The
+        // payload was validated upstream (`validators::check_type`); a
+        // value that still fails to parse is bound as text on purpose, so
+        // Postgres refuses it (42804) instead of this layer inventing a
+        // number the operator never typed.
+        "BigInt" => match value
+            .as_str()
+            .and_then(|text| text.parse::<cratestack_core::BigInt>().ok())
+        {
+            Some(parsed) => TypedValue::Int(parsed.get()),
+            None => text_value(value),
+        },
         "Float" => TypedValue::Float(value.as_f64().unwrap_or(0.0)),
         "Boolean" => TypedValue::Bool(value.as_bool().unwrap_or(false)),
         "Json" => TypedValue::Json(value.clone()),
         // String, Cuid, Uuid, Decimal, DateTime, Bytes, enums.
-        _ => TypedValue::Text(match value {
-            serde_json::Value::String(s) => s.clone(),
-            other => other.to_string(),
-        }),
+        _ => text_value(value),
     }
+}
+
+fn text_value(value: &serde_json::Value) -> TypedValue {
+    TypedValue::Text(match value {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    })
 }
 
 /// Bind one typed value onto a sqlx Query. The `match` keeps the
@@ -113,5 +131,58 @@ pub(super) fn typed_kind(value: &TypedValue) -> &'static str {
         TypedValue::Bool(_) => "boolean",
         TypedValue::Json(_) => "jsonb",
         TypedValue::Null => "null",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The three values ADR 0019 pins: both `i64` bounds, and the first
+    /// integer an IEEE double cannot hold.
+    const BOUNDARIES: [(&str, i64); 3] = [
+        ("9223372036854775807", i64::MAX),
+        ("-9223372036854775808", i64::MIN),
+        ("9007199254740993", 9_007_199_254_740_993),
+    ];
+
+    #[test]
+    fn bigint_string_binds_as_an_integer_parameter_not_text() {
+        for (text, expected) in BOUNDARIES {
+            let typed = json_to_typed("BigInt", &serde_json::json!(text));
+            assert!(
+                matches!(typed, TypedValue::Int(value) if value == expected),
+                "{text} should bind as Int({expected}), got {typed:?}"
+            );
+            assert_eq!(typed_kind(&typed), "bigint");
+        }
+    }
+
+    #[test]
+    fn bigint_null_binds_null() {
+        let typed = json_to_typed("BigInt", &serde_json::Value::Null);
+        assert!(matches!(typed, TypedValue::Null), "{typed:?}");
+    }
+
+    /// Unreachable through the API (the validator refuses these first),
+    /// but this layer must not turn them into a number: bound as text,
+    /// Postgres refuses them against the BIGINT column.
+    #[test]
+    fn bigint_values_that_are_not_canonical_strings_never_become_an_integer() {
+        for bad in [
+            serde_json::json!("+5"),
+            serde_json::json!("007"),
+            serde_json::json!("-0"),
+            serde_json::json!(" 1"),
+            serde_json::json!("9223372036854775808"),
+            serde_json::json!(42),
+            serde_json::json!(1.5),
+        ] {
+            let typed = json_to_typed("BigInt", &bad);
+            assert!(
+                matches!(typed, TypedValue::Text(_)),
+                "{bad} must not bind as an integer, got {typed:?}"
+            );
+        }
     }
 }

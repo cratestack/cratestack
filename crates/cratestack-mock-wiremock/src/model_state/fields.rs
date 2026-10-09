@@ -54,6 +54,11 @@ pub(crate) struct ModelFieldPlan {
     /// is never carried by `UpdateModelInput` either,
     /// `crates/cratestack-macros/src/model/descriptor/columns.rs`).
     pub(crate) version_name: Option<String>,
+    /// How the `@version` field is written into a body: bare for `Int`
+    /// ([`ScalarKind::Number`]), quoted for `BigInt`
+    /// ([`ScalarKind::QuotedString`], a decimal string on the wire).
+    /// Meaningless when `version_name` is `None`.
+    pub(crate) version_kind: ScalarKind,
     pub(crate) stateful: Vec<StateField>,
     pub(crate) frozen: Vec<FrozenField>,
 }
@@ -71,11 +76,11 @@ pub(crate) fn build_field_plan(
     pk_field: &Field,
 ) -> Result<ModelFieldPlan, WireMockGeneratorError> {
     let owner = format!("model `{}`", model.name);
-    let version_name = model
-        .fields
-        .iter()
-        .find(|field| is_version_field(field))
-        .map(|field| field.name.clone());
+    let version_field = model.fields.iter().find(|field| is_version_field(field));
+    let version_name = version_field.map(|field| field.name.clone());
+    let version_kind = version_field.map_or(ScalarKind::Number, |field| {
+        classify_field_kind(schema, field)
+    });
     let mut stateful = Vec::new();
     let mut frozen = Vec::new();
 
@@ -124,6 +129,7 @@ pub(crate) fn build_field_plan(
         pk_type_name: pk_field.ty.name.clone(),
         pk_kind: classify_field_kind(schema, pk_field),
         version_name,
+        version_kind,
         stateful,
         frozen,
     })
@@ -138,6 +144,7 @@ pub(crate) fn build_field_plan(
 fn scalar_default_literal(schema: &Schema, type_name: &str) -> String {
     match type_name {
         "Int" => "0".to_owned(),
+        "BigInt" => "0".to_owned(),
         "Float" => "0.0".to_owned(),
         "Boolean" => "true".to_owned(),
         "Cuid" => "clxxxxxxxxxxxxxxxxxxxxxxxx".to_owned(),

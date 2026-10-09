@@ -41,6 +41,11 @@ where
         "DateTime" => render_input(io, "datetime-local", "1", String::new()),
         "Decimal" | "Float" => render_input(io, "number", "any", placeholder),
         "Int" => render_input(io, "number", "1", placeholder),
+        // A `BigInt` is a canonical decimal string on every wire, and it
+        // can exceed 2^53, which a number input's spinner and `step`
+        // arithmetic would treat as a double. A text input keeps the
+        // digits the operator typed exactly as typed.
+        "BigInt" => render_input(io, "text", "", placeholder),
         "Boolean" => render_boolean(io, optional),
         _ => render_input(io, "text", "", placeholder),
     }

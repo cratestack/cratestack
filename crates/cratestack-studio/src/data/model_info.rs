@@ -34,11 +34,16 @@ pub(crate) struct ColumnInfo<'a> {
     /// Postgres aliases each selected column to it.
     pub field_name: &'a str,
     pub column_name: String,
+    /// The field's declared `.cstack` type name (`Int`, `BigInt`, ...).
+    /// Binding a JSON payload value needs it, because the JSON shape
+    /// alone cannot tell a `BigInt` (a string on every wire) from a
+    /// `String`.
+    pub scalar: &'a str,
 }
 
 /// How a primary-key value should be interpreted at the SQL layer.
 /// Text-shaped PKs (`String`, `Cuid`, `Uuid`, `Decimal`) get bound
-/// directly; `Int` PKs get cast on the bound parameter.
+/// directly; `Int` and `BigInt` PKs get cast on the bound parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PkCast {
     Text,
@@ -68,11 +73,12 @@ pub(crate) fn resolve_model<'a>(
         .map(|f| ColumnInfo {
             field_name: f.name.as_str(),
             column_name: column_name(&f.name),
+            scalar: f.ty.name.as_str(),
         })
         .collect();
 
     let pk_cast = pk_cast_for(&pk_field.ty.name).ok_or_else(|| DataError::Unsupported {
-        what: "primary key of this type (Phase 1 supports String, Cuid, Uuid, Decimal, Int)",
+        what: "primary key of this type (Phase 1 supports String, Cuid, Uuid, Decimal, Int, BigInt)",
     })?;
 
     Ok((
@@ -137,6 +143,9 @@ fn pk_cast_for(scalar: &str) -> Option<PkCast> {
     match scalar {
         "String" | "Uuid" | "Cuid" | "Decimal" => Some(PkCast::Text),
         "Int" => Some(PkCast::BigInt),
+        // Not folded into the `Int` arm: `Int` narrows to 32 bits and gets
+        // its own cast later (ADR 0019 PR C); `BigInt` stays `bigint`.
+        "BigInt" => Some(PkCast::BigInt),
         _ => None,
     }
 }
@@ -148,5 +157,41 @@ pub(crate) fn json_value_to_cursor(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(s) => s.clone(),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(text: &str) -> Schema {
+        cratestack_parser::parse_schema(text).expect("schema parses")
+    }
+
+    /// A `BigInt` key with no arm in `pk_cast_for` is refused as an
+    /// unsupported key type, which silently drops the model from
+    /// browse, relation follow and the generated find-by-key snippet.
+    #[test]
+    fn bigint_primary_key_resolves_to_the_bigint_cast() {
+        let schema = parse(
+            r#"
+                model Ledger {
+                  id BigInt @id
+                  amountE8 BigInt
+                  note String
+                }
+            "#,
+        );
+        let (_, info) = resolve_model(&schema, "Ledger").expect("BigInt key is supported");
+        assert_eq!(info.pk_cast, PkCast::BigInt);
+        let scalars: Vec<(&str, &str)> = info
+            .columns
+            .iter()
+            .map(|c| (c.field_name, c.scalar))
+            .collect();
+        assert_eq!(
+            scalars,
+            [("id", "BigInt"), ("amountE8", "BigInt"), ("note", "String")]
+        );
     }
 }
