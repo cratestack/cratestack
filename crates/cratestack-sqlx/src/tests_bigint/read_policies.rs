@@ -3,8 +3,8 @@
 //! claims bind, so these pin that the executed form and the preview renderer
 //! (`render_read_policy_sql`, which must stay in lock-step with it) agree for
 //! a `BigInt`, and that an `auth().x <op> <literal>` predicate, which is
-//! decided in-process and emitted as a `TRUE`/`FALSE` constant, refuses a
-//! string claim on both sides. `pg` runs the same fragments against Postgres.
+//! decided in-process and emitted as a `TRUE`/`FALSE`/`NULL` constant, refuses
+//! a string claim on both sides. `pg` runs the same fragments against Postgres.
 
 use cratestack_core::{CratestackContext, Value};
 
@@ -104,14 +104,15 @@ fn auth_field_literal_predicates_agree_and_refuse_a_string_claim() {
     assert_agree(ne, &claim(Value::Int(7)), "(FALSE)");
     assert_agree(eq, &claim(Value::Int(7)), "(TRUE)");
     // Was `(TRUE)` for `ne`: a string never equalled the integer, so it
-    // "differed".
+    // "differed". Now neither holds, and an unknown renders `NULL` so that a
+    // `@deny` on it refuses the row (`undecided_render` has the deny forms).
     for refused in [
         Value::String("7".to_owned()),
         Value::Bool(true),
         Value::Null,
     ] {
-        assert_agree(ne, &claim(refused.clone()), "(FALSE)");
-        assert_agree(eq, &claim(refused), "(FALSE)");
+        assert_agree(ne, &claim(refused.clone()), "(NULL)");
+        assert_agree(eq, &claim(refused), "(NULL)");
     }
 }
 

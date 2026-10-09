@@ -18,6 +18,7 @@
 //! - [`version_probe`]: shared `@version` mismatch-vs-policy-denial
 //!   disambiguation for the versioned update/delete paths.
 
+mod auth_literal;
 mod comparison;
 mod conditions;
 mod create;
@@ -35,7 +36,7 @@ mod unique_violation;
 mod values;
 mod version_probe;
 
-pub(crate) use comparison::{value_differs_from_auth_literal, value_matches_auth_literal};
+pub(crate) use auth_literal::{Position, auth_literal_sql};
 pub(crate) use conditions::{ReadPolicyKind, authorize_record_action, push_scoped_conditions};
 /// The create path evaluates predicates in-process rather than pushing
 /// them into SQL, so it is a second evaluator `AuthIsSystem` has to be

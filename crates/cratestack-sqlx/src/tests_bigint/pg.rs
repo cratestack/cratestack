@@ -9,6 +9,7 @@ mod fixture;
 mod mutate;
 mod read;
 mod refuse;
+mod undecided;
 
 use super::pg_support::connect_or_skip;
 
@@ -22,4 +23,6 @@ async fn bigint_policies_against_postgres() {
     read::negated_policies_deny_on_read(&pg.pool).await;
     mutate::negated_policies_deny_on_update_and_delete(&pg.pool).await;
     refuse::a_string_claim_is_refused_not_matched(&pg.pool).await;
+    undecided::an_undecidable_claim_denies_on_read_update_and_delete(&pg.pool).await;
+    undecided::a_relation_quantifier_never_grants_on_an_undecidable_claim(&pg.pool).await;
 }

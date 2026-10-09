@@ -30,7 +30,7 @@ pub(super) fn parse_policy_literal(
             .map_err(|_| format!("expected integer literal for field `{}`", field.name)),
         // `PolicyLiteral::Int` is an `i64` and a `BigInt` column is an `INT8`,
         // so the literal needs no variant of its own; the comparison against
-        // a `SqlValue::BigInt` is `cratestack-sqlx`'s `sql_value_matches_literal`.
+        // a `SqlValue::BigInt` is `cratestack-sqlx`'s `column_vs_literal`.
         // A schema-authored literal is read as `i64` here (the wire grammar
         // governs what a client sends, not what a schema author writes), and
         // one outside `i64` is refused at expansion.

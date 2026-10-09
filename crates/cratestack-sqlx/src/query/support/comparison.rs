@@ -37,6 +37,10 @@
 //! lowers to no `SqlValue`) is not a pair: it stays `False`, as the
 //! pushed-down form's `FALSE` constant does.
 //!
+//! The in-process `auth().x <op> <literal>` of read, update and delete has the
+//! same rule: an undecidable claim renders `NULL`, not `FALSE`, so that SQL's
+//! `NOT (NULL)` refuses the row; see [`super::auth_literal`].
+//!
 //! # What is and is not decided
 //!
 //! A `BigInt` column is compared numerically with an integer literal or an
@@ -177,14 +181,4 @@ pub(crate) fn column_vs_claim(candidate: &SqlValue, claim: &SqlValue) -> Compari
         // Everything that predates `BigInt`: derived equality.
         (left, right) => Comparison::of(left == right),
     }
-}
-
-/// `auth().x == <literal>`.
-pub(crate) fn value_matches_auth_literal(value: &Value, literal: PolicyLiteral) -> bool {
-    claim_vs_literal(value, literal).for_eq().is_true()
-}
-
-/// `auth().x != <literal>`.
-pub(crate) fn value_differs_from_auth_literal(value: &Value, literal: PolicyLiteral) -> bool {
-    claim_vs_literal(value, literal).for_ne().is_true()
 }

@@ -8,6 +8,9 @@
 //!   path is three-valued; an `@deny` fires on a comparison that cannot be
 //!   decided, an `@allow` does not grant on one, and `and` / `or` follow Kleene.
 //! - `create_defaults`: `@default(auth().x)` into a `BigInt` column.
+//! - `undecided_render` (and `pg::undecided` against Postgres): an
+//!   `auth().x <op> <literal>` with a claim that cannot be compared renders
+//!   `NULL`, so a `@deny` refuses the row on read, update and delete.
 //! - `read_policies`: the pushed-down form (read, update, delete) and the
 //!   preview renderer agree, with no database.
 //! - `binds`, `audit_snapshot`: bind arms and the canonical-string audit form.
@@ -26,6 +29,7 @@ mod create_policies;
 mod pg;
 mod pg_support;
 mod read_policies;
+mod undecided_render;
 
 /// `i64::MIN`, `-1`, `0`, `2^53 + 1` (the first integer a JS number cannot
 /// hold) and `i64::MAX`.

@@ -8,7 +8,7 @@ use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::{PolicyLiteral, ReadPredicate, sqlx};
 
-use super::comparison::{value_differs_from_auth_literal, value_matches_auth_literal};
+use super::auth_literal::{Position, auth_literal_sql};
 use super::policy_relation::push_relation_policy_query;
 use super::values::{auth_value_to_sql, claim_type_suffix, push_bind_value};
 
@@ -16,6 +16,7 @@ pub(super) fn push_policy_predicate(
     query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     predicate: ReadPredicate,
     ctx: &CratestackContext,
+    position: Position,
 ) {
     match predicate {
         ReadPredicate::AuthNotNull => {
@@ -50,28 +51,20 @@ pub(super) fn push_policy_predicate(
             });
         }
         ReadPredicate::AuthFieldEqLiteral { auth_field, value } => {
-            query.push(
-                if ctx
-                    .auth_field(auth_field)
-                    .is_some_and(|candidate| value_matches_auth_literal(candidate, value))
-                {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                },
-            );
+            query.push(auth_literal_sql(
+                ctx.auth_field(auth_field),
+                value,
+                false,
+                position,
+            ));
         }
         ReadPredicate::AuthFieldNeLiteral { auth_field, value } => {
-            query.push(
-                if ctx
-                    .auth_field(auth_field)
-                    .is_some_and(|candidate| value_differs_from_auth_literal(candidate, value))
-                {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                },
-            );
+            query.push(auth_literal_sql(
+                ctx.auth_field(auth_field),
+                value,
+                true,
+                position,
+            ));
         }
         ReadPredicate::FieldIsTrue { column } => {
             query.push(column).push(" = TRUE");
