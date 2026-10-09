@@ -1,0 +1,40 @@
+// ADR 0019 PR B (B11): every generated shape that carries a `BigInt`, for the
+// DB-free wire tests in `bigint_wire_shapes.rs`. The shapes are the ones a
+// `serde(with = ...)` on a raw `i64` would silently miss (ADR 0019 D3): a model
+// and its create/update inputs, the `<Model>Where` filter, a `type` block with a
+// required, an optional and a list `BigInt`, and procedure arguments.
+//
+// Modelled on `bytes_wire_shapes.cstack`. The model name is `BiShapeRow` so its
+// table never collides with another fixture's on a shared test Postgres.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth BiShapeOperator {
+  id Int
+}
+
+type BiShapeEnvelope {
+  amountE8 BigInt
+  maybeE8 BigInt?
+  listE8 BigInt[]
+}
+
+model BiShapeRow {
+  id BigInt @id
+  amountE8 BigInt
+  feeE8 BigInt?
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+procedure biShapeEcho(amountE8: BigInt, maybeE8: BigInt?, listE8: BigInt[]): BiShapeEnvelope
+  @allow(auth() != null)
+
+procedure biShapeFind(query: FindMany<BiShapeRow>): BiShapeRow[]
+  @allow(auth() != null)

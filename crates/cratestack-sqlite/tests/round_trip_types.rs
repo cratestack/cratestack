@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 use std::str::FromStr;
 
 use cratestack::include_embedded_schema;
-use cratestack::{Decimal, Json, RusqliteRuntime, Value};
+use cratestack::{BigInt, Decimal, Json, RusqliteRuntime, Value};
 use cratestack_rusqlite::{ModelDelegate, ddl::create_table_sql};
 
 include_embedded_schema!(
@@ -31,7 +31,8 @@ use cratestack_schema::{ROUND_TRIP_ENUM_MODEL, ROUND_TRIP_SCALAR_MODEL};
 /// same name (see that file for the full rationale on the guard test
 /// below and on why `jsonReq` isn't present in this backend's fixture).
 const COVERED_SCALAR_TYPES: &[&str] = &[
-    "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes", "Uuid",
+    "String", "Cuid", "Int", "BigInt", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes",
+    "Uuid",
 ];
 
 fn setup() -> RusqliteRuntime {
@@ -119,6 +120,9 @@ fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
         cuidOpt: Some("cliqzroundtrip0002".to_owned()),
         intReq: 42,
         intOpt: Some(-7),
+        // ADR 0019: the extremes of the range, which no `f64` or `i32` path holds.
+        bigIntReq: BigInt::MAX,
+        bigIntOpt: Some(BigInt::MIN),
         floatReq: 3.5,
         floatOpt: Some(-2.25),
         booleanReq: true,
@@ -151,6 +155,8 @@ fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
     assert_eq!(fetched.cuidOpt, input.cuidOpt);
     assert_eq!(fetched.intReq, input.intReq);
     assert_eq!(fetched.intOpt, input.intOpt);
+    assert_eq!(fetched.bigIntReq, input.bigIntReq);
+    assert_eq!(fetched.bigIntOpt, input.bigIntOpt);
     assert_eq!(fetched.floatReq, input.floatReq);
     assert_eq!(fetched.floatOpt, input.floatOpt);
     assert_eq!(fetched.booleanReq, input.booleanReq);
@@ -187,6 +193,8 @@ fn optional_builtin_scalars_round_trip_as_null() {
             cuidOpt: None,
             intReq: 1,
             intOpt: None,
+            bigIntReq: BigInt::new(9_007_199_254_740_993),
+            bigIntOpt: None,
             floatReq: 1.0,
             floatOpt: None,
             booleanReq: false,
@@ -213,6 +221,8 @@ fn optional_builtin_scalars_round_trip_as_null() {
     assert!(fetched.stringOpt.is_none());
     assert!(fetched.cuidOpt.is_none());
     assert!(fetched.intOpt.is_none());
+    assert_eq!(fetched.bigIntReq, BigInt::new(9_007_199_254_740_993));
+    assert!(fetched.bigIntOpt.is_none());
     assert!(fetched.floatOpt.is_none());
     assert!(fetched.booleanOpt.is_none());
     assert!(fetched.dateTimeOpt.is_none());

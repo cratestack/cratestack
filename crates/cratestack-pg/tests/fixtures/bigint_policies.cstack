@@ -1,0 +1,164 @@
+// ADR 0019 PR B (B11): policies over a `BigInt` column and a `BigInt`
+// procedure argument. Driven by `bigint_policies.rs`.
+//
+// The danger these fixtures exist for (ADR 0019 risk 2, section 4 of the PR B
+// plan): a negated predicate on a `BigInt` that FAILS OPEN. A create policy
+// compares the input's `SqlValue::BigInt` with a policy literal / auth claim
+// built as `Int`, and a procedure policy reads the argument through a `Value`
+// conversion; where either has no `BigInt` arm the comparison is "no match",
+// so `!=` and `not in` come out true and the operation is allowed when the
+// values are EQUAL. No compiler error points at it, so each predicate shape
+// below has a model or procedure, and the test asserts the equal case denies.
+//
+// The `==` and `in` shapes are here too: a `@@deny(x == 100)` that never
+// matches is the same hole from the other side.
+//
+// `BiPol` prefix: tables (`bi_pol_ne_lits`, ...) must not collide with another
+// fixture's on a shared test Postgres.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth BiCaller {
+  id Int
+  quotaE8 BigInt
+}
+
+model BiPolNeLit {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", amountE8 != 100)
+}
+
+model BiPolNotIn {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", amountE8 not in [100, 9007199254740993, 9223372036854775807, -9223372036854775808])
+}
+
+model BiPolNeAuth {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", amountE8 != auth().quotaE8)
+}
+
+model BiPolDenyEq {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@deny("create", amountE8 == 100)
+}
+
+model BiPolDenyIn {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@deny("create", amountE8 in [100, 9007199254740993])
+}
+
+model BiPolEqLit {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", amountE8 == 100)
+}
+
+model BiPolEqAuth {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", amountE8 == auth().quotaE8)
+}
+
+model BiPolIn {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("read", auth() != null)
+  @@allow("create", amountE8 in [100, 9223372036854775807])
+}
+
+// Read policies are SQL, not Rust: a `BigInt` column against an `Int` literal
+// and against an auth claim.
+model BiPolScoped {
+  id Int @id
+  ownerE8 BigInt
+  amountE8 BigInt
+
+  @@allow("create", auth() != null)
+  @@allow("read", ownerE8 == auth().quotaE8)
+  @@deny("read", amountE8 == 100)
+}
+
+model BiPolNeRead {
+  id Int @id
+  amountE8 BigInt
+
+  @@allow("create", auth() != null)
+  @@allow("read", amountE8 != auth().quotaE8)
+}
+
+// An auth-derived default: the claim fills a BigInt column.
+model BiPolStamped {
+  id Int @id
+  ownerE8 BigInt @default(auth().quotaE8)
+  note String
+
+  @@allow("create", auth() != null)
+  @@allow("read", auth() != null)
+}
+
+type BiPair {
+  a BigInt
+  b BigInt
+}
+
+// Procedure policies read the arguments through `Value`.
+mutation procedure biNeLit(args: BiPair): BiPair
+  @allow(args.a != 100)
+
+mutation procedure biEqLit(args: BiPair): BiPair
+  @allow(args.a == 100)
+
+mutation procedure biDenyEq(args: BiPair): BiPair
+  @allow(auth() != null)
+  @deny(args.a == 100)
+
+mutation procedure biNeAuth(args: BiPair): BiPair
+  @allow(args.a != auth().quotaE8)
+
+mutation procedure biEqAuth(args: BiPair): BiPair
+  @allow(args.a == auth().quotaE8)
+
+mutation procedure biNeInput(args: BiPair): BiPair
+  @allow(args.a != args.b)
+
+mutation procedure biEqInput(args: BiPair): BiPair
+  @allow(args.a == args.b)
+
+// The same, with the BigInt as a bare procedure argument.
+mutation procedure biDirectNe(a: BigInt, b: BigInt): BiPair
+  @allow(a != 100)
+
+mutation procedure biDirectNeAuth(a: BigInt, b: BigInt): BiPair
+  @allow(a != auth().quotaE8)
+
+// The same policy under `@isolation`: it is evaluated on the procedure's own
+// transaction (`authorize_with_db`), a different code path from the above.
+mutation procedure biIsolatedNe(args: BiPair): BiPair
+  @isolation("serializable")
+  @allow(args.a != 100)

@@ -1,0 +1,112 @@
+// ADR 0019 PR B (B11): `BigInt` end to end on the REST transport, against a
+// real Postgres. Driven by `bigint_end_to_end.rs`; `bigint_end_to_end_rpc.cstack`
+// is this schema over `transport rpc` (keep the two in step).
+//
+// One model per behaviour the design doc's section 7 lists for `cratestack-pg`:
+//   BiAccount            BigInt @id, required and optional BigInt columns:
+//                        create, get, list with ?fields=, update, delete and
+//                        the gt/lt/in filters
+//   BiLedger             `@version` on BigInt: the ETag / If-Match round trip
+//   BiLimit              `@range ... @db_enforce` on BigInt: API 422 + DB CHECK
+//   BiTeam / BiPlayer    a BigInt foreign key and a relation include
+// plus procedures with a BigInt argument, a bare BigInt return, a BigInt list
+// and `FindMany<BiAccount>` (the generated `BiAccountWhere`).
+//
+// `Bi` prefix: the tables (`bi_accounts`, ...) must not collide with another
+// fixture's on a shared test Postgres (`fixture_table_names.rs`).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth BiOperator {
+  id Int
+}
+
+model BiAccount {
+  id BigInt @id
+  amountE8 BigInt
+  feeE8 BigInt?
+  label String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model BiLedger {
+  id BigInt @id
+  balanceE8 BigInt
+  version BigInt @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+// The wide range sits one short of each end of `i64` so that a bound compared
+// through `f64` or clamped to `i32` accepts what it must refuse.
+model BiLimit {
+  id Int @id
+  smallE8 BigInt @range(min: 0, max: 1000000) @db_enforce
+  wideE8 BigInt @range(min: -9223372036854775807, max: 9223372036854775806) @db_enforce
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+model BiTeam {
+  id BigInt @id
+  name String
+  players BiPlayer[] @relation(fields:[id],references:[teamId])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model BiPlayer {
+  id BigInt @id
+  teamId BigInt
+  scoreE8 BigInt
+  team BiTeam @relation(fields:[teamId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type BiEchoArgs {
+  amountE8 BigInt
+  feeE8 BigInt?
+  tagsE8 BigInt[]
+}
+
+type BiEcho {
+  amountE8 BigInt
+  feeE8 BigInt?
+  tagsE8 BigInt[]
+}
+
+mutation procedure biEcho(args: BiEchoArgs): BiEcho
+  @allow(auth() != null)
+
+procedure biNext(valueE8: BigInt): BigInt
+  @allow(auth() != null)
+
+procedure biFindAccounts(query: FindMany<BiAccount>): BiAccount[]
+  @allow(auth() != null)
+
+// A `db = Postgres` procedure with BigInt arguments that runs in its own
+// `@isolation` transaction: the arguments are validated and decoded before the
+// transaction opens, and the body reads and writes a BigInt key through it.
+type BiDepositArgs {
+  accountId BigInt
+  deltaE8 BigInt
+}
+
+mutation procedure biDeposit(args: BiDepositArgs): BiAccount
+  @isolation("serializable")
+  @allow(auth() != null)

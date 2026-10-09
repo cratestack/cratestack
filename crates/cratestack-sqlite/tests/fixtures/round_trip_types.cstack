@@ -38,6 +38,8 @@ model RoundTripScalar {
   cuidOpt Cuid?
   intReq Int
   intOpt Int?
+  bigIntReq BigInt
+  bigIntOpt BigInt?
   floatReq Float
   floatOpt Float?
   booleanReq Boolean

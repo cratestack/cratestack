@@ -1,0 +1,104 @@
+// ADR 0019 PR B (B11): `bigint_end_to_end.cstack` over `transport rpc`. Driven by
+// `bigint_end_to_end_rpc.rs` (unary and batch, JSON and CBOR). Keep the two
+// fixtures in step; see the REST one for what each model pins.
+//
+// `RpcBi` prefix: the tables (`rpc_bi_accounts`, ...) must not collide with the
+// REST fixture's on a shared test Postgres (`fixture_table_names.rs`).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth RpcBiOperator {
+  id Int
+}
+
+model RpcBiAccount {
+  id BigInt @id
+  amountE8 BigInt
+  feeE8 BigInt?
+  label String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+model RpcBiLedger {
+  id BigInt @id
+  balanceE8 BigInt
+  version BigInt @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+// The wide range sits one short of each end of `i64` so that a bound compared
+// through `f64` or clamped to `i32` accepts what it must refuse.
+model RpcBiLimit {
+  id Int @id
+  smallE8 BigInt @range(min: 0, max: 1000000) @db_enforce
+  wideE8 BigInt @range(min: -9223372036854775807, max: 9223372036854775806) @db_enforce
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+}
+
+model RpcBiTeam {
+  id BigInt @id
+  name String
+  players RpcBiPlayer[] @relation(fields:[id],references:[teamId])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+model RpcBiPlayer {
+  id BigInt @id
+  teamId BigInt
+  scoreE8 BigInt
+  team RpcBiTeam @relation(fields:[teamId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}
+
+type RpcBiEchoArgs {
+  amountE8 BigInt
+  feeE8 BigInt?
+  tagsE8 BigInt[]
+}
+
+type RpcBiEcho {
+  amountE8 BigInt
+  feeE8 BigInt?
+  tagsE8 BigInt[]
+}
+
+mutation procedure rpcBiEcho(args: RpcBiEchoArgs): RpcBiEcho
+  @allow(auth() != null)
+
+procedure rpcBiNext(valueE8: BigInt): BigInt
+  @allow(auth() != null)
+
+procedure rpcBiFindAccounts(query: FindMany<RpcBiAccount>): RpcBiAccount[]
+  @allow(auth() != null)
+
+// A `db = Postgres` procedure with BigInt arguments that runs in its own
+// `@isolation` transaction: the arguments are validated and decoded before the
+// transaction opens, and the body reads and writes a BigInt key through it.
+type RpcBiDepositArgs {
+  accountId BigInt
+  deltaE8 BigInt
+}
+
+mutation procedure rpcBiDeposit(args: RpcBiDepositArgs): RpcBiAccount
+  @isolation("serializable")
+  @allow(auth() != null)
