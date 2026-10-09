@@ -66,7 +66,7 @@ const fn route_with(
     }
 }
 
-pub static REST_ROUTES: [RouteTransportDescriptor; 12] = [
+pub static REST_ROUTES: [RouteTransportDescriptor; 13] = [
     route("POST", "/widgets"),
     route_with("GET", "/widgets/{id}", CAPS_READ),
     route_with("DELETE", "/widgets/{id}", CAPS_READ),
@@ -79,4 +79,5 @@ pub static REST_ROUTES: [RouteTransportDescriptor; 12] = [
     route_with("POST", "/either", CAPS_ANY),
     route_with("GET", "/html", CAPS_ANY),
     route_with("GET", "/plain-error", CAPS_ANY),
+    route_with("GET", "/utf16", CAPS_ANY),
 ];

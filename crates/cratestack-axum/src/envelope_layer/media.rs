@@ -89,11 +89,45 @@ pub(super) fn response_media_type(headers: &HeaderMap) -> Option<&str> {
     Some(value.split(';').next().unwrap_or(value).trim())
 }
 
+/// Whether a response's `Content-Type` is free of a `charset` other than
+/// UTF-8. The type is sealed without its parameters and a client decodes
+/// JSON and forms as UTF-8, so a body a handler labelled otherwise would be
+/// misread, never refused: it is not sealed as the negotiated type.
+pub(super) fn charset_is_utf8(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(CONTENT_TYPE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';').skip(1))
+        .filter_map(|param| param.split_once('='))
+        .filter(|(name, _)| name.trim().eq_ignore_ascii_case("charset"))
+        .all(|(_, value)| value.trim().trim_matches('"').eq_ignore_ascii_case("utf-8"))
+}
+
 #[cfg(test)]
 mod tests {
     use http::{HeaderMap, HeaderValue};
 
-    use super::{accept_names_stream, names_cose, refused, response_media_type};
+    use super::{accept_names_stream, charset_is_utf8, names_cose, refused, response_media_type};
+
+    #[test]
+    fn only_utf_8_is_a_charset_a_sealed_response_may_name() {
+        for (value, utf8) in [
+            ("application/json", true),
+            ("application/json; charset=utf-8", true),
+            ("application/json;charset=\"UTF-8\"", true),
+            ("application/json; charset=utf-16", false),
+            ("application/json; Charset=latin1", false),
+            ("application/json; q=1; charset=utf-8x", false),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_str(value).expect("header"),
+            );
+            assert_eq!(charset_is_utf8(&headers), utf8, "{value}");
+        }
+    }
 
     #[test]
     fn cose_is_recognised_in_every_spelling() {

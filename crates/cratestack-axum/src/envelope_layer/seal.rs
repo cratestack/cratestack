@@ -64,6 +64,7 @@ impl Sealer {
             }
         };
         let negotiated = media::response_media_type(&parts.headers)
+            .filter(|_| media::charset_is_utf8(&parts.headers))
             .and_then(|media_type| self.inputs.payload.response_type(media_type))
             .map(str::to_owned);
         if let Some(payload_type) = negotiated {

@@ -159,6 +159,10 @@ pub fn rest_router(layer: EnvelopeLayer, hits: &Hits) -> Router {
             "/plain-error",
             get(|| async { with_type(StatusCode::NOT_FOUND, "text/plain", "gone") }),
         )
+        .route(
+            "/utf16",
+            get(|| async { with_type(StatusCode::OK, "application/json; charset=utf-16", "{}") }),
+        )
         .route("/unlisted", get(echo_route(hits.clone())))
         .layer(layer)
 }
