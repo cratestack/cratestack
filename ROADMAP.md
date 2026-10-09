@@ -224,7 +224,7 @@ Build and CI:
   `riverpod_generator` does not solve on every Flutter channel, so the BigInt
   Riverpod legs run in `cargo test -p cratestack-client-dart --test bigint_round_trip`
   (with `CRATESTACK_RELAX_RIVERPOD_PINS=1` where needed), not in that recipe.
-- Human-test issues: {{HUMAN_TEST_ISSUES}}
+- Human-test issues: #1159 (Flutter devices and web), #1160 (TypeScript in browsers), #1161 (downstream upgrades), #1162 (Studio UI), #1163 (VS Code), #1164 (MCP with a real AI client), #1165 (live WireMock)
 
 Ruled out in the ADR, so it isn't proposed again:
 
