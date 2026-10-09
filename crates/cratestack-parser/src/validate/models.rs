@@ -11,6 +11,7 @@ use crate::validate::collect::record;
 use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
+use crate::validate::default_autoincrement::validate_default_autoincrement_rejected;
 use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_list_arity_support,
     validate_field_policy_attributes, validate_field_reserved_identifier,
@@ -158,6 +159,8 @@ pub(super) fn validate_models_collecting(
                 validate_field_policy_attributes(&model.name, field)?;
                 server_only::validate_model_field(schema, model, field, &model_names)?;
                 validate_default_dbgenerated_no_args(&model.name, field)?;
+                validate_default_autoincrement_rejected(&model.name, field)?;
+
                 validate_removed_field_attributes("model", &model.name, field)?;
                 validate_misspelled_field_attributes("model", &model.name, field)?;
                 validate_key_and_relation_attributes("model", &model.name, field)?;

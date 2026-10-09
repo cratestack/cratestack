@@ -196,6 +196,41 @@ model Article {
     );
 }
 
+/// cratestack#1128: `@default(autoincrement())` is refused by `cratestack
+/// check` (`validate_default_autoincrement_rejected`), so a validated
+/// schema can never carry it here. This test pins the layer that follows:
+/// a snapshot's previous schema, or a direct `cratestack-migrate` library
+/// call, bypasses validation and can still hold the spelling — and the
+/// emitter must never turn it into `DEFAULT autoincrement()`, which SQLite
+/// rejects at apply time. Parsed unvalidated for exactly that reason.
+#[test]
+fn autoincrement_default_emits_no_default_clause() {
+    let prev = schema(&with_models(""));
+    let next = cratestack_parser::parse_schema_unvalidated(&with_models(
+        r#"
+model Widget {
+  id Int @id @default(autoincrement())
+}
+"#,
+    ))
+    .expect("unvalidated schema should parse");
+    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
+    assert!(
+        !migration.up.contains("DEFAULT autoincrement()"),
+        "emitted DDL must never contain the literal invalid `DEFAULT autoincrement()` call: {}",
+        migration.up
+    );
+    assert!(
+        migration.up.contains("id BLOB NOT NULL,"),
+        "up was: {}",
+        migration.up
+    );
+    assert_eq!(
+        migration.unverified_dbgenerated,
+        vec![("widgets".to_owned(), "id".to_owned())]
+    );
+}
+
 #[test]
 fn enum_changes_produce_no_sqlite_ddl() {
     let prev = schema(&with_models(

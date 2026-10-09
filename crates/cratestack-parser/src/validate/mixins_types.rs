@@ -10,6 +10,7 @@ use crate::validate::collect::record;
 use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
+use crate::validate::default_autoincrement::validate_default_autoincrement_rejected;
 use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_reserved_identifier,
 };
@@ -89,6 +90,7 @@ pub(super) fn validate_mixins_collecting(
                     },
                 )?;
                 validate_default_dbgenerated_no_args(&mixin.name, field)?;
+                validate_default_autoincrement_rejected(&mixin.name, field)?;
                 validate_removed_field_attributes("mixin", &mixin.name, field)?;
                 validate_misspelled_field_attributes("mixin", &mixin.name, field)?;
                 validate_key_and_relation_attributes("mixin", &mixin.name, field)?;

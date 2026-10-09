@@ -10,6 +10,7 @@ mod computed;
 mod computed_attribute;
 mod computed_params;
 mod computed_resolver_names;
+mod default_autoincrement;
 mod fields;
 mod index_attribute;
 mod isolation_scope;
