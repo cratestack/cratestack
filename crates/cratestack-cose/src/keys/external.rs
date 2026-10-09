@@ -1,4 +1,8 @@
 //! A signer whose key lives outside this process (cratestack#1007).
+//!
+//! [`ExternalSigner::esp256`] for a P-256 key in a platform keystore, and
+//! [`ExternalSigner::ed25519`] for an Ed25519 key behind a callback (a Node
+//! `KeyObject` that cannot be exported, a KMS, a hardware token).
 
 use std::fmt;
 use std::future::Future;
@@ -25,6 +29,25 @@ type SignFn = dyn Fn(Vec<u8>) -> BoxFuture<'static, Result<Vec<u8>, CratestackEr
 /// The key is never exported; the callback is asked to sign the complete
 /// `Sig_structure` and nothing else. On `wasm32` neither the callback nor its
 /// future needs to be `Send` (see [`CoseSigner`]).
+///
+/// An Ed25519 key behind a callback, with the platform's own primitive
+/// standing in for the key store (here, `Ed25519Signer`):
+///
+/// ```
+/// use cratestack_cose::{CoseAlg, CoseSigner, Ed25519Signer, ExternalSigner};
+///
+/// let key = Ed25519Signer::from_seed(&[7; 32]);
+/// let public = key.verify_key().ed25519_bytes().unwrap();
+/// let signer = ExternalSigner::ed25519(&public, move |tbs| {
+///     let key = key.clone();
+///     async move { key.sign(&tbs).await }
+/// })
+/// .unwrap();
+/// assert_eq!(signer.alg(), CoseAlg::Ed25519);
+/// assert_eq!(signer.kid().len(), 8);
+/// ```
+///
+/// A P-256 key:
 ///
 /// ```
 /// use cratestack_cose::{CoseAlg, CoseSigner, ExternalSigner, P256Signer};
@@ -75,6 +98,32 @@ impl ExternalSigner {
             sign: Arc::new(move |tbs| Box::pin(sign(tbs))),
         })
     }
+
+    /// An Ed25519 (`-19`) signer for the key whose public half is
+    /// `public_key`. The `kid` is the key's RFC 9679 thumbprint prefix,
+    /// computed here so the caller cannot get it wrong.
+    ///
+    /// `sign` receives the full to-be-signed bytes and must return the
+    /// 64-byte Ed25519 signature over exactly those bytes (pure Ed25519, as
+    /// RFC 8032 defines it, never a pre-hash of them), which is what a Node
+    /// `crypto.sign(null, tbs, key)` or a KMS `ED25519` key produces. Any
+    /// other length is refused as the signer's failure.
+    ///
+    /// Fails with `CratestackError::Validation` if `public_key` is not a
+    /// point encoding.
+    pub fn ed25519<F, Fut>(public_key: &[u8; 32], sign: F) -> Result<Self, CratestackError>
+    where
+        F: Fn(Vec<u8>) -> Fut + MaybeSendSync + 'static,
+        Fut: Future<Output = Result<Vec<u8>, CratestackError>> + MaybeSend + 'static,
+    {
+        let key = CoseVerifyKey::ed25519(public_key)?;
+        let kid = key.kid();
+        Ok(Self {
+            alg: CoseAlg::Ed25519,
+            kid,
+            sign: Arc::new(move |tbs| Box::pin(sign(tbs))),
+        })
+    }
 }
 
 impl fmt::Debug for ExternalSigner {
@@ -99,7 +148,22 @@ impl CoseSigner for ExternalSigner {
 
     async fn sign(&self, to_be_signed: &[u8]) -> Result<Vec<u8>, CratestackError> {
         let signature = (self.sign)(to_be_signed.to_vec()).await?;
-        raw_signature(&signature)
+        match self.alg {
+            CoseAlg::Ed25519 => ed25519_signature(signature),
+            _ => raw_signature(&signature),
+        }
+    }
+}
+
+/// An Ed25519 signature is exactly 64 bytes: anything else is the
+/// callback's failure, not the message's.
+fn ed25519_signature(signature: Vec<u8>) -> Result<Vec<u8>, CratestackError> {
+    if signature.len() == 64 {
+        Ok(signature)
+    } else {
+        Err(CratestackError::Internal(
+            "the external signer did not return a 64-byte Ed25519 signature".to_owned(),
+        ))
     }
 }
 
