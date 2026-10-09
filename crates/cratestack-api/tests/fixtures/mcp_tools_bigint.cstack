@@ -1,0 +1,25 @@
+// ADR 0019: a `BigInt` through MCP `tools/call`, for `tests/mcp_tools_bigint.rs`.
+// `db = None`: arguments decode through the same generated `Args` serde as
+// REST and RPC, and the outputs come back as canonical decimal strings.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+type Ledger {
+  total BigInt
+  note BigInt?
+  history BigInt[]
+}
+
+procedure echoBig(total: BigInt, maybe: BigInt?, totals: BigInt[]): Ledger
+  @allow(true)
+  @mcp(tool)
+
+procedure echoLedger(ledger: Ledger): Ledger
+  @allow(true)
+  @mcp(tool)

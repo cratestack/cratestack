@@ -2,8 +2,9 @@
 // Schema round-trip in `tests/json_schema_models.rs`. Scalars, lists and
 // nesting are covered by `cratestack-api`'s `db = None` fixture; this one
 // only adds what a model brings: relation fields (not serde fields at
-// all), `@server_only` fields (serde `skip`), and a model used as a
-// procedure argument, a return type and a `Page<T>` item.
+// all), `@server_only` fields (serde `skip`), a model used as a
+// procedure argument, a return type and a `Page<T>` item, and (ADR 0019)
+// `BigInt` model fields and arguments.
 
 datasource db {
   provider = "postgresql"
@@ -38,6 +39,9 @@ model Post {
   author Author @relation(fields: [authorId], references: [id])
   publishedAt DateTime?
   cover Bytes?
+  // ADR 0019: `BigInt` as a required and an optional model field.
+  reads BigInt
+  quota BigInt?
 }
 
 procedure fetchPost(id: Int): Post
@@ -49,5 +53,11 @@ procedure feed(page: PageInput?): Page<Post>
   @mcp(tool)
 
 procedure importPost(post: Post): Boolean
+  @allow(true)
+  @mcp(tool)
+
+// ADR 0019: `BigInt` as a procedure argument next to a model, in a list and
+// as a scalar.
+procedure postsAbove(floor: BigInt, ids: BigInt[]): Page<Post>
   @allow(true)
   @mcp(tool)

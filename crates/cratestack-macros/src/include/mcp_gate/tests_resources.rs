@@ -81,11 +81,35 @@ fn a_key_a_uri_cannot_carry_is_refused() {
         "{message}"
     );
     assert!(message.contains("`DateTime`"), "{message}");
+    // The refusal lists what is addressable, `BigInt` included.
+    assert!(message.contains("Int, BigInt, Uuid"), "{message}");
+}
+
+/// A `BigInt` key is planned, and keeps its scalar in the plan so the id in
+/// a URI is parsed with `BigInt`'s canonical-only `FromStr`
+/// (`resources_dispatch.rs`'s `record_arm`), not `Int`'s.
+#[test]
+fn a_big_int_key_is_planned_as_a_big_int() {
+    let schema = schema("  id BigInt @id\n  @@mcp(resource: \"posts\")");
+    let plan = server_plan(&schema, None, true).expect("served");
+    assert_eq!(plan.resources[0].primary_key.ty.name, "BigInt");
+}
+
+/// Only a required key is addressable: an optional or list `BigInt` is
+/// refused like any other optional key.
+#[test]
+fn an_optional_big_int_key_is_refused() {
+    let schema = schema("  id BigInt? @id\n  @@mcp(resource: \"posts\")");
+    let message = refused(&schema);
+    assert!(
+        message.contains("cannot address a record by URI"),
+        "{message}"
+    );
 }
 
 #[test]
 fn every_addressable_key_type_is_planned() {
-    for ty in ["String", "Cuid", "Int", "Uuid"] {
+    for ty in ["String", "Cuid", "Int", "BigInt", "Uuid"] {
         let schema = schema(&format!("  id {ty} @id\n  @@mcp(resource: \"posts\")"));
         assert!(server_plan(&schema, None, true).is_ok(), "{ty}");
     }

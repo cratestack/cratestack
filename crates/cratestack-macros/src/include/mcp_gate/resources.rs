@@ -26,8 +26,11 @@ pub(in crate::include) struct ResourcePlan {
 }
 
 /// Primary-key types an id in a URI can be parsed into, with the same
-/// `FromStr` text a REST path segment uses.
-const ADDRESSABLE_KEYS: [&str; 4] = ["String", "Cuid", "Int", "Uuid"];
+/// `FromStr` text a REST path segment uses. `BigInt` is addressed by its
+/// canonical decimal string, the only text `cratestack::BigInt`'s `FromStr`
+/// takes, so `cratestack://blog/posts/9007199254740993` finds the record
+/// and `+1`, `007` or `1.0` is not found (ADR 0019).
+const ADDRESSABLE_KEYS: [&str; 5] = ["String", "Cuid", "Int", "BigInt", "Uuid"];
 
 pub(super) fn resource_plans(schema: &Schema) -> Result<Vec<ResourcePlan>, String> {
     let exposed: Vec<&Model> = schema.models.iter().filter(|m| m.mcp.is_some()).collect();

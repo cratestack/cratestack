@@ -8,8 +8,12 @@
 //! The schemas come from the generated MCP tool table
 //! (`cratestack_schema::mcp::TOOLS`, cratestack#1038), so this checks what
 //! an agent is sent. Gated `required-features = ["mcp"]`; `just
-//! test-ci-host` runs it with the feature on.
+//! test-ci-host` runs it with the feature on. The `BigInt` (ADR 0019) model
+//! fields and argument are in `json_schema_models_support/mod.rs`.
 
+mod json_schema_models_support;
+
+use cratestack::BigInt;
 use cratestack::include_server_schema;
 use jsonschema::Validator;
 use serde_json::{Value, json};
@@ -44,6 +48,8 @@ fn validator(name: &str, output: bool) -> Validator {
 
 fn posts() -> Vec<Post> {
     let at = cratestack::chrono::DateTime::from_timestamp(1_700_000_000, 5).unwrap();
+    // `reads` is the id (so `i64::MAX` reaches a `BigInt` field), `quota`
+    // is `i64::MIN` exactly when there is a cover.
     let post = |id, body: Option<&str>, visibility, cover: Option<Vec<u8>>| Post {
         id,
         title: format!("post {id}"),
@@ -53,6 +59,8 @@ fn posts() -> Vec<Post> {
         secret: "hunter2".to_owned(),
         authorId: 7,
         publishedAt: cover.as_ref().map(|_| at),
+        reads: BigInt::new(id),
+        quota: cover.as_ref().map(|_| BigInt::MIN),
         cover,
     };
     vec![
@@ -120,13 +128,15 @@ fn relations_and_server_only_fields_are_not_advertised() {
         "id",
         "price",
         "publishedAt",
+        "quota",
+        "reads",
         "title",
         "visibility",
     ];
     assert_eq!(properties, expected);
     assert_eq!(
         post["required"],
-        json!(["id", "title", "price", "visibility", "authorId"])
+        json!(["id", "title", "price", "visibility", "authorId", "reads"])
     );
     assert_eq!(post["description"], "A published piece.");
 }

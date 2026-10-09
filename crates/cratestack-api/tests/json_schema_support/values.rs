@@ -2,6 +2,7 @@
 //! of its scalar's serde output: extremes, empty, unicode, fractional
 //! seconds, pre-epoch times, and every decimal form the backend emits.
 
+use cratestack::BigInt;
 use cratestack::chrono::{DateTime, Utc};
 use cratestack::uuid::Uuid;
 
@@ -10,6 +11,21 @@ use crate::cratestack_schema::{Scalars, Shapes, Status, Tree};
 fn at(seconds: i64, nanos: u32) -> DateTime<Utc> {
     DateTime::from_timestamp(seconds, nanos).expect("in chrono's range")
 }
+
+/// The values ADR 0019 pins on every transport, plus the neighbours that
+/// break a wrong encoding: `i64::MAX`, `i64::MIN`, `2^53 + 1` (the first
+/// integer a JavaScript number cannot hold), its negative, `2^53 - 1`, and
+/// the small ones where a sign or a leading zero could go wrong.
+pub const BIG_INTS: [i64; 8] = [
+    i64::MAX,
+    i64::MIN,
+    9_007_199_254_740_993,
+    -9_007_199_254_740_993,
+    9_007_199_254_740_991,
+    0,
+    -1,
+    7,
+];
 
 /// Every value of every scalar appears at least once; fields cycle
 /// independently so the combinations vary too.
@@ -43,6 +59,7 @@ pub fn scalars() -> Vec<Scalars> {
     let count = [
         texts.len(),
         counts.len(),
+        BIG_INTS.len(),
         ratios.len(),
         ats.len(),
         decimals.len(),
@@ -55,6 +72,7 @@ pub fn scalars() -> Vec<Scalars> {
             text: texts[i % texts.len()].to_owned(),
             cuid: cuids[i % cuids.len()].to_owned(),
             count: counts[i % counts.len()],
+            big: BigInt::new(BIG_INTS[i % BIG_INTS.len()]),
             ratio: ratios[i % ratios.len()],
             flag: i % 2 == 0,
             at: ats[i % ats.len()],
@@ -89,6 +107,8 @@ pub fn shapes() -> Vec<Shapes> {
         maybeAmount: None,
         maybeAt: None,
         ids: Vec::new(),
+        maybeBig: None,
+        bigs: Vec::new(),
     };
     let full = Shapes {
         label: Some("label".to_owned()),
@@ -106,6 +126,8 @@ pub fn shapes() -> Vec<Shapes> {
         maybeAmount: Some(crate::DECIMAL.samples[3].parse().unwrap()),
         maybeAt: Some(samples[3].at),
         ids: samples.iter().map(|s| s.id).collect(),
+        maybeBig: Some(BigInt::new(BIG_INTS[2])),
+        bigs: BIG_INTS.map(BigInt::new).to_vec(),
     };
     vec![empty, full]
 }

@@ -48,6 +48,18 @@ const RUST_DECIMAL_PATTERN: &str = "^-?[0-9]+(\\.[0-9]+)?$";
 /// sends a float that has already lost precision.
 const BIG_DECIMAL_PATTERN: &str = "^-?[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?$";
 
+/// `cratestack::BigInt` (ADR 0019): its serde writes `i64`'s `Display` and
+/// reads nothing but the canonical decimal string, on every codec. The
+/// grammar is `0`, or an optional `-`, a non-zero digit and at most 18 more
+/// digits. That is as close to `i64` as a regular expression gets without
+/// enumerating the range: the 19-digit values from `9223372036854775808` up
+/// and from `-9223372036854775809` down match the pattern and fail serde,
+/// so the `i64` bound is enforced by the server only (`json_schema.rs`'s
+/// module doc lists it). It is never `"type": "integer"`: a JSON number is
+/// refused on input, because a JavaScript producer may already have rounded
+/// it, and a validator that accepted one would invite exactly that.
+const BIG_INT_PATTERN: &str = "^(0|-?[1-9][0-9]{0,18})$";
+
 /// What a built-in name maps to. `None` from [`builtin_scalar`] means the
 /// name isn't a scalar at all (a declaration, or a generic like `Page`).
 pub(super) enum Scalar {
@@ -64,6 +76,10 @@ pub(super) fn builtin_scalar(name: &str, decimal: Option<DecimalBackend>) -> Opt
         // Schema's `integer` accepts; see the module doc in
         // `json_schema.rs`.
         "Int" => Scalar::Mapped(int()),
+        // `cratestack::BigInt`, a canonical decimal string; see
+        // `BIG_INT_PATTERN`. Same shape as `Decimal`: the type is `string`
+        // so a number never validates.
+        "BigInt" => Scalar::Mapped(big_int()),
         // `f64`. Integers deserialize into it too.
         "Float" => Scalar::Mapped(json!({ "type": "number" })),
         "Boolean" => Scalar::Mapped(json!({ "type": "boolean" })),
@@ -110,6 +126,10 @@ pub(super) fn builtin_scalar(name: &str, decimal: Option<DecimalBackend>) -> Opt
 /// `i64`, also used by `Page`'s and `PageInput`'s counters.
 pub(super) fn int() -> Value {
     json!({ "type": "integer", "minimum": i64::MIN, "maximum": i64::MAX })
+}
+
+fn big_int() -> Value {
+    json!({ "type": "string", "pattern": BIG_INT_PATTERN })
 }
 
 fn byte_array() -> Value {

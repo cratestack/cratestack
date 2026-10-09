@@ -38,6 +38,12 @@
 //!   rejects any float-shaped number. That includes an integer literal
 //!   just below `i64::MIN`, which serde_json can only read as an `f64`
 //!   that rounds onto the bound.
+//! - `BigInt`: the canonical-decimal pattern allows up to 19 digits, which
+//!   is wider than `i64`. `9223372036854775808` and `-9223372036854775809`
+//!   (and every 19-digit value past them) pass the schema and are refused
+//!   by `cratestack::BigInt`'s deserializer, so the `i64` bound is enforced
+//!   by the server only. The reverse gap does not exist: serde takes
+//!   nothing the pattern refuses, and neither takes a JSON number.
 //! - `DateTime`: the pattern checks the RFC 3339 shape, not the calendar
 //!   or the offset's range. `2024-02-30T00:00:00Z` and `…+24:00` pass the
 //!   pattern and fail chrono. Validators that assert `format: date-time`
@@ -58,6 +64,8 @@ mod parts;
 mod scalar;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_bigint;
 #[cfg(test)]
 mod tests_shapes;
 
