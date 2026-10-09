@@ -8,7 +8,10 @@ use cratestack_core::CratestackContext;
 use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::ReadPredicate;
-use crate::query::{auth_value_to_sql, value_matches_auth_literal};
+use crate::query::{
+    auth_value_to_sql, claim_type_suffix, value_differs_from_auth_literal,
+    value_matches_auth_literal,
+};
 
 use super::policy::render_relation_policy_sql;
 
@@ -95,7 +98,7 @@ pub(super) fn render_policy_predicate(
             sql.push_str(
                 if ctx
                     .auth_field(auth_field)
-                    .is_some_and(|c| !value_matches_auth_literal(c, value))
+                    .is_some_and(|c| value_differs_from_auth_literal(c, value))
                 {
                     "TRUE"
                 } else {
@@ -121,16 +124,20 @@ pub(super) fn render_policy_predicate(
             render_in_list(sql, column, values.len(), true, bind_index);
         }
         ReadPredicate::FieldEqAuth { column, auth_field } => {
-            if auth_value_to_sql(ctx, auth_field).is_some() {
-                let _ = write!(sql, "{column} = ${bind_index}");
+            if let Some(value) = auth_value_to_sql(ctx, auth_field) {
+                let _ = write!(sql, "{column} = ${bind_index}{}", claim_type_suffix(&value));
                 *bind_index += 1;
             } else {
                 sql.push_str("FALSE");
             }
         }
         ReadPredicate::FieldNeAuth { column, auth_field } => {
-            if auth_value_to_sql(ctx, auth_field).is_some() {
-                let _ = write!(sql, "{column} != ${bind_index}");
+            if let Some(value) = auth_value_to_sql(ctx, auth_field) {
+                let _ = write!(
+                    sql,
+                    "{column} != ${bind_index}{}",
+                    claim_type_suffix(&value)
+                );
                 *bind_index += 1;
             } else {
                 sql.push_str("FALSE");

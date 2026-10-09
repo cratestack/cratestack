@@ -56,7 +56,7 @@ fn field_ne_auth_renders_bound_column_comparison() {
             auth_field: "email",
         }),
     }];
-    assert_eq!(render(&allow, &[], &ctx).unwrap(), "(email != $1)");
+    assert_eq!(render(&allow, &[], &ctx).unwrap(), "(email != $1::text)");
 }
 
 /// Every `RelationQuantifier` variant, rendered for a `ReadPolicy`

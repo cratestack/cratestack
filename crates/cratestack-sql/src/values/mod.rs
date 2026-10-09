@@ -5,6 +5,8 @@ mod input_traits;
 mod into_sql;
 mod projection;
 mod sql_value;
+#[cfg(test)]
+mod tests_bigint;
 
 pub use conflict::ConflictTarget;
 pub use decimal_like::DecimalLike;

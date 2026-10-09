@@ -18,6 +18,15 @@ impl IntoSqlValue for i64 {
     }
 }
 
+/// The `BigInt` scalar (ADR 0019). Also what lets a `BigInt @id` or a
+/// `BigInt` foreign key satisfy the rusqlite delegates' `IntoSqlValue`
+/// primary-key bound.
+impl IntoSqlValue for cratestack_core::BigInt {
+    fn into_sql_value(self) -> SqlValue {
+        SqlValue::BigInt(self.get())
+    }
+}
+
 impl IntoSqlValue for f64 {
     fn into_sql_value(self) -> SqlValue {
         SqlValue::Float(self)

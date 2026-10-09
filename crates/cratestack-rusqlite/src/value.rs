@@ -10,6 +10,7 @@
 //! - `Decimal`      → TEXT (canonical string form — preserves precision)
 //! - `Bytes`        → BLOB
 //! - `Bool`         → INTEGER 0/1
+//! - `BigInt`       → INTEGER (64-bit, so exact at both ends)
 //! - everything else maps to the obvious SQLite storage class.
 //!
 //! Decoding mirrors these choices. Round-trip is bit-exact for all variants
@@ -20,6 +21,8 @@ mod columns;
 mod decode;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_bigint;
 
 pub use bind::SqlValueParam;
 // `DecimalColumn<D>`/`decode_decimal` are generic over the concrete

@@ -45,7 +45,11 @@ decimal-bigdecimal = [
 
 [dependencies]
 chrono.workspace = true
-cratestack-core.workspace = true
+# `rusqlite` gives `cratestack_core::BigInt` its `ToSql`/`FromSql` impls (an
+# SQLite INTEGER), which a `BigInt @id` or foreign key needs to satisfy the
+# delegates' primary-key bounds. Enabled here, and in no other facade, so
+# `cratestack-pg` keeps no `libsqlite3-sys` (ADR 0019 D3 as amended in PR B).
+cratestack-core = { workspace = true, features = ["rusqlite"] }
 cratestack-sql.workspace = true
 rusqlite.workspace = true
 serde.workspace = true

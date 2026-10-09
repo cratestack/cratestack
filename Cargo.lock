@@ -1710,6 +1710,8 @@ dependencies = [
  "sqlx",
  "sqlx-core",
  "sqlx-postgres",
+ "testcontainers",
+ "testcontainers-modules",
  "tokio",
  "tracing",
  "uuid",

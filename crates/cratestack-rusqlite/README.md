@@ -153,6 +153,7 @@ notes.delete(created.id).run()?;
 |------------|-------------------------------------------------|
 | `String`   | TEXT                                            |
 | `Int`      | INTEGER                                         |
+| `BigInt`   | INTEGER (64-bit, exact)                         |
 | `Float`    | REAL                                            |
 | `Bool`     | INTEGER (0/1)                                   |
 | `Bytes`    | BLOB                                            |

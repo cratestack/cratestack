@@ -2,6 +2,7 @@
 pub enum CreateDefaultType {
     Bool,
     Int,
+    BigInt,
     String,
 }
 
