@@ -137,8 +137,8 @@ pub use transport::{
     canonical_request_string,
 };
 pub use validators::{
-    validate_email, validate_iso4217, validate_length, validate_length_bytes, validate_range_i64,
-    validate_uri,
+    ValidateFields, validate_email, validate_iso4217, validate_length, validate_length_bytes,
+    validate_range_i64, validate_uri,
 };
 // `validate_range_decimal` is generic over `DecimalValue` (cratestack#505
 // Direction 2), so it's unconditional — no decimal feature required.

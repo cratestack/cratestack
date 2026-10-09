@@ -1,0 +1,26 @@
+// Review of cratestack#1132 (B1): the old half of the one edit the
+// classifier must REFUSE although it looks additive. `Paint` is an input-only
+// `type`; the new schema adds a required field, and a `type` is decoded as
+// sent, so an old client's message has no such field and cannot be decoded.
+// `contract_roundtrip.rs` pins that the classifier says Breaking and that the
+// generated decode really fails. B1 was written with `@default(1)` on the
+// added field, which only a model op's create input honours; since ADR 0019
+// D5 the parser refuses `@default` on a `type` field, so the trap can no
+// longer be written, and the plain required field is the edit that remains.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type Paint {
+  size Int
+}
+
+type Reply {
+  ok Boolean
+}
+
+procedure paint(args: Paint): Reply
+  @allow(auth() != null)

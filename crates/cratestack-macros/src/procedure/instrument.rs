@@ -39,8 +39,8 @@ pub(super) use invoke_with_db::invoke_with_db_fn_tokens;
 pub(super) fn authorized_type_tokens() -> proc_macro2::TokenStream {
     quote! {
         /// Proof that this procedure's `@allow`/`@deny` policy — and, for
-        /// [`authorize_with_db`], any `@authorize` model checks — ran and
-        /// passed for a call. [`super::procedures::ProcedureRegistry`]'s
+        /// [`authorize_with_db`], the arguments' field validators and any
+        /// `@authorize` model checks — ran and passed for a call. [`super::procedures::ProcedureRegistry`]'s
         /// generated method for this procedure takes one of these as its
         /// last argument, which is what makes
         /// `registry.<method>(&db, &ctx, args)` — the shape that used to
@@ -110,9 +110,27 @@ pub(super) fn authorize_fn_tokens() -> proc_macro2::TokenStream {
     }
 }
 
+/// `validates_args`: an argument is, or holds, a `type` with a validator, so
+/// `Args` implements `ValidateFields` (`crate::validators`) and it runs here
+/// first. This is the one place every transport and every non-HTTP caller
+/// passes through to obtain an [`authorized_type_tokens`] witness, which is
+/// why the validation lives here and not in a REST or RPC handler: a
+/// per-transport call is a call one transport can forget (CLAUDE.md,
+/// "Transport parity"). It precedes `@allow`, as a model input's `validate`
+/// precedes its create policy. Only arguments are validated: a return value is
+/// produced by the server, so no call site exists for it (decided here, not in
+/// the dispatch tail). The plain [`authorize_fn_tokens`] and
+/// [`invoke_fn_tokens`] are generic over any `ProcedureArgs`, hold no
+/// witness and reach no registry method, so they stay policy-only.
 pub(super) fn authorize_with_db_fn_tokens(
     model_authorizers: &[proc_macro2::TokenStream],
+    validates_args: bool,
 ) -> proc_macro2::TokenStream {
+    let validate_args = if validates_args {
+        quote! { ::cratestack::ValidateFields::validate(args)?; }
+    } else {
+        quote! {}
+    };
     quote! {
         pub async fn authorize_with_db(
             db: &super::super::Cratestack,
@@ -120,6 +138,7 @@ pub(super) fn authorize_with_db_fn_tokens(
             ctx: &::cratestack::CratestackContext,
         ) -> Result<Authorized, ::cratestack::CratestackError> {
             let started = ::std::time::Instant::now();
+            #validate_args
             ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
             #(#model_authorizers)*
             ::cratestack::tracing::debug!(

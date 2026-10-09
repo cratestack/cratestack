@@ -41,6 +41,7 @@ mod server_only_placement;
 mod snake_case_collisions;
 mod spatial_type;
 mod stream_attribute;
+mod type_field_attributes;
 mod type_names;
 mod unsupported_attribute;
 mod validator_args;

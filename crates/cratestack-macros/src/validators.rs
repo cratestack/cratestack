@@ -1,9 +1,17 @@
 //! Generate the body of `validate(&self) -> Result<(), CratestackError>` for
 //! the given input fields, based on `@length`, `@range`, `@regex`,
 //! `@email`, `@uri`, `@iso4217` attributes.
+//!
+//! The same field validators run in two places, one emitter for both
+//! ([`FieldScope`] only changes how an error names the field): a model's
+//! create and update inputs, and the `type`s that procedures take as
+//! arguments ([`types`]).
 
 mod emit;
 mod parse;
+#[cfg(test)]
+mod tests_types;
+mod types;
 
 use cratestack_core::Field;
 use proc_macro2::TokenStream;
@@ -11,6 +19,22 @@ use quote::quote;
 
 use emit::emit_field_validators;
 use parse::{parse_length_args, parse_range_args, parse_regex_arg};
+
+pub(crate) use types::{
+    generate_args_validate_impl, generate_type_validate_impl, procedure_validates_args,
+    validating_type_names,
+};
+
+/// How an error message names the field that failed.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum FieldScope {
+    /// By its schema name: a model's input struct is the whole payload.
+    Input,
+    /// By its path in the request body (`args.items[2].name`): a `type`
+    /// value sits anywhere in a procedure's arguments, and the generated
+    /// `validate_at` receives where.
+    Nested,
+}
 
 #[derive(Debug, Clone)]
 pub(super) enum FieldValidator {
@@ -38,7 +62,12 @@ pub(crate) fn generate_input_validate_body(
                 return None;
             }
             any = true;
-            Some(emit_field_validators(field, &validators, treat_as_optional))
+            Some(emit_field_validators(
+                field,
+                &validators,
+                treat_as_optional,
+                FieldScope::Input,
+            ))
         })
         .collect::<Vec<_>>();
     if !any {

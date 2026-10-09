@@ -16,7 +16,7 @@
 //! |-----------|-----------|---------|
 //! | `@id` | none | model, view: `cratestack-core/src/schema/attribute_text_names.rs:38` through `Field::is_primary_key`; model `cratestack-macros/src/model/descriptor.rs:39`, `cratestack-migrate/src/convert/fields.rs:101`; view `cratestack-macros/src/view/descriptor.rs:49`, `view/accessor.rs:36`, `cratestack-migrate/src/diff/views.rs:102` |
 //! | `@unique` | none | model: `cratestack-migrate/src/convert/fields.rs:104` |
-//! | `@default` | required | model: `shared/attrs.rs:69`, `:76`, `:88`, `cratestack-migrate/src/convert/fields.rs:126`, `cratestack-client-typescript/src/types.rs:174`, `cratestack-client-dart/src/naming.rs:96` |
+//! | `@default` | required | model: `shared/attrs.rs:69`, `:76`, `:88`, `cratestack-migrate/src/convert/fields.rs:126`, `cratestack-client-typescript/src/types.rs:174`, `cratestack-client-dart/src/naming.rs:96`; not a `type` field, see below |
 //! | `@relation` | required | model: `cratestack-macros/src/relation/parse.rs:10`, `cratestack-migrate/src/convert/relations.rs:33`, `fields.rs:111` |
 //! | `@computed` | optional (`@computed(params: <Type>?)`) | model, type: `cratestack-core/src/schema/computed_attribute.rs:81`, `cratestack-macros/src/types.rs:36`, `shared.rs:109` |
 //! | `@readonly` | none | model: `shared/attrs.rs:38`, `model/inputs.rs:23`, `:31`, `model/descriptor/columns.rs:94` |
@@ -24,8 +24,8 @@
 //! | `@version` | none | model: `shared/attrs.rs:93`, `model/descriptor.rs:169`, `axum/model/prep.rs:80` |
 //! | `@pii`, `@sensitive` | none | model: `shared/attrs.rs:54`, `:62`, `model/descriptor/columns.rs:66`, `:74` (audit redaction) |
 //! | `@db_enforce` | none | model: `cratestack-migrate/src/convert/checks.rs:12` |
-//! | `@email`, `@uri`, `@iso4217` | none | model: `cratestack-macros/src/validators.rs:78` to `:80`, `cratestack-studio/src/validators/predicates.rs`; `@iso4217` also `cratestack-migrate/src/convert/checks.rs:31` |
-//! | `@length`, `@range`, `@regex` | required | model: `cratestack-macros/src/validators.rs:63` to `:73`; `@length` and `@range` also `cratestack-migrate/src/convert/checks.rs:25` |
+//! | `@email`, `@uri`, `@iso4217` | none | model: `cratestack-macros/src/validators.rs:105` to `:107`, `cratestack-studio/src/validators/predicates.rs`; `@iso4217` also `cratestack-migrate/src/convert/checks.rs:31`; type: `cratestack-macros/src/validators/types.rs:37` through the same `validators.rs` arms |
+//! | `@length`, `@range`, `@regex` | required | model: `cratestack-macros/src/validators.rs:90` to `:104`; `@length` and `@range` also `cratestack-migrate/src/convert/checks.rs:25`; type: `cratestack-macros/src/validators/types.rs:37`, through the same arms |
 //! | `@rename` | required, exactly `from = "<old>"` (`super::rename_attributes`) | model: `cratestack-migrate/src/convert/renames.rs:25` |
 //! | `@from` | required | view: none reads it; see below |
 //!
@@ -37,24 +37,30 @@
 //! read only its name (`cratestack-macros/src/policy/auth.rs:11`), and
 //! `@server_only` and `@computed` on it already had refusals of their own.
 //!
-//! Three entries are accepted although nothing reads them, each because a
-//! committed schema, a recorded decision or the documentation says they are
-//! written there, and refusing them is a decision for the maintainer:
+//! One entry is accepted although nothing reads it, because the
+//! documentation and the ADR say it is written there, and refusing it is a
+//! decision for the maintainer: `@from(Model.field)` on a view field is
+//! documented as an unchecked source annotation (`cratestack-docs`
+//! `reference/views.md`), is named by ADR 0019 D5, and appears 11 times in
+//! this repository.
 //!
-//! - `@from(Model.field)` on a view field is documented as an unchecked
-//!   source annotation (`cratestack-docs` `reference/views.md`), is named by
-//!   ADR 0019 D5, and appears 11 times in this repository.
-//! - `@default` on a `type` field is honoured by nothing, and the contract
-//!   classifier says so (`cratestack-core/src/client_contract/compat_decl.rs:55`);
-//!   `cratestack-api/tests/fixtures/contract_roundtrip_default_new.cstack`
-//!   writes it on purpose.
-//! - `@length` on a `type` field validates nothing, since only a model's
-//!   create and update inputs run validators
-//!   (`cratestack-macros/src/model/inputs.rs`);
-//!   `cratestack-api/tests/fixtures/contract_new.cstack` writes it, and so do
-//!   downstream schemas.
+//! A `type` field is the case the first cut of these lists got wrong, and the
+//! reason there is no such entry for it. It listed `@default` and `@length`
+//! because committed schemas wrote them, although neither did anything: a
+//! `type` is decoded as sent, so `@default` is never applied
+//! (`cratestack-core/src/client_contract/compat_decl.rs:55`, pinned by
+//! `cratestack-api/tests/contract_roundtrip.rs`), and only a model's create
+//! and update inputs ran validators. Accepting an attribute that does nothing
+//! is what D5 closes, and downstream schemas (skyport-billing, the vaam p2p
+//! and mobile-v3 schemas) wrote `@length` on `type`s used as procedure
+//! arguments believing it checked them. So the validator family is accepted
+//! on a `type` field and enforced on procedure arguments
+//! (`cratestack-macros/src/validators/types.rs`), and the two names with no
+//! reader are refused, each with its own message
+//! (`super::type_field_attributes`): `@default`, and `@db_enforce`, since a
+//! `type` has no table. A validator on a list field is refused there too.
 //!
-//! The other validators, `@pii`, `@unique` and the rest are refused on a
+//! The other attributes, `@pii`, `@unique` and the rest, are refused on a
 //! `type` or `view` field, where they were inert.
 
 use super::attribute_shape::{Arguments, Known};
@@ -107,8 +113,12 @@ pub(super) const MIXIN_FIELD_ATTRIBUTES: &[Known] = &[
 
 pub(super) const TYPE_FIELD_ATTRIBUTES: &[Known] = &[
     ("@computed", Arguments::Optional),
-    ("@default", Arguments::Required),
+    ("@email", Arguments::None),
+    ("@uri", Arguments::None),
+    ("@iso4217", Arguments::None),
     ("@length", Arguments::Required),
+    ("@range", Arguments::Required),
+    ("@regex", Arguments::Required),
 ];
 
 pub(super) const AUTH_FIELD_ATTRIBUTES: &[Known] = &[];

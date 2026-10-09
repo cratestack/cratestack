@@ -33,9 +33,11 @@ type Report {
   level String
 }
 
+// `@range` on an argument `type` is enforced before the procedure's
+// transaction does anything (`procedure_isolation.rs`, ADR 0019 D5).
 type Withdrawal {
   accountId Int
-  amount Int
+  amount Int @range(min: 1)
 }
 
 type Receipt {

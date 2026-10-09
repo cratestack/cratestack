@@ -150,6 +150,8 @@ mod tests_transport;
 #[cfg(test)]
 mod tests_type_declaration_collisions;
 #[cfg(test)]
+mod tests_type_field_validators;
+#[cfg(test)]
 mod tests_types;
 #[cfg(test)]
 mod tests_validators;

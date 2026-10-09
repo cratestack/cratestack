@@ -98,7 +98,8 @@ See [Field Attributes](https://cratestack.dev/reference/field-attributes) for th
 - `@id`, `@unique`, `@relation(...)`, `@default(...)`
 - `@readonly`, `@server_only`, `@pii`, `@sensitive`
 - `@version` (optimistic locking)
-- `@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217` (validators)
+- `@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217` (validators: enforced on a model's create and
+  update inputs, and on the `type`s a procedure takes as arguments)
 - `@@allow(action, expr)`, `@@deny(action, expr)`
 - `@@audit`, `@@soft_delete`
 - `@@emit(created, updated, deleted)`

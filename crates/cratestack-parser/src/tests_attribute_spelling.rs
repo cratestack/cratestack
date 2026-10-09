@@ -56,15 +56,12 @@ fn refuses_an_argument_list_on_each_no_argument_attribute() {
 }
 
 // The same rule on the other blocks, which `validators` never sees. A `type`
-// takes a name with arguments only, so its case is a bare `@length`; the auth
-// block takes no attribute at all (`tests_field_attribute_lists`).
+// field has no case here: its attributes are the validator family, which
+// `validators` checks first, as on a model (`tests_type_field_validators`);
+// the auth block takes no attribute at all (`tests_field_attribute_lists`).
 #[test]
 fn refuses_the_wrong_argument_shape_in_every_field_bearing_block() {
     for (source, needle) in [
-        (
-            "type R {\n  s String @length\n}\nprocedure p(): R\n",
-            "field `s` on type `R` writes `@length`: `@length` takes an argument list",
-        ),
         (
             "mixin M {\n  s String @readonly()\n}\nmodel A {\n  id Int @id\n}\n",
             "field `s` on mixin `M` writes `@readonly()`",

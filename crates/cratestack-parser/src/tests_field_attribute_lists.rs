@@ -95,6 +95,8 @@ fn an_unknown_name_is_refused_on_every_kind_naming_the_kind_and_the_list() {
 fn a_name_of_another_kind_is_refused() {
     let own_message = [
         (FieldHost::Type, "@server_only"),
+        (FieldHost::Type, "@default"),
+        (FieldHost::Type, "@db_enforce"),
         (FieldHost::Auth, "@server_only"),
         (FieldHost::Mixin, "@computed"),
         (FieldHost::View, "@computed"),

@@ -16,8 +16,10 @@ auth Caller {
   role String
 }
 
+// `@range` on an argument `type`: enforced for a tool call as for REST and
+// RPC (`tests/mcp_tools.rs`, ADR 0019 D5).
 type TransferInput {
-  amount Int
+  amount Int @range(min: 1)
 }
 
 type Receipt {

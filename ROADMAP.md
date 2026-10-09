@@ -113,8 +113,9 @@ shared schema across services (`import`). Blocked at the front on
 
 Accepted on 2026-09-30 as [ADR 0019](docs/adr/0019-int-and-bigint-built-in-types.md),
 with the per-target changes, diagrams and the three-PR plan in
-[`docs/design/int-and-bigint.md`](docs/design/int-and-bigint.md) (§7). The
-implementation has not started; #1130 is the draft PR carrying the ADR.
+[`docs/design/int-and-bigint.md`](docs/design/int-and-bigint.md) (§7). PR A is
+implemented and held: it merges only together with B and C, so that the first
+0.16.0 a user runs carries all three. The ADR landed in #1130.
 
 The problem is precise: a schema `Int` is a Rust `i64` and a JSON number that
 carries every digit, and no JavaScript consumer can hold that range. TypeScript
@@ -144,7 +145,7 @@ client and rebuilds every server in one upgrade.
 
 | PR | Scope | Status |
 | --- | --- | --- |
-| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)) | planned |
+| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)); validators on a `type` field are enforced on procedure arguments | implemented, held for 0.16.0 with B and C |
 | B | `BigInt` end to end: core type and serde on both codecs, SQL, migrate, JSON Schema, MCP, TypeScript and Dart clients | planned |
 | C | `Int` becomes 32-bit: snapshot format 3, digest domains `v2`, the `int-to-bigint` codemod | planned |
 

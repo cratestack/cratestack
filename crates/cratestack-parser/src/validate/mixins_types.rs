@@ -18,7 +18,9 @@ use crate::validate::key_relation_attributes::validate_key_and_relation_attribut
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::server_only_placement as server_only;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
+use crate::validate::type_field_attributes;
 use crate::validate::type_names::validate_type_ref;
+use crate::validate::validators::validate_validator_attributes;
 
 /// Each mixin is checked independently.
 pub(super) fn validate_mixins_collecting(
@@ -155,8 +157,14 @@ pub(super) fn validate_types_collecting(
                         ..Default::default()
                     },
                 )?;
-                // Its own message for `@server_only`, ahead of the closed list's.
+                // The validator family on a `type` field is enforced on procedure
+                // arguments (`cratestack-macros/src/validators/types.rs`), so it
+                // is checked like a model field's: argument shape, scalar type.
+                validate_validator_attributes(&ty.name, field)?;
+                // Their own messages for `@server_only`, `@default`, `@db_enforce`
+                // and a validator on a list, ahead of the closed list's.
                 server_only::validate_type_field(&ty.name, field)?;
+                type_field_attributes::validate_type_field(&ty.name, field)?;
                 validate_field_attributes(FieldHost::Type, &ty.name, field)?;
                 validate_key_and_relation_attributes("type", &ty.name, field)?;
             }

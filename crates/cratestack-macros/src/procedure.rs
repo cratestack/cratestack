@@ -26,6 +26,7 @@ use quote::quote;
 
 use crate::policy::{PolicySubject, generate_procedure_policy};
 use crate::shared::{doc_attrs, ident, is_stream_procedure, to_snake_case};
+use crate::validators::procedure_validates_args;
 
 use client_types::generate_client_procedure_args_struct;
 use instrument::{
@@ -86,7 +87,10 @@ pub(crate) fn generate_procedure_module(
     };
 
     let authorize_fn = authorize_fn_tokens();
-    let authorize_with_db_fn = authorize_with_db_fn_tokens(&model_authorizers);
+    let authorize_with_db_fn = authorize_with_db_fn_tokens(
+        &model_authorizers,
+        procedure_validates_args(procedure, types),
+    );
     let invoke_fn = invoke_fn_tokens();
     let (isolation_const, invoke_with_db_fn) = isolation_and_invoke_with_db_tokens(procedure);
     // cratestack#512: the witness type `authorize_with_db`/`invoke_with_db`

@@ -27,6 +27,7 @@ use crate::transport::{
     generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
 };
 use crate::types::{generate_enum_type, generate_type_struct};
+use crate::validators::{generate_type_validate_impl, validating_type_names};
 
 pub(super) type Ts = proc_macro2::TokenStream;
 
@@ -123,10 +124,19 @@ pub(super) fn collect_server_schema(
         .map(|p| schema_lit(&p.name))
         .collect();
     let view_names = schema.views.iter().map(|v| schema_lit(&v.name)).collect();
+    // The server composer alone adds `ValidateFields` to a `type`: only
+    // it has procedures to run them on (the embedded composer has none,
+    // the client composer never validates what it sends).
+    let validating = validating_type_names(&schema.types);
     let type_structs = schema
         .types
         .iter()
-        .map(|ty| generate_type_struct(ty, &enum_name_set))
+        .flat_map(|ty| {
+            [
+                generate_type_struct(ty, &enum_name_set),
+                generate_type_validate_impl(ty, &validating),
+            ]
+        })
         .collect();
     let enum_types = schema.enums.iter().map(generate_enum_type).collect();
     // `@computed` fields exist on both `type` and `model` declarations

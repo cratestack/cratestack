@@ -11,6 +11,7 @@ use quote::quote;
 
 use crate::builder::{BuilderField, generate_builder};
 use crate::shared::{bytes_serde_attr, doc_attrs, ident, value_tokens};
+use crate::validators::generate_args_validate_impl;
 
 use super::type_tokens::procedure_type_tokens;
 
@@ -135,6 +136,10 @@ pub(crate) fn generate_procedure_args_struct(
     };
 
     let struct_doc = format!("Generated argument payload for this {construct}.");
+    // Empty unless an argument is, or holds, a `type` with a validator. A
+    // `query`'s arguments are bindable scalars (the parser refuses a `type`
+    // there), so it never has one.
+    let validate_impl = generate_args_validate_impl(procedure, types);
 
     quote! {
         #[doc = #struct_doc]
@@ -153,5 +158,7 @@ pub(crate) fn generate_procedure_args_struct(
                 }
             }
         }
+
+        #validate_impl
     }
 }

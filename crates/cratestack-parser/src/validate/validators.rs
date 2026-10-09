@@ -4,7 +4,9 @@ use crate::validate::validator_args::{parse_length_args, parse_range_args, parse
 /// Recognise the validation attribute family (`@length`, `@range`, `@regex`,
 /// `@email`, `@uri`, `@iso4217`) and reject combinations that don't match the
 /// field's scalar type. This is parse-time only — runtime enforcement happens
-/// in generated `validate` impls on Create/Update inputs.
+/// in generated `validate` impls on a model's Create/Update inputs, and in
+/// the `ValidateFields` impls on the `type`s a procedure takes as arguments.
+/// `model_name` is the declaration that owns the field, a model or a `type`.
 pub(super) fn validate_validator_attributes(
     model_name: &str,
     field: &cratestack_core::Field,

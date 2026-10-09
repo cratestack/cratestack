@@ -1,19 +1,24 @@
 //! Field-level validators.
 //!
 //! Standalone helpers invoked from generated `validate` methods on
-//! Create / Update input structs. Each returns `Ok(())` on success or
-//! a redacted [`CratestackError::Validation`] whose public message names
-//! the field but never echoes the rejected value (so PII does not
-//! leak via 422 bodies).
+//! Create / Update input structs, and from the [`ValidateFields`] impls
+//! generated for `type` structs and procedure `Args`. Each returns `Ok(())`
+//! on success or a redacted [`CratestackError::Validation`] whose public
+//! message names the field but never echoes the rejected value (so PII does
+//! not leak via 422 bodies). `field` is the name, or for a field of a
+//! nested `type` the dotted path from the request body (`args.items[2].name`).
 
 use crate::decimal::DecimalValue;
 use crate::error::CratestackError;
 
+mod fields;
 #[cfg(test)]
 mod tests;
 
+pub use fields::ValidateFields;
+
 pub fn validate_length(
-    field: &'static str,
+    field: &str,
     value: &str,
     min: Option<usize>,
     max: Option<usize>,
@@ -47,7 +52,7 @@ pub fn validate_length(
 /// shared generic: fixed-width digest/hash columns are the motivating use
 /// case (`digest Bytes @length(min: 32, max: 32)`).
 pub fn validate_length_bytes(
-    field: &'static str,
+    field: &str,
     value: &[u8],
     min: Option<usize>,
     max: Option<usize>,
@@ -71,7 +76,7 @@ pub fn validate_length_bytes(
 }
 
 pub fn validate_range_i64(
-    field: &'static str,
+    field: &str,
     value: i64,
     min: Option<i64>,
     max: Option<i64>,
@@ -110,7 +115,7 @@ pub fn validate_range_i64(
 /// typed as the field's own concrete decimal type, so `D` is inferred at
 /// the call site; no turbofish needed.
 pub fn validate_range_decimal<D: DecimalValue>(
-    field: &'static str,
+    field: &str,
     value: &D,
     min: Option<i64>,
     max: Option<i64>,
@@ -139,7 +144,7 @@ pub fn validate_range_decimal<D: DecimalValue>(
 /// whitespace. Not a full RFC 5322 grammar — that grammar admits
 /// forms (quoted local parts, IP literals) banks rarely accept
 /// anyway. Reject early; let real KYC flows do deeper validation.
-pub fn validate_email(field: &'static str, value: &str) -> Result<(), CratestackError> {
+pub fn validate_email(field: &str, value: &str) -> Result<(), CratestackError> {
     let trimmed = value.trim();
     if trimmed.is_empty()
         || trimmed.chars().any(char::is_whitespace)
@@ -158,7 +163,7 @@ pub fn validate_email(field: &'static str, value: &str) -> Result<(), Cratestack
     Ok(())
 }
 
-pub fn validate_uri(field: &'static str, value: &str) -> Result<(), CratestackError> {
+pub fn validate_uri(field: &str, value: &str) -> Result<(), CratestackError> {
     if url::Url::parse(value).is_err() {
         return Err(CratestackError::Validation(format!(
             "field '{field}' is not a valid URI",
@@ -171,7 +176,7 @@ pub fn validate_uri(field: &'static str, value: &str) -> Result<(), CratestackEr
 /// enforce the registered set here — that table churns and is
 /// downstream policy. Banks typically pin allowed currencies via a
 /// separate allow-list anyway.
-pub fn validate_iso4217(field: &'static str, value: &str) -> Result<(), CratestackError> {
+pub fn validate_iso4217(field: &str, value: &str) -> Result<(), CratestackError> {
     if value.len() != 3 || !value.chars().all(|c| c.is_ascii_uppercase()) {
         return Err(CratestackError::Validation(format!(
             "field '{field}' must be a 3-letter uppercase ISO 4217 code",

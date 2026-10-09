@@ -352,10 +352,44 @@ keeps its specific messages for `@allow`, `@deny`, `@pb`, `@custom`; `misspelled
 becomes the suggestion source inside `check_shape`.
 
 The migration story #679 asked for: no field attribute outside the 19 appears in any of the 265
-committed schemas that parse, or in the five downstream schemas (RAN, E9). The objection recorded
+committed schemas that parse, or in the five downstream schemas (RAN, E9; the census is now a test
+and counts 277 parsing schemas at PR A, see the end of E9). The objection recorded
 in `misspelled_attributes.rs:17-25` (no spec to derive the set from, five declaration kinds, a
 too-narrow list breaks users) is answered by that census plus the reader table, which is how
 GHSA-69g4-xvcm-vm2j closed the other positions.
+
+**Validators on a `type` field are enforced, not tolerated.** The first cut of the lists kept
+`@default` and `@length` on a `type` field because committed schemas wrote them, although
+`@length` validated nothing there (only a model's create and update inputs run validators,
+`crates/cratestack-macros/src/validators.rs`) and `@default` is not applied on decode
+(`crates/cratestack-core/src/client_contract/compat_decl.rs`, pinned by
+`crates/cratestack-api/tests/contract_roundtrip.rs`). That is the silent failure D5 exists to
+close, and downstream schemas (skyport-billing's `ProjectRef.project_id`, the vaam p2p and
+mobile-v3 argument types) wrote `@length` on `type`s used as procedure arguments believing it
+checked them. So the validator family is accepted on a `type` field and run on procedure
+arguments, and the two names with no reader are refused:
+
+- the macros emit `impl ValidateFields` for each `type` that holds a validator, directly or
+  through a nested `type` (a fixpoint over the stored fields; optional and list fields recurse),
+  and for the `Args` of each procedure that takes one
+  (`crates/cratestack-macros/src/validators/types.rs`); the emitter is the one model inputs use,
+  with the field named by its request-body path (`args.owner.tags[1].label`);
+- the call is the first statement of the generated `authorize_with_db`, the one function REST,
+  RPC unary, RPC batch, MCP and every non-HTTP caller of `invoke_with_db` pass through to get an
+  `Authorized` witness, so no transport can omit it (the transport-parity rule in `CLAUDE.md`
+  satisfied by construction, not by three call sites); it precedes `@allow`, as a model input's
+  `validate` precedes its create policy;
+- the error is `CratestackError::Validation`, the variant a failed model validator returns:
+  `422 VALIDATION_ERROR` on REST, `invalid_argument` on RPC;
+- return values are not validated, `query` arguments cannot be a `type` (the parser binds
+  scalars only), and the embedded composer has no procedures, so none of them has a call site;
+- `@default` is refused on a `type` field (make the field optional), `@db_enforce` is refused
+  (a `type` has no table), and a validator on a list field is refused (declare a `type` with the
+  validated field and take a list of it).
+
+Tests: `crates/cratestack-api/tests/type_validators_{rest,rpc}.rs` drive one case table over
+REST, RPC unary and RPC batch, each in JSON and CBOR, and `mcp_tools.rs` covers an MCP call;
+`crates/cratestack-pg/tests/procedure_isolation.rs` covers an `@isolation` procedure on Postgres.
 
 ## 6. Diagrams
 
@@ -448,8 +482,9 @@ decided in ADR 0019 D5). Ships in 0.16.0 with B and C, not in an earlier release
 
 - Parser: §5. LSP: the attribute completions read the same tables (`completion.rs:11-42` is a
   hand-written list today).
-- Tests: every committed `.cstack` keeps its parse result (the census in E9 as a test: 265 parse,
-  8 negative fixtures still fail with their current messages); an unknown name (`@string`,
+- Tests: every committed `.cstack` keeps its parse result (the census in E9 as a test,
+  `crates/cratestack-parser/tests/committed_schemas.rs`: every file parses, and the 8 negative
+  fixtures still fail with their current messages); an unknown name (`@string`,
   `@wire(string)`, `@bigint`, `@totallyBogusAttribute(x)`) is refused on each of the five kinds;
   a name valid on one kind and not another (`@from` on a model field) is refused; the existing
   near-miss and `removed_attributes` tests keep passing with their messages.
@@ -648,6 +683,15 @@ schemas parsed: 265
 field attribute names seen: {'computed': 41, 'default': 48, 'email': 1, 'from': 11, 'id': 352, 'iso4217': 1, 'length': 21, 'pii': 1, 'range': 19, 'readonly': 1, 'regex': 1, 'relation': 145, 'sensitive': 1, 'server_only': 31, 'unique': 2, 'version': 13}
 field attributes NOT in the proposed closed set: {}
 ```
+
+The census is a test since PR A: `crates/cratestack-parser/tests/committed_schemas.rs` walks
+`git ls-files '*.cstack'`, requires each file to parse, and requires each declared negative
+fixture to keep failing with its recorded message, so a stale entry fails too. It holds no file
+count; `cargo test -p cratestack-parser --test committed_schemas -- --nocapture` prints the
+counts and the attribute tally per declaration kind. At the commit that made validators on a
+`type` field enforced it reads 287 committed `.cstack` files, 279 that parse and 8 negative
+fixtures (285, 277 and 8 one commit earlier, before that change added the two `type_validators_*`
+fixtures).
 
 **E10. In-repo churn.** `git ls-files '*.cstack'` lists 273 files; 225 contain an `Int` token, 736
 tokens in all, outside full-line comments; none contains `BigInt`.
