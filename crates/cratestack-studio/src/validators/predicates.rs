@@ -110,9 +110,16 @@ fn length_error(field: &Field, bound: i64, comparator: &str) -> FieldError {
 }
 
 fn check_range(field: &Field, value: &serde_json::Value, args: &str) -> Option<FieldError> {
-    let n = value
-        .as_i64()
-        .or_else(|| value.as_f64().map(|f| f as i64))?;
+    // A `BigInt` value is a decimal string, which `as_i64`/`as_f64` read
+    // as `None`, so without this arm `@range` on a `BigInt` field would be
+    // skipped silently (the `?` below) and an out-of-range value accepted.
+    let n = if field.ty.name == "BigInt" {
+        super::bigint::value_of(value)?
+    } else {
+        value
+            .as_i64()
+            .or_else(|| value.as_f64().map(|f| f as i64))?
+    };
     let (min, max) = parse_min_max(args);
     if let Some(m) = min
         && n < m

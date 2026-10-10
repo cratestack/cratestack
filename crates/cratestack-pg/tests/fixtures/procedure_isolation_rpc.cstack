@@ -33,9 +33,13 @@ type Report {
   level String
 }
 
+// `@range` on an argument `type` is enforced before the procedure takes a
+// pooled connection or opens its transaction, and not again on a retry
+// (`procedure_isolation.rs`; `model_argument_validators_*.rs` proves the
+// no-connection part against a pool that cannot connect; ADR 0019 D5).
 type Withdrawal {
   accountId Int
-  amount Int
+  amount Int @range(min: 1)
 }
 
 type Receipt {

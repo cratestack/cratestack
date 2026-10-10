@@ -1,0 +1,37 @@
+// ADR 0019 PR B (B4): the Rust client surface for `BigInt`, RPC transport.
+// Transport parity twin of `bigint_client_rest.cstack`: the same model and
+// procedure, so one set of assertions holds for both. Driven by
+// `bigint_client.rs`.
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Ledger {
+  id BigInt @id
+  label String
+  balance BigInt
+  fee BigInt?
+  revision BigInt @version
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
+
+type Quote {
+  amount BigInt
+  maybe BigInt?
+  many BigInt[]
+}
+
+procedure lookup(owner: BigInt): Quote
+  @allow(auth() != null)

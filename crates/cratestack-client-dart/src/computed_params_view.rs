@@ -20,6 +20,13 @@ pub(crate) struct ModelApiView {
     pub(crate) route: String,
     pub(crate) detail_route: String,
     pub(crate) primary_key_type: String,
+    /// The Dart expression that puts the RPC methods' `id` parameter on
+    /// the wire (`{'id': <this>}`): `id` itself for every scalar that is
+    /// already a JSON/CBOR value, `id.toString()` for a `BigInt` key
+    /// (ADR 0019), which would otherwise reach `jsonEncode` or
+    /// `package:cbor` as a bare `BigInt`. REST interpolates `$id` into the
+    /// path, which already calls `toString()`.
+    pub(crate) primary_key_wire_expr: String,
     pub(crate) is_paged: bool,
     pub(crate) list_return_type: String,
     pub(crate) list_decode_expr: String,

@@ -32,7 +32,12 @@ pub fn rust_find_unique(schema: &Schema, model: &str, pk_value: &str) -> Result<
     ))
 }
 
-fn pk_literal_for(_scalar: &str, pk_value: &str, cast: PkCast) -> String {
+fn pk_literal_for(scalar: &str, pk_value: &str, cast: PkCast) -> String {
+    // A `BigInt` key is the `cratestack::BigInt` newtype, not a bare
+    // `i64`, so `42_i64` would not type-check against its delegate.
+    if scalar == "BigInt" {
+        return format!("cratestack::BigInt::new({pk_value}_i64)");
+    }
     match cast {
         PkCast::BigInt => format!("{pk_value}_i64"),
         PkCast::Text => format!("\"{}\".to_owned()", escape_str(pk_value)),
@@ -98,6 +103,23 @@ mod tests {
         );
         let snippet = rust_find_unique(&schema, "Customer", "42").expect("ok");
         assert!(snippet.contains(".find_unique(42_i64)"), "{snippet}");
+    }
+
+    #[test]
+    fn renders_bigint_pk_as_the_newtype_not_a_bare_i64() {
+        let schema = parse(
+            r#"
+                model Ledger {
+                  id BigInt @id
+                  note String
+                }
+            "#,
+        );
+        let snippet = rust_find_unique(&schema, "Ledger", "9223372036854775807").expect("ok");
+        assert!(
+            snippet.contains(".find_unique(cratestack::BigInt::new(9223372036854775807_i64))"),
+            "{snippet}"
+        );
     }
 
     #[test]

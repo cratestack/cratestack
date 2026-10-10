@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Test-only: the shared fixtures now pin a CrateStack `BigInt` (ADR 0019) as a CBOR text string
+  (`i64::MAX`, `i64::MIN`, `2^53 + 1`, `0` and `-1`, byte for byte) through the native and web
+  codecs. No library code changed: a text string already survives both JSON-text boundaries.
 - New `package:cratestack_cbor/cose.dart`: seal requests and open responses
   of CrateStack's COSE signed transport (ADR 0006) from Dart, through
   `cratestack-cose` over the same backends as the codec (flutter_rust_bridge

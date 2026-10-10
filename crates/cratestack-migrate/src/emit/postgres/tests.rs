@@ -1,6 +1,7 @@
 //! Shared helpers + integration tests for the Postgres emitter, split
 //! by topic into sibling submodules to stay under the 200-LoC budget.
 
+mod bigint;
 mod checks;
 mod columns;
 mod create;

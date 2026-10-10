@@ -93,8 +93,9 @@ pub(in super::super) fn build_get_handler(p: &ModelHandlerPrep) -> proc_macro2::
             // Validated before any DB access (docs/design/computed-fields.md):
             // a `computedParams` value that isn't a JSON object, or that
             // names an unknown/non-parameterized/`?fields=`-excluded key,
-            // never reaches `find_unique`. Decoding a key's *value* into its
-            // field's params type is a separate, later step — it happens at
+            // never reaches `find_unique`. So does a key's value that fails
+            // its params type's validators (ADR 0019 D5). Decoding a value
+            // into a params type with no validator is a later step, at
             // resolve time in `serializers::computed_fields`, after the row
             // has already been fetched.
             let computed_params = match #parse_computed_params_ident(query.computed_params.as_deref(), &query.selection) {

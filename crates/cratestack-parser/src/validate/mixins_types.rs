@@ -10,16 +10,17 @@ use crate::validate::collect::record;
 use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
+use crate::validate::field_attributes::{FieldHost, validate_field_attributes};
 use crate::validate::fields::{
     validate_default_dbgenerated_no_args, validate_field_reserved_identifier,
 };
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
-use crate::validate::misspelled_attributes::validate_misspelled_field_attributes;
-use crate::validate::removed_attributes::validate_removed_field_attributes;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::server_only_placement as server_only;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
+use crate::validate::type_field_attributes;
 use crate::validate::type_names::validate_type_ref;
+use crate::validate::validators::validate_validator_attributes;
 
 /// Each mixin is checked independently.
 pub(super) fn validate_mixins_collecting(
@@ -89,8 +90,7 @@ pub(super) fn validate_mixins_collecting(
                     },
                 )?;
                 validate_default_dbgenerated_no_args(&mixin.name, field)?;
-                validate_removed_field_attributes("mixin", &mixin.name, field)?;
-                validate_misspelled_field_attributes("mixin", &mixin.name, field)?;
+                validate_field_attributes(FieldHost::Mixin, &mixin.name, field)?;
                 validate_key_and_relation_attributes("mixin", &mixin.name, field)?;
             }
             Ok(())
@@ -157,10 +157,16 @@ pub(super) fn validate_types_collecting(
                         ..Default::default()
                     },
                 )?;
-                validate_removed_field_attributes("type", &ty.name, field)?;
-                validate_misspelled_field_attributes("type", &ty.name, field)?;
-                validate_key_and_relation_attributes("type", &ty.name, field)?;
+                // The validator family on a `type` field is enforced on procedure
+                // arguments (`cratestack-macros/src/validators/types.rs`), so it
+                // is checked like a model field's: argument shape, scalar type.
+                validate_validator_attributes(&ty.name, field)?;
+                // Their own messages for `@server_only`, `@default`, `@db_enforce`
+                // and a validator on a list, ahead of the closed list's.
                 server_only::validate_type_field(&ty.name, field)?;
+                type_field_attributes::validate_type_field(&ty.name, field)?;
+                validate_field_attributes(FieldHost::Type, &ty.name, field)?;
+                validate_key_and_relation_attributes("type", &ty.name, field)?;
             }
             Ok(())
         });
@@ -244,10 +250,10 @@ pub(super) fn validate_auth(
                     ..Default::default()
                 },
             )?;
-            validate_removed_field_attributes("auth block", &auth.name, field)?;
-            validate_misspelled_field_attributes("auth block", &auth.name, field)?;
-            validate_key_and_relation_attributes("auth block", &auth.name, field)?;
+            // Its own message for `@server_only`, ahead of the closed list's.
             server_only::validate_auth_field(&auth.name, field)?;
+            validate_field_attributes(FieldHost::Auth, &auth.name, field)?;
+            validate_key_and_relation_attributes("auth block", &auth.name, field)?;
         }
     }
     Ok(())

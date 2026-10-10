@@ -7,6 +7,8 @@ use cratestack_core::CratestackContext;
 
 use crate::{PolicyExpr, ReadPolicy, RelationQuantifier};
 
+use crate::query::Position;
+
 use super::policy_predicate::render_policy_predicate;
 use super::relation::relation_from_sql;
 
@@ -59,24 +61,41 @@ fn render_allow_policy_sql(
         if policy_index > 0 {
             sql.push_str(" OR ");
         }
-        render_policy_expr_sql(policy.expr, ctx, &mut sql, bind_index);
+        render_policy_expr_at(policy.expr, ctx, &mut sql, bind_index, Position::Clause);
     }
 
     Some(sql)
 }
 
+/// The entry for an expression inside a relation quantifier, where an
+/// undecidable `auth().x <op> <literal>` stays `FALSE`; the executed form is
+/// `push_policy_expr_query`.
 pub(crate) fn render_policy_expr_sql(
     expr: PolicyExpr,
     ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
 ) {
+    render_policy_expr_at(expr, ctx, sql, bind_index, Position::Relation);
+}
+
+fn render_policy_expr_at(
+    expr: PolicyExpr,
+    ctx: &CratestackContext,
+    sql: &mut String,
+    bind_index: &mut usize,
+    position: Position,
+) {
     match expr {
         PolicyExpr::Predicate(predicate) => {
-            render_policy_predicate(predicate, ctx, sql, bind_index)
+            render_policy_predicate(predicate, ctx, sql, bind_index, position)
         }
-        PolicyExpr::And(exprs) => render_grouped_policy_sql(exprs, " AND ", ctx, sql, bind_index),
-        PolicyExpr::Or(exprs) => render_grouped_policy_sql(exprs, " OR ", ctx, sql, bind_index),
+        PolicyExpr::And(exprs) => {
+            render_grouped_policy_sql(exprs, " AND ", ctx, sql, bind_index, position)
+        }
+        PolicyExpr::Or(exprs) => {
+            render_grouped_policy_sql(exprs, " OR ", ctx, sql, bind_index, position)
+        }
     }
 }
 
@@ -117,13 +136,14 @@ fn render_grouped_policy_sql(
     ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
+    position: Position,
 ) {
     sql.push('(');
     for (index, expr) in exprs.iter().enumerate() {
         if index > 0 {
             sql.push_str(joiner);
         }
-        render_policy_expr_sql(*expr, ctx, sql, bind_index);
+        render_policy_expr_at(*expr, ctx, sql, bind_index, position);
     }
     sql.push(')');
 }

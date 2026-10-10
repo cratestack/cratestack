@@ -41,8 +41,8 @@ pub(crate) fn is_paged_model(model: &Model) -> bool {
 /// `crates/cratestack-macros/src/shared/attrs.rs`'s predicate of the
 /// same name; parser validation (`cratestack-parser/src/validate/
 /// model_attributes.rs`) guarantees at most one per model and that it's
-/// a required `Int`, so this generator never needs to re-check either
-/// of those — only whether the attribute is present at all.
+/// a required `Int` or `BigInt`, so this generator never needs to
+/// re-check either of those — only whether the attribute is present at all.
 pub(crate) fn is_version_field(field: &Field) -> bool {
     field
         .attributes
@@ -97,7 +97,9 @@ pub(crate) fn classify_field_kind(schema: &Schema, field: &Field) -> ScalarKind 
     match field.ty.name.as_str() {
         "Int" | "Float" => ScalarKind::Number,
         "Boolean" => ScalarKind::Bool,
-        "String" | "Cuid" | "Uuid" | "DateTime" => ScalarKind::QuotedString,
+        // `BigInt` is a decimal string on the wire, so it is echoed and
+        // stored exactly like a `String`: quoted, never a bare number.
+        "String" | "Cuid" | "Uuid" | "DateTime" | "BigInt" => ScalarKind::QuotedString,
         other => {
             // An enum variant renders as a plain JSON string (its variant
             // name), same wire shape as `String` — echoing/storing it

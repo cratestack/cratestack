@@ -1,0 +1,97 @@
+// ADR 0019 D5 (PR A): validators on `type` fields run on procedure
+// arguments. RPC twin of `type_validators_rest.cstack`; the two declare
+// the same types so one set of assertions holds for both transports.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type Tag {
+  label String @length(min: 2, max: 8)
+}
+
+type Owner {
+  name   String @length(min: 3)
+  email  String @email
+  tags   Tag[]
+  backup Tag?
+}
+
+type Account {
+  owner    Owner
+  age      Int @range(min: 18, max: 120)
+  code     String @regex("^[A-Z]{3}-[0-9]{2}$")
+  currency String? @iso4217
+  site     String? @uri
+  digest   Bytes @length(min: 4, max: 4)
+}
+
+type Greeting {
+  message String @length(min: 3)
+}
+
+// No validator anywhere inside: its `Args` must not implement
+// `ValidateFields` and its calls must pass whatever the value is.
+type Plain {
+  note String
+}
+
+// A list cycle: a `Node` holds `Node`s, so validation has to recurse through
+// the children to any depth. `Left` and `Right` are the same cycle through two
+// types, the validator on one side only.
+type Node {
+  label    String @length(min: 1)
+  children Node[]
+}
+
+type Left {
+  rights Right[]
+}
+
+type Right {
+  lefts Left[]
+  name  String @length(min: 1)
+}
+
+// Declared outermost first: only a fixpoint over the declarations, not one
+// pass in this order, finds that `Outer` holds a validator three levels down.
+type Outer {
+  middle Middle
+}
+
+type Middle {
+  inner Inner
+}
+
+type Inner {
+  code String @length(min: 2)
+}
+
+type Reply {
+  ok Boolean
+}
+
+procedure greet(args: Greeting): Reply
+  @allow(auth() != null)
+
+procedure openAccount(args: Account): Reply
+  @allow(auth() != null)
+
+// A validated `type` as a list argument and as an optional one, beside a
+// plain scalar: each is reported under its own argument name.
+procedure relabel(id: String, tags: Tag[], extra: Tag?): Reply
+  @allow(auth() != null)
+
+procedure plain(args: Plain): Reply
+  @allow(auth() != null)
+
+procedure walk(args: Node): Reply
+  @allow(auth() != null)
+
+procedure meet(args: Left): Reply
+  @allow(auth() != null)
+
+procedure deep(args: Outer): Reply
+  @allow(auth() != null)

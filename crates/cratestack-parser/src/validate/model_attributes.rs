@@ -189,12 +189,12 @@ pub(super) fn validate_model_version_field(model: &Model) -> Result<(), SchemaEr
         ));
     }
     if let Some(version) = version_fields.first() {
-        if version.ty.name != "Int"
+        if !matches!(version.ty.name.as_str(), "Int" | "BigInt")
             || !matches!(version.ty.arity, cratestack_core::TypeArity::Required)
         {
             return Err(span_error(
                 format!(
-                    "@version field `{}.{}` must be a required `Int`",
+                    "@version field `{}.{}` must be a required `Int` or `BigInt`",
                     model.name, version.name,
                 ),
                 version.span,

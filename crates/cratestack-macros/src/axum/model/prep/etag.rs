@@ -2,6 +2,11 @@
 //! derived from the `@version` field if the model has one. Empty
 //! tokens otherwise.
 //!
+//! The version column may be an `Int` (`i64` today) or a `BigInt`
+//! (`cratestack::BigInt`); both widen to the `i64` the `ETag` and `If-Match`
+//! headers carry through `i64::from`, and the header stays a plain decimal
+//! number whichever the column is (it is not a JSON body).
+//!
 //! `delete_if_match_decl` deliberately mirrors `update_if_match_decl`
 //! token-for-token (cratestack#519): `DELETE` on an `@version` model
 //! now enforces `If-Match` exactly like `PATCH` does, closing the
@@ -69,7 +74,7 @@ pub(super) fn etag_tokens(
         update_if_match_apply: quote! { .if_match(if_match_version.unwrap()) },
         update_etag_extract: quote! {
             let etag_version: Option<i64> = match &result {
-                Ok(record) => Some(record.#version_field_ident),
+                Ok(record) => Some(i64::from(record.#version_field_ident)),
                 Err(_) => None,
             };
         },
@@ -106,7 +111,7 @@ pub(super) fn etag_tokens(
             let mut etag_version: Option<i64> = None;
         },
         get_etag_capture: quote! {
-            etag_version = Some(record.#version_field_ident);
+            etag_version = Some(i64::from(record.#version_field_ident));
         },
         get_etag_apply: quote! {
             if let Some(v) = etag_version {
@@ -115,3 +120,6 @@ pub(super) fn etag_tokens(
         },
     }
 }
+
+#[cfg(test)]
+mod tests;

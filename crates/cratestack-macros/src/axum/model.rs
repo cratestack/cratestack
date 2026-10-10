@@ -11,6 +11,8 @@
 
 mod builders;
 mod computed;
+#[cfg(test)]
+mod computed_tests;
 mod handlers_crud;
 mod handlers_list;
 mod handlers_update;
@@ -29,6 +31,7 @@ use crate::relation::{
     generate_relation_query_guard,
 };
 use crate::shared::{model_name_set, queryable_model_fields, relation_model_fields};
+use crate::validators::Validating;
 
 use super::filter_arms::{generate_order_by_arm, generate_query_filter_arm};
 
@@ -40,6 +43,7 @@ pub(crate) fn generate_model_axum_handlers(
     model: &Model,
     models: &[Model],
     enum_names: &BTreeSet<&str>,
+    validating: &Validating,
 ) -> Result<proc_macro2::TokenStream, String> {
     let p = prep::build_prep(model)?;
     let model_names = model_name_set(models);
@@ -88,7 +92,7 @@ pub(crate) fn generate_model_axum_handlers(
     let query_helpers = builders::build_query_helpers(&p, &arms);
     let validate_helpers = builders::build_validate_helpers(&p, &arms);
     let projection_helpers = serializers::build_projection_helpers(&p, model, &model_names);
-    let computed_fields = computed::model_computed_fields(model);
+    let computed_fields = computed::model_computed_fields(model, validating);
     let parse_computed_params_fn = computed::build_parse_computed_params_fn(&p, &computed_fields);
     let serialize_helper = serializers::build_serialize_helper(&p, &arms, &computed_fields);
     let list_builder = serializers::build_list_builder(&p, &arms);

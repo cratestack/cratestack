@@ -48,6 +48,27 @@ pub(crate) fn value_tokens(
                 None => ::cratestack::Value::Null,
             }
         },
+        // The in-process value a procedure policy compares (`args.owner != 7`);
+        // it is never serialized to a client. `Value` has no 64-bit-string
+        // form and `Value::Int` is `i64`, so a `BigInt` is its `i64`: the same
+        // variant a literal (`ProcedurePolicyLiteral::Int`) and an integer
+        // auth claim compare against. Falling to `Value::Null` here is the
+        // fail-open this arm exists to prevent: `!=` against a null passes.
+        ("BigInt", TypeArity::Required) => quote! { ::cratestack::Value::Int(#value.get()) },
+        ("BigInt", TypeArity::Optional) => quote! {
+            match #value {
+                Some(value) => ::cratestack::Value::Int(value.get()),
+                None => ::cratestack::Value::Null,
+            }
+        },
+        ("BigInt", TypeArity::List) => quote! {
+            ::cratestack::Value::List(
+                #value
+                    .into_iter()
+                    .map(|value| ::cratestack::Value::Int(value.get()))
+                    .collect()
+            )
+        },
         ("Boolean", TypeArity::Required) => quote! { ::cratestack::Value::Bool(#value) },
         ("Boolean", TypeArity::Optional) => quote! {
             match #value {
@@ -55,6 +76,16 @@ pub(crate) fn value_tokens(
                 None => ::cratestack::Value::Null,
             }
         },
+        // Everything else has no policy-comparable form. A policy literal is
+        // only ever a `Boolean`, an integer or a `String`
+        // (`policy::procedure::resolver::parse_procedure_literal`), but two
+        // arguments of the same type can still be compared with each other,
+        // and two `Null`s are equal. `tests_values` lists every built-in
+        // scalar that reaches this arm on purpose, and fails when a new one
+        // does, so that adding a scalar is a decision here and not an accident.
         _ => quote! { ::cratestack::Value::Null },
     }
 }
+
+#[cfg(test)]
+mod tests_values;

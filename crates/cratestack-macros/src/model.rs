@@ -33,6 +33,11 @@ mod selection;
 mod selection_module;
 pub(crate) mod struct_only;
 
+#[cfg(test)]
+mod tests_bigint;
+#[cfg(test)]
+mod tests_bigint_rows;
+
 pub(crate) use accessor::{
     generate_bound_model_accessor, generate_isolated_model_accessor, generate_model_accessor,
 };

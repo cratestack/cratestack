@@ -34,7 +34,15 @@ use super::find_many_where_push::build_field_push;
 pub(super) fn is_filterable_scalar(field: &Field, enum_names: &BTreeSet<&str>) -> bool {
     matches!(
         field.ty.name.as_str(),
-        "String" | "Cuid" | "Int" | "Float" | "Boolean" | "Uuid" | "DateTime" | "Decimal"
+        "String"
+            | "Cuid"
+            | "Int"
+            | "BigInt"
+            | "Float"
+            | "Boolean"
+            | "Uuid"
+            | "DateTime"
+            | "Decimal"
     ) || enum_names.contains(field.ty.name.as_str())
 }
 

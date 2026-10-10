@@ -7,8 +7,9 @@
 //! - [`policy`] / [`policy_predicate`] / [`policy_relation`]:
 //!   allow/deny dispatch + per-predicate emission + relation EXISTS.
 //! - [`order`]: ORDER BY / LIMIT / OFFSET helpers.
-//! - [`values`]: `push_bind_value`, `auth_value_to_sql`, the
-//!   small literal-equality helpers.
+//! - [`values`]: `push_bind_value`, `auth_value_to_sql`.
+//! - [`comparison`]: the three-valued in-process comparisons behind the
+//!   create-path evaluator and `auth().x <op> <literal>`.
 //! - [`decimal_bind`]: the `SqlValue::Decimal`/`NullDecimal` → `push_bind`
 //!   boundary, split out of `values` (cratestack#505 Direction 2).
 //! - [`create`]: create-path auth-default + policy evaluation.
@@ -17,6 +18,8 @@
 //! - [`version_probe`]: shared `@version` mismatch-vs-policy-denial
 //!   disambiguation for the versioned update/delete paths.
 
+mod auth_literal;
+mod comparison;
 mod conditions;
 mod create;
 mod create_eval;
@@ -33,6 +36,7 @@ mod unique_violation;
 mod values;
 mod version_probe;
 
+pub(crate) use auth_literal::{Position, auth_literal_sql};
 pub(crate) use conditions::{ReadPolicyKind, authorize_record_action, push_scoped_conditions};
 /// The create path evaluates predicates in-process rather than pushing
 /// them into SQL, so it is a second evaluator `AuthIsSystem` has to be
@@ -47,8 +51,5 @@ pub(crate) use filter::{push_filter_expr_query, push_filter_query};
 pub(crate) use order::push_order_and_paging;
 pub(crate) use policy::{push_action_policy_query, push_policy_expr_query};
 pub(crate) use unique_violation::classify_unique_violation;
-pub(crate) use values::{
-    auth_value_to_sql, find_column_value, push_bind_value, sql_value_matches_literal,
-    value_matches_auth_literal,
-};
+pub(crate) use values::{auth_value_to_sql, claim_type_suffix, find_column_value, push_bind_value};
 pub(crate) use version_probe::no_row_error;

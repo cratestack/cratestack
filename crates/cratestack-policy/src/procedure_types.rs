@@ -1,6 +1,6 @@
 //! Procedure-side policy types and the `ProcedureArgs` trait.
 
-use cratestack_core::Value;
+use cratestack_core::{CratestackError, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcedurePolicyLiteral {
@@ -97,6 +97,19 @@ pub enum ProcedurePolicyExpr {
 
 pub trait ProcedureArgs {
     fn procedure_arg_value(&self, field: &str) -> Option<Value>;
+
+    /// Run the field validators (`@length`, `@range`, `@regex`, `@email`,
+    /// `@uri`, `@iso4217`) of the arguments a client sent, and of every
+    /// `type` and `model` they hold. The generated `Args` overrides this when
+    /// an argument is, or holds, a validated `type` or `model`; every other
+    /// implementor has nothing to check.
+    ///
+    /// The generated `authorize`, `authorize_with_db`, `invoke` and
+    /// `invoke_with_db` each call it before they evaluate `@allow`, so no
+    /// choice of helper skips validation (ADR 0019 D5).
+    fn validate_fields(&self) -> Result<(), CratestackError> {
+        Ok(())
+    }
 }
 
 impl ProcedureArgs for () {

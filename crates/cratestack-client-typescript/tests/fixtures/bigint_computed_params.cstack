@@ -1,0 +1,22 @@
+// ADR 0019: a `BigInt` inside a `@computed(params: ...)` params type, REST transport.
+// `computedParams` is the one query value (REST) / input field (RPC) that
+// the generated client serialises with `JSON.stringify` itself, so it is
+// the one place a `bigint` would throw ("Do not know how to serialize a
+// BigInt") if the conversion were left to the codec.
+//
+// Its own fixture, not part of `bigint_scalar.cstack`: a model with a
+// readable, parameterized `@computed` field makes the `--swr` hooks file
+// reference `<Model>ComputedParams` without importing it, which fails
+// `tsc` independently of `BigInt`. Kept apart so `bigint_scalar.cstack`
+// can still be compiled under `--swr`.
+
+model Quote {
+  id Cuid @id @default(cs_cuid())
+  label String @computed(params: ScaleParams?)
+
+  @@allow("read", true)
+}
+
+type ScaleParams {
+  factorE8 BigInt
+}

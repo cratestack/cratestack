@@ -61,8 +61,15 @@ impl CratestackCodec for CborCodec {
         })
     }
 
+    /// Same as `minicbor_serde::from_slice`, wrapped in `serde_path_to_error`
+    /// so the error's detail names the field that failed
+    /// (`failed to decode CBOR body: amountE8: ...`). The public message of
+    /// `CratestackError::Codec` stays generic; the path reaches operators
+    /// through `detail()` only. Like `from_slice`, it does not look at bytes
+    /// after the first item.
     fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError> {
-        minicbor_serde::from_slice(bytes)
+        let mut deserializer = minicbor_serde::Deserializer::new(bytes);
+        serde_path_to_error::deserialize(&mut deserializer)
             .map_err(|error| CratestackError::Codec(format!("failed to decode CBOR body: {error}")))
     }
 }

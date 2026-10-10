@@ -38,11 +38,14 @@ pub(in crate::procedure) fn isolation_and_invoke_with_db_tokens(
 
 fn invoke_with_db_isolated_fn_tokens() -> proc_macro2::TokenStream {
     quote! {
-        /// Runs this procedure's authorization (`@allow`/`@deny` and any
-        /// `@authorize` model check) and then `f` inside one database
-        /// transaction at [`ISOLATION`], retrying both on a serialization
-        /// failure or deadlock (SQLSTATE `40001`/`40P01`), and commits when
-        /// `f` returns `Ok`. `f` receives the
+        /// Validates the arguments' fields, before any connection is taken:
+        /// an invalid request costs no pooled connection and no transaction,
+        /// and the validation does not repeat on a retry. Then runs this
+        /// procedure's authorization (`@allow`/`@deny` and any `@authorize`
+        /// model check) and `f` inside one database transaction at
+        /// [`ISOLATION`], retrying both on a serialization failure or
+        /// deadlock (SQLSTATE `40001`/`40P01`), and commits when `f` returns
+        /// `Ok`. `f` receives the
         /// [`super::super::IsolatedCratestack`] bound to that transaction —
         /// the only database handle an `@isolation` procedure's
         /// [`super::ProcedureRegistry`] method accepts — and the
@@ -85,6 +88,7 @@ fn invoke_with_db_isolated_fn_tokens() -> proc_macro2::TokenStream {
             );
             let _guard = span.enter();
             let started = ::std::time::Instant::now();
+            ::cratestack::ProcedureArgs::validate_fields(args)?;
             let result = db
                 .runtime
                 .run_isolated(ISOLATION, |runtime| {
@@ -93,7 +97,7 @@ fn invoke_with_db_isolated_fn_tokens() -> proc_macro2::TokenStream {
                         let tx_db = super::super::IsolatedCratestack {
                             inner: super::super::Cratestack { runtime },
                         };
-                        let authorized = authorize_with_db(&tx_db.inner, args, ctx).await?;
+                        let authorized = authorize_validated_with_db(&tx_db.inner, args, ctx).await?;
                         f(tx_db, authorized).await
                     }
                 })

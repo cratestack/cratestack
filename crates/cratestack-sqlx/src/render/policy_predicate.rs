@@ -8,7 +8,7 @@ use cratestack_core::CratestackContext;
 use cratestack_policy::{context_has_role, context_in_tenant};
 
 use crate::ReadPredicate;
-use crate::query::{auth_value_to_sql, value_matches_auth_literal};
+use crate::query::{Position, auth_literal_sql, auth_value_to_sql, claim_type_suffix};
 
 use super::policy::render_relation_policy_sql;
 
@@ -46,6 +46,7 @@ pub(super) fn render_policy_predicate(
     ctx: &CratestackContext,
     sql: &mut String,
     bind_index: &mut usize,
+    position: Position,
 ) {
     match predicate {
         ReadPredicate::AuthNotNull => {
@@ -80,28 +81,20 @@ pub(super) fn render_policy_predicate(
             });
         }
         ReadPredicate::AuthFieldEqLiteral { auth_field, value } => {
-            sql.push_str(
-                if ctx
-                    .auth_field(auth_field)
-                    .is_some_and(|c| value_matches_auth_literal(c, value))
-                {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                },
-            );
+            sql.push_str(auth_literal_sql(
+                ctx.auth_field(auth_field),
+                value,
+                false,
+                position,
+            ));
         }
         ReadPredicate::AuthFieldNeLiteral { auth_field, value } => {
-            sql.push_str(
-                if ctx
-                    .auth_field(auth_field)
-                    .is_some_and(|c| !value_matches_auth_literal(c, value))
-                {
-                    "TRUE"
-                } else {
-                    "FALSE"
-                },
-            );
+            sql.push_str(auth_literal_sql(
+                ctx.auth_field(auth_field),
+                value,
+                true,
+                position,
+            ));
         }
         ReadPredicate::FieldIsTrue { column } => {
             let _ = write!(sql, "{column} = TRUE");
@@ -121,16 +114,20 @@ pub(super) fn render_policy_predicate(
             render_in_list(sql, column, values.len(), true, bind_index);
         }
         ReadPredicate::FieldEqAuth { column, auth_field } => {
-            if auth_value_to_sql(ctx, auth_field).is_some() {
-                let _ = write!(sql, "{column} = ${bind_index}");
+            if let Some(value) = auth_value_to_sql(ctx, auth_field) {
+                let _ = write!(sql, "{column} = ${bind_index}{}", claim_type_suffix(&value));
                 *bind_index += 1;
             } else {
                 sql.push_str("FALSE");
             }
         }
         ReadPredicate::FieldNeAuth { column, auth_field } => {
-            if auth_value_to_sql(ctx, auth_field).is_some() {
-                let _ = write!(sql, "{column} != ${bind_index}");
+            if let Some(value) = auth_value_to_sql(ctx, auth_field) {
+                let _ = write!(
+                    sql,
+                    "{column} != ${bind_index}{}",
+                    claim_type_suffix(&value)
+                );
                 *bind_index += 1;
             } else {
                 sql.push_str("FALSE");

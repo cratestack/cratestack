@@ -38,6 +38,9 @@ model CompRouterPhoto {
   @@allow("create", auth() != null)
 }
 
+// `computedParams` is client input, so the params `type`'s validators run on
+// it before the model is read (ADR 0019 D5): `?computedParams=` with a width
+// outside the range is a 422, not a call to the resolver.
 type CompRouterProxyParams {
-  width Int?
+  width Int? @range(min: 1, max: 4000)
 }

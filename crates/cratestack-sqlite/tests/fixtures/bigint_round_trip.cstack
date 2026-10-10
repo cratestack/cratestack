@@ -1,0 +1,40 @@
+// ADR 0019 PR B (B11): `BigInt` through the embedded (rusqlite) backend,
+// natively. Driven by `bigint_round_trip.rs`.
+//
+// SQLite columns here have BLOB affinity (`emit/sqlite/columns.rs`), which does
+// no conversion at all, so a value stored with the wrong bind type STAYS that
+// type: a `BigInt` bound as text is stored as text and then compares and sorts
+// lexically. The test reads `typeof(column)` back to pin the bind.
+//
+// Embedded has no policy enforcement and no optimistic locking, so this
+// fixture has neither `@@allow` nor `@version`.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+model BiLite {
+  id BigInt @id
+  amountE8 BigInt
+  feeE8 BigInt?
+  label String
+}
+
+model BiLiteLimit {
+  id Int @id
+  smallE8 BigInt @range(min: 0, max: 1000000)
+  wideE8 BigInt @range(min: -9223372036854775807, max: 9223372036854775806)
+}
+
+model BiLiteTeam {
+  id BigInt @id
+  name String
+}
+
+model BiLitePlayer {
+  id BigInt @id
+  teamId BigInt
+  scoreE8 BigInt
+  team BiLiteTeam @relation(fields:[teamId],references:[id])
+}

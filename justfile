@@ -218,7 +218,7 @@ lint:
 	# `cratestack-pg` scoped to its lib and the MCP targets, since every
 	# other test there would re-expand under the feature for no new code.
 	cargo clippy -p cratestack-api --features mcp --all-targets -- -D warnings {{clippy_allow}}
-	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test json_schema_models --test server_only_outbound_mcp --test procedure_isolation_mcp -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-pg --features mcp --lib --test mcp_policy_pg --test mcp_resources_pg --test mcp_resources_bigint_pg --test json_schema_models --test server_only_outbound_mcp --test procedure_isolation_mcp -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-cose`'s off-by-default `auth` feature
 	# (cratestack#1005): `cratestack_cose::auth` and its `required-features`
 	# test targets only exist under it, and nothing in the workspace turns
@@ -377,7 +377,7 @@ test-ci-db-decimal-bigdecimal *args='':
 # fails instead of skipping and printing `ok` (CI's `tests-db` job sets it
 # too; the two agree).
 test-ci-db-mcp *args='':
-	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg --test procedure_isolation_mcp {{args}}
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features mcp --test mcp_policy_pg --test mcp_resources_pg --test mcp_resources_bigint_pg --test procedure_isolation_mcp {{args}}
 
 # The signed Rust client over real models (cratestack#1007): create, get, a
 # bound query, `If-Match`, delete and `/rpc/batch`, over REST and RPC, through
@@ -530,18 +530,19 @@ test-ci-redis *args='':
 test-ci-studio *args='':
 	cargo test -p cratestack-studio --no-fail-fast {{args}}
 
-# Shard addendum: cratestack-studio's four `tests/postgres_*.rs` files
-# (postgres_explain, postgres_routed_writes, postgres_row_keys,
-# postgres_unsafe_writes) — the live-Postgres coverage that, until CI
+# Shard addendum: cratestack-studio's five `tests/postgres_*.rs` files
+# (postgres_bigint, postgres_explain, postgres_routed_writes, postgres_row_keys,
+# postgres_unsafe_writes), the live-Postgres coverage that, until CI
 # started setting CRATESTACK_REQUIRE_DB/CRATESTACK_USE_TESTCONTAINERS for
 # this recipe, skipped silently on every run (a coverage audit found this
 # is how the duplicate-column bug PR #553 fixed shipped in the first
 # place: its decisive test never actually ran in CI). Mirrors
 # `test-ci-db`'s testcontainers pattern one-for-one, scoped to just these
-# four test binaries so the plain `test-ci-studio` run above isn't
+# five test binaries so the plain `test-ci-studio` run above isn't
 # duplicated wholesale.
 test-ci-studio-db *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-studio \
+		--test postgres_bigint \
 		--test postgres_explain \
 		--test postgres_routed_writes \
 		--test postgres_row_keys \
@@ -1027,7 +1028,7 @@ verify-dart:
 	# own text-level tests and to `tsc`-style structure checks; only a real
 	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
 	# one.
-	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest)
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="

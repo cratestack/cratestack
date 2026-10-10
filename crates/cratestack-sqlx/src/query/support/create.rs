@@ -8,11 +8,10 @@ use crate::{
     CreateDefault, CreateDefaultType, ReadPolicy, ReadPredicate, SqlColumnValue, SqlValue,
 };
 
+use super::comparison::{Truth, claim_vs_literal, column_vs_claim, column_vs_literal};
 use super::create_eval::evaluate_create_policy_expr;
 use super::db::PolicyDb;
-use super::values::{
-    auth_value_to_sql, find_column_value, sql_value_matches_literal, value_matches_auth_literal,
-};
+use super::values::{auth_value_to_sql, find_column_value};
 
 pub(crate) async fn evaluate_create_policies(
     mut db: PolicyDb<'_>,
@@ -25,14 +24,19 @@ pub(crate) async fn evaluate_create_policies(
         return Ok(false);
     }
 
+    // Three-valued, as SQL is on the other actions (see `super::comparison`):
+    // a `@deny` fires on anything that is not `False`, `Unknown` included; an
+    // `@allow` grants only on `True`.
     for policy in deny_policies {
-        if evaluate_create_policy_expr(db.reborrow(), policy.expr, values, ctx).await? {
+        let truth = evaluate_create_policy_expr(db.reborrow(), policy.expr, values, ctx).await?;
+        if !truth.is_false() {
             return Ok(false);
         }
     }
 
     for policy in allow_policies {
-        if evaluate_create_policy_expr(db.reborrow(), policy.expr, values, ctx).await? {
+        let truth = evaluate_create_policy_expr(db.reborrow(), policy.expr, values, ctx).await?;
+        if truth.is_true() {
             return Ok(true);
         }
     }
@@ -104,6 +108,7 @@ fn resolve_default_value(
         },
         Some(Value::Int(value)) => match default.ty {
             CreateDefaultType::Int => Ok(SqlValue::Int(*value)),
+            CreateDefaultType::BigInt => Ok(SqlValue::BigInt(*value)),
             _ => Err(CratestackError::Validation(format!(
                 "auth field `{}` has incompatible type for create default on `{}`",
                 default.auth_field, default.column
@@ -111,6 +116,17 @@ fn resolve_default_value(
         },
         Some(Value::String(value)) => match default.ty {
             CreateDefaultType::String => Ok(SqlValue::String(value.clone())),
+            // A `BigInt` claim may arrive as its canonical string, the one
+            // form the wire uses; anything else is refused, never coerced.
+            CreateDefaultType::BigInt => value
+                .parse::<cratestack_core::BigInt>()
+                .map(|parsed| SqlValue::BigInt(parsed.get()))
+                .map_err(|_| {
+                    CratestackError::Validation(format!(
+                        "auth field `{}` is not a canonical BigInt for create default on `{}`",
+                        default.auth_field, default.column
+                    ))
+                }),
             _ => Err(CratestackError::Validation(format!(
                 "auth field `{}` has incompatible type for create default on `{}`",
                 default.auth_field, default.column
@@ -143,6 +159,7 @@ fn resolve_default_value(
             match default.ty {
                 CreateDefaultType::Bool => Ok(SqlValue::NullBool),
                 CreateDefaultType::Int => Ok(SqlValue::NullInt),
+                CreateDefaultType::BigInt => Ok(SqlValue::NullBigInt),
                 CreateDefaultType::String => Ok(SqlValue::NullString),
             }
         }
@@ -156,65 +173,82 @@ fn resolve_default_value(
     }
 }
 
+/// A leaf as an `@allow` reads it: true only on a decided match. The create
+/// path calls [`evaluate_input_truth`], which a `@deny` also needs.
+#[cfg(test)]
 pub(crate) fn evaluate_input_predicate(
     predicate: ReadPredicate,
     values: &[SqlColumnValue],
     ctx: &CratestackContext,
 ) -> bool {
+    evaluate_input_truth(predicate, values, ctx).is_true()
+}
+
+/// One leaf of a create policy, against the prospective input and the caller.
+/// An absent operand makes it `False`, a pair that cannot be compared makes it
+/// `Unknown`; see [`super::comparison`].
+pub(crate) fn evaluate_input_truth(
+    predicate: ReadPredicate,
+    values: &[SqlColumnValue],
+    ctx: &CratestackContext,
+) -> Truth {
+    let input = |column: &str| find_column_value(values, column);
     match predicate {
-        ReadPredicate::AuthNotNull => ctx.is_authenticated(),
-        ReadPredicate::AuthIsNull => !ctx.is_authenticated(),
-        ReadPredicate::AuthIsSystem => ctx.is_system(),
-        ReadPredicate::HasRole { role } => context_has_role(ctx, role),
-        ReadPredicate::InTenant { tenant_id } => context_in_tenant(ctx, tenant_id),
-        ReadPredicate::AuthFieldEqLiteral { auth_field, value } => ctx
-            .auth_field(auth_field)
-            .is_some_and(|candidate| value_matches_auth_literal(candidate, value)),
-        ReadPredicate::AuthFieldNeLiteral { auth_field, value } => ctx
-            .auth_field(auth_field)
-            .is_some_and(|candidate| !value_matches_auth_literal(candidate, value)),
-        ReadPredicate::FieldIsTrue { column } => {
-            find_column_value(values, column) == Some(&SqlValue::Bool(true))
+        ReadPredicate::AuthNotNull => ctx.is_authenticated().into(),
+        ReadPredicate::AuthIsNull => (!ctx.is_authenticated()).into(),
+        ReadPredicate::AuthIsSystem => ctx.is_system().into(),
+        ReadPredicate::HasRole { role } => context_has_role(ctx, role).into(),
+        ReadPredicate::InTenant { tenant_id } => context_in_tenant(ctx, tenant_id).into(),
+        ReadPredicate::AuthFieldEqLiteral { auth_field, value } => {
+            ctx.auth_field(auth_field).map_or(Truth::False, |claim| {
+                claim_vs_literal(claim, value).for_eq()
+            })
         }
-        ReadPredicate::FieldEqLiteral { column, value } => find_column_value(values, column)
-            .is_some_and(|candidate| sql_value_matches_literal(candidate, value)),
-        ReadPredicate::FieldNeLiteral { column, value } => find_column_value(values, column)
-            .is_some_and(|candidate| !sql_value_matches_literal(candidate, value)),
-        // `in` / `not in` (issue #666). A column absent from the input
-        // fails BOTH, matching how `FieldEqLiteral`/`FieldNeLiteral`
-        // treat absence — `is_some_and` returns false either way. That
-        // is the fail-closed reading: an unstated column cannot be
-        // asserted to be outside a set any more than inside one.
+        ReadPredicate::AuthFieldNeLiteral { auth_field, value } => {
+            ctx.auth_field(auth_field).map_or(Truth::False, |claim| {
+                claim_vs_literal(claim, value).for_ne()
+            })
+        }
+        ReadPredicate::FieldIsTrue { column } => {
+            (input(column) == Some(&SqlValue::Bool(true))).into()
+        }
+        ReadPredicate::FieldEqLiteral { column, value } => {
+            input(column).map_or(Truth::False, |c| column_vs_literal(c, value).for_eq())
+        }
+        ReadPredicate::FieldNeLiteral { column, value } => {
+            input(column).map_or(Truth::False, |c| column_vs_literal(c, value).for_ne())
+        }
+        // `in` is the `or` of its `==`, `not in` the `and` of its `!=`, as in
+        // SQL. A column absent from the input is `False` for both: unstated,
+        // it can be asserted neither inside a set nor outside it.
         ReadPredicate::FieldInLiterals {
             column,
             values: literals,
-        } => find_column_value(values, column).is_some_and(|candidate| {
-            literals
-                .iter()
-                .any(|literal| sql_value_matches_literal(candidate, *literal))
+        } => input(column).map_or(Truth::False, |c| {
+            literals.iter().fold(Truth::False, |truth, literal| {
+                truth.or(column_vs_literal(c, *literal).for_eq())
+            })
         }),
         ReadPredicate::FieldNotInLiterals {
             column,
             values: literals,
-        } => find_column_value(values, column).is_some_and(|candidate| {
-            !literals
-                .iter()
-                .any(|literal| sql_value_matches_literal(candidate, *literal))
+        } => input(column).map_or(Truth::False, |c| {
+            literals.iter().fold(Truth::True, |truth, literal| {
+                truth.and(column_vs_literal(c, *literal).for_ne())
+            })
         }),
-        ReadPredicate::FieldEqAuth { column, auth_field } => match (
-            find_column_value(values, column),
-            auth_value_to_sql(ctx, auth_field),
-        ) {
-            (Some(candidate), Some(auth_value)) => candidate == &auth_value,
-            _ => false,
-        },
-        ReadPredicate::FieldNeAuth { column, auth_field } => match (
-            find_column_value(values, column),
-            auth_value_to_sql(ctx, auth_field),
-        ) {
-            (Some(candidate), Some(auth_value)) => candidate != &auth_value,
-            _ => false,
-        },
-        ReadPredicate::Relation { .. } => false,
+        ReadPredicate::FieldEqAuth { column, auth_field } => {
+            match (input(column), auth_value_to_sql(ctx, auth_field)) {
+                (Some(candidate), Some(claim)) => column_vs_claim(candidate, &claim).for_eq(),
+                _ => Truth::False,
+            }
+        }
+        ReadPredicate::FieldNeAuth { column, auth_field } => {
+            match (input(column), auth_value_to_sql(ctx, auth_field)) {
+                (Some(candidate), Some(claim)) => column_vs_claim(candidate, &claim).for_ne(),
+                _ => Truth::False,
+            }
+        }
+        ReadPredicate::Relation { .. } => Truth::False,
     }
 }

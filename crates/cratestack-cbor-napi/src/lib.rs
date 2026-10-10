@@ -218,6 +218,70 @@ mod tests {
         );
     }
 
+    /// ADR 0019 D2: a `BigInt` travels as a CBOR text string (major type
+    /// 3) holding the canonical decimal form. Tuples are
+    /// `(decimal, exact CBOR hex of {"amountE8": <decimal>})`. The same
+    /// five hex strings sit, byte-identical, in the other copies of this
+    /// table: `cratestack-cbor-wasm`'s `value_bridge.rs`,
+    /// `cratestack-client-flutter`'s `cbor/mod.rs` and
+    /// `dart/verify_round_trip.dart`, `dart-packages/cratestack_cbor`'s
+    /// `test/shared_fixtures.dart`, and the three vitest suites under
+    /// `packages/cratestack-cbor{,-node,-web}/tests`. Each was computed
+    /// by hand from RFC 8949 (`0xa1` map of one pair, `0x68` + the
+    /// 8-byte key, then `0x60 | len` + the ASCII digits) and
+    /// cross-checked with an independent encoder.
+    const BIGINT_FIXTURES: [(&str, &str); 5] = [
+        (
+            "9223372036854775807",
+            "a168616d6f756e7445387339323233333732303336383534373735383037",
+        ),
+        (
+            "-9223372036854775808",
+            "a168616d6f756e744538742d39323233333732303336383534373735383038",
+        ),
+        (
+            "9007199254740993",
+            "a168616d6f756e7445387039303037313939323534373430393933",
+        ),
+        ("0", "a168616d6f756e7445386130"),
+        ("-1", "a168616d6f756e744538622d31"),
+    ];
+
+    fn unhex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("valid hex"))
+            .collect()
+    }
+
+    #[test]
+    fn bigint_text_string_fixtures_stay_byte_exact_in_both_directions() {
+        // A text string is just a string to this bridge, so a `BigInt`
+        // needs no bridge change; this pins that it stays true. Both
+        // directions, so neither side can quietly widen the decimal into
+        // an integer or round it through a double.
+        for (decimal, expected_hex) in BIGINT_FIXTURES {
+            let input = value(json!({ "amountE8": decimal }));
+
+            let bytes = encode_value(&input).expect("encode");
+            assert_eq!(hex(&bytes), expected_hex, "encode {decimal}");
+            // `0xa1` (map of one), `0x68` + 8 key bytes, then the value
+            // header at index 10: major type 3, never 0/1 (integer).
+            assert_eq!(bytes[10] >> 5, 3, "{decimal} must be a text string");
+
+            let decoded = decode_bytes(&unhex(expected_hex)).expect("decode");
+            assert_eq!(decoded, input, "decode {decimal}");
+            let Value::Map(fields) = decoded else {
+                panic!("fixture for {decimal} must decode to a map");
+            };
+            assert_eq!(
+                fields.get("amountE8"),
+                Some(&Value::String(decimal.to_owned())),
+                "{decimal} must come back as the exact string, not a number"
+            );
+        }
+    }
+
     fn hex(bytes: &[u8]) -> String {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }

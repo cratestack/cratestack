@@ -5,9 +5,18 @@ use tower_lsp_server::ls_types::{
     CompletionItem, CompletionItemKind, Documentation, MarkupContent, MarkupKind,
 };
 
+use cratestack_parser::FieldHost;
+
+use crate::attribute_completion::field_attribute_items;
 use crate::type_ref::render_type_ref;
 
-pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
+/// `host` is the field-bearing block the cursor is in, when it is in one
+/// (`crate::field_host`): the field attributes offered are then exactly that
+/// block's list, and the procedure-position `@allow` is not offered.
+pub(crate) fn completion_items(
+    schema: Option<&Schema>,
+    host: Option<FieldHost>,
+) -> Vec<CompletionItem> {
     let keywords = [
         "datasource",
         "auth",
@@ -23,19 +32,6 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
         "@@sql",
         "mcp",
         "@use",
-        "@id",
-        "@unique",
-        "@default",
-        "@relation",
-        "@allow",
-        // `@custom` was removed in favor of `@computed`
-        // (`docs/design/computed-fields.md`) — one concept, resolver-
-        // backed response-time fields. `@computed(params: <Type>?)` is
-        // the parameterized form; this flat keyword list has no snippet-
-        // completion mechanism (no other entry here carries an
-        // insert-text placeholder either), so only the bare marker is
-        // offered.
-        "@computed",
         "@@allow",
         "@@id",
         "@@unique",
@@ -97,6 +93,15 @@ pub(crate) fn completion_items(schema: Option<&Schema>) -> Vec<CompletionItem> {
             ..CompletionItem::default()
         })
         .collect::<Vec<_>>();
+
+    items.extend(field_attribute_items(host));
+    if host.is_none() {
+        items.push(CompletionItem {
+            label: "@allow".to_owned(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            ..CompletionItem::default()
+        });
+    }
 
     items.extend(
         cratestack_parser::reserved_multi_file_keywords()

@@ -1,0 +1,26 @@
+// ADR 0019: an MCP resource keyed by `BigInt`, for
+// `tests/mcp_resources_bigint_pg.rs`. The id in the URI is the canonical
+// decimal string, parsed with `cratestack::BigInt`'s `FromStr`, and the
+// record's `id` comes back as that same string.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+mcp {
+  name = "ledger"
+  expose = [resources]
+}
+
+auth Caller {
+  id String
+}
+
+model McpBigNote {
+  id BigInt @id
+  label String
+
+  @@allow("read", auth() != null)
+  @@mcp(resource: "notes")
+}

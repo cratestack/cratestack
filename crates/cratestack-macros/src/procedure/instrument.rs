@@ -3,9 +3,14 @@
 //! `invoke_with_db`. Factored out of the entry to keep
 //! [`super::generate_procedure_module`] readable.
 //!
-//! Each helper wraps the same shape: stamp `Instant::now()`, run the
-//! policy check (and any `@authorize` model checks), then `tracing`
-//! the result in the standard `cratestack_*` field set.
+//! Each helper wraps the same shape: stamp `Instant::now()`, validate the
+//! arguments' fields, run the policy check (and any `@authorize` model
+//! checks), then `tracing` the result in the standard `cratestack_*` field
+//! set. The validation is `ProcedureArgs::validate_fields`, the first
+//! statement of all four, so no choice of helper skips it (ADR 0019 D5):
+//! the generated `Args` overrides it when an argument is, or holds, a `type`
+//! or `model` with a validator, and every other `Args` inherits a method
+//! that returns `Ok(())`.
 //!
 //! cratestack#512: `authorize_with_db`/`invoke_with_db` are also the
 //! only source of an [`authorized_type_tokens`]-generated `Authorized`
@@ -13,22 +18,25 @@
 //! makes `registry.<method>(&db, &ctx, args)` (skipping the
 //! `ProcedureRegistry` trait method's now-required witness parameter)
 //! fail to compile instead of silently skipping every `@allow`. The
-//! plain (non-`db`) `authorize`/`invoke` pair below is untouched:
+//! plain (non-`db`) `authorize`/`invoke` pair below holds no witness:
 //! `ProcedureRegistry` methods always take `db` (even under `db =
 //! None`, where `Cratestack` is just a unit struct — see
 //! `include/server/runtime/none.rs`), so nothing ever needs a witness
 //! from the `db`-less pair to call one.
 //!
-//! `invoke_with_db_fn_tokens` itself lives in the `invoke_with_db`
-//! submodule, not here — its generated doc comment (cratestack#611) is
-//! long enough that keeping it inline would push this file past the
-//! crate's ~200-LoC file ceiling.
+//! `authorize_with_db` and `invoke_with_db_fn_tokens` themselves live in
+//! the `authorize_with_db` and `invoke_with_db` submodules, not here —
+//! their generated doc comments (cratestack#611) are long enough that
+//! keeping them inline would push this file past the crate's ~200-LoC file
+//! ceiling.
 
 use quote::quote;
 
+mod authorize_with_db;
 mod invoke_isolated;
 mod invoke_with_db;
 
+pub(super) use authorize_with_db::authorize_with_db_fn_tokens;
 pub(super) use invoke_isolated::isolation_and_invoke_with_db_tokens;
 pub(super) use invoke_with_db::invoke_with_db_fn_tokens;
 
@@ -38,8 +46,8 @@ pub(super) use invoke_with_db::invoke_with_db_fn_tokens;
 /// any `pub` constructor, is the entire enforcement mechanism.
 pub(super) fn authorized_type_tokens() -> proc_macro2::TokenStream {
     quote! {
-        /// Proof that this procedure's `@allow`/`@deny` policy — and, for
-        /// [`authorize_with_db`], any `@authorize` model checks — ran and
+        /// Proof that this procedure's arguments' field validators, its
+        /// `@allow`/`@deny` policy and any `@authorize` model checks ran and
         /// passed for a call. [`super::procedures::ProcedureRegistry`]'s
         /// generated method for this procedure takes one of these as its
         /// last argument, which is what makes
@@ -85,7 +93,8 @@ pub(super) fn authorize_fn_tokens() -> proc_macro2::TokenStream {
             ctx: &::cratestack::CratestackContext,
         ) -> Result<(), ::cratestack::CratestackError> {
             let started = ::std::time::Instant::now();
-            let result = ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx);
+            let result = ::cratestack::ProcedureArgs::validate_fields(args)
+                .and_then(|()| ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx));
             match &result {
                 Ok(()) => ::cratestack::tracing::debug!(
                     target: "cratestack",
@@ -110,31 +119,6 @@ pub(super) fn authorize_fn_tokens() -> proc_macro2::TokenStream {
     }
 }
 
-pub(super) fn authorize_with_db_fn_tokens(
-    model_authorizers: &[proc_macro2::TokenStream],
-) -> proc_macro2::TokenStream {
-    quote! {
-        pub async fn authorize_with_db(
-            db: &super::super::Cratestack,
-            args: &Args,
-            ctx: &::cratestack::CratestackContext,
-        ) -> Result<Authorized, ::cratestack::CratestackError> {
-            let started = ::std::time::Instant::now();
-            ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
-            #(#model_authorizers)*
-            ::cratestack::tracing::debug!(
-                target: "cratestack",
-                cratestack_procedure = NAME,
-                cratestack_operation = "authorize_with_db",
-                cratestack_authenticated = ctx.is_authenticated(),
-                cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                "cratestack procedure db authorization completed",
-            );
-            Ok(Authorized(()))
-        }
-    }
-}
-
 pub(super) fn invoke_fn_tokens() -> proc_macro2::TokenStream {
     quote! {
         pub async fn invoke<A, F, Fut, T>(
@@ -155,6 +139,7 @@ pub(super) fn invoke_fn_tokens() -> proc_macro2::TokenStream {
             );
             let _guard = span.enter();
             let started = ::std::time::Instant::now();
+            ::cratestack::ProcedureArgs::validate_fields(args)?;
             ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
             let result = f().await;
             match &result {

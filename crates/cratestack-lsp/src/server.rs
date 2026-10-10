@@ -13,6 +13,7 @@ use crate::capabilities::server_capabilities;
 use crate::completion::completion_items;
 use crate::definition::definition_location;
 use crate::document_symbols::document_symbols_for;
+use crate::field_host::host_at_position;
 use crate::hover_render::hover_at;
 use crate::navigation::reference_ranges;
 use crate::rename::{prepare_rename, workspace_edit};
@@ -64,10 +65,15 @@ impl LanguageServer for Backend {
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let documents = self.documents.read().await;
-        let schema = documents
-            .get(&params.text_document_position.text_document.uri)
-            .and_then(|document| document.resolved().map(|(_, schema)| schema));
-        Ok(Some(CompletionResponse::Array(completion_items(schema))))
+        let document = documents.get(&params.text_document_position.text_document.uri);
+        let schema = document.and_then(|document| document.resolved().map(|(_, schema)| schema));
+        // The cursor is placed in the text the editor holds now, not the last
+        // text that parsed: the block it is in is what decides the list.
+        let host = document
+            .and_then(|d| host_at_position(&d.text, params.text_document_position.position));
+        Ok(Some(CompletionResponse::Array(completion_items(
+            schema, host,
+        ))))
     }
 
     async fn goto_definition(

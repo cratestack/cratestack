@@ -1,8 +1,10 @@
 mod analyze;
+mod attribute_completion;
 mod capabilities;
 mod completion;
 mod definition;
 mod document_symbols;
+mod field_host;
 mod hover;
 mod hover_render;
 mod mcp_completion;

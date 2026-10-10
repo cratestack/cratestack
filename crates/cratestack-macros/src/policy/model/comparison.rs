@@ -6,10 +6,11 @@
 use cratestack_core::{EnumDecl, Model, TypeDecl};
 use quote::quote;
 
+use super::literal::parse_policy_literal;
 use super::predicates::{
     ensure_auth_field, find_model_field, generate_scalar_auth_predicate,
-    generate_scalar_literal_predicate, parse_policy_literal,
-    validate_auth_field_matches_model_field, wrap_relation_predicate,
+    generate_scalar_literal_predicate, validate_auth_field_matches_model_field,
+    wrap_relation_predicate,
 };
 use super::relation_path::{RelationPolicyField, resolve_relation_policy_field};
 use crate::shared::to_snake_case;

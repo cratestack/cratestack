@@ -18,6 +18,8 @@ impl<'a> ToSql for SqlValueParam<'a> {
         let value: ToSqlOutput<'_> = match self.0 {
             SqlValue::Bool(v) => ToSqlOutput::Owned(RV::Integer(i64::from(*v))),
             SqlValue::Int(v) => ToSqlOutput::Owned(RV::Integer(*v)),
+            // An SQLite INTEGER is 64-bit, so `BigInt` is exact at both ends.
+            SqlValue::BigInt(v) => ToSqlOutput::Owned(RV::Integer(*v)),
             SqlValue::Float(v) => ToSqlOutput::Owned(RV::Real(*v)),
             SqlValue::String(v) => ToSqlOutput::Borrowed(ValueRef::Text(v.as_bytes())),
             SqlValue::Bytes(v) => ToSqlOutput::Borrowed(ValueRef::Blob(v.as_slice())),
@@ -27,6 +29,7 @@ impl<'a> ToSql for SqlValueParam<'a> {
             SqlValue::Decimal(v) => ToSqlOutput::Owned(RV::Text(format_decimal(v.as_ref()))),
             SqlValue::NullBool
             | SqlValue::NullInt
+            | SqlValue::NullBigInt
             | SqlValue::NullFloat
             | SqlValue::NullString
             | SqlValue::NullBytes

@@ -79,6 +79,16 @@ pub(crate) fn sql_value_tokens(
                 None => ::cratestack::SqlValue::NullInt,
             }
         },
+        // `BigInt` binds as its `i64` (`INT8` on Postgres, an SQLite integer),
+        // through a variant of its own so that a predicate comparing it with
+        // an `Int` or a literal never meets a mismatched variant by accident.
+        ("BigInt", TypeArity::Required) => quote! { ::cratestack::SqlValue::BigInt(#value.get()) },
+        ("BigInt", TypeArity::Optional) => quote! {
+            match #value {
+                Some(value) => ::cratestack::SqlValue::BigInt(value.get()),
+                None => ::cratestack::SqlValue::NullBigInt,
+            }
+        },
         ("Float", TypeArity::Required) => quote! { ::cratestack::SqlValue::Float(#value) },
         ("Float", TypeArity::Optional) => quote! {
             match #value {

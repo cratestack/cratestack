@@ -6,6 +6,8 @@ use super::parse_schema;
 
 #[test]
 fn identity_is_not_a_primary_key() {
+    // Before the closed list (ADR 0019 D5) `@identity` was inert and the
+    // model failed for want of a key; now the attribute itself is refused.
     let error = parse_schema(
         r#"
 model Account {
@@ -16,34 +18,28 @@ model Account {
     )
     .expect_err("`@identity` must not satisfy the primary-key requirement");
 
+    let message = error.to_string();
     assert!(
-        error
-            .to_string()
-            .contains("model `Account` is missing an @id field"),
-        "{error}",
+        message.contains("unsupported attribute `@identity` on a model field"),
+        "{message}",
     );
+    assert!(!message.contains("did you mean `@id`"), "{message}");
 }
 
 #[test]
-fn id_prefixed_attributes_beside_a_real_id_are_not_keys() {
-    let schema = parse_schema(
-        r#"
-model Account {
-  id Int @id
-  code String @identity
-  ref String @id_foo
-}
-"#,
-    )
-    .expect("an unknown `@id…` attribute is inert, not a second `@id`");
-
-    let keys: Vec<&str> = schema.models[0]
-        .fields
-        .iter()
-        .filter(|field| field.is_primary_key())
-        .map(|field| field.name.as_str())
-        .collect();
-    assert_eq!(keys, ["id"]);
+fn id_prefixed_attributes_beside_a_real_id_are_refused_not_counted() {
+    for name in ["@identity", "@id_foo"] {
+        let error = parse_schema(&format!(
+            "model Account {{\n  id Int @id\n  code String {name}\n}}\n"
+        ))
+        .expect_err("an unknown `@id…` attribute is refused, not a second `@id`");
+        let message = error.to_string();
+        assert!(
+            message.contains(&format!("unsupported attribute `{name}`")),
+            "{message}"
+        );
+        assert!(!message.contains("more than one field-level"), "{message}");
+    }
 }
 
 #[test]
@@ -69,7 +65,7 @@ fn id_with_arguments_is_refused_at_the_attribute() {
         let source = format!("model Account {{\n  id Int {raw}\n}}\n");
         let error = parse_schema(&source).expect_err("`@id` takes no arguments");
         assert!(
-            error.to_string().contains("`@id` takes no arguments"),
+            error.to_string().contains("`@id` does not take arguments"),
             "{error}",
         );
         let start = source.find(raw).expect("attribute in source");
@@ -108,7 +104,9 @@ fn a_second_relation_is_refused_at_the_second() {
 }
 
 #[test]
-fn a_bare_relation_counts_toward_the_limit() {
+fn a_bare_relation_is_refused_before_it_can_count() {
+    // `@relation` takes an argument list, so a bare one is refused by the
+    // closed list itself.
     let error = parse_schema(
         r#"
 model User {
@@ -122,12 +120,12 @@ model Post {
 }
 "#,
     )
-    .expect_err("a bare second `@relation` is still a second declaration");
+    .expect_err("a bare `@relation` takes no part in a relation");
 
     assert!(
         error
             .to_string()
-            .contains("declares `@relation` more than once"),
+            .contains("`@relation` takes an argument list"),
         "{error}",
     );
 }

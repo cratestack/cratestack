@@ -268,6 +268,11 @@ fn scalar_to_postgres(name: &str) -> &'static str {
     match name {
         "String" | "Cuid" => "TEXT",
         "Int" => "BIGINT",
+        // `BigInt` is the permanent 64-bit scalar (ADR 0019). Its arm is
+        // explicit rather than left to the `_ => "TEXT"` fallback below,
+        // which would create a TEXT column that every i64 bind and read
+        // then fails against.
+        "BigInt" => "BIGINT",
         "Float" => "DOUBLE PRECISION",
         "Decimal" => "NUMERIC",
         "Boolean" => "BOOLEAN",

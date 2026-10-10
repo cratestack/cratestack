@@ -98,10 +98,18 @@ See [Field Attributes](https://cratestack.dev/reference/field-attributes) for th
 - `@id`, `@unique`, `@relation(...)`, `@default(...)`
 - `@readonly`, `@server_only`, `@pii`, `@sensitive`
 - `@version` (optimistic locking)
-- `@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217` (validators)
+- `@length`, `@range`, `@email`, `@regex`, `@uri`, `@iso4217` (validators: enforced on a model's create and
+  update inputs, on the `type`s and `model`s a procedure takes as arguments, and on a `@computed`
+  field's `?computedParams=`; refused on a `type` no client input reaches)
+- `@db_enforce` (the validators `@range`, `@length`, `@iso4217` as a `CHECK`; refused beside none of them)
 - `@@allow(action, expr)`, `@@deny(action, expr)`
 - `@@audit`, `@@soft_delete`
 - `@@emit(created, updated, deleted)`
+
+A field accepts only the attributes its declaration kind lists (`model`,
+`view`, `mixin`, `type`, `auth`), and any other name is an error:
+`cratestack_parser::field_attribute_names(host)` returns a kind's list, and
+the editor completions read the same one.
 
 ## See Also
 

@@ -147,6 +147,24 @@ async fn arguments_that_do_not_decode_name_the_field() {
     assert_eq!(registry.runs(), 0);
 }
 
+/// ADR 0019 D5 (PR A): a validator on an argument `type` also runs for an
+/// agent's call. MCP is outside the transport-parity rule, but the check is
+/// in `authorize_with_db`, which `execute` reaches through `invoke_with_db`
+/// like REST and RPC do, so there is no MCP path to forget. The message is
+/// the one the HTTP transports answer with.
+#[tokio::test]
+async fn arguments_that_fail_a_type_validator_are_an_error_and_never_run() {
+    let registry = Registry::default();
+    let mut client = serve(&registry, caller("u-1", "teller"));
+    let result = client
+        .call("transfer_funds", json!({ "args": { "amount": 0 } }), None)
+        .await;
+    let error = envelope(&result);
+    assert_eq!(error["code"], "VALIDATION_ERROR");
+    assert_eq!(error["message"], "field 'args.amount' is below minimum 1");
+    assert_eq!(registry.runs(), 0);
+}
+
 /// ADR 0002 Q7: a `@computed` output is resolved by the same composition
 /// REST runs, and the result validates against the advertised
 /// `outputSchema` — the round trip phase 2 could not do for these types.

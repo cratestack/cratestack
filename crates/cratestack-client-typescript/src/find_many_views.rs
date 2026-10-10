@@ -21,7 +21,15 @@ use crate::views::{EnumView, FieldView, InterfaceView};
 fn is_filterable_scalar(field: &Field, enum_names: &BTreeSet<&str>) -> bool {
     matches!(
         field.ty.name.as_str(),
-        "String" | "Cuid" | "Int" | "Float" | "Boolean" | "Uuid" | "DateTime" | "Decimal"
+        "String"
+            | "Cuid"
+            | "Int"
+            | "BigInt"
+            | "Float"
+            | "Boolean"
+            | "Uuid"
+            | "DateTime"
+            | "Decimal"
     ) || enum_names.contains(field.ty.name.as_str())
 }
 
@@ -39,6 +47,10 @@ fn filter_type_name(field: &Field, enum_names: &BTreeSet<&str>) -> String {
     match field.ty.name.as_str() {
         "String" | "Cuid" => "StringFilter",
         "Int" | "Float" => "NumberFilter",
+        // `ComparableFilter<bigint>` (`models.ts.j2`): the operators carry
+        // `bigint` values, which `encodeWireFields` turns into canonical
+        // decimal strings on the way out.
+        "BigInt" => "BigIntFilter",
         "Boolean" => "BooleanFilter",
         "Uuid" => "UuidFilter",
         "DateTime" => "DateTimeFilter",

@@ -35,6 +35,8 @@ mod tests_computed_params;
 mod tests_computed_stream;
 mod tests_computed_type_valued;
 #[cfg(test)]
+mod tests_db_enforce_eligibility;
+#[cfg(test)]
 mod tests_detached_attributes;
 #[cfg(test)]
 mod tests_docs;
@@ -44,6 +46,10 @@ mod tests_enums;
 mod tests_error_file_identity;
 #[cfg(test)]
 mod tests_extensions;
+#[cfg(test)]
+mod tests_field_attribute_lists;
+#[cfg(test)]
+mod tests_field_attribute_lists_accepted;
 #[cfg(test)]
 mod tests_field_attrs;
 #[cfg(test)]
@@ -146,13 +152,19 @@ mod tests_transport;
 #[cfg(test)]
 mod tests_type_declaration_collisions;
 #[cfg(test)]
+mod tests_type_field_validators;
+#[cfg(test)]
 mod tests_types;
+#[cfg(test)]
+mod tests_unreachable_validators;
 #[cfg(test)]
 mod tests_validators;
 #[cfg(test)]
 mod tests_vector;
 #[cfg(test)]
 mod tests_version;
+#[cfg(test)]
+mod tests_view_from;
 #[cfg(test)]
 mod tests_views;
 
@@ -161,6 +173,7 @@ pub use entry::{
     ANONYMOUS_SCHEMA, parse_schema, parse_schema_diagnostics, parse_schema_file,
     parse_schema_named, parse_schema_unvalidated,
 };
+pub use validate::{FieldHost, field_attribute_names};
 
 /// Canonical scalar type names built into the `.cstack` language (e.g.
 /// `String`, `Int`, `Decimal`, ...), including `Page` (which is valid only

@@ -33,7 +33,15 @@ use crate::views::{DataClassView, EnumVariantView, EnumView, FieldView};
 fn is_filterable_scalar(field: &Field, enum_names: &BTreeSet<&str>) -> bool {
     matches!(
         field.ty.name.as_str(),
-        "String" | "Cuid" | "Int" | "Float" | "Boolean" | "Uuid" | "DateTime" | "Decimal"
+        "String"
+            | "Cuid"
+            | "Int"
+            | "BigInt"
+            | "Float"
+            | "Boolean"
+            | "Uuid"
+            | "DateTime"
+            | "Decimal"
     ) || enum_names.contains(field.ty.name.as_str())
 }
 
@@ -55,6 +63,10 @@ fn filter_type_name(
     match field.ty.name.as_str() {
         "String" | "Cuid" => "StringFilter",
         "Int" | "Float" => "NumberFilter",
+        // ADR 0019: operands are real `BigInt`s, not `num` (a `num` is a
+        // JS double on dart2js), so `BigInt` gets its own class, as
+        // `Decimal` does.
+        "BigInt" => "BigIntFilter",
         "Boolean" => "BooleanFilter",
         "Uuid" => "UuidFilter",
         "DateTime" => "DateTimeFilter",

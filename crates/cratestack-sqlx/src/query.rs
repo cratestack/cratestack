@@ -9,13 +9,13 @@ pub use read::{
     ProjectedFindMany, ProjectedFindUnique,
 };
 #[cfg(test)]
-pub(crate) use support::evaluate_input_predicate_for_tests;
+pub(crate) use support::{PolicyDb, evaluate_input_predicate_for_tests};
 #[allow(unused_imports)]
 pub(crate) use support::{
-    ReadPolicyKind, apply_create_defaults, auth_value_to_sql, authorize_record_action,
-    evaluate_create_policies, find_column_value, push_action_policy_query, push_bind_value,
-    push_filter_expr_query, push_filter_query, push_order_and_paging, push_policy_expr_query,
-    push_scoped_conditions, sql_value_matches_literal, value_matches_auth_literal,
+    Position, ReadPolicyKind, apply_create_defaults, auth_literal_sql, auth_value_to_sql,
+    authorize_record_action, claim_type_suffix, evaluate_create_policies, find_column_value,
+    push_action_policy_query, push_bind_value, push_filter_expr_query, push_filter_query,
+    push_order_and_paging, push_policy_expr_query, push_scoped_conditions,
 };
 #[allow(unused_imports)]
 pub use write::{

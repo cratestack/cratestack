@@ -27,6 +27,7 @@ type Scalars {
   text String
   cuid Cuid
   count Int
+  big BigInt
   ratio Float
   flag Boolean
   at DateTime
@@ -50,6 +51,8 @@ type Shapes {
   maybeAmount Decimal?
   maybeAt DateTime?
   ids Uuid[]
+  maybeBig BigInt?
+  bigs BigInt[]
 }
 
 /// Refers to itself.
@@ -75,6 +78,13 @@ procedure echoTree(tree: Tree): Tree
   @mcp(tool)
 
 procedure countScalars(filter: String?): Int
+  @allow(true)
+  @mcp(tool)
+
+// ADR 0019: `BigInt` as a bare procedure argument in every arity, and as a
+// scalar return. A scalar return has no output schema; the field forms in
+// `Scalars` and `Shapes` cover the output side.
+procedure echoBig(total: BigInt, maybe: BigInt?, totals: BigInt[]): BigInt
   @allow(true)
   @mcp(tool)
 

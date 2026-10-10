@@ -76,6 +76,13 @@ export const jsonRpcCodec: CratestackRpcCodec = {
     // lossy-looking conversion. See that function's own doc comment for
     // why `JSON.stringify` can't do it.
     //
+    // The same walk turns every `bigint` (a `BigInt` field) into its
+    // canonical decimal string, and it lives in the codec, not only in
+    // `terminalLink`, on purpose: `@cratestack/link-batch` encodes a
+    // batch of RAW inputs with the request's codec and never runs
+    // `terminalLink`, so a conversion that lived only there would be
+    // skipped by exactly the path that batches.
+    //
     // (Deliberately no package name in this comment: `native_cbor: false`
     // builds assert that `runtime.ts` never mentions the native codec
     // package at all — see `tests/native_cbor_generator.rs`.)
@@ -88,6 +95,36 @@ export const jsonRpcCodec: CratestackRpcCodec = {
     return JSON.parse(new TextDecoder().decode(bytes));
   },
 };
+
+const wireEncodingCodecs = new WeakMap<CratestackRpcCodec, CratestackRpcCodec>();
+
+/** Wraps the native codec so `encode()` runs {@link encodeWireFields} first:
+ *  a `bigint` (a `BigInt` field) becomes its canonical decimal string, and a
+ *  {@link Decimal} its string, whoever called `encode()`.
+ *
+ *  `terminalLink` already does that for every request it builds, but
+ *  `@cratestack/link-batch` does not go through it: it encodes a batch of
+ *  RAW inputs with `request.codec` directly. Unwrapped, the native codec
+ *  would take a `bigint` there and write a CBOR *integer*, silently, which a
+ *  server refuses for a `BigInt` field. Converting in the codec itself
+ *  means no caller can skip it. {@link jsonRpcCodec} does the same for the
+ *  JSON side via `encodeBinaryAsJson`.
+ *
+ *  The wrapper is memoized per underlying codec, so two runtimes that share
+ *  the native codec still hand `@cratestack/link-batch` ONE codec reference
+ *  (it partitions batches by codec identity). */
+function withWireEncoding(codec: CratestackRpcCodec): CratestackRpcCodec {
+  let wrapped = wireEncodingCodecs.get(codec);
+  if (wrapped === undefined) {
+    wrapped = {
+      contentType: codec.contentType,
+      encode: (value: unknown): BodyInit => codec.encode(encodeWireFields(value)),
+      decode: (bytes: Uint8Array): unknown => codec.decode(bytes),
+    };
+    wireEncodingCodecs.set(codec, wrapped);
+  }
+  return wrapped;
+}
 
 export interface CratestackRpcClientOptions {
   basePath?: string;
@@ -289,8 +326,10 @@ export class CratestackRpcRuntime {
    *  (headers first, codec second) is deliberate: it matches the
    *  `--no-native-cbor` path's ordering exactly, so a user's
    *  `options.headers` callback fires at the same point in both. An
-   *  explicit `options.codec` always wins and needs no async resolution;
-   *  otherwise `@cratestack/cbor`'s `createCborCodec()` is invoked and
+   *  explicit `options.codec` always wins and needs no async resolution (it
+   *  is used exactly as given: `terminalLink` still converts a `bigint` or
+   *  `Decimal` for every request it builds, but a custom codec that other
+   *  code calls directly has to cope with those itself); otherwise `@cratestack/cbor`'s `createCborCodec()` is invoked and
    *  memoized on first use, never more than once per runtime instance.
    *
    *  Only a *successful* resolution is memoized — mirrors
@@ -313,12 +352,15 @@ export class CratestackRpcRuntime {
     // undefined`. The retry-on-rejection behavior is unchanged: the
     // `.catch()` below still clears `this.codecPromise` so the next call
     // gets a fresh `createCborCodec()` attempt.
+    //
+    // `.then(withWireEncoding)` sits AFTER the `.catch`, so a rejection
+    // still clears `codecPromise` and still skips the wrapper.
     const pending =
       this.codecPromise ??
       (this.codecPromise = createCborCodec().catch((error: unknown) => {
         this.codecPromise = undefined;
         throw error;
-      }));
+      }).then(withWireEncoding));
     return pending;
   }
 

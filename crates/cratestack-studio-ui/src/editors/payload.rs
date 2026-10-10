@@ -53,6 +53,11 @@ fn parse_value(f: &FieldSummary, raw: &str) -> serde_json::Value {
             .map(serde_json::Value::from)
             .unwrap_or_else(|_| serde_json::Value::String(raw.to_owned())),
         "Decimal" => serde_json::Value::String(raw.to_owned()),
+        // Never `Value::from(i64)`: a `BigInt` is a decimal string on every
+        // wire, and a JSON number would be refused by the validator (and
+        // rounded by any JavaScript hop past 2^53). Non-canonical text is
+        // kept verbatim so the server-side validator can name the problem.
+        "BigInt" => serde_json::Value::String(raw.to_owned()),
         "DateTime" => serde_json::Value::String(normalize_datetime(raw)),
         "Boolean" => match raw {
             "true" | "1" | "yes" => serde_json::Value::Bool(true),
@@ -81,6 +86,57 @@ pub(super) fn normalize_datetime(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn field(name: &str, type_name: &str, arity: &str) -> FieldSummary {
+        FieldSummary {
+            name: name.to_owned(),
+            type_name: type_name.to_owned(),
+            arity: arity.to_owned(),
+            is_id: false,
+            is_relation: false,
+            is_enum: false,
+            enum_variants: Vec::new(),
+        }
+    }
+
+    fn payload_for(field: FieldSummary, raw: &str) -> serde_json::Value {
+        let values = std::collections::BTreeMap::from([(field.name.clone(), raw.to_owned())]);
+        build_payload(&[field], &values)
+    }
+
+    #[test]
+    fn bigint_stays_a_string_at_the_boundaries() {
+        for raw in [
+            "9223372036854775807",
+            "-9223372036854775808",
+            "9007199254740993",
+        ] {
+            let payload = payload_for(field("amountE8", "BigInt", "required"), raw);
+            assert_eq!(payload["amountE8"], serde_json::json!(raw));
+            assert!(
+                payload["amountE8"].is_string(),
+                "{raw} must not become a number"
+            );
+        }
+    }
+
+    #[test]
+    fn bigint_keeps_non_canonical_text_for_the_server_to_refuse() {
+        let payload = payload_for(field("amountE8", "BigInt", "required"), "007");
+        assert_eq!(payload["amountE8"], serde_json::json!("007"));
+    }
+
+    #[test]
+    fn empty_optional_bigint_is_null() {
+        let payload = payload_for(field("feeE8", "BigInt", "optional"), "");
+        assert_eq!(payload["feeE8"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn int_still_becomes_a_json_number() {
+        let payload = payload_for(field("hits", "Int", "required"), "7");
+        assert_eq!(payload["hits"], serde_json::json!(7));
+    }
 
     #[test]
     fn datetime_appends_zero_seconds_and_z() {

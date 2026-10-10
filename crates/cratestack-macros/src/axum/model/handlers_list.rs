@@ -154,10 +154,11 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             // Validated before any DB access (docs/design/computed-fields.md):
             // a `computedParams` value that isn't a JSON object, or that
             // names an unknown/non-parameterized/`?fields=`-excluded key,
-            // never reaches the list query. Decoding a key's *value* into
-            // its field's params type is a separate, later step — it
-            // happens at resolve time in `serializers::computed_fields`,
-            // once rows have already been fetched.
+            // never reaches the list query. So does a key's value that
+            // fails its params type's validators (ADR 0019 D5). Decoding a
+            // value into a params type with no validator is a later step,
+            // at resolve time in `serializers::computed_fields`, once rows
+            // have already been fetched.
             let computed_params = match #parse_computed_params_ident(query.computed_params.as_deref(), &query.selection) {
                 Ok(computed_params) => computed_params,
                 Err(error) => {

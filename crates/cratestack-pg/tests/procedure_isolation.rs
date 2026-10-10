@@ -284,6 +284,69 @@ async fn nothing_a_failed_isolated_procedure_wrote_survives() {
     }
 }
 
+/// ADR 0019 D5 (PR A): a validator on an argument `type` refuses the call
+/// before the procedure does anything. An `@isolation` procedure validates
+/// before `run_isolated`, so an invalid request takes no pooled connection and
+/// opens no transaction (`model_argument_validators_*.rs` proves that without
+/// a database: its pool cannot connect), and a plain one validates before it
+/// authorizes. Either way the answer is the 422 a failed model validator gives
+/// (`VALIDATION_ERROR` on REST, `invalid_argument` on RPC), never the
+/// `TRANSACTION_ABORTED` a retried attempt ends in, and the body never runs.
+/// `withdraw` also carries an `@authorize` model check, which validation
+/// precedes.
+#[tokio::test]
+async fn a_type_validator_refuses_an_isolated_procedures_arguments_before_it_runs() {
+    let _guard = pg::serial_guard().await;
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let pool = test_pg.pool.clone();
+
+    for (label, rpc) in TRANSPORTS {
+        for procedure in ["withdraw", "withdrawPlain"] {
+            reset(&pool, &[(1, 100)]).await;
+            let (router, registry) = iso::routers(&pool, Gate::new(1), None, rpc);
+            let (status, text) = post(
+                router,
+                uri(rpc, procedure),
+                r#"{"args":{"accountId":1,"amount":0}}"#,
+            )
+            .await;
+            println!("VALIDATION {label} {procedure}: {status} {text}");
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{label} {procedure}: {text}"
+            );
+            let code = if rpc {
+                "invalid_argument"
+            } else {
+                "VALIDATION_ERROR"
+            };
+            assert!(text.contains(&format!(r#""code":"{code}""#)), "{text}");
+            assert!(
+                text.contains("field 'args.amount' is below minimum 1"),
+                "{text}"
+            );
+            assert_eq!(registry.runs(), 0, "{label} {procedure}: the body ran");
+            assert_eq!(account_balances(&pool).await, vec![(1, 100)]);
+
+            // The control: the same call with a valid amount runs and pays.
+            reset(&pool, &[(1, 100)]).await;
+            let (router, registry) = iso::routers(&pool, Gate::new(1), None, rpc);
+            let (status, text) = post(
+                router,
+                uri(rpc, procedure),
+                r#"{"args":{"accountId":1,"amount":100}}"#,
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{label} {procedure}: {text}");
+            assert_eq!(registry.runs(), 1);
+            assert_eq!(account_balances(&pool).await, vec![(1, 0)]);
+        }
+    }
+}
+
 #[tokio::test]
 async fn exhausted_retries_are_aborted_not_an_overdraft() {
     let _guard = pg::serial_guard().await;

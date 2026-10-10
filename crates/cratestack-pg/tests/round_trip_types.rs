@@ -33,7 +33,7 @@ use std::str::FromStr;
 
 use cratestack::include_server_schema;
 use cratestack::sqlx::query;
-use cratestack::{CratestackContext, Decimal, Json, Value};
+use cratestack::{BigInt, CratestackContext, Decimal, Json, Value};
 use cratestack_migrate::diff;
 use cratestack_migrate::emit::postgres;
 use cratestack_parser::parse_schema;
@@ -59,7 +59,8 @@ const SCHEMA_SRC: &str = include_str!("fixtures/round_trip_types.cstack");
 /// fails loudly the moment a new builtin scalar is added without adding a
 /// field for it in the fixture and write/assert coverage for it here.
 const COVERED_SCALAR_TYPES: &[&str] = &[
-    "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes", "Uuid",
+    "String", "Cuid", "Int", "BigInt", "Float", "Boolean", "DateTime", "Decimal", "Json", "Bytes",
+    "Uuid",
 ];
 
 fn ctx() -> CratestackContext {
@@ -167,6 +168,21 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
     );
 }
 
+/// ADR 0019 risk 3: a scalar with no emitter arm compiles, migrates and creates
+/// a `TEXT` column that every `i64` bind then fails against. The columns of the
+/// `BigInt` fields must be `BIGINT`, whatever the round trip below says.
+#[test]
+fn bigint_fields_are_emitted_as_bigint_columns() {
+    let up = emitted_migration_up();
+    assert!(up.contains("big_int_req BIGINT NOT NULL"), "up was: {up}");
+    assert!(up.contains("big_int_opt BIGINT"), "up was: {up}");
+    assert!(!up.contains("big_int_opt BIGINT NOT NULL"), "up was: {up}");
+    assert!(
+        !up.contains("big_int_req TEXT") && !up.contains("big_int_opt TEXT"),
+        "up was: {up}"
+    );
+}
+
 #[tokio::test]
 async fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
     let _guard = pg::serial_guard().await;
@@ -193,6 +209,9 @@ async fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
         cuidOpt: Some("cliqzroundtrip0002".to_owned()),
         intReq: 42,
         intOpt: Some(-7),
+        // ADR 0019: the extremes of the range, which no `f64` or `i32` path holds.
+        bigIntReq: BigInt::MAX,
+        bigIntOpt: Some(BigInt::MIN),
         floatReq: 3.5,
         floatOpt: Some(-2.25),
         booleanReq: true,
@@ -232,6 +251,8 @@ async fn all_non_enum_builtin_scalars_round_trip_through_generated_orm() {
     assert_eq!(fetched.cuidOpt, input.cuidOpt);
     assert_eq!(fetched.intReq, input.intReq);
     assert_eq!(fetched.intOpt, input.intOpt);
+    assert_eq!(fetched.bigIntReq, input.bigIntReq);
+    assert_eq!(fetched.bigIntOpt, input.bigIntOpt);
     assert_eq!(fetched.floatReq, input.floatReq);
     assert_eq!(fetched.floatOpt, input.floatOpt);
     assert_eq!(fetched.booleanReq, input.booleanReq);
@@ -276,6 +297,8 @@ async fn optional_builtin_scalars_round_trip_as_null() {
             cuidOpt: None,
             intReq: 1,
             intOpt: None,
+            bigIntReq: BigInt::new(9_007_199_254_740_993),
+            bigIntOpt: None,
             floatReq: 1.0,
             floatOpt: None,
             booleanReq: false,
@@ -306,6 +329,8 @@ async fn optional_builtin_scalars_round_trip_as_null() {
     assert!(fetched.stringOpt.is_none());
     assert!(fetched.cuidOpt.is_none());
     assert!(fetched.intOpt.is_none());
+    assert_eq!(fetched.bigIntReq, BigInt::new(9_007_199_254_740_993));
+    assert!(fetched.bigIntOpt.is_none());
     assert!(fetched.floatOpt.is_none());
     assert!(fetched.booleanOpt.is_none());
     assert!(fetched.dateTimeOpt.is_none());

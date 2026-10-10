@@ -7,9 +7,9 @@ use quote::quote;
 
 pub(in crate::procedure) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStream {
     quote! {
-        /// Runs `@allow`/`@deny` (and any `@authorize` model checks) via
-        /// [`authorize_with_db`], then calls `f` with the resulting
-        /// [`Authorized`] witness. `f` is the only place that witness can
+        /// Validates the arguments' fields, runs `@allow`/`@deny` (and any
+        /// `@authorize` model checks) as [`authorize_with_db`] does, then
+        /// calls `f` with the resulting [`Authorized`] witness. `f` is the only place that witness can
         /// go: into the [`super::procedures::ProcedureRegistry`] method
         /// call this procedure's generated dispatch handler makes — see
         /// cratestack#512.
@@ -72,7 +72,8 @@ pub(in crate::procedure) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStre
             );
             let _guard = span.enter();
             let started = ::std::time::Instant::now();
-            let authorized = authorize_with_db(db, args, ctx).await?;
+            ::cratestack::ProcedureArgs::validate_fields(args)?;
+            let authorized = authorize_validated_with_db(db, args, ctx).await?;
             let result = f(authorized).await;
             match &result {
                 Ok(_) => ::cratestack::tracing::info!(

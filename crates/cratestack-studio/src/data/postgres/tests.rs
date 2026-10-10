@@ -332,3 +332,34 @@ fn list_on_column_filters_and_pages_simultaneously() {
     assert!(sql.contains(r#""id" > $2"#), "{sql}");
     assert!(sql.contains("LIMIT 25"), "{sql}");
 }
+
+/// A `BigInt` key is cast to `bigint` on every bound key parameter,
+/// exactly like an `Int` key: the key travels as text and the cast is
+/// what makes Postgres compare it as a number.
+#[test]
+fn bigint_pk_is_cast_to_bigint_in_list_get_update_and_delete() {
+    let schema = parse(
+        r#"
+            model Ledger {
+              id BigInt @id
+              note String
+            }
+        "#,
+    );
+    let (_, info) = resolve_model(&schema, "Ledger").unwrap();
+    assert_eq!(info.pk_cast, PkCast::BigInt);
+    assert!(
+        build_list_sql(&info, 10).contains(r#""id" > $1::bigint"#),
+        "list"
+    );
+    assert!(build_get_sql(&info).contains(r#""id" = $1::bigint"#), "get");
+    let columns = vec!["note".to_owned()];
+    assert!(
+        build_update_sql(&info, &columns, None).contains(r#""id" = $2::bigint"#),
+        "update"
+    );
+    assert!(
+        build_delete_sql(&info).contains(r#""id" = $1::bigint"#),
+        "delete"
+    );
+}

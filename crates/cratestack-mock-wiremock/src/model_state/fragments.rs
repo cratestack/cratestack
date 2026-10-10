@@ -144,6 +144,12 @@ pub(crate) fn id_generator(pk_type_name: &str, kind: ScalarKind) -> String {
         // uniformly random across the full digit space — irrelevant for
         // a mock, where uniqueness (not distribution) is what matters.
         (_, ScalarKind::Number) => "1{{randomValue length=5 type='NUMERIC'}}".to_owned(),
+        // A `BigInt` key is `QuotedString` (a decimal string on the wire),
+        // so the arms below would hand it an alphanumeric id that no
+        // generated client can parse as a `BigInt`. Same non-zero leading
+        // digit as the `Number` arm, for the same reason: a canonical
+        // decimal has no leading zero.
+        ("BigInt", _) => "1{{randomValue length=5 type='NUMERIC'}}".to_owned(),
         ("Uuid", _) => "{{randomValue type='UUID'}}".to_owned(),
         ("Cuid", _) => "c{{randomValue length=24 type='ALPHANUMERIC' uppercase=false}}".to_owned(),
         // Plain `String` PK, or any other/unexpected kind (defense in

@@ -113,8 +113,13 @@ shared schema across services (`import`). Blocked at the front on
 
 Accepted on 2026-09-30 as [ADR 0019](docs/adr/0019-int-and-bigint-built-in-types.md),
 with the per-target changes, diagrams and the three-PR plan in
-[`docs/design/int-and-bigint.md`](docs/design/int-and-bigint.md) (§7). The
-implementation has not started; #1130 is the draft PR carrying the ADR.
+[`docs/design/int-and-bigint.md`](docs/design/int-and-bigint.md) (§7). The ADR
+landed in #1130. **Handoff, 2026-10-09:** PR A and PR B are built and land on
+`main` together; PR C (the `Int` cutover) and the live-server TypeScript round
+trip B13 are not built and pass to a colleague. Landing A and B is not a
+release: B and C ship together in 0.16.0, so no release is cut from `main`
+until C lands. The ADR's "Amendment (PR B, 2026-10-09)" records where the build
+differs from the plan.
 
 The problem is precise: a schema `Int` is a Rust `i64` and a JSON number that
 carries every digit, and no JavaScript consumer can hold that range. TypeScript
@@ -144,13 +149,82 @@ client and rebuilds every server in one upgrade.
 
 | PR | Scope | Status |
 | --- | --- | --- |
-| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)) | planned |
-| B | `BigInt` end to end: core type and serde on both codecs, SQL, migrate, JSON Schema, MCP, TypeScript and Dart clients | planned |
-| C | `Int` becomes 32-bit: snapshot format 3, digest domains `v2`, the `int-to-bigint` codemod | planned |
+| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)); validators on a `type` field and on a `model` procedure argument are enforced ([#1156](https://github.com/cratestack/cratestack/issues/1156), fixed by this merge) | **done, merged** (2026-10-09), unreleased |
+| B | `BigInt` end to end: core type and serde on both codecs, SQL, migrate, JSON Schema, MCP, TypeScript and Dart clients, fail-closed policies | **done, merged** (2026-10-09), unreleased. Tests: `cratestack-pg` `bigint_end_to_end`, `bigint_end_to_end_rpc`, `bigint_policies`, `bigint_wire_shapes`; `cratestack-sqlite` `bigint_round_trip` |
+| B13 | The generated TypeScript client driven against a real server (JSON and `@cratestack/cbor-node`, `@cratestack/link-batch`, a REST body and query, TanStack and RTK keys) | **pending** (colleague). Until then the TypeScript claim rests on the client-side suites in `crates/cratestack-client-typescript/tests/js` |
+| C | `Int` becomes 32-bit: snapshot format 3, digest domains `v2`, the `int-to-bigint` codemod | **pending** (colleague); starts from design §7, "What C inherits from B" |
+| Docs and skills | The `cratestack-docs` pages and `cratestack-skills` entries named in design §4.4 | **pending** |
 
 B and C must ship together, or a hand edit from `Int` to `BigInt` would be a
 `Lossy` `ALTER` to the same type. A is technically independent and rides the
-same release.
+same release. Until C lands, `Int` is still an `i64`, and the `## Unreleased`
+entry for B says so.
+
+#### Follow-ups for the colleague
+
+Found while building A and B. Each is verified or marked as a decision; none is
+fixed by the merge unless it says so.
+
+Policies (`!=`, `not in` and `@deny` now fail closed for `BigInt`; these are the
+edges that remain):
+
+- **String-claim coercion in policies.** A string auth claim in a numeric
+  comparison denies today. Accepting a canonical `BigInt` string needs the
+  predicate to carry the column type. `@default(auth().x)` already accepts it.
+- **Unify nullable-column `FieldNeAuth` semantics before C.** A `NULL`
+  `Int?`, `Boolean?` or `String?` column against a claim satisfies a create-path
+  `!=` while SQL denies. `NullBigInt` is stricter, so the codemod would change
+  outcomes.
+- **Null-valued `Float`, `DateTime`, `Decimal`, `Json`, `Bytes` and `Uuid`
+  procedure arguments in policies** reach the evaluator as `Null` and still pass
+  `!=` (in procedure policies only an integer against a string is undecidable).
+  An issue is being filed.
+- **An absent or unbindable auth claim** (null, float, bytes, list, map) makes a
+  column comparison `FALSE` on create, read, update and delete, so
+  `@deny(owner != auth().accountId)` stays silent for a caller whose claim is
+  null or a float. A `NULL` `Bool` column under `FieldIsTrue` is the same family.
+  Pre-existing; a decision. Changing it is one coordinated change in
+  `crates/cratestack-sqlx/src/query/support/policy_predicate.rs`,
+  `render/policy_predicate.rs` and `query/support/create.rs`.
+
+Found by the end-to-end tests, both pre-existing and not `BigInt` bugs:
+
+- **The migrate emitter copies `@default(auth().x)` into the column as
+  `DEFAULT auth().x`**, which is invalid SQL (SQLSTATE 42601), for any scalar.
+  It should skip auth-derived defaults.
+- **A foreign-key violation (SQLSTATE 23503) is not mapped to a 4xx.** It answers
+  `500`, for an `Int` key as much as a `BigInt` one.
+
+TypeScript:
+
+- `packages/cratestack-adapter-rtk` still declares `@reduxjs/toolkit` `^2.0.0`;
+  the generated clients now require `^2.2.7`.
+- `just verify-typescript-floors` does not exercise RTK, so the new floor is
+  pinned only by `tests/bigint_query_keys.rs`.
+- Refine: `withRefineId` (`packages/cratestack-refine/src/index.ts:58-65`) casts a
+  record's key to `BaseKey`, and a `BigInt` id is a revived `bigint`. It works at
+  runtime; returning `String(id)` for a `bigint` is the type-correct option.
+
+Filed, pre-existing, not caused by `BigInt` (open):
+
+- [#1153](https://github.com/cratestack/cratestack/issues/1153): the CBOR codec
+  ignores bytes after the first item, where the JSON codec refuses them.
+- [#1154](https://github.com/cratestack/cratestack/issues/1154): `generate-typescript
+  --swr` uses `<Model>ComputedParams` in `*.hooks.ts` without importing it.
+- [#1155](https://github.com/cratestack/cratestack/issues/1155): the generated
+  TypeScript client leaves `Decimal[]` fields as strings at runtime.
+
+Build and CI:
+
+- **`cratestack-core`'s `rusqlite` feature** is enabled by `cratestack-rusqlite`
+  but nothing on the embedded path needs it; only that crate's unit tests do
+  (ADR 0019, Amendment). Keep it for hand-written rusqlite code or remove it.
+- `just verify-dart` generates the `bigint_scalar` and `bigint_scalar_rpc`
+  fixtures in the default preset only. The Riverpod preset's pinned
+  `riverpod_generator` does not solve on every Flutter channel, so the BigInt
+  Riverpod legs run in `cargo test -p cratestack-client-dart --test bigint_round_trip`
+  (with `CRATESTACK_RELAX_RIVERPOD_PINS=1` where needed), not in that recipe.
+- Human-test issues: #1159 (Flutter devices and web), #1160 (TypeScript in browsers), #1161 (downstream upgrades), #1162 (Studio UI), #1163 (VS Code), #1164 (MCP with a real AI client), #1165 (live WireMock)
 
 Ruled out in the ADR, so it isn't proposed again:
 

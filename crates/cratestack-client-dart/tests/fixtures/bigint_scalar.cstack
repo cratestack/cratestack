@@ -1,0 +1,53 @@
+// Dedicated BigInt-scalar fixture (ADR 0019, PR B). The Dart counterpart of
+// `decimal_scalar.cstack`, plus the places a `BigInt` can sit that a
+// `Decimal` cannot: a primary key, and a bare procedure argument and return.
+//
+// `Ledger.id` is a `BigInt @id` so the RPC `get`/`update`/`delete` methods
+// have to put a `BigInt` on the wire as its canonical string, and the REST
+// ones interpolate it into the path. `Account.balanceE8` is required and
+// `Account.limitE8` optional, so both the strict and the null-tolerant decode
+// forms are generated. `Account.ledger` is the relation-embedded case:
+// `Account.fromWire` must decode a `BigInt` nested inside another model.
+// `Report` is a `type`, the shape a procedure returns, with a `BigInt[]` and
+// an optional `BigInt`. `BalanceParams` is a `@computed` params type holding a
+// `BigInt`, which `AccountComputedParams` compares and hashes through
+// `jsonEncode(toWire())`, so `toWire` has to hand it strings. `Amount` and
+// `echoAmount` give a request and a response whose CBOR is exactly
+// `{"amountE8": "<decimal>"}`, the shape the cross-language fixtures pin.
+
+model Ledger {
+  id BigInt @id
+  openingE8 BigInt
+
+  @@allow("list", true)
+}
+
+model Account {
+  id Cuid @id @default(cs_cuid())
+  holder String
+  balanceE8 BigInt
+  limitE8 BigInt?
+  ledgerId BigInt
+  ledger Ledger @relation(fields:[ledgerId],references:[id])
+  summary String @computed(params: BalanceParams?)
+
+  @@allow("list", true)
+}
+
+type BalanceParams {
+  floorE8 BigInt?
+}
+
+type Amount {
+  amountE8 BigInt
+}
+
+type Report {
+  totalE8 BigInt
+  perAccountE8 BigInt[]
+  maxE8 BigInt?
+}
+
+procedure report(since: BigInt): Report
+procedure bump(by: BigInt): BigInt
+mutation procedure echoAmount(amountE8: BigInt): Amount

@@ -1,5 +1,5 @@
-// `contract_roundtrip_default_old.cstack` after the refused edit: `Paint`
-// gains `level Int @default(1)`.
+// `contract_roundtrip_required_old.cstack` after the refused edit: `Paint`
+// gains the required field `level`.
 
 transport rpc
 
@@ -9,7 +9,7 @@ datasource db {
 
 type Paint {
   size Int
-  level Int @default(1)
+  level Int
 }
 
 type Reply {

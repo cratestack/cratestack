@@ -36,6 +36,10 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/readme/decimal.md.j2"),
     ),
     (
+        "readme/bigint.md.j2",
+        include_str!("../templates/readme/bigint.md.j2"),
+    ),
+    (
         "rpc_runtime/types.dart.j2",
         include_str!("../templates/rpc_runtime/types.dart.j2"),
     ),

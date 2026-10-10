@@ -1,3 +1,10 @@
+{#- RTK Query's tag `id` is `string | number`, so the key of a `BigInt` model
+    (a `bigint`, ADR 0019) is tagged by its canonical decimal string, the form
+    it has on the wire. Every tag of a model goes through here, so what a query
+    provides is exactly what a mutation invalidates. -#}
+{% macro tag_id(model, id_expr) -%}
+{% if model.primary_key_type == "bigint" %}{{ id_expr }}.toString(){% else %}{{ id_expr }}{% endif %}
+{%- endmacro -%}
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { {{ client_class_name }} } from "./client.js";
 import { CratestackHttpError } from "./runtime.js";
@@ -46,6 +53,30 @@ function toRtkRestError(error: unknown): RtkRestQueryError {
  * convention, and every `procedure`'s tags are exactly the models its own
  * `args`/return type reference (`crate::rtk::touch::touched_model_names`
  * at generation time) — never hand-written.
+ *
+ * **`BigInt` fields (ADR 0019)** are `bigint`s, so an id or a procedure
+ * argument can be one. RTK Query's default `serializeQueryArgs` writes a
+ * `bigint` argument as `{ "$bigint": "<digits>" }` (since `@reduxjs/toolkit`
+ * 2.2.4; this package's floor is 2.2.7, the first release whose types this
+ * file can emit declarations against), so two different values are two cache
+ * entries and the same value is one. RTK Query tags carry a
+ * `string | number` id, so a model with a `BigInt` key is tagged by the
+ * decimal string of the key, on the query that provides the tag and on the
+ * mutation that invalidates it alike.
+ *
+ * RTK's development-only serializability check does not know `bigint` and
+ * logs it, once per argument and per revived field, in the store that holds
+ * this api. Tell it:
+ *
+ *     configureStore({
+ *       reducer: { [api.reducerPath]: api.reducer },
+ *       middleware: (getDefault) =>
+ *         getDefault({
+ *           serializableCheck: { isSerializable: (value) => typeof value === "bigint" || isPlain(value) },
+ *         }).concat(api.middleware),
+ *     });
+ *
+ * (`isPlain` is exported by `@reduxjs/toolkit`.)
  */
 export function createCratestackRtkApi(
   client: {{ client_class_name }},
@@ -83,7 +114,11 @@ export function createCratestackRtkApi(
                 // useful for at all.
                 ...({% if model.is_paged %}result.items{% else %}result{% endif %}).map((item) => ({
                   type: "{{ model.name }}" as const,
+{% if model.primary_key_type == "bigint" %}
+                  id: item.{{ model.primary_key_name }}?.toString() as string,
+{% else %}
                   id: item.{{ model.primary_key_name }} as {{ model.primary_key_type }},
+{% endif %}
                 })),
                 { type: "{{ model.name }}" as const, id: "LIST" },
               ]
@@ -99,7 +134,7 @@ export function createCratestackRtkApi(
             return { error: toRtkRestError(error) };
           }
         },
-        providesTags: (_result, _error, id) => [{ type: "{{ model.name }}" as const, id }],
+        providesTags: (_result, _error, id) => [{ type: "{{ model.name }}" as const, id: {{ tag_id(model, "id") }} }],
       }),
 {% endif %}
 {% if model.allows_create %}
@@ -124,7 +159,7 @@ export function createCratestackRtkApi(
           }
         },
         invalidatesTags: (_result, _error, arg) => [
-          { type: "{{ model.name }}" as const, id: arg.id },
+          { type: "{{ model.name }}" as const, id: {{ tag_id(model, "arg.id") }} },
           { type: "{{ model.name }}" as const, id: "LIST" },
         ],
       }),
@@ -139,7 +174,7 @@ export function createCratestackRtkApi(
           }
         },
         invalidatesTags: (_result, _error, arg) => [
-          { type: "{{ model.name }}" as const, id: arg.id },
+          { type: "{{ model.name }}" as const, id: {{ tag_id(model, "arg.id") }} },
           { type: "{{ model.name }}" as const, id: "LIST" },
         ],
       }),

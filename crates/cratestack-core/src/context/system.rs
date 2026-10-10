@@ -22,7 +22,7 @@
 //! Fail-closed follows from the *policy* side, not from this type:
 //! `is_system()` only ever *satisfies a predicate a schema wrote down*
 //! (`ReadPredicate::AuthIsSystem`, matched in
-//! `cratestack_sqlx::query::support::create::evaluate_input_predicate`,
+//! `cratestack_sqlx::query::support::create::evaluate_input_truth`,
 //! `query::support::policy_predicate::push_policy_predicate`, and
 //! `render::policy_predicate::render_policy_predicate`). A model that
 //! never names `auth().isSystem()` in an `@@allow` clause never emits

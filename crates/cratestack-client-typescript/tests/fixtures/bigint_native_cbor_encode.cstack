@@ -1,0 +1,36 @@
+// ADR 0019: the fixture `tests/native_cbor_bigint_encode.rs` runs against the
+// REAL, published `@cratestack/cbor`. RPC transport, so the generated runtime
+// resolves the native codec by default.
+//
+// `@cratestack/cbor` takes a JS `bigint` without complaint and writes a CBOR
+// *integer* (RAN: `9223372036854775807n` encodes as `1b7fffffffffffffff`),
+// which a server refuses for a `BigInt` field, so a missed conversion is not
+// a throw but a request that is silently the wrong type. Hence a real codec
+// and not a stub, as in `decimal_native_cbor_encode.cstack`.
+//
+// Needs, from one schema: a `BigInt` model field (required, optional, list),
+// a `BigInt @id` (`get(id: bigint)`), and a procedure with a `BigInt`
+// argument and a bare `BigInt` return.
+
+transport rpc
+
+model Ledger {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountE8 BigInt
+  feeE8 BigInt?
+  tiers BigInt[]
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@allow("update", true)
+}
+
+model Counter {
+  id BigInt @id
+  hitsE8 BigInt
+
+  @@allow("read", true)
+}
+
+procedure scale(amountE8: BigInt, factorE8: BigInt?): BigInt

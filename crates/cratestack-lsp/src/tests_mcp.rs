@@ -46,7 +46,7 @@ fn uri() -> Uri {
 
 #[test]
 fn completion_offers_the_mcp_attributes_and_expose_key_with_detail() {
-    let items = completion_items(None);
+    let items = completion_items(None, None);
     for label in [
         "@mcp",
         "@@mcp",
@@ -134,7 +134,7 @@ fn mcp_syntax_errors_are_reported_as_diagnostics() {
 /// the broken rule.
 #[test]
 fn the_mcp_name_is_hinted_and_checked_as_a_dns_label() {
-    let items = completion_items(None);
+    let items = completion_items(None, None);
     let name = items.iter().find(|item| item.label == "name = \"...\"");
     let detail = name.and_then(|item| item.detail.as_deref()).unwrap_or("");
     assert!(detail.contains("a DNS label"), "{detail}");

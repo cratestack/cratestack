@@ -73,7 +73,7 @@ fn is_system_grants_a_system_context_caller() {
 #[test]
 fn is_system_denies_a_request_derived_caller() {
     let sql = render(&allow(owner_or_system()), &user_ctx("subject-1"));
-    assert_eq!(sql, "((FALSE OR subject_id = $1))");
+    assert_eq!(sql, "((FALSE OR subject_id = $1::text))");
 
     // Anonymous callers get neither arm.
     let sql = render(&allow(owner_or_system()), &CratestackContext::anonymous());
@@ -105,7 +105,7 @@ fn model_that_never_names_is_system_denies_system_callers() {
     // FALSE above is the policy denying the system caller, not the
     // policy being broken outright.
     let sql = render(&owner_only, &user_ctx("subject-1"));
-    assert_eq!(sql, "(subject_id = $1)");
+    assert_eq!(sql, "(subject_id = $1::text)");
 }
 
 /// The other fail-closed direction: a model with *no* policy for an

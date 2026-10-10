@@ -28,7 +28,7 @@ pub(crate) struct ProcedureView {
     pub(crate) query_key: String,
     pub(crate) mutation_key: String,
     /// `"scalar"` when the return type is a bare revivable scalar —
-    /// `Decimal` or `Bytes`, at any arity. The decoded value is a raw
+    /// `Decimal`, `BigInt` or `Bytes`, at any arity. The decoded value is a raw
     /// string / integer array (or an array of them, or null), not an
     /// object, so the generated call site uses `reviveWireScalar` instead
     /// of `reviveWireFields`. `"shape"` for every other return type
@@ -40,7 +40,7 @@ pub(crate) struct ProcedureView {
     pub(crate) revival_kind: &'static str,
     /// Only meaningful when `revival_kind == "scalar"` — which scalar
     /// revival the generated `reviveWireScalar(value, "...")` call asks
-    /// for (`"decimal"`, `"bytes"`, or `"bytesList"`). Empty string for
+    /// for (`"decimal"`, `"bigint"`, `"bytes"`, or `"bytesList"`). Empty string for
     /// `"shape"`. See `crate::wire_shapes::ScalarRevival`, whose string
     /// forms are a contract with `models.ts.j2`'s runtime.
     pub(crate) revival_scalar_kind: &'static str,

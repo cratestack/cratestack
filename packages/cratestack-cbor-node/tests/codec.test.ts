@@ -88,6 +88,80 @@ describe("cross-language fixtures (byte-identical to the Rust CborCodec)", () =>
   });
 });
 
+describe("BigInt text-string fixtures (ADR 0019 D2)", () => {
+  // A `BigInt` travels as a CBOR text string (major type 3) holding the
+  // canonical decimal form, so this bridge needs no BigInt knowledge: a
+  // text string is just a string. `hex` is the exact CBOR of
+  // `{"amountE8": "<decimal>"}`, computed by hand from RFC 8949 (`a1` map
+  // of one pair, `68` + the 8-byte key, then `0x60 | len` + the ASCII
+  // digits) and cross-checked with an independent encoder. The same five
+  // hex strings are asserted byte-identical in `cratestack-cbor-napi`'s
+  // `lib.rs`, `cratestack-cbor-wasm`'s `value_bridge.rs`,
+  // `cratestack-client-flutter`'s `cbor/mod.rs` and
+  // `dart/verify_round_trip.dart`, `cratestack_cbor`'s
+  // `test/shared_fixtures.dart`, and the `@cratestack/cbor-web` and
+  // `@cratestack/cbor` suites.
+  const BIGINT_FIXTURES: ReadonlyArray<{ decimal: string; value: bigint; hex: string }> = [
+    {
+      decimal: "9223372036854775807",
+      value: 9223372036854775807n,
+      hex: "a168616d6f756e7445387339323233333732303336383534373735383037",
+    },
+    {
+      decimal: "-9223372036854775808",
+      value: -9223372036854775808n,
+      hex: "a168616d6f756e744538742d39323233333732303336383534373735383038",
+    },
+    {
+      decimal: "9007199254740993",
+      value: 9007199254740993n,
+      hex: "a168616d6f756e7445387039303037313939323534373430393933",
+    },
+    { decimal: "0", value: 0n, hex: "a168616d6f756e7445386130" },
+    { decimal: "-1", value: -1n, hex: "a168616d6f756e744538622d31" },
+  ];
+
+  it.each(BIGINT_FIXTURES)("encodes $decimal as a major type 3 text string", ({ decimal, hex }) => {
+    const bytes = cborCodec.encode({ amountE8: decimal }) as Uint8Array;
+    expect(bytesToHex(bytes)).toBe(hex);
+    // Index 10 is the value header after `a1` and the `68` + 8-byte key;
+    // its top three bits are the major type (3 = text, never 0/1 = int).
+    expect((bytes[10] ?? 0) >> 5).toBe(3);
+  });
+
+  it.each(BIGINT_FIXTURES)(
+    "decodes $decimal back to the exact string, losslessly as a bigint",
+    ({ decimal, value, hex }) => {
+      const decoded = cborCodec.decode(hexToBytes(hex)) as { amountE8: unknown };
+      expect(decoded).toEqual({ amountE8: decimal });
+      expect(typeof decoded.amountE8).toBe("string");
+      // The point of the text string: nothing was squeezed through a
+      // double on the way, so the string parses to the exact bigint.
+      expect(BigInt(decoded.amountE8 as string)).toBe(value);
+    },
+  );
+
+  it("round-trips every boundary value through encode then decode", () => {
+    for (const { decimal } of BIGINT_FIXTURES) {
+      const input = { amountE8: decimal };
+      expect(cborCodec.decode(cborCodec.encode(input) as Uint8Array)).toEqual(input);
+    }
+  });
+
+  it("keeps a number and a numeric string distinct on the wire", () => {
+    // The same digits as a number are a CBOR integer (major type 0) and
+    // come back as a number, never as the text string: the Rust codec can
+    // therefore refuse a number at a `BigInt` key, instead of this bridge
+    // guessing which one the caller meant.
+    const asNumber = cborCodec.encode({ amountE8: 1 }) as Uint8Array;
+    const asString = cborCodec.encode({ amountE8: "1" }) as Uint8Array;
+    expect(bytesToHex(asNumber)).toBe("a168616d6f756e74453801");
+    expect(bytesToHex(asString)).toBe("a168616d6f756e7445386131");
+    expect(cborCodec.decode(asNumber)).toEqual({ amountE8: 1 });
+    expect(cborCodec.decode(asString)).toEqual({ amountE8: "1" });
+  });
+});
+
 describe("binary data (cratestack#783)", () => {
   // `@cratestack/cbor` used to serialise a `Uint8Array` as a CBOR *map*
   // of index→value — `a8 6130 01 6131 02 …` — which no generated Rust

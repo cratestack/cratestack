@@ -38,6 +38,10 @@ model Post {
   status PostStatus
   published Boolean
   authorId Int
+  // ADR 0019: a `BigInt` field, so `just verify-dart` generates, analyzes and
+  // (riverpod) builds one in the richer fixtures too, under the default and the
+  // riverpod preset. Dart type `BigInt`, wire form a canonical decimal string.
+  viewCount BigInt
   author Author @relation(fields:[authorId],references:[id])
 
   @@allow("read", published || authorId == auth().id)

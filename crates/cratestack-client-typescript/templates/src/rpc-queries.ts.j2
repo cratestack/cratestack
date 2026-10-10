@@ -76,6 +76,20 @@ export interface CratestackRpcListQuery<TComputedParams = never> {
   computedParams?: TComputedParams;
 }
 
+/** `computedParams` as `RpcListInput::computed_params` carries it: the raw
+ *  JSON-object TEXT of the params. Every `computedParams` call site (`list`,
+ *  `get`, the `swr` layout's `get`) goes through here so none of them can
+ *  hand `JSON.stringify` a `bigint` (a `BigInt` field in the params `type`),
+ *  which throws "Do not know how to serialize a BigInt". The replacer turns
+ *  one into its canonical decimal string, the wire form of a `BigInt`.
+ *
+ *  A replacer and not `encodeBinaryAsJson`, on purpose: this file has no
+ *  imports, so it loads (and `toRpcListInput` runs) without `models.ts` and
+ *  its `decimal.js`. A `Decimal` needs no help, its `toJSON` runs first. */
+export function encodeComputedParams(params: unknown): string {
+  return JSON.stringify(params, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
+}
+
 /** Builds the exact object shape `RpcListInput` expects on the wire.
  *  Omits every unset/empty field, mirroring `RpcListInput`'s
  *  `skip_serializing_if` attributes so an empty query serializes the same
@@ -116,7 +130,7 @@ export function toRpcListInput<TComputedParams = never>(
     input.filters = query.filters;
   }
   if (query.computedParams && Object.keys(query.computedParams as Record<string, unknown>).length > 0) {
-    input.computedParams = JSON.stringify(query.computedParams);
+    input.computedParams = encodeComputedParams(query.computedParams);
   }
 
   return input;

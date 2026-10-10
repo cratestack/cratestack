@@ -222,6 +222,104 @@ fn composes_with_every_other_flag_in_every_combination() {
     }
 }
 
+/// ADR 0019: RTK Query builds a cache key from a `bigint` argument with its
+/// default `serializeQueryArgs`, which throws on one before `@reduxjs/toolkit`
+/// 2.2.4 (reduxjs/redux-toolkit@ae838b4c, first in `v2.2.4`), and the generated
+/// `rtk-api.ts` only emits declarations from 2.2.7 (TS2527 before it). The
+/// runtime proof re-pins the toolkit to the floor declared here, builds the
+/// package and runs it (`tests/bigint_query_keys.rs`).
+#[test]
+fn the_toolkit_floor_serializes_a_bigint_argument_and_builds_the_generated_api() {
+    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
+        let package = generate(
+            fixture,
+            Flags {
+                rtk: true,
+                ..Flags::default()
+            },
+        );
+        let package_json = file(&package, "package.json");
+        assert_eq!(
+            package_json
+                .matches("\"@reduxjs/toolkit\": \"^2.2.7\"")
+                .count(),
+            2,
+            "{fixture}: expected @reduxjs/toolkit ^2.2.7 in both peerDependencies and \
+             devDependencies:\n{package_json}"
+        );
+        assert!(
+            !package_json.contains("\"@reduxjs/toolkit\": \"^2.0.0\""),
+            "{fixture}: the pre-2.2.7 floor throws on a bigint argument or cannot build rtk-api.ts:\n{package_json}"
+        );
+    }
+}
+
+/// RTK tag ids are `string | number`, so a `bigint` key is tagged by its decimal
+/// string, and the query that provides a tag and the mutation that invalidates
+/// it must agree. `tsc` over the generated package (`tests/bigint_query_keys.rs`)
+/// is what fails without this; the text pins it without Node.
+#[test]
+fn a_bigint_key_is_tagged_by_its_decimal_string_and_other_keys_are_untouched() {
+    for rpc in [false, true] {
+        let source = std::fs::read_to_string("tests/fixtures/bigint_query_keys.cstack")
+            .expect("read the fixture");
+        let source = if rpc {
+            source.replacen("model Counter {", "transport rpc\n\nmodel Counter {", 1)
+        } else {
+            source
+        };
+        let schema = cratestack_parser::parse_schema(&source).expect("fixture should parse");
+        let package = generate_package(
+            &schema,
+            &TypeScriptGeneratorConfig {
+                package_name: "bigint-rtk-fixture-client".to_owned(),
+                rtk: true,
+                ..TypeScriptGeneratorConfig::default()
+            },
+        )
+        .expect("--rtk should render");
+        let rtk_api = file(&package, "src/rtk-api.ts");
+
+        for needle in [
+            "id: item.id?.toString() as string,",
+            "[{ type: \"Counter\" as const, id: id.toString() }]",
+            "{ type: \"Counter\" as const, id: arg.id.toString() },",
+            // `Ledger` has a `Cuid` key: its tags are exactly what they were.
+            "id: item.id as string,",
+            "[{ type: \"Ledger\" as const, id: id }]",
+            "{ type: \"Ledger\" as const, id: arg.id },",
+        ] {
+            assert!(
+                rtk_api.contains(needle),
+                "rpc={rpc}: expected `{needle}` in the generated rtk-api.ts:\n{rtk_api}"
+            );
+        }
+        assert_eq!(
+            rtk_api.matches("arg.id.toString()").count(),
+            2,
+            "rpc={rpc}: update and delete both invalidate the stringified tag:\n{rtk_api}"
+        );
+        assert!(
+            rtk_api.contains("isPlain(value)") && rtk_api.contains("$bigint"),
+            "rpc={rpc}: the serializability-check guidance for bigint arguments is documented:\n{rtk_api}"
+        );
+    }
+
+    // An `Int` key is a `number` and keeps its raw tag id.
+    let package = generate(
+        REST_FIXTURE,
+        Flags {
+            rtk: true,
+            ..Flags::default()
+        },
+    );
+    let rtk_api = file(&package, "src/rtk-api.ts");
+    assert!(
+        !rtk_api.contains(".toString()"),
+        "an Int key must not be stringified:\n{rtk_api}"
+    );
+}
+
 #[derive(Default)]
 struct Flags {
     swr: bool,

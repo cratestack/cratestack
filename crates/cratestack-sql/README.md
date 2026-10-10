@@ -23,6 +23,7 @@ cratestack-sql = "0.7"
 pub enum SqlValue {
     Bool(bool),
     Int(i64),
+    BigInt(i64),        // ADR 0019: INT8 on Postgres, an INTEGER on SQLite
     Float(f64),
     String(String),
     Bytes(Vec<u8>),
@@ -30,7 +31,7 @@ pub enum SqlValue {
     DateTime(chrono::DateTime<chrono::Utc>),
     Json(cratestack_core::Value),
     Decimal(cratestack_core::Decimal),
-    NullBool, NullInt, NullFloat, NullString,
+    NullBool, NullInt, NullBigInt, NullFloat, NullString,
     NullBytes, NullUuid, NullDateTime, NullJson, NullDecimal,
 }
 ```

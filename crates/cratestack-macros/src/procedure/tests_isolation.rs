@@ -7,6 +7,7 @@
 //! and a procedure without the attribute generates exactly what it did.
 
 use super::{generate_procedure_module, generate_procedure_registry_method};
+use crate::validators::Validating;
 
 const SCHEMA: &str = r#"
 datasource db {
@@ -38,6 +39,7 @@ fn module_tokens(procedure: &cratestack_core::Procedure) -> String {
         &schema.types,
         &Default::default(),
         None,
+        &Validating::none(),
     )
     .unwrap()
     .to_string()
@@ -73,9 +75,11 @@ fn isolated_module_runs_authorization_and_body_in_the_declared_transaction() {
     );
     assert!(isolated.contains("run_isolated (ISOLATION ,"), "{isolated}");
     // Authorization happens inside the attempt, against the bound handle.
+    // Validation does not: it ran once before the transaction began
+    // (`tests_validation`), so a retried attempt does not repeat it.
     let run = isolated.find("run_isolated").unwrap();
     let authorize = isolated
-        .rfind("authorize_with_db (& tx_db . inner")
+        .rfind("authorize_validated_with_db (& tx_db . inner")
         .unwrap();
     assert!(authorize > run, "{isolated}");
 

@@ -145,6 +145,11 @@ fn synthesize_base(
         "Cuid" => Ok(json!("clxxxxxxxxxxxxxxxxxxxxxxxx")),
         "Uuid" => Ok(json!("00000000-0000-0000-0000-000000000000")),
         "Int" => Ok(json!(0)),
+        // A `BigInt` is a canonical decimal string on the wire (ADR 0019),
+        // never a JSON number: the generated clients throw on a number at
+        // a `BigInt` key. An unsupported arm here would not fall through
+        // quietly, `synthesize_named_reference` reports `UnknownType`.
+        "BigInt" => Ok(json!("0")),
         "Float" => Ok(json!(0.0)),
         "Boolean" => Ok(json!(true)),
         // Matches `wire_encode.rs`'s `DateTime` -> `toIso8601String()`

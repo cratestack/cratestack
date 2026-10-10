@@ -52,7 +52,7 @@ pub(crate) fn create_body(plan: &ModelFieldPlan) -> String {
         pairs.push((field.name.clone(), value));
     }
     if let Some(version_name) = &plan.version_name {
-        pairs.push((version_name.clone(), "0".to_owned()));
+        pairs.push((version_name.clone(), quote_wrap(plan.version_kind, "0")));
     }
     pairs.extend(frozen_pairs(plan));
     assemble_object(&pairs)
@@ -84,7 +84,10 @@ pub(crate) fn read_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
         pairs.push((field.name.clone(), value));
     }
     if let Some(version_name) = &plan.version_name {
-        pairs.push((version_name.clone(), read_state(version_name, context_expr)));
+        pairs.push((
+            version_name.clone(),
+            quote_wrap(plan.version_kind, &read_state(version_name, context_expr)),
+        ));
     }
     pairs.extend(frozen_pairs(plan));
     assemble_object(&pairs)
@@ -116,7 +119,7 @@ pub(crate) fn update_body(plan: &ModelFieldPlan, context_expr: &str) -> String {
     if let Some(version_name) = &plan.version_name {
         pairs.push((
             version_name.clone(),
-            version_bump(version_name, context_expr),
+            quote_wrap(plan.version_kind, &version_bump(version_name, context_expr)),
         ));
     }
     pairs.extend(frozen_pairs(plan));

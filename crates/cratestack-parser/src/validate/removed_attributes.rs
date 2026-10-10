@@ -1,48 +1,40 @@
-//! Rejection, by name, of field attributes that must never be inert:
+//! Specific explanations for field attributes that must never be inert:
 //! attributes the language used to accept and no longer does, and
 //! attributes that read as access control but were never wired up at field
 //! position in the first place.
 //!
 //! `.cstack` attributes parse generically into an opaque
-//! `Attribute { raw, span }` (see `crate::parse::fields`), and there is no
-//! blanket "unknown attribute" rejection pass — an unrecognised attribute is
-//! simply inert. That default is fine for an attribute that never existed,
-//! but it is the wrong answer here:
+//! `Attribute { raw, span }` (see `crate::parse::fields`). Since ADR 0019 D5
+//! every field attribute outside its kind's list is refused by
+//! `super::field_attributes` (`super::field_attribute_tables`), so none of
+//! these could pass silently any more. They are still named here, and run
+//! first, because the generic "unsupported attribute" would not say what to
+//! do instead:
 //!
-//! - a schema carrying `@pb(3)` from before 0.8.5 would keep parsing after
-//!   the 0.8.5 protobuf removal while silently meaning nothing, and the
-//!   author would get no signal that the pins they wrote are now dead text.
+//! - a schema carrying `@pb(3)` from before 0.8.5 has pins that are dead
+//!   text since the 0.8.5 protobuf removal; the author needs to be told that
+//!   is why, not only that the name is unknown.
 //! - `@allow(...)` / `@deny(...)` at field position parse and look exactly
 //!   like the real, supported policy attributes of the same name at
 //!   *procedure* position (`cratestack-macros/src/policy/procedure.rs`) and
 //!   *model/view* position as `@@allow`/`@@deny` (double-`@`,
 //!   `cratestack-macros/src/policy/model.rs`) — but no codegen reads a
 //!   single-`@` `@allow`/`@deny` off a *field*. A schema author reading
-//!   `bucket String @allow(auth().role == "system")` gets `schema OK` and
-//!   reasonably believes the field is access-controlled; it is not
-//!   (cratestack#679). Field-level read policy isn't implemented, so the
-//!   only honest outcome is a loud parse error naming the real
-//!   alternatives, not silent acceptance.
+//!   `bucket String @allow(auth().role == "system")` reasonably believes the
+//!   field is access-controlled; it is not (cratestack#679). Field-level read
+//!   policy isn't implemented, so the message names the real alternatives.
 //!
-//! So both classes are rejected by name, individually, here. This is
-//! deliberately not a generic unknown-attribute pass: adding one would
-//! change the behaviour of every attribute the validators intentionally
-//! ignore today, which is a far larger and unrelated language change (see
-//! cratestack#679's discussion — that issue's typo-class half, e.g.
-//! `@raedonly` silently dropping `@readonly`, is intentionally NOT addressed
-//! by this module).
+//! The names are also offered as suggestions for a typo, so `@alow` is
+//! pointed at `@allow` and then gets this explanation.
 //!
 //! **When adding an entry to [`REJECTED_FIELD_ATTRIBUTES`], check every call
-//! site.** Because this is opt-in per declaration kind rather than a single
-//! central pass, a missed call site fails *silently* — the attribute goes
-//! back to being inert, which is the exact bug this module exists to
-//! prevent. There are five, one per field-bearing declaration: `model` and
-//! `view` (`validate::models`, `validate::views`), and `mixin`, `type`, and
-//! the `auth` block (all three in `validate::mixins_types`). Enum variants
-//! are not one: `cratestack_core::EnumVariant` carries no attributes.
+//! site.** There is one, `super::field_attributes::validate_field_attributes`,
+//! which every field-bearing declaration goes through: `model` and `view`
+//! (`validate::models`, `validate::views`), and `mixin`, `type`, and the
+//! `auth` block (all three in `validate::mixins_types`). Enum variants are
+//! not one: `cratestack_core::EnumVariant` carries no attributes.
 //! `tests_field_attrs::pb_field_attribute_is_rejected_on_every_field_bearing_declaration`
-//! and its `@allow`/`@deny` counterparts cover all five and are the guard
-//! against a sixth being added without a matching call.
+//! and its `@allow`/`@deny` counterparts cover all five.
 
 use cratestack_core::Field;
 
@@ -84,6 +76,11 @@ const REJECTED_FIELD_ATTRIBUTES: &[(&str, &str)] = &[
          inputs or out of client responses",
     ),
 ];
+
+/// The removed names, sigil included (`@pb`).
+pub(super) fn rejected_field_attribute_names() -> impl Iterator<Item = &'static str> {
+    REJECTED_FIELD_ATTRIBUTES.iter().map(|(name, _)| *name)
+}
 
 pub(super) fn validate_removed_field_attributes(
     owner_kind: &str,

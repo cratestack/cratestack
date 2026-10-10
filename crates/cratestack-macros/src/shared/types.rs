@@ -1,16 +1,18 @@
 //! Rust-type token generation + scalar parser tokens used by route
 //! handlers when decoding query parameters.
 
-use std::collections::BTreeSet;
-
 use cratestack_core::{Field, TypeArity, TypeRef};
 use quote::quote;
 
-use super::enum_query_parser::query_enum_parser_tokens;
 use super::{doc_attrs, ident};
 
+mod query_parsers;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_bigint;
+
+pub(crate) use query_parsers::{query_scalar_list_parser_tokens, query_scalar_parser_tokens};
 
 pub(crate) fn rust_type_tokens(type_ref: &TypeRef) -> proc_macro2::TokenStream {
     rust_type_tokens_with_scope(type_ref, true)
@@ -32,6 +34,11 @@ pub(crate) fn rust_type_tokens_with_scope(
         "String" => quote! { String },
         "Cuid" => quote! { String },
         "Int" => quote! { i64 },
+        // ADR 0019: a `Copy` newtype over `i64` that travels as a canonical
+        // decimal string. Named in full (`::cratestack::BigInt`) because the
+        // facades re-export `cratestack-core`, and so the generated code
+        // never depends on what the consumer has imported.
+        "BigInt" => quote! { ::cratestack::BigInt },
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
@@ -111,86 +118,4 @@ pub(crate) fn field_definition(
         #serde_attr
         pub #field_ident: #field_type,
     }
-}
-
-pub(crate) fn query_scalar_parser_tokens(
-    ty: &TypeRef,
-    value_expr: proc_macro2::TokenStream,
-    field_name: &str,
-    enum_names: &BTreeSet<&str>,
-) -> Option<proc_macro2::TokenStream> {
-    // Issue #928: an enum-typed field is a first-class query-filter
-    // scalar too — checked ahead of the fixed catch-all match below
-    // since `ty.name` is schema-authored and can't collide with one of
-    // the builtin scalar names matched there.
-    if enum_names.contains(ty.name.as_str()) {
-        return Some(query_enum_parser_tokens(ty, value_expr, field_name));
-    }
-
-    Some(match ty.name.as_str() {
-        "String" => quote! { Ok((#value_expr).to_owned()) },
-        "Cuid" => quote! { ::cratestack::parse_cuid(#value_expr) },
-        "Int" => quote! {
-            (#value_expr).parse::<i64>().map_err(|error| {
-                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-            })
-        },
-        "Float" => quote! {
-            (#value_expr).parse::<f64>().map_err(|error| {
-                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-            })
-        },
-        "Boolean" => quote! {
-            (#value_expr).parse::<bool>().map_err(|error| {
-                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-            })
-        },
-        "Uuid" => quote! {
-            (#value_expr).parse::<::cratestack::uuid::Uuid>().map_err(|error| {
-                CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-            })
-        },
-        "DateTime" => quote! {
-            (#value_expr)
-                .parse::<::cratestack::chrono::DateTime<::cratestack::chrono::FixedOffset>>()
-                .map(|value| value.with_timezone(&::cratestack::chrono::Utc))
-                .map_err(|error| {
-                    CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-                })
-        },
-        "Decimal" => {
-            let decimal_ty = crate::shared::decimal_backend::current_decimal_type_tokens();
-            quote! {
-                (#value_expr).parse::<#decimal_ty>().map_err(|error| {
-                    CratestackError::BadRequest(format!("invalid value '{}' for {}: {error}", #value_expr, #field_name))
-                })
-            }
-        }
-        _ => return None,
-    })
-}
-
-pub(crate) fn query_scalar_list_parser_tokens(
-    ty: &TypeRef,
-    field_name: &str,
-    enum_names: &BTreeSet<&str>,
-) -> Option<proc_macro2::TokenStream> {
-    let scalar_parser =
-        query_scalar_parser_tokens(ty, quote! { raw_value }, field_name, enum_names)?;
-
-    Some(quote! {{
-        let parsed = value
-            .split(',')
-            .map(str::trim)
-            .filter(|raw_value| !raw_value.is_empty())
-            .map(|raw_value| -> Result<_, CratestackError> { #scalar_parser })
-            .collect::<Result<Vec<_>, CratestackError>>()?;
-        if parsed.is_empty() {
-            return Err(CratestackError::BadRequest(format!(
-                "{}__in requires at least one value",
-                #field_name,
-            )));
-        }
-        parsed
-    }})
 }

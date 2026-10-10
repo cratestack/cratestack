@@ -28,9 +28,10 @@ pub(super) fn collect_create_defaults(
             let kind = match field.ty.name.as_str() {
                 "String" | "Cuid" => Ok(quote! { ::cratestack::CreateDefaultType::String }),
                 "Int" => Ok(quote! { ::cratestack::CreateDefaultType::Int }),
+                "BigInt" => Ok(quote! { ::cratestack::CreateDefaultType::BigInt }),
                 "Boolean" => Ok(quote! { ::cratestack::CreateDefaultType::Bool }),
                 other => Err(format!(
-                    "auth-derived defaults currently support only String/Cuid, Int, and Boolean fields; `{}`.{} is unsupported",
+                    "auth-derived defaults currently support only String/Cuid, Int, BigInt, and Boolean fields; `{}`.{} is unsupported",
                     model.name, other
                 )),
             };
@@ -62,3 +63,6 @@ pub(super) fn collect_create_defaults(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

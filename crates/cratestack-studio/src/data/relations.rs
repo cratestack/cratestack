@@ -182,6 +182,7 @@ fn pk_cast_for(scalar: &str) -> Option<PkCast> {
     match scalar {
         "String" | "Uuid" | "Cuid" | "Decimal" => Some(PkCast::Text),
         "Int" => Some(PkCast::BigInt),
+        "BigInt" => Some(PkCast::BigInt),
         _ => None,
     }
 }

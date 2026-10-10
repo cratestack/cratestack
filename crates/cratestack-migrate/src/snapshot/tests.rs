@@ -105,3 +105,46 @@ fn read_reports_malformed_json_as_structured_error() {
     let err = read_snapshot(&path).expect_err("malformed should fail");
     assert!(matches!(err, MigrateError::SnapshotParse { .. }));
 }
+
+const BIGINT_SCHEMA: &str = r#"
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+model Ledger {
+  id BigInt @id
+  amountE8 BigInt
+  feeE8 BigInt?
+}
+"#;
+
+/// The snapshot keeps the `.cstack` scalar name as a string
+/// (`ColumnType::Scalar`), so `BigInt` needs no format change, but it
+/// must survive the disk round trip as `BigInt`: a snapshot that came
+/// back as `Int` (or anything else) would make the next `migrate diff`
+/// invent a type change.
+#[test]
+fn bigint_columns_round_trip_through_the_snapshot_unchanged() {
+    let schema = parse(BIGINT_SCHEMA);
+    let snapshot = Snapshot::from_schema(&schema);
+
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join("schema.snapshot.json");
+    write_snapshot(&snapshot, &path).expect("write");
+    let contents = fs::read_to_string(&path).expect("read text");
+    assert!(
+        contents.contains("\"BigInt\""),
+        "the snapshot should record the BigInt scalar name: {contents}"
+    );
+
+    let loaded = read_snapshot(&path).expect("read");
+    assert_eq!(loaded, snapshot);
+
+    let ops = crate::diff::diff_projections(&loaded.projections, &project(&schema))
+        .expect("diff should succeed");
+    assert!(
+        ops.is_empty(),
+        "a BigInt schema diffed against its own snapshot must be a no-op: {ops:?}"
+    );
+}

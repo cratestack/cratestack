@@ -24,6 +24,7 @@ pub(crate) fn procedure_client_output_item_tokens(type_ref: &TypeRef) -> proc_ma
         "String" => quote! { String },
         "Cuid" => quote! { String },
         "Int" => quote! { i64 },
+        "BigInt" => quote! { ::cratestack::BigInt },
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
@@ -94,6 +95,7 @@ fn procedure_item_type_tokens(
         "String" => quote! { String },
         "Cuid" => quote! { String },
         "Int" => quote! { i64 },
+        "BigInt" => quote! { ::cratestack::BigInt },
         "Float" => quote! { f64 },
         "Boolean" => quote! { bool },
         "DateTime" => quote! { ::cratestack::chrono::DateTime<::cratestack::chrono::Utc> },
@@ -125,3 +127,6 @@ pub(super) fn procedure_stream_item_tokens(
 ) -> proc_macro2::TokenStream {
     procedure_item_type_tokens(type_ref, types, enum_names)
 }
+
+#[cfg(test)]
+mod tests_bigint;

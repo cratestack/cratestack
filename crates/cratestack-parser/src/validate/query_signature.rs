@@ -33,7 +33,7 @@ use crate::validate::reserved_idents::validate_reserved_identifier;
 ///
 /// Widening this list later is additive and breaks nothing.
 const BINDABLE_ARG_TYPES: &[&str] = &[
-    "String", "Cuid", "Int", "Float", "Boolean", "DateTime", "Uuid", "Bytes",
+    "String", "Cuid", "Int", "BigInt", "Float", "Boolean", "DateTime", "Uuid", "Bytes",
 ];
 
 pub(super) fn validate_query_args(query: &Query) -> Result<(), SchemaError> {

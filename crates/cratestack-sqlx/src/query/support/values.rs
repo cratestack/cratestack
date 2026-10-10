@@ -1,10 +1,11 @@
 //! Value-shaped helpers: `SqlValue` → bind-slot push, `auth_field`
-//! lookup with type narrowing, slice-of-columns scan, and the two
-//! equality checks shared by the create-policy evaluator.
+//! lookup with type narrowing, and slice-of-columns scan. The
+//! comparisons the create-policy evaluator makes live in
+//! [`super::comparison`].
 
 use cratestack_core::{CratestackContext, Value};
 
-use crate::{Json, PolicyLiteral, SqlColumnValue, SqlValue, sqlx};
+use crate::{Json, SqlColumnValue, SqlValue, sqlx};
 
 use super::decimal_bind::{bind_decimal, bind_null_decimal};
 
@@ -21,6 +22,10 @@ pub(crate) fn push_bind_value(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, va
             query.push_bind(*value);
         }
         SqlValue::Int(value) => {
+            query.push_bind(*value);
+        }
+        // `INT8`, the same wire type as `Int` until `Int` narrows to 32 bits.
+        SqlValue::BigInt(value) => {
             query.push_bind(*value);
         }
         SqlValue::Float(value) => {
@@ -52,6 +57,9 @@ pub(crate) fn push_bind_value(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, va
             query.push_bind(Option::<bool>::None);
         }
         SqlValue::NullInt => {
+            query.push_bind(Option::<i64>::None);
+        }
+        SqlValue::NullBigInt => {
             query.push_bind(Option::<i64>::None);
         }
         SqlValue::NullFloat => {
@@ -117,12 +125,40 @@ pub(crate) fn push_bind_value(query: &mut sqlx::QueryBuilder<sqlx::Postgres>, va
     }
 }
 
+/// The caller's claim as a bindable value, for the pushed-down
+/// `col = $n` / `col != $n` forms. An integer claim binds `INT8`, which
+/// compares numerically with a `BigInt` (or `Int`) column. A string claim
+/// binds `TEXT` whatever the column is, because the predicate carries no
+/// column type: against a `BIGINT` column Postgres refuses it
+/// (`operator does not exist: bigint = text`, SQLSTATE 42883), which fails
+/// the query rather than matching. So a `BigInt` auth claim has to be a JSON
+/// integer in a policy comparison (see [`super::comparison`]).
 pub(crate) fn auth_value_to_sql(ctx: &CratestackContext, auth_field: &str) -> Option<SqlValue> {
     match ctx.auth_field(auth_field)? {
         Value::Bool(value) => Some(SqlValue::Bool(*value)),
         Value::Int(value) => Some(SqlValue::Int(*value)),
         Value::String(value) => Some(SqlValue::String(value.clone())),
         _ => None,
+    }
+}
+
+/// Suffix for the placeholder of a pushed-down `col = $n` / `col != $n`
+/// comparison against a caller's claim.
+///
+/// The claim's runtime type is the one thing in such a statement that varies
+/// from request to request while the SQL text stays the same, and sqlx caches
+/// a persistent prepared statement by SQL text alone. Without this, an integer
+/// claim prepares `amount != $1` with `$1` as `int8`; a later string claim
+/// reuses that statement and sends its bytes as binary `int8`. Measured: a
+/// 7-byte string fails with SQLSTATE 08P01, and an 8-byte one (`"12345678"`)
+/// is read as the integer `0x3132333435363738`, so `!=` admitted every row.
+/// Naming the type puts it in the text, so each claim type gets its own
+/// statement, and Postgres types the parameter as `text` itself: against a
+/// `BIGINT` column that is a deterministic `operator does not exist` (42883).
+pub(crate) fn claim_type_suffix(value: &SqlValue) -> &'static str {
+    match value {
+        SqlValue::String(_) => "::text",
+        _ => "",
     }
 }
 
@@ -134,22 +170,4 @@ pub(crate) fn find_column_value<'a>(
         .iter()
         .find(|value| value.column == column)
         .map(|value| &value.value)
-}
-
-pub(crate) fn sql_value_matches_literal(value: &SqlValue, literal: PolicyLiteral) -> bool {
-    match (value, literal) {
-        (SqlValue::Bool(left), PolicyLiteral::Bool(right)) => *left == right,
-        (SqlValue::Int(left), PolicyLiteral::Int(right)) => *left == right,
-        (SqlValue::String(left), PolicyLiteral::String(right)) => left == right,
-        _ => false,
-    }
-}
-
-pub(crate) fn value_matches_auth_literal(value: &Value, literal: PolicyLiteral) -> bool {
-    match (value, literal) {
-        (Value::Bool(left), PolicyLiteral::Bool(right)) => *left == right,
-        (Value::Int(left), PolicyLiteral::Int(right)) => *left == right,
-        (Value::String(left), PolicyLiteral::String(right)) => left == right,
-        _ => false,
-    }
 }

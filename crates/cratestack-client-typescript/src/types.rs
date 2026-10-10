@@ -46,6 +46,20 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         // to know that and hand-roll parsing.
         "Decimal" => "Decimal".to_owned(),
         "Int" | "Float" => "number".to_owned(),
+        // ADR 0019: a real `bigint`, exact over the whole `i64` range. A
+        // `BigInt` field *travels* as a canonical decimal string on every
+        // codec (JSON and CBOR alike), so the type here is paired with
+        // `wire_shapes.rs`'s `bigintKeys` revival on decode and
+        // `models.ts.j2`'s `encodeWireFields` on encode: without the
+        // revival a string would sit under a `bigint` type, and without
+        // the encode a `bigint` would make `JSON.stringify` throw.
+        //
+        // The explicit arm is load-bearing. The catch-all below would
+        // otherwise emit the name verbatim, and `BigInt` is also the name
+        // of the global JS wrapper *interface*, so `tsc` would accept it
+        // while typing the field as the boxed `BigInt` object instead of
+        // the primitive.
+        "BigInt" => "bigint".to_owned(),
         "Boolean" => "boolean".to_owned(),
         "Json" => "JsonValue".to_owned(),
         // cratestack#783 follow-up: a real `Uint8Array`, in *both*

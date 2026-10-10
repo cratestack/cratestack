@@ -57,6 +57,52 @@ fn range_decimal_enforces_inclusive_bounds_after_promoting_i64_to_decimal() {
     assert!(validate_range_decimal("amount", &too_big, None, Some(10)).is_err());
 }
 
+/// A `Display` that counts how often it is written, standing for the path of
+/// a nested value (`FieldPath`) that must cost nothing until a validator fails.
+struct Written<'a>(&'a core::cell::Cell<u32>);
+
+impl core::fmt::Display for Written<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.set(self.0.get() + 1);
+        f.write_str("args.field")
+    }
+}
+
+#[test]
+fn a_field_name_is_written_only_when_a_validator_fails() {
+    let writes = core::cell::Cell::new(0);
+    let field = Written(&writes);
+    assert!(validate_length(&field, "abc", Some(3), Some(3)).is_ok());
+    assert!(validate_length_bytes(&field, &[1, 2], Some(2), Some(2)).is_ok());
+    assert!(validate_range_i64(&field, 5, Some(0), Some(10)).is_ok());
+    assert!(validate_email(&field, "alice@example.com").is_ok());
+    assert!(validate_uri(&field, "https://example.com").is_ok());
+    assert!(validate_iso4217(&field, "XAF").is_ok());
+    assert_eq!(writes.get(), 0, "the success path must not build the path");
+
+    let error = validate_length(&field, "a", Some(3), None).unwrap_err();
+    assert_eq!(writes.get(), 1);
+    assert_eq!(
+        error.public_message().into_owned(),
+        "field 'args.field' length 1 is below minimum 3"
+    );
+}
+
+#[test]
+fn validators_name_a_field_by_its_path_in_the_body() {
+    use crate::validators::FieldPath;
+    let root = FieldPath::Root;
+    let args = root.field("args");
+    let tags = args.field("tags");
+    let second = tags.index(1);
+    let label = second.field("label");
+    let error = validate_length(&label, "x", Some(2), None).unwrap_err();
+    assert_eq!(
+        error.public_message().into_owned(),
+        "field 'args.tags[1].label' length 1 is below minimum 2"
+    );
+}
+
 #[test]
 fn validation_error_does_not_echo_value() {
     let err = validate_email("primary_email", "not-an-email").unwrap_err();

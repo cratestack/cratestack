@@ -8,6 +8,7 @@ use cratestack_core::CratestackContext;
 
 use crate::{PolicyExpr, ReadPolicy, sqlx};
 
+use super::auth_literal::Position;
 use super::policy_predicate::push_policy_predicate;
 
 /// Emits the action's policy predicate as a **single, fully
@@ -59,19 +60,31 @@ fn push_allow_policy_query(
         if policy_index > 0 {
             query.push(" OR ");
         }
-        push_policy_expr_query(query, policy.expr, ctx);
+        push_policy_expr_at(query, policy.expr, ctx, Position::Clause);
     }
 }
 
+/// The entry the relation pushers use: an expression inside a relation
+/// quantifier, where an undecidable `auth().x <op> <literal>` stays `FALSE`
+/// (see [`super::auth_literal`]).
 pub(crate) fn push_policy_expr_query(
     query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
     expr: PolicyExpr,
     ctx: &CratestackContext,
 ) {
+    push_policy_expr_at(query, expr, ctx, Position::Relation);
+}
+
+fn push_policy_expr_at(
+    query: &mut sqlx::QueryBuilder<sqlx::Postgres>,
+    expr: PolicyExpr,
+    ctx: &CratestackContext,
+    position: Position,
+) {
     match expr {
-        PolicyExpr::Predicate(predicate) => push_policy_predicate(query, predicate, ctx),
-        PolicyExpr::And(exprs) => push_grouped_policy_query(query, exprs, " AND ", ctx),
-        PolicyExpr::Or(exprs) => push_grouped_policy_query(query, exprs, " OR ", ctx),
+        PolicyExpr::Predicate(predicate) => push_policy_predicate(query, predicate, ctx, position),
+        PolicyExpr::And(exprs) => push_grouped_policy_query(query, exprs, " AND ", ctx, position),
+        PolicyExpr::Or(exprs) => push_grouped_policy_query(query, exprs, " OR ", ctx, position),
     }
 }
 
@@ -80,13 +93,14 @@ fn push_grouped_policy_query(
     exprs: &[PolicyExpr],
     joiner: &str,
     ctx: &CratestackContext,
+    position: Position,
 ) {
     query.push("(");
     for (index, expr) in exprs.iter().enumerate() {
         if index > 0 {
             query.push(joiner);
         }
-        push_policy_expr_query(query, *expr, ctx);
+        push_policy_expr_at(query, *expr, ctx, position);
     }
     query.push(")");
 }

@@ -10,7 +10,7 @@ the ADR's recommendations. Every question this ADR left open is now a recorded d
 | Decision | Recorded outcome | Basis |
 |---|---|---|
 | D2, CBOR | `BigInt` is a CBOR text string (major type 3) holding the canonical decimal form, with JSON's grammar and rejection rules. Native CBOR integers and RFC 8949 bignum tags 2 and 3 are rejected. | Explicit: CBOR is the primary codec for these projects, so a decision for it is mandatory; `BigInt` as a string is fine |
-| D3, Rust type | `cratestack::BigInt`, a newtype over `i64`: `get`/`new`, `From<i64>`, `From<BigInt> for i64`, checked arithmetic only, no `Deref`. The name stays. | The ADR's recommendation, accepted |
+| D3, Rust type | `cratestack::BigInt`, a newtype over `i64`: `get`/`new`, `From<i64>`, `From<BigInt> for i64`, checked arithmetic only, no `Deref`. The name stays. Amended in PR B: the driver impls live in `cratestack-core` behind optional features (Amendment below). | The ADR's recommendation, accepted |
 | D4, upgrade | `cratestack upgrade int-to-bigint` rewrites every `Int` to `BigInt` by parser span; no DDL. Narrowing to `Int` is a per-field edit, `Lossy` in `migrate diff`, behind `--allow-destructive`. | The ADR's recommendation, accepted |
 | D5, field attributes | Closed list per declaration kind; supersedes the narrow route taken on cratestack#679 for field attributes. | The ADR's recommendation, accepted |
 | Release | PR A (D5), PR B (`BigInt` end to end) and PR C (the `Int` cutover) all ship in **0.16.0**, one breaking release, no compatibility path. | The ADR's recommendation, accepted |
@@ -183,6 +183,9 @@ serialize each field as a type-erased leaf
 by construction, and a place that still expects `i64` is a compile error. The database boundary
 converts in generated code (`try_get::<i64>` then `BigInt::new`; `SqlValue::BigInt(i64)`), so the
 newtype needs no sqlx or rusqlite impls and `cratestack-core` keeps zero workspace dependencies.
+**Superseded 2026-10-09, see the Amendment (PR B) below:** the newtype does need the driver impls
+for a `BigInt` primary or foreign key, and they live in `cratestack-core` behind two optional
+features. `cratestack-core` still has no workspace dependency.
 
 The decided surface: `new` and `get`, `From<i64>` and `From<BigInt> for i64`, `Display`, `FromStr`
 and the comparison traits, and arithmetic as checked methods only (`checked_add`, `checked_sub`
@@ -276,6 +279,170 @@ int-to-bigint` arrive together, and the command is deleted in 0.17.0.
 their own type on every target, their own column type, their own filter type and their own wire
 form; neither is an attribute, an alias or a flag on the other, and the old meaning of `Int` does
 not survive the release anywhere.
+
+## Amendment (PR B, 2026-10-09)
+
+PR A (the closed field attributes, D5) and PR B (`BigInt` end to end, D2 and D3) land on `main`
+together, ahead of PR C (the `Int` cutover, D4). Building PR B found five places where this ADR or
+its context doc was wrong or silent. Where this section and an earlier one disagree, this section
+governs; the earlier text is left as it was written. Labels follow the repository convention: RAN
+means executed on 2026-10-09 (macOS arm64) with the output observed, READ means source was read.
+
+| Item | Outcome | Replaces |
+|---|---|---|
+| D3, driver impls | `cratestack-core` has two optional features, `sqlx-postgres` and `rusqlite`, that carry the `Type`/`Encode`/`Decode` and `ToSql`/`FromSql` impls for `BigInt`. The Postgres one is required; nothing but a unit test needs the SQLite one. | D3: "the newtype needs no sqlx or rusqlite impls" |
+| Policy claims | A string auth claim in a numeric policy comparison is undecidable and denies. Coercing a canonical string is a follow-up. | The context doc's §3.2 sentence on claims |
+| D2, error text | A refused value is named by field path in `CratestackError::Codec`'s `detail()`; the public message stays generic. | D2: "with a message naming the field" |
+| Dart | Decode goes through `cratestackDecodeBigInt` with no client-side `i64` range check; RPC `get`, `update` and `delete` send a `BigInt` key as a string. | The context doc's §3.6 |
+| RTK floor | `@reduxjs/toolkit` rises from `^2.0.0` to `^2.2.7`. | The context doc's §3.5: "the first release carrying that commit" |
+| Pending | B13 (a live-server TypeScript round trip) and PR C. | |
+
+**D3: the driver impls live in `cratestack-core`, behind optional features.** D3 said the database
+boundary converts in generated code (`try_get::<i64>` then `BigInt::new`), so the newtype needs no
+sqlx or rusqlite impls. That is wrong on Postgres and only half right on SQLite.
+
+- *Postgres.* The generated row decode is `row.try_get(name)?` for every plain scalar
+  (`crates/cratestack-macros/src/model/row_pg.rs:87`, `:160`), so a `BigInt` field is read as a
+  `BigInt` and needs `Type<Postgres>` and `Decode<Postgres>`. A `BigInt @id` or foreign key also
+  meets the delegates' bounds, `PK: Send + sqlx::Type<Postgres> + for<'q> Encode<'q, Postgres>`
+  (READ: `crates/cratestack-sqlx/src/delegate/scoped_writes.rs:87`,
+  `crates/cratestack-sqlx/src/audit.rs:148`). The orphan rule lets only the crate that owns `BigInt`
+  or the crate that owns the trait write the impls, and the trait crates are not ours. So the impls
+  are in `cratestack-core`.
+- *SQLite.* The embedded delegates bound a key with `IntoSqlValue`
+  (READ: `crates/cratestack-rusqlite/src/delegate/delete.rs:17`), which `cratestack-sql` implements
+  for `BigInt` (`crates/cratestack-sql/src/values/into_sql.rs:24`), and the generated row decode
+  reads an `i64` and applies `BigInt::new` (`crates/cratestack-macros/src/model/row_sqlite.rs:103-108`),
+  so no `ToSql` or `FromSql` impl on `BigInt` is on that path. The `rusqlite` feature adds them
+  anyway, for hand-written rusqlite code. RAN, on a scratch copy of this tree with
+  `features = ["rusqlite"]` removed from `cratestack-rusqlite`'s dependency on `cratestack-core`:
+  `cargo check -p cratestack-rusqlite --lib` and `cargo check -p cratestack-sqlite --all-targets` both
+  finish, and the only failure is `cratestack-rusqlite`'s own unit tests
+  (`src/value/tests_bigint.rs:92`, `:127`, `:152`), which call `row.get::<_, BigInt>`. Other
+  rusqlite users in the workspace (studio, the examples) were not built. So this feature is
+  enabled by `cratestack-rusqlite` on D-PK's reasoning and is exercised only by tests; whether it
+  stays is left to the maintainer (`ROADMAP.md`). The Postgres feature is not in doubt.
+
+The result:
+
+- `cratestack-core` gains `sqlx-postgres = ["dep:sqlx-core", "dep:sqlx-postgres"]` and
+  `rusqlite = ["dep:rusqlite"]` (`crates/cratestack-core/Cargo.toml:55-56`, optional dependencies at
+  `:74-76`). They add `Type`, `Encode`, `Decode` and `PgHasArrayType` (`INT8`, `INT8[]`) and `ToSql`
+  and `FromSql` (an SQLite integer), each delegating to `i64`. The pair `sqlx-core` and
+  `sqlx-postgres` is what `cratestack-sqlx` already depends on, not the `sqlx` umbrella, for the
+  same `links = "sqlite3"` reason the facades avoid it.
+- Only the runtime that needs a feature enables it: `cratestack-sqlx` turns on `sqlx-postgres`
+  (`crates/cratestack-sqlx/Cargo.toml:84`) and `cratestack-rusqlite` turns on `rusqlite`
+  (`crates/cratestack-rusqlite/Cargo.toml:52`). Neither is a default and none is a flag that gates
+  behaviour; they are optional dependencies, not a dormant path.
+- `cratestack-core` still has no workspace dependency, so it is visible to all four facades, which
+  was the point of D3. The facade-disjointness invariant (ADR 0013) holds. RAN, from the repository
+  root and in the standalone example workspaces, with the same commands CI's `facade-disjointness`
+  job uses:
+
+  ```text
+  examples/no-database-verification-api   cargo tree --locked | grep -ci sqlx        -> 0
+  examples/client-only-verification       cargo tree --locked | grep -ci sqlx        -> 0
+  examples/client-only-verification       cargo tree --locked | grep -ci axum        -> 0
+  examples/no-database-verification       cargo tree --locked | grep -ci sqlx        -> 0
+  cargo tree -p cratestack-api    | grep -ci sqlx                                    -> 0
+  cargo tree -p cratestack-client | grep -ci sqlx                                    -> 0
+  cargo tree -p cratestack-pg     | grep -ci libsqlite3                              -> 0
+  cargo tree -p cratestack-sqlite | grep -ci sqlx                                    -> 0
+  cargo tree -p cratestack-core -e normal | grep -ciE "sqlx|rusqlite|libsqlite3"    -> 0
+  ```
+
+  `cargo metadata --locked` succeeds in all three examples, so their lockfiles carry the new
+  optional edges. (`cratestack-sqlite` does show `libsqlite3-sys`, as it must.)
+
+**Policy claims: a string claim in a numeric comparison is undecidable, and denies.** The context
+doc's §3.2 said a `BigInt` claim "is accepted as a JSON integer or a canonical string". That is true
+of `@default(auth().x)` only, where the value is parsed once with `BigInt::from_str` and anything
+else is refused (READ: `crates/cratestack-sqlx/src/query/support/create.rs`, the `CreateDefaultType::BigInt`
+arm). In a policy comparison it is not, for three reasons, all READ in the code:
+
+1. A predicate carries no column type, so the evaluator cannot tell a `BigInt` string from a
+   `String` one.
+2. The pushed-down SQL cannot either: a string claim renders as `$N::text`, and Postgres has no
+   `bigint = text` operator, so the database refuses the comparison
+   (`crates/cratestack-sqlx/src/query/support/values.rs`, `claim_type_suffix`). The cast also gives
+   each claim type its own statement text, which closes a fail-open that sqlx's statement cache by
+   SQL text allowed between an integer claim and a later string claim.
+3. Reading the string as a number in the evaluator would make one claim pass in a procedure policy
+   and fail in a model policy.
+
+So a `BigInt` claim must be a JSON integer in a policy comparison. The same decision is made twice,
+once for the create path and `auth().x` literals (`comparison.rs` in `cratestack-sqlx`: `claim_vs_literal`,
+`column_vs_claim`) and once for procedure policies (`compare.rs` in `cratestack-policy`), and each
+file names the other. Both are three-valued: equal, different, or undecidable. `==` and `in` pass
+only on a decided equality, `!=` and `not in` only on a decided difference, and an undecidable pair
+satisfies neither, so a `@deny` on it fires. This is what SQL does with a `NULL`. The create-path
+evaluator composes the outcomes with Kleene `and` and `or`: an `@allow` grants only on a decided
+true and a `@deny` fires on anything but a decided false. On read, update and delete the
+pushed-down `@deny` on `auth().x <op> <literal>` renders `NULL` rather than `FALSE` for an
+undecidable claim, so it fires there too.
+
+Three limits are accepted and recorded. In procedure policies only an integer against a string is
+undecidable; a `Bool`, `Float` or `Null` operand still passes `!=`. The model pairs that predate
+`BigInt` keep derived equality, so a `NULL` `Int?` column against a claim still satisfies a
+create-path `!=` where SQL denies. And an absent or unbindable claim (null, float, bytes, list, map)
+makes a column comparison false on create, read, update and delete, so a
+`@deny(owner != auth().accountId)` stays silent for a caller whose claim is null (a `NULL` `Bool`
+column under `FieldIsTrue` is the same family). All three are follow-ups, and the second must be
+settled before PR C, because `NullBigInt` is stricter and the codemod would change outcomes. Coercing a canonical-string
+claim in policies (the design the context doc first described) is a follow-up too; it needs the
+predicate to carry the column type.
+
+**D2: the field path is in `detail()`.** D2 says a refused value gets "a message naming the field".
+`JsonCodec` and `CborCodec` now decode through `serde_path_to_error`, so the path is in the error's
+`detail()` (`failed to decode JSON body: amountE8: ...`), while the public message of
+`CratestackError::Codec` is unchanged and generic, because it reaches clients. The wire form, the
+grammar and the refusals of D2 are as decided.
+
+**Dart: two deviations from the context doc's §3.6.**
+
+- *Decode.* The doc said `BigInt.parse({expr} as String)`. `BigInt.parse` is not strict. RAN on the
+  Dart VM: it returns `5` for `+5`, `7` for `007`, `0` for `-0`, `31` for `0x1F`, `1` for `" 1"` and
+  accepts `9223372036854775808`, every one a spelling D2 refuses. The generated runtime has
+  `cratestackDecodeBigInt(value, 'Owner.field')`
+  (`crates/cratestack-client-dart/templates/rest-runtime.dart.j2:66`), which checks the type and the
+  canonical grammar and throws a `FormatException` naming the field, then calls `BigInt.parse`, which
+  is exact on the VM, dart2js and dart2wasm. It does not check the `i64` range: the server refuses a
+  value outside `i64`, and a Dart `BigInt` is not bounded.
+- *RPC keys.* `get`, `update` and `delete` took `{'id': id}`, which for a `BigInt` key is a Dart
+  `BigInt`: `jsonEncode` throws on it and `package:cbor` writes an integer or a bignum, not the text
+  string the server requires. They send `{'id': id.toString()}`
+  (`crates/cratestack-client-dart/templates/rpc-apis.dart.j2:101-143`, `primary_key_wire_expr` built
+  from `encode_value_expr`), in the default and the Riverpod presets.
+
+**The RTK floor is 2.2.7, not the first release with the bigint commit.** §3.5 raised the floor to
+the first release carrying reduxjs/redux-toolkit@ae838b4c, which is 2.2.4. Two facts set the floor
+and it is the later one (READ: the doc comment on `REDUX_TOOLKIT_RANGE`,
+`crates/cratestack-client-typescript/src/rtk/deps.rs:48`, which records the measurement on the
+published tarballs): `serializeQueryArgs` throws on a `bigint` before 2.2.4, and the generated
+`rtk-api.ts` does not build with `declaration: true` before 2.2.7 (`TS2527`). The old `^2.0.0` floor
+could not build at its lowest version. `packages/cratestack-adapter-rtk` still declares `^2.0.0` and
+is a follow-up.
+
+**What is pending, and why the release decision stands.**
+
+- *B13.* A decision taken for PR B on 2026-10-09 requires the generated
+  TypeScript client to be driven against a real server over JSON and `@cratestack/cbor-node`,
+  including `@cratestack/link-batch`, a REST body, a REST query and the TanStack and RTK keys. It has
+  not been written. What exists instead is a client-side suite (the generated client against a fake
+  transport and the real revival and encode code, in `crates/cratestack-client-typescript/tests/js`)
+  and the cross-language CBOR bytes pinned in every bridge. Dart stays on the pinned bytes.
+- *PR C.* The `Int` cutover, `cratestack upgrade int-to-bigint`, snapshot format 3 and digest domains
+  `v2`, exactly as §7 of the context doc lists. Until it lands `Int` is an `i64`, introspection maps
+  `int8` to `Int`, and editing a field from `Int` to `BigInt` makes `migrate diff` emit an `ALTER`
+  to the type the column already has, classed `Lossy` (READ: `emit_alter_column_type`,
+  `ir.rs`).
+- *Docs and skills.* The `cratestack-docs` pages and `cratestack-skills` entries of the context doc's
+  §4.4 are not written.
+- *Release.* Landing A and B on `main` is not a release. The reason B and C ship together (a release
+  with `BigInt` and the old `Int` gives users two upgrades and makes a hand edit from `Int` to
+  `BigInt` an `ALTER` to the same type) is unchanged, so 0.16.0 waits for C, as the Release decision
+  says. The `## Unreleased` entry says plainly that `Int` is still `i64`.
 
 ## Consequences
 

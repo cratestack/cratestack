@@ -5,19 +5,18 @@
 //!   ([`cratestack_core::is_primary_key_attribute`]); `@id(...)` is refused
 //!   instead of being left inert, because an inert `@id(...)` would quietly
 //!   leave the field an ordinary column. The refusal is not here: `@id` is
-//!   an entry of `crate::validate::attribute_spelling`'s no-argument table,
-//!   which runs first (inside `validate_misspelled_field_attributes`) and
-//!   also refuses stray punctuation (`@id;`), so there is one check, with
-//!   this module's original wording. Before #1074 every consumer but
-//!   `cratestack-migrate` took any `@id…` prefix — `@identity` and `@idx`
-//!   included — for the key; those names are now unknown attributes and go
-//!   through `crate::validate::misspelled_attributes` like any other.
+//!   a no-argument entry of the field lists (`super::field_attributes`),
+//!   which run first and also refuse stray punctuation (`@id;`), so there is
+//!   one check. Before #1074 every consumer but `cratestack-migrate` took
+//!   any `@id…` prefix — `@identity` and `@idx` included — for the key;
+//!   those names are unsupported attributes, refused by the same lists
+//!   (`@idx` with a "did you mean `@id`?").
 //! - A field declares at most one `@relation`. Every consumer (parser,
 //!   macros, migrate, LSP, studio) reads the first and ignores the rest, so
 //!   a second one was a contradiction that reported `schema OK`.
 //!
 //! Runs on every field-bearing declaration (`model`, `view`, `mixin`,
-//! `type`, `auth`), after the removed/misspelled attribute checks.
+//! `type`, `auth`), after the closed field lists.
 
 use cratestack_core::{Field, is_relation_attribute};
 

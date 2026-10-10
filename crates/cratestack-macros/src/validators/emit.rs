@@ -6,12 +6,13 @@ use quote::quote;
 
 use crate::shared::ident;
 
-use super::FieldValidator;
+use super::{FieldScope, FieldValidator};
 
 pub(super) fn emit_field_validators(
     field: &Field,
     validators: &[FieldValidator],
     treat_as_optional: bool,
+    scope: FieldScope,
 ) -> TokenStream {
     let field_ident = ident(&field.name);
     let scalar = field.ty.name.as_str();
@@ -25,10 +26,22 @@ pub(super) fn emit_field_validators(
     // see cratestack#537.
     let nullable = matches!(field.ty.arity, TypeArity::Optional);
 
+    // What the error names the field by: the schema name on a model input,
+    // the request-body path (`args.items[2].name`) on a `type` or a `model`
+    // sent as a value, which can sit anywhere in a procedure's arguments.
+    // The path is a borrowed `FieldPath`, written only by a validator that
+    // fails: building the `String` here would cost an allocation per field
+    // on every valid request.
+    let field_name = &field.name;
+    let name = match scope {
+        FieldScope::Input => quote! { #field_name },
+        FieldScope::Nested => quote! { &path.field(#field_name) },
+    };
     let calls = validators
         .iter()
         .enumerate()
-        .map(|(idx, v)| emit_one(field, scalar, idx, v));
+        .map(|(idx, v)| emit_one(field, scalar, idx, v, &name));
+    let calls = quote! { #(#calls)* };
 
     match (treat_as_optional, nullable) {
         (true, true) => quote! {
@@ -40,71 +53,87 @@ pub(super) fn emit_field_validators(
             // this is where validators actually run.
             if let Some(Some(value)) = self.#field_ident.as_ref() {
                 let _ = value;
-                #(#calls)*
+                #calls
             }
         },
         (true, false) | (false, true) => quote! {
             if let Some(value) = self.#field_ident.as_ref() {
                 let _ = value;
-                #(#calls)*
+                #calls
             }
         },
         (false, false) => quote! {
             {
                 let value = &self.#field_ident;
                 let _ = value;
-                #(#calls)*
+                #calls
             }
         },
     }
 }
 
-fn emit_one(field: &Field, scalar: &str, idx: usize, v: &FieldValidator) -> TokenStream {
-    let field_name = &field.name;
+fn emit_one(
+    field: &Field,
+    scalar: &str,
+    idx: usize,
+    v: &FieldValidator,
+    name: &TokenStream,
+) -> TokenStream {
     match v {
-        FieldValidator::Length { min, max } => emit_length(field_name, scalar, *min, *max),
-        FieldValidator::Range { min, max } => emit_range(field_name, scalar, *min, *max),
-        FieldValidator::Regex { pattern } => emit_regex(field, idx, pattern),
+        FieldValidator::Length { min, max } => emit_length(name, scalar, *min, *max),
+        FieldValidator::Range { min, max } => emit_range(name, scalar, *min, *max),
+        FieldValidator::Regex { pattern } => emit_regex(field, idx, pattern, name),
         FieldValidator::Email => quote! {
-            ::cratestack::validate_email(#field_name, value)?;
+            ::cratestack::validate_email(#name, value)?;
         },
         FieldValidator::Uri => quote! {
-            ::cratestack::validate_uri(#field_name, value)?;
+            ::cratestack::validate_uri(#name, value)?;
         },
         FieldValidator::Iso4217 => quote! {
-            ::cratestack::validate_iso4217(#field_name, value)?;
+            ::cratestack::validate_iso4217(#name, value)?;
         },
     }
 }
 
 // Dispatches on the field's scalar the same way `emit_range` dispatches
-// `Int`/`Decimal` — see cratestack#572. `String` and `Bytes` are the only
+// `Int`/`BigInt`/`Decimal` — see cratestack#572. `String` and `Bytes` are the only
 // scalars the parser accepts `@length` on
 // (`crates/cratestack-parser/src/validate/validators.rs::check_length`);
 // `Bytes` generates as `Vec<u8>` and needs `&[u8]`, not `&str`, so a
 // single `validate_length(field, value, ..)` call can't type-check both.
-fn emit_length(field_name: &str, scalar: &str, min: Option<u32>, max: Option<u32>) -> TokenStream {
+fn emit_length(
+    name: &TokenStream,
+    scalar: &str,
+    min: Option<u32>,
+    max: Option<u32>,
+) -> TokenStream {
     let min_tok = optional_usize(min.map(|n| n as usize));
     let max_tok = optional_usize(max.map(|n| n as usize));
     match scalar {
         "Bytes" => quote! {
-            ::cratestack::validate_length_bytes(#field_name, value, #min_tok, #max_tok)?;
+            ::cratestack::validate_length_bytes(#name, value, #min_tok, #max_tok)?;
         },
         // "String" and anything else the parser might loosen in the
         // future: keep the pre-existing `&str` call as the default so an
         // unrecognized-but-string-shaped scalar doesn't silently no-op.
         _ => quote! {
-            ::cratestack::validate_length(#field_name, value, #min_tok, #max_tok)?;
+            ::cratestack::validate_length(#name, value, #min_tok, #max_tok)?;
         },
     }
 }
 
-fn emit_range(field_name: &str, scalar: &str, min: Option<i64>, max: Option<i64>) -> TokenStream {
+fn emit_range(name: &TokenStream, scalar: &str, min: Option<i64>, max: Option<i64>) -> TokenStream {
     let min_tok = optional_i64(min);
     let max_tok = optional_i64(max);
     match scalar {
         "Int" => quote! {
-            ::cratestack::validate_range_i64(#field_name, *value, #min_tok, #max_tok)?;
+            ::cratestack::validate_range_i64(#name, *value, #min_tok, #max_tok)?;
+        },
+        // `BigInt` is checked on its `i64`, against the same `i64` bounds the
+        // parser reads. Without this arm the old catch-all emitted nothing,
+        // so `@range` on a `BigInt` was accepted and enforced nothing.
+        "BigInt" => quote! {
+            ::cratestack::validate_range_i64(#name, value.get(), #min_tok, #max_tok)?;
         },
         // Decimal bounds in `.cstack` are specified as integers (the
         // parser only accepts i64 literals); the runtime helper promotes
@@ -112,17 +141,24 @@ fn emit_range(field_name: &str, scalar: &str, min: Option<i64>, max: Option<i64>
         // cases like `amount Decimal @range(min: 0)` — fractional bounds
         // need a separate syntax change, tracked outside this PR.
         "Decimal" => quote! {
-            ::cratestack::validate_range_decimal(#field_name, value, #min_tok, #max_tok)?;
+            ::cratestack::validate_range_decimal(#name, value, #min_tok, #max_tok)?;
         },
-        // Unknown scalar: the parser shouldn't have accepted the attribute
-        // in the first place; we'd rather emit nothing than a type-
-        // confused call.
-        _ => quote! {},
+        // Unknown scalar: the parser refuses `@range` anywhere else
+        // (`cratestack-parser`'s `check_range`), so this is a scalar it began
+        // accepting without teaching the emitter. Emitting nothing would
+        // leave the attribute accepted and enforcing nothing, which is the
+        // `BigInt` defect this arm replaces, so refuse to expand instead.
+        other => {
+            let message = format!(
+                "@range on a `{other}` field has no generated check; \
+                 the validator emitter needs an arm for it"
+            );
+            quote! { compile_error!(#message); }
+        }
     }
 }
 
-fn emit_regex(field: &Field, idx: usize, pattern: &str) -> TokenStream {
-    let field_name = &field.name;
+fn emit_regex(field: &Field, idx: usize, pattern: &str, name: &TokenStream) -> TokenStream {
     let regex_ident = ident(&format!(
         "__VALIDATOR_REGEX_{}_{}",
         field.name.to_uppercase(),
@@ -136,7 +172,7 @@ fn emit_regex(field: &Field, idx: usize, pattern: &str) -> TokenStream {
             });
         if !#regex_ident.is_match(value) {
             return Err(::cratestack::CratestackError::Validation(format!(
-                "field '{}' does not match required pattern", #field_name,
+                "field '{}' does not match required pattern", #name,
             )));
         }
     }
@@ -155,3 +191,6 @@ fn optional_i64(value: Option<i64>) -> TokenStream {
         None => quote! { None },
     }
 }
+
+#[cfg(test)]
+mod tests_bigint;

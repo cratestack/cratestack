@@ -72,6 +72,13 @@ export const jsonRpcCodec: CratestackRpcCodec = {
     // lossy-looking conversion. See that function's own doc comment for
     // why `JSON.stringify` can't do it.
     //
+    // The same walk turns every `bigint` (a `BigInt` field) into its
+    // canonical decimal string, and it lives in the codec, not only in
+    // `terminalLink`, on purpose: `@cratestack/link-batch` encodes a
+    // batch of RAW inputs with the request's codec and never runs
+    // `terminalLink`, so a conversion that lived only there would be
+    // skipped by exactly the path that batches.
+    //
     // (Deliberately no package name in this comment: `native_cbor: false`
     // builds assert that `runtime.ts` never mentions the native codec
     // package at all — see `tests/native_cbor_generator.rs`.)

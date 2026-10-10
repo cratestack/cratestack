@@ -567,6 +567,7 @@ dependencies = [
  "cratestack-core",
  "minicbor-serde",
  "serde",
+ "serde_path_to_error",
 ]
 
 [[package]]
@@ -576,6 +577,7 @@ dependencies = [
  "cratestack-core",
  "serde",
  "serde_json",
+ "serde_path_to_error",
 ]
 
 [[package]]
@@ -592,6 +594,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sqlx-core",
+ "sqlx-postgres",
  "subtle",
  "thiserror",
  "url",

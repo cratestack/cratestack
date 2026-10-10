@@ -10,6 +10,12 @@
 //! tests here never construct the wire shape by hand: every positive value
 //! is a generated type run through `serde_json`.
 //!
+//! `bigint.rs` is the `BigInt` (ADR 0019) half: the emitted fragment, the
+//! pinned values `i64::MAX`, `i64::MIN` and `2^53 + 1` as strings, a JSON
+//! number refused, and the one `i64`-bound gap. `values.rs` also puts a
+//! `BigInt` in `Scalars` and `Shapes`, so the shared tests cover the field
+//! forms too.
+//!
 //! `@computed` outputs (ADR 0002 Q7) cannot be covered here: their wire
 //! value only exists after response composition, which needs a resolver
 //! and a dispatch. `tests/mcp_tools.rs` round-trips one through a real
@@ -20,6 +26,7 @@
 //! assertion sees, so the generated patterns have to do the rejecting.
 
 mod accepted_forms;
+mod bigint;
 mod gaps;
 mod negative;
 mod round_trip;

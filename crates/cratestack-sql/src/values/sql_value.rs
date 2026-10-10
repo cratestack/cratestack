@@ -6,6 +6,14 @@ use super::decimal_like::DecimalLike;
 pub enum SqlValue {
     Bool(bool),
     Int(i64),
+    /// A `BigInt` field's value (ADR 0019). Bound as `INT8` on Postgres
+    /// and stored as an SQLite INTEGER, exactly like [`SqlValue::Int`] in
+    /// this release. A variant of its own, rather than reusing `Int`, so
+    /// the next release can narrow `Int` to 32 bits without touching any
+    /// `BigInt` call site, and so a comparison between the two is an
+    /// explicit decision (`cratestack-sqlx` compares them numerically)
+    /// rather than the derived `PartialEq`, which treats them as different.
+    BigInt(i64),
     Float(f64),
     String(String),
     Bytes(Vec<u8>),
@@ -43,6 +51,7 @@ pub enum SqlValue {
     Spatial(Vec<u8>),
     NullBool,
     NullInt,
+    NullBigInt,
     NullFloat,
     NullString,
     NullBytes,

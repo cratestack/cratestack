@@ -13,6 +13,18 @@
 //! an `int4` column silently mapped to `Int` would make a live table
 //! that actually differs from the schema (`Int` always emits `int8`)
 //! look identical to it.
+//!
+//! `int8` maps to `Int`, never to `BigInt`, while `Int` is still the
+//! 64-bit scalar (ADR 0019, PR B). Both scalars emit `BIGINT`, so
+//! `int8` is the exact spelling of either and a one-name whitelist can
+//! only hold one of them; `Int` is the one every existing schema uses,
+//! and answering `BigInt` here would report all of them as drifted.
+//! Introspection therefore never produces `BigInt` yet. PR C narrows
+//! `Int` to `INTEGER` and flips this to `int4 -> Int`, `int8 -> BigInt`
+//! (`docs/design/int-and-bigint.md` section 3.3); until then a schema
+//! that declares `BigInt` compares as `Int` vs `BigInt` against a live
+//! `int8` column, which is the accepted cost of shipping B and C in
+//! one release.
 pub(super) fn map_scalar(typname: &str, typtype: char, typcategory: char) -> Option<&'static str> {
     // `typtype != 'b'` excludes enums (`'e'`, handled separately via
     // `pg_enum` — see `super::enums`), domains (`'d'`), composite

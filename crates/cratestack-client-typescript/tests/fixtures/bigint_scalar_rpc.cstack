@@ -1,0 +1,68 @@
+// ADR 0019 (`BigInt` end to end), RPC transport, the counterpart of
+// `bigint_scalar.cstack` (same models, so the RPC templates get the coverage
+// the REST ones do). One schema covering every
+// place a `BigInt` can sit in a generated TypeScript client, so a single
+// generated package proves all of them:
+//
+//   * a required, an optional and a list `BigInt` field on a model;
+//   * a `BigInt` reached through a relation (`Entry.ledger`) and through a
+//     `type` block (`Totals`), the two nested shapes `wireShapes` routes;
+//   * a `@@paged` model, whose list envelope revives its `items`;
+//   * a bare `BigInt`, `BigInt?`, `BigInt[]` and `Page<...>` procedure
+//     return, and a `BigInt` procedure argument;
+//   * a `BigInt @id`, so a primary key is a `bigint` in `get(id)` and
+//     travels in the URL (REST) / the input (RPC) as its decimal string;
+//   * a name collision: `Ledger.amountE8` is a `BigInt` and `Entry.amountE8`
+//     is a `String`. Revival is by type, so the `Entry` one must come back
+//     untouched even when it is digits (`decimal_name_collision.cstack` is
+//     the same trap for `Decimal`).
+
+transport rpc
+
+model Ledger {
+  id Cuid @id @default(cs_cuid())
+  reference String
+  amountE8 BigInt
+  feeE8 BigInt?
+  tiers BigInt[]
+  entries Entry[] @relation(fields:[id],references:[ledgerId])
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@allow("update", true)
+  @@paged
+}
+
+model Entry {
+  id Cuid @id @default(cs_cuid())
+  ledgerId Cuid
+  ledger Ledger @relation(fields:[ledgerId],references:[id])
+  deltaE8 BigInt
+  amountE8 String
+
+  @@allow("read", true)
+  @@allow("create", true)
+}
+
+// A `BigInt` primary key: `get(id: bigint)`, `String(id)` in a REST path.
+model Counter {
+  id BigInt @id
+  label String
+  hitsE8 BigInt
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@allow("update", true)
+}
+
+type Totals {
+  grossE8 BigInt
+  history BigInt[]
+}
+
+procedure totals(reference: String): Totals
+procedure balance(reference: String): BigInt
+procedure maybeBalance(reference: String): BigInt?
+procedure history(reference: String): BigInt[]
+procedure ledgers(reference: String): Page<Ledger>
+procedure scale(amountE8: BigInt, factorE8: BigInt?): BigInt

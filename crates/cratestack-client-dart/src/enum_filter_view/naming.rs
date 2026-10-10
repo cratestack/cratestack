@@ -10,9 +10,10 @@ use std::collections::BTreeSet;
 /// in `occupied_type_names` (nothing in the schema declares them), so
 /// without reserving them here `enum Number` alone produces a duplicate
 /// `class NumberFilter` — no contrived schema required.
-pub(crate) const BUILTIN_FILTER_CLASSES: [&str; 6] = [
+pub(crate) const BUILTIN_FILTER_CLASSES: [&str; 7] = [
     "StringFilter",
     "NumberFilter",
+    "BigIntFilter",
     "BooleanFilter",
     "UuidFilter",
     "DateTimeFilter",

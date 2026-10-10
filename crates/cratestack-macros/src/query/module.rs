@@ -18,6 +18,7 @@ use crate::policy::{
 };
 use crate::procedure::{generate_procedure_args_struct, procedure_output_tokens};
 use crate::shared::{doc_attrs, ident, to_snake_case};
+use crate::validators::Validating;
 
 use super::entry::generate_query_entry;
 use super::shim::as_procedure;
@@ -71,7 +72,8 @@ pub(crate) fn generate_query_module(
         .map(|expression| generate_procedure_policy(expression, &subject, types, auth))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let args_struct = generate_procedure_args_struct(&procedure, types, enum_names, "query");
+    let args_struct =
+        generate_procedure_args_struct(&procedure, types, enum_names, "query", &Validating::none());
     let output_type = procedure_output_tokens(&query.result_type, types, enum_names);
     // `query_as::<_, T>` decodes one row at a time, so it always wants the
     // element type — `Vec<T>` for a `T[]` query is what `fetch_all`

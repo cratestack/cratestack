@@ -3,7 +3,7 @@ import {
   type CratestackRpcCallOptions,
   type CratestackRpcClientOptions,
 } from "./runtime.js";
-import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
+import { encodeComputedParams, toRpcListInput, type CratestackRpcListQuery } from "./queries.js";
 import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
 {% for interface in interfaces %}
@@ -74,7 +74,7 @@ export class {{ model.api_name }} {
     }
 {% if model.computed_params_interface %}
     if (options.computedParams && Object.keys(options.computedParams as Record<string, unknown>).length > 0) {
-      input.computedParams = JSON.stringify(options.computedParams);
+      input.computedParams = encodeComputedParams(options.computedParams);
     }
 {% endif %}
     return this.runtime.call<Record<string, unknown>, unknown>(

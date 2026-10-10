@@ -98,9 +98,9 @@ class {{ model.api_class_name }} {
     final body = await _client.adapter.call(
       '{{ model.op_ids.get }}',
 {% if model.has_parameterized_computed_fields %}
-      cratestackWithRpcComputedParams({'id': id}, computedParams?.toWire()),
+      cratestackWithRpcComputedParams({'id': {{ model.primary_key_wire_expr }}}, computedParams?.toWire()),
 {% else %}
-      {'id': id},
+      {'id': {{ model.primary_key_wire_expr }}},
 {% endif %}
       options: options,
     );
@@ -127,7 +127,7 @@ class {{ model.api_class_name }} {
   }) async {
     final body = await _client.adapter.call(
       '{{ model.op_ids.update }}',
-      {'id': id, 'patch': patch.toWire()},
+      {'id': {{ model.primary_key_wire_expr }}, 'patch': patch.toWire()},
       options: options,
     );
     return {{ model.model_name }}.fromWire(cratestackAsValueMap(body));
@@ -140,7 +140,7 @@ class {{ model.api_class_name }} {
   }) async {
     final body = await _client.adapter.call(
       '{{ model.op_ids.delete }}',
-      {'id': id},
+      {'id': {{ model.primary_key_wire_expr }}},
       options: options,
     );
     return {{ model.model_name }}.fromWire(cratestackAsValueMap(body));

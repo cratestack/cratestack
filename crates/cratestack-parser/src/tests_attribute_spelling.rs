@@ -1,7 +1,7 @@
 //! Field attributes written in a form no generator reads
-//! (`validate::attribute_spelling`): an argument list or stray punctuation
-//! on an attribute that takes no arguments, and two attributes with no
-//! space between them.
+//! (`validate::attribute_shape::check_shape`, the check every closed list
+//! shares): an argument list or stray punctuation on an attribute that takes
+//! no arguments, and two attributes with no space between them.
 
 use super::parse_schema;
 
@@ -15,7 +15,7 @@ fn model_with(attributes: &str) -> String {
     format!("model User {{\n  id Int @id\n  value String {attributes}\n}}\n")
 }
 
-// Every entry of the no-argument table, with an argument list, on a model
+// Every no-argument name of the model list, with an argument list, on a model
 // field. `@email`/`@uri`/`@iso4217` are refused there by `validators` first.
 #[test]
 fn refuses_an_argument_list_on_each_no_argument_attribute() {
@@ -29,43 +29,42 @@ fn refuses_an_argument_list_on_each_no_argument_attribute() {
     ] {
         refused(
             &model_with(&format!("{name}()")),
-            &format!("writes `{name}()`, but `{name}` takes no arguments — write `{name}`"),
+            &format!(
+                "writes `{name}()`: `{name}` does not take arguments, and a generator \
+                 recognises it only when written exactly `{name}`"
+            ),
         );
     }
     refused(
         "model User {\n  id Int @id\n  rev Int @version(1)\n}\n",
-        "writes `@version(1)`, but `@version` takes no arguments — write `@version`",
+        "writes `@version(1)`: `@version` does not take arguments",
     );
     refused(
         "model User {\n  id Int @id(map: \"pk\")\n}\n",
-        "writes `@id(map: \"pk\")`, but `@id` takes no arguments — write `@id`",
+        "writes `@id(map: \"pk\")`: `@id` does not take arguments",
     );
     for name in ["@email", "@uri", "@iso4217"] {
         refused(&model_with(&format!("{name}()")), "does not take arguments");
         // `validators` refuses the argument list on a model field too, so a
-        // `type` field is what shows this rule covers each of the three.
+        // mixin field that no model uses is what shows the closed list covers each of
+        // the three.
         refused(
-            &format!("type R {{\n  s String {name}()\n}}\nprocedure p(): R\n"),
-            &format!("writes `{name}()`, but `{name}` takes no arguments — write `{name}`"),
+            &format!("mixin M {{\n  s String {name}()\n}}\nmodel A {{\n  id Int @id\n}}\n"),
+            &format!("writes `{name}()`: `{name}` does not take arguments"),
         );
     }
 }
 
-// The same rule on the other blocks, which `validators` never sees.
+// The same rule on the other blocks, which `validators` never sees. A `type`
+// field has no case here: its attributes are the validator family, which
+// `validators` checks first, as on a model (`tests_type_field_validators`);
+// the auth block takes no attribute at all (`tests_field_attribute_lists`).
 #[test]
-fn refuses_an_argument_list_in_every_field_bearing_block() {
+fn refuses_the_wrong_argument_shape_in_every_field_bearing_block() {
     for (source, needle) in [
-        (
-            "type R {\n  s String @email()\n}\nprocedure p(): R\n",
-            "field `s` on type `R` writes `@email()`",
-        ),
         (
             "mixin M {\n  s String @readonly()\n}\nmodel A {\n  id Int @id\n}\n",
             "field `s` on mixin `M` writes `@readonly()`",
-        ),
-        (
-            "auth Ctx {\n  id Int\n  s String @pii()\n}\nmodel A {\n  id Int @id\n}\n",
-            "field `s` on auth block `Ctx` writes `@pii()`",
         ),
         (
             "model A {\n  id Int @id\n}\n\
@@ -81,22 +80,29 @@ fn refuses_an_argument_list_in_every_field_bearing_block() {
 fn refuses_stray_punctuation_after_a_no_argument_attribute() {
     refused(
         &model_with("@readonly,"),
-        "writes `@readonly,`; `@readonly` is recognised only when written exactly `@readonly`",
+        "writes `@readonly,`: `,` after `@readonly` is not part of any attribute, and a \
+         generator reads `@readonly` only when nothing follows it",
     );
     // Every reader matches `@id` exactly since cratestack#1074, so `@id;`
     // is no key anywhere; before it, the model generators took it for one.
     refused(
         "model User {\n  id Int @id;\n}\n",
-        "writes `@id;`; `@id` is recognised only when written exactly `@id`",
+        "writes `@id;`: `;` after `@id` is not part of any attribute",
     );
 }
 
 #[test]
 fn a_longer_name_is_another_attribute_and_not_this_rule() {
-    // `@unique_per_tenant` is not `@unique` plus text: it stays an unknown,
-    // inert attribute, as it was.
-    parse_schema(&model_with("@unique_per_tenant"))
-        .expect("an unknown attribute that is not a near-miss stays accepted");
+    // `@unique_per_tenant` is not `@unique` plus text, so it is refused as an
+    // unsupported name (it used to stay an unknown, inert attribute), not as
+    // stray text after `@unique`.
+    let error = parse_schema(&model_with("@unique_per_tenant")).expect_err("unknown name");
+    let message = error.to_string();
+    assert!(
+        message.contains("unsupported attribute `@unique_per_tenant` on a model field"),
+        "{message}"
+    );
+    assert!(!message.contains("after `@unique`"), "{message}");
 }
 
 #[test]
@@ -110,7 +116,8 @@ fn refuses_attributes_run_together() {
             &model_with(attributes),
             &format!(
                 "writes `{attributes}`: attributes with no space between them are read as one \
-                 unrecognised attribute, so this is refused. Separate them with a space: {fix}"
+                 unrecognised attribute, so none of them has any effect. Separate them with a \
+                 space: {fix}"
             ),
         );
     }
@@ -148,8 +155,8 @@ fn accepts_at_signs_in_strings_and_correct_spellings() {
          @@allow(\"read\", auth().email == \"a@b\")\n\
          @@allow('update', auth().email == 'ops@b.io')\n}\n\
          auth Ctx {\n  id Int\n  email String\n}\n\
-         type R {\n  s String @email\n}\n\
-         procedure p(): R\n",
+         type R {\n  s String @length(min: 1)\n}\n\
+         procedure p(args: R): R\n",
     )
     .expect("correctly spelled attributes stay accepted");
 }

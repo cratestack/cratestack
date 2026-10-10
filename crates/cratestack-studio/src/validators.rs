@@ -7,9 +7,12 @@
 //! the same predicates here against `serde_json::Value` payloads.
 //! Errors are structured per-field so the UI can surface them inline.
 
+mod bigint;
 mod predicates;
 mod types;
 
+#[cfg(test)]
+mod bigint_tests;
 #[cfg(test)]
 mod predicate_tests;
 #[cfg(test)]
@@ -114,6 +117,9 @@ fn is_writable_field(field: &Field) -> bool {
 
 fn check_type(field: &Field, value: &serde_json::Value) -> Option<FieldError> {
     let scalar = field.ty.name.as_str();
+    if scalar == "BigInt" {
+        return bigint::check(field, value);
+    }
     let ok = match scalar {
         "String" | "Cuid" | "Uuid" | "DateTime" | "Decimal" | "Bytes" => value.is_string(),
         "Int" => value.is_i64() || value.is_u64(),

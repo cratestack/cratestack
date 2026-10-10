@@ -12,8 +12,9 @@
 //!   with that same reader: `@rename`, directly `(`, `from = "<old>"`, `)`.
 //!   Before, only `@@rename` was checked, and `title String
 //!   @rename(from: "name")` checked OK and dropped the `name` column. A
-//!   misspelled name (`@renam(…)`, `@Rename(…)`) is refused as a near-miss
-//!   of `@rename` (`super::misspelled_attributes`); `@rename (…)` by the
+//!   misspelled name (`@renam(…)`, `@Rename(…)`) is refused by the field
+//!   lists (`super::field_attributes`) with "did you mean `@rename`?";
+//!   `@rename (…)` by the
 //!   splitter (`crate::parse::attribute_spacing`). The check runs on every
 //!   field-bearing block, so a mixin's marker is refused where it is
 //!   written as well as in each model that `@use`s it.

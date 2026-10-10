@@ -8,6 +8,9 @@ pub(super) const BUILTIN_TYPES: &[&str] = &[
     "String",
     "Cuid",
     "Int",
+    // 64-bit integer (ADR 0019). On the wire a canonical decimal string, in
+    // Rust `cratestack::BigInt`; valid wherever `Int` is.
+    "BigInt",
     "Float",
     "Boolean",
     "DateTime",

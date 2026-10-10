@@ -75,7 +75,13 @@ postgis = ["cratestack-sql/postgis"]
 [dependencies]
 async-trait.workspace = true
 chrono.workspace = true
-cratestack-core.workspace = true
+# `sqlx-postgres` gives `cratestack_core::BigInt` its `Type`/`Encode`/`Decode`
+# impls (INT8). They live in core because of the orphan rule, and are what
+# lets a `BigInt @id` or foreign key satisfy this crate's generic
+# `PK: sqlx::Type<Postgres> + Encode<Postgres>` delegate bounds. Enabled here,
+# and in no other facade, so `cratestack-api` and `cratestack-client` stay free
+# of sqlx (ADR 0019 D3 as amended in PR B; `facade-disjointness` proves it).
+cratestack-core = { workspace = true, features = ["sqlx-postgres"] }
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true
 serde.workspace = true
@@ -112,3 +118,7 @@ pgvector = { workspace = true, optional = true }
 sqlx = { version = "=0.9.0", default-features = false, features = ["postgres"], optional = true }
 
 [dev-dependencies]
+# The PG-backed `BigInt` policy tests (`src/tests_bigint/pg.rs`), skipped without
+# a database unless `CRATESTACK_REQUIRE_DB` is set.
+testcontainers.workspace = true
+testcontainers-modules.workspace = true

@@ -104,7 +104,9 @@ model Account {
     .expect_err("@range on String should fail");
 
     assert!(
-        error.to_string().contains("only valid on Int or Decimal"),
+        error
+            .to_string()
+            .contains("only valid on Int, BigInt or Decimal"),
         "error: {error}",
     );
 }
