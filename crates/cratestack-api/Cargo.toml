@@ -206,6 +206,15 @@ tokio = { workspace = true, features = ["net", "io-util", "time"] }
 tower.workspace = true
 tracing-subscriber.workspace = true
 
+# cratestack#1026: the example server the Dart client's live test spawns
+# (`dart-packages/cratestack_cbor/test/cose/live_test.dart`). It serves one
+# procedure over REST and RPC behind the COSE envelope layer, so it needs
+# the `cose` feature; without it Cargo skips it.
+[[example]]
+name = "cose_roundtrip_server"
+path = "examples/cose_roundtrip_server.rs"
+required-features = ["cose"]
+
 # cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
 # round-trip suite. The default test run never selects that backend, so
 # `just test-ci-host` runs this target with the features on explicitly.

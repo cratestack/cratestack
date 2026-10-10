@@ -1,0 +1,20 @@
+// The RPC half of `cose_roundtrip_server.rs` (cratestack#1026); the REST
+// twin is `cose_roundtrip.cstack`. Same procedure, `transport rpc`.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type EchoArgs {
+  message String
+}
+
+type EchoReply {
+  message String
+  signer String
+}
+
+procedure echo(args: EchoArgs): EchoReply
+  @allow(auth() != null)

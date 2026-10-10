@@ -14,11 +14,15 @@ void main() {
     'round-trips a CBOR value through the real cratestack_cbor API and '
     'shows the result',
     (WidgetTester tester) async {
-      // Started before the widget exists, exactly as `main()` does it — the
-      // app takes the future rather than starting one on first build (see
-      // `main.dart`'s comment, cratestack#704).
+      // The round trip seals and opens a COSE vector (cratestack#1026), and
+      // those calls are asynchronous FFI: the native side answers on a real
+      // port, which the fake-async zone `testWidgets` runs in never drains.
+      // So the round trip runs in real time, before the widget exists, as
+      // `main()` starts it (see `main.dart`'s comment, cratestack#704), and
+      // the app is given the finished result.
+      final result = await tester.runAsync(runRoundTrip);
       await tester.pumpWidget(CratestackCborExampleApp(
-        roundTrip: runRoundTrip(),
+        roundTrip: Future.value(result!),
       ));
       await tester.pumpAndSettle();
 

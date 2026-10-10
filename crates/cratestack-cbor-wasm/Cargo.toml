@@ -44,9 +44,25 @@ decimal-bigdecimal = [
     "cratestack-codec-cbor/decimal-bigdecimal",
 ]
 
+# Off by default, and kept out of `@cratestack/cbor-web`: the npm package is
+# built without it, byte for byte codec-only (CI's `js-cbor-wasm` and
+# `release-cli.yml`'s `publish-npm-cbor-web` assert that). Only the
+# `cratestack_cbor` Dart package's web artifact is built with it
+# (`just cbor-vendor-web`): a `ClientEnvelope` class that seals requests
+# and opens responses with `cratestack-cose` (cratestack#1026, ADR 0006
+# §11). The Promise-returning methods need `js-sys` and
+# `wasm-bindgen-futures`, which only exist on the wasm target.
+cose = ["dep:bytes", "dep:cratestack-cose", "dep:js-sys", "dep:wasm-bindgen-futures", "dep:zeroize"]
+
 [dependencies]
+# `cose` only: the type `open_response` takes.
+bytes = { workspace = true, optional = true }
 cratestack-codec-cbor = { workspace = true, default-features = false }
 cratestack-core.workspace = true
+# `cose` only: the one implementation of the envelope.
+cratestack-cose = { workspace = true, optional = true }
+# `cose` only: the seed copy this layer makes is wiped on drop.
+zeroize = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
@@ -64,9 +80,13 @@ serde_json.workspace = true
 # wasm32 target, no cratestack-core changes required.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"
+# `cose` only (see the feature above).
+js-sys = { version = "0.3", optional = true }
 serde-wasm-bindgen = "0.6"
 uuid = { workspace = true, features = ["js"] }
 wasm-bindgen = "0.2"
+# `cose` only (see the feature above).
+wasm-bindgen-futures = { version = "0.4", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 js-sys = "0.3"

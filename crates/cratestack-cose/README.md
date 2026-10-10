@@ -74,6 +74,13 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   HMAC secret; `KeyProviderMacKeys` loads Mac0 keys from core's `KeyProvider`. HMAC secrets
   must be random: a Mac0 `kid` publishes 64 bits of the secret's thumbprint, so a guessable
   secret can be found offline.
+- **`CallBinding`:** the owned inputs of one call (`audience`, `method`, `route`,
+  `path_params`, `query`, `contract_sha`, `idempotency_key`, `if_match`) with
+  `request()` and `response(sealed_request, status)`, which build the `Binding`. The query is
+  canonicalised there (an empty one binds as `null`) and the payload type is
+  `application/cbor`. The Flutter and wasm glues (cratestack#1026) map their bridge types into
+  it, so neither re-implements the canonical query or the AAD inputs; `contract_header_value`
+  gives the unbound `Cratestack-Contract` value for a `contract_sha`.
 
 ## The `auth` feature
 

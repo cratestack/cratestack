@@ -74,6 +74,7 @@ mod aad;
 mod alg;
 #[cfg(feature = "auth")]
 pub mod auth;
+mod call;
 mod cbor;
 mod envelope;
 mod error;
@@ -90,6 +91,7 @@ mod wire;
 
 pub use aad::{BINDING_VERSION, external_aad};
 pub use alg::{CoseAlg, CoseMode};
+pub use call::{CallBinding, contract_header_value};
 /// Defined in `cratestack-core` since the cratestack#1006 API review (so
 /// the axum layer's `envelope` feature needs no COSE crate), and
 /// re-exported here unchanged: every path under `cratestack_cose` keeps

@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+### Dart clients can seal and open COSE through cratestack_cbor (#1151, #1026)
+
+A Dart or Flutter app can now call a server behind the COSE envelope layer (ADR 0006). The new
+`package:cratestack_cbor/cose.dart` seals a request and opens a response with `cratestack-cose`, the
+one Rust implementation, reached through the same backends as the CBOR codec: `flutter_rust_bridge`
+on native platforms, the `cratestack-cbor-wasm` build on the web. There is no Dart reimplementation
+of COSE, the canonical query or the AAD, and no crypto in the package's `lib/`. A codec-only app
+imports nothing new.
+
+```dart
+final envelope = await ClientEnvelope.create(
+  signer: Ed25519Signer.fromSeed(seed),          // or HmacSigner(CoseAlg.hmac256x64, secret)
+  serverKeys: [CoseServerKey.ed25519(serverPublicKey)],
+  audience: 'payments',
+);
+final sealed = await envelope.sealRequest(cborPayload, binding);
+final opened = await envelope.openResponse(body, binding: binding, sealedRequest: sealed, status: 200);
+```
+
+- `cratestack-cose` gains `CallBinding`, the owned inputs of one call (`audience`, `method`, `route`,
+  `path_params`, `query`, `contract_sha`, `Idempotency-Key`, `If-Match`), with `request()` and
+  `response(sealed_request, status)` building the `Binding`, and `contract_header_value`. Both glues
+  map their bridge types into it, so the canonical query (an empty one binds as `null`) and the AAD
+  inputs are not written a third time.
+- `cratestack-client-flutter` gets a `cose` feature (`frb-glue` implies it; default builds stay
+  crypto-free): the opaque `FlutterClientEnvelope`, built on `CoseEnvelope::client`, with `hmac` and
+  `ed25519_seed` constructors, `seal_request`, `open_response` and `mode`, `media_type`, `kid`
+  getters. `FlutterCoseError` is a kind and a message, not an enum with fields, because
+  `flutter_rust_bridge` would turn the latter into a `freezed` class; every failed verification is the
+  same `Rejected`, with no detail.
+- `cratestack-cbor-wasm` gets an off-by-default `cose` feature with a `ClientEnvelope` class whose
+  `sealRequest` and `openResponse` return Promises and whose errors are `{ code, message }` objects.
+  `@cratestack/cbor-web` is built without it and stays codec-only.
+- `cratestack-api` gets the `cose_roundtrip_server` example (the same `echo` procedure over REST and
+  `transport rpc`, behind the envelope layer), which the Dart package's live test spawns.
+- Only `Required` mode, like the Rust client. The signers of this release hold their key in memory
+  (an HMAC secret, an Ed25519 seed); a key in the Android Keystore or the Secure Enclave is the
+  callback signer of a follow-up. ESP256 is verified (a server may sign with it) but there is no
+  in-memory ESP256 signer.
+- The vendored artifacts of `cratestack_cbor` now carry `cratestack-cose`: the stripped Linux x86_64
+  library grows from 956,096 to 1,417,784 bytes and the web `.wasm` from 130,810 to 403,503 bytes
+  (gzipped 48,667 to 168,114). `.ci/affected-components.py` now counts the `cose` feature edge of
+  `cratestack-client-flutter` and `cratestack-cbor-wasm` (and no other optional edge), so a change to
+  `cratestack-cose` alone now sets the `cbor`, `dart` and `ts` components, the three that list those bridge
+  crates as roots. No other crate's result changes.
 ### Signed transport carries non-CBOR payloads, negotiated and bound in the AAD; CBOR stays the default (#1168)
 
 The COSE envelope's inner payload was fixed to CBOR on both sides, so a service whose public payloads are

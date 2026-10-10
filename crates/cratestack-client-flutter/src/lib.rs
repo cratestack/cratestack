@@ -6,6 +6,13 @@
 //! source this crate's `flutter_rust_bridge_codegen` glue is generated
 //! from for the published `cratestack_cbor` pub.dev package.
 //!
+//! With the `cose` feature (off by default; `frb-glue` implies it) it also
+//! carries the COSE signed transport (cratestack#1026, ADR 0006 §11): the
+//! opaque [`cose::FlutterClientEnvelope`] seals requests and opens responses
+//! with `cratestack-cose`, which `package:cratestack_cbor/cose.dart` reaches
+//! over the same bridge. The glue is generated from `crate::cbor` and
+//! `crate::cose`.
+//!
 //! `mod frb_generated` is the Rust half of that generated glue
 //! (`flutter_rust_bridge_codegen generate`'s `rust_output`, see
 //! `flutter_rust_bridge.yaml`). It is gitignored, not committed
@@ -22,6 +29,8 @@ mod frb_generated;
 
 pub mod cbor;
 mod conversions;
+#[cfg(feature = "cose")]
+pub mod cose;
 mod decoder;
 mod runtime;
 mod types;

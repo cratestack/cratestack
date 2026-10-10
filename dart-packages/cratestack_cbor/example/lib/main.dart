@@ -19,6 +19,8 @@ import 'dart:async';
 import 'package:cratestack_cbor/cratestack_cbor.dart';
 import 'package:flutter/material.dart';
 
+import 'cose_vector.dart';
+
 /// Prefix every marker line starts with, so verification can `grep` for a
 /// single literal string regardless of OK/FAILED outcome.
 const resultMarkerPrefix = 'CRATESTACK_CBOR_EXAMPLE_RESULT:';
@@ -162,8 +164,13 @@ Future<RoundTripResult> runRoundTrip() async {
       hex: hex,
       output: output,
     );
+    // The COSE half (cratestack#1026): seal one shared vector with pinned
+    // `iat`/`cti`, compare the bytes, open its response. It rides on the
+    // same marker line as the codec's, so one line proves both and every
+    // verification recipe's `OK <hex>` check still matches its prefix.
+    final coseHex = await runCoseVector();
     // ignore: avoid_print
-    print('$resultMarkerPrefix OK $hex');
+    print('$resultMarkerPrefix OK $hex COSE OK $coseHex');
     return result;
   } catch (error, stackTrace) {
     // ignore: avoid_print

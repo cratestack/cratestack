@@ -1,0 +1,20 @@
+// The REST half of `cose_roundtrip_server.rs` (cratestack#1026): the
+// smallest `db = None` schema that gives a Dart client one signed call. Its
+// `transport rpc` twin is `cose_roundtrip_rpc.cstack`; a schema is one or
+// the other.
+
+datasource db {
+  provider = "none"
+}
+
+type EchoArgs {
+  message String
+}
+
+type EchoReply {
+  message String
+  signer String
+}
+
+procedure echo(args: EchoArgs): EchoReply
+  @allow(auth() != null)

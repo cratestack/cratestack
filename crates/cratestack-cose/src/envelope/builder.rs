@@ -143,6 +143,13 @@ impl CoseEnvelopeBuilder {
     /// next thousand years) would not be a representable time. Without that
     /// last check such an envelope would build, and then answer every valid
     /// request with a `401`.
+    #[cfg_attr(
+        target_arch = "wasm32",
+        allow(
+            clippy::arc_with_non_send_sync,
+            reason = "on wasm32 a browser signer's future is never `Send` (see `maybe_send.rs`), so `Inner` is not `Send + Sync` there by design; the `Arc` is a cheap shared handle, not a thread hand-off"
+        )
+    )]
     pub fn build(self) -> Result<CoseEnvelope, CratestackError> {
         let inner = self.inner;
         if inner.signer.alg().mode() != inner.mode {

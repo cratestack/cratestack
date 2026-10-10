@@ -44,6 +44,14 @@ CRATES_DIR = ROOT / "crates"
 # so upstream crates (cratestack-core, cratestack-parser, ...) never need to
 # be listed here -- a change to them reaches every crate that depends on
 # them through the graph.
+# Optional dependency edges, absent from the default-feature graph, that a
+# component's artifact is nevertheless built with: crate -> the crates it
+# pulls in through a feature of its own. See `reverse_closure`.
+FEATURE_EDGES = {
+    "cratestack-client-flutter": {"cratestack-cose"},
+    "cratestack-cbor-wasm": {"cratestack-cose"},
+}
+
 ROOTS = {
     "cbor": {
         "cratestack-cbor-napi",
@@ -163,6 +171,21 @@ def reverse_closure(changed_names, meta):
             if dep in workspace_ids:
                 reverse[dep].add(nid)
     id_by_name = {p["name"]: p["id"] for p in meta["packages"] if p["source"] is None}
+    # `resolve` holds the graph for the default features only, so an edge
+    # behind an off-by-default feature is not in it. Exactly one such edge
+    # matters here (cratestack#1026): the `cose` feature of the two bridge
+    # crates `cratestack_cbor`'s vendored artifacts are built from
+    # (`just cbor-vendor-lib` via `frb-glue`, `just cbor-vendor-web`). Without
+    # it a diff touching only `cratestack-cose` would skip `cbor`, whose
+    # shipped bytes carry that code. Every other optional edge (`mcp`, `auth`,
+    # the facades' `cose`) stays out on purpose: adding them all made a
+    # cose or auth change run the ts, dart and cli components for nothing.
+    for pkg in meta["packages"]:
+        if pkg["source"] is not None or pkg["name"] not in FEATURE_EDGES:
+            continue
+        for dep in pkg["dependencies"]:
+            if dep.get("optional") and dep["name"] in FEATURE_EDGES[pkg["name"]]:
+                reverse[id_by_name[dep["name"]]].add(pkg["id"])
 
     affected = set()
     stack = []

@@ -1,0 +1,8 @@
+tags:
+  # `test/cose/live_test.dart`: a real round trip against the example server
+  # of `crates/cratestack-api` (cratestack#1026). It needs
+  # CRATESTACK_COSE_SERVER, the path of the built
+  # `cose_roundtrip_server` example; `just cbor-verify-package` builds it and
+  # sets the variable. Without it the tests skip, unless
+  # CRATESTACK_COSE_REQUIRE_LIVE=1, which makes the skip a failure.
+  live:
