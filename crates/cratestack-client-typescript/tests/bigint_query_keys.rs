@@ -36,6 +36,9 @@ use std::process::{Command, Output};
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 use serde_json::Value;
 
+mod vitest_support;
+use vitest_support::vitest_command;
+
 const FIXTURE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/bigint_query_keys.cstack"
@@ -234,11 +237,9 @@ fn declared_toolkit_floor(manifest: &Value) -> String {
 }
 
 fn vitest(dir: &Path, transport: &str, files: &[&str]) -> Output {
-    Command::new("npx")
-        .args(["--yes", "vitest", "run", "--reporter=verbose"])
+    vitest_command(dir)
         .args(files)
         .env("B8_TRANSPORT", transport)
-        .current_dir(dir)
         .output()
         .expect("run npx vitest")
 }

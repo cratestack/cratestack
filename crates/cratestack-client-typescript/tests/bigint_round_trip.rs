@@ -25,6 +25,9 @@ use std::process::Command;
 
 use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 
+mod vitest_support;
+use vitest_support::vitest_command;
+
 const JS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/js/bigint_round_trip");
 const LINK_BATCH_SRC: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -143,11 +146,7 @@ fn run(
         String::from_utf8_lossy(&install.stderr)
     );
 
-    let vitest = Command::new("npx")
-        .args(["--yes", "vitest", "run", "--reporter=verbose"])
-        .current_dir(dir.path())
-        .output()
-        .expect("run npx vitest");
+    let vitest = vitest_command(dir.path()).output().expect("run npx vitest");
     let stdout = String::from_utf8_lossy(&vitest.stdout);
     let stderr = String::from_utf8_lossy(&vitest.stderr);
     assert!(

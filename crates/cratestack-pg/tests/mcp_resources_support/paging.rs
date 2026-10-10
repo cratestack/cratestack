@@ -96,8 +96,12 @@ pub async fn the_page_query_filters_before_it_limits(db: &Cratestack) {
             .unwrap_or_else(|| panic!("no `{needle}` in {statement}"))
     };
     // The compiled `published || authorId == auth().id`, with the
-    // caller's id bound — not the projection's `published AS ...`.
-    let policy = "(published = TRUE OR author_id = $1)";
+    // caller's id bound — not the projection's `published AS ...`. The
+    // `user()` claim is a `Value::String`, so the pushed-down comparison
+    // names the parameter's type (`$1::text`, ADR 0019 PR B,
+    // `claim_type_suffix`): it keeps sqlx's statement cache from reusing an
+    // int8-typed statement for a string claim.
+    let policy = "(published = TRUE OR author_id = $1::text)";
     assert!(at("WHERE") < at(policy), "{statement}");
     assert!(at(policy) < at("ORDER BY"), "{statement}");
     assert!(at("ORDER BY") < at("LIMIT"), "{statement}");
