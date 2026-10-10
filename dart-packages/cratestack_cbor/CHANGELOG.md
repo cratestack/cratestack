@@ -3,6 +3,17 @@
 - Test-only: the shared fixtures now pin a CrateStack `BigInt` (ADR 0019) as a CBOR text string
   (`i64::MAX`, `i64::MIN`, `2^53 + 1`, `0` and `-1`, byte for byte) through the native and web
   codecs. No library code changed: a text string already survives both JSON-text boundaries.
+- New `package:cratestack_cbor/cose.dart`: seal requests and open responses
+  of CrateStack's COSE signed transport (ADR 0006) from Dart, through
+  `cratestack-cose` over the same backends as the codec (flutter_rust_bridge
+  natively, `cratestack-cbor-wasm` on the web). `ClientEnvelope`,
+  `HmacSigner` (COSE_Mac0) and `Ed25519Signer.fromSeed` (COSE_Sign1, in
+  memory), `CoseServerKey`, `CallBinding`, and a sealed `CoseException`
+  hierarchy. No Dart reimplementation of COSE, no crypto in `lib/`;
+  codec-only apps are unchanged. The vendored native library and the
+  vendored web `.wasm` now carry `cratestack-cose` (cratestack#1026): the
+  stripped Linux x86_64 library grows from 956,096 to 1,417,784 bytes, and
+  the web `.wasm` from 130,810 to 403,503 bytes (gzipped 48,667 to 168,114).
 
 ## 0.15.3 (2026-09-30)
 

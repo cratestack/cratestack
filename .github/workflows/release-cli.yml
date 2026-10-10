@@ -1207,6 +1207,15 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build @cratestack/cbor-web (wasm-pack + tsc)
         run: pnpm turbo run build --filter='./packages/cratestack-cbor-web'
+      # cratestack#1026: `@cratestack/cbor-web` is codec-only, byte for byte.
+      # The COSE `ClientEnvelope` class lives behind `cratestack-cbor-wasm`'s
+      # `cose` feature, which only the Dart package's web artifact is built
+      # with (`just cbor-vendor-web`). A feature enabled by default, or a
+      # `--features cose` copied into this build, would ship a signing client
+      # nobody documented to every npm consumer: look in what is about to be
+      # published, the JS glue and the module's own export names.
+      - name: Assert the published wasm is codec-only (no COSE)
+        run: .ci/cbor-web-codec-only.sh packages/cratestack-cbor-web/dist/wasm-pkg
       # Pinned to the latest 11.x, not an unbounded `npm@latest` — see the
       # `publish-npm-cbor-node` job's own comment on this same step for why
       # (a real npm 12.x regression broke @napi-rs/cli's release-package
@@ -2173,7 +2182,34 @@ jobs:
           # comment sits next to. Scoping both closes that coupling.
           ios_zip_count=$(grep -c 'CratestackCborNative\.xcframework\.zip' <<<"$ios_block" || true)
 
+          # cratestack#1026: `cratestack_cbor/cose.dart` is useless, and
+          # misleading, unless BOTH backends carry the COSE bridge. The
+          # listing above only names files, so look in the tree being
+          # archived: the generated flutter_rust_bridge glue must have the
+          # `cose` module (a dropped `crate::cose` in `cbor-vendor-glue`
+          # would still publish the codec), and the vendored web JS must
+          # export `ClientEnvelope` with `sealRequest` (a `cbor-vendor-web`
+          # without `--features cose` would too). The listing must also
+          # name the glue files, i.e. they are not ignored out of the archive.
+          cose_glue_ok=1
+          for symbol in FlutterClientEnvelope FlutterCoseError coseContractHeaderValue; do
+            grep -rq "$symbol" lib/src/native/rust || cose_glue_ok=0
+          done
+          cose_glue_listed=$(grep -c 'envelope\.dart' <<<"$dry_run_output" || true)
+          cose_web_ok=1
+          for symbol in 'export class ClientEnvelope' sealRequest openResponse; do
+            grep -q "$symbol" lib/src/web/wasm-pkg/cratestack_cbor_wasm.js || cose_web_ok=0
+          done
+
           fail=0
+          if [ "$cose_glue_ok" -ne 1 ] || [ "$cose_glue_listed" -lt 1 ]; then
+            echo "::error::the COSE bridge is missing from the native flutter_rust_bridge glue (lib/src/native/rust/cose/) or from the archive listing. cbor-vendor-glue did not run with --rust-input crate::cbor,crate::cose — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$cose_web_ok" -ne 1 ]; then
+            echo "::error::the vendored web JS does not export ClientEnvelope with sealRequest/openResponse. cbor-vendor-web did not build cratestack-cbor-wasm with --features cose — DO NOT PUBLISH." >&2
+            fail=1
+          fi
           if [ "$so_count" -ne 4 ]; then
             echo "::error::expected 4 vendored libcratestack_client_flutter.so entries in the pub.dev archive (linux-x64 + arm64-v8a + x86_64 + armeabi-v7a), found $so_count. cbor-vendor-native/cbor-vendor-android did not populate the archive — DO NOT PUBLISH." >&2
             fail=1

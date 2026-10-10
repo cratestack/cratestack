@@ -127,8 +127,29 @@ CHANGELOG_FILES_DEFAULT=(
 # dart-packages/cratestack_annotations` shows a pubspec-version correction
 # (cratestack#710) — so the inverse (placeholder-still-fires) case matters
 # for these two exactly as much as it does for cratestack_cbor.
+#
+# crates/cratestack-cose is in the cratestack_cbor scope since
+# cratestack#1026, and unlike the codec this one is a compiled-in path, not
+# only a dependency edge: `cbor-vendor-lib` builds the native library with
+# `--features frb-glue`, which implies `cratestack-client-flutter`'s `cose`
+# feature, and `cbor-vendor-web` builds `cratestack-cbor-wasm` with
+# `--features cose`. Both vendored artifacts therefore carry
+# `cratestack-cose`'s code, and a change to it (the AAD, a signer, the
+# canonical query reached through `CallBinding`) changes the shipped bytes
+# while the package's own directory stays untouched.
+#
+# The same reasoning reaches the few FILES of `crates/cratestack-core` that
+# `CallBinding` and the envelope feed into those bytes: the `Binding` and its
+# parts (`codec/binding.rs`, `bound_headers.rs`, `path_params.rs`,
+# `response_binding.rs`), the request digest and nonce (`request_nonce.rs`), the
+# `Cratestack-Contract` selector (`contract_selector.rs`) and
+# `transport/canonical_query.rs`. The scope is a list of git pathspecs, so
+# files are listed, not the whole crate, which changes on nearly every
+# release for reasons unrelated to what ships here (see above). The gap that
+# remains: a change elsewhere in core (the error type, `Value`) that alters a
+# vendored byte is not seen; add its file here if one ever does.
 declare -A CHANGELOG_NOOP_SCOPES=(
-  ["dart-packages/cratestack_cbor/CHANGELOG.md"]="dart-packages/cratestack_cbor crates/cratestack-client-flutter crates/cratestack-cbor-wasm crates/cratestack-codec-cbor"
+  ["dart-packages/cratestack_cbor/CHANGELOG.md"]="dart-packages/cratestack_cbor crates/cratestack-client-flutter crates/cratestack-cbor-wasm crates/cratestack-codec-cbor crates/cratestack-cose crates/cratestack-core/src/codec/binding.rs crates/cratestack-core/src/codec/bound_headers.rs crates/cratestack-core/src/codec/path_params.rs crates/cratestack-core/src/codec/request_nonce.rs crates/cratestack-core/src/codec/response_binding.rs crates/cratestack-core/src/codec/contract_selector.rs crates/cratestack-core/src/transport/canonical_query.rs"
   ["dart-packages/cratestack_annotations/CHANGELOG.md"]="dart-packages/cratestack_annotations"
   ["dart-packages/cratestack_builder/CHANGELOG.md"]="dart-packages/cratestack_builder"
 )

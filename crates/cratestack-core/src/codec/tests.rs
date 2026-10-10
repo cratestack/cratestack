@@ -4,6 +4,7 @@
 
 mod binding;
 mod contract_selector;
+mod payload_type;
 mod provided_methods;
 mod stream_shape;
 

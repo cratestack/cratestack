@@ -149,7 +149,12 @@ jobs:
         # `getrandom` 0.4 there) breaks it, and only the wasm-pack job
         # further down would notice, much later. Decision B-1 of the
         # second #1006 review.
-        run: cargo check --locked -p cratestack-cbor-wasm --target wasm32-unknown-unknown
+        run: |
+          cargo check --locked -p cratestack-cbor-wasm --target wasm32-unknown-unknown
+          # cratestack#1026: the `ClientEnvelope` class the Dart package's web
+          # artifact is built with. Its code is wasm32-only, so only this
+          # target compiles it; the npm package is built without the feature.
+          cargo check --locked -p cratestack-cbor-wasm --target wasm32-unknown-unknown --features cose
       - name: cargo tree (cratestack-cose reaches cratestack-auth only through its `auth` feature)
         # ADR 0006 §11 / cratestack#1005: clients and the wasm/napi builds
         # depend on `cratestack-cose` without `auth`, and must not inherit
@@ -440,6 +445,20 @@ jobs:
             echo "::error::cratestack-client --features cose must not pull axum"
             exit 1
           fi
+          # cratestack#1026: the Dart and web bridges carry COSE behind their
+          # own off-by-default `cose` feature (`frb-glue` implies it in the
+          # flutter crate, because the vendored `cratestack_cbor` library is
+          # built from that feature). A default graph has neither
+          # `cratestack-cose` nor a signature crate; the `--features cose` leg
+          # proves the grep can fail.
+          for bridge in cratestack-client-flutter cratestack-cbor-wasm; do
+            no_crypto "$bridge (default features)" -p "$bridge"
+            graph="$(cargo tree --locked -e normal -p "$bridge" --features cose --prefix none)"
+            if ! grep -q '^cratestack-cose v' <<<"$graph"; then
+              echo "::error::expected cratestack-cose in $bridge's graph with --features cose"
+              exit 1
+            fi
+          done
           for example in no-database-verification no-database-verification-api client-only-verification db-transaction-verification declarative-query-verification mcp-operator; do
             graph="$(cd "examples/$example" && cargo tree --locked -e normal --prefix none)"
             if grep -E "$crypto" <<<"$graph"; then
@@ -1648,6 +1667,26 @@ jobs:
         run: cargo install --locked flutter_rust_bridge_codegen --version 2.13.0
       - name: Vendor flutter_rust_bridge glue (both halves)
         run: just cbor-vendor-glue
+      - name: The glue carries the COSE bridge (cratestack#1026)
+        # `--rust-input crate::cbor,crate::cose` in `cbor-vendor-glue`: a
+        # dropped `crate::cose` would still generate the codec glue, still
+        # compile, and ship a Dart package whose `cose.dart` has nothing to
+        # call. Both halves are checked, and so is what the generated Dart
+        # may not import: the package declares neither `freezed_annotation`
+        # (an enum with fields would bring it, which is why the bridge's
+        # error is a struct) nor `collection` (a `[u8; 32]` would).
+        run: |
+          set -euo pipefail
+          dart_glue=dart-packages/cratestack_cbor/lib/src/native/rust
+          rust_glue=crates/cratestack-client-flutter/src/frb_generated.rs
+          for symbol in FlutterClientEnvelope FlutterCoseError FlutterCallBinding coseContractHeaderValue; do
+            grep -rq "$symbol" "$dart_glue" || { echo "::error::$symbol missing from the generated Dart glue"; exit 1; }
+          done
+          grep -q 'cose_contract_header_value' "$rust_glue" || { echo "::error::the cose bridge is missing from the generated Rust glue"; exit 1; }
+          if grep -rlE "package:(freezed_annotation|collection)/" "$dart_glue"; then
+            echo "::error::the generated Dart glue imports a package cratestack_cbor does not depend on"
+            exit 1
+          fi
       # Both halves ship: the Rust side is what makes
       # `cargo build --features frb-glue` compile at all (without it,
       # `crates/cratestack-client-flutter/src/lib.rs`'s `mod frb_generated;`
@@ -2442,6 +2481,11 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build, test, lint @cratestack/cbor-web
         run: pnpm turbo run build test lint --filter='./packages/cratestack-cbor-web'
+      # cratestack#1026: the npm package stays codec-only; the COSE class is
+      # behind a cargo feature only the Dart package's web artifact enables.
+      # The same script gates the release publish.
+      - name: Assert @cratestack/cbor-web is codec-only (no COSE ClientEnvelope)
+        run: .ci/cbor-web-codec-only.sh packages/cratestack-cbor-web/dist/wasm-pkg
 
   # ---- @cratestack/refine (dataProvider over a generated TS client) -----
   # Same rationale as js-cbor-napi/js-cbor-wasm above, for the third

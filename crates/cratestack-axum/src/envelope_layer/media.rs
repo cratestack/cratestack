@@ -1,10 +1,9 @@
 //! Media-type checks: which requests carry an envelope, and what `Accept`
 //! asks for.
 
+use http::HeaderMap;
 use http::header::{ACCEPT, CONTENT_TYPE};
-use http::{HeaderMap, HeaderValue};
 
-use super::PAYLOAD_MEDIA_TYPE;
 use super::server_envelope::ServerEnvelope;
 
 /// The base type every COSE framing shares (RFC 9052 §2); `cose-type` is a
@@ -78,32 +77,57 @@ fn refused(entry: &str) -> bool {
     })
 }
 
-/// Whether a response's `Content-Type` is exactly the payload media type
-/// the binding names (parameters aside), so its body can be sealed as is.
-pub(super) fn is_cbor_response(headers: &HeaderMap) -> bool {
+/// The base media type of a response's one `Content-Type` header,
+/// parameters aside; `None` when it has none or more than one, so a response
+/// that labels itself twice is never sealed as either.
+pub(super) fn response_media_type(headers: &HeaderMap) -> Option<&str> {
     let mut values = headers.get_all(CONTENT_TYPE).iter();
     let (Some(value), None) = (values.next(), values.next()) else {
-        return false;
+        return None;
     };
-    value.to_str().is_ok_and(|value| {
-        value
-            .split(';')
-            .next()
-            .unwrap_or(value)
-            .trim()
-            .eq_ignore_ascii_case(PAYLOAD_MEDIA_TYPE)
-    })
+    let value = value.to_str().ok()?;
+    Some(value.split(';').next().unwrap_or(value).trim())
 }
 
-pub(super) fn cbor_header_value() -> HeaderValue {
-    HeaderValue::from_static(PAYLOAD_MEDIA_TYPE)
+/// Whether a response's `Content-Type` is free of a `charset` other than
+/// UTF-8. The type is sealed without its parameters and a client decodes
+/// JSON and forms as UTF-8, so a body a handler labelled otherwise would be
+/// misread, never refused: it is not sealed as the negotiated type.
+pub(super) fn charset_is_utf8(headers: &HeaderMap) -> bool {
+    headers
+        .get_all(CONTENT_TYPE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';').skip(1))
+        .filter_map(|param| param.split_once('='))
+        .filter(|(name, _)| name.trim().eq_ignore_ascii_case("charset"))
+        .all(|(_, value)| value.trim().trim_matches('"').eq_ignore_ascii_case("utf-8"))
 }
 
 #[cfg(test)]
 mod tests {
     use http::{HeaderMap, HeaderValue};
 
-    use super::{accept_names_stream, is_cbor_response, names_cose, refused};
+    use super::{accept_names_stream, charset_is_utf8, names_cose, refused, response_media_type};
+
+    #[test]
+    fn only_utf_8_is_a_charset_a_sealed_response_may_name() {
+        for (value, utf8) in [
+            ("application/json", true),
+            ("application/json; charset=utf-8", true),
+            ("application/json;charset=\"UTF-8\"", true),
+            ("application/json; charset=utf-16", false),
+            ("application/json; Charset=latin1", false),
+            ("application/json; q=1; charset=utf-8x", false),
+        ] {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                http::header::CONTENT_TYPE,
+                HeaderValue::from_str(value).expect("header"),
+            );
+            assert_eq!(charset_is_utf8(&headers), utf8, "{value}");
+        }
+    }
 
     #[test]
     fn cose_is_recognised_in_every_spelling() {
@@ -142,17 +166,18 @@ mod tests {
     }
 
     #[test]
-    fn a_response_with_two_content_types_is_not_cbor() {
+    fn a_response_with_two_content_types_names_none() {
         let mut headers = HeaderMap::new();
+        headers.append(
+            http::header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+        assert_eq!(response_media_type(&headers), Some("application/json"));
         headers.append(
             http::header::CONTENT_TYPE,
             HeaderValue::from_static("application/cbor"),
         );
-        assert!(is_cbor_response(&headers));
-        headers.append(
-            http::header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-        assert!(!is_cbor_response(&headers));
+        assert_eq!(response_media_type(&headers), None);
+        assert_eq!(response_media_type(&HeaderMap::new()), None);
     }
 }

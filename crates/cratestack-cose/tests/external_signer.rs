@@ -155,58 +155,50 @@ fn a_public_key_that_is_not_on_the_curve_is_refused() {
     assert!(matches!(error, CratestackError::Validation(_)), "{error:?}");
 }
 
-/// Fixed DER encodings a keystore may return, each converted to the 64-byte
-/// `r ‖ s` COSE carries.
-mod der_vectors {
-    use super::*;
+#[tokio::test]
+async fn a_signature_by_another_key_is_a_local_error_not_a_silent_401() {
+    // The callback signs with a key that is not the one declared: every
+    // request would otherwise fail at the peer with the coarse 401.
+    let other = SigningKey::from_slice(&[9; 32]).expect("scalar");
+    let signer = ExternalSigner::esp256(&public_sec1(), move |tbs| {
+        let other = other.clone();
+        async move {
+            let signature: Signature = other.sign(&tbs);
+            Ok(signature.to_bytes().to_vec())
+        }
+    })
+    .expect("signer");
+    let error = envelope(signer)
+        .seal_request(b"\xa0", &rest_request())
+        .await
+        .expect_err("a signature that does not verify never reaches the wire");
+    assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");
+}
 
-    async fn raw_of(answer: Vec<u8>) -> Vec<u8> {
-        let signer = ExternalSigner::esp256(&public_sec1(), move |_tbs| {
-            let answer = answer.clone();
-            async move { Ok(answer) }
-        })
-        .expect("signer");
-        signer.sign(b"tbs").await.expect("converted")
-    }
-
-    fn padded(value: &[u8]) -> Vec<u8> {
-        let mut out = vec![0; 32 - value.len()];
-        out.extend_from_slice(value);
-        out
-    }
-
-    #[tokio::test]
-    async fn a_high_bit_r_and_s_lose_their_zero_padding() {
-        // INTEGERs whose top bit is set carry a leading 0x00 in DER: 33 bytes.
-        let (mut r, mut s) = (vec![0x80], vec![0xC0]);
-        r.extend([0x11; 31]);
-        s.extend([0x22; 31]);
-        let mut der = vec![0x30, 0x46, 0x02, 0x21, 0x00];
-        der.extend(&r);
-        der.extend([0x02, 0x21, 0x00]);
-        der.extend(&s);
-        assert_eq!(raw_of(der).await, [r, s].concat());
-    }
-
-    #[tokio::test]
-    async fn a_short_r_and_s_are_left_padded_to_32_bytes() {
-        // r = 0x0102 and s = 0x7f: DER drops the leading zeros.
-        let der = vec![0x30, 0x07, 0x02, 0x02, 0x01, 0x02, 0x02, 0x01, 0x7f];
-        assert_eq!(
-            raw_of(der).await,
-            [padded(&[0x01, 0x02]), padded(&[0x7f])].concat()
-        );
-    }
-
-    #[tokio::test]
-    async fn garbage_is_refused() {
-        let signer = ExternalSigner::esp256(&public_sec1(), |_tbs| async { Ok(vec![0x30, 0x01]) })
-            .expect("signer");
-        assert!(matches!(
-            signer.sign(b"tbs").await,
-            Err(CratestackError::Internal(_))
-        ));
-    }
+#[tokio::test]
+async fn a_high_s_signature_that_is_otherwise_valid_is_accepted_as_before() {
+    // Keystores do not normalise `s`; the envelope does, so the signer must
+    // not refuse what the envelope would have fixed.
+    let key = keystore();
+    let signer = ExternalSigner::esp256(&public_sec1(), move |tbs| {
+        let key = key.clone();
+        async move {
+            let signature: Signature = key.sign(&tbs);
+            let (r, s) = (signature.r(), signature.s());
+            let high = Signature::from_scalars(r, -*s).expect("scalars");
+            Ok(high.to_bytes().to_vec())
+        }
+    })
+    .expect("signer");
+    let bind = rest_request();
+    let sealed = envelope(signer)
+        .seal_request(b"\xa0", &bind)
+        .await
+        .expect("seal");
+    common::server(CoseAlg::Esp256, common::now())
+        .open_request(sealed, &bind)
+        .await
+        .expect("verifies");
 }
 
 #[test]
@@ -219,4 +211,108 @@ fn a_compressed_sec1_key_gives_the_same_kid() {
     let signer = ExternalSigner::esp256(&compressed, |_tbs| async { Ok(Vec::new()) })
         .expect("a compressed key is accepted");
     assert_eq!(signer.kid(), der_signer().kid());
+}
+
+mod ed25519 {
+    use std::sync::Arc;
+
+    use cratestack_core::CratestackError;
+    use cratestack_cose::{
+        CoseAlg, CoseEnvelope, CoseMode, CoseSigner, CoseVerifyKey, ExternalSigner,
+    };
+    use ed25519_dalek::Signer as _;
+
+    use super::common::{self, ED25519_SEED, rest_request};
+
+    fn keystore() -> ed25519_dalek::SigningKey {
+        ed25519_dalek::SigningKey::from_bytes(&ED25519_SEED)
+    }
+
+    fn public() -> [u8; 32] {
+        keystore().verifying_key().to_bytes()
+    }
+
+    fn signer() -> ExternalSigner {
+        let key = keystore();
+        ExternalSigner::ed25519(&public(), move |tbs| {
+            let key = key.clone();
+            async move { Ok(key.sign(&tbs).to_bytes().to_vec()) }
+        })
+        .expect("signer")
+    }
+
+    #[test]
+    fn the_kid_is_the_thumbprint_of_the_public_key() {
+        let external = signer();
+        assert_eq!(external.alg(), CoseAlg::Ed25519);
+        assert_eq!(external.kid(), common::ed25519().kid());
+    }
+
+    #[tokio::test]
+    async fn what_the_keystore_signed_verifies_at_the_server() {
+        let client = CoseEnvelope::client(CoseMode::Sign1, Arc::new(signer()), common::resolver())
+            .build()
+            .expect("client envelope");
+        let bind = rest_request();
+        let sealed = client.seal_request(b"\xa0", &bind).await.expect("seal");
+        let server = common::server(CoseAlg::Ed25519, common::now());
+        let opened = server.open_request(sealed, &bind).await.expect("verifies");
+        assert_eq!(opened.payload.as_ref(), b"\xa0");
+    }
+
+    #[tokio::test]
+    async fn it_agrees_byte_for_byte_with_the_in_process_signer() {
+        let tbs = b"to be signed".to_vec();
+        assert_eq!(
+            signer().sign(&tbs).await.expect("external"),
+            common::ed25519().sign(&tbs).await.expect("in process"),
+            "Ed25519 is deterministic"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_signature_of_the_wrong_length_is_refused() {
+        for bad in [Vec::new(), vec![0; 63], vec![0; 65]] {
+            let signer = ExternalSigner::ed25519(&public(), move |_| {
+                let bad = bad.clone();
+                async move { Ok(bad) }
+            })
+            .expect("signer");
+            let error = signer.sign(b"tbs").await.expect_err("not 64 bytes");
+            assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_signature_by_another_key_is_a_local_error_not_a_silent_401() {
+        let other = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+        let signer = ExternalSigner::ed25519(&public(), move |tbs| {
+            let other = other.clone();
+            async move { Ok(other.sign(&tbs).to_bytes().to_vec()) }
+        })
+        .expect("signer");
+        let client = CoseEnvelope::client(CoseMode::Sign1, Arc::new(signer), common::resolver())
+            .build()
+            .expect("client envelope");
+        let error = client
+            .seal_request(b"\xa0", &rest_request())
+            .await
+            .expect_err("a signature that does not verify never reaches the wire");
+        assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");
+    }
+
+    #[test]
+    fn a_public_key_that_is_not_a_point_is_refused() {
+        let not_a_point = (2u8..=255)
+            .map(|y| {
+                let mut bytes = [0u8; 32];
+                bytes[0] = y;
+                bytes
+            })
+            .find(|bytes| CoseVerifyKey::ed25519(bytes).is_err())
+            .expect("some y does not decompress");
+        let error = ExternalSigner::ed25519(&not_a_point, |_| async { Ok(vec![0; 64]) })
+            .expect_err("refused");
+        assert!(matches!(error, CratestackError::Validation(_)), "{error:?}");
+    }
 }

@@ -11,6 +11,18 @@ pub trait HttpClientCodec: CratestackCodec {
 
     fn sequence_accept_header_value(&self) -> &'static str;
 
+    /// The response payload types this codec reads **inside a COSE
+    /// envelope**, as a `Cratestack-Payload-Accept` value: one to eight
+    /// lowercase `type/subtype` entries joined by `", "`, in order of
+    /// preference. The default is [`CONTENT_TYPE`](cratestack_core::CratestackCodec::CONTENT_TYPE)
+    /// alone, which suits a codec that writes and reads the same type;
+    /// override it for an asymmetric one (a form in, JSON out). A sealed
+    /// call sends the header only when this is not `application/cbor`, and
+    /// the client refuses any answer sealed under a type it does not list.
+    fn payload_accept(&self) -> &'static str {
+        Self::CONTENT_TYPE
+    }
+
     fn decode_response<T>(&self, content_type: &str, body: &[u8]) -> Result<T, CratestackError>
     where
         T: DeserializeOwned;

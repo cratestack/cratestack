@@ -80,8 +80,18 @@ where
     /// supplies ([`with_contracts`](Self::with_contracts)); a bare client
     /// fails its first call with `BadInput`.
     ///
-    /// The envelope is CBOR: fails with `BadInput` for a codec whose body is
-    /// not `application/cbor` (`JsonCodec`).
+    /// The codec's `CONTENT_TYPE` is the type of every sealed request, and
+    /// its [`payload_accept`](HttpClientCodec::payload_accept) the types it
+    /// reads back; CBOR is the default and sends nothing extra, any other
+    /// type travels in the `Cratestack-Payload-Type` / `-Accept` headers and
+    /// is bound in the seal (cratestack#1168), so the server's layer must
+    /// have opted in to it. Fails with `BadInput` for a codec whose types can
+    /// never be sealed (an envelope, a stream, a multipart body, or anything
+    /// outside the lowercase `type/subtype` grammar). A response sealed under
+    /// a type the codec did not list is
+    /// [`EnvelopeError::UnexpectedPayloadType`](crate::EnvelopeError), and is
+    /// never decoded. A sealed `/rpc/batch` is CBOR both ways, so a batch over
+    /// another codec fails with `BadInput` before anything is sent.
     ///
     /// **Retries.** A sealed request carries a fresh `cti`, and the server
     /// answers a replayed one with an unsigned `401`. So sealed requests are
@@ -113,16 +123,11 @@ where
     /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError) until
     /// ADR 0006 P1.
     ///
-    /// **Authorizers** still run, over the *inner* payload with
-    /// `Content-Type: application/cbor` (none for a bodiless call): the
-    /// request the server's `AuthProvider` sees after it opens the seal.
+    /// **Authorizers** still run, over the *inner* payload with the codec's
+    /// `Content-Type` (none for a bodiless call): the request the server's
+    /// `AuthProvider` sees after it opens the seal.
     pub fn with_envelope(mut self, envelope: ClientEnvelope) -> Result<Self, ClientError> {
-        if C::CONTENT_TYPE != "application/cbor" {
-            return Err(ClientError::BadInput(format!(
-                "a COSE envelope wraps CBOR; this client's codec is {}",
-                C::CONTENT_TYPE
-            )));
-        }
+        crate::envelope::check_payload_types(C::CONTENT_TYPE, self.codec.payload_accept())?;
         self.sealing.envelope = Some(envelope);
         Ok(self)
     }

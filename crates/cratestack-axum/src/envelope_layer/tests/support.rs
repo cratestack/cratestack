@@ -35,9 +35,16 @@ pub static CONTRACTS: AcceptedContracts = &[
     ("POST /widgets", &[CONTRACT]),
     ("GET /widgets/{id}", &[CONTRACT]),
     ("DELETE /widgets/{id}", &[CONTRACT]),
+    ("GET /notes", &[CONTRACT]),
+    ("GET /form-read", &[CONTRACT]),
     ("GET /text-error", &[CONTRACT]),
     ("GET /json", &[CONTRACT]),
     ("GET /stream", &[CONTRACT]),
+    ("POST /pay", &[CONTRACT]),
+    ("POST /either", &[CONTRACT]),
+    ("GET /html", &[CONTRACT]),
+    ("GET /plain-error", &[CONTRACT]),
+    ("GET /utf16", &[CONTRACT]),
 ];
 pub const SIGN1: &str = "application/cose; cose-type=\"cose-sign1\"";
 /// `{"a": 1}` in CBOR.
