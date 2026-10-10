@@ -6,6 +6,8 @@ use std::borrow::Cow;
 
 use http::Method;
 
+use super::resolver_payload::PayloadTypes;
+
 /// What a resolver sees of a request: the method, the raw path, the route
 /// template axum matched (`None` when no route matched, or under
 /// `nest_service`), and the matched path parameters, percent-decoded, in the
@@ -62,6 +64,7 @@ pub struct ResolvedRoute {
     route: Cow<'static, str>,
     path_params: Vec<String>,
     contract_key: Option<Cow<'static, str>>,
+    pub(super) payload_types: Option<PayloadTypes>,
 }
 
 /// The route an RPC subscription is bound under: `subscribe/<op id>`.
@@ -77,6 +80,7 @@ impl ResolvedRoute {
             route: route.into(),
             path_params,
             contract_key: None,
+            payload_types: None,
         }
     }
 

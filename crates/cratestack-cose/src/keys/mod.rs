@@ -2,6 +2,7 @@
 //! in-process implementations.
 
 mod external;
+mod external_signature;
 mod hmac;
 mod key_provider;
 mod registry_resolver;

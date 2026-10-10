@@ -68,6 +68,7 @@ impl EnvelopeLayerBuilder {
                 "allow_unresolved({bad:?}): a route template starts with '/'"
             )));
         }
+        super::builder_payload::validate(&self.payload_request, &self.payload_response)?;
         let media_type = self.envelope.media_type();
         if HeaderValue::from_str(media_type).is_err()
             || !media::is_envelope_media_type(media_type, &*self.envelope)
@@ -90,6 +91,8 @@ impl EnvelopeLayerBuilder {
                 max_body_bytes: self.max_body_bytes,
                 mount_prefix: mount_prefix::normalize(prefix),
                 allow_unresolved: self.allow_unresolved,
+                payload_request: self.payload_request,
+                payload_response: self.payload_response,
             }),
         })
     }

@@ -54,8 +54,8 @@
 //!    `Required` a request that is not is refused. Under `Optional` it runs
 //!    unsigned, and its response is sealed only if it carries a valid
 //!    `Cratestack-Nonce` and the [`ResponseSealPolicy`] agrees (D10).
-//! 5. An opened request reaches the router as the plain CBOR request it
-//!    wraps, with `Accept: application/cbor`, and gains the
+//! 5. An opened request reaches the router as the plain request it wraps,
+//!    with the negotiated `Content-Type`/`Accept`, and gains the
 //!    `cratestack_core::VerifiedSigner` (recorded on the handler's context,
 //!    D2, never an authentication) and the [`PrincipalMapper`]'s
 //!    `VerifiedPrincipal` extensions.
@@ -63,6 +63,11 @@
 //!    request was opened against, plus the request digest and the status.
 //!    Every response to a signed request is sealed, under `Optional` too
 //!    (S3), errors included, except the layer's own refusals (D4).
+//!
+//! # Payload media types (cratestack#1168)
+//!
+//! A payload is CBOR unless the client names another type (unbound `Cratestack-Payload-Type`
+//! / `-Accept` headers, bound in the AAD): [`EnvelopeLayerBuilder::payload_media_types`].
 //!
 //! # Security invariants, enforced here and not by the plug-ins
 //!
@@ -72,7 +77,7 @@
 //!   the policy says, or refused with the unsigned `415`: never forwarded.
 //! - Under `Required`, no unsigned request reaches the inner service, and
 //!   no response to a signed request goes out plain: one the layer cannot
-//!   seal (a stream, a body that is not CBOR) is replaced by a sealed error.
+//!   seal (a stream, a body of an un-negotiated type) is replaced by a sealed error.
 //! - A verification failure is always the same coarse, **unsigned** `401`
 //!   (D4): a replayed request must not earn a signed "401" for a request
 //!   that already executed. Any other envelope error is a `500` whose
@@ -89,7 +94,7 @@
 //!
 //! The AAD binds the audience, method, route, path parameters, canonical
 //! query (distinct keys in any order bind alike; one key's repeated values
-//! keep their order), op-contract digest, payload media type, and the
+//! keep their order), op-contract digest, the message's payload type, and the
 //! `Idempotency-Key` and `If-Match` headers exactly as sent (S1; a request
 //! sending either twice is refused with a `400`). For a response: the
 //! request digest and the status. **Response headers** (`ETag`,
@@ -101,8 +106,8 @@
 //!
 //! - Streamed responses (`@stream` over `application/cbor-seq`, SSE
 //!   subscriptions) cannot be sealed until `chain` mode (ADR 0006 P1). A
-//!   signed request gets `Accept: application/cbor`, so a `@stream` op
-//!   answers with one buffered, sealed array; a signed subscription is
+//!   signed request gets an `Accept` of sealable types only, so a `@stream`
+//!   op answers with one buffered, sealed array; a signed subscription is
 //!   refused with a sealed `406` before its handler runs. Only an unsigned
 //!   request under `Optional` can stream (plain).
 //! - A response is re-buffered to be sealed, up to
@@ -133,6 +138,7 @@ mod batch;
 mod bound;
 mod build;
 mod builder;
+mod builder_payload;
 mod contract;
 #[cfg(feature = "cose")]
 mod cose_impl;
@@ -143,11 +149,13 @@ mod layer;
 mod media;
 mod mode;
 mod opened;
+mod payload;
 mod policy_request;
 mod principal;
 mod refusal;
 mod request;
 mod resolver;
+mod resolver_payload;
 mod resolver_rest;
 mod resolver_rpc;
 mod seal;
@@ -178,8 +186,8 @@ pub use seal_policy::{AcceptNamesEnvelope, ResponseSealPolicy, UnsignedRequest};
 pub use server_envelope::ServerEnvelope;
 pub use service::EnvelopeService;
 
-/// The media type of every payload inside a sealed message: the AAD binds
-/// it (ADR 0006 §4), and it is fixed to CBOR in P0.
+/// The payload type of a sealed message that names none (ADR 0006 §4): the
+/// default, no longer the only one ([`EnvelopeLayerBuilder::payload_media_types`]).
 pub const PAYLOAD_MEDIA_TYPE: &str = "application/cbor";
 
 /// The default cap on the accepted digests tried for a request that names

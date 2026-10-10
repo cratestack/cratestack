@@ -7,6 +7,7 @@
 
 mod adversarial_envelope;
 mod fixtures;
+mod fixtures_routes;
 mod hostile;
 mod support;
 mod toy;
@@ -41,6 +42,26 @@ mod off_mode;
 mod optional;
 #[cfg(feature = "cose")]
 mod optional_signed;
+#[cfg(feature = "cose")]
+mod payload_types;
+#[cfg(feature = "cose")]
+mod payload_types_builder;
+#[cfg(feature = "cose")]
+mod payload_types_charset;
+#[cfg(feature = "cose")]
+mod payload_types_compat;
+#[cfg(feature = "cose")]
+mod payload_types_optional;
+#[cfg(feature = "cose")]
+mod payload_types_reads;
+#[cfg(feature = "cose")]
+mod payload_types_reads_checked;
+#[cfg(feature = "cose")]
+mod payload_types_refusals;
+#[cfg(feature = "cose")]
+mod payload_types_rpc;
+#[cfg(feature = "cose")]
+mod payload_types_support;
 #[cfg(feature = "cose")]
 mod plugins;
 #[cfg(feature = "cose")]

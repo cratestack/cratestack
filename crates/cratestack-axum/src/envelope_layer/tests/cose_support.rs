@@ -67,6 +67,10 @@ pub struct Call {
     pub bound: (Option<&'static str>, Option<&'static str>),
     /// The op-contract digest the client binds.
     pub contract: [u8; 32],
+    /// The payload type the request binds, and the one its response is
+    /// expected to bind (cratestack#1168).
+    pub request_type: &'static str,
+    pub response_type: &'static str,
 }
 
 impl Call {
@@ -78,6 +82,18 @@ impl Call {
             query: None,
             bound: (None, None),
             contract: CONTRACT,
+            request_type: "application/cbor",
+            response_type: "application/cbor",
+        }
+    }
+
+    /// The same call, binding `request` for its payload and expecting its
+    /// response to bind `response`.
+    pub fn types(self, request: &'static str, response: &'static str) -> Self {
+        Self {
+            request_type: request,
+            response_type: response,
+            ..self
         }
     }
 
@@ -116,7 +132,10 @@ impl Call {
             path_params: PathParams::Borrowed(&self.params),
             query: self.query.map(Cow::Borrowed),
             contract_sha: self.contract,
-            payload_media_type: Cow::Borrowed("application/cbor"),
+            payload_media_type: Cow::Borrowed(match response {
+                None => self.request_type,
+                Some(_) => self.response_type,
+            }),
             bound_headers: BoundHeaders {
                 idempotency_key: self.bound.0.map(Cow::Borrowed),
                 if_match: self.bound.1.map(Cow::Borrowed),

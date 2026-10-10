@@ -106,6 +106,16 @@ pub struct Binding<'a> {
     /// COSE header (label 3 would cost bytes on every message; ADR 0006 §2),
     /// so a verifier cannot be tricked into decoding the payload as
     /// something else.
+    ///
+    /// On a request binding it is the **request** payload's type; on a
+    /// response binding ([`response`](Self::response) is `Some`) it is the
+    /// **response** payload's own type, which need not be the request's
+    /// (form in, JSON out). Both default to `application/cbor`
+    /// ([`DEFAULT_PAYLOAD_MEDIA_TYPE`](super::DEFAULT_PAYLOAD_MEDIA_TYPE)), and
+    /// the `Cratestack-Payload-Type` / `Cratestack-Payload-Accept` headers
+    /// (see [`PAYLOAD_TYPE_HEADER`](super::PAYLOAD_TYPE_HEADER)) tell the
+    /// verifier which string to rebuild the AAD with. The AAD layout and the
+    /// binding version are unchanged.
     pub payload_media_type: Cow<'a, str>,
     /// The request's `Idempotency-Key` and `If-Match`, exactly as sent (see
     /// [`BoundHeaders`]); [`BoundHeaders::NONE`] for a request with

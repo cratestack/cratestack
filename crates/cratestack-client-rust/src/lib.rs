@@ -44,7 +44,7 @@ pub use cratestack_core::ProjectionDecoder as Projection;
 #[cfg(feature = "cose")]
 pub use cratestack_cose as cose;
 #[cfg(feature = "cose")]
-pub use envelope::ClientEnvelope;
+pub use envelope::{ClientEnvelope, OpenedResponse, PendingResponse, SealCall, SealedCall};
 pub use envelope_error::EnvelopeError;
 pub use error::{ClientError, HeaderPair, QueryPair};
 pub use idempotency::RequestIdempotency;

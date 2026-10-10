@@ -7,10 +7,13 @@
 
 use axum::response::Response;
 use cratestack_core::{
-    CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE, CratestackError, UNAUTHENTICATED,
+    CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE, CratestackError,
+    PAYLOAD_TYPE_NOT_ACCEPTABLE_CODE, PAYLOAD_TYPE_NOT_ACCEPTABLE_REST_CODE,
+    PAYLOAD_TYPE_UNSUPPORTED_CODE, PAYLOAD_TYPE_UNSUPPORTED_REST_CODE, UNAUTHENTICATED,
 };
 use http::{HeaderMap, HeaderValue, Method, StatusCode};
 
+use super::payload::Refusal;
 use super::request::BufferError;
 use super::resolver::ResolvedRoute;
 use crate::middleware_error::{
@@ -47,6 +50,38 @@ pub(super) fn contract_unsupported(headers: &HeaderMap, path: &str) -> Response 
         (CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE),
         "this client's contract for the operation is not supported; update the client",
     )
+}
+
+/// A request whose payload types the layer will not serve
+/// (cratestack#1168), decided before any key is looked up. Unsigned, like
+/// every refusal made before verification, so it is a hint and never proof.
+/// A malformed or repeated selector header is the `400`; a request type the
+/// op does not accept is the `415`; no response type the client reads that
+/// the op can answer in is the `406`.
+pub(super) fn payload_types(headers: &HeaderMap, path: &str, refusal: Refusal) -> Response {
+    match refusal {
+        Refusal::Malformed(error) => bad_request(headers, path, error),
+        Refusal::RequestType => middleware_coded_response(
+            headers,
+            path,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            (
+                PAYLOAD_TYPE_UNSUPPORTED_CODE,
+                PAYLOAD_TYPE_UNSUPPORTED_REST_CODE,
+            ),
+            "the payload type of this request is not accepted for this operation",
+        ),
+        Refusal::NotAcceptable => middleware_coded_response(
+            headers,
+            path,
+            StatusCode::NOT_ACCEPTABLE,
+            (
+                PAYLOAD_TYPE_NOT_ACCEPTABLE_CODE,
+                PAYLOAD_TYPE_NOT_ACCEPTABLE_REST_CODE,
+            ),
+            "none of the requested response payload types is available for this operation",
+        ),
+    }
 }
 
 /// A COSE body the layer will not open (policy `Off`, or no generated op to

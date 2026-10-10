@@ -5,6 +5,7 @@ use http::Method;
 
 use super::resolver::{BindingResolver, Resolution, ResolvedRoute, RouteRequest};
 use crate::idempotency::mount_prefix;
+use crate::rpc::RPC_BINDING_CAPABILITIES;
 
 /// RPC: the op id axum decoded from `/rpc/{op_id}`, `batch` for
 /// `/rpc/batch` (decision D11), and `subscribe/<op id>` for a subscription.
@@ -89,10 +90,12 @@ impl BindingResolver for RpcBindingResolver {
         if !is_op_id(op_id) {
             return Resolution::NotAnOp;
         }
-        Resolution::Op(ResolvedRoute::new(
-            format!("{route_prefix}{op_id}"),
-            values(mount),
-        ))
+        Resolution::Op(
+            ResolvedRoute::new(format!("{route_prefix}{op_id}"), values(mount)).with_payload_types(
+                RPC_BINDING_CAPABILITIES.request_types,
+                RPC_BINDING_CAPABILITIES.response_types,
+            ),
+        )
     }
 }
 
