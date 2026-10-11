@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-axum"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -537,7 +537,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-rust"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -562,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-cbor"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "cratestack-core",
  "minicbor-serde",
@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-json"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-core"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -604,7 +604,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-exec"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "cratestack-core",
  "uuid",
@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-macros"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-mcp"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "axum",
  "bytes",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-parser"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "ariadne",
  "chumsky",
@@ -658,7 +658,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-pg"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "async-stream",
  "chrono",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-policy"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -689,7 +689,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sql"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "chrono",
  "cratestack-core",
@@ -702,7 +702,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sqlx"
-version = "0.15.3"
+version = "0.15.4"
 dependencies = [
  "async-trait",
  "chrono",

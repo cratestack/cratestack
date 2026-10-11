@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.15.4 (2026-10-11)
+
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)
 
 Part of ADR 0019, which ships as 0.16.0 with the `BigInt` entry that follows it and the 32-bit `Int`

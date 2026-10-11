@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.15.4 (2026-10-11)
+
 - Test-only: the shared fixtures now pin a CrateStack `BigInt` (ADR 0019) as a CBOR text string
   (`i64::MAX`, `i64::MIN`, `2^53 + 1`, `0` and `-1`, byte for byte) through the native and web
   codecs. No library code changed: a text string already survives both JSON-text boundaries.
