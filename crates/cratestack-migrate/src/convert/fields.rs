@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use cratestack_core::schema::default_markers::default_marker;
 use cratestack_core::{Field, TypeArity};
 
 use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType};
@@ -144,8 +145,21 @@ fn field_default(field: &Field) -> Option<ColumnDefault> {
     // `dbgenerated()` is a marker, not a real function call — see
     // `ColumnDefault::DbGenerated`. The parser rejects any argument
     // (`validate_default_dbgenerated_no_args`), so the only form that
-    // reaches here is the bare call.
-    if inner == "dbgenerated()" {
+    // reaches here is the bare call. `autoincrement()` is that same marker
+    // under a spelling the parser refuses outright
+    // (`validate_default_autoincrement_rejected`, cratestack#1128):
+    // `autoincrement()` is not a function in Postgres or SQLite, so
+    // passing it through as `ColumnDefault::Function` would emit
+    // `DEFAULT autoincrement()` — DDL both databases reject at apply
+    // time. A snapshot's previous schema, or a direct library call,
+    // can still carry the spelling past validation; the emitter must
+    // never write it.
+    //
+    // `default_marker` matches whitespace-insensitively (cratestack#1128):
+    // `attribute_text::split_attributes` preserves a space between the name
+    // and its paren, so `autoincrement ()` / `dbgenerated ()` must be
+    // classified here too, or they would leak a broken `DEFAULT` clause.
+    if default_marker(&inner).is_some() {
         return Some(ColumnDefault::DbGenerated);
     }
     if inner.ends_with(')') && !inner.starts_with('\'') {

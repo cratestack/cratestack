@@ -390,7 +390,9 @@ fn default_integer_literals_are_accepted_on_bigint() {
 
 #[test]
 fn default_functions_and_markers_are_left_alone_on_bigint() {
-    for default in ["autoincrement()", "dbgenerated()", "now()"] {
+    // `autoincrement()` is not in this list: cratestack#1128 refuses it on
+    // every field of every kind, so it never reaches the BigInt check.
+    for default in ["dbgenerated()", "now()"] {
         parsed(&model_with(&format!("seq BigInt @default({default})")));
     }
     parsed(
