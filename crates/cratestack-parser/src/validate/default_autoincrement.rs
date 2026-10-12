@@ -1,4 +1,5 @@
 use cratestack_core::Field;
+use cratestack_core::schema::default_markers::{DefaultMarker, default_marker};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -14,6 +15,11 @@ use crate::diagnostics::{SchemaError, span_error};
 /// refused too — it would be silently discarded the same way
 /// `dbgenerated(<args>)`'s is (see `validate_default_dbgenerated_no_args`
 /// in `super::fields`).
+///
+/// The match is whitespace-insensitive via [`default_marker`], so
+/// `@default(autoincrement ())` is refused the same as the bare spelling
+/// (cratestack#1128): `attribute_text::split_attributes` keeps the space,
+/// and the emitter would still write the invalid clause.
 pub(super) fn validate_default_autoincrement_rejected(
     model_name: &str,
     field: &Field,
@@ -32,21 +38,13 @@ pub(super) fn validate_default_autoincrement_rejected(
     else {
         return Ok(());
     };
-    let args = inner
-        .trim()
-        .strip_prefix("autoincrement(")
-        .and_then(|rest| rest.strip_suffix(')'));
-    let Some(args) = args else {
+    let trimmed = inner.trim();
+    if default_marker(trimmed) != Some(DefaultMarker::Autoincrement) {
         return Ok(());
-    };
-    let written = if args.trim().is_empty() {
-        "autoincrement()".to_owned()
-    } else {
-        format!("autoincrement({})", args.trim())
-    };
+    }
     Err(span_error(
         format!(
-            "field `{}.{}` uses `@default({written})`; cratestack's `autoincrement()` is not a \
+            "field `{}.{}` uses `@default({trimmed})`; cratestack's `autoincrement()` is not a \
              real database function — Postgres and SQLite both refuse the \
              `DEFAULT autoincrement()` clause the migration emitter would write for it, so the \
              first migration that applies it fails (cratestack#1128). If the column's value is \

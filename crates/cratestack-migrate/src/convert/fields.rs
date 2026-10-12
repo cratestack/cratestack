@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use cratestack_core::schema::default_markers::default_marker;
 use cratestack_core::{Field, TypeArity};
 
 use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType};
@@ -153,7 +154,12 @@ fn field_default(field: &Field) -> Option<ColumnDefault> {
     // time. A snapshot's previous schema, or a direct library call,
     // can still carry the spelling past validation; the emitter must
     // never write it.
-    if inner == "dbgenerated()" || inner == "autoincrement()" {
+    //
+    // `default_marker` matches whitespace-insensitively (cratestack#1128):
+    // `attribute_text::split_attributes` preserves a space between the name
+    // and its paren, so `autoincrement ()` / `dbgenerated ()` must be
+    // classified here too, or they would leak a broken `DEFAULT` clause.
+    if default_marker(&inner).is_some() {
         return Some(ColumnDefault::DbGenerated);
     }
     if inner.ends_with(')') && !inner.starts_with('\'') {
