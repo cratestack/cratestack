@@ -51,8 +51,8 @@ importers:
         specifier: ^8.5.28
         version: 8.5.28
       serwist:
-        specifier: ^9.5.11
-        version: 9.5.12(browserslist@4.28.6)(typescript@7.0.2)
+        specifier: ^9.5.13
+        version: 9.5.13(browserslist@4.28.6)(typescript@7.0.2)
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.3
@@ -903,6 +903,14 @@ packages:
       browserslist:
         optional: true
 
+  '@serwist/utils@9.5.13':
+    resolution: {integrity: sha512-jJJSvl0pSc6udJ7pN2u0oduOfQqSY6oJNjbIc82YcVnkpzj1O+qFHYdrR6tu9bspa30Nc8ZVV+VncOcyguvk5w==}
+    peerDependencies:
+      browserslist: '>=4'
+    peerDependenciesMeta:
+      browserslist:
+        optional: true
+
   '@serwist/webpack-plugin@9.5.12':
     resolution: {integrity: sha512-+a5Fap7wVR4oN5jg1GxVNbWW+xUv3LO7UWYfg2D8PkJZiTCcX8PwkcmdzMGVr39dyOtIMTSAANw0af1zMjVbOA==}
     engines: {node: '>=18.0.0'}
@@ -1449,6 +1457,14 @@ packages:
 
   serwist@9.5.12:
     resolution: {integrity: sha512-PwREKJrSb3ja40XJyBntPOm7okcYZJCJPd++jUVz8tzxY1VYO9dyKSm0MimZ8LtUk0pIUTN0q2cfGe7R0wQsaQ==}
+    peerDependencies:
+      typescript: '>=5.0.0'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  serwist@9.5.13:
+    resolution: {integrity: sha512-ZpskCei2d5Zcljeb6QvYP94pV5xY3GCdbOk0hOzMSEPFOqJDwJvMpQq7i1r/psuR1WQCsKX6p7UpLle6sTPYjw==}
     peerDependencies:
       typescript: '>=5.0.0'
     peerDependenciesMeta:
@@ -2211,6 +2227,10 @@ snapshots:
     optionalDependencies:
       browserslist: 4.28.6
 
+  '@serwist/utils@9.5.13(browserslist@4.28.6)':
+    optionalDependencies:
+      browserslist: 4.28.6
+
   '@serwist/webpack-plugin@9.5.12(browserslist@4.28.6)(typescript@7.0.2)':
     dependencies:
       '@serwist/build': 9.5.12(browserslist@4.28.6)(typescript@7.0.2)
@@ -2609,6 +2629,15 @@ snapshots:
   serwist@9.5.12(browserslist@4.28.6)(typescript@7.0.2):
     dependencies:
       '@serwist/utils': 9.5.12(browserslist@4.28.6)
+      idb: 8.0.3
+    optionalDependencies:
+      typescript: 7.0.2
+    transitivePeerDependencies:
+      - browserslist
+
+  serwist@9.5.13(browserslist@4.28.6)(typescript@7.0.2):
+    dependencies:
+      '@serwist/utils': 9.5.13(browserslist@4.28.6)
       idb: 8.0.3
     optionalDependencies:
       typescript: 7.0.2
