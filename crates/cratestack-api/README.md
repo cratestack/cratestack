@@ -119,8 +119,11 @@ demonstrated manually instead.
   gate, unlike `cratestack-pg`'s same-named feature.
 - `decimal-bigdecimal` — arbitrary-precision `bigdecimal` backend instead
   (heap-allocated, not `Copy` — see `cratestack-core`'s README for the
-  trait differences). Mutually exclusive with `decimal-rust-decimal`;
-  selecting both is a compile error. Selecting *neither* is allowed as of
+  trait differences). As of cratestack#505 Direction 2, this is **not**
+  mutually exclusive with `decimal-rust-decimal` — both may be enabled at
+  once; see `cratestack-core`'s README and
+  `docs/design/decimal-backend-additivity.md` for the mechanism.
+  Selecting *neither* is allowed as of
   cratestack#521 — the `Decimal` type is simply not exported, so only a schema
   that actually uses a `Decimal` field fails, with rustc's own "cannot find
   type `Decimal`". **Wire compatibility
