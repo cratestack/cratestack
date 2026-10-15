@@ -134,8 +134,6 @@ mod tests_rename_attributes;
 #[cfg(test)]
 mod tests_rename_placement;
 #[cfg(test)]
-mod tests_render_char_offsets;
-#[cfg(test)]
 mod tests_reserved_keywords;
 #[cfg(test)]
 mod tests_server_only_placement;

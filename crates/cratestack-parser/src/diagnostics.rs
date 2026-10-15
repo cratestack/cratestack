@@ -149,3 +149,8 @@ fn char_span(source: &str, span: Range<usize>) -> Range<usize> {
 pub(crate) fn span_error(message: impl Into<String>, span: SourceSpan) -> SchemaError {
     SchemaError::new(message, span.start..span.end, span.line)
 }
+
+// Kept beside the renderer it pins, not in `lib.rs`, which is at the file-length ceiling.
+#[cfg(test)]
+#[path = "tests_render_char_offsets.rs"]
+mod tests_render_char_offsets;
