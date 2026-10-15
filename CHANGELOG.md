@@ -12,6 +12,28 @@ dozens of lines away. The renderer now converts the span to characters once, in
 stays in bytes. ASCII-only schemas render exactly as before. No change to the schema language or to
 the JSON output.
 
+### CBOR bodies with bytes after the first item are refused, as JSON bodies already were (#1153)
+
+**What was wrong.** `CborCodec::decode` read one CBOR item and never checked that the input ended
+there, so `01 ff ff de ad` decoded to `1` and `82 01 02 f6 f6` decoded to `[1, 2]`. `JsonCodec`
+refuses trailing characters with `CODEC_ERROR`, so the same request body got a 200 over CBOR and a
+400 over JSON. Trailing bytes on a REST or `/rpc/{op_id}` request, and on `/rpc/batch`, were
+silently ignored.
+
+**What changed.** `CborCodec::decode` now errors with `CratestackError::Codec` unless the input is
+exactly one item, with the message `failed to decode CBOR body: N trailing bytes after the first
+item`. A request with trailing bytes now gets a 400 on CBOR, as it already did on JSON: `CODEC_ERROR` on a
+REST route, `invalid_argument` (the RPC binding's code for `CODEC_ERROR`) on `/rpc/{op_id}` and
+`/rpc/batch`.
+`application/cbor-seq` is not affected: its multi-item decoders walk the sequence without going
+through `decode`.
+
+**Who is affected.** Any caller that relied on the prefix decoding, which is a silent mis-parse of
+the body: a client that sends CBOR with bytes after the item, or a server handler that expected to
+read a leading item out of a longer buffer, now gets an error instead. The CBOR bindings that call
+`CborCodec::decode` (`cratestack-cbor-napi`, `cratestack-cbor-wasm`, `cratestack-client-flutter`)
+inherit the stricter decode.
+
 ## 0.15.4 (2026-10-11)
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)

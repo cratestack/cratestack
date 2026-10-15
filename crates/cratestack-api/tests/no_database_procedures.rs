@@ -17,6 +17,7 @@ use cratestack::axum::body::{Body, to_bytes};
 use cratestack::axum::http::{Request, StatusCode};
 use cratestack::include_server_schema;
 use cratestack::{CratestackContext, CratestackError, SystemContext};
+use cratestack_codec_cbor::CborCodec;
 use cratestack_codec_json::JsonCodec;
 use tower::ServiceExt;
 
@@ -239,4 +240,77 @@ async fn no_database_router_round_trips_ping_procedure_over_http() {
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     let reply: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(reply["echo"], "hello");
+}
+
+/// The same router as [`build_router`], on CBOR.
+fn build_cbor_router() -> cratestack::axum::Router {
+    let db = cratestack_schema::Cratestack::builder().build();
+    cratestack_schema::axum::router(
+        db,
+        Procedures,
+        (),
+        CborCodec,
+        AllowAllAuth,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
+}
+
+/// POSTs `body` to `/$procs/ping` as `content_type` and returns the status
+/// and the decoded reply or error body.
+async fn post_ping(
+    app: cratestack::axum::Router,
+    content_type: &'static str,
+    body: Vec<u8>,
+) -> (StatusCode, serde_json::Value) {
+    let response = app
+        .oneshot(
+            Request::post("/$procs/ping")
+                .header("content-type", content_type)
+                .header("accept", content_type)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let value = if content_type == CborCodec::CONTENT_TYPE {
+        CborCodec.decode(&bytes).unwrap()
+    } else {
+        serde_json::from_slice(&bytes).unwrap()
+    };
+    (status, value)
+}
+
+/// #1153: bytes after the first item are a `CODEC_ERROR` on a REST procedure
+/// route, on CBOR as on JSON. The clean item is the control, so the failure
+/// is the trailing bytes and not the body.
+#[tokio::test]
+async fn trailing_bytes_after_one_item_are_refused_on_a_rest_route() {
+    let clean = CborCodec
+        .encode(&serde_json::json!({ "args": { "message": "hello" } }))
+        .unwrap();
+    let (status, reply) =
+        post_ping(build_cbor_router(), CborCodec::CONTENT_TYPE, clean.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["echo"], "hello");
+
+    for tail in [&[0x00][..], &[0xff, 0xff, 0xde, 0xad], &[0xf6]] {
+        let mut body = clean.clone();
+        body.extend_from_slice(tail);
+        let (status, error) = post_ping(build_cbor_router(), CborCodec::CONTENT_TYPE, body).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "CBOR tail {tail:02x?}");
+        assert_eq!(error["code"], "CODEC_ERROR", "CBOR tail {tail:02x?}");
+    }
+
+    // JSON parity: the same refusal already held for JSON before #1153.
+    let json = br#"{"args":{"message":"hello"}}"#;
+    let (status, reply) = post_ping(build_router(), JsonCodec::CONTENT_TYPE, json.to_vec()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["echo"], "hello");
+    let mut trailing = json.to_vec();
+    trailing.extend_from_slice(b" x");
+    let (status, error) = post_ping(build_router(), JsonCodec::CONTENT_TYPE, trailing).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["code"], "CODEC_ERROR");
 }

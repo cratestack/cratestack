@@ -61,18 +61,37 @@ impl CratestackCodec for CborCodec {
         })
     }
 
-    /// Same as `minicbor_serde::from_slice`, wrapped in `serde_path_to_error`
-    /// so the error's detail names the field that failed
-    /// (`failed to decode CBOR body: amountE8: ...`). The public message of
-    /// `CratestackError::Codec` stays generic; the path reaches operators
-    /// through `detail()` only. Like `from_slice`, it does not look at bytes
-    /// after the first item.
+    /// Decodes exactly one CBOR item spanning all of `bytes`, wrapped in
+    /// `serde_path_to_error` so the error's detail names the field that
+    /// failed (`failed to decode CBOR body: amountE8: ...`). The public
+    /// message of `CratestackError::Codec` stays generic; the path reaches
+    /// operators through `detail()` only.
+    ///
+    /// Bytes after the first item are an error (#1153), as with
+    /// `JsonCodec::decode`'s trailing-characters check. `minicbor_serde::from_slice`
+    /// would accept them silently. `application/cbor-seq` never reaches this
+    /// method: its multi-item decoders walk the sequence with
+    /// `Deserializer::decoder().position()` and do not use `decode`.
     fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError> {
         let mut deserializer = minicbor_serde::Deserializer::new(bytes);
-        serde_path_to_error::deserialize(&mut deserializer)
-            .map_err(|error| CratestackError::Codec(format!("failed to decode CBOR body: {error}")))
+        let value = serde_path_to_error::deserialize(&mut deserializer).map_err(decode_error)?;
+        let consumed = deserializer.decoder().position();
+        if consumed != bytes.len() {
+            return Err(decode_error(format!(
+                "{} trailing bytes after the first item",
+                bytes.len() - consumed
+            )));
+        }
+        Ok(value)
     }
 }
+
+fn decode_error(error: impl std::fmt::Display) -> CratestackError {
+    CratestackError::Codec(format!("failed to decode CBOR body: {error}"))
+}
+
+#[cfg(test)]
+mod tests_trailing;
 
 #[cfg(test)]
 mod tests {
