@@ -41,6 +41,16 @@ importing it, so `tsc` failed with `TS2304: Cannot find name 'ImageComputedParam
 parameterized `@computed` field. The hooks file now imports it from `./<model>.js`, on REST and RPC,
 only when a hook in that file references it. Models without computed params are unchanged.
 
+### Fix: a generated TypeScript client revives each element of a `Decimal[]` field (#1155)
+
+A `Decimal[]` field on a model or a `type` came back from a generated TypeScript client as an array of
+strings, while its type said `Decimal[]`, so `.plus()` and the other `Decimal` methods threw. The
+decode-side walker converted a string at a `Decimal` key only, and an array is not a string, so the
+whole array was copied through unchanged. Both the default layout and `--swr` now map an array element
+by element, the way a bare `Decimal[]` procedure return already did. A `null` element, a `null` array
+and a scalar `Decimal` or `Decimal?` field decode as before. Generated code only; no wire format
+change.
+
 ## 0.15.4 (2026-10-11)
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)

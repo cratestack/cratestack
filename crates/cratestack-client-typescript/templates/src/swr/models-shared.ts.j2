@@ -76,8 +76,8 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
       if (nestedShapeName !== undefined) {
         const nestedShape = wireShapes[nestedShapeName];
         result[key] = nestedShape ? reviveShaped(entry, nestedShape, nestedShapeName) : entry;
-      } else if (shape.decimalKeys.includes(key) && typeof entry === "string") {
-        result[key] = new Decimal(entry);
+      } else if (shape.decimalKeys.includes(key)) {
+        result[key] = toDecimal(entry);
       } else if (shape.bigintKeys.includes(key)) {
         result[key] = toBigInt(entry, `${shapeName}.${key}`);
       } else if (shape.bytesKeys.includes(key)) {
@@ -91,6 +91,16 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
     return result;
   }
   return value;
+}
+
+/** See the default preset's `models.ts.j2`'s `toDecimal` for the full doc
+ *  comment (cratestack#1155): a `Decimal[]` field is revived item by item,
+ *  and `null`/non-string values pass through — identical implementation. */
+function toDecimal(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(toDecimal);
+  }
+  return typeof value === "string" ? new Decimal(value) : value;
 }
 
 /** See the default preset's `models.ts.j2` for the full doc comment on

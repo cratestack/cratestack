@@ -134,8 +134,8 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
       if (nestedShapeName !== undefined) {
         const nestedShape = wireShapes[nestedShapeName];
         result[key] = nestedShape ? reviveShaped(entry, nestedShape, nestedShapeName) : entry;
-      } else if (shape.decimalKeys.includes(key) && typeof entry === "string") {
-        result[key] = new Decimal(entry);
+      } else if (shape.decimalKeys.includes(key)) {
+        result[key] = toDecimal(entry);
       } else if (shape.bigintKeys.includes(key)) {
         result[key] = toBigInt(entry, `${shapeName}.${key}`);
       } else if (shape.bytesKeys.includes(key)) {
@@ -149,6 +149,21 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
     return result;
   }
   return value;
+}
+
+/** One `Decimal` leaf (or an array of them), wire form -> {@link Decimal}.
+ *
+ *  The same conversion as {@link reviveWireScalar}'s `"decimal"` arm, for a
+ *  field rather than a bare procedure return (cratestack#1155). A `Decimal[]`
+ *  field shares the one `decimalKeys` list with a scalar `Decimal`, so an
+ *  array is revived item by item here, as `reviveWireScalar` already does
+ *  for a bare `Decimal[]` return. A `null` element, a `null` array and a
+ *  non-string value pass through untouched, as they did before. */
+function toDecimal(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(toDecimal);
+  }
+  return typeof value === "string" ? new Decimal(value) : value;
 }
 
 /** The canonical `BigInt` wire grammar (ADR 0019 D2): `0`, or an optional
