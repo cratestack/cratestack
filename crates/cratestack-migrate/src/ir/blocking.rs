@@ -57,8 +57,12 @@ pub fn blocking_reasons(ops: &[Op]) -> Vec<BlockingReason> {
 /// exemption. A validator CHECK on a table that `ops` itself creates is
 /// Safe, because that table has no rows the CHECK could reject
 /// (cratestack#1129). `Op` cannot see the rest of the list, so the
-/// exemption lives here. Every blocking decision and label must come
-/// through this module, not from `Op::destructiveness` directly.
+/// exemption lives here. Every *blocking* decision and label
+/// (`has_blocking`, the `up.pre.sql` scaffold, the WARNING header, the
+/// drift report) must come through this module, not from
+/// `Op::destructiveness` directly. Lossy and down-migration code may
+/// still read `Op::destructiveness`, since the exemption never changes
+/// those.
 pub fn destructiveness_in_context(ops: &[Op]) -> Vec<Destructiveness> {
     let created = tables_created_in(ops);
     ops.iter().map(|op| class_in(op, &created)).collect()

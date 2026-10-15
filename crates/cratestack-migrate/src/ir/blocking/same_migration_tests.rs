@@ -3,7 +3,7 @@
 //! the CHECK. Kept apart from `tests.rs` for the 200-line budget.
 
 use super::*;
-use crate::ir::{AddCheck, CheckKind, CreateTable};
+use crate::ir::{AddCheck, CheckKind, CreateTable, RenameTable};
 
 fn create_table(name: &str) -> Op {
     Op::CreateTable(CreateTable {
@@ -60,4 +60,20 @@ fn validator_check_on_existing_table_stays_blocking_beside_an_unrelated_create()
     let reasons = blocking_reasons(&ops);
     assert_eq!(reasons.len(), 1);
     assert_eq!(reasons[0].target(), "orders.total");
+}
+
+/// A rename is not a create: the renamed table keeps its rows, so a CHECK
+/// added to it afterwards can still fail them and must stay blocking.
+#[test]
+fn validator_check_on_renamed_table_stays_blocking() {
+    let ops = vec![
+        Op::RenameTable(RenameTable {
+            from: "orders".to_owned(),
+            to: "purchases".to_owned(),
+        }),
+        range_check("purchases", "total"),
+    ];
+    let reasons = blocking_reasons(&ops);
+    assert_eq!(reasons.len(), 1);
+    assert_eq!(reasons[0].target(), "purchases.total");
 }

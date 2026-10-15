@@ -83,10 +83,10 @@ change.
 
 Eight example lockfile roots declared no pnpm pin, so Dependabot inferred pnpm 10 from their
 lockfiles while CI installs pnpm 11.24.0. Each now pins the repo root's `pnpm@11.24.0`, including
-`examples/embedded-expo/app`: Expo's docs use the field for Corepack-driven installs and say nothing
-that breaks under pnpm. `just verify-pnpm-pins` now requires a pin in every tracked `pnpm-lock.yaml`
-root. The `examples/react-nextjs-daisyui` Dependabot entry gets the same minor/patch group as the
-other npm entries.
+`examples/embedded-expo/app`: the repo has no `eas.json`, so EAS is not in play, and
+`pnpm install --frozen-lockfile --lockfile-only` passes there with the pin. `just verify-pnpm-pins`
+now requires a pin in every tracked `pnpm-lock.yaml` root. The `examples/react-nextjs-daisyui`
+Dependabot entry gets the same minor/patch group as most other npm entries.
 
 ## 0.15.4 (2026-10-11)
 
