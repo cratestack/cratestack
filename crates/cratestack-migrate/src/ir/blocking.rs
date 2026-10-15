@@ -9,7 +9,9 @@
 //! `Optional → Required` promotion of a column that already existed
 //! (cratestack#843).
 
-use super::{ColumnArity, Op};
+use std::collections::HashSet;
+
+use super::{ColumnArity, Destructiveness, Op};
 
 /// One blocking operation, described in terms the operator can act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,15 +40,50 @@ impl BlockingReason {
 
 /// Every blocking op in `ops`, in emission order.
 ///
-/// Empty exactly when no op is
-/// [`Destructiveness::Blocking`](super::Destructiveness::Blocking), so
-/// callers can use `!is_empty()` in place of the `has_blocking` bit and
-/// get the per-op detail for free.
+/// Empty exactly when no op is blocking in context (see
+/// [`destructiveness_in_context`]), so callers can use `!is_empty()` in
+/// place of the `has_blocking` bit and get the per-op detail for free.
 pub fn blocking_reasons(ops: &[Op]) -> Vec<BlockingReason> {
-    ops.iter().filter_map(reason_for).collect()
+    let created = tables_created_in(ops);
+    ops.iter()
+        .filter_map(|op| reason_for(op, &created))
+        .collect()
 }
 
-fn reason_for(op: &Op) -> Option<BlockingReason> {
+/// The destructiveness of each op in `ops`, in order, as the migration
+/// as a whole classifies it.
+///
+/// This is [`Op::destructiveness`] with one context-dependent
+/// exemption. A validator CHECK on a table that `ops` itself creates is
+/// Safe, because that table has no rows the CHECK could reject
+/// (cratestack#1129). `Op` cannot see the rest of the list, so the
+/// exemption lives here. Every blocking decision and label must come
+/// through this module, not from `Op::destructiveness` directly.
+pub fn destructiveness_in_context(ops: &[Op]) -> Vec<Destructiveness> {
+    let created = tables_created_in(ops);
+    ops.iter().map(|op| class_in(op, &created)).collect()
+}
+
+/// Names of the tables `ops` creates. Keyed on the name in the same op
+/// list, never on the previous snapshot, so a table that merely
+/// exists before the migration is not mistaken for a new one.
+fn tables_created_in(ops: &[Op]) -> HashSet<&str> {
+    ops.iter()
+        .filter_map(|op| match op {
+            Op::CreateTable(create) => Some(create.name.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn class_in(op: &Op, created: &HashSet<&str>) -> Destructiveness {
+    match op {
+        Op::AddCheck(check) if created.contains(check.table.as_str()) => Destructiveness::Safe,
+        _ => op.destructiveness(),
+    }
+}
+
+fn reason_for(op: &Op, created: &HashSet<&str>) -> Option<BlockingReason> {
     match op {
         // A brand-new required column with no default: every existing
         // row needs a value, and no `UPDATE` can supply one before the
@@ -80,8 +117,9 @@ fn reason_for(op: &Op) -> Option<BlockingReason> {
             })
         }
         // A CHECK the existing rows may not satisfy. The remedy is
-        // row-shape-specific, so we can only gesture at it.
-        Op::AddCheck(check) if op.destructiveness().is_blocking() => Some(BlockingReason {
+        // row-shape-specific, so we can only gesture at it. Not reached
+        // for a table this list creates: `class_in` makes that Safe.
+        Op::AddCheck(check) if class_in(op, created).is_blocking() => Some(BlockingReason {
             table: check.table.clone(),
             column: Some(check.column.clone()),
             cause: format!(
@@ -97,5 +135,7 @@ fn reason_for(op: &Op) -> Option<BlockingReason> {
     }
 }
 
+#[cfg(test)]
+mod same_migration_tests;
 #[cfg(test)]
 mod tests;

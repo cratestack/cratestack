@@ -14,6 +14,8 @@ mod slug;
 mod tests_baseline;
 #[cfg(test)]
 mod tests_diff;
+#[cfg(test)]
+mod tests_diff_checks;
 
 pub(crate) use baseline_cmd::handle_baseline;
 pub(crate) use diff_cmd::handle_diff;

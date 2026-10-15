@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### `migrate diff` no longer calls a CHECK on a table it creates blocking (#1129)
+
+A validator CHECK (`@range`, `@length`, `@iso4217` with `@db_enforce`) on a table the same migration
+creates was classified Blocking. The first migration of any `@db_enforce` schema therefore printed
+"blocks on existing data", wrote a comment-only `up.pre.sql`, labelled itself `(blocking)`, and put a
+WARNING at the top of `up.sql`. A table being created has no rows, so the CHECK cannot reject any. Such
+a migration is now `(safe)`, as the enum CHECK on the same table already was. A CHECK added to an
+existing table is still blocking, with its per-op reason and `up.pre.sql`. `migrate baseline`'s drift
+report applies the same rule. No change to the generated DDL.
+
 ### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
 
 A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte
