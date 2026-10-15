@@ -310,7 +310,7 @@ cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.15.4", default
 # explicitly (see that crate's Cargo.toml) since turning off ALL default
 # features here also turns off `embed-ui`, which was previously implicit.
 cratestack-studio = { path = "crates/cratestack-studio", version = "0.15.4", default-features = false }
-minijinja = "2"
+minijinja = "3"
 # Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
 # name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could
 # only satisfy `cratestack-client-rust`'s edge with the newest 0.12.x release
