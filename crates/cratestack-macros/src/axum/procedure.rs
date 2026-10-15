@@ -114,7 +114,10 @@ pub(crate) fn generate_procedure_axum_handler(
                 cratestack_procedure = #procedure_name,
                 cratestack_operation = "procedure",
             );
-            let _span_guard = span.enter();
+            // cratestack#1081: the span is attached to the whole body rather
+            // than entered with a guard, so it is never current while this
+            // handler is suspended on an `.await` (auth, the procedure call).
+            ::cratestack::tracing::Instrument::instrument(async move {
             let started = ::std::time::Instant::now();
 
             if let Err(error) = ::cratestack::validate_transport_request_headers_for(&state.codec, &headers, &CAPABILITIES) {
@@ -146,6 +149,7 @@ pub(crate) fn generate_procedure_axum_handler(
             #invoke_block
 
             #dispatch_tail
+            }, span).await
         }
     })
 }

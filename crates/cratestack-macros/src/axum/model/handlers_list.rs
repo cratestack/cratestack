@@ -79,7 +79,10 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 cratestack_operation = "list",
                 cratestack_paged = #paged,
             );
-            let _span_guard = span.enter();
+            // cratestack#1081: instrument the whole body instead of holding an
+            // entered-span guard, which would leak the span to other tasks while
+            // this handler is suspended on auth or the database.
+            ::cratestack::tracing::Instrument::instrument(async move {
             let started = ::std::time::Instant::now();
 
             if let Err(error) = ::cratestack::validate_transport_response_headers_for(&state.codec, &headers, &CAPABILITIES) {
@@ -199,6 +202,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
             };
             #list_result_log
             ::cratestack::encode_transport_result_with_status_for(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, result)
+            }, span).await
         }
     }
 }

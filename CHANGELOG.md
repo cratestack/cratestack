@@ -54,6 +54,25 @@ Pass it to the generated router in place of the header provider:
 
 Remaining work: window replay (P2) is out of scope here.
 
+### Generated procedure and route spans no longer leak to other tasks across `.await` (#1081)
+
+**What was wrong.** The generated `invoke`, `invoke_with_db` (including its `@isolation` variant),
+the axum procedure route, and the axum model list route handlers entered their tracing span with a guard
+that lived across every `.await`. While a generated future was suspended, the executor could poll
+an unrelated task on the same thread, and that task saw the procedure's span as its current span,
+so its events and child spans were parented under an operation they had nothing to do with.
+
+**What changed.** Each of those bodies is now attached to its span with
+`::cratestack::tracing::Instrument::instrument`, so the span is entered only while the body is being
+polled. Span names, fields, and the completed/failed events are unchanged, and early returns still
+return from the instrumented body. Generated code only: no change to any public API, and the
+generated dispatch tokens differ only in this one construct.
+
+**Verification.** `crates/cratestack-api/tests/procedure_span_isolation.rs` and
+`crates/cratestack-pg/tests/list_route_span_isolation.rs` each fail on the old codegen (the unrelated
+task observes the procedure or route span) and pass on the fix. The list-route test needs no
+database.
+
 ### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
 
 A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte
