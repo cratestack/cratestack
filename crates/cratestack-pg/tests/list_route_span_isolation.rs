@@ -1,8 +1,12 @@
 //! cratestack#1081: the generated model list route must not hold its tracing
 //! span entered across an `.await`. Auth is the first `.await` in that route,
-//! so the test suspends `authenticate` on a oneshot gate. An unrelated task
-//! spawned on the same current-thread runtime runs during that suspension,
-//! records `Span::current()`, and releases the gate.
+//! so the test suspends `authenticate` on a gate. `authenticate` first signals
+//! "reached" from inside the route span, then awaits the gate. An unrelated
+//! task spawned on the same current-thread runtime waits for that signal,
+//! records `Span::current()`, and only then releases the gate. Waiting on the
+//! signal (rather than reading as soon as the task first runs) keeps the test
+//! from passing vacuously if something ever yields before the span is
+//! created. No sleeps: ordering comes from the channels.
 //!
 //! No database is needed. The pool is lazy and is never successfully
 //! connected: the gate is released before the route reaches its first query,
@@ -49,10 +53,26 @@ impl SpanNameRecorder {
     }
 }
 
+/// The auth side of the gate: `authenticate` calls [`Gate::pass`] from inside
+/// the route span.
+struct Gate {
+    reached: oneshot::Sender<()>,
+    release: oneshot::Receiver<()>,
+}
+
+impl Gate {
+    /// Signals that the route is inside its span and about to suspend, then
+    /// suspends until the observer has released the gate.
+    async fn pass(self) {
+        let _ = self.reached.send(());
+        let _ = self.release.await;
+    }
+}
+
 /// An `AuthProvider` whose `authenticate` suspends on a gate before answering.
 #[derive(Clone)]
 struct GatedAuthProvider {
-    gate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
+    gate: Arc<Mutex<Option<Gate>>>,
 }
 
 impl AuthProvider for GatedAuthProvider {
@@ -69,7 +89,7 @@ impl AuthProvider for GatedAuthProvider {
             .take();
         async move {
             if let Some(gate) = gate {
-                let _ = gate.await;
+                gate.pass().await;
             }
             Ok(CratestackContext::authenticated([(
                 "id".to_owned(),
@@ -85,12 +105,24 @@ async fn model_list_route_does_not_leak_its_span_across_an_await() {
     let subscriber = tracing_subscriber::registry().with(recorder.clone());
     let _dispatch = tracing::subscriber::set_default(subscriber);
 
-    let (release, gate) = oneshot::channel::<()>();
+    let (reached_tx, reached_rx) = oneshot::channel::<()>();
+    let (release_tx, release_rx) = oneshot::channel::<()>();
+    let gate = Gate {
+        reached: reached_tx,
+        release: release_rx,
+    };
+    // Waits for `authenticate` to report it is inside the route span and
+    // parked on the gate; only then reads `Span::current()` and releases it.
+    // Panics if auth never reached the gate, so a route that bypasses it
+    // cannot pass vacuously.
     let observer = tokio::spawn(async move {
+        reached_rx
+            .await
+            .expect("the gated authenticate never reached its gate");
         let observed = tracing::Span::current()
             .metadata()
             .map(|metadata| metadata.name());
-        let _ = release.send(());
+        let _ = release_tx.send(());
         observed
     });
 

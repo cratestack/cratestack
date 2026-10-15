@@ -5,13 +5,17 @@
 //! and child spans would be mis-parented under a procedure they have nothing
 //! to do with.
 //!
-//! Each test suspends the procedure body on a oneshot gate. An unrelated task,
-//! spawned on the same current-thread runtime, runs during that suspension,
-//! records `Span::current()`, and releases the gate. The body only continues
-//! once that has happened, so the unrelated task is guaranteed to be polled
-//! while the procedure future is pending. Each test also checks that the
-//! procedure span was actually created, so an absent span cannot pass the
-//! "not the procedure span" assertion vacuously.
+//! Each test suspends the procedure body on a gate. The body first signals
+//! "reached" from inside the span, then awaits the gate. An unrelated task,
+//! spawned on the same current-thread runtime, waits for that signal, records
+//! `Span::current()`, and only then releases the gate. The observer therefore
+//! reads `Span::current()` after the span exists and while the procedure
+//! future is parked on the gate, and the body only continues once it has done
+//! so. Waiting on the signal (rather than reading as soon as the task first
+//! runs) keeps the test from passing vacuously if something ever yields
+//! before the span is created. Each test also checks that the procedure span
+//! was actually created, so an absent span cannot pass the "not the procedure
+//! span" assertion vacuously. No sleeps: ordering comes from the channels.
 //!
 //! Needs no database: it uses the `db = None` fixture shared with
 //! `no_database_procedures.rs`.
@@ -62,24 +66,52 @@ fn install_recorder() -> (SpanNameRecorder, tracing::subscriber::DefaultGuard) {
     (recorder, guard)
 }
 
-/// Spawns a task that reads `Span::current()` and then fires `release`. The
-/// name it reports is `None` when no span is current on its thread.
-fn spawn_span_observer(
-    release: oneshot::Sender<()>,
-) -> tokio::task::JoinHandle<Option<&'static str>> {
-    tokio::spawn(async move {
+/// The procedure side of the gate: the body calls [`Gate::pass`] from inside
+/// its span.
+struct Gate {
+    reached: oneshot::Sender<()>,
+    release: oneshot::Receiver<()>,
+}
+
+impl Gate {
+    /// Signals that the body is inside its span and about to suspend, then
+    /// suspends until the observer has released the gate.
+    async fn pass(self) {
+        let _ = self.reached.send(());
+        let _ = self.release.await;
+    }
+}
+
+/// Spawns a task that waits until the body reports it reached the gate, reads
+/// `Span::current()`, and then releases the gate. The name it reports is
+/// `None` when no span is current on its thread. The task panics if the body
+/// never reached the gate, so a body that bypasses it cannot pass vacuously.
+fn gate_and_observer() -> (Gate, tokio::task::JoinHandle<Option<&'static str>>) {
+    let (reached_tx, reached_rx) = oneshot::channel::<()>();
+    let (release_tx, release_rx) = oneshot::channel::<()>();
+    let observer = tokio::spawn(async move {
+        reached_rx
+            .await
+            .expect("the gated body never reached its gate");
         let observed = tracing::Span::current()
             .metadata()
             .map(|metadata| metadata.name());
-        let _ = release.send(());
+        let _ = release_tx.send(());
         observed
-    })
+    });
+    (
+        Gate {
+            reached: reached_tx,
+            release: release_rx,
+        },
+        observer,
+    )
 }
 
 /// A `ProcedureRegistry` whose `ping` suspends on a gate before answering.
 #[derive(Clone)]
 struct GatedProcedures {
-    gate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
+    gate: Arc<Mutex<Option<Gate>>>,
 }
 
 impl cratestack_schema::procedures::ProcedureRegistry for GatedProcedures {
@@ -99,7 +131,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for GatedProcedures {
             .take();
         async move {
             if let Some(gate) = gate {
-                let _ = gate.await;
+                gate.pass().await;
             }
             Ok(cratestack_schema::PingReply {
                 echo: args.args.message,
@@ -144,8 +176,7 @@ async fn invoke_with_db_does_not_leak_its_span_across_an_await() {
     let db = cratestack_schema::Cratestack::builder().build();
     let args = ping_args();
     let ctx = authenticated_ctx();
-    let (release, gate) = oneshot::channel::<()>();
-    let observer = spawn_span_observer(release);
+    let (gate, observer) = gate_and_observer();
     let procedures = GatedProcedures {
         gate: Arc::new(Mutex::new(None)),
     };
@@ -157,7 +188,7 @@ async fn invoke_with_db_does_not_leak_its_span_across_an_await() {
         &args,
         &ctx,
         |authorized| async move {
-            let _ = gate.await;
+            gate.pass().await;
             cratestack_schema::procedures::ProcedureRegistry::ping(
                 &procedures,
                 &db,
@@ -191,11 +222,10 @@ async fn invoke_does_not_leak_its_span_across_an_await() {
     let (recorder, _guard) = install_recorder();
     let args = ping_args();
     let ctx = authenticated_ctx();
-    let (release, gate) = oneshot::channel::<()>();
-    let observer = spawn_span_observer(release);
+    let (gate, observer) = gate_and_observer();
 
     let output = cratestack_schema::procedures::ping::invoke(&args, &ctx, || async move {
-        let _ = gate.await;
+        gate.pass().await;
         Ok(cratestack_schema::PingReply {
             echo: "hello".to_owned(),
         })
@@ -219,8 +249,7 @@ async fn invoke_does_not_leak_its_span_across_an_await() {
 #[tokio::test]
 async fn axum_procedure_route_does_not_leak_its_span_across_an_await() {
     let (recorder, _guard) = install_recorder();
-    let (release, gate) = oneshot::channel::<()>();
-    let observer = spawn_span_observer(release);
+    let (gate, observer) = gate_and_observer();
     let db = cratestack_schema::Cratestack::builder().build();
     let router = cratestack_schema::axum::router(
         db,
