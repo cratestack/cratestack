@@ -6,45 +6,16 @@
 //!
 //! Both tests touch server-wide state (the connection counter, and every
 //! normal client), so they take `SERIAL` and can share one
-//! `CRATESTACK_REDIS_TEST_URL` under the default parallel runner.
+//! `CRATESTACK_REDIS_TEST_URL` under the default parallel runner. Failure
+//! modes (auth change, timeouts, an unreachable server) are in
+//! `redis_nonce_recovery.rs`, `redis_nonce_timeout.rs` and
+//! `redis_nonce_unreachable.rs`.
 
 mod redis_support;
 
-use chrono::{Duration, Utc};
-use cratestack_auth::{AuthError, NonceStore, nonce_store_from_redis_url};
+use cratestack_auth::{AuthError, nonce_store_from_redis_url};
 
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-/// `total_connections_received` from `INFO stats`: every TCP connection the
-/// server has accepted since it started.
-async fn connections_received(conn: &mut redis::aio::MultiplexedConnection) -> u64 {
-    let info: String = redis::cmd("INFO")
-        .arg("stats")
-        .query_async(conn)
-        .await
-        .expect("INFO stats");
-    info.lines()
-        .find_map(|line| line.strip_prefix("total_connections_received:"))
-        .expect("total_connections_received in INFO stats")
-        .trim()
-        .parse()
-        .expect("numeric connection counter")
-}
-
-async fn claim(store: &dyn NonceStore, nonce: &str) -> Result<(), AuthError> {
-    store
-        .claim("vk_1070", nonce, Utc::now(), Duration::seconds(300))
-        .await
-}
-
-/// Distinguishes this run's nonces from an earlier run's keys still alive
-/// (TTL 300 s) on a shared server.
-fn run_tag() -> String {
-    Utc::now()
-        .timestamp_nanos_opt()
-        .unwrap_or_default()
-        .to_string()
-}
+use redis_support::{SERIAL, claim, connections_received, run_tag};
 
 #[tokio::test]
 async fn fifty_claims_open_a_constant_number_of_connections() {

@@ -18,13 +18,20 @@ report applies the same rule. No change to the generated DDL.
 so every signed request that reached the nonce check cost a TCP connection, plus a TLS handshake on
 `rediss://`. Fifty claims raised Redis's `total_connections_received` by fifty.
 
-**What changed.** The store opens one managed connection on its first claim, shares it across
-claims, and reconnects after a dropped connection. A dropped connection is retried once. The retry
-is safe because `SET NX` is atomic: a retry that finds a nonce an earlier attempt already stored
-answers as a replay, never as new. Timeouts are the driver defaults the old path already got (1 s to
-connect, 500 ms per reply). `SET NX EX`, `NonceReused` on replay, and `NonceStoreUnavailable` on
-every error are unchanged. The known limitation recorded under the COSE nonce bridge (#1005) no
-longer applies.
+**What changed.** The store opens one managed connection on its first claim and shares it across
+claims. It does not trust a connection that has failed: any failure other than a normal server reply
+to the `SET` (an I/O error, a response timeout, a dropped connection, a failed re-authentication
+after a password change) discards that connection, and the next claim opens a fresh one, so the store
+recovers without a restart. Retrying is narrow. A `SET` is retried once, on a fresh connection, only
+when the connection had already dropped or broke on the write; if the first attempt did land, the
+retry finds the nonce and answers as a replay, never as new. A `SET` that times out is not retried (a
+retry would queue behind the slow original and turn a first use into a false `NonceReused`); it
+answers `NonceStoreUnavailable` and resets the connection. A failed connect is not retried either.
+Concurrent claims against an unreachable Redis share one connect attempt, so they answer
+`NonceStoreUnavailable` in about a second together rather than queueing one second each. The timeouts
+are the driver defaults the old path already got (1 s to connect, 500 ms per reply). `SET NX EX`,
+`NonceReused` on replay, and `NonceStoreUnavailable` on every error are unchanged. The known
+limitation recorded under the COSE nonce bridge (#1005) no longer applies.
 
 ### A COSE-verified signer authenticates through the device and service registries (#1077)
 

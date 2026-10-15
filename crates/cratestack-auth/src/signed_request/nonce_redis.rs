@@ -2,31 +2,32 @@
 //! it and the in-memory default based on configuration.
 
 use std::sync::Arc;
-use std::time::Duration as StdDuration;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use redis::Client as RedisClient;
-use redis::aio::{ConnectionManager, ConnectionManagerConfig};
-use tokio::sync::OnceCell;
 
 use super::consts::REDIS_NONCE_KEY_PREFIX;
+use super::nonce_redis_conn::{SharedConnection, dropped_before_running, is_plain_server_reply};
 use super::nonce_store::{InMemoryNonceStore, NonceStore};
 use crate::AuthError;
 
-/// The driver's own defaults, made explicit: one connect attempt gets 1 s
-/// and one reply 500 ms. A Redis outage therefore still answers
-/// `NonceStoreUnavailable` about a second in, as it did before the store
-/// held a connection (#1070). Deliberately not the 2 s used by
-/// `cratestack-redis`: this path is on every signed request.
-const CONNECT_TIMEOUT: StdDuration = StdDuration::from_secs(1);
-const RESPONSE_TIMEOUT: StdDuration = StdDuration::from_millis(500);
+/// Why a `SET NX` produced no answer. Every variant is answered
+/// `NonceStoreUnavailable`: an error is never "new".
+enum SetFailure {
+    /// No connection was made. The attempt used the whole 1 s connect
+    /// budget (or was refused at once) and is not repeated.
+    Connect(String),
+    /// The connection failed or timed out; it has been discarded.
+    Command(redis::RedisError),
+    /// The server answered with an error reply. The connection stays.
+    Reply(redis::RedisError),
+}
 
 pub(super) struct RedisNonceStore {
-    client: RedisClient,
-    /// The one managed connection, opened by the first claim and shared by
-    /// every later one. It reconnects by itself after a dropped connection.
-    connection: OnceCell<ConnectionManager>,
+    /// The shared connection, opened by the first claim and rebuilt after
+    /// any failure that is not a server reply.
+    connection: SharedConnection,
 }
 
 impl RedisNonceStore {
@@ -37,21 +38,8 @@ impl RedisNonceStore {
             ))
         })?;
         Ok(Self {
-            client,
-            connection: OnceCell::new(),
+            connection: SharedConnection::new(client),
         })
-    }
-
-    /// Returns a cheap clone of the shared connection, opening it on first
-    /// use. A failed attempt is not cached, so the next claim retries.
-    async fn connection(&self) -> redis::RedisResult<ConnectionManager> {
-        let manager = self
-            .connection
-            .get_or_try_init(|| async {
-                ConnectionManager::new_with_config(self.client.clone(), manager_config()).await
-            })
-            .await?;
-        Ok(manager.clone())
     }
 
     /// `SET key value NX EX ttl`: `Some` when the key was stored, `None`
@@ -61,28 +49,30 @@ impl RedisNonceStore {
         storage_key: &str,
         value: &str,
         ttl_seconds: u64,
-    ) -> redis::RedisResult<Option<String>> {
-        let mut connection = self.connection().await?;
-        redis::cmd("SET")
+    ) -> Result<Option<String>, SetFailure> {
+        let attempt = self.connection.attempt();
+        let mut connection = self
+            .connection
+            .manager(&attempt)
+            .await
+            .map_err(SetFailure::Connect)?;
+        let result = redis::cmd("SET")
             .arg(storage_key)
             .arg(value)
             .arg("NX")
             .arg("EX")
             .arg(ttl_seconds)
             .query_async(&mut connection)
-            .await
+            .await;
+        result.map_err(|error| {
+            if is_plain_server_reply(&error) {
+                SetFailure::Reply(error)
+            } else {
+                self.connection.reset(&attempt);
+                SetFailure::Command(error)
+            }
+        })
     }
-}
-
-/// No reconnect backoff: the driver's default of six retries makes a claim
-/// wait out roughly nine seconds of an outage, on the request path. With
-/// none, an outage fails the claim in milliseconds (fail closed), and the
-/// next claim makes one fresh attempt, so recovery needs no restart.
-fn manager_config() -> ConnectionManagerConfig {
-    ConnectionManagerConfig::new()
-        .set_connection_timeout(Some(CONNECT_TIMEOUT))
-        .set_response_timeout(Some(RESPONSE_TIMEOUT))
-        .set_number_of_retries(0)
 }
 
 #[async_trait]
@@ -98,16 +88,25 @@ impl NonceStore for RedisNonceStore {
         let ttl_seconds = replay_ttl_seconds(timestamp, replay_window);
         let value = timestamp.to_rfc3339();
         let set_result = match self.set_nx(&storage_key, &value, ttl_seconds).await {
-            // The shared connection's first command after the server dropped
-            // it fails before the manager reconnects, so retry once. Safe
-            // because SET NX is atomic: if a lost reply hid a write that did
-            // happen, the retry finds the key and answers NonceReused.
-            Err(error) if error.is_connection_dropped() || error.is_io_error() => {
+            // Retried once, and only when the connection was already gone
+            // or broke on the write, so the command cannot have been
+            // waiting behind a slow server. The connection was discarded,
+            // so the retry connects afresh. If the first SET did land, the
+            // retry finds the key and answers NonceReused: that fails
+            // closed. Never retried on a timeout (the retry would queue
+            // behind the original SET and turn a first use into a replay)
+            // or on a failed connect (that attempt used the claim's budget).
+            Err(SetFailure::Command(error)) if dropped_before_running(&error) => {
                 self.set_nx(&storage_key, &value, ttl_seconds).await
             }
             other => other,
         }
-        .map_err(|error| AuthError::NonceStoreUnavailable(error.to_string()))?;
+        .map_err(|failure| {
+            AuthError::NonceStoreUnavailable(match failure {
+                SetFailure::Connect(error) => error,
+                SetFailure::Command(error) | SetFailure::Reply(error) => error.to_string(),
+            })
+        })?;
 
         if set_result.is_some() {
             Ok(())

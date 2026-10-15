@@ -1,4 +1,4 @@
-//! A real Redis for `tests/redis_nonce_connection.rs`, chosen the way
+//! A real Redis for the `tests/redis_nonce_*.rs` suites, chosen the way
 //! `cratestack-redis`'s suites choose theirs
 //! (`crates/cratestack-redis/tests/support/redis.rs`):
 //!
@@ -11,6 +11,11 @@
 //! failure into a panic, so a CI job (or a rootless-Docker host whose
 //! `DOCKER_HOST` is unset) cannot pass by skipping.
 
+// Each test binary uses a different subset of these helpers.
+#![allow(dead_code)]
+
+use chrono::{Duration, Utc};
+use cratestack_auth::{AuthError, NonceStore};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, ImageExt};
 use testcontainers_modules::redis::Redis;
@@ -76,4 +81,48 @@ impl TestRedis {
             .await
             .expect("connect")
     }
+
+    /// True when this test owns the server (an ephemeral container), or
+    /// when `CRATESTACK_REDIS_TEST_ALLOW_RECONFIGURE` says the external one
+    /// may be reconfigured (`CONFIG SET requirepass`) and is restored after.
+    pub fn may_reconfigure(&self) -> bool {
+        self._container.is_some()
+            || std::env::var("CRATESTACK_REDIS_TEST_ALLOW_RECONFIGURE").is_ok()
+    }
+}
+
+/// Tests touch server-wide state (the connection counter, `CLIENT KILL`,
+/// `CLIENT PAUSE`, passwords), so they take this and can share one
+/// `CRATESTACK_REDIS_TEST_URL` under the default parallel runner.
+pub static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// `total_connections_received` from `INFO stats`: every TCP connection the
+/// server has accepted since it started.
+pub async fn connections_received(conn: &mut redis::aio::MultiplexedConnection) -> u64 {
+    let info: String = redis::cmd("INFO")
+        .arg("stats")
+        .query_async(conn)
+        .await
+        .expect("INFO stats");
+    info.lines()
+        .find_map(|line| line.strip_prefix("total_connections_received:"))
+        .expect("total_connections_received in INFO stats")
+        .trim()
+        .parse()
+        .expect("numeric connection counter")
+}
+
+pub async fn claim(store: &dyn NonceStore, nonce: &str) -> Result<(), AuthError> {
+    store
+        .claim("vk_1070", nonce, Utc::now(), Duration::seconds(300))
+        .await
+}
+
+/// Distinguishes this run's nonces from an earlier run's keys still alive
+/// (TTL 300 s) on a shared server.
+pub fn run_tag() -> String {
+    Utc::now()
+        .timestamp_nanos_opt()
+        .unwrap_or_default()
+        .to_string()
 }

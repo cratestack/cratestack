@@ -58,7 +58,7 @@ rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-# `OnceCell` holds the Redis nonce store's one managed connection (#1070).
+# `OnceCell` shares the Redis nonce store's one connect attempt (#1070).
 tokio = { workspace = true, features = ["sync"] }
 thiserror.workspace = true
 

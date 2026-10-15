@@ -515,7 +515,8 @@ test-ci-db-cli-baseline *args='':
 #
 # Also `cratestack-cose`'s Redis nonce bridge (cratestack#1005), whose
 # target is `required-features = ["auth"]`, and `cratestack-auth`'s Redis
-# nonce store (cratestack#1070: one managed connection, reconnect).
+# nonce store (cratestack#1070: one managed connection, reconnect after a
+# dropped connection, a password change, and a response timeout).
 # Not `set -e`, for `test-ci-host`'s reason: a failure in the first run
 # must not hide the second.
 test-ci-redis *args='':
@@ -524,7 +525,7 @@ test-ci-redis *args='':
 	status=0
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis --no-fail-fast {{args}} || status=1
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-cose --features auth --test auth_redis_nonce {{args}} || status=1
-	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-auth --test redis_nonce_connection {{args}} || status=1
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-auth --test redis_nonce_connection --test redis_nonce_recovery --test redis_nonce_timeout {{args}} || status=1
 	exit "$status"
 
 # Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
