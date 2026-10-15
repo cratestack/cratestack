@@ -112,10 +112,11 @@ impl SchemaError {
         let mut output = Vec::new();
         let file = self.file.to_string();
         let shown = substitute_for_display(&self.source_text);
-        Report::build(ReportKind::Error, (file.clone(), self.span.clone()))
+        let span = char_span(&self.source_text, self.span.clone());
+        Report::build(ReportKind::Error, (file.clone(), span.clone()))
             .with_message(&self.message)
             .with_label(
-                Label::new((file.clone(), self.span.clone()))
+                Label::new((file.clone(), span))
                     .with_message(&self.message)
                     .with_color(Color::Red),
             )
@@ -125,6 +126,24 @@ impl SchemaError {
 
         String::from_utf8(output).expect("ariadne should emit utf-8")
     }
+}
+
+/// Converts a byte span into `source` to the character span ariadne counts
+/// in (cratestack#1157). This is the only place the unit changes: `span()`
+/// stays in bytes for slicing the source and for the JSON output, and
+/// `substitute_for_display` keeps the source's length in characters, so the
+/// converted span lands on the same place in the code frame.
+///
+/// Counts the characters that start before each byte offset, so an offset
+/// past the end of `source` clamps instead of panicking.
+fn char_span(source: &str, span: Range<usize>) -> Range<usize> {
+    let chars_before = |byte: usize| {
+        source.as_bytes()[..byte.min(source.len())]
+            .iter()
+            .filter(|&&b| b & 0xC0 != 0x80)
+            .count()
+    };
+    chars_before(span.start)..chars_before(span.end)
 }
 
 pub(crate) fn span_error(message: impl Into<String>, span: SourceSpan) -> SchemaError {

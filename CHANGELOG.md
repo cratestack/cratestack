@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
+
+A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte
+character before the error (`é`, `✓`, `𝄞`, an emoji, or a comment in another language) therefore
+moved the frame: the error lost its location and snippet, or in a long file pointed at a line up to
+dozens of lines away. The renderer now converts the span to characters once, in
+`SchemaError::render`, before handing it to the code frame. `SchemaError::span()` is unchanged and
+stays in bytes. ASCII-only schemas render exactly as before. No change to the schema language or to
+the JSON output.
+
 ## 0.15.4 (2026-10-11)
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)
