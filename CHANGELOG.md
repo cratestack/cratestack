@@ -26,6 +26,27 @@ connect, 500 ms per reply). `SET NX EX`, `NonceReused` on replay, and `NonceStor
 every error are unchanged. The known limitation recorded under the COSE nonce bridge (#1005) no
 longer applies.
 
+### A COSE-verified signer authenticates through the device and service registries (#1077)
+
+A signed client no longer needs an `Authorization` header to make a write to an `@allow(auth() != null)`
+op. `cratestack_cose::auth::CoseAuthProvider` wraps the header-based `AuthProvider` and, when the
+header path yields no identity, takes the `VerifiedSigner` the envelope layer verified and asks the
+device key registry (a `DeviceKeyResolver`) and, if given, a service key registry (a
+`CoseVerifierResolver`, such as `RegistryVerifierResolver`) whether they still hold that key. A
+key that is known and active authenticates as `cose:<thumbprint>`, with `kind` `device` or
+`service`. An unknown or revoked key is anonymous, so policy refuses it. It is not an error, and
+a backend failure stays an error (`500`), so an outage is not mistaken for an unknown key.
+
+The adapter reads the signer only from the request's in-process extensions, never from a header or
+a body, so a client cannot fake one. A forged signer header on an unsigned request stays anonymous.
+The `auth` feature of `cratestack-cose` is the only place this lives, and nothing changes for
+callers that do not wrap their provider.
+
+Pass it to the generated router in place of the header provider:
+`CoseAuthProvider::new(header_provider, device_registry).with_service_keys(service_registry)`.
+
+Remaining work: window replay (P2) is out of scope here.
+
 ### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
 
 A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte

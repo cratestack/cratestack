@@ -6,7 +6,10 @@
 // Each test binary uses a different subset of these helpers.
 #![allow(dead_code, unused_imports)]
 
+mod principal;
 mod stores;
+
+pub use principal::*;
 
 use std::borrow::Cow;
 use std::sync::Arc;

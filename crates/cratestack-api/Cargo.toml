@@ -140,6 +140,14 @@ uuid.workspace = true
 # dependency of `cratestack-axum` (this crate's dependency) at workspace
 # version "0.1", so this adds no new dependency to the graph.
 async-trait.workspace = true
+# cratestack#1077: `tests/cose_auth_provider_*.rs` put `CoseAuthProvider` in front
+# of a generated router. The `cose` facade does not re-export `auth`, its
+# `DeviceKeyResolver` trait, or the `ed25519-dalek` key it hands the resolver,
+# so they are dev-only edges here. The normal graph is unchanged (CI's
+# `facade-disjointness` job checks normal edges only).
+cratestack-auth.workspace = true
+cratestack-cose = { workspace = true, features = ["auth"] }
+ed25519-dalek.workspace = true
 # Plain edges, not hardcoded `features = [...]`: both codecs get their
 # backend from THIS crate's own `decimal-rust-decimal`/`decimal-bigdecimal`
 # feature (see the forwards there) — Cargo's feature resolver unifies
@@ -332,4 +340,16 @@ required-features = ["cose"]
 [[test]]
 name = "cose_envelope_registry"
 path = "tests/cose_envelope_registry.rs"
+required-features = ["cose"]
+
+# cratestack#1077: a COSE-verified signer authenticates through the device
+# registry, REST and RPC (the two stay in step, per the transport-parity rule).
+[[test]]
+name = "cose_auth_provider_rest"
+path = "tests/cose_auth_provider_rest.rs"
+required-features = ["cose"]
+
+[[test]]
+name = "cose_auth_provider_rpc"
+path = "tests/cose_auth_provider_rpc.rs"
 required-features = ["cose"]
