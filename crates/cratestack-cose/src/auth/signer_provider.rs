@@ -36,7 +36,7 @@ use crate::keys::CoseVerifierResolver;
 /// Wraps an [`AuthProvider`] and authenticates a COSE-verified signer through
 /// the device key registry and, optionally, a service key registry.
 ///
-/// ```ignore
+/// ```text
 /// let provider = CoseAuthProvider::new(header_provider, device_registry)
 ///     .with_service_keys(service_registry);
 /// ```
