@@ -1143,6 +1143,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "testcontainers",
+ "testcontainers-modules",
  "thiserror 2.0.21",
  "tokio",
  "tower",

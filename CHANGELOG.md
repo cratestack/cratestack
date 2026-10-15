@@ -12,6 +12,20 @@ a migration is now `(safe)`, as the enum CHECK on the same table already was. A 
 existing table is still blocking, with its per-op reason and `up.pre.sql`. `migrate baseline`'s drift
 report applies the same rule. No change to the generated DDL.
 
+### Redis nonce store keeps one managed connection; the known limitation is lifted (#1070)
+
+**What was wrong.** `cratestack-auth`'s Redis nonce store opened a new connection for every claim,
+so every signed request that reached the nonce check cost a TCP connection, plus a TLS handshake on
+`rediss://`. Fifty claims raised Redis's `total_connections_received` by fifty.
+
+**What changed.** The store opens one managed connection on its first claim, shares it across
+claims, and reconnects after a dropped connection. A dropped connection is retried once. The retry
+is safe because `SET NX` is atomic: a retry that finds a nonce an earlier attempt already stored
+answers as a replay, never as new. Timeouts are the driver defaults the old path already got (1 s to
+connect, 500 ms per reply). `SET NX EX`, `NonceReused` on replay, and `NonceStoreUnavailable` on
+every error are unchanged. The known limitation recorded under the COSE nonce bridge (#1005) no
+longer applies.
+
 ### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
 
 A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte
