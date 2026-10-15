@@ -52,8 +52,8 @@
   },
   "devDependencies": {
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3",
-    "zod": "^4.6.5",
+    "vitest": "^5.0.4",
+    "zod": "^4.6.6",
     "zod3": "npm:zod@^3.23.0"
   },
   "engines": {
