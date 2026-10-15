@@ -1,0 +1,19 @@
+// cratestack#1081: a minimal model for the generated list route's span
+// isolation test. Its table name (`span_isolation_items`) is unique to this
+// fixture, so the test binary can share a database with the others.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model SpanIsolationItem {
+  id Int @id
+  label String
+
+  @@allow("read", auth() != null)
+}

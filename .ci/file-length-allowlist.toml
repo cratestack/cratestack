@@ -735,13 +735,6 @@ added = "2026-08-29"
 reason = "pre-existing; split by concern (extract inline tests first)"
 
 [[file]]
-path = "crates/cratestack-macros/src/axum/model/handlers_list.rs"
-lines = 203
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-mock-wiremock/src/model_state.rs"
 lines = 203
 issue = "#TBD"

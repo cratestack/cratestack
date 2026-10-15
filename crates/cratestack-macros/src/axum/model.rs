@@ -15,6 +15,7 @@ mod computed;
 mod computed_tests;
 mod handlers_crud;
 mod handlers_list;
+mod handlers_list_mount;
 mod handlers_update;
 mod prep;
 mod routes;

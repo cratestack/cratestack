@@ -178,12 +178,17 @@ updates:
   # #1050). Both members are hand-written, so nothing is excluded. Pointing at
   # the root also brings `napi/` (its `@napi-rs/cli` dev dependency) under
   # Dependabot for the first time.
+  # Grouped minor/patch like the other npm entries (#1060): it opened nine
+  # single-dependency PRs before, which is how the stale lockfile was noticed.
   - package-ecosystem: npm
     directory: /examples/react-nextjs-daisyui
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
     ignore:
       - dependency-name: "@types/node"
 

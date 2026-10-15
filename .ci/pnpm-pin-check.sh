@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# pnpm version pin agreement check (cratestack#1050).
+# pnpm version pin agreement check (cratestack#1050, #1060).
 #
-# The pnpm version is pinned with `packageManager` in more than one tracked
-# `package.json`: the repo root, and the manifest-only roots of the example
-# workspaces that exist so Dependabot can maintain their lockfiles
+# The pnpm version is pinned with `packageManager` in every tracked
+# `package.json` that sits beside a tracked `pnpm-lock.yaml` (the repo root,
+# and every example lockfile root), and in the manifest-only roots of the
+# example workspaces that exist so Dependabot can maintain their lockfiles
 # (`examples/react-vite-swr`, #1049; `examples/react-nextjs-daisyui`, #1050).
 # Dependabot resolves each example with that example's pin, and pnpm itself
 # switches to it too: run inside the example, even CI's root-pinned pnpm
@@ -15,9 +16,8 @@
 #
 # Rules and edge cases live in `.ci/pnpm_pin_check.py`'s docstring.
 #
-# Deliberately NOT checked: that every lockfile root declares a pin. Eight
-# example lockfile roots declare none today, and adding one changes which pnpm
-# Dependabot uses there, which is a separate decision.
+# Every tracked pnpm lockfile root must declare a pin (#1060): the roots are
+# derived from `git ls-files`, so a new lockfile is covered automatically.
 #
 # Run locally via `just verify-pnpm-pins`.
 set -euo pipefail
@@ -30,4 +30,4 @@ if ! command -v python3 > /dev/null; then
   exit 1
 fi
 
-git ls-files -z -- '*package.json' | python3 "$script_dir/pnpm_pin_check.py"
+git ls-files -z -- '*package.json' '*pnpm-lock.yaml' | python3 "$script_dir/pnpm_pin_check.py"

@@ -514,15 +514,18 @@ test-ci-db-cli-baseline *args='':
 # shard, where the tests used to skip silently for lack of a Redis.
 #
 # Also `cratestack-cose`'s Redis nonce bridge (cratestack#1005), whose
-# target is `required-features = ["auth"]`. Not `set -e`, for
-# `test-ci-host`'s reason: a failure in the first run must not hide the
-# second.
+# target is `required-features = ["auth"]`, and `cratestack-auth`'s Redis
+# nonce store (cratestack#1070: one managed connection, reconnect after a
+# dropped connection, a password change, and a response timeout).
+# Not `set -e`, for `test-ci-host`'s reason: a failure in the first run
+# must not hide the second.
 test-ci-redis *args='':
 	#!/usr/bin/env bash
 	set -uo pipefail
 	status=0
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-redis --no-fail-fast {{args}} || status=1
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-cose --features auth --test auth_redis_nonce {{args}} || status=1
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-auth --test redis_nonce_connection --test redis_nonce_recovery --test redis_nonce_timeout {{args}} || status=1
 	exit "$status"
 
 # Shard: the Studio crate, whose api_smoke tests assert the Trunk-built UI
@@ -1638,8 +1641,9 @@ verify-napi-targets:
 
 # pnpm version pin agreement (cratestack#1050) — asserts every tracked
 # `package.json` that declares `packageManager` (or `devEngines.packageManager`)
-# pins exactly the root's pnpm, and that the example workspace roots
-# Dependabot resolves, plus any manifest-only one, declare one. Inside an
+# pins exactly the root's pnpm, and that every pnpm lockfile root (a directory
+# with a tracked `pnpm-lock.yaml`) and any manifest-only workspace root
+# declares one (#1060). Inside an
 # example, pnpm switches to that example's pin (Dependabot uses it too), so a
 # drift silently runs the example on a different pnpm from the rest of CI.
 # Blocking CI gate, run as the `pnpm-pins` job in `.github/workflows/ci.yml`.

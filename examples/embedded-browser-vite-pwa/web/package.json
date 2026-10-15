@@ -1,6 +1,7 @@
 {
   "name": "embedded-browser-vite-pwa-example",
   "private": true,
+  "packageManager": "pnpm@11.24.0",
   "type": "module",
   "scripts": {
     "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target web --out-dir web/pkg",

@@ -45,7 +45,7 @@ cuid2.workspace = true
 ed25519-dalek.workspace = true
 http.workspace = true
 rand.workspace = true
-redis = { workspace = true, features = ["tokio-comp"] }
+redis = { workspace = true, features = ["tokio-comp", "connection-manager"] }
 reqwest = { workspace = true, features = ["json"] }
 # `reqwest`'s `rustls-no-provider` feature (see the workspace `Cargo.toml`'s
 # `reqwest` entry) ships no crypto provider — `Client::build()` panics at
@@ -58,9 +58,15 @@ rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+# `OnceCell` shares the Redis nonce store's one connect attempt (#1070).
+tokio = { workspace = true, features = ["sync"] }
 thiserror.workspace = true
 
 [dev-dependencies]
 axum.workspace = true
+# Real-Redis tests (`tests/redis_nonce_connection.rs`): same harness as
+# `cratestack-cose`'s `auth_redis_nonce`, see `tests/redis_support/mod.rs`.
+testcontainers = { workspace = true, features = ["http_wait"] }
+testcontainers-modules = { workspace = true, features = ["redis"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net"] }
 tower.workspace = true

@@ -2,6 +2,113 @@
 
 ## Unreleased
 
+### `migrate diff` no longer calls a CHECK on a table it creates blocking (#1129)
+
+A validator CHECK (`@range`, `@length`, `@iso4217` with `@db_enforce`) on a table the same migration
+creates was classified Blocking. The first migration of any `@db_enforce` schema therefore printed
+"blocks on existing data", wrote a comment-only `up.pre.sql`, labelled itself `(blocking)`, and put a
+WARNING at the top of `up.sql`. A table being created has no rows, so the CHECK cannot reject any. Such
+a migration is now `(safe)`, as the enum CHECK on the same table already was. A CHECK added to an
+existing table is still blocking, with its per-op reason and `up.pre.sql`. `migrate baseline`'s drift
+report applies the same rule. No change to the generated DDL.
+
+### Redis nonce store keeps one managed connection; the known limitation is lifted (#1070)
+
+**What was wrong.** `cratestack-auth`'s Redis nonce store opened a new connection for every claim,
+so every signed request that reached the nonce check cost a TCP connection, plus a TLS handshake on
+`rediss://`. Fifty claims raised Redis's `total_connections_received` by fifty.
+
+**What changed.** The store opens one managed connection on its first claim and shares it across
+claims. It does not trust a connection that has failed: any failure other than a normal server reply
+to the `SET` (an I/O error, a response timeout, a dropped connection, a failed re-authentication
+after a password change) discards that connection, and the next claim opens a fresh one, so the store
+recovers without a restart. Retrying is narrow. A `SET` is retried once, on a fresh connection, only
+when the connection had already dropped or broke on the write; if the first attempt did land, the
+retry finds the nonce and answers as a replay, never as new. A `SET` that times out is not retried (a
+retry would queue behind the slow original and turn a first use into a false `NonceReused`); it
+answers `NonceStoreUnavailable` and resets the connection. A failed connect is not retried either.
+Concurrent claims against an unreachable Redis share one connect attempt, so they answer
+`NonceStoreUnavailable` in about a second together rather than queueing one second each. The timeouts
+are the driver defaults the old path already got (1 s to connect, 500 ms per reply). `SET NX EX`,
+`NonceReused` on replay, and `NonceStoreUnavailable` on every error are unchanged. The known
+limitation recorded under the COSE nonce bridge (#1005) no longer applies.
+
+### A COSE-verified signer authenticates through the service and device registries (#1077)
+
+A signed client no longer needs an `Authorization` header to make a write to an `@allow(auth() != null)`
+op. `cratestack_cose::auth::CoseAuthProvider` wraps the header-based `AuthProvider` and, when the
+header path yields no identity, takes the `VerifiedSigner` the envelope layer verified and asks the
+registries whether they still hold that key, matched by full thumbprint (the 8-byte `kid` is only a
+prefix). The service key registry (a `CoseVerifierResolver`, such as `RegistryVerifierResolver`) is
+asked first, then the device key registry (a `DeviceKeyResolver`), the order `cratestack-auth`'s
+verifier uses, so a device enrolment can never relabel a service key and a device-registry outage
+does not fail a service signer. Unlike that verifier, which treats a JWKS/service error as a miss, a
+service-registry error here is NOT a miss: it fails the request (`500`), including for device
+signers, so it fails closed. A key that is known and active authenticates as `cose:<thumbprint>`
+(with the default `ThumbprintPrincipal` prefix), with `kind` `device` or `service`, and the context
+fields `thumbprint` (bare lowercase hex) and `alg` (the COSE algorithm id). An unknown or revoked key
+is anonymous, so policy refuses it. It is not an error, and a failure of a registry that is asked
+stays an error (`500`), so an outage is not mistaken for an unknown key.
+
+**Device keys are opt-in.** A device key proves a device, not a user, like `TransportCallerMode::Never`
+for a key-only header. By default only service keys authenticate; an enrolled device signer is
+anonymous (the device registry is not asked, but a failing service registry, asked first, still returns
+an error, `500`) and is refused by `auth() != null`.
+`.authenticate_devices(true)` switches device keys on.
+
+**How to use it.** Depend on `cratestack-cose` directly with `features = ["auth"]` and on
+`cratestack-auth` (the `cratestack` facade's `cose` feature re-exports `cratestack-cose`, and
+`cratestack::cose::auth` appears when something in the build turns the `auth` feature on, but it does
+not re-export `cratestack-auth`, which owns `DeviceKeyResolver`). Pass it to the generated router in
+place of the header provider:
+`CoseAuthProvider::new(header_provider, device_registry).with_service_keys(service_registry)`, and add
+`.authenticate_devices(true)` to authenticate devices.
+
+**Security.** With `authenticate_devices(true)`, wrapping a provider makes any request sealed by an
+enrolled device key authenticated, with no user (no `id_jwt`), on every method, whatever the inner
+provider's `TransportCallerMode`. `auth() != null` then means "holds an enrolled device or service
+key", and revoking the key, not token expiry, is what bounds access. Turn it on only where device
+enrolment itself is gated. A service key authenticates even with the gate off, so
+**`with_service_keys` must hold service keys only; a device key placed there authenticates as a
+service whatever the gate.** The service registry is asked first, regardless of
+`authenticate_devices`: passing it a resolver that also holds device keys (for example the same
+`RegistryVerifierResolver` the envelope verifies with, where devices enrol) makes every enrolled device
+a `kind: service` caller with the gate off. Also:
+
+- A header the inner provider refuses (`Err`) is never replaced by the signer. A header it accepts but
+  maps to anonymous (for example `SignedRequestAuthProvider` under `TransportCallerMode::Never`, for a
+  key-only header) is not a refusal, and the signer supersedes it.
+- The envelope's "Required" mode does not bind a header identity to the signer: when the inner
+  provider authenticates, its identity wins and the signer is not consulted.
+- An ESP256 or WebCrypto device key can authenticate only through the service registry, because
+  `DeviceKeyResolver` is Ed25519-only.
+
+The adapter reads the signer only from the request's in-process extensions, never from a header or
+a body, so a client cannot fake one. A forged signer header on an unsigned request stays anonymous.
+The `auth` feature of `cratestack-cose` is the only place this lives, and nothing changes for
+callers that do not wrap their provider.
+
+Remaining work: window replay (P2) is out of scope here.
+
+### Generated procedure and route spans no longer leak to other tasks across `.await` (#1081)
+
+**What was wrong.** The generated `invoke`, `invoke_with_db` (including its `@isolation` variant),
+the axum procedure route, and the axum model list route handlers entered their tracing span with a guard
+that lived across every `.await`. While a generated future was suspended, the executor could poll
+an unrelated task on the same thread, and that task saw the procedure's span as its current span,
+so its events and child spans were parented under an operation they had nothing to do with.
+
+**What changed.** Each of those bodies is now attached to its span with
+`::cratestack::tracing::Instrument::instrument`, so the span is entered only while the body is being
+polled. Span names, fields, and the completed/failed events are unchanged, and early returns still
+return from the instrumented body. Generated code only: no change to any public API, and the
+generated dispatch tokens differ only in this one construct.
+
+**Verification.** `crates/cratestack-api/tests/procedure_span_isolation.rs` and
+`crates/cratestack-pg/tests/list_route_span_isolation.rs` each fail on the old codegen (the unrelated
+task observes the procedure or route span) and pass on the fix. The list-route test needs no
+database.
+
 ### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
 
 A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte
@@ -54,6 +161,15 @@ whole array was copied through unchanged. Both the default layout and `--swr` no
 by element, the way a bare `Decimal[]` procedure return already did. A `null` element, a `null` array
 and a scalar `Decimal` or `Decimal?` field decode as before. Generated code only; no wire format
 change.
+
+### CI: every example pnpm lockfile root pins `packageManager`, and the check requires it (#1060)
+
+Eight example lockfile roots declared no pnpm pin, so Dependabot inferred pnpm 10 from their
+lockfiles while CI installs pnpm 11.24.0. Each now pins the repo root's `pnpm@11.24.0`, including
+`examples/embedded-expo/app`: the repo has no `eas.json`, so EAS is not in play, and
+`pnpm install --frozen-lockfile --lockfile-only` passes there with the pin. `just verify-pnpm-pins`
+now requires a pin in every tracked `pnpm-lock.yaml` root. The `examples/react-nextjs-daisyui`
+Dependabot entry gets the same minor/patch group as most other npm entries.
 
 ## 0.15.4 (2026-10-11)
 

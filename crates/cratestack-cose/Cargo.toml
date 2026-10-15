@@ -123,6 +123,9 @@ coset.workspace = true
 cratestack-codec-cbor.workspace = true
 # A randomized (non-RFC 6979) ES256 signature for the verify-only test.
 rand.workspace = true
+# `tests/auth_signer_provider.rs` (`auth` only) builds the `RequestContext`
+# an `AuthProvider` is handed: its headers and extensions are `http` types.
+http.workspace = true
 # `tests/auth_redis_nonce.rs` (`auth` only) reads the key and its TTL back
 # from the real Redis the bridge wrote to.
 redis = { workspace = true, features = ["tokio-comp"] }
@@ -151,4 +154,8 @@ required-features = ["auth"]
 
 [[test]]
 name = "auth_redis_nonce"
+required-features = ["auth"]
+
+[[test]]
+name = "auth_signer_provider"
 required-features = ["auth"]

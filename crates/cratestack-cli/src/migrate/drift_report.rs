@@ -7,7 +7,10 @@
 use std::collections::BTreeMap;
 
 use cratestack_migrate::introspect::postgres::UnmappedColumn;
-use cratestack_migrate::ir::{Destructiveness, Op};
+use cratestack_migrate::ir::{Destructiveness, Op, destructiveness_in_context};
+
+#[cfg(test)]
+mod tests;
 
 /// Render the full drift report: grouped ops, then a separate
 /// "unmapped columns" section — real columns the comparison above
@@ -31,9 +34,12 @@ pub(super) fn render(ops: &[Op], unmapped: &[UnmappedColumn]) -> String {
 }
 
 fn render_ops(ops: &[Op]) -> String {
-    let mut grouped: BTreeMap<&str, Vec<&Op>> = BTreeMap::new();
-    for op in ops {
-        grouped.entry(target(op)).or_default().push(op);
+    // In context, not `op.destructiveness()`: a CHECK on a table the
+    // same diff creates is not blocking (cratestack#1129).
+    let classes = destructiveness_in_context(ops);
+    let mut grouped: BTreeMap<&str, Vec<(&Op, Destructiveness)>> = BTreeMap::new();
+    for (op, class) in ops.iter().zip(classes) {
+        grouped.entry(target(op)).or_default().push((op, class));
     }
 
     let mut out = format!(
@@ -43,12 +49,8 @@ fn render_ops(ops: &[Op]) -> String {
     );
     for (name, ops) in grouped {
         out.push_str(&format!("\n{name}:\n"));
-        for op in ops {
-            out.push_str(&format!(
-                "  [{}] {}\n",
-                severity_label(op.destructiveness()),
-                describe(op)
-            ));
+        for (op, class) in ops {
+            out.push_str(&format!("  [{}] {}\n", severity_label(class), describe(op)));
         }
     }
     out

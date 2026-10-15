@@ -6,7 +6,10 @@
 // Each test binary uses a different subset of these helpers.
 #![allow(dead_code, unused_imports)]
 
+mod principal;
 mod stores;
+
+pub use principal::*;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -48,6 +51,12 @@ fn server_signer() -> Ed25519Signer {
 /// The client's verification key, for a test that registers it itself.
 pub fn client_verify_key() -> cratestack::cose::CoseVerifyKey {
     client_signer().verify_key()
+}
+
+/// Another device's verification key, which never signs a request here: a
+/// test enrols it to have a real thumbprint that the signer is not.
+pub fn other_device_key() -> cratestack::cose::CoseVerifyKey {
+    Ed25519Signer::from_seed(&seed(0x40)).verify_key()
 }
 
 /// The server's envelope, trusting the client's key.
