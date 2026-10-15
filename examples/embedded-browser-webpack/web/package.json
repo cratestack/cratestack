@@ -1,6 +1,7 @@
 {
   "name": "embedded-browser-webpack-example",
   "private": true,
+  "packageManager": "pnpm@11.24.0",
   "scripts": {
     "wasm:build": "node ../../../examples/scripts/wasm-build.mjs --target bundler --out-dir web/pkg",
     "wasm:build:dev": "node ../../../examples/scripts/wasm-build.mjs --target bundler --out-dir web/pkg --dev",

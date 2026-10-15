@@ -55,6 +55,15 @@ by element, the way a bare `Decimal[]` procedure return already did. A `null` el
 and a scalar `Decimal` or `Decimal?` field decode as before. Generated code only; no wire format
 change.
 
+### CI: every example pnpm lockfile root pins `packageManager`, and the check requires it (#1060)
+
+Eight example lockfile roots declared no pnpm pin, so Dependabot inferred pnpm 10 from their
+lockfiles while CI installs pnpm 11.24.0. Each now pins the repo root's `pnpm@11.24.0`, including
+`examples/embedded-expo/app`: Expo's docs use the field for Corepack-driven installs and say nothing
+that breaks under pnpm. `just verify-pnpm-pins` now requires a pin in every tracked `pnpm-lock.yaml`
+root. The `examples/react-nextjs-daisyui` Dependabot entry gets the same minor/patch group as the
+other npm entries.
+
 ## 0.15.4 (2026-10-11)
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)
