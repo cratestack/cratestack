@@ -26,10 +26,12 @@
 //!    then, **only if device authentication is switched on**, the device
 //!    registry. That is the order `cratestack-auth`'s verifier uses, so a
 //!    device enrolment can never relabel a service key and a device registry
-//!    outage does not fail a service signer. An unknown or revoked key, or a
-//!    device key while the gate is off, gets the wrapped provider's anonymous
-//!    answer, not an error, so policy refuses it as it refuses any anonymous
-//!    caller. A backend failure of a registry that is asked is an `Err`.
+//!    outage does not fail a service signer. Unlike that verifier, which
+//!    treats a JWKS/service error as a miss, a service-registry error here is
+//!    NOT a miss: it fails the request (`500`), including for device signers.
+//!    This fails closed. An unknown or revoked key, or a device key while the
+//!    gate is off, gets the wrapped provider's anonymous answer, so policy
+//!    refuses it. A backend failure of a registry that is asked is an `Err`.
 //!
 //! # Device authentication is opt-in
 //!
@@ -37,7 +39,8 @@
 //! in `cratestack-auth`, this adapter does not turn a key alone into a caller
 //! unless told to. By default a service key authenticates (services are
 //! machine principals by design) and a device key does not: it resolves to
-//! anonymous, without a lookup in the device registry and never as an error.
+//! anonymous, without a lookup in the device registry. A failing service
+//! registry still errors (`500`), as it is asked first.
 //! [`CoseAuthProvider::authenticate_devices`] switches device keys on.
 //!
 //! # Security
@@ -54,20 +57,14 @@
 //! user cannot rely on `auth() != null` alone.
 //!
 //! Even with the gate off, a service key makes `auth() != null` true for the
-//! holder of that key.
+//! holder of that key. So [`CoseAuthProvider::with_service_keys`] must hold
+//! service keys only: a device key placed there authenticates as a service
+//! whatever the gate, because the service registry is asked first.
 //!
 //! The envelope's "Required" mode does not bind a header identity to the
 //! signer. When the inner provider authenticates from a header, that identity
 //! wins and the signer is not consulted, so a request may be sealed by one
 //! device and act as the user in another's header.
-//!
-//! # Which keys can authenticate
-//!
-//! The device registry is a `DeviceKeyResolver`, which holds Ed25519 keys
-//! only. An ESP256 or WebCrypto device key therefore authenticates only
-//! through the service registry ([`CoseAuthProvider::with_service_keys`]),
-//! which is not behind the device gate; offered to the device registry it is
-//! anonymous, without a lookup.
 //!
 //! # The principal
 //!
@@ -90,9 +87,10 @@ use crate::keys::CoseVerifierResolver;
 /// Wraps an [`AuthProvider`] and authenticates a COSE-verified signer through
 /// a service key registry and, once switched on, the device key registry.
 ///
-/// Both registries must be the same ones the envelope verifies with, or
-/// stricter. A device the envelope accepts but this adapter does not know is
-/// refused by policy, so revoking a key in either registry revokes it here.
+/// Each registry must be the one the envelope verifies with, or stricter, so
+/// revoking a key there revokes it here. But `with_service_keys` must hold
+/// service keys only (see "Security"): do not pass it a resolver that also
+/// holds device keys.
 /// The service registry is asked before the device registry, and the device
 /// registry only after [`authenticate_devices`](Self::authenticate_devices).
 ///
@@ -103,15 +101,6 @@ use crate::keys::CoseVerifierResolver;
 /// // Also devices, where device enrolment is gated.
 /// let provider = provider.authenticate_devices(true);
 /// ```
-///
-/// # Header refusals and the signer
-///
-/// A header the inner provider refuses (`Err`) is never replaced by the
-/// signer. A header it accepts but maps to anonymous, such as a key-only
-/// `SignedRequestAuthProvider` header under `TransportCallerMode::Never`, is
-/// not a refusal: the signer supersedes it. The "Required" envelope mode does
-/// not bind a header identity to the signer either; when the inner provider
-/// authenticates, its identity wins and the signer is not looked at.
 ///
 /// # Security
 ///
@@ -124,6 +113,13 @@ use crate::keys::CoseVerifierResolver;
 /// or service key", and revoking the key, not token expiry, is what bounds
 /// access. Turn it on only where device enrolment itself is gated. A service
 /// key authenticates either way. See the module docs.
+///
+/// `with_service_keys` must hold service keys only; a device key placed there
+/// authenticates as a service whatever the gate. The service registry is asked
+/// first and authenticates regardless of `authenticate_devices`, so passing it
+/// the resolver devices enrol into (for example the same
+/// `RegistryVerifierResolver` the envelope verifies with) makes every enrolled
+/// device a `kind: service` caller with the gate off.
 ///
 /// An ESP256 or WebCrypto device key can authenticate only through the
 /// service registry (not behind the device gate), because `DeviceKeyResolver`
@@ -151,7 +147,8 @@ impl<A> CoseAuthProvider<A> {
     /// Switch device authentication on or off (off by default).
     ///
     /// Off, a verified device signer is anonymous: the device registry is not
-    /// asked, so it is never an error either, and policy refuses it. On, a
+    /// asked and policy refuses it (a failing service registry, asked first,
+    /// still errors with `500`). On, a
     /// device key the registry still holds authenticates as `kind` `device`
     /// (see the type docs, "Security": this makes the key alone a caller).
     /// Service keys ([`with_service_keys`](Self::with_service_keys)) are not
@@ -163,6 +160,8 @@ impl<A> CoseAuthProvider<A> {
 
     /// Also authenticate verified service keys, which `services` holds under
     /// any algorithm it verifies (for example a `RegistryVerifierResolver`).
+    /// `services` must hold service keys only: a device key here authenticates
+    /// as a service whatever the gate.
     pub fn with_service_keys(mut self, services: Arc<dyn CoseVerifierResolver>) -> Self {
         self.registries = self.registries.with_services(services);
         self

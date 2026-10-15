@@ -17,7 +17,9 @@
 //!   COSE-verified signer through the service key registry and, once
 //!   `authenticate_devices(true)` opts in, the device key registry
 //!   (cratestack#1077). Unknown or revoked keys, and device keys while the
-//!   gate is off, are anonymous, not errors. Read its "Security" section.
+//!   gate is off, are anonymous; a failing registry that is asked is a `500`.
+//!   The service registry must hold service keys only. Read its "Security"
+//!   section.
 //!
 //! The dependency points one way, `cratestack-cose` -> `cratestack-auth`
 //! (L2 -> L1, `docs/adr/layers.toml`). Without the feature this crate

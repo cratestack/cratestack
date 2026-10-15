@@ -42,7 +42,9 @@ registries whether they still hold that key, matched by full thumbprint (the 8-b
 prefix). The service key registry (a `CoseVerifierResolver`, such as `RegistryVerifierResolver`) is
 asked first, then the device key registry (a `DeviceKeyResolver`), the order `cratestack-auth`'s
 verifier uses, so a device enrolment can never relabel a service key and a device-registry outage
-does not fail a service signer. A key that is known and active authenticates as `cose:<thumbprint>`
+does not fail a service signer. Unlike that verifier, which treats a JWKS/service error as a miss, a
+service-registry error here is NOT a miss: it fails the request (`500`), including for device
+signers, so it fails closed. A key that is known and active authenticates as `cose:<thumbprint>`
 (with the default `ThumbprintPrincipal` prefix), with `kind` `device` or `service`, and the context
 fields `thumbprint` (bare lowercase hex) and `alg` (the COSE algorithm id). An unknown or revoked key
 is anonymous, so policy refuses it. It is not an error, and a failure of a registry that is asked
@@ -50,7 +52,8 @@ stays an error (`500`), so an outage is not mistaken for an unknown key.
 
 **Device keys are opt-in.** A device key proves a device, not a user, like `TransportCallerMode::Never`
 for a key-only header. By default only service keys authenticate; an enrolled device signer is
-anonymous (never an error, and the device registry is not asked) and is refused by `auth() != null`.
+anonymous (the device registry is not asked, but a failing service registry, asked first, still returns
+an error, `500`) and is refused by `auth() != null`.
 `.authenticate_devices(true)` switches device keys on.
 
 **How to use it.** Depend on `cratestack-cose` directly with `features = ["auth"]` and on
@@ -65,7 +68,12 @@ place of the header provider:
 enrolled device key authenticated, with no user (no `id_jwt`), on every method, whatever the inner
 provider's `TransportCallerMode`. `auth() != null` then means "holds an enrolled device or service
 key", and revoking the key, not token expiry, is what bounds access. Turn it on only where device
-enrolment itself is gated. A service key authenticates even with the gate off. Also:
+enrolment itself is gated. A service key authenticates even with the gate off, so
+**`with_service_keys` must hold service keys only; a device key placed there authenticates as a
+service whatever the gate.** The service registry is asked first, regardless of
+`authenticate_devices`: passing it a resolver that also holds device keys (for example the same
+`RegistryVerifierResolver` the envelope verifies with, where devices enrol) makes every enrolled device
+a `kind: service` caller with the gate off. Also:
 
 - A header the inner provider refuses (`Err`) is never replaced by the signer. A header it accepts but
   maps to anonymous (for example `SignedRequestAuthProvider` under `TransportCallerMode::Never`, for a

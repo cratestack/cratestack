@@ -503,6 +503,30 @@ async fn a_service_registry_failure_is_an_error_not_anonymous() {
 }
 
 #[tokio::test]
+async fn gate_off_a_service_registry_failure_is_still_an_error_not_anonymous() {
+    // With the gate off a device signer is anonymous and the device registry is
+    // not asked, but the service registry is asked first, and its outage fails
+    // the request (fails closed) rather than reading as a miss.
+    let key = device_key();
+    let devices = Devices::holding(std::slice::from_ref(&key));
+    let services = Services::failing();
+    let provider =
+        by_default(Inner::Anonymous, devices.clone()).with_service_keys(services.clone());
+
+    let error = authenticate(&provider, Some(signer_for(&key, ED25519)), &no_headers())
+        .await
+        .expect_err("a failing service registry is not anonymous");
+
+    assert!(
+        matches!(error, CratestackError::Internal(_)),
+        "a backend failure is a 500: {error:?}"
+    );
+    assert!(!error.public_message().contains("service-db"));
+    assert_eq!(services.calls(), 1);
+    assert_eq!(devices.calls(), 0, "the gate is off: devices are not asked");
+}
+
+#[tokio::test]
 async fn a_key_in_both_registries_is_a_service_and_the_devices_are_not_asked() {
     // A device enrolment accepts a caller-proposed key, so it must not be able
     // to relabel a service key.
