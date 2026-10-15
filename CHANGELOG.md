@@ -20,13 +20,17 @@ refuses trailing characters with `CODEC_ERROR`, so the same request body got a 2
 400 over JSON. Trailing bytes on a REST or `/rpc/{op_id}` request, and on `/rpc/batch`, were
 silently ignored.
 
-**What changed.** `CborCodec::decode` now errors with `CratestackError::Codec` unless the input is
-exactly one item, with the message `failed to decode CBOR body: N trailing bytes after the first
-item`. A request with trailing bytes now gets a 400 on CBOR, as it already did on JSON: `CODEC_ERROR` on a
+**What changed.** `CborCodec::decode` now errors with `CratestackError::Codec` unless the value consumes
+all of the input. The error's `detail()` (operator-facing; clients see the public message `invalid
+request payload`) reads `failed to decode CBOR body: N bytes left unconsumed after the value`
+(`1 byte` when singular). A unit enum variant sent as a one-entry map (`{"A": null}`) is refused
+the same way, because minicbor-serde leaves the map value unconsumed; first-party encoders send unit
+variants as plain strings. A request with trailing bytes now gets a 400 on CBOR, as it already did on JSON: `CODEC_ERROR` on a
 REST route, `invalid_argument` (the RPC binding's code for `CODEC_ERROR`) on `/rpc/{op_id}` and
 `/rpc/batch`.
-`application/cbor-seq` is not affected: its multi-item decoders walk the sequence without going
-through `decode`.
+`application/cbor-seq` is not affected: the buffered `cratestack-client-rust` sequence decoder walks
+items with its own deserializer, and the streaming decoders cut each item at `Decoder::skip()`
+boundaries before decoding the exact item bytes.
 
 **Who is affected.** Any caller that relied on the prefix decoding, which is a silent mis-parse of
 the body: a client that sends CBOR with bytes after the item, or a server handler that expected to

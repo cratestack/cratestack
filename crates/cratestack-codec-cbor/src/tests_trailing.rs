@@ -23,7 +23,7 @@ fn u32_with_trailing_garbage_is_refused() {
     let detail = codec_detail(CborCodec.decode::<u32>(&[0x01, 0xff, 0xff, 0xde, 0xad]));
     assert_eq!(
         detail,
-        "failed to decode CBOR body: 4 trailing bytes after the first item"
+        "failed to decode CBOR body: 4 bytes left unconsumed after the value"
     );
 }
 
@@ -33,21 +33,27 @@ fn vec_with_trailing_items_is_refused() {
     let detail = codec_detail(CborCodec.decode::<Vec<u32>>(&[0x82, 0x01, 0x02, 0xf6, 0xf6]));
     assert_eq!(
         detail,
-        "failed to decode CBOR body: 2 trailing bytes after the first item"
+        "failed to decode CBOR body: 2 bytes left unconsumed after the value"
     );
 }
 
 #[test]
 fn a_single_trailing_byte_is_refused() {
     let detail = codec_detail(CborCodec.decode::<u32>(&[0x01, 0x00]));
-    assert!(detail.contains("1 trailing bytes"), "{detail}");
+    assert_eq!(
+        detail,
+        "failed to decode CBOR body: 1 byte left unconsumed after the value"
+    );
 }
 
 #[test]
 fn a_complete_second_item_is_refused() {
     // Two whole items: the first decodes, the second is still trailing.
     let detail = codec_detail(CborCodec.decode::<u32>(&[0x01, 0x02]));
-    assert!(detail.contains("1 trailing bytes"), "{detail}");
+    assert_eq!(
+        detail,
+        "failed to decode CBOR body: 1 byte left unconsumed after the value"
+    );
 }
 
 #[test]
@@ -70,5 +76,24 @@ fn a_clean_item_with_an_indefinite_length_array_still_decodes() {
             .decode::<Vec<u32>>(&[0x9f, 0x01, 0x02, 0xff])
             .expect("indefinite array"),
         vec![1, 2]
+    );
+}
+
+#[test]
+fn a_unit_variant_sent_as_a_one_entry_map_is_refused() {
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code)]
+    enum E {
+        A,
+        B(u32),
+    }
+    // `a1 61 41 f6` is `{"A": null}`. minicbor-serde 0.7.1's `unit_variant`
+    // does not consume the map value, so the trailing `f6` is left over even
+    // though it is inside the item. A first-party encoder sends unit variants
+    // as plain strings, so refusing this form loses nothing legitimate.
+    let detail = codec_detail(CborCodec.decode::<E>(&[0xa1, 0x61, 0x41, 0xf6]));
+    assert_eq!(
+        detail,
+        "failed to decode CBOR body: 1 byte left unconsumed after the value"
     );
 }

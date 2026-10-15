@@ -112,7 +112,7 @@ impl SchemaError {
         let mut output = Vec::new();
         let file = self.file.to_string();
         let shown = substitute_for_display(&self.source_text);
-        let span = char_span(&self.source_text, self.span.clone());
+        let span = char_span(&self.source_text, &self.span);
         Report::build(ReportKind::Error, (file.clone(), span.clone()))
             .with_message(&self.message)
             .with_label(
@@ -136,7 +136,7 @@ impl SchemaError {
 ///
 /// Counts the characters that start before each byte offset, so an offset
 /// past the end of `source` clamps instead of panicking.
-fn char_span(source: &str, span: Range<usize>) -> Range<usize> {
+fn char_span(source: &str, span: &Range<usize>) -> Range<usize> {
     let chars_before = |byte: usize| {
         source.as_bytes()[..byte.min(source.len())]
             .iter()

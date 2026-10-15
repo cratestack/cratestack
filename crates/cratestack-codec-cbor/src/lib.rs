@@ -61,25 +61,34 @@ impl CratestackCodec for CborCodec {
         })
     }
 
-    /// Decodes exactly one CBOR item spanning all of `bytes`, wrapped in
+    /// Decodes a CBOR value that must consume all of `bytes`, wrapped in
     /// `serde_path_to_error` so the error's detail names the field that
     /// failed (`failed to decode CBOR body: amountE8: ...`). The public
     /// message of `CratestackError::Codec` stays generic; the path reaches
     /// operators through `detail()` only.
     ///
-    /// Bytes after the first item are an error (#1153), as with
-    /// `JsonCodec::decode`'s trailing-characters check. `minicbor_serde::from_slice`
-    /// would accept them silently. `application/cbor-seq` never reaches this
-    /// method: its multi-item decoders walk the sequence with
-    /// `Deserializer::decoder().position()` and do not use `decode`.
+    /// Unconsumed bytes are an error (#1153), as with `JsonCodec::decode`'s
+    /// trailing-characters check. `minicbor_serde::from_slice` would accept
+    /// them silently. This also refuses a unit variant sent as a one-entry map
+    /// (`{"A": null}`): minicbor-serde 0.7.1's `unit_variant` leaves the map
+    /// value unconsumed. A first-party encoder sends unit variants as plain
+    /// strings, so nothing legitimate is lost.
+    ///
+    /// `application/cbor-seq` does not rely on this method to split items: the
+    /// buffered `cratestack-client-rust` `decode_cbor_sequence` walks items with
+    /// its own deserializer, and the streaming decoders cut each item at
+    /// `Decoder::skip()` boundaries before decoding the exact item bytes
+    /// (Flutter's path then runs each item through this `decode`, where every
+    /// slice is exactly one item).
     fn decode<T: for<'de> Deserialize<'de>>(&self, bytes: &[u8]) -> Result<T, CratestackError> {
         let mut deserializer = minicbor_serde::Deserializer::new(bytes);
         let value = serde_path_to_error::deserialize(&mut deserializer).map_err(decode_error)?;
         let consumed = deserializer.decoder().position();
         if consumed != bytes.len() {
+            let left = bytes.len() - consumed;
+            let unit = if left == 1 { "byte" } else { "bytes" };
             return Err(decode_error(format!(
-                "{} trailing bytes after the first item",
-                bytes.len() - consumed
+                "{left} {unit} left unconsumed after the value"
             )));
         }
         Ok(value)
