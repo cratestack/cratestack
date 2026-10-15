@@ -40,6 +40,9 @@ impl SignerKind {
 pub(super) struct SignerRegistries {
     devices: Arc<dyn CoseVerifierResolver>,
     services: Option<Arc<dyn CoseVerifierResolver>>,
+    /// Whether a device key authenticates. Off by default: a device key alone
+    /// is not a user (see `CoseAuthProvider::authenticate_devices`).
+    devices_enabled: bool,
 }
 
 impl SignerRegistries {
@@ -47,7 +50,13 @@ impl SignerRegistries {
         Self {
             devices: Arc::new(DeviceKeyCoseResolver::new(devices)),
             services: None,
+            devices_enabled: false,
         }
+    }
+
+    pub(super) fn with_devices_enabled(mut self, enabled: bool) -> Self {
+        self.devices_enabled = enabled;
+        self
     }
 
     pub(super) fn with_services(mut self, services: Arc<dyn CoseVerifierResolver>) -> Self {
@@ -56,7 +65,9 @@ impl SignerRegistries {
     }
 
     /// The registry that still holds the key that verified `signer`, or `None`
-    /// when the key is unknown or revoked. A backend `Err` stays an error: an
+    /// when the key is unknown or revoked. Services are asked first, then
+    /// devices (see the module docs); a registry that holds the key ends the
+    /// search, so the other is not asked. A backend `Err` stays an error: an
     /// outage must not look like an unknown key (ADR 0006 §10, a `500`).
     pub(super) async fn vouch(
         &self,
@@ -72,13 +83,15 @@ impl SignerRegistries {
         let Some(alg) = CoseAlg::from_id(signer.alg()) else {
             return Ok(None);
         };
-        if holds(self.devices.as_ref(), kid, alg, &thumbprint).await? {
-            return Ok(Some(SignerKind::Device));
-        }
         if let Some(services) = self.services.as_deref()
             && holds(services, kid, alg, &thumbprint).await?
         {
             return Ok(Some(SignerKind::Service));
+        }
+        // With the gate off the device registry is not asked at all, so a
+        // device signer is anonymous even when that registry is down.
+        if self.devices_enabled && holds(self.devices.as_ref(), kid, alg, &thumbprint).await? {
+            return Ok(Some(SignerKind::Device));
         }
         Ok(None)
     }
@@ -101,8 +114,12 @@ async fn holds(
 }
 
 /// The context a vouched signer authenticates as. `id` is `cose:<thumbprint>`,
-/// the string `ThumbprintPrincipal` charges the same signer to, so rate-limit
-/// buckets and policy rules name one principal.
+/// the string the envelope layer's default `ThumbprintPrincipal` charges the
+/// same signer to, so rate-limit buckets and policy rules name one principal.
+/// That holds only with the default `cose:` prefix: an envelope built with
+/// `ThumbprintPrincipal::with_prefix(..)` (or another principal mapper) names
+/// the signer differently, and the two ids then differ. `thumbprint` carries
+/// the bare lowercase hex either way, and `alg` the COSE algorithm id.
 pub(super) fn authenticated(signer: &VerifiedSigner, kind: SignerKind) -> CratestackContext {
     let thumbprint: String = signer
         .thumbprint()

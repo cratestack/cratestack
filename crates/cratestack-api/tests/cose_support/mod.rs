@@ -53,6 +53,12 @@ pub fn client_verify_key() -> cratestack::cose::CoseVerifyKey {
     client_signer().verify_key()
 }
 
+/// Another device's verification key, which never signs a request here: a
+/// test enrols it to have a real thumbprint that the signer is not.
+pub fn other_device_key() -> cratestack::cose::CoseVerifyKey {
+    Ed25519Signer::from_seed(&seed(0x40)).verify_key()
+}
+
 /// The server's envelope, trusting the client's key.
 pub fn server_envelope() -> CoseEnvelope {
     server_envelope_with(Arc::new(

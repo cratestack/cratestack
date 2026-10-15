@@ -57,9 +57,57 @@ impl AuthProvider for HeaderlessAuth {
     }
 }
 
-/// The adapter a generated router takes as its `auth`, over `devices`.
-pub fn cose_auth(devices: Arc<RegistryVerifierResolver>) -> CoseAuthProvider<HeaderlessAuth> {
+/// An inner provider that authenticates from a header, the way a bearer token
+/// would: `x-test-user: alice` is the user `user:alice`, no header is anonymous.
+#[derive(Clone, Default)]
+pub struct HeaderAuth;
+
+impl AuthProvider for HeaderAuth {
+    type Error = CratestackError;
+
+    async fn authenticate(
+        &self,
+        request: &RequestContext<'_>,
+    ) -> Result<CratestackContext, CratestackError> {
+        match request
+            .headers
+            .get("x-test-user")
+            .and_then(|value| value.to_str().ok())
+        {
+            Some(user) => Ok(CratestackContext::authenticated([(
+                "id".to_owned(),
+                Value::String(format!("user:{user}")),
+            )])),
+            None => Ok(CratestackContext::anonymous()),
+        }
+    }
+}
+
+/// The adapter as shipped: device authentication off, so only service keys
+/// (none are wired here) authenticate.
+pub fn cose_auth_by_default(
+    devices: Arc<RegistryVerifierResolver>,
+) -> CoseAuthProvider<HeaderlessAuth> {
     CoseAuthProvider::new(HeaderlessAuth, Arc::new(DeviceRegistry(devices)))
+}
+
+/// The adapter a generated router takes as its `auth`, over `devices`, with
+/// device authentication switched on (the opt-in a device principal needs).
+pub fn cose_auth(devices: Arc<RegistryVerifierResolver>) -> CoseAuthProvider<HeaderlessAuth> {
+    cose_auth_by_default(devices).authenticate_devices(true)
+}
+
+/// As [`cose_auth`], over an inner provider of the test's choosing.
+pub fn cose_auth_over<A>(inner: A, devices: Arc<RegistryVerifierResolver>) -> CoseAuthProvider<A> {
+    CoseAuthProvider::new(inner, Arc::new(DeviceRegistry(devices))).authenticate_devices(true)
+}
+
+/// The lowercase hex of `key`'s thumbprint: the bare form of its principal.
+pub fn thumbprint_hex(key: &cratestack::cose::CoseVerifyKey) -> String {
+    key.thumbprint()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// The `id` of the identity a handler saw, or `anonymous`.

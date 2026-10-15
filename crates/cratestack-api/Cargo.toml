@@ -141,10 +141,14 @@ uuid.workspace = true
 # version "0.1", so this adds no new dependency to the graph.
 async-trait.workspace = true
 # cratestack#1077: `tests/cose_auth_provider_*.rs` put `CoseAuthProvider` in front
-# of a generated router. The `cose` facade does not re-export `auth`, its
-# `DeviceKeyResolver` trait, or the `ed25519-dalek` key it hands the resolver,
-# so they are dev-only edges here. The normal graph is unchanged (CI's
-# `facade-disjointness` job checks normal edges only).
+# of a generated router. The `cose` feature does re-export `cratestack-cose` as
+# `cratestack::cose`; the tests reach `cratestack::cose::auth` because this
+# dev-dependency turns the `auth` feature of `cratestack-cose` on, and Cargo
+# unifies it into the facade's copy for test builds. The facade does not
+# re-export `cratestack-auth` (the `DeviceKeyResolver` trait) or the
+# `ed25519-dalek` key it hands the resolver, so those are dev-only edges too.
+# The normal graph is unchanged (CI's `facade-disjointness` job checks normal
+# edges only).
 cratestack-auth.workspace = true
 cratestack-cose = { workspace = true, features = ["auth"] }
 ed25519-dalek.workspace = true

@@ -14,8 +14,10 @@
 //!   breaking change). It is a separate, older COSE shape and does not go
 //!   through the envelope's strict opener (see its module docs).
 //! - [`CoseAuthProvider`]: an `AuthProvider` that authenticates a
-//!   COSE-verified signer through the device and service key registries
-//!   (cratestack#1077). Unknown or revoked keys are anonymous, not errors.
+//!   COSE-verified signer through the service key registry and, once
+//!   `authenticate_devices(true)` opts in, the device key registry
+//!   (cratestack#1077). Unknown or revoked keys, and device keys while the
+//!   gate is off, are anonymous, not errors. Read its "Security" section.
 //!
 //! The dependency points one way, `cratestack-cose` -> `cratestack-auth`
 //! (L2 -> L1, `docs/adr/layers.toml`). Without the feature this crate

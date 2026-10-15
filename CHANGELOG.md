@@ -33,24 +33,52 @@ are the driver defaults the old path already got (1 s to connect, 500 ms per rep
 `NonceReused` on replay, and `NonceStoreUnavailable` on every error are unchanged. The known
 limitation recorded under the COSE nonce bridge (#1005) no longer applies.
 
-### A COSE-verified signer authenticates through the device and service registries (#1077)
+### A COSE-verified signer authenticates through the service and device registries (#1077)
 
 A signed client no longer needs an `Authorization` header to make a write to an `@allow(auth() != null)`
 op. `cratestack_cose::auth::CoseAuthProvider` wraps the header-based `AuthProvider` and, when the
 header path yields no identity, takes the `VerifiedSigner` the envelope layer verified and asks the
-device key registry (a `DeviceKeyResolver`) and, if given, a service key registry (a
-`CoseVerifierResolver`, such as `RegistryVerifierResolver`) whether they still hold that key. A
-key that is known and active authenticates as `cose:<thumbprint>`, with `kind` `device` or
-`service`. An unknown or revoked key is anonymous, so policy refuses it. It is not an error, and
-a backend failure stays an error (`500`), so an outage is not mistaken for an unknown key.
+registries whether they still hold that key, matched by full thumbprint (the 8-byte `kid` is only a
+prefix). The service key registry (a `CoseVerifierResolver`, such as `RegistryVerifierResolver`) is
+asked first, then the device key registry (a `DeviceKeyResolver`), the order `cratestack-auth`'s
+verifier uses, so a device enrolment can never relabel a service key and a device-registry outage
+does not fail a service signer. A key that is known and active authenticates as `cose:<thumbprint>`
+(with the default `ThumbprintPrincipal` prefix), with `kind` `device` or `service`, and the context
+fields `thumbprint` (bare lowercase hex) and `alg` (the COSE algorithm id). An unknown or revoked key
+is anonymous, so policy refuses it. It is not an error, and a failure of a registry that is asked
+stays an error (`500`), so an outage is not mistaken for an unknown key.
+
+**Device keys are opt-in.** A device key proves a device, not a user, like `TransportCallerMode::Never`
+for a key-only header. By default only service keys authenticate; an enrolled device signer is
+anonymous (never an error, and the device registry is not asked) and is refused by `auth() != null`.
+`.authenticate_devices(true)` switches device keys on.
+
+**How to use it.** Depend on `cratestack-cose` directly with `features = ["auth"]` and on
+`cratestack-auth` (the `cratestack` facade's `cose` feature re-exports `cratestack-cose`, and
+`cratestack::cose::auth` appears when something in the build turns the `auth` feature on, but it does
+not re-export `cratestack-auth`, which owns `DeviceKeyResolver`). Pass it to the generated router in
+place of the header provider:
+`CoseAuthProvider::new(header_provider, device_registry).with_service_keys(service_registry)`, and add
+`.authenticate_devices(true)` to authenticate devices.
+
+**Security.** With `authenticate_devices(true)`, wrapping a provider makes any request sealed by an
+enrolled device key authenticated, with no user (no `id_jwt`), on every method, whatever the inner
+provider's `TransportCallerMode`. `auth() != null` then means "holds an enrolled device or service
+key", and revoking the key, not token expiry, is what bounds access. Turn it on only where device
+enrolment itself is gated. A service key authenticates even with the gate off. Also:
+
+- A header the inner provider refuses (`Err`) is never replaced by the signer. A header it accepts but
+  maps to anonymous (for example `SignedRequestAuthProvider` under `TransportCallerMode::Never`, for a
+  key-only header) is not a refusal, and the signer supersedes it.
+- The envelope's "Required" mode does not bind a header identity to the signer: when the inner
+  provider authenticates, its identity wins and the signer is not consulted.
+- An ESP256 or WebCrypto device key can authenticate only through the service registry, because
+  `DeviceKeyResolver` is Ed25519-only.
 
 The adapter reads the signer only from the request's in-process extensions, never from a header or
 a body, so a client cannot fake one. A forged signer header on an unsigned request stays anonymous.
 The `auth` feature of `cratestack-cose` is the only place this lives, and nothing changes for
 callers that do not wrap their provider.
-
-Pass it to the generated router in place of the header provider:
-`CoseAuthProvider::new(header_provider, device_registry).with_service_keys(service_registry)`.
 
 Remaining work: window replay (P2) is out of scope here.
 

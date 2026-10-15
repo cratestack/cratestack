@@ -227,3 +227,52 @@ async fn a_forged_signer_on_an_unsigned_request_does_not_authenticate() {
     assert_eq!(error_code(&answer.body), "permission_denied");
     assert_eq!(procedures.runs(), 0, "a header is not a verified signer");
 }
+
+#[tokio::test]
+async fn by_default_an_enrolled_device_is_refused_and_with_the_opt_in_it_passes() {
+    // A device key alone is not a user. The same enrolled, envelope-trusted
+    // device is refused by policy until the adapter is told to authenticate
+    // devices.
+    let registry = Arc::new(RegistryVerifierResolver::new());
+    registry.register(client_verify_key()).expect("register");
+
+    let procedures = Procedures::default();
+    let gated = router(
+        cose_auth_by_default(registry.clone()),
+        procedures.clone(),
+        envelope(registry.clone(), EnvelopeMode::Required),
+    );
+    let (sent, denied) = ping(&gated, "n1", &[]).await;
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
+    assert_eq!(refusal_code(&sent, &denied).await, "permission_denied");
+    assert_eq!(procedures.runs(), 0);
+
+    let opted_in = router(
+        cose_auth(registry.clone()),
+        procedures.clone(),
+        envelope(registry, EnvelopeMode::Required),
+    );
+    let (sent, answer) = ping(&opted_in, "n2", &[]).await;
+    assert_eq!(
+        reply(&sent, &answer).await.nonce,
+        format!("n2|{CLIENT_PRINCIPAL}")
+    );
+    assert_eq!(procedures.runs(), 1);
+}
+
+#[tokio::test]
+async fn an_identity_from_the_inner_provider_wins_over_the_signer() {
+    let registry = Arc::new(RegistryVerifierResolver::new());
+    registry.register(client_verify_key()).expect("register");
+    let procedures = Procedures::default();
+    let router = router(
+        cose_auth_over(HeaderAuth, registry.clone()),
+        procedures.clone(),
+        envelope(registry, EnvelopeMode::Required),
+    );
+
+    let (sent, answer) = ping(&router, "n1", &[("x-test-user", "alice")]).await;
+
+    assert_eq!(reply(&sent, &answer).await.nonce, "n1|user:alice");
+    assert_eq!(procedures.runs(), 1);
+}
