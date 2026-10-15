@@ -77,10 +77,14 @@ async fn a_timeout_resets_the_connection() {
     claim(store.as_ref(), &format!("{run}-fresh"))
         .await
         .expect("a new nonce after the pause is accepted");
+    // Without the reset the next claim reuses the wedged socket and opens
+    // none. With it, the store connects once; redis-rs' ConnectionManager may
+    // also start its own background reconnect for the abandoned manager,
+    // which can add one short-lived connection (seen in CI), so allow 1..=2.
     let opened = connections_received(&mut admin).await - before;
-    assert_eq!(
-        opened, 1,
-        "the timeout must drop the wedged connection and the next claim open exactly one"
+    assert!(
+        (1..=2).contains(&opened),
+        "the timeout must drop the wedged connection and the next claim reconnect; opened {opened}"
     );
 
     // Replay of the timed-out nonce: the SET may have landed (the server
