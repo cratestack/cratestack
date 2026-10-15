@@ -34,6 +34,13 @@ read a leading item out of a longer buffer, now gets an error instead. The CBOR 
 `CborCodec::decode` (`cratestack-cbor-napi`, `cratestack-cbor-wasm`, `cratestack-client-flutter`)
 inherit the stricter decode.
 
+### Fix: `generate-typescript --swr` imports `<Model>ComputedParams` in the hooks file that uses it (#1154)
+
+The `list` and `get` hooks in `<model>.hooks.ts` named a model's `<Model>ComputedParams` type without
+importing it, so `tsc` failed with `TS2304: Cannot find name 'ImageComputedParams'` on a model with a
+parameterized `@computed` field. The hooks file now imports it from `./<model>.js`, on REST and RPC,
+only when a hook in that file references it. Models without computed params are unchanged.
+
 ## 0.15.4 (2026-10-11)
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)

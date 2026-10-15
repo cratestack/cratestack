@@ -60,6 +60,9 @@ import {
 {% if update_input %}
   type {{ update_input.name }},
 {% endif %}
+{% if model.computed_params_interface and model.allows_list %}
+  type {{ model.computed_params_interface }},
+{% endif %}
 {% if model.computed_params_interface and model.allows_get %}
   type {{ model.api_name }}GetOptions,
 {% endif %}

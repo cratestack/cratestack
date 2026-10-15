@@ -1,0 +1,25 @@
+// `--swr` repro for cratestack#1154: `Image` declares a parameterized
+// `@computed` field, so its generated `ImageComputedParams` interface is
+// referenced by the `list`/`get` hooks in `image.hooks.ts`, which must import it.
+// `Widget` declares no computed fields, so its hooks file must not import
+// any `*ComputedParams` type.
+
+model Image {
+  id Int @id
+  storageKey String
+  proxyUrl String @computed(params: ProxyParams?)
+
+  @@allow("create", true)
+}
+
+type ProxyParams {
+  width Int?
+  height Int?
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("create", true)
+}
