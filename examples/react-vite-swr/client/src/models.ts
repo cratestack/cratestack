@@ -47,7 +47,11 @@ export type Decimal = DecimalJs;
  *
  *  `bigintKeys` is one list for every arity: a `BigInt` leaf is a string
  *  and a `BigInt[]` is an array of strings, which {@link toBigInt} tells
- *  apart structurally. An empty `[]` needs no conversion either way. */
+ *  apart structurally. An empty `[]` needs no conversion either way.
+ *
+ *  `decimalKeys` likewise covers every arity, scalar and list: a `Decimal`
+ *  leaf is a string and a `Decimal[]` is an array of strings, which
+ *  {@link toDecimal} maps element by element. */
 export interface WireShape {
   readonly decimalKeys: readonly string[];
   readonly bigintKeys: readonly string[];
@@ -88,7 +92,8 @@ export const wireShapes: Readonly<Record<string, WireShape>> = {
 };
 
 /** Decodes `value` against the named entry in {@link wireShapes},
- *  replacing every string at a key that shape's own `decimalKeys` names
+ *  replacing every string (or, for a `Decimal[]` field, every element of
+ *  an array of strings) at a key that shape's own `decimalKeys` names
  *  with a real {@link Decimal}, every canonical decimal string (or array
  *  of them) at a `bigintKeys` name with a `bigint`, and every wire integer
  *  array at a `bytesKeys`/`bytesListKeys` name with a `Uint8Array`, and

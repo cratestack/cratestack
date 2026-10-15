@@ -102,6 +102,36 @@ fn swr_computed_params_hooks_type_check() {
             "{fixture}: widget has no computed params, so widget.hooks.ts must not reference \
              or import any *ComputedParams type:\n{widget_hooks}"
         );
+
+        // List-only / get-only models: each hooks file must import
+        // `<Model>ComputedParams` exactly when one of its hooks uses it.
+        // REST: both `list` and `get` take it. RPC: only `list` does; RPC
+        // `get` is typed by `<Model>ApiGetOptions`, so the get-only model
+        // must not import it (an unused import is not a `tsc` error, hence
+        // a string check).
+        let hooks_of = |model: &str| {
+            fs::read_to_string(dir.path().join(format!("src/swr/models/{model}.hooks.ts")))
+                .unwrap_or_else(|error| panic!("{fixture}: {model}.hooks.ts should exist: {error}"))
+        };
+        let listing_hooks = hooks_of("listing");
+        let receipt_hooks = hooks_of("receipt");
+        assert!(
+            listing_hooks.contains("type ListingComputedParams,"),
+            "{fixture}: list-only listing.hooks.ts must import ListingComputedParams:\n{listing_hooks}"
+        );
+        if fixture.ends_with("_rpc") {
+            assert!(
+                !receipt_hooks.contains("ReceiptComputedParams")
+                    && receipt_hooks.contains("ReceiptApiGetOptions"),
+                "{fixture}: RPC get-only receipt.hooks.ts must use ReceiptApiGetOptions and not \
+                 import ReceiptComputedParams:\n{receipt_hooks}"
+            );
+        } else {
+            assert!(
+                receipt_hooks.contains("type ReceiptComputedParams,"),
+                "{fixture}: REST get-only receipt.hooks.ts must import ReceiptComputedParams:\n{receipt_hooks}"
+            );
+        }
     }
 }
 

@@ -21,3 +21,26 @@ model Widget {
 
   @@allow("create", true)
 }
+
+// List-only: `@@internal("detail")` hides `get`, so its hooks file has a
+// `list` hook that uses `ListingComputedParams` and no `get` hook.
+model Listing {
+  id Int @id
+  title String
+  thumbUrl String @computed(params: ProxyParams?)
+
+  @@allow("read", true)
+  @@internal("detail")
+}
+
+// Get-only: `@@internal("list")` hides `list`, so its hooks file has a
+// `get` hook only. Under RPC that hook is typed by `ReceiptApiGetOptions`
+// (no computed-params slot), so it must NOT import `ReceiptComputedParams`.
+model Receipt {
+  id Int @id
+  label String
+  previewUrl String @computed(params: ProxyParams?)
+
+  @@allow("read", true)
+  @@internal("list")
+}
