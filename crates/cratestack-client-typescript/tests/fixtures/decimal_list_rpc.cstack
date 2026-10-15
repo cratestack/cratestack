@@ -1,0 +1,21 @@
+// RPC-transport counterpart to `decimal_list.cstack` (cratestack#1155): the
+// same `Ledger` model and `Quote` type, so `rpc-client.ts.j2` gets the same
+// `Decimal[]` revival coverage the REST fixture proves for
+// `rest-client.ts.j2`.
+
+transport rpc
+
+model Ledger {
+  id Cuid @id @default(cs_cuid())
+  entries Decimal[]
+
+  @@allow("list", true)
+}
+
+type Quote {
+  total Decimal
+  parts Decimal[]
+}
+
+procedure quote(): Quote
+  @allow(auth() != null)

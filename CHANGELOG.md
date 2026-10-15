@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+### `cratestack check` keeps the error's line and column after non-ASCII text (#1157)
+
+A schema error is located by a byte offset, but the code frame counts characters. Any multi-byte
+character before the error (`é`, `✓`, `𝄞`, an emoji, or a comment in another language) therefore
+moved the frame: the error lost its location and snippet, or in a long file pointed at a line up to
+dozens of lines away. The renderer now converts the span to characters once, in
+`SchemaError::render`, before handing it to the code frame. `SchemaError::span()` is unchanged and
+stays in bytes. ASCII-only schemas render exactly as before. No change to the schema language or to
+the JSON output.
+
+### CBOR bodies with bytes after the first item are refused, as JSON bodies already were (#1153)
+
+**What was wrong.** `CborCodec::decode` read one CBOR item and never checked that the input ended
+there, so `01 ff ff de ad` decoded to `1` and `82 01 02 f6 f6` decoded to `[1, 2]`. `JsonCodec`
+refuses trailing characters with `CODEC_ERROR`, so the same request body got a 200 over CBOR and a
+400 over JSON. Trailing bytes on a REST or `/rpc/{op_id}` request, and on `/rpc/batch`, were
+silently ignored.
+
+**What changed.** `CborCodec::decode` now errors with `CratestackError::Codec` unless the value consumes
+all of the input. The error's `detail()` (operator-facing; clients see the public message `invalid
+request payload`) reads `failed to decode CBOR body: N bytes left unconsumed after the value`
+(`1 byte` when singular). A unit enum variant sent as a one-entry map (`{"A": null}`) is refused
+the same way, because minicbor-serde leaves the map value unconsumed; first-party encoders send unit
+variants as plain strings. A request with trailing bytes now gets a 400 on CBOR, as it already did on JSON: `CODEC_ERROR` on a
+REST route, `invalid_argument` (the RPC binding's code for `CODEC_ERROR`) on `/rpc/{op_id}` and
+`/rpc/batch`.
+`application/cbor-seq` is not affected: the buffered `cratestack-client-rust` sequence decoder walks
+items with its own deserializer, and the streaming decoders cut each item at `Decoder::skip()`
+boundaries before decoding the exact item bytes.
+
+**Who is affected.** Any caller that relied on the prefix decoding, which is a silent mis-parse of
+the body: a client that sends CBOR with bytes after the item, or a server handler that expected to
+read a leading item out of a longer buffer, now gets an error instead. The CBOR bindings that call
+`CborCodec::decode` (`cratestack-cbor-napi`, `cratestack-cbor-wasm`, `cratestack-client-flutter`)
+inherit the stricter decode.
+
+### Fix: `generate-typescript --swr` imports `<Model>ComputedParams` in the hooks file that uses it (#1154)
+
+The `list` and `get` hooks in `<model>.hooks.ts` named a model's `<Model>ComputedParams` type without
+importing it, so `tsc` failed with `TS2304: Cannot find name 'ImageComputedParams'` on a model with a
+parameterized `@computed` field. The hooks file now imports it from `./<model>.js`, on REST and RPC,
+only when a hook in that file references it. Models without computed params are unchanged.
+
+### Fix: a generated TypeScript client revives each element of a `Decimal[]` field (#1155)
+
+A `Decimal[]` field on a model or a `type` came back from a generated TypeScript client as an array of
+strings, while its type said `Decimal[]`, so `.plus()` and the other `Decimal` methods threw. The
+decode-side walker converted a string at a `Decimal` key only, and an array is not a string, so the
+whole array was copied through unchanged. Both the default layout and `--swr` now map an array element
+by element, the way a bare `Decimal[]` procedure return already did. A `null` element, a `null` array
+and a scalar `Decimal` or `Decimal?` field decode as before. Generated code only; no wire format
+change.
+
 ## 0.15.4 (2026-10-11)
 
 ### Field attributes are a closed list per declaration kind — breaking (ADR 0019 D5, #679)

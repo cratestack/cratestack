@@ -1,0 +1,19 @@
+// cratestack#1155: a `Decimal[]` field, on a model and on a `type`, must
+// revive element by element to real `Decimal`s on decode. Read by
+// `tests/decimal_list_round_trip.rs`; the RPC counterpart is
+// `decimal_list_rpc.cstack`.
+
+model Ledger {
+  id Cuid @id @default(cs_cuid())
+  entries Decimal[]
+
+  @@allow("list", true)
+}
+
+type Quote {
+  total Decimal
+  parts Decimal[]
+}
+
+procedure quote(): Quote
+  @allow(auth() != null)
