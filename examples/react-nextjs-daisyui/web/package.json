@@ -15,20 +15,20 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "next": "^16.3.8",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
+    "next": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "react-nextjs-daisyui-napi": "workspace:*"
   },
   "devDependencies": {
-    "@serwist/next": "^9.5.11",
+    "@serwist/next": "^9.5.13",
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "daisyui": "^5.7.47",
-    "postcss": "^8.5.28",
-    "serwist": "^9.5.11",
+    "daisyui": "^5.7.50",
+    "postcss": "^8.5.30",
+    "serwist": "^9.5.13",
     "tailwindcss": "^4.3.0",
     "typescript": "^7.0.2"
   }
