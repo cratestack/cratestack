@@ -25,7 +25,7 @@ generator, not from this app.
     `query` — `CratestackFetchQuery?`/`CratestackListQuery?` respectively — which is why every call
     site above is `boardListProvider()`, not the bare identifier: a parameterized `@riverpod` function
     compiles to a `riverpod_generator` *family*, and even its zero-argument default has to be invoked.
-- **Overrides the adapter provider to point at a real local server** — `flutterRiverpodClientAdapterProvider.overrideWithValue(CratestackDioAdapter(dio: myDio))` in `app/lib/main.dart`, the one and only override every consumer of this preset needs (see `client/README.md`'s "Riverpod Setup").
+- **Overrides the adapter provider to point at a real local server** — `flutterRiverpodClientAdapterProvider.overrideWithValue(CratestackHttpAdapter(CratestackDioTransport(myDio), baseUri: ..., format: CratestackWireFormat.json))` in `app/lib/main.dart` (built by `buildAppAdapter()` in `app/lib/src/runtime.dart`), the one and only override every consumer of this preset needs (see `client/README.md`'s "Riverpod Setup").
 - **Reuses `react-vite-swr`'s schema and server** rather than standing up a second Postgres-backed
   crate: `examples/react-vite-swr/schema.cstack` (`Board`/`Task` models with a relation, plus an
   `estimateFocusMinutes` procedure) and `cargo run -p react-vite-swr-example` are the "existing example
@@ -126,7 +126,8 @@ CI).
 
 ## Real bugs found and fixed while building this (see the PR description for the full writeup)
 
-1. **`CratestackDioAdapter` (REST plain-JSON adapter) never sent an `Accept` header.** Reproduced
+1. **`CratestackDioAdapter` (REST plain-JSON adapter, since replaced by `CratestackHttpAdapter` with
+   `format: CratestackWireFormat.json`, which keeps this fix) never sent an `Accept` header.** Reproduced
    live: a request with no `Accept` header against a real server wired with only `JsonCodec` got "no
    encoder configured for response Content-Type application/cbor" back, not JSON. Fixed in
    `crates/cratestack-client-dart/templates/rest-runtime.dart.j2` — now sends `Accept: application/json`

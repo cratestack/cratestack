@@ -419,7 +419,7 @@ final flutterRiverpodClientBoardApiProvider = Provider<BoardApi>((ref) {
 // `flutterRiverpodClientBoardApiProvider` — the existing `Provider<BoardApi>`
 // relocated by #301 (right above this block) — never the adapter/client
 // providers in `client.dart` directly. Overriding
-// `flutterRiverpodClientAdapterProvider` alone (the pre-existing Dio
+// `flutterRiverpodClientAdapterProvider` alone (the pre-existing adapter
 // override point) is enough to change what every provider below does.
 
 // Issue #331: `query` forwards straight to the underlying `XApi`

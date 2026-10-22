@@ -2,6 +2,83 @@
 
 ## Unreleased
 
+### Generated Dart client sends through a pluggable HTTP transport; the four `*DioAdapter` classes are removed (#1204)
+
+**What was wrong.** The generated Dart client was Dio and nothing else. The four adapter classes in
+`runtime.dart` took a `Dio` and each repeated the codec work, both generated pubspecs depended on
+`dio`, and an app that sends through another stack (its own client, request signing over the final
+bytes, a captive-portal check, HTTP spans) had to put a Dio in front of it. Every failure then came
+back as a `DioException` its error readers must unwrap. REST had no typed remote error at all (a raw
+`DioException` leaked out of `execute`), no call could be cancelled, REST had no idempotency key, and
+`stream()` buffered the whole body.
+
+**What changed (`generate-dart`, `default` and `riverpod` presets, REST and RPC alike).**
+
+- **One seam, pure Dart, no dependency.** Every generated `runtime.dart` declares
+  `CratestackHttpTransport` (`send(CratestackHttpRequest) -> CratestackHttpResponse`),
+  `CratestackHttpRequest` (method, absolute `uri`, headers, exact body bytes, an `abort` future and an
+  off-the-wire `extra` map), `CratestackHttpResponse` (status, lower-cased headers, a body stream,
+  `bytes()`) and a sealed `CratestackTransportException` with four kinds, each carrying its `cause`:
+  `CratestackTransportAborted`, `CratestackTransportUnsent` (provably never left the device, safe to
+  resend), `CratestackTransportTimedOut` and `CratestackTransportBroken`.
+- **One adapter per protocol, written once over it.** `CratestackHttpAdapter` (REST) and
+  `CratestackRpcHttpAdapter` (RPC) take a transport, a `baseUri` and a `format`
+  (`CratestackWireFormat.cbor`, the default, or `.json`). They own the headers, the CBOR/JSON choice (native
+  `cratestack_cbor`, or `package:cbor` under `--no-native-cbor`), the dispatch on the answer's
+  `Content-Type`, and the error mapping. An HTTP error answer is a `CratestackRpcException` over RPC,
+  built exactly as before from the status and the decoded body, and a new typed
+  `CratestackRestException{status, body}` over REST (the `api_bridge.md` "no typed remote error"
+  limitation is gone). A call that gets no answer is a `CratestackTransportException`, never a
+  `DioException`.
+- **A canonical query encoder.** `cratestackCanonicalizeQuery` now produces the query string and the
+  adapter appends it, so no client's list or null rules apply: pairs in map order, keys and values
+  through `Uri.encodeQueryComponent`, a list repeats its key, a nested map nests with literal
+  brackets, and a `null` is omitted. For every value the generated query builders emit it is
+  byte-identical to what Dio produced; `wire_parity_rest_test.dart` pins that against Dio's own
+  `Transformer.urlEncodeQueryMap`, and against golden requests captured from the retired adapters
+  (method, URI with query, headers and body bytes for every REST and RPC operation of the `ci_rest` /
+  `ci_rpc` fixtures, both formats).
+- **Dio is one transport.** `CratestackDioTransport(Dio)` lives in its own generated file,
+  `lib/src/dio_transport.dart`, the only file in `lib/src/` that names Dio. It sends with
+  `ResponseType.stream` and `validateStatus: (_) => true`, cancels through a `CancelToken` (including
+  while the body is streaming), and maps connect timeout, refused connection, DNS and certificate
+  failures to `Unsent`, send and receive timeouts to `TimedOut`, a cancel to `Aborted`, and the rest to
+  `Broken`. The `default` and `riverpod` presets keep `dio` in their pubspecs.
+- **Call options.** `CratestackCallOptions` and `CratestackRpcCallOptions` both gain `abort`
+  (`Future<void>?`; completing it cancels the send and the call throws `CratestackTransportAborted`),
+  and `CratestackCallOptions` gains `idempotencyKey` (sent as `Idempotency-Key`), as RPC already had.
+- **`stream()` no longer buffers.** `CratestackRpcHttpAdapter.stream()` reads an
+  `application/cbor-seq` answer as it arrives, through `CborSeqStreamTransformer`, so frames are
+  delivered before the body ends. It ships a pure-Dart `CratestackCborSeqScanner` as the default
+  boundary scanner (pass a `CborSeqDecoderHandle` as `cborSeqDecoder:` to use another, such as an FFI-backed one), turns a final
+  `Tag(48900, RpcErrorBody)` item into a `CratestackRpcException`, and still reads the single-array
+  `application/cbor` and JSON answers.
+
+**Kept as they were.** `useRustTransport` (REST): it was a Dio `extra` flag read by a host
+interceptor, and it still is. `CratestackHttpAdapter(useRustTransport: true)` puts
+`cratestackUseRustTransportExtraKey` in `CratestackHttpRequest.extra`, `CratestackDioTransport` copies
+`extra` into `Options.extra`, and it is never sent as a header. The `cratestack_cbor` codec cache
+(#563, #798) is now one copy shared by both adapters. The wire output is unchanged.
+
+**Breaking, with no aliases.** `CratestackDioAdapter`, `CratestackCborDioAdapter`,
+`CratestackRpcDioAdapter` and `CratestackRpcCborDioAdapter` are removed. Migration, one line each:
+
+| Before | After |
+|---|---|
+| `CratestackCborDioAdapter(dio: dio)` | `CratestackHttpAdapter(CratestackDioTransport(dio), baseUri: Uri.parse(baseUrl))` |
+| `CratestackDioAdapter(dio: dio, useRustTransport: r)` | `CratestackHttpAdapter(CratestackDioTransport(dio), baseUri: Uri.parse(baseUrl), format: CratestackWireFormat.json, useRustTransport: r)` |
+| `CratestackRpcCborDioAdapter(dio: dio)` | `CratestackRpcHttpAdapter(CratestackDioTransport(dio), baseUri: Uri.parse(baseUrl))` |
+| `CratestackRpcDioAdapter(dio: dio)` | `CratestackRpcHttpAdapter(CratestackDioTransport(dio), baseUri: Uri.parse(baseUrl), format: CratestackWireFormat.json)` |
+
+`baseUri` replaces `dio.options.baseUrl`, which the transport no longer reads (the adapter sends an
+absolute URI; a path prefix on `baseUri` is kept). Interceptors, base headers, pinning and retry on the
+`Dio` keep working. Code that caught `DioException` around a generated call now catches
+`CratestackRestException` / `CratestackRpcException` for an HTTP error answer and
+`CratestackTransportException` for the rest; an interceptor that reads `options.path` sees an absolute
+URI. A response of an unsupported `Content-Type` is now a `FormatException` on the JSON REST adapter too
+(it used to hand back the raw string). The `riverpod` preset's `<prefix>AdapterProvider` docs and the
+generated README show the new construction.
+
 ### `migrate diff` no longer calls a CHECK on a table it creates blocking (#1129)
 
 A validator CHECK (`@range`, `@length`, `@iso4217` with `@db_enforce`) on a table the same migration

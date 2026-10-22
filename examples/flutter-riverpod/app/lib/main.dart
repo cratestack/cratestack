@@ -18,7 +18,7 @@ void main() {
         // enough to point the *entire* generated surface at a real
         // server, which is exactly what this override demonstrates.
         flutterRiverpodClientAdapterProvider.overrideWithValue(
-          CratestackDioAdapter(dio: buildAppDio()),
+          buildAppAdapter(),
         ),
       ],
       child: const RiverpodExampleApp(),
