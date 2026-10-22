@@ -82,6 +82,18 @@ schemas — a strict superset of the same content, never a redesign of what's ge
   procedures in their own file, and the package-wide DI providers
   (`xAdapterProvider`/`xClientProvider`) in `lib/src/client.dart`. List responses use
   `fast_immutable_collections`' `IList`.
+- `fespalier` — the `riverpod` preset sending through fespalier's `HttpTransport`
+  (`package:fespalier_transport`) instead of Dio (cratestack#1204). No `dio` in the pubspec
+  and no `lib/src/dio_transport.dart`; instead `lib/src/fespalier_transport.dart`
+  (`CratestackFespalierTransport`, an adapter from `HttpTransport` to the generated
+  `CratestackHttpTransport` seam) and two providers an app overrides:
+  `<prefix>TransportProvider` (its transport chain, e.g. `SessionTransport(… HttpClientTransport(client))`)
+  and `<prefix>BaseUriProvider`. `<prefix>AdapterProvider` defaults to the HTTP adapter over them.
+  Abort comes from the call option, else from `TransportZone` (so `fespalier_cratestack`'s
+  `ref.cancellable` aborts a page's loads). The pubspec pins `fespalier_transport` by git at
+  `DEFAULT_FESPALIER_REF` (`v0.22.0`), changed with `--fespalier-ref`. fespalier packages are git
+  dependencies by design; until the pinned ref is reachable, `just verify-dart-fespalier` resolves
+  it from a local checkout (`FESPALIER_TRANSPORT_PATH`) and skips without one.
 
 ```bash
 cratestack generate-dart \

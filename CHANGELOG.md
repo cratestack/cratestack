@@ -79,6 +79,47 @@ URI. A response of an unsupported `Content-Type` is now a `FormatException` on t
 (it used to hand back the raw string). The `riverpod` preset's `<prefix>AdapterProvider` docs and the
 generated README show the new construction.
 
+### `generate-dart --preset fespalier`: the Riverpod preset over `fespalier_transport`, with no Dio (#1204)
+
+**What it is.** `--preset fespalier` is the `riverpod` preset, sending through fespalier's
+`HttpTransport` (`package:fespalier_transport`) instead of Dio. An app passes its transport chain
+once (`SessionTransport(… HttpClientTransport(client))`) and the generated client sends through it. It
+needs the HTTP-seam change above and follows it directly.
+
+- **`CratestackFespalierTransport`** (`lib/src/fespalier_transport.dart`) implements the seam over an
+  `HttpTransport`. The request goes out with the exact body bytes, the headers, and `extra` as
+  `TransportRequest.attributes` (never sent). The abort is the call option's `abort`, else the
+  current `TransportZone` trigger, so `ref.cancellable` in `fespalier_cratestack` aborts a page's
+  loads with no wiring. Every status is an answer; a `TransportStatusError` thrown by a decorator is
+  treated as the answer it carries, so it becomes `CratestackRestException` / `CratestackRpcException`.
+  `TransportAborted`, `TransportUnsent`, `TransportTimedOut` and `TransportBroken` map one to one onto
+  the `CratestackTransportException` kinds; `TransportPortal` and `TransportUntrusted` become
+  `CratestackTransportBroken` (the seam has no kind for them), with the original failure as `cause`.
+  Any other error a decorator throws (such as `AuthRejected`) reaches the caller unchanged.
+- **Providers.** `<prefix>TransportProvider` (`Provider<HttpTransport>`) and `<prefix>BaseUriProvider`
+  (`Provider<Uri>`) throw an instructive `UnimplementedError` until the app overrides them;
+  `<prefix>AdapterProvider` defaults to `CratestackHttpAdapter` / `CratestackRpcHttpAdapter` over
+  `CratestackFespalierTransport(ref.watch(<prefix>TransportProvider))`. `<prefix>BasePathProvider` is
+  unchanged (REST): it is the path prefix of the request, while the base URI is the server's origin.
+- **No Dio.** The preset does not emit `dio_transport.dart` and its pubspec has no `dio`. It depends on
+  `fespalier_transport` by git (`url: https://github.com/fespalier/fespalier`,
+  `path: packages/fespalier_transport`) at `DEFAULT_FESPALIER_REF`, a generator constant set to the
+  fespalier release this targets, `v0.22.0`. `--fespalier-ref <ref>` overrides it (a tag, branch or
+  commit; an error with any other preset, or if it is empty or holds whitespace).
+- **Everything else is the `riverpod` preset's**, byte for byte, except the README (a fespalier
+  section), the `lib/<package>.dart` export, the pubspec, `client.dart` and the doc comments in
+  `runtime.dart` that show how to build an adapter.
+
+**CI.** `fespalier_transport` is unreleased, so the pinned ref is not reachable from GitHub yet. The
+generated files are checked in CI (`tests/fespalier_preset.rs`, the `fespalier_tiny_{rest,rpc}`
+snapshots). `just verify-dart` ends with `just verify-dart-fespalier`, which generates the preset's
+`ci_rest` and `ci_rpc` packages and runs `flutter analyze` and `flutter test` on them (golden wire
+parity, the exact CBOR bytes a decorator sees, abort through `TransportZone`, every failure mapping,
+the providers, with `FakeTransport` from `fespalier_transport/testing.dart`) against a
+`pubspec_overrides.yaml` that points `fespalier_transport` at `FESPALIER_TRANSPORT_PATH`. With that
+variable unset it **skips** with a message, so CI stays green until fespalier releases; then the skip
+and the path override go.
+
 ### `migrate diff` no longer calls a CHECK on a table it creates blocking (#1129)
 
 A validator CHECK (`@range`, `@length`, `@iso4217` with `@db_enforce`) on a table the same migration
