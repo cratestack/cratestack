@@ -8,7 +8,7 @@
 //  * the CBOR bytes a decorator sees are the exact bytes the inner transport
 //    receives (a signer layered above sees what goes on the wire);
 //  * an abort through `TransportZone` (`ref.cancellable`'s mechanism) fires,
-//    and a call option's `abort` wins over the zone's;
+//    and a call option's `abort` aborts too (either one aborts);
 //  * every `TransportFailure` maps to the matching `CratestackTransportException`,
 //    a `TransportStatusError` becomes the typed REST error, and any other
 //    error a decorator throws passes through unchanged;
@@ -163,7 +163,7 @@ void main() {
       expect(fake.abortCount, 1);
     });
 
-    test('a call option abort wins over the zone and is the request trigger', () async {
+    test('the call option abort aborts the send, with a zone trigger that never fires', () async {
       final fake = FakeTransport((_, __) => Completer<TransportResponse>().future);
       final zone = Completer<void>();
       final option = Completer<void>();
@@ -176,10 +176,29 @@ void main() {
       );
       final outcome = expectLater(call, throwsA(isA<CratestackTransportAborted>()));
       await pumpEventQueue();
-      expect(fake.requests.single.request.abortTrigger, same(option.future));
+      expect(fake.requests.single.abortable, isTrue);
       option.complete();
       await outcome;
       expect(fake.abortCount, 1);
+    });
+
+    test('the zone trigger aborts a send that carries its own abort', () async {
+      final fake = FakeTransport((_, __) => Completer<TransportResponse>().future);
+      final zone = Completer<void>();
+      final option = Completer<void>();
+      final call = TransportZone.run(
+        zone.future,
+        () => _adapter(fake).execute(
+          _get,
+          options: CratestackCallOptions(abort: option.future),
+        ),
+      );
+      final outcome = expectLater(call, throwsA(isA<CratestackTransportAborted>()));
+      await pumpEventQueue();
+      zone.complete();
+      await outcome;
+      expect(fake.abortCount, 1);
+      expect(option.isCompleted, isFalse);
     });
 
     test('a call outside any zone and without an abort is not abortable', () async {

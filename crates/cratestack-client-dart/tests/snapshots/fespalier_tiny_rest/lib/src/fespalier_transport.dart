@@ -39,10 +39,14 @@ class CratestackFespalierTransport implements CratestackHttpTransport {
           // The exact bytes the adapter encoded: a signer layered above sees
           // these and nothing else.
           body: request.body,
-          // The call option wins; with none, the abort trigger of the zone the
-          // call runs in, which is how `ref.cancellable` in
-          // `fespalier_cratestack` aborts a page's loads without extra wiring.
-          abortTrigger: request.abort ?? TransportZone.current(),
+          // Either aborts: the call option's `abort` and the abort trigger of
+          // the zone the call runs in, merged. The zone's is how
+          // `ref.cancellable` in `fespalier_cratestack` aborts a page's loads
+          // without extra wiring, even for a call that carries its own abort.
+          abortTrigger: TransportZone.merge(
+            request.abort,
+            TransportZone.current(),
+          ),
           attributes: request.extra,
         ),
       );

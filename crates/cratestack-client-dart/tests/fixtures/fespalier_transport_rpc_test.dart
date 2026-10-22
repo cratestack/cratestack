@@ -162,7 +162,7 @@ void main() {
       expect(fake.abortCount, 1);
     });
 
-    test('a call option abort wins over the zone and is the request trigger', () async {
+    test('the call option abort aborts the send, with a zone trigger that never fires', () async {
       final fake = FakeTransport((_, __) => Completer<TransportResponse>().future);
       final zone = Completer<void>();
       final option = Completer<void>();
@@ -176,10 +176,30 @@ void main() {
       );
       final outcome = expectLater(call, throwsA(isA<CratestackTransportAborted>()));
       await pumpEventQueue();
-      expect(fake.requests.single.request.abortTrigger, same(option.future));
+      expect(fake.requests.single.abortable, isTrue);
       option.complete();
       await outcome;
       expect(fake.abortCount, 1);
+    });
+
+    test('the zone trigger aborts a send that carries its own abort', () async {
+      final fake = FakeTransport((_, __) => Completer<TransportResponse>().future);
+      final zone = Completer<void>();
+      final option = Completer<void>();
+      final call = TransportZone.run(
+        zone.future,
+        () => _adapter(fake).call(
+          'x',
+          {},
+          options: CratestackRpcCallOptions(abort: option.future),
+        ),
+      );
+      final outcome = expectLater(call, throwsA(isA<CratestackTransportAborted>()));
+      await pumpEventQueue();
+      zone.complete();
+      await outcome;
+      expect(fake.abortCount, 1);
+      expect(option.isCompleted, isFalse);
     });
   });
 

@@ -88,9 +88,10 @@ needs the HTTP-seam change above and follows it directly.
 
 - **`CratestackFespalierTransport`** (`lib/src/fespalier_transport.dart`) implements the seam over an
   `HttpTransport`. The request goes out with the exact body bytes, the headers, and `extra` as
-  `TransportRequest.attributes` (never sent). The abort is the call option's `abort`, else the
-  current `TransportZone` trigger, so `ref.cancellable` in `fespalier_cratestack` aborts a page's
-  loads with no wiring. Every status is an answer; a `TransportStatusError` thrown by a decorator is
+  `TransportRequest.attributes` (never sent). The abort is the call option's `abort` merged with
+  the current `TransportZone` trigger (`TransportZone.merge`), so either one aborts and
+  `ref.cancellable` in `fespalier_cratestack` aborts a page's loads with no wiring, even for a call
+  that carries its own abort. Every status is an answer; a `TransportStatusError` thrown by a decorator is
   treated as the answer it carries, so it becomes `CratestackRestException` / `CratestackRpcException`.
   `TransportAborted`, `TransportUnsent`, `TransportTimedOut` and `TransportBroken` map one to one onto
   the `CratestackTransportException` kinds; `TransportPortal` and `TransportUntrusted` become

@@ -70,7 +70,7 @@ final client = TinyRestClientCratestackClient(
 
 `baseUri` is joined with the request path (a path prefix such as `https://example.com/v1` is kept). What `CratestackFespalierTransport` maps:
 
-- the request: the exact body bytes, the headers, and `CratestackHttpRequest.extra` as `TransportRequest.attributes` (never sent). The abort is the call option's `abort`; with none, it is the abort trigger of the current `TransportZone`, so `ref.cancellable` in `fespalier_cratestack` aborts a page's loads with no extra wiring.
+- the request: the exact body bytes, the headers, and `CratestackHttpRequest.extra` as `TransportRequest.attributes` (never sent). The abort is the call option's `abort` merged with the abort trigger of the current `TransportZone` (`TransportZone.merge`), so either one aborts: `ref.cancellable` in `fespalier_cratestack` aborts a page's loads with no extra wiring, even for a call that carries its own abort.
 - the answer: every status is a response, which the adapter maps to the typed error. A `TransportStatusError` thrown by a decorator is treated as the answer it carries.
 - a call that got no answer: `TransportAborted`, `TransportUnsent`, `TransportTimedOut` and `TransportBroken` map one to one onto `CratestackTransportAborted`, `Unsent`, `TimedOut` and `Broken`. `TransportPortal` and `TransportUntrusted` become `CratestackTransportBroken`; its `cause` is the original failure, so check `error.cause is TransportPortal` to tell them apart. Any other error a decorator throws (such as `AuthRejected`) reaches the caller unchanged.
 
