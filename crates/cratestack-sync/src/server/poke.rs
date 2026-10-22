@@ -51,9 +51,9 @@ impl PokeHub {
     }
 
     /// Run forever: `LISTEN cratestack_sync`, rebroadcast each scope.
-    pub async fn listen(&self, pool: PgPool) {
+    pub async fn listen(&self, pool: &PgPool) {
         loop {
-            match self.listen_once(&pool).await {
+            match self.listen_once(pool).await {
                 Ok(()) => {}
                 Err(error) => tracing::warn!(%error, "sync poke listener dropped; reconnecting"),
             }

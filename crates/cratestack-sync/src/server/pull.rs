@@ -67,7 +67,7 @@ impl SyncServer {
         authorize(&mut tx, &principal, request.client_id, false).await?;
         self.check_horizon(&mut tx, request.cursor).await?;
 
-        let mut scopes = principal.scopes.clone();
+        let mut scopes = principal.scopes;
         scopes.push(client_scope(request.client_id));
         let rows: Vec<ChangeRow> = sqlx::query_as(PAGE_SQL)
             .bind(&scopes)

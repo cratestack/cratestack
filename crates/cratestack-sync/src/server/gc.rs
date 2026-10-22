@@ -67,7 +67,7 @@ impl SyncServer {
     /// running every `gc_every`. Both log and retry on failure.
     pub fn spawn_background(&self, gc_every: std::time::Duration) {
         let listener = self.clone();
-        tokio::spawn(async move { listener.pokes.listen(listener.pool.clone()).await });
+        tokio::spawn(async move { listener.pokes.listen(&listener.pool).await });
         let gc = self.clone();
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(gc_every);

@@ -64,7 +64,7 @@ impl NotesApp {
                 &NOTE_MODEL,
             ))
             .mutation("note.create", move |conn: &Connection, args: &Value| {
-                let args: WriteArgs = serde_json::from_value(args.clone())?;
+                let args = WriteArgs::deserialize(args)?;
                 let input = CreateNoteInput {
                     id: args.id,
                     ownerId: owner.clone(),
@@ -76,7 +76,7 @@ impl NotesApp {
                 Ok(())
             })
             .mutation("note.update", move |conn: &Connection, args: &Value| {
-                let args: WriteArgs = serde_json::from_value(args.clone())?;
+                let args = WriteArgs::deserialize(args)?;
                 let patch = UpdateNoteInput {
                     title: args.title,
                     done: args.done,
@@ -90,7 +90,7 @@ impl NotesApp {
                 Ok(())
             })
             .mutation("note.delete", move |conn: &Connection, args: &Value| {
-                let args: WriteArgs = serde_json::from_value(args.clone())?;
+                let args = WriteArgs::deserialize(args)?;
                 delegate(&delete_rt).delete(args.id).run_in_tx(conn)?;
                 Ok(())
             });

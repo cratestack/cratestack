@@ -59,15 +59,13 @@ impl SyncServer {
                 client_id: request.client_id,
                 seq: mutation.seq,
             };
+            let seq = mutation.seq;
             let outcome = match self.screen(&mutation, now) {
                 Some(rejection) => rejection,
-                None => self.apply_one(&mut tx, &mc, mutation.clone()).await?,
+                None => self.apply_one(&mut tx, &mc, mutation).await?,
             };
-            next_seq = mutation.seq;
-            results.push(MutationResult {
-                seq: mutation.seq,
-                outcome,
-            });
+            next_seq = seq;
+            results.push(MutationResult { seq, outcome });
         }
 
         if next_seq > last_seq {
@@ -154,7 +152,7 @@ impl SyncServer {
         mc: &MutationContext<'_>,
         mutation: Mutation,
     ) -> Result<MutationOutcome, SyncError> {
-        let handler = self.registry.mutators[&mutation.name].clone();
+        let handler = &self.registry.mutators[&mutation.name];
         let mut savepoint = tx.begin().await.map_err(internal)?;
         match handler.apply(&mut savepoint, mc, mutation.args).await {
             Ok(()) => {

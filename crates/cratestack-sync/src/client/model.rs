@@ -67,7 +67,8 @@ where
     }
 
     fn upsert(&self, conn: &Connection, row: &Value) -> Result<(), ClientError> {
-        let input: I = serde_json::from_value(row.clone())?;
+        // Deserialize from the borrowed value: no copy of the row.
+        let input = I::deserialize(row)?;
         let values = <I as UpsertModelInput<M>>::sql_values(&input);
         let (sql, binds) = render_upsert_with_conflict(
             &SqliteDialect,
