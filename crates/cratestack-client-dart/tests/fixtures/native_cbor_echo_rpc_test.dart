@@ -4,7 +4,7 @@
 // codec" rationale.
 //
 // This file additionally covers the async exception-decode path
-// (`_exceptionFromDio`) that #647's own risk assessment flagged as the part
+// (an HTTP error answer's body) that #647's own risk assessment flagged as the part
 // "most likely to have missed a call site": a 4xx CBOR error body must be
 // awaited and decoded through the real native codec, not just the happy
 // path.
@@ -63,8 +63,10 @@ void main() {
       });
       addTearDown(server.close);
 
-      final dio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:${server.port}'));
-      final adapter = CratestackRpcCborDioAdapter(dio: dio);
+      final adapter = CratestackRpcHttpAdapter(
+        CratestackDioTransport(Dio()),
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+      );
       final client = NativeCborEchoRpcVerifyCratestackClient(adapter);
 
       final reply = await client.procedures.echo(
@@ -79,7 +81,7 @@ void main() {
   test(
     'generated --native-cbor RPC client awaits and decodes a real 4xx CBOR '
     'error body through the real cratestack_cbor codec (the async '
-    '_exceptionFromDio rework)',
+    'error-body decode)',
     () async {
       final server = await _startCborServer(400, {
         'code': 'invalid_argument',
@@ -87,8 +89,10 @@ void main() {
       });
       addTearDown(server.close);
 
-      final dio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:${server.port}'));
-      final adapter = CratestackRpcCborDioAdapter(dio: dio);
+      final adapter = CratestackRpcHttpAdapter(
+        CratestackDioTransport(Dio()),
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+      );
       final client = NativeCborEchoRpcVerifyCratestackClient(adapter);
 
       await expectLater(

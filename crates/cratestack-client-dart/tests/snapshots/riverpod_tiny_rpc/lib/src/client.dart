@@ -14,6 +14,25 @@ class TinyRpcClientCratestackClient {
   ProceduresApi get procedures => ProceduresApi(this);
 }
 
+/// The adapter every generated API sends through. No default: the app picks
+/// its HTTP stack by overriding this provider.
+///
+/// ```dart
+/// ProviderScope(
+///   overrides: [
+///     tinyRpcClientAdapterProvider.overrideWithValue(
+///       CratestackRpcHttpAdapter(
+///         CratestackDioTransport(dio),
+///         baseUri: Uri.parse('https://api.example.com'),
+///       ),
+///     ),
+///   ],
+///   child: const MyApp(),
+/// )
+/// ```
+///
+/// `CratestackDioTransport` wraps a `Dio`; any other HTTP stack implements
+/// `CratestackHttpTransport` instead.
 final tinyRpcClientAdapterProvider = Provider<CratestackRpcAdapter>((ref) {
   throw UnimplementedError('Override tinyRpcClientAdapterProvider before reading the generated CrateStack client.');
 });

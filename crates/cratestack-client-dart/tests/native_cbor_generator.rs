@@ -263,9 +263,11 @@ fn the_flag_swaps_the_pubspec_dependency_and_the_runtime_import() {
             "{fixture}: runtime.dart should define the cached async codec accessor:\n{runtime}"
         );
         assert!(
-            runtime.contains("Future<Object?> _encodeBody(Object? body) async {"),
-            "{fixture}: _encodeBody must become async under the flag (cratestack_cbor's \
-             createCborCodec() is async):\n{runtime}"
+            runtime.contains(
+                "Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async {"
+            ),
+            "{fixture}: _encodeBody must be async (cratestack_cbor's createCborCodec() is \
+             async):\n{runtime}"
         );
     }
 }
@@ -314,46 +316,60 @@ fn the_flag_is_additive_only_pubspec_and_runtime_differ() {
     }
 }
 
+/// cratestack#1204: the codec work lives in one fragment (`http_runtime/
+/// codec.dart.j2`) shared by the REST and RPC adapters, and is async whichever
+/// CBOR implementation backs it — so the old "sync under `package:cbor`, async
+/// under `cratestack_cbor`" fork (and its six `throw await _exceptionFromDio`
+/// call sites) is gone. What the flag still changes is exactly the CBOR calls.
 #[test]
-fn rpc_exception_decoding_becomes_async_under_the_flag_and_every_call_site_awaits_it() {
-    let plain = generate(RPC_FIXTURE, DartPreset::Default, false);
-    let native = generate(RPC_FIXTURE, DartPreset::Default, true);
+fn the_flag_changes_only_the_cbor_calls_inside_the_shared_codec_fragment() {
+    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
+        let plain = file(
+            &generate(fixture, DartPreset::Default, false),
+            "lib/src/runtime.dart",
+        )
+        .to_owned();
+        let native = file(
+            &generate(fixture, DartPreset::Default, true),
+            "lib/src/runtime.dart",
+        )
+        .to_owned();
 
-    let plain_runtime = file(&plain, "lib/src/runtime.dart");
-    let native_runtime = file(&native, "lib/src/runtime.dart");
+        for (name, runtime) in [("plain", &plain), ("native", &native)] {
+            assert!(
+                runtime.contains(
+                    "Future<Object?> _decodeBody(Uint8List bytes, String? contentType, String owner) async {"
+                ),
+                "{fixture}/{name}: decoding must be async on both codecs:\n{runtime}"
+            );
+            assert!(
+                !runtime.contains("_exceptionFromDio"),
+                "{fixture}/{name}: the Dio-specific error mapper must be gone:\n{runtime}"
+            );
+            assert_eq!(
+                runtime.matches("class _Cratestack").count(),
+                0,
+                "{fixture}/{name}: no private adapter copies"
+            );
+        }
 
-    assert!(
-        plain_runtime.contains("CratestackRpcException _exceptionFromDio(DioException error) {"),
-        "without the flag, _exceptionFromDio must stay synchronous:\n{plain_runtime}"
-    );
-    assert_eq!(
-        plain_runtime
-            .matches("throw _exceptionFromDio(error);")
-            .count(),
-        6,
-        "without the flag, every one of the 6 call sites (3 in the JSON adapter, 3 in the CBOR \
-         adapter) must call _exceptionFromDio synchronously:\n{plain_runtime}"
-    );
+        assert!(plain.contains("cratestackNormalizeWire(cbor.cbor.decode(bytes))"));
+        assert!(plain.contains("Uint8List.fromList(cbor.cbor.encode(body))"));
+        assert!(!plain.contains("_cratestackCborCodec"));
 
-    assert!(
-        native_runtime.contains(
-            "Future<CratestackRpcException> _exceptionFromDio(DioException error) async {"
-        ),
-        "under the flag, _exceptionFromDio must become async (it awaits the native codec to \
-         decode a CBOR error body):\n{native_runtime}"
-    );
-    assert_eq!(
-        native_runtime
-            .matches("throw await _exceptionFromDio(error);")
-            .count(),
-        6,
-        "under the flag, every one of the 6 call sites must await the now-async \
-         _exceptionFromDio:\n{native_runtime}"
-    );
-    assert!(
-        !native_runtime.contains("throw _exceptionFromDio(error);"),
-        "under the flag, no call site should still call _exceptionFromDio without await:\n{native_runtime}"
-    );
+        assert!(native.contains("jsonDecode(codec.decodeJson(bytes))"));
+        assert!(native.contains("codec.encodeJson(jsonEncode(body))"));
+        assert!(native.contains("final codec = await _cratestackCborCodec();"));
+        assert_eq!(
+            native
+                .matches("Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;")
+                .count(),
+            1,
+            "{fixture}: the cached codec future must be declared exactly once, shared by every \
+             adapter in the file (cratestack#798 asserts both transports, so a second copy is the \
+             drift it guards against)"
+        );
+    }
 }
 
 #[test]
@@ -394,6 +410,7 @@ fn generate(fixture_stem: &str, preset: DartPreset, native_cbor: bool) -> Genera
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("{fixture_stem}: generation should succeed: {error}"))

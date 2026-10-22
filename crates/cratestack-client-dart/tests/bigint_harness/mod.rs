@@ -190,6 +190,7 @@ pub fn generate(
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render");

@@ -136,6 +136,16 @@ fn generate_dart_with_preset(
     check: bool,
     preset: DartPresetArg,
 ) -> anyhow::Result<()> {
+    generate_dart_with_ref(schema, out, check, preset, None)
+}
+
+fn generate_dart_with_ref(
+    schema: PathBuf,
+    out: PathBuf,
+    check: bool,
+    preset: DartPresetArg,
+    fespalier_ref: Option<String>,
+) -> anyhow::Result<()> {
     handle_generate_dart(
         schema,
         out,
@@ -144,6 +154,7 @@ fn generate_dart_with_preset(
         None,
         check,
         preset,
+        fespalier_ref,
         false,
         false,
     )
@@ -457,3 +468,85 @@ fn dart_check_does_not_conflate_default_and_riverpod_file_sets() {
 // pass `run_build_runner: true`), and that clap parses the flag at all
 // (see `generate_dart_clap_accepts_run_build_runner_flag` in
 // `src/main.rs`).
+
+/// cratestack#1204: `--preset fespalier` pins `fespalier_transport` at the
+/// generator's targeted release by default, at `--fespalier-ref` when given,
+/// and `--check` is clean against its own output.
+#[test]
+fn dart_fespalier_pins_the_default_ref_and_honours_fespalier_ref() {
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+    let default_out = dir.path().join("default_ref");
+    let pinned_out = dir.path().join("pinned_ref");
+
+    generate_dart_with_preset(
+        schema.clone(),
+        default_out.clone(),
+        false,
+        DartPresetArg::Fespalier,
+    )
+    .expect("fespalier generate");
+    let pubspec = fs::read_to_string(default_out.join("pubspec.yaml")).expect("pubspec");
+    assert!(
+        pubspec.contains(&format!(
+            "ref: '{}'",
+            cratestack_client_dart::DEFAULT_FESPALIER_REF
+        )),
+        "{pubspec}"
+    );
+    assert!(!pubspec.contains("dio"), "{pubspec}");
+
+    generate_dart_with_ref(
+        schema.clone(),
+        pinned_out.clone(),
+        false,
+        DartPresetArg::Fespalier,
+        Some("0123abcd".to_owned()),
+    )
+    .expect("fespalier generate with --fespalier-ref");
+    let pubspec = fs::read_to_string(pinned_out.join("pubspec.yaml")).expect("pubspec");
+    assert!(pubspec.contains("ref: '0123abcd'"), "{pubspec}");
+
+    generate_dart_with_ref(
+        schema,
+        pinned_out,
+        true,
+        DartPresetArg::Fespalier,
+        Some("0123abcd".to_owned()),
+    )
+    .expect("check should pass on unmodified fespalier output");
+}
+
+#[test]
+fn dart_fespalier_ref_is_rejected_with_another_preset_or_when_malformed() {
+    let dir = TempDir::new().expect("tempdir");
+    let schema = write_schema(&dir, INITIAL_SCHEMA);
+
+    let error = generate_dart_with_ref(
+        schema.clone(),
+        dir.path().join("riverpod"),
+        false,
+        DartPresetArg::Riverpod,
+        Some("v0.21.0".to_owned()),
+    )
+    .expect_err("--fespalier-ref with --preset riverpod must fail");
+    assert!(
+        error
+            .to_string()
+            .contains("only applies to --preset fespalier"),
+        "{error}"
+    );
+
+    let error = generate_dart_with_ref(
+        schema,
+        dir.path().join("malformed"),
+        false,
+        DartPresetArg::Fespalier,
+        Some("not a ref".to_owned()),
+    )
+    .expect_err("a ref with whitespace must fail");
+    assert!(
+        error.to_string().contains("invalid fespalier ref"),
+        "{error}"
+    );
+}

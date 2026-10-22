@@ -1,0 +1,176 @@
+// -----------------------------------------------------------------------------
+// Wire codecs and the plumbing both HTTP adapters share (cratestack#1204)
+//
+// One copy, included by the REST runtime and the RPC runtime alike, so the
+// two adapters cannot drift on the CBOR/JSON choice, on dispatching a
+// response by its `Content-Type`, or on how a URI and the headers are built.
+// -----------------------------------------------------------------------------
+{% if native_cbor %}
+
+// cratestack#563: `createCborCodec()` is async (it loads a
+// vendored native library / wasm module on first use), so the codec is
+// resolved once and cached here rather than per call — every
+// `_cratestackCborCodec()` caller after the first just awaits the same
+// already-in-flight (or already-resolved) `Future`.
+//
+// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
+// `??=` never re-evaluates once the field holds a settled *rejected*
+// future, so one transient failure — a wasm asset that 404s on web, a
+// vendored library that was not there yet — would brick every later
+// request in the isolate, replaying the same error forever instead of
+// giving the next caller a fresh attempt. `onError` clears the cache so
+// it can retry, and rethrows with the original stack trace so nothing is
+// swallowed. Same rule, for the same reason, as the generated TypeScript
+// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
+// `createCborCodec()`.
+Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+
+Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        // Hung off the future rather than written as a `try`/`catch`
+        // around the call so it cannot run before the `??=` has
+        // assigned: an `onError` callback is always asynchronous,
+        // whereas a `catch` body fires synchronously for anything thrown
+        // before the factory's first `await`, and the assignment would
+        // then immediately re-cache the very failure it just cleared.
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
+}
+{% endif %}
+
+/// The wire format a request body is written in and an `Accept` header
+/// prefers. Responses are always decoded by their own `Content-Type`, so an
+/// adapter set to one format still reads the other.
+enum CratestackWireFormat {
+  /// `application/cbor`, the framework's default wire format.
+  cbor,
+
+  /// `application/json`.
+  json,
+}
+
+String _cratestackMimeOf(String? contentType) =>
+    (contentType ?? '').split(';').first.trim().toLowerCase();
+
+bool _isCborContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/cbor';
+
+bool _isJsonContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/json';
+
+/// Encodes a request body in [format]. `null` stays `null` (no body), and
+/// bytes are sent as they are.
+Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async {
+  if (body == null) {
+    return null;
+  }
+  if (body is Uint8List) {
+    return body;
+  }
+  if (body is List<int>) {
+    return Uint8List.fromList(body);
+  }
+  switch (format) {
+    case CratestackWireFormat.json:
+      return Uint8List.fromList(utf8.encode(jsonEncode(body)));
+    case CratestackWireFormat.cbor:
+{% if native_cbor %}
+      final codec = await _cratestackCborCodec();
+      return codec.encodeJson(jsonEncode(body));
+{% else %}
+      return Uint8List.fromList(cbor.cbor.encode(body));
+{% endif %}
+  }
+}
+
+/// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
+/// decoders expect.
+Future<Object?> _decodeCbor(Uint8List bytes) async {
+{% if native_cbor %}
+  // `cratestack_cbor`'s wire boundary is JSON text (see
+  // `DartGeneratorConfig::native_cbor`'s doc comment), and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values —
+  // `jsonDecode` alone gives the exact `Map<String, Object?>` shape
+  // `cratestackNormalizeWire` exists to reconstruct from the `cbor` package's
+  // `Map<Object?, Object?>`, so it isn't needed on this path.
+  final codec = await _cratestackCborCodec();
+  return jsonDecode(codec.decodeJson(bytes));
+{% else %}
+  return cratestackNormalizeWire(cbor.cbor.decode(bytes));
+{% endif %}
+}
+
+/// Decodes a response body by its `Content-Type`: an empty body is `null`,
+/// CBOR and JSON are decoded, anything else is a [FormatException].
+Future<Object?> _decodeBody(Uint8List bytes, String? contentType, String owner) async {
+  if (bytes.isEmpty) {
+    return null;
+  }
+  if (_isCborContentType(contentType)) {
+    return _decodeCbor(bytes);
+  }
+  if (_isJsonContentType(contentType)) {
+    return jsonDecode(utf8.decode(bytes));
+  }
+  throw FormatException(
+    'Unsupported response Content-Type $contentType for $owner',
+  );
+}
+
+/// Best-effort decode of an HTTP error answer's body. Never throws: a body
+/// that is empty or does not decode is `null`, and a body of any other
+/// `Content-Type` (a proxy's plain-text 502, say) is its text.
+Future<Object?> _decodeErrorBody(Uint8List bytes, String? contentType) async {
+  if (bytes.isEmpty) {
+    return null;
+  }
+  try {
+    if (_isCborContentType(contentType) || _isJsonContentType(contentType)) {
+      return await _decodeBody(bytes, contentType, 'an error body');
+    }
+    final text = utf8.decode(bytes, allowMalformed: true).trim();
+    return text.isEmpty ? null : text;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Layers header maps, later layers winning. Header names are
+/// case-insensitive, so `accept` from a later layer replaces `Accept` from an
+/// earlier one instead of sitting beside it.
+Map<String, String> _mergeHeaders(List<Map<String, String>?> layers) {
+  final merged = <String, String>{};
+  final keyByLowerName = <String, String>{};
+  for (final layer in layers) {
+    if (layer == null) {
+      continue;
+    }
+    for (final entry in layer.entries) {
+      final lowerName = entry.key.toLowerCase();
+      final earlier = keyByLowerName[lowerName];
+      if (earlier != null) {
+        merged.remove(earlier);
+      }
+      keyByLowerName[lowerName] = entry.key;
+      merged[entry.key] = entry.value;
+    }
+  }
+  return merged;
+}
+
+/// `baseUri` + `path` + `query`, joined by concatenation rather than RFC 3986
+/// resolution: a base URI with a path prefix (`https://host/v1`) keeps it, and
+/// a `path` starting with `/` does not discard it. [query] is an already
+/// percent-encoded query string.
+Uri _resolveUri(Uri baseUri, String path, String? query) {
+  final basePath = baseUri.path.endsWith('/')
+      ? baseUri.path.substring(0, baseUri.path.length - 1)
+      : baseUri.path;
+  final tail = path.startsWith('/') ? path : '/$path';
+  final origin = '${baseUri.scheme}://${baseUri.authority}';
+  final suffix = (query == null || query.isEmpty) ? '' : '?$query';
+  return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
+}

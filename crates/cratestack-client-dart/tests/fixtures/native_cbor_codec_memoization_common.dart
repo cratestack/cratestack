@@ -8,38 +8,15 @@
 // way is to let one set of assertions run against both. If the two
 // runtimes ever drift, this file stops compiling or starts failing for one
 // of them — which is the signal we want.
-import 'dart:typed_data';
-
 import 'package:cratestack_cbor/cratestack_cbor.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// A `Dio` whose transport never leaves the process — every request
-/// answers `204 No Content`, which the generated adapters short-circuit
-/// before decoding. The request half is what matters here: it is the
-/// encode path that resolves the codec.
-Dio stubDio() {
-  final dio = Dio(BaseOptions(baseUrl: 'http://stub.invalid'));
-  dio.httpClientAdapter = _NoNetworkAdapter();
-  return dio;
-}
-
-class _NoNetworkAdapter implements HttpClientAdapter {
-  @override
-  Future<ResponseBody> fetch(
-    RequestOptions options,
-    Stream<Uint8List>? requestStream,
-    Future<void>? cancelFuture,
-  ) async => ResponseBody.fromBytes(const <int>[], 204);
-
-  @override
-  void close({bool force = false}) {}
-}
-
 /// Runs the whole contract against [issueRequest], which must send one
-/// request with a non-null body through a CBOR adapter — i.e. must reach
-/// the generated runtime's `_encodeBody`, which is where the cached codec
-/// future is awaited.
+/// request with a non-null body through a CBOR-format adapter — i.e. must
+/// reach the generated runtime's `_encodeBody`, which is where the cached
+/// codec future is awaited. Each driver answers with a transport that never
+/// leaves the process (a bare `204`), because only the request half matters:
+/// it is the encode path that resolves the codec.
 void runCodecMemoizationContract(
   String transport,
   Future<void> Function() issueRequest,

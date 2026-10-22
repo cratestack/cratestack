@@ -87,8 +87,9 @@ void main() {
       await request.response.close();
     });
     client = BigintNativeCborEchoRestVerifyCratestackClient(
-      CratestackCborDioAdapter(
-        dio: Dio(BaseOptions(baseUrl: 'http://127.0.0.1:${server.port}')),
+      CratestackHttpAdapter(
+        CratestackDioTransport(Dio()),
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
       ),
       basePath: '',
     );

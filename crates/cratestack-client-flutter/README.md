@@ -153,6 +153,8 @@ if (decoder.pendingLen() > 0) {
 }
 ```
 
+A generated Dart client does this wiring for you: `CratestackRpcHttpAdapter(CratestackDioTransport(dio), baseUri: ...)` reads an `application/cbor-seq` answer frame by frame through a `CborSeqDecoderHandle`, with the HTTP stack chosen by the transport. Its default scanner is pure Dart; a host that wants this FFI decoder passes a `CborSeqDecoderHandle` backed by it as `cborSeqDecoder:`.
+
 The decoder is a pure data structure — no I/O. The boundary-detection logic stays in Rust (where `minicbor::Decoder::skip` already lives); HTTP cancellation, retry, interceptors, and platform networking concerns stay in Dart with dio. Tests in [`tests/cbor_seq_decoder.rs`](tests/cbor_seq_decoder.rs).
 
 This is **complementary** to `execute_streamed` / `rpc_call_streamed`, not a replacement — pick per request:

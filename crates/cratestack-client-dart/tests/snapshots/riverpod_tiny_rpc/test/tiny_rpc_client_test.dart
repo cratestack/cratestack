@@ -16,7 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// A fake [CratestackRpcAdapter] the test below overrides
 /// `tinyRpcClientAdapterProvider` with — the *existing*,
-/// unmodified Dio override point (issue #302's acceptance criterion:
+/// unmodified adapter override point (issue #302's acceptance criterion:
 /// generated operation providers must be reachable through it, not
 /// through a new one). Recording `calls` proves the generated
 /// `WidgetApi.list()` method itself ran (not

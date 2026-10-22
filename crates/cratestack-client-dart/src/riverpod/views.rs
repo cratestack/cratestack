@@ -261,6 +261,10 @@ pub(crate) struct ClientFileContext {
     /// checks it — `ClientFileContext` never otherwise carries the
     /// procedure list.
     pub(crate) has_procedures: bool,
+    /// `--preset fespalier` (cratestack#1204): the adapter provider defaults
+    /// to the HTTP adapter over `<prefix>TransportProvider`, and the file
+    /// declares that provider and `<prefix>BaseUriProvider`.
+    pub(crate) is_fespalier: bool,
 }
 
 /// Renders `lib/<package_name>.dart`, the library entrypoint.

@@ -1,4 +1,5 @@
 export 'src/runtime.dart';
+export 'src/dio_transport.dart';
 export 'src/constants.dart';
 export 'src/models/shared_types.dart';
 export 'src/models/widget.dart';

@@ -25,6 +25,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render");
@@ -42,6 +43,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     let analysis_options = package_file(&package, "analysis_options.yaml");
     let library = package_file(&package, "lib/blog_client.dart");
     let runtime = package_file(&package, "lib/src/runtime.dart");
+    let dio_transport = package_file(&package, "lib/src/dio_transport.dart");
     let queries = package_file(&package, "lib/src/queries.dart");
     let constants = package_file(&package, "lib/src/constants.dart");
     let models = package_file(&package, "lib/src/models.dart");
@@ -49,7 +51,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     let example = package_file(&package, "example/main.dart");
     let test_file = package_file(&package, "test/blog_client_test.dart");
 
-    assert_eq!(package.files.len(), 12);
+    assert_eq!(package.files.len(), 13);
     assert!(pubspec.contains("name: blog_client"));
     assert!(pubspec.contains("flutter:"));
     assert!(pubspec.contains("sdk: flutter"));
@@ -74,14 +76,25 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(changelog.contains("# 0.1.0"));
     assert!(analysis_options.contains("include: package:flutter_lints/flutter.yaml"));
     assert!(library.contains("export 'src/runtime.dart';"));
+    assert!(library.contains("export 'src/dio_transport.dart';"));
     assert!(library.contains("export 'src/apis.dart';"));
     assert!(runtime.contains("import 'package:cbor/simple.dart' as cbor;"));
-    assert!(runtime.contains("import 'package:dio/dio.dart';"));
+    // cratestack#1204: the runtime is pure Dart over the HTTP seam; Dio lives
+    // in its own file, and the four `*DioAdapter` classes are gone.
+    assert!(!runtime.contains("package:dio"));
     assert!(runtime.contains("abstract interface class CratestackClientAdapter {"));
-    assert!(runtime.contains("class CratestackDioAdapter implements CratestackClientAdapter {"));
+    assert!(runtime.contains("abstract interface class CratestackHttpTransport {"));
+    assert!(runtime.contains("sealed class CratestackTransportException implements Exception {"));
+    assert!(runtime.contains("class CratestackHttpAdapter implements CratestackClientAdapter {"));
+    assert!(runtime.contains("class CratestackRestException implements Exception {"));
+    assert!(!runtime.contains("DioAdapter"));
+    assert!(dio_transport.contains("import 'package:dio/dio.dart';"));
     assert!(
-        runtime.contains("class CratestackCborDioAdapter implements CratestackClientAdapter {")
+        dio_transport.contains("class CratestackDioTransport implements CratestackHttpTransport {")
     );
+    assert!(dio_transport.contains("validateStatus: (_) => true,"));
+    assert!(dio_transport.contains("responseType: ResponseType.stream,"));
+    assert!(dio_transport.contains("CancelToken()"));
     assert!(
         runtime
             .contains("const cratestackUseRustTransportExtraKey = 'cratestackUseRustTransport';")
@@ -165,7 +178,6 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(test_file.contains("filters: {'status': 'active'}"));
     assert!(test_file.contains("const fetchQuery = CratestackFetchQuery();"));
     assert!(all.contains("package:dio"));
-    assert!(!all.contains("CancelToken"));
     assert!(!all.contains("CratestackWireCodec"));
     assert!(models.contains("factory Post.fromWire(CratestackValueMap value) {"));
     assert!(models.contains("class ProjectedPost {"));
@@ -192,9 +204,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
         "const String? cratestackSchemaSha256 = '{TEST_SCHEMA_SHA256}';"
     )));
     assert!(runtime.contains("import 'constants.dart';"));
-    assert!(runtime.contains(
-        "if (cratestackSchemaSha256 != null)\n            'x-cratestack-schema-sha': cratestackSchemaSha256!,"
-    ));
+    assert!(runtime.contains("'x-cratestack-schema-sha': cratestackSchemaSha256!,"));
 }
 
 #[test]
@@ -641,6 +651,7 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("order template should render");
@@ -669,6 +680,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("enum template should render");
@@ -757,6 +769,7 @@ fn prefers_template_override_directory_when_provided() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("override template should render");
@@ -797,6 +810,7 @@ fn decimal_scalar_maps_to_a_real_decimal_type() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render");
@@ -884,6 +898,7 @@ fn builder_edge_case_fields_survive_as_ordinary_constructor_fields() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("builder edge-case template should render");
@@ -979,6 +994,7 @@ fn list_field_constructor_and_annotation_are_unaffected_by_moving_the_builder_ou
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("builder edge-case template should render");

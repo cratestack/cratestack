@@ -36,9 +36,70 @@ class {{ client_class_name }} {
 {% endif %}
 }
 
+{% if is_fespalier %}
+/// The transport every generated call sends through: your `fespalier_transport`
+/// chain. No default; the app provides it once.
+///
+/// ```dart
+/// ProviderScope(
+///   overrides: [
+///     {{ provider_prefix }}TransportProvider.overrideWith(
+///       (ref) => SessionTransport(
+///         WriteGuardTransport(HttpClientTransport(client)),
+///         ref.watch(credentialsProvider),
+///       ),
+///     ),
+///     {{ provider_prefix }}BaseUriProvider.overrideWithValue(
+///       Uri.parse('https://api.example.com'),
+///     ),
+///   ],
+///   child: const MyApp(),
+/// )
+/// ```
+final {{ provider_prefix }}TransportProvider = Provider<HttpTransport>((ref) {
+  throw UnimplementedError('Override {{ provider_prefix }}TransportProvider with your fespalier_transport chain before reading the generated CrateStack client.');
+});
+
+/// The server's origin, with an optional path prefix, that request paths are
+/// joined onto: `https://api.example.com` or `https://example.com/v1`. No
+/// default.
+final {{ provider_prefix }}BaseUriProvider = Provider<Uri>((ref) {
+  throw UnimplementedError('Override {{ provider_prefix }}BaseUriProvider with the server\'s origin before reading the generated CrateStack client.');
+});
+
+/// The adapter every generated API sends through: the HTTP adapter over
+/// [{{ provider_prefix }}TransportProvider]. Override it only to change the wire
+/// format or to use another adapter.
+final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((ref) {
+  return CratestackHttpAdapter(
+    CratestackFespalierTransport(ref.watch({{ provider_prefix }}TransportProvider)),
+    baseUri: ref.watch({{ provider_prefix }}BaseUriProvider),
+  );
+});
+{% else %}
+/// The adapter every generated API sends through. No default: the app picks
+/// its HTTP stack by overriding this provider.
+///
+/// ```dart
+/// ProviderScope(
+///   overrides: [
+///     {{ provider_prefix }}AdapterProvider.overrideWithValue(
+///       CratestackHttpAdapter(
+///         CratestackDioTransport(dio),
+///         baseUri: Uri.parse('https://api.example.com'),
+///       ),
+///     ),
+///   ],
+///   child: const MyApp(),
+/// )
+/// ```
+///
+/// `CratestackDioTransport` wraps a `Dio`; any other HTTP stack implements
+/// `CratestackHttpTransport` instead.
 final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((ref) {
   throw UnimplementedError('Override {{ provider_prefix }}AdapterProvider before reading the generated CrateStack client.');
 });
+{% endif %}
 
 final {{ provider_prefix }}BasePathProvider = Provider<String>((ref) => '{{ base_path_literal }}');
 

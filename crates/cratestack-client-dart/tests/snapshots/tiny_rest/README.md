@@ -7,9 +7,9 @@ Generated CrateStack Flutter package.
 - typed CRUD APIs for generated CrateStack model routes
 - typed procedure APIs for generated CrateStack procedure routes
 - Riverpod providers for the generated client and APIs
-- an adapter seam that lets app code provide Dio or another transport implementation
+- an HTTP transport seam (`CratestackHttpTransport`) that lets app code send through Dio or any other HTTP stack
 
-This package does not own app-specific host selection, request signing policy, or transport interception policy. Those concerns stay with the host Flutter app and its Dio stack.
+This package does not own app-specific host selection, request signing policy, or transport interception policy. Those concerns stay with the host Flutter app and its HTTP stack.
 
 ## Install And Import
 
@@ -35,6 +35,7 @@ import 'package:tiny_rest_client/tiny_rest_client.dart';
 - `analysis_options.yaml`
 - `lib/tiny_rest_client.dart`
 - `lib/src/runtime.dart`
+- `lib/src/dio_transport.dart`
 - `lib/src/queries.dart`
 - `lib/src/constants.dart`
 - `lib/src/models.dart`
@@ -46,67 +47,66 @@ Import only `package:tiny_rest_client/tiny_rest_client.dart` from application co
 
 ## Adapter Setup
 
-The generated package expects a transport adapter implementation. The built-in default is `CratestackDioAdapter`, but the client only depends on the `CratestackClientAdapter` interface.
+The generated client depends only on the `CratestackClientAdapter` interface. The built-in implementation is `CratestackHttpAdapter`, written once over a pure-Dart HTTP seam, `CratestackHttpTransport`. The adapter owns the headers, the CBOR/JSON choice, the response `Content-Type` dispatch, the canonical query string and the error mapping; the transport owns the connection.
 
-Minimal shape:
+Dio is one transport (`CratestackDioTransport`, in `lib/src/dio_transport.dart`, the only file that names Dio):
 
 ```dart
-class MyAdapter implements CratestackClientAdapter {
+final adapter = CratestackHttpAdapter(
+  CratestackDioTransport(myDio),
+  baseUri: Uri.parse('https://api.example.com'),
+  // useRustTransport: true,   // marks requests for a host interceptor that routes them through Rust
+);
+
+final client = TinyRestClientCratestackClient(
+  adapter,
+  basePath: '/api',
+);
+```
+
+`baseUri` is joined with the request path (a path prefix such as `https://example.com/v1` is kept), so `myDio.options.baseUrl` is not used. Interceptors, base headers, certificate pinning and retry on `myDio` keep working.
+
+Any other HTTP stack implements `CratestackHttpTransport` (one method, `send`) and is handed to the same adapter. Resolve with the response for every HTTP status; throw a `CratestackTransportException` (`Aborted`, `Unsent`, `TimedOut` or `Broken`) when there is no answer:
+
+```dart
+class MyTransport implements CratestackHttpTransport {
   @override
-  Future<Object?> execute(
-    CratestackRequest request, {
-    CratestackCallOptions? options,
-  }) async {
+  Future<CratestackHttpResponse> send(CratestackHttpRequest request) async {
+    // request.method, request.uri, request.headers, request.body (the exact
+    // bytes to send), request.abort (completes when the caller gives up).
     throw UnimplementedError();
   }
 }
 ```
 
-Client construction:
+Wire format:
+
+- `format: CratestackWireFormat.cbor` (the default) writes CBOR bodies and prefers a CBOR answer
+- `format: CratestackWireFormat.json` writes JSON bodies and prefers a JSON answer
+- either way the answer is decoded by its own `Content-Type`
+
+Errors:
+
+- an HTTP error answer is a `CratestackRestException` (`status` and the decoded `body`)
+- a call that got no answer is a `CratestackTransportException`: `CratestackTransportUnsent` (provably never left the device, always safe to resend), `CratestackTransportAborted`, `CratestackTransportTimedOut` or `CratestackTransportBroken`. Never a Dio type.
+
+Cancelling a call:
 
 ```dart
-final client = TinyRestClientCratestackClient(
-  myAdapter,
-  basePath: '/api',
+final cancel = Completer<void>();
+final future = client.procedures.someCall(
+  args,
+  options: CratestackCallOptions(abort: cancel.future),
 );
+cancel.complete(); // the call throws CratestackTransportAborted
 ```
-
-Dio-backed setup:
-
-```dart
-final adapter = CratestackDioAdapter(
-  dio: myDio,
-  useRustTransport: true,
-);
-
-final client = TinyRestClientCratestackClient(
-  adapter,
-  basePath: '/api',
-);
-```
-
-CBOR-over-Dio setup for web or non-Rust platforms:
-
-```dart
-final adapter = CratestackCborDioAdapter(dio: myDio);
-
-final client = TinyRestClientCratestackClient(
-  adapter,
-  basePath: '/api',
-);
-```
-
-Rule of thumb:
-
-- use `CratestackDioAdapter(dio: ..., useRustTransport: true)` when Rust should execute the request
-- use `CratestackDioAdapter(dio: ..., useRustTransport: false)` for plain JSON/Dio flows
-- use `CratestackCborDioAdapter(dio: ...)` when the host should stay on Dio/browser transport but speak CBOR on the wire
 
 Per-request headers:
 
 ```dart
 const options = CratestackCallOptions(
   headers: {'x-auth-id': '1'},
+  idempotencyKey: 'order-42', // sent as Idempotency-Key
 );
 ```
 
@@ -126,7 +126,10 @@ Typical overrides:
 final container = ProviderContainer(
   overrides: [
     tinyRestClientAdapterProvider.overrideWithValue(
-      CratestackDioAdapter(dio: myDio, useRustTransport: true),
+CratestackHttpAdapter(
+        CratestackDioTransport(myDio),
+        baseUri: Uri.parse('https://api.example.com'),
+      ),
     ),
     tinyRestClientBasePathProvider.overrideWith((ref) => '/api'),
   ],
@@ -562,7 +565,6 @@ Bridge bytes are an internal runtime format, not the public transport codec cont
 - model fields are generated as projection-safe nullable properties so `fields`, `include`, and `includeFields[path]` remain usable
 - the generated Dart package still relies on generic value-graph conversion for typed model shaping
 - the bridge currently uses JSON bytes internally even when the HTTP transport codec is CBOR
-- the generated Dart APIs do not yet surface a first-class typed remote-error API
 - `sort` and `orderBy` must match if both are provided
 - transport codec, envelope behavior, and signing belong to the Rust runtime bridge, not this package
 

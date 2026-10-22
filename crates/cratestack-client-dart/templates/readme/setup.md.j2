@@ -7,9 +7,9 @@ Generated CrateStack Flutter package.
 - typed CRUD APIs for generated CrateStack model routes
 - typed procedure APIs for generated CrateStack procedure routes
 - Riverpod providers for the generated client and APIs
-- an adapter seam that lets app code provide Dio or another transport implementation
+- an HTTP transport seam (`CratestackHttpTransport`) that lets app code send through {% if is_fespalier_preset %}fespalier's `HttpTransport`{% else %}Dio{% endif %} or any other HTTP stack
 
-This package does not own app-specific host selection, request signing policy, or transport interception policy. Those concerns stay with the host Flutter app and its Dio stack.
+This package does not own app-specific host selection, request signing policy, or transport interception policy. Those concerns stay with the host Flutter app and its HTTP stack.
 
 ## Install And Import
 
@@ -35,6 +35,11 @@ import 'package:{{ package_name }}/{{ package_name }}.dart';
 - `analysis_options.yaml`
 - `lib/{{ package_name }}.dart`
 - `lib/src/runtime.dart`
+{% if is_fespalier_preset %}
+- `lib/src/fespalier_transport.dart`
+{% else %}
+- `lib/src/dio_transport.dart`
+{% endif %}
 - `lib/src/queries.dart`
 - `lib/src/constants.dart`
 - `lib/src/models.dart`
@@ -46,67 +51,107 @@ Import only `package:{{ package_name }}/{{ package_name }}.dart` from applicatio
 
 ## Adapter Setup
 
-The generated package expects a transport adapter implementation. The built-in default is `CratestackDioAdapter`, but the client only depends on the `CratestackClientAdapter` interface.
+The generated client depends only on the `{% if is_rpc %}CratestackRpcAdapter{% else %}CratestackClientAdapter{% endif %}` interface. The built-in implementation is `{% if is_rpc %}CratestackRpcHttpAdapter{% else %}CratestackHttpAdapter{% endif %}`, written once over a pure-Dart HTTP seam, `CratestackHttpTransport`. The adapter owns the headers, the CBOR/JSON choice, the response `Content-Type` dispatch{% if not is_rpc %}, the canonical query string{% endif %} and the error mapping; the transport owns the connection.
 
-Minimal shape:
+{% if is_fespalier_preset %}
+This package sends through fespalier's `HttpTransport` (`package:fespalier_transport`, a git dependency pinned at `{{ fespalier_ref }}`; it is not on pub.dev, and `dio` is not a dependency). `CratestackFespalierTransport`, in `lib/src/fespalier_transport.dart`, adapts it to the seam:
 
 ```dart
-class MyAdapter implements CratestackClientAdapter {
+final adapter = {% if is_rpc %}CratestackRpcHttpAdapter{% else %}CratestackHttpAdapter{% endif %}(
+  CratestackFespalierTransport(
+    // Your transport chain, outer to inner. A signer sees the exact CBOR bytes
+    // that are sent.
+    SessionTransport(WriteGuardTransport(HttpClientTransport(client)), credentials),
+  ),
+  baseUri: Uri.parse('https://api.example.com'),
+{% if not is_rpc %}
+  // useRustTransport: true,   // marks requests for a host interceptor that routes them through Rust
+{% endif %}
+);
+
+final client = {{ client_class_name }}(
+  adapter,
+{% if not is_rpc %}
+  basePath: '{{ base_path_literal }}',
+{% endif %}
+);
+```
+
+`baseUri` is joined with the request path (a path prefix such as `https://example.com/v1` is kept). What `CratestackFespalierTransport` maps:
+
+- the request: the exact body bytes, the headers, and `CratestackHttpRequest.extra` as `TransportRequest.attributes` (never sent). The abort is the call option's `abort` merged with the abort trigger of the current `TransportZone` (`TransportZone.merge`), so either one aborts: `ref.cancellable` in `fespalier_cratestack` aborts a page's loads with no extra wiring, even for a call that carries its own abort.
+- the answer: every status is a response, which the adapter maps to the typed error. A `TransportStatusError` thrown by a decorator is treated as the answer it carries.
+- a call that got no answer: `TransportAborted`, `TransportUnsent`, `TransportTimedOut` and `TransportBroken` map one to one onto `CratestackTransportAborted`, `Unsent`, `TimedOut` and `Broken`. `TransportPortal` and `TransportUntrusted` become `CratestackTransportBroken`; its `cause` is the original failure, so check `error.cause is TransportPortal` to tell them apart. Any other error a decorator throws (such as `AuthRejected`) reaches the caller unchanged.
+
+fespalier packages are git dependencies by design, so the pinned ref must be reachable for this package to resolve. `--fespalier-ref` changes it; where it is not reachable yet (an unreleased fespalier), point `fespalier_transport` at a local checkout with a `pubspec_overrides.yaml`.
+{% else %}
+Dio is one transport (`CratestackDioTransport`, in `lib/src/dio_transport.dart`, the only file that names Dio):
+
+```dart
+final adapter = {% if is_rpc %}CratestackRpcHttpAdapter{% else %}CratestackHttpAdapter{% endif %}(
+  CratestackDioTransport(myDio),
+  baseUri: Uri.parse('https://api.example.com'),
+{% if not is_rpc %}
+  // useRustTransport: true,   // marks requests for a host interceptor that routes them through Rust
+{% endif %}
+);
+
+final client = {{ client_class_name }}(
+  adapter,
+{% if not is_rpc %}
+  basePath: '{{ base_path_literal }}',
+{% endif %}
+);
+```
+
+`baseUri` is joined with the request path (a path prefix such as `https://example.com/v1` is kept), so `myDio.options.baseUrl` is not used. Interceptors, base headers, certificate pinning and retry on `myDio` keep working.
+
+{% endif %}
+Any other HTTP stack implements `CratestackHttpTransport` (one method, `send`) and is handed to the same adapter. Resolve with the response for every HTTP status; throw a `CratestackTransportException` (`Aborted`, `Unsent`, `TimedOut` or `Broken`) when there is no answer:
+
+```dart
+class MyTransport implements CratestackHttpTransport {
   @override
-  Future<Object?> execute(
-    CratestackRequest request, {
-    CratestackCallOptions? options,
-  }) async {
+  Future<CratestackHttpResponse> send(CratestackHttpRequest request) async {
+    // request.method, request.uri, request.headers, request.body (the exact
+    // bytes to send), request.abort (completes when the caller gives up).
     throw UnimplementedError();
   }
 }
 ```
 
-Client construction:
+Wire format:
+
+- `format: CratestackWireFormat.cbor` (the default) writes CBOR bodies and prefers a CBOR answer
+- `format: CratestackWireFormat.json` writes JSON bodies and prefers a JSON answer
+- either way the answer is decoded by its own `Content-Type`
+
+Errors:
+
+{% if is_rpc %}
+- an HTTP error answer is a `CratestackRpcException` (`status`, `code`, `message`, `details`)
+{% else %}
+- an HTTP error answer is a `CratestackRestException` (`status` and the decoded `body`)
+{% endif %}
+- a call that got no answer is a `CratestackTransportException`: `CratestackTransportUnsent` (provably never left the device, always safe to resend), `CratestackTransportAborted`, `CratestackTransportTimedOut` or `CratestackTransportBroken`. Never a Dio type.
+
+Cancelling a call:
 
 ```dart
-final client = {{ client_class_name }}(
-  myAdapter,
-  basePath: '{{ base_path_literal }}',
+final cancel = Completer<void>();
+final future = client.procedures.someCall(
+  args,
+  options: {% if is_rpc %}CratestackRpcCallOptions{% else %}CratestackCallOptions{% endif %}(abort: cancel.future),
 );
+cancel.complete(); // the call throws CratestackTransportAborted
 ```
-
-Dio-backed setup:
-
-```dart
-final adapter = CratestackDioAdapter(
-  dio: myDio,
-  useRustTransport: true,
-);
-
-final client = {{ client_class_name }}(
-  adapter,
-  basePath: '{{ base_path_literal }}',
-);
-```
-
-CBOR-over-Dio setup for web or non-Rust platforms:
-
-```dart
-final adapter = CratestackCborDioAdapter(dio: myDio);
-
-final client = {{ client_class_name }}(
-  adapter,
-  basePath: '{{ base_path_literal }}',
-);
-```
-
-Rule of thumb:
-
-- use `CratestackDioAdapter(dio: ..., useRustTransport: true)` when Rust should execute the request
-- use `CratestackDioAdapter(dio: ..., useRustTransport: false)` for plain JSON/Dio flows
-- use `CratestackCborDioAdapter(dio: ...)` when the host should stay on Dio/browser transport but speak CBOR on the wire
 
 Per-request headers:
 
 ```dart
-const options = CratestackCallOptions(
+const options = {% if is_rpc %}CratestackRpcCallOptions{% else %}CratestackCallOptions{% endif %}(
   headers: {'x-auth-id': '1'},
+  idempotencyKey: 'order-42', // sent as Idempotency-Key
 );
 ```
 
@@ -114,24 +159,57 @@ const options = CratestackCallOptions(
 
 Generated providers include:
 
+{% if is_fespalier_preset %}
+- `{{ provider_prefix }}TransportProvider` (a `Provider<HttpTransport>`; throws until you override it)
+- `{{ provider_prefix }}BaseUriProvider` (a `Provider<Uri>`; throws until you override it)
+{% endif %}
+{% if is_fespalier_preset %}
+- `{{ provider_prefix }}AdapterProvider` (defaults to the HTTP adapter over `CratestackFespalierTransport({{ provider_prefix }}TransportProvider)`)
+{% else %}
 - `{{ provider_prefix }}AdapterProvider`
+{% endif %}
+{% if not is_rpc %}
 - `{{ provider_prefix }}BasePathProvider`
+{% endif %}
 - `{{ provider_prefix }}ClientProvider`
 {% for accessor in model_accessors %}- `{{ accessor.provider_name }}`
 {% endfor %}- `{{ provider_prefix }}ProceduresApiProvider`
 
 Typical overrides:
 
+{% if is_fespalier_preset %}
+An app passes its transport chain once; the generated client sends through it:
+
+```dart
+final container = ProviderContainer(
+  overrides: [
+    {{ provider_prefix }}TransportProvider.overrideWith(
+      (ref) => SessionTransport(WriteGuardTransport(HttpClientTransport(client)), credentials),
+    ),
+    {{ provider_prefix }}BaseUriProvider.overrideWithValue(Uri.parse('https://api.example.com')),
+{% if not is_rpc %}
+    {{ provider_prefix }}BasePathProvider.overrideWith((ref) => '{{ base_path_literal }}'),
+{% endif %}
+  ],
+);
+```
+{% else %}
 ```dart
 final container = ProviderContainer(
   overrides: [
     {{ provider_prefix }}AdapterProvider.overrideWithValue(
-      CratestackDioAdapter(dio: myDio, useRustTransport: true),
+      {% if is_rpc %}CratestackRpcHttpAdapter{% else %}CratestackHttpAdapter{% endif %}(
+        CratestackDioTransport(myDio),
+        baseUri: Uri.parse('https://api.example.com'),
+      ),
     ),
+{% if not is_rpc %}
     {{ provider_prefix }}BasePathProvider.overrideWith((ref) => '{{ base_path_literal }}'),
+{% endif %}
   ],
 );
 ```
+{% endif %}
 {% if data_classes | length > 0 or is_riverpod_preset %}
 
 ## Code Generation (`build_runner`)
@@ -154,6 +232,6 @@ Or pass `--run-build-runner` to `cratestack generate-dart` to have the CLI run i
 after generation (opt-in; requires a Dart SDK on `PATH`):
 
 ```sh
-cratestack generate-dart --schema schema.cstack --out . {% if is_riverpod_preset %}--preset riverpod {% endif %}--run-build-runner
+cratestack generate-dart --schema schema.cstack --out . {% if is_fespalier_preset %}--preset fespalier {% elif is_riverpod_preset %}--preset riverpod {% endif %}--run-build-runner
 ```
 {% endif %}
