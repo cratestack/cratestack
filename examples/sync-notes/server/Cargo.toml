@@ -1,0 +1,22 @@
+[package]
+name = "sync-notes-server"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Server half of the sync-notes example: the generated Postgres/axum surface for schema.cstack, plus cratestack-sync's change capture, push/pull/poke endpoints, TTL GC and rate limiting. Also serves the demo web page."
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono = { workspace = true }
+cratestack = { package = "cratestack-pg", path = "../../../crates/cratestack-pg" }
+cratestack-codec-json = { path = "../../../crates/cratestack-codec-json" }
+cratestack-sync = { path = "../../../crates/cratestack-sync", features = ["server"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "fs", "signal"] }
+tracing = { workspace = true }
+uuid = { workspace = true }

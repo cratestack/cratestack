@@ -1,0 +1,33 @@
+// One schema, two roles. The server compiles it with
+// `include_server_schema!(.., db = Postgres)`; every device compiles the
+// same file with `include_embedded_schema!` into a wasm/OPFS SQLite store.
+// `cratestack-sync` moves rows and mutations between the two.
+//
+// Sync wants client-generated primary keys (a note created offline needs
+// its final id before the server has ever seen it), hence `id Uuid @id`
+// with no default.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth User {
+  id String
+}
+
+model Note {
+  id Uuid @id
+  ownerId String
+  title String
+  done Boolean
+  updatedAt DateTime
+
+  // The policies are the real guard. The embedded role ignores them by
+  // design (a device is single-user), so every pushed mutation is replayed
+  // through these on the server, and every pulled row is read through them.
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", ownerId == auth().id)
+  @@allow("update", ownerId == auth().id)
+  @@allow("delete", ownerId == auth().id)
+}
