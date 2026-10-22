@@ -36,6 +36,7 @@ members = [
     "crates/cratestack-sqlite",
     "crates/cratestack-sqlx",
     "crates/cratestack-studio",
+    "crates/cratestack-sync",
     "examples/embedded-cli",
     "examples/embedded-daemon",
     "examples/embedded-webhook",
@@ -51,6 +52,8 @@ members = [
     "examples/embedded-browser-vite",
     "examples/embedded-browser-vite-pwa",
     "examples/embedded-browser-webpack",
+    "examples/sync-notes/server",
+    "examples/sync-notes/client",
     "examples/react-vite-daisyui",
     "examples/react-vite-swr",
     "examples/react-vite-refine",
@@ -310,6 +313,9 @@ cratestack-sqlx = { path = "crates/cratestack-sqlx", version = "0.15.4", default
 # explicitly (see that crate's Cargo.toml) since turning off ALL default
 # features here also turns off `embed-ui`, which was previously implicit.
 cratestack-studio = { path = "crates/cratestack-studio", version = "0.15.4", default-features = false }
+# Prototype sync engine (ADR 0020, Proposed). `publish = false` for now; the
+# version is still stated so the bump recipe rewrites it with everything else.
+cratestack-sync = { path = "crates/cratestack-sync", version = "0.15.4", default-features = false }
 minijinja = "2"
 # Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
 # name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could

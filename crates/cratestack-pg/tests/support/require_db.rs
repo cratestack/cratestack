@@ -21,7 +21,7 @@
 //!
 //! # The other copies of this guard
 //!
-//! The same idea is implemented independently in six other places, because
+//! The same idea is implemented independently in seven other places, because
 //! integration-test support modules compile as separate crates and each
 //! site reaches `sqlx` by a different path (`cratestack::sqlx`,
 //! `cratestack_sqlx::sqlx`, bare `sqlx_postgres`). #747 found two of the
@@ -30,6 +30,8 @@
 //!
 //! - `crates/cratestack-outbox/tests/support/require_db.rs` (was the other
 //!   broken one; same split, same tests)
+//! - `crates/cratestack-sync/tests/support/require_db.rs` (same split as
+//!   outbox, same tests)
 //! - `crates/cratestack-studio/tests/support/pg.rs`
 //! - `crates/cratestack-migrate/tests/postgres_introspect.rs`
 //! - `crates/cratestack-cli/src/migrate/tests_baseline.rs` (`base_url`)

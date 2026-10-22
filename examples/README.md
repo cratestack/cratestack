@@ -33,6 +33,7 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`embedded-browser-vite-pwa/`](embedded-browser-vite-pwa) | `include_embedded_schema!` | Same Rust crate, Vite + `vite-plugin-pwa` — installable PWA with Workbox-generated service worker precaching the wasm bundle |
 | [`react-vite-daisyui/`](react-vite-daisyui) | `include_embedded_schema!` | React 19 + Vite 8 + Tailwind 4 + DaisyUI 5 — same wasm/OPFS shape with a real component library on top |
 | [`react-nextjs-daisyui/`](react-nextjs-daisyui) | `include_embedded_schema!` (×2) **and** `include_client_schema!` | Next.js 16 App Router with three CrateStack surfaces: wasm/OPFS in the browser, napi-rs `.node` addon on the Node side, typed HTTP client to upstream services. Serwist PWA + offline-first sync engine reconciling OPFS ↔ napi over a delta protocol. |
+| [`sync-notes/`](sync-notes) | `include_server_schema!` **and** `include_embedded_schema!` (one schema) | Prototype offline sync (`cratestack-sync`, ADR 0020 *Proposed*): three wasm/OPFS devices and a Postgres server; offline writes, server-side writes via REST, policy-checked replay, scope isolation, rejected-write rollback |
 | [`tauri-web/`](tauri-web) | `include_embedded_schema!` **and** `include_client_schema!` | Tauri 2 desktop shell. Webview hosts the embedded wasm (OPFS); native shell hosts the typed HTTP client called via Tauri commands. |
 
 Build prerequisites for all four:

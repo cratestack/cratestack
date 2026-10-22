@@ -244,6 +244,9 @@ lint:
 	# target (its tests included).
 	cargo clippy -p cratestack-client-flutter --features cose --all-targets -- -D warnings {{clippy_allow}}
 	cargo clippy -p cratestack-cbor-wasm --features cose --target wasm32-unknown-unknown --all-targets -- -D warnings {{clippy_allow}}
+	# Same blind spot for `cratestack-sync` (ADR 0020): both halves are behind
+	# off-by-default features, and its PG suites are `required-features`.
+	cargo clippy -p cratestack-sync --features client,server --all-targets -- -D warnings {{clippy_allow}}
 
 # Verify formatting without writing — blocking CI gate.
 fmt-check:
@@ -478,6 +481,18 @@ mcp-conformance:
 # testcontainers pattern one-for-one.
 test-ci-db-outbox *args='':
 	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-outbox --test outbox_roundtrip {{args}}
+
+# Shard addendum: `cratestack-sync`'s live-Postgres suites (ADR 0020 prototype):
+# change capture, the commit-ordered cursor, push replay, TTLs and the
+# protections, plus the two-device end-to-end test. All three are
+# `required-features`, and the plain `--workspace` run in `test-ci-host`
+# only skips them (no database there), so without this line they would
+# repeat the outbox's never-ran-in-CI history above. `--test-threads=1` is
+# belt and braces: the suites already serialize themselves, because the
+# pull gate reads the cluster-wide `pg_snapshot_xmin` (see
+# `crates/cratestack-sync/tests/support/pg.rs`).
+test-ci-db-sync *args='':
+	CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-sync --features client,server --test server_pg --test ttl_protection_pg --test end_to_end {{args}} -- --test-threads=1
 
 # Shard addendum: `cratestack-migrate`'s live-Postgres introspection tests
 # (issue #204, `crates/cratestack-migrate/tests/postgres_introspect.rs`),

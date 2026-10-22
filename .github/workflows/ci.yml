@@ -660,6 +660,10 @@ jobs:
         # this step, despite the crate correctly implementing the standard
         # `connect_or_skip`/`CRATESTACK_REQUIRE_DB` shim.
         run: just test-ci-db-outbox --locked
+      - name: cargo test (cratestack-sync, testcontainers Postgres)
+        # ADR 0020 prototype. `required-features` suites that the host
+        # shard only ever skips; see the recipe's comment.
+        run: just test-ci-db-sync --locked
       - name: cargo test (cratestack-migrate postgres-introspect, testcontainers Postgres)
         # A 2026-08 CI-coverage audit found these 7 live-introspection
         # tests (issue #204) were gated `#![cfg(feature =
