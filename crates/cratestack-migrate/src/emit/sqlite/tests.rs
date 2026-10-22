@@ -1,3 +1,4 @@
+mod checks;
 mod partial_index;
 mod uniques;
 

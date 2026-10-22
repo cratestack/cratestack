@@ -86,40 +86,47 @@ fn invoke_with_db_isolated_fn_tokens() -> proc_macro2::TokenStream {
                 cratestack_authenticated = ctx.is_authenticated(),
                 cratestack_isolation = ISOLATION.as_sql(),
             );
-            let _guard = span.enter();
-            let started = ::std::time::Instant::now();
-            ::cratestack::ProcedureArgs::validate_fields(args)?;
-            let result = db
-                .runtime
-                .run_isolated(ISOLATION, |runtime| {
-                    let f = f.clone();
-                    async move {
-                        let tx_db = super::super::IsolatedCratestack {
-                            inner: super::super::Cratestack { runtime },
-                        };
-                        let authorized = authorize_validated_with_db(&tx_db.inner, args, ctx).await?;
-                        f(tx_db, authorized).await
+            // cratestack#1081: instrument the future rather than hold an
+            // entered-span guard across the transaction's `.await`s.
+            ::cratestack::tracing::Instrument::instrument(
+                async move {
+                    let started = ::std::time::Instant::now();
+                    ::cratestack::ProcedureArgs::validate_fields(args)?;
+                    let result = db
+                        .runtime
+                        .run_isolated(ISOLATION, |runtime| {
+                            let f = f.clone();
+                            async move {
+                                let tx_db = super::super::IsolatedCratestack {
+                                    inner: super::super::Cratestack { runtime },
+                                };
+                                let authorized = authorize_validated_with_db(&tx_db.inner, args, ctx).await?;
+                                f(tx_db, authorized).await
+                            }
+                        })
+                        .await;
+                    match &result {
+                        Ok(_) => ::cratestack::tracing::info!(
+                            target: "cratestack",
+                            cratestack_procedure = NAME,
+                            cratestack_operation = "invoke_with_db",
+                            cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                            "cratestack procedure completed",
+                        ),
+                        Err(error) => ::cratestack::tracing::warn!(
+                            target: "cratestack",
+                            cratestack_procedure = NAME,
+                            cratestack_operation = "invoke_with_db",
+                            cratestack_error = error.code(),
+                            cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                            "cratestack procedure failed",
+                        ),
                     }
-                })
-                .await;
-            match &result {
-                Ok(_) => ::cratestack::tracing::info!(
-                    target: "cratestack",
-                    cratestack_procedure = NAME,
-                    cratestack_operation = "invoke_with_db",
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    "cratestack procedure completed",
-                ),
-                Err(error) => ::cratestack::tracing::warn!(
-                    target: "cratestack",
-                    cratestack_procedure = NAME,
-                    cratestack_operation = "invoke_with_db",
-                    cratestack_error = error.code(),
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    "cratestack procedure failed",
-                ),
-            }
-            result
+                    result
+                },
+                span,
+            )
+            .await
         }
     }
 }

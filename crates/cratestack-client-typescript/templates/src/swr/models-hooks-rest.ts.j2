@@ -60,6 +60,9 @@ import {
 {% if update_input %}
   type {{ update_input.name }},
 {% endif %}
+{% if model.computed_params_interface and (model.allows_list or model.allows_get) %}
+  type {{ model.computed_params_interface }},
+{% endif %}
 } from "./{{ file_stem }}.js";
 
 {% if model.allows_list %}

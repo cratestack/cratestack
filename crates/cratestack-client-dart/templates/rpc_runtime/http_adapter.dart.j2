@@ -1,0 +1,190 @@
+bool _isCborSeqContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/cbor-seq';
+
+/// The RPC adapter, written once over a [CratestackHttpTransport].
+///
+/// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
+/// `Content-Type`, and the error mapping: an HTTP error answer becomes a
+/// [CratestackRpcException], a call that got no answer at all fails with a
+/// [CratestackTransportException]. The transport owns the connection. To use
+/// an HTTP client of your own, implement [CratestackHttpTransport]; to use
+{% if is_fespalier_preset %}
+/// fespalier's transport chain, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackRpcHttpAdapter(
+///   CratestackFespalierTransport(transportChain),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+{% else %}
+/// Dio, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackRpcHttpAdapter(
+///   CratestackDioTransport(dio),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+{% endif %}
+class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
+  const CratestackRpcHttpAdapter(
+    this.transport, {
+    required this.baseUri,
+    this.format = CratestackWireFormat.cbor,
+    this.cborSeqDecoder,
+  });
+
+  final CratestackHttpTransport transport;
+
+  /// Scheme, authority and optional path prefix `/rpc/...` is joined onto:
+  /// `https://api.example.com` or `https://example.com/v1`.
+  final Uri baseUri;
+
+  /// The wire format of request bodies and the `Accept` preference.
+  final CratestackWireFormat format;
+
+  /// Makes the scanner that splits an `application/cbor-seq` answer into
+  /// items, one per `stream()` call. Defaults to [CratestackCborSeqScanner],
+  /// which is pure Dart.
+  final CborSeqDecoderHandle Function()? cborSeqDecoder;
+
+  @override
+  Future<Object?> call(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    final response = await _post(
+      '/rpc/${Uri.encodeComponent(opId)}',
+      input,
+      accept: _acceptForUnary,
+      options: options,
+      idempotent: true,
+    );
+    return _decodeSuccess(response);
+  }
+
+  @override
+  Future<List<RpcResponseFrame>> batch(
+    List<RpcRequest> requests, {
+    CratestackRpcCallOptions? options,
+  }) async {
+    final response = await _post(
+      '/rpc/batch',
+      requests.map((r) => r.toWire()).toList(growable: false),
+      accept: _acceptForUnary,
+      options: options,
+    );
+    final frames = await _decodeSuccess(response) as List<dynamic>;
+    return frames
+        .map((frame) => RpcResponseFrame.fromWire(frame))
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<Object?> stream(
+    String opId,
+    Object? input, {
+    CratestackRpcCallOptions? options,
+  }) async* {
+    final response = await _post(
+      '/rpc/${Uri.encodeComponent(opId)}',
+      input,
+      accept: format == CratestackWireFormat.json
+          ? 'application/json, application/cbor-seq;q=0.9'
+          : 'application/cbor-seq, application/cbor, application/json;q=0.9',
+      options: options,
+    );
+    if (response.status >= 200 && response.status < 300 &&
+        _isCborSeqContentType(response.headers['content-type'])) {
+      // Frame by frame: items are yielded as their bytes arrive, the body is
+      // never buffered.
+      final decoder = (cborSeqDecoder ?? CratestackCborSeqScanner.new)();
+      await for (final item in response.body.transform(
+        CborSeqStreamTransformer(decoder),
+      )) {
+        final tag = _cratestackReadLeadingTag(item);
+        if (tag != null && tag.$1 == cratestackRpcStreamErrorTag) {
+          // The stream-error sentinel is always the last item.
+          final error = await _decodeBody(
+            Uint8List.sublistView(item, tag.$2),
+            'application/cbor',
+            'CratestackRpcHttpAdapter',
+          );
+          throw CratestackRpcException(
+            status: response.status,
+            body: RpcErrorBody.fromWire(error),
+          );
+        }
+        yield await _decodeBody(item, 'application/cbor', 'CratestackRpcHttpAdapter');
+      }
+      return;
+    }
+    // The server answered with one array (`application/cbor` or JSON).
+    final decoded = await _decodeSuccess(response);
+    if (decoded == null) {
+      return;
+    }
+    for (final item in decoded as List<dynamic>) {
+      yield item;
+    }
+  }
+
+  // Mirrors the retired JSON adapter, which sent no `Accept` on a unary call
+  // or a batch; the CBOR format states its preference.
+  String? get _acceptForUnary => format == CratestackWireFormat.json
+      ? null
+      : 'application/cbor, application/json;q=0.9';
+
+  Future<CratestackHttpResponse> _post(
+    String path,
+    Object? body, {
+    required String? accept,
+    required CratestackRpcCallOptions? options,
+    bool idempotent = false,
+  }) async {
+    final encoded = await _encodeBody(format, body);
+    return transport.send(
+      CratestackHttpRequest(
+        method: 'POST',
+        uri: _resolveUri(baseUri, path, null),
+        headers: _mergeHeaders([
+          <String, String>{
+            if (accept != null) 'Accept': accept,
+            'Content-Type': format == CratestackWireFormat.json
+                ? 'application/json'
+                : 'application/cbor',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
+            if (idempotent && options?.idempotencyKey != null)
+              'Idempotency-Key': options!.idempotencyKey!,
+          },
+          options?.headers,
+        ]),
+        body: encoded,
+        abort: options?.abort,
+      ),
+    );
+  }
+
+  /// Reads a unary answer: the decoded body on 2xx, a
+  /// [CratestackRpcException] otherwise.
+  Future<Object?> _decodeSuccess(CratestackHttpResponse response) async {
+    final bytes = await response.bytes();
+    final contentType = response.headers['content-type'];
+    if (response.status < 200 || response.status >= 300) {
+      final data = await _decodeErrorBody(bytes, contentType);
+      throw CratestackRpcException(
+        status: response.status,
+        body: RpcErrorBody.fromWire(
+          data ?? <String, Object?>{
+            'code': CratestackRpcErrorCodes.internal,
+            'message': 'HTTP ${response.status}',
+          },
+        ),
+      );
+    }
+    return _decodeBody(bytes, contentType, 'CratestackRpcHttpAdapter');
+  }
+}

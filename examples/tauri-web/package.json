@@ -1,6 +1,7 @@
 {
   "name": "tauri-web-example",
   "private": true,
+  "packageManager": "pnpm@11.24.0",
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",

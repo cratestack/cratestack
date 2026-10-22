@@ -1,21 +1,22 @@
-"""pnpm version pin agreement check (cratestack#1050). See pnpm-pin-check.sh.
+"""pnpm version pin agreement check (cratestack#1050, #1060). See pnpm-pin-check.sh.
 
-Reads NUL-separated tracked `package.json` paths on stdin (from
-`git ls-files -z`) and enforces, against the root `package.json`'s
-`packageManager`:
+Reads NUL-separated tracked paths on stdin (from `git ls-files -z` over
+`*package.json` and `*pnpm-lock.yaml`) and enforces, against the root
+`package.json`'s `packageManager`:
 
 1. every `packageManager` pin equals the root's;
 2. every `devEngines.packageManager` version, when present, equals the root's
    version (pnpm honours that field too, so it is a second place to drift);
-3. every workspace root in REQUIRED declares a pin, whatever else it
-   declares: these are the roots Dependabot resolves with their own pin
-   (#1049, #1050), so a deleted pin there would otherwise pass rule 1 by
-   having nothing to compare. #1060 decides whether the other example
-   lockfile roots join the list;
+3. every pnpm lockfile root declares a pin, whatever else it declares. A
+   lockfile root is a directory holding a tracked `pnpm-lock.yaml`; the
+   `package.json` beside that lockfile must exist and must pin. Dependabot and
+   pnpm itself resolve inside that directory with the pin, so a missing one
+   silently runs whatever pnpm is installed (#1049, #1050, #1060). The roots
+   come from `git ls-files`, so a new lockfile is covered without a list;
 4. every manifest-only workspace root declares a pin. That is a
    `package.json` with a `pnpm-workspace.yaml` beside it and no dependencies
-   of its own, the shape added for Dependabot, so a new one is caught before
-   anyone remembers to add it to REQUIRED.
+   of its own, the shape added for Dependabot, so a new one is caught even
+   before it has a lockfile.
 
 The root must declare a pin; with nothing to compare against, the check fails
 as a setup error rather than passing vacuously.
@@ -27,10 +28,7 @@ import sys
 
 DEP_KEYS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 
-REQUIRED = {
-    "examples/react-vite-swr/package.json",
-    "examples/react-nextjs-daisyui/package.json",
-}
+LOCKFILE = "pnpm-lock.yaml"
 
 
 def load(path):
@@ -46,8 +44,15 @@ def dev_engines_versions(manifest):
     return [e.get("version") for e in entries if isinstance(e, dict) and e.get("name") == "pnpm"]
 
 
+def lockfile_roots(lockfiles):
+    # Maps each lockfile root's manifest path to the lockfile that makes it a root.
+    return {os.path.join(os.path.dirname(p), "package.json"): p for p in lockfiles}
+
+
 def main():
     paths = [p for p in sys.stdin.buffer.read().decode().split("\0") if p]
+    lockfiles = [p for p in paths if os.path.basename(p) == LOCKFILE]
+    paths = [p for p in paths if os.path.basename(p) != LOCKFILE]
     if "package.json" not in paths:
         sys.exit("pnpm-pin-check: setup error: no tracked root package.json")
 
@@ -56,9 +61,11 @@ def main():
         sys.exit(f"pnpm-pin-check: setup error: root package.json pins {root!r}, expected pnpm@<version>")
     root_version = root.removeprefix("pnpm@").split("+", 1)[0]
 
+    roots = lockfile_roots(lockfiles)
     errors, pinned = [], []
-    for path in sorted(REQUIRED - set(paths)):
-        errors.append((path, "listed in REQUIRED but not a tracked file; update .ci/pnpm_pin_check.py"))
+    for manifest_path, lockfile in sorted(roots.items()):
+        if manifest_path not in paths:
+            errors.append((lockfile, f"pnpm lockfile root has no tracked {manifest_path}, so nothing pins its pnpm"))
     for path in sorted(paths):
         if path == "package.json":
             continue
@@ -74,8 +81,8 @@ def main():
         for dev in dev_engines_versions(manifest):
             if dev != root_version:
                 errors.append((path, f"devEngines.packageManager version is {dev!r}, but the root pins {root_version!r}"))
-        if pin is None and path in REQUIRED:
-            errors.append((path, f"Dependabot-resolved workspace root declares no packageManager; pin {root!r}"))
+        if pin is None and path in roots:
+            errors.append((path, f"pnpm lockfile root ({roots[path]}) declares no packageManager; pin {root!r}"))
             continue
         workspace_root = os.path.exists(os.path.join(os.path.dirname(path), "pnpm-workspace.yaml"))
         manifest_only = not any(manifest.get(k) for k in DEP_KEYS)
@@ -88,7 +95,10 @@ def main():
         sys.exit(f"pnpm-pin-check: {len(errors)} problem(s) against the root pin ({root})")
 
     listed = ", ".join(pinned) or "(none)"
-    print(f"pnpm-pin-check: ok, root {root} and {len(pinned)} other pin(s) agree: {listed}")
+    print(
+        f"pnpm-pin-check: ok, root {root} and {len(pinned)} other pin(s) agree: {listed}; "
+        f"{len(roots)} pnpm lockfile root(s) all pin it"
+    )
 
 
 if __name__ == "__main__":

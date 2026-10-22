@@ -137,29 +137,37 @@ pub(super) fn invoke_fn_tokens() -> proc_macro2::TokenStream {
                 cratestack_operation = "invoke",
                 cratestack_authenticated = ctx.is_authenticated(),
             );
-            let _guard = span.enter();
-            let started = ::std::time::Instant::now();
-            ::cratestack::ProcedureArgs::validate_fields(args)?;
-            ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
-            let result = f().await;
-            match &result {
-                Ok(_) => ::cratestack::tracing::info!(
-                    target: "cratestack",
-                    cratestack_procedure = NAME,
-                    cratestack_operation = "invoke",
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    "cratestack procedure completed",
-                ),
-                Err(error) => ::cratestack::tracing::warn!(
-                    target: "cratestack",
-                    cratestack_procedure = NAME,
-                    cratestack_operation = "invoke",
-                    cratestack_error = error.code(),
-                    cratestack_duration_ms = started.elapsed().as_millis() as u64,
-                    "cratestack procedure failed",
-                ),
-            }
-            result
+            // cratestack#1081: the span is attached to the future, not
+            // entered with a guard, so it is current only while this body is
+            // polled and never while it is suspended on an `.await`.
+            ::cratestack::tracing::Instrument::instrument(
+                async move {
+                    let started = ::std::time::Instant::now();
+                    ::cratestack::ProcedureArgs::validate_fields(args)?;
+                    ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
+                    let result = f().await;
+                    match &result {
+                        Ok(_) => ::cratestack::tracing::info!(
+                            target: "cratestack",
+                            cratestack_procedure = NAME,
+                            cratestack_operation = "invoke",
+                            cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                            "cratestack procedure completed",
+                        ),
+                        Err(error) => ::cratestack::tracing::warn!(
+                            target: "cratestack",
+                            cratestack_procedure = NAME,
+                            cratestack_operation = "invoke",
+                            cratestack_error = error.code(),
+                            cratestack_duration_ms = started.elapsed().as_millis() as u64,
+                            "cratestack procedure failed",
+                        ),
+                    }
+                    result
+                },
+                span,
+            )
+            .await
         }
     }
 }

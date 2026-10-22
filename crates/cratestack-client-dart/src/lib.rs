@@ -14,16 +14,18 @@ mod idents;
 mod naming;
 mod package_floors;
 mod patch_touch;
+mod preset_view;
 mod release_line;
 mod riverpod;
 mod templates;
+mod templates_fespalier;
 mod templates_fragments;
 mod views;
 mod wire_decode;
 mod wire_encode;
 
 pub use config::{
-    DEFAULT_NATIVE_CBOR, DartGeneratorConfig, DartGeneratorError, DartPreset, GeneratedDartFile,
-    GeneratedDartPackage,
+    DEFAULT_FESPALIER_REF, DEFAULT_NATIVE_CBOR, DartGeneratorConfig, DartGeneratorError,
+    DartPreset, GeneratedDartFile, GeneratedDartPackage,
 };
 pub use generator::generate_package;

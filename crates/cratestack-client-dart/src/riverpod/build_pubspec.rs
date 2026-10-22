@@ -11,7 +11,7 @@
 //! shared one. `flutter_riverpod`/`cbor`/`dio`/`flutter_lints` stay
 //! exactly as `pubspec.yaml.j2` already pins them — this is additive, not
 //! a redesign.
-use crate::config::DartGeneratorConfig;
+use crate::config::{DartGeneratorConfig, DartPreset};
 use crate::package_floors::{
     CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR, requirement,
 };
@@ -31,6 +31,12 @@ pub(crate) struct PubspecFileContext {
     pub(crate) cratestack_annotations_version_requirement: String,
     /// See `crate::views::TemplateContext::cratestack_builder_version_requirement`.
     pub(crate) cratestack_builder_version_requirement: String,
+    /// `--preset fespalier` (cratestack#1204): depend on `fespalier_transport`
+    /// by git instead of on `dio`.
+    pub(crate) is_fespalier: bool,
+    /// The git ref `fespalier_transport` is pinned at, already escaped for a
+    /// single-quoted YAML scalar. Empty unless `is_fespalier`.
+    pub(crate) fespalier_ref: String,
 }
 
 pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileContext {
@@ -42,6 +48,7 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
     } else {
         String::new()
     };
+    let is_fespalier = config.preset == DartPreset::Fespalier;
     PubspecFileContext {
         package_name: config.library_name.clone(),
         native_cbor: config.native_cbor,
@@ -50,5 +57,11 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
         // `^{CARGO_PKG_VERSION}` — see `crate::package_floors`.
         cratestack_annotations_version_requirement: requirement(CRATESTACK_ANNOTATIONS_FLOOR),
         cratestack_builder_version_requirement: requirement(CRATESTACK_BUILDER_FLOOR),
+        is_fespalier,
+        fespalier_ref: if is_fespalier {
+            config.fespalier_ref.replace('\'', "''")
+        } else {
+            String::new()
+        },
     }
 }

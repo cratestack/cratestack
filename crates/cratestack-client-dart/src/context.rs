@@ -1,11 +1,11 @@
-use cratestack_core::{Field, Schema};
+use cratestack_core::{Field, Schema, TransportStyle};
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{
     build_model_accessor, build_model_api, build_procedure, build_selection_group,
     build_selection_model,
 };
-use crate::config::{DartGeneratorConfig, DartGeneratorError, DartPreset};
+use crate::config::{DartGeneratorConfig, DartGeneratorError};
 use crate::enum_filter_view::build_enum_filter_data_class;
 use crate::find_many_order::{build_find_many_data_class, build_order_by_clause_data_class};
 use crate::find_many_views::{build_sort_field_enum, build_where_data_class};
@@ -19,7 +19,7 @@ use crate::naming::{
 use crate::package_floors::{
     CRATESTACK_ANNOTATIONS_FLOOR, CRATESTACK_BUILDER_FLOOR, CRATESTACK_CBOR_FLOOR, requirement,
 };
-use crate::views::{ConstantView, DataClassKind, SampleModelView, TemplateContext};
+use crate::views::{ConstantView, DataClassKind, PresetView, SampleModelView, TemplateContext};
 use cratestack_core::ModelVerb;
 
 pub(crate) fn build_template_context(
@@ -281,7 +281,8 @@ pub(crate) fn build_template_context(
         query_procedures,
         mutation_procedures,
         sample_model,
-        is_riverpod_preset: config.preset == DartPreset::Riverpod,
+        preset: PresetView::new(config),
+        is_rpc: schema.transport == TransportStyle::Rpc,
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,
         has_computed_params_class,

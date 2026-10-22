@@ -20,7 +20,7 @@ mod views;
 
 use serde::{Deserialize, Serialize};
 
-pub use blocking::{BlockingReason, blocking_reasons};
+pub use blocking::{BlockingReason, blocking_reasons, destructiveness_in_context};
 pub use checks::{AddCheck, CheckKind, DropCheck};
 pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
 pub use extensions::EnsureExtension;
@@ -107,7 +107,10 @@ impl Op {
             Op::RenameTable(_) | Op::RenameColumn(_) => Destructiveness::Safe,
             // Adding a validator CHECK constraint is conservatively
             // Blocking — existing rows that don't satisfy it will
-            // block the ALTER on a non-empty table.
+            // block the ALTER on a non-empty table. This is the per-op
+            // class only: a CHECK on a table the same op list creates
+            // is Safe in context (`blocking::destructiveness_in_context`,
+            // cratestack#1129), because that table has no rows yet.
             //
             // An enum CHECK is the exception. It is only ever emitted
             // alongside the column it constrains (CREATE TABLE, ADD

@@ -141,7 +141,9 @@ fn non_empty_exactly_when_some_op_is_blocking() {
         promote_to_not_null("products", "version"),
     ];
 
-    let any_blocking = ops.iter().any(|op| op.destructiveness().is_blocking());
+    let any_blocking = destructiveness_in_context(&ops)
+        .iter()
+        .any(|class| class.is_blocking());
     assert_eq!(!blocking_reasons(&ops).is_empty(), any_blocking);
 }
 

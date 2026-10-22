@@ -16,6 +16,7 @@ mod device_key_resolver;
 mod env;
 mod keys;
 mod nonce_redis;
+mod nonce_redis_conn;
 mod nonce_store;
 #[cfg(test)]
 mod tests;

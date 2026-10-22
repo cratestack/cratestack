@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use cratestack_core::Schema;
 
 use crate::builders_model::build_model_accessor;
-use crate::config::DartGeneratorConfig;
+use crate::config::{DartGeneratorConfig, DartPreset};
 use crate::idents::escape_dart_string;
 use crate::riverpod::imports::{model_file_path, render_import_lines};
 use crate::riverpod::views::ClientFileContext;
@@ -30,6 +30,12 @@ pub(crate) fn build_client_file(
     imports.insert("import 'package:flutter_riverpod/flutter_riverpod.dart';".to_owned());
     imports.insert("import 'runtime.dart';".to_owned());
     imports.insert("import 'procedures.dart';".to_owned());
+    let is_fespalier = config.preset == DartPreset::Fespalier;
+    if is_fespalier {
+        // cratestack#1204: `HttpTransport` is the type of the transport provider.
+        imports.insert("import 'package:fespalier_transport/fespalier_transport.dart';".to_owned());
+        imports.insert("import 'fespalier_transport.dart';".to_owned());
+    }
     for model in &schema.models {
         imports.insert(format!("import 'models/{}';", model_file_path(&model.name)));
     }
@@ -41,5 +47,6 @@ pub(crate) fn build_client_file(
         imports: render_import_lines(imports),
         model_accessors,
         has_procedures: !schema.procedures.is_empty(),
+        is_fespalier,
     }
 }

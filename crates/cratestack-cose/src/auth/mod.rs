@@ -13,6 +13,13 @@
 //!   enrolment challenge code, moved here from `cratestack-auth` (a
 //!   breaking change). It is a separate, older COSE shape and does not go
 //!   through the envelope's strict opener (see its module docs).
+//! - [`CoseAuthProvider`]: an `AuthProvider` that authenticates a
+//!   COSE-verified signer through the service key registry and, once
+//!   `authenticate_devices(true)` opts in, the device key registry
+//!   (cratestack#1077). Unknown or revoked keys, and device keys while the
+//!   gate is off, are anonymous; a failing registry that is asked is a `500`.
+//!   The service registry must hold service keys only. Read its "Security"
+//!   section.
 //!
 //! The dependency points one way, `cratestack-cose` -> `cratestack-auth`
 //! (L2 -> L1, `docs/adr/layers.toml`). Without the feature this crate
@@ -28,8 +35,11 @@ mod device_resolver;
 mod enroll;
 mod nonce_bridge;
 mod service_signer;
+mod signer_principal;
+mod signer_provider;
 
 pub use device_resolver::DeviceKeyCoseResolver;
 pub use enroll::{build_cose_enroll_response, parse_cose_enroll_response};
 pub use nonce_bridge::{AUTH_NONCE_KEY_ID, AuthNonceStore};
 pub use service_signer::ServiceKeySigner;
+pub use signer_provider::CoseAuthProvider;

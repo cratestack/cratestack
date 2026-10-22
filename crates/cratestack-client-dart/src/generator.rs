@@ -32,14 +32,28 @@ pub fn generate_package(
     match config.preset {
         DartPreset::Default => generate_default_package(schema, config),
         DartPreset::Riverpod => crate::riverpod::generate_package(schema, config),
+        DartPreset::Fespalier => {
+            validate_fespalier_ref(&config.fespalier_ref)?;
+            crate::riverpod::generate_package(schema, config)
+        }
     }
+}
+
+/// A git ref has no whitespace or control characters and is not empty; this
+/// is the only validation the pubspec's `ref:` line needs (the value is
+/// quoted when rendered).
+fn validate_fespalier_ref(git_ref: &str) -> Result<(), DartGeneratorError> {
+    if git_ref.is_empty() || git_ref.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(DartGeneratorError::InvalidFespalierRef(git_ref.to_owned()));
+    }
+    Ok(())
 }
 
 pub(crate) fn generate_default_package(
     schema: &Schema,
     config: &DartGeneratorConfig,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
-    let specs = template_specs_for(schema.transport);
+    let specs = template_specs_for(schema.transport, config.preset);
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config)?;
     let files = specs
