@@ -7,6 +7,7 @@ pub mod attribute_text;
 pub mod composite_key;
 pub mod composite_unique;
 pub mod computed_attribute;
+pub mod default_markers;
 mod field_list;
 pub mod index_attribute;
 pub mod internal_attribute;

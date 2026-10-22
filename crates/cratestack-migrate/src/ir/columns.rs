@@ -2,6 +2,7 @@
 //! `destructiveness_on_add` rule shared by `AddColumn` / `CreateTable`
 //! flows.
 
+use cratestack_core::schema::default_markers::marker_call;
 use serde::{Deserialize, Serialize};
 
 use super::Destructiveness;
@@ -100,7 +101,15 @@ pub enum ColumnType {
 
 /// Column default value, captured as the developer wrote it. The
 /// emitter is responsible for any dialect-specific quoting.
+///
+/// Deserializing normalises a default whose text is a marker (any case,
+/// spacing, argument or trailing text, or the bare word) to
+/// [`ColumnDefault::DbGenerated`]. A snapshot written before cratestack#1128
+/// can hold `Function("autoincrement()")`; read as-is, the next diff that
+/// changes that column's default would reverse into
+/// `SET DEFAULT autoincrement()` in `down.sql`, which neither database accepts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "ColumnDefaultRepr")]
 pub enum ColumnDefault {
     /// Literal (e.g. `0`, `'pending'`, `true`).
     Literal(String),
@@ -116,6 +125,26 @@ pub enum ColumnDefault {
     /// `crate::ir::unverified_dbgenerated_columns` for the
     /// corresponding safety checks.
     DbGenerated,
+}
+
+/// [`ColumnDefault`]'s on-disk shape, before marker normalisation.
+#[derive(Deserialize)]
+enum ColumnDefaultRepr {
+    Literal(String),
+    Function(String),
+    DbGenerated,
+}
+
+impl From<ColumnDefaultRepr> for ColumnDefault {
+    fn from(repr: ColumnDefaultRepr) -> Self {
+        match repr {
+            ColumnDefaultRepr::Literal(value) if marker_call(&value).is_some() => Self::DbGenerated,
+            ColumnDefaultRepr::Literal(value) => Self::Literal(value),
+            ColumnDefaultRepr::Function(call) if marker_call(&call).is_some() => Self::DbGenerated,
+            ColumnDefaultRepr::Function(call) => Self::Function(call),
+            ColumnDefaultRepr::DbGenerated => Self::DbGenerated,
+        }
+    }
 }
 
 impl Column {

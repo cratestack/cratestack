@@ -12,10 +12,11 @@ use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
 use crate::validate::db_enforce::validate_db_enforce;
+use crate::validate::default_markers::validate_default_marker;
 use crate::validate::field_attributes::{FieldHost, validate_field_attributes};
 use crate::validate::fields::{
-    validate_default_dbgenerated_no_args, validate_field_list_arity_support,
-    validate_field_policy_attributes, validate_field_reserved_identifier,
+    validate_field_list_arity_support, validate_field_policy_attributes,
+    validate_field_reserved_identifier,
 };
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
 use crate::validate::model_attributes::{validate_model_attributes, validate_model_version_field};
@@ -157,7 +158,7 @@ pub(super) fn validate_models_collecting(
                 validate_validator_attributes(&model.name, field)?;
                 validate_field_policy_attributes(&model.name, field)?;
                 server_only::validate_model_field(schema, model, field, &model_names)?;
-                validate_default_dbgenerated_no_args(&model.name, field)?;
+                validate_default_marker(&model.name, field)?;
                 validate_field_attributes(FieldHost::Model, &model.name, field)?;
                 validate_db_enforce(&model.name, field)?;
                 validate_key_and_relation_attributes("model", &model.name, field)?;
