@@ -316,7 +316,7 @@ cratestack-studio = { path = "crates/cratestack-studio", version = "0.15.4", def
 # Prototype sync engine (ADR 0020, Proposed). `publish = false` for now; the
 # version is still stated so the bump recipe rewrites it with everything else.
 cratestack-sync = { path = "crates/cratestack-sync", version = "0.15.4", default-features = false }
-minijinja = "2"
+minijinja = "3"
 # Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
 # name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could
 # only satisfy `cratestack-client-rust`'s edge with the newest 0.12.x release
