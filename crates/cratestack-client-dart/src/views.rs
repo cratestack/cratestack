@@ -26,12 +26,13 @@ pub(crate) struct TemplateContext {
     /// `config.preset == DartPreset::Riverpod` (issue #303). `README.md.j2`
     /// is one of the files `crate::riverpod::generate_package` reuses
     /// verbatim from `generate_default_package` (see that module's doc),
-    /// so this flag is how the shared template gates riverpod-only prose
-    /// (its own `@riverpod`/`dart_mappable` codegen reasons for needing
-    /// `build_runner`, on top of the `@CratestackBuilder(...)` reason every
-    /// preset shares as of issue #668 phase 2 — see `setup.md.j2`'s "Code
-    /// Generation" section) without forking the template.
+    /// so this flag gates riverpod-only prose (its `@riverpod`/`dart_mappable`
+    /// reasons for needing `build_runner`, on top of the `@CratestackBuilder`
+    /// one every preset shares — see `setup.md.j2`'s "Code Generation"
+    /// section) without forking the template.
     pub(crate) is_riverpod_preset: bool,
+    /// RPC schema (#1204): the shared README names the RPC adapter.
+    pub(crate) is_rpc: bool,
     /// `config.native_cbor` (issue #563) — gates whether the generated
     /// runtime imports `package:cbor` (sync, pure Dart) or
     /// `cratestack_cbor` (async, native) and whether `pubspec.yaml`

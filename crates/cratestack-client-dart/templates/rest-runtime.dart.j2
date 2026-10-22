@@ -6,44 +6,12 @@ import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
 {% else %}
 import 'package:cbor/simple.dart' as cbor;
 {% endif %}
-import 'package:dio/dio.dart';
 
 import 'constants.dart';
-{% if native_cbor %}
 
-// cratestack#563: `createCborCodec()` is async (it loads a
-// vendored native library / wasm module on first use), so the codec is
-// resolved once and cached here rather than per call — every
-// `_cratestackCborCodec()` caller after the first just awaits the same
-// already-in-flight (or already-resolved) `Future`.
-//
-// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
-// `??=` never re-evaluates once the field holds a settled *rejected*
-// future, so one transient failure — a wasm asset that 404s on web, a
-// vendored library that was not there yet — would brick every later
-// request in the isolate, replaying the same error forever instead of
-// giving the next caller a fresh attempt. `onError` clears the cache so
-// it can retry, and rethrows with the original stack trace so nothing is
-// swallowed. Same rule, for the same reason, as the generated TypeScript
-// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
-// `createCborCodec()`.
-Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+{% include "http_runtime/seam.dart.j2" %}
 
-Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
-  return _cratestackCborCodecFuture ??= cratestack_cbor
-      .createCborCodec()
-      .onError<Object>((error, stackTrace) {
-        // Hung off the future rather than written as a `try`/`catch`
-        // around the call so it cannot run before the `??=` has
-        // assigned: an `onError` callback is always asynchronous,
-        // whereas a `catch` body fires synchronously for anything thrown
-        // before the factory's first `await`, and the assignment would
-        // then immediately re-cache the very failure it just cleared.
-        _cratestackCborCodecFuture = null;
-        Error.throwWithStackTrace(error, stackTrace);
-      });
-}
-{% endif %}
+{% include "http_runtime/codec.dart.j2" %}
 
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
   if (value == null) {
@@ -130,7 +98,7 @@ List<Object?> cratestackAsValueList(Object? value) {
 /// value the field's params serialized as plain JSON-compatible Dart
 /// objects — `docs/design/computed-fields.md`) into a request's other
 /// query parameters, under the single wire query key `computedParams`, as
-/// a JSON-encoded string. `dio`'s query-string builder percent-encodes
+/// a JSON-encoded string. [cratestackCanonicalizeQuery] percent-encodes
 /// map values itself, so nothing here needs to pre-escape the JSON text.
 /// Absent/empty `computedParams` leaves `queryParameters` untouched
 /// (never adds an empty `computedParams=` key) — the server treats a
@@ -148,24 +116,63 @@ Map<String, Object?>? cratestackWithComputedParams(
   };
 }
 
+/// The canonical query string of a request: `key=value` pairs joined by `&`,
+/// keys and values percent-encoded with [Uri.encodeQueryComponent], in map
+/// order. It does not depend on any HTTP client's own list or null rules:
+///
+///  * a `null` value is omitted (never a bare `key`);
+///  * a list repeats the key, `tag=a&tag=b`;
+///  * a nested map nests with literal brackets, `filter[kind]=x`;
+///  * every other value is its `toString()`.
+///
+/// Returns `null` when there is nothing to send. For the string, int and bool
+/// values the generated query builders produce, the output is byte-identical
+/// to what the retired Dio adapters sent (pinned by `wire_parity_rest_test`).
 String? cratestackCanonicalizeQuery(Map<String, Object?>? queryParameters) {
   if (queryParameters == null || queryParameters.isEmpty) {
     return null;
   }
-  return queryParameters.entries
-      .where((entry) => entry.value != null)
-      .map((entry) {
-        final key = Uri.encodeQueryComponent(entry.key);
-        final value = Uri.encodeQueryComponent(entry.value.toString());
-        return '$key=$value';
-      })
-      .join('&');
+  final pairs = <String>[];
+  void add(String encodedKey, Object? value) {
+    if (value == null) {
+      return;
+    }
+    if (value is Map) {
+      value.forEach((key, entry) {
+        add('$encodedKey[${Uri.encodeQueryComponent(key.toString())}]', entry);
+      });
+      return;
+    }
+    if (value is Iterable) {
+      for (final item in value) {
+        add(encodedKey, item);
+      }
+      return;
+    }
+    pairs.add('$encodedKey=${Uri.encodeQueryComponent(value.toString())}');
+  }
+
+  queryParameters.forEach((key, value) => add(Uri.encodeQueryComponent(key), value));
+  return pairs.isEmpty ? null : pairs.join('&');
 }
 
+/// Per-call settings for the REST adapter.
 class CratestackCallOptions {
-  const CratestackCallOptions({this.headers = const <String, String>{}});
+  const CratestackCallOptions({
+    this.headers = const <String, String>{},
+    this.idempotencyKey,
+    this.abort,
+  });
 
+  /// Extra request headers; they win over the adapter's own.
   final Map<String, String> headers;
+
+  /// Sent as `Idempotency-Key`, so a retried mutation is applied once.
+  final String? idempotencyKey;
+
+  /// Completing this future cancels the call; the adapter then throws a
+  /// [CratestackTransportAborted].
+  final Future<void>? abort;
 }
 
 class CratestackRequest {
@@ -193,159 +200,4 @@ abstract interface class CratestackClientAdapter {
   });
 }
 
-class CratestackDioAdapter implements CratestackClientAdapter {
-  const CratestackDioAdapter({
-    required Dio dio,
-    this.useRustTransport = false,
-  }) : _dio = dio;
-
-  final Dio _dio;
-  final bool useRustTransport;
-
-  @override
-  Future<Object?> execute(
-    CratestackRequest request, {
-    CratestackCallOptions? options,
-  }) async {
-    final response = await _dio.request<Object?>(
-      request.path,
-      data: request.body,
-      queryParameters: request.queryParameters,
-      options: Options(
-        method: request.method,
-        headers: {
-          // Explicit, not left to Dio's/the platform HTTP client's own
-          // default (typically `*/*`, sometimes nothing at all): a
-          // server exposing more than one wire codec (e.g. this router
-          // also serving `application/cbor` for other adapters) may
-          // resolve an absent/wildcard `Accept` to something other than
-          // JSON — and a router that *only* has a JSON codec wired up
-          // can still 406/error on a request that didn't ask for JSON
-          // by name. Reproduced for real (issue #303): a plain `curl`
-          // with no `Accept` header against a REST server built with
-          // only `JsonCodec` returned "no encoder configured for
-          // response Content-Type application/cbor", not JSON. Matches
-          // `CratestackCborDioAdapter`'s own explicit `Accept` below and
-          // the TypeScript REST runtime's `headers.set("Accept",
-          // "application/json")`, which this adapter had fallen out of
-          // parity with.
-          'Accept': 'application/json',
-          if (cratestackSchemaSha256 != null)
-            'x-cratestack-schema-sha': cratestackSchemaSha256!,
-          ...request.headers,
-          ...?options?.headers,
-        },
-        extra: {
-          if (useRustTransport) cratestackUseRustTransportExtraKey: true,
-        },
-      ),
-    );
-
-    return response.data;
-  }
-}
-
-class CratestackCborDioAdapter implements CratestackClientAdapter {
-  const CratestackCborDioAdapter({required Dio dio}) : _dio = dio;
-
-  final Dio _dio;
-
-  @override
-  Future<Object?> execute(
-    CratestackRequest request, {
-    CratestackCallOptions? options,
-  }) async {
-{% if native_cbor %}
-    final encodedBody = await _encodeBody(request.body);
-    final response = await _dio.request<List<int>>(
-      request.path,
-      data: encodedBody,
-{% else %}
-    final response = await _dio.request<List<int>>(
-      request.path,
-      data: _encodeBody(request.body),
-{% endif %}
-      queryParameters: request.queryParameters,
-      options: Options(
-        method: request.method,
-        responseType: ResponseType.bytes,
-        headers: {
-          'Accept': 'application/cbor, application/json;q=0.9',
-          if (request.body != null) 'Content-Type': 'application/cbor',
-          if (cratestackSchemaSha256 != null)
-            'x-cratestack-schema-sha': cratestackSchemaSha256!,
-          ...request.headers,
-          ...?options?.headers,
-        },
-      ),
-    );
-
-    final bytes = response.data;
-    if (bytes == null || bytes.isEmpty) {
-      return null;
-    }
-
-    final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
-    if (_isCborContentType(contentType)) {
-{% if native_cbor %}
-      final codec = await _cratestackCborCodec();
-      // `cratestack_cbor`'s wire boundary is JSON text (see
-      // `DartGeneratorConfig::native_cbor`'s doc comment), and every
-      // generated `toWire()`/`fromWire` already produces/expects
-      // JSON-plain values — `jsonDecode` alone gives the exact
-      // `Map<String, Object?>` shape `cratestackNormalizeWire` exists to
-      // reconstruct from the `cbor` package's `Map<Object?, Object?>`, so
-      // it isn't needed on this path.
-      return jsonDecode(codec.decodeJson(bytes));
-{% else %}
-      return cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(bytes)));
-{% endif %}
-    }
-
-    if (_isJsonContentType(contentType)) {
-      return jsonDecode(utf8.decode(bytes));
-    }
-
-    throw FormatException(
-      'Unsupported response Content-Type $contentType for CratestackCborDioAdapter',
-    );
-  }
-}
-{% if native_cbor %}
-
-Future<Object?> _encodeBody(Object? body) async {
-  if (body == null) {
-    return null;
-  }
-  if (body is Uint8List) {
-    return body;
-  }
-  if (body is List<int>) {
-    return Uint8List.fromList(body);
-  }
-  final codec = await _cratestackCborCodec();
-  return codec.encodeJson(jsonEncode(body));
-}
-{% else %}
-
-Object? _encodeBody(Object? body) {
-  if (body == null) {
-    return null;
-  }
-  if (body is Uint8List) {
-    return body;
-  }
-  if (body is List<int>) {
-    return Uint8List.fromList(body);
-  }
-  return Uint8List.fromList(cbor.cbor.encode(body));
-}
-{% endif %}
-
-bool _isCborContentType(String contentType) {
-  return contentType.split(';').first.trim() == 'application/cbor';
-}
-
-bool _isJsonContentType(String contentType) {
-  return contentType.split(';').first.trim() == Headers.jsonContentType;
-}
+{% include "rest_runtime/http_adapter.dart.j2" %}

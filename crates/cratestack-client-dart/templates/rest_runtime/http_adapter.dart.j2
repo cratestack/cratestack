@@ -1,0 +1,109 @@
+/// Thrown by [CratestackHttpAdapter] when the server answers with a non-2xx
+/// status. [body] is the decoded error body (CBOR or JSON), the text of a body
+/// of any other `Content-Type`, or `null` when there was none or it did not
+/// decode.
+///
+/// A call that gets no answer at all fails with a
+/// [CratestackTransportException] instead, so `on CratestackRestException`
+/// means "the server said no" and nothing else.
+class CratestackRestException implements Exception {
+  const CratestackRestException({required this.status, this.body});
+
+  final int status;
+  final Object? body;
+
+  @override
+  String toString() => 'CratestackRestException(status=$status, body=$body)';
+}
+
+/// The REST adapter, written once over a [CratestackHttpTransport].
+///
+/// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
+/// `Content-Type`, the canonical query string, and the error mapping; the
+/// transport owns the connection. To use an HTTP client of your own,
+/// implement [CratestackHttpTransport]; to use Dio, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackHttpAdapter(
+///   CratestackDioTransport(dio),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+class CratestackHttpAdapter implements CratestackClientAdapter {
+  const CratestackHttpAdapter(
+    this.transport, {
+    required this.baseUri,
+    this.format = CratestackWireFormat.cbor,
+    this.useRustTransport = false,
+  });
+
+  final CratestackHttpTransport transport;
+
+  /// Scheme, authority and optional path prefix every request path is joined
+  /// onto: `https://api.example.com` or `https://example.com/v1`.
+  final Uri baseUri;
+
+  /// The wire format of request bodies and the `Accept` preference.
+  final CratestackWireFormat format;
+
+  /// Marks every request with [cratestackUseRustTransportExtraKey] in
+  /// [CratestackHttpRequest.extra] (never on the wire), for a host
+  /// interceptor that routes marked requests through the Rust runtime.
+  final bool useRustTransport;
+
+  @override
+  Future<Object?> execute(
+    CratestackRequest request, {
+    CratestackCallOptions? options,
+  }) async {
+    final body = await _encodeBody(format, request.body);
+    final response = await transport.send(
+      CratestackHttpRequest(
+        method: request.method,
+        uri: _resolveUri(
+          baseUri,
+          request.path,
+          cratestackCanonicalizeQuery(request.queryParameters),
+        ),
+        headers: _mergeHeaders([
+          <String, String>{
+            // Explicit, never left to the HTTP stack's default (typically
+            // `*/*`, sometimes nothing): a server exposing more than one wire
+            // codec may resolve an absent or wildcard `Accept` to something
+            // other than what this adapter asked for, and a router with only
+            // a JSON codec can fail a request that did not name JSON
+            // (cratestack#303).
+            'Accept': format == CratestackWireFormat.json
+                ? 'application/json'
+                : 'application/cbor, application/json;q=0.9',
+            if (body != null)
+              'Content-Type': format == CratestackWireFormat.json
+                  ? 'application/json'
+                  : 'application/cbor',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
+            if (options?.idempotencyKey != null)
+              'Idempotency-Key': options!.idempotencyKey!,
+          },
+          request.headers,
+          options?.headers,
+        ]),
+        body: body,
+        abort: options?.abort,
+        extra: <String, Object?>{
+          if (useRustTransport) cratestackUseRustTransportExtraKey: true,
+        },
+      ),
+    );
+
+    final bytes = await response.bytes();
+    final contentType = response.headers['content-type'];
+    if (response.status < 200 || response.status >= 300) {
+      throw CratestackRestException(
+        status: response.status,
+        body: await _decodeErrorBody(bytes, contentType),
+      );
+    }
+    return _decodeBody(bytes, contentType, 'CratestackHttpAdapter');
+  }
+}

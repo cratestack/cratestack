@@ -8,7 +8,10 @@ use crate::riverpod::imports::model_file_path;
 use crate::riverpod::views::LibraryFileContext;
 
 pub(crate) fn build_library_file(schema: &Schema, is_rest: bool) -> LibraryFileContext {
-    let mut exports = vec!["export 'src/runtime.dart';".to_owned()];
+    let mut exports = vec![
+        "export 'src/runtime.dart';".to_owned(),
+        "export 'src/dio_transport.dart';".to_owned(),
+    ];
     if is_rest {
         exports.push("export 'src/queries.dart';".to_owned());
     }

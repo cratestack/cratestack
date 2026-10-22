@@ -36,6 +36,25 @@ class {{ client_class_name }} {
 {% endif %}
 }
 
+/// The adapter every generated API sends through. No default: the app picks
+/// its HTTP stack by overriding this provider.
+///
+/// ```dart
+/// ProviderScope(
+///   overrides: [
+///     {{ provider_prefix }}AdapterProvider.overrideWithValue(
+///       CratestackHttpAdapter(
+///         CratestackDioTransport(dio),
+///         baseUri: Uri.parse('https://api.example.com'),
+///       ),
+///     ),
+///   ],
+///   child: const MyApp(),
+/// )
+/// ```
+///
+/// `CratestackDioTransport` wraps a `Dio`; any other HTTP stack implements
+/// `CratestackHttpTransport` instead.
 final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((ref) {
   throw UnimplementedError('Override {{ provider_prefix }}AdapterProvider before reading the generated CrateStack client.');
 });

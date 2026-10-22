@@ -1,4 +1,4 @@
-use cratestack_core::{Field, Schema};
+use cratestack_core::{Field, Schema, TransportStyle};
 
 use crate::builders::{build_data_class, build_enum_view};
 use crate::builders_model::{
@@ -282,6 +282,7 @@ pub(crate) fn build_template_context(
         mutation_procedures,
         sample_model,
         is_riverpod_preset: config.preset == DartPreset::Riverpod,
+        is_rpc: schema.transport == TransportStyle::Rpc,
         native_cbor: config.native_cbor,
         cratestack_cbor_version_requirement,
         has_computed_params_class,

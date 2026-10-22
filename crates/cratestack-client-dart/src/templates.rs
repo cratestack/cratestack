@@ -42,6 +42,11 @@ const COMMON_TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/constants.dart.j2"),
     },
     TemplateSpec {
+        template_name: "dio-transport.dart.j2",
+        output_path: "lib/src/dio_transport.dart",
+        default_source: include_str!("../templates/dio-transport.dart.j2"),
+    },
+    TemplateSpec {
         template_name: "models.dart.j2",
         output_path: "lib/src/models.dart",
         default_source: include_str!("../templates/models.dart.j2"),
