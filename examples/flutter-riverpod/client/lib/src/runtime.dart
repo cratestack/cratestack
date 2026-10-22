@@ -2,9 +2,183 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
-import 'package:dio/dio.dart';
 
 import 'constants.dart';
+
+// -----------------------------------------------------------------------------
+// The HTTP seam (cratestack#1204)
+//
+// Everything the generated adapters need from an HTTP stack, and nothing
+// else: pure Dart, no dependency. An app that owns its HTTP stack (a signing
+// layer, a captive-portal check, spans, a different client) implements
+// `CratestackHttpTransport` once and hands it to `CratestackHttpAdapter` /
+// `CratestackRpcHttpAdapter`; the adapters do the codec work, the headers and
+// the error mapping over it. Retries, deadlines and interception stay the
+// transport's job.
+// -----------------------------------------------------------------------------
+
+/// Sends one HTTP request and returns the answer as soon as the status line
+/// and headers are in; the body is still a stream at that point.
+///
+/// Contract:
+///
+///  * Resolve with the response for EVERY HTTP status. A 4xx/5xx answer is
+///    not an error here: the adapter maps it (`CratestackRestException` over
+///    REST, `CratestackRpcException` over RPC).
+///  * Fail with a [CratestackTransportException] when there is no answer:
+///    [CratestackTransportUnsent] when the request provably never left,
+///    [CratestackTransportAborted] when [CratestackHttpRequest.abort]
+///    completed, [CratestackTransportTimedOut] for a deadline, and
+///    [CratestackTransportBroken] for anything else.
+///  * Send [CratestackHttpRequest.body] exactly as given (the bytes a signer
+///    layered above this one saw), and send no header the request does not
+///    carry beyond what the platform adds by itself.
+abstract interface class CratestackHttpTransport {
+  Future<CratestackHttpResponse> send(CratestackHttpRequest request);
+}
+
+/// One request, fully encoded: the codec work is already done.
+final class CratestackHttpRequest {
+  const CratestackHttpRequest({
+    required this.method,
+    required this.uri,
+    this.headers = const <String, String>{},
+    this.body,
+    this.abort,
+    this.extra = const <String, Object?>{},
+  });
+
+  /// Upper-case HTTP method (`GET`, `POST`, ...).
+  final String method;
+
+  /// Absolute URI, query string included.
+  final Uri uri;
+
+  /// Request headers, names as the adapter wrote them.
+  final Map<String, String> headers;
+
+  /// The exact body bytes, or `null` for a request without a body.
+  final Uint8List? body;
+
+  /// Completing this future cancels the send, whether the request is still
+  /// connecting, uploading, waiting for the answer or streaming the body.
+  /// The transport then fails with [CratestackTransportAborted].
+  final Future<void>? abort;
+
+  /// Transport-local attributes that are NOT sent on the wire (for example
+  /// [cratestackUseRustTransportExtraKey]). A transport forwards the ones it
+  /// understands to its own machinery and ignores the rest.
+  final Map<String, Object?> extra;
+}
+
+/// The answer to a [CratestackHttpRequest].
+final class CratestackHttpResponse {
+  /// [headers] names are lower-cased; a repeated header is joined with `, `.
+  CratestackHttpResponse({
+    required this.status,
+    required Map<String, String> headers,
+    required this.body,
+  }) : headers = Map<String, String>.unmodifiable(<String, String>{
+         for (final entry in headers.entries) entry.key.toLowerCase(): entry.value,
+       });
+
+  /// A fully buffered answer: handy for tests and for transports that have
+  /// already read the body.
+  factory CratestackHttpResponse.buffered({
+    required int status,
+    Map<String, String> headers = const <String, String>{},
+    List<int> body = const <int>[],
+  }) {
+    return CratestackHttpResponse(
+      status: status,
+      headers: headers,
+      body: Stream<Uint8List>.value(Uint8List.fromList(body)),
+    );
+  }
+
+  final int status;
+
+  /// Response headers, names lower-cased.
+  final Map<String, String> headers;
+
+  /// The body, as the transport received it. Single-subscription: read it
+  /// once, either through [bytes] or by listening to it directly.
+  final Stream<Uint8List> body;
+
+  /// Reads the whole [body]. Consumes it.
+  Future<Uint8List> bytes() async {
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in body) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
+}
+
+/// A request that produced no HTTP answer. Never a `DioException` or any other
+/// stack-specific type: a caller that catches this works with every transport.
+sealed class CratestackTransportException implements Exception {
+  const CratestackTransportException({this.cause, this.message});
+
+  /// The stack-specific error that caused this, when there is one.
+  final Object? cause;
+
+  final String? message;
+
+  String get _kind;
+
+  @override
+  String toString() {
+    final detail = message ?? cause;
+    return detail == null ? _kind : '$_kind: $detail';
+  }
+}
+
+/// The caller cancelled the call through [CratestackHttpRequest.abort].
+final class CratestackTransportAborted extends CratestackTransportException {
+  const CratestackTransportAborted({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportAborted';
+}
+
+/// The request provably never left this device: the connection was refused,
+/// the host did not resolve, the connect timed out, or TLS failed before any
+/// request byte was written. Always safe to send again, even a non-idempotent
+/// call.
+final class CratestackTransportUnsent extends CratestackTransportException {
+  const CratestackTransportUnsent({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportUnsent';
+}
+
+/// A deadline expired after the request may have left. The server may have
+/// acted on it.
+final class CratestackTransportTimedOut extends CratestackTransportException {
+  const CratestackTransportTimedOut({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportTimedOut';
+}
+
+/// Anything else that went wrong without an answer (a dropped connection
+/// mid-request or mid-body, a malformed response). The server may have acted
+/// on the request.
+final class CratestackTransportBroken extends CratestackTransportException {
+  const CratestackTransportBroken({super.cause, super.message});
+
+  @override
+  String get _kind => 'CratestackTransportBroken';
+}
+
+// -----------------------------------------------------------------------------
+// Wire codecs and the plumbing both HTTP adapters share (cratestack#1204)
+//
+// One copy, included by the REST runtime and the RPC runtime alike, so the
+// two adapters cannot drift on the CBOR/JSON choice, on dispatching a
+// response by its `Content-Type`, or on how a URI and the headers are built.
+// -----------------------------------------------------------------------------
 
 // cratestack#563: `createCborCodec()` is async (it loads a
 // vendored native library / wasm module on first use), so the codec is
@@ -37,6 +211,132 @@ Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
         _cratestackCborCodecFuture = null;
         Error.throwWithStackTrace(error, stackTrace);
       });
+}
+
+/// The wire format a request body is written in and an `Accept` header
+/// prefers. Responses are always decoded by their own `Content-Type`, so an
+/// adapter set to one format still reads the other.
+enum CratestackWireFormat {
+  /// `application/cbor`, the framework's default wire format.
+  cbor,
+
+  /// `application/json`.
+  json,
+}
+
+String _cratestackMimeOf(String? contentType) =>
+    (contentType ?? '').split(';').first.trim().toLowerCase();
+
+bool _isCborContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/cbor';
+
+bool _isJsonContentType(String? contentType) =>
+    _cratestackMimeOf(contentType) == 'application/json';
+
+/// Encodes a request body in [format]. `null` stays `null` (no body), and
+/// bytes are sent as they are.
+Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async {
+  if (body == null) {
+    return null;
+  }
+  if (body is Uint8List) {
+    return body;
+  }
+  if (body is List<int>) {
+    return Uint8List.fromList(body);
+  }
+  switch (format) {
+    case CratestackWireFormat.json:
+      return Uint8List.fromList(utf8.encode(jsonEncode(body)));
+    case CratestackWireFormat.cbor:
+      final codec = await _cratestackCborCodec();
+      return codec.encodeJson(jsonEncode(body));
+  }
+}
+
+/// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
+/// decoders expect.
+Future<Object?> _decodeCbor(Uint8List bytes) async {
+  // `cratestack_cbor`'s wire boundary is JSON text (see
+  // `DartGeneratorConfig::native_cbor`'s doc comment), and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values —
+  // `jsonDecode` alone gives the exact `Map<String, Object?>` shape
+  // `cratestackNormalizeWire` exists to reconstruct from the `cbor` package's
+  // `Map<Object?, Object?>`, so it isn't needed on this path.
+  final codec = await _cratestackCborCodec();
+  return jsonDecode(codec.decodeJson(bytes));
+}
+
+/// Decodes a response body by its `Content-Type`: an empty body is `null`,
+/// CBOR and JSON are decoded, anything else is a [FormatException].
+Future<Object?> _decodeBody(Uint8List bytes, String? contentType, String owner) async {
+  if (bytes.isEmpty) {
+    return null;
+  }
+  if (_isCborContentType(contentType)) {
+    return _decodeCbor(bytes);
+  }
+  if (_isJsonContentType(contentType)) {
+    return jsonDecode(utf8.decode(bytes));
+  }
+  throw FormatException(
+    'Unsupported response Content-Type $contentType for $owner',
+  );
+}
+
+/// Best-effort decode of an HTTP error answer's body. Never throws: a body
+/// that is empty or does not decode is `null`, and a body of any other
+/// `Content-Type` (a proxy's plain-text 502, say) is its text.
+Future<Object?> _decodeErrorBody(Uint8List bytes, String? contentType) async {
+  if (bytes.isEmpty) {
+    return null;
+  }
+  try {
+    if (_isCborContentType(contentType) || _isJsonContentType(contentType)) {
+      return await _decodeBody(bytes, contentType, 'an error body');
+    }
+    final text = utf8.decode(bytes, allowMalformed: true).trim();
+    return text.isEmpty ? null : text;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Layers header maps, later layers winning. Header names are
+/// case-insensitive, so `accept` from a later layer replaces `Accept` from an
+/// earlier one instead of sitting beside it.
+Map<String, String> _mergeHeaders(List<Map<String, String>?> layers) {
+  final merged = <String, String>{};
+  final keyByLowerName = <String, String>{};
+  for (final layer in layers) {
+    if (layer == null) {
+      continue;
+    }
+    for (final entry in layer.entries) {
+      final lowerName = entry.key.toLowerCase();
+      final earlier = keyByLowerName[lowerName];
+      if (earlier != null) {
+        merged.remove(earlier);
+      }
+      keyByLowerName[lowerName] = entry.key;
+      merged[entry.key] = entry.value;
+    }
+  }
+  return merged;
+}
+
+/// `baseUri` + `path` + `query`, joined by concatenation rather than RFC 3986
+/// resolution: a base URI with a path prefix (`https://host/v1`) keeps it, and
+/// a `path` starting with `/` does not discard it. [query] is an already
+/// percent-encoded query string.
+Uri _resolveUri(Uri baseUri, String path, String? query) {
+  final basePath = baseUri.path.endsWith('/')
+      ? baseUri.path.substring(0, baseUri.path.length - 1)
+      : baseUri.path;
+  final tail = path.startsWith('/') ? path : '/$path';
+  final origin = '${baseUri.scheme}://${baseUri.authority}';
+  final suffix = (query == null || query.isEmpty) ? '' : '?$query';
+  return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
 }
 
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
@@ -124,7 +424,7 @@ List<Object?> cratestackAsValueList(Object? value) {
 /// value the field's params serialized as plain JSON-compatible Dart
 /// objects — `docs/design/computed-fields.md`) into a request's other
 /// query parameters, under the single wire query key `computedParams`, as
-/// a JSON-encoded string. `dio`'s query-string builder percent-encodes
+/// a JSON-encoded string. [cratestackCanonicalizeQuery] percent-encodes
 /// map values itself, so nothing here needs to pre-escape the JSON text.
 /// Absent/empty `computedParams` leaves `queryParameters` untouched
 /// (never adds an empty `computedParams=` key) — the server treats a
@@ -142,24 +442,63 @@ Map<String, Object?>? cratestackWithComputedParams(
   };
 }
 
+/// The canonical query string of a request: `key=value` pairs joined by `&`,
+/// keys and values percent-encoded with [Uri.encodeQueryComponent], in map
+/// order. It does not depend on any HTTP client's own list or null rules:
+///
+///  * a `null` value is omitted (never a bare `key`);
+///  * a list repeats the key, `tag=a&tag=b`;
+///  * a nested map nests with literal brackets, `filter[kind]=x`;
+///  * every other value is its `toString()`.
+///
+/// Returns `null` when there is nothing to send. For the string, int and bool
+/// values the generated query builders produce, the output is byte-identical
+/// to what the retired Dio adapters sent (pinned by `wire_parity_rest_test`).
 String? cratestackCanonicalizeQuery(Map<String, Object?>? queryParameters) {
   if (queryParameters == null || queryParameters.isEmpty) {
     return null;
   }
-  return queryParameters.entries
-      .where((entry) => entry.value != null)
-      .map((entry) {
-        final key = Uri.encodeQueryComponent(entry.key);
-        final value = Uri.encodeQueryComponent(entry.value.toString());
-        return '$key=$value';
-      })
-      .join('&');
+  final pairs = <String>[];
+  void add(String encodedKey, Object? value) {
+    if (value == null) {
+      return;
+    }
+    if (value is Map) {
+      value.forEach((key, entry) {
+        add('$encodedKey[${Uri.encodeQueryComponent(key.toString())}]', entry);
+      });
+      return;
+    }
+    if (value is Iterable) {
+      for (final item in value) {
+        add(encodedKey, item);
+      }
+      return;
+    }
+    pairs.add('$encodedKey=${Uri.encodeQueryComponent(value.toString())}');
+  }
+
+  queryParameters.forEach((key, value) => add(Uri.encodeQueryComponent(key), value));
+  return pairs.isEmpty ? null : pairs.join('&');
 }
 
+/// Per-call settings for the REST adapter.
 class CratestackCallOptions {
-  const CratestackCallOptions({this.headers = const <String, String>{}});
+  const CratestackCallOptions({
+    this.headers = const <String, String>{},
+    this.idempotencyKey,
+    this.abort,
+  });
 
+  /// Extra request headers; they win over the adapter's own.
   final Map<String, String> headers;
+
+  /// Sent as `Idempotency-Key`, so a retried mutation is applied once.
+  final String? idempotencyKey;
+
+  /// Completing this future cancels the call; the adapter then throws a
+  /// [CratestackTransportAborted].
+  final Future<void>? abort;
 }
 
 class CratestackRequest {
@@ -187,13 +526,57 @@ abstract interface class CratestackClientAdapter {
   });
 }
 
-class CratestackDioAdapter implements CratestackClientAdapter {
-  const CratestackDioAdapter({
-    required Dio dio,
-    this.useRustTransport = false,
-  }) : _dio = dio;
+/// Thrown by [CratestackHttpAdapter] when the server answers with a non-2xx
+/// status. [body] is the decoded error body (CBOR or JSON), the text of a body
+/// of any other `Content-Type`, or `null` when there was none or it did not
+/// decode.
+///
+/// A call that gets no answer at all fails with a
+/// [CratestackTransportException] instead, so `on CratestackRestException`
+/// means "the server said no" and nothing else.
+class CratestackRestException implements Exception {
+  const CratestackRestException({required this.status, this.body});
 
-  final Dio _dio;
+  final int status;
+  final Object? body;
+
+  @override
+  String toString() => 'CratestackRestException(status=$status, body=$body)';
+}
+
+/// The REST adapter, written once over a [CratestackHttpTransport].
+///
+/// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
+/// `Content-Type`, the canonical query string, and the error mapping; the
+/// transport owns the connection. To use an HTTP client of your own,
+/// implement [CratestackHttpTransport]; to use Dio, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackHttpAdapter(
+///   CratestackDioTransport(dio),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+class CratestackHttpAdapter implements CratestackClientAdapter {
+  const CratestackHttpAdapter(
+    this.transport, {
+    required this.baseUri,
+    this.format = CratestackWireFormat.cbor,
+    this.useRustTransport = false,
+  });
+
+  final CratestackHttpTransport transport;
+
+  /// Scheme, authority and optional path prefix every request path is joined
+  /// onto: `https://api.example.com` or `https://example.com/v1`.
+  final Uri baseUri;
+
+  /// The wire format of request bodies and the `Accept` preference.
+  final CratestackWireFormat format;
+
+  /// Marks every request with [cratestackUseRustTransportExtraKey] in
+  /// [CratestackHttpRequest.extra] (never on the wire), for a host
+  /// interceptor that routes marked requests through the Rust runtime.
   final bool useRustTransport;
 
   @override
@@ -201,119 +584,54 @@ class CratestackDioAdapter implements CratestackClientAdapter {
     CratestackRequest request, {
     CratestackCallOptions? options,
   }) async {
-    final response = await _dio.request<Object?>(
-      request.path,
-      data: request.body,
-      queryParameters: request.queryParameters,
-      options: Options(
+    final body = await _encodeBody(format, request.body);
+    final response = await transport.send(
+      CratestackHttpRequest(
         method: request.method,
-        headers: {
-          // Explicit, not left to Dio's/the platform HTTP client's own
-          // default (typically `*/*`, sometimes nothing at all): a
-          // server exposing more than one wire codec (e.g. this router
-          // also serving `application/cbor` for other adapters) may
-          // resolve an absent/wildcard `Accept` to something other than
-          // JSON — and a router that *only* has a JSON codec wired up
-          // can still 406/error on a request that didn't ask for JSON
-          // by name. Reproduced for real (issue #303): a plain `curl`
-          // with no `Accept` header against a REST server built with
-          // only `JsonCodec` returned "no encoder configured for
-          // response Content-Type application/cbor", not JSON. Matches
-          // `CratestackCborDioAdapter`'s own explicit `Accept` below and
-          // the TypeScript REST runtime's `headers.set("Accept",
-          // "application/json")`, which this adapter had fallen out of
-          // parity with.
-          'Accept': 'application/json',
-          if (cratestackSchemaSha256 != null)
-            'x-cratestack-schema-sha': cratestackSchemaSha256!,
-          ...request.headers,
-          ...?options?.headers,
-        },
-        extra: {
+        uri: _resolveUri(
+          baseUri,
+          request.path,
+          cratestackCanonicalizeQuery(request.queryParameters),
+        ),
+        headers: _mergeHeaders([
+          <String, String>{
+            // Explicit, never left to the HTTP stack's default (typically
+            // `*/*`, sometimes nothing): a server exposing more than one wire
+            // codec may resolve an absent or wildcard `Accept` to something
+            // other than what this adapter asked for, and a router with only
+            // a JSON codec can fail a request that did not name JSON
+            // (cratestack#303).
+            'Accept': format == CratestackWireFormat.json
+                ? 'application/json'
+                : 'application/cbor, application/json;q=0.9',
+            if (body != null)
+              'Content-Type': format == CratestackWireFormat.json
+                  ? 'application/json'
+                  : 'application/cbor',
+            if (cratestackSchemaSha256 != null)
+              'x-cratestack-schema-sha': cratestackSchemaSha256!,
+            if (options?.idempotencyKey != null)
+              'Idempotency-Key': options!.idempotencyKey!,
+          },
+          request.headers,
+          options?.headers,
+        ]),
+        body: body,
+        abort: options?.abort,
+        extra: <String, Object?>{
           if (useRustTransport) cratestackUseRustTransportExtraKey: true,
         },
       ),
     );
 
-    return response.data;
-  }
-}
-
-class CratestackCborDioAdapter implements CratestackClientAdapter {
-  const CratestackCborDioAdapter({required Dio dio}) : _dio = dio;
-
-  final Dio _dio;
-
-  @override
-  Future<Object?> execute(
-    CratestackRequest request, {
-    CratestackCallOptions? options,
-  }) async {
-    final encodedBody = await _encodeBody(request.body);
-    final response = await _dio.request<List<int>>(
-      request.path,
-      data: encodedBody,
-      queryParameters: request.queryParameters,
-      options: Options(
-        method: request.method,
-        responseType: ResponseType.bytes,
-        headers: {
-          'Accept': 'application/cbor, application/json;q=0.9',
-          if (request.body != null) 'Content-Type': 'application/cbor',
-          if (cratestackSchemaSha256 != null)
-            'x-cratestack-schema-sha': cratestackSchemaSha256!,
-          ...request.headers,
-          ...?options?.headers,
-        },
-      ),
-    );
-
-    final bytes = response.data;
-    if (bytes == null || bytes.isEmpty) {
-      return null;
+    final bytes = await response.bytes();
+    final contentType = response.headers['content-type'];
+    if (response.status < 200 || response.status >= 300) {
+      throw CratestackRestException(
+        status: response.status,
+        body: await _decodeErrorBody(bytes, contentType),
+      );
     }
-
-    final contentType = response.headers.value(Headers.contentTypeHeader) ?? '';
-    if (_isCborContentType(contentType)) {
-      final codec = await _cratestackCborCodec();
-      // `cratestack_cbor`'s wire boundary is JSON text (see
-      // `DartGeneratorConfig::native_cbor`'s doc comment), and every
-      // generated `toWire()`/`fromWire` already produces/expects
-      // JSON-plain values — `jsonDecode` alone gives the exact
-      // `Map<String, Object?>` shape `cratestackNormalizeWire` exists to
-      // reconstruct from the `cbor` package's `Map<Object?, Object?>`, so
-      // it isn't needed on this path.
-      return jsonDecode(codec.decodeJson(bytes));
-    }
-
-    if (_isJsonContentType(contentType)) {
-      return jsonDecode(utf8.decode(bytes));
-    }
-
-    throw FormatException(
-      'Unsupported response Content-Type $contentType for CratestackCborDioAdapter',
-    );
+    return _decodeBody(bytes, contentType, 'CratestackHttpAdapter');
   }
-}
-
-Future<Object?> _encodeBody(Object? body) async {
-  if (body == null) {
-    return null;
-  }
-  if (body is Uint8List) {
-    return body;
-  }
-  if (body is List<int>) {
-    return Uint8List.fromList(body);
-  }
-  final codec = await _cratestackCborCodec();
-  return codec.encodeJson(jsonEncode(body));
-}
-
-bool _isCborContentType(String contentType) {
-  return contentType.split(';').first.trim() == 'application/cbor';
-}
-
-bool _isJsonContentType(String contentType) {
-  return contentType.split(';').first.trim() == Headers.jsonContentType;
 }

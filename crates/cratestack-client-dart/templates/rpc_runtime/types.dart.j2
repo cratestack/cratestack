@@ -1,12 +1,19 @@
 // Generated CrateStack Dart RPC runtime for `transport rpc` schemas.
 //
 // Speaks the `/rpc/{op_id}` and `/rpc/batch` URL space defined by
-// `cratestack-axum::rpc`. Two adapter impls ship by default:
+// `cratestack-axum::rpc`. One adapter ships, written over the HTTP seam
+// (`CratestackHttpTransport`, below):
 //
-//   * `CratestackRpcDioAdapter`        — JSON over HTTP (the easy default)
-//   * `CratestackRpcCborDioAdapter`    — CBOR-by-default with JSON
-//                                        negotiation, mirrors the REST
-//                                        runtime's adapter pair
+//   * `CratestackRpcHttpAdapter`  — CBOR or JSON on the wire
+//                                   (`CratestackWireFormat`), any transport
+//
+{% if is_fespalier_preset %}
+// plus `CratestackFespalierTransport` (a separate file,
+// `fespalier_transport.dart`) for fespalier's `HttpTransport`.
+{% else %}
+// plus `CratestackDioTransport` (a separate file, `dio_transport.dart`) for
+// apps that already have a Dio.
+{% endif %}
 
 import 'dart:async';
 import 'dart:convert';
@@ -17,31 +24,12 @@ import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
 {% else %}
 import 'package:cbor/simple.dart' as cbor;
 {% endif %}
-import 'package:dio/dio.dart';
 
 import 'constants.dart';
-{% if native_cbor %}
 
-// cratestack#563: see `rest-runtime.dart.j2`'s identical
-// comment — one cached codec `Future`, shared by every adapter in this
-// file (`CratestackRpcCborDioAdapter` in `dio_cbor.dart.j2`).
-//
-// cratestack#798: and its identical `onError` too — only a SUCCESSFUL
-// resolution stays cached, so one transient failure cannot brick every
-// later request in the isolate. See that file for the full reasoning;
-// the two must not drift, which is why both transports changed in the
-// same PR.
-Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+{% include "http_runtime/seam.dart.j2" %}
 
-Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
-  return _cratestackCborCodecFuture ??= cratestack_cbor
-      .createCborCodec()
-      .onError<Object>((error, stackTrace) {
-        _cratestackCborCodecFuture = null;
-        Error.throwWithStackTrace(error, stackTrace);
-      });
-}
-{% endif %}
+{% include "http_runtime/codec.dart.j2" %}
 
 typedef CratestackValueMap = Map<String, Object?>;
 
@@ -267,20 +255,30 @@ class CratestackRpcException implements Exception {
       'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
 }
 
+/// Per-call settings for the RPC adapter.
 class CratestackRpcCallOptions {
   const CratestackRpcCallOptions({
     this.headers = const <String, String>{},
     this.idempotencyKey,
+    this.abort,
   });
 
+  /// Extra request headers; they win over the adapter's own.
   final Map<String, String> headers;
+
+  /// Sent as `Idempotency-Key`, so a retried mutation is applied once.
   final String? idempotencyKey;
+
+  /// Completing this future cancels the call; the adapter then throws a
+  /// [CratestackTransportAborted].
+  final Future<void>? abort;
 }
 
 /// Adapter interface — implementations carry the actual transport
-/// (HTTP via Dio, FFI to the Rust runtime, in-process stub, etc.) and
-/// the codec choice. The generated API classes only know about this
-/// interface; swapping JSON for CBOR is a constructor flip.
+/// (HTTP through a [CratestackHttpTransport], FFI to the Rust runtime,
+/// in-process stub, etc.) and the codec choice. The generated API classes
+/// only know about this interface; swapping JSON for CBOR is a constructor
+/// flip.
 abstract interface class CratestackRpcAdapter {
   /// POST /rpc/{op_id} — unary call.
   Future<Object?> call(

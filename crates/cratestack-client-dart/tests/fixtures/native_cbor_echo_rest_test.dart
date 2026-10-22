@@ -1,6 +1,6 @@
 // cratestack#647 gap closure: this file settles the one thing
 // `native_cbor_generator.rs`'s structural (source-text) assertions cannot
-// — that a `--native-cbor`-generated REST client's `CratestackCborDioAdapter`
+// — that a `--native-cbor`-generated REST client's `CratestackHttpAdapter`
 // really encodes a request body and decodes a response body through the
 // real, published `cratestack_cbor` package (flutter_rust_bridge-backed on
 // this CI runner's Linux x86_64 host), not a plausible-looking template
@@ -56,8 +56,10 @@ void main() {
       });
       addTearDown(server.close);
 
-      final dio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:${server.port}'));
-      final adapter = CratestackCborDioAdapter(dio: dio);
+      final adapter = CratestackHttpAdapter(
+        CratestackDioTransport(Dio()),
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+      );
       final client = NativeCborEchoRestVerifyCratestackClient(
         adapter,
         basePath: '',

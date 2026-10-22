@@ -1,7 +1,7 @@
 //! Builds `test/{{ package_name }}_test.dart` for the riverpod preset —
 //! issue #302's real, executed proof (not just a Rust-side text
 //! assertion) that overriding `{{ provider_prefix }}AdapterProvider`
-//! alone — the pre-existing Dio/adapter override point, unmodified by
+//! alone — the pre-existing adapter override point, unmodified by
 //! this story — changes what a generated `@riverpod` operation provider
 //! actually returns. Reuses `crate::context::build_template_context`
 //! (the `default` preset's own context builder) for the pre-existing

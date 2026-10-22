@@ -89,6 +89,7 @@ fn generate(preset: DartPreset) -> GeneratedDartPackage {
             preset,
             schema_sha256: "0".repeat(64),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("hostile fixture should generate under {preset:?}: {error}"))

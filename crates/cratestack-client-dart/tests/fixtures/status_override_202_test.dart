@@ -9,7 +9,10 @@
 // templates, from which it was *inferred* (never run) that Dio's own
 // default `validateStatus` (`200 <= status < 300`) applies unmodified.
 // This file settles that with a real generated client hitting a real
-// `dart:io HttpServer`, not inference.
+// `dart:io HttpServer`, not inference. Since cratestack#1204 the status
+// gate is the HTTP adapter's own (any 2xx is success, anything else a typed
+// `CratestackRestException`); the `CratestackDioTransport` underneath hands
+// every status through.
 //
 // `just verify-dart` copies this file into BOTH a `default`-preset and a
 // `riverpod`-preset package generated from
@@ -32,9 +35,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dart_status_verify/dart_status_verify.dart';
 
 /// A real HTTP/1.1 server (`dart:io`, not a fake `CratestackClientAdapter`)
-/// so this test exercises Dio's actual `validateStatus` behavior — the
-/// exact thing the prior source-reading inference was never checked
-/// against.
+/// so this test exercises the real status handling end to end — the exact
+/// thing the prior source-reading inference was never checked against.
 Future<HttpServer> _startCborServer(
   int status,
   Map<String, Object?> body,
@@ -55,8 +57,10 @@ void main() {
     final server = await _startCborServer(202, {'echo': 'hello'});
     addTearDown(server.close);
 
-    final dio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:${server.port}'));
-    final adapter = CratestackCborDioAdapter(dio: dio);
+    final adapter = CratestackHttpAdapter(
+      CratestackDioTransport(Dio()),
+      baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+    );
     final client = DartStatusVerifyCratestackClient(adapter, basePath: '');
 
     final reply = await client.procedures.submit(
@@ -74,15 +78,19 @@ void main() {
       final server = await _startCborServer(500, {'echo': 'hello'});
       addTearDown(server.close);
 
-      final dio = Dio(BaseOptions(baseUrl: 'http://127.0.0.1:${server.port}'));
-      final adapter = CratestackCborDioAdapter(dio: dio);
+      final adapter = CratestackHttpAdapter(
+        CratestackDioTransport(Dio()),
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+      );
       final client = DartStatusVerifyCratestackClient(adapter, basePath: '');
 
       await expectLater(
         client.procedures.submit(
           const SubmitProcedureArgs(args: SubmitArgs(message: 'hello')),
         ),
-        throwsA(isA<DioException>()),
+        throwsA(
+          isA<CratestackRestException>().having((e) => e.status, 'status', 500),
+        ),
       );
     },
   );

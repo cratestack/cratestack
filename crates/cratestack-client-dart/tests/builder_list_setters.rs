@@ -42,6 +42,7 @@ fn generated_models() -> String {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render");

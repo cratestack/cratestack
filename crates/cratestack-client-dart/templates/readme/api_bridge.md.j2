@@ -37,7 +37,6 @@ Bridge bytes are an internal runtime format, not the public transport codec cont
 - model fields are generated as projection-safe nullable properties so `fields`, `include`, and `includeFields[path]` remain usable
 - the generated Dart package still relies on generic value-graph conversion for typed model shaping
 - the bridge currently uses JSON bytes internally even when the HTTP transport codec is CBOR
-- the generated Dart APIs do not yet surface a first-class typed remote-error API
 - `sort` and `orderBy` must match if both are provided
 - transport codec, envelope behavior, and signing belong to the Rust runtime bridge, not this package
 

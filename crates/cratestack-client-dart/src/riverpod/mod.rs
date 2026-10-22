@@ -175,7 +175,7 @@ pub(crate) fn generate_package(
         });
     }
 
-    let library_context = build_library_file(schema, is_rest);
+    let library_context = build_library_file(schema, is_rest, config.preset);
     files.push(GeneratedDartFile {
         file_name: library_entrypoint,
         contents: render(&environment, templates::LIBRARY, &library_context)?,

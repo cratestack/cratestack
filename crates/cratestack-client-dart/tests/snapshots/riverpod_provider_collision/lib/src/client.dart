@@ -33,6 +33,25 @@ class DartVerifyRiverpodCollisionCratestackClient {
   ProceduresApi get procedures => ProceduresApi(this);
 }
 
+/// The adapter every generated API sends through. No default: the app picks
+/// its HTTP stack by overriding this provider.
+///
+/// ```dart
+/// ProviderScope(
+///   overrides: [
+///     dartVerifyRiverpodCollisionAdapterProvider.overrideWithValue(
+///       CratestackHttpAdapter(
+///         CratestackDioTransport(dio),
+///         baseUri: Uri.parse('https://api.example.com'),
+///       ),
+///     ),
+///   ],
+///   child: const MyApp(),
+/// )
+/// ```
+///
+/// `CratestackDioTransport` wraps a `Dio`; any other HTTP stack implements
+/// `CratestackHttpTransport` instead.
 final dartVerifyRiverpodCollisionAdapterProvider = Provider<CratestackClientAdapter>((ref) {
   throw UnimplementedError('Override dartVerifyRiverpodCollisionAdapterProvider before reading the generated CrateStack client.');
 });

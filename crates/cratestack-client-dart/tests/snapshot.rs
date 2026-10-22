@@ -58,12 +58,16 @@ fn rpc_runtime_defines_adapter_interface_and_exception() {
         "runtime.dart must declare the CratestackRpcAdapter interface"
     );
     assert!(
-        runtime.contains("class CratestackRpcDioAdapter"),
-        "runtime.dart must ship the JSON adapter"
+        runtime.contains("class CratestackRpcHttpAdapter implements CratestackRpcAdapter"),
+        "runtime.dart must ship the HTTP adapter (CBOR or JSON, over any transport)"
     );
     assert!(
-        runtime.contains("class CratestackRpcCborDioAdapter"),
-        "runtime.dart must ship the CBOR adapter"
+        runtime.contains("abstract interface class CratestackHttpTransport"),
+        "runtime.dart must declare the HTTP seam"
+    );
+    assert!(
+        !runtime.contains("DioAdapter"),
+        "the four *DioAdapter classes are gone (hard cutover, cratestack#1204)"
     );
     assert!(
         runtime.contains("class CratestackRpcException"),
@@ -91,34 +95,31 @@ fn rest_runtime_keeps_existing_adapter_interface() {
 }
 
 /// Regression test for a real bug found while building the
-/// `examples/flutter-riverpod` end-to-end example (issue #303):
-/// `CratestackDioAdapter.execute` never set an `Accept` header, unlike
-/// `CratestackCborDioAdapter` right below it (which always has) and the
-/// TypeScript REST runtime's `headers.set("Accept", "application/json")`
+/// `examples/flutter-riverpod` end-to-end example (issue #303): the REST JSON
+/// adapter never set an `Accept` header, unlike the CBOR adapter right below
+/// it (which always had) and the TypeScript REST runtime's
+/// `headers.set("Accept", "application/json")`
 /// (`crates/cratestack-client-typescript/templates/rest-runtime.ts.j2`).
 /// Reproduced live: a plain `curl` with no `Accept` header against a
 /// real `--preset riverpod` example server (Postgres + axum, wired with
 /// only `JsonCodec`) returned "no encoder configured for response
 /// Content-Type application/cbor", not JSON — the router's own
 /// content-negotiation default doesn't fall back to the one codec that
-/// was actually registered. Every REST JSON adapter call must state its
-/// preference explicitly rather than rely on that default.
+/// was actually registered. Every REST JSON call must state its
+/// preference explicitly rather than rely on that default. Since
+/// cratestack#1204 the two adapters are one `CratestackHttpAdapter`; the
+/// JSON format's explicit `Accept` is pinned here, and its wire output by
+/// `tests/fixtures/wire-golden/rest-json.json`.
 #[test]
-fn rest_dio_adapter_sends_an_explicit_json_accept_header() {
+fn rest_http_adapter_sends_an_explicit_json_accept_header() {
     let package = generate_for("tiny_rest", "tiny_rest_client");
     let runtime = package_file(&package, "lib/src/runtime.dart");
-    let dio_adapter_start = runtime
-        .find("class CratestackDioAdapter")
-        .expect("runtime.dart should declare CratestackDioAdapter");
-    let cbor_adapter_start = runtime
-        .find("class CratestackCborDioAdapter")
-        .expect("runtime.dart should declare CratestackCborDioAdapter");
-    let dio_adapter_body = &runtime[dio_adapter_start..cbor_adapter_start];
     assert!(
-        dio_adapter_body.contains("'Accept': 'application/json'"),
-        "CratestackDioAdapter must send an explicit Accept: application/json \
-         header, matching CratestackCborDioAdapter's own explicit Accept and \
-         the TypeScript REST runtime's parity behaviour:\n{dio_adapter_body}"
+        runtime.contains(
+            "'Accept': format == CratestackWireFormat.json\n                ? 'application/json'"
+        ),
+        "CratestackHttpAdapter must send an explicit Accept: application/json header in the \
+         JSON wire format:\n{runtime}"
     );
 }
 
@@ -198,6 +199,7 @@ fn generate_for(fixture_stem: &str, library_name: &str) -> GeneratedDartPackage 
             preset: DartPreset::Default,
             schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render")

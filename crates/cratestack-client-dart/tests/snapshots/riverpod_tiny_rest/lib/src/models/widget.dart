@@ -453,7 +453,7 @@ final tinyRestClientWidgetApiProvider = Provider<WidgetApi>((ref) {
 // `tinyRestClientWidgetApiProvider` — the existing `Provider<WidgetApi>`
 // relocated by #301 (right above this block) — never the adapter/client
 // providers in `client.dart` directly. Overriding
-// `tinyRestClientAdapterProvider` alone (the pre-existing Dio
+// `tinyRestClientAdapterProvider` alone (the pre-existing adapter
 // override point) is enough to change what every provider below does.
 
 // Issue #331: `query` forwards straight to the underlying `XApi`

@@ -44,12 +44,24 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/rpc_runtime/types.dart.j2"),
     ),
     (
-        "rpc_runtime/dio_json.dart.j2",
-        include_str!("../templates/rpc_runtime/dio_json.dart.j2"),
+        "http_runtime/seam.dart.j2",
+        include_str!("../templates/http_runtime/seam.dart.j2"),
     ),
     (
-        "rpc_runtime/dio_cbor.dart.j2",
-        include_str!("../templates/rpc_runtime/dio_cbor.dart.j2"),
+        "http_runtime/codec.dart.j2",
+        include_str!("../templates/http_runtime/codec.dart.j2"),
+    ),
+    (
+        "rest_runtime/http_adapter.dart.j2",
+        include_str!("../templates/rest_runtime/http_adapter.dart.j2"),
+    ),
+    (
+        "rpc_runtime/http_adapter.dart.j2",
+        include_str!("../templates/rpc_runtime/http_adapter.dart.j2"),
+    ),
+    (
+        "rpc_runtime/cbor_seq_scanner.dart.j2",
+        include_str!("../templates/rpc_runtime/cbor_seq_scanner.dart.j2"),
     ),
     (
         "rpc_runtime/cbor_seq.dart.j2",

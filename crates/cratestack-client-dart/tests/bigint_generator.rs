@@ -38,6 +38,7 @@ fn render(schema: &cratestack_core::Schema, preset: DartPreset) -> GeneratedDart
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("should generate under {preset:?}: {error}"))

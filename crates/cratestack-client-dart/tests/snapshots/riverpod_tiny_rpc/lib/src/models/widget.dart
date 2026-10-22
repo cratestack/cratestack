@@ -418,7 +418,7 @@ final tinyRpcClientWidgetApiProvider = Provider<WidgetApi>((ref) {
 // `tinyRpcClientWidgetApiProvider` — the existing `Provider<WidgetApi>`
 // relocated by #301 (right above this block) — never the adapter/client
 // providers in `client.dart` directly. Overriding
-// `tinyRpcClientAdapterProvider` alone (the pre-existing Dio
+// `tinyRpcClientAdapterProvider` alone (the pre-existing adapter
 // override point) is enough to change what every provider below does.
 
 @riverpod
