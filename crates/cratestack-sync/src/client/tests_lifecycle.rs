@@ -116,3 +116,14 @@ fn queue_is_bounded_while_offline() {
         "the refused write left no trace"
     );
 }
+
+#[test]
+fn a_default_engine_accepts_writes() {
+    let (mut conn, _, _) = setup();
+    // Same registrations as `setup()`, but built through `Default`.
+    let engine = crate::client::SyncEngine::default()
+        .model(super::tests_support::Counters)
+        .mutation("inc", super::tests_support::inc);
+    engine.mutate(&mut conn, "inc", json!({"id": "a"})).unwrap();
+    assert_eq!(value(&conn, "a"), Some(1));
+}

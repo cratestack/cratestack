@@ -77,18 +77,27 @@ pub struct SyncStatus {
     pub rejected: Vec<RejectedMutation>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct SyncEngine {
     models: Vec<Arc<dyn SyncedModel>>,
     mutators: HashMap<String, Arc<dyn LocalMutator>>,
     max_pending: u64,
 }
 
+/// Not derived: a derived `Default` would set `max_pending` to 0 and make
+/// every `mutate` fail with `QueueFull(0)`.
+impl Default for SyncEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SyncEngine {
     pub fn new() -> Self {
         Self {
+            models: Vec::new(),
+            mutators: HashMap::new(),
             max_pending: crate::SyncPolicy::default().max_pending_mutations,
-            ..Self::default()
         }
     }
 

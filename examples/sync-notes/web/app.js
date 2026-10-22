@@ -1,9 +1,15 @@
 // Main thread: render each device from its worker's state messages, and
 // poll the demo-only /demo/server endpoint for the server panel.
+//
+// Every value interpolated into an innerHTML template goes through
+// `escape()` (or `short()`, which escapes) — including ids and enum-like
+// fields that are UUIDs or check-constrained today. Note titles and
+// rejection messages are user-controlled, and rows reach this page from
+// other users' devices via the server, so nothing here is trusted markup.
 
 const escape = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const short = (id) => String(id).slice(0, 8);
+const short = (id) => escape(String(id).slice(0, 8));
 const ago = (ms) => {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
   return s < 2 ? 'now' : s < 60 ? `${s}s` : `${Math.round(s / 60)}m`;
@@ -68,7 +74,7 @@ function render(card, state, send) {
   card.querySelector('.notes').innerHTML = notes.length
     ? notes
         .map(
-          (n) => `<li data-id="${n.id}" class="${n.done ? 'is-done' : ''}">
+          (n) => `<li data-id="${escape(n.id)}" class="${n.done ? 'is-done' : ''}">
             <input type="checkbox" class="done" ${n.done ? 'checked' : ''} aria-label="done">
             <span class="text">${escape(n.title)}</span>
             ${n.unsynced ? '<span class="badge" title="local change not yet acknowledged by the server">unsynced</span>' : ''}
@@ -88,8 +94,8 @@ function render(card, state, send) {
   card.querySelector('.stats').innerHTML = `
     <div><dt>client</dt><dd>${status.clientId ? short(status.clientId) : '—'}</dd></div>
     <div><dt>cursor</dt><dd>${escape(status.cursor)}</dd></div>
-    <div><dt>queued</dt><dd>${status.unpushed}</dd></div>
-    <div><dt>awaiting ack</dt><dd>${status.pending - status.unpushed}</dd></div>`;
+    <div><dt>queued</dt><dd>${escape(status.unpushed)}</dd></div>
+    <div><dt>awaiting ack</dt><dd>${escape(status.pending - status.unpushed)}</dd></div>`;
   card.querySelector('.log').innerHTML = state.log
     .map((l) => `<li><span>${ago(l.at)}</span>${escape(l.line)}</li>`)
     .join('');
@@ -109,15 +115,15 @@ async function refreshServer() {
         .join('') || '<tr><td colspan="3" class="empty">empty</td></tr>';
     document.querySelector('#server-changes tbody').innerHTML =
       state.changes
-        .map((c) => `<tr><td><code>${escape(c.position)}</code></td><td>${escape(c.scope.startsWith('client:') ? 'client:' + short(c.scope.slice(7)) : c.scope)}</td><td class="op ${c.op}">${c.model === '$ack' ? 'ack' : c.op}</td><td><code>${short(c.pk)}</code></td></tr>`)
+        .map((c) => `<tr><td><code>${escape(c.position)}</code></td><td>${escape(c.scope.startsWith('client:') ? 'client:' + short(c.scope.slice(7)) : c.scope)}</td><td class="op ${escape(c.op)}">${c.model === '$ack' ? 'ack' : escape(c.op)}</td><td><code>${short(c.pk)}</code></td></tr>`)
         .join('') || '<tr><td colspan="4" class="empty">empty</td></tr>';
     document.querySelector('#server-clients tbody').innerHTML = state.clients
-      .map((c) => `<tr><td>${escape(c.principal)}</td><td><code>${short(c.clientId)}</code></td><td>${c.lastMutationSeq}</td></tr>`)
+      .map((c) => `<tr><td>${escape(c.principal)}</td><td><code>${short(c.clientId)}</code></td><td>${escape(c.lastMutationSeq)}</td></tr>`)
       .join('');
     const select = document.getElementById('server-note');
     const chosen = select.value;
     select.innerHTML = state.notes
-      .map((n) => `<option value="${n.id}">${escape(n.ownerId)}: ${escape(n.title)}</option>`)
+      .map((n) => `<option value="${escape(n.id)}">${escape(n.ownerId)}: ${escape(n.title)}</option>`)
       .join('');
     if (chosen) select.value = chosen;
   } catch (_) {}
