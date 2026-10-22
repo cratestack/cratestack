@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use cratestack_core::schema::default_markers::default_marker;
+use cratestack_core::schema::default_markers::{default_inner, marker_call};
 use cratestack_core::{Field, TypeArity};
 
 use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType};
@@ -125,46 +125,26 @@ pub(super) fn is_computed_field(field: &Field) -> bool {
 }
 
 fn field_default(field: &Field) -> Option<ColumnDefault> {
-    let raw = field
-        .attributes
-        .iter()
-        .find(|attribute| attribute.raw.starts_with("@default("))?
-        .raw
-        .as_str();
-    // `@default(<inner>)` — strip prefix/suffix, trim. We classify
-    // function calls (suffix `()`) vs literals; everything else is
-    // passed to the emitter as a literal and quoted per dialect.
-    let inner = raw
-        .strip_prefix("@default(")?
-        .strip_suffix(')')?
-        .trim()
-        .to_owned();
+    // We classify function calls (suffix `)`) vs literals; everything else
+    // is passed to the emitter as a literal and quoted per dialect.
+    let inner = default_inner(field)?;
     if inner.is_empty() {
         return None;
     }
     // `dbgenerated()` is a marker, not a real function call — see
-    // `ColumnDefault::DbGenerated`. The parser rejects any argument
-    // (`validate_default_dbgenerated_no_args`), so the only form that
-    // reaches here is the bare call. `autoincrement()` is that same marker
-    // under a spelling the parser refuses outright
-    // (`validate_default_autoincrement_rejected`, cratestack#1128):
-    // `autoincrement()` is not a function in Postgres or SQLite, so
-    // passing it through as `ColumnDefault::Function` would emit
-    // `DEFAULT autoincrement()` — DDL both databases reject at apply
-    // time. A snapshot's previous schema, or a direct library call,
-    // can still carry the spelling past validation; the emitter must
-    // never write it.
-    //
-    // `default_marker` matches whitespace-insensitively (cratestack#1128):
-    // `attribute_text::split_attributes` preserves a space between the name
-    // and its paren, so `autoincrement ()` / `dbgenerated ()` must be
-    // classified here too, or they would leak a broken `DEFAULT` clause.
-    if default_marker(&inner).is_some() {
+    // `ColumnDefault::DbGenerated`. `autoincrement()` is the same marker
+    // under a spelling the parser refuses (cratestack#1128): it is not a
+    // function in Postgres or SQLite, so it must never reach a `DEFAULT`
+    // clause. The parser also refuses arguments and text after a marker;
+    // this crate is callable without validation, so any marker call is
+    // classified here, never passed through as SQL. Snapshots get the same
+    // treatment when they are read (`ColumnDefault`'s `Deserialize`).
+    if marker_call(inner).is_some() {
         return Some(ColumnDefault::DbGenerated);
     }
     if inner.ends_with(')') && !inner.starts_with('\'') {
-        Some(ColumnDefault::Function(inner))
+        Some(ColumnDefault::Function(inner.to_owned()))
     } else {
-        Some(ColumnDefault::Literal(inner))
+        Some(ColumnDefault::Literal(inner.to_owned()))
     }
 }

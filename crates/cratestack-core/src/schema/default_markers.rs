@@ -36,14 +36,38 @@ pub enum DefaultMarker {
     Autoincrement,
 }
 
-/// The marker function called by the *inner text* of a `@default(...)`
-/// attribute — the text between the outer parentheses — or `None` if it is
-/// not one.
+/// A marker call split into its parts. `args` is the text between the
+/// call's parentheses; `trailing` is whatever follows the matching `)`.
+/// `closed` is false when the opening `(` has no matching `)`.
+///
+/// A well-formed marker is the *whole* default expression: no argument,
+/// closed, nothing after it. `dbgenerated() || 'x'` or `dbgenerated()::text`
+/// still classify as the marker (so an emitter never writes them as SQL),
+/// and the parser refuses them by checking [`MarkerCall::is_bare`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarkerCall<'a> {
+    pub marker: DefaultMarker,
+    pub args: &'a str,
+    pub trailing: &'a str,
+    pub closed: bool,
+}
+
+impl MarkerCall<'_> {
+    /// `name()` and nothing else (whitespace aside).
+    pub fn is_bare(&self) -> bool {
+        self.closed && self.args.trim().is_empty() && self.trailing.trim().is_empty()
+    }
+}
+
+/// Parse the *inner text* of a `@default(...)` attribute — the text between
+/// the outer parentheses — as a marker call, or `None` if it does not start
+/// with one.
 ///
 /// A call is: optional leading whitespace, a name of `[A-Za-z0-9_]`,
 /// optional whitespace, then `(`. Case-sensitive, matching the repo's
 /// exact-text philosophy for the closed attribute surface (GHSA-69g4-xvcm-vm2j).
-pub fn default_marker(inner: &str) -> Option<DefaultMarker> {
+/// The closing `)` is the one that balances the opening `(`.
+pub fn marker_call(inner: &str) -> Option<MarkerCall<'_>> {
     let trimmed = inner.trim_start();
     let name_len = trimmed
         .chars()
@@ -51,14 +75,54 @@ pub fn default_marker(inner: &str) -> Option<DefaultMarker> {
         .map(char::len_utf8)
         .sum::<usize>();
     let (name, rest) = trimmed.split_at(name_len);
-    if !rest.trim_start().starts_with('(') {
-        return None;
+    let marker = match name {
+        "dbgenerated" => DefaultMarker::DbGenerated,
+        "autoincrement" => DefaultMarker::Autoincrement,
+        _ => return None,
+    };
+    let body = rest.trim_start().strip_prefix('(')?;
+    let mut depth = 1usize;
+    for (index, c) in body.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(MarkerCall {
+                        marker,
+                        args: &body[..index],
+                        trailing: &body[index + 1..],
+                        closed: true,
+                    });
+                }
+            }
+            _ => {}
+        }
     }
-    match name {
-        "dbgenerated" => Some(DefaultMarker::DbGenerated),
-        "autoincrement" => Some(DefaultMarker::Autoincrement),
-        _ => None,
-    }
+    Some(MarkerCall {
+        marker,
+        args: body,
+        trailing: "",
+        closed: false,
+    })
+}
+
+/// The marker a `@default(...)` inner text starts with, if any. See
+/// [`marker_call`] for the parts.
+pub fn default_marker(inner: &str) -> Option<DefaultMarker> {
+    marker_call(inner).map(|call| call.marker)
+}
+
+/// The trimmed inner text of a field's first `@default(...)` attribute.
+pub fn default_inner(field: &crate::Field) -> Option<&str> {
+    field
+        .attributes
+        .iter()
+        .find(|attribute| attribute.raw.starts_with("@default("))?
+        .raw
+        .strip_prefix("@default(")?
+        .strip_suffix(')')
+        .map(str::trim)
 }
 
 #[cfg(test)]

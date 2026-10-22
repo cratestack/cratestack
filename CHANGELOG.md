@@ -17,11 +17,19 @@ database level (a sequence, `GENERATED ... AS IDENTITY`, a trigger, hand-authore
 SQL)". Any argument form (`autoincrement(1)`) is refused the same way `dbgenerated(<args>)` is.
 `@default(dbgenerated())`, `@default(now())` and literal defaults are unchanged.
 
-Defence in depth: a migration's *previous* schema comes from a snapshot JSON that bypasses
-validation, and `cratestack-migrate` is callable as a library, so `field_default` also
-classifies `autoincrement()` as the `DbGenerated` marker — no code path emits
-`DEFAULT autoincrement()` anymore, and a column carrying the spelling past validation surfaces
-the same `unverified dbgenerated` warning `dbgenerated()` does.
+Defence in depth, for the paths that skip validation. `cratestack-migrate` is callable as a
+library, so `field_default` classifies any marker call as `ColumnDefault::DbGenerated` and never
+passes it through as SQL. A snapshot written before this change can still hold
+`Function("autoincrement()")`; reading a snapshot now normalises a marker-call `Function` to
+`DbGenerated`. Without that, the next `migrate diff` against such a snapshot wrote
+`SET DEFAULT autoincrement()` into `down.sql`. A column carrying the spelling past validation
+surfaces the same `unverified dbgenerated` warning `dbgenerated()` does.
+
+`dbgenerated()` must now be the whole default expression. `@default(dbgenerated() || 'x')`,
+`@default(dbgenerated()::text)` and an unclosed `dbgenerated(` used to pass `check` and were
+classified as the marker, so the rest of the expression vanished from the migration without a
+word. `cratestack check` refuses them; the matcher (`default_markers::marker_call`) finds the
+`)` that balances the call's `(` and reports any argument or trailing text.
 
 Both markers are matched **whitespace-insensitively** through one shared helper
 (`cratestack_core::schema::default_markers`). `attribute_text::split_attributes` trims only

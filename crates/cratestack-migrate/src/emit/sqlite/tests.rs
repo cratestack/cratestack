@@ -1,4 +1,5 @@
 mod checks;
+mod default_markers;
 mod partial_index;
 mod uniques;
 
@@ -194,89 +195,6 @@ model Article {
     assert_eq!(
         migration.unverified_dbgenerated,
         vec![("articles".to_owned(), "id".to_owned())]
-    );
-}
-
-/// cratestack#1128: `@default(autoincrement())` is refused by `cratestack
-/// check` (`validate_default_autoincrement_rejected`), so a validated
-/// schema can never carry it here. This test pins the layer that follows:
-/// a snapshot's previous schema, or a direct `cratestack-migrate` library
-/// call, bypasses validation and can still hold the spelling — and the
-/// emitter must never turn it into `DEFAULT autoincrement()`, which SQLite
-/// rejects at apply time. Parsed unvalidated for exactly that reason.
-#[test]
-fn autoincrement_default_emits_no_default_clause() {
-    let prev = schema(&with_models(""));
-    let next = cratestack_parser::parse_schema_unvalidated(&with_models(
-        r#"
-model Widget {
-  id Int @id @default(autoincrement())
-}
-"#,
-    ))
-    .expect("unvalidated schema should parse");
-    let migration = emit(&diff(&prev, &next).expect("diff should succeed"));
-    assert!(
-        !migration.up.contains("DEFAULT autoincrement()"),
-        "emitted DDL must never contain the literal invalid `DEFAULT autoincrement()` call: {}",
-        migration.up
-    );
-    assert!(
-        migration.up.contains("id BLOB NOT NULL,"),
-        "up was: {}",
-        migration.up
-    );
-    assert_eq!(
-        migration.unverified_dbgenerated,
-        vec![("widgets".to_owned(), "id".to_owned())]
-    );
-}
-
-/// cratestack#1128: a space between the marker name and its `(` must not
-/// slip past the classifier — `attribute_text::split_attributes` preserves
-/// it, and `DEFAULT autoincrement ()` / `DEFAULT dbgenerated ()` are the
-/// same broken clauses the unspaced spellings produce.
-#[test]
-fn spaced_marker_defaults_emit_no_default_clause() {
-    // `autoincrement ()` is refused by `cratestack check`
-    // (`validate_default_autoincrement_rejected`), so parse unvalidated
-    // to reach the emitter layer, exactly as a snapshot could.
-    let next = cratestack_parser::parse_schema_unvalidated(&with_models(
-        r#"
-model Widget {
-  id Int @id @default(autoincrement ())
-}
-"#,
-    ))
-    .expect("unvalidated schema should parse");
-    let migration = emit(&diff(&schema(&with_models("")), &next).expect("diff should succeed"));
-    assert!(
-        !migration.up.contains("DEFAULT autoincrement ()"),
-        "emitted DDL must never contain the spaced invalid call: {}",
-        migration.up
-    );
-    assert_eq!(
-        migration.unverified_dbgenerated,
-        vec![("widgets".to_owned(), "id".to_owned())]
-    );
-
-    // `dbgenerated ()` is the sanctioned marker (bare), so it validates.
-    let next = schema(&with_models(
-        r#"
-model Gadget {
-  id Int @id @default(dbgenerated ())
-}
-"#,
-    ));
-    let migration = emit(&diff(&schema(&with_models("")), &next).expect("diff should succeed"));
-    assert!(
-        !migration.up.contains("DEFAULT dbgenerated ()"),
-        "emitted DDL must never contain the spaced invalid call: {}",
-        migration.up
-    );
-    assert_eq!(
-        migration.unverified_dbgenerated,
-        vec![("gadgets".to_owned(), "id".to_owned())]
     );
 }
 

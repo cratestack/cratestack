@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::schema::default_markers::{DefaultMarker, default_marker};
 use cratestack_core::{Field, TypeArity};
 
 use crate::diagnostics::{SchemaError, span_error};
@@ -39,61 +38,6 @@ pub(super) fn validate_field_policy_attributes(
             format!(
                 "field `{}.{}` declares both @readonly and @server_only; use @server_only alone",
                 model_name, field.name,
-            ),
-            field.span,
-        ));
-    }
-    Ok(())
-}
-
-/// Reject `@default(dbgenerated(...))` with an argument. cratestack's
-/// `dbgenerated()` is a bare marker (matching Prisma's semantics): it
-/// asserts the column already has a real Postgres-level default set
-/// some other way (hand-authored migration SQL, a trigger,
-/// `GENERATED ... AS IDENTITY`, etc), and the migration emitter never
-/// generates a `DEFAULT` clause for it. An argument would silently be
-/// discarded rather than turned into real SQL, which is worse than
-/// rejecting it outright.
-pub(super) fn validate_default_dbgenerated_no_args(
-    model_name: &str,
-    field: &cratestack_core::Field,
-) -> Result<(), SchemaError> {
-    let Some(attribute) = field
-        .attributes
-        .iter()
-        .find(|attribute| attribute.raw.starts_with("@default("))
-    else {
-        return Ok(());
-    };
-    let Some(inner) = attribute
-        .raw
-        .strip_prefix("@default(")
-        .and_then(|rest| rest.strip_suffix(')'))
-    else {
-        return Ok(());
-    };
-    let trimmed = inner.trim();
-    if default_marker(trimmed) != Some(DefaultMarker::DbGenerated) {
-        return Ok(());
-    }
-    let open = trimmed
-        .find('(')
-        .expect("default_marker matched implies a `(`");
-    let args = match trimmed.rfind(')') {
-        Some(close) if close > open => &trimmed[open + 1..close],
-        _ => &trimmed[open + 1..],
-    };
-    if !args.trim().is_empty() {
-        return Err(span_error(
-            format!(
-                "field `{}.{}` uses `@default(dbgenerated({}))`; cratestack's \
-                 `dbgenerated()` takes no argument — it is a marker meaning the column \
-                 already has a real Postgres-level default set some other way \
-                 (hand-authored migration SQL, a trigger, `GENERATED ... AS IDENTITY`, \
-                 etc). Remove the argument and use bare `dbgenerated()`.",
-                model_name,
-                field.name,
-                args.trim(),
             ),
             field.span,
         ));

@@ -11,7 +11,7 @@ mod computed_attribute;
 mod computed_params;
 mod computed_resolver_names;
 mod db_enforce;
-mod default_autoincrement;
+mod default_markers;
 mod field_attribute_tables;
 mod field_attributes;
 mod fields;
