@@ -8,17 +8,17 @@ use crate::diagnostics::{SchemaError, span_error};
 /// - `dbgenerated()` is a bare marker (matching Prisma's semantics): it
 ///   asserts the column already has a real database-level default set some
 ///   other way, and the migration emitter never writes a `DEFAULT` clause
-///   for it. An argument (`dbgenerated("x")`) or anything after the call
-///   (`dbgenerated() || 'x'`, `dbgenerated()::text`) would be silently
-///   discarded rather than turned into SQL, so both are refused.
-/// - `autoincrement()` is refused in every form (cratestack#1128). It is not
-///   a function in Postgres or SQLite, so it can never mean anything a
-///   migration could apply; the marker for "the database generates this
-///   value" is `dbgenerated()`.
+///   for it. Any other spelling (`DbGenerated()`, the bare word), an
+///   argument (`dbgenerated("x")`) or text after the call
+///   (`dbgenerated() || 'x'`) is refused: the emitter would drop it or write
+///   it as SQL no database has.
+/// - `autoincrement()` is refused in every form, any case and the bare word
+///   included (cratestack#1128). It is not a function in Postgres or SQLite,
+///   so no migration could apply it; the marker for "the database generates
+///   this value" is `dbgenerated()`.
 ///
 /// Matching goes through [`marker_call`], shared with the migration emitter,
-/// so a space before the `(` (kept by `attribute_text::split_attributes`)
-/// cannot make the two disagree.
+/// so spacing and case cannot make the two disagree.
 pub(super) fn validate_default_marker(model_name: &str, field: &Field) -> Result<(), SchemaError> {
     let Some(inner) = default_inner(field) else {
         return Ok(());
@@ -31,9 +31,16 @@ pub(super) fn validate_default_marker(model_name: &str, field: &Field) -> Result
             "field `{model_name}.{}` uses `@default({inner})`; `autoincrement()` is not a \
              function in Postgres or SQLite, so no migration could apply it \
              (cratestack#1128). If the column's value is generated at the database level (a \
-             sequence, `GENERATED ... AS IDENTITY`, a trigger, hand-authored migration SQL), \
-             use the marker `@default(dbgenerated())` instead: it emits no `DEFAULT` clause \
-             and asserts exactly that.",
+             sequence, `GENERATED ... AS IDENTITY`, a trigger), use the marker \
+             `@default(dbgenerated())` and create that sequence or identity yourself in \
+             hand-authored migration SQL: cratestack emits neither, and without one an \
+             insert that omits the column fails with a NOT NULL violation.",
+            field.name,
+        ),
+        DefaultMarker::DbGenerated if !call.called || !call.canonical => format!(
+            "field `{model_name}.{}` uses `@default({inner})`; the marker is spelled exactly \
+             `dbgenerated()`. Any other spelling would reach the migration as SQL, and the \
+             database has no such function.",
             field.name,
         ),
         DefaultMarker::DbGenerated if !call.args.trim().is_empty() => format!(

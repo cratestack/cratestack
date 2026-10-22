@@ -153,3 +153,27 @@ fn rejects_unclosed_dbgenerated() {
     parse_schema("model Article {\n  id String @id @default(dbgenerated()\n}\n")
         .expect_err("an unclosed dbgenerated( should fail");
 }
+
+/// Postgres folds unquoted identifiers, and the bare word would be written
+/// raw, so every one of these fails at apply time.
+#[test]
+fn rejects_autoincrement_in_any_case_and_the_bare_word() {
+    for default in ["AutoIncrement()", "AUTOINCREMENT()", "autoincrement"] {
+        let source = format!("model Widget {{\n  id Int @id @default({default})\n}}\n");
+        let message = parse_schema(&source).expect_err(default).to_string();
+        assert!(message.contains("dbgenerated()"), "{default}: {message}");
+        assert!(
+            message.contains("NOT NULL"),
+            "{default} says to create the identity: {message}"
+        );
+    }
+}
+
+#[test]
+fn rejects_other_spellings_of_dbgenerated() {
+    for default in ["DbGenerated()", "DBGENERATED()", "dbgenerated"] {
+        let source = format!("model Article {{\n  id String @id @default({default})\n}}\n");
+        let message = parse_schema(&source).expect_err(default).to_string();
+        assert!(message.contains("spelled exactly"), "{default}: {message}");
+    }
+}

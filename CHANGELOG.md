@@ -31,6 +31,13 @@ classified as the marker, so the rest of the expression vanished from the migrat
 word. `cratestack check` refuses them; the matcher (`default_markers::marker_call`) finds the
 `)` that balances the call's `(` and reports any argument or trailing text.
 
+Marker names match case-insensitively, because Postgres folds unquoted identifiers:
+`@default(AutoIncrement())` used to pass `check` as an ordinary function and fail at apply exactly
+like `autoincrement()`. The bare word `@default(autoincrement)`, written raw as
+`DEFAULT autoincrement`, is refused the same way. `check` accepts only the exact spelling
+`dbgenerated()`, and the `autoincrement()` refusal now says that the sequence or identity must be
+created in hand-authored migration SQL, since cratestack emits neither.
+
 Both markers are matched **whitespace-insensitively** through one shared helper
 (`cratestack_core::schema::default_markers`). `attribute_text::split_attributes` trims only
 the outer edges of each attribute, so a space between the name and its `(` —

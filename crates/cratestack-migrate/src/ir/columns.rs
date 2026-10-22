@@ -102,12 +102,12 @@ pub enum ColumnType {
 /// Column default value, captured as the developer wrote it. The
 /// emitter is responsible for any dialect-specific quoting.
 ///
-/// Deserializing normalises a `Function` whose text is a marker call
-/// (`autoincrement()`, `dbgenerated()`, any spacing or trailing text) to
+/// Deserializing normalises a default whose text is a marker (any case,
+/// spacing, argument or trailing text, or the bare word) to
 /// [`ColumnDefault::DbGenerated`]. A snapshot written before cratestack#1128
-/// can hold `Function("autoincrement()")`; read as-is, the next diff would
-/// put `SET DEFAULT autoincrement()` in a `down.sql`, or rebuild a dropped
-/// table with it — DDL neither database accepts.
+/// can hold `Function("autoincrement()")`; read as-is, the next diff that
+/// changes that column's default would reverse into
+/// `SET DEFAULT autoincrement()` in `down.sql`, which neither database accepts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "ColumnDefaultRepr")]
 pub enum ColumnDefault {
@@ -138,6 +138,7 @@ enum ColumnDefaultRepr {
 impl From<ColumnDefaultRepr> for ColumnDefault {
     fn from(repr: ColumnDefaultRepr) -> Self {
         match repr {
+            ColumnDefaultRepr::Literal(value) if marker_call(&value).is_some() => Self::DbGenerated,
             ColumnDefaultRepr::Literal(value) => Self::Literal(value),
             ColumnDefaultRepr::Function(call) if marker_call(&call).is_some() => Self::DbGenerated,
             ColumnDefaultRepr::Function(call) => Self::Function(call),

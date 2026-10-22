@@ -50,12 +50,31 @@ pub struct MarkerCall<'a> {
     pub args: &'a str,
     pub trailing: &'a str,
     pub closed: bool,
+    /// The name has parentheses after it. `@default(autoincrement)` is the
+    /// marker's bare word: an emitter would write it raw, so it classifies.
+    pub called: bool,
+    /// The name is spelled exactly (`dbgenerated`, not `DbGenerated`).
+    pub canonical: bool,
+}
+
+impl DefaultMarker {
+    /// The marker's exact spelling.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::DbGenerated => "dbgenerated",
+            Self::Autoincrement => "autoincrement",
+        }
+    }
 }
 
 impl MarkerCall<'_> {
-    /// `name()` and nothing else (whitespace aside).
+    /// `name()` exactly and nothing else (whitespace aside).
     pub fn is_bare(&self) -> bool {
-        self.closed && self.args.trim().is_empty() && self.trailing.trim().is_empty()
+        self.called
+            && self.canonical
+            && self.closed
+            && self.args.trim().is_empty()
+            && self.trailing.trim().is_empty()
     }
 }
 
@@ -64,9 +83,15 @@ impl MarkerCall<'_> {
 /// with one.
 ///
 /// A call is: optional leading whitespace, a name of `[A-Za-z0-9_]`,
-/// optional whitespace, then `(`. Case-sensitive, matching the repo's
-/// exact-text philosophy for the closed attribute surface (GHSA-69g4-xvcm-vm2j).
-/// The closing `)` is the one that balances the opening `(`.
+/// optional whitespace, then `(`; the closing `)` is the one that balances
+/// it. The name, or the name alone with nothing after it, also classifies.
+///
+/// Names match **case-insensitively**. Postgres folds unquoted identifiers,
+/// so `DEFAULT AutoIncrement()` fails exactly like `autoincrement()`; an
+/// exact-case match would let `AutoIncrement()` through as an ordinary
+/// function. Only the exact spelling is accepted by the parser
+/// ([`MarkerCall::canonical`], [`MarkerCall::is_bare`]), keeping the closed
+/// attribute surface exact-text (GHSA-69g4-xvcm-vm2j).
 pub fn marker_call(inner: &str) -> Option<MarkerCall<'_>> {
     let trimmed = inner.trim_start();
     let name_len = trimmed
@@ -75,12 +100,21 @@ pub fn marker_call(inner: &str) -> Option<MarkerCall<'_>> {
         .map(char::len_utf8)
         .sum::<usize>();
     let (name, rest) = trimmed.split_at(name_len);
-    let marker = match name {
-        "dbgenerated" => DefaultMarker::DbGenerated,
-        "autoincrement" => DefaultMarker::Autoincrement,
-        _ => return None,
+    let marker = [DefaultMarker::DbGenerated, DefaultMarker::Autoincrement]
+        .into_iter()
+        .find(|marker| name.eq_ignore_ascii_case(marker.name()))?;
+    let canonical = name == marker.name();
+    let after = rest.trim_start();
+    let Some(body) = after.strip_prefix('(') else {
+        return after.is_empty().then_some(MarkerCall {
+            marker,
+            args: "",
+            trailing: "",
+            closed: false,
+            called: false,
+            canonical,
+        });
     };
-    let body = rest.trim_start().strip_prefix('(')?;
     let mut depth = 1usize;
     for (index, c) in body.char_indices() {
         match c {
@@ -93,6 +127,8 @@ pub fn marker_call(inner: &str) -> Option<MarkerCall<'_>> {
                         args: &body[..index],
                         trailing: &body[index + 1..],
                         closed: true,
+                        called: true,
+                        canonical,
                     });
                 }
             }
@@ -104,6 +140,8 @@ pub fn marker_call(inner: &str) -> Option<MarkerCall<'_>> {
         args: body,
         trailing: "",
         closed: false,
+        called: true,
+        canonical,
     })
 }
 

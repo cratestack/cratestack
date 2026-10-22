@@ -44,6 +44,8 @@ fn autoincrement_default_emits_no_default_clause() {
         "model Widget {\n  id Int @id @default(autoincrement())\n}\n",
         "model Widget {\n  id Int @id @default(autoincrement ())\n}\n",
         "model Widget {\n  id Int @id @default(dbgenerated() || 'x')\n}\n",
+        "model Widget {\n  id Int @id @default(AutoIncrement())\n}\n",
+        "model Widget {\n  id Int @id @default(autoincrement)\n}\n",
     ] {
         let migration = emit(&diff(&schema(&with_models("")), &unvalidated(models)).unwrap());
         assert!(

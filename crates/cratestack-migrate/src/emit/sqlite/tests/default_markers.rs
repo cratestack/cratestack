@@ -33,6 +33,14 @@ fn marker_defaults_emit_no_default_clause() {
             "model Gadget {\n  id Int @id @default(dbgenerated ())\n}\n",
             "gadgets",
         ),
+        (
+            "model Widget {\n  id Int @id @default(AutoIncrement())\n}\n",
+            "widgets",
+        ),
+        (
+            "model Widget {\n  id Int @id @default(autoincrement)\n}\n",
+            "widgets",
+        ),
     ] {
         let next = cratestack_parser::parse_schema_unvalidated(&with_models(models))
             .expect("unvalidated schema should parse");

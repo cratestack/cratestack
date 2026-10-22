@@ -60,15 +60,32 @@ fn non_markers_are_none() {
 }
 
 #[test]
-fn different_spelling_or_case_is_not_a_marker() {
+fn a_different_spelling_is_not_a_marker() {
     assert_eq!(default_marker("db_generated()"), None);
-    assert_eq!(default_marker("AutoIncrement()"), None);
     assert_eq!(default_marker("auto_increment()"), None);
 }
 
+/// Postgres folds unquoted identifiers, so `AutoIncrement()` is the same
+/// broken call: it classifies, but is not the canonical spelling.
 #[test]
-fn missing_open_paren_is_not_a_call() {
-    assert_eq!(default_marker("autoincrement"), None);
+fn case_variants_classify_but_are_not_canonical() {
+    for (inner, marker) in [
+        ("AutoIncrement()", DefaultMarker::Autoincrement),
+        ("AUTOINCREMENT()", DefaultMarker::Autoincrement),
+        ("DbGenerated()", DefaultMarker::DbGenerated),
+    ] {
+        let call = marker_call(inner).expect("a marker");
+        assert_eq!(call.marker, marker, "{inner}");
+        assert!(!call.canonical && !call.is_bare(), "{inner}");
+    }
+}
+
+/// The bare word would be written raw as `DEFAULT autoincrement`.
+#[test]
+fn the_bare_word_classifies_but_is_not_a_call() {
+    let call = marker_call(" autoincrement ").expect("a marker");
+    assert_eq!(call.marker, DefaultMarker::Autoincrement);
+    assert!(!call.called && !call.is_bare());
     assert_eq!(default_marker("dbgenerated x"), None);
 }
 
