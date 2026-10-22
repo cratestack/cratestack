@@ -7,8 +7,13 @@
 //   * `CratestackRpcHttpAdapter`  — CBOR or JSON on the wire
 //                                   (`CratestackWireFormat`), any transport
 //
+{% if is_fespalier_preset %}
+// plus `CratestackFespalierTransport` (a separate file,
+// `fespalier_transport.dart`) for fespalier's `HttpTransport`.
+{% else %}
 // plus `CratestackDioTransport` (a separate file, `dio_transport.dart`) for
 // apps that already have a Dio.
+{% endif %}
 
 import 'dart:async';
 import 'dart:convert';

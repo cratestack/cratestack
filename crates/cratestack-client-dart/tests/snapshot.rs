@@ -199,6 +199,7 @@ fn generate_for(fixture_stem: &str, library_name: &str) -> GeneratedDartPackage 
             preset: DartPreset::Default,
             schema_sha256: SNAPSHOT_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render")

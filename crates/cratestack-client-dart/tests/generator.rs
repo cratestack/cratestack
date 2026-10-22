@@ -25,6 +25,7 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render");
@@ -650,6 +651,7 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("order template should render");
@@ -678,6 +680,7 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("enum template should render");
@@ -766,6 +769,7 @@ fn prefers_template_override_directory_when_provided() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("override template should render");
@@ -806,6 +810,7 @@ fn decimal_scalar_maps_to_a_real_decimal_type() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("default template should render");
@@ -893,6 +898,7 @@ fn builder_edge_case_fields_survive_as_ordinary_constructor_fields() {
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("builder edge-case template should render");
@@ -988,6 +994,7 @@ fn list_field_constructor_and_annotation_are_unaffected_by_moving_the_builder_ou
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .expect("builder edge-case template should render");

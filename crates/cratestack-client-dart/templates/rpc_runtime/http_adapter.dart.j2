@@ -8,6 +8,16 @@ bool _isCborSeqContentType(String? contentType) =>
 /// [CratestackRpcException], a call that got no answer at all fails with a
 /// [CratestackTransportException]. The transport owns the connection. To use
 /// an HTTP client of your own, implement [CratestackHttpTransport]; to use
+{% if is_fespalier_preset %}
+/// fespalier's transport chain, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackRpcHttpAdapter(
+///   CratestackFespalierTransport(transportChain),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+{% else %}
 /// Dio, wrap it:
 ///
 /// ```dart
@@ -16,6 +26,7 @@ bool _isCborSeqContentType(String? contentType) =>
 ///   baseUri: Uri.parse('https://api.example.com'),
 /// );
 /// ```
+{% endif %}
 class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
   const CratestackRpcHttpAdapter(
     this.transport, {

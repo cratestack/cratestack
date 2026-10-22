@@ -32,7 +32,30 @@ pub enum DartPreset {
     /// their own file, and the package-wide DI providers
     /// (`xAdapterProvider`/`xClientProvider`) in a shared `client.dart`.
     Riverpod,
+    /// The `riverpod` preset, sending through fespalier's `HttpTransport`
+    /// instead of Dio (cratestack#1204): no `dio` in the pubspec, no
+    /// `dio_transport.dart`, a generated `CratestackFespalierTransport`
+    /// over `package:fespalier_transport`, and a `<prefix>TransportProvider`
+    /// the app overrides with its transport chain. The `fespalier_transport`
+    /// git dependency is pinned at [`DartGeneratorConfig::fespalier_ref`].
+    Fespalier,
 }
+
+impl DartPreset {
+    /// Whether this preset emits the riverpod layout (one file per model,
+    /// `@riverpod` providers). `Fespalier` is `Riverpod` plus a transport.
+    pub fn is_riverpod_layout(self) -> bool {
+        matches!(self, Self::Riverpod | Self::Fespalier)
+    }
+}
+
+/// The fespalier release `--preset fespalier` pins `fespalier_transport` at
+/// unless `--fespalier-ref` says otherwise (cratestack#1204). This is the
+/// release whose `fespalier_transport` interface the generated
+/// `CratestackFespalierTransport` was written against; bump it together with
+/// that file when fespalier changes the interface. fespalier packages are git
+/// dependencies by design, so this is a git tag, not a pub.dev version.
+pub const DEFAULT_FESPALIER_REF: &str = "v0.22.0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DartGeneratorConfig {
@@ -97,6 +120,11 @@ pub struct DartGeneratorConfig {
     /// than any CBOR-specific Dart type, so the body a runtime adapter
     /// encodes/decodes was already JSON-safe before this flag existed.
     pub native_cbor: bool,
+    /// Git ref (tag, branch or commit) of `github.com/fespalier/fespalier`
+    /// the `fespalier` preset pins `fespalier_transport` at in the emitted
+    /// pubspec (cratestack#1204). Ignored by every other preset. Defaults to
+    /// [`DEFAULT_FESPALIER_REF`]; the CLI exposes it as `--fespalier-ref`.
+    pub fespalier_ref: String,
 }
 
 impl Default for DartGeneratorConfig {
@@ -108,6 +136,7 @@ impl Default for DartGeneratorConfig {
             preset: DartPreset::Default,
             schema_sha256: String::new(),
             native_cbor: DEFAULT_NATIVE_CBOR,
+            fespalier_ref: DEFAULT_FESPALIER_REF.to_owned(),
         }
     }
 }
@@ -146,4 +175,8 @@ pub enum DartGeneratorError {
     /// a schema. Same rejection, same wording, as the macro path.
     #[error("{0}")]
     CompositePrimaryKeyUnsupported(String),
+    /// `--fespalier-ref` is empty or holds whitespace or control characters,
+    /// none of which a git ref can contain.
+    #[error("invalid fespalier ref {0:?}: expected a git tag, branch or commit, e.g. v0.22.0")]
+    InvalidFespalierRef(String),
 }

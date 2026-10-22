@@ -85,6 +85,7 @@ fn config(preset: DartPreset) -> DartGeneratorConfig {
         preset,
         schema_sha256: "deadbeef".to_owned(),
         native_cbor: false,
+        ..DartGeneratorConfig::default()
     }
 }
 

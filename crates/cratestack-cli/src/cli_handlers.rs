@@ -25,6 +25,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             preset,
+            fespalier_ref,
             run_build_runner,
             no_native_cbor,
         } => handle_generate_dart(
@@ -35,6 +36,7 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             template_dir,
             check,
             preset,
+            fespalier_ref,
             run_build_runner,
             // The CLI surface is inverted (`--no-native-cbor`, defaulting to
             // off i.e. native-on) but the generator API stays in terms of
@@ -141,9 +143,13 @@ fn handle_generate_dart(
     template_dir: Option<PathBuf>,
     check: bool,
     preset: DartPresetArg,
+    fespalier_ref: Option<String>,
     run_build_runner: bool,
     native_cbor: bool,
 ) -> Result<()> {
+    if fespalier_ref.is_some() && preset != DartPresetArg::Fespalier {
+        bail!("--fespalier-ref only applies to --preset fespalier");
+    }
     let parsed = parse_schema_or_render(&schema)?;
     let schema_sha256 = cratestack_core::schema_digest_hex(&parsed);
     let package = cratestack_client_dart::generate_package(
@@ -155,6 +161,8 @@ fn handle_generate_dart(
             preset: preset.into(),
             schema_sha256,
             native_cbor,
+            fespalier_ref: fespalier_ref
+                .unwrap_or_else(|| cratestack_client_dart::DEFAULT_FESPALIER_REF.to_owned()),
         },
     )?;
     let files = into_generated_files(package.files);

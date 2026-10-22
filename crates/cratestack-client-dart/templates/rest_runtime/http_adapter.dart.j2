@@ -21,6 +21,17 @@ class CratestackRestException implements Exception {
 /// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
 /// `Content-Type`, the canonical query string, and the error mapping; the
 /// transport owns the connection. To use an HTTP client of your own,
+{% if is_fespalier_preset %}
+/// implement [CratestackHttpTransport]; to use fespalier's transport
+/// chain, wrap it:
+///
+/// ```dart
+/// final adapter = CratestackHttpAdapter(
+///   CratestackFespalierTransport(transportChain),
+///   baseUri: Uri.parse('https://api.example.com'),
+/// );
+/// ```
+{% else %}
 /// implement [CratestackHttpTransport]; to use Dio, wrap it:
 ///
 /// ```dart
@@ -29,6 +40,7 @@ class CratestackRestException implements Exception {
 ///   baseUri: Uri.parse('https://api.example.com'),
 /// );
 /// ```
+{% endif %}
 class CratestackHttpAdapter implements CratestackClientAdapter {
   const CratestackHttpAdapter(
     this.transport, {

@@ -410,6 +410,7 @@ fn generate(fixture_stem: &str, preset: DartPreset, native_cbor: bool) -> Genera
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("{fixture_stem}: generation should succeed: {error}"))

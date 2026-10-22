@@ -4,7 +4,8 @@ use std::path::Path;
 use cratestack_core::TransportStyle;
 use minijinja::Environment;
 
-use crate::config::DartGeneratorError;
+use crate::config::{DartGeneratorError, DartPreset};
+use crate::templates_fespalier::swap_dio_for_fespalier;
 use crate::templates_fragments::FRAGMENT_TEMPLATES;
 
 #[derive(Debug, Clone, Copy)]
@@ -125,14 +126,20 @@ const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
     },
 ];
 
-pub(crate) fn template_specs_for(transport: TransportStyle) -> Vec<TemplateSpec> {
+pub(crate) fn template_specs_for(
+    transport: TransportStyle,
+    preset: DartPreset,
+) -> Vec<TemplateSpec> {
     let (common, mode_specs) = match transport {
         TransportStyle::Rest => (COMMON_TEMPLATE_SPECS, REST_TEMPLATE_SPECS),
         TransportStyle::Rpc => (COMMON_TEMPLATE_SPECS, RPC_TEMPLATE_SPECS),
     };
-    let mut specs = Vec::with_capacity(common.len() + mode_specs.len());
+    let mut specs = Vec::with_capacity(common.len() + mode_specs.len() + 1);
     specs.extend_from_slice(common);
     specs.extend_from_slice(mode_specs);
+    if preset == DartPreset::Fespalier {
+        swap_dio_for_fespalier(&mut specs);
+    }
     specs
 }
 

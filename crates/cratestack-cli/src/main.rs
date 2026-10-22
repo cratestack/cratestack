@@ -83,6 +83,7 @@ mod tests {
                 template_dir,
                 check,
                 preset,
+                fespalier_ref,
                 run_build_runner,
                 no_native_cbor,
             } => {
@@ -93,6 +94,7 @@ mod tests {
                 assert_eq!(template_dir, None);
                 assert!(!check);
                 assert_eq!(preset, DartPresetArg::Default);
+                assert_eq!(fespalier_ref, None);
                 assert!(
                     !run_build_runner,
                     "--run-build-runner must default to off (issue #303: opt-in, not default)"
@@ -144,6 +146,62 @@ mod tests {
         match cli.command {
             Command::GenerateDart { preset, .. } => {
                 assert_eq!(preset, DartPresetArg::Riverpod);
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
+    fn generate_dart_clap_accepts_fespalier_preset_and_ref() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "fespalier",
+            "--fespalier-ref",
+            "0123abc",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart {
+                preset,
+                fespalier_ref,
+                ..
+            } => {
+                assert_eq!(preset, DartPresetArg::Fespalier);
+                assert_eq!(fespalier_ref.as_deref(), Some("0123abc"));
+            }
+            _ => panic!("expected generate-dart command"),
+        }
+    }
+
+    #[test]
+    fn generate_dart_clap_fespalier_ref_defaults_to_none() {
+        let cli = Cli::parse_from([
+            "cratestack",
+            "generate-dart",
+            "--schema",
+            "schema.cstack",
+            "--out",
+            "out",
+            "--preset",
+            "fespalier",
+        ]);
+
+        match cli.command {
+            Command::GenerateDart {
+                preset,
+                fespalier_ref,
+                ..
+            } => {
+                // `None` here; the handler falls back to the generator's
+                // `DEFAULT_FESPALIER_REF`.
+                assert_eq!(preset, DartPresetArg::Fespalier);
+                assert_eq!(fespalier_ref, None);
             }
             _ => panic!("expected generate-dart command"),
         }

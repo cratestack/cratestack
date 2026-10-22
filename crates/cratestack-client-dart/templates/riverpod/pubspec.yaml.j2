@@ -29,7 +29,18 @@ dependencies:
 {% else %}
   cbor: ^6.5.1
 {% endif %}
+{% if is_fespalier %}
+  # cratestack#1204: the generated `CratestackFespalierTransport` sends through
+  # fespalier's `HttpTransport`. Not on pub.dev: fespalier packages are git
+  # dependencies, pinned at a release tag (`--fespalier-ref` changes it).
+  fespalier_transport:
+    git:
+      url: https://github.com/fespalier/fespalier
+      path: packages/fespalier_transport
+      ref: '{{ fespalier_ref }}'
+{% else %}
   dio: ^5.8.0+1
+{% endif %}
   # issue #325: gives every generated data class real `operator ==`/
   # `hashCode`/`copyWith` via `@MappableClass()` (see
   # `enums_and_data_classes.dart.j2`) — a range, not an exact pin, since

@@ -22,6 +22,7 @@ fn generate(fixture: &str, library_name: &str, preset: DartPreset) -> GeneratedD
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("{fixture} should generate under {preset:?}: {error}"))
@@ -47,6 +48,7 @@ fn generate_from_source(
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
             native_cbor: false,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("inline schema should generate under {preset:?}: {error}"))
@@ -89,6 +91,7 @@ fn omitting_preset_matches_explicit_default_preset() {
         preset: DartPreset::default(),
         schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
         native_cbor: false,
+        ..DartGeneratorConfig::default()
     };
     let config_explicit_default = DartGeneratorConfig {
         preset: DartPreset::Default,

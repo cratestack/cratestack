@@ -55,6 +55,7 @@ fn config(preset: DartPreset) -> DartGeneratorConfig {
         // genuinely differ, and that difference is not what is under test.
         schema_sha256: "deadbeef".to_owned(),
         native_cbor: false,
+        ..DartGeneratorConfig::default()
     }
 }
 

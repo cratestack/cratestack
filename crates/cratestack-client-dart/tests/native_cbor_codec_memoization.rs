@@ -118,6 +118,7 @@ fn write_generated_package(fixture: &str, library_name: &str, dir: &Path) {
             // The whole point — the cached codec accessor only exists on
             // the native path.
             native_cbor: true,
+            ..DartGeneratorConfig::default()
         },
     )
     .unwrap_or_else(|error| panic!("{fixture}: generation should succeed: {error}"));

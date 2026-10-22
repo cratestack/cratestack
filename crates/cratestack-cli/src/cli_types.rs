@@ -40,8 +40,22 @@ pub(crate) enum Command {
         /// `riverpod` (one file per model under `lib/src/models/`, plus
         /// a shared file for cross-model types, procedures in their own
         /// file, and the package-wide DI providers in `lib/src/client.dart`).
+        ///
+        /// `fespalier` is `riverpod` sending through fespalier's
+        /// `HttpTransport` instead of Dio (cratestack#1204): no `dio` in the
+        /// pubspec, a generated `CratestackFespalierTransport`, and a
+        /// `<prefix>TransportProvider` the app overrides with its transport
+        /// chain. Its pubspec depends on `fespalier_transport` by git, which
+        /// is not on pub.dev (see `--fespalier-ref`).
         #[arg(long, value_enum, default_value_t = DartPresetArg::Default)]
         preset: DartPresetArg,
+        /// Git ref (tag, branch or commit) of github.com/fespalier/fespalier
+        /// that `--preset fespalier` pins `fespalier_transport` at. Defaults
+        /// to the release the generator targets
+        /// (`cratestack_client_dart::DEFAULT_FESPALIER_REF`, `v0.22.0`).
+        /// An error with any other preset.
+        #[arg(long)]
+        fespalier_ref: Option<String>,
         /// Opt-in (issue #303): after generation, shell out to `dart run
         /// build_runner build --delete-conflicting-outputs` in `--out`.
         /// Every preset needs this since issue #668 phase 2/3: every
@@ -380,6 +394,7 @@ pub(crate) enum MigrateAction {
 pub(crate) enum DartPresetArg {
     Default,
     Riverpod,
+    Fespalier,
 }
 
 impl From<DartPresetArg> for cratestack_client_dart::DartPreset {
@@ -387,6 +402,7 @@ impl From<DartPresetArg> for cratestack_client_dart::DartPreset {
         match value {
             DartPresetArg::Default => cratestack_client_dart::DartPreset::Default,
             DartPresetArg::Riverpod => cratestack_client_dart::DartPreset::Riverpod,
+            DartPresetArg::Fespalier => cratestack_client_dart::DartPreset::Fespalier,
         }
     }
 }
