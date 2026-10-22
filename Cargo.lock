@@ -1767,6 +1767,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-sync"
+version = "0.15.4"
+dependencies = [
+ "async-stream",
+ "async-trait",
+ "axum",
+ "chrono",
+ "cratestack-core",
+ "cratestack-rusqlite",
+ "cratestack-sqlx",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 2.0.21",
+ "tokio",
+ "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "crc"
 version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6984,6 +7007,39 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "sync-notes-client"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "console_error_panic_hook",
+ "cratestack-macros",
+ "cratestack-rusqlite",
+ "cratestack-sqlite",
+ "cratestack-sync",
+ "serde",
+ "serde_json",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "sync-notes-server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "cratestack-codec-json",
+ "cratestack-pg",
+ "cratestack-sync",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

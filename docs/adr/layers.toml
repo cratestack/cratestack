@@ -175,6 +175,18 @@ cratestack-outbox = 2
 # the wasm/napi bindings (all L4), so the upper-bound half of the rule
 # reads 2 <= 4 and needs no allowlist entry.
 cratestack-cose = 2
+# `cratestack-sync` (ADR 0020, Proposed — `publish = false` prototype): the
+# offline sync engine. Normal workspace dependencies: `cratestack-core` (L0)
+# always; `cratestack-sqlx` (L2) behind its `server` feature and
+# `cratestack-rusqlite` (L2) behind its `client` feature. `cargo metadata`
+# lists both optional edges, so this check sees them; every edge reads
+# `dep.layer <= 2`. It is an adapter-level crate by the "lowest number the
+# real graph supports" rule: it is NOT a binding (its axum router speaks
+# plain `axum`, not `cratestack-axum`, the same posture `cratestack-outbox`
+# takes above) and it emits no code. The two halves are feature-disjoint so
+# a client build never links sqlx and a server build never links rusqlite.
+# Nothing in `crates/` depends on it.
+cratestack-sync = 2
 
 # --- L3: Execution -----------------------------------------------------
 # `cratestack-exec` (ADR 0015 slices 1 and 2): idempotency and rate-limit

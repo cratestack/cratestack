@@ -1,0 +1,75 @@
+[package]
+name = "cratestack-sync"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Experimental offline sync engine for CrateStack: a commit-ordered Postgres change log captured by triggers, server-authoritative mutation replay, TTLs, and a sans-IO SQLite client with an undo log for rebasing local writes. Prototype — see docs/design/sync-engine.md."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+# Prototype (ADR 0020, Proposed). Not published until the ADR is accepted and
+# the `@@sync` schema surface replaces the hand-written registries.
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Postgres change log, push/pull/register handlers, GC and the poke stream.
+server = [
+    "dep:async-stream",
+    "dep:async-trait",
+    "dep:axum",
+    "dep:cratestack-sqlx",
+    "dep:futures-util",
+    "dep:tokio",
+    "dep:tracing",
+]
+# rusqlite-backed client engine. Sans-IO: compiles to wasm32-unknown-unknown.
+client = ["dep:cratestack-rusqlite"]
+
+[dependencies]
+chrono.workspace = true
+cratestack-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+async-stream = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+cratestack-rusqlite = { workspace = true, optional = true }
+cratestack-sqlx = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["sync", "time", "macros"] }
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+async-trait.workspace = true
+axum.workspace = true
+tower.workspace = true
+testcontainers.workspace = true
+testcontainers-modules.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+uuid = { workspace = true, features = ["v4"] }
+
+# The PG suite exercises the server half; the client half is unit-tested in
+# `src/client/tests_rebase.rs` and end-to-end in `tests/end_to_end.rs`.
+[[test]]
+name = "server_pg"
+required-features = ["server"]
+
+[[test]]
+name = "ttl_protection_pg"
+required-features = ["server"]
+
+[[test]]
+name = "end_to_end"
+required-features = ["server", "client"]

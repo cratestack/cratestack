@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sync Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Sync Notes <span class="tag">cratestack-sync prototype</span></h1>
+      <p class="lede">
+        Three devices, each with its own SQLite database on OPFS (a Rust/wasm worker), syncing with one
+        Postgres server. Writes land locally first, so they work offline. They replay on the server under the
+        schema's policies, and changes come back through a commit-ordered change log.
+      </p>
+    </div>
+    <ul class="legend">
+      <li><span class="dot ok"></span>in sync</li>
+      <li><span class="dot busy"></span>syncing</li>
+      <li><span class="dot wait"></span>local changes queued</li>
+      <li><span class="dot off"></span>offline</li>
+    </ul>
+  </header>
+
+  <main class="grid">
+    <section class="device" data-device="alice-laptop" data-user="alice" data-label="Alice · Laptop"></section>
+    <section class="device" data-device="alice-phone" data-user="alice" data-label="Alice · Phone"></section>
+    <section class="device" data-device="bob-laptop" data-user="bob" data-label="Bob · Laptop"></section>
+
+    <section class="server" id="server">
+      <div class="card-head">
+        <div class="who"><span class="avatar srv">PG</span><div><h2>Server</h2><p class="sub">Postgres, as the server sees it</p></div></div>
+      </div>
+      <div class="server-cols">
+        <div>
+          <h3>notes table</h3>
+          <table id="server-notes"><thead><tr><th>owner</th><th>title</th><th>done</th></tr></thead><tbody></tbody></table>
+          <form id="server-edit" class="server-edit">
+            <h3>Server-side write <span class="hint">through the generated REST API, not sync</span></h3>
+            <div class="row">
+              <select id="server-note" aria-label="note"></select>
+              <input id="server-title" placeholder="New title" autocomplete="off">
+              <button type="submit">PATCH</button>
+            </div>
+            <p id="server-result" class="hint"></p>
+          </form>
+        </div>
+        <div>
+          <h3>change log <span class="hint">compacted · newest first</span></h3>
+          <table id="server-changes"><thead><tr><th>position</th><th>scope</th><th>op</th><th>key</th></tr></thead><tbody></tbody></table>
+          <h3>registered clients</h3>
+          <table id="server-clients"><thead><tr><th>principal</th><th>client</th><th>last seq</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <template id="device-template">
+    <div class="card-head">
+      <div class="who"><span class="avatar"></span><div><h2 class="label"></h2><p class="sub storage"></p></div></div>
+      <label class="switch"><input type="checkbox" class="online" checked><span class="track"></span><span class="switch-label">Online</span></label>
+    </div>
+    <div class="state"><span class="dot"></span><span class="state-text"></span></div>
+    <form class="add"><input class="title" placeholder="Add a note…" autocomplete="off"><button type="submit">Add</button></form>
+    <ul class="notes"></ul>
+    <div class="rejected" hidden><div class="rejected-head"><strong>Rejected by server</strong><button class="link dismiss" type="button">dismiss</button></div><ul></ul></div>
+    <footer>
+      <dl class="stats"></dl>
+      <ol class="log"></ol>
+    </footer>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

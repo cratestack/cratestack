@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Prototype: offline sync between embedded devices and a Postgres server (ADR 0020, proposed)
+
+New crate `cratestack-sync`, `publish = false`, with a runnable demo in `examples/sync-notes`. It is
+here to test the design in `docs/design/sync-engine.md` against real code. It is not a supported
+surface yet, and the `@@sync` schema attribute it argues for does not exist.
+
+- **Device to server.** A write applies to the device's SQLite immediately and is queued as a named
+  mutation. The server replays each mutation through the generated delegates in its own savepoint,
+  so `@@allow` policies, validators and `@version` apply. Sequences are strict per client, and a
+  retried push is acknowledged without running again.
+- **Server to devices.** A Postgres trigger records every write to a synced table, whatever made it:
+  generated REST and RPC routes and plain SQL included, not only sync. Pulls read a compacted change
+  log with a `(txid, seq)` cursor gated on `pg_snapshot_xmin`, so a transaction that commits late is
+  never skipped. Rows are read through the model's read policy when they are pulled. `NOTIFY` pokes
+  connected devices.
+- **Offline.** The device keeps an undo log (shadow tables filled by triggers). A pull or a server
+  rejection rewinds to server state and replays the pending queue exactly, so mutators do not have
+  to be idempotent.
+- **TTLs.** `SyncPolicy` sets a mutation TTL (stale offline writes are rejected), a client TTL (idle
+  devices are evicted, and their unacknowledged writes come back as rejected rather than being sent
+  twice), and a tombstone TTL (a cursor older than the purge horizon gets a full resync). `validate()`
+  refuses a client TTL that is not longer than the mutation TTL.
+- **Protections.** Every endpoint goes through the app's own `AuthProvider`. A client id is bound to
+  the principal that registered it. Scopes are derived on the server. Bodies, pushes, mutation sizes,
+  pages, registrations, poke streams and the offline queue are all bounded. Optional per-principal
+  rate limiting goes through any `RateLimitStore`, and fails closed if the store errors.
+
+Postgres-backed suites: `just test-ci-db-sync`. The demo: `examples/sync-notes/README.md`.
+
 ### `migrate diff` no longer calls a CHECK on a table it creates blocking (#1129)
 
 A validator CHECK (`@range`, `@length`, `@iso4217` with `@db_enforce`) on a table the same migration
