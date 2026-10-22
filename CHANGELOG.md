@@ -105,7 +105,7 @@ needs the HTTP-seam change above and follows it directly.
 - **No Dio.** The preset does not emit `dio_transport.dart` and its pubspec has no `dio`. It depends on
   `fespalier_transport` by git (`url: https://github.com/fespalier/fespalier`,
   `path: packages/fespalier_transport`) at `DEFAULT_FESPALIER_REF`, a generator constant set to the
-  fespalier release this targets, `v0.22.0`. `--fespalier-ref <ref>` overrides it (a tag, branch or
+  fespalier release this targets, `v0.21.0`. `--fespalier-ref <ref>` overrides it (a tag, branch or
   commit; an error with any other preset, or if it is empty or holds whitespace).
 - **Everything else is the `riverpod` preset's**, byte for byte, except the README (a fespalier
   section), the `lib/<package>.dart` export, the pubspec, `client.dart` and the doc comments in

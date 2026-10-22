@@ -55,7 +55,7 @@ impl DartPreset {
 /// `CratestackFespalierTransport` was written against; bump it together with
 /// that file when fespalier changes the interface. fespalier packages are git
 /// dependencies by design, so this is a git tag, not a pub.dev version.
-pub const DEFAULT_FESPALIER_REF: &str = "v0.22.0";
+pub const DEFAULT_FESPALIER_REF: &str = "v0.21.0";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DartGeneratorConfig {
@@ -177,6 +177,6 @@ pub enum DartGeneratorError {
     CompositePrimaryKeyUnsupported(String),
     /// `--fespalier-ref` is empty or holds whitespace or control characters,
     /// none of which a git ref can contain.
-    #[error("invalid fespalier ref {0:?}: expected a git tag, branch or commit, e.g. v0.22.0")]
+    #[error("invalid fespalier ref {0:?}: expected a git tag, branch or commit, e.g. v0.21.0")]
     InvalidFespalierRef(String),
 }

@@ -49,7 +49,7 @@ Import only `package:tiny_rest_client/tiny_rest_client.dart` from application co
 
 The generated client depends only on the `CratestackClientAdapter` interface. The built-in implementation is `CratestackHttpAdapter`, written once over a pure-Dart HTTP seam, `CratestackHttpTransport`. The adapter owns the headers, the CBOR/JSON choice, the response `Content-Type` dispatch, the canonical query string and the error mapping; the transport owns the connection.
 
-This package sends through fespalier's `HttpTransport` (`package:fespalier_transport`, a git dependency pinned at `v0.22.0`; it is not on pub.dev, and `dio` is not a dependency). `CratestackFespalierTransport`, in `lib/src/fespalier_transport.dart`, adapts it to the seam:
+This package sends through fespalier's `HttpTransport` (`package:fespalier_transport`, a git dependency pinned at `v0.21.0`; it is not on pub.dev, and `dio` is not a dependency). `CratestackFespalierTransport`, in `lib/src/fespalier_transport.dart`, adapts it to the seam:
 
 ```dart
 final adapter = CratestackHttpAdapter(

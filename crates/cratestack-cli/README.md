@@ -75,7 +75,7 @@ Flags:
   fespalier's `HttpTransport` instead of Dio (cratestack#1204): no `dio` in the
   pubspec, a generated `CratestackFespalierTransport`, and a
   `<prefix>TransportProvider` the app overrides with its transport chain.
-- `--fespalier-ref <REF>` (optional, `--preset fespalier` only; default `v0.22.0`) — the
+- `--fespalier-ref <REF>` (optional, `--preset fespalier` only; default `v0.21.0`) — the
   git tag, branch or commit of `github.com/fespalier/fespalier` that the generated
   pubspec pins `fespalier_transport` at. An error with any other preset.
 - `--run-build-runner` — after generation, shell out to `dart run

@@ -81,7 +81,7 @@ fn names_dio(text: &str) -> bool {
 
 #[test]
 fn the_default_ref_is_the_release_the_generator_targets() {
-    assert_eq!(DEFAULT_FESPALIER_REF, "v0.22.0");
+    assert_eq!(DEFAULT_FESPALIER_REF, "v0.21.0");
     assert_eq!(
         DartGeneratorConfig::default().fespalier_ref,
         DEFAULT_FESPALIER_REF
@@ -123,7 +123,7 @@ fn the_pubspec_pins_fespalier_transport_by_git() {
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
             pubspec.contains(
-                "  fespalier_transport:\n    git:\n      url: https://github.com/fespalier/fespalier\n      path: packages/fespalier_transport\n      ref: 'v0.22.0'\n"
+                "  fespalier_transport:\n    git:\n      url: https://github.com/fespalier/fespalier\n      path: packages/fespalier_transport\n      ref: 'v0.21.0'\n"
             ),
             "{fixture}:\n{pubspec}"
         );

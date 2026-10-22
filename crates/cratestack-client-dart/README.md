@@ -91,7 +91,7 @@ schemas — a strict superset of the same content, never a redesign of what's ge
   and `<prefix>BaseUriProvider`. `<prefix>AdapterProvider` defaults to the HTTP adapter over them.
   The call option's abort and `TransportZone`'s are merged, so either aborts (so `fespalier_cratestack`'s
   `ref.cancellable` aborts a page's loads). The pubspec pins `fespalier_transport` by git at
-  `DEFAULT_FESPALIER_REF` (`v0.22.0`), changed with `--fespalier-ref`. fespalier packages are git
+  `DEFAULT_FESPALIER_REF` (`v0.21.0`), changed with `--fespalier-ref`. fespalier packages are git
   dependencies by design; until the pinned ref is reachable, `just verify-dart-fespalier` resolves
   it from a local checkout (`FESPALIER_TRANSPORT_PATH`) and skips without one.
 

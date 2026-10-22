@@ -25,7 +25,7 @@ dependencies:
     git:
       url: https://github.com/fespalier/fespalier
       path: packages/fespalier_transport
-      ref: 'v0.22.0'
+      ref: 'v0.21.0'
   # issue #325: gives every generated data class real `operator ==`/
   # `hashCode`/`copyWith` via `@MappableClass()` (see
   # `enums_and_data_classes.dart.j2`) — a range, not an exact pin, since

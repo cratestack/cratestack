@@ -527,7 +527,7 @@ fn dart_fespalier_ref_is_rejected_with_another_preset_or_when_malformed() {
         dir.path().join("riverpod"),
         false,
         DartPresetArg::Riverpod,
-        Some("v0.22.0".to_owned()),
+        Some("v0.21.0".to_owned()),
     )
     .expect_err("--fespalier-ref with --preset riverpod must fail");
     assert!(

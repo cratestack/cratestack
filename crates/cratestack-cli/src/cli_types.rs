@@ -52,7 +52,7 @@ pub(crate) enum Command {
         /// Git ref (tag, branch or commit) of github.com/fespalier/fespalier
         /// that `--preset fespalier` pins `fespalier_transport` at. Defaults
         /// to the release the generator targets
-        /// (`cratestack_client_dart::DEFAULT_FESPALIER_REF`, `v0.22.0`).
+        /// (`cratestack_client_dart::DEFAULT_FESPALIER_REF`, `v0.21.0`).
         /// An error with any other preset.
         #[arg(long)]
         fespalier_ref: Option<String>,
