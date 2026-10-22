@@ -1,0 +1,148 @@
+[
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Author.list",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Author.list",
+    "headers": {
+      "content-type": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b227768657265223a226e616d653d612062222c226c696d6974223a357d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Author.get",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a317d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Author.create",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a312c226e616d65223a22416461227d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Author.update",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a312c227061746368223a7b226e616d65223a224772616365227d7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Author.delete",
+    "headers": {
+      "content-type": "application/json",
+      "idempotency-key": "idem-1",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a317d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Post.list",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Post.get",
+    "headers": {
+      "content-type": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a377d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Post.create",
+    "headers": {
+      "content-type": "application/json",
+      "idempotency-key": "idem-1",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a372c227469746c65223a2248656c6c6f2c2077c3b6726c64222c22737461747573223a226472616674222c227075626c6973686564223a747275652c22617574686f724964223a312c2276696577436f756e74223a2239323233333732303336383534373735383037227d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Post.update",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a372c227061746368223a7b227469746c65223a2252656e616d6564222c227075626c6973686564223a66616c73657d7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Post.delete",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a377d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/procedure.searchPosts",
+    "headers": {
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b2266696c746572223a7b227374617475736573223a5b226472616674225d7d7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/procedure.currentStatus",
+    "headers": {
+      "content-type": "application/json",
+      "idempotency-key": "idem-1",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b22706f73744964223a377d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/batch",
+    "headers": {
+      "content-type": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "5b7b226964223a312c226f70223a226d6f64656c2e417574686f722e676574222c22696e707574223a7b226964223a317d7d2c7b226964223a322c226f70223a226d6f64656c2e506f73742e6c697374222c22696e707574223a7b226c696d6974223a357d2c226964656d223a226672616d652d6964656d227d5d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/rpc/model.Post.list",
+    "headers": {
+      "accept": "application/json, application/cbor-seq;q=0.9",
+      "content-type": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226c696d6974223a327d"
+  }
+]

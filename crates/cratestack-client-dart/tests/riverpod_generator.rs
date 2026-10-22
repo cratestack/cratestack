@@ -115,6 +115,7 @@ fn riverpod_preset_emits_one_file_per_model_and_a_shared_client_surface() {
         "analysis_options.yaml",
         "lib/src/constants.dart",
         "lib/src/runtime.dart",
+        "lib/src/dio_transport.dart",
         "lib/src/queries.dart",
         "lib/src/client.dart",
         "lib/src/procedures.dart",

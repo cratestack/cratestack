@@ -1,0 +1,167 @@
+[
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/authors",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/authors?status=draft&q=x+y%26z&fields=id%2Ctitle&include=author&includeFields%5Bauthor%5D=id%2Cname&limit=20&offset=40&sort=-id&where=published%3Dtrue&or=title%3Da+b%7Ctitle%3D%C3%BC%2F%C3%A9+%2B%26%3D",
+    "headers": {
+      "accept": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/authors/1",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/authors/2?fields=id%2Cname&include=posts&includeFields%5Bposts%5D=id",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/api/authors",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a312c226e616d65223a22416461227d"
+  },
+  {
+    "method": "PATCH",
+    "uri": "http://127.0.0.1:9/api/authors/1",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226e616d65223a224772616365227d"
+  },
+  {
+    "method": "DELETE",
+    "uri": "http://127.0.0.1:9/api/authors/1",
+    "headers": {
+      "accept": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/posts",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/posts?status=draft&q=x+y%26z&fields=id%2Ctitle&include=author&includeFields%5Bauthor%5D=id%2Cname&limit=20&offset=40&sort=-id&where=published%3Dtrue&or=title%3Da+b%7Ctitle%3D%C3%BC%2F%C3%A9+%2B%26%3D",
+    "headers": {
+      "accept": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/posts/7",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "GET",
+    "uri": "http://127.0.0.1:9/api/posts/8?fields=id%2Cname&include=posts&includeFields%5Bposts%5D=id",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/api/posts",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b226964223a372c227469746c65223a2248656c6c6f2c2077c3b6726c64222c22737461747573223a226472616674222c227075626c6973686564223a747275652c22617574686f724964223a312c2276696577436f756e74223a2239323233333732303336383534373735383037227d"
+  },
+  {
+    "method": "PATCH",
+    "uri": "http://127.0.0.1:9/api/posts/7",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b227469746c65223a2252656e616d6564222c227075626c6973686564223a66616c73657d"
+  },
+  {
+    "method": "DELETE",
+    "uri": "http://127.0.0.1:9/api/posts/7",
+    "headers": {
+      "accept": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": ""
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/api/$procs/searchPosts",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b2266696c746572223a7b227374617475736573223a5b226472616674222c227075626c6973686564225d7d7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/api/$procs/searchPosts",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b2266696c746572223a6e756c6c7d"
+  },
+  {
+    "method": "POST",
+    "uri": "http://127.0.0.1:9/api/$procs/currentStatus",
+    "headers": {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "x-auth-id": "1",
+      "x-cratestack-schema-sha": "<schema-sha>"
+    },
+    "bodyHex": "7b22706f73744964223a377d"
+  }
+]

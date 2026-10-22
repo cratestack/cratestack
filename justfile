@@ -1059,6 +1059,21 @@ verify-dart:
 	    echo "=== flutter test (untouched-vs-cleared patch field proof): $pkg ==="
 	    (cd "$pkg" && flutter test test/builder_edge_cases_patch_test.dart)
 	  fi
+	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
+	  # Dio adapters (golden requests captured from them), typed REST/RPC
+	  # errors, transport failures, abort, idempotency key and chunked
+	  # cbor-seq streaming. Both tests import the package by its
+	  # `dart_verify_ci_{rest,rpc}` library name, which is why they only run
+	  # here and not under the riverpod preset.
+	  if [ "$fixture" = "ci_rest" ] || [ "$fixture" = "ci_rpc" ]; then
+	    transport="${fixture#ci_}"
+	    mkdir -p "$pkg/test/wire-golden"
+	    cp "crates/cratestack-client-dart/tests/fixtures/wire_parity_${transport}_test.dart" "$pkg/test/"
+	    cp "crates/cratestack-client-dart/tests/fixtures/wire_parity_${transport}_ops.dart" "$pkg/test/"
+	    cp crates/cratestack-client-dart/tests/fixtures/wire-golden/${transport}-*.json "$pkg/test/wire-golden/"
+	    echo "=== flutter test (HTTP seam wire parity + behaviour): $pkg ==="
+	    (cd "$pkg" && flutter test "test/wire_parity_${transport}_test.dart")
+	  fi
 	done
 
 	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan)
