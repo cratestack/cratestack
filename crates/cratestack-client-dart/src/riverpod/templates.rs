@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 
 use minijinja::Environment;
+use minijinja::syntax::SyntaxConfig;
 
 use crate::config::DartGeneratorError;
 
@@ -99,9 +100,14 @@ pub(crate) fn build_environment(
     template_dir: Option<&Path>,
 ) -> Result<Environment<'static>, DartGeneratorError> {
     let mut environment = Environment::new();
-    environment.set_trim_blocks(true);
-    environment.set_lstrip_blocks(true);
-    environment.set_keep_trailing_newline(true);
+    environment.set_syntax(
+        SyntaxConfig::builder()
+            .trim_blocks(true)
+            .lstrip_blocks(true)
+            .keep_trailing_newline(true)
+            .build()
+            .map_err(|error| DartGeneratorError::TemplateRegistration("<syntax config>", error))?,
+    );
 
     for &(name, default_source) in TEMPLATE_SOURCES {
         let source = load_template_source(template_dir, name, default_source)?;

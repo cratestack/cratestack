@@ -59,6 +59,7 @@ mod templates;
 mod views;
 
 use cratestack_core::Schema;
+use minijinja::value::Serde;
 
 use crate::config::{GeneratedTypeScriptFile, TypeScriptGeneratorConfig};
 use crate::error::TypeScriptGeneratorError;
@@ -88,7 +89,7 @@ pub(crate) fn generate(
             .map_err(|error| TypeScriptGeneratorError::TemplateRender(spec.template_name, error))?;
         match spec.output_path {
             OutputPath::Fixed(path) => {
-                let contents = template.render(&shared_context).map_err(|error| {
+                let contents = template.render(Serde(&shared_context)).map_err(|error| {
                     TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
                 })?;
                 files.push(GeneratedTypeScriptFile {
@@ -98,7 +99,7 @@ pub(crate) fn generate(
             }
             OutputPath::PerModel(suffix) => {
                 for model_context in &model_contexts {
-                    let contents = template.render(model_context).map_err(|error| {
+                    let contents = template.render(Serde(model_context)).map_err(|error| {
                         TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
                     })?;
                     files.push(GeneratedTypeScriptFile {

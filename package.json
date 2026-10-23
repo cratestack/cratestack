@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "turbo": "^2.11.6"
+    "turbo": "^2.11.8"
   },
   "packageManager": "pnpm@11.24.0",
   "engines": {

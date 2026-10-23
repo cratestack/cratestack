@@ -1,4 +1,5 @@
 use cratestack_core::Schema;
+use minijinja::value::Serde;
 
 use crate::config::{
     DartGeneratorConfig, DartGeneratorError, DartPreset, GeneratedDartFile, GeneratedDartPackage,
@@ -63,7 +64,7 @@ pub(crate) fn generate_default_package(
                 .get_template(spec.template_name)
                 .map_err(|error| DartGeneratorError::TemplateRender(spec.template_name, error))?;
             let contents = template
-                .render(&context)
+                .render(Serde(&context))
                 .map_err(|error| DartGeneratorError::TemplateRender(spec.template_name, error))?;
             Ok(GeneratedDartFile {
                 file_name: spec

@@ -3,6 +3,7 @@ use std::path::Path;
 
 use cratestack_core::TransportStyle;
 use minijinja::Environment;
+use minijinja::syntax::SyntaxConfig;
 
 use crate::config::{DartGeneratorError, DartPreset};
 use crate::templates_fespalier::swap_dio_for_fespalier;
@@ -148,14 +149,19 @@ pub(crate) fn build_environment(
     specs: &[TemplateSpec],
 ) -> Result<Environment<'static>, DartGeneratorError> {
     let mut environment = Environment::new();
-    environment.set_trim_blocks(true);
-    environment.set_lstrip_blocks(true);
     // {% include %} strips the included template's final newline by
     // default, which breaks byte-identical output when a large template
     // is split into fragments along section boundaries. Preserving the
     // trailing newline keeps the rendered concatenation predictable and
     // matches POSIX text-file convention (files end with \n).
-    environment.set_keep_trailing_newline(true);
+    environment.set_syntax(
+        SyntaxConfig::builder()
+            .trim_blocks(true)
+            .lstrip_blocks(true)
+            .keep_trailing_newline(true)
+            .build()
+            .map_err(|error| DartGeneratorError::TemplateRegistration("<syntax config>", error))?,
+    );
 
     for (name, source) in FRAGMENT_TEMPLATES {
         environment

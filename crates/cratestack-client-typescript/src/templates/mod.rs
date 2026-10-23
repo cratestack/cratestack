@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use minijinja::syntax::SyntaxConfig;
 use minijinja::{Environment, UndefinedBehavior};
 
 use crate::error::TypeScriptGeneratorError;
@@ -58,8 +59,15 @@ pub(crate) fn build_environment(
     specs: &[TemplateSpec],
 ) -> Result<Environment<'static>, TypeScriptGeneratorError> {
     let mut environment = Environment::new();
-    environment.set_trim_blocks(true);
-    environment.set_lstrip_blocks(true);
+    environment.set_syntax(
+        SyntaxConfig::builder()
+            .trim_blocks(true)
+            .lstrip_blocks(true)
+            .build()
+            .map_err(|error| {
+                TypeScriptGeneratorError::TemplateRegistration("<syntax config>", error)
+            })?,
+    );
     // Undefined is an ERROR, not a falsy value (issue #774, maintainer
     // decision recorded 2026-08-29: option 1 of three).
     //
