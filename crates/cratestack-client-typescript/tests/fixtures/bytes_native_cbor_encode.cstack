@@ -18,7 +18,7 @@
 transport rpc
 
 model Attachment {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   label String
   payload Bytes
   checksums Int[]

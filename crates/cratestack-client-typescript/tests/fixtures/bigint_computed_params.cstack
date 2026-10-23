@@ -11,7 +11,7 @@
 // can still be compiled under `--swr`.
 
 model Quote {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   label String @computed(params: ScaleParams?)
 
   @@allow("read", true)

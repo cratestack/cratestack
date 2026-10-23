@@ -6,14 +6,14 @@
 // path-/type-aware one) cannot tell these apart.
 
 model Account {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   total String
 
   @@allow("list", true)
 }
 
 model Order {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   total Decimal
   accountId Cuid
   account Account @relation(fields:[accountId],references:[id])

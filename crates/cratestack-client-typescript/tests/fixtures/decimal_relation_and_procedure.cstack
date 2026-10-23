@@ -7,14 +7,14 @@
 // key list against; adding a relation there would perturb that list.
 
 model Customer {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   balance Decimal
 
   @@allow("list", true)
 }
 
 model Invoice {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   amountXaf Decimal
   customerId Cuid
   customer Customer @relation(fields:[customerId],references:[id])

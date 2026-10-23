@@ -4,7 +4,7 @@
 // `decimal_list_rpc.cstack`.
 
 model Ledger {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   entries Decimal[]
 
   @@allow("list", true)

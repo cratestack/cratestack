@@ -16,7 +16,7 @@
 //     the same trap for `Decimal`).
 
 model Ledger {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   reference String
   amountE8 BigInt
   feeE8 BigInt?
@@ -30,7 +30,7 @@ model Ledger {
 }
 
 model Entry {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   ledgerId Cuid
   ledger Ledger @relation(fields:[ledgerId],references:[id])
   deltaE8 BigInt

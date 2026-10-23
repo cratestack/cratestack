@@ -10,7 +10,7 @@
 // schema rather than by the decoded value's structure.
 
 model Sample {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   label String
   payload Bytes
   signature Bytes?

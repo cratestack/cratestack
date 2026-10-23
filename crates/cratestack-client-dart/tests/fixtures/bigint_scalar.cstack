@@ -23,7 +23,7 @@ model Ledger {
 }
 
 model Account {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   holder String
   balanceE8 BigInt
   limitE8 BigInt?

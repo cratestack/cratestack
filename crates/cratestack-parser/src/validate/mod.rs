@@ -11,6 +11,7 @@ mod computed_attribute;
 mod computed_params;
 mod computed_resolver_names;
 mod db_enforce;
+mod default_functions;
 mod default_markers;
 mod field_attribute_tables;
 mod field_attributes;
@@ -229,6 +230,7 @@ fn validate_datasource(schema: &Schema) -> Result<(), SchemaError> {
             datasource.name_span,
             &format!("datasource `{}`", datasource.name),
         )?;
+        default_functions::validate_registered_functions(datasource)?;
         let provider = datasource_provider(schema);
 
         if let Some(provider) = provider
