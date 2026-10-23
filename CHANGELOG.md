@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### `now()`, `uuid()` and `cuid()` are built-in defaults; any other function must be registered — breaking (#1209)
+
+**What was wrong.** A `@default(fn())` went into the migration's `DEFAULT` clause verbatim.
+`cratestack check` checked nothing, so the database refused the migration when it was applied:
+
+- `uuid()` and `cuid()` do not exist in Postgres;
+- SQLite takes a function default only in parentheses, so every function default failed there,
+  `now()` included;
+- `@default(auth().id)` was emitted as `DEFAULT auth().id`;
+- on the embedded runtime, whose tables carry no `DEFAULT` clauses, any `@default` column was
+  written as NULL and the create failed while decoding the row.
+
+**What changed.**
+
+- **cratestack defines `now()` (`DateTime`), `uuid()` (`Uuid` or `String`) and `cuid()` (`Cuid` or
+  `String`).** The runtime generates them in Rust on create, on the server and embedded runtimes
+  alike. Migrations still carry the database's equivalent for writes that bypass cratestack:
+  `now()` and `gen_random_uuid()` on Postgres, and matching expressions on SQLite. `cuid()` has no
+  database equivalent.
+- **A function your database provides is registered on the datasource:**
+  `datasource db { functions = ["my_fn"] }`. It is written to the migration verbatim
+  (parenthesised on SQLite), and Postgres refuses the migration if it does not exist.
+- **`check` refuses everything else:** an unregistered function, a builtin with an argument or in
+  the wrong case, a builtin on a field of another type, a bare `now` on a `DateTime`, and `auth()`
+  inside a database expression (`lower(auth().email)`).
+- **`auth().field` defaults never reach DDL.**
+- **Older migration snapshots are read back normalised,** so a stored `uuid()` or `auth().id`
+  default never reverses into DDL the database refuses.
+
+**Migrating.**
+
+- `@default(gen_random_uuid())` → `@default(uuid())`.
+- Any other database function: add it to the datasource's `functions`.
+- `@default(cs_cuid())` and other undefined functions → `@default(cuid())`.
+
+Design: `docs/design/default-functions.md`.
+
 ### `@default(autoincrement())` is refused, pointing at `@default(dbgenerated())` — breaking (#1128)
 
 `autoincrement()` is not a function in Postgres or SQLite, but the parser accepted it and the
