@@ -1,6 +1,6 @@
 {
   "name": "@cratestack/refine",
-  "version": "0.15.4",
+  "version": "0.16.0",
   "description": "A refine.dev DataProvider over CrateStack's generated TypeScript client (REST or RPC) — the safe end-user admin-UI surface that goes through the generated API (policy, validation, @version concurrency, audit), unlike cratestack-studio's direct-to-database sysadmin access.",
   "license": "MIT",
   "repository": {
@@ -45,7 +45,7 @@
     "@refinedev/core": "^5.0.0",
     "decimal.js": "^10.6.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.5"
   },
   "engines": {
     "node": ">=24"

@@ -1,5 +1,18 @@
 ## Unreleased
 
+## 0.16.0 (2026-10-23)
+
+- `decodeJson` now refuses bytes after the first CBOR item, on the native
+  and the web backend alike, instead of decoding the first item and
+  ignoring the rest: `01 ff ff de ad` used to decode to `1` and now throws
+  `CratestackCborCodecError`, whose message names how many bytes were left
+  unconsumed. A unit enum variant sent as a one-entry map (`{"A": null}`)
+  is refused the same way. Both backends call the shared Rust codec
+  (`cratestack-codec-cbor`), which is where the check landed
+  (cratestack#1153); a server running CrateStack 0.16.0 answers such a body
+  with a 400, as it already did for JSON. Bytes a CrateStack encoder
+  produced are always exactly one item, so they decode as before.
+
 ## 0.15.4 (2026-10-11)
 
 - Test-only: the shared fixtures now pin a CrateStack `BigInt` (ADR 0019) as a CBOR text string

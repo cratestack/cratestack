@@ -39,6 +39,8 @@
 
 Design: `docs/design/default-functions.md`.
 
+## 0.16.0 (2026-10-23)
+
 ### `@default(autoincrement())` is refused, pointing at `@default(dbgenerated())` — breaking (#1128)
 
 `autoincrement()` is not a function in Postgres or SQLite, but the parser accepted it and the
