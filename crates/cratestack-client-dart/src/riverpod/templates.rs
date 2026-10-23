@@ -106,7 +106,7 @@ pub(crate) fn build_environment(
             .lstrip_blocks(true)
             .keep_trailing_newline(true)
             .build()
-            .expect("the default delimiters are a valid syntax config"),
+            .map_err(|error| DartGeneratorError::TemplateRegistration("<syntax config>", error))?,
     );
 
     for &(name, default_source) in TEMPLATE_SOURCES {

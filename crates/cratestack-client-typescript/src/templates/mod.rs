@@ -64,7 +64,9 @@ pub(crate) fn build_environment(
             .trim_blocks(true)
             .lstrip_blocks(true)
             .build()
-            .expect("the default delimiters are a valid syntax config"),
+            .map_err(|error| {
+                TypeScriptGeneratorError::TemplateRegistration("<syntax config>", error)
+            })?,
     );
     // Undefined is an ERROR, not a falsy value (issue #774, maintainer
     // decision recorded 2026-08-29: option 1 of three).
