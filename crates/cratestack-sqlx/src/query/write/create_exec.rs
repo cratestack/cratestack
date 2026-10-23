@@ -59,6 +59,7 @@ where
 {
     input.validate()?;
     let mut values = apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+    descriptor.fill_generated_defaults(&mut values);
     // Seed the optimistic-lock column server-side. `@version` is
     // excluded from the generated Create input so clients can't pick
     // the initial value, and the column has no SQL `DEFAULT`. Done

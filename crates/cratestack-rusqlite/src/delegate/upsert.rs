@@ -46,7 +46,8 @@ where
     /// `conflict_target_validate` first).
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
-        let values = self.input.sql_values();
+        let mut values = self.input.sql_values();
+        self.descriptor.fill_generated_defaults(&mut values);
         let (sql, _) =
             render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         sql
@@ -64,7 +65,8 @@ where
         // backend — so it still runs here.
         conflict_target_validate(self.conflict_target)?;
         let dialect = SqliteDialect;
-        let values = self.input.sql_values();
+        let mut values = self.input.sql_values();
+        self.descriptor.fill_generated_defaults(&mut values);
         let (sql, binds) =
             render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         self.runtime
@@ -79,7 +81,8 @@ where
     {
         conflict_target_validate(self.conflict_target)?;
         let dialect = SqliteDialect;
-        let values = self.input.sql_values();
+        let mut values = self.input.sql_values();
+        self.descriptor.fill_generated_defaults(&mut values);
         let (sql, binds) =
             render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         run_insert_returning(conn, &sql, &binds)

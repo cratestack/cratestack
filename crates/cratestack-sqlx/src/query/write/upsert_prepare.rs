@@ -37,6 +37,7 @@ where
     // stay identical to `.create()`.
     let mut insert_values =
         apply_create_defaults(input.sql_values(), descriptor.create_defaults, ctx)?;
+    descriptor.fill_generated_defaults(&mut insert_values);
     if let Some(version_col) = descriptor.version_column
         && find_column_value(&insert_values, version_col).is_none()
     {

@@ -95,12 +95,12 @@ pub use transaction::Tx;
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
 pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
-    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Orderable, Projection, RelatedReadScope, RelationFilter, RelationHop,
-    RelationInclude, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, Unorderable,
-    UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric,
-    coalesce, is_orderable, order_value_sql, wrap_filter,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault, GeneratedValue,
+    IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor,
+    ModelPrimaryKey, NullOrder, OrderClause, Orderable, Projection, RelatedReadScope,
+    RelationFilter, RelationHop, RelationInclude, RelationQuantifier, SortDirection,
+    SqlColumnValue, SqlValue, Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr,
+    VectorDistanceFilter, VectorMetric, coalesce, is_orderable, order_value_sql, wrap_filter,
 };
 /// PostGIS query surface (cratestack#842), gated in `cratestack-sql`
 /// and forwarded through this crate's own `postgis` feature.

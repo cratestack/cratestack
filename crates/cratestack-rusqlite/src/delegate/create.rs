@@ -18,7 +18,8 @@ where
 {
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
-        let values = self.input.sql_values();
+        let mut values = self.input.sql_values();
+        self.descriptor.fill_generated_defaults(&mut values);
         let (sql, _) = render_insert(&dialect, self.descriptor, &values);
         sql
     }
@@ -28,7 +29,8 @@ where
         M: FromRusqliteRow,
     {
         let dialect = SqliteDialect;
-        let values = self.input.sql_values();
+        let mut values = self.input.sql_values();
+        self.descriptor.fill_generated_defaults(&mut values);
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
         self.runtime
             .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
@@ -43,7 +45,8 @@ where
         M: FromRusqliteRow,
     {
         let dialect = SqliteDialect;
-        let values = self.input.sql_values();
+        let mut values = self.input.sql_values();
+        self.descriptor.fill_generated_defaults(&mut values);
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
         run_insert_returning(conn, &sql, &binds)
     }
