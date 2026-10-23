@@ -17,6 +17,7 @@ pub mod client_contract;
 pub mod codec;
 pub mod composite_id;
 pub mod context;
+pub mod cuid;
 pub mod decimal;
 pub mod envelope;
 pub mod error;

@@ -92,13 +92,14 @@ pub use futures_util as futures;
 // `cratestack-sql` so consumers don't transit through `cratestack-sqlx`.
 pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
-    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderCatalog, OrderClause, OrderRelationEdge, OrderTarget, Orderable, Projection, ReadSource,
-    RelatedReadScope, RelationFilter, RelationHop, RelationInclude, ResolvedOrderTarget,
-    SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput, UpsertModelInput,
-    VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor, WriteSource, coalesce,
-    is_orderable, order_value_sql, resolve_order_target, wrap_filter,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault, GeneratedValue,
+    IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor,
+    ModelPrimaryKey, NullOrder, OrderCatalog, OrderClause, OrderRelationEdge, OrderTarget,
+    Orderable, Projection, ReadSource, RelatedReadScope, RelationFilter, RelationHop,
+    RelationInclude, ResolvedOrderTarget, SortDirection, SqlColumnValue, SqlValue, Unorderable,
+    UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric,
+    ViewDescriptor, WriteSource, coalesce, is_orderable, order_value_sql, resolve_order_target,
+    wrap_filter,
 };
 /// PostGIS query surface (cratestack#842) — gated in
 /// `cratestack-sql` and forwarded through this crate's own

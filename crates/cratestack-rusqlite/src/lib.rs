@@ -20,12 +20,13 @@ pub mod opfs;
 
 pub use cratestack_sql::{
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
-    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName, IntoSqlValue,
-    JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
-    OrderClause, Orderable, Projection, RelatedReadScope, RelationFilter, RelationHop,
-    RelationInclude, RelationQuantifier, SortDirection, SqlColumnValue, SqlValue, SqliteDialect,
-    Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter,
-    VectorMetric, coalesce, is_orderable, order_value_sql, wrap_filter,
+    CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault, GeneratedValue,
+    IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor,
+    ModelPrimaryKey, NullOrder, OrderClause, Orderable, Projection, RelatedReadScope,
+    RelationFilter, RelationHop, RelationInclude, RelationQuantifier, SortDirection,
+    SqlColumnValue, SqlValue, SqliteDialect, Unorderable, UpdateModelInput, UpsertModelInput,
+    VectorDistanceExpr, VectorDistanceFilter, VectorMetric, coalesce, is_orderable,
+    order_value_sql, wrap_filter,
 };
 // Re-exported only so a workspace that enables `postgis` elsewhere still
 // resolves these paths through this facade; the embedded backend fails

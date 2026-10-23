@@ -1,9 +1,8 @@
 use cratestack_core::Field;
-use cratestack_core::schema::default_markers::{DefaultMarker, default_inner, marker_call};
+use cratestack_core::schema::default_markers::{DefaultMarker, MarkerCall};
 
-use crate::diagnostics::{SchemaError, span_error};
-
-/// Check a field's `@default(...)` marker call, if it has one.
+/// The refusal for a field's `@default(...)` marker call, or `None` when
+/// the marker is spelled and used correctly.
 ///
 /// - `dbgenerated()` is a bare marker (matching Prisma's semantics): it
 ///   asserts the column already has a real database-level default set some
@@ -17,15 +16,14 @@ use crate::diagnostics::{SchemaError, span_error};
 ///   so no migration could apply it; the marker for "the database generates
 ///   this value" is `dbgenerated()`.
 ///
-/// Matching goes through [`marker_call`], shared with the migration emitter,
+/// Matching goes through `marker_call`, shared with the migration emitter,
 /// so spacing and case cannot make the two disagree.
-pub(super) fn validate_default_marker(model_name: &str, field: &Field) -> Result<(), SchemaError> {
-    let Some(inner) = default_inner(field) else {
-        return Ok(());
-    };
-    let Some(call) = marker_call(inner) else {
-        return Ok(());
-    };
+pub(super) fn marker_error(
+    model_name: &str,
+    field: &Field,
+    inner: &str,
+    call: MarkerCall<'_>,
+) -> Option<String> {
     let message = match call.marker {
         DefaultMarker::Autoincrement => format!(
             "field `{model_name}.{}` uses `@default({inner})`; `autoincrement()` is not a \
@@ -59,9 +57,9 @@ pub(super) fn validate_default_marker(model_name: &str, field: &Field) -> Result
              real expression in hand-authored migration SQL.",
             field.name,
         ),
-        DefaultMarker::DbGenerated => return Ok(()),
+        DefaultMarker::DbGenerated => return None,
     };
-    Err(span_error(message, field.span))
+    Some(message)
 }
 
 #[cfg(test)]

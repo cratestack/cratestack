@@ -30,7 +30,7 @@ model Counter {
 }
 
 model Ledger {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   reference String
   amountE8 BigInt
 

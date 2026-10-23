@@ -4,7 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::columns::{Column, ColumnArity, ColumnDefault, ColumnType};
+use super::column_default::ColumnDefault;
+use super::columns::{Column, ColumnArity, ColumnType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateTable {

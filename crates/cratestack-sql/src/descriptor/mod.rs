@@ -12,7 +12,7 @@ mod view;
 #[cfg(test)]
 mod tests_view;
 
-pub use defaults::{CreateDefault, CreateDefaultType};
+pub use defaults::{CreateDefault, CreateDefaultType, GeneratedDefault, GeneratedValue};
 pub use read_source::{ReadSource, WriteSource};
 pub use view::ViewDescriptor;
 
@@ -42,6 +42,8 @@ pub struct ModelDescriptor<M, PK> {
     pub delete_allow_policies: &'static [ReadPolicy],
     pub delete_deny_policies: &'static [ReadPolicy],
     pub create_defaults: &'static [CreateDefault],
+    /// `@default(now())`, `uuid()`, `cuid()` columns; see [`GeneratedDefault`].
+    pub generated_defaults: &'static [GeneratedDefault],
     pub emitted_events: &'static [ModelEventKind],
     /// Column name of the optimistic-locking version field, set when the
     /// model declares an `@version` field. `None` for non-versioned models,
@@ -135,6 +137,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
             delete_allow_policies,
             delete_deny_policies,
             create_defaults,
+            generated_defaults: &[],
             emitted_events,
             version_column,
             audit_enabled,

@@ -6,6 +6,7 @@
 
 mod columns;
 mod defaults;
+mod generated;
 
 use cratestack_core::{EnumDecl, Field, Model, TypeDecl};
 use quote::quote;
@@ -19,6 +20,7 @@ use crate::shared::{ident, is_primary_key, pluralize, rust_type_tokens, to_snake
 
 use columns::collect_column_lists;
 use defaults::collect_create_defaults;
+use generated::collect_generated_defaults;
 
 pub(crate) fn generate_model_descriptor(
     model: &Model,
@@ -67,6 +69,7 @@ pub(crate) fn generate_model_descriptor(
         generate_denies_for_actions(model, models, types, enums, auth, &["detail", "read"])?;
 
     let create_defaults = collect_create_defaults(model, models, types, auth)?;
+    let generated_defaults = collect_generated_defaults(model, models);
     let emitted_events = emitted_event_tokens(model)?;
     let cols = collect_column_lists(model, models)?;
 
@@ -141,7 +144,8 @@ pub(crate) fn generate_model_descriptor(
                 #soft_delete_column_tokens,
                 #retention_days_tokens,
                 &[#(#upsert_update_columns),*],
-            );
+            )
+            .with_generated_defaults(&[#(#generated_defaults),*]);
     })
 }
 

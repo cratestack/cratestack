@@ -58,7 +58,8 @@ where
     I: CreateModelInput<M>,
     M: FromRusqliteRow,
 {
-    let values = input.sql_values();
+    let mut values = input.sql_values();
+    descriptor.fill_generated_defaults(&mut values);
     let mut sql = format!("INSERT INTO {} (", descriptor.table_name);
     for (idx, value) in values.iter().enumerate() {
         if idx > 0 {

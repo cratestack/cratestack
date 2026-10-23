@@ -11,9 +11,26 @@ use crate::ir::{
     ColumnDefault, DropColumn, RenameColumn,
 };
 
+use super::defaults::render_default;
 use super::idents::quote_ident;
 
 pub(super) fn emit_add_column(sql: &mut String, add: &AddColumn) {
+    let expression_default = add
+        .column
+        .default
+        .as_ref()
+        .filter(|default| !matches!(default, ColumnDefault::Literal(_)))
+        .and_then(render_default);
+    if expression_default.is_some() {
+        writeln!(
+            sql,
+            "-- SQLite refuses to add a column whose default is an expression\n\
+             -- (\"Cannot add a column with non-constant default\") once the table\n\
+             -- has rows. If {} has rows, rebuild the table below, in this file.",
+            add.table
+        )
+        .unwrap();
+    }
     writeln!(
         sql,
         "ALTER TABLE {} ADD COLUMN {};",
@@ -90,17 +107,9 @@ pub(super) fn render_column(column: &Column) -> String {
     if matches!(column.arity, ColumnArity::Required | ColumnArity::List) {
         buf.push_str(" NOT NULL");
     }
-    match &column.default {
-        Some(ColumnDefault::Literal(value)) => {
-            buf.push_str(" DEFAULT ");
-            buf.push_str(value);
-        }
-        Some(ColumnDefault::Function(call)) => {
-            buf.push_str(" DEFAULT ");
-            buf.push_str(call);
-        }
-        // No DDL default for `dbgenerated()` — see `ColumnDefault::DbGenerated`.
-        Some(ColumnDefault::DbGenerated) | None => {}
+    if let Some(rendered) = column.default.as_ref().and_then(render_default) {
+        buf.push_str(" DEFAULT ");
+        buf.push_str(&rendered);
     }
     buf
 }

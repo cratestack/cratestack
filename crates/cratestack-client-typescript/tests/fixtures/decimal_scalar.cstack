@@ -1,5 +1,5 @@
 model Invoice {
-  id Cuid @id @default(cs_cuid())
+  id Cuid @id @default(cuid())
   reference String
   amountXaf Decimal
   discountXaf Decimal?

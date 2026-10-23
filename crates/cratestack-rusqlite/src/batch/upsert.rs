@@ -70,7 +70,8 @@ where
     M: FromRusqliteRow,
 {
     let dialect = cratestack_sql::SqliteDialect;
-    let values = input.sql_values();
+    let mut values = input.sql_values();
+    descriptor.fill_generated_defaults(&mut values);
     let (sql, binds) = render_upsert(&dialect, descriptor, &values);
     let mut stmt = sp.prepare(&sql)?;
     let bind_iter = binds.iter().map(SqlValueParam);

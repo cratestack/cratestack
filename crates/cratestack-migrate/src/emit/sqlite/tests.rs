@@ -1,4 +1,5 @@
 mod checks;
+mod default_functions;
 mod default_markers;
 mod partial_index;
 mod uniques;
