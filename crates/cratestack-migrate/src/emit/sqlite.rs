@@ -24,6 +24,7 @@
 
 mod checks;
 mod columns;
+mod defaults;
 mod down;
 mod foreign_keys;
 mod idents;

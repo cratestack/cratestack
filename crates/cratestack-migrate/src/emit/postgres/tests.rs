@@ -5,6 +5,7 @@ mod bigint;
 mod checks;
 mod columns;
 mod create;
+mod default_functions;
 mod default_markers;
 mod enums;
 mod extensions;

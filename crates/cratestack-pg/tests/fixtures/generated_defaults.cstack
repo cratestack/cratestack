@@ -1,0 +1,32 @@
+// cratestack#1209: function-shaped defaults, end to end on Postgres.
+//
+// `uuid()`, `cuid()` and `now()` are cratestack's own: the runtime fills
+// them on create, and the emitted DDL carries the Postgres equivalent
+// (`gen_random_uuid()`, none, `now()`) for writes that bypass cratestack.
+// `cs1209_ticket_label()` is a function the database provides, registered
+// below; the test creates it before applying the emitted migration.
+//
+// See `../generated_defaults.rs`: it parses this exact file, applies the
+// emitter's real DDL, and writes through both cratestack and raw SQL.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+  functions = ["cs1209_ticket_label"]
+}
+
+auth Operator {
+  id Int
+}
+
+model Ticket {
+  id        Uuid     @id @default(uuid())
+  code      Cuid     @default(cuid())
+  reference String   @default(uuid())
+  createdAt DateTime @default(now())
+  label     String   @default(cs1209_ticket_label())
+  title     String
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+}

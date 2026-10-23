@@ -10,6 +10,7 @@ use crate::ir::{
 };
 use crate::naming;
 
+use super::defaults::render_default;
 use super::idents::quote_ident;
 
 pub(super) fn emit_add_column(sql: &mut String, add: &AddColumn) {
@@ -81,8 +82,6 @@ pub(super) fn emit_alter_column_nullability(sql: &mut String, alter: &AlterColum
 
 pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDefault) {
     match &alter.to {
-        Some(ColumnDefault::Literal(value)) => emit_set_default(sql, alter, value),
-        Some(ColumnDefault::Function(call)) => emit_set_default(sql, alter, call),
         // `@default(dbgenerated())` asserts that a real database-level
         // default *exists*, supplied some way cratestack cannot see: a
         // trigger, `GENERATED ... AS IDENTITY`, hand-authored DDL. See
@@ -96,7 +95,6 @@ pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDef
         // the moment the migration lands, against a schema that
         // declares the column has a default. A comment records the
         // transition for the reader instead.
-        //
         Some(ColumnDefault::DbGenerated) => writeln!(
             sql,
             "-- {}.{} switches to `@default(dbgenerated())`: no DDL emitted. \
@@ -106,30 +104,36 @@ pub(super) fn emit_alter_column_default(sql: &mut String, alter: &AlterColumnDef
             alter.table, alter.column
         )
         .unwrap(),
-        // Removing a default cratestack set is cratestack's to do.
-        // Removing one it never set is not — and `down.rs` reverses
-        // this op by swapping `from`/`to`, so if this arm dropped
-        // unconditionally, the reversal of the no-op above would
-        // destroy the external default that the forward direction was
-        // careful to leave alone. Symmetry here is what makes
-        // `up`-then-`down` a round trip.
-        None => match &alter.from {
-            Some(ColumnDefault::DbGenerated) => writeln!(
-                sql,
-                "-- {}.{} drops `@default(dbgenerated())`: no DDL emitted. \
-                 cratestack never set this column's default, so it does not \
-                 remove it — drop it by hand if the external mechanism \
-                 supplying it is also going away.",
-                alter.table, alter.column
-            )
-            .unwrap(),
-            Some(ColumnDefault::Literal(_)) | Some(ColumnDefault::Function(_)) | None => writeln!(
-                sql,
-                "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT;",
-                quote_ident(&alter.table),
-                quote_ident(&alter.column)
-            )
-            .unwrap(),
+        to => match to.as_ref().and_then(render_default) {
+            Some(rendered) => emit_set_default(sql, alter, &rendered),
+            // No database default any more: none at all, or `cuid()`,
+            // which cratestack fills on create.
+            //
+            // Removing a default cratestack set is cratestack's to do.
+            // Removing one it never set is not — and `down.rs` reverses
+            // this op by swapping `from`/`to`, so if this arm dropped
+            // unconditionally, the reversal of the no-op above would
+            // destroy the external default that the forward direction was
+            // careful to leave alone. Symmetry here is what makes
+            // `up`-then-`down` a round trip.
+            None => match &alter.from {
+                Some(ColumnDefault::DbGenerated) => writeln!(
+                    sql,
+                    "-- {}.{} drops `@default(dbgenerated())`: no DDL emitted. \
+                     cratestack never set this column's default, so it does not \
+                     remove it — drop it by hand if the external mechanism \
+                     supplying it is also going away.",
+                    alter.table, alter.column
+                )
+                .unwrap(),
+                _ => writeln!(
+                    sql,
+                    "ALTER TABLE {} ALTER COLUMN {} DROP DEFAULT;",
+                    quote_ident(&alter.table),
+                    quote_ident(&alter.column)
+                )
+                .unwrap(),
+            },
         },
     }
 }
@@ -152,17 +156,9 @@ pub(super) fn render_column(column: &Column) -> String {
     if matches!(column.arity, ColumnArity::Required | ColumnArity::List) {
         buf.push_str(" NOT NULL");
     }
-    match &column.default {
-        Some(ColumnDefault::Literal(value)) => {
-            buf.push_str(" DEFAULT ");
-            buf.push_str(value);
-        }
-        Some(ColumnDefault::Function(call)) => {
-            buf.push_str(" DEFAULT ");
-            buf.push_str(call);
-        }
-        // No DDL default for `dbgenerated()` — see `ColumnDefault::DbGenerated`.
-        Some(ColumnDefault::DbGenerated) | None => {}
+    if let Some(rendered) = column.default.as_ref().and_then(render_default) {
+        buf.push_str(" DEFAULT ");
+        buf.push_str(&rendered);
     }
     buf
 }

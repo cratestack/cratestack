@@ -9,7 +9,7 @@
 use sqlx_core::row::Row as _;
 use sqlx_postgres::PgPool;
 
-use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType};
+use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType, GeneratedDefault};
 
 use super::error::IntrospectError;
 use super::types::map_scalar;
@@ -115,8 +115,17 @@ fn resolve_column(row: Row) -> ColumnOutcome {
 /// documented source of possible spurious `AlterColumnDefault` drift
 /// in a Phase C report, not a correctness bug in the mapped/unmapped
 /// column classification above.
+///
+/// `now()` and `gen_random_uuid()` are what cratestack's own `now()` and
+/// `uuid()` defaults render to (cratestack#1209), so they read back as
+/// those, not as functions the schema would have to register.
 fn parse_default(expr: &str) -> ColumnDefault {
     let stripped = strip_trailing_cast(expr);
+    match stripped.as_str() {
+        "now()" => return ColumnDefault::Generated(GeneratedDefault::Now),
+        "gen_random_uuid()" => return ColumnDefault::Generated(GeneratedDefault::Uuid),
+        _ => {}
+    }
     if stripped.ends_with(')') && !is_quoted(&stripped) {
         ColumnDefault::Function(stripped)
     } else {
@@ -159,7 +168,15 @@ mod tests {
     fn classifies_function_calls_vs_literals() {
         assert_eq!(
             parse_default("now()"),
-            ColumnDefault::Function("now()".into())
+            ColumnDefault::Generated(GeneratedDefault::Now)
+        );
+        assert_eq!(
+            parse_default("gen_random_uuid()"),
+            ColumnDefault::Generated(GeneratedDefault::Uuid)
+        );
+        assert_eq!(
+            parse_default("my_fn()"),
+            ColumnDefault::Function("my_fn()".into())
         );
         assert_eq!(
             parse_default("'pending'::text"),

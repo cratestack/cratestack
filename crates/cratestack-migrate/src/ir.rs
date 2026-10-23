@@ -12,6 +12,7 @@
 
 mod blocking;
 mod checks;
+mod column_default;
 mod columns;
 mod extensions;
 mod foreign_keys;
@@ -22,7 +23,8 @@ use serde::{Deserialize, Serialize};
 
 pub use blocking::{BlockingReason, blocking_reasons, destructiveness_in_context};
 pub use checks::{AddCheck, CheckKind, DropCheck};
-pub use columns::{Column, ColumnArity, ColumnDefault, ColumnType};
+pub use column_default::{ColumnDefault, GeneratedDefault};
+pub use columns::{Column, ColumnArity, ColumnType};
 pub use extensions::EnsureExtension;
 pub use foreign_keys::{AddForeignKey, DropForeignKey, ForeignKeyAction};
 pub use ops::{

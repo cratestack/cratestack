@@ -2,10 +2,10 @@
 //! `destructiveness_on_add` rule shared by `AddColumn` / `CreateTable`
 //! flows.
 
-use cratestack_core::schema::default_markers::marker_call;
 use serde::{Deserialize, Serialize};
 
 use super::Destructiveness;
+use super::column_default::{ColumnDefault, deserialize_column_default};
 
 /// Column data shared by `CreateTable` and `AddColumn`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,6 +13,7 @@ pub struct Column {
     pub name: String,
     pub ty: ColumnType,
     pub arity: ColumnArity,
+    #[serde(default, deserialize_with = "deserialize_column_default")]
     pub default: Option<ColumnDefault>,
     pub primary_key: bool,
 }
@@ -99,54 +100,6 @@ pub enum ColumnType {
     },
 }
 
-/// Column default value, captured as the developer wrote it. The
-/// emitter is responsible for any dialect-specific quoting.
-///
-/// Deserializing normalises a default whose text is a marker (any case,
-/// spacing, argument or trailing text, or the bare word) to
-/// [`ColumnDefault::DbGenerated`]. A snapshot written before cratestack#1128
-/// can hold `Function("autoincrement()")`; read as-is, the next diff that
-/// changes that column's default would reverse into
-/// `SET DEFAULT autoincrement()` in `down.sql`, which neither database accepts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "ColumnDefaultRepr")]
-pub enum ColumnDefault {
-    /// Literal (e.g. `0`, `'pending'`, `true`).
-    Literal(String),
-    /// Database function (e.g. `now()`, `gen_random_uuid()`).
-    Function(String),
-    /// `@default(dbgenerated())` — a marker, not a value. It asserts
-    /// that the column already has (or will separately be given) a
-    /// real Postgres-level default set some other way: hand-authored
-    /// migration SQL, a trigger, `GENERATED ... AS IDENTITY`, etc.
-    /// cratestack has no way to verify that claim from the `.cstack`
-    /// schema alone, so emitters must never invent a `DEFAULT` clause
-    /// for it — see `Op::destructiveness` and
-    /// `crate::ir::unverified_dbgenerated_columns` for the
-    /// corresponding safety checks.
-    DbGenerated,
-}
-
-/// [`ColumnDefault`]'s on-disk shape, before marker normalisation.
-#[derive(Deserialize)]
-enum ColumnDefaultRepr {
-    Literal(String),
-    Function(String),
-    DbGenerated,
-}
-
-impl From<ColumnDefaultRepr> for ColumnDefault {
-    fn from(repr: ColumnDefaultRepr) -> Self {
-        match repr {
-            ColumnDefaultRepr::Literal(value) if marker_call(&value).is_some() => Self::DbGenerated,
-            ColumnDefaultRepr::Literal(value) => Self::Literal(value),
-            ColumnDefaultRepr::Function(call) if marker_call(&call).is_some() => Self::DbGenerated,
-            ColumnDefaultRepr::Function(call) => Self::Function(call),
-            ColumnDefaultRepr::DbGenerated => Self::DbGenerated,
-        }
-    }
-}
-
 impl Column {
     /// Whether adding this column to an existing table is safe,
     /// blocking, or otherwise.
@@ -165,13 +118,10 @@ impl Column {
         match self.arity {
             ColumnArity::Optional | ColumnArity::List => Destructiveness::Safe,
             ColumnArity::Required => {
-                // `DbGenerated` is a marker, not a real DDL default —
-                // it backfills nothing, so it must not count as "has
-                // a default" here any more than no default at all.
-                let has_real_default = matches!(
-                    self.default,
-                    Some(ColumnDefault::Literal(_)) | Some(ColumnDefault::Function(_))
-                );
+                // `DbGenerated` is a marker, not a real DDL default, and
+                // `cuid()` has no database equivalent: neither backfills
+                // anything, so neither counts as "has a default" here.
+                let has_real_default = self.default.as_ref().is_some_and(ColumnDefault::backfills);
                 if has_real_default || self.primary_key {
                     Destructiveness::Safe
                 } else {
