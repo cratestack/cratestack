@@ -188,7 +188,8 @@ jobs:
         run: |
           set -euo pipefail
           CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-dart \
-            --test snapshot --test riverpod_snapshot --test riverpod_providers
+            --test snapshot --test riverpod_snapshot --test riverpod_providers \
+            --test fespalier_snapshot
           CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-typescript --test snapshot
           just regen-examples
 
