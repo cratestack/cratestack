@@ -1,4 +1,5 @@
 use cratestack_core::Schema;
+use minijinja::value::Serde;
 
 use crate::config::{
     GeneratedTypeScriptFile, GeneratedTypeScriptPackage, TypeScriptGeneratorConfig,
@@ -61,7 +62,7 @@ fn generate_default_package(
                 .map_err(|error| {
                     TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
                 })?;
-            let contents = template.render(&context).map_err(|error| {
+            let contents = template.render(Serde(&context)).map_err(|error| {
                 TypeScriptGeneratorError::TemplateRender(spec.template_name, error)
             })?;
             Ok(GeneratedTypeScriptFile {
