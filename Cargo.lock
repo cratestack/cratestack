@@ -4358,6 +4358,9 @@ name = "minijinja"
 version = "3.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0032a2738ba16d9a8822e4eb2833faeed5c41d767633ea753f33b6becd58cbfc"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "miniz_oxide"

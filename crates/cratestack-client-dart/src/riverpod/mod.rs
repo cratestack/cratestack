@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 
 use cratestack_core::{EnumDecl, Schema, TransportStyle, TypeDecl};
 use minijinja::Environment;
+use minijinja::value::Serde;
 use serde::Serialize;
 
 use crate::config::{
@@ -219,6 +220,6 @@ fn render<S: Serialize>(
         .get_template(name)
         .map_err(|error| DartGeneratorError::TemplateRender(name, error))?;
     template
-        .render(context)
+        .render(Serde(context))
         .map_err(|error| DartGeneratorError::TemplateRender(name, error))
 }
