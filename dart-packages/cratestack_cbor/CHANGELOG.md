@@ -1,5 +1,40 @@
 ## Unreleased
 
+## 0.16.0 (2026-10-23)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.15.4..HEAD at 3eacfdf28a3571035746d27935cb10b7143e6a9e -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- a pluggable HTTP transport under the Dart client, and --preset fespalier (#1206)
+- prototype offline sync engine + sync-notes example (ADR 0020, proposed) (#1205)
+
+#### Fixes
+
+- refuse @default(autoincrement()) and never emit its DDL (#1167)
+- refresh the fespalier snapshots on a version bump (#1213)
+- batch 2 — pnpm pins (#1060), migrate CHECK safety (#1129), span guards (#1081), Redis nonce connection (#1070), COSE AuthProvider (#1077) (#1188)
+- strict CBOR decode, non-ASCII diagnostic spans, TS Decimal[] revival and --swr ComputedParams import (#1187)
+
+#### Chores
+
+- bump github/codeql-action/upload-sarif (#1173)
+- bump the cargo-minor-patch group across 1 directory with 14 updates (#1202)
+- bump expo in /examples/embedded-expo/app (#1171)
+- bump expo in /examples/embedded-expo/app (#1198)
+- bump webpack in /examples/embedded-browser-webpack/web (#1194)
+- bump @modelcontextprotocol/inspector (#1196)
+- bump the npm-minor-patch group across 1 directory with 4 updates (#1200)
+- bump the npm-minor-patch group across 7 directories with 14 updates (#1203)
+- pre-release batch: minijinja 3 port, ctutils advisory, conflicting example bumps, decimal README fix (#983) (#1210)
+
 ## 0.15.4 (2026-10-11)
 
 - Test-only: the shared fixtures now pin a CrateStack `BigInt` (ADR 0019) as a CBOR text string
