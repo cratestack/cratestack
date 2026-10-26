@@ -11,6 +11,13 @@ pub(super) fn diff(prev: &str, next: &str) -> SchemaDiff {
     diff_schemas(&parse(prev), &parse(next))
 }
 
+/// For ordinal enums, which validation refuses until they are generated.
+pub(super) fn diff_unvalidated(prev: &str, next: &str) -> SchemaDiff {
+    let parse =
+        |source| cratestack_parser::parse_schema_unvalidated(source).expect("schema should parse");
+    diff_schemas(&parse(prev), &parse(next))
+}
+
 pub(super) fn categories(diff: &SchemaDiff, severity: Severity) -> Vec<&'static str> {
     diff.changes
         .iter()

@@ -176,11 +176,18 @@ Adds enum diffing, for **both** kinds of enum (defect 1.1.1):
 | Change | Severity |
 |---|---|
 | variant removed | breaking |
-| variant renamed (string enum) | breaking — the wire value changed |
-| variant renamed (ordinal enum) | wire-neutral; flagged as client-source-breaking (generated identifiers change) |
-| variant added | non-breaking for the server; warned, because a client that decodes exhaustively rejects the new value until regenerated (O1) |
-| string enum → ordinal enum | breaking |
-| ordinal changed | breaking (and already refused by 3.2) |
+| variant renamed (string enum) | breaking — the wire value changed. Reported as a removal plus an addition: `diff` infers no renames, for fields either |
+| variant renamed (ordinal enum) | breaking, as `enum_variant_renamed`: wire-neutral, but generated client identifiers change |
+| variant added, enum reachable from a response | breaking: a client generated from the old schema refuses the unknown value (O1) |
+| variant added, enum only in requests | additive |
+| variants reordered (string enum) | internal; for an ordinal enum, nothing |
+| string enum ↔ ordinal enum | breaking (`enum_encoding_changed`) |
+| ordinal changed | breaking (a removal plus an addition, and already refused by 3.2) |
+
+*As built (slice 2).* `diff` has no warning level, so "warned" became a direction rule, the same
+one the op-contract classifier applies (`client_contract/compat_enum.rs`). "Reachable from a
+response" is computed over models, views, procedure and query results, through fields, `type`s
+and generic arguments (`cratestack-cli/src/schema_diff/response_reach.rs`), and is conservative.
 
 ### 3.4 Tests the implementing PRs must carry
 
@@ -329,8 +336,8 @@ CLAUDE.md).
 
 | Slice | Scope | State |
 |---|---|---|
-| 1. Front end | `EnumVariant::ordinal`, `EnumDecl::reserved` (`cratestack-core/src/schema/enum_ordinal.rs`); the body syntax (`cratestack-parser/src/parse/enum_body.rs`); R1–R4 and the refusal (`validate/enum_ordinals.rs`); ordinals in the schema digest and the op contract, skipped when empty so string-enum digests do not move; the contract classifier compares ordinal enums by number (`client_contract/compat_enum.rs`) | this branch |
-| 2. `cratestack diff` enums | §3.3, for string enums as well as ordinal ones: defect 1.1.1 is live today, independent of ordinals | next; can ship alone |
+| 1. Front end | `EnumVariant::ordinal`, `EnumDecl::reserved` (`cratestack-core/src/schema/enum_ordinal.rs`); the body syntax (`cratestack-parser/src/parse/enum_body.rs`); R1–R4 and the refusal (`validate/enum_ordinals.rs`); ordinals in the schema digest and the op contract, skipped when empty so string-enum digests do not move; the contract classifier compares ordinal enums by number (`client_contract/compat_enum.rs`) | merged (#1229) |
+| 2. `cratestack diff` enums | §3.3, for string enums as well as ordinal ones: defect 1.1.1 is live today, independent of ordinals | this branch: `cratestack-cli/src/schema_diff/enums.rs`, `response_reach.rs` |
 | 3. Storage | `migrate diff`: `SMALLINT` + `CHECK`, `DEFAULT n`, the §3.2 refusals, the §4 conversion, both dialects; Postgres-backed tests | |
 | 4. Server | `cratestack-macros`: `#[repr(i16)]`, integer `Serialize` and tolerant `Deserialize` (§2.3), `IntoSqlValue`, row decoders for both backends, names-only query parsing (O2), policy literals, `@default`; JSON Schema and MCP `oneOf` | |
 | 5. Clients and tools | Rust, TypeScript (revival both ways, `EOrdinals`), Dart (`int wireValue`), the swr, riverpod and fespalier layers, WireMock, Studio, LSP and the two editor grammars; `just regen-examples` | |

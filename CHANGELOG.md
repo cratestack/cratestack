@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### `cratestack diff` reports enum changes; it ignored enums entirely (enum ordinals, slice 2)
+
+**What was wrong.** `cratestack diff` compared models and procedures and never read the schema's
+enums. Removing or renaming a variant breaks every client that receives it, and the command
+reported "no structural changes detected" and exited 0, so a CI gate built on it let the change
+through.
+
+**What changed.** Enums are matched by name, and their changes are classified:
+
+| Change | Severity | Category |
+|---|---|---|
+| enum removed | breaking | `enum_removed` |
+| enum added | additive | `enum_added` |
+| variant removed | breaking | `enum_variant_removed` |
+| variant added, enum appears in a response | breaking | `enum_variant_added` |
+| variant added, enum appears only in requests | additive | `enum_variant_added` |
+| variants reordered (string enum) | internal | `enum_variants_reordered` |
+
+An added variant is breaking in a response because a client generated from the old schema refuses
+a value it does not know: the generated Dart decoders throw `ArgumentError`, and the Rust ones
+fail to deserialize. "Appears in a response" means the enum is reachable from any model, view,
+procedure result or query result, through fields, `type`s and generic arguments. The check is
+deliberately conservative: a `@server_only` field still counts.
+
+A rename still shows up as a removal plus an addition, as it does for fields. Ordinal enums
+(`Pending = 1`, still refused by `check`) are matched by number. For them a rename is
+`enum_variant_renamed`, breaking only for generated identifiers because the wire is unchanged, and
+switching between names and ordinals is `enum_encoding_changed`.
+
+**Upgrading.** A schema PR that adds a variant to an enum your responses carry now fails a
+`cratestack diff` gate. That is the intended signal: ship the regenerated clients first.
+
 ### Enum bodies read explicit ordinals and `@@reserved`, and refuse them until they are generated (enum ordinals, part 1)
 
 The first slice of `docs/design/enum-ordinals.md`, where an enum is stored and sent as a declared
