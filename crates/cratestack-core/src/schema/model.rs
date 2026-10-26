@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::SourceSpan;
+use super::enum_ordinal::ReservedOrdinals;
 use super::mcp::ModelMcpExposure;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -46,6 +47,9 @@ pub struct EnumDecl {
     pub name: String,
     pub name_span: SourceSpan,
     pub variants: Vec<EnumVariant>,
+    /// `@@reserved(..)`; absent on every string enum, so their IR is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserved: Option<ReservedOrdinals>,
     pub span: SourceSpan,
 }
 
@@ -53,6 +57,9 @@ pub struct EnumDecl {
 pub struct EnumVariant {
     pub docs: Vec<String>,
     pub name: String,
+    /// `Pending = 1`'s `1`; `None` on a string enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinal: Option<i64>,
     pub span: SourceSpan,
 }
 

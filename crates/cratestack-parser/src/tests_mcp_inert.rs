@@ -96,11 +96,15 @@ fn an_mcp_attribute_glued_to_or_misspelled_on_a_field_is_rejected() {
     }
 }
 
+/// The enum body parser refuses any `@` line but `@@reserved(..)` before
+/// validation runs (enum ordinals), so this is its message, not the inert
+/// rule's; the inert rule still guards a variant name that names MCP.
 #[test]
 fn an_mcp_line_inside_an_enum_is_rejected_not_read_as_a_variant() {
     for line in ["@@mcp", "@mcp"] {
         let source = format!("{VALID}\nenum Role {{\n  admin\n  {line}\n}}\n");
-        assert_eq!(rejected(&source, NEEDLE), line, "{line}");
+        let needle = "an enum accepts no attribute but `@@reserved(n, …)`";
+        assert_eq!(rejected(&source, needle), line, "{line}");
     }
 }
 
