@@ -168,7 +168,7 @@ Against the last committed `schema.snapshot.json`:
 | variant renamed, ordinal kept | allowed and **storage-neutral** — no data moves; `CHECK` unchanged |
 | a variant's ordinal changed | **refused**: "ordinal of `PaymentStatus.Approved` changed 2 → 7; ordinals are permanent. Add a new variant instead." |
 | variant removed, its ordinal not added to `@@reserved` | **refused**, naming the ordinal to reserve |
-| variant removed and reserved | allowed; `CHECK` narrowed — **destructive** (rows holding it fail the new `CHECK`), so it goes through the existing destructive classification and `up.pre.sql` path. *As built:* the narrowed `CHECK` is classified safe, as it already is for a string enum losing a variant (`Op::destructiveness`, `CheckKind::Enum`); see §9.1 |
+| variant removed and reserved | allowed; `CHECK` narrowed — **destructive** (rows holding it fail the new `CHECK`), so it goes through the existing destructive classification and `up.pre.sql` path. *As built:* the narrowed `CHECK` is Blocking in context (`ir/blocking/narrowing.rs`, which pairs the `DropCheck` and `AddCheck` of the same name), and `up.pre.sql` is scaffolded with `UPDATE … WHERE status IN (5)`. The same applies to a string enum losing a variant, which used to be classified safe |
 | a previously used ordinal reused by a different name | **refused** |
 | `@@reserved` entry removed | **refused** |
 
@@ -361,9 +361,6 @@ client agreeing (transport parity, CLAUDE.md).
 
 None of these stores or sends a wrong value; each is a limit worth knowing.
 
-- **A narrowed `CHECK` is not flagged.** Removing a reserved variant drops it from the `CHECK`,
-  and `migrate diff` classifies that safe, as it does for a string enum. Rows still holding the
-  number make the migration fail when it runs, not when it is planned.
 - **Introspection.** `cratestack migrate` reading a live Postgres does not map `SMALLINT` (as it
   leaves `int4` unmapped) and reads the numeric `CHECK` back as a raw expression, so a baseline
   taken from a database with an ordinal column reports drift on it.

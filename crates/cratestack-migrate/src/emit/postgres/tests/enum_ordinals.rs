@@ -135,3 +135,34 @@ fn a_projection_without_ordinal_enums_serializes_as_before() {
     assert!(!json.contains("\"enums\""), "{json}");
     assert!(!json.contains("ordinals"), "{json}");
 }
+
+#[test]
+fn retiring_a_variant_blocks_and_every_other_change_does_not() {
+    let base = order(ORDINALS);
+    let retired = up_migration(
+        &base,
+        &order("  Pending = 1\n  Approved = 2\n  @@reserved(5)"),
+    );
+    assert!(retired.has_blocking, "up was: {}", retired.up);
+    let pre = retired.up_pre.as_deref().expect("up.pre.sql is scaffolded");
+    assert!(
+        pre.contains("WHERE status IN (5);"),
+        "an ordinal is matched as a number: {pre}"
+    );
+
+    for next in [
+        "  Pending = 1\n  Accepted = 2\n  Refunded = 5",
+        "  Pending = 1\n  Approved = 2\n  Refunded = 5\n  Late = 6",
+        "  Pending\n  Approved\n  Refunded",
+    ] {
+        let migration = up_migration(&base, &order(next));
+        assert!(!migration.has_blocking, "{next}: {}", migration.up);
+    }
+}
+
+fn up_migration(
+    prev: &cratestack_core::Schema,
+    next: &cratestack_core::Schema,
+) -> crate::emit::EmittedMigration {
+    emit(&diff(prev, next).expect("diff succeeds"))
+}

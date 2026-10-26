@@ -42,9 +42,10 @@ pub(super) fn diff_checks(prev: &TableProjection, next: &TableProjection) -> Che
             // passed — this is the path that replaces the old
             // `ALTER TYPE ... ADD VALUE`, without its transactional
             // restrictions. *Removing* a variant narrows the set and
-            // can fail on existing rows holding the removed value;
-            // that is a genuine schema-level decision the diff engine
-            // does not try to backfill around.
+            // can fail on existing rows holding the removed value. The
+            // diff does not backfill around that schema-level decision;
+            // `ir::blocking::narrowing` classifies the pair Blocking and
+            // names the values, so `up.pre.sql` can move those rows.
             if !same_constraint(&prev_check.kind, &check.kind) {
                 out.drops.push(Op::DropCheck(DropCheck {
                     table: prev_check.table.clone(),

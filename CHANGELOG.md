@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### `migrate diff` blocks a migration that removes an enum value rows may still hold
+
+**What was wrong.** Removing a variant from an enum, or retiring an ordinal into `@@reserved`,
+rebuilds the column's membership `CHECK` with fewer values, and every row still holding the
+removed one makes that `ALTER TABLE` fail. `migrate diff` classified every enum `CHECK` as safe,
+because adding a variant only widens it, so the migration was written with no warning and failed
+when it ran against data.
+
+**What changed.** A rebuilt enum `CHECK` that loses a value is now **blocking**, like a `NOT
+NULL` promotion: `up.sql` opens with the warning, and on Postgres `up.pre.sql` is scaffolded with
+the backfill to adapt:
+
+```sql
+UPDATE orders SET status = <a value the enum keeps> WHERE status IN ('Shipped');
+```
+
+Adding a variant, reordering, renaming an ordinal enum's variant, and switching an enum between
+names and numbers are unchanged; the last is already lossy through its type change.
+
+**Upgrading.** A migration that removes an enum variant now comes with an `up.pre.sql`. Fill it
+in, or leave it as comments if you know no row holds the value.
+
 ### Ordinal enums: an enum can be stored and sent as declared numbers (enum ordinals)
 
 Number every variant of an enum and it is stored and sent as that number instead of its name:
@@ -50,9 +72,8 @@ new shape beside the old one, but model routes are not versioned, so an enum tha
 read through a model can only become ordinal once they have updated. `docs/design/enum-ordinals.md`
 §4 has the rollout.
 
-**Known limits** (§9.1 of the design): removing a reserved variant narrows the `CHECK` without
-being flagged destructive, as for a string enum; introspecting a live Postgres reports drift on
-an ordinal column; sorting by an ordinal enum orders by number.
+**Known limits** (§9.1 of the design): introspecting a live Postgres reports drift on an ordinal
+column; sorting by an ordinal enum orders by number.
 
 ### `cratestack diff` reports enum changes; it ignored enums entirely (enum ordinals, slice 2)
 

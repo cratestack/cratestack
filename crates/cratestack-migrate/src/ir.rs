@@ -119,8 +119,8 @@ impl Op {
             // COLUMN — no pre-existing rows), or as the second half of
             // a variant *addition*, which widens the accepted set and
             // therefore cannot reject a row that already passed. The
-            // one case that can fail on existing data is removing a
-            // variant; see the note in `diff::checks`.
+            // one case that can fail on existing data, removing a
+            // variant, is Blocking in context (`blocking::narrowing`).
             Op::AddCheck(check) => match check.kind {
                 CheckKind::Enum { .. } => Destructiveness::Safe,
                 _ => Destructiveness::Blocking,
