@@ -64,8 +64,9 @@ open), and `migrate diff` refuses changing a variant's number, removing a varian
 `@@reserved`-ing its number, dropping a number from `@@reserved`, and reusing a reserved number.
 
 **Converting an existing enum.** Adding the numbers to a string enum makes `migrate diff` emit
-the conversion: on Postgres the column's type changes with `USING (CASE … END)` (classified
-lossy: a table rewrite under an exclusive lock), on SQLite an `UPDATE … SET status = CASE …`.
+the conversion: on Postgres the column's type changes with `USING (CASE … END)` (a table rewrite
+under an exclusive lock), on SQLite an `UPDATE … SET status = CASE …`. Either way it is classified
+lossy, so `migrate diff` writes it only with `--allow-destructive`.
 Taking the numbers away converts back the same way. On the wire it is a breaking change for
 clients you do not regenerate and deploy with the server. `@api_version` can serve a procedure's
 new shape beside the old one, but model routes are not versioned, so an enum that installed apps
