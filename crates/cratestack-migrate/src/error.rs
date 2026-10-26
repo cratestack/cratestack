@@ -69,4 +69,14 @@ pub enum MigrateError {
         prev: String,
         next: String,
     },
+
+    /// An ordinal enum's history was rewritten: a variant renumbered, an
+    /// ordinal dropped without being reserved, or a used or reserved ordinal
+    /// handed to another variant (`docs/design/enum-ordinals.md` §3.2).
+    /// Stored rows mean what their number meant when they were written, so
+    /// the diff refuses rather than emits.
+    #[error(
+        "enum `{enum_name}`: {reason}. Ordinals are permanent: stored rows keep the meaning their number had when written."
+    )]
+    EnumOrdinalHistory { enum_name: String, reason: String },
 }

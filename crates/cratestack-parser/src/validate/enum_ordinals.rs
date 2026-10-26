@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 
-use cratestack_core::{ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl};
+use cratestack_core::{AuthBlock, ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl, Schema};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -118,4 +118,34 @@ pub(super) fn refuse_until_generated(e: &EnumDecl) -> Result<(), SchemaError> {
         ),
         e.name_span,
     ))
+}
+
+/// R5: an `auth` field may not have an ordinal enum type. A claim is
+/// whatever JSON the auth provider returns, so a policy could not know
+/// whether `auth().role` holds the variant's name or its number, and
+/// comparing an ordinal column with a string claim would fail open on the
+/// create path. Ruling the type out of `auth` also rules out
+/// `field == auth().x` for an ordinal field, since both sides must match.
+pub(super) fn refuse_ordinal_auth_fields(
+    schema: &Schema,
+    auth: &AuthBlock,
+) -> Result<(), SchemaError> {
+    for field in &auth.fields {
+        let ordinal = schema
+            .enums
+            .iter()
+            .any(|e| e.name == field.ty.name && e.is_ordinal());
+        if ordinal {
+            return Err(span_error(
+                format!(
+                    "auth field `{}` has the ordinal enum type `{}`; a claim's encoding is the \
+                     auth provider's choice, so `auth` fields may use string enums only. Use a \
+                     string enum, or a `String`, here",
+                    field.name, field.ty.name
+                ),
+                field.span,
+            ));
+        }
+    }
+    Ok(())
 }

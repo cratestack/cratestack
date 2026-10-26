@@ -22,6 +22,7 @@
 
 mod checks;
 mod columns;
+mod enum_ordinals;
 mod extensions;
 mod foreign_keys;
 mod indexes;
@@ -68,6 +69,9 @@ pub fn diff(prev: &Schema, next: &Schema) -> Result<Vec<Op>, MigrateError> {
 /// value — not just [`project`] reading a parsed `.cstack` `Schema` —
 /// can be diffed against another `Projections` value here.
 pub fn diff_projections(prev: &Projections, next: &Projections) -> Result<Vec<Op>, MigrateError> {
+    // An ordinal enum renumbered, or a number reused, refuses the whole
+    // diff before any op is computed, like a primary-key change.
+    enum_ordinals::check_ordinal_history(prev, next)?;
     let prev_tables = &prev.tables;
     let next_tables = &next.tables;
 
@@ -157,6 +161,7 @@ pub fn diff_projections(prev: &Projections, next: &Projections) -> Result<Vec<Op
     // both source tables and any new columns the view body
     // references exist before the view definition is parsed.
     ops.append(&mut view_diff.creates);
+    enum_ordinals::attach_enum_casts(&mut ops, prev, next);
     Ok(ops)
 }
 

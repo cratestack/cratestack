@@ -525,13 +525,6 @@ added = "2026-08-29"
 reason = "test module; split by concern when the module it covers is next touched"
 
 [[file]]
-path = "crates/cratestack-macros/src/model/row_pg.rs"
-lines = 226
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-studio/src/eject.rs"
 lines = 226
 issue = "#TBD"
@@ -646,13 +639,6 @@ reason = "pre-existing; split by concern (extract inline tests first)"
 [[file]]
 path = "crates/cratestack-core/src/schema/computed_attribute.rs"
 lines = 213
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
-path = "crates/cratestack-macros/src/model/row_sqlite.rs"
-lines = 211
 issue = "#TBD"
 added = "2026-08-29"
 reason = "pre-existing; split by concern (extract inline tests first)"

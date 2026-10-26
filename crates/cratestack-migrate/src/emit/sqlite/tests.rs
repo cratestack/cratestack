@@ -407,3 +407,27 @@ model Item {
         migration.up
     );
 }
+
+#[test]
+fn an_enum_switching_to_ordinals_rewrites_its_values_on_sqlite() {
+    let order = |variants: &str| {
+        cratestack_parser::parse_schema_unvalidated(&with_models(&format!(
+            "enum Status {{\n{variants}\n}}\n\nmodel Order {{\n  id Int @id\n  status Status\n}}\n"
+        )))
+        .expect("parses")
+    };
+    let migration = emit(
+        &diff(
+            &order("  Pending\n  Approved"),
+            &order("  Pending = 1\n  Approved = 2"),
+        )
+        .expect("diff succeeds"),
+    );
+    assert!(
+        migration
+            .up
+            .contains("UPDATE orders SET status = CASE status WHEN 'Pending' THEN 1 WHEN 'Approved' THEN 2 END;"),
+        "{}",
+        migration.up
+    );
+}

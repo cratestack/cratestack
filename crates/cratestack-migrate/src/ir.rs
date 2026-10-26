@@ -29,7 +29,7 @@ pub use extensions::EnsureExtension;
 pub use foreign_keys::{AddForeignKey, DropForeignKey, ForeignKeyAction};
 pub use ops::{
     AddColumn, AddIndex, AlterColumnDefault, AlterColumnNullability, AlterColumnType, CreateTable,
-    DropColumn, DropIndex, DropTable, RenameColumn, RenameTable,
+    DropColumn, DropIndex, DropTable, EnumCast, RenameColumn, RenameTable,
 };
 pub use views::{CreateMaterializedView, CreateView, DropMaterializedView, DropView, ReplaceView};
 

@@ -20,3 +20,19 @@ pub struct ReservedOrdinals {
     pub values: Vec<i64>,
     pub span: SourceSpan,
 }
+
+impl super::model::EnumDecl {
+    /// Whether the enum is stored and sent as its ordinals. Validation
+    /// guarantees all variants are numbered or none is.
+    pub fn is_ordinal(&self) -> bool {
+        self.variants.iter().any(|v| v.ordinal.is_some())
+    }
+
+    /// The ordinal `variant` carries, if the enum is ordinal and has it.
+    pub fn ordinal_of(&self, variant: &str) -> Option<i64> {
+        self.variants
+            .iter()
+            .find(|v| v.name == variant)
+            .and_then(|v| v.ordinal)
+    }
+}

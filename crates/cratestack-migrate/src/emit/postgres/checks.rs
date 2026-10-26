@@ -32,18 +32,29 @@ pub(super) fn emit_drop_check(sql: &mut String, check: &DropCheck) {
 fn render_check_predicate_postgres(column: &str, kind: &CheckKind) -> String {
     let c = quote_ident(column);
     match kind {
-        CheckKind::Enum { variants, list } => {
-            let literals: Vec<String> = variants
-                .iter()
-                .map(|variant| format!("'{}'", variant.replace('\'', "''")))
-                .collect();
+        CheckKind::Enum {
+            variants,
+            list,
+            ordinals,
+        } => {
+            // An ordinal enum's column holds numbers, so the CHECK lists them.
+            let (literals, element): (Vec<String>, &str) = match ordinals {
+                Some(ordinals) => (ordinals.iter().map(i64::to_string).collect(), "SMALLINT"),
+                None => (
+                    variants
+                        .iter()
+                        .map(|variant| format!("'{}'", variant.replace('\'', "''")))
+                        .collect(),
+                    "TEXT",
+                ),
+            };
             // `variants` is never empty — the projection skips the
             // check entirely for a variant-less enum.
             if *list {
                 // Array containment: every element of the column must
                 // be one of the variants. NULL and `{}` both pass,
                 // matching scalar `IN` semantics for NULL.
-                format!("{c} <@ ARRAY[{}]::TEXT[]", literals.join(", "))
+                format!("{c} <@ ARRAY[{}]::{element}[]", literals.join(", "))
             } else {
                 // NULL passes: `NULL IN (...)` is NULL, and a CHECK
                 // only fails on FALSE. Nullable enum columns therefore

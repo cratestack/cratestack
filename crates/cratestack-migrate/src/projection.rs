@@ -48,6 +48,23 @@ pub struct Projections {
     pub views: BTreeMap<String, ViewProjection>,
     #[serde(default)]
     pub declared_extensions: BTreeSet<ExtensionKind>,
+    /// Every ordinal enum's name ↔ number map and `@@reserved` list, the
+    /// history `migrate diff` needs to keep ordinals append-only
+    /// (`docs/design/enum-ordinals.md` §3.2). String enums are absent, and
+    /// the map is skipped when empty, so a snapshot without ordinal enums
+    /// serializes, and checksums, exactly as before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enums: BTreeMap<String, EnumProjection>,
+}
+
+/// One ordinal enum's history-relevant shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumProjection {
+    /// `(name, ordinal)` per variant, in declaration order.
+    pub variants: Vec<(String, i64)>,
+    /// Ordinals retired with `@@reserved`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reserved: Vec<i64>,
 }
 
 /// Project a parsed `.cstack` [`Schema`] into its [`Projections`] IR
@@ -57,7 +74,29 @@ pub fn project(schema: &Schema) -> Projections {
         tables: project_tables(schema),
         views: project_views(schema),
         declared_extensions: schema.declared_extensions.clone(),
+        enums: project_ordinal_enums(schema),
     }
+}
+
+fn project_ordinal_enums(schema: &Schema) -> BTreeMap<String, EnumProjection> {
+    schema
+        .enums
+        .iter()
+        .filter(|e| e.is_ordinal())
+        .map(|e| {
+            let variants = e
+                .variants
+                .iter()
+                .filter_map(|v| Some((v.name.clone(), v.ordinal?)))
+                .collect();
+            let reserved = e
+                .reserved
+                .as_ref()
+                .map(|r| r.values.clone())
+                .unwrap_or_default();
+            (e.name.clone(), EnumProjection { variants, reserved })
+        })
+        .collect()
 }
 
 fn project_tables(schema: &Schema) -> BTreeMap<String, TableProjection> {
