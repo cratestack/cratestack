@@ -1,19 +1,18 @@
 //! Ordinal enums on Postgres (`docs/design/enum-ordinals.md` §2.2, §3.2,
 //! §4): a `SMALLINT` column with a numeric CHECK and default, the
-//! names ↔ ordinals conversion, and the history refusals. The parser still
-//! refuses ordinal enums, so schemas are built unvalidated.
+//! names ↔ ordinals conversion, and the history refusals.
 
 use super::super::emit;
 use super::with_models;
 use crate::diff::diff;
 use crate::error::MigrateError;
 
-fn unvalidated(source: &str) -> cratestack_core::Schema {
-    cratestack_parser::parse_schema_unvalidated(source).expect("parses")
+fn parse(source: &str) -> cratestack_core::Schema {
+    cratestack_parser::parse_schema(source).expect("parses")
 }
 
 fn order(variants: &str) -> cratestack_core::Schema {
-    unvalidated(&with_models(&format!(
+    parse(&with_models(&format!(
         "enum Status {{\n{variants}\n}}\n\nmodel Order {{\n  id Int @id\n  status Status @default(Pending)\n}}\n"
     )))
 }
@@ -26,7 +25,7 @@ fn up(prev: &cratestack_core::Schema, next: &cratestack_core::Schema) -> String 
 
 #[test]
 fn an_ordinal_enum_column_is_smallint_with_a_numeric_check_and_default() {
-    let sql = up(&unvalidated(&with_models("")), &order(ORDINALS));
+    let sql = up(&parse(&with_models("")), &order(ORDINALS));
     assert!(sql.contains("status SMALLINT NOT NULL DEFAULT 1"), "{sql}");
     assert!(sql.contains("CHECK (status IN (1, 2, 5))"), "{sql}");
     assert!(!sql.contains("'Pending'"), "{sql}");
@@ -114,11 +113,19 @@ fn rewriting_the_history_is_refused() {
         "  Pending = 1\n  Approved = 2",
         "dropped from `@@reserved`",
     );
-    refused(
-        retired,
-        "  Pending = 1\n  Approved = 2\n  Late = 5\n  @@reserved(5)",
-        "earlier migration retired",
-    );
+    // R3 refuses this schema at parse time; the diff refuses it too, for a
+    // snapshot or an IR that never went through the parser.
+    let reused = cratestack_parser::parse_schema_unvalidated(&with_models(
+        "enum Status {\n  Pending = 1\n  Approved = 2\n  Late = 5\n  @@reserved(5)\n}\n\n\
+         model Order {\n  id Int @id\n  status Status @default(Pending)\n}\n",
+    ))
+    .expect("parses");
+    match diff(&order(retired), &reused) {
+        Err(MigrateError::EnumOrdinalHistory { reason, .. }) => {
+            assert!(reason.contains("earlier migration retired"), "{reason}");
+        }
+        other => panic!("expected an ordinal-history refusal, got {other:?}"),
+    }
 }
 
 #[test]

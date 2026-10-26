@@ -22,6 +22,7 @@ mod server;
 mod state;
 mod symbol_target;
 mod text;
+mod type_hover;
 mod type_ref;
 
 #[cfg(test)]
@@ -32,6 +33,8 @@ mod tests_attribute_run_diagnostics;
 mod tests_block_diagnostics;
 #[cfg(test)]
 mod tests_completion;
+#[cfg(test)]
+mod tests_enum_hover;
 #[cfg(test)]
 mod tests_last_known_good;
 #[cfg(test)]

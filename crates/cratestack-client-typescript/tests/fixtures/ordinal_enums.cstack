@@ -1,0 +1,55 @@
+// Ordinal enums (`Pending = 1`, docs/design/enum-ordinals.md), REST. A
+// response carries each ordinal enum value as its number; the generated
+// client must hand application code the variant's name everywhere one can
+// sit:
+//
+//   * a required and an optional ordinal field on a model, plus a `@@paged`
+//     list envelope;
+//   * an ordinal field reached through a relation (`Refund.payment`) and a
+//     `type` block (`Summary`), including an ordinal list;
+//   * a bare ordinal enum procedure return;
+//   * a name collision: `Refund.status` is a `String`, so a number there is
+//     not a `PaymentStatus` and comes back untouched;
+//   * a string enum (`Channel`) beside them, which stays a name end to end.
+
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)
+}
+
+enum Channel {
+  card
+  transfer
+}
+
+model Payment {
+  id Int @id
+  status PaymentStatus @default(Pending)
+  previous PaymentStatus?
+  channel Channel
+  refunds Refund[] @relation(fields:[id],references:[paymentId])
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@paged
+}
+
+model Refund {
+  id Int @id
+  paymentId Int
+  payment Payment @relation(fields:[paymentId],references:[id])
+  status String
+
+  @@allow("read", true)
+}
+
+type Summary {
+  current PaymentStatus
+  history PaymentStatus[]
+}
+
+procedure summary(id: Int): Summary
+procedure statusOf(id: Int): PaymentStatus

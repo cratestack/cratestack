@@ -1,0 +1,48 @@
+// Ordinal enums (`Pending = 1`, docs/design/enum-ordinals.md), REST, for
+// `just verify-dart`: it generates both presets from this, analyzes them,
+// and runs `ordinal_enums_test.dart` against the default one. An ordinal
+// enum sits everywhere it can: a required and an optional model field, a
+// `@@paged` list, through a relation, a `type` with an ordinal list, and a
+// bare procedure return. `Channel`, a string enum beside it, stays a name.
+
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)
+}
+
+enum Channel {
+  card
+  transfer
+}
+
+model Payment {
+  id Int @id
+  status PaymentStatus @default(Pending)
+  previous PaymentStatus?
+  channel Channel
+  refunds Refund[] @relation(fields:[id],references:[paymentId])
+
+  @@allow("read", true)
+  @@allow("create", true)
+  @@paged
+}
+
+model Refund {
+  id Int @id
+  paymentId Int
+  payment Payment @relation(fields:[paymentId],references:[id])
+  status String
+
+  @@allow("read", true)
+}
+
+type Summary {
+  current PaymentStatus
+  history PaymentStatus[]
+}
+
+procedure summary(id: Int): Summary
+procedure statusOf(id: Int): PaymentStatus

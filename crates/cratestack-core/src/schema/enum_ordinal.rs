@@ -1,7 +1,7 @@
 //! Explicit enum ordinals (`Pending = 1`, `@@reserved(4)`), the IR half of
 //! `docs/design/enum-ordinals.md`. The parser fills these in and checks
-//! rules R1–R4; nothing generates from them yet, which is why validation
-//! refuses an ordinal enum until a backend does.
+//! rules R1–R5; the macros, `cratestack-migrate` and the client generators
+//! read them back through [`EnumDecl::is_ordinal`](super::model::EnumDecl::is_ordinal).
 
 use serde::{Deserialize, Serialize};
 

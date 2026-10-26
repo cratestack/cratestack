@@ -411,7 +411,7 @@ model Item {
 #[test]
 fn an_enum_switching_to_ordinals_rewrites_its_values_on_sqlite() {
     let order = |variants: &str| {
-        cratestack_parser::parse_schema_unvalidated(&with_models(&format!(
+        cratestack_parser::parse_schema(&with_models(&format!(
             "enum Status {{\n{variants}\n}}\n\nmodel Order {{\n  id Int @id\n  status Status\n}}\n"
         )))
         .expect("parses")

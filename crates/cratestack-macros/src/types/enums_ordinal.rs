@@ -14,15 +14,19 @@ use quote::quote;
 
 use crate::shared::{ident, schema_lit};
 
-/// `Self::A => 1,` per variant.
-fn ordinal_arms(e: &EnumDecl) -> Vec<proc_macro2::TokenStream> {
+/// `(1, A)` per variant: each ordinal and the variant it names.
+fn ordinal_pairs(e: &EnumDecl) -> Vec<(i16, proc_macro2::Ident)> {
     e.variants
         .iter()
-        .filter_map(|v| {
-            let variant = ident(&v.name);
-            let ordinal = i16::try_from(v.ordinal?).ok()?;
-            Some(quote! { #ordinal => Ok(Self::#variant), })
-        })
+        .filter_map(|v| Some((i16::try_from(v.ordinal?).ok()?, ident(&v.name))))
+        .collect()
+}
+
+/// `1 => Ok(Self::A),` per variant.
+fn ordinal_arms(e: &EnumDecl) -> Vec<proc_macro2::TokenStream> {
+    ordinal_pairs(e)
+        .into_iter()
+        .map(|(ordinal, variant)| quote! { #ordinal => Ok(Self::#variant), })
         .collect()
 }
 
@@ -40,14 +44,16 @@ fn accepted_ordinals(e: &EnumDecl) -> syn::LitStr {
 pub(super) fn storage_items(e: &EnumDecl) -> proc_macro2::TokenStream {
     let enum_name = schema_lit(&e.name);
     let (ordinal, null, from_ordinal) = if e.is_ordinal() {
-        let arms = ordinal_arms(e);
+        let arms = ordinal_pairs(e)
+            .into_iter()
+            .map(|(ordinal, variant)| quote! { Some(#ordinal) => Ok(Self::#variant), });
         let accepted = accepted_ordinals(e);
         (
             quote! { true },
             quote! { ::cratestack::SqlValue::NullInt },
             quote! {
                 match i16::try_from(value).ok() {
-                    #(Some(#arms))*
+                    #(#arms)*
                     _ => Err(format!(
                         "unknown ordinal {value} for `{}`; expected one of: {}",
                         #enum_name, #accepted,

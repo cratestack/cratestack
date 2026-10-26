@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+### Ordinal enums: an enum can be stored and sent as declared numbers (enum ordinals)
+
+Number every variant of an enum and it is stored and sent as that number instead of its name:
+
+```cstack
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)   // retired; never reuse
+}
+```
+
+`Pending` costs 1 byte in a CBOR or JSON body instead of 8 (CBOR) or 9 (JSON), and 2 bytes in a
+Postgres row and every index on it instead of 8. The numbers are the stored meaning of every row, so they are
+append-only, and `cratestack migrate diff` enforces that. Enums without numbers are unchanged:
+the same DDL, wire form, snapshots and digests.
+
+| Surface | Ordinal enum |
+|---|---|
+| Postgres | `SMALLINT` with `CHECK (status IN (1, 2, 5))`; `@default(Pending)` emits `DEFAULT 1` |
+| SQLite | the integer, in the usual `BLOB`-declared column (no `CHECK`, as for a string enum) |
+| CBOR and JSON bodies, REST and RPC | the number; a server decodes the number **or** the name, so a client still sending names keeps working |
+| Query strings (`?status=Approved`, `__in`) | names only; `?status=2` is a `400` naming the accepted values |
+| Policies | names in the source (`status != Refunded`), compared as numbers |
+| Rust type | `#[repr(i16)]`; `ordinal()`, `TryFrom<i16>`; `Display`/`FromStr` keep the names |
+| TypeScript client | the type is still `'Pending' \| 'Approved' \| 'Refunded'`: responses are revived to names; requests send names |
+| Dart client | the same constants, with `int wireValue` beside `wireName`; `fromWire` takes either form |
+| JSON Schema / MCP | `{"type": "integer", "oneOf": [{"const": 1, "title": "Pending"}, …]}` |
+| WireMock | the first variant's number; a model field is not echoed from the request |
+| Studio | shows `Pending (1)`, writes by name or number |
+| LSP | hovering an enum or a variant shows the numbers |
+
+**Rules.** Besides the parse-time ones of part 1 below, `check` refuses an `auth` field of an
+ordinal enum type (a claim's encoding is the auth provider's choice, so a comparison could fail
+open), and `migrate diff` refuses changing a variant's number, removing a variant without
+`@@reserved`-ing its number, dropping a number from `@@reserved`, and reusing a reserved number.
+
+**Converting an existing enum.** Adding the numbers to a string enum makes `migrate diff` emit
+the conversion: on Postgres the column's type changes with `USING (CASE … END)` (classified
+lossy: a table rewrite under an exclusive lock), on SQLite an `UPDATE … SET status = CASE …`.
+Taking the numbers away converts back the same way. On the wire it is a breaking change for
+clients you do not regenerate and deploy with the server. `@api_version` can serve a procedure's
+new shape beside the old one, but model routes are not versioned, so an enum that installed apps
+read through a model can only become ordinal once they have updated. `docs/design/enum-ordinals.md`
+§4 has the rollout.
+
+**Known limits** (§9.1 of the design): removing a reserved variant narrows the `CHECK` without
+being flagged destructive, as for a string enum; introspecting a live Postgres reports drift on
+an ordinal column; sorting by an ordinal enum orders by number.
+
 ### `cratestack diff` reports enum changes; it ignored enums entirely (enum ordinals, slice 2)
 
 **What was wrong.** `cratestack diff` compared models and procedures and never read the schema's
@@ -27,7 +79,7 @@ procedure result or query result, through fields, `type`s and generic arguments.
 deliberately conservative: a `@server_only` field still counts.
 
 A rename still shows up as a removal plus an addition, as it does for fields. Ordinal enums
-(`Pending = 1`, still refused by `check`) are matched by number. For them a rename is
+(`Pending = 1`, see the entry above) are matched by number. For them a rename is
 `enum_variant_renamed`, breaking only for generated identifiers because the wire is unchanged, and
 switching between names and ordinals is `enum_encoding_changed`.
 
@@ -84,11 +136,11 @@ crate gains one dependency, `thiserror`, already in the workspace; it still comp
 **Migrating.** Additive; nothing to do. Do not use a claim object where a transport envelope is
 needed: it carries no binding to a request and does no replay protection.
 
-### Enum bodies read explicit ordinals and `@@reserved`, and refuse them until they are generated (enum ordinals, part 1)
+### Enum bodies read explicit ordinals and `@@reserved` (enum ordinals, part 1)
 
 The first slice of `docs/design/enum-ordinals.md`, where an enum is stored and sent as a declared
-number (`Pending = 1`) instead of its name. This release parses and checks that syntax. Nothing
-generates from it yet, so a well-formed ordinal enum is **refused**, not accepted and ignored:
+number (`Pending = 1`) instead of its name: the syntax and its rules. The entry "Ordinal enums"
+above covers what is generated from it.
 
 ```cstack
 enum PaymentStatus {
@@ -100,9 +152,7 @@ enum PaymentStatus {
 }
 ```
 
-`check` reports that the enum "declares explicit ordinals, which this release parses but does not
-generate", with the span on the enum's name. Before that, it checks the rules the design fixes, so
-a schema written today is already in the shape the generating release will accept:
+`check` enforces these, refusing a violation at its span:
 
 - every variant is numbered, or none is;
 - an ordinal is an integer from 0 to 32767, used by one variant only;

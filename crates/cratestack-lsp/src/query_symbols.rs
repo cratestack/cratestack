@@ -24,9 +24,9 @@
 
 use cratestack_core::{Schema, SourceSpan};
 
-use crate::hover::named_type_symbol;
 use crate::state::SymbolInfo;
 use crate::text::span_contains;
+use crate::type_hover::named_type_symbol;
 use crate::type_ref::{
     collect_type_ref_spans, nested_type_reference_name_at_offset, render_type_ref,
     type_ref_at_offset,

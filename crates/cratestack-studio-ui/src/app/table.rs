@@ -16,6 +16,11 @@ fn render_cell(field: &FieldSummary, value: Option<&serde_json::Value>) -> impl 
         return view! { <span class="text-base-content/30">"—"</span> }.into_any();
     }
     let text = value.map(format_cell).unwrap_or_default();
+    // An ordinal enum's row holds the number: show the name beside it.
+    if let Some(name) = value.and_then(|v| field.enum_name_of(v)) {
+        let label = format!("{name} ({text})");
+        return view! { <span class="badge badge-ghost badge-sm">{label}</span> }.into_any();
+    }
     match value {
         Some(serde_json::Value::Bool(b)) => {
             let class = if *b { "badge badge-success badge-sm" } else { "badge badge-ghost badge-sm" };

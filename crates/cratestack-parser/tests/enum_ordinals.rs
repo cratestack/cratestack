@@ -1,6 +1,5 @@
-//! Explicit enum ordinals (`docs/design/enum-ordinals.md`): the body syntax,
-//! rules R1–R4, and the refusal that keeps a well-formed ordinal enum from
-//! being accepted before any generator stores or sends ordinals.
+//! Explicit enum ordinals (`docs/design/enum-ordinals.md`): the body syntax
+//! and rules R1–R5.
 
 use cratestack_core::Schema;
 use cratestack_parser::{parse_schema, parse_schema_unvalidated};
@@ -63,16 +62,25 @@ fn an_ordinal_enum_reads_into_the_ir() {
 }
 
 #[test]
-fn a_well_formed_ordinal_enum_is_refused_until_it_is_generated() {
+fn a_well_formed_ordinal_enum_is_accepted() {
+    let schema = parse_schema(PAYMENT).expect("a well-formed ordinal enum validates");
+    let e = &schema.enums[0];
+    assert!(e.is_ordinal());
+    assert_eq!(e.ordinal_of("Refunded"), Some(5));
+    assert_eq!(e.ordinal_of("Settled"), None);
+}
+
+#[test]
+fn r5_an_auth_field_is_never_an_ordinal_enum() {
+    let source = format!("{PAYMENT}\nauth Claims {{\n  id Int\n  status PaymentStatus\n}}\n");
     refused_at(
-        PAYMENT,
-        "PaymentStatus",
-        &[
-            "declares explicit ordinals",
-            "does not generate",
-            "enum-ordinals.md",
-        ],
+        &source,
+        // A field's span starts at its line's indent.
+        "  status PaymentStatus",
+        &["auth field `status`", "ordinal enum type `PaymentStatus`"],
     );
+    let string_enum = "enum Role {\n  admin\n}\n\nauth Claims {\n  id Int\n  role Role\n}\n";
+    parse_schema(string_enum).expect("a string enum stays a valid auth field type");
 }
 
 #[test]
