@@ -71,12 +71,6 @@ fn encoding(ordinal: bool) -> &'static str {
 }
 
 fn by_name(name: &str, was: &EnumDecl, now: &EnumDecl, decoded: bool, changes: &mut Vec<Change>) {
-    let names = |e: &EnumDecl| {
-        e.variants
-            .iter()
-            .map(|v| v.name.clone())
-            .collect::<Vec<_>>()
-    };
     let (before, after) = (names(was), names(now));
     for variant in before.iter().filter(|v| !after.contains(v)) {
         changes.push(change(
@@ -86,14 +80,10 @@ fn by_name(name: &str, was: &EnumDecl, now: &EnumDecl, decoded: bool, changes: &
             format!("variant `{variant}` was removed from enum `{name}`"),
         ));
     }
-    let added: Vec<&String> = after.iter().filter(|v| !before.contains(v)).collect();
-    for variant in &added {
+    for variant in after.iter().filter(|v| !before.contains(v)) {
         changes.push(added_variant(name, &format!("`{variant}`"), decoded));
     }
-    let kept_order = |list: &[String], other: &[String]| -> Vec<String> {
-        list.iter().filter(|v| other.contains(v)).cloned().collect()
-    };
-    if kept_order(&before, &after) != kept_order(&after, &before) {
+    if common_order(&before, &after) != common_order(&after, &before) {
         changes.push(change(
             Severity::Internal,
             "enum_variants_reordered",
@@ -113,12 +103,6 @@ fn by_ordinal(
     decoded: bool,
     changes: &mut Vec<Change>,
 ) {
-    let numbered = |e: &EnumDecl| -> BTreeMap<i64, String> {
-        e.variants
-            .iter()
-            .filter_map(|v| Some((v.ordinal?, v.name.clone())))
-            .collect()
-    };
     let (before, after) = (numbered(was), numbered(now));
     for (ordinal, variant) in &before {
         match after.get(ordinal) {
@@ -147,6 +131,22 @@ fn by_ordinal(
             decoded,
         ));
     }
+}
+
+fn names(e: &EnumDecl) -> Vec<&str> {
+    e.variants.iter().map(|v| v.name.as_str()).collect()
+}
+
+/// `list`'s variants that `other` also has, in `list`'s order.
+fn common_order<'a>(list: &[&'a str], other: &[&str]) -> Vec<&'a str> {
+    list.iter().copied().filter(|v| other.contains(v)).collect()
+}
+
+fn numbered(e: &EnumDecl) -> BTreeMap<i64, &str> {
+    e.variants
+        .iter()
+        .filter_map(|v| Some((v.ordinal?, v.name.as_str())))
+        .collect()
 }
 
 /// A new value is harmless in a request and breaking in a response: a
