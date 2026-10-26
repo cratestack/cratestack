@@ -8,17 +8,20 @@
 //! Errors are structured per-field so the UI can surface them inline.
 
 mod bigint;
+mod enum_ordinal;
 mod predicates;
 mod types;
 
 #[cfg(test)]
 mod bigint_tests;
 #[cfg(test)]
+mod enum_ordinal_tests;
+#[cfg(test)]
 mod predicate_tests;
 #[cfg(test)]
 mod tests;
 
-use cratestack_core::{Field, Model};
+use cratestack_core::{Field, Model, Schema};
 
 pub use types::{FieldError, ValidationCode};
 
@@ -29,6 +32,7 @@ pub use types::{FieldError, ValidationCode};
 /// Returns all per-field errors at once — the UI can surface them
 /// together rather than failing on the first one.
 pub fn validate_payload(
+    schema: &Schema,
     model: &Model,
     payload: &serde_json::Map<String, serde_json::Value>,
     partial: bool,
@@ -58,7 +62,7 @@ pub fn validate_payload(
                 }
             }
             Some(v) => {
-                if let Some(err) = check_type(field, v) {
+                if let Some(err) = check_type(schema, field, v) {
                     errors.push(err);
                     continue;
                 }
@@ -115,10 +119,17 @@ fn is_writable_field(field: &Field) -> bool {
         .any(|a| a.raw.starts_with("@relation") || a.raw == "@version")
 }
 
-fn check_type(field: &Field, value: &serde_json::Value) -> Option<FieldError> {
+fn check_type(schema: &Schema, field: &Field, value: &serde_json::Value) -> Option<FieldError> {
     let scalar = field.ty.name.as_str();
     if scalar == "BigInt" {
         return bigint::check(field, value);
+    }
+    if let Some(e) = schema
+        .enums
+        .iter()
+        .find(|e| e.name == scalar && e.is_ordinal())
+    {
+        return enum_ordinal::check(field, e, value);
     }
     let ok = match scalar {
         "String" | "Cuid" | "Uuid" | "DateTime" | "Decimal" | "Bytes" => value.is_string(),

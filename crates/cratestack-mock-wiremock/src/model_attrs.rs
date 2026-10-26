@@ -105,12 +105,24 @@ pub(crate) fn classify_field_kind(schema: &Schema, field: &Field) -> ScalarKind 
             // name), same wire shape as `String` — echoing/storing it
             // through the state store is exactly as safe as any other
             // string-kind field. Anything else (a nested `type`, `Json`,
-            // `Bytes`, `Vector(n)`) is unsupported.
-            if schema.enums.iter().any(|e| e.name == other) {
-                ScalarKind::QuotedString
-            } else {
-                ScalarKind::Unsupported
+            // `Bytes`, `Vector(n)`) is unsupported. So is an ordinal enum
+            // (`Pending = 1`): a TypeScript client sends its name and a
+            // Rust or Dart one its number, so no one quoting echoes both;
+            // it is frozen to an example ordinal instead.
+            match schema.enums.iter().find(|e| e.name == other) {
+                Some(e) if !e.is_ordinal() => ScalarKind::QuotedString,
+                _ => ScalarKind::Unsupported,
             }
         }
     }
+}
+
+/// An enum's example wire value: its first variant, as the number an
+/// ordinal enum is sent as (`docs/design/enum-ordinals.md`) or the name.
+pub(crate) fn enum_example(e: &cratestack_core::EnumDecl) -> Option<serde_json::Value> {
+    let variant = e.variants.first()?;
+    Some(match variant.ordinal {
+        Some(ordinal) => serde_json::json!(ordinal),
+        None => serde_json::json!(variant.name),
+    })
 }

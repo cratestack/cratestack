@@ -55,6 +55,9 @@ pub(crate) struct TemplateContext {
     /// call site looks a name up in (`crate::decimal`'s module doc has the
     /// full rationale; cratestack#499 review remediation).
     wire_shapes: Vec<WireShapeView>,
+    /// Ordinal enums' decode tables (`crate::ordinal_enums`); empty, and
+    /// rendering nothing, for a schema without one.
+    ordinal_enums: crate::ordinal_enums::OrdinalRegistry,
     /// Issue #571 (`--refine`). Mirrors
     /// `TypeScriptGeneratorConfig::refine`, and is read by the two
     /// *unconditional* templates that also change under the flag —
@@ -376,6 +379,7 @@ pub(crate) fn build_template_context(
         query_procedures,
         mutation_procedures,
         wire_shapes,
+        ordinal_enums: crate::ordinal_enums::build_ordinal_registry(schema),
         refine: config.refine,
         refine_version_requirement: refine_version_requirement.clone(),
         // Built only when the flag is on: a default run has no template

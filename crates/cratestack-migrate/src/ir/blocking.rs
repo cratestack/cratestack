@@ -11,7 +11,9 @@
 
 use std::collections::HashSet;
 
-use super::{ColumnArity, Destructiveness, Op};
+use super::{AddCheck, ColumnArity, Destructiveness, Op};
+
+mod narrowing;
 
 /// One blocking operation, described in terms the operator can act on.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,9 +46,9 @@ impl BlockingReason {
 /// [`destructiveness_in_context`]), so callers can use `!is_empty()` in
 /// place of the `has_blocking` bit and get the per-op detail for free.
 pub fn blocking_reasons(ops: &[Op]) -> Vec<BlockingReason> {
-    let created = tables_created_in(ops);
+    let context = Context::of(ops);
     ops.iter()
-        .filter_map(|op| reason_for(op, &created))
+        .filter_map(|op| reason_for(op, &context))
         .collect()
 }
 
@@ -64,8 +66,32 @@ pub fn blocking_reasons(ops: &[Op]) -> Vec<BlockingReason> {
 /// still read `Op::destructiveness`, since the exemption never changes
 /// those.
 pub fn destructiveness_in_context(ops: &[Op]) -> Vec<Destructiveness> {
-    let created = tables_created_in(ops);
-    ops.iter().map(|op| class_in(op, &created)).collect()
+    let context = Context::of(ops);
+    ops.iter().map(|op| class_in(op, &context)).collect()
+}
+
+/// What an op's class depends on beyond the op itself.
+struct Context<'a> {
+    created: HashSet<&'a str>,
+    /// Enum `CHECK`s rebuilt with fewer values (`narrowing`), Blocking
+    /// although an enum `AddCheck` alone is Safe.
+    narrowed: Vec<(&'a AddCheck, Vec<String>)>,
+}
+
+impl<'a> Context<'a> {
+    fn of(ops: &'a [Op]) -> Self {
+        Context {
+            created: tables_created_in(ops),
+            narrowed: narrowing::narrowed_enum_checks(ops),
+        }
+    }
+
+    fn removed_values(&self, check: &AddCheck) -> Option<&[String]> {
+        self.narrowed
+            .iter()
+            .find(|(add, _)| std::ptr::eq(*add, check))
+            .map(|(_, removed)| removed.as_slice())
+    }
 }
 
 /// Names of the tables `ops` creates. Keyed on the name in the same op
@@ -80,15 +106,24 @@ fn tables_created_in(ops: &[Op]) -> HashSet<&str> {
         .collect()
 }
 
-fn class_in(op: &Op, created: &HashSet<&str>) -> Destructiveness {
+fn class_in(op: &Op, context: &Context<'_>) -> Destructiveness {
     match op {
-        Op::AddCheck(check) if created.contains(check.table.as_str()) => Destructiveness::Safe,
+        Op::AddCheck(check) if context.created.contains(check.table.as_str()) => {
+            Destructiveness::Safe
+        }
+        Op::AddCheck(check) if context.removed_values(check).is_some() => Destructiveness::Blocking,
         _ => op.destructiveness(),
     }
 }
 
-fn reason_for(op: &Op, created: &HashSet<&str>) -> Option<BlockingReason> {
+fn reason_for(op: &Op, context: &Context<'_>) -> Option<BlockingReason> {
     match op {
+        // An enum lost a value that rows may still hold. The remedy moves
+        // them to a value the rebuilt CHECK still accepts.
+        Op::AddCheck(check) if context.removed_values(check).is_some() => {
+            let removed = context.removed_values(check).unwrap_or_default();
+            Some(narrowing::reason(check, removed))
+        }
         // A brand-new required column with no default: every existing
         // row needs a value, and no `UPDATE` can supply one before the
         // column exists. The remedy is a two-step add (nullable, then
@@ -123,7 +158,7 @@ fn reason_for(op: &Op, created: &HashSet<&str>) -> Option<BlockingReason> {
         // A CHECK the existing rows may not satisfy. The remedy is
         // row-shape-specific, so we can only gesture at it. Not reached
         // for a table this list creates: `class_in` makes that Safe.
-        Op::AddCheck(check) if class_in(op, created).is_blocking() => Some(BlockingReason {
+        Op::AddCheck(check) if class_in(op, context).is_blocking() => Some(BlockingReason {
             table: check.table.clone(),
             column: Some(check.column.clone()),
             cause: format!(

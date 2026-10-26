@@ -56,3 +56,17 @@ pub(crate) fn sample_column_names(
         .map(|c| c.column_name.clone())
         .collect()
 }
+
+/// The number an ordinal enum (`Pending = 1`, `docs/design/enum-ordinals.md`)
+/// column stores for a payload `value`: a variant's name maps to its
+/// ordinal and a valid ordinal passes as is. `None` for anything else,
+/// which the validator refuses before a bind is ever built.
+pub(crate) fn ordinal_of(e: &cratestack_core::EnumDecl, value: &serde_json::Value) -> Option<i64> {
+    match value {
+        serde_json::Value::String(name) => e.ordinal_of(name),
+        serde_json::Value::Number(number) => number
+            .as_i64()
+            .filter(|ordinal| e.variants.iter().any(|v| v.ordinal == Some(*ordinal))),
+        _ => None,
+    }
+}

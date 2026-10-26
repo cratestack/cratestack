@@ -1,10 +1,9 @@
-//! Rules R1–R4 of `docs/design/enum-ordinals.md` for an enum's explicit
-//! ordinals, and the refusal that keeps them from being declared but inert
-//! until a generator stores and sends them.
+//! Rules R1–R5 of `docs/design/enum-ordinals.md` for an enum's explicit
+//! ordinals: R1–R4 on the enum itself, R5 on the `auth` block.
 
 use std::collections::BTreeMap;
 
-use cratestack_core::{ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl};
+use cratestack_core::{AuthBlock, ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl, Schema};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -100,22 +99,32 @@ pub(super) fn validate_enum_ordinals(e: &EnumDecl) -> Result<(), SchemaError> {
     Ok(())
 }
 
-/// Nothing generates from an ordinal yet: every backend and client would
-/// still store and send the variant's name. Accepting `Pending = 1` would
-/// therefore promise an encoding the build does not deliver, so a
-/// well-formed ordinal enum is refused until the generators land.
-pub(super) fn refuse_until_generated(e: &EnumDecl) -> Result<(), SchemaError> {
-    if e.variants.iter().all(|v| v.ordinal.is_none()) {
-        return Ok(());
+/// R5: an `auth` field may not have an ordinal enum type. A claim is
+/// whatever JSON the auth provider returns, so a policy could not know
+/// whether `auth().role` holds the variant's name or its number, and
+/// comparing an ordinal column with a string claim would fail open on the
+/// create path. Ruling the type out of `auth` also rules out
+/// `field == auth().x` for an ordinal field, since both sides must match.
+pub(super) fn refuse_ordinal_auth_fields(
+    schema: &Schema,
+    auth: &AuthBlock,
+) -> Result<(), SchemaError> {
+    for field in &auth.fields {
+        let ordinal = schema
+            .enums
+            .iter()
+            .any(|e| e.name == field.ty.name && e.is_ordinal());
+        if ordinal {
+            return Err(span_error(
+                format!(
+                    "auth field `{}` has the ordinal enum type `{}`; a claim's encoding is the \
+                     auth provider's choice, so `auth` fields may use string enums only. Use a \
+                     string enum, or a `String`, here",
+                    field.name, field.ty.name
+                ),
+                field.span,
+            ));
+        }
     }
-    Err(span_error(
-        format!(
-            "enum `{}` declares explicit ordinals, which this release parses but does not \
-             generate: every backend and client would still store and send the variant \
-             names. Remove the `= n` values and any `{ENUM_RESERVED_ATTRIBUTE}` line until \
-             ordinal enums ship (docs/design/enum-ordinals.md in the cratestack repository)",
-            e.name
-        ),
-        e.name_span,
-    ))
+    Ok(())
 }

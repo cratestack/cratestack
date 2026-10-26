@@ -164,6 +164,9 @@ fn column_alter_ops(table: &str, prev: &Column, next: &Column) -> Vec<Op> {
                 from_arity: prev.arity,
                 to: next.ty.clone(),
                 to_arity: next.arity,
+                // Filled in by `enum_ordinals::attach_enum_casts`, which
+                // has both sides' enum maps.
+                enum_cast: None,
             }));
         }
     }

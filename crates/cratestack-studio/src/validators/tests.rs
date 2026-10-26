@@ -34,7 +34,12 @@ const POST_OPTIONAL_BODY: &str = r#"
 fn required_field_missing_on_create_errors() {
     let schema = parse(POST_OPTIONAL_BODY);
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
-    let errors = validate_payload(model, &payload(&[("id", serde_json::json!("a"))]), false);
+    let errors = validate_payload(
+        &schema,
+        model,
+        &payload(&[("id", serde_json::json!("a"))]),
+        false,
+    );
     let codes: Vec<ValidationCode> = errors.iter().map(|e| e.code).collect();
     assert!(codes.contains(&ValidationCode::Required));
     assert!(!errors.iter().any(|e| e.field == "body"));
@@ -44,7 +49,7 @@ fn required_field_missing_on_create_errors() {
 fn required_field_missing_on_update_is_ok() {
     let schema = parse(POST);
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
-    let errors = validate_payload(model, &payload(&[]), true);
+    let errors = validate_payload(&schema, model, &payload(&[]), true);
     assert!(errors.is_empty(), "{errors:?}");
 }
 
@@ -53,6 +58,7 @@ fn type_mismatch_flags_wrong_json_type() {
     let schema = parse(POST);
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
     let bad = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("p")),
@@ -68,6 +74,7 @@ fn null_on_required_field_errors_but_null_on_optional_ok() {
     let schema = parse(POST_OPTIONAL_BODY);
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
     let bad = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("p")),

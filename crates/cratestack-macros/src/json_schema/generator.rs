@@ -114,11 +114,7 @@ impl<'a> Generator<'a> {
     fn declaration_schema(&mut self, name: &str) -> Result<Value, JsonSchemaError> {
         let schema = self.schema;
         if let Some(decl) = schema.enums.iter().find(|e| e.name == name) {
-            // Every variant carries `#[serde(rename = "<Variant>")]`
-            // (`crate::types::enums::variant_tokens`).
-            let variants: Vec<&str> = decl.variants.iter().map(|v| v.name.as_str()).collect();
-            let enum_schema = json!({ "type": "string", "enum": variants });
-            return Ok(with_docs(enum_schema, &decl.docs));
+            return Ok(with_docs(enum_schema(decl), &decl.docs));
         }
         if let Some(decl) = schema.types.iter().find(|t| t.name == name) {
             // `crate::types::generate_type_struct`: every field, no serde
@@ -172,3 +168,21 @@ impl<'a> Generator<'a> {
 // `None` as `null`. Phase 2 refused these outputs until dispatch composed.
 // The parser still rejects a computed-bearing type as procedure *input*,
 // so only outputs can reach here with one.
+
+/// A string enum's variants carry `#[serde(rename = "<Variant>")]`
+/// (`crate::types::enums_parts::variant_tokens`). An ordinal enum is sent as
+/// its number, with each variant's name as the `title`, so an agent reading
+/// an MCP tool's input schema still sees the names
+/// (`docs/design/enum-ordinals.md` §2.2).
+fn enum_schema(decl: &cratestack_core::EnumDecl) -> Value {
+    if decl.is_ordinal() {
+        let options: Vec<Value> = decl
+            .variants
+            .iter()
+            .filter_map(|v| Some(json!({ "const": v.ordinal?, "title": v.name })))
+            .collect();
+        return json!({ "type": "integer", "oneOf": options });
+    }
+    let variants: Vec<&str> = decl.variants.iter().map(|v| v.name.as_str()).collect();
+    json!({ "type": "string", "enum": variants })
+}

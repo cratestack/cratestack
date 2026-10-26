@@ -1,17 +1,17 @@
 //! Per-field projection: scalar/enum/user-defined type detection,
 //! arity mapping, default-value parsing.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use cratestack_core::schema::default_markers::default_inner;
-use cratestack_core::{Field, TypeArity};
+use cratestack_core::{EnumDecl, Field, TypeArity};
 
 use crate::ir::{Column, ColumnArity, ColumnDefault, ColumnType};
 use crate::naming::column_name;
 
 pub(super) fn field_to_column(
     field: &Field,
-    known_enums: &HashSet<&str>,
+    known_enums: &HashMap<&str, &EnumDecl>,
     known_types: &HashSet<&str>,
 ) -> Column {
     let primary_key = field_has_id(field);
@@ -38,8 +38,12 @@ pub(super) fn field_to_column(
                 .map(str::to_owned),
             srid: field.ty.spatial_srid(),
         }
-    } else if known_enums.contains(ty_name) {
-        ColumnType::Enum(ty_name.to_owned())
+    } else if let Some(decl) = known_enums.get(ty_name) {
+        if decl.is_ordinal() {
+            ColumnType::OrdinalEnum(ty_name.to_owned())
+        } else {
+            ColumnType::Enum(ty_name.to_owned())
+        }
     } else if known_types.contains(ty_name) {
         ColumnType::UserDefined(ty_name.to_owned())
     } else {
@@ -47,8 +51,12 @@ pub(super) fn field_to_column(
     };
 
     let mut default = field_default(field);
-    if matches!(ty, ColumnType::Enum(_)) {
-        default = default.map(quote_bare_literal);
+    match (&ty, known_enums.get(ty_name)) {
+        (ColumnType::Enum(_), _) => default = default.map(quote_bare_literal),
+        (ColumnType::OrdinalEnum(_), Some(decl)) => {
+            default = default.map(|default| ordinal_literal(default, decl));
+        }
+        _ => {}
     }
 
     Column {
@@ -79,6 +87,22 @@ fn quote_bare_literal(default: ColumnDefault) -> ColumnDefault {
     match default {
         ColumnDefault::Literal(value) if !is_quoted(&value) => {
             ColumnDefault::Literal(format!("'{}'", value.replace('\'', "''")))
+        }
+        other => other,
+    }
+}
+
+/// An ordinal enum column's `@default(Pending)` is the variant's number:
+/// `DEFAULT 1`. A default naming no variant is left as it is; the parser's
+/// default checks report it.
+fn ordinal_literal(default: ColumnDefault, decl: &EnumDecl) -> ColumnDefault {
+    match default {
+        ColumnDefault::Literal(value) => {
+            let name = value.trim_matches('\'');
+            match decl.ordinal_of(name) {
+                Some(ordinal) => ColumnDefault::Literal(ordinal.to_string()),
+                None => ColumnDefault::Literal(value),
+            }
         }
         other => other,
     }

@@ -123,6 +123,7 @@ fn enum_membership_check_is_not_blocking() {
         kind: CheckKind::Enum {
             variants: vec!["pending".to_owned(), "shipped".to_owned()],
             list: false,
+            ordinals: None,
         },
     })]);
     assert_eq!(reasons, Vec::new());
