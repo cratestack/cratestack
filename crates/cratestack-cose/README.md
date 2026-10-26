@@ -82,6 +82,34 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   it, so neither re-implements the canonical query or the AAD inputs; `contract_header_value`
   gives the unbound `Cratestack-Contract` value for a `contract_sha`.
 
+## Claim objects
+
+The envelope above dies with its request: a ±300 s `iat` window and a nonce. For a payload signed
+offline by one device and delivered later by another, `sign_claims` / `open_claims` produce and
+verify a self-contained `COSE_Sign1` whose lifetime and replay the **application** decides:
+
+```rust,no_run
+use cratestack_cose::{CwtClaims, open_claims, sign_claims};
+
+let claims = CwtClaims { exp: Some(1_790_003_600), ..CwtClaims::default() };
+let bytes = sign_claims(&signer, TYP, &claims, payload, aad).await?;
+let opened = open_claims(&resolver, &bytes, TYP, aad).await?; // signature only
+// now enforce opened.claims.exp / .aud / .cti yourself
+```
+
+- **Header:** protected `{1: alg, 4: kid, ? 15: {3: aud, 4: exp, 6: iat, 7: cti}, 16: typ}`,
+  unprotected empty, payload embedded, tag 18. The CWT claims (RFC 8392) are written only when
+  present; `typ` (RFC 9596) is mandatory and must match on open.
+- **Not checked, on purpose:** no skew window, no nonce store. An object with no `exp` never
+  expires and opens as often as it is presented.
+- **Domain separation:** the envelope's parser refuses header label 16 and the claim opener
+  requires it, so neither format opens as the other. `external_aad` is the caller's own binding
+  (a tenant, a purpose); it is signed, not sent, and must match on open.
+- **Algorithms:** the signature algorithms only (Ed25519, ESP256 low-`s`). HMAC / `COSE_Mac0` is
+  refused. The signer and resolver are the envelope's own `CoseSigner` and `CoseVerifierResolver`.
+- **Errors:** `ClaimsError` (`Malformed`, `WrongType`, `Unverified`, `Resolver`, `Signer`,
+  `Misuse`); `into_error()` gives the envelope's coarse `401` / `500`.
+
 ## The `auth` feature
 
 `cratestack_cose::auth` connects the envelope to `cratestack-auth` (the edge points cose ->
