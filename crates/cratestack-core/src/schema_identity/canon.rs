@@ -64,7 +64,7 @@ pub(crate) struct CEnum<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ordinals: Option<Vec<Option<i64>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) reserved: Option<Vec<i64>>,
+    pub(crate) reserved: Option<&'a [i64]>,
     pub(crate) variants: Vec<&'a str>,
 }
 

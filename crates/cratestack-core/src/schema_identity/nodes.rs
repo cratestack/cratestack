@@ -162,7 +162,7 @@ fn enum_decl(e: &EnumDecl) -> CEnum<'_> {
     CEnum {
         name,
         ordinals,
-        reserved: reserved.as_ref().map(|r| r.values.clone()),
+        reserved: reserved.as_ref().map(|r| r.values.as_slice()),
         variants,
     }
 }

@@ -37,8 +37,8 @@ pub(super) fn validate_enum_ordinals(e: &EnumDecl) -> Result<(), SchemaError> {
     }
 
     let mut used = BTreeMap::new();
-    for variant in &e.variants {
-        let ordinal = variant.ordinal.expect("every variant is numbered (R1)");
+    // R1 above guarantees every variant is numbered.
+    for (variant, ordinal) in e.variants.iter().filter_map(|v| Some((v, v.ordinal?))) {
         if !(0..=ENUM_ORDINAL_MAX).contains(&ordinal) {
             return Err(span_error(
                 format!(
