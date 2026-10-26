@@ -1,6 +1,8 @@
 # Explicit enum ordinals: a compact, append-only enum encoding
 
-Status: **proposed** (2026-10-26). **Not implemented.** Nothing below exists in any release;
+Status: **proposed** (2026-10-26). **Not implemented.** Two open questions are decided by the
+maintainer (2026-10-26): the syntax is `Pending = 1` (O4), and the query string takes names only
+(O2); §7 records both. Nothing below exists in any release;
 the docs guide [Reducing payload size](https://github.com/cratestack/cratestack-docs/blob/main/guides/payload-size.md)
 links here and says so.
 
@@ -100,7 +102,8 @@ Why `= n` and not `@value(n)`: the number is the variant's identity on disk and 
 a modifier on it; it reads the way Rust discriminants and protobuf field numbers read, which is
 what a reviewer will pattern-match against. The cost is grammar work in three places — the
 chumsky parser, the tree-sitter grammar and the VS Code TextMate grammar — where `@value(n)` would
-have reused the attribute path. Open question O4 records the alternative.
+have reused the attribute path. **Decided (O4):** `= n`; `@value(n)` is not accepted as an
+alternative spelling, so there is one way to number a variant.
 
 ### 2.2 What each surface does with an ordinal enum
 
@@ -114,7 +117,7 @@ one. The **ordinal** is what is stored and sent.
 | Postgres | `SMALLINT` + `CHECK (col IN (1, 2, 3, 5))`; row decoders `try_get::<i16>` then `TryFrom` |
 | SQLite | still a `BLOB`-declared column, the value stored as an integer, plus the same `CHECK` |
 | CBOR / JSON body | integer |
-| REST query string (`?status=Approved`, `__in`, sort) | **names**, unchanged. The URL is the human-facing surface; codegen maps name → ordinal before binding. |
+| REST query string (`?status=Approved`, `__in`, sort) | **names only**, unchanged (decided, O2). The URL is the human-facing surface; codegen maps name → ordinal before binding. A digit (`?status=2`) is refused with the same `BadRequest` an unknown name gets today, naming the accepted values. |
 | RPC | frames carry integers like REST bodies; filters reach the REST parser through `cratestack-axum/src/rpc/synthesize.rs`, so filter parity is free |
 | Policy literals (`auth().role == admin`) | names in source; `policy/model/enum_literal.rs` resolves to the ordinal at codegen |
 | `@default(Pending)` | name in source; DDL emits `DEFAULT 1` |
@@ -258,14 +261,22 @@ tables and anything a regulator or an on-call engineer reads raw.
 - **O1 — unknown values.** Should an enum be able to declare a fallback (`@@open`, decoding an
   unknown ordinal to an `Unknown(i16)` variant) so that adding a variant stops being a client
   break? Applies to string enums equally; deliberately not folded in here.
-- **O2 — digits in the query string.** Should `?status=2` be accepted alongside `?status=Approved`?
-  Proposed: no, one spelling per surface.
 - **O3 — a lookup relation in the database.** Should `migrate` emit
   `cratestack_enum_payment_status(ordinal SMALLINT PRIMARY KEY, name TEXT)` (and keep it in sync)
   so raw SQL can `JOIN` names back? Cheap to emit, one more object to migrate.
-- **O4 — syntax.** `Pending = 1` (proposed) or `Pending @value(1)`.
 - **O5 — default.** Ordinal stays opt-in. Making it the default for new enums would make the
   first-time author choose numbers before they know which enums are hot; not proposed.
+
+### Decided
+
+- **O2 — names only in the query string** (maintainer, 2026-10-26). `?status=Approved` is the only
+  accepted spelling; `?status=2` is refused. One spelling per surface: integers on the wire and
+  at rest, names wherever a human types the value. RPC inherits this, since its filters re-enter
+  the REST parser (`cratestack-axum/src/rpc/synthesize.rs`). The generated clients already send
+  names in the query string, so nothing changes for them.
+- **O4 — `Pending = 1`** (maintainer, 2026-10-26), for the reasons in §2.1. The implementing PR
+  therefore owns the grammar work in the chumsky parser, the tree-sitter grammar and the VS Code
+  TextMate grammar, plus LSP completion and hover for the ordinal.
 
 ## 8. Measurements
 
