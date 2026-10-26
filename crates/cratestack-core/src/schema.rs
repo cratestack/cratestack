@@ -9,6 +9,7 @@ pub mod composite_unique;
 pub mod computed_attribute;
 pub mod default_functions;
 pub mod default_markers;
+pub mod enum_ordinal;
 mod field_list;
 pub mod index_attribute;
 pub mod internal_attribute;
@@ -35,6 +36,7 @@ pub use computed_attribute::{
     ComputedParamsArg, computed_params_type_name, is_computed_attribute, is_computed_field,
     parse_computed_params_arg,
 };
+pub use enum_ordinal::{ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, ReservedOrdinals};
 pub use index_attribute::{ParsedIndexAttribute, parse_index_attribute};
 pub use internal_attribute::{INTERNAL_ACTIONS, model_internal_actions, parse_internal_attribute};
 pub use mcp::{MCP_MAX_PAGE_SIZE, McpConfig, McpName, ModelMcpExposure, ProcedureMcpExposure};

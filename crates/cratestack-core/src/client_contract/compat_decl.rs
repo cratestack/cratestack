@@ -3,8 +3,9 @@
 //! reachable in.
 
 use super::attrs::attribute_name;
+use super::compat_enum::enum_decl;
 use super::compat_op::{Directions, attributes, show, widens};
-use super::owned::{Decl, Enum, Field, Kind, OpContract};
+use super::owned::{Decl, Field, Kind, OpContract};
 
 pub(super) fn closure(old: &OpContract, new: &OpContract, reasons: &mut Vec<String>) {
     let dirs = Directions::new(old, new);
@@ -82,24 +83,4 @@ fn field(at: &str, old: &Field, new: &Field, input_only: bool, reasons: &mut Vec
         ));
     }
     attributes(at, &old.attributes, &new.attributes, reasons);
-}
-
-fn enum_decl(old: &Enum, new: &Enum, dirs: &Directions, reasons: &mut Vec<String>) {
-    if old.variants == new.variants {
-        return;
-    }
-    let appended = new.variants.starts_with(&old.variants);
-    if !(appended && dirs.input_only(&old.name)) {
-        reasons.push(format!(
-            "the enum `{}` changed from [{}] to [{}]{}",
-            old.name,
-            old.variants.join(", "),
-            new.variants.join(", "),
-            if appended {
-                ": a variant added to an enum an old client decodes is refused"
-            } else {
-                ""
-            }
-        ));
-    }
 }

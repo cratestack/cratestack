@@ -27,9 +27,11 @@ fn enum_decl(name: &str, variants: &[&str]) -> EnumDecl {
             .map(|v| EnumVariant {
                 docs: vec![],
                 name: (*v).to_owned(),
+                ordinal: None,
                 span: span(),
             })
             .collect(),
+        reserved: None,
         span: span(),
     }
 }

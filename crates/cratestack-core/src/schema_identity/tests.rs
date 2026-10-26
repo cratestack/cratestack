@@ -52,7 +52,7 @@ fn model(name: &str, fields: Vec<Field>, attributes: Vec<Attribute>, at: usize) 
     }
 }
 
-fn enum_decl(name: &str, variants: &[&str]) -> EnumDecl {
+pub(super) fn enum_decl(name: &str, variants: &[&str]) -> EnumDecl {
     EnumDecl {
         docs: vec![],
         name: name.to_owned(),
@@ -62,14 +62,16 @@ fn enum_decl(name: &str, variants: &[&str]) -> EnumDecl {
             .map(|v| EnumVariant {
                 docs: vec![],
                 name: (*v).to_owned(),
+                ordinal: None,
                 span: span(0),
             })
             .collect(),
+        reserved: None,
         span: span(0),
     }
 }
 
-fn empty() -> Schema {
+pub(super) fn empty() -> Schema {
     serde_json::from_str(
         r#"{"datasource":null,"auth":null,"config_blocks":[],"mixins":[],
             "models":[],"types":[],"enums":[],"procedures":[]}"#,

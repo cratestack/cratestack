@@ -11,11 +11,14 @@ impl CratestackCodec for CborCodec {
         // `minicbor-serde` reports `is_human_readable() == false` — verified
         // by encoding a probe type whose `Serialize` echoes the hint; it
         // emits `0xf4` (CBOR false). Types whose serde impl branches on that
-        // hint (`uuid::Uuid`, `chrono::DateTime`, `cratestack_core::Value`'s
-        // `Bytes` arm) therefore take their binary branch here, which is the
-        // intended behavior: `ProjectedValue` (cratestack#430) exists
-        // precisely to defer that branch to this serializer rather than
-        // baking in `serde_json`'s always-human-readable answer upstream.
+        // hint (`uuid::Uuid`, `cratestack_core::Value`'s `Bytes` arm)
+        // therefore take their binary branch here, which is the intended
+        // behavior: `ProjectedValue` (cratestack#430) exists precisely to
+        // defer that branch to this serializer rather than baking in
+        // `serde_json`'s always-human-readable answer upstream.
+        // `chrono::DateTime` has no such branch: its `Serialize` always
+        // writes RFC 3339 text, so it is a text string here too: 21 to 32
+        // bytes by fractional precision (`docs/design/enum-ordinals.md` §8).
         //
         // By default `minicbor-serde` encodes `serialize_unit()` (bare `()`,
         // and anything whose `Serialize` impl calls it) as `0x80` — a CBOR

@@ -58,7 +58,22 @@ pub(super) struct CModel<'a> {
 #[derive(Serialize)]
 pub(crate) struct CEnum<'a> {
     pub(crate) name: &'a str,
+    /// Each variant's ordinal, in variant order. Skipped when no variant has
+    /// one, so a string enum's bytes, and every digest over them, are
+    /// unchanged by the field's existence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ordinals: Option<Vec<Option<i64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reserved: Option<&'a [i64]>,
     pub(crate) variants: Vec<&'a str>,
+}
+
+/// `CEnum::ordinals` for `variants`: `None` unless a variant is numbered.
+pub(crate) fn enum_ordinals(variants: &[crate::schema::EnumVariant]) -> Option<Vec<Option<i64>>> {
+    variants
+        .iter()
+        .any(|v| v.ordinal.is_some())
+        .then(|| variants.iter().map(|v| v.ordinal).collect())
 }
 
 #[derive(Serialize)]

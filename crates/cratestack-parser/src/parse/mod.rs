@@ -2,6 +2,7 @@ mod arg_split;
 mod attribute_run;
 mod attribute_spacing;
 mod blocks;
+mod enum_body;
 mod fields;
 mod format_chars;
 mod hidden_breaks;
@@ -28,7 +29,8 @@ use crate::line_helpers::{
 
 use self::attribute_run::{declaration_label, detached_group_error};
 use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
-use self::fields::{parse_enum_variants, parse_fields};
+use self::enum_body::parse_enum_body;
+use self::fields::parse_fields;
 use self::mcp::{extract_model_mcp, parse_mcp_block};
 use self::models::{expand_model_mixins, parse_model_body};
 use self::procedures::parse_procedure;
@@ -160,11 +162,13 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
 
         if line.trimmed.starts_with("enum ") {
             let (name, body, span, next) = parse_body_block(&lines, cursor, "enum")?;
+            let body = parse_enum_body(&body)?;
             enums.push(EnumDecl {
                 docs: std::mem::take(&mut pending_docs),
                 name,
                 name_span: name_span_in_line(line, line.trimmed, "enum ")?,
-                variants: parse_enum_variants(&body)?,
+                variants: body.variants,
+                reserved: body.reserved,
                 span,
             });
             cursor = next;

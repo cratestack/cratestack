@@ -11,7 +11,7 @@ use crate::schema::{
     Attribute, EnumDecl, EnumVariant, Field, Model, Schema, TypeDecl, TypeRef, View,
     computed_params_type_name,
 };
-use crate::schema_identity::canon::{CEnum, CField, CFields};
+use crate::schema_identity::canon::{CEnum, CField, CFields, enum_ordinals};
 use crate::schema_identity::members::type_ref;
 
 pub(super) fn wire_attributes(attrs: &[Attribute]) -> Vec<String> {
@@ -103,20 +103,31 @@ fn wire_enum(e: &EnumDecl) -> CEnum<'_> {
         name,
         name_span: _,
         variants,
+        // Retired ordinals never reach the wire; they only constrain the
+        // schema's own future edits.
+        reserved: _,
         span: _,
     } = e;
+    // An ordinal is the value the wire carries, so it is contract.
+    let ordinals = enum_ordinals(variants);
     let variants = variants
         .iter()
         .map(|v| {
             let EnumVariant {
                 docs: _,
                 name,
+                ordinal: _,
                 span: _,
             } = v;
             name.as_str()
         })
         .collect();
-    CEnum { name, variants }
+    CEnum {
+        name,
+        ordinals,
+        reserved: None,
+        variants,
+    }
 }
 
 /// Collects every type name a type ref mentions, generic arguments included.
