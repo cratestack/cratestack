@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+### `cratestack-cose` signs and opens standalone claim objects, with no freshness or replay check
+
+**What was missing.** The crate could only seal and open a *transport envelope*: a `COSE_Sign1` bound
+to one request, whose protected header is exactly `{1: alg, 4: kid, ? 15: {6: iat, 7: cti}}`, and
+which the opener refuses outside a ±300 s `iat` window (`DEFAULT_SKEW_SECS`) or on a repeated `cti`.
+A consumer that needs an object signed offline by one device and delivered later by another cannot
+use that: the envelope is dead by the time it arrives, and its freshness is not the application's to
+decide. The pieces to do better were all `pub(crate)` (the header parser, the `Sig_structure`
+builder, verification).
+
+**What changed.** Two functions, over a new public `claims` module and re-exported from the crate
+root:
+
+```rust
+let bytes = sign_claims(&signer, "application/vnd.example.grant+cwt", &claims, payload, aad).await?;
+let opened = open_claims(&resolver, &bytes, "application/vnd.example.grant+cwt", aad).await?;
+// opened.claims.exp, .aud, .iat, .cti: yours to enforce; opened.payload: the bytes signed
+```
+
+- **The object** is a tagged `COSE_Sign1` (tag 18) with protected header
+  `{1: alg, 4: kid, ? 15: {3: aud, 4: exp, 6: iat, 7: cti}, 16: typ}`, an empty unprotected header
+  and an embedded payload. The CWT claims (RFC 8392, RFC 9597) are written only when present; the
+  `typ` (RFC 9596) is mandatory. Encoding is deterministic (RFC 8949 §4.2.1), ESP256 is low-`s`, and
+  the opener is exactly as strict as the envelope's: no unknown or out-of-order label, no non-minimal
+  or indefinite head, nothing unprotected, no detached payload, no trailing bytes.
+- **`open_claims` checks the signature and nothing else.** There is no skew window and no nonce
+  store: whether `exp` has passed, whether `aud` is this service and whether a `cti` was already
+  accepted are the caller's to enforce on the returned `OpenedClaims`. An object without `exp` never
+  expires. This is documented, with a doctest, on the function.
+- **A claim object never opens as a transport envelope, and the reverse.** The envelope's parser
+  already refuses header label 16; the claim opener requires it. `tests/claims_domain_separation.rs`
+  checks both directions, with correctly signed objects and the other format's AAD.
+- **Signature algorithms only.** Ed25519 and ESP256, through the existing `CoseSigner` (in-process,
+  KMS or HSM) and `CoseVerifierResolver`. An HMAC signer is `ClaimsError::Misuse` and an HMAC `alg`
+  in a received object is `ClaimsError::Malformed`.
+- **`ClaimsError`** (`thiserror`): `Malformed`, `WrongType`, `Unverified` (an unknown `kid` and a bad
+  signature are not told apart), `Resolver` and `Signer` (backend outages) and `Misuse`.
+  `into_error()` maps them onto the envelope's coarse `401` / `500`.
+- **Interop.** `tests/claims_interop_coset.rs` has `coset` build the same bytes from the same
+  inputs, parse and verify what `sign_claims` writes, and sign objects that `open_claims` opens.
+  `tests/claims_malformed.rs` is a table of malformed objects plus every truncation and every
+  single-byte change of valid ones, none of which may open or panic.
+
+The transport envelope is untouched: same wire format, same `BINDING_VERSION`, same errors. The
+crate gains one dependency, `thiserror`, already in the workspace; it still compiles for
+`wasm32-unknown-unknown` and still depends on `cratestack-core` alone without its `auth` feature.
+
+**Migrating.** Additive; nothing to do. Do not use a claim object where a transport envelope is
+needed: it carries no binding to a request and does no replay protection.
+
 ### Enum bodies read explicit ordinals and `@@reserved`, and refuse them until they are generated (enum ordinals, part 1)
 
 The first slice of `docs/design/enum-ordinals.md`, where an enum is stored and sent as a declared

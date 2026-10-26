@@ -1438,6 +1438,7 @@ dependencies = [
  "subtle",
  "testcontainers",
  "testcontainers-modules",
+ "thiserror 2.0.21",
  "tokio",
  "uuid",
  "zeroize",
