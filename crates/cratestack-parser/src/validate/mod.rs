@@ -13,6 +13,7 @@ mod computed_resolver_names;
 mod db_enforce;
 mod default_functions;
 mod default_markers;
+mod enum_ordinals;
 mod field_attribute_tables;
 mod field_attributes;
 mod fields;

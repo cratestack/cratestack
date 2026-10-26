@@ -1,8 +1,9 @@
 # Explicit enum ordinals: a compact, append-only enum encoding
 
-Status: **proposed** (2026-10-26). **Not implemented.** Two open questions are decided by the
-maintainer (2026-10-26): the syntax is `Pending = 1` (O4), and the query string takes names only
-(O2); §7 records both. Nothing below exists in any release;
+Status: **accepted for implementation** (2026-10-26, by the maintainer), **in progress**: slice 1
+of 6 (§9) parses and checks the syntax, then refuses it until the generators land. Two open
+questions are decided: the syntax is `Pending = 1` (O4), and the query string takes names only
+(O2); §7 records both. No release stores or sends an enum as its ordinal;
 the docs guide [Reducing payload size](https://github.com/cratestack/cratestack-docs/blob/main/guides/payload-size.md)
 links here and says so.
 
@@ -317,3 +318,24 @@ fn cbor<T: serde::Serialize>(v: &T) -> Vec<u8> {
     out
 }
 ```
+
+## 9. Implementation plan
+
+The feature lands in slices. Until the last one, `validate::enum_ordinals::refuse_until_generated`
+refuses every well-formed ordinal enum, so no release accepts `Pending = 1` and then stores
+or sends the name anyway. Lifting that refusal is the final slice's job, and the slice that
+lifts it must leave REST, RPC and every generated client agreeing (transport parity,
+CLAUDE.md).
+
+| Slice | Scope | State |
+|---|---|---|
+| 1. Front end | `EnumVariant::ordinal`, `EnumDecl::reserved` (`cratestack-core/src/schema/enum_ordinal.rs`); the body syntax (`cratestack-parser/src/parse/enum_body.rs`); R1–R4 and the refusal (`validate/enum_ordinals.rs`); ordinals in the schema digest and the op contract, skipped when empty so string-enum digests do not move; the contract classifier compares ordinal enums by number (`client_contract/compat_enum.rs`) | this branch |
+| 2. `cratestack diff` enums | §3.3, for string enums as well as ordinal ones: defect 1.1.1 is live today, independent of ordinals | next; can ship alone |
+| 3. Storage | `migrate diff`: `SMALLINT` + `CHECK`, `DEFAULT n`, the §3.2 refusals, the §4 conversion, both dialects; Postgres-backed tests | |
+| 4. Server | `cratestack-macros`: `#[repr(i16)]`, integer `Serialize` and tolerant `Deserialize` (§2.3), `IntoSqlValue`, row decoders for both backends, names-only query parsing (O2), policy literals, `@default`; JSON Schema and MCP `oneOf` | |
+| 5. Clients and tools | Rust, TypeScript (revival both ways, `EOrdinals`), Dart (`int wireValue`), the swr, riverpod and fespalier layers, WireMock, Studio, LSP and the two editor grammars; `just regen-examples` | |
+| 6. Lift the refusal | delete `refuse_until_generated`; end-to-end REST and RPC round trips on Postgres and SQLite; docs and skills move the feature from proposed to shipped | |
+
+Slices 3–5 can merge behind the refusal. Until it lifts, their tests build an ordinal IR with
+`cratestack_parser::parse_schema_unvalidated`, which skips validation, and drive the generator
+directly.

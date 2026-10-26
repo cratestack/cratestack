@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### Enum bodies read explicit ordinals and `@@reserved`, and refuse them until they are generated (enum ordinals, part 1)
+
+The first slice of `docs/design/enum-ordinals.md`, where an enum is stored and sent as a declared
+number (`Pending = 1`) instead of its name. This release parses and checks that syntax. Nothing
+generates from it yet, so a well-formed ordinal enum is **refused**, not accepted and ignored:
+
+```cstack
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(4)   // was Settled; never reuse
+}
+```
+
+`check` reports that the enum "declares explicit ordinals, which this release parses but does not
+generate", with the span on the enum's name. Before that, it checks the rules the design fixes, so
+a schema written today is already in the shape the generating release will accept:
+
+- every variant is numbered, or none is;
+- an ordinal is an integer from 0 to 32767, used by one variant only;
+- `@@reserved(n, …)` appears at most once, only on an ordinal enum, and no variant uses a number
+  it lists.
+
+**Also changed for every enum:**
+
+- A trailing `//` comment on a variant line is a comment. It used to be refused.
+- A line starting with `@` is refused unless it is `@@reserved(..)`. Before, a line with no
+  whitespace, such as `@@map("x")`, was read as a variant with that name.
+
+String enums are otherwise untouched: the same IR (the new `EnumVariant::ordinal` and
+`EnumDecl::reserved` fields are skipped when serialized while empty), the same schema digest and
+the same op contracts. The contract classifier already compares ordinal enums by number, so a
+rename keeps the contract compatible and a renumbering does not.
+
 ### `now()`, `uuid()` and `cuid()` are built-in defaults; any other function must be registered — breaking (#1209)
 
 **What was wrong.** A `@default(fn())` went into the migration's `DEFAULT` clause verbatim.

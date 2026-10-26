@@ -33,6 +33,8 @@ mod nodes;
 mod tests;
 #[cfg(test)]
 mod tests_bytes;
+#[cfg(test)]
+mod tests_enum_ordinals;
 
 use sha2::{Digest, Sha256};
 

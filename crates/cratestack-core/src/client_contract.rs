@@ -36,6 +36,7 @@ mod canon;
 mod canonical_json;
 mod compat;
 mod compat_decl;
+mod compat_enum;
 mod compat_op;
 mod lock;
 mod lock_date;
@@ -53,6 +54,8 @@ mod tests_bytes;
 mod tests_compat;
 #[cfg(test)]
 mod tests_compat_default;
+#[cfg(test)]
+mod tests_compat_ordinals;
 #[cfg(test)]
 mod tests_compat_table;
 #[cfg(test)]

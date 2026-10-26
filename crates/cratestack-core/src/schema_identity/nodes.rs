@@ -143,18 +143,26 @@ fn enum_decl(e: &EnumDecl) -> CEnum<'_> {
         name,
         name_span: _,
         variants,
+        reserved,
         span: _,
     } = e;
+    let ordinals = enum_ordinals(variants);
     let variants = variants
         .iter()
         .map(|v| {
             let EnumVariant {
                 docs: _,
                 name,
+                ordinal: _,
                 span: _,
             } = v;
             name.as_str()
         })
         .collect();
-    CEnum { name, variants }
+    CEnum {
+        name,
+        ordinals,
+        reserved: reserved.as_ref().map(|r| r.values.clone()),
+        variants,
+    }
 }

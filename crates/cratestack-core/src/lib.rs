@@ -122,17 +122,17 @@ pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{
-    Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource, EnumDecl,
-    EnumVariant, ExtensionKind, Field, INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName,
-    MixinDecl, Model, ModelMcpExposure, OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE,
-    ParsedCompositeUnique, ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind,
-    ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query, Schema, SchemaSummary, SelectionQuery,
-    SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View, ViewSource,
-    canonical_geometry_subtype, computed_params_type_name, field_attribute_name,
-    geometry_subtype_names, is_computed_attribute, is_computed_field, is_primary_key_attribute,
-    is_relation_attribute, model_internal_actions, parse_composite_id_attribute,
-    parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
-    parse_internal_attribute, scan_sql_placeholders,
+    Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource,
+    ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl, EnumVariant, ExtensionKind, Field,
+    INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName, MixinDecl, Model, ModelMcpExposure,
+    OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE, ParsedCompositeUnique, ParsedIndexAttribute,
+    Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query,
+    ReservedOrdinals, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity,
+    TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype, computed_params_type_name,
+    field_attribute_name, geometry_subtype_names, is_computed_attribute, is_computed_field,
+    is_primary_key_attribute, is_relation_attribute, model_internal_actions,
+    parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
+    parse_index_attribute, parse_internal_attribute, scan_sql_placeholders,
 };
 pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{
