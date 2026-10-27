@@ -15,7 +15,19 @@ use crate::shared::{
 };
 use crate::validators::generate_input_validate_body;
 
+use super::create_fields::{CreateField, embedded_create_fields};
 use super::struct_only::struct_field_definition;
+
+/// Which composer a create input is generated for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InputRole {
+    Server,
+    /// `include_embedded_schema!` (cratestack#1234): nothing fills an
+    /// `auth()` default, so the field is required; a `dbgenerated()` or
+    /// registered-function default is the database's, so the field is an
+    /// `Option` the runtime binds when it is set.
+    Embedded,
+}
 
 fn create_input_fields<'a>(model: &'a Model, model_names: &BTreeSet<&str>) -> Vec<&'a Field> {
     scalar_model_fields(model, model_names)
@@ -48,16 +60,40 @@ pub(crate) fn generate_create_input_struct(
     model: &Model,
     model_names: &BTreeSet<&str>,
     enum_names: &BTreeSet<&str>,
+    role: InputRole,
 ) -> proc_macro2::TokenStream {
     let input_ident = ident(&format!("Create{}Input", model.name));
     let docs = generated_doc_attr(format!("Generated create input for `{}`.", model.name));
-    let fields = create_input_fields(model, model_names);
+    let create_fields = match role {
+        InputRole::Server => create_input_fields(model, model_names)
+            .into_iter()
+            .map(CreateField::bound)
+            .collect(),
+        InputRole::Embedded => embedded_create_fields(model, model_names),
+    };
+    let fields: Vec<&Field> = create_fields.iter().map(|field| &field.field).collect();
     let definitions = fields
         .iter()
         .map(|field| struct_field_definition(field, false, enum_names));
-    let sql_values = fields
+    let sql_values = create_fields
         .iter()
-        .map(|field| create_sql_value(field, enum_names));
+        .filter(|field| !field.deferred)
+        .map(|field| create_sql_value(&field.field, enum_names));
+    let deferred_values: Vec<_> = create_fields
+        .iter()
+        .filter(|field| field.deferred)
+        .map(|field| update_sql_value(&field.required(), enum_names))
+        .collect();
+    // A database-filled field is bound only when set.
+    let sql_values_body = if deferred_values.is_empty() {
+        quote! { vec![#(#sql_values),*] }
+    } else {
+        quote! {
+            let mut values = vec![#(#sql_values),*];
+            #(#deferred_values)*
+            values
+        }
+    };
     let model_ident = ident(&model.name);
     let validate_impl = validate_impl_tokens(&fields, false);
     let builder = generate_builder(
@@ -76,7 +112,7 @@ pub(crate) fn generate_create_input_struct(
 
         impl ::cratestack::CreateModelInput<super::models::#model_ident> for #input_ident {
             fn sql_values(&self) -> Vec<::cratestack::SqlColumnValue> {
-                vec![#(#sql_values),*]
+                #sql_values_body
             }
             #validate_impl
         }

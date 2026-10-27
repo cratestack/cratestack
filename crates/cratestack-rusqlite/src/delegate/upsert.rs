@@ -4,7 +4,8 @@ use cratestack_sql::{ConflictTarget, ModelDescriptor, SqliteDialect, UpsertModel
 
 use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_upsert_with_conflict};
 
-use super::support::run_insert_returning;
+use super::support::run_create_returning;
+use crate::create_defaults::fill_create_defaults;
 
 /// Reject a predicate paired with `ConflictTarget::PRIMARY_KEY`
 /// (cratestack#741) before any SQL is built. `ConflictTarget::validate`
@@ -47,7 +48,7 @@ where
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let mut values = self.input.sql_values();
-        self.descriptor.fill_generated_defaults(&mut values);
+        fill_create_defaults(self.descriptor, &mut values);
         let (sql, _) =
             render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         sql
@@ -66,11 +67,11 @@ where
         conflict_target_validate(self.conflict_target)?;
         let dialect = SqliteDialect;
         let mut values = self.input.sql_values();
-        self.descriptor.fill_generated_defaults(&mut values);
+        fill_create_defaults(self.descriptor, &mut values);
         let (sql, binds) =
             render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
         self.runtime
-            .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
+            .with_connection(|conn| run_create_returning(conn, self.descriptor, &sql, &binds))
     }
 
     /// Run against a caller-supplied connection. See
@@ -82,9 +83,9 @@ where
         conflict_target_validate(self.conflict_target)?;
         let dialect = SqliteDialect;
         let mut values = self.input.sql_values();
-        self.descriptor.fill_generated_defaults(&mut values);
+        fill_create_defaults(self.descriptor, &mut values);
         let (sql, binds) =
             render_upsert_with_conflict(&dialect, self.descriptor, &values, self.conflict_target);
-        run_insert_returning(conn, &sql, &binds)
+        run_create_returning(conn, self.descriptor, &sql, &binds)
     }
 }

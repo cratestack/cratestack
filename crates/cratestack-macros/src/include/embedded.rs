@@ -11,7 +11,7 @@ use quote::quote;
 use syn::LitStr;
 
 use crate::model::{
-    generate_create_input_struct, generate_field_module, generate_model_descriptor,
+    InputRole, generate_create_input_struct, generate_field_module, generate_model_descriptor,
     generate_model_struct_only, generate_primary_key_accessor_impl,
     generate_rusqlite_from_row_impl, generate_update_input_struct, generate_upsert_input_struct,
 };
@@ -111,7 +111,14 @@ pub(super) fn compose_embedded_schema(
             .models
             .iter()
             .map(|model| {
-                generate_model_descriptor(model, &schema.models, &schema.types, &schema.enums, auth)
+                generate_model_descriptor(
+                    model,
+                    &schema.models,
+                    &schema.types,
+                    &schema.enums,
+                    auth,
+                    true,
+                )
             })
             .collect::<Result<Vec<_>, String>>()
         {
@@ -135,10 +142,14 @@ pub(super) fn compose_embedded_schema(
                     .into();
             }
         };
-        let create_input_structs = schema
-            .models
-            .iter()
-            .map(|model| generate_create_input_struct(model, &model_name_set, &enum_name_set));
+        let create_input_structs = schema.models.iter().map(|model| {
+            generate_create_input_struct(
+                model,
+                &model_name_set,
+                &enum_name_set,
+                InputRole::Embedded,
+            )
+        });
         let update_input_structs = schema
             .models
             .iter()

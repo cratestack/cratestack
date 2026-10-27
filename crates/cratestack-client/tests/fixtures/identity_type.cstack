@@ -1,5 +1,5 @@
 model Widget {
   id Int @id
   name String
-  active String @default(false)
+  active String @default("false")
 }

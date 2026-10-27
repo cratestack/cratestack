@@ -82,6 +82,7 @@ impl From<crate::RusqliteError> for OperationResponse {
             crate::RusqliteError::BatchTooLarge { .. } => "batch_too_large",
             crate::RusqliteError::DuplicateBatchKey { .. } => "duplicate_batch_key",
             crate::RusqliteError::Validation(_) => "validation",
+            crate::RusqliteError::UnfilledDefault(_) => "unfilled_default",
         };
         Self::err(code, error.to_string())
     }

@@ -5,6 +5,7 @@ use cratestack_core::ModelEventKind;
 use cratestack_policy::ReadPolicy;
 
 mod defaults;
+mod embedded_defaults;
 mod model_impls;
 mod read_source;
 mod view;
@@ -13,6 +14,7 @@ mod view;
 mod tests_view;
 
 pub use defaults::{CreateDefault, CreateDefaultType, GeneratedDefault, GeneratedValue};
+pub use embedded_defaults::{DatabaseDefault, LiteralDefault};
 pub use read_source::{ReadSource, WriteSource};
 pub use view::ViewDescriptor;
 
@@ -44,6 +46,12 @@ pub struct ModelDescriptor<M, PK> {
     pub create_defaults: &'static [CreateDefault],
     /// `@default(now())`, `uuid()`, `cuid()` columns; see [`GeneratedDefault`].
     pub generated_defaults: &'static [GeneratedDefault],
+    /// Literal `@default` columns, which the embedded runtime binds itself;
+    /// see [`LiteralDefault`]. The server leaves them to the migration's
+    /// `DEFAULT` clause.
+    pub literal_defaults: &'static [LiteralDefault],
+    /// Required columns only the database can fill; see [`DatabaseDefault`].
+    pub database_defaults: &'static [DatabaseDefault],
     pub emitted_events: &'static [ModelEventKind],
     /// Column name of the optimistic-locking version field, set when the
     /// model declares an `@version` field. `None` for non-versioned models,
@@ -138,6 +146,8 @@ impl<M, PK> ModelDescriptor<M, PK> {
             delete_deny_policies,
             create_defaults,
             generated_defaults: &[],
+            literal_defaults: &[],
+            database_defaults: &[],
             emitted_events,
             version_column,
             audit_enabled,

@@ -55,11 +55,13 @@ fn builtins_must_be_spelled_exactly_and_bare() {
     }
 }
 
-/// The bare word is only refused where the builtin's value would fit: on
-/// a `String`, `now` is an ordinary literal.
+/// Where the builtin's value would not fit, the bare word is checked as a
+/// literal: on a `String`, an unquoted word (cratestack#1234).
 #[test]
 fn a_bare_builtin_name_on_another_type_is_a_literal() {
-    parse_schema(&with_field("", "label String @default(now)")).expect("a literal");
+    let message = refused("", "label String @default(now)");
+    assert!(message.contains("write `@default(\"now\")`"), "{message}");
+    parse_schema(&with_field("", "label String @default(\"now\")")).expect("a literal");
 }
 
 #[test]
@@ -111,5 +113,35 @@ fn malformed_or_reserved_registrations_are_refused() {
     ] {
         let message = refused(extra, "ref String");
         assert!(message.contains(says), "{extra}: {message}");
+    }
+}
+
+/// cratestack#1234: a literal must fit its field.
+#[test]
+fn literals_that_fit_their_field_are_accepted() {
+    let schema = "datasource db {\n  provider = \"postgresql\"\n  url = env(\"DATABASE_URL\")\n}\n\n\
+                  enum Status {\n  Draft\n  Live\n}\n\nmodel Widget {\n  key String @id\n  \
+                  a Boolean @default(false)\n  b Int @default(-3)\n  c Float @default(1.5)\n  \
+                  d Decimal @default(12.50)\n  e String @default(\"draft\")\n  \
+                  f String @default('single')\n  g Status @default(Draft)\n  \
+                  h DateTime @default(\"2026-01-02T03:04:05Z\")\n}\n";
+    parse_schema(schema).expect("every literal fits");
+}
+
+#[test]
+fn literals_that_do_not_fit_are_refused() {
+    for (field, says) in [
+        ("n Int @default(abc)", "decimal integer"),
+        ("s String @default(draft)", "write `@default(\"draft\")`"),
+        (
+            "t DateTime @default(CURRENT_TIMESTAMP)",
+            "`@default(now())`",
+        ),
+        ("b Boolean @default(1)", "`true` or `false`"),
+        ("j Json @default(\"{}\")", "takes no literal default"),
+    ] {
+        let message = refused("", field);
+        assert!(message.contains(says), "{field}: {message}");
+        assert!(message.contains("but "), "{field}: {message}");
     }
 }

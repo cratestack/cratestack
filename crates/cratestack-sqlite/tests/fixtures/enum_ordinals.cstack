@@ -1,7 +1,7 @@
 // Ordinal enums (`Pending = 1`, docs/design/enum-ordinals.md) on the
 // embedded backend: stored as integers, decoded back into variants,
-// filtered by variant, and sent over JSON as the number. No `@default`:
-// the embedded DDL declares no column defaults, for any field type.
+// filtered by variant, and sent over JSON as the number. Ordinal enum
+// defaults are covered by `literal_defaults.cstack`.
 
 datasource db {
   provider = "sqlite"

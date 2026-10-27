@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)
+
+**What was wrong.** On the embedded runtime, every `@default` except `now()`, `uuid()` and
+`cuid()` was written as NULL, so the create failed while decoding the row. That covered literals
+(`@default(false)`, `@default("draft")`, enums), `auth().field`, `dbgenerated()` and registered
+functions. The embedded tables carried no `DEFAULT` clauses, the runtime bound nothing, and the
+create input left those fields out. Separately, a double-quoted string literal was written to
+migrations verbatim as `DEFAULT "draft"`, which Postgres reads as a column reference, and no
+literal was checked against its field's type.
+
+**What changed.**
+
+- **Literal defaults on embedded:** the runtime binds them on create, which also works on tables
+  an older version created. `create_table_sql` now writes the same values as `DEFAULT` clauses,
+  plus the SQLite expressions for `now()` and `uuid()`, for rows inserted with raw SQL.
+- **`@default(auth().field)` on embedded:** the field stays in the embedded `Create…Input` as a
+  required field, so the app passes the value. The server input is unchanged.
+- **`@default(dbgenerated())` and registered functions on embedded:** the field stays in the
+  embedded input as an `Option`. A set value is bound; an unset one is left to an app trigger or
+  `DEFAULT`. A required column that comes back NULL is refused with the new
+  `RusqliteError::UnfilledDefault` (`VALIDATION_ERROR` for a batch item), and the insert is rolled
+  back.
+- **Migrations:** a string literal is written single-quoted (`DEFAULT 'draft'`, inner quotes
+  doubled), on both trees. An older snapshot holding `"draft"` reads back as `'draft'`, so the
+  next diff sees no change.
+- **`check` refuses a literal that does not fit its field:**
+  - a non-integer on an `Int`;
+  - an unquoted word on a `String` (`@default(draft)`);
+  - an SQL expression such as `CURRENT_TIMESTAMP` (use `now()`);
+  - a malformed `Uuid`, `Cuid` or RFC 3339 `DateTime`;
+  - `null`;
+  - any literal on `Json`, `Bytes`, a list or a composite type.
+
+**Migrating.**
+
+- Quote string defaults: `@default(draft)` → `@default("draft")`.
+- `@default(CURRENT_TIMESTAMP)` → `@default(now())`.
+- Embedded code that constructs a `Create…Input` for a model with `auth()`, `dbgenerated()` or
+  registered-function defaults now sets those fields.
+- Exhaustive matches on `RusqliteError` need an `UnfilledDefault` arm.
+
+Design: `docs/design/default-functions.md`.
+
 ### `migrate diff` blocks a migration that removes an enum value rows may still hold
 
 **What was wrong.** Removing a variant from an enum, or retiring an ordinal into `@@reserved`,

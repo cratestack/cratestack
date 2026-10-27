@@ -1,0 +1,23 @@
+// cratestack#1234: defaults nothing on the device fills. The embedded
+// create input keeps an `auth()` field as required, and a `dbgenerated()`
+// or registered-function field as an `Option`; a required one that comes
+// back NULL is refused.
+
+datasource db {
+  provider  = "sqlite"
+  url       = env("DATABASE_URL")
+  functions = ["next_label"]
+}
+
+auth User {
+  id String
+}
+
+model Entry {
+  id    Uuid    @id @default(uuid())
+  owner String  @default(auth().id)
+  seq   Int     @default(dbgenerated())
+  code  String  @default(next_label())
+  note  String? @default(dbgenerated())
+  title String
+}
