@@ -4,6 +4,8 @@ use cratestack_core::BatchResponse;
 use cratestack_sql::{CreateModelInput, ModelDescriptor, SqlValue};
 use rusqlite::params_from_iter;
 
+use crate::create_defaults::{fill_create_defaults, unfilled_default};
+
 use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, SqlValueParam};
 
 use super::support::{err_item, finalize, item_error, ok_item, validate_batch_size};
@@ -59,7 +61,7 @@ where
     M: FromRusqliteRow,
 {
     let mut values = input.sql_values();
-    descriptor.fill_generated_defaults(&mut values);
+    fill_create_defaults(descriptor, &mut values);
     let mut sql = format!("INSERT INTO {} (", descriptor.table_name);
     for (idx, value) in values.iter().enumerate() {
         if idx > 0 {
@@ -84,5 +86,8 @@ where
     let row = rows
         .next()?
         .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows)?;
+    if let Some(unfilled) = unfilled_default(descriptor, row)? {
+        return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(unfilled)));
+    }
     M::from_rusqlite_row(row)
 }

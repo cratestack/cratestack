@@ -63,3 +63,14 @@ fn a_missing_default_key_reads_as_none() {
         None
     );
 }
+
+/// Before cratestack#1234 `@default("draft")` was stored, and emitted, as
+/// `"draft"`: a column reference to Postgres. It reads back as the SQL
+/// string the emitter now writes.
+#[test]
+fn old_double_quoted_strings_read_as_sql_strings() {
+    assert_eq!(
+        round_trip(ColumnDefault::Literal(r#""it's \"x\"""#.to_owned())),
+        Some(ColumnDefault::Literal(r#"'it''s "x"'"#.to_owned()))
+    );
+}

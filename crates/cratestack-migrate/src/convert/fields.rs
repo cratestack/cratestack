@@ -3,6 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use cratestack_core::schema::default_literal::literal_default;
 use cratestack_core::schema::default_markers::default_inner;
 use cratestack_core::{EnumDecl, Field, TypeArity};
 
@@ -50,14 +51,10 @@ pub(super) fn field_to_column(
         ColumnType::Scalar(ty_name.to_owned())
     };
 
-    let mut default = field_default(field);
-    match (&ty, known_enums.get(ty_name)) {
-        (ColumnType::Enum(_), _) => default = default.map(quote_bare_literal),
-        (ColumnType::OrdinalEnum(_), Some(decl)) => {
-            default = default.map(|default| ordinal_literal(default, decl));
-        }
-        _ => {}
-    }
+    let default = field_default(field).map(|default| match default {
+        ColumnDefault::Literal(inner) => literal_sql(inner, field, &ty, known_enums.get(ty_name)),
+        other => other,
+    });
 
     Column {
         name: column_name(&field.name),
@@ -65,6 +62,28 @@ pub(super) fn field_to_column(
         arity,
         default,
         primary_key,
+    }
+}
+
+/// A literal default as the SQL literal it stands for (cratestack#1234):
+/// a string single-quoted, an enum its quoted name or its ordinal.
+/// `cratestack check` refuses a literal that does not fit its field; this
+/// crate can run without validation, so one that does not fit keeps the
+/// handling it had before.
+fn literal_sql(
+    inner: String,
+    field: &Field,
+    ty: &ColumnType,
+    decl: Option<&&EnumDecl>,
+) -> ColumnDefault {
+    if let Ok(literal) = literal_default(&inner, &field.ty, decl.copied()) {
+        return ColumnDefault::Literal(literal.sql);
+    }
+    let default = ColumnDefault::Literal(inner);
+    match (ty, decl) {
+        (ColumnType::Enum(_), _) => quote_bare_literal(default),
+        (ColumnType::OrdinalEnum(_), Some(decl)) => ordinal_literal(default, decl),
+        _ => default,
     }
 }
 

@@ -4,7 +4,8 @@ use cratestack_sql::{CreateModelInput, ModelDescriptor, SqliteDialect};
 
 use crate::{FromRusqliteRow, RusqliteError, RusqliteRuntime, render::render_insert};
 
-use super::support::run_insert_returning;
+use super::support::run_create_returning;
+use crate::create_defaults::fill_create_defaults;
 
 pub struct CreateRecord<'a, M: 'static, PK: 'static, I> {
     pub(super) runtime: &'a RusqliteRuntime,
@@ -19,7 +20,7 @@ where
     pub fn preview_sql(&self) -> String {
         let dialect = SqliteDialect;
         let mut values = self.input.sql_values();
-        self.descriptor.fill_generated_defaults(&mut values);
+        fill_create_defaults(self.descriptor, &mut values);
         let (sql, _) = render_insert(&dialect, self.descriptor, &values);
         sql
     }
@@ -30,10 +31,10 @@ where
     {
         let dialect = SqliteDialect;
         let mut values = self.input.sql_values();
-        self.descriptor.fill_generated_defaults(&mut values);
+        fill_create_defaults(self.descriptor, &mut values);
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
         self.runtime
-            .with_connection(|conn| run_insert_returning(conn, &sql, &binds))
+            .with_connection(|conn| run_create_returning(conn, self.descriptor, &sql, &binds))
     }
 
     /// Run against a caller-supplied connection (typically the active
@@ -46,8 +47,8 @@ where
     {
         let dialect = SqliteDialect;
         let mut values = self.input.sql_values();
-        self.descriptor.fill_generated_defaults(&mut values);
+        fill_create_defaults(self.descriptor, &mut values);
         let (sql, binds) = render_insert(&dialect, self.descriptor, &values);
-        run_insert_returning(conn, &sql, &binds)
+        run_create_returning(conn, self.descriptor, &sql, &binds)
     }
 }

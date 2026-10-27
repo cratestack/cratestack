@@ -11,6 +11,7 @@ mod enum_ordinals;
 mod enums;
 mod extensions;
 mod indexes;
+mod literal_defaults;
 mod partial_index;
 mod pluralization_rename;
 mod postgis;

@@ -2,6 +2,7 @@
 //! defaults are normalised when read back.
 
 use cratestack_core::schema::default_functions::{BuiltinDefault, DefaultValue, classify_default};
+use cratestack_core::schema::default_literal::{sql_string, unquote};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// Column default value, captured as the developer wrote it. The
@@ -61,6 +62,16 @@ impl From<BuiltinDefault> for GeneratedDefault {
     }
 }
 
+impl From<GeneratedDefault> for BuiltinDefault {
+    fn from(generated: GeneratedDefault) -> Self {
+        match generated {
+            GeneratedDefault::Now => Self::Now,
+            GeneratedDefault::Uuid => Self::Uuid,
+            GeneratedDefault::Cuid => Self::Cuid,
+        }
+    }
+}
+
 impl ColumnDefault {
     /// The default a `.cstack` `@default(<inner>)` stores in DDL, or `None`
     /// when it stores none (`auth().field` is filled from the auth context).
@@ -106,8 +117,19 @@ impl From<ColumnDefaultRepr> for ColumnDefault {
             DefaultValue::Marker(_) => Self::DbGenerated,
             DefaultValue::Builtin(builtin, _) => Self::Generated(builtin.into()),
             DefaultValue::Function(_) => Self::Function(text),
-            DefaultValue::Auth | DefaultValue::Literal => Self::Literal(text),
+            DefaultValue::Auth | DefaultValue::Literal => Self::Literal(stored_literal(text)),
         }
+    }
+}
+
+/// A literal stored before cratestack#1234 kept a double-quoted string as
+/// written, `"draft"`, which the emitter wrote as `DEFAULT "draft"`: a
+/// column reference to Postgres. It reads back as the SQL string the
+/// emitter now writes, so the next diff does not see a change.
+fn stored_literal(text: String) -> String {
+    match text.starts_with('"').then(|| unquote(&text)).flatten() {
+        Some(unquoted) => sql_string(&unquoted),
+        None => text,
     }
 }
 

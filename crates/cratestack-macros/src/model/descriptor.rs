@@ -6,6 +6,7 @@
 
 mod columns;
 mod defaults;
+mod embedded;
 mod generated;
 
 use cratestack_core::{EnumDecl, Field, Model, TypeDecl};
@@ -20,6 +21,7 @@ use crate::shared::{ident, is_primary_key, pluralize, rust_type_tokens, to_snake
 
 use columns::collect_column_lists;
 use defaults::collect_create_defaults;
+use embedded::collect_embedded_defaults;
 use generated::collect_generated_defaults;
 
 pub(crate) fn generate_model_descriptor(
@@ -28,6 +30,7 @@ pub(crate) fn generate_model_descriptor(
     types: &[TypeDecl],
     enums: &[EnumDecl],
     auth: Option<&cratestack_core::AuthBlock>,
+    embedded: bool,
 ) -> Result<proc_macro2::TokenStream, String> {
     let model_ident = ident(&model.name);
     let descriptor_ident = ident(&format!(
@@ -70,6 +73,11 @@ pub(crate) fn generate_model_descriptor(
 
     let create_defaults = collect_create_defaults(model, models, types, auth)?;
     let generated_defaults = collect_generated_defaults(model, models);
+    let embedded_defaults = if embedded {
+        collect_embedded_defaults(model, models, enums)?
+    } else {
+        quote! {}
+    };
     let emitted_events = emitted_event_tokens(model)?;
     let cols = collect_column_lists(model, models)?;
 
@@ -145,7 +153,8 @@ pub(crate) fn generate_model_descriptor(
                 #retention_days_tokens,
                 &[#(#upsert_update_columns),*],
             )
-            .with_generated_defaults(&[#(#generated_defaults),*]);
+            .with_generated_defaults(&[#(#generated_defaults),*])
+            #embedded_defaults;
     })
 }
 

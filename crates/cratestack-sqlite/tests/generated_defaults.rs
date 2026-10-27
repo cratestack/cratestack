@@ -1,6 +1,7 @@
 //! cratestack#1209: the embedded runtime fills `@default(uuid())`,
 //! `@default(cuid())` and `@default(now())` on create. `create_table_sql`
-//! writes no `DEFAULT` clauses, so the database cannot.
+//! wrote no `DEFAULT` clauses before cratestack#1234, and a table it
+//! created then still has none, so the database cannot.
 
 use chrono::Utc;
 use cratestack::RusqliteRuntime;

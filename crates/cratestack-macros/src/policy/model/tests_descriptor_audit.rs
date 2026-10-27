@@ -40,6 +40,7 @@ fn model_result(raw: &str) -> Result<String, String> {
         &schema.types,
         &[],
         schema.auth.as_ref(),
+        false,
     )
     .map(|tokens| tokens.to_string())
 }
