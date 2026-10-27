@@ -113,6 +113,8 @@ pub(crate) struct SwrSchemaContext {
     /// TemplateContext::wire_shapes`'s identical field for the full
     /// rationale (`crate::decimal`'s module doc has the complete story).
     pub(crate) wire_shapes: Vec<crate::wire_shapes::WireShapeView>,
+    /// See `crate::context::TemplateContext::ordinal_enums`.
+    pub(crate) ordinal_enums: crate::ordinal_enums::OrdinalRegistry,
     /// See `crate::context::TemplateContext::models_import_path`'s doc
     /// comment for the full rationale — always `"../models.js"` here,
     /// since `--swr` nests `runtime.ts`/`stream-terminal.ts` one directory

@@ -1,0 +1,27 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// Ordinal enums (`Pending = 1`, docs/design/enum-ordinals.md) on the
+// server backend: a `SMALLINT` column from the real emitter, a create and
+// a read policy on ordinal literals, names in query strings, and the
+// number on the JSON wire. Driven by `tests/enum_ordinals.rs`.
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)
+}
+
+model Payment {
+  id Int @id
+  status PaymentStatus
+  previous PaymentStatus?
+  initial PaymentStatus @default(Pending)
+
+  @@allow("create", status != Refunded)
+  @@allow("update", auth() != null)
+  @@allow("read", status in [Pending, Approved, Refunded] && status != Pending)
+}

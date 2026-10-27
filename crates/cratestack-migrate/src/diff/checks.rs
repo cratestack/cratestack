@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::convert::TableProjection;
-use crate::ir::{DropCheck, Op};
+use crate::ir::{CheckKind, DropCheck, Op};
 
 #[derive(Default)]
 pub(super) struct CheckOps {
@@ -42,10 +42,11 @@ pub(super) fn diff_checks(prev: &TableProjection, next: &TableProjection) -> Che
             // passed — this is the path that replaces the old
             // `ALTER TYPE ... ADD VALUE`, without its transactional
             // restrictions. *Removing* a variant narrows the set and
-            // can fail on existing rows holding the removed value;
-            // that is a genuine schema-level decision the diff engine
-            // does not try to backfill around.
-            if prev_check.kind != check.kind {
+            // can fail on existing rows holding the removed value. The
+            // diff does not backfill around that schema-level decision;
+            // `ir::blocking::narrowing` classifies the pair Blocking and
+            // names the values, so `up.pre.sql` can move those rows.
+            if !same_constraint(&prev_check.kind, &check.kind) {
                 out.drops.push(Op::DropCheck(DropCheck {
                     table: prev_check.table.clone(),
                     column: prev_check.column.clone(),
@@ -58,4 +59,31 @@ pub(super) fn diff_checks(prev: &TableProjection, next: &TableProjection) -> Che
     }
 
     out
+}
+
+/// Whether two checks enforce the same thing. An ordinal enum's CHECK lists
+/// numbers, so renaming or reordering its variants leaves it as it is.
+fn same_constraint(prev: &CheckKind, next: &CheckKind) -> bool {
+    match (prev, next) {
+        (
+            CheckKind::Enum {
+                list: prev_list,
+                ordinals: Some(prev_ordinals),
+                ..
+            },
+            CheckKind::Enum {
+                list: next_list,
+                ordinals: Some(next_ordinals),
+                ..
+            },
+        ) => {
+            let sorted = |ordinals: &[i64]| {
+                let mut ordinals = ordinals.to_vec();
+                ordinals.sort_unstable();
+                ordinals
+            };
+            prev_list == next_list && sorted(prev_ordinals) == sorted(next_ordinals)
+        }
+        _ => prev == next,
+    }
 }

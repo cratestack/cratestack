@@ -89,6 +89,45 @@ export const wireShapes: Readonly<Record<string, WireShape>> = {
   {{ shape.name }}: { decimalKeys: {{ shape.decimal_keys_js }}, bigintKeys: {{ shape.bigint_keys_js }}, bytesKeys: {{ shape.bytes_keys_js }}, bytesListKeys: {{ shape.bytes_list_keys_js }}, nested: {{ shape.nested_js }} },
 {% endfor %}
 };
+{% if ordinal_enums.enums %}
+
+/** Ordinal enums (`Pending = 1`, docs/design/enum-ordinals.md): a response
+ *  carries the number, and revival hands application code the variant's
+ *  name, so each enum's type stays its string union. Requests still send
+ *  names; the server decodes either. */
+export const ordinalEnumNames: Readonly<Record<string, Readonly<Record<number, string>>>> = {
+{% for e in ordinal_enums.enums %}
+  {{ e.name }}: {{ e.names_js }},
+{% endfor %}
+};
+
+/** Per model/`type` shape, the fields that hold an ordinal enum. */
+export const ordinalEnumFields: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+{% for f in ordinal_enums.fields %}
+  {{ f.shape }}: {{ f.fields_js }},
+{% endfor %}
+};
+
+/** An ordinal enum's wire value (or array of them) -> its variant name. A
+ *  name passes through, so a peer still sending names decodes; anything
+ *  else throws, as an unknown string variant would. */
+function toEnumName(entry: unknown, enumName: string, where: string): unknown {
+  if (entry === null || entry === undefined) {
+    return entry;
+  }
+  if (Array.isArray(entry)) {
+    return entry.map((item) => toEnumName(item, enumName, where));
+  }
+  const names = ordinalEnumNames[enumName] ?? {};
+  if (typeof entry === "number" && names[entry] !== undefined) {
+    return names[entry];
+  }
+  if (typeof entry === "string" && Object.values(names).includes(entry)) {
+    return entry;
+  }
+  throw new TypeError(`${where}: ${String(entry)} is not a value of enum ${enumName}`);
+}
+{% endif %}
 
 /** Decodes `value` against the named entry in {@link wireShapes},
  *  replacing every string (or, for a `Decimal[]` field, every element of
@@ -109,6 +148,11 @@ export const wireShapes: Readonly<Record<string, WireShape>> = {
 export function reviveWireFields(value: unknown, shapeName: string): unknown {
   const shape = wireShapes[shapeName];
   if (!shape) {
+{% if ordinal_enums.enums %}
+    if (ordinalEnumNames[shapeName] !== undefined) {
+      return toEnumName(value, shapeName, shapeName);
+    }
+{% endif %}
     return value;
   }
   return reviveShaped(value, shape, shapeName);
@@ -147,6 +191,10 @@ function reviveShaped(value: unknown, shape: WireShape, shapeName: string): unkn
         result[key] = toBytes(entry);
       } else if (shape.bytesListKeys.includes(key)) {
         result[key] = Array.isArray(entry) ? entry.map(toBytes) : entry;
+{% if ordinal_enums.enums %}
+      } else if (ordinalEnumFields[shapeName]?.[key] !== undefined) {
+        result[key] = toEnumName(entry, ordinalEnumFields[shapeName][key], `${shapeName}.${key}`);
+{% endif %}
       } else {
         result[key] = entry;
       }

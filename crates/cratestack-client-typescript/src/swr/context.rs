@@ -158,6 +158,7 @@ pub(crate) fn build_shared_context(
         models,
         procedures_file,
         wire_shapes: build_wire_shapes(schema),
+        ordinal_enums: crate::ordinal_enums::build_ordinal_registry(schema),
         models_import_path: "../models.js",
         native_cbor: config.native_cbor,
     }

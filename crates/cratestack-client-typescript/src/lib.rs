@@ -5,6 +5,7 @@ mod error;
 mod find_many_views;
 mod generator;
 mod naming;
+mod ordinal_enums;
 mod package_deps;
 mod package_floors;
 mod procedure_views;

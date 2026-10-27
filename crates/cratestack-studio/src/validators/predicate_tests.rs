@@ -27,6 +27,7 @@ fn email_validator_passes_and_fails() {
     );
     let model = schema.models.iter().find(|m| m.name == "User").unwrap();
     let ok = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("u1")),
@@ -37,6 +38,7 @@ fn email_validator_passes_and_fails() {
     assert!(ok.is_empty(), "{ok:?}");
 
     let bad = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("u1")),
@@ -59,6 +61,7 @@ fn length_validator_enforces_min_and_max() {
     );
     let model = schema.models.iter().find(|m| m.name == "Post").unwrap();
     let short = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("p")),
@@ -69,6 +72,7 @@ fn length_validator_enforces_min_and_max() {
     assert!(short.iter().any(|e| e.code == ValidationCode::Length));
 
     let long = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("p")),
@@ -91,6 +95,7 @@ fn range_validator_enforces_bounds() {
     );
     let model = schema.models.iter().find(|m| m.name == "Customer").unwrap();
     let bad = validate_payload(
+        &schema,
         model,
         &payload(&[("id", serde_json::json!(1)), ("age", serde_json::json!(-1))]),
         false,
@@ -110,6 +115,7 @@ fn regex_validator_enforces_pattern() {
     );
     let model = schema.models.iter().find(|m| m.name == "Code").unwrap();
     let bad = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("c1")),
@@ -132,6 +138,7 @@ fn iso4217_requires_three_uppercase_letters() {
     );
     let model = schema.models.iter().find(|m| m.name == "Account").unwrap();
     let ok = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("a1")),
@@ -142,6 +149,7 @@ fn iso4217_requires_three_uppercase_letters() {
     assert!(ok.is_empty(), "{ok:?}");
 
     let bad = validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("a1")),

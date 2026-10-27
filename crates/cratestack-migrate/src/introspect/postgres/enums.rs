@@ -73,6 +73,7 @@ pub(super) async fn introspect_enum_checks(
             kind: CheckKind::Enum {
                 variants,
                 list: false,
+                ordinals: None,
             },
         })
         .collect())

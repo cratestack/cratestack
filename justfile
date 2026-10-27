@@ -1046,7 +1046,7 @@ verify-dart:
 	# own text-level tests and to `tsc`-style structure checks; only a real
 	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
 	# one.
-	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc)
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="
@@ -1074,6 +1074,15 @@ verify-dart:
 	    echo "=== flutter test (untouched-vs-cleared patch field proof): $pkg ==="
 	    (cd "$pkg" && flutter test test/builder_edge_cases_patch_test.dart)
 	  fi
+	  # Ordinal enums (docs/design/enum-ordinals.md): a running proof that a
+	  # generated ordinal enum sends its number and decodes either form —
+	  # see the copied file's own module doc.
+	  if [ "$fixture" = "ordinal_enums" ]; then
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/ordinal_enums_test.dart" "$pkg/test/ordinal_enums_test.dart"
+	    echo "=== flutter test (ordinal enum wire form): $pkg ==="
+	    (cd "$pkg" && flutter test test/ordinal_enums_test.dart)
+	  fi
 	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
 	  # Dio adapters (golden requests captured from them), typed REST/RPC
 	  # errors, transport failures, abort, idempotency key and chunked
@@ -1091,7 +1100,7 @@ verify-dart:
 	  fi
 	done
 
-	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan)
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan ordinal_enums)
 	for fixture in "${riverpod_fixtures[@]}"; do
 	  pkg="$out/riverpod/$fixture"
 	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"

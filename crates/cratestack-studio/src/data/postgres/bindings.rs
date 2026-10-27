@@ -7,6 +7,7 @@
 //! payload happens to be a plain string.
 
 use crate::data::Row;
+use crate::data::common::ordinal_of;
 use crate::data::model_info::ModelSqlInfo;
 
 /// One typed value ready for a Postgres bind. JSON / array / object
@@ -20,6 +21,8 @@ pub(crate) enum TypedValue {
     Bool(bool),
     Json(serde_json::Value),
     Null,
+    /// A NULL for an integer column that refuses a text-typed one.
+    NullInt,
 }
 
 /// Walk `payload` in column order, looking up each field's scalar
@@ -62,7 +65,13 @@ pub(super) fn collect_payload(
             .find(|f| f.name == col.field_name)
             .expect("column info was derived from the same field list");
         cols.push(col.column_name.clone());
-        binds.push(json_to_typed(&field.ty.name, value));
+        binds.push(match col.ordinal_enum {
+            // An ordinal enum's `SMALLINT` refuses a text-typed NULL (42804).
+            Some(_) if value.is_null() => TypedValue::NullInt,
+            Some(e) => ordinal_of(e, value)
+                .map_or_else(|| json_to_typed(&field.ty.name, value), TypedValue::Int),
+            None => json_to_typed(&field.ty.name, value),
+        });
     }
     (cols, binds)
 }
@@ -94,7 +103,7 @@ fn json_to_typed(scalar: &str, value: &serde_json::Value) -> TypedValue {
         "Float" => TypedValue::Float(value.as_f64().unwrap_or(0.0)),
         "Boolean" => TypedValue::Bool(value.as_bool().unwrap_or(false)),
         "Json" => TypedValue::Json(value.clone()),
-        // String, Cuid, Uuid, Decimal, DateTime, Bytes, enums.
+        // String, Cuid, Uuid, Decimal, DateTime, Bytes, string enums.
         _ => text_value(value),
     }
 }
@@ -120,6 +129,7 @@ pub(super) fn bind_typed<'q>(
         TypedValue::Bool(b) => q.bind(*b),
         TypedValue::Json(j) => q.bind(sqlx_core::types::Json(j.clone())),
         TypedValue::Null => q.bind(Option::<String>::None),
+        TypedValue::NullInt => q.bind(Option::<i64>::None),
     }
 }
 
@@ -130,7 +140,7 @@ pub(super) fn typed_kind(value: &TypedValue) -> &'static str {
         TypedValue::Float(_) => "double",
         TypedValue::Bool(_) => "boolean",
         TypedValue::Json(_) => "jsonb",
-        TypedValue::Null => "null",
+        TypedValue::Null | TypedValue::NullInt => "null",
     }
 }
 

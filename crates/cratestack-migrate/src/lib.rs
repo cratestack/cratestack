@@ -27,7 +27,7 @@ pub use diff::{diff, diff_projections};
 pub use emit::EmittedMigration;
 pub use error::MigrateError;
 pub use naming::{check_name, column_name, fk_name, index_name_unique, table_name};
-pub use projection::{Projections, project};
+pub use projection::{EnumProjection, Projections, project};
 pub use snapshot::{
     SNAPSHOT_FORMAT_VERSION, Snapshot, read_or_empty, read_snapshot, write_snapshot,
 };

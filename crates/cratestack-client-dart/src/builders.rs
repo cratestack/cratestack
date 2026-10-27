@@ -18,8 +18,10 @@ pub(crate) fn build_enum_view(enum_decl: &EnumDecl) -> EnumView {
             .map(|variant| EnumVariantView {
                 identifier: dart_identifier(&to_camel_case(&variant.name)),
                 wire_name: variant.name.clone(),
+                ordinal: variant.ordinal,
             })
             .collect(),
+        is_ordinal: enum_decl.is_ordinal(),
     }
 }
 

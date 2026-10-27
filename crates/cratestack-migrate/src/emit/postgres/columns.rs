@@ -46,6 +46,9 @@ pub(super) fn emit_rename_column(sql: &mut String, rename: &RenameColumn) {
 
 pub(super) fn emit_alter_column_type(sql: &mut String, alter: &AlterColumnType) {
     let rendered = render_type(&alter.to, alter.to_arity);
+    if let Some(cast) = &alter.enum_cast {
+        return super::enum_cast::emit_enum_cast(sql, alter, cast, &rendered);
+    }
     writeln!(
         sql,
         "ALTER TABLE {} ALTER COLUMN {} TYPE {} USING ({}::{});",
@@ -174,6 +177,9 @@ fn render_type(ty: &ColumnType, arity: ColumnArity) -> String {
         // a `CHECK (col IN (...))` constraint — see
         // `super::checks` and `crate::convert::enum_check_kind`.
         ColumnType::Enum(_) => "TEXT".to_owned(),
+        // An ordinal enum holds its variant's number (`Pending = 1`), at
+        // most `i16::MAX` (`cratestack_core::ENUM_ORDINAL_MAX`).
+        ColumnType::OrdinalEnum(_) => "SMALLINT".to_owned(),
         // Composite type identifiers are snake-cased so the SQL type
         // name matches the convention used elsewhere in the generator
         // (tables, columns) and so that case-mismatched references

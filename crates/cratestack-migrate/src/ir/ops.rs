@@ -80,6 +80,20 @@ pub struct AlterColumnType {
     pub from_arity: ColumnArity,
     pub to: ColumnType,
     pub to_arity: ColumnArity,
+    /// Set when an enum switches between names and ordinals: each
+    /// variant's name and number, so the emitter can rewrite the stored
+    /// values (`USING CASE`) rather than cast them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enum_cast: Option<EnumCast>,
+}
+
+/// The rewrite an enum's switch between names and ordinals needs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumCast {
+    /// `(name, ordinal)` per variant.
+    pub pairs: Vec<(String, i64)>,
+    /// Names to ordinals when true; ordinals back to names when false.
+    pub to_ordinals: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

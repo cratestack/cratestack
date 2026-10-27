@@ -92,17 +92,9 @@ pub(crate) struct TemplateContext {
     pub(crate) cratestack_builder_version_requirement: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct EnumView {
-    pub(crate) name: String,
-    pub(crate) variants: Vec<EnumVariantView>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct EnumVariantView {
-    pub(crate) identifier: String,
-    pub(crate) wire_name: String,
-}
+// `EnumView`/`EnumVariantView` live in `crate::enum_view`, split out and
+// re-exported the same way as the two below.
+pub(crate) use crate::enum_view::{EnumVariantView, EnumView};
 
 // `DataClassView`/`DataClassKind` live in `crate::data_class_view` (split
 // out per the repo's 200-LoC file convention) and are re-exported here so
