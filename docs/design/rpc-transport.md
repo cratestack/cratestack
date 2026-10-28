@@ -553,9 +553,9 @@ appears.
 ## 6.5. WebSocket + SSE subscription bindings — status
 
 **Proposed successor (2026-10-28):** [subscriptions-websocket.md](subscriptions-websocket.md)
-designs the WS binding below, subscription procedures and topics, multi-replica delivery, and
-read-policy enforcement on streamed events. Until it is accepted, this section is the record of
-what is built.
+designs the WS binding below, a WebTransport binding beside it, subscription procedures and
+topics, multi-replica delivery, and read-policy enforcement on streamed events. Until it is
+accepted, this section is the record of what is built.
 
 §3.4 specifies the wire shape for WebSocket subscriptions; §3.4a (added by
 issue #183's spike decision) specifies SSE as the recommended first path.

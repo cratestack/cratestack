@@ -461,6 +461,165 @@ subscription `Request` through `OpExecutor::admit_rate_limit` (dispatch-side, pe
 nothing else. Unary-over-WS stays gated on the trigger rpc-transport.md §6.5 already names: a
 concrete multiplexing need.
 
+## 6a. The WebTransport binding
+
+WebTransport is a first-class binding, not a future option. This is a deployment requirement: the
+production app this design serves is built on it. Its server and its clients ship in the same
+release train as WS. What follows maps the subscription contract onto it and is explicit about what
+it costs to run, because those costs are real.
+
+### 6a.1 What it gives a subscription that WS cannot
+
+- **One stream per subscription, no head-of-line blocking.** A WS socket is one TCP byte stream: a
+  lost packet or a large item on one subscription stalls every other subscription on the socket.
+  Over QUIC each subscription is its own stream. Loss and flow control are per stream.
+- **Sessions survive network changes.** QUIC connection migration keeps the session alive when a
+  phone moves from Wi-Fi to cellular. Over WS that ends every subscription, and §2.1 then makes the
+  client resubscribe and reload each snapshot.
+- **The transport does the multiplexing.** The `id` field and the `Cancel` frame exist on WS only
+  because subscriptions share one socket. Here, the stream is the identity and resetting it is the
+  cancel.
+- **Datagrams**, for the one kind of data where dropping is correct (§6a.7).
+
+### 6a.2 Session and streams
+
+```text
+client                                              server
+  │  HTTP/3 extended CONNECT  :protocol=webtransport  │   /rpc/wt  (REST schemas: /$wt)
+  │ ────────────────────────────────────────────────▶ │   Origin + (native) auth headers checked
+  │ ◀──────────────────────────────────────── 200 ─── │
+  │                                                   │
+  │  1st bidi stream (control): Init ─▶ ◀─ Ready{0}   │   auth, later re-auth; nothing else
+  │  each later bidi stream = one subscription:       │
+  │     Request ─▶  ◀─ Ready{n}  ◀─ StreamItem …      │
+  │     ◀─ StreamEnd | Error, then FIN                │
+  │     RESET_STREAM / STOP_SENDING  ─▶  = Cancel     │
+```
+
+- **Session = the WS socket.** It holds the authenticated context, the principal, and the
+  per-session limits.
+- **Control stream.** The first client-opened bidirectional stream carries `Init` → `Ready{id: 0}`
+  and later re-auth `Init`s (§6.3's rules, unchanged). No subscription stream is accepted before
+  `Ready{id: 0}`.
+- **One bidirectional stream per subscription.** The client writes exactly one `Request` frame and
+  finishes its send side. The server writes `Ready`, then `StreamItem`s, then `StreamEnd` or `Error`,
+  then FIN. Either side resetting the stream ends the subscription. A client reset is `Cancel`. A
+  server reset (code `0x01`) means the session is going away, and the client treats it as
+  `unavailable`.
+- **`id` stays in the frames.** That keeps the §2.3 codec byte-identical across bindings, so all
+  three share one encoder and decoder. On WebTransport the stream routes, and an `id` that does not
+  match the stream's `Request` is a protocol error (stream reset, code `0x02`).
+
+### 6a.3 Framing and codec
+
+A QUIC stream is a byte stream with no message boundaries, unlike a WS message. So frames are
+self-delimiting:
+
+- **CBOR (default):** frames back to back as a CBOR sequence (RFC 8742), decoded by the boundary
+  scanner the streaming path already uses (`CborSeqChunkDecoder`, rpc-transport.md §3.3).
+- **JSON:** one JSON document per line (NDJSON). JSON encoders escape newlines inside strings, so a
+  raw `\n` only ever ends a frame.
+
+The codec is negotiated with WebTransport application-protocol negotiation (`cratestack.rpc.v1+cbor`
+/ `+json`, the WS subprotocol names) where the browser and the server crate support it. Otherwise
+the client names it in the session URL (`/rpc/wt?codec=cbor`): not a secret, so the URL is an
+acceptable place for it. Mid-stream errors use the `Error` frame, not tag 48900, because the frame
+envelope already carries the error variant.
+
+**One rule follows for the WS binding too:** no layer above the transport may assume one frame per
+transport message. The client frame decoders are written against a byte stream from the start, so
+WS and WebTransport share them.
+
+### 6a.4 Authentication, Origin, limits
+
+- **Native clients** (Rust, Flutter native through the Rust client, servers) send auth headers on
+  the CONNECT request, which `AuthProvider::authenticate` sees as it sees a WS upgrade. The
+  canonical request is `CONNECT /rpc/wt` with no body.
+- **Browsers** cannot set headers on `new WebTransport(url)` either, so they use the `Init` frame on
+  the control stream, exactly as §6.3 defines it.
+- **Origin.** Browsers send `Origin` on the CONNECT. The same `allowed_origins` allowlist applies,
+  with the same same-origin default.
+- **0-RTT is refused** on this listener. Early data can be replayed, and the first bytes a client
+  sends here are credentials (`Init`) or a policy-checked `Request`.
+- **Limits** reuse §6.6's table. Where the chosen crate exposes them, two are enforced by the
+  transport rather than by our code: subscriptions per session = the session's advertised
+  bidirectional-stream limit (64 + 1 for control), and the inbound frame cap = the per-stream
+  receive window. Our own checks stay in place regardless, so a crate that lacks these controls
+  weakens nothing. Keepalive is QUIC's own: PING
+  every 15 s, idle timeout 30 s.
+- **Backpressure is not delegated to flow control.** A client that stops reading fills its stream's
+  window. That must never block the backplane fan-out (§4.2) for everyone else, so the bounded
+  per-subscription buffer and its `unavailable` exit (§2.1) stay exactly as on WS.
+
+### 6a.5 Server architecture
+
+axum and hyper do not serve HTTP/3. So WebTransport is a **second listener in the same process**:
+a UDP socket, normally on the same port number as HTTPS (`:443/udp` beside `:443/tcp`), driven by
+QUIC.
+
+- **New crate `cratestack-webtransport`, L4** (beside `cratestack-axum` and `cratestack-mcp`; added
+  to `docs/adr/layers.toml` in the same PR). It depends on `cratestack-core` and `cratestack-exec`,
+  never on `cratestack-axum`. It owns the QUIC endpoint, session handling, the control stream, and
+  the stream ⇄ frame adapter around the generated `subscription_dispatch` (§6.1).
+- **QUIC/WebTransport implementation behind our own seam.** The protocol is still an IETF draft
+  (draft-ietf-webtrans-http3-16, July 2026), and the Rust crates track drafts at different speeds.
+  `cratestack-webtransport` defines a small internal `WtAcceptor`/`WtSession` seam and implements it
+  on one crate. Candidates are `wtransport`, `web-transport-quinn` and `h3-webtransport`; which one
+  is decision O8, settled by the interop spike in §11 S5b. A draft change then touches one module.
+- **Same handle, two listeners.** The generated server exposes
+  `cratestack::webtransport::serve(endpoint_config, router_state)` next to the axum `Router`. Both
+  share the `AuthProvider`, backplane, `OpExecutor` and schema handle, so one replica runs one
+  backplane listener (§4.2) whichever bindings its clients use.
+- **TLS.** The QUIC listener needs its own rustls `ServerConfig` (ALPN `h3`), built from the same
+  certificate as the TCP listener. Certificate reload applies to both.
+- **Local development.** Browsers accept a self-signed certificate for WebTransport only through
+  `serverCertificateHashes`, which accepts only short-lived certificates (at most 14 days of
+  validity; S5b's spike confirms the exact key-type rules per browser).
+  `cratestack run` and the examples generate one at startup and print its hash, and the TS client
+  takes it as `webtransport: { certificateHashes }`.
+
+### 6a.6 Running it in production
+
+These are deployment requirements, written into the docs and the example's README, not just here:
+
+- **UDP must reach the replicas.** L7 HTTP proxies generally do not forward WebTransport (nginx has
+  no plan to). Put an **L4 UDP load balancer** in front of the replicas and terminate TLS in the
+  app.
+- **Migration needs a QUIC-aware balancer.** A balancer that routes by the address 4-tuple sends a
+  migrated connection to a different replica, where the session does not exist. The client then
+  sees the session end, gets `unavailable` everywhere, and resubscribes: correct, but it loses the
+  migration benefit. To keep sessions across network changes, the balancer must route on QUIC
+  connection IDs, with the server encoding a replica identifier in the connection IDs it issues
+  (QUIC-LB style). The seam in §6a.5 exposes connection-ID generation for this.
+- **Client IP.** There are no forwarding headers on this path, and PROXY protocol over UDP is not
+  widely supported. The binding uses the QUIC peer address and needs a balancer that preserves the
+  source address. `trusted-proxy-client-ip.md`'s header logic does not apply here, and rate-limit
+  keys should prefer the principal.
+- **Fallback is mandatory, not optional.** Some networks block UDP 443, and Safari before 26.4 has
+  no WebTransport. Every generated client tries WebTransport, then WS, then SSE (§8), and the
+  §2.1 contract is identical on all three, so application code cannot tell which one it got.
+
+### 6a.7 Datagram subscriptions (opt-in)
+
+For data where the newest value replaces the previous one and a lost update is harmless (cursor
+positions, presence, live telemetry), a subscription procedure may opt out of the §2.1 guarantee:
+
+```text
+subscription procedure cursors(args: RoomArgs): CursorPosition
+  @allow(auth() != null)
+  @datagram
+```
+
+- Over WebTransport, each item is one QUIC datagram, prefixed with the subscription's stream id
+  (varint). `Ready`, `StreamEnd` and `Error` still travel on the subscription's stream, so the
+  subscription lifecycle stays reliable even though its items are not.
+- An item larger than the session's datagram size limit is a handler error. It is never split, and
+  it is never sent silently on the stream instead.
+- Over WS and SSE the same op delivers reliably. Reliable delivery is stronger than the op asked
+  for, so the op works on every binding and parity holds.
+- `@datagram` is the only way to give up §2.1, and the generated client type says so
+  (`LossySubscription<T>`), so nobody gets lossy delivery by accident.
+
 ## 7. The SSE binding, brought to the same contract
 
 ### 7.1 Changes
@@ -475,10 +634,13 @@ concrete multiplexing need.
 
 ### 7.2 REST routes
 
-| Op | REST (SSE) | RPC (SSE) | WS (both) |
+| Op | REST (SSE) | RPC (SSE) | WS and WebTransport (both) |
 |---|---|---|---|
 | Model feed | `GET /<plural>/$subscribe?<list filter syntax>` | `GET`/`POST /rpc/subscribe/model.<X>.subscribe` | `Request{op: "model.<X>.subscribe"}` |
 | Subscription procedure | `POST /$procs/<name>` + `Accept: text/event-stream` | `POST /rpc/subscribe/procedure.<name>` | `Request{op: "procedure.<name>"}` |
+
+Session endpoints: WS at `GET /rpc/ws` / `GET /$ws`, WebTransport at `CONNECT /rpc/wt` / `CONNECT
+/$wt`.
 
 `<plural>` is `model_route_segment` (`cratestack-core/src/route_naming.rs:112`). A subscription
 procedure has no unary form, so its REST route answers 406 to any other `Accept`. This is the
@@ -488,13 +650,18 @@ under `transport rpc`" goes away, and with it the parser rule at `model_attribut
 ## 8. Clients
 
 One contract in each language: **subscribe → `Ready` → items → end or error**, with the binding
-(SSE or WS) chosen in client configuration, not in generated method names.
+(WebTransport, WS or SSE) chosen in client configuration, not in generated method names. The
+default is `transport: "auto"`: try WebTransport, fall back to WS, then SSE. A WebTransport attempt
+that has not reached `Ready{id: 0}` within 3 s counts as failed. The outcome is remembered per
+origin for 10 minutes, wrapped in try/catch so it works without storage, so a client on a
+UDP-blocked network pays that wait once, not on every subscription.
 
 | | Rust (`cratestack-client-rust`) | TypeScript | Dart |
 |---|---|---|---|
 | Call | `client.widget().subscribe(input).await? -> impl Stream<Item = Result<ModelEvent<Widget>>>` | `client.widget.subscribe(input, { signal }): AsyncIterable<ModelEvent<Widget>>` | `client.widget.subscribe(input): Stream<ModelEvent<Widget>>` |
 | Procedure | `client.room_messages(args)` | `client.roomMessages(args)` | `client.roomMessages(args)` |
 | Ready | the `await` before the stream resolves on `Ready` | the iterator's first `next()` resolves only after `Ready` (plus an `onReady` option) | `Stream` `onListen` + `ready` future |
+| WebTransport | `webtransport` feature: the §6a.5 crate's client natively, `web-sys` `WebTransport` on `wasm32` | browser `WebTransport`, one session per client, opened lazily, ref-counted, 5 s linger; not available on Node (falls back to WS) | Flutter native: the Rust client through `cratestack-client-flutter` (flutter_rust_bridge); Flutter web: JS interop to the browser API; pure Dart VM: falls back to WS |
 | WS | `ws` feature: `tokio-tungstenite` natively, `web-sys` on `wasm32` | one shared socket per client, opened lazily, ref-counted, closed after the last unsubscribe plus a 5 s linger | `web_socket_channel` |
 | SSE | `reqwest` byte stream (existing CBOR-seq decoder's sibling) | `fetch` + SSE parser (not `EventSource`: headers) | Dio response stream |
 | Framework layer | — | swr `useSubscription`, react-query `useSubscription` + `useLiveQuery` (§2.1 loop, invalidates the query on each event or replaces in place by key) | riverpod `StreamProvider.autoDispose` |
@@ -502,18 +669,21 @@ One contract in each language: **subscribe → `Ready` → items → end or erro
 TypeScript transports plug in as `RpcStreamLink` terminals, reusing the frame contract
 streaming-rpc-links.md §4 already settled (`{kind: "output"} | {kind: "error"}`). Logger and auth
 links therefore work on subscriptions without a third link type. `include_client_schema!` (the client
-role) generates the Rust surface. `cratestack-client` gains the `ws` feature. Neither pulls `axum`, so
-the `facade-disjointness` CI assertion is unchanged.
+role) generates the Rust surface. `cratestack-client` gains the `ws` and `webtransport` features.
+Neither pulls `axum`, so the `facade-disjointness` CI assertion is unchanged. `@datagram` ops
+(§6a.7) surface as `LossySubscription<T>` in every language.
 
 ## 9. Server wiring and gating
 
 - **Cargo:** a `ws` feature on `cratestack-axum` (enables `axum/ws`), forwarded by `cratestack-pg`
-  and `cratestack-api`, and on `cratestack-client-rust`/`cratestack-client`. SSE needs no feature —
-  it ships today.
-- **Schema:** `extension websocket { }`, following extensions.md's three-layer rule: the schema
-  declares participation, a same-named Cargo feature gates the code, and declaring one without the
-  other is a compile error, never a silent no-op. Decision O4 is whether WS should instead be
-  generated whenever the feature is on.
+  and `cratestack-api`, and on `cratestack-client-rust`/`cratestack-client`. A `webtransport` feature
+  on the same facades and client crates pulls in `cratestack-webtransport` (server) or its client
+  half. Without it, no QUIC dependency enters the graph. SSE needs no feature — it ships today.
+- **Schema:** `extension websocket { }` and `extension webtransport { }`, following extensions.md's
+  three-layer rule: the schema declares participation, a same-named Cargo feature gates the code,
+  and declaring one without the other is a compile error, never a silent no-op. Decision O4 is
+  whether they should instead be generated whenever the feature is on. `@datagram` requires
+  `extension webtransport`.
 - **Backplane:** imperative, at router construction, like every other store:
   `rpc_router(…).with_backplane(PgNotifyBackplane::new(pool.clone()))`. Defaults are listed in §4.1;
   decision O6.
@@ -524,11 +694,15 @@ the `facade-disjointness` CI assertion is unchanged.
 ## 10. Observability
 
 One span per subscription (`cratestack_operation = "subscription"`, `cratestack_op_id`, principal,
-binding), closed with `delivered`, `dropped_by_policy`, and `end_reason` set to one of `cancel`,
-`disconnect`, `lagged`, `resync`, `stream_end`, `error`, `expired`. The metrics are an active-subscription
+binding: `sse` | `ws` | `webtransport`), closed with `delivered`, `dropped_by_policy`, and
+`end_reason` set to one of `cancel`, `disconnect`, `lagged`, `resync`, `stream_end`, `error`,
+`expired`. WebTransport sessions add QUIC statistics: RTT, lost packets, migrations, datagrams
+dropped for size. The client reports which binding `auto` settled on, so operators can see how much
+traffic actually falls back. The metrics are an active-subscription
 gauge per op, lag and resync counters, refetch-query counts for class B, and backplane listener
 reconnects. A lag counter that keeps rising is the operator's signal to raise the buffer or switch
-to Redis.
+to Redis. A migration count of zero on mobile-heavy traffic means the load balancer is not routing
+by connection ID (§6a.6).
 
 ## 11. Slices
 
@@ -543,11 +717,15 @@ cratestack-skills companions (CLAUDE.md, "Docs and skills parity").
 | S3 | **Model feed input + REST.** `where`/`operations`/`fields`; `GET /<plural>/$subscribe`; lift the `transport rpc` requirement. | S2 |
 | S3b | **Class-B refetch** with auth-equivalence grouping; tombstones per O2. | S3 |
 | S4 | **Subscription procedures + topics.** Grammar, handler trait, SSE dispatch on both transports, `topic` codegen, `publish_in_tx`. | S2 |
-| S5 | **WebSocket binding** (subscriptions only): upgrade and `Init` auth, Origin, limits, keepalive, `extension websocket`. | S3, S4 |
-| S6 | **Clients**: Rust, TS (links, swr, react-query), Dart (riverpod); an `examples/realtime-chat` exercising topics, a model feed and both bindings; docs and skills. | S5 |
-| S7 | Later, each gated on a concrete case: `RedisBackplane`, `@topic` shorthand, filter-exit events (O3), unary over WS (§6.7). | — |
+| S5a | **Transport-neutral dispatcher** (§6.1): extract `subscription_dispatch` out of the axum handler; SSE becomes its first adapter, with no wire change. Byte-stream frame codec (CBOR-seq / NDJSON) shared by clients (§6a.3). | S3, S4 |
+| S5 | **WebSocket binding** (subscriptions only): upgrade and `Init` auth, Origin, limits, keepalive, `extension websocket`. | S5a |
+| S5b | **WebTransport binding.** Starts with a time-boxed interop spike: each O8 candidate against current Chrome, Firefox and Safari (Playwright drives all three) on draft negotiation, protocol negotiation, datagrams, migration. Then `cratestack-webtransport` (L4) with the `WtAcceptor` seam, session, control stream, stream-per-subscription adapter, CONNECT/`Init` auth, Origin, 0-RTT refusal, limits, `extension webtransport`, dev certificates via `serverCertificateHashes`. CI: a browser interop job, and a multi-replica test with a write on A observed over WebTransport on B. | S5a; independent of S5, so S5 and S5b can land in either order |
+| S5c | **`@datagram` subscriptions** (§6a.7). | S5b |
+| S6 | **Clients**: Rust, TS (links, swr, react-query), Dart (riverpod; Flutter native over the Rust client); `transport: "auto"` WT → WS → SSE; an `examples/realtime-chat` exercising topics, a model feed and all three bindings, including a forced-fallback test with UDP blocked; docs (including §6a.6's deployment requirements) and skills. | S5, S5b |
+| S7 | Later, each gated on a concrete case: `RedisBackplane`, `@topic` shorthand, filter-exit events (O3), unary over WS/WT (§6.7). | — |
 
-S6 is listed last for dependency order only. Each server slice's PR should also carry the
+Because WebTransport is a production requirement, S5b may go ahead of S5. The only thing they share
+is S5a. S6 is listed last for dependency order only. Each server slice's PR should also carry the
 smallest client change that lets its integration test run through a generated client, not raw HTTP.
 
 ## 12. Decisions for the maintainer
@@ -566,7 +744,14 @@ smallest client change that lets its integration test run through a generated cl
   listener needs a direct connection, configurable separately).
 - **O7. Browser auth**: the `Init` frame (proposed) versus short-lived signed upgrade tickets
   (`POST /rpc/ws-ticket` → one-use token in the URL), which some deployments prefer for
-  load-balancer-level auth.
+  load-balancer-level auth. The answer applies to WS and WebTransport alike.
+- **O8. WebTransport implementation**: `wtransport`, `web-transport-quinn` or `h3-webtransport`,
+  behind the §6a.5 seam. No recommendation before S5b's spike: the deciding factor is interop with
+  the browser versions your users actually run, which has to be measured, not read off a README.
+- **O9. `@datagram`** (§6a.7): ship with S5b, or keep it for when the app has a lossy use case.
+- **O10. Load balancer target**: document QUIC-LB connection-ID routing as required (sessions survive
+  network changes) or as recommended (4-tuple routing works, and a network change becomes a clean
+  resubscribe).
 
 ## 13. Alternatives considered
 
@@ -574,6 +759,17 @@ smallest client change that lets its integration test run through a generated cl
   for what SSE cannot do: many subscriptions on HTTP/1.1 (the six-connection cap), one radio-friendly
   socket on mobile, client-to-server control (`Cancel`, credential refresh) without a new request,
   and binary CBOR frames.
+- **WebTransport only, no WS.** Rejected: networks that block UDP 443 and older Safari would have no
+  binding at all apart from SSE. WS is the fallback that keeps one multiplexed socket for those
+  clients.
+- **WebTransport through an HTTP/3-capable reverse proxy instead of in-process.** Would keep a single
+  listener in the app, but no common proxy forwards WebTransport today (§6a.6). The in-process
+  listener behind a UDP L4 balancer is what works now. If proxy support arrives, the binding is
+  unchanged: only the listener moves.
+- **Map subscriptions onto WebTransport unidirectional streams.** A server-opened unidirectional
+  stream per subscription saves the client's half of the stream, but leaves no place for the
+  `Request`, and cancel needs a second signal. A client-opened bidirectional stream carries the
+  request, the response and the cancel on one stream.
 - **Adopt the `graphql-ws` or tRPC protocol.** A ready-made client ecosystem, but they bring a
   second envelope next to §2.3's, which every CrateStack client already speaks for batch and stream.
   The `Init`/`Ready` handshake borrows `graphql-ws`'s `connection_init`/`connection_ack` idea without
