@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use cratestack_core::{CratestackContext, Value};
 
@@ -38,7 +38,10 @@ pub(crate) fn session_key(principal: Option<&str>, remote: IpAddr) -> String {
     }
 }
 
-/// Open sessions per key, shared by every session of one server.
+/// Open sessions per key, shared by every session of one server. A
+/// poisoned lock is recovered rather than propagated: the guarded state is
+/// a counter no panic can leave half-updated, and propagating would turn one
+/// panicked task into a refusal of every later session.
 #[derive(Debug, Default)]
 pub(crate) struct SessionRegistry {
     open: Mutex<HashMap<String, usize>>,
@@ -54,7 +57,7 @@ pub(crate) struct SessionSlot {
 
 impl SessionRegistry {
     pub(crate) fn admit(self: &Arc<Self>, key: String, limit: usize) -> Option<SessionSlot> {
-        let mut open = self.open.lock().expect("session registry poisoned");
+        let mut open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
         let count = open.entry(key.clone()).or_default();
         if *count >= limit {
             return None;
@@ -73,7 +76,7 @@ impl Drop for SessionSlot {
             .registry
             .open
             .lock()
-            .expect("session registry poisoned");
+            .unwrap_or_else(PoisonError::into_inner);
         if let Some(count) = open.get_mut(&self.key) {
             *count -= 1;
             if *count == 0 {

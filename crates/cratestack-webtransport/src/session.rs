@@ -166,8 +166,9 @@ async fn authenticate<A: AuthProvider>(
     connect: &Connect,
     init_headers: &BTreeMap<String, String>,
 ) -> Result<CratestackContext, CratestackError> {
+    let from_init;
     let headers = if init_headers.is_empty() {
-        connect.headers.clone()
+        &connect.headers
     } else {
         let mut headers = HeaderMap::new();
         for (name, value) in init_headers {
@@ -180,14 +181,15 @@ async fn authenticate<A: AuthProvider>(
             })?;
             headers.append(name, value);
         }
-        headers
+        from_init = headers;
+        &from_init
     };
     let extensions = http::Extensions::new();
     let request = RequestContext {
         method: "CONNECT",
         path: &connect.path,
         query: connect.query.as_deref(),
-        headers: &headers,
+        headers,
         body: &[],
         extensions: &extensions,
     };
