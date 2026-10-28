@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+### An `AuthProvider` refusal can shape its response: extra members and `WWW-Authenticate` (#1208)
+
+**What was missing.** A provider could only refuse with `CratestackError::Unauthorized` or
+`Forbidden`, so every refusal reached the client as the same `UNAUTHORIZED` /
+`unauthenticated` code with a message. A client that must tell "renew your credential and retry
+once" from "your key is gone, sign out" could not. Device-signed sessions classify refusals by an
+`error` member, and OAuth resource servers by `WWW-Authenticate`. Such a provider had to verify
+and refuse in a tower layer in front of the generated router.
+
+**What changed.**
+
+- **`AuthRefusal`** (`cratestack::AuthRefusal`), turned into the new
+  `CratestackError::AuthRefused` by `refusal.into_error()`. There is deliberately no
+  `From<AuthRefusal> for CratestackError`: a second `From` impl on `CratestackError` would make
+  every `?` whose error type was inferred through `From<T> for T` ambiguous (E0283), in generated
+  code and in an app's code alike.
+  - `AuthRefusal::unauthenticated(message)` is a 401 and `AuthRefusal::forbidden(message)` a 403.
+    The codes stay `UNAUTHORIZED` / `FORBIDDEN`, and on RPC `unauthenticated` /
+    `permission_denied`, so existing clients read a refusal as before.
+  - `.with_member(name, value)` adds a top-level envelope member next to `code` and `message`.
+    The names `code`, `message` and `details` are ignored (`RESERVED_ENVELOPE_MEMBERS`).
+  - `.with_details(value)` sets `details`.
+  - `.with_challenge(value)` adds a `WWW-Authenticate` header. A value that is not printable
+    ASCII is ignored.
+- **The envelopes carry the members.** `CratestackErrorResponse` and `RpcErrorBody` gain a public
+  `extra` map. It is written after `code`, `message` and `details`, and it collects the unknown
+  members of an envelope read from the wire.
+- **Same on both transports.** REST, RPC unary and RPC batch send the same status, members and
+  challenges. A batch refusal still answers the whole batch, since the envelope is authenticated
+  once. The RPC binding's re-encoding of a handler's error keeps the `WWW-Authenticate` header.
+  The SSE and middleware error paths attach it too.
+- **No byte changes elsewhere.** Both envelopes' serde is now written by hand: always a
+  known-length map, never `#[serde(flatten)]`. An envelope without extra members encodes byte
+  for byte as before, in JSON and in CBOR (`cratestack-codec-cbor/tests/error_envelope_bytes.rs`).
+
+**Migrating.** Code that builds `CratestackErrorResponse { .. }` or `RpcErrorBody { .. }` with a
+struct literal must add `extra: Default::default()` (both now implement `Default`, so
+`..Default::default()` works too). In `cratestack-client-rust`, `ClientError::Remote`'s `error`
+is now `Option<Box<CratestackErrorResponse>>`: field access through it is unchanged, but code that
+builds the variant wraps the envelope in `Box::new`, and a pattern that names the envelope's fields
+inside `Some(..)` matches on `Some(boxed)` and then reads `boxed.code`. Inline, the larger envelope
+made every `Result<_, ClientError>` trip `clippy::result_large_err`. Code that matches on
+`CratestackError` already has a wildcard arm (the enum is `#[non_exhaustive]`). Providers that
+return `Unauthorized` / `Forbidden` are unchanged.
+
+Not in this change: `cratestack-sync` and `cratestack-mcp` still render a refusal their own way.
+That, and the principal contract, are the rest of #1243.
+
 ## 0.17.0 (2026-10-28)
 
 ### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)

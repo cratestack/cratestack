@@ -3,7 +3,7 @@
 //! response carries ([`cratestack_error_code_to_rpc_code`]). The two must
 //! agree; `cratestack-axum`'s `tests_error.rs` checks every variant.
 
-use crate::error::CratestackError;
+use crate::error::{AuthRefusalKind, CratestackError};
 
 /// Map a [`CratestackError`] to its stable RPC code (gRPC-style snake_case).
 pub const fn rpc_code(error: &CratestackError) -> &'static str {
@@ -31,6 +31,12 @@ pub const fn rpc_code(error: &CratestackError) -> &'static str {
         // limit" (google.rpc.Code.RESOURCE_EXHAUSTED = 8). New with
         // cratestack#846's `TooManyRequests`; no prior variant mapped here.
         CratestackError::TooManyRequests(_) => "resource_exhausted",
+        // cratestack#1208: the same codes as `Unauthorized` / `Forbidden`,
+        // so a client reads a refusal the way it always has.
+        CratestackError::AuthRefused(refusal) => match refusal.kind() {
+            AuthRefusalKind::Unauthenticated => "unauthenticated",
+            AuthRefusalKind::Forbidden => "permission_denied",
+        },
     }
 }
 

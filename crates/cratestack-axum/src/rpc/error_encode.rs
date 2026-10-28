@@ -33,6 +33,7 @@ where
     let body = RpcErrorBody::from_cratestack(error);
     let status = error.status_code();
     let response = encode_rpc_value_response(codec, headers, status, body);
+    let response = crate::auth_challenge::attach(response, error.auth_challenges());
     crate::idempotency::with_tag(crate::idempotency::unrecorded_tag(error), response)
 }
 
@@ -71,6 +72,9 @@ where
     C: HttpTransport,
 {
     let status = response.status();
+    // The refusal's `WWW-Authenticate` (cratestack#1208) rides on the
+    // handler's response; the re-encoded one below must keep it.
+    let challenge_headers = response.headers().clone();
     let body_bytes = match axum::body::to_bytes(
         response.into_body(),
         cratestack_core::MAX_RESPONSE_REBUFFER_BYTES,
@@ -101,7 +105,8 @@ where
         }
     };
 
-    encode_rpc_value_response(codec, headers, status, rpc_body)
+    let response = encode_rpc_value_response(codec, headers, status, rpc_body);
+    crate::auth_challenge::copy(&challenge_headers, response)
 }
 
 fn encode_rpc_value_response<C, T>(

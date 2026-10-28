@@ -58,6 +58,7 @@ async fn seal_value_reproduces_every_vector() {
         code: "not_found".to_owned(),
         message: "payment not found".to_owned(),
         details: None,
+        extra: Default::default(),
     };
     let mut checked = 0;
     for case in file["cases"].as_array().expect("cases") {

@@ -56,9 +56,11 @@ where
         Err(error) => {
             let (error, tag) = crate::idempotency::answered(error);
             let status = error.status_code();
+            let challenges = crate::auth_challenge::challenges_of(&error);
             let body = error.into_response();
             let response =
                 encode_codec_response(codec, status, &body).unwrap_or_else(fallback_error_response);
+            let response = crate::auth_challenge::attach(response, &challenges);
             crate::idempotency::with_tag(tag, response)
         }
     }

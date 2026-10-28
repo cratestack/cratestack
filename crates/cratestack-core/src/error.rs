@@ -10,9 +10,10 @@ use std::borrow::Cow;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use crate::value::Value;
-
 mod aborted;
+mod auth_refusal;
+mod cuid_check;
+mod response;
 // Doctest-only: `AbortOwnership::Claimed` cannot be forged from outside.
 #[cfg(doctest)]
 mod aborted_doctests;
@@ -20,15 +21,14 @@ mod aborted_doctests;
 mod tests;
 #[cfg(test)]
 mod tests_aborted;
+#[cfg(test)]
+mod tests_auth_refusal;
 
 pub use aborted::{AbortOwnership, TransactionAbort};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CratestackErrorResponse {
-    pub code: String,
-    pub message: String,
-    pub details: Option<Value>,
-}
+pub use auth_refusal::{AuthRefusal, AuthRefusalKind, RESERVED_ENVELOPE_MEMBERS};
+pub use cuid_check::parse_cuid;
+pub use response::CratestackErrorResponse;
+pub(crate) use response::visible_extra_members;
 
 /// Structured information extracted from a driver-level database error.
 ///
@@ -136,6 +136,13 @@ pub enum CratestackError {
     /// than the layer inventing a second body shape.
     #[error("too many requests: {0}")]
     TooManyRequests(String),
+    /// 401 or 403 — an [`AuthProvider`](crate::AuthProvider) refused the
+    /// request and chose how the refusal reads: extra envelope members,
+    /// `details` and `WWW-Authenticate` challenges (cratestack#1208). The
+    /// code stays `UNAUTHORIZED` or `FORBIDDEN`. Built by
+    /// [`AuthRefusal::into_error`].
+    #[error("auth refused: {}", .0.message())]
+    AuthRefused(AuthRefusal),
 }
 
 impl CratestackError {
@@ -156,6 +163,10 @@ impl CratestackError {
             Self::Internal(_) => "INTERNAL_ERROR",
             Self::Unavailable(_) => "UNAVAILABLE",
             Self::TooManyRequests(_) => "TOO_MANY_REQUESTS",
+            Self::AuthRefused(refusal) => match refusal.kind() {
+                AuthRefusalKind::Unauthenticated => "UNAUTHORIZED",
+                AuthRefusalKind::Forbidden => "FORBIDDEN",
+            },
         }
     }
 
@@ -177,6 +188,10 @@ impl CratestackError {
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::TooManyRequests(_) => StatusCode::TOO_MANY_REQUESTS,
+            Self::AuthRefused(refusal) => match refusal.kind() {
+                AuthRefusalKind::Unauthenticated => StatusCode::UNAUTHORIZED,
+                AuthRefusalKind::Forbidden => StatusCode::FORBIDDEN,
+            },
         }
     }
 
@@ -207,6 +222,7 @@ impl CratestackError {
             // `db_err.message()`).
             Self::ConflictTyped(info) => Cow::Borrowed(info.detail.as_str()),
             Self::TransactionAborted(abort) => Cow::Borrowed(abort.info.detail.as_str()),
+            Self::AuthRefused(refusal) => Cow::Borrowed(refusal.message()),
         }
     }
 
@@ -245,6 +261,7 @@ impl CratestackError {
                     Some(info.detail.as_str())
                 }
             }
+            Self::AuthRefused(refusal) => Some(refusal.message()).filter(|m| !m.is_empty()),
         }
     }
 
@@ -276,54 +293,36 @@ impl CratestackError {
         }
     }
 
-    pub fn into_response(self) -> CratestackErrorResponse {
-        let code = self.code().to_owned();
-        let message = self.public_message().into_owned();
-        CratestackErrorResponse {
-            code,
-            message,
-            details: None,
+    /// The `WWW-Authenticate` header values the response carries: an
+    /// [`AuthRefusal`]'s challenges, and none for every other error.
+    pub fn auth_challenges(&self) -> &[String] {
+        match self {
+            Self::AuthRefused(refusal) => refusal.challenges(),
+            _ => &[],
         }
     }
-}
 
-pub fn parse_cuid(value: &str) -> Result<String, CratestackError> {
-    if is_valid_cuid(value) {
-        Ok(value.to_owned())
-    } else {
-        Err(CratestackError::BadRequest(format!(
-            "invalid cuid '{}': expected a lowercase alphanumeric id (2-32 chars)",
-            value,
-        )))
+    pub fn into_response(self) -> CratestackErrorResponse {
+        self.clone_envelope()
     }
-}
 
-/// Minimum accepted length for a `Cuid` scalar value.
-///
-/// cuid v1 ids are at least 2 characters (the `'c'` prefix plus at least one
-/// more character); cuid2 ids can be as short as 2 characters too, so this
-/// bound covers both formats.
-const CUID_MIN_LEN: usize = 2;
-
-/// Maximum accepted length for a `Cuid` scalar value.
-///
-/// cuid2 defaults to 24 characters but its length is configurable by the
-/// generator; 32 gives generous headroom above the default while still
-/// rejecting pathological/oversized input.
-const CUID_MAX_LEN: usize = 32;
-
-/// Validates that `value` is a plausible cuid, accepting both the legacy
-/// cuid v1 shape (`'c'`-prefixed) and the current cuid2 shape (no fixed
-/// prefix; the first character is a uniform random lowercase letter).
-///
-/// This is intentionally a format guard, not a full cuid2
-/// checksum/fingerprint verification: lowercase alphanumeric only,
-/// non-empty, bounded length.
-fn is_valid_cuid(value: &str) -> bool {
-    if !(CUID_MIN_LEN..=CUID_MAX_LEN).contains(&value.len()) {
-        return false;
+    /// The envelope [`Self::into_response`] returns, without consuming
+    /// the error (the RPC body is built from a borrowed error).
+    pub(crate) fn clone_envelope(&self) -> CratestackErrorResponse {
+        let code = self.code().to_owned();
+        let message = self.public_message().into_owned();
+        match self {
+            Self::AuthRefused(refusal) => CratestackErrorResponse {
+                code,
+                message,
+                details: refusal.details().cloned(),
+                extra: refusal.members().clone(),
+            },
+            _ => CratestackErrorResponse {
+                code,
+                message,
+                ..Default::default()
+            },
+        }
     }
-    value
-        .chars()
-        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
 }

@@ -99,8 +99,8 @@ pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
 pub use error::{
-    AbortOwnership, CratestackError, CratestackErrorResponse, DbErrorInfo, TransactionAbort,
-    parse_cuid,
+    AbortOwnership, AuthRefusal, AuthRefusalKind, CratestackError, CratestackErrorResponse,
+    DbErrorInfo, RESERVED_ENVELOPE_MEMBERS, TransactionAbort, parse_cuid,
 };
 pub use events::{
     CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEvent, ModelEventKind,
