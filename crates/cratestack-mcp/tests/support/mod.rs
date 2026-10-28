@@ -8,6 +8,7 @@
 
 pub mod client;
 pub mod counting;
+pub mod device;
 pub mod failing;
 pub mod http_app;
 pub mod owned;

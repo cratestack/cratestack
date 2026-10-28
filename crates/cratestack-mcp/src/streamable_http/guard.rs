@@ -7,11 +7,13 @@
 //! Origin not allowed                 -> 403   (before any MCP handling)
 //! not POST                           -> 405
 //! `access_token` in the query        -> 400 + WWW-Authenticate (strict.rs)
-//! no bearer token                    -> 401 + WWW-Authenticate
+//! two Authorization / bare `Bearer`   -> 400 + WWW-Authenticate
+//! no credential (presence.rs)        -> 401 + WWW-Authenticate
 //! body over 4 MiB                    -> 413
 //! AuthProvider refuses / no identity -> 401 (403, 5xx) + WWW-Authenticate
 //! a mirrored MCP header sent twice   -> 400 / -32020 (strict.rs)
-//! Authorization removed, caller attached to the request, then rmcp:
+//! Authorization and the credential headers removed, caller attached to
+//! the request, then rmcp:
 //!   Host, Origin again, MCP-Protocol-Version / Mcp-Method / Mcp-Name
 //!   against the body (400 / -32020), then the handler
 //! ```
@@ -20,8 +22,9 @@
 //! out of JSON-RPC, so an unauthenticated request never reaches MCP parsing
 //! (cratestack#1039's implementation note).
 //!
-//! **The token is not forwarded.** The `Authorization` header is removed
-//! before `rmcp` sees the request, so neither `rmcp` nor a tool handler nor
+//! **The token is not forwarded.** The `Authorization` header (and every
+//! header `CredentialPresence` names) is removed before `rmcp` sees the
+//! request, so neither `rmcp` nor a tool handler nor
 //! anything that logs a request downstream ever holds it. The provider saw
 //! it and turned it into a `CratestackContext`, and that context is all
 //! the call runs with.
@@ -38,9 +41,10 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 
-use super::auth::{Bearer, authenticate, bearer, missing_token};
+use super::auth::{Bearer, Credential, authenticate, bearer, missing_token};
 use super::caller::hand_over;
 use super::origin::AllowedOrigins;
+use super::presence::CredentialPresence;
 use super::reply::{self, Reply};
 use super::resource::Resolved;
 use super::strict;
@@ -59,6 +63,7 @@ pub(crate) struct Shared<T: McpTools, A> {
     pub(crate) provider: A,
     pub(crate) origins: AllowedOrigins,
     pub(crate) resource: Resolved,
+    pub(crate) presence: CredentialPresence,
 }
 
 /// The MCP endpoint, as a tower service: mount it with
@@ -99,16 +104,11 @@ impl<T: McpTools, A: AuthProvider> Shared<T, A> {
             let header = self.resource.challenge(Some("invalid_request"));
             return reply::challenge(StatusCode::BAD_REQUEST, header);
         }
-        let token = match bearer(request.headers()) {
-            Bearer::Token(token) => token.to_owned(),
-            Bearer::Missing => return missing_token(&self.resource),
-            Bearer::Malformed => {
-                let header = self.resource.challenge(Some("invalid_request"));
-                return reply::challenge(StatusCode::BAD_REQUEST, header);
-            }
-        };
-
         let (mut parts, body) = request.into_parts();
+        let credential = match self.credential(&parts) {
+            Ok(credential) => credential,
+            Err(refusal) => return *refusal,
+        };
         let body = match Limited::new(body, MAX_BODY_BYTES).collect().await {
             Ok(collected) => collected.to_bytes(),
             Err(error) if error.downcast_ref::<LengthLimitError>().is_some() => {
@@ -116,19 +116,48 @@ impl<T: McpTools, A: AuthProvider> Shared<T, A> {
             }
             Err(_) => return reply::bad_body(),
         };
-        let caller = match authenticate(&self.provider, &self.resource, &parts, &body, &token).await
-        {
-            Ok(caller) => caller,
-            Err(refusal) => return *refusal,
-        };
+        let caller =
+            match authenticate(&self.provider, &self.resource, &parts, &body, &credential).await {
+                Ok(caller) => caller,
+                Err(refusal) => return *refusal,
+            };
         if let Some(name) = strict::repeated_mirror(&parts.headers) {
             return reply::header_mismatch(format!("the {name} header appears more than once"));
         }
 
         hand_over(&mut parts, caller);
+        self.presence.strip(&mut parts);
         self.inner
             .handle(Request::from_parts(parts, Full::new(body)))
             .await
+    }
+}
+
+impl<T: McpTools, A> Shared<T, A> {
+    /// The request's credential under the configured rule, or the 400
+    /// (an `Authorization` the guard will not guess at, whatever the rule)
+    /// or 401 that refuses it before the body is read.
+    fn credential(&self, parts: &http::request::Parts) -> Result<Credential, Box<Reply>> {
+        let token = match bearer(&parts.headers) {
+            Bearer::Token(token) => Some(token),
+            Bearer::Missing => None,
+            Bearer::Malformed => {
+                let header = self.resource.challenge(Some("invalid_request"));
+                return Err(Box::new(reply::challenge(StatusCode::BAD_REQUEST, header)));
+            }
+        };
+        if !self.presence.present(parts, token.is_some()) {
+            let reason = if self.presence.is_bearer() {
+                "no bearer token"
+            } else {
+                "no credential"
+            };
+            return Err(Box::new(missing_token(&self.resource, reason)));
+        }
+        Ok(Credential {
+            bearer: token.is_some(),
+            secrets: self.presence.secrets(parts, token),
+        })
     }
 }
 

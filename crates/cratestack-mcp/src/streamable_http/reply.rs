@@ -1,6 +1,6 @@
 //! The responses the guard gives before `rmcp` is reached: 403, 405, 400
-//! (a query token), 401, 413, a provider's 5xx, and 400 `-32020` for a
-//! repeated mirrored header (`strict.rs`).
+//! (a query token), 401, 413, a provider's 5xx or `AuthRefusal`, and 400
+//! `-32020` for a repeated mirrored header (`strict.rs`).
 //!
 //! Plain HTTP, not JSON-RPC, except the `-32020`, which MCP requires to be
 //! a JSON-RPC error. None of these requests reached MCP handling,
@@ -26,7 +26,11 @@ pub(crate) type Reply = Response<BoxBody<Bytes, Infallible>>;
 
 fn envelope(status: StatusCode, code: &str, message: &str) -> Reply {
     let body = serde_json::json!({ "code": code, "message": message, "details": null });
-    let mut reply = Response::new(Full::new(Bytes::from(body.to_string())).boxed());
+    json_reply(status, body.to_string())
+}
+
+fn json_reply(status: StatusCode, body: String) -> Reply {
+    let mut reply = Response::new(Full::new(Bytes::from(body)).boxed());
     *reply.status_mut() = status;
     reply
         .headers_mut()
@@ -91,6 +95,26 @@ pub(crate) fn challenge(status: StatusCode, header: HeaderValue) -> Reply {
     };
     let mut reply = envelope(status, code, message);
     reply.headers_mut().insert(WWW_AUTHENTICATE, header);
+    reply
+}
+
+/// An [`AuthRefusal`](cratestack_core::AuthRefusal)'s answer
+/// (cratestack#1243): its status, REST's full envelope (its `message`,
+/// `details` and extra members), the guard's `header` first, then the
+/// refusal's own challenges, each its own `WWW-Authenticate`, as REST sends
+/// them.
+pub(crate) fn refusal(error: CratestackError, header: HeaderValue) -> Reply {
+    let status = error.status_code();
+    let challenges = error.auth_challenges().to_vec();
+    let body = serde_json::to_string(&error.into_response()).unwrap_or_default();
+    let mut reply = json_reply(status, body);
+    let headers = reply.headers_mut();
+    headers.insert(WWW_AUTHENTICATE, header);
+    for challenge in challenges {
+        if let Ok(value) = HeaderValue::from_str(&challenge) {
+            headers.append(WWW_AUTHENTICATE, value);
+        }
+    }
     reply
 }
 

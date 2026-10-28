@@ -3,17 +3,26 @@
 //! Authentication is the application's existing [`AuthProvider`] — the
 //! same one its generated routes use — so sync adds no second identity
 //! system. Bodies are capped at `max_body_bytes` before decoding.
+//!
+//! A provider error reads as it does on REST (cratestack#1243): its public
+//! message, never an operator detail; 403 `forbidden` for a caller the
+//! provider knows and refuses, 500 `internal` for a provider that could not
+//! decide, and 401 `unauthenticated` for the rest. An
+//! [`AuthRefusal`](cratestack_core::AuthRefusal) also keeps its `details`
+//! and members in the body and its challenges as `WWW-Authenticate`.
 
 mod stream;
 
 use axum::Router;
 use axum::body::{Bytes, to_bytes};
 use axum::extract::{Request, State};
+use axum::http::HeaderValue;
 use axum::http::StatusCode;
+use axum::http::header::WWW_AUTHENTICATE;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use cratestack_core::{AuthProvider, CratestackContext, RequestContext};
+use cratestack_core::{AuthProvider, CratestackContext, CratestackError, RequestContext};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -96,11 +105,35 @@ impl<A: AuthProvider> HttpState<A> {
             body,
             extensions: &parts.extensions,
         };
-        self.auth.authenticate(&request).await.map_err(|error| {
-            let error: cratestack_core::CratestackError = error.into();
-            SyncError::new(SyncErrorCode::Unauthenticated, error.to_string())
-        })
+        self.auth
+            .authenticate(&request)
+            .await
+            .map_err(|error| refused(error.into()))
     }
+}
+
+/// A provider's error as the sync error body; see the module docs.
+fn refused(error: CratestackError) -> SyncError {
+    let status = error.status_code();
+    let code = if status.is_server_error() {
+        // The provider could not decide (a key server down): not the
+        // caller's fault, so no 401 that would send it to sign in again.
+        tracing::error!(error = %error, "sync: the auth provider failed");
+        SyncErrorCode::Internal
+    } else if status == StatusCode::FORBIDDEN {
+        SyncErrorCode::Forbidden
+    } else {
+        SyncErrorCode::Unauthenticated
+    };
+    let challenges = error.auth_challenges().to_vec();
+    // REST's envelope: its public message (an `Internal` detail stays in
+    // the log), and a refusal's `details` and members.
+    let envelope = error.into_response();
+    let mut body = SyncError::new(code, envelope.message);
+    body.details = envelope.details.map(Box::new);
+    body.extra = envelope.extra;
+    body.challenges = challenges;
+    body
 }
 
 pub(crate) fn respond<T: Serialize>(result: Result<T, SyncError>) -> Response {
@@ -110,11 +143,17 @@ pub(crate) fn respond<T: Serialize>(result: Result<T, SyncError>) -> Response {
     }
 }
 
-pub(crate) fn error_response(error: SyncError) -> Response {
+pub(crate) fn error_response(mut error: SyncError) -> Response {
     let status =
         StatusCode::from_u16(error.code.status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let retry_after = error.retry_after_secs;
+    let challenges = std::mem::take(&mut error.challenges);
     let mut response = (status, axum::Json(error)).into_response();
+    for challenge in challenges {
+        if let Ok(value) = HeaderValue::from_str(&challenge) {
+            response.headers_mut().append(WWW_AUTHENTICATE, value);
+        }
+    }
     if let Some(secs) = retry_after
         && let Ok(value) = secs.to_string().parse()
     {
