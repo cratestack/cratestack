@@ -40,6 +40,7 @@ pub mod rust_keywords;
 pub mod schema;
 pub mod schema_identity;
 pub mod store;
+pub mod subscription;
 pub mod transport;
 pub mod validators;
 pub mod value;
@@ -140,6 +141,7 @@ pub use store::{
     InMemoryStateStore, JsonFileStateStore, MAX_TTL_SECS, PersistedClientState, RateLimitConfig,
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
+pub use subscription::{SubscriptionDispatcher, SubscriptionOpen, SubscriptionStream};
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor, canonical_query,
     canonical_request_string,

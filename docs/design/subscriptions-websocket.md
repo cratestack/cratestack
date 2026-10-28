@@ -1,6 +1,8 @@
 # Subscriptions: a WebSocket binding, subscription procedures, and multi-replica delivery
 
-Status: **proposed** (2026-10-28). Nothing here is built. It extends — it does not replace —
+Status: **proposed** (2026-10-28). Built so far: the WebTransport binding runtime (§11 S5b, crate
+`cratestack-webtransport`), with the S5b interop spike's results recorded in §6a.5. Nothing else
+here is built yet. It extends — it does not replace —
 [rpc-transport.md](rpc-transport.md) §3.4 (the WebSocket binding, specified since 2026-05-15 and
 never built) and §3.4a (the SSE binding, shipped in cratestack#390).
 
@@ -408,13 +410,23 @@ carries an expiry, the server closes with 4401 at that instant unless a refresh 
 
 ### 6.4 Frames
 
-The §2.3 envelope — `Request`, `Response`, `StreamItem`, `StreamEnd`, `Cancel`, `Error` — plus two
-variants. The envelope is discriminated by which key is present, so new variants are additive:
+The §2.3 envelope plus two variants, `Init` and `Ready`. The envelope is discriminated by which key
+is present, so new variants are additive. The key names are the ones that already ship, not §2.3's
+older sketch (`in`/`out`): a request is the batch binding's `RpcRequest` (`id`, `op`, `input`), and
+items and errors are the SSE binding's `next`/`err` (`cratestack-axum/src/rpc/sse.rs`). *As built*
+in `cratestack-webtransport/src/frame.rs`:
 
 ```text
-Init  { id: 0, init: { headers: { <name>: <value> } } }     client → server
-Ready { id: u64, ready: {} }                                 server → client
+Init      { id: 0, init: { headers: { <name>: <value> } } }  client → server
+Request   { id: u64, op: string, input: <value> }             client → server
+Ready     { id: u64, ready: {} }                              server → client
+StreamItem{ id: u64, next: <value> }                          server → client
+StreamEnd { id: u64, end: {} }                                server → client
+Error     { id: u64, err: RpcErrorBody }                      server → client
 ```
+
+A `next` that is present but `null` is an item whose value is `null`. Presence decides the kind,
+never the value.
 
 `Ready{id: 0}` acknowledges `Init`. `Ready{id: n}` says subscription `n` is live: the §2.1 guarantee
 starts at this frame.
@@ -422,7 +434,7 @@ starts at this frame.
 One subscription's life:
 
 ```text
-C→S  Request    { id: 7, op: "procedure.roomMessages", in: { roomId: "r1" } }
+C→S  Request    { id: 7, op: "procedure.roomMessages", input: { roomId: "r1" } }
 S→C  Ready      { id: 7, ready: {} }                    | Error { id: 7, err } (policy, setup)
 S→C  StreamItem { id: 7, next: <ChatMessage> } …
 C→S  Cancel     { id: 7, cancel: {} }                   (optional)
@@ -509,6 +521,17 @@ client                                              server
 - **`id` stays in the frames.** That keeps the §2.3 codec byte-identical across bindings, so all
   three share one encoder and decoder. On WebTransport the stream routes, and an `id` that does not
   match the stream's `Request` is a protocol error (stream reset, code `0x02`).
+- **Found by the browser test, not the native one (as built).** Two shutdown details are invisible
+  to a native client and break Chromium:
+  - The server reads the client's half of a subscription stream to its FIN before releasing it.
+    Releasing it earlier sends `STOP_SENDING`, and a browser whose FIN for the `Request` has not
+    landed yet rejects its `writer.close()`. That happens reliably for a subscription that ends at
+    once.
+  - A session close waits until the close capsule is out (`web-transport-quinn` writes it from a
+    task it spawns). Returning first gives the browser "Connection lost" instead of the close code.
+
+  Refused CONNECTs (403/404/406) likewise hold the connection briefly, so the status arrives before
+  the connection closes.
 
 ### 6a.3 Framing and codec
 
@@ -541,11 +564,12 @@ WS and WebTransport share them.
   with the same same-origin default.
 - **0-RTT is refused** on this listener. Early data can be replayed, and the first bytes a client
   sends here are credentials (`Init`) or a policy-checked `Request`.
-- **Limits** reuse §6.6's table. Where the chosen crate exposes them, two are enforced by the
-  transport rather than by our code: subscriptions per session = the session's advertised
-  bidirectional-stream limit (64 + 1 for control), and the inbound frame cap = the per-stream
-  receive window. Our own checks stay in place regardless, so a crate that lacks these controls
-  weakens nothing. Keepalive is QUIC's own: PING
+- **Limits** reuse §6.6's table, enforced by our code. The QUIC bidirectional-stream limit is a
+  hard ceiling set **above** the subscription limit (twice it, plus the control and CONNECT
+  streams). *As built:* setting it equal to the limit made the client's next stream open wait
+  silently for credit, so the explicit `resource_exhausted` §6.6 promises could never be sent.
+  Frames are capped while still incomplete, so a client cannot make the server buffer an unbounded
+  frame. Keepalive is QUIC's own: PING
   every 15 s, idle timeout 30 s.
 - **Backpressure is not delegated to flow control.** A client that stops reading fills its stream's
   window. That must never block the backplane fan-out (§4.2) for everyone else, so the bounded
@@ -564,12 +588,35 @@ QUIC.
 - **QUIC/WebTransport implementation behind our own seam.** The protocol is still an IETF draft
   (draft-ietf-webtrans-http3-16, July 2026), and the Rust crates track drafts at different speeds.
   `cratestack-webtransport` defines a small internal `WtAcceptor`/`WtSession` seam and implements it
-  on one crate. Candidates are `wtransport`, `web-transport-quinn` and `h3-webtransport`; which one
-  is decision O8, settled by the interop spike in §11 S5b. A draft change then touches one module.
+  on one crate. A draft change then touches one module (*as built*: `src/transport.rs` is the only
+  file that names the crate).
+- **Decision O8, measured (2026-10-28): `web-transport-quinn` 0.13.5**, with its `ring` backend to
+  match the workspace's `rustls`. The spike ran one protocol against two servers from headless
+  Chromium 153 (Playwright, `serverCertificateHashes`, a page on `http://localhost`):
+
+  | Check | `web-transport-quinn` 0.13.5 | `wtransport` 0.7.2 |
+  |---|---|---|
+  | Session open, `Origin` visible on CONNECT | yes | yes |
+  | Subprotocol negotiation (`cratestack.rpc.v1+cbor`) | yes | **no**: the offer arrives as a raw `wt-available-protocols` header and is never answered |
+  | 100 items, then a clean FIN | yes | yes |
+  | Client cancel seen by the server | yes, code 0 | yes, but as the raw HTTP/3-mapped code `91141958510811` |
+  | Server `reset(7)` seen by the browser | `streamErrorCode: 7` | **`streamErrorCode: 0`** |
+  | 64 concurrent streams on one session | yes | yes |
+  | Datagram echo | yes (browser max 1024 B) | yes |
+  | Session close `(4401, reason)` seen by the browser | code and reason | **"Connection lost"**, no code |
+
+  `wtransport` fails the three things this design relies on: negotiation (§6a.3), stream reset codes
+  (§6a.2) and close codes (§6.3, §6.6). `h3-webtransport` was not measured. Its last release is
+  0.1.2 (May 2025). Firefox and Safari were not measured either: only Chromium was available.
+  Chromium still sends `sec-webtransport-http3-draft02: 1`, so browser and server meet on a
+  draft-era wire format. That is a reason to keep the seam, and to run the browser test (§11 S5b)
+  on every PR.
 - **Same handle, two listeners.** The generated server exposes
   `cratestack::webtransport::serve(endpoint_config, router_state)` next to the axum `Router`. Both
   share the `AuthProvider`, backplane, `OpExecutor` and schema handle, so one replica runs one
   backplane listener (§4.2) whichever bindings its clients use.
+  *As built:* `WebTransportServer::bind(WebTransportConfig, auth_provider, dispatcher)` and then
+  `serve()` / `serve_with_shutdown(signal)`. The generated `serve` helper comes with S5a.
 - **TLS.** The QUIC listener needs its own rustls `ServerConfig` (ALPN `h3`), built from the same
   certificate as the TCP listener. Certificate reload applies to both.
 - **Local development.** Browsers accept a self-signed certificate for WebTransport only through
@@ -577,6 +624,8 @@ QUIC.
   validity; S5b's spike confirms the exact key-type rules per browser).
   `cratestack run` and the examples generate one at startup and print its hash, and the TS client
   takes it as `webtransport: { certificateHashes }`.
+  *As built:* `DevCertificate::generate(hosts)` behind the crate's `dev-cert` feature. It returns
+  the chain, the key and the SHA-256 hash. Wiring it into `cratestack run` comes with S6.
 
 ### 6a.6 Running it in production
 
@@ -725,7 +774,21 @@ cratestack-skills companions (CLAUDE.md, "Docs and skills parity").
 | S7 | Later, each gated on a concrete case: `RedisBackplane`, `@topic` shorthand, filter-exit events (O3), unary over WS/WT (§6.7). | — |
 
 Because WebTransport is a production requirement, S5b may go ahead of S5. The only thing they share
-is S5a. S6 is listed last for dependency order only. Each server slice's PR should also carry the
+is S5a. S6 is listed last for dependency order only.
+
+**S5b status (as built, 2026-10-28).** Built:
+- the spike (§6a.5);
+- `cratestack-webtransport` with everything in S5b's row except the `extension webtransport`
+  gating;
+- `cratestack_core::SubscriptionDispatcher`, the S5a seam the binding drives;
+- a native-client integration suite;
+- the Chromium end-to-end check, `just test-webtransport-browser` (CI job `webtransport-browser`).
+
+Not built: the multi-replica test (it needs S2's backplane) and the schema-level `extension
+webtransport` gating, which lands with S5a's codegen. The binding is deliberately **not** wired into
+generated code yet. Generated wiring would expose today's model feeds over a second transport before
+S1's open-time policy exists, so it waits for S1 and S5a. Until then an application implements
+`SubscriptionDispatcher` by hand. Each server slice's PR should also carry the
 smallest client change that lets its integration test run through a generated client, not raw HTTP.
 
 ## 12. Decisions for the maintainer
@@ -745,9 +808,8 @@ smallest client change that lets its integration test run through a generated cl
 - **O7. Browser auth**: the `Init` frame (proposed) versus short-lived signed upgrade tickets
   (`POST /rpc/ws-ticket` → one-use token in the URL), which some deployments prefer for
   load-balancer-level auth. The answer applies to WS and WebTransport alike.
-- **O8. WebTransport implementation**: `wtransport`, `web-transport-quinn` or `h3-webtransport`,
-  behind the §6a.5 seam. No recommendation before S5b's spike: the deciding factor is interop with
-  the browser versions your users actually run, which has to be measured, not read off a README.
+- **O8. WebTransport implementation**: **decided for Chromium, `web-transport-quinn`** (§6a.5's
+  table). Still open: confirm on Firefox and Safari before relying on them in production.
 - **O9. `@datagram`** (§6a.7): ship with S5b, or keep it for when the app has a lossy use case.
 - **O10. Load balancer target**: document QUIC-LB connection-ID routing as required (sessions survive
   network changes) or as recommended (4-tuple routing works, and a network change becomes a clean
