@@ -2,33 +2,11 @@
 
 ## 0.17.0 (2026-10-28)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.16.0..HEAD at ce316ab7d61fa35269606e23609f2d5ac4001852 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- built-in now()/uuid()/cuid() defaults, registered database functions, per-dialect default DDL (#1209) (#1211)
-- sign and open standalone claim objects, with no freshness or replay check (#1231) (#1232)
-- explicit enum ordinals — design, and slice 1 (parse, check, refuse) (#1229)
-- ordinal enums, stored and sent as declared numbers (enum ordinals, slices 2–6) (#1230)
-
-#### Fixes
-
-- every @default works on the embedded runtime; literal defaults are typed (#1234) (#1237)
-- keep Prepare Release under the runner's disk limit (#1239)
-
-#### Chores
-
-- bump jsonschema from 0.58.6 to 0.60.0 (#1228)
-- bump expo-file-system from 58.0.9 to 58.0.10 in /examples/embedded-expo/app (#1216)
-- bump expo-modules-core in /examples/embedded-expo/app (#1199)
-- bump postcss (#1212)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares. The crates
+  this package builds on changed only additively: `cratestack-cose` gained
+  standalone signed claim objects (cratestack#1231), which this package does
+  not expose, and `cratestack-codec-cbor`'s encoding is unchanged.
 
 ## 0.16.0 (2026-10-23)
 
