@@ -122,26 +122,4 @@ impl CratestackError {
             },
         }
     }
-
-    /// The envelope [`Self::into_response`] returns, without consuming
-    /// the error: `RpcErrorBody::from_cratestack` builds the RPC body from a
-    /// borrowed error, so a refusal's members are copied here, and only
-    /// on that path.
-    pub(crate) fn clone_envelope(&self) -> CratestackErrorResponse {
-        let code = self.code().to_owned();
-        let message = self.public_message().into_owned();
-        match self {
-            Self::AuthRefused(refusal) => CratestackErrorResponse {
-                code,
-                message,
-                details: refusal.details().cloned(),
-                extra: refusal.members().clone(),
-            },
-            _ => CratestackErrorResponse {
-                code,
-                message,
-                ..Default::default()
-            },
-        }
-    }
 }

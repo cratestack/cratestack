@@ -39,22 +39,22 @@ pub struct RpcErrorBody {
 
 impl RpcErrorBody {
     pub fn from_cratestack(error: &CratestackError) -> Self {
-        let code = rpc_code(error).to_owned();
-        let CratestackErrorResponse {
-            message,
-            details,
-            extra,
-            ..
-        } = error.clone_envelope();
-        Self {
-            code,
-            message,
-            details: details.map(cratestack_value_to_json),
-            extra: extra
-                .into_iter()
-                .map(|(name, value)| (name, cratestack_value_to_json(value)))
-                .collect(),
+        let mut body = Self {
+            code: rpc_code(error).to_owned(),
+            message: error.public_message().into_owned(),
+            ..Self::default()
+        };
+        // A refusal's `details` and members are serialized straight from
+        // the borrowed error, never copied as `Value`s first.
+        if let CratestackError::AuthRefused(refusal) = error {
+            body.details = refusal.details().map(cratestack_value_to_json);
+            body.extra = refusal
+                .members()
+                .iter()
+                .map(|(name, value)| (name.to_owned(), cratestack_value_to_json(value)))
+                .collect();
         }
+        body
     }
 
     /// Translate a REST-style [`CratestackErrorResponse`] into the RPC
@@ -71,17 +71,17 @@ impl RpcErrorBody {
         Self {
             code: cratestack_error_code_to_rpc_code(&code).to_owned(),
             message,
-            details: details.map(cratestack_value_to_json),
+            details: details.as_ref().map(cratestack_value_to_json),
             extra: extra
                 .into_iter()
-                .map(|(name, value)| (name, cratestack_value_to_json(value)))
+                .map(|(name, value)| (name, cratestack_value_to_json(&value)))
                 .collect(),
         }
     }
 }
 
-fn cratestack_value_to_json(value: crate::Value) -> serde_json::Value {
-    serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
+fn cratestack_value_to_json(value: &crate::Value) -> serde_json::Value {
+    serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
 }
 
 impl Serialize for RpcErrorBody {
