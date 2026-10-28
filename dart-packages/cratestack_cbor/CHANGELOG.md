@@ -1,5 +1,13 @@
 ## Unreleased
 
+## 0.17.0 (2026-10-28)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares. The crates
+  this package builds on changed only additively: `cratestack-cose` gained
+  standalone signed claim objects (cratestack#1231), which this package does
+  not expose, and `cratestack-codec-cbor`'s encoding is unchanged.
+
 ## 0.16.0 (2026-10-23)
 
 - `decodeJson` now refuses bytes after the first CBOR item, on the native

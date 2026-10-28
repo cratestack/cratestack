@@ -44,6 +44,8 @@ codes, and lost session close codes (design §6a.5).
 - New `just test-webtransport-browser` and CI job `webtransport-browser`: headless Chromium, end
   to end, against the binding.
 
+## 0.17.0 (2026-10-28)
+
 ### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)
 
 **What was wrong.** On the embedded runtime, every `@default` except `now()`, `uuid()` and
