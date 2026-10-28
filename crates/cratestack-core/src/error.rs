@@ -292,37 +292,4 @@ impl CratestackError {
             _ => None,
         }
     }
-
-    /// The `WWW-Authenticate` header values the response carries: an
-    /// [`AuthRefusal`]'s challenges, and none for every other error.
-    pub fn auth_challenges(&self) -> &[String] {
-        match self {
-            Self::AuthRefused(refusal) => refusal.challenges(),
-            _ => &[],
-        }
-    }
-
-    pub fn into_response(self) -> CratestackErrorResponse {
-        self.clone_envelope()
-    }
-
-    /// The envelope [`Self::into_response`] returns, without consuming
-    /// the error (the RPC body is built from a borrowed error).
-    pub(crate) fn clone_envelope(&self) -> CratestackErrorResponse {
-        let code = self.code().to_owned();
-        let message = self.public_message().into_owned();
-        match self {
-            Self::AuthRefused(refusal) => CratestackErrorResponse {
-                code,
-                message,
-                details: refusal.details().cloned(),
-                extra: refusal.members().clone(),
-            },
-            _ => CratestackErrorResponse {
-                code,
-                message,
-                ..Default::default()
-            },
-        }
-    }
 }

@@ -15,6 +15,7 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use super::CratestackError;
 use super::auth_refusal::RESERVED_ENVELOPE_MEMBERS;
 use crate::value::Value;
 
@@ -87,5 +88,60 @@ impl<'de> Visitor<'de> for EnvelopeVisitor {
             details,
             extra,
         })
+    }
+}
+
+// The envelope a `CratestackError` answers with: here, next to the
+// envelope's own serde, rather than in `error.rs`.
+impl CratestackError {
+    /// The `WWW-Authenticate` header values the response carries: an
+    /// [`AuthRefusal`]'s challenges, and none for every other error.
+    pub fn auth_challenges(&self) -> &[String] {
+        match self {
+            Self::AuthRefused(refusal) => refusal.challenges(),
+            _ => &[],
+        }
+    }
+
+    pub fn into_response(self) -> CratestackErrorResponse {
+        let code = self.code().to_owned();
+        match self {
+            Self::AuthRefused(refusal) => {
+                let (message, details, extra) = refusal.into_parts();
+                CratestackErrorResponse {
+                    code,
+                    message,
+                    details,
+                    extra,
+                }
+            }
+            other => CratestackErrorResponse {
+                code,
+                message: other.public_message().into_owned(),
+                ..Default::default()
+            },
+        }
+    }
+
+    /// The envelope [`Self::into_response`] returns, without consuming
+    /// the error: `RpcErrorBody::from_cratestack` builds the RPC body from a
+    /// borrowed error, so a refusal's members are copied here, and only
+    /// on that path.
+    pub(crate) fn clone_envelope(&self) -> CratestackErrorResponse {
+        let code = self.code().to_owned();
+        let message = self.public_message().into_owned();
+        match self {
+            Self::AuthRefused(refusal) => CratestackErrorResponse {
+                code,
+                message,
+                details: refusal.details().cloned(),
+                extra: refusal.members().clone(),
+            },
+            _ => CratestackErrorResponse {
+                code,
+                message,
+                ..Default::default()
+            },
+        }
     }
 }

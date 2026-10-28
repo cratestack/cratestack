@@ -148,6 +148,12 @@ impl AuthRefusal {
     pub fn challenges(&self) -> &[String] {
         &self.body.challenges
     }
+
+    /// The message, `details` and members, moved out for the envelope.
+    pub(crate) fn into_parts(self) -> (String, Option<Value>, BTreeMap<String, Value>) {
+        let body = *self.body;
+        (body.message, body.details, body.members)
+    }
 }
 
 // Deliberately no `From<AuthRefusal> for CratestackError`: a second `From`

@@ -5,9 +5,9 @@
 //! [`CratestackError`] into a response takes them off the error first
 //! ([`challenges_of`]) and puts them on the response it built ([`attach`]).
 //! The RPC binding re-encodes a handler's REST-shaped error response into
-//! an RPC body, and [`copy`] carries the header across that re-encoding.
+//! an RPC body, and [`copy`] moves the header across that re-encoding.
 
-use axum::http::header::WWW_AUTHENTICATE;
+use axum::http::header::{Entry, WWW_AUTHENTICATE};
 use axum::http::{HeaderMap, HeaderValue};
 use axum::response::Response;
 use cratestack_core::CratestackError;
@@ -30,12 +30,13 @@ pub(crate) fn attach(mut response: Response, challenges: &[String]) -> Response 
     response
 }
 
-/// Copies every `WWW-Authenticate` header of `from` onto `response`.
-pub(crate) fn copy(from: &HeaderMap, mut response: Response) -> Response {
-    for value in from.get_all(WWW_AUTHENTICATE) {
-        response
-            .headers_mut()
-            .append(WWW_AUTHENTICATE, value.clone());
+/// Moves every `WWW-Authenticate` header of `from` onto `response`.
+pub(crate) fn copy(mut from: HeaderMap, mut response: Response) -> Response {
+    if let Entry::Occupied(entry) = from.entry(WWW_AUTHENTICATE) {
+        let (_, values) = entry.remove_entry_mult();
+        for value in values {
+            response.headers_mut().append(WWW_AUTHENTICATE, value);
+        }
     }
     response
 }

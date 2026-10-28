@@ -71,23 +71,21 @@ async fn convert_error_body<C>(
 where
     C: HttpTransport,
 {
-    let status = response.status();
     // The refusal's `WWW-Authenticate` (cratestack#1208) rides on the
-    // handler's response; the re-encoded one below must keep it.
-    let challenge_headers = response.headers().clone();
-    let body_bytes = match axum::body::to_bytes(
-        response.into_body(),
-        cratestack_core::MAX_RESPONSE_REBUFFER_BYTES,
-    )
-    .await
-    {
-        Ok(bytes) => bytes.to_vec(),
-        Err(error) => {
-            // Buffering failed — synthesize an internal error frame.
-            let cool = CratestackError::Internal(format!("buffer handler error body: {error}"));
-            return encode_rpc_error(codec, headers, &cool);
-        }
-    };
+    // handler's response; the re-encoded one below must keep it, so the
+    // headers are taken apart from the body rather than copied.
+    let (parts, body) = response.into_parts();
+    let status = parts.status;
+    let challenge_headers = parts.headers;
+    let body_bytes =
+        match axum::body::to_bytes(body, cratestack_core::MAX_RESPONSE_REBUFFER_BYTES).await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(error) => {
+                // Buffering failed — synthesize an internal error frame.
+                let cool = CratestackError::Internal(format!("buffer handler error body: {error}"));
+                return encode_rpc_error(codec, headers, &cool);
+            }
+        };
 
     let rpc_body = match decode_rpc_body::<_, cratestack_core::CratestackErrorResponse>(
         codec,
@@ -106,7 +104,7 @@ where
     };
 
     let response = encode_rpc_value_response(codec, headers, status, rpc_body);
-    crate::auth_challenge::copy(&challenge_headers, response)
+    crate::auth_challenge::copy(challenge_headers, response)
 }
 
 fn encode_rpc_value_response<C, T>(
