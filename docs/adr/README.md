@@ -23,7 +23,8 @@ regardless of which repo holds it.
 | 0007–0010 | **Reserved** by ADR 0001's "Follow-Up ADRs" list — unwritten, do not reuse |
 | 0011–0019 | This repo's internal-shape series |
 | 0020 | **Proposed**, in `cratestack-docs/internals/sync-engine-adr.md` — offline sync engine (user-visible protocol and the proposed `@@sync` attribute, so it lives with the user-facing half). Context: [docs/design/sync-engine.md](../design/sync-engine.md) |
-| 0021– | Next free number, in whichever repo the decision's audience dictates |
+| 0021 | **Proposed**, in `cratestack-docs/internals/auth-seam-adr.md` — pluggable authentication: the `AuthProvider` seam (refusal envelope on every transport, principal contract, canonical request, MCP credential presence, provider chain, conformance kit, independence from auth libraries). Epic [#1243](https://github.com/cratestack/cratestack/issues/1243) |
+| 0022– | Next free number, in whichever repo the decision's audience dictates |
 
 The gap is deliberate. ADR 0001 (`cratestack-docs/internals/core-architecture-adr.md`) names five
 planned ADRs at 0006–0010 (COSE envelope modes, migration strategy, relation loading, privileged
