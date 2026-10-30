@@ -63,7 +63,7 @@ impl cratestack_core::AuthProvider for SignedRequestAuthProvider {
     ) -> impl core::future::Future<Output = Result<cratestack_core::CratestackContext, Self::Error>> + Send
     {
         let allow_transport_caller = self.transport_caller_mode.allows(request.method);
-        let mapper = self.mapper.clone();
+        let mapper = &self.mapper;
         authenticate_cratestack_request(self.verifier.clone(), request, move |principal| {
             mapper.map(principal, Some("caller"), allow_transport_caller)
         })

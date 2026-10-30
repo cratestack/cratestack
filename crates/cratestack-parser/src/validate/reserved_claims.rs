@@ -10,6 +10,8 @@
 //! the readers and this check. A dotted entry (`tenant.id`, `cnf.jkt`) is
 //! checked on the member of the `type` its root field names.
 
+use std::borrow::Cow;
+
 use cratestack_core::{AuthBlock, ClaimType, Field, RESERVED_CLAIMS, Schema, TypeArity, TypeRef};
 
 use crate::diagnostics::{SchemaError, span_error};
@@ -98,10 +100,10 @@ fn is_string(schema: &Schema, name: &str) -> bool {
     matches!(name, "String" | "Cuid" | "Uuid") || schema.enums.iter().any(|e| e.name == name)
 }
 
-fn render(ty: &TypeRef) -> String {
+fn render(ty: &TypeRef) -> Cow<'_, str> {
     match ty.arity {
-        TypeArity::Required => ty.name.clone(),
-        TypeArity::Optional => format!("{}?", ty.name),
-        TypeArity::List => format!("{}[]", ty.name),
+        TypeArity::Required => Cow::Borrowed(&ty.name),
+        TypeArity::Optional => Cow::Owned(format!("{}?", ty.name)),
+        TypeArity::List => Cow::Owned(format!("{}[]", ty.name)),
     }
 }

@@ -44,10 +44,11 @@ pub fn principal_to_contract_context<S: AsRef<str>>(
         }
         None => return Ok(CratestackContext::anonymous()),
     };
-    let fields = product.auth.map(|auth| auth.fields).unwrap_or_default();
+    // `product` is ours, so a selected claim is moved out of it, not cloned.
+    let mut fields = product.auth.map(|auth| auth.fields).unwrap_or_default();
     for name in selected {
-        if let Some(value) = fields.get(name.as_ref()) {
-            builder = builder.claim(name.as_ref(), value.clone());
+        if let Some(value) = fields.remove(name.as_ref()) {
+            builder = builder.claim(name.as_ref(), value);
         }
     }
     Ok(builder.build())

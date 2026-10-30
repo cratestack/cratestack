@@ -71,8 +71,9 @@ pub fn jwk_thumbprint(jwk: &Jwk) -> Option<String> {
         "x": jwk.x.as_deref()?,
     });
     // Written in key order, so the output is canonical whether or not
-    // `serde_json`'s `preserve_order` is on; `to_string` adds no whitespace.
-    let digest = Sha256::digest(canonical.to_string().as_bytes());
+    // `serde_json`'s `preserve_order` is on; the compact writer adds no
+    // whitespace. Serializing a `Value` cannot fail.
+    let digest = Sha256::digest(serde_json::to_vec(&canonical).ok()?);
     Some(URL_SAFE_NO_PAD.encode(digest))
 }
 

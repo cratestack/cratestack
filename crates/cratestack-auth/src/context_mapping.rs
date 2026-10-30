@@ -66,19 +66,21 @@ pub fn principal_to_cratestack_context(
         expires_at: i64,
     }
 
+    // The contract names borrow from `user`: serialization copies them once
+    // into the context, so an owned copy here would be a second one.
     #[derive(Serialize)]
-    struct Confirmation {
-        kid: String,
+    struct Confirmation<'a> {
+        kid: &'a str,
         #[serde(skip_serializing_if = "Option::is_none")]
-        jkt: Option<String>,
+        jkt: Option<&'a str>,
     }
 
     #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
-    struct CratestackPrincipal {
-        sub: String,
-        roles: Vec<String>,
-        cnf: Confirmation,
+    struct CratestackPrincipal<'a> {
+        sub: &'a str,
+        roles: [&'a str; 1],
+        cnf: Confirmation<'a>,
         actor: ActorPrincipal,
         session: SessionPrincipal,
         id: String,
@@ -99,11 +101,11 @@ pub fn principal_to_cratestack_context(
         .and_then(|value| value.as_str().map(str::to_owned));
 
     cratestack_core::CratestackContext::from_principal(Some(CratestackPrincipal {
-        sub: user.user_id.clone(),
-        roles: vec![user.role.clone()],
+        sub: &user.user_id,
+        roles: [&user.role],
         cnf: Confirmation {
-            kid: user.bound_key_id.clone(),
-            jkt: user.bound_key_jkt.clone(),
+            kid: &user.bound_key_id,
+            jkt: user.bound_key_jkt.as_deref(),
         },
         actor: ActorPrincipal {
             id: user.user_id.clone(),
@@ -160,7 +162,7 @@ pub(super) fn service_principal_to_cratestack_context(
         ),
         (
             "clientId".to_owned(),
-            cratestack_core::Value::String(caller_id.clone()),
+            cratestack_core::Value::String(caller_id),
         ),
         (
             "enrollmentStatus".to_owned(),
