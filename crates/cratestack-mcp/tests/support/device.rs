@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use cratestack_core::{
-    AuthProvider, AuthRefusal, CratestackContext, CratestackError, RequestContext, Value,
+    AuthProvider, AuthRefusal, CratestackContext, CratestackError, Credential, RequestContext,
+    Value,
 };
 
 #[derive(Clone, Default)]
@@ -64,5 +65,17 @@ impl AuthProvider for DeviceProvider {
             )]),
             None => CratestackContext::anonymous(),
         })
+    }
+
+    /// Present with `x-device`, malformed when it is `malformed`, absent
+    /// without it: what `CredentialPresence::ask_provider()` reads.
+    fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {
+        match request.headers.get("x-device").map(|v| v.to_str()) {
+            None => Credential::Absent,
+            Some(Ok("malformed")) | Some(Err(_)) => Credential::Malformed("an unreadable x-device"),
+            Some(Ok(device)) => Credential::Present {
+                redact: Some(device),
+            },
+        }
     }
 }

@@ -29,6 +29,13 @@ use serde::de::DeserializeOwned;
 use super::{SyncError, SyncServer};
 use crate::protocol::SyncErrorCode;
 
+// The routes, which are also the `path` the provider is given: the
+// canonical request (ADR 0021 §3) names the declared route, never the URI a
+// client sent nor the prefix the router is mounted under.
+const REGISTER: &str = "/sync/register";
+const PUSH: &str = "/sync/push";
+const PULL: &str = "/sync/pull";
+
 #[derive(Clone)]
 pub(crate) struct HttpState<A> {
     pub(crate) server: SyncServer,
@@ -38,10 +45,10 @@ pub(crate) struct HttpState<A> {
 /// Mount next to the generated router: `app.merge(sync_router(server, auth))`.
 pub fn sync_router<A: AuthProvider>(server: SyncServer, auth: A) -> Router {
     Router::new()
-        .route("/sync/register", post(register::<A>))
-        .route("/sync/push", post(push::<A>))
-        .route("/sync/pull", post(pull::<A>))
-        .route("/sync/poke", get(stream::poke::<A>))
+        .route(REGISTER, post(register::<A>))
+        .route(PUSH, post(push::<A>))
+        .route(PULL, post(pull::<A>))
+        .route(stream::POKE, get(stream::poke::<A>))
         .with_state(HttpState { server, auth })
 }
 
@@ -50,7 +57,7 @@ async fn register<A: AuthProvider>(
     request: Request,
 ) -> Response {
     let result = async {
-        let (ctx, body) = state.read(request).await?;
+        let (ctx, body) = state.read(request, REGISTER).await?;
         state.server.register(&ctx, body).await
     };
     respond(result.await)
@@ -58,7 +65,7 @@ async fn register<A: AuthProvider>(
 
 async fn push<A: AuthProvider>(State(state): State<HttpState<A>>, request: Request) -> Response {
     let result = async {
-        let (ctx, body) = state.read(request).await?;
+        let (ctx, body) = state.read(request, PUSH).await?;
         state.server.push(&ctx, body).await
     };
     respond(result.await)
@@ -66,7 +73,7 @@ async fn push<A: AuthProvider>(State(state): State<HttpState<A>>, request: Reque
 
 async fn pull<A: AuthProvider>(State(state): State<HttpState<A>>, request: Request) -> Response {
     let result = async {
-        let (ctx, body) = state.read(request).await?;
+        let (ctx, body) = state.read(request, PULL).await?;
         state.server.pull(&ctx, body).await
     };
     respond(result.await)
@@ -77,6 +84,7 @@ impl<A: AuthProvider> HttpState<A> {
     async fn read<T: DeserializeOwned>(
         &self,
         request: Request,
+        route: &'static str,
     ) -> Result<(CratestackContext, T), SyncError> {
         let (parts, body) = request.into_parts();
         let limit = self.server.policy.max_body_bytes;
@@ -86,7 +94,7 @@ impl<A: AuthProvider> HttpState<A> {
                 format!("request body exceeds {limit} bytes"),
             )
         })?;
-        let ctx = self.authenticate(&parts, &bytes).await?;
+        let ctx = self.authenticate(&parts, route, &bytes).await?;
         let decoded = serde_json::from_slice(&bytes)
             .map_err(|error| SyncError::new(SyncErrorCode::BadRequest, error.to_string()))?;
         Ok((ctx, decoded))
@@ -95,11 +103,12 @@ impl<A: AuthProvider> HttpState<A> {
     pub(crate) async fn authenticate(
         &self,
         parts: &Parts,
+        route: &'static str,
         body: &Bytes,
     ) -> Result<CratestackContext, SyncError> {
         let request = RequestContext {
             method: parts.method.as_str(),
-            path: parts.uri.path(),
+            path: route,
             query: parts.uri.query(),
             headers: &parts.headers,
             body,
