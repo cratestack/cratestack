@@ -6,11 +6,51 @@
 /// A call that gets no answer at all fails with a
 /// [CratestackTransportException] instead, so `on CratestackRestException`
 /// means "the server said no" and nothing else.
+///
+/// The envelope's members are typed by the getters: [code], [message],
+/// [details], [extra] (every other member, as an `AuthProvider` refusal adds
+/// them, cratestack#1208) and [challenges] (the `WWW-Authenticate` value).
+/// [body] still holds the whole decoded body.
 class CratestackRestException implements Exception {
-  const CratestackRestException({required this.status, this.body});
+  const CratestackRestException({
+    required this.status,
+    this.body,
+    this.headers = const <String, String>{},
+  });
 
   final int status;
   final Object? body;
+
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `).
+  final Map<String, String> headers;
+
+  /// The envelope's `code` (`UNAUTHORIZED`, `FORBIDDEN`, ...), or `null` when
+  /// [body] is not an envelope.
+  String? get code => _envelopeMember('code') as String?;
+
+  /// The envelope's `message`, or `null` when [body] is not an envelope.
+  String? get message => _envelopeMember('message') as String?;
+
+  /// The envelope's `details`, as decoded.
+  Object? get details => _envelopeMember('details');
+
+  /// Every top-level member of the envelope other than `code`, `message` and
+  /// `details`, as decoded; empty when there is none or [body] is not a map.
+  Map<String, Object?> get extra => _cratestackExtraErrorMembers(body);
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
+
+  Object? _envelopeMember(String name) {
+    final body = this.body;
+    if (body is! Map) {
+      return null;
+    }
+    final value = body[name];
+    return name == 'details' || value is String ? value : null;
+  }
 
   @override
   String toString() => 'CratestackRestException(status=$status, body=$body)';
@@ -114,6 +154,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
       throw CratestackRestException(
         status: response.status,
         body: await _decodeErrorBody(bytes, contentType),
+        headers: response.headers,
       );
     }
     return _decodeBody(bytes, contentType, 'CratestackHttpAdapter');

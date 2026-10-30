@@ -9,6 +9,7 @@ mod error;
 mod idempotency;
 #[cfg(feature = "middleware")]
 mod middleware;
+mod remote_refusal;
 mod rpc;
 mod runtime;
 mod state;
@@ -50,6 +51,7 @@ pub use error::{ClientError, HeaderPair, QueryPair};
 pub use idempotency::RequestIdempotency;
 #[cfg(feature = "middleware")]
 pub use middleware::MiddlewareError;
+pub use remote_refusal::Challenges;
 pub use rpc::batch::{BatchBuilder, BatchResults};
 pub use rpc::batch_call::{BatchHandle, BatchableCall};
 pub use rpc::client::RpcClient;

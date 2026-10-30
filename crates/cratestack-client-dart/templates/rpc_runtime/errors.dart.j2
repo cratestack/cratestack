@@ -1,0 +1,86 @@
+/// Wire shape of an RPC error body. Mirrors
+/// `cratestack_core::rpc::RpcErrorBody`.
+class RpcErrorBody {
+  const RpcErrorBody({
+    required this.code,
+    required this.message,
+    this.details,
+    this.extra = const <String, Object?>{},
+  });
+
+  final String code;
+  final String message;
+  final Object? details;
+
+  /// Every top-level member of the body other than `code`, `message` and
+  /// `details`, as decoded: what an `AuthProvider` refusal adds, such as
+  /// `{'error': 'attestation_expired'}` (cratestack#1208). Empty when the
+  /// server sent none; a member this client does not know is kept, never
+  /// dropped.
+  final Map<String, Object?> extra;
+
+  factory RpcErrorBody.fromWire(Object? value) {
+    if (value is! Map) {
+      return RpcErrorBody(
+        code: CratestackRpcErrorCodes.internal,
+        message: value?.toString() ?? 'unknown RPC error',
+      );
+    }
+    final map = value;
+    return RpcErrorBody(
+      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
+      message: (map['message'] as String?) ?? '',
+      details: map['details'],
+      extra: _cratestackExtraErrorMembers(map),
+    );
+  }
+}
+
+/// Thrown by an RPC adapter when a remote call fails with an
+/// `RpcErrorBody` payload. Carries the gRPC-style `code` directly so
+/// callers can switch on it without parsing.
+///
+/// A refusal from the server's `AuthProvider` keeps its fixed code
+/// (`unauthenticated` or `permission_denied`); what it adds is in [details],
+/// [extra] and [challenges]:
+///
+/// ```dart
+/// on CratestackRpcException catch (e) {
+///   if (e.code == CratestackRpcErrorCodes.unauthenticated &&
+///       e.extra['error'] == 'attestation_expired') {
+///     // renew the credential and send again, once
+///   }
+/// }
+/// ```
+class CratestackRpcException implements Exception {
+  CratestackRpcException({
+    required this.status,
+    required this.body,
+    this.headers = const <String, String>{},
+  });
+
+  final int status;
+  final RpcErrorBody body;
+
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `). Empty for an error that arrived inside a batch frame or as a
+  /// stream's final item, which have no headers of their own.
+  final Map<String, String> headers;
+
+  String get code => body.code;
+  String get message => body.message;
+  Object? get details => body.details;
+
+  /// [RpcErrorBody.extra]: the body's members beyond `code`, `message` and
+  /// `details`.
+  Map<String, Object?> get extra => body.extra;
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
+
+  @override
+  String toString() =>
+      'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
+}
+

@@ -200,6 +200,44 @@ a prefix, and on the sync endpoints.
 that already lacked the prefix, but it was whatever the client sent; it is now the declared route
 (`/sync/register`, `/sync/push`, `/sync/pull`, `/sync/poke`).
 
+### Every generated client types a refusal's members, `details` and challenges, on REST and RPC (#1243)
+
+**What was missing.** #1208 let an `AuthProvider` refusal add top-level envelope members, a
+`details` and `WWW-Authenticate` challenges, but the generated clients did not all surface them.
+The Dart RPC `RpcErrorBody.fromWire` dropped every member but `code`, `message` and `details`; the
+Dart REST `CratestackRestException` kept them only inside its raw `body`; neither Dart exception
+nor the TypeScript `CratestackRpcError` kept the response headers, so no challenge was reachable;
+and the Rust client read the members but dropped the `WWW-Authenticate` header on both transports.
+
+**What changed.** Each client and transport now types the same five things: the wire `code`,
+`message`, `details`, the other members (`extra`, never dropped, CBOR and JSON) and the
+`WWW-Authenticate` challenges (raw, unparsed).
+
+- **Rust** (`cratestack-client-rust`): `ClientError::Remote` and `RpcRemoteError` gain a
+  `challenges: Challenges` field (a new exported type that reads as a `[String]`, every
+  `WWW-Authenticate` value in order). New accessors: `ClientError::remote_error()` (the decoded
+  `CratestackErrorResponse`, whose `extra` already held the members) and `ClientError::challenges()`,
+  `RpcClientError::remote()` and `RpcClientError::challenges()`. A batch frame's error has no
+  headers, so its `challenges` is empty.
+- **Dart**: `RpcErrorBody.extra` keeps every unknown member. `CratestackRpcException` and
+  `CratestackRestException` take the answer's `headers` (an optional constructor argument) and
+  expose `extra` and `challenges`; `CratestackRestException` also gets typed `code`, `message` and
+  `details` getters over its `body`, which is unchanged. The HTTP seam joins a repeated header with
+  `, `, so two challenge lines arrive as one entry. Every preset (default, riverpod, fespalier)
+  shares the runtime.
+- **TypeScript**: `CratestackHttpError` gains `body` (the typed `CratestackErrorResponse`, a new
+  exported interface), `code`, `details`, `extra` and `challenges`; `CratestackRpcError` takes the
+  response's `headers` (an optional third constructor argument) and exposes `extra`, `headers` and
+  `challenges`; `CratestackRpcStreamError` gets `extra`. The `--rtk` REST error
+  (`RtkRestQueryError`) carries `code`, `extra` and `challenges` as optional fields. `--swr` hooks
+  surface the same error instances.
+
+**Migrating.** Nothing changes for Dart or TypeScript code. In Rust, a pattern that lists every
+field of `ClientError::Remote { status, error, message }` or `RpcRemoteError { status, body }`
+without `..` must add `..` (or bind `challenges`), and code that builds an `RpcRemoteError` with a
+struct literal adds `challenges: Default::default()`. The Flutter FFI error wire
+(`RuntimeErrorWire`) still carries the envelope (members included) but not the challenges.
+
 ### An `AuthProvider` conformance kit; `CoseAuthProvider` is a first-success chain; a CI guard keeps auth libraries out (#1243)
 
 **What was missing.** Nothing proved that a provider behaves the same on every transport, so an

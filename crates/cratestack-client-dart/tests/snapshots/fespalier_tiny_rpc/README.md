@@ -94,7 +94,8 @@ Wire format:
 
 Errors:
 
-- an HTTP error answer is a `CratestackRpcException` (`status`, `code`, `message`, `details`)
+- an HTTP error answer is a `CratestackRpcException` (`status`, `code`, `message`, `details`, `extra` and `challenges`)
+- a refusal from the server's `AuthProvider` keeps its fixed code; the members it adds (`{"error": "attestation_expired"}`) are in `extra`, and its `WWW-Authenticate` value, raw, is in `challenges`
 - a call that got no answer is a `CratestackTransportException`: `CratestackTransportUnsent` (provably never left the device, always safe to resend), `CratestackTransportAborted`, `CratestackTransportTimedOut` or `CratestackTransportBroken`. Never a Dio type.
 
 Cancelling a call:

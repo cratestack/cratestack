@@ -33,11 +33,24 @@ export interface RtkRestQueryError {
   status: number | "FETCH_ERROR";
   error: string;
   data?: unknown;
+  /** The envelope's `code`, for a server answer (cratestack#1243). */
+  code?: string;
+  /** The envelope's members beyond `code`, `message` and `details`. */
+  extra?: Readonly<Record<string, unknown>>;
+  /** The answer's `WWW-Authenticate` value, raw. */
+  challenges?: readonly string[];
 }
 
 function toRtkRestError(error: unknown): RtkRestQueryError {
   if (error instanceof CratestackHttpError) {
-    return { status: error.status, error: error.message, data: error.payload };
+    return {
+      status: error.status,
+      error: error.message,
+      data: error.payload,
+      ...(error.code !== undefined ? { code: error.code } : {}),
+      extra: error.extra,
+      challenges: error.challenges,
+    };
   }
   return {
     status: "FETCH_ERROR",

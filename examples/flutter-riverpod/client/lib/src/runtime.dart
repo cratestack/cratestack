@@ -339,6 +339,44 @@ Uri _resolveUri(Uri baseUri, String path, String? query) {
   return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
 }
 
+// -----------------------------------------------------------------------------
+// What an error answer says beyond its code (cratestack#1208, cratestack#1243)
+//
+// An `AuthProvider` refusal keeps the fixed code (`UNAUTHORIZED`, RPC
+// `unauthenticated`) and may add top-level members to the error body, a
+// `details` member and `WWW-Authenticate` challenges. These two helpers read
+// them for `CratestackRestException` and `CratestackRpcException`.
+// -----------------------------------------------------------------------------
+
+/// The members of an error body that are not `code`, `message` or `details`,
+/// unmodifiable and in wire order. Empty when [body] is not a map. Nothing is
+/// dropped: a member this client does not know is kept here, as decoded.
+Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {
+  if (body is! Map) {
+    return const <String, Object?>{};
+  }
+  const reserved = <String>{'code', 'message', 'details'};
+  return Map<String, Object?>.unmodifiable(<String, Object?>{
+    for (final entry in body.entries)
+      if (!reserved.contains(entry.key.toString()))
+        entry.key.toString(): entry.value,
+  });
+}
+
+/// The `WWW-Authenticate` value of an answer's [headers], raw and unparsed,
+/// as a list: empty when there is none. [CratestackHttpResponse] joins a
+/// repeated header with `, `, so two challenges sent as two header lines
+/// arrive as one entry holding both.
+List<String> _cratestackChallenges(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    final value = entry.value;
+    if (entry.key.toLowerCase() == 'www-authenticate' && value.isNotEmpty) {
+      return List<String>.unmodifiable(<String>[value]);
+    }
+  }
+  return const <String>[];
+}
+
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
   if (value == null) {
     throw FormatException('Missing required field $ownerName.$fieldName');
@@ -534,11 +572,51 @@ abstract interface class CratestackClientAdapter {
 /// A call that gets no answer at all fails with a
 /// [CratestackTransportException] instead, so `on CratestackRestException`
 /// means "the server said no" and nothing else.
+///
+/// The envelope's members are typed by the getters: [code], [message],
+/// [details], [extra] (every other member, as an `AuthProvider` refusal adds
+/// them, cratestack#1208) and [challenges] (the `WWW-Authenticate` value).
+/// [body] still holds the whole decoded body.
 class CratestackRestException implements Exception {
-  const CratestackRestException({required this.status, this.body});
+  const CratestackRestException({
+    required this.status,
+    this.body,
+    this.headers = const <String, String>{},
+  });
 
   final int status;
   final Object? body;
+
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `).
+  final Map<String, String> headers;
+
+  /// The envelope's `code` (`UNAUTHORIZED`, `FORBIDDEN`, ...), or `null` when
+  /// [body] is not an envelope.
+  String? get code => _envelopeMember('code') as String?;
+
+  /// The envelope's `message`, or `null` when [body] is not an envelope.
+  String? get message => _envelopeMember('message') as String?;
+
+  /// The envelope's `details`, as decoded.
+  Object? get details => _envelopeMember('details');
+
+  /// Every top-level member of the envelope other than `code`, `message` and
+  /// `details`, as decoded; empty when there is none or [body] is not a map.
+  Map<String, Object?> get extra => _cratestackExtraErrorMembers(body);
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
+
+  Object? _envelopeMember(String name) {
+    final body = this.body;
+    if (body is! Map) {
+      return null;
+    }
+    final value = body[name];
+    return name == 'details' || value is String ? value : null;
+  }
 
   @override
   String toString() => 'CratestackRestException(status=$status, body=$body)';
@@ -630,6 +708,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
       throw CratestackRestException(
         status: response.status,
         body: await _decodeErrorBody(bytes, contentType),
+        headers: response.headers,
       );
     }
     return _decodeBody(bytes, contentType, 'CratestackHttpAdapter');
