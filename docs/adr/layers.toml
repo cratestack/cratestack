@@ -235,6 +235,11 @@ cratestack-sqlite = 5
 cratestack-client = 5
 
 [tools]
+# The AuthProvider conformance kit (ADR 0021 §6, cratestack#1243): a
+# test-support crate that compiles its own schemas, so it sits on top of a
+# facade. Providers take it as a dev-dependency only, which the layer check
+# exempts, so nothing in the layered graph depends on it.
+cratestack-auth-conformance = true
 cratestack-cli = true
 cratestack-lsp = true
 cratestack-migrate = true

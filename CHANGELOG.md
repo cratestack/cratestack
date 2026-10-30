@@ -238,6 +238,38 @@ without `..` must add `..` (or bind `challenges`), and code that builds an `RpcR
 struct literal adds `challenges: Default::default()`. The Flutter FFI error wire
 (`RuntimeErrorWire`) still carries the envelope (members included) but not the challenges.
 
+### An `AuthProvider` conformance kit; `CoseAuthProvider` is a first-success chain; a CI guard keeps auth libraries out (#1243)
+
+**What was missing.** Nothing proved that a provider behaves the same on every transport, so an
+external authentication library (or CrateStack's own) had no test to pass, and parity between REST,
+RPC and MCP was asserted transport by transport. `CoseAuthProvider` wrapped its inner provider by
+hand.
+
+**What changed.**
+
+- **New crate `cratestack-auth-conformance`** (ADR 0021 §6), a dev-dependency of a provider's tests:
+  `auth_conformance(provider).accepts(subject, sign).refuses(name, sign, expected).run().await`.
+  It compiles its own schemas and drives the provider through REST, RPC unary and RPC batch (each at
+  the root and under a mount prefix) and MCP Streamable HTTP (with
+  `CredentialPresence::ask_provider()`), and asserts the same subject (`CratestackContext::subject()`) or the same refusal (status,
+  code, message, members, `details`, challenges), the canonical request exactly, and one provider call
+  per request. A signer is handed the `Canonical` request before it is sent and returns headers, or
+  `Credentials` with request extensions for an in-process credential such as a verified COSE signer.
+  `Expected::refusal(&AuthRefusal)`, `Expected::unauthorized(..)` and `Expected::forbidden(..)`
+  describe a refusal. On MCP a plain (non-`AuthRefusal`) error reads with MCP's own fixed message, so
+  the kit compares only its status and code there. Not driven yet: SSE model subscriptions and sync,
+  which need a database.
+- **`CoseAuthProvider` is now `first_success(inner).or(CoseSignerProvider)`**, and
+  `CoseSignerProvider`, the verified signer as a provider of its own, is public, so an application can
+  put it in a chain of its own. Its credential is present exactly when the envelope layer recorded a
+  verified signer. Behaviour is unchanged, and it passes the kit.
+- **`SignedRequestAuthProvider` passes the kit too**: a client that signs the canonical request (the
+  declared route, no mount prefix, the exact body) is accepted on every transport, and one that signs
+  another path is refused on every transport.
+- **CI job `auth library independence (ADR 0021)`** (`.ci/auth-independence-check.sh`): the
+  workspace's `Cargo.lock` must contain no `authkestra*` package, so no framework crate depends on
+  an external authentication library (ADR 0021 §7).
+
 ## 0.17.0 (2026-10-28)
 
 ### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)
