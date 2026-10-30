@@ -13,10 +13,12 @@ pub mod audit;
 pub mod batch;
 pub mod bigint;
 pub mod builder;
+pub mod chain;
 pub mod client_contract;
 pub mod codec;
 pub mod composite_id;
 pub mod context;
+pub mod credential;
 pub mod cuid;
 pub mod decimal;
 pub mod envelope;
@@ -59,6 +61,7 @@ pub use batch::{
     BatchSummary, find_duplicate_position,
 };
 pub use bigint::{BigInt, ParseBigIntError};
+pub use chain::{FirstSuccess, Or, first_success};
 pub use codec::{
     Binding, BodyShape, BoundHeaders, CONTRACT_HEADER, CONTRACT_HEADER_VALUE_LEN,
     CONTRACT_SELECTOR_LEN, CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE,
@@ -87,6 +90,7 @@ pub use client_contract::{
     bound_contracts, classify, client_contract_digest, digest_hex, find_contract,
     op_contract_digest, op_contract_digests, op_contract_json, op_keys,
 };
+pub use credential::Credential;
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;
 #[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]

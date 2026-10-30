@@ -156,6 +156,50 @@ text, which for an `Internal` or `Database` error is the operator's detail.
 headers), so a struct literal needs the new fields or `..SyncErrorBody::new(code, message)`. `SyncErrorCode` gains
 `Forbidden`, so an exhaustive `match` needs an arm for it.
 
+### Compose `AuthProvider`s with a first-success chain; a provider can say whether a request carries its credential (#1243)
+
+**What was missing.** An application that accepts more than one kind of credential (a bearer token
+from an OAuth server and a device signature, say) had to write a wrapper provider by hand, as
+`CoseAuthProvider` does, and each wrapper chose its own rules for a refused credential. MCP's
+`CredentialPresence` could not ask the provider itself whether a request carries a credential.
+
+**What changed.**
+
+- `AuthProvider` gains a defaulted method, `credential(&RequestContext) -> Credential`, read from
+  the request head (the body may be empty when it is asked). `Credential` is `Unknown` (the
+  default: the provider is always called, exactly as before), `Absent`, `Present { redact }` or
+  `Malformed(reason)`. `Credential::bearer(headers)` reads an `Authorization: Bearer` token the way
+  MCP does, and `Credential::header(headers, name)` a credential carried in one header. Existing
+  providers need no change.
+- `first_success(a).or(b).or(c)` composes providers into one, statically (no `dyn`). Each member,
+  in order: skipped without being called when its credential is `Absent`; its authenticated
+  context is the answer; its error is the answer, so **a credential one member refuses is never
+  rescued by another**; an anonymous answer goes on to the next member. No member authenticating
+  is anonymous (the first anonymous context a member returned, so its extensions are kept), and
+  policy decides. The chain's own `credential` is present if any member's is.
+- MCP Streamable HTTP: `CredentialPresence::ask_provider()` lets the provider's `credential`
+  decide before the body is read. `Absent` gets the 401 challenge with `resource_metadata`,
+  `Malformed` a 400 `invalid_request`, `Present` reaches the provider with its `redact` value cut
+  out of logged detail, and `Unknown` reaches the provider as under `provider_decides()`. The
+  default stays `CredentialPresence::bearer()`, so a deployment that does not opt in keeps a
+  spec-conformant MCP resource server (ADR 0002).
+
+ADR 0021 (cratestack-docs `internals/auth-seam-adr.md`) proposed `Credential::bearer` as the
+trait's default. The default is `Unknown` instead: with a bearer default, a provider that reads a
+cookie or a signature and does not override the method would be silently skipped by every chain.
+
+### The canonical request a provider sees is a stated rule, pinned by tests; sync passes its declared route (#1243)
+
+`RequestContext`'s documentation now states what a provider is handed (ADR 0021 §3): the
+operation's declared method, its declared route relative to the router's root (a mount prefix
+never appears), the raw query only where the operation reads one, and the exact body bytes,
+before decoding. Tests pin it on the generated REST and RPC routers (unary and batch) nested under
+a prefix, and on the sync endpoints.
+
+**Changed:** the sync endpoints handed the provider the request URI's path. Under axum's `nest`
+that already lacked the prefix, but it was whatever the client sent; it is now the declared route
+(`/sync/register`, `/sync/push`, `/sync/pull`, `/sync/poke`).
+
 ## 0.17.0 (2026-10-28)
 
 ### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)

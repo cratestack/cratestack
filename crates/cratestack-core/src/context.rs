@@ -83,6 +83,27 @@ pub struct CratestackContext {
 ///
 /// A shared reference is `Copy`, so adding this field does not affect the
 /// `Copy` derive below.
+///
+/// ## The canonical request (ADR 0021 §3)
+///
+/// What a provider is given is the **canonical request** of the
+/// operation, and a client that signs a request signs the same thing:
+///
+/// - `method` is the operation's declared method: `POST` for every RPC
+///   call (unary and batch), `GET` for a subscription.
+/// - `path` is the route CrateStack declares, relative to the router's own
+///   root. A mount prefix never appears: a router nested under `/api`
+///   hands the provider `/rpc/<op_id>`, not `/api/rpc/<op_id>`, so a client
+///   signs its request path minus its base URL's path. A REST model route
+///   carries the **decoded** `/<id>`, not its percent-encoded wire form.
+/// - `query` is the raw query string where the operation reads one (REST
+///   model reads, MCP, sync) and `None` elsewhere (RPC, REST procedures).
+/// - `body` is the exact bytes the router received, before decoding and
+///   never re-encoded; for a batch, the whole batch body, authenticated
+///   once. Behind an envelope layer it is the opened payload.
+///
+/// `crates/cratestack-api/tests/canonical_request_{rest,rpc}.rs` and
+/// `crates/cratestack-sync/tests/canonical_request.rs` pin it.
 #[derive(Debug, Clone, Copy)]
 pub struct RequestContext<'a> {
     pub method: &'a str,
@@ -109,6 +130,17 @@ pub trait AuthProvider: Clone + Send + Sync + 'static {
         &self,
         request: &RequestContext<'_>,
     ) -> impl ::core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send;
+
+    /// Whether `request` carries this provider's credential, read from the
+    /// request head without authenticating (the body may be empty). The
+    /// [first-success chain](crate::first_success) skips a provider that
+    /// answers [`Credential::Absent`]. The default,
+    /// [`Credential::Unknown`], means the provider is always called, as
+    /// before this method existed. See [`Credential`].
+    fn credential<'r>(&self, request: &RequestContext<'r>) -> crate::Credential<'r> {
+        let _ = request;
+        crate::Credential::Unknown
+    }
 }
 
 impl<F, E> AuthProvider for F
