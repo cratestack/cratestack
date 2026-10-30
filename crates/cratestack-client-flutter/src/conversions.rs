@@ -162,6 +162,7 @@ impl From<ClientError> for FlutterRuntimeError {
                 status,
                 error,
                 message,
+                ..
             } => Self {
                 code: RuntimeErrorCode::Remote as u32,
                 http_status: Some(status.as_u16()),

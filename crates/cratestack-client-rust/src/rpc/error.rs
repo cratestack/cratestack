@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 use crate::codec::HttpClientCodec;
 use crate::envelope_error::EnvelopeError;
 use crate::error::{ClientError, TransportError};
+use crate::remote_refusal::{Challenges, www_authenticate};
 use crate::runtime::wire::RuntimeResponseWire;
 
 /// Error variant produced by the RPC client when a remote call fails with
@@ -14,7 +15,13 @@ use crate::runtime::wire::RuntimeResponseWire;
 #[derive(Debug, Clone)]
 pub struct RpcRemoteError {
     pub status: StatusCode,
+    /// `code`, `message`, `details` and, in `extra`, every other member of
+    /// the error body (an `AuthRefusal`'s members, cratestack#1208).
     pub body: RpcErrorBody,
+    /// Every `WWW-Authenticate` value the answer carried, raw and in order
+    /// (cratestack#1243). Always empty for a batch frame's error: a frame
+    /// has no headers of its own.
+    pub challenges: Challenges,
 }
 
 impl std::fmt::Display for RpcRemoteError {
@@ -106,6 +113,7 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
             status,
             error,
             message,
+            challenges,
         } => {
             // Legacy translation path — should not fire for /rpc/... URLs
             // (the server-side dispatcher emits RpcErrorBody-shaped error
@@ -119,7 +127,11 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
                     details: None,
                     extra: Default::default(),
                 });
-            RpcClientError::Remote(RpcRemoteError { status, body })
+            RpcClientError::Remote(RpcRemoteError {
+                status,
+                body,
+                challenges,
+            })
         }
     }
 }
@@ -161,6 +173,7 @@ where
             status: StatusCode::from_u16(response.status_code)
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             body,
+            challenges: www_authenticate(&response.headers),
         }))
     }
 }

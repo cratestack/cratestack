@@ -311,6 +311,44 @@ Uri _resolveUri(Uri baseUri, String path, String? query) {
   return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
 }
 
+// -----------------------------------------------------------------------------
+// What an error answer says beyond its code (cratestack#1208, cratestack#1243)
+//
+// An `AuthProvider` refusal keeps the fixed code (`UNAUTHORIZED`, RPC
+// `unauthenticated`) and may add top-level members to the error body, a
+// `details` member and `WWW-Authenticate` challenges. These two helpers read
+// them for `CratestackRestException` and `CratestackRpcException`.
+// -----------------------------------------------------------------------------
+
+/// The members of an error body that are not `code`, `message` or `details`,
+/// unmodifiable and in wire order. Empty when [body] is not a map. Nothing is
+/// dropped: a member this client does not know is kept here, as decoded.
+Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {
+  if (body is! Map) {
+    return const <String, Object?>{};
+  }
+  const reserved = <String>{'code', 'message', 'details'};
+  return Map<String, Object?>.unmodifiable(<String, Object?>{
+    for (final entry in body.entries)
+      if (!reserved.contains(entry.key.toString()))
+        entry.key.toString(): entry.value,
+  });
+}
+
+/// The `WWW-Authenticate` value of an answer's [headers], raw and unparsed,
+/// as a list: empty when there is none. [CratestackHttpResponse] joins a
+/// repeated header with `, `, so two challenges sent as two header lines
+/// arrive as one entry holding both.
+List<String> _cratestackChallenges(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    final value = entry.value;
+    if (entry.key.toLowerCase() == 'www-authenticate' && value.isNotEmpty) {
+      return List<String>.unmodifiable(<String>[value]);
+    }
+  }
+  return const <String>[];
+}
+
 typedef CratestackValueMap = Map<String, Object?>;
 
 /// Recursively rewrites decoded containers into the `Map<String, Object?>`
@@ -438,35 +476,6 @@ class CratestackRpcErrorCodes {
   static const String internal = 'internal';
 }
 
-/// Wire shape of an RPC error body. Mirrors
-/// `cratestack_core::rpc::RpcErrorBody`.
-class RpcErrorBody {
-  const RpcErrorBody({
-    required this.code,
-    required this.message,
-    this.details,
-  });
-
-  final String code;
-  final String message;
-  final Object? details;
-
-  factory RpcErrorBody.fromWire(Object? value) {
-    if (value is! Map) {
-      return RpcErrorBody(
-        code: CratestackRpcErrorCodes.internal,
-        message: value?.toString() ?? 'unknown RPC error',
-      );
-    }
-    final map = value;
-    return RpcErrorBody(
-      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
-      message: (map['message'] as String?) ?? '',
-      details: map['details'],
-    );
-  }
-}
-
 /// Wire shape of a single batch request frame. Mirrors
 /// `cratestack_core::rpc::RpcRequest`.
 class RpcRequest {
@@ -514,26 +523,92 @@ class RpcResponseFrame {
   }
 }
 
+/// Wire shape of an RPC error body. Mirrors
+/// `cratestack_core::rpc::RpcErrorBody`.
+class RpcErrorBody {
+  const RpcErrorBody({
+    required this.code,
+    required this.message,
+    this.details,
+    this.extra = const <String, Object?>{},
+  });
+
+  final String code;
+  final String message;
+  final Object? details;
+
+  /// Every top-level member of the body other than `code`, `message` and
+  /// `details`, as decoded: what an `AuthProvider` refusal adds, such as
+  /// `{'error': 'attestation_expired'}` (cratestack#1208). Empty when the
+  /// server sent none; a member this client does not know is kept, never
+  /// dropped.
+  final Map<String, Object?> extra;
+
+  factory RpcErrorBody.fromWire(Object? value) {
+    if (value is! Map) {
+      return RpcErrorBody(
+        code: CratestackRpcErrorCodes.internal,
+        message: value?.toString() ?? 'unknown RPC error',
+      );
+    }
+    final map = value;
+    return RpcErrorBody(
+      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
+      message: (map['message'] as String?) ?? '',
+      details: map['details'],
+      extra: _cratestackExtraErrorMembers(map),
+    );
+  }
+}
+
 /// Thrown by an RPC adapter when a remote call fails with an
 /// `RpcErrorBody` payload. Carries the gRPC-style `code` directly so
 /// callers can switch on it without parsing.
+///
+/// A refusal from the server's `AuthProvider` keeps its fixed code
+/// (`unauthenticated` or `permission_denied`); what it adds is in [details],
+/// [extra] and [challenges]:
+///
+/// ```dart
+/// on CratestackRpcException catch (e) {
+///   if (e.code == CratestackRpcErrorCodes.unauthenticated &&
+///       e.extra['error'] == 'attestation_expired') {
+///     // renew the credential and send again, once
+///   }
+/// }
+/// ```
 class CratestackRpcException implements Exception {
   CratestackRpcException({
     required this.status,
     required this.body,
+    this.headers = const <String, String>{},
   });
 
   final int status;
   final RpcErrorBody body;
 
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `). Empty for an error that arrived inside a batch frame or as a
+  /// stream's final item, which have no headers of their own.
+  final Map<String, String> headers;
+
   String get code => body.code;
   String get message => body.message;
   Object? get details => body.details;
+
+  /// [RpcErrorBody.extra]: the body's members beyond `code`, `message` and
+  /// `details`.
+  Map<String, Object?> get extra => body.extra;
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
 
   @override
   String toString() =>
       'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
 }
+
 
 /// Per-call settings for the RPC adapter.
 class CratestackRpcCallOptions {
@@ -755,6 +830,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
             'message': 'HTTP ${response.status}',
           },
         ),
+        headers: response.headers,
       );
     }
     return _decodeBody(bytes, contentType, 'CratestackRpcHttpAdapter');

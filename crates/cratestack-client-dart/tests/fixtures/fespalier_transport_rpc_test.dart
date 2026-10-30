@@ -271,6 +271,38 @@ void main() {
       );
     });
 
+    test('a refusal keeps its members, details and challenge (cratestack#1243)', () async {
+      final error = await failWith(
+        TransportStatusError(
+          statusCode: 401,
+          headers: const {
+            'content-type': 'application/cbor',
+            'www-authenticate': 'Signature error="attestation_expired"',
+          },
+          body: Uint8List.fromList(
+            cbor.cbor.encode({
+              'code': 'unauthenticated',
+              'message': 'attestation expired',
+              'details': {'device': 'd-1'},
+              'error': 'attestation_expired',
+            }),
+          ),
+        ),
+      );
+      expect(
+        error,
+        isA<CratestackRpcException>()
+            .having((e) => e.code, 'code', 'unauthenticated')
+            .having((e) => e.details, 'details', {'device': 'd-1'})
+            .having((e) => e.extra, 'extra', {'error': 'attestation_expired'})
+            .having(
+              (e) => e.challenges,
+              'challenges',
+              ['Signature error="attestation_expired"'],
+            ),
+      );
+    });
+
     test('any other error a decorator throws reaches the caller unchanged', () async {
       expect(await failWith(StateError('rejected')), isA<StateError>());
     });

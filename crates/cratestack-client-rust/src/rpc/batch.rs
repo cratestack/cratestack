@@ -30,6 +30,7 @@
 use cratestack_core::CratestackError;
 
 use crate::codec::HttpClientCodec;
+use crate::remote_refusal::Challenges;
 use crate::rpc::batch_call::BatchHandle;
 use crate::rpc::client::RpcClient;
 use crate::rpc::error::{RpcClientError, RpcRemoteError, http_status_for_rpc_code};
@@ -167,6 +168,7 @@ impl BatchResults {
             (None, Some(body)) => Err(RpcClientError::Remote(RpcRemoteError {
                 status: http_status_for_rpc_code(&body.code),
                 body,
+                challenges: Challenges::default(),
             })),
             (Some(_), Some(_)) | (None, None) => Err(RpcClientError::InvalidResponse(format!(
                 "batch frame {} has both `output` and `error` set, or neither",
