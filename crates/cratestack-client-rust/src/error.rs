@@ -75,7 +75,10 @@ pub enum ClientError {
     #[error("remote call failed with status {status}: {message}")]
     Remote {
         status: StatusCode,
-        error: Option<CratestackErrorResponse>,
+        /// The decoded error envelope, boxed since cratestack#1208 gave it
+        /// an `extra` map: inline, it made every `Result<_, ClientError>`
+        /// carry it (`clippy::result_large_err`).
+        error: Option<Box<CratestackErrorResponse>>,
         message: String,
     },
 }

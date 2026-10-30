@@ -29,7 +29,9 @@ impl SyncEngine {
                 store::set(&tx, store::PUSHED_SEQ, server_seq)?;
                 Recovery::Retry { after_secs: None }
             }
-            SyncErrorCode::ClientMismatch | SyncErrorCode::Unauthenticated => Recovery::Halt,
+            SyncErrorCode::ClientMismatch
+            | SyncErrorCode::Unauthenticated
+            | SyncErrorCode::Forbidden => Recovery::Halt,
             _ => Recovery::Retry {
                 after_secs: error.retry_after_secs,
             },

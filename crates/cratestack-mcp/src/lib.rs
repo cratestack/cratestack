@@ -71,7 +71,8 @@ pub use resources::{DEFAULT_PAGE_SIZE, RESOURCE_SCHEME, ResourceDescriptor};
 pub use server::McpServer;
 pub use stdio::{ServeError, StdioServer};
 pub use streamable_http::{
-    HttpConfigError, ProtectedResource, StreamableHttp, StreamableHttpServer, StreamableHttpService,
+    CredentialPresence, HttpConfigError, ProtectedResource, StreamableHttp, StreamableHttpServer,
+    StreamableHttpService,
 };
 pub use table::{ArgumentsError, McpTools, ToolDescriptor, decode_arguments, encode_output};
 

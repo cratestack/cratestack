@@ -1,12 +1,18 @@
 //! Request-level failures. Per-mutation failures are not errors — they are
 //! [`super::MutationOutcome::Rejected`] inside a successful push.
 
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+use cratestack_core::Value;
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SyncErrorCode {
     Unauthenticated,
+    /// The application's `AuthProvider` knows the caller and refused it
+    /// (an `AuthRefusal::forbidden`, cratestack#1243).
+    Forbidden,
     /// The client id is registered to another principal.
     ClientMismatch,
     /// The client id is unknown or was evicted by the client TTL. Recovery:
@@ -29,7 +35,7 @@ impl SyncErrorCode {
     pub fn status(self) -> u16 {
         match self {
             Self::Unauthenticated => 401,
-            Self::ClientMismatch => 403,
+            Self::ClientMismatch | Self::Forbidden => 403,
             Self::SequenceGap => 409,
             Self::ClientExpired | Self::CursorExpired => 410,
             Self::TooManyMutations | Self::MutationTooLarge => 413,
@@ -52,6 +58,41 @@ pub struct SyncErrorBody {
     /// Set on `rate_limited`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after_secs: Option<u32>,
+    /// An `AuthRefusal`'s `details` (cratestack#1243). Boxed so the body,
+    /// the error of every sync handler, stays small.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<Box<Value>>,
+    /// An `AuthRefusal`'s extra members, top-level next to `code` and
+    /// `message` as on REST (`{"code": "unauthenticated", ..., "error":
+    /// "attestation_expired"}`). A name this body already uses
+    /// ([`RESERVED_SYNC_ERROR_MEMBERS`]) is never written; read from the
+    /// wire, every member the body does not know lands here.
+    #[serde(flatten, serialize_with = "visible_members")]
+    pub extra: BTreeMap<String, Value>,
+    /// An `AuthRefusal`'s `WWW-Authenticate` challenges. Sent as headers,
+    /// never in the body, so a decoded body has none.
+    #[serde(skip)]
+    pub challenges: Vec<String>,
+}
+
+/// The members [`SyncErrorBody::extra`] can never set.
+pub const RESERVED_SYNC_ERROR_MEMBERS: [&str; 5] = [
+    "code",
+    "message",
+    "details",
+    "lastMutationSeq",
+    "retryAfterSecs",
+];
+
+fn visible_members<S: Serializer>(
+    extra: &BTreeMap<String, Value>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_map(
+        extra
+            .iter()
+            .filter(|(name, _)| !RESERVED_SYNC_ERROR_MEMBERS.contains(&name.as_str())),
+    )
 }
 
 impl SyncErrorBody {
@@ -61,6 +102,9 @@ impl SyncErrorBody {
             message: message.into(),
             last_mutation_seq: None,
             retry_after_secs: None,
+            details: None,
+            extra: BTreeMap::new(),
+            challenges: Vec::new(),
         }
     }
 }

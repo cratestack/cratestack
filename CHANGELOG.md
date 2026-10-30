@@ -44,6 +44,93 @@ codes, and lost session close codes (design §6a.5).
 - New `just test-webtransport-browser` and CI job `webtransport-browser`: headless Chromium, end
   to end, against the binding.
 
+### An `AuthProvider` refusal can shape its response: extra members and `WWW-Authenticate` (#1208)
+
+**What was missing.** A provider could only refuse with `CratestackError::Unauthorized` or
+`Forbidden`, so every refusal reached the client as the same `UNAUTHORIZED` /
+`unauthenticated` code with a message. A client that must tell "renew your credential and retry
+once" from "your key is gone, sign out" could not. Device-signed sessions classify refusals by an
+`error` member, and OAuth resource servers by `WWW-Authenticate`. Such a provider had to verify
+and refuse in a tower layer in front of the generated router.
+
+**What changed.**
+
+- **`AuthRefusal`** (`cratestack::AuthRefusal`), turned into the new
+  `CratestackError::AuthRefused` by `refusal.into_error()`. There is deliberately no
+  `From<AuthRefusal> for CratestackError`: a second `From` impl on `CratestackError` would make
+  every `?` whose error type was inferred through `From<T> for T` ambiguous (E0283), in generated
+  code and in an app's code alike.
+  - `AuthRefusal::unauthenticated(message)` is a 401 and `AuthRefusal::forbidden(message)` a 403.
+    The codes stay `UNAUTHORIZED` / `FORBIDDEN`, and on RPC `unauthenticated` /
+    `permission_denied`, so existing clients read a refusal as before.
+  - `.with_member(name, value)` adds a top-level envelope member next to `code` and `message`.
+    The names `code`, `message` and `details` are ignored (`RESERVED_ENVELOPE_MEMBERS`).
+  - `.with_details(value)` sets `details`.
+  - `.with_challenge(value)` adds a `WWW-Authenticate` header. A value that is not printable
+    ASCII is ignored.
+- **The envelopes carry the members.** `CratestackErrorResponse` and `RpcErrorBody` gain a public
+  `extra` map. It is written after `code`, `message` and `details`, and it collects the unknown
+  members of an envelope read from the wire.
+- **Same on both transports.** REST, RPC unary and RPC batch send the same status, members and
+  challenges. A batch refusal still answers the whole batch, since the envelope is authenticated
+  once. The RPC binding's re-encoding of a handler's error keeps the `WWW-Authenticate` header.
+  The SSE and middleware error paths attach it too.
+- **No byte changes elsewhere.** Both envelopes' serde is now written by hand: always a
+  known-length map, never `#[serde(flatten)]`. An envelope without extra members encodes byte
+  for byte as before, in JSON and in CBOR (`cratestack-codec-cbor/tests/error_envelope_bytes.rs`).
+
+**Migrating.** Code that builds `CratestackErrorResponse { .. }` or `RpcErrorBody { .. }` with a
+struct literal must add `extra: Default::default()` (both now implement `Default`, so
+`..Default::default()` works too). In `cratestack-client-rust`, `ClientError::Remote`'s `error`
+is now `Option<Box<CratestackErrorResponse>>`: field access through it is unchanged, but code that
+builds the variant wraps the envelope in `Box::new`, and a pattern that names the envelope's fields
+inside `Some(..)` matches on `Some(boxed)` and then reads `boxed.code`. Inline, the larger envelope
+made every `Result<_, ClientError>` trip `clippy::result_large_err`. Code that matches on
+`CratestackError` already has a wildcard arm (the enum is `#[non_exhaustive]`). Providers that
+return `Unauthorized` / `Forbidden` are unchanged.
+
+Not in this change: `cratestack-sync` and `cratestack-mcp` (the next entry), and the principal
+contract (the rest of #1243).
+
+### MCP and sync render an `AuthRefusal`; MCP's credential check is pluggable (#1243)
+
+**What was missing.** Two surfaces outside REST and RPC ignored #1208's refusals. MCP's
+Streamable HTTP guard required `Authorization: Bearer` before the provider ran, so a provider
+that authenticates another way (a device signature, a COSE envelope, mTLS) could never
+authenticate an MCP call, and a refusal reached the client as the guard's fixed 401 or 403. The
+sync endpoints turned every provider error into `401 unauthenticated` with the error's `Display`
+text, which for an `Internal` or `Database` error is the operator's detail.
+
+**What changed.**
+
+- **`CredentialPresence`** (`cratestack::mcp::CredentialPresence`), set with
+  `StreamableHttpServer::with_credential_presence`, decides before the body is read whether a
+  request carries a credential at all:
+  - `CredentialPresence::bearer()` is the default and today's rule, unchanged.
+  - `CredentialPresence::provider_decides()` sends every request to the provider.
+  - `CredentialPresence::when(|parts| ...)` takes a predicate over the request head.
+  - `.with_credential_headers([...])` names the headers that carry the credential. They are
+    removed before `rmcp` sees the request, as `Authorization` always is, and their values are cut
+    out of a provider's logged detail. A token is still never passed on to a tool.
+
+  A request the rule finds without a credential still gets the RFC 9728
+  `Bearer resource_metadata="..."` challenge. Two `Authorization` headers are still 400 under any
+  rule. The challenge's `error` (`invalid_token`, `insufficient_scope`) now appears only when the
+  request carried a bearer token, which under the default rule is always.
+- **MCP renders an `AuthRefusal`** with its status, REST's full envelope (its message,
+  `details` and members), and its challenges as further `WWW-Authenticate` headers after the
+  guard's own. A plain provider error reads as before.
+- **Sync renders a provider error as REST does.** An `AuthRefusal` keeps its status, its
+  `details` and members (top-level in the sync error body, as on REST) and its challenges. A
+  plain error now sends its public message, never the operator detail. A `Forbidden` is the new
+  `403 forbidden` code, not a 401. A provider that could not decide (a 5xx) is
+  `500 internal error`, not a 401 that would send the client to sign in again. The sync client
+  treats `forbidden` like `unauthenticated` (`Recovery::Halt`).
+
+**Migrating.** `SyncErrorBody` gains `details`, `extra` and `challenges` (not on the wire; sent as
+headers), so a struct literal needs the new fields or `..SyncErrorBody::new(code, message)`. `SyncErrorCode` gains
+`Forbidden`, so an exhaustive `match` needs an arm for it.
+
 ## 0.17.0 (2026-10-28)
 
 ### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)

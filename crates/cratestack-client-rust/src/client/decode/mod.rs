@@ -73,7 +73,7 @@ where
         Err(ClientError::Remote {
             status: StatusCode::from_u16(response.status_code)
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            error,
+            error: error.map(Box::new),
             message,
         })
     }
@@ -106,7 +106,7 @@ where
     ClientError::Remote {
         status: StatusCode::from_u16(response.status_code)
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-        error,
+        error: error.map(Box::new),
         message,
     }
 }
@@ -157,7 +157,7 @@ where
         Err(ClientError::Remote {
             status: StatusCode::from_u16(response.status_code)
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            error,
+            error: error.map(Box::new),
             message,
         })
     }

@@ -569,6 +569,7 @@ fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcRespo
                         code: "not_found".to_owned(),
                         message: format!("widget {} not found", input.id),
                         details: None,
+                        extra: Default::default(),
                     }),
                 }
             }
@@ -600,6 +601,7 @@ fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcRespo
                 code: "internal".to_owned(),
                 message: format!("test batch server has no dispatch for op `{other}`"),
                 details: None,
+                extra: Default::default(),
             }),
         },
     }

@@ -15,7 +15,10 @@
 //! - **The OAuth 2.1 resource-server contract** (`auth.rs`, `resource.rs`,
 //!   `metadata.rs`). `rmcp` has none on the server side: a 401 with
 //!   `WWW-Authenticate: Bearer resource_metadata="..."`, and RFC 9728
-//!   metadata naming the authorization servers.
+//!   metadata naming the authorization servers. A request needs a bearer
+//!   token by default; [`CredentialPresence`] (`presence.rs`) lets a
+//!   provider that authenticates another way decide (cratestack#1243), and
+//!   an `AuthRefusal` keeps its status, members and challenges.
 //! - **Two request shapes `rmcp` would serve** (`strict.rs`): a token in
 //!   the query string, and a header MCP mirrors from the body sent twice.
 //! - **The caller's identity** (`caller.rs`). The provider's
@@ -66,6 +69,7 @@ mod error;
 mod guard;
 mod metadata;
 mod origin;
+mod presence;
 mod reply;
 mod resource;
 mod strict;
@@ -75,4 +79,5 @@ mod tests_call_guard;
 pub use builder::{StreamableHttp, StreamableHttpServer};
 pub use error::HttpConfigError;
 pub use guard::StreamableHttpService;
+pub use presence::CredentialPresence;
 pub use resource::ProtectedResource;
