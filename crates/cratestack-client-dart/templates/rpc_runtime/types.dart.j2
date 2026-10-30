@@ -31,6 +31,8 @@ import 'constants.dart';
 
 {% include "http_runtime/codec.dart.j2" %}
 
+{% include "http_runtime/refusal.dart.j2" %}
+
 typedef CratestackValueMap = Map<String, Object?>;
 
 /// Recursively rewrites decoded containers into the `Map<String, Object?>`
@@ -158,35 +160,6 @@ class CratestackRpcErrorCodes {
   static const String internal = 'internal';
 }
 
-/// Wire shape of an RPC error body. Mirrors
-/// `cratestack_core::rpc::RpcErrorBody`.
-class RpcErrorBody {
-  const RpcErrorBody({
-    required this.code,
-    required this.message,
-    this.details,
-  });
-
-  final String code;
-  final String message;
-  final Object? details;
-
-  factory RpcErrorBody.fromWire(Object? value) {
-    if (value is! Map) {
-      return RpcErrorBody(
-        code: CratestackRpcErrorCodes.internal,
-        message: value?.toString() ?? 'unknown RPC error',
-      );
-    }
-    final map = value;
-    return RpcErrorBody(
-      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
-      message: (map['message'] as String?) ?? '',
-      details: map['details'],
-    );
-  }
-}
-
 /// Wire shape of a single batch request frame. Mirrors
 /// `cratestack_core::rpc::RpcRequest`.
 class RpcRequest {
@@ -234,26 +207,7 @@ class RpcResponseFrame {
   }
 }
 
-/// Thrown by an RPC adapter when a remote call fails with an
-/// `RpcErrorBody` payload. Carries the gRPC-style `code` directly so
-/// callers can switch on it without parsing.
-class CratestackRpcException implements Exception {
-  CratestackRpcException({
-    required this.status,
-    required this.body,
-  });
-
-  final int status;
-  final RpcErrorBody body;
-
-  String get code => body.code;
-  String get message => body.message;
-  Object? get details => body.details;
-
-  @override
-  String toString() =>
-      'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
-}
+{% include "rpc_runtime/errors.dart.j2" %}
 
 /// Per-call settings for the RPC adapter.
 class CratestackRpcCallOptions {

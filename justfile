@@ -1097,6 +1097,11 @@ verify-dart:
 	    cp crates/cratestack-client-dart/tests/fixtures/wire-golden/${transport}-*.json "$pkg/test/wire-golden/"
 	    echo "=== flutter test (HTTP seam wire parity + behaviour): $pkg ==="
 	    (cd "$pkg" && flutter test "test/wire_parity_${transport}_test.dart")
+	    # cratestack#1243: an AuthProvider refusal's code, details, extra
+	    # members and WWW-Authenticate challenges, typed on both exceptions.
+	    cp "crates/cratestack-client-dart/tests/fixtures/auth_refusal_${transport}_test.dart" "$pkg/test/"
+	    echo "=== flutter test (AuthProvider refusal members + challenges): $pkg ==="
+	    (cd "$pkg" && flutter test "test/auth_refusal_${transport}_test.dart")
 	  fi
 	done
 

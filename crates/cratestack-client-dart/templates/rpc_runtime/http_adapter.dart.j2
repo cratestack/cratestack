@@ -183,6 +183,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
             'message': 'HTTP ${response.status}',
           },
         ),
+        headers: response.headers,
       );
     }
     return _decodeBody(bytes, contentType, 'CratestackRpcHttpAdapter');

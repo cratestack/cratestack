@@ -7,6 +7,7 @@ use crate::codec::{
     CBOR_SEQUENCE_CONTENT_TYPE, HttpClientCodec, decode_cbor_sequence, media_type_matches,
 };
 use crate::error::ClientError;
+use crate::remote_refusal::www_authenticate;
 use crate::runtime::wire::RuntimeResponseWire;
 
 /// Decodes a 2xx response body to `Output`, discarding status and
@@ -75,6 +76,7 @@ where
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             error: error.map(Box::new),
             message,
+            challenges: www_authenticate(&response.headers),
         })
     }
 }
@@ -108,6 +110,7 @@ where
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
         error: error.map(Box::new),
         message,
+        challenges: www_authenticate(&response.headers),
     }
 }
 
@@ -159,6 +162,7 @@ where
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
             error: error.map(Box::new),
             message,
+            challenges: www_authenticate(&response.headers),
         })
     }
 }

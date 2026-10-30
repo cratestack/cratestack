@@ -232,3 +232,42 @@ fn riverpod_adapter_provider_docs_show_the_http_adapter_over_the_dio_transport()
     let client = file(&rpc, "lib/src/client.dart");
     assert!(client.contains("CratestackRpcHttpAdapter(\n///         CratestackDioTransport(dio),"));
 }
+
+/// cratestack#1243: both exceptions type an `AuthProvider` refusal's members,
+/// `details` and `WWW-Authenticate` challenges, and `RpcErrorBody` no longer
+/// drops the members it does not know. The behavioural proof is
+/// `tests/fixtures/auth_refusal_{rest,rpc}_test.dart`, under `just verify-dart`.
+#[test]
+fn both_exceptions_type_the_refusal_members_and_the_challenges() {
+    for (label, package) in every_package() {
+        let runtime = file(&package, "lib/src/runtime.dart");
+        let common = [
+            "Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {",
+            "List<String> _cratestackChallenges(Map<String, String> headers) {",
+            "this.headers = const <String, String>{},",
+            "List<String> get challenges => _cratestackChallenges(headers);",
+        ];
+        let rest = [
+            "String? get code => _envelopeMember('code') as String?;",
+            "Map<String, Object?> get extra => _cratestackExtraErrorMembers(body);",
+            "        headers: response.headers,\n      );",
+        ];
+        let rpc = [
+            "final Map<String, Object?> extra;",
+            "extra: _cratestackExtraErrorMembers(map),",
+            "Map<String, Object?> get extra => body.extra;",
+            "        headers: response.headers,\n      );",
+        ];
+        let specific: &[&str] = if label.starts_with("tiny_rest") {
+            &rest
+        } else {
+            &rpc
+        };
+        for needle in common.iter().chain(specific) {
+            assert!(
+                runtime.contains(needle),
+                "{label}: runtime.dart lacks `{needle}`"
+            );
+        }
+    }
+}

@@ -1,0 +1,37 @@
+// -----------------------------------------------------------------------------
+// What an error answer says beyond its code (cratestack#1208, cratestack#1243)
+//
+// An `AuthProvider` refusal keeps the fixed code (`UNAUTHORIZED`, RPC
+// `unauthenticated`) and may add top-level members to the error body, a
+// `details` member and `WWW-Authenticate` challenges. These two helpers read
+// them for `CratestackRestException` and `CratestackRpcException`.
+// -----------------------------------------------------------------------------
+
+/// The members of an error body that are not `code`, `message` or `details`,
+/// unmodifiable and in wire order. Empty when [body] is not a map. Nothing is
+/// dropped: a member this client does not know is kept here, as decoded.
+Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {
+  if (body is! Map) {
+    return const <String, Object?>{};
+  }
+  const reserved = <String>{'code', 'message', 'details'};
+  return Map<String, Object?>.unmodifiable(<String, Object?>{
+    for (final entry in body.entries)
+      if (!reserved.contains(entry.key.toString()))
+        entry.key.toString(): entry.value,
+  });
+}
+
+/// The `WWW-Authenticate` value of an answer's [headers], raw and unparsed,
+/// as a list: empty when there is none. [CratestackHttpResponse] joins a
+/// repeated header with `, `, so two challenges sent as two header lines
+/// arrive as one entry holding both.
+List<String> _cratestackChallenges(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    final value = entry.value;
+    if (entry.key.toLowerCase() == 'www-authenticate' && value.isNotEmpty) {
+      return List<String>.unmodifiable(<String>[value]);
+    }
+  }
+  return const <String>[];
+}

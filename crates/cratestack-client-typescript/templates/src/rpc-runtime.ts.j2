@@ -174,7 +174,9 @@ export interface RpcResponseFrame<O = JsonValue> {
 }
 
 /** Wire shape of an RPC error body. Mirrors the server-side
- *  `cratestack_core::rpc::RpcErrorBody`. */
+ *  `cratestack_core::rpc::RpcErrorBody`. Members beyond these three (an
+ *  `AuthProvider` refusal's) stay on the decoded object; read them typed
+ *  through `CratestackRpcError.extra`. */
 export interface RpcErrorBody {
   code: RpcErrorCode | string;
   message: string;
@@ -201,22 +203,59 @@ export type RpcErrorCode =
   | "canceled"
   | "internal";
 
+const RESERVED_ERROR_MEMBERS: ReadonlySet<string> = new Set(["code", "message", "details"]);
+
+/** The members of a decoded error body beyond `code`, `message` and
+ *  `details`: what an `AuthProvider` refusal adds (cratestack#1208), such
+ *  as `{ error: "attestation_expired" }`. Every member is kept, as decoded;
+ *  empty when `body` is not an object. */
+function extraErrorMembers(body: unknown): Readonly<Record<string, unknown>> {
+  const extra: Record<string, unknown> = {};
+  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+    for (const [name, value] of Object.entries(body)) {
+      if (!RESERVED_ERROR_MEMBERS.has(name)) {
+        extra[name] = value;
+      }
+    }
+  }
+  return Object.freeze(extra);
+}
+
+/** The answer's `WWW-Authenticate` value, raw and unparsed (cratestack#1243);
+ *  empty when there is none. `Headers` joins two challenge lines with `, `,
+ *  so they arrive as one entry holding both. */
+function challengesOf(headers: Headers | undefined): readonly string[] {
+  const value = headers?.get("www-authenticate");
+  return Object.freeze(value ? [value] : []);
+}
+
 /** Thrown by `CratestackRpcRuntime` when a remote call fails. Carries
  *  the wire-shaped `RpcErrorBody` directly so callers can switch on
- *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.). */
+ *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.).
+ *
+ *  An `AuthProvider` refusal keeps its fixed code (`unauthenticated` or
+ *  `permission_denied`); what it adds is in `details`, `extra` (the body's
+ *  other members, which `body` also keeps) and `challenges`. */
 export class CratestackRpcError extends Error {
   readonly status: number;
   readonly code: RpcErrorCode | string;
   readonly details: unknown;
   readonly body: RpcErrorBody;
+  readonly extra: Readonly<Record<string, unknown>>;
+  /** The answer's headers; `undefined` when it had none of its own. */
+  readonly headers: Headers | undefined;
+  readonly challenges: readonly string[];
 
-  constructor(status: number, body: RpcErrorBody) {
+  constructor(status: number, body: RpcErrorBody, headers?: Headers) {
     super(`RPC call failed with code ${body.code} (status ${status}): ${body.message}`);
     this.name = "CratestackRpcError";
     this.status = status;
     this.code = body.code;
     this.details = body.details;
     this.body = body;
+    this.extra = extraErrorMembers(body);
+    this.headers = headers;
+    this.challenges = challengesOf(headers);
   }
 }
 
@@ -241,6 +280,7 @@ export class CratestackRpcStreamError extends Error {
   readonly code: RpcErrorCode | string;
   readonly details: unknown;
   readonly body: RpcErrorBody;
+  readonly extra: Readonly<Record<string, unknown>>;
 
   constructor(body: RpcErrorBody) {
     super(`RPC stream failed with code ${body.code}: ${body.message}`);
@@ -248,6 +288,7 @@ export class CratestackRpcStreamError extends Error {
     this.code = body.code;
     this.details = body.details;
     this.body = body;
+    this.extra = extraErrorMembers(body);
   }
 }
 
@@ -489,7 +530,11 @@ export class CratestackRpcRuntime {
       return codec.decode(bytes);
     }
 
-    throw new CratestackRpcError(response.status, await readErrorBody(response, codec));
+    throw new CratestackRpcError(
+      response.status,
+      await readErrorBody(response, codec),
+      response.headers,
+    );
   }
 
   private async buildHeaders(extra?: HeadersInit): Promise<Headers> {
