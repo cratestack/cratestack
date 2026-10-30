@@ -89,7 +89,10 @@ async fn run<P: AuthProvider>(
 }
 
 fn id(context: &CratestackContext) -> &str {
-    context.principal_actor_id().unwrap_or("")
+    match context.auth_field("id") {
+        Some(Value::String(id)) => id,
+        _ => "",
+    }
 }
 
 #[tokio::test]
