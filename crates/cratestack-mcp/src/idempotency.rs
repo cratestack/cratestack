@@ -40,23 +40,23 @@
 //! `context/system.rs`). The prefix stays outside the hash (below), so
 //! hashing the id keeps this split.
 //!
-//! The id is read by [`principal_id`], not `principal_actor_id`, because
-//! the latter answers only a *string* `id`: an `auth User { id Int }`
-//! schema — the shape ADR 0002's own examples use — would otherwise be
-//! refused on every keyed or rate-limited call, told to add the `id` claim
-//! it already has. An `Int` id renders as its decimal digits, so `7` and
-//! `"7"` share a namespace; one `auth` block declares one type for `id`,
-//! so a single service never has both.
+//! The id is the principal contract's `CratestackContext::subject()` (ADR
+//! 0021 §2): `sub`, then `actor.id`, then `id`, the same "who" the audit
+//! actor and the sync principal read. An `Int` id renders as its decimal
+//! digits, so an `auth User { id Int }` schema — the shape ADR 0002's own
+//! examples use — is admitted rather than told to add the `id` claim it
+//! already has; `7` and `"7"` share a namespace, and one `auth` block
+//! declares one type for `id`, so a single service never has both. This
+//! module once restated that lookup as its own `principal_id`; it moved to
+//! core so every reader of "who" gives one answer.
 //!
 //! **The record** is the serialized `CallToolResult`, with status 200 for a
 //! success and the error's HTTP status for an `isError` result. As on HTTP,
 //! an error outcome is recorded too: the IETF contract freezes the outcome,
 //! whatever it was (`IdempotencyStore::complete`'s docs).
 
-use std::borrow::Cow;
-
 use cratestack_core::idempotency_record::IdempotencyRecord;
-use cratestack_core::{CratestackContext, CratestackError, Value as ClaimValue};
+use cratestack_core::{CratestackContext, CratestackError};
 use rmcp::model::{CallToolResult, RequestMetaObject};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -102,34 +102,15 @@ fn bad_key(rule: &str) -> CratestackError {
     CratestackError::BadRequest(format!("_meta[\"{IDEMPOTENCY_KEY_META}\"] {rule}"))
 }
 
-/// The caller's `id` claim as text: the value `principal_actor_id` finds,
-/// in its lookup order (actor facet, principal claims, auth fields; the
-/// first *present* one wins), but answered for an `Int` as well as a
-/// `String`. The `a_string_id_agrees_with_principal_actor_id` test keeps
-/// the two from drifting apart.
-pub(crate) fn principal_id(ctx: &CratestackContext) -> Option<Cow<'_, str>> {
-    let principal = ctx.principal.as_ref();
-    let id = principal
-        .and_then(|principal| principal.actor.as_ref())
-        .and_then(|facet| facet.fields.get("id"))
-        .or_else(|| principal.and_then(|principal| principal.claims.get("id")))
-        .or_else(|| ctx.auth.as_ref().and_then(|auth| auth.fields.get("id")))?;
-    match id {
-        ClaimValue::String(id) => Some(Cow::Borrowed(id.as_str())),
-        ClaimValue::Int(id) => Some(Cow::Owned(id.to_string())),
-        _ => None,
-    }
-}
-
 /// `mcp:<sha256 hex of the actor id>` for a user, `mcp-system:<…>` for a
 /// system caller, or a refusal when the context has no actor id.
 pub(crate) fn namespace(ctx: &CratestackContext) -> Result<String, CratestackError> {
     let prefix = if ctx.is_system() { "mcp-system" } else { "mcp" };
-    match principal_id(ctx) {
+    match ctx.subject() {
         Some(id) if !id.is_empty() => Ok(format!("{prefix}:{}", sha256_hex(id.as_bytes()))),
         _ => Err(CratestackError::PreconditionFailed(
             "this server's context has no principal id, so a keyed or rate-limited call has no \
-             namespace to be scoped to; build the context with an `id` claim"
+             namespace to be scoped to; build the context with a `sub` (or `id`) claim"
                 .to_owned(),
         )),
     }

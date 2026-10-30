@@ -73,11 +73,12 @@ where
 }
 
 /// Derive an [`AuditActor`] from the [`CratestackContext`] active at
-/// mutation time. Banks generally want the principal's id, primary
-/// claims, and source IP if the transport recorded one.
+/// mutation time. Banks generally want the principal's id (`subject()`:
+/// `sub`, then `actor.id`, then `id`), primary claims, and source IP if the
+/// transport recorded one.
 pub(crate) fn actor_from_context(ctx: &CratestackContext) -> AuditActor {
     AuditActor {
-        id: ctx.principal_actor_id().map(|s| s.to_owned()),
+        id: ctx.subject().map(std::borrow::Cow::into_owned),
         claims: ctx.audit_claims_snapshot(),
         ip: ctx.client_ip().map(|s| s.to_owned()),
     }

@@ -129,7 +129,7 @@ impl McpTools for FakeTools {
                 })
             }
             // The run number makes a replay distinguishable from a rerun.
-            Call::Transfer(args) => Ok(json!([args.amount, run, ctx.principal_actor_id()])),
+            Call::Transfer(args) => Ok(json!([args.amount, run, ctx.subject()])),
         }
     }
 }

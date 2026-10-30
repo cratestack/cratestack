@@ -4,6 +4,7 @@
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use sha2::{Digest, Sha256};
 
 use crate::{AuthError, Jwk, decode_verifying_key};
 
@@ -53,6 +54,26 @@ pub fn verifying_key_from_jwk(jwk: &Jwk) -> Result<VerifyingKey, AuthError> {
         .as_deref()
         .ok_or_else(|| AuthError::InvalidPublicKey("cnf jwk missing x".to_string()))?;
     decode_verifying_key(x)
+}
+
+/// The RFC 7638 JWK SHA-256 thumbprint of an OKP key, base64url without
+/// padding: the value the principal contract carries as `cnf.jkt` (RFC 9449
+/// §6). The hash input is the required members `crv`, `kty` and `x` in that
+/// (lexicographic) order, with no whitespace (RFC 8037 §2). `None` for any
+/// other key type, or an OKP key missing `crv` or `x`.
+pub fn jwk_thumbprint(jwk: &Jwk) -> Option<String> {
+    if jwk.kty != "OKP" {
+        return None;
+    }
+    let canonical = serde_json::json!({
+        "crv": jwk.crv.as_deref()?,
+        "kty": jwk.kty,
+        "x": jwk.x.as_deref()?,
+    });
+    // Written in key order, so the output is canonical whether or not
+    // `serde_json`'s `preserve_order` is on; `to_string` adds no whitespace.
+    let digest = Sha256::digest(canonical.to_string().as_bytes());
+    Some(URL_SAFE_NO_PAD.encode(digest))
 }
 
 pub fn encode_signing_key(signing_key: &SigningKey) -> String {

@@ -2,6 +2,73 @@
 
 ## Unreleased
 
+### The principal contract: reserved claims, a builder, typed readers, `hasRole` over `roles` (#1243)
+
+**What was missing.** Nothing named the claims the framework itself reads. Each reader of "who"
+had its own lookup: the audit actor (`principal_actor_id()`) took only a string `id`, MCP's
+admission key restated that lookup to accept an integer, and a sync resolver read whatever its
+author chose. `hasRole` read only a single `role`, so a provider whose caller has several roles
+could not express them. A provider had to know the `actor` / `session` / `tenant` facet layout to
+build a context. ADR 0021 §2 (cratestack-docs `internals/auth-seam-adr.md`) fixes the contract.
+
+**What changed.**
+
+- **Reserved claim names with fixed types** (`cratestack::RESERVED_CLAIMS`, `ClaimType`):
+  `sub` (string), `roles` (list of strings), `role` (legacy string), `tenant.id` (string),
+  `auth_time` (integer seconds), `amr` (list of strings), `acr` (string), `cnf` (map, RFC 7800
+  members; `cnf.jkt` a string), `key_role` (`ambient` or `user_present`), `exp` (integer
+  seconds). `id` is **not** reserved. Every other name stays free-form.
+- **`CratestackContext::builder(sub)`** returns a `CratestackContextBuilder` with `.roles(..)`,
+  `.tenant(..)`, `.auth_time(..)`, `.amr(..)`, `.acr(..)`, `.cnf_jkt(..)`, `.cnf(member, value)`,
+  `.key_role(KeyRole::..)`, `.expires_at(..)`, `.claim(name, value)` and `.build()`. It fills
+  `auth` and `principal` exactly as `from_principal` does for the same claims, so `auth().<path>`
+  and every existing reader see the result. It sets no system flag and no verified signer.
+- **Typed readers** on `CratestackContext`, each `None` for an absent **or mistyped** claim:
+  `subject()`, `roles()`, `auth_time()`, `amr()`, `acr()`, `cnf(member)`, `cnf_jkt()`,
+  `key_role()`, `expires_at()`.
+- **One "who".** `subject()` reads `sub` (a string), then `actor.id`, then `id`, an integer
+  rendered as its decimal digits. The audit actor, MCP's idempotency and rate-limit namespace, and
+  the new sync default (`SyncPrincipal::from_subject`, `cratestack_sync::server::subject_resolver`)
+  all read it.
+- **`hasRole(r)`** is true when `roles` contains `r`, or `role` equals `r`, or `actor.role` equals
+  `r`, on every path: procedure policies, read policies lowered to SQL, and the create-time check.
+- **The semantic checker** refuses an `auth` block that declares a reserved name with another type
+  (`roles String`, `auth_time String`, `cnf String`, or a `tenant` type whose `id` is not a
+  string). String-like types (`String`, `Cuid`, `Uuid`, a string enum) count as strings, and a
+  `type` or `Json` as a map.
+- **`cratestack-auth`.** `principal_to_cratestack_context` also emits `sub` (the user id, or
+  `svc:<key id>` for a service caller), `roles` (the verified `role`, or the service caller's
+  default role) and, for a user, `cnf` (`kid`, the bound key's id, and `jkt`, its RFC 7638
+  thumbprint when the id token carried `cnf.jwk`). Nothing it emitted before is removed. The new
+  `principal_to_contract_context` emits only the contract names plus the product claims a
+  deployment selects. `SignedRequestAuthProvider::principal_mapper(PrincipalMapper::..)` picks one
+  (`product()`, the default; `contract([..])`; or `custom(..)`). New `jwk_thumbprint` and
+  `UserPrincipal::bound_key_jkt`.
+
+**Behaviour changes.**
+
+- The audit actor's id now follows `subject()`: an integer `id` is recorded as its digits (it was
+  recorded as no actor), a `sub` wins over `actor.id` and `id`, and a context made with
+  `CratestackContext::authenticated([("actor", {id})..])` now records the `actor.id`.
+- A who-candidate of another kind (a boolean `actor.id`) is skipped and the next one read, where
+  the first present candidate used to answer `None`.
+- `hasRole` reads `role` and `actor.role` independently: a context whose `role` is `user` and
+  whose `actor.role` is `merchant` now passes `hasRole("merchant")`. It used to stop at `role`.
+- MCP's namespace for a context with `sub` hashes `sub`, so a provider that adds `sub` next to a
+  different `id` moves its callers to a new idempotency and rate-limit namespace once.
+- The product mapping's contexts gain the top-level claims `sub`, `roles` and `cnf`.
+
+**Migrating.**
+
+- `principal_actor_id()` returns `Option<Cow<'_, str>>` (it was `Option<&str>`): `.as_deref()` gives
+  the old shape; `.map(str::to_owned)` becomes `.map(Cow::into_owned)`. Prefer `subject()`.
+- A schema whose `auth` block declares a reserved name with another type now fails to check. Declare
+  the contract's type (`roles String[]`, `auth_time Int`) or rename the field.
+- `UserPrincipal` gains `bound_key_jkt`: a struct literal adds `bound_key_jkt: None`.
+
+Not in this change: the `auth_time` / `amr` policy operators and `cratestack-auth`'s `auth_time` /
+`amr` claims (#1244), `CoseAuthProvider` on the builder (a later story of #1243).
+
 ### An `AuthProvider` refusal can shape its response: extra members and `WWW-Authenticate` (#1208)
 
 **What was missing.** A provider could only refuse with `CratestackError::Unauthorized` or

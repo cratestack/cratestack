@@ -1,10 +1,30 @@
 //! Mapping a verified [`RequestPrincipal`] onto a
 //! [`cratestack_core::CratestackContext`].
+//!
+//! Two mappings (ADR 0021 §2, cratestack#1243). The product one,
+//! [`principal_to_cratestack_context`], keeps the shape Webank's policies
+//! read (`auth().actor.id`, `kycStatus`, `session.boundKeyId`) and also
+//! emits the principal contract's names it knows: `sub`, `roles` and `cnf`.
+//! The contract one, [`principal_to_contract_context`], emits only the
+//! contract's names plus the free-form claims a deployment selects.
+//! [`PrincipalMapper`] picks one for `SignedRequestAuthProvider`.
+
+mod contract;
+mod mapper;
+#[cfg(test)]
+mod tests;
 
 use serde::Serialize;
 
 use crate::id_token::RequestPrincipal;
 
+pub use contract::principal_to_contract_context;
+pub use mapper::PrincipalMapper;
+
+/// The product mapping: today's claims, plus the contract's `sub` (the user
+/// id, or `svc:<key id>` for a service caller), `roles` (the one verified
+/// `role`) and, for a user, `cnf` (`kid` the bound key's id, `jkt` its RFC
+/// 7638 thumbprint when the id token carried the key).
 pub fn principal_to_cratestack_context(
     principal: &RequestPrincipal,
     role: Option<&str>,
@@ -47,8 +67,18 @@ pub fn principal_to_cratestack_context(
     }
 
     #[derive(Serialize)]
+    struct Confirmation {
+        kid: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        jkt: Option<String>,
+    }
+
+    #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct CratestackPrincipal {
+        sub: String,
+        roles: Vec<String>,
+        cnf: Confirmation,
         actor: ActorPrincipal,
         session: SessionPrincipal,
         id: String,
@@ -69,6 +99,12 @@ pub fn principal_to_cratestack_context(
         .and_then(|value| value.as_str().map(str::to_owned));
 
     cratestack_core::CratestackContext::from_principal(Some(CratestackPrincipal {
+        sub: user.user_id.clone(),
+        roles: vec![user.role.clone()],
+        cnf: Confirmation {
+            kid: user.bound_key_id.clone(),
+            jkt: user.bound_key_jkt.clone(),
+        },
         actor: ActorPrincipal {
             id: user.user_id.clone(),
             enrollment_status: user.enrollment_status.clone(),
@@ -103,12 +139,21 @@ pub fn principal_to_cratestack_context(
     }))
 }
 
-fn service_principal_to_cratestack_context(
+pub(super) fn service_principal_to_cratestack_context(
     principal: &RequestPrincipal,
     role: Option<&str>,
 ) -> cratestack_core::CratestackContext {
     let caller_id = format!("svc:{}", principal.transport.key_id);
+    let role = role.unwrap_or("caller");
     cratestack_core::CratestackContext::authenticated([
+        (
+            "sub".to_owned(),
+            cratestack_core::Value::String(caller_id.clone()),
+        ),
+        (
+            "roles".to_owned(),
+            cratestack_core::Value::List(vec![cratestack_core::Value::String(role.to_owned())]),
+        ),
         (
             "id".to_owned(),
             cratestack_core::Value::String(caller_id.clone()),
@@ -127,7 +172,7 @@ fn service_principal_to_cratestack_context(
         ),
         (
             "role".to_owned(),
-            cratestack_core::Value::String(role.unwrap_or("caller").to_owned()),
+            cratestack_core::Value::String(role.to_owned()),
         ),
         (
             "callerService".to_owned(),

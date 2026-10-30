@@ -67,7 +67,7 @@ async fn a_mismatched_mcp_method_or_name_is_400_header_mismatch() {
 }
 
 /// The identity the provider built is the one the tool runs as. The fake
-/// `transfer` echoes `ctx.principal_actor_id()`, so two tokens give two
+/// `transfer` echoes `ctx.subject()`, so two tokens give two
 /// answers. (The generated-table version, a procedure policy keyed on an
 /// auth field, is `cratestack-api`'s `tests/mcp_http.rs`.)
 #[tokio::test]

@@ -73,8 +73,9 @@ pub use codec::{
     request_digest_unsigned,
 };
 pub use context::{
-    AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
-    PrincipalFacet, RequestContext, SystemContext, VerifiedSigner,
+    AuthProvider, CachedAuthProvider, ClaimType, CratestackAuthIdentity, CratestackContext,
+    CratestackContextBuilder, KeyRole, PrincipalContext, PrincipalFacet, RESERVED_CLAIMS,
+    RequestContext, ReservedClaim, SystemContext, VerifiedSigner,
 };
 // `Decimal` only exists when EXACTLY ONE decimal backend feature is
 // active; `RustDecimal`/`BigDecimal` each only exist under their own
