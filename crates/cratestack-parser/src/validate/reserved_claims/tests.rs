@@ -75,3 +75,29 @@ fn a_facet_member_is_checked_on_the_type_it_names() {
     // A scalar `tenant` is no facet, so it reserves nothing.
     parse_schema("auth User {\n  tenant String\n}\n").expect("scalar tenant");
 }
+
+#[test]
+fn an_ordinal_enum_member_is_no_string() {
+    // An ordinal enum travels as an integer. On the auth block itself it is
+    // refused already; inside the `type` a dotted claim names, only this
+    // check sees it.
+    for (decl, field) in [("Tenant", "tenant"), ("Cnf", "cnf")] {
+        let member = if field == "tenant" { "id" } else { "jkt" };
+        let source = format!(
+            "enum Code {{\n  a = 1\n  b = 2\n}}\n\ntype {decl} {{\n  {member} Code\n}}\n\n\
+             auth User {{\n  {field} {decl}\n}}\n"
+        );
+        let message = parse_schema(&source)
+            .expect_err("an ordinal enum is not a string claim")
+            .to_string();
+        assert!(
+            message.contains(&format!(
+                "`{field}.{member}` on auth block `User` is declared `Code`"
+            )),
+            "{message}"
+        );
+    }
+    let string_enum = "enum Code {\n  a\n  b\n}\n\ntype Tenant {\n  id Code\n}\n\n\
+                       auth User {\n  tenant Tenant\n}\n";
+    parse_schema(string_enum).expect("a string enum is a string claim");
+}

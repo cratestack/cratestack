@@ -8,13 +8,13 @@
 //! characters, printable ASCII. Absent means no reservation — the same as
 //! REST without the header.
 //!
-//! **The namespace** is `mcp:<sha256 of the principal actor id>` for a user
-//! and `mcp-system:<sha256 of the actor id>` for a `SystemContext`, in
+//! **The namespace** is `mcp:<sha256 of the subject>` for a user
+//! and `mcp-system:<sha256 of the subject>` for a `SystemContext`, in
 //! lowercase hex. REST derives its own from a hash of `Authorization`, a
 //! verified principal or the peer address; the caller here *is* a context —
 //! the one the application supplied on stdio, or the one its `AuthProvider`
-//! built on Streamable HTTP — so its actor id is the identity to scope by.
-//! With no actor id the call is refused rather than put in a shared
+//! built on Streamable HTTP — so its subject is the identity to scope by.
+//! With no subject the call is refused rather than put in a shared
 //! `"anonymous"` namespace, for cratestack#416's reason: two callers sharing
 //! a namespace can replay each other's results.
 //!
@@ -102,8 +102,9 @@ fn bad_key(rule: &str) -> CratestackError {
     CratestackError::BadRequest(format!("_meta[\"{IDEMPOTENCY_KEY_META}\"] {rule}"))
 }
 
-/// `mcp:<sha256 hex of the actor id>` for a user, `mcp-system:<…>` for a
-/// system caller, or a refusal when the context has no actor id.
+/// `mcp:<sha256 hex of the subject>` for a user, `mcp-system:<…>` for a
+/// system caller, or a refusal when the context has no subject (or an empty
+/// one).
 pub(crate) fn namespace(ctx: &CratestackContext) -> Result<String, CratestackError> {
     let prefix = if ctx.is_system() { "mcp-system" } else { "mcp" };
     match ctx.subject() {

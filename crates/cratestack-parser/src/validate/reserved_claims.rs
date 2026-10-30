@@ -95,9 +95,16 @@ fn check(
 }
 
 /// A type whose claim is a string on the wire: `String`, `Cuid`, `Uuid`,
-/// or a string enum (an ordinal enum is refused on an `auth` block already).
+/// or a string enum. An ordinal enum travels as an integer, so it is not one.
+/// `refuse_ordinal_auth_fields` sees only the `auth` block's own fields, and a
+/// dotted claim (`tenant.id`, `cnf.jkt`) is a member of a `type`, so the check
+/// is made here too.
 fn is_string(schema: &Schema, name: &str) -> bool {
-    matches!(name, "String" | "Cuid" | "Uuid") || schema.enums.iter().any(|e| e.name == name)
+    matches!(name, "String" | "Cuid" | "Uuid")
+        || schema
+            .enums
+            .iter()
+            .any(|e| e.name == name && !e.is_ordinal())
 }
 
 fn render(ty: &TypeRef) -> Cow<'_, str> {
