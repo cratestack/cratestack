@@ -32,7 +32,8 @@ pub use claims::{
 pub use disclosure::decode_disclosures_unverified;
 pub use issuance::{default_id_token_claims, issue_id_token, issue_sd_id_token, take_disclosures};
 pub use jwk::{
-    decode_signing_key, encode_signing_key, issuer_jwk, verifying_key_from_jwk, verifying_key_jwk,
+    decode_signing_key, encode_signing_key, issuer_jwk, jwk_thumbprint, verifying_key_from_jwk,
+    verifying_key_jwk,
 };
 pub use principal::{AuthenticatedPrincipal, CurrentPrincipal, RequestPrincipal, UserPrincipal};
 pub use token_parsing::decode_id_token_claims_unverified;

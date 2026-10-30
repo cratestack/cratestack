@@ -77,5 +77,9 @@ name = "auth_refusal"
 required-features = ["server"]
 
 [[test]]
+name = "canonical_request"
+required-features = ["server"]
+
+[[test]]
 name = "end_to_end"
 required-features = ["server", "client"]

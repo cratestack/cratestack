@@ -24,6 +24,9 @@ use crate::server::clients::authorize;
 use crate::server::poke::{ALL_SCOPES, StreamSlot};
 use crate::server::{SyncError, SyncServer, internal};
 
+/// The poke route, and the `path` the provider is given (see `REGISTER`).
+pub(super) const POKE: &str = "/sync/poke";
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PokeQuery {
@@ -50,7 +53,7 @@ async fn open<A: AuthProvider>(
     client_id: Uuid,
 ) -> Result<impl Stream<Item = Result<Event, Infallible>> + use<A>, SyncError> {
     let server: &SyncServer = &state.server;
-    let ctx = state.authenticate(parts, &Bytes::new()).await?;
+    let ctx = state.authenticate(parts, POKE, &Bytes::new()).await?;
     let principal = server.principal(&ctx)?;
     server.admit("poke", &principal.id).await?;
     let mut conn = server.pool.acquire().await.map_err(internal)?;
