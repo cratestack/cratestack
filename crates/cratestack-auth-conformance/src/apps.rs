@@ -10,17 +10,10 @@ use cratestack_codec_json::JsonCodec;
 pub(crate) const MCP_RESOURCE: &str = "http://localhost/mcp";
 const MCP_ISSUER: &str = "https://issuer.conformance.invalid";
 
-/// Who the caller is, as the procedure reports it: `sub`, then the actor's
-/// `id`, then a top-level `id`, an integer rendered as its digits.
+/// Who the caller is, as the procedure reports it: the framework's own
+/// answer, [`CratestackContext::subject`](cratestack::CratestackContext::subject).
 pub(crate) fn subject(ctx: &cratestack::CratestackContext) -> String {
-    for name in ["sub", "actor.id", "id"] {
-        match ctx.auth_field(name) {
-            Some(cratestack::Value::String(value)) => return value.clone(),
-            Some(cratestack::Value::Int(value)) => return value.to_string(),
-            _ => {}
-        }
-    }
-    String::new()
+    ctx.subject().map(String::from).unwrap_or_default()
 }
 
 mod rest {

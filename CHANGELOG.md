@@ -213,7 +213,7 @@ hand.
   `auth_conformance(provider).accepts(subject, sign).refuses(name, sign, expected).run().await`.
   It compiles its own schemas and drives the provider through REST, RPC unary and RPC batch (each at
   the root and under a mount prefix) and MCP Streamable HTTP (with
-  `CredentialPresence::ask_provider()`), and asserts the same subject or the same refusal (status,
+  `CredentialPresence::ask_provider()`), and asserts the same subject (`CratestackContext::subject()`) or the same refusal (status,
   code, message, members, `details`, challenges), the canonical request exactly, and one provider call
   per request. A signer is handed the `Canonical` request before it is sent and returns headers, or
   `Credentials` with request extensions for an in-process credential such as a verified COSE signer.
@@ -225,6 +225,9 @@ hand.
   `CoseSignerProvider`, the verified signer as a provider of its own, is public, so an application can
   put it in a chain of its own. Its credential is present exactly when the envelope layer recorded a
   verified signer. Behaviour is unchanged, and it passes the kit.
+- **`SignedRequestAuthProvider` passes the kit too**: a client that signs the canonical request (the
+  declared route, no mount prefix, the exact body) is accepted on every transport, and one that signs
+  another path is refused on every transport.
 - **CI job `auth library independence (ADR 0021)`** (`.ci/auth-independence-check.sh`): the
   workspace's `Cargo.lock` must contain no `authkestra*` package, so no framework crate depends on
   an external authentication library (ADR 0021 §7).
