@@ -31,6 +31,7 @@ tower.workspace = true
 
 [dev-dependencies]
 async-trait.workspace = true
+chrono.workspace = true
 cratestack-auth.workspace = true
 cratestack-cose = { workspace = true, features = ["auth"] }
 ed25519-dalek.workspace = true
