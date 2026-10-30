@@ -4,6 +4,7 @@ members = [
     "crates/cratestack",
     "crates/cratestack-api",
     "crates/cratestack-auth",
+    "crates/cratestack-auth-conformance",
     "crates/cratestack-axum",
     "crates/cratestack-cbor-napi",
     "crates/cratestack-cbor-wasm",

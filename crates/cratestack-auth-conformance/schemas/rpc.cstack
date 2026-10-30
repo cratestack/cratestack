@@ -1,0 +1,15 @@
+// The RPC half of the AuthProvider conformance kit (ADR 0021 §6): the same
+// procedure as `rest.cstack`, on `transport rpc` (unary and batch).
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type Identity {
+  subject String
+}
+
+procedure whoAmI(tag: String): Identity
+  @allow(auth() != null)
