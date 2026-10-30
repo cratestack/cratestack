@@ -2,21 +2,27 @@
 //! point its REST and RPC routers use (ADR 0002 § Authentication: no second
 //! auth mechanism).
 //!
-//! **A bearer token is required before the provider runs.** MCP's
-//! authorization spec puts the access token in `Authorization: Bearer`, and
-//! a request without one gets the 401 challenge that tells the client where
-//! to authenticate. A provider that authenticates some other way (mTLS in
-//! the extensions, a signed-request header) still gets called, but only for
-//! requests that also carry a token.
+//! **A credential is required before the provider runs.** By default that
+//! is MCP's `Authorization: Bearer` token, and a request without one gets
+//! the 401 challenge that tells the client where to authenticate. An
+//! application whose provider authenticates another way (a device
+//! signature, a COSE envelope, mTLS in the extensions) chooses the rule with
+//! [`CredentialPresence`](super::CredentialPresence) (cratestack#1243).
 //!
 //! **An identity is required after it.** REST providers often return
 //! `CratestackContext::anonymous()` for a token they do not recognise and
 //! leave the rest to `@allow`. An MCP resource server must refuse that
 //! request, so an unauthenticated context is a 401 here.
 //!
+//! **A refusal reads as the provider wrote it.** An
+//! [`AuthRefusal`](cratestack_core::AuthRefusal) keeps its status, its
+//! envelope members and `details`, and its challenges follow the guard's
+//! own `Bearer resource_metadata=...` one (cratestack#1243), as on REST.
+//!
 //! **The token is never logged.** Nothing here logs a header. A provider's
 //! error detail is logged, since it is how an operator learns why tokens
-//! fail, but with the token cut out first, in case the provider quoted it.
+//! fail, but with the credential cut out first, in case the provider
+//! quoted it.
 
 use cratestack_core::{AuthProvider, CratestackContext, CratestackError, RequestContext};
 use http::header::AUTHORIZATION;
@@ -64,11 +70,29 @@ pub(crate) fn bearer(headers: &HeaderMap) -> Bearer<'_> {
     }
 }
 
-/// No token at all: RFC 6750 §3.1 says the challenge then carries no
+/// No credential at all: RFC 6750 §3.1 says the challenge then carries no
 /// `error`, only where to get one.
-pub(crate) fn missing_token(resource: &Resolved) -> Reply {
-    refused("no bearer token", "UNAUTHORIZED", "");
+/// `reason` is what the log says was missing.
+pub(crate) fn missing_token(resource: &Resolved, reason: &str) -> Reply {
+    refused(reason, "UNAUTHORIZED", "");
     reply::challenge(StatusCode::UNAUTHORIZED, resource.challenge(None))
+}
+
+/// What the guard learnt about the request's credential before the
+/// provider ran.
+pub(crate) struct Credential {
+    /// Whether it carried a bearer token: the challenge's `error` is only
+    /// ever a claim about a token the client actually sent. Always true
+    /// under the default rule.
+    pub(crate) bearer: bool,
+    /// The values cut out of a logged provider detail.
+    pub(crate) secrets: Vec<String>,
+}
+
+impl Credential {
+    fn challenge(&self, resource: &Resolved, error: &str) -> http::HeaderValue {
+        resource.challenge(self.bearer.then_some(error))
+    }
 }
 
 pub(crate) async fn authenticate<A: AuthProvider>(
@@ -76,7 +100,7 @@ pub(crate) async fn authenticate<A: AuthProvider>(
     resource: &Resolved,
     parts: &Parts,
     body: &[u8],
-    token: &str,
+    credential: &Credential,
 ) -> Result<CratestackContext, Box<Reply>> {
     let request = RequestContext {
         method: parts.method.as_str(),
@@ -86,34 +110,42 @@ pub(crate) async fn authenticate<A: AuthProvider>(
         body,
         extensions: &parts.extensions,
     };
-    let invalid = || {
-        reply::challenge(
-            StatusCode::UNAUTHORIZED,
-            resource.challenge(Some("invalid_token")),
-        )
-    };
+    let invalid = || credential.challenge(resource, "invalid_token");
     let error: CratestackError = match provider.authenticate(&request).await {
         Ok(context) if context.is_authenticated() => return Ok(context),
         Ok(_) => {
             refused("the provider returned no identity", "UNAUTHORIZED", "");
-            return Err(Box::new(invalid()));
+            return Err(Box::new(reply::challenge(
+                StatusCode::UNAUTHORIZED,
+                invalid(),
+            )));
         }
         Err(error) => error.into(),
     };
-    let detail = error.detail().unwrap_or("").replace(token, "[redacted]");
+    let detail = credential
+        .secrets
+        .iter()
+        .fold(error.detail().unwrap_or("").to_owned(), |detail, secret| {
+            detail.replace(secret.as_str(), "[redacted]")
+        });
     refused("the provider refused the token", error.code(), &detail);
     let status = error.status_code();
+    let scope = || credential.challenge(resource, "insufficient_scope");
     Err(Box::new(if status.is_server_error() {
         // The provider could not decide (a JWKS endpoint down, say). A 401
         // would send the client to re-authenticate for nothing.
         reply::from_error(error)
+    } else if matches!(error, CratestackError::AuthRefused(_)) {
+        let header = if status == StatusCode::FORBIDDEN {
+            scope()
+        } else {
+            invalid()
+        };
+        reply::refusal(error, header)
     } else if status == StatusCode::FORBIDDEN {
-        reply::challenge(
-            StatusCode::FORBIDDEN,
-            resource.challenge(Some("insufficient_scope")),
-        )
+        reply::challenge(StatusCode::FORBIDDEN, scope())
     } else {
-        invalid()
+        reply::challenge(StatusCode::UNAUTHORIZED, invalid())
     }))
 }
 

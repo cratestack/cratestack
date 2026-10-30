@@ -102,12 +102,14 @@ pub(crate) fn middleware_error_response_with_status(
     error: CratestackError,
 ) -> Response {
     let codec = middleware_codec();
-    if is_rpc_path(path) {
+    let challenges = crate::auth_challenge::challenges_of(&error);
+    let response = if is_rpc_path(path) {
         let body = RpcErrorBody::from_cratestack(&error);
         encode_with_status(&codec, headers, status, &body)
     } else {
         encode_with_status(&codec, headers, status, &error.into_response())
-    }
+    };
+    crate::auth_challenge::attach(response, &challenges)
 }
 
 /// [`middleware_error_response_with_status`] with the REST body's `code`

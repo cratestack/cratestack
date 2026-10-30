@@ -146,6 +146,7 @@ fn unavailable() -> CratestackErrorResponse {
         code: "unavailable".to_owned(),
         message: "try again".to_owned(),
         details: None,
+        extra: Default::default(),
     }
 }
 

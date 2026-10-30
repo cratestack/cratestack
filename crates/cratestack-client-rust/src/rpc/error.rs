@@ -112,11 +112,12 @@ pub(crate) fn client_error_to_rpc(error: ClientError) -> RpcClientError {
             // bodies), but keep a sensible fallback rather than dropping
             // the message on the floor.
             let body = error
-                .map(cratestack_core::rpc::RpcErrorBody::from_cratestack_response)
+                .map(|error| cratestack_core::rpc::RpcErrorBody::from_cratestack_response(*error))
                 .unwrap_or_else(|| RpcErrorBody {
                     code: "internal".to_owned(),
                     message,
                     details: None,
+                    extra: Default::default(),
                 });
             RpcClientError::Remote(RpcRemoteError { status, body })
         }
@@ -154,6 +155,7 @@ where
                     response.status_code
                 ),
                 details: None,
+                extra: Default::default(),
             });
         Err(RpcClientError::Remote(RpcRemoteError {
             status: StatusCode::from_u16(response.status_code)

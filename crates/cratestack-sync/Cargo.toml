@@ -70,6 +70,12 @@ required-features = ["server"]
 name = "ttl_protection_pg"
 required-features = ["server"]
 
+# cratestack#1243: a provider's `AuthRefusal` on the sync surface. No
+# database: every request is refused before the (lazy) pool is used.
+[[test]]
+name = "auth_refusal"
+required-features = ["server"]
+
 [[test]]
 name = "end_to_end"
 required-features = ["server", "client"]

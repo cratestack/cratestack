@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CratestackError, CratestackErrorResponse};
+use crate::error::CratestackError;
 
 /// Mount path for unary RPC calls. The trailing segment is the
 /// percent-decoded op id, e.g. `POST /rpc/model.User.list`.
@@ -49,50 +49,6 @@ pub const RPC_SUBSCRIBE_PATH: &str = "/rpc/subscribe/{op_id}";
 /// verification method and the collision-risk flag for a pre-merge
 /// human double-check.
 pub const RPC_STREAM_ERROR_TAG: u64 = 48900;
-
-/// Wire shape of a single error returned by an RPC call. Maps from
-/// [`CratestackError`] via [`rpc_code`] + [`CratestackError::public_message`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcErrorBody {
-    /// Stable gRPC-style code: `not_found`, `invalid_argument`,
-    /// `permission_denied`, `failed_precondition`, `conflict`,
-    /// `unauthenticated`, `resource_exhausted` (a rate-limit throttle,
-    /// cratestack#846), `aborted` (an `@isolation` transaction that ran out
-    /// of retries; safe to send again), `unavailable`, `internal`.
-    pub code: String,
-    /// Public, safe-to-expose message.
-    pub message: String,
-    /// Op-defined structured payload (e.g. validation issues).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub details: Option<serde_json::Value>,
-}
-
-impl RpcErrorBody {
-    pub fn from_cratestack(error: &CratestackError) -> Self {
-        Self {
-            code: rpc_code(error).to_owned(),
-            message: error.public_message().into_owned(),
-            details: None,
-        }
-    }
-
-    /// Translate a REST-style [`CratestackErrorResponse`] into the RPC
-    /// error body. The `code` field is mapped from screaming-snake to
-    /// gRPC-style lowercase via [`cratestack_error_code_to_rpc_code`];
-    /// `message` and `details` flow through verbatim.
-    pub fn from_cratestack_response(response: CratestackErrorResponse) -> Self {
-        let CratestackErrorResponse {
-            code,
-            message,
-            details,
-        } = response;
-        Self {
-            code: cratestack_error_code_to_rpc_code(&code).to_owned(),
-            message,
-            details: details.map(cratestack_value_to_json),
-        }
-    }
-}
 
 /// Wire shape of a single batch request frame.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,10 +94,6 @@ impl RpcResponseFrame {
     }
 }
 
-fn cratestack_value_to_json(value: crate::Value) -> serde_json::Value {
-    serde_json::to_value(&value).unwrap_or(serde_json::Value::Null)
-}
-
 // RPC model-CRUD input envelopes. Split into their own module rather than
 // appended here: this file is the wire-shape module and was already at 180
 // lines, and the ~85 lines of input envelopes push it past the ~200-LoC
@@ -153,6 +105,12 @@ fn cratestack_value_to_json(value: crate::Value) -> serde_json::Value {
 mod inputs;
 
 pub use inputs::*;
+
+// The error body, split out when cratestack#1208 gave it extra members and a
+// hand-written serde (see `error_body.rs`).
+mod error_body;
+
+pub use error_body::RpcErrorBody;
 
 // The two error-code maps, split out for the ~200-LoC ceiling when
 // `TransactionAborted` (GHSA-r67q-4qqq-g9gm) added an arm to each.
