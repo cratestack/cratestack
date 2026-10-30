@@ -63,7 +63,7 @@ impl McpTools for Table {
         (): (),
         ctx: &CratestackContext,
     ) -> Result<serde_json::Value, CratestackError> {
-        Ok(json!({ "id": ctx.principal_actor_id() }))
+        Ok(json!({ "id": ctx.subject() }))
     }
 }
 

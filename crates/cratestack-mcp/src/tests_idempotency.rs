@@ -10,7 +10,7 @@ use rmcp::model::RequestMetaObject;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::idempotency::{idempotency_key, namespace, principal_id};
+use crate::idempotency::{idempotency_key, namespace};
 
 fn meta(value: Value) -> RequestMetaObject {
     let mut meta = RequestMetaObject::new();
@@ -59,7 +59,7 @@ fn no_actor_id_means_no_namespace() {
 fn a_user_claiming_a_system_id_is_not_in_the_system_namespace() {
     let system = SystemContext::for_service("svc").into_context();
     let impostor = id(ClaimValue::String("system:svc".to_owned()));
-    assert_eq!(principal_id(&system), principal_id(&impostor));
+    assert_eq!(system.subject(), impostor.subject());
     assert_eq!(
         namespace(&system).unwrap(),
         hashed("mcp-system", "system:svc")
@@ -104,37 +104,54 @@ fn id(value: ClaimValue) -> CratestackContext {
     CratestackContext::authenticated([("id".to_owned(), value)])
 }
 
-/// `principal_id` restates `principal_actor_id`'s lookup so it can accept
-/// an `Int`. For every string-id shape the two must answer the same, or the
-/// restatement has drifted from core.
+/// The namespace hashes `subject()` (ADR 0021 §2), the one "who" every
+/// framework reader shares: `sub` first, then the `actor.id` facet, then
+/// `id`, and an `Int` id as its digits.
 #[test]
-fn a_string_id_agrees_with_principal_actor_id() {
+fn the_namespace_is_the_subject() {
     let mut facet = PrincipalContext::from_claims(
         [("id".to_owned(), ClaimValue::String("claim".to_owned()))].into(),
     );
     facet.actor = Some(PrincipalFacet {
         fields: [("id".to_owned(), ClaimValue::String("facet".to_owned()))].into(),
     });
-    let contexts = [
+    let facet = CratestackContext::with_principal(facet);
+    assert_eq!(namespace(&facet).unwrap(), hashed("mcp", "facet"));
+
+    let sub = CratestackContext::builder("user-42")
+        .claim("id", ClaimValue::Int(7))
+        .build();
+    assert_eq!(namespace(&sub).unwrap(), hashed("mcp", "user-42"));
+
+    for ctx in [
         id(ClaimValue::String("u-1".to_owned())),
         SystemContext::for_service("svc").into_context(),
-        CratestackContext::with_principal(facet),
-        CratestackContext::anonymous(),
-        id(ClaimValue::Bool(true)),
-    ];
-    for ctx in &contexts {
+        facet,
+        sub,
+        id(ClaimValue::Int(7)),
+    ] {
         assert_eq!(
-            principal_id(ctx).as_deref(),
             ctx.principal_actor_id(),
-            "{ctx:?}"
+            ctx.subject(),
+            "the audit actor and the MCP key read one subject: {ctx:?}"
         );
     }
-    assert_eq!(principal_id(&contexts[2]).as_deref(), Some("facet"));
 }
 
 #[test]
 fn an_int_id_is_an_identity_and_other_kinds_are_not() {
-    assert_eq!(principal_id(&id(ClaimValue::Int(7))).as_deref(), Some("7"));
-    assert_eq!(principal_id(&id(ClaimValue::Float(7.0))), None);
-    assert_eq!(principal_id(&id(ClaimValue::Null)), None);
+    assert_eq!(
+        namespace(&id(ClaimValue::Int(7))).unwrap(),
+        hashed("mcp", "7")
+    );
+    for other in [
+        ClaimValue::Float(7.0),
+        ClaimValue::Null,
+        ClaimValue::Bool(true),
+    ] {
+        assert_eq!(
+            namespace(&id(other)).unwrap_err().code(),
+            "PRECONDITION_FAILED"
+        );
+    }
 }

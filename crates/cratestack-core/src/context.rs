@@ -2,6 +2,8 @@
 //! principal, transport extensions, plus the [`AuthProvider`] trait
 //! that auth middlewares implement.
 
+mod builder;
+mod contract;
 mod identity;
 mod principal;
 mod system;
@@ -9,7 +11,10 @@ mod verified_signer;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_contract;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +22,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::CratestackError;
 use crate::value::Value;
 
+pub use builder::CratestackContextBuilder;
+pub use contract::{ClaimType, KeyRole, RESERVED_CLAIMS, ReservedClaim};
 pub use identity::CratestackAuthIdentity;
 pub use principal::{PrincipalContext, PrincipalFacet};
 pub use system::SystemContext;
@@ -288,25 +295,12 @@ impl CratestackContext {
         }
     }
 
-    /// Convenience accessor for the principal's actor id. Falls back
-    /// from `principal.actor.id` to `principal.claims.id` to
-    /// `auth.fields.id` so audit rows capture an identity regardless
-    /// of which builder the caller used.
-    pub fn principal_actor_id(&self) -> Option<&str> {
-        let from_facet = self
-            .principal
-            .as_ref()
-            .and_then(|p| p.actor.as_ref())
-            .and_then(|facet| facet.fields.get("id"));
-        let from_claims = self.principal.as_ref().and_then(|p| p.claims.get("id"));
-        let from_auth = self.auth.as_ref().and_then(|auth| auth.fields.get("id"));
-        from_facet
-            .or(from_claims)
-            .or(from_auth)
-            .and_then(|v| match v {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            })
+    /// The caller's identity for audit rows: [`Self::subject`] (`sub`,
+    /// then `actor.id`, then `id`, an integer as its decimal digits).
+    /// Kept as a name for existing callers; it answers exactly what
+    /// `subject()` answers.
+    pub fn principal_actor_id(&self) -> Option<Cow<'_, str>> {
+        self.subject()
     }
 
     /// Tenant id surfaced for audit/log scoping.
