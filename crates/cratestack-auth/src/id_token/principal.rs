@@ -12,6 +12,10 @@ pub struct UserPrincipal {
     pub issued_at: i64,
     pub expires_at: i64,
     pub bound_key_id: String,
+    /// The RFC 7638 thumbprint of the bound key the token carried in
+    /// `cnf.jwk` ([`crate::jwk_thumbprint`]); `None` when it carried none.
+    /// The principal contract's `cnf.jkt`.
+    pub bound_key_jkt: Option<String>,
     pub profile_version: i32,
     pub enrollment_status: String,
     pub kyc_status: Option<String>,

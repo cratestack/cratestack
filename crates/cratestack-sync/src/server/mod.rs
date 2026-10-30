@@ -16,6 +16,7 @@ mod ddl;
 mod gc;
 mod http;
 mod poke;
+mod principal;
 mod pull;
 mod push;
 mod registry;
@@ -29,6 +30,7 @@ pub use ddl::{CaptureSpec, IdentifierError, SERVER_DDL, capture_trigger_sql};
 pub use gc::GcReport;
 pub use http::sync_router;
 pub use poke::PokeHub;
+pub use principal::subject_resolver;
 pub use registry::{MutationContext, MutationError, MutationHandler, RowFetcher, SyncRegistry};
 
 use crate::policy::{PolicyError, SyncPolicy};
@@ -48,6 +50,7 @@ pub struct SyncPrincipal {
 }
 
 /// Maps an authenticated context to a principal; `None` refuses sync.
+/// [`subject_resolver`] is the default shape: the id is `ctx.subject()`.
 pub type ScopeResolver = Arc<dyn Fn(&CratestackContext) -> Option<SyncPrincipal> + Send + Sync>;
 
 #[derive(Clone)]

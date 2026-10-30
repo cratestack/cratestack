@@ -57,15 +57,17 @@ pub use authenticate::{
     authenticate_cratestack_request, authenticate_cratestack_request_with, authorization_header,
     request_uri,
 };
-pub use context_mapping::principal_to_cratestack_context;
+pub use context_mapping::{
+    PrincipalMapper, principal_to_contract_context, principal_to_cratestack_context,
+};
 pub use error::{AuthError, auth_error_to_cratestack_error};
 pub use id_token::{
     AuthenticatedPrincipal, CurrentPrincipal, DEFAULT_ID_TOKEN_AUDIENCE, DisclosureClaim,
     ID_TOKEN_AUDIENCE_ENV, IdTokenClaims, IdTokenClaimsParams, IdTokenVerifier, IssuedSdIdToken,
     RequestPrincipal, UserPrincipal, decode_disclosures_unverified,
     decode_id_token_claims_unverified, decode_signing_key, default_id_token_claims,
-    encode_signing_key, issue_id_token, issue_sd_id_token, issuer_jwk, take_disclosures,
-    verifying_key_from_jwk, verifying_key_jwk,
+    encode_signing_key, issue_id_token, issue_sd_id_token, issuer_jwk, jwk_thumbprint,
+    take_disclosures, verifying_key_from_jwk, verifying_key_jwk,
 };
 pub use ids::{challenge, challenge_expiry, enrollment_id, key_id, user_id};
 #[cfg(feature = "axum")]

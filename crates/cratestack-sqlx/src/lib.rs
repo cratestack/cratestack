@@ -17,6 +17,8 @@ mod retriable;
 #[cfg(feature = "postgis")]
 mod spatial;
 #[cfg(test)]
+mod tests_audit_actor;
+#[cfg(test)]
 mod tests_bigint;
 #[cfg(test)]
 mod tests_coalesce;
@@ -30,6 +32,8 @@ mod tests_field_filter;
 mod tests_filter_logic;
 #[cfg(test)]
 mod tests_geography;
+#[cfg(test)]
+mod tests_has_role_contract;
 #[cfg(test)]
 mod tests_json;
 #[cfg(test)]
