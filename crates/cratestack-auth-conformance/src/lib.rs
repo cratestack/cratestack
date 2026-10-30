@@ -38,10 +38,12 @@
 mod apps;
 mod canonical;
 mod check;
+mod credentials;
 mod expect;
 mod run;
 mod send;
 
 pub use canonical::{Canonical, Transport};
+pub use credentials::Credentials;
 pub use expect::Expected;
 pub use run::{Conformance, auth_conformance};

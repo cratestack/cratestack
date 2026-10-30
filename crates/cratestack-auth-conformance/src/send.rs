@@ -4,12 +4,13 @@
 use cratestack::axum::Router;
 use cratestack::axum::body::Body;
 use http::header::WWW_AUTHENTICATE;
-use http::{HeaderMap, Request, StatusCode};
+use http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use crate::canonical::{Canonical, Transport};
+use crate::credentials::Credentials;
 
 const JSON: &str = "application/json";
 const TAG: &str = "conformance";
@@ -60,8 +61,8 @@ pub(crate) struct Answer {
     pub(crate) body: Value,
 }
 
-/// Sends `canonical` to `app` with the signer's `credential` headers.
-pub(crate) async fn send(app: &Router, canonical: &Canonical, credential: HeaderMap) -> Answer {
+/// Sends `canonical` to `app` with the signer's `credential`.
+pub(crate) async fn send(app: &Router, canonical: &Canonical, credential: Credentials) -> Answer {
     // Every transport sends `?kit=1`: the provider sees it only where the
     // operation reads a query (MCP here), and `None` elsewhere.
     let uri = format!("{}{}?kit=1", canonical.mount, canonical.path);
@@ -79,9 +80,10 @@ pub(crate) async fn send(app: &Router, canonical: &Canonical, credential: Header
     let mut request = request
         .body(Body::from(canonical.body.clone()))
         .expect("the kit builds a valid request");
-    for (name, value) in &credential {
+    for (name, value) in &credential.headers {
         request.headers_mut().append(name, value.clone());
     }
+    request.extensions_mut().extend(credential.extensions);
     let response = app
         .clone()
         .oneshot(request)

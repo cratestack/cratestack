@@ -90,8 +90,16 @@ async fn a_provider_that_signs_the_canonical_request_conforms() {
         .accepts("device-1", signed)
         .refuses("expired", refusal("expired"), Expected::refusal(&expired()))
         .refuses("revoked", refusal("revoked"), Expected::refusal(&revoked()))
-        .refuses("plain", refusal("plain"), Expected::unauthorized(Some("bad signature")))
-        .refuses("unsigned", |_| HeaderMap::new(), Expected::unauthorized(None))
+        .refuses(
+            "plain",
+            refusal("plain"),
+            Expected::unauthorized(Some("bad signature")),
+        )
+        .refuses(
+            "unsigned",
+            |_| HeaderMap::new(),
+            Expected::unauthorized(None),
+        )
         .run()
         .await;
 }

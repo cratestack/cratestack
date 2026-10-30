@@ -41,7 +41,9 @@ pub(crate) fn accepted(transport: Transport, answer: &Answer, subject: &str) -> 
         .into_iter()
         .filter_map(|got| match got {
             Ok(got) if got == subject => None,
-            Ok(got) => Some(format!("the caller's subject was {got:?}, expected {subject:?}")),
+            Ok(got) => Some(format!(
+                "the caller's subject was {got:?}, expected {subject:?}"
+            )),
             Err(answer) => Some(format!("the call was not accepted: {answer}")),
         })
         .collect()
@@ -64,19 +66,22 @@ pub(crate) fn refused(transport: Transport, answer: &Answer, expected: &Expected
         _ => expected.rest_code(),
     };
     let body = &answer.body;
-    if body["code"] != Value::from(code) {
+    if body["code"] != code {
         findings.push(format!("code {}, expected {code:?}", body["code"]));
     }
     let mcp_message = transport == Transport::Mcp && expected.plain;
     if let Some(message) = &expected.message
         && !mcp_message
-        && body["message"] != Value::from(message.as_str())
+        && body["message"] != message.as_str()
     {
         findings.push(format!("message {}, expected {message:?}", body["message"]));
     }
     let details = body.get("details").cloned().unwrap_or(Value::Null);
     if details != expected.details.clone().unwrap_or(Value::Null) {
-        findings.push(format!("details {details}, expected {:?}", expected.details));
+        findings.push(format!(
+            "details {details}, expected {:?}",
+            expected.details
+        ));
     }
     let members: Vec<(&String, &Value)> = body
         .as_object()
@@ -86,9 +91,7 @@ pub(crate) fn refused(transport: Transport, answer: &Answer, expected: &Expected
         .collect();
     let wanted: Vec<(&String, &Value)> = expected.members.iter().collect();
     if members != wanted {
-        findings.push(format!(
-            "envelope members {members:?}, expected {wanted:?}"
-        ));
+        findings.push(format!("envelope members {members:?}, expected {wanted:?}"));
     }
     let challenges = match transport {
         Transport::Mcp => match answer.challenges.split_first() {

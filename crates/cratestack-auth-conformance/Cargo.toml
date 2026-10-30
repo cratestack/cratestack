@@ -30,6 +30,8 @@ serde_json.workspace = true
 tower.workspace = true
 
 [dev-dependencies]
+async-trait.workspace = true
 cratestack-auth.workspace = true
 cratestack-cose = { workspace = true, features = ["auth"] }
+ed25519-dalek.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

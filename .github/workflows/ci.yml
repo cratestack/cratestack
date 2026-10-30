@@ -899,6 +899,18 @@ jobs:
       - name: Layer-direction check
         run: ./.ci/layer-direction-check.sh
 
+  # Auth-library independence (ADR 0021 §7, cratestack#1243): no package of
+  # an external authentication library (Authkestra's crates) in the
+  # workspace's resolved graph. Reads `Cargo.lock` only: no toolchain needed.
+  auth-independence:
+    timeout-minutes: 10
+    name: auth library independence (ADR 0021)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Auth-library independence check
+        run: ./.ci/auth-independence-check.sh
+
   # Workspace-lints opt-in check (cratestack#523). Manifest-only (`cargo
   # metadata --no-deps`) — same reasoning as `layer-direction` above, no
   # `rust-cache`/`just` install step needed.

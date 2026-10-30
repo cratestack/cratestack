@@ -107,7 +107,11 @@ pub(crate) fn rpc<A: AuthProvider>(auth: A, mount: &str) -> Router {
 /// The MCP Streamable HTTP endpoint at `/mcp`, where the provider's own
 /// `credential` decides presence (`CredentialPresence::ask_provider()`).
 pub(crate) fn mcp<A: AuthProvider>(auth: A) -> Router {
-    let tools = rest::mcp::tools(rest::Cratestack::builder().build(), rest::Registry, rest::Resolver);
+    let tools = rest::mcp::tools(
+        rest::Cratestack::builder().build(),
+        rest::Registry,
+        rest::Resolver,
+    );
     let server = StreamableHttpServer::builder(
         tools,
         auth,

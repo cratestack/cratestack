@@ -18,6 +18,9 @@
 //!   `authenticate_devices(true)` opts in, the device key registry
 //!   (cratestack#1077). Unknown or revoked keys, and device keys while the
 //!   gate is off, are anonymous; a failing registry that is asked is a `500`.
+//!   It is `first_success(inner).or(`[`CoseSignerProvider`]`)`, the public
+//!   chain (cratestack#1243); compose the signer provider yourself to put it
+//!   in a chain of your own.
 //!   The service registry must hold service keys only. Read its "Security"
 //!   section.
 //!
@@ -35,6 +38,7 @@ mod device_resolver;
 mod enroll;
 mod nonce_bridge;
 mod service_signer;
+mod signer_member;
 mod signer_principal;
 mod signer_provider;
 
@@ -42,4 +46,5 @@ pub use device_resolver::DeviceKeyCoseResolver;
 pub use enroll::{build_cose_enroll_response, parse_cose_enroll_response};
 pub use nonce_bridge::{AUTH_NONCE_KEY_ID, AuthNonceStore};
 pub use service_signer::ServiceKeySigner;
+pub use signer_member::CoseSignerProvider;
 pub use signer_provider::CoseAuthProvider;

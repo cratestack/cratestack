@@ -5,19 +5,26 @@ use std::sync::Arc;
 
 use cratestack::axum::Router;
 use cratestack::{AuthProvider, RequestContext};
-use http::{Extensions, HeaderMap};
 
 use crate::apps;
 use crate::canonical::{Canonical, Recording, Transport};
 use crate::check;
+use crate::credentials::Credentials;
 use crate::expect::Expected;
 use crate::send::{self, Answer};
 
-type Signer = Arc<dyn Fn(&Canonical) -> HeaderMap + Send + Sync>;
+type Signer = Arc<dyn Fn(&Canonical) -> Credentials + Send + Sync>;
 
 enum Case {
-    Accept { subject: String, sign: Signer },
-    Refuse { name: String, sign: Signer, expected: Expected },
+    Accept {
+        subject: String,
+        sign: Signer,
+    },
+    Refuse {
+        name: String,
+        sign: Signer,
+        expected: Expected,
+    },
 }
 
 /// Starts a conformance run for `provider`. Declare at least one case with
@@ -45,35 +52,35 @@ const TRANSPORTS: [Transport; 4] = [
 ];
 
 impl<P: AuthProvider> Conformance<P> {
-    /// `sign` returns the headers of a credential the provider accepts for
-    /// this exact request; the call must succeed everywhere as `subject`.
+    /// `sign` returns a credential the provider accepts for this exact
+    /// request (headers, or [`Credentials`] with extensions); the call must
+    /// succeed everywhere as `subject`.
     #[must_use]
-    pub fn accepts(
+    pub fn accepts<C: Into<Credentials>>(
         mut self,
         subject: impl Into<String>,
-        sign: impl Fn(&Canonical) -> HeaderMap + Send + Sync + 'static,
+        sign: impl Fn(&Canonical) -> C + Send + Sync + 'static,
     ) -> Self {
         let subject = subject.into();
         self.cases.push(Case::Accept {
             subject,
-            sign: Arc::new(sign),
+            sign: Arc::new(move |canonical| sign(canonical).into()),
         });
         self
     }
 
-    /// `sign` returns the headers of a credential the provider refuses;
-    /// the refusal must read as `expected` everywhere. `name` labels the
-    /// case in the report.
+    /// `sign` returns a credential the provider refuses; the refusal must
+    /// read as `expected` everywhere. `name` labels the case in the report.
     #[must_use]
-    pub fn refuses(
+    pub fn refuses<C: Into<Credentials>>(
         mut self,
         name: impl Into<String>,
-        sign: impl Fn(&Canonical) -> HeaderMap + Send + Sync + 'static,
+        sign: impl Fn(&Canonical) -> C + Send + Sync + 'static,
         expected: Expected,
     ) -> Self {
         self.cases.push(Case::Refuse {
             name: name.into(),
-            sign: Arc::new(sign),
+            sign: Arc::new(move |canonical| sign(canonical).into()),
             expected,
         });
         self
@@ -146,16 +153,15 @@ async fn run_case<P: AuthProvider>(
 fn provider_says_absent<P: AuthProvider>(
     provider: &Recording<P>,
     canonical: &Canonical,
-    headers: &HeaderMap,
+    credentials: &Credentials,
 ) -> bool {
-    let extensions = Extensions::new();
     let request = RequestContext {
         method: canonical.method,
         path: canonical.path,
         query: canonical.query,
-        headers,
+        headers: &credentials.headers,
         body: &[],
-        extensions: &extensions,
+        extensions: &credentials.extensions,
     };
     provider.credential(&request).is_absent()
 }
