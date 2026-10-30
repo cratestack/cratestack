@@ -30,6 +30,7 @@ type Predicate = Arc<dyn Fn(&Parts) -> bool + Send + Sync>;
 enum Rule {
     Bearer,
     Provider,
+    Ask,
     Predicate(Predicate),
 }
 
@@ -57,6 +58,18 @@ impl CredentialPresence {
     /// request without a token does under [`Self::bearer`].
     pub fn provider_decides() -> Self {
         Self::with_rule(Rule::Provider)
+    }
+
+    /// The provider's own [`AuthProvider::credential`] answers, before the
+    /// body is read (with an empty body): `Absent` gets the 401 challenge,
+    /// `Malformed` a 400 `invalid_request`, `Present` reaches the provider
+    /// with its `redact` value cut out of logged detail, and `Unknown` (the
+    /// default of a provider that does not say) reaches the provider as
+    /// under [`Self::provider_decides`] (ADR 0021 §4).
+    ///
+    /// [`AuthProvider::credential`]: cratestack_core::AuthProvider::credential
+    pub fn ask_provider() -> Self {
+        Self::with_rule(Rule::Ask)
     }
 
     /// A request reaches the provider when `present` says it carries a
@@ -90,12 +103,18 @@ impl CredentialPresence {
         matches!(self.rule, Rule::Bearer)
     }
 
+    /// Whether the provider's own `credential` answers (see
+    /// [`Self::ask_provider`]).
+    pub(crate) fn asks_provider(&self) -> bool {
+        matches!(self.rule, Rule::Ask)
+    }
+
     /// Whether the request carries a credential under this rule.
     /// `has_bearer` is what the guard already read from `Authorization`.
     pub(crate) fn present(&self, parts: &Parts, has_bearer: bool) -> bool {
         match &self.rule {
             Rule::Bearer => has_bearer,
-            Rule::Provider => true,
+            Rule::Provider | Rule::Ask => true,
             Rule::Predicate(present) => present(parts),
         }
     }
@@ -138,6 +157,7 @@ impl fmt::Debug for CredentialPresence {
         let rule = match self.rule {
             Rule::Bearer => "bearer",
             Rule::Provider => "provider_decides",
+            Rule::Ask => "ask_provider",
             Rule::Predicate(_) => "when",
         };
         f.debug_struct("CredentialPresence")

@@ -65,6 +65,7 @@
 mod auth;
 mod builder;
 pub(crate) mod caller;
+mod credential;
 mod error;
 mod guard;
 mod metadata;
