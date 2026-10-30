@@ -172,5 +172,18 @@ async fn a_provider_without_a_credential_method_is_always_called() {
     assert_eq!(a.calls(), 0);
 }
 
+#[tokio::test]
+async fn the_first_anonymous_context_is_kept() {
+    // What a provider put in its anonymous answer (here a client ip)
+    // survives the chain, as it did behind a hand-written wrapper.
+    let tagged = |_: &HeaderMap| -> Result<CratestackContext, CratestackError> {
+        Ok(CratestackContext::anonymous().with_client_ip("10.0.0.1"))
+    };
+    let chain = first_success(tagged).or(fake("x-b", Verdict::Anonymous));
+    let context = run(&chain, &headers(&["x-b"])).await.unwrap();
+    assert!(!context.is_authenticated());
+    assert_eq!(context.client_ip(), Some("10.0.0.1"));
+}
+
 #[path = "chain_credential_tests.rs"]
 mod credential;
