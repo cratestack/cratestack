@@ -15,8 +15,10 @@
 //!    rescued by another**: the chain fails closed.
 //! 4. If it returns an anonymous context, the next member is asked.
 //!
-//! When no member authenticates, the chain answers anonymous and the
-//! schema's policies decide. A request that carries two credentials is
+//! When no member authenticates, the chain answers with the first anonymous
+//! context a member returned (so what a provider put in it, such as its
+//! extensions, is kept), or a plain anonymous context when every member was
+//! skipped, and the schema's policies decide. A request that carries two credentials is
 //! resolved by order: the first member that authenticates it wins.
 //!
 //! The chain is generic and static (`Or<Or<A, B>, C>`): `AuthProvider`
@@ -54,20 +56,42 @@ impl<P: AuthProvider> FirstSuccess<P> {
     }
 }
 
-/// Asks one member. `None` means "go on": its credential is absent, or it
-/// answered anonymous.
-async fn ask<P: AuthProvider>(
-    provider: &P,
-    request: &RequestContext<'_>,
-) -> Option<Result<CratestackContext, CratestackError>> {
+/// What one member said.
+enum Step {
+    /// Its credential is absent: it was not called.
+    Skipped,
+    /// It answered anonymous, with this context.
+    Anonymous(CratestackContext),
+    /// It authenticated or failed: the chain's answer.
+    Done(Result<CratestackContext, CratestackError>),
+}
+
+/// Asks one member.
+async fn ask<P: AuthProvider>(provider: &P, request: &RequestContext<'_>) -> Step {
     if provider.credential(request).is_absent() {
-        return None;
+        return Step::Skipped;
     }
     match provider.authenticate(request).await {
-        Ok(context) if context.is_authenticated() => Some(Ok(context)),
-        Ok(_) => None,
-        Err(error) => Some(Err(error.into())),
+        Ok(context) if context.is_authenticated() => Step::Done(Ok(context)),
+        Ok(context) => Step::Anonymous(context),
+        Err(error) => Step::Done(Err(error.into())),
     }
+}
+
+/// The chain's answer once every member was asked: the first anonymous
+/// context, else a plain anonymous one.
+fn settle(steps: [Step; 2]) -> Result<CratestackContext, CratestackError> {
+    let mut anonymous = None;
+    for step in steps {
+        match step {
+            Step::Done(answer) => return answer,
+            Step::Anonymous(context) => {
+                anonymous.get_or_insert(context);
+            }
+            Step::Skipped => {}
+        }
+    }
+    Ok(anonymous.unwrap_or_else(CratestackContext::anonymous))
 }
 
 /// What a chain of members says about the request's credential: present if
@@ -100,12 +124,11 @@ impl<A: AuthProvider, B: AuthProvider> AuthProvider for Or<A, B> {
         &self,
         request: &RequestContext<'_>,
     ) -> Result<CratestackContext, CratestackError> {
-        if let Some(answer) = ask(&self.first, request).await {
+        let first = ask(&self.first, request).await;
+        if let Step::Done(answer) = first {
             return answer;
         }
-        ask(&self.next, request)
-            .await
-            .unwrap_or_else(|| Ok(CratestackContext::anonymous()))
+        settle([first, ask(&self.next, request).await])
     }
 
     fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {
@@ -123,9 +146,7 @@ impl<P: AuthProvider> AuthProvider for FirstSuccess<P> {
         &self,
         request: &RequestContext<'_>,
     ) -> Result<CratestackContext, CratestackError> {
-        ask(&self.0, request)
-            .await
-            .unwrap_or_else(|| Ok(CratestackContext::anonymous()))
+        settle([ask(&self.0, request).await, Step::Skipped])
     }
 
     fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {

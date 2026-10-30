@@ -108,7 +108,8 @@ from an OAuth server and a device signature, say) had to write a wrapper provide
   in order: skipped without being called when its credential is `Absent`; its authenticated
   context is the answer; its error is the answer, so **a credential one member refuses is never
   rescued by another**; an anonymous answer goes on to the next member. No member authenticating
-  is anonymous, and policy decides. The chain's own `credential` is present if any member's is.
+  is anonymous (the first anonymous context a member returned, so its extensions are kept), and
+  policy decides. The chain's own `credential` is present if any member's is.
 - MCP Streamable HTTP: `CredentialPresence::ask_provider()` lets the provider's `credential`
   decide before the body is read. `Absent` gets the 401 challenge with `resource_metadata`,
   `Malformed` a 400 `invalid_request`, `Present` reaches the provider with its `redact` value cut
