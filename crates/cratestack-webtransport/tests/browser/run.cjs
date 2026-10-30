@@ -115,12 +115,19 @@ async function scenarios({ port, sha256, expectRefusedOrigin }) {
   await forever.reader.cancel();
   await new Promise((resolve) => setTimeout(resolve, 300));
 
-  const bad = await session("bad");
-  const closed = await Promise.race([
-    bad.wt.closed,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("no close in 3s")), 3000)),
-  ]);
-  out.badTokenClose = { closeCode: closed.closeCode, reason: closed.reason };
+  // A session refusal (ADR 0021 §1): the `{id: 0, err}` frame must reach
+  // the page before the close, with the refusal's members and `details`.
+  const sessionRefusal = async (token) => {
+    const r = await session(token);
+    const frame = await r.controlFrames.next();
+    const closed = await Promise.race([
+      r.wt.closed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("no close in 3s")), 3000)),
+    ]);
+    return { frame, closeCode: closed.closeCode };
+  };
+  out.badToken = await sessionRefusal("bad");
+  out.forbiddenToken = await sessionRefusal("forbidden");
   s.wt.close();
   return out;
 }
@@ -167,7 +174,21 @@ async function main() {
       allowed.events.some((e) => e.dropped),
       allowed.events,
     );
-    check("bad credentials close with 4401", r.badTokenClose.closeCode === 4401, r.badTokenClose);
+    check(
+      "a 401 refusal: err frame with its member, then 4401",
+      r.badToken.frame?.id === 0 &&
+        r.badToken.frame.err?.code === "unauthenticated" &&
+        r.badToken.frame.err.error === "attestation_expired" &&
+        r.badToken.closeCode === 4401,
+      r.badToken,
+    );
+    check(
+      "a 403 refusal: err frame with details, then 4403",
+      r.forbiddenToken.frame?.err?.code === "permission_denied" &&
+        r.forbiddenToken.frame.err.details?.tenant === "acme" &&
+        r.forbiddenToken.closeCode === 4403,
+      r.forbiddenToken,
+    );
 
     const other = await refusing.ready;
     const refused = await tab.evaluate(scenarios, { ...other, expectRefusedOrigin: true });

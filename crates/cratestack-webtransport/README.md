@@ -52,8 +52,12 @@ tokio::spawn(server.serve_with_shutdown(shutdown_signal));
   on that request), 8 sessions per principal (anonymous sessions counted per IP; past it: close
   4429), 2 MiB frames, 15 s keepalive, 30 s idle timeout. 0-RTT is always refused.
 
-Close codes: 4400 protocol, 4401 unauthenticated / no `Init`, 4403 principal changed, 4429 too
-many sessions. Stream reset codes: `0x01` going away, `0x02` protocol.
+**Refusals** (ADR 0021 §1): before closing, the server sends `{id: 0, err: RpcErrorBody}` on the
+control stream, carrying an `AuthRefusal`'s `details` and extra members (not its `WWW-Authenticate`
+challenges: a frame has no headers). Close codes: 4401 a 401 refusal (or no `Init` in time, with no
+frame), 4403 a 403 refusal or a re-authentication naming another principal, 4400 a protocol error or
+malformed `Init` header, 4429 too many sessions, 4500 the provider could not decide (retry; not a
+verdict on the credentials). Stream reset codes: `0x01` going away, `0x02` protocol.
 
 ## Deploying
 

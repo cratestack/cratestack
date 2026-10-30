@@ -19,12 +19,18 @@ pub mod close_code {
     /// The control stream broke protocol: first frame not `Init`, a frame
     /// that does not decode, or a frame over the size limit.
     pub const PROTOCOL: u32 = 4400;
-    /// Authentication failed, or no `Init` arrived in time.
+    /// Authentication was refused (401), or no `Init` arrived in time.
+    /// A refusal is preceded by an `{id: 0, err}` frame; a timeout is not.
     pub const UNAUTHENTICATED: u32 = 4401;
-    /// A re-authentication named a different principal.
-    pub const PRINCIPAL_CHANGED: u32 = 4403;
+    /// A 403 refusal: the provider forbade the caller, or a
+    /// re-authentication named a different principal. The `{id: 0, err}`
+    /// frame before the close says which.
+    pub const FORBIDDEN: u32 = 4403;
     /// Too many open sessions for this principal.
     pub const TOO_MANY_SESSIONS: u32 = 4429;
+    /// The `AuthProvider` could not decide (a 5xx: its key server is down).
+    /// Not a verdict on the credentials: retry later, do not sign out.
+    pub const SERVER_ERROR: u32 = 4500;
 }
 
 /// Stream reset codes (sent on one subscription's stream).

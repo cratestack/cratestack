@@ -17,7 +17,11 @@ changing networks. Design: `docs/design/subscriptions-websocket.md` §6a (slice 
   subprotocol, with a `?codec=` fallback.
 - **Admission:**
   - `Init` must arrive within 10 s; browsers present credentials in it.
-  - A later `Init` re-authenticates and must name the same principal (close 4403).
+  - A later `Init` re-authenticates and must name the same principal.
+  - A refused session first gets `{id: 0, err: RpcErrorBody}` on the control stream, carrying an
+    `AuthRefusal`'s `details` and extra members (ADR 0021 §1), then closes: 4401 for a 401, 4403
+    for a 403 or a changed principal, 4400 for a malformed `Init`, and 4500 when the provider could
+    not decide (a 5xx such as a key server outage, which is not a verdict on the credentials).
   - `Origin` allowlist, defaulting to same-origin. 0-RTT is refused.
 - **Limits** (`WebTransportLimits`): subscriptions per session (`resource_exhausted` past it),
   sessions per principal (close 4429), frame size, keepalive and idle timeout.

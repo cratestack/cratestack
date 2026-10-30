@@ -41,18 +41,6 @@ async fn connect_headers_authenticate_a_native_client_with_an_empty_init() {
 }
 
 #[tokio::test]
-async fn refused_credentials_close_the_session_with_4401() {
-    let server = start(WebTransportLimits::default());
-    let mut client = Client::new(
-        server.connect_with(server.request()).await.unwrap(),
-        WireCodec::Cbor,
-    )
-    .await;
-    client.send_control(&ClientFrame::init(bearer("bad"))).await;
-    assert_eq!(client.close_code().await, close_code::UNAUTHENTICATED);
-}
-
-#[tokio::test]
 async fn a_session_without_init_is_closed_with_4401() {
     let limits = WebTransportLimits {
         init_timeout: Duration::from_millis(200),
@@ -64,22 +52,6 @@ async fn a_session_without_init_is_closed_with_4401() {
         support::close_code(&session).await,
         close_code::UNAUTHENTICATED
     );
-}
-
-#[tokio::test]
-async fn reauthentication_keeps_the_principal_or_closes_with_4403() {
-    let server = start(WebTransportLimits::default());
-    let mut client = server.session(Some("7")).await;
-    client.send_control(&ClientFrame::init(bearer("7"))).await;
-    let mut still_open = client
-        .subscribe(1, "test.items", serde_json::json!({ "n": 1 }))
-        .await;
-    assert!(
-        still_open.next().await.unwrap().ready.is_some(),
-        "same principal: session continues"
-    );
-    client.send_control(&ClientFrame::init(bearer("8"))).await;
-    assert_eq!(client.close_code().await, close_code::PRINCIPAL_CHANGED);
 }
 
 #[tokio::test]

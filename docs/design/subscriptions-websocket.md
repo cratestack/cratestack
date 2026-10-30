@@ -394,8 +394,8 @@ servers, and stays. It does not work for browsers, whose `WebSocket` constructor
    request's canonical form (`GET /rpc/ws`, no body), including HMAC envelopes.
 2. **`Init` frame** (browsers): the first frame within 10 s must be
    `Init { init: { headers: { "authorization": "…" } } }`. The server runs the same `AuthProvider`
-   over a synthesized request context with those headers, and answers `Ready { id: 0 }` or closes
-   with 4401. No other frame is accepted before that.
+   over a synthesized request context with those headers, and answers `Ready { id: 0 }` or refuses
+   (below). No other frame is accepted before that.
 
 Tokens in the URL query (they end up in access logs) and in `Sec-WebSocket-Protocol` (a misuse of the
 header that some proxies log too) are both rejected as designs.
@@ -404,9 +404,29 @@ header that some proxies log too) are both rejected as designs.
 hijacking is possible. The upgrade checks `Origin` against an allowlist (`WsConfig::allowed_origins`).
 The default is same-origin only, and the check is never skipped silently.
 
+**Refusal (ADR 0021 §1, cratestack-docs `internals/auth-seam-adr.md`).** A refusal is never just a
+close code. The server first sends `{id: 0, err: RpcErrorBody}`, built by
+`RpcErrorBody::from_cratestack`, so an `AuthRefusal`'s `details` and extra members (the `error`
+reason a device-signature client switches on) arrive as they do on REST and RPC. Then it closes:
+
+| Refusal | Close |
+|---|---|
+| 401 (`Unauthorized`, `AuthRefusal::unauthenticated`) | 4401 |
+| 403 (`Forbidden`, `AuthRefusal::forbidden`), or a re-authentication naming another principal | 4403 (ADR 0021 Q4) |
+| a malformed `Init` header | 4400 |
+| the provider could not decide (5xx: a key server down) | 4500, **not** a verdict on the credentials: retry, do not sign out |
+
+`WWW-Authenticate` challenges are not carried: a frame has no headers, and ADR 0021 Q5 keeps them out
+of the body for now. A client reads the frame when present rather than the close code alone, because
+4401 also follows an `Init` that never arrived. *As built* for WebTransport
+(`cratestack-webtransport/src/admission.rs`): the server finishes the control stream after the frame
+and waits, bounded, for the client to acknowledge it, so the session close cannot overtake it.
+Verified in Chromium.
+
 **Expiry and refresh.** The client may send `Init` again on a live socket to refresh credentials.
-The new context must name the same principal, or the socket closes with 4403. If the context
-carries an expiry, the server closes with 4401 at that instant unless a refresh arrived first.
+A refused refresh is refused as above. The new context must name the same principal, or it is a 403
+refusal (4403). If the context carries an expiry, the server closes with 4401 at that instant unless a
+refresh arrived first.
 
 ### 6.4 Frames
 

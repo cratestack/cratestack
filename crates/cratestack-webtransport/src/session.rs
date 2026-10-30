@@ -2,16 +2,14 @@
 //! authenticate on the control stream, then hand every further
 //! bidirectional stream to [`crate::subscription`].
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use cratestack_core::{
-    AuthProvider, CratestackContext, CratestackError, RequestContext, SubscriptionDispatcher,
-};
-use http::{HeaderMap, HeaderName, HeaderValue, StatusCode};
+use cratestack_core::{AuthProvider, CratestackError, SubscriptionDispatcher};
+use http::StatusCode;
 use tokio::sync::Semaphore;
 use tracing::Instrument;
 
+use crate::admission::{Connect, authenticate, init_headers, refuse};
 use crate::codec::WireCodec;
 use crate::frame::{ClientFrame, ClientMessage, ServerFrame, close_code};
 use crate::principal::session_key;
@@ -19,13 +17,6 @@ use crate::reader::{FrameReader, ReadFailure};
 use crate::server::Shared;
 use crate::subscription::{self, StreamCtx};
 use crate::transport::{Incoming, Session};
-
-/// What the CONNECT carried that authentication needs later.
-struct Connect {
-    path: String,
-    query: Option<String>,
-    headers: HeaderMap,
-}
 
 pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
     shared: Arc<Shared<A, D>>,
@@ -87,8 +78,11 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
             "expected Init on the first stream",
         );
     };
-    let Ok(ctx) = authenticate(&shared.auth, connect, &init).await else {
-        return (close_code::UNAUTHENTICATED, "authentication failed");
+    let ctx = match authenticate(&shared.auth, connect, &init).await {
+        Ok(ctx) => ctx,
+        Err(error) => {
+            return refuse(&mut control_send, codec, &error, "authentication failed").await;
+        }
     };
     let principal = (shared.principal_key)(&ctx);
     let key = session_key(principal.as_deref(), remote);
@@ -129,11 +123,17 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                 match frame.map(ClientFrame::classify) {
                     Ok(Ok(ClientMessage::Init(init))) => {
                         // Re-authentication: must name the same principal (§6.3).
-                        let Ok(refreshed) = authenticate(&shared.auth, connect, &init.headers).await else {
-                            return (close_code::UNAUTHENTICATED, "re-authentication failed");
+                        let refreshed = match authenticate(&shared.auth, connect, &init.headers).await {
+                            Ok(refreshed) => refreshed,
+                            Err(error) => {
+                                return refuse(&mut control_send, codec, &error, "re-authentication failed").await;
+                            }
                         };
                         if (shared.principal_key)(&refreshed) != principal {
-                            return (close_code::PRINCIPAL_CHANGED, "re-authentication named another principal");
+                            let error = CratestackError::Forbidden(
+                                "re-authentication named another principal".to_owned(),
+                            );
+                            return refuse(&mut control_send, codec, &error, "principal changed").await;
                         }
                         ctx_tx.send_replace(refreshed);
                     }
@@ -147,51 +147,4 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
             }
         }
     }
-}
-
-/// The first control frame must be `Init`.
-fn init_headers(frame: ClientFrame) -> Option<BTreeMap<String, String>> {
-    match frame.classify() {
-        Ok(ClientMessage::Init(init)) => Some(init.headers),
-        _ => None,
-    }
-}
-
-/// Runs the app's `AuthProvider` over the CONNECT request. `Init` headers,
-/// when present, stand in for the CONNECT headers: that is how a browser,
-/// which cannot set headers on `new WebTransport(url)`, presents
-/// credentials. A native client sends them on CONNECT and an empty `Init`.
-async fn authenticate<A: AuthProvider>(
-    auth: &A,
-    connect: &Connect,
-    init_headers: &BTreeMap<String, String>,
-) -> Result<CratestackContext, CratestackError> {
-    let from_init;
-    let headers = if init_headers.is_empty() {
-        &connect.headers
-    } else {
-        let mut headers = HeaderMap::new();
-        for (name, value) in init_headers {
-            let name =
-                HeaderName::from_bytes(name.to_ascii_lowercase().as_bytes()).map_err(|_| {
-                    CratestackError::BadRequest(format!("invalid Init header name `{name}`"))
-                })?;
-            let value = HeaderValue::from_str(value).map_err(|_| {
-                CratestackError::BadRequest(format!("invalid Init header value for `{name}`"))
-            })?;
-            headers.append(name, value);
-        }
-        from_init = headers;
-        &from_init
-    };
-    let extensions = http::Extensions::new();
-    let request = RequestContext {
-        method: "CONNECT",
-        path: &connect.path,
-        query: connect.query.as_deref(),
-        headers,
-        body: &[],
-        extensions: &extensions,
-    };
-    auth.authenticate(&request).await.map_err(Into::into)
 }

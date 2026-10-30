@@ -34,6 +34,7 @@
 //! routing to keep sessions across network changes, a WebSocket fallback
 //! for networks that block UDP) is in the design doc, §6a.6.
 
+mod admission;
 mod codec;
 mod config;
 #[cfg(feature = "dev-cert")]

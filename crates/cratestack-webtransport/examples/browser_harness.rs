@@ -10,7 +10,7 @@ use std::io::Write;
 use std::time::Duration;
 
 use cratestack_core::{
-    CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen,
+    AuthRefusal, CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen,
     SubscriptionStream, Value,
 };
 use cratestack_webtransport::{
@@ -24,7 +24,14 @@ fn auth(headers: &http::HeaderMap) -> Result<CratestackContext, CratestackError>
         .map(|v| v.to_str().unwrap_or_default())
     {
         None => Ok(CratestackContext::anonymous()),
-        Some("Bearer bad") => Err(CratestackError::Unauthorized("bad token".into())),
+        Some("Bearer bad") => Err(AuthRefusal::unauthenticated("attestation expired")
+            .with_member("error", Value::String("attestation_expired".into()))
+            .into_error()),
+        Some("Bearer forbidden") => Err(AuthRefusal::forbidden("not a member of this tenant")
+            .with_details(Value::Map(
+                [("tenant".to_owned(), Value::String("acme".into()))].into(),
+            ))
+            .into_error()),
         Some(value) => {
             let id = value.trim_start_matches("Bearer ").to_owned();
             Ok(CratestackContext::authenticated([(

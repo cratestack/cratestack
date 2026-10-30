@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use cratestack_core::{
-    CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen,
+    AuthRefusal, CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen,
     SubscriptionStream, Value,
 };
 use cratestack_webtransport::{
@@ -22,14 +22,32 @@ use web_transport_quinn as wtq;
 
 pub const ALLOWED_ORIGIN: &str = "http://localhost:5173";
 
-/// `Bearer <id>` authenticates as `<id>`, `Bearer bad` is refused, and no
-/// header is anonymous — the shape most `AuthProvider`s have.
+/// `Bearer <id>` authenticates as `<id>`, and no header is anonymous — the
+/// shape most `AuthProvider`s have. Three tokens refuse the way real
+/// providers do (ADR 0021 §1): `bad` with a 401 `AuthRefusal` carrying an
+/// `error` reason and a challenge, `forbidden` with a 403 carrying
+/// `details`, and `down`/`broken` with a provider that could not decide.
 pub fn auth(headers: &http::HeaderMap) -> Result<CratestackContext, CratestackError> {
     let Some(value) = headers.get(http::header::AUTHORIZATION) else {
         return Ok(CratestackContext::anonymous());
     };
     match value.to_str().unwrap_or_default().strip_prefix("Bearer ") {
-        Some("bad") | None => Err(CratestackError::Unauthorized("bad token".into())),
+        Some("bad") | None => Err(AuthRefusal::unauthenticated("attestation expired")
+            .with_member("error", Value::String("attestation_expired".into()))
+            .with_challenge(r#"DeviceSig realm="cratestack""#)
+            .into_error()),
+        Some("forbidden") => Err(AuthRefusal::forbidden("not a member of this tenant")
+            .with_member("error", Value::String("tenant_mismatch".into()))
+            .with_details(Value::Map(
+                [("tenant".to_owned(), Value::String("acme".into()))].into(),
+            ))
+            .into_error()),
+        Some("down") => Err(CratestackError::Unavailable(
+            "key server unreachable".into(),
+        )),
+        Some("broken") => Err(CratestackError::Internal(
+            "jwks cache poisoned: secret=xyz".into(),
+        )),
         Some(id) => Ok(CratestackContext::authenticated([(
             "id".to_owned(),
             Value::String(id.into()),
@@ -225,6 +243,11 @@ impl Client {
 
     pub async fn send_control(&mut self, frame: &ClientFrame) {
         self.control.write(frame).await;
+    }
+
+    /// The next frame the server sends on the control stream.
+    pub async fn control_frame(&mut self) -> Option<ServerFrame> {
+        self.control.next().await
     }
 
     /// Opens a subscription stream and sends its one `Request`.
