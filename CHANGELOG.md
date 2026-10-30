@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Security: `@@subscribe` events pass the subscriber's read policy
+
+**What was wrong.** `GET /rpc/subscribe/{op_id}` authenticated the caller and then sent it every
+event of the model. Row-level `@@allow`/`@@deny` read rules were not applied, so any caller the
+`AuthProvider` admitted, including an anonymous one, received every created, updated and
+deleted record of a `@@subscribe` model, and `list`/`get` policies did not limit that.
+
+**What changed.**
+
+- Each event is checked against the subscriber's read policy, the model's `detail` and `read`
+  rules that `get` applies, before it is sent. An event the subscriber may not read is
+  dropped. The check runs in-process against the event's record, with the create path's
+  evaluator; a relation predicate still probes the database.
+- A policy that reads a column the event does not carry (a `@server_only` field) cannot be
+  decided, so the subscription is refused when it opens: 500, with the columns named in the
+  server log.
+- A policy that cannot be decided for one event, for example when a relation probe fails, ends
+  the stream with `Error{unavailable}`, the same terminal event as overflow. The client
+  reconnects.
+- No schema change is needed. An anonymous subscriber to a model whose read policy requires
+  `auth()` now gets a stream that stays open and empty.
+
+Runtime additions: `cratestack_sqlx::{record_readable, missing_policy_columns}` and
+`cratestack_axum::rpc::readable_events`, reached by generated code through
+`cratestack::__private`.
 ### The principal contract: reserved claims, a builder, typed readers, `hasRole` over `roles` (#1243)
 
 **What was missing.** Nothing named the claims the framework itself reads. Each reader of "who"

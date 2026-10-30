@@ -64,7 +64,9 @@ pub use batch::response_to_frame;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
-pub use subscription_bridge::{SubscriptionPush, guarded_receiver_stream, subscription_channel};
+pub use subscription_bridge::{
+    SubscriptionPush, guarded_receiver_stream, readable_events, subscription_channel,
+};
 pub use synthesize::{synthesize_get_query, synthesize_list_query};
 
 /// Codec/transport capabilities for every RPC binding route. Both unary

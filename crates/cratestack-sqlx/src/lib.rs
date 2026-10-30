@@ -12,6 +12,7 @@ mod json;
 mod migrations;
 mod partial_row;
 mod query;
+mod record_policy;
 mod render;
 mod retriable;
 #[cfg(feature = "postgis")]
@@ -94,6 +95,7 @@ pub use migrations::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
+pub use record_policy::{missing_policy_columns, record_readable};
 pub use transaction::Tx;
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};
