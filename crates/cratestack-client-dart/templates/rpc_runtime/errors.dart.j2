@@ -79,8 +79,22 @@ class CratestackRpcException implements Exception {
   /// there is none. A transport joins two challenge lines into one entry.
   List<String> get challenges => _cratestackChallenges(headers);
 
+  /// The step-up refusal this answer is (cratestack#1244): code
+  /// `unauthenticated` and the [extra] member `error` set to
+  /// `insufficient_user_authentication`, read from [details]; a batch frame
+  /// reads the same. `null` for any other error; reading never throws.
+  StepUpRequired? get stepUp => _cratestackStepUp(
+        code == CratestackRpcErrorCodes.unauthenticated,
+        details,
+        extra,
+      );
+
   @override
   String toString() =>
       'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
 }
 
+/// What [retryAfterStepUp] reads: the step-up refusal of a
+/// [CratestackRpcException], `null` for anything else.
+StepUpRequired? _cratestackStepUpOf(Object error) =>
+    error is CratestackRpcException ? error.stepUp : null;

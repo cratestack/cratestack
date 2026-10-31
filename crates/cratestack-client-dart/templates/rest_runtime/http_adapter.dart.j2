@@ -43,6 +43,11 @@ class CratestackRestException implements Exception {
   /// there is none. A transport joins two challenge lines into one entry.
   List<String> get challenges => _cratestackChallenges(headers);
 
+  /// The step-up refusal this answer is (cratestack#1244): a 401 whose
+  /// [extra] member `error` is `insufficient_user_authentication`, read from
+  /// [details]. `null` for any other error; reading never throws.
+  StepUpRequired? get stepUp => _cratestackStepUp(status == 401, details, extra);
+
   Object? _envelopeMember(String name) {
     final body = this.body;
     if (body is! Map) {
@@ -55,6 +60,11 @@ class CratestackRestException implements Exception {
   @override
   String toString() => 'CratestackRestException(status=$status, body=$body)';
 }
+
+/// What [retryAfterStepUp] reads: the step-up refusal of a
+/// [CratestackRestException], `null` for anything else.
+StepUpRequired? _cratestackStepUpOf(Object error) =>
+    error is CratestackRestException ? error.stepUp : null;
 
 /// The REST adapter, written once over a [CratestackHttpTransport].
 ///

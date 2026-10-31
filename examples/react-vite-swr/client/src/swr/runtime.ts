@@ -90,6 +90,89 @@ function challengesOf(headers: Headers | undefined): readonly string[] {
   return Object.freeze(value ? [value] : []);
 }
 
+/** The extra member `error` of a step-up refusal (RFC 9470, cratestack#1244). */
+export const INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication";
+
+/** What a step-up refusal asks for (cratestack#1244): an operation that
+ *  requires a fresher or stronger authentication than the caller presented.
+ *  Each requirement is present only when the refused operation declares it. */
+export interface StepUpRequired {
+  /** The longest time, in seconds, since the caller last authenticated. */
+  readonly maxAge: number | undefined;
+  /** The authentication context classes the operation accepts. */
+  readonly acrValues: readonly string[];
+  /** The authentication methods the operation requires. */
+  readonly amr: readonly string[];
+  /** Which requirements the caller failed: a subset of `"max_age"`, `"acr"`
+   *  and `"amr"`. */
+  readonly unmet: readonly string[];
+}
+
+/** Reads a step-up refusal once the transport's own test (`refused`: a 401,
+ *  or `unauthenticated`) passed: `undefined` unless the extra member `error`
+ *  is `insufficient_user_authentication`. Never throws: a missing or
+ *  mistyped field reads as absent or empty. */
+function readStepUp(
+  refused: boolean,
+  details: unknown,
+  extra: Readonly<Record<string, unknown>>,
+): StepUpRequired | undefined {
+  if (!refused || extra["error"] !== INSUFFICIENT_USER_AUTHENTICATION) {
+    return undefined;
+  }
+  const map: Record<string, unknown> =
+    typeof details === "object" && details !== null && !Array.isArray(details)
+      ? (details as Record<string, unknown>)
+      : {};
+  const strings = (name: string): readonly string[] => {
+    const value = map[name];
+    return Object.freeze(
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [],
+    );
+  };
+  const raw = map["max_age"];
+  const maxAge = typeof raw === "bigint" ? Number(raw) : raw;
+  return Object.freeze({
+    maxAge:
+      typeof maxAge === "number" && Number.isSafeInteger(maxAge) && maxAge >= 0
+        ? maxAge
+        : undefined,
+    acrValues: strings("acr_values"),
+    amr: strings("amr"),
+    unmet: strings("unmet"),
+  });
+}
+
+/** Runs `call`; when it fails with a step-up refusal, hands the refusal to
+ *  `reprove` and, when that resolves `true` (the user authenticated again),
+ *  runs `call` **once** more and returns what it gives, even a second
+ *  refusal. Never loops (cratestack#1244).
+ *
+ *  `reprove` resolves `false` when the user declined or the re-proof failed;
+ *  the first refusal is then rethrown. Any other error, and one `reprove`
+ *  itself throws, propagates as it is.
+ *
+ *  ```ts
+ *  const receipt = await retryAfterStepUp(
+ *    () => client.procedures.transfer(args),
+ *    (stepUp) => session.reauthenticate({ maxAge: stepUp.maxAge }),
+ *  );
+ *  ``` */
+export async function retryAfterStepUp<T>(
+  call: () => Promise<T>,
+  reprove: (stepUp: StepUpRequired) => Promise<boolean>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const stepUp = stepUpOf(error);
+    if (stepUp === undefined || !(await reprove(stepUp))) {
+      throw error;
+    }
+  }
+  return call();
+}
+
 /** The error envelope a CrateStack server answers with. Mirrors
  *  `cratestack_core::CratestackErrorResponse`; the members an
  *  `AuthProvider` refusal adds beside these three are on
@@ -124,6 +207,10 @@ export class CratestackHttpError extends Error {
   readonly details: unknown;
   readonly extra: Readonly<Record<string, unknown>>;
   readonly challenges: readonly string[];
+  /** The step-up refusal this answer is (cratestack#1244): a 401 whose
+   *  extra member `error` is `insufficient_user_authentication`, read from
+   *  `details`; `undefined` for any other error. */
+  readonly stepUp: StepUpRequired | undefined;
 
   constructor(response: Response, payload: unknown) {
     super(`CrateStack request failed with status ${response.status}`);
@@ -136,7 +223,14 @@ export class CratestackHttpError extends Error {
     this.details = this.body?.details;
     this.extra = extraErrorMembers(this.body);
     this.challenges = challengesOf(response.headers);
+    this.stepUp = readStepUp(this.status === 401, this.details, this.extra);
   }
+}
+
+/** The step-up refusal of a {@link CratestackHttpError} (its `stepUp`);
+ *  `undefined` for anything else (cratestack#1244). */
+export function stepUpOf(error: unknown): StepUpRequired | undefined {
+  return error instanceof CratestackHttpError ? error.stepUp : undefined;
 }
 
 export class CratestackRuntime {

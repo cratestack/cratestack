@@ -303,6 +303,32 @@ void main() {
       );
     });
 
+    test('a step-up refusal is typed as stepUp (cratestack#1244)', () async {
+      final error = await failWith(
+        TransportStatusError(
+          statusCode: 401,
+          headers: const {'content-type': 'application/cbor'},
+          body: Uint8List.fromList(
+            cbor.cbor.encode({
+              'code': 'unauthenticated',
+              'message': 'step-up authentication required',
+              'details': {
+                'max_age': 300,
+                'acr_values': ['aal2'],
+                'unmet': ['max_age'],
+              },
+              'error': 'insufficient_user_authentication',
+            }),
+          ),
+        ),
+      );
+      final stepUp = (error as CratestackRpcException).stepUp!;
+      expect(stepUp.maxAge, 300);
+      expect(stepUp.acrValues, ['aal2']);
+      expect(stepUp.amr, isEmpty);
+      expect(stepUp.unmet, ['max_age']);
+    });
+
     test('any other error a decorator throws reaches the caller unchanged', () async {
       expect(await failWith(StateError('rejected')), isA<StateError>());
     });

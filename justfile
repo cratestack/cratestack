@@ -1117,6 +1117,11 @@ verify-dart:
 	    cp "crates/cratestack-client-dart/tests/fixtures/auth_refusal_${transport}_test.dart" "$pkg/test/"
 	    echo "=== flutter test (AuthProvider refusal members + challenges): $pkg ==="
 	    (cd "$pkg" && flutter test "test/auth_refusal_${transport}_test.dart")
+	    # cratestack#1244: a step-up refusal typed as `stepUp`, and the
+	    # retry-at-most-once helper `retryAfterStepUp`.
+	    cp "crates/cratestack-client-dart/tests/fixtures/step_up_${transport}_test.dart" "$pkg/test/"
+	    echo "=== flutter test (step-up refusal + retryAfterStepUp): $pkg ==="
+	    (cd "$pkg" && flutter test "test/step_up_${transport}_test.dart")
 	  fi
 	done
 
