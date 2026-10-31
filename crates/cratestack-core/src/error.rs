@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 mod aborted;
 mod auth_refusal;
+mod auth_refusal_claim;
 mod cuid_check;
 mod response;
 // Doctest-only: `AbortOwnership::Claimed` cannot be forged from outside.
@@ -23,6 +24,8 @@ mod tests;
 mod tests_aborted;
 #[cfg(test)]
 mod tests_auth_refusal;
+#[cfg(test)]
+mod tests_auth_refusal_claim;
 
 pub use aborted::{AbortOwnership, TransactionAbort};
 pub use auth_refusal::{AuthRefusal, AuthRefusalKind, RESERVED_ENVELOPE_MEMBERS};

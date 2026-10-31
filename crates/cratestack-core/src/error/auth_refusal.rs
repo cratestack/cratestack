@@ -47,6 +47,10 @@ pub enum AuthRefusalKind {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AuthRefusal {
     kind: AuthRefusalKind,
+    /// Private: read it with [`Self::is_dispatch_owned`]. Only
+    /// [`CratestackError::__generated_claim_auth_refusal`](super::CratestackError::__generated_claim_auth_refusal)
+    /// sets it (cratestack#1261, `auth_refusal_claim.rs`).
+    dispatch_owned: bool,
     // Boxed so `CratestackError` stays as small as its other variants.
     body: Box<RefusalBody>,
 }
@@ -73,6 +77,7 @@ impl AuthRefusal {
     fn new(kind: AuthRefusalKind, message: String) -> Self {
         Self {
             kind,
+            dispatch_owned: false,
             body: Box::new(RefusalBody {
                 message,
                 members: BTreeMap::new(),
@@ -147,6 +152,21 @@ impl AuthRefusal {
     /// The `WWW-Authenticate` header values, in the order they were added.
     pub fn challenges(&self) -> &[String] {
         &self.body.challenges
+    }
+
+    /// Whether the generated dispatch claimed this refusal as its own: it
+    /// refused the request before any procedure body ran, so an idempotency
+    /// layer releases the key instead of recording the refusal
+    /// (cratestack#1261). `false` for every refusal a provider or a body
+    /// builds.
+    pub const fn is_dispatch_owned(&self) -> bool {
+        self.dispatch_owned
+    }
+
+    /// This refusal, with [`Self::is_dispatch_owned`] set to `owned`.
+    pub(super) fn owned_by_dispatch(mut self, owned: bool) -> Self {
+        self.dispatch_owned = owned;
+        self
     }
 
     /// The message, `details` and members, moved out for the envelope.

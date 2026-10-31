@@ -58,5 +58,19 @@ pub(in crate::procedure) fn authorize_with_db_fn_tokens(
             );
             Ok(Authorized(()))
         }
+
+        /// `error`, claimed as the generated dispatch's refusal when
+        /// `dispatch`: both forms of `invoke_with_db` map their authorization
+        /// step's error through it (cratestack#1261).
+        fn claimed_by(
+            dispatch: bool,
+            error: ::cratestack::CratestackError,
+        ) -> ::cratestack::CratestackError {
+            if dispatch {
+                error.__generated_claim_auth_refusal()
+            } else {
+                error
+            }
+        }
     }
 }

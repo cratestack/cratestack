@@ -76,7 +76,9 @@ fn each_of_the_four_helpers_validates_before_it_authorizes() {
         ("authorize", "authorize_procedure"),
         ("invoke", "authorize_procedure"),
         ("authorize_with_db", "authorize_validated_with_db"),
-        ("invoke_with_db", "authorize_validated_with_db"),
+        // `invoke_with_db` and `__generated_dispatch_with_db` both delegate
+        // to it (cratestack#1261): see the test below.
+        ("invoke_with_db_as", "authorize_validated_with_db"),
     ] {
         let (_, code) = body(&module, helper);
         let validate = code
@@ -87,6 +89,34 @@ fn each_of_the_four_helpers_validates_before_it_authorizes() {
             validate < authorize,
             "`{helper}` must validate before `{authorizes}`: {code}"
         );
+    }
+}
+
+/// The public `invoke_with_db` and the generated dispatch's
+/// `__generated_dispatch_with_db` are one function with one flag
+/// (cratestack#1261): the dispatch's differs only in claiming its own
+/// authorization refusal, never in what it validates or authorizes. Both
+/// forms, the isolated one too.
+#[test]
+fn the_dispatch_path_is_invoke_with_db_with_the_claim_on() {
+    for name in ["rename", "renameIsolated"] {
+        let module = module(name);
+        let (visibility, public) = body(&module, "invoke_with_db");
+        assert!(matches!(visibility, syn::Visibility::Public(_)));
+        assert!(
+            public.contains("invoke_with_db_as (db , args , ctx , false , f)"),
+            "{public}"
+        );
+        let (visibility, dispatch) = body(&module, "__generated_dispatch_with_db");
+        assert!(matches!(visibility, syn::Visibility::Public(_)));
+        assert!(
+            dispatch.contains("invoke_with_db_as (db , args , ctx , true , f)"),
+            "{dispatch}"
+        );
+        let (visibility, inner) = body(&module, "invoke_with_db_as");
+        assert!(matches!(visibility, syn::Visibility::Inherited));
+        assert!(inner.contains("claimed_by (dispatch , error)"), "{inner}");
+        assert!(inner.contains("disown_auth_refusal"), "{inner}");
     }
 }
 
@@ -107,7 +137,7 @@ fn authorization_without_validation_is_private_to_the_module() {
 #[test]
 fn an_isolated_procedure_validates_before_it_takes_a_connection() {
     let module = module("renameIsolated");
-    let (_, code) = body(&module, "invoke_with_db");
+    let (_, code) = body(&module, "invoke_with_db_as");
     let validate = code.find("validate_fields").expect("validates");
     let transaction = code.find("run_isolated").expect("runs in a transaction");
     assert!(validate < transaction, "{code}");

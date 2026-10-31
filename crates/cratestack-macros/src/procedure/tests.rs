@@ -137,7 +137,17 @@ fn stream_marked_list_procedure_generates_stream_shaped_trait_method() {
 /// Preserving line boundaries is what makes the fence-open check below
 /// precise instead of a substring guess.
 fn doc_lines(tokens: proc_macro2::TokenStream) -> Vec<String> {
-    let item: syn::ItemFn = syn::parse2(tokens).expect("invoke_with_db tokens must parse as a fn");
+    // The tokens are `invoke_with_db` and the functions it delegates to
+    // (cratestack#1261); the doc comment under test is `invoke_with_db`'s.
+    let file: syn::File = syn::parse2(tokens).expect("invoke_with_db tokens must parse as items");
+    let item = file
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            syn::Item::Fn(function) if function.sig.ident == "invoke_with_db" => Some(function),
+            _ => None,
+        })
+        .expect("the tokens define `invoke_with_db`");
     item.attrs
         .iter()
         .filter(|attr| attr.path().is_ident("doc"))

@@ -80,6 +80,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
                     Err(error) => {
                         let error: CratestackError = error.into();
+                        let error = error.__generated_claim_auth_refusal();
                         ::cratestack::tracing::warn!(
                             target: "cratestack",
                             cratestack_route = canonical_route,

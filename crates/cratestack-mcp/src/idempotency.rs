@@ -53,7 +53,12 @@
 //! **The record** is the serialized `CallToolResult`, with status 200 for a
 //! success and the error's HTTP status for an `isError` result. As on HTTP,
 //! an error outcome is recorded too: the IETF contract freezes the outcome,
-//! whatever it was (`IdempotencyStore::complete`'s docs).
+//! whatever it was (`IdempotencyStore::complete`'s docs). The exceptions
+//! are HTTP's, read from `CratestackError::is_idempotency_replayable`: an
+//! `@isolation` tool's own exhausted retries, and a refusal of the tool's
+//! generated authorize step (`@allow`/`@deny`, `@authn`), which ran no body
+//! and is released so the caller can step up and send the same key again
+//! (cratestack#1261). A refusal the tool's body returns is recorded.
 
 use cratestack_core::idempotency_record::IdempotencyRecord;
 use cratestack_core::{CratestackContext, CratestackError};

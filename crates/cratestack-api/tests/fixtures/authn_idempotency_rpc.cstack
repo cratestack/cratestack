@@ -1,0 +1,28 @@
+// The RPC half of authn_idempotency_rest.cstack (cratestack#1261).
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PayArgs {
+  amount Int
+}
+
+type Receipt {
+  ok Boolean
+}
+
+// A step-up requirement: a stale or weak caller is refused before the body.
+mutation procedure pay(args: PayArgs): Receipt
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk"])
+
+// A role: a caller without it is refused (403) before the body.
+mutation procedure close(args: PayArgs): Receipt
+  @allow(hasRole("admin"))
+
+// Admitted, but its body writes and then refuses the caller itself.
+mutation procedure refund(args: PayArgs): Receipt
+  @allow(auth() != null)
