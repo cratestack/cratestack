@@ -180,9 +180,29 @@ it, and an empty list is refused). `GET` and `DELETE` get `405`. A missing or re
 The token is removed from the request before the MCP handler sees it, and it is never passed on to
 another service.
 
+### A credential that is not a bearer token
+
+The endpoint runs with `CredentialPresence::ask_provider()` (ADR 0021 §4, cratestack#1245): instead
+of insisting on `Authorization: Bearer`, it asks the provider's `credential()` whether a request
+carries a credential at all. [`src/provider.rs`](src/provider.rs) also accepts the same token in an
+`X-Agent-Token` header, as an agent runtime with a header of its own might send it, and names it for
+redaction like a bearer token:
+
+```bash
+npx @modelcontextprotocol/inspector@2.8.0 --cli http://127.0.0.1:8787/mcp -- \
+  --transport http --protocol-era modern \
+  --header "X-Agent-Token: $TOKEN" \
+  --method tools/call --tool-name recent_posts --tool-args-json '{"limit":5}'
+```
+
+A refused agent token is the provider's `401`, exactly as the same token over `Bearer`; a request
+with neither credential still gets MCP's own `401` and its `resource_metadata` pointer.
+`tests/agent_token.rs` checks the three.
+
 ## Tokens and the example `AuthProvider`
 
-[`src/token.rs`](src/token.rs) is **example code, not a published API**. CrateStack v1 ships no
+[`src/token.rs`](src/token.rs) and [`src/provider.rs`](src/provider.rs) are **example code, not a
+published API**. CrateStack v1 ships no
 generic OAuth access-token provider (ADR 0002 Q5): your application brings its own, verifying its
 authorization server's JWTs against that server's JWKS. This stand-in uses a compact
 `<claims>.<signature>` token (base64url JSON claims, HMAC-SHA256), so the example needs no
@@ -250,6 +270,7 @@ export DOCKER_HOST="$(docker context inspect --format '{{.Endpoints.docker.Host}
 CRATESTACK_REQUIRE_DB=1 cargo test -- --test-threads=1
 ```
 
-`tests/token.rs` needs no database. `tests/serve.rs` starts a Postgres testcontainer. It skips, and
-still prints `ok`, when Docker is unreachable, unless `CRATESTACK_REQUIRE_DB` is set. Read
+`tests/token.rs` needs no database. `tests/serve.rs` and `tests/agent_token.rs` use
+`CRATESTACK_TEST_DATABASE_URL` when it is set, and otherwise start a Postgres testcontainer. They
+skip, and still print `ok`, when Docker is unreachable, unless `CRATESTACK_REQUIRE_DB` is set. Read
 `finished in` to tell a skip (`0.00s`) from a run (seconds).

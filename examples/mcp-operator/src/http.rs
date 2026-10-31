@@ -1,10 +1,13 @@
 //! The Streamable HTTP side: the MCP endpoint behind the example
-//! [`AudienceProvider`], plus its RFC 9728 metadata document.
+//! [`AudienceProvider`](crate::provider::AudienceProvider), plus its RFC 9728 metadata document.
 
 use cratestack::axum::Router;
-use cratestack::mcp::{HttpConfigError, ProtectedResource, StreamableHttpServer};
+use cratestack::mcp::{
+    CredentialPresence, HttpConfigError, ProtectedResource, StreamableHttpServer,
+};
 
-use crate::token::{AudienceProvider, ISSUER, TokenVerifier};
+use crate::provider::AudienceProvider;
+use crate::token::{ISSUER, TokenVerifier};
 use crate::{cratestack_schema, mcp_table};
 
 /// What the HTTP server needs to know about where it is reached.
@@ -32,6 +35,9 @@ pub fn app(db: cratestack_schema::Cratestack, config: &HttpConfig) -> Result<Rou
         ProtectedResource::new(config.resource.as_str(), [ISSUER]),
     )
     .with_implementation("mcp-operator-example", env!("CARGO_PKG_VERSION"))
+    // Ask the provider whether a credential is present, so its non-bearer
+    // `X-Agent-Token` is one too (`src/provider.rs`).
+    .with_credential_presence(CredentialPresence::ask_provider())
     .build()
     .map_err(|error: HttpConfigError| error.to_string())?;
     Ok(Router::new()

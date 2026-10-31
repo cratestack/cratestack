@@ -1,0 +1,25 @@
+// One schema, three providers (cratestack#1245). Nothing here knows which
+// AuthProvider runs: the policies read the principal contract (ADR 0021 §2),
+// which every provider fills the same way.
+
+datasource db {
+  provider = "none"
+}
+
+type Identity {
+  subject String
+  roles String[]
+}
+
+type Report {
+  subject String
+  note String
+}
+
+// Any authenticated caller.
+procedure whoAmI(): Identity
+  @allow(auth() != null)
+
+// Only a caller whose `roles` contains "admin".
+procedure adminReport(): Report
+  @allow(hasRole("admin"))

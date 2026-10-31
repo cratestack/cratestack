@@ -372,6 +372,40 @@ hand.
   workspace's `Cargo.lock` must contain no `authkestra*` package, so no framework crate depends on
   an external authentication library (ADR 0021 §7).
 
+### Examples: one schema, three auth providers (two of them Authkestra); MCP accepts a non-bearer credential (#1245)
+
+**What was missing.** Nothing showed an external authentication library plugged into a CrateStack
+server, so "the in-house auth and an external library plug in equally" (ADR 0021) was a claim, not a
+test. The MCP example authenticated with `Authorization: Bearer` only.
+
+**What changed.**
+
+- **New example `examples/auth-pluggable`**, a standalone workspace (listed in the root `exclude`):
+  one schema (`whoAmI`, and `adminReport` under `@allow(hasRole("admin"))`), one test suite, and
+  three binaries that differ only in their provider, each one file on the public seam:
+  - `inhouse`: `SignedRequestAuthProvider` then a COSE-verified signer (`CoseAuthProvider`'s chain);
+  - `authkestra-devsig`: `authkestra_devsig::verify` (an `X-Signature` per request and an
+    `X-Attestation`), with refusals as `401 {"error": "<code>"}`;
+  - `authkestra-oidc`: `authkestra-resource`'s `JwtStrategy` with DPoP-bound access tokens, mapped
+    onto `sub`, `roles`, `amr`, `acr`, `auth_time` and `cnf.jkt`. Its tests start `authkestra-op`
+    in-process and send real DPoP proofs.
+
+  The suite runs each provider through `cratestack-auth-conformance` (REST, RPC unary and batch,
+  MCP) and through the example's own policies. Authkestra is pinned to one commit. The README lists
+  what the providers work around in Authkestra (no refusal reason from `JwtStrategy`, no DPoP nonce,
+  JWKS only over HTTP, no device-signature profile or vectors yet).
+- **CI job `auth-pluggable`**: lockfile, `fmt`, `clippy`, the three suites, and
+  `.ci/auth-pluggable-check.sh`, which runs `cargo tree` on every CrateStack crate in the example's
+  graph and fails if one reaches an `authkestra*` package (and checks the example itself does, so the
+  check can fail).
+- **`examples/mcp-operator`** runs its Streamable HTTP endpoint with
+  `CredentialPresence::ask_provider()`. Its provider (now `src/provider.rs`) also accepts the token in
+  an `X-Agent-Token` header, refused exactly like a bearer token; a request with neither still gets
+  MCP's own 401. `tests/agent_token.rs` and two MCP Inspector conformance cases cover it, and the
+  Postgres-backed tests take `CRATESTACK_TEST_DATABASE_URL` when it is set.
+- `examples/README.md` gains a "Phase H — Authentication" table. (#1245 named it "Phase E", which the
+  Dart presets already use.)
+
 ### `@authn`: a procedure states how fresh and how strong the caller's authentication must be; unmet is RFC 9470's step-up (#1244)
 
 **What was missing.** A policy could say *who* may call a procedure, never *how recently* or *how

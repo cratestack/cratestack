@@ -604,6 +604,39 @@ jobs:
       - name: Conformance with the MCP Inspector CLI (stdio + Streamable HTTP)
         run: just mcp-conformance
 
+  # `examples/auth-pluggable` (cratestack#1245) is its own `[workspace]` root
+  # because it is the one crate that depends on Authkestra: outside the root
+  # workspace, Authkestra never enters the root `Cargo.lock`
+  # (`.ci/auth-independence-check.sh`). This job runs its three providers
+  # through the same suite and checks that no CrateStack crate in its graph
+  # reaches an `authkestra*` package (`.ci/auth-pluggable-check.sh`).
+  auth-pluggable:
+    timeout-minutes: 45
+    name: auth-pluggable (examples/auth-pluggable, three providers, one suite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # Before rust-cache, whose own `cargo metadata` would quietly rewrite
+      # a stale lockfile (the `check` job's reasoning).
+      - name: Assert Cargo.lock is up to date (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/auth-pluggable
+      - name: rustfmt (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo fmt --check
+      - name: clippy (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: The three providers through one suite (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo test --locked
+      - name: No CrateStack crate reaches Authkestra (auth-pluggable)
+        run: ./.ci/auth-pluggable-check.sh
+
   webtransport-browser:
     timeout-minutes: 30
     name: webtransport (cratestack-webtransport, real Chromium end to end)

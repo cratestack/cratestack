@@ -51,6 +51,19 @@ function httpTarget(url, token) {
   };
 }
 
+/** The same token in `X-Agent-Token`, a credential that is not a bearer
+ * token: the endpoint asks its provider (`CredentialPresence::ask_provider()`). */
+function agentTarget(url, token) {
+  return {
+    name: "http",
+    target: [url],
+    options: [
+      "--transport", "http", "--protocol-era", "modern", "--stored-auth-only",
+      "--header", `X-Agent-Token: ${token}`,
+    ],
+  };
+}
+
 const call = (transport, ...options) =>
   h.inspect(launcher, HOME, transport.target, [...transport.options, ...options]);
 
@@ -184,8 +197,18 @@ try {
   check("http", "a token for another audience (stdio's): 401, auth_required",
     call(httpTarget(http.url, mint(STDIO_AUDIENCE, "u-1", "member")), "--method", "tools/list"),
     (r) => r.status !== 0 && r.error.code === "auth_required");
+
+  // cratestack#1245: a non-bearer credential opens the endpoint, and is
+  // refused like a bearer token.
+  check("http", "X-Agent-Token: the same token opens the endpoint, rows filtered by @@allow",
+    call(agentTarget(http.url, mint(http.url, "u-1", "member")),
+      "--method", "tools/call", "--tool-name", "recent_posts", "--tool-args-json", '{"limit":10}'),
+    (r) => r.status === 0 && r.result.isError === false && same(ids(text(r)), [1, 2, 4]));
+  check("http", "X-Agent-Token for another audience (stdio's): 401, auth_required",
+    call(agentTarget(http.url, mint(STDIO_AUDIENCE, "u-1", "member")), "--method", "tools/list"),
+    (r) => r.status !== 0 && r.error.code === "auth_required");
 } finally {
   http.child.kill();
 }
 
-h.finish(2 * SUITE_CASES + 3 + 3);
+h.finish(2 * SUITE_CASES + 3 + 5);
