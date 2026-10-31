@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+### Every generated client types a step-up refusal as `StepUpRequired`, and retries once after a re-proof (#1244)
+
+**What was missing.** #1244 lets an operation require a fresher or stronger authentication than the
+caller presented, and refuses it with an `AuthRefusal` (ADR 0022): 401 on REST, code
+`unauthenticated` on RPC, the extra member `error: "insufficient_user_authentication"` (RFC 9470)
+and a `details` naming the requirements (`max_age`, `acr_values`, `amr`) and which of them the
+caller failed (`unmet`). #1243 made those members readable, but raw: a caller had to compare the
+`error` member by hand, walk an untyped `details`, and write its own "re-prove, then send again
+once" loop, in each language.
+
+**What changed.** Each client reads a step-up refusal the same way, on both transports (REST, RPC
+unary and RPC batch frames): a refusal is a step-up only when its status is 401 (REST) or its code
+`unauthenticated` (RPC) **and** its `error` member is `insufficient_user_authentication`. Reading
+never throws: a missing or mistyped field reads as absent or empty.
+
+- **Rust** (`cratestack-client-rust`): `StepUpRequired { max_age: Option<u64>, acr_values,
+  amr, unmet: Vec<String> }`; `ClientError::step_up()`, `RpcClientError::step_up()` and
+  `RpcRemoteError::step_up()` (a batch frame's error); the `StepUpError` trait over the three;
+  `retry_after_step_up(call, reprove)`, which runs `call`, and on a step-up runs `reprove` and,
+  when it answers `true`, runs `call` once more and returns that result, a second refusal
+  included. `call` may return anything `.await` takes, so a generated RPC method's call fits.
+  Also `INSUFFICIENT_USER_AUTHENTICATION`.
+- **Dart** (every preset: default, riverpod, fespalier): a `StepUpRequired` class (`maxAge`,
+  `acrValues`, `amr`, `unmet`), a `stepUp` getter on `CratestackRestException` and
+  `CratestackRpcException` (`null` when the error is not a step-up), and
+  `retryAfterStepUp(call, reprove)` with the same rule (`reprove` returns `Future<bool>`; `false`
+  rethrows the first refusal). The riverpod providers already rethrow and store the exception
+  itself in `AsyncError`, and the fespalier transport's refusals reach the same exception
+  classes, so `stepUp` reads the same there.
+- **TypeScript**: a `StepUpRequired` interface, a `stepUp` field on `CratestackHttpError` and
+  `CratestackRpcError`, `stepUpOf(error)` (in the RPC runtime it also reads a batch frame's
+  `error` body), and `retryAfterStepUp(call, reprove)`. The `--rtk` REST error gains an optional
+  `stepUp`; `--swr` hooks surface the same error instances.
+
+The committed example clients (`examples/flutter-riverpod/client`, `examples/react-vite-swr/client`)
+are regenerated. This is the client side only: the server side that declares the requirement and
+emits the refusal is a separate #1244 PR, and nothing here changes what a server sends.
+
+**Migrating.** Nothing to change. The new names (`StepUpRequired`, `retryAfterStepUp`,
+`stepUpOf`, `cratestackInsufficientUserAuthentication`, `INSUFFICIENT_USER_AUTHENTICATION`) are
+new exports of the generated runtimes and of `cratestack-client-rust`; a hand-written declaration
+of the same name in a file that imports the whole runtime would now clash.
+
 ### Security: `@@subscribe` events pass the subscriber's read policy
 
 **What was wrong.** `GET /rpc/subscribe/{op_id}` authenticated the caller and then sent it every

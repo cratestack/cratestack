@@ -7,7 +7,7 @@
 {%- endmacro -%}
 import { createApi, fakeBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { {{ client_class_name }} } from "./client.js";
-import { CratestackHttpError } from "./runtime.js";
+import { CratestackHttpError, type StepUpRequired } from "./runtime.js";
 import type {
 {% for interface in interfaces %}
   {{ interface.name }},
@@ -39,6 +39,8 @@ export interface RtkRestQueryError {
   extra?: Readonly<Record<string, unknown>>;
   /** The answer's `WWW-Authenticate` value, raw. */
   challenges?: readonly string[];
+  /** The step-up refusal, when the answer is one (cratestack#1244). */
+  stepUp?: StepUpRequired;
 }
 
 function toRtkRestError(error: unknown): RtkRestQueryError {
@@ -50,6 +52,7 @@ function toRtkRestError(error: unknown): RtkRestQueryError {
       ...(error.code !== undefined ? { code: error.code } : {}),
       extra: error.extra,
       challenges: error.challenges,
+      ...(error.stepUp !== undefined ? { stepUp: error.stepUp } : {}),
     };
   }
   return {
