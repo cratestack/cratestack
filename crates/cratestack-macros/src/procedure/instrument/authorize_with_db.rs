@@ -12,7 +12,8 @@
 use quote::quote;
 
 /// `authorize_with_db` validates the arguments' fields, then authorizes:
-/// `@allow`/`@deny` and any `@authorize` model checks. This is the one place
+/// `@allow`/`@deny`, the `@authn` requirement and any `@authorize` model
+/// checks. This is the one place
 /// every transport and every non-HTTP caller passes through to obtain an
 /// `Authorized` witness, so the validation is not a per-transport call that
 /// one transport can forget (CLAUDE.md, "Transport parity"). It precedes
@@ -43,6 +44,9 @@ pub(in crate::procedure) fn authorize_with_db_fn_tokens(
         ) -> Result<Authorized, ::cratestack::CratestackError> {
             let started = ::std::time::Instant::now();
             ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
+            // ADR 0022: after `@allow`/`@deny`, so a caller who may never
+            // call is told 403, not asked to re-authenticate.
+            ::cratestack::require_authn(AUTHN.as_ref(), ctx)?;
             #(#model_authorizers)*
             ::cratestack::tracing::debug!(
                 target: "cratestack",

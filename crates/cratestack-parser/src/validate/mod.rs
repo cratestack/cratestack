@@ -1,5 +1,6 @@
 mod attribute_shape;
 mod attribute_spelling;
+mod authn_attribute;
 mod block_attributes;
 mod builder_collisions;
 mod builder_setter_collisions;
@@ -332,6 +333,7 @@ fn validate_procedures(
         validate_procedure_stream_attribute(procedure)?;
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
         validate_procedure_no_idempotency_attribute(procedure)?;
+        self::authn_attribute::validate_procedure_authn_attribute(procedure)?;
         validate_procedure_status_attribute(procedure, schema)?;
         self::procedure_attributes::validate_procedure_attributes(procedure)?;
     }

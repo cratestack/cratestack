@@ -110,6 +110,9 @@ pub fn default_id_token_claims(params: IdTokenClaimsParams<'_>) -> IdTokenClaims
             kid: params.bound_key_id.to_string(),
             jwk: params.bound_key_jwk,
         },
+        // ADR 0022: a token is minted right after the user authenticated.
+        auth_time: Some(iat.timestamp()),
+        amr: Vec::new(),
         main_email: params.main_email,
         main_phone: params.main_phone,
         main_address: params.main_address,

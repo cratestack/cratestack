@@ -804,12 +804,40 @@ is S5a. S6 is listed last for dependency order only.
 - a native-client integration suite;
 - the Chromium end-to-end check, `just test-webtransport-browser` (CI job `webtransport-browser`).
 
-Not built: the multi-replica test (it needs S2's backplane) and the schema-level `extension
-webtransport` gating, which lands with S5a's codegen. The binding is deliberately **not** wired into
-generated code yet. Generated wiring would expose today's model feeds over a second transport before
-S1's open-time policy exists, so it waits for S1 and S5a. Until then an application implements
-`SubscriptionDispatcher` by hand. Each server slice's PR should also carry the
+Not built: the multi-replica test (it needs S2's backplane). The `extension webtransport` gating
+and the generated wiring landed with S5a (below). Each server slice's PR should also carry the
 smallest client change that lets its integration test run through a generated client, not raw HTTP.
+
+**S5a status (as built, 2026-10-31).** Built ahead of S3 and S4, for model feeds only (the one
+subscription op that exists):
+- **The generated dispatcher.** A `db = Postgres` server schema with a `@@subscribe` model gets a
+  `subscriptions` module: `SubscriptionDispatch` implements `cratestack_core::SubscriptionDispatcher`,
+  and `Cratestack::subscriptions()` returns one. Its `open` matches the op id and does what the SSE
+  handler used to do inline: refuse a read policy it cannot decide on an event (§5.2's `@server_only`
+  rule, cratestack#1253), register on the event bus, and filter every event through the subscriber's
+  read policy. A model feed takes no input yet; anything but `null` or `{}` is `invalid_argument`
+  until S3.
+- **SSE as its first adapter, with no wire change.** The generated `GET /rpc/subscribe/{op_id}` arm
+  checks `Accept`, authenticates, opens through the dispatcher and encodes the stream
+  (`encode_subscription_sse_response`). The feed ends with an error item, which the adapter sends as
+  the terminal `event: error`. Overflow is still `unavailable` / `"subscription lagged"`
+  byte for byte (`rpc_subscribe_sse.rs` is unchanged and green). One difference: a read policy that
+  cannot be decided for one event (a failed relation probe) now ends the stream with that error, not
+  with `"subscription lagged"`.
+- **`extension webtransport { }`**, §9's three layers: the schema declares it, the `webtransport`
+  Cargo feature on `cratestack-pg` pulls in `cratestack-webtransport` (re-exported as
+  `cratestack::webtransport`) and gates the codegen, and declaring one without the other is a compile
+  error. The extension adds `SubscriptionDispatch::webtransport(config, auth)`, which binds the
+  WebTransport server to the generated dispatcher. Declaring it in a schema with no subscription op is
+  a compile error, as is declaring it under `include_embedded_schema!`. `cratestack-client`'s
+  `webtransport` feature is a schema-compatibility switch only: the generated clients are S6.
+- Tests: the dispatcher against Postgres (`rpc_subscribe_read_policy/dispatcher.rs`), and the dispatcher served over
+  real QUIC against Postgres (`webtransport_model_feed.rs`, CI job `webtransport-browser`).
+
+Not in S5a: the open-time refusal of §5.1 (a caller whose read policy is `False` before any row,
+such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, never an event), the
+`ready` event and keepalive on SSE (S1/S2), and the byte-stream frame codec for clients, which
+`CborSeqChunkDecoder`'s move to `cratestack-codec-cbor` in S5b already shares.
 
 ## 12. Decisions for the maintainer
 

@@ -1,0 +1,27 @@
+// cratestack#1244 (ADR 0022): `@authn` on REST procedures, `db = None`.
+
+datasource db {
+  provider = "none"
+}
+
+type PayArgs {
+  amount Int
+}
+
+type Receipt {
+  ok Boolean
+}
+
+// Freshness, a method and a class.
+mutation procedure pay(args: PayArgs): Receipt
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk"], acr: ["aal2", "aal3"])
+
+// A role first: a caller without it is 403, never asked to step up.
+mutation procedure close(args: PayArgs): Receipt
+  @allow(hasRole("admin"))
+  @authn(maxAge: 60)
+
+// No requirement.
+procedure balance(args: PayArgs): Receipt
+  @allow(auth() != null)

@@ -670,6 +670,12 @@ jobs:
         env:
           NODE_PATH: ${{ runner.temp }}/pw/node_modules
         run: just test-webtransport-browser
+      - name: Generated dispatcher over WebTransport (testcontainers Postgres)
+        # Slice S5a: `db.subscriptions().webtransport(..)` serving a
+        # `@@subscribe` feed with its read policy. `required-features =
+        # ["webtransport"]`, so the db shard never builds it; here because
+        # this job already builds the QUIC stack.
+        run: just test-ci-db-webtransport --locked -- --test-threads=1
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to

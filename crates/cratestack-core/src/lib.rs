@@ -10,6 +10,7 @@
 //! submodule paths directly.
 
 pub mod audit;
+pub mod authn;
 pub mod batch;
 pub mod bigint;
 pub mod builder;
@@ -56,6 +57,9 @@ pub type CratestackBody = bytes::Bytes;
 pub use audit::{
     AuditActor, AuditEvent, AuditOperation, AuditSink, MulticastAuditSink, NoopAuditSink,
     TransactionIsolation,
+};
+pub use authn::{
+    AuthnRequirement, STEP_UP_ERROR, STEP_UP_MESSAGE, Unmet, require_authn, require_authn_at,
 };
 pub use batch::{
     BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest, BatchResponse,

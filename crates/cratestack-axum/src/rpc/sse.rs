@@ -11,10 +11,11 @@
 //! and exactly one final `event: error` (`data:` is `{"id": <u64>,
 //! "err": RpcErrorBody}`) when the underlying stream ends — see
 //! `super::subscription_bridge`'s module doc for why "the stream ends"
-//! means backpressure overflow (or a read policy that could not be
-//! decided, `super::subscription_bridge::readable_events`), never an
-//! ordinary client disconnect (which just drops this whole future
-//! instead, so this code never runs for that case).
+//! only ever means backpressure overflow here, never an ordinary client
+//! disconnect (which just drops this whole future instead, so this code
+//! never runs for that case). The generated `@@subscribe` endpoint now
+//! goes through [`super::sse_subscription`] instead, which takes the
+//! dispatcher's `SubscriptionStream` and sends its terminal error as is.
 //!
 //! Payload encoding is always JSON regardless of which `CratestackCodec` the
 //! server negotiates for its unary/batch RPC routes: SSE is a
@@ -76,7 +77,12 @@ where
     T: Serialize + Send + 'static,
     S: Stream<Item = T> + Send + 'static,
 {
-    let mut response = Response::new(Body::from_stream(encode_sse_events(items)));
+    sse_response(Body::from_stream(encode_sse_events(items)))
+}
+
+/// A `200 text/event-stream` response around an already-encoded body.
+pub(super) fn sse_response(body: Body) -> Response {
+    let mut response = Response::new(body);
     *response.status_mut() = StatusCode::OK;
     response.headers_mut().insert(
         header::CONTENT_TYPE,
@@ -149,14 +155,14 @@ struct SseErrorPayload<'a> {
     err: &'a RpcErrorBody,
 }
 
-fn format_message_event<T: Serialize>(id: u64, item: &T) -> Bytes {
+pub(super) fn format_message_event<T: Serialize>(id: u64, item: &T) -> Bytes {
     let payload = SseStreamItemPayload { id, next: item };
     let json =
         serde_json::to_string(&payload).unwrap_or_else(|_| r#"{"id":0,"next":null}"#.to_owned());
     Bytes::from(format!("event: message\ndata: {json}\n\n"))
 }
 
-fn format_error_event(id: u64, error: &RpcErrorBody) -> Bytes {
+pub(super) fn format_error_event(id: u64, error: &RpcErrorBody) -> Bytes {
     let payload = SseErrorPayload { id, err: error };
     let json = serde_json::to_string(&payload).unwrap_or_else(|_| {
         r#"{"id":0,"err":{"code":"internal","message":"encode failure"}}"#.to_owned()

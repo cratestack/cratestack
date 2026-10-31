@@ -23,6 +23,14 @@ pub struct IdTokenClaims {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jti: Option<String>,
     pub cnf: Confirmation,
+    /// When the user last actively authenticated (OIDC `auth_time`, ADR
+    /// 0022): the issuer sets it to the mint time by default, and keeps the
+    /// earlier time when it re-mints without a fresh user proof.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_time: Option<i64>,
+    /// How the user authenticated (RFC 8176 `amr`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amr: Vec<String>,
     #[serde(rename = "mainEmail", skip_serializing_if = "Option::is_none")]
     pub main_email: Option<String>,
     #[serde(rename = "mainPhone", skip_serializing_if = "Option::is_none")]

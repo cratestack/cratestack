@@ -133,6 +133,7 @@ pub(super) fn compose_server_schema(
             procedure_registry_methods,
             generated_client_module,
             generated_event_module,
+            generated_subscription_module,
             ..
         } = collected;
 
@@ -146,6 +147,12 @@ pub(super) fn compose_server_schema(
         // of keeping it as unreachable API surface.
         let generated_event_module = match db {
             ServerDb::Postgres => generated_event_module,
+            ServerDb::None => proc_macro2::TokenStream::new(),
+        };
+        // Model feeds need a model, so the subscription module is empty under
+        // `db = None` too (until slice S4's subscription procedures).
+        let generated_subscription_module = match db {
+            ServerDb::Postgres => generated_subscription_module,
             ServerDb::None => proc_macro2::TokenStream::new(),
         };
 
@@ -325,6 +332,7 @@ pub(super) fn compose_server_schema(
 
                 #generated_client_module
                 #generated_event_module
+                #generated_subscription_module
                 #queries_module
 
                 pub mod procedures {

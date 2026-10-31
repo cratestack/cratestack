@@ -18,6 +18,7 @@
 //! | `@no_rate_limit`  | none      | `cratestack-macros/src/transport/rate_limit.rs` |
 //! | `@isolation`      | required  | `super::procedures`; enforced by the generated dispatch (`cratestack-macros` `procedure/instrument/invoke_isolated.rs`) |
 //! | `@mcp`            | required  | `crate::parse::mcp` (moved to `Procedure::mcp` while parsing) |
+//! | `@authn`          | required  | `cratestack_core::parse_authn_attribute`; enforced by the generated authorize step (`cratestack-macros` `procedure/authn.rs`) |
 //!
 //! Runs after the per-attribute validators, so their more specific
 //! messages (`@isolation requires a quoted level argument`, …) still win
@@ -40,6 +41,7 @@ const PROCEDURE_ATTRIBUTES: &[Known] = &[
     ("@no_rate_limit", Arguments::None),
     ("@isolation", Arguments::Required),
     ("@mcp", Arguments::Required),
+    ("@authn", Arguments::Required),
 ];
 
 /// The actions `@authorize(Model, action, args.path)` supports

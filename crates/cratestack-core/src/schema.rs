@@ -4,6 +4,7 @@
 
 mod attribute_syntax;
 pub mod attribute_text;
+pub mod authn_attribute;
 pub mod composite_key;
 pub mod composite_unique;
 pub mod computed_attribute;
@@ -31,6 +32,10 @@ use serde::{Deserialize, Serialize};
 
 pub use attribute_text::{
     PRIMARY_KEY_ATTRIBUTE, field_attribute_name, is_primary_key_attribute, is_relation_attribute,
+};
+pub use authn_attribute::{
+    AUTHN_ATTRIBUTE, AUTHN_KEYS, AUTHN_MAX_AGE_LIMIT, ParsedAuthn, authn_attribute,
+    parse_authn_attribute,
 };
 pub use composite_key::parse_composite_id_attribute;
 pub use composite_unique::{ParsedCompositeUnique, parse_composite_unique_attribute};
@@ -94,15 +99,19 @@ pub enum ExtensionKind {
     RateLimit,
     Pgvector,
     Postgis,
+    /// The WebTransport subscription binding
+    /// (`docs/design/subscriptions-websocket.md` §6a, §9).
+    Webtransport,
 }
 
 impl ExtensionKind {
     /// Every recognized extension name, in a stable order — used to build
     /// clear "expected one of: ..." error messages.
-    pub const ALL: [ExtensionKind; 3] = [
+    pub const ALL: [ExtensionKind; 4] = [
         ExtensionKind::RateLimit,
         ExtensionKind::Pgvector,
         ExtensionKind::Postgis,
+        ExtensionKind::Webtransport,
     ];
 
     pub const fn as_str(&self) -> &'static str {
@@ -110,6 +119,7 @@ impl ExtensionKind {
             ExtensionKind::RateLimit => "rate_limit",
             ExtensionKind::Pgvector => "pgvector",
             ExtensionKind::Postgis => "postgis",
+            ExtensionKind::Webtransport => "webtransport",
         }
     }
 
@@ -249,6 +259,7 @@ mod tests {
         assert_eq!(ExtensionKind::RateLimit.as_str(), "rate_limit");
         assert_eq!(ExtensionKind::Pgvector.as_str(), "pgvector");
         assert_eq!(ExtensionKind::Postgis.as_str(), "postgis");
+        assert_eq!(ExtensionKind::Webtransport.as_str(), "webtransport");
     }
 
     #[test]
@@ -265,15 +276,20 @@ mod tests {
             ExtensionKind::parse_name("postgis"),
             Some(ExtensionKind::Postgis)
         );
+        assert_eq!(
+            ExtensionKind::parse_name("webtransport"),
+            Some(ExtensionKind::Webtransport)
+        );
         assert_eq!(ExtensionKind::parse_name("unknown"), None);
     }
 
     #[test]
     fn extension_kind_all_constant() {
-        assert_eq!(ExtensionKind::ALL.len(), 3);
+        assert_eq!(ExtensionKind::ALL.len(), 4);
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::RateLimit));
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::Pgvector));
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::Postgis));
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::Webtransport));
     }
 
     #[test]

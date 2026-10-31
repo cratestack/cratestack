@@ -22,6 +22,8 @@ use tower::util::ServiceExt;
 
 include_server_schema!("tests/fixtures/subscribe_read_policy.cstack", db = Postgres);
 
+#[path = "rpc_subscribe_read_policy/dispatcher.rs"]
+mod dispatcher;
 mod support;
 
 use support::pg;
