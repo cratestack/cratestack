@@ -15,7 +15,7 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | `@stream` schema directive + stream-shaped `ProcedureRegistry` trait method | shipped | #282 |
 | Genuinely incremental delivery for `@stream` ops (`Body::from_stream`, mid-stream error sentinel, client-disconnect cancellation) | shipped | #283 |
 | SSE subscription binding (§3.4a, `@@subscribe` schema directive) — recommended first path | shipped | #183, #390 |
-| WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case | — |
+| WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case — design proposed in [subscriptions-websocket.md](subscriptions-websocket.md) | — |
 | Batch parallelization | deferred (no observed contention) | — |
 
 Streaming now delivers incrementally, but only for ops explicitly marked
@@ -558,6 +558,11 @@ appears.
   different prefixes.
 
 ## 6.5. WebSocket + SSE subscription bindings — status
+
+**Proposed successor (2026-10-28):** [subscriptions-websocket.md](subscriptions-websocket.md)
+designs the WS binding below, a WebTransport binding beside it, subscription procedures and
+topics, multi-replica delivery, and read-policy enforcement on streamed events. Until it is
+accepted, this section is the record of what is built.
 
 §3.4 specifies the wire shape for WebSocket subscriptions; §3.4a (added by
 issue #183's spike decision) specifies SSE as the recommended first path.

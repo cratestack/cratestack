@@ -368,6 +368,7 @@ name = "cratestack-codec-cbor"
 version = "0.17.0"
 dependencies = [
  "cratestack-core",
+ "minicbor",
  "minicbor-serde",
  "serde",
  "serde_path_to_error",
@@ -391,6 +392,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "chrono",
+ "futures-core",
  "hmac",
  "http",
  "rust_decimal",
