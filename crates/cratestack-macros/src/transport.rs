@@ -2,8 +2,10 @@
 //!
 //! Four independent slices live as sibling submodules: REST per-route
 //! descriptors ([`rest`]), RPC op descriptors ([`op_descriptors`]), RPC
-//! unary/batch dispatch arms ([`rpc`]), and RPC subscription (SSE)
-//! dispatch arms ([`subscribe_dispatch`]). The top-level macro picks
+//! unary/batch dispatch arms ([`rpc`]), RPC subscription (SSE)
+//! dispatch arms ([`subscribe_dispatch`]), and the transport-neutral
+//! subscription dispatcher those arms open through
+//! ([`subscription_module`]). The top-level macro picks
 //! which slice is populated at emission time based on `Schema.transport`.
 
 mod idempotency;
@@ -12,6 +14,7 @@ mod rate_limit;
 mod rest;
 mod rpc;
 mod subscribe_dispatch;
+mod subscription_module;
 
 pub(crate) use op_descriptors::{
     generate_model_op_descriptors, generate_model_subscribe_op_descriptor,
@@ -25,3 +28,4 @@ pub(crate) use rest::{
 };
 pub(crate) use rpc::{generate_model_rpc_dispatch_arms, generate_procedure_rpc_dispatch_arm};
 pub(crate) use subscribe_dispatch::generate_model_subscribe_dispatch_arm;
+pub(crate) use subscription_module::generate_subscription_module;

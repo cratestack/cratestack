@@ -175,6 +175,13 @@ pub use cratestack_axum::rpc;
 #[cfg(feature = "mcp")]
 pub use cratestack_mcp as mcp;
 
+/// The WebTransport subscription binding
+/// (`docs/design/subscriptions-websocket.md` §6a). A schema declaring
+/// `extension webtransport { }` binds it to its generated dispatcher with
+/// `db.subscriptions().webtransport(config, auth)`.
+#[cfg(feature = "webtransport")]
+pub use cratestack_webtransport as webtransport;
+
 // Everything below is sqlx (Postgres)-backed and only compiled in when the
 // default-on `postgres` feature is enabled (cratestack#329). A `db = None`
 // -only consumer builds with `default-features = false` (or explicitly
@@ -278,8 +285,8 @@ pub mod __private {
     /// part of the public API surface for the same reason as the rest
     /// of this module.
     pub use cratestack_axum::rpc::{
-        encode_model_event_sse_response, guarded_receiver_stream, readable_events,
-        subscription_channel, validate_subscribe_accept_header,
+        encode_model_event_sse_response, encode_subscription_sse_response, guarded_receiver_stream,
+        model_feed, subscription_channel, validate_subscribe_accept_header,
     };
     /// The subscriber's read policy, decided per event in the same
     /// dispatch (an event has no query to push the policy into).

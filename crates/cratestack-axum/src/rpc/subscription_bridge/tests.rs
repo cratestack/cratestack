@@ -101,37 +101,3 @@ async fn guard_drops_when_the_stream_is_cancelled_mid_poll() {
         "guard should drop when the stream itself is dropped mid-poll"
     );
 }
-
-#[tokio::test]
-async fn readable_events_drops_what_the_policy_refuses() {
-    let source = futures_util::stream::iter([1u32, 2, 3, 4]);
-    let kept: Vec<u32> = readable_events(source, |item: &u32| {
-        let even = item.is_multiple_of(2);
-        async move { Ok(even) }
-    })
-    .collect()
-    .await;
-    assert_eq!(kept, vec![2, 4]);
-}
-
-#[tokio::test]
-async fn an_undecided_policy_ends_the_stream() {
-    let source = futures_util::stream::iter([1u32, 2, 3]);
-    let kept: Vec<u32> = readable_events(source, |item: &u32| {
-        let item = *item;
-        async move {
-            if item == 2 {
-                Err(cratestack_core::CratestackError::Unavailable(
-                    "db down".to_owned(),
-                ))
-            } else {
-                Ok(true)
-            }
-        }
-    })
-    .collect()
-    .await;
-    // Nothing after the undecided item: the SSE encoder then sends
-    // `Error{unavailable}`, never item 3 with item 2 silently skipped.
-    assert_eq!(kept, vec![1]);
-}
