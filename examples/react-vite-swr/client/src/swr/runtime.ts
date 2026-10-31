@@ -14,7 +14,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 // `tracing::warn!`, never a rejection. Empty when the CLI wasn't given a
 // schema fingerprint (e.g. this crate used as a library directly, or a
 // test) — the header is simply omitted in that case.
-export const SCHEMA_SHA256: string = "217ba18873787830e1ff660ecce902cfba0cec5a007b8773e512ec2be0a622f3";
+export const SCHEMA_SHA256: string = "02cc93609f6e33ef57205aa2bda8a1e6ea731cfe9de9468042ff673c83a8e408";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
 // Per-op contract digests (binding version 2, cratestack#1123): what a signed
@@ -32,12 +32,13 @@ export const OP_CONTRACTS: Readonly<Record<string, string>> = {
   "GET /tasks/{id}": "3f6748635dac9ff32302ee383c0e891e23e0d7f0bd96cf93edd8f2c80bdcb61a",
   "PATCH /boards/{id}": "48da7b836217709abcf4fa3253c090ee68f2b86189f8ea6240c6cf43975716ea",
   "PATCH /tasks/{id}": "bc5b440b35082a7fa989477693522f48c1cce02101f0c95b4440fddfd394ed49",
+  "POST /$procs/clearDoneTasks": "e61cb59a793682d54d88f5bcc3a69dd82f687798307d107cc56ecfc8429f1dde",
   "POST /$procs/estimateFocusMinutes": "a96af61cf2998d8b76c69baf5f907b76860f3eaa5b64cf35134192a406023e51",
   "POST /boards": "3a348af6855d701092188c2f19366818c059a59f6770e28ed7945cd84c12e394",
   "POST /tasks": "35ca0825853c3f3c577159e9c3568612df10c63d3ca6c1b9d825abdda60cb44a",
 };
 // Hex of the whole-contract digest: moves when any op's contract does.
-export const CLIENT_CONTRACT_SHA256: string = "3ebac1ceab8439af4e1cb1a93940dc8cd00f36c384939efee730c033af36aa93";
+export const CLIENT_CONTRACT_SHA256: string = "6233d9c56994306cca7cf14e719addb198141a6aa0f3106d951212b6d31ece23";
 
 export interface CratestackClientOptions {
   basePath?: string;

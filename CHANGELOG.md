@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### Step-up end to end: `examples/step-up-procedures`, and a step-up screen in the Flutter and React examples (#1245)
+
+**What was missing.** #1244 lets a procedure state how fresh and how strong the caller's
+authentication must be (`@authn`), refuses with RFC 9470's step-up signal, and types the refusal as
+`StepUpRequired` in every generated client. No example ran the whole path, from the schema through a
+real provider and the generated clients to a UI, so nothing showed that the pieces fit.
+
+**What changed.**
+
+- **New example `examples/step-up-procedures`** (a workspace member, no database, no Authkestra).
+  `payInvoice` declares `@authn(maxAge: 300, amr: ["hwk"])` and `balance` declares nothing. The
+  server is the generated REST and RPC routers behind `SignedRequestAuthProvider`, CrateStack's
+  in-house provider, which copies the id token's `auth_time` and `amr` (plus `pop`) onto the
+  principal. The generated Rust clients sign every request with a device key and carry the id token.
+  A password session from twenty minutes ago reads the balance, meets `StepUpRequired` on the
+  payment, re-proves, and pays through `retry_after_step_up`: on REST, an RPC unary call and an RPC
+  batch, where only the payment's frame is refused. Its tests (`cargo test -p
+  step-up-procedures-example`) also cover the wire shape, a declined re-proof (no retry) and a
+  re-proof that still falls short (one retry, then the second refusal is returned).
+- **`examples/react-vite-swr`'s schema gains `clearDoneTasks`**, under `@authn(maxAge: 300, amr:
+  ["hwk"])`. The example's `HeaderAuthProvider` (now `src/auth.rs`) also fills `auth_time` and `amr`,
+  from two stand-in headers, `x-auth-time` and `x-auth-amr`, like the `x-auth-id` it already
+  trusted. `tests/step_up.rs` checks the step-up 401 with no database, and the successful call
+  against Postgres. Both committed clients are regenerated (`just regen-examples`).
+- **`examples/flutter-riverpod`**: a "Clear done tasks" button through the generated
+  `ClearDoneTasksController`, wrapped in `retryAfterStepUp`. The refusal opens a step-up screen
+  driven by `StepUpRequired`; confirming retries once. A declined step-up, or any other refusal,
+  shows a banner keyed on the refusal code (`error` member, else `code`). Widget tests:
+  `app/test/step_up_test.dart`.
+- **`examples/react-vite-swr/web`**: the same flow on the generated `useClearDoneTasksMutation`,
+  with a step-up dialog and a refusal banner. `web/test/step-up.test.ts` (`pnpm --filter
+  react-vite-swr-web test`, tsx and `node:test`, no new dependency) runs the generated
+  `clearDoneTasks` and `retryAfterStepUp` against a fake server; CI's `js (react-vite-swr example)`
+  job now runs it.
+
+The two app examples send the session's facts as headers, which a real provider must never trust;
+their READMEs say so and point at `step-up-procedures`, where the facts come from a verified token.
+
 ### Every generated client types a step-up refusal as `StepUpRequired`, and retries once after a re-proof (#1244)
 
 **What was missing.** #1244 lets an operation require a fresher or stronger authentication than the

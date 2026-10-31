@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod_client/flutter_riverpod_client.dart';
 
+import '../step_up/clear_done_tasks.dart';
+
 /// One pomodoro — the `estimateFocusMinutes` procedure's own unit,
 /// matching the `react-vite-swr` example's `MINUTES_PER_TASK` constant
 /// so the two sibling examples agree on the demo's numbers.
@@ -170,6 +172,8 @@ class _BoardDetailScreenState extends ConsumerState<BoardDetailScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                ClearDoneTasksButton(boardId: widget.boardId),
                 const SizedBox(height: 16),
                 Expanded(
                   child: boardTasks.isEmpty

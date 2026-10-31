@@ -3,6 +3,8 @@ import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./mod
 import type {
   FocusEstimateArgs,
   FocusEstimateResult,
+  ClearDoneTasksArgs,
+  ClearDoneTasksResult,
   Board,
   CreateBoardInput,
   UpdateBoardInput,
@@ -16,6 +18,7 @@ import type {
   TaskOrderByClause,
   TaskFindMany,
   EstimateFocusMinutesArgs,
+  ClearDoneTasksProcedureArgs,
   BoardSortField,
   TaskSortField,
   Page,
@@ -172,6 +175,11 @@ export class ProceduresApi {
   estimateFocusMinutes(args: EstimateFocusMinutesArgs, options: CratestackRequestConfig = {}): Promise<FocusEstimateResult> {
     return this.runtime.post<unknown>("/$procs/estimateFocusMinutes", args, options)
       .then((value) => reviveWireFields(value, 'FocusEstimateResult') as FocusEstimateResult);
+  }
+
+  clearDoneTasks(args: ClearDoneTasksProcedureArgs, options: CratestackRequestConfig = {}): Promise<ClearDoneTasksResult> {
+    return this.runtime.post<unknown>("/$procs/clearDoneTasks", args, options)
+      .then((value) => reviveWireFields(value, 'ClearDoneTasksResult') as ClearDoneTasksResult);
   }
 
 }

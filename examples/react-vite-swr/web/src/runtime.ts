@@ -15,15 +15,17 @@
 // one specifically, so the runtime instance handed to them has to come
 // from there too, not the root.
 import { CratestackRuntime } from "react-vite-swr-client/swr";
+import { session } from "./session.ts";
 
 // Stand-in for real auth (a session cookie, a bearer token, an OAuth
-// flow — anything a production app would use). The schema's
-// `@@allow(..., auth() != null)` rules only need SOME authenticated
-// caller, and the server's `HeaderAuthProvider` (`../../src/lib.rs`)
-// reads this header as `auth().id` — so a fixed header is enough to
-// demonstrate the generated surface without building a login screen,
-// which is out of scope for this example.
+// flow — anything a production app would use). The server's
+// `HeaderAuthProvider` (`../../src/auth.rs`) reads `x-auth-id` as
+// `auth().id`, and `x-auth-time` / `x-auth-amr` as the principal's
+// `auth_time` and `amr` (cratestack#1245). `headers` is a function, read on
+// every request, so once the step-up dialog updates the session the
+// retried call carries the new values. Building a login screen is out of
+// scope for this example.
 export const runtime = new CratestackRuntime("http://127.0.0.1:3210", {
   basePath: "/api",
-  headers: { "x-auth-id": "1" },
+  headers: () => session.headers(),
 });

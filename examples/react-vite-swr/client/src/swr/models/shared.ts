@@ -42,6 +42,8 @@ export const wireShapes: Readonly<Record<string, WireShape>> = {
   Task: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: { 'board': 'Board' } },
   FocusEstimateArgs: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
   FocusEstimateResult: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  ClearDoneTasksArgs: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  ClearDoneTasksResult: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
 };
 
 export function reviveWireFields(value: unknown, shapeName: string): unknown {

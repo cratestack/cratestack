@@ -383,11 +383,12 @@ Query procedures:
 
 Mutation procedures:
 
-- none in this schema
+- `client.procedures.clearDoneTasks(ClearDoneTasksProcedureArgs(...), options: options)`
 
 Full generated procedure inventory:
 
 - `query` `client.procedures.estimateFocusMinutes(...)` returns `FocusEstimateResult`
+- `mutation` `client.procedures.clearDoneTasks(...)` returns `ClearDoneTasksResult`
 
 ## Query Parameters
 
@@ -548,6 +549,7 @@ Model entry points:
 Procedure entry points:
 
 - `client.procedures.estimateFocusMinutes(...)`
+- `client.procedures.clearDoneTasks(...)`
 
 ## Bridge Contract
 

@@ -89,6 +89,8 @@ export const wireShapes: Readonly<Record<string, WireShape>> = {
   Task: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: { 'board': 'Board' } },
   FocusEstimateArgs: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
   FocusEstimateResult: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  ClearDoneTasksArgs: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  ClearDoneTasksResult: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
 };
 
 /** Decodes `value` against the named entry in {@link wireShapes},
@@ -542,6 +544,14 @@ export interface FocusEstimateResult {
   totalMinutes: number;
 }
 
+export interface ClearDoneTasksArgs {
+  boardId: number;
+}
+
+export interface ClearDoneTasksResult {
+  removed: number;
+}
+
 export interface Board {
   id?: number;
   name?: string;
@@ -611,5 +621,9 @@ export interface TaskFindMany {
 
 export interface EstimateFocusMinutesArgs {
   args: FocusEstimateArgs;
+}
+
+export interface ClearDoneTasksProcedureArgs {
+  args: ClearDoneTasksArgs;
 }
 

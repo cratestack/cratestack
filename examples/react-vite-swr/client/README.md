@@ -74,6 +74,7 @@ await client.boards.delete(updated.id, { headers });
 ## Procedures
 
 - `client.procedures.estimateFocusMinutes`
+- `client.procedures.clearDoneTasks`
 
 ```ts
 const result = await client.procedures.estimateFocusMinutes(args, {

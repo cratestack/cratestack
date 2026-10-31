@@ -2715,12 +2715,14 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: pnpm --filter react-vite-swr-client run build
-      - name: Typecheck + lint the web app
+      - name: Typecheck, lint and test the web app
         if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: |
           pnpm --filter react-vite-swr-web run typecheck
           pnpm --filter react-vite-swr-web run lint
+          # The step-up flow (cratestack#1245) on the generated client.
+          pnpm --filter react-vite-swr-web run test
 
   # ---- react-nextjs-daisyui example (lockfile + typecheck) ---------------
   # Blocking. Issue #1050: until this job existed, nothing in CI installed
