@@ -202,6 +202,28 @@ just mcp-conformance                           # from the repository root: needs
 
 See [`mcp-operator/README.md`](mcp-operator/README.md) for pointing an MCP client at each transport.
 
+## Phase H — Authentication (standalone workspace)
+
+One schema and one test suite, run against three `AuthProvider`s: CrateStack's own (signed requests
+chained with COSE signers), Authkestra device signatures, and Authkestra OIDC with DPoP-bound tokens
+(cratestack#1245, ADR 0021). Each provider is one file built only on the public seam. The example is
+its own `[workspace]` root, listed in the root `Cargo.toml`'s `exclude`, because it is the only crate
+in the repository that depends on Authkestra: the root `Cargo.lock` never sees it, and
+`.ci/auth-pluggable-check.sh` proves no CrateStack crate in its graph reaches an `authkestra*`
+package. Run its commands from its directory.
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`auth-pluggable/`](auth-pluggable) | `include_server_schema!` (`db = None`) | `whoAmI` (any caller) and `adminReport` (`hasRole("admin")`), served by three binaries that differ only in their provider. One suite runs each provider through the conformance kit (REST, RPC unary and batch, MCP) and the example's own policies; the OIDC tests start `authkestra-op` in-process and send real DPoP proofs. |
+
+```bash
+cd examples/auth-pluggable
+cargo test --locked                            # the three providers through one suite
+../../.ci/auth-pluggable-check.sh              # no CrateStack crate reaches Authkestra
+```
+
+See [`auth-pluggable/README.md`](auth-pluggable/README.md) for the three provider files side by side.
+
 ## Standalone verification crates (not workspace members)
 
 These two prove a dependency-graph property that only holds outside Cargo's workspace-wide feature
