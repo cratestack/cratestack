@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.1 (2026-10-31)
+
 ### Step-up end to end: `examples/step-up-procedures`, and a step-up screen in the Flutter and React examples (#1245)
 
 **What was missing.** #1244 lets a procedure state how fresh and how strong the caller's

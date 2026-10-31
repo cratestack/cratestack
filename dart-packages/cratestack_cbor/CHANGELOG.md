@@ -1,5 +1,20 @@
 ## Unreleased
 
+## 0.17.1 (2026-10-31)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares. This release
+  is about authentication on the server and in the generated clients
+  (`@authn` and step-up, cratestack#1244; the `AuthProvider` seam,
+  cratestack#1243), none of which this package exposes. The crates it builds
+  on changed only additively: `cratestack-codec-cbor` gained a Rust
+  `CborSeqChunkDecoder` for `application/cbor-seq` streams (not exposed
+  here), and its error envelopes now carry optional extra members
+  (cratestack#1208) without changing a byte of an envelope that has none,
+  which `tests/error_envelope_bytes.rs` pins; `cratestack-cose`'s changes are
+  server-side (a COSE signer's principal now reports `amr: ["pop"]`), so
+  sealing and opening are unchanged.
+
 ## 0.17.0 (2026-10-28)
 
 - No functional changes. Version kept in lockstep with the CrateStack
