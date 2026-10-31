@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.17.2 (2026-10-31)
+
 ### A refusal before the body no longer burns the `Idempotency-Key` (#1261)
 
 **What was wrong.** The idempotency layer recorded a 401 or 403 like any other error and replayed it
