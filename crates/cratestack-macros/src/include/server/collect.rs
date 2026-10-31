@@ -239,8 +239,9 @@ pub(super) fn collect_server_schema(
     let rpc_subscribe_dispatch_arms: Vec<Ts> = if is_rpc {
         let mut arms = Vec::new();
         for model in &schema.models {
-            if let Some(arm) = generate_model_subscribe_dispatch_arm(model)
-                .map_err(|error| compile_error(schema_path, error))?
+            if let Some(arm) =
+                generate_model_subscribe_dispatch_arm(model, &model_name_set, &enum_name_set)
+                    .map_err(|error| compile_error(schema_path, error))?
             {
                 arms.push(arm);
             }

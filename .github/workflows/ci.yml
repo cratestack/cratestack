@@ -637,6 +637,40 @@ jobs:
       - name: No CrateStack crate reaches Authkestra (auth-pluggable)
         run: ./.ci/auth-pluggable-check.sh
 
+  webtransport-browser:
+    timeout-minutes: 30
+    name: webtransport (cratestack-webtransport, real Chromium end to end)
+    runs-on: ubuntu-latest
+    # The native integration tests (`cargo test -p cratestack-webtransport`)
+    # run in the test shards; this job adds what they cannot see: a real
+    # browser's WebTransport stack. It is what caught the binding dropping a
+    # stream's receive half early (a browser surfaces STOP_SENDING as a
+    # rejected `writer.close()`) and returning before the session-close
+    # capsule went out (a browser then reports "Connection lost", not the
+    # close code). Playwright lives outside the pnpm workspace so this job
+    # does not touch `pnpm-lock.yaml`.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install Playwright and Chromium
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw"
+          cd "$RUNNER_TEMP/pw"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: WebTransport end to end in Chromium
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: just test-webtransport-browser
+
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to
   # compile the whole workspace — pulling the tauri/wasm/napi example crates

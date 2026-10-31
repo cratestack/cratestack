@@ -1,0 +1,39 @@
+// `@@subscribe` events pass the subscriber's read policy
+// (`tests/rpc_subscribe_read_policy.rs`).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+// Readable by its owner, unless archived.
+model SubNote {
+  id Int @id
+  ownerId Int
+  body String
+  archived Boolean
+
+  @@allow("read", ownerId == auth().id)
+  @@deny("read", archived)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+}
+
+// The policy reads a column the event payload never carries, so no event
+// could be decided: the subscription is refused when it opens.
+model SubSecret {
+  id Int @id
+  hidden Boolean @server_only
+
+  @@allow("read", auth() != null)
+  @@deny("read", hidden)
+  @@emit(created)
+  @@subscribe
+}

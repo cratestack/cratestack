@@ -16,8 +16,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use std::future::Future;
+
+use cratestack_core::CratestackError;
 use futures_util::Stream;
-use futures_util::stream;
+use futures_util::stream::{self, StreamExt};
 use tokio::sync::mpsc;
 
 /// One SSE subscription's outbox capacity before it's considered lagged.
@@ -98,6 +101,43 @@ where
         let item = rx.recv().await?;
         Some((item, (rx, guard)))
     })
+}
+
+/// Keeps the items of `items` that `readable` admits, in order: the
+/// subscriber's read policy, decided per event. An item it refuses is
+/// dropped; an `Err` (the policy could not be decided) ends the stream, so
+/// the SSE encoder closes with `Error{unavailable}` rather than send an
+/// event nobody checked, or silently skip one the subscriber may read.
+pub fn readable_events<T, S, F, Fut>(
+    items: S,
+    readable: F,
+) -> impl Stream<Item = T> + Send + 'static
+where
+    T: Send + 'static,
+    S: Stream<Item = T> + Send + 'static,
+    F: FnMut(&T) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<bool, CratestackError>> + Send + 'static,
+{
+    stream::unfold(
+        (Box::pin(items), readable),
+        |(mut items, mut readable)| async move {
+            loop {
+                let item = items.next().await?;
+                match readable(&item).await {
+                    Ok(true) => return Some((item, (items, readable))),
+                    Ok(false) => continue,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "cratestack",
+                            %error,
+                            "subscription read policy undecided; ending the stream",
+                        );
+                        return None;
+                    }
+                }
+            }
+        },
+    )
 }
 
 #[cfg(test)]
