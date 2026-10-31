@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.17.2 (2026-10-31)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.17.1 (2026-10-31)
 
 - No functional changes. Version kept in lockstep with the CrateStack
