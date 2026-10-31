@@ -15,7 +15,7 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | `@stream` schema directive + stream-shaped `ProcedureRegistry` trait method | shipped | #282 |
 | Genuinely incremental delivery for `@stream` ops (`Body::from_stream`, mid-stream error sentinel, client-disconnect cancellation) | shipped | #283 |
 | SSE subscription binding (§3.4a, `@@subscribe` schema directive) — recommended first path | shipped | #183, #390 |
-| WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case | — |
+| WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case — design proposed in [subscriptions-websocket.md](subscriptions-websocket.md) | — |
 | Batch parallelization | deferred (no observed contention) | — |
 
 Streaming now delivers incrementally, but only for ops explicitly marked
@@ -435,12 +435,19 @@ for whenever a real bidirectional or high-multiplexing need
 materializes; it isn't wrong, it's just not what the case in front of
 us needs today.
 
-Row-level `@@allow` policy is **not** replayed against streamed
-events — that machinery lives in the SQL query builders and has no
-analogue for an in-memory outbox-sourced event. A subscription client
-only needs to authenticate; it does not get per-row filtering the way
-`list`/`get` do. This is a deliberate, documented scope limit for the
-first cut, not an oversight — revisit if a concrete case needs it.
+Every event passes the subscriber's read policy before it is sent — the
+model's `detail`/`read` rules, the ones `get` applies — and an event the
+subscriber may not read is dropped. An event has no query to push the
+policy into, so it is decided in-process against the event's record
+(`cratestack_sqlx::record_readable`, the create path's evaluator; a
+relation predicate still probes the database with `EXISTS`). The record
+lacks its `@server_only` columns, so a policy that reads one cannot be
+decided: that subscription is refused when it opens (500, the columns
+named in the server log). A policy that cannot be decided for one event
+(a relation probe fails) ends the stream with `Error{unavailable}`, the
+same signal as overflow. Until this was added a subscriber only had to
+authenticate, and any caller the `AuthProvider` admitted — anonymous
+included — received every event of the model.
 
 ## 4. Cross-binding concerns
 
@@ -552,6 +559,11 @@ appears.
 
 ## 6.5. WebSocket + SSE subscription bindings — status
 
+**Proposed successor (2026-10-28):** [subscriptions-websocket.md](subscriptions-websocket.md)
+designs the WS binding below, a WebTransport binding beside it, subscription procedures and
+topics, multi-replica delivery, and read-policy enforcement on streamed events. Until it is
+accepted, this section is the record of what is built.
+
 §3.4 specifies the wire shape for WebSocket subscriptions; §3.4a (added by
 issue #183's spike decision) specifies SSE as the recommended first path.
 **SSE shipped in cratestack#390.** WS remains unimplemented. Unlike
@@ -594,11 +606,6 @@ Still missing:
   `Cancel`/`Error` variants in §2.3 are not wired through to the axum WS
   extractor. Deferred until a concrete bidirectional/multiplexing case
   appears, per §3.4a.
-- **Row-level policy on streamed events.** `@@allow` is not replayed
-  against `ModelEvent<T>` items — a subscriber only needs to
-  authenticate, it does not get per-row filtering. Documented scope
-  limit, not a gap in the SSE path itself; revisit if a concrete case
-  needs it.
 - **Client-generated subscription helpers** (Rust/TypeScript/Dart). Out
   of scope for #390 by design — server-side dispatch ships first, per
   this repo's established pattern (e.g. #171 before #209/#210 for gRPC).

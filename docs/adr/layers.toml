@@ -220,6 +220,9 @@ cratestack-cbor-wasm = 4
 # into the consuming crate. Depended on only by `cratestack-pg` and
 # `cratestack-api` (L5), optionally, behind their `mcp` feature (D3).
 cratestack-mcp = 4
+# WebTransport subscription binding: a second (QUIC) listener beside the
+# axum router, so the same layer as `cratestack-axum` (design §6a.5).
+cratestack-webtransport = 4
 
 # --- L5: Facades -----------------------------------------------------------
 cratestack-pg = 5

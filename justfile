@@ -224,6 +224,9 @@ lint:
 	# test targets only exist under it, and nothing in the workspace turns
 	# it on.
 	cargo clippy -p cratestack-cose --features auth --all-targets -- -D warnings {{clippy_allow}}
+	# Same blind spot for `cratestack-webtransport`'s off-by-default `dev-cert`
+	# feature (design §6a.5): `DevCertificate` only exists under it.
+	cargo clippy -p cratestack-webtransport --features dev-cert --all-targets -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-axum`'s off-by-default `envelope` and
 	# `cose` features (cratestack#1006): `envelope_layer` and the
 	# `cose_envelope_*` targets of `cratestack-api` only exist under them, and
@@ -389,6 +392,18 @@ test-ci-db-mcp *args='':
 # MCP sibling, so a missing database fails instead of skipping.
 test-ci-db-cose *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features cose --test cose_client_models {{args}}
+
+# Headless Chromium, through Playwright, against `cratestack-webtransport`'s
+# `browser_harness` example, speaking the binding's JSON codec via the
+# browser's own `WebTransport` API (docs/design/subscriptions-websocket.md
+# §6a). Needs `node` and a `playwright` that `require()` resolves (set
+# `NODE_PATH` if it is installed outside this repo) with its Chromium
+# installed (`npx playwright install chromium`). CI's `webtransport-browser`
+# job runs it.
+# Real-browser end-to-end check of the WebTransport subscription binding.
+test-webtransport-browser:
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	node crates/cratestack-webtransport/tests/browser/run.cjs target/debug/examples/browser_harness
 
 # MCP conformance with a real third-party client (cratestack#1041, ADR 0002
 # phase 6): the official MCP Inspector CLI drives `examples/mcp-operator`
