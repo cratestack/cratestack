@@ -289,7 +289,7 @@ async fn open_stream(session: &wtq::Session, codec: WireCodec) -> Stream {
 /// A native client on an IPv4 socket (`web-transport-quinn`'s builder binds
 /// `[::]:0`, which fails on hosts without IPv6) that trusts exactly one
 /// certificate — what a browser's `serverCertificateHashes` does.
-fn client(expected: CertificateDer<'static>) -> wtq::Client {
+pub fn client(expected: CertificateDer<'static>) -> wtq::Client {
     use wtq::quinn;
     use wtq::quinn::rustls;
     let provider = Arc::new(rustls::crypto::ring::default_provider());

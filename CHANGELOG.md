@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Subscriptions open through one generated dispatcher; `extension webtransport` serves them over WebTransport
+
+**What was missing.** The SSE endpoint carried its own copy of the subscription logic: event-bus
+registration and the per-event read policy were generated inline in the axum handler. The
+WebTransport binding (`cratestack-webtransport`) was driven through
+`cratestack_core::SubscriptionDispatcher`, but nothing generated one, so an application had to
+implement it by hand to serve its model feeds over WebTransport.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §11 S5a).
+
+- **The generated `subscriptions` module.** A `db = Postgres` server schema with a `@@subscribe`
+  model gets `SubscriptionDispatch`, which implements `SubscriptionDispatcher`.
+  `Cratestack::subscriptions()` returns one. Its `open` takes the op id
+  (`model.<Model>.subscribe`) and the authenticated context, and owns the policy: it refuses a read
+  policy that cannot be decided on an event, and filters every event through the subscriber's read
+  policy. A model feed takes no input yet: anything but `null` or `{}` is refused with
+  `invalid_argument`.
+- **The SSE endpoint is an adapter over it, on the same wire.** `GET /rpc/subscribe/{op_id}`
+  checks `Accept`, authenticates, opens through the dispatcher and encodes the stream. Items and the
+  overflow frame (`unavailable` / `"subscription lagged"`) are unchanged. A read policy that cannot
+  be decided for one event now ends the stream with that error instead of `"subscription lagged"`.
+- **`extension webtransport { }`**, gated by a same-named Cargo feature on `cratestack-pg`, like
+  `pgvector`. The feature pulls in `cratestack-webtransport` (re-exported as
+  `cratestack::webtransport`), and the extension adds `db.subscriptions().webtransport(config,
+  auth)`, which binds the WebTransport server to the generated dispatcher. It is a compile error to
+  declare the extension without the feature, in a schema with no subscription op, or under
+  `include_embedded_schema!`. `cratestack-client` gains a `webtransport` feature as a
+  schema-compatibility switch, so a client can still be generated from such a schema; the generated
+  subscription clients are a later slice.
+- `cratestack_core::ExtensionKind` gains `Webtransport`: a `match` on it needs the new arm.
+
 ### WebTransport subscription binding: `cratestack-webtransport` (#1238)
 
 **What is new.** A new crate serves subscriptions over an HTTP/3 WebTransport session. Inside the

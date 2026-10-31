@@ -18,6 +18,11 @@ datasource db {
 extension pgvector {
 }
 
+// A server binding (slice S5a): nothing for the client to generate yet,
+// but a server schema that serves WebTransport must still compile here.
+extension webtransport {
+}
+
 extension rate_limit {
 }
 
