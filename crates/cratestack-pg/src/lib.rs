@@ -278,7 +278,11 @@ pub mod __private {
     /// part of the public API surface for the same reason as the rest
     /// of this module.
     pub use cratestack_axum::rpc::{
-        encode_model_event_sse_response, guarded_receiver_stream, subscription_channel,
-        validate_subscribe_accept_header,
+        encode_model_event_sse_response, guarded_receiver_stream, readable_events,
+        subscription_channel, validate_subscribe_accept_header,
     };
+    /// The subscriber's read policy, decided per event in the same
+    /// dispatch (an event has no query to push the policy into).
+    #[cfg(feature = "postgres")]
+    pub use cratestack_sqlx::{missing_policy_columns, record_readable};
 }
