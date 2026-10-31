@@ -38,6 +38,7 @@ members = [
     "crates/cratestack-sqlx",
     "crates/cratestack-studio",
     "crates/cratestack-sync",
+    "crates/cratestack-webtransport",
     "examples/embedded-cli",
     "examples/embedded-daemon",
     "examples/embedded-webhook",
@@ -317,6 +318,10 @@ cratestack-studio = { path = "crates/cratestack-studio", version = "0.17.0", def
 # Prototype sync engine (ADR 0020, Proposed). `publish = false` for now; the
 # version is still stated so the bump recipe rewrites it with everything else.
 cratestack-sync = { path = "crates/cratestack-sync", version = "0.17.0", default-features = false }
+# WebTransport subscription binding (docs/design/subscriptions-websocket.md
+# §6a). `default-features = false` for the same decimal-forwarding reason
+# as `cratestack-axum` above.
+cratestack-webtransport = { path = "crates/cratestack-webtransport", version = "0.17.0", default-features = false }
 minijinja = { version = "3", features = ["serde"] }
 # Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
 # name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could
@@ -389,6 +394,9 @@ reqwest-middleware = { version = "0.5", default-features = false }
 # `rustls` defaults.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# Only the `Stream` trait, for `cratestack-core::SubscriptionStream`; the
+# same crate `futures-util` already brings into every graph.
+futures-core = { version = "0.3", default-features = false }
 rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
@@ -409,6 +417,17 @@ rand = "0.10.2"
 # transitively, re-exported as `p256::ecdsa`, so `ecdsa` itself is not a
 # direct dependency.
 p256 = { version = "0.14", default-features = false, features = ["ecdsa"] }
+# WebTransport over HTTP/3 for `cratestack-webtransport` (design §6a, decision
+# O8). Chosen over `wtransport` by the S5b interop spike against Chromium:
+# `wtransport` 0.7.2 did not negotiate the WebTransport subprotocol, did not
+# map stream error codes, and lost the session close code and reason.
+# `ring`, not the default `aws-lc-rs`, to match `rustls` above.
+web-transport-quinn = { version = "0.13.5", default-features = false, features = ["ring"] }
+# Short-lived self-signed certificates for local WebTransport development
+# (`serverCertificateHashes` only accepts certificates valid for 14 days or
+# less). Only behind `cratestack-webtransport`'s `dev-cert` feature.
+rcgen = "0.14"
+time = "0.3"
 rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 bigdecimal = { version = "0.4", default-features = false, features = ["serde"] }
 sha2 = "0.11"

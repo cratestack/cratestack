@@ -65,11 +65,13 @@ jobs:
         # `--features cratestack-axum/cose` likewise for
         # `cratestack_axum::envelope_layer` (cratestack#1006), which the
         # published `cratestack-pg` namespace re-exports under the same
-        # feature.
+        # feature. `--features cratestack-webtransport/dev-cert` for
+        # `DevCertificate`, matching that crate's `[package.metadata.docs.rs]`.
         run: |
           cargo doc --no-deps \
             --features cratestack-cose/auth \
             --features cratestack-axum/cose \
+            --features cratestack-webtransport/dev-cert \
             -p cratestack-pg \
             -p cratestack-axum \
             -p cratestack-cli \
@@ -91,7 +93,8 @@ jobs:
             -p cratestack-redis \
             -p cratestack-rusqlite \
             -p cratestack-sql \
-            -p cratestack-sqlx
+            -p cratestack-sqlx \
+            -p cratestack-webtransport
 
       - name: Prepare Pages content
         run: |

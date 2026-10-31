@@ -1,6 +1,10 @@
 use cratestack_core::{CratestackCodec, CratestackError};
 use serde::{Deserialize, Serialize};
 
+mod seq;
+
+pub use seq::CborSeqChunkDecoder;
+
 #[derive(Debug, Clone, Default)]
 pub struct CborCodec;
 

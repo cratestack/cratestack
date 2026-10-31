@@ -28,6 +28,9 @@ decimal-bigdecimal = ["cratestack-core/decimal-bigdecimal"]
 
 [dependencies]
 cratestack-core.workspace = true
+# `seq::CborSeqChunkDecoder` uses `minicbor::Decoder::skip` for item
+# boundaries; `minicbor-serde` already brings the same crate in.
+minicbor.workspace = true
 minicbor-serde.workspace = true
 serde.workspace = true
 serde_path_to_error.workspace = true

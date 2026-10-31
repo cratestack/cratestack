@@ -45,6 +45,52 @@ emits the refusal is a separate #1244 PR, and nothing here changes what a server
 new exports of the generated runtimes and of `cratestack-client-rust`; a hand-written declaration
 of the same name in a file that imports the whole runtime would now clash.
 
+### WebTransport subscription binding: `cratestack-webtransport` (#1238)
+
+**What is new.** A new crate serves subscriptions over an HTTP/3 WebTransport session. Inside the
+session, a control stream carries `Init`/re-authentication and **each subscription gets its own
+QUIC stream**: one `Request` in, then `Ready`, items and a terminal `end`/`err` out. Streams don't
+hold each other up, a client cancels by stopping a stream, and a session survives the client
+changing networks. Design: `docs/design/subscriptions-websocket.md` §6a (slice S5b).
+
+- **Server:** `WebTransportServer::bind(WebTransportConfig, auth_provider, dispatcher)`, then
+  `serve()` or `serve_with_shutdown(signal)`. It is a second listener (UDP, QUIC) beside the axum
+  router, using the same `AuthProvider`.
+- **Codec:** CBOR or JSON, negotiated as the `cratestack.rpc.v1+cbor` / `+json` WebTransport
+  subprotocol, with a `?codec=` fallback.
+- **Admission:**
+  - `Init` must arrive within 10 s; browsers present credentials in it.
+  - A later `Init` re-authenticates and must name the same principal.
+  - A refused session first gets `{id: 0, err: RpcErrorBody}` on the control stream, carrying an
+    `AuthRefusal`'s `details` and extra members (ADR 0021 §1), then closes: 4401 for a 401, 4403
+    for a 403 or a changed principal, 4400 for a malformed `Init`, and 4500 when the provider could
+    not decide (a 5xx such as a key server outage, which is not a verdict on the credentials).
+  - `Origin` allowlist, defaulting to same-origin. 0-RTT is refused.
+- **Limits** (`WebTransportLimits`): subscriptions per session (`resource_exhausted` past it),
+  sessions per principal (close 4429), frame size, keepalive and idle timeout.
+- **`dev-cert` feature:** `DevCertificate::generate`, a short-lived self-signed certificate plus
+  the SHA-256 hash browsers take as `serverCertificateHashes`, for local development.
+- **Opening a subscription** goes through the new transport-neutral
+  `cratestack_core::SubscriptionDispatcher` (with `SubscriptionOpen` and `SubscriptionStream`).
+  The schema macro will implement it for every binding in a later slice. The binding is
+  deliberately **not wired into generated code yet**, so for now an application implements the
+  dispatcher itself.
+
+The QUIC/WebTransport implementation is `web-transport-quinn`. An interop spike against Chromium
+chose it over `wtransport`, which did not negotiate the subprotocol, did not map stream reset
+codes, and lost session close codes (design §6a.5).
+
+**Also in this change.**
+
+- `CborSeqChunkDecoder` moved from `cratestack-client-rust` to `cratestack-codec-cbor`, so the
+  server-side binding shares it. `cratestack_client_rust::CborSeqChunkDecoder` re-exports it, and
+  every existing path still compiles.
+- `Cargo.lock` moves `quinn-proto` 0.11.17 → 0.11.19 (with `quinn` 0.11.12, `quinn-udp`
+  0.5.16), past RUSTSEC-2026-0338, -0340 and -0343. `main`'s lockfile already carried 0.11.17,
+  through `reqwest`.
+- New `just test-webtransport-browser` and CI job `webtransport-browser`: headless Chromium, end
+  to end, against the binding.
+
 ### Security: `@@subscribe` events pass the subscriber's read policy
 
 **What was wrong.** `GET /rpc/subscribe/{op_id}` authenticated the caller and then sent it every
