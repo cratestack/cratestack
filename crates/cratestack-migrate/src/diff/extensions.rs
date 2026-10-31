@@ -28,6 +28,6 @@ fn postgres_extension_name(kind: ExtensionKind) -> Option<&'static str> {
     match kind {
         ExtensionKind::Pgvector => Some("vector"),
         ExtensionKind::Postgis => Some("postgis"),
-        ExtensionKind::RateLimit => None,
+        ExtensionKind::RateLimit | ExtensionKind::Webtransport => None,
     }
 }

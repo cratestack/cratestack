@@ -95,6 +95,11 @@ cose = ["cratestack-client-rust/cose"]
 pgvector = ["cratestack-macros/pgvector"]
 postgis = ["cratestack-macros/postgis"]
 rate_limit = ["cratestack-macros/rate_limit"]
+# `extension webtransport { }`: a schema-compatibility switch like the
+# three above, so a client can be generated against a schema whose server
+# serves WebTransport. The client stubs do not use it yet; the generated
+# subscription clients are design slice S6.
+webtransport = ["cratestack-macros/webtransport"]
 
 [dependencies]
 chrono.workspace = true
@@ -117,4 +122,4 @@ url.workspace = true
 [[test]]
 name = "extension_feature_forwarding"
 path = "tests/extension_feature_forwarding.rs"
-required-features = ["pgvector", "rate_limit"]
+required-features = ["pgvector", "rate_limit", "webtransport"]

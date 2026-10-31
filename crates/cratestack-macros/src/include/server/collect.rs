@@ -25,6 +25,7 @@ use crate::transport::{
     generate_model_op_descriptors, generate_model_rpc_dispatch_arms,
     generate_model_subscribe_dispatch_arm, generate_model_subscribe_op_descriptor,
     generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
+    generate_subscription_module,
 };
 use crate::types::{generate_enum_type, generate_type_struct};
 use crate::validators::{Validating, generate_type_validate_impl};
@@ -84,6 +85,7 @@ pub(super) struct ServerCollected {
     pub(super) rpc_subscribe_dispatch_arms: Vec<Ts>,
     pub(super) generated_client_module: Ts,
     pub(super) generated_event_module: Ts,
+    pub(super) generated_subscription_module: Ts,
 }
 
 pub(super) fn collect_server_schema(
@@ -239,12 +241,7 @@ pub(super) fn collect_server_schema(
     let rpc_subscribe_dispatch_arms: Vec<Ts> = if is_rpc {
         let mut arms = Vec::new();
         for model in &schema.models {
-            if let Some(arm) =
-                generate_model_subscribe_dispatch_arm(model, &model_name_set, &enum_name_set)
-                    .map_err(|error| compile_error(schema_path, error))?
-            {
-                arms.push(arm);
-            }
+            arms.extend(generate_model_subscribe_dispatch_arm(model));
         }
         arms
     } else {
@@ -260,6 +257,17 @@ pub(super) fn collect_server_schema(
     .map_err(|e| compile_error(schema_path, e))?;
     let generated_event_module =
         generate_event_module(&schema.models).map_err(|e| compile_error(schema_path, e))?;
+    // The transport-neutral subscription dispatcher (slice S5a) the SSE
+    // arms above open through; empty for a schema with no `@@subscribe`.
+    let generated_subscription_module = generate_subscription_module(
+        &schema.models,
+        &model_name_set,
+        &enum_name_set,
+        schema
+            .declared_extensions
+            .contains(&cratestack_core::ExtensionKind::Webtransport),
+    )
+    .map_err(|e| compile_error(schema_path, e))?;
 
     // View emission — see ADR-0003. Views participate in the server
     // composer only when they declare `@@server_sql` (or `@@sql` as a
@@ -355,6 +363,7 @@ pub(super) fn collect_server_schema(
         rpc_subscribe_dispatch_arms,
         generated_client_module,
         generated_event_module,
+        generated_subscription_module,
     })
 }
 

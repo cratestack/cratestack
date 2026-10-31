@@ -49,10 +49,14 @@
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_webtransport;
 
 mod errors;
 
-use self::errors::{embedded_postgres_only_error, missing_feature_error};
+use self::errors::{
+    embedded_postgres_only_error, embedded_server_only_error, missing_feature_error,
+};
 
 use proc_macro::TokenStream;
 use syn::LitStr;
@@ -69,6 +73,7 @@ fn required_feature(kind: ExtensionKind) -> (&'static str, u32) {
         ExtensionKind::RateLimit => ("rate_limit", 154),
         ExtensionKind::Pgvector => ("pgvector", 155),
         ExtensionKind::Postgis => ("postgis", 842),
+        ExtensionKind::Webtransport => ("webtransport", 183),
     }
 }
 
@@ -79,8 +84,15 @@ fn required_feature(kind: ExtensionKind) -> (&'static str, u32) {
 fn is_postgres_only(kind: ExtensionKind) -> bool {
     match kind {
         ExtensionKind::Pgvector | ExtensionKind::Postgis => true,
-        ExtensionKind::RateLimit => false,
+        ExtensionKind::RateLimit | ExtensionKind::Webtransport => false,
     }
+}
+
+/// Whether `kind` is a server binding, with nothing to generate for the
+/// embedded role: `include_embedded_schema!` serves no subscriptions, so
+/// `extension webtransport { }` there could only be a silent no-op.
+fn is_server_only(kind: ExtensionKind) -> bool {
+    matches!(kind, ExtensionKind::Webtransport)
 }
 
 /// Whether `kind`'s required Cargo feature is enabled on *this* crate
@@ -93,6 +105,7 @@ fn feature_enabled(kind: ExtensionKind) -> bool {
         ExtensionKind::RateLimit => cfg!(feature = "rate_limit"),
         ExtensionKind::Pgvector => cfg!(feature = "pgvector"),
         ExtensionKind::Postgis => cfg!(feature = "postgis"),
+        ExtensionKind::Webtransport => cfg!(feature = "webtransport"),
     }
 }
 
@@ -159,6 +172,14 @@ pub(super) fn guard_embedded_declared_extensions(
         .find(|kind| is_postgres_only(*kind))
     {
         return Err(embedded_postgres_only_error(schema_path, kind));
+    }
+    if let Some(kind) = schema
+        .declared_extensions
+        .iter()
+        .copied()
+        .find(|kind| is_server_only(*kind))
+    {
+        return Err(embedded_server_only_error(schema_path, kind));
     }
     guard_declared_extensions(schema_path, schema)
 }

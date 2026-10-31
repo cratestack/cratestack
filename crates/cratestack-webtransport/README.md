@@ -20,22 +20,39 @@ networks (QUIC connection migration), and cancel is a stream reset. The frames, 
 ## Status
 
 The binding runtime: session admission, authentication, the stream-per-subscription adapter,
-limits and the frame codec. It is driven through `cratestack_core::SubscriptionDispatcher`,
-which the schema macro will implement once for every binding (design §11 S5a). Until then you
-can implement it by hand. Generated wiring, datagram subscriptions (`@datagram`, S5c) and the
-generated clients (S6) are later slices.
+limits and the frame codec. It is driven through `cratestack_core::SubscriptionDispatcher`, which
+the schema macro implements once for every binding (design §11 S5a): a schema with `@@subscribe`
+models gets `Cratestack::subscriptions()`. You can also implement the trait by hand. Datagram
+subscriptions (`@datagram`, S5c) and the generated clients (S6) are later slices.
 
 ## Use
 
+Declare the extension in the schema, and enable the same-named feature on the facade:
+
+```text
+transport rpc
+
+extension webtransport {
+}
+```
+
+```toml
+cratestack = { package = "cratestack-pg", version = "0.17", features = ["webtransport"] }
+```
+
 ```rust,ignore
-use cratestack_webtransport::{OriginPolicy, WebTransportConfig, WebTransportServer};
+use cratestack::webtransport::{OriginPolicy, WebTransportConfig};
 
 let config = WebTransportConfig::new("[::]:443".parse()?, certificate_chain, private_key)
     .origins(OriginPolicy::Allow(vec!["https://app.example.com".into()]));
-// The same AuthProvider your axum router uses, and the schema's dispatcher.
-let server = WebTransportServer::bind(config, auth_provider, dispatcher)?;
+// The same AuthProvider your axum router uses.
+let server = db.subscriptions().webtransport(config, auth_provider)?;
 tokio::spawn(server.serve_with_shutdown(shutdown_signal));
 ```
+
+Every `@@subscribe` model is then served at `model.<Model>.subscribe`, with the same per-event
+read policy as the SSE endpoint. Without the extension, `WebTransportServer::bind(config, auth,
+db.subscriptions())` does the same from a direct dependency on this crate.
 
 - **Path**: `/rpc/wt` by default; `/$wt` for REST schemas (`.path("/$wt")`). Anything else is
   refused with 404.
@@ -77,7 +94,7 @@ short-lived self-signed certificate and the SHA-256 hash a page passes as
   `webtransport-browser`).
 
 The QUIC/WebTransport implementation is [`web-transport-quinn`][wtq], reached only through
-`src/transport.rs`. It was chosen over `wtransport` by an interop spike against Chromium
+`src/transport/`. It was chosen over `wtransport` by an interop spike against Chromium
 (design §6a.5, decision O8).
 
 [design]: ../../docs/design/subscriptions-websocket.md

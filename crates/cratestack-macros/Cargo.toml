@@ -98,6 +98,14 @@ pgvector = []
 # SpatiaLite, so no Cargo feature can make it valid there (see
 # `extension_gate.rs`, `docs/design/extensions.md` §6b). Off by default.
 postgis = []
+# Gates codegen for the `webtransport` extension, declared in `.cstack` via
+# `extension webtransport { }` (docs/design/subscriptions-websocket.md §9):
+# adds `SubscriptionDispatch::webtransport` to the generated
+# `subscriptions` module. Same mechanism as `pgvector` above. Forwarded
+# from `cratestack-pg`'s and `cratestack-client`'s own `webtransport`
+# feature; `include_embedded_schema!` rejects the extension whatever this
+# feature says (it serves no subscriptions). Off by default.
+webtransport = []
 # Serves `@mcp(tool)` procedures (ADR 0002, cratestack#1038): with it,
 # `include_server_schema!` emits the per-schema `mcp` module; without it, a
 # schema that declares MCP is a `compile_error!` naming this feature, so no

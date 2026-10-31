@@ -37,7 +37,12 @@ model Widget {
 }
 
 #[test]
-#[cfg(not(any(feature = "rate_limit", feature = "pgvector", feature = "postgis")))]
+#[cfg(not(any(
+    feature = "rate_limit",
+    feature = "pgvector",
+    feature = "postgis",
+    feature = "webtransport"
+)))]
 fn declared_extension_without_its_feature_is_flagged() {
     // Only meaningful with neither feature enabled — this crate's own
     // default-feature test run — so both are reported missing,
@@ -79,7 +84,12 @@ model Widget {
 }
 
 #[test]
-#[cfg(not(any(feature = "rate_limit", feature = "pgvector", feature = "postgis")))]
+#[cfg(not(any(
+    feature = "rate_limit",
+    feature = "pgvector",
+    feature = "postgis",
+    feature = "webtransport"
+)))]
 fn missing_extension_is_reported_in_declared_extensions_stable_order() {
     // `declared_extensions` is a `BTreeSet<ExtensionKind>`, so
     // iteration order follows `ExtensionKind`'s derived `Ord` (variant
