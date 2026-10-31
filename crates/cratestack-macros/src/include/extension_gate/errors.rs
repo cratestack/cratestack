@@ -50,8 +50,8 @@ pub(super) fn embedded_postgres_only_error(
         ),
         // `is_postgres_only` gates every caller, so no other kind
         // reaches here.
-        ExtensionKind::RateLimit => {
-            unreachable!("rate_limit is not a Postgres-only extension and never reaches this error")
+        ExtensionKind::RateLimit | ExtensionKind::Webtransport => {
+            unreachable!("only a Postgres-only extension reaches this error")
         }
     };
     TokenStream::from(
@@ -66,6 +66,24 @@ pub(super) fn embedded_postgres_only_error(
                  schemas that need {scalar} fields, or drop the `extension {name} {{ }}` block \
                  from schemas meant for the embedded backend. See \
                  docs/design/extensions.md {section}."
+            ),
+        )
+        .to_compile_error(),
+    )
+}
+
+pub(super) fn embedded_server_only_error(schema_path: &LitStr, kind: ExtensionKind) -> TokenStream {
+    let name = kind.as_str();
+    TokenStream::from(
+        syn::Error::new(
+            schema_path.span(),
+            format!(
+                "schema declares `extension {name} {{ }}`, but `include_embedded_schema!` \
+                 serves no subscriptions, so there is nothing for it to bind: {name} is a \
+                 server binding. Declare it in the schema `include_server_schema!` compiles \
+                 (with its `{name}` Cargo feature enabled), or drop the block from schemas \
+                 meant for the embedded backend. See \
+                 docs/design/subscriptions-websocket.md §9."
             ),
         )
         .to_compile_error(),

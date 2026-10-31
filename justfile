@@ -393,6 +393,17 @@ test-ci-db-mcp *args='':
 test-ci-db-cose *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features cose --test cose_client_models {{args}}
 
+# The generated subscription dispatcher served over WebTransport, against
+# Postgres (docs/design/subscriptions-websocket.md §6a, slice S5a): a schema
+# declaring `extension webtransport { }` serves its `@@subscribe` feeds
+# through `db.subscriptions().webtransport(..)`, with the per-event read
+# policy. `required-features = ["webtransport"]`, so `test-ci-db` never builds
+# it; CI's `webtransport-browser` job runs it. Exports `CRATESTACK_REQUIRE_DB=1`
+# itself, so a missing database fails instead of skipping.
+# The generated subscription dispatcher over WebTransport, against Postgres.
+test-ci-db-webtransport *args='':
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
+
 # Headless Chromium, through Playwright, against `cratestack-webtransport`'s
 # `browser_harness` example, speaking the binding's JSON codec via the
 # browser's own `WebTransport` API (docs/design/subscriptions-websocket.md
@@ -652,7 +663,7 @@ test-ci-host *args='':
 	# `codec-json` is a `cratestack-pg` default.
 	cargo test -p cratestack-pg --features rate_limit --test rate_limit_runtime {{args}} || status=1
 	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
-	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}} || status=1
+	cargo test -p cratestack-client --features pgvector,rate_limit,webtransport --test extension_feature_forwarding {{args}} || status=1
 	# cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
 	# round-trip suite. `required-features = ["decimal-bigdecimal", "mcp"]`
 	# (the schemas are read from the generated MCP table since #1038), so the

@@ -40,6 +40,37 @@ real provider and the generated clients to a UI, so nothing showed that the piec
 The two app examples send the session's facts as headers, which a real provider must never trust;
 their READMEs say so and point at `step-up-procedures`, where the facts come from a verified token.
 
+### Subscriptions open through one generated dispatcher; `extension webtransport` serves them over WebTransport
+
+**What was missing.** The SSE endpoint carried its own copy of the subscription logic: event-bus
+registration and the per-event read policy were generated inline in the axum handler. The
+WebTransport binding (`cratestack-webtransport`) was driven through
+`cratestack_core::SubscriptionDispatcher`, but nothing generated one, so an application had to
+implement it by hand to serve its model feeds over WebTransport.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §11 S5a).
+
+- **The generated `subscriptions` module.** A `db = Postgres` server schema with a `@@subscribe`
+  model gets `SubscriptionDispatch`, which implements `SubscriptionDispatcher`.
+  `Cratestack::subscriptions()` returns one. Its `open` takes the op id
+  (`model.<Model>.subscribe`) and the authenticated context, and owns the policy: it refuses a read
+  policy that cannot be decided on an event, and filters every event through the subscriber's read
+  policy. A model feed takes no input yet: anything but `null` or `{}` is refused with
+  `invalid_argument`.
+- **The SSE endpoint is an adapter over it, on the same wire.** `GET /rpc/subscribe/{op_id}`
+  checks `Accept`, authenticates, opens through the dispatcher and encodes the stream. Items and the
+  overflow frame (`unavailable` / `"subscription lagged"`) are unchanged. A read policy that cannot
+  be decided for one event now ends the stream with that error instead of `"subscription lagged"`.
+- **`extension webtransport { }`**, gated by a same-named Cargo feature on `cratestack-pg`, like
+  `pgvector`. The feature pulls in `cratestack-webtransport` (re-exported as
+  `cratestack::webtransport`), and the extension adds `db.subscriptions().webtransport(config,
+  auth)`, which binds the WebTransport server to the generated dispatcher. It is a compile error to
+  declare the extension without the feature, in a schema with no subscription op, or under
+  `include_embedded_schema!`. `cratestack-client` gains a `webtransport` feature as a
+  schema-compatibility switch, so a client can still be generated from such a schema; the generated
+  subscription clients are a later slice.
+- `cratestack_core::ExtensionKind` gains `Webtransport`: a `match` on it needs the new arm.
+
 ### WebTransport subscription binding: `cratestack-webtransport` (#1238)
 
 **What is new.** A new crate serves subscriptions over an HTTP/3 WebTransport session. Inside the
@@ -421,6 +452,40 @@ hand.
 - **CI job `auth library independence (ADR 0021)`** (`.ci/auth-independence-check.sh`): the
   workspace's `Cargo.lock` must contain no `authkestra*` package, so no framework crate depends on
   an external authentication library (ADR 0021 §7).
+
+### Examples: one schema, three auth providers (two of them Authkestra); MCP accepts a non-bearer credential (#1245)
+
+**What was missing.** Nothing showed an external authentication library plugged into a CrateStack
+server, so "the in-house auth and an external library plug in equally" (ADR 0021) was a claim, not a
+test. The MCP example authenticated with `Authorization: Bearer` only.
+
+**What changed.**
+
+- **New example `examples/auth-pluggable`**, a standalone workspace (listed in the root `exclude`):
+  one schema (`whoAmI`, and `adminReport` under `@allow(hasRole("admin"))`), one test suite, and
+  three binaries that differ only in their provider, each one file on the public seam:
+  - `inhouse`: `SignedRequestAuthProvider` then a COSE-verified signer (`CoseAuthProvider`'s chain);
+  - `authkestra-devsig`: `authkestra_devsig::verify` (an `X-Signature` per request and an
+    `X-Attestation`), with refusals as `401 {"error": "<code>"}`;
+  - `authkestra-oidc`: `authkestra-resource`'s `JwtStrategy` with DPoP-bound access tokens, mapped
+    onto `sub`, `roles`, `amr`, `acr`, `auth_time` and `cnf.jkt`. Its tests start `authkestra-op`
+    in-process and send real DPoP proofs.
+
+  The suite runs each provider through `cratestack-auth-conformance` (REST, RPC unary and batch,
+  MCP) and through the example's own policies. Authkestra is pinned to one commit. The README lists
+  what the providers work around in Authkestra (no refusal reason from `JwtStrategy`, no DPoP nonce,
+  JWKS only over HTTP, no device-signature profile or vectors yet).
+- **CI job `auth-pluggable`**: lockfile, `fmt`, `clippy`, the three suites, and
+  `.ci/auth-pluggable-check.sh`, which runs `cargo tree` on every CrateStack crate in the example's
+  graph and fails if one reaches an `authkestra*` package (and checks the example itself does, so the
+  check can fail).
+- **`examples/mcp-operator`** runs its Streamable HTTP endpoint with
+  `CredentialPresence::ask_provider()`. Its provider (now `src/provider.rs`) also accepts the token in
+  an `X-Agent-Token` header, refused exactly like a bearer token; a request with neither still gets
+  MCP's own 401. `tests/agent_token.rs` and two MCP Inspector conformance cases cover it, and the
+  Postgres-backed tests take `CRATESTACK_TEST_DATABASE_URL` when it is set.
+- `examples/README.md` gains a "Phase H — Authentication" table. (#1245 named it "Phase E", which the
+  Dart presets already use.)
 
 ### `@authn`: a procedure states how fresh and how strong the caller's authentication must be; unmet is RFC 9470's step-up (#1244)
 

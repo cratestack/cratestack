@@ -1,0 +1,55 @@
+[workspace]
+# Deliberately its own workspace root, and in the parent repo's `[workspace]
+# exclude` list (cratestack#1245): it is the only crate in the repository
+# that depends on Authkestra, and keeping it outside the root workspace keeps
+# Authkestra out of the root `Cargo.lock`, which `.ci/auth-independence-check.sh`
+# (ADR 0021 §7) refuses to see it in. Its own CI job (`auth-pluggable`) runs
+# `cargo tree` on every framework crate in this graph and asserts none of
+# them reaches an `authkestra*` package. As a disjoint workspace it does not
+# inherit the root `[workspace.lints]`, so the `unsafe_code` ban is declared
+# here too (cratestack#523).
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[package]
+name = "auth-pluggable"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "One schema, one test suite, three AuthProviders (cratestack#1245): CrateStack's in-house signed requests and COSE, Authkestra device signatures, and Authkestra OIDC with DPoP. Each provider is one file built only on the public AuthProvider seam (ADR 0021)."
+
+[lints]
+workspace = true
+
+[dependencies]
+cratestack = { package = "cratestack-api", path = "../../crates/cratestack-api" }
+cratestack-auth = { path = "../../crates/cratestack-auth" }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
+cratestack-cose = { path = "../../crates/cratestack-cose", features = ["auth"] }
+# Authkestra, pinned to one commit: a bump is a deliberate PR (cratestack#1245
+# risks table). Only this example depends on it.
+authkestra-devsig = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954" }
+authkestra-engine = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954", features = ["memory"] }
+authkestra-resource = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954" }
+async-trait = "0.1"
+ed25519-dalek = "3"
+# Generated code derives `serde::Serialize` through bare `serde::` paths.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+http = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+# Only the binaries read these: the JWK set file (devsig) and the algorithms.
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
+
+[dev-dependencies]
+cratestack-auth-conformance = { path = "../../crates/cratestack-auth-conformance" }
+authkestra-op = { git = "https://github.com/Authkestra/authkestra", rev = "9d401693621745fd149babc074a7c8dce8adf954" }
+base64 = "0.22"
+chrono = "0.4"
+ed25519-dalek-v2 = { package = "ed25519-dalek", version = "2", features = ["pkcs8", "pem"] }
+http-body-util = "0.1"
+p256 = { version = "0.13", features = ["pem", "ecdsa", "pkcs8"] }
+rand = "0.8"
+sha2 = "0.10"
+tower = { version = "0.5", features = ["util"] }

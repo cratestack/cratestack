@@ -116,6 +116,11 @@ exclude = [
     # whole workspace in `cargo test --workspace` (feature unification), and
     # `cratestack-macros`' `tests/ui_mcp.rs` pins the feature-off refusal.
     "examples/mcp-operator",
+    # cratestack#1245: the only crate in the repository that depends on
+    # Authkestra. Outside the workspace, Authkestra stays out of the root
+    # `Cargo.lock` (ADR 0021 §7's guard reads it); its own CI job checks that
+    # no framework crate in its graph reaches an `authkestra*` package.
+    "examples/auth-pluggable",
 ]
 
 [workspace.package]

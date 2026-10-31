@@ -59,6 +59,7 @@ fn empty_collected() -> ServerCollected {
         rpc_subscribe_dispatch_arms: Vec::new(),
         generated_client_module: proc_macro2::TokenStream::new(),
         generated_event_module: proc_macro2::TokenStream::new(),
+        generated_subscription_module: proc_macro2::TokenStream::new(),
     }
 }
 
