@@ -15,6 +15,8 @@ import 'constants.dart';
 
 {% include "http_runtime/refusal.dart.j2" %}
 
+{% include "http_runtime/step_up.dart.j2" %}
+
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
   if (value == null) {
     throw FormatException('Missing required field $ownerName.$fieldName');

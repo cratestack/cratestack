@@ -229,6 +229,89 @@ function challengesOf(headers: Headers | undefined): readonly string[] {
   return Object.freeze(value ? [value] : []);
 }
 
+/** The extra member `error` of a step-up refusal (RFC 9470, cratestack#1244). */
+export const INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication";
+
+/** What a step-up refusal asks for (cratestack#1244): an operation that
+ *  requires a fresher or stronger authentication than the caller presented.
+ *  Each requirement is present only when the refused operation declares it. */
+export interface StepUpRequired {
+  /** The longest time, in seconds, since the caller last authenticated. */
+  readonly maxAge: number | undefined;
+  /** The authentication context classes the operation accepts. */
+  readonly acrValues: readonly string[];
+  /** The authentication methods the operation requires. */
+  readonly amr: readonly string[];
+  /** Which requirements the caller failed: a subset of `"max_age"`, `"acr"`
+   *  and `"amr"`. */
+  readonly unmet: readonly string[];
+}
+
+/** Reads a step-up refusal once the transport's own test (`refused`: a 401,
+ *  or `unauthenticated`) passed: `undefined` unless the extra member `error`
+ *  is `insufficient_user_authentication`. Never throws: a missing or
+ *  mistyped field reads as absent or empty. */
+function readStepUp(
+  refused: boolean,
+  details: unknown,
+  extra: Readonly<Record<string, unknown>>,
+): StepUpRequired | undefined {
+  if (!refused || extra["error"] !== INSUFFICIENT_USER_AUTHENTICATION) {
+    return undefined;
+  }
+  const map: Record<string, unknown> =
+    typeof details === "object" && details !== null && !Array.isArray(details)
+      ? (details as Record<string, unknown>)
+      : {};
+  const strings = (name: string): readonly string[] => {
+    const value = map[name];
+    return Object.freeze(
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [],
+    );
+  };
+  const raw = map["max_age"];
+  const maxAge = typeof raw === "bigint" ? Number(raw) : raw;
+  return Object.freeze({
+    maxAge:
+      typeof maxAge === "number" && Number.isSafeInteger(maxAge) && maxAge >= 0
+        ? maxAge
+        : undefined,
+    acrValues: strings("acr_values"),
+    amr: strings("amr"),
+    unmet: strings("unmet"),
+  });
+}
+
+/** Runs `call`; when it fails with a step-up refusal, hands the refusal to
+ *  `reprove` and, when that resolves `true` (the user authenticated again),
+ *  runs `call` **once** more and returns what it gives, even a second
+ *  refusal. Never loops (cratestack#1244).
+ *
+ *  `reprove` resolves `false` when the user declined or the re-proof failed;
+ *  the first refusal is then rethrown. Any other error, and one `reprove`
+ *  itself throws, propagates as it is.
+ *
+ *  ```ts
+ *  const receipt = await retryAfterStepUp(
+ *    () => client.procedures.transfer(args),
+ *    (stepUp) => session.reauthenticate({ maxAge: stepUp.maxAge }),
+ *  );
+ *  ``` */
+export async function retryAfterStepUp<T>(
+  call: () => Promise<T>,
+  reprove: (stepUp: StepUpRequired) => Promise<boolean>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const stepUp = stepUpOf(error);
+    if (stepUp === undefined || !(await reprove(stepUp))) {
+      throw error;
+    }
+  }
+  return call();
+}
+
 /** Thrown by `CratestackRpcRuntime` when a remote call fails. Carries
  *  the wire-shaped `RpcErrorBody` directly so callers can switch on
  *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.).
@@ -245,6 +328,11 @@ export class CratestackRpcError extends Error {
   /** The answer's headers; `undefined` when it had none of its own. */
   readonly headers: Headers | undefined;
   readonly challenges: readonly string[];
+  /** The step-up refusal this answer is (cratestack#1244): code
+   *  `unauthenticated` and the extra member `error` set to
+   *  `insufficient_user_authentication`, read from `details`; `undefined`
+   *  for any other error. */
+  readonly stepUp: StepUpRequired | undefined;
 
   constructor(status: number, body: RpcErrorBody, headers?: Headers) {
     super(`RPC call failed with code ${body.code} (status ${status}): ${body.message}`);
@@ -256,7 +344,27 @@ export class CratestackRpcError extends Error {
     this.extra = extraErrorMembers(body);
     this.headers = headers;
     this.challenges = challengesOf(headers);
+    this.stepUp = readStepUp(body.code === "unauthenticated", body.details, this.extra);
   }
+}
+
+/** The step-up refusal of a {@link CratestackRpcError} (its `stepUp`), or of
+ *  a batch frame's `error` body, which reads the same; `undefined` for
+ *  anything else (cratestack#1244). */
+export function stepUpOf(error: unknown): StepUpRequired | undefined {
+  if (error instanceof CratestackRpcError) {
+    return error.stepUp;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    !(error instanceof Error) &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    const body = error as RpcErrorBody;
+    return readStepUp(body.code === "unauthenticated", body.details, extraErrorMembers(body));
+  }
+  return undefined;
 }
 
 /** Transport-level error (network failure, malformed response,

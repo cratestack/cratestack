@@ -13,6 +13,7 @@ mod remote_refusal;
 mod rpc;
 mod runtime;
 mod state;
+mod step_up;
 mod streaming;
 mod streaming_callback;
 mod task;
@@ -66,6 +67,9 @@ pub use runtime::wire::{
 pub use state::{
     ClientStateStore, InMemoryStateStore, JsonFileStateStore, PersistedClientState,
     RequestJournalEntry,
+};
+pub use step_up::{
+    INSUFFICIENT_USER_AUTHENTICATION, StepUpError, StepUpRequired, retry_after_step_up,
 };
 pub use streaming::CborSeqChunkDecoder;
 pub use streaming_callback::RuntimeChunkWire;
