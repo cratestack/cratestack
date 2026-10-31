@@ -1,5 +1,38 @@
 ## Unreleased
 
+## 0.17.1 (2026-10-31)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.17.0..HEAD at f78e71d2382cf873acf8c7d1a6d89d26f84cffb5 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- @authn, a procedure's authentication requirement, and RFC 9470's step-up refusal (#1244) (#1257)
+- AuthProvider conformance kit, passed by both in-house providers; CoseAuthProvider is a first-success chain; auth-library independence guard (#1243) (#1251)
+- an AuthProvider refusal shapes its response on every transport; MCP credential presence is pluggable (#1208, #1243) (#1246)
+- first_success provider chain, AuthProvider::credential, MCP ask_provider; the canonical request is pinned (#1243) (#1248)
+- the principal contract: reserved claims, a builder, typed readers, hasRole over roles (#1243) (#1250)
+- a step-up refusal is typed as StepUpRequired in every generated client, with a retry-once helper (#1244) (#1256)
+- typed AuthRefusal members, details and challenges on REST and RPC errors (#1243) (#1249)
+- one schema, three auth providers (two Authkestra); MCP accepts a non-bearer credential (#1245) (#1254)
+- step-up end to end in Rust, Flutter and React, on `@authn` (#1245) (#1258)
+- one generated dispatcher behind every binding; extension webtransport (S5a) (#1255)
+- subscriptions design + WebTransport binding (slice S5b) (#1238)
+
+#### Fixes
+
+- apply the subscriber's read policy to every SSE event (#1253)
+
+#### Documentation
+
+- claim ADR 0021 for the AuthProvider seam (in cratestack-docs) (#1247)
+
 ## 0.17.0 (2026-10-28)
 
 - No functional changes. Version kept in lockstep with the CrateStack
