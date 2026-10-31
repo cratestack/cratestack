@@ -14,7 +14,7 @@ use super::{StepUpError, StepUpRequired};
 /// failed; the first refusal is then returned unchanged. Any other error,
 /// and a success, is returned from the first call as it is.
 ///
-/// ```ignore
+/// ```text
 /// let order = retry_after_step_up(
 ///     || client.procedures().transfer(&args),
 ///     |step_up| async move { session.reauthenticate(step_up.max_age).await.is_ok() },
