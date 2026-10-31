@@ -341,6 +341,52 @@ hand.
   workspace's `Cargo.lock` must contain no `authkestra*` package, so no framework crate depends on
   an external authentication library (ADR 0021 §7).
 
+### `@authn`: a procedure states how fresh and how strong the caller's authentication must be; unmet is RFC 9470's step-up (#1244)
+
+**What was missing.** A policy could say *who* may call a procedure, never *how recently* or *how
+strongly* they must have authenticated. Every product hand-wrote that check and invented its own
+refusal, and a client could not tell "re-authenticate" from "never allowed".
+
+**What changed** (ADR 0022, cratestack-docs `internals/authn-requirements-adr.md`):
+
+- **New procedure attribute `@authn(maxAge: 300, amr: ["hwk"], acr: ["aal2", "aal3"])`.** Any of
+  `maxAge` (seconds since the user last authenticated, 1 to one year), `amr` (methods that must all
+  be present, RFC 8176) and `acr` (acceptable classes; the caller's must be one). The parser reads it
+  with the one reader the generator uses (`cratestack_core::schema::parse_authn_attribute`) and
+  refuses anything else: an unknown key, a repeat, a non-list, an empty list, a value outside
+  letters, digits and `._:/~+-`, a second `@authn`. The LSP completes it.
+- **Generated enforcement on every path to a procedure.** Each procedure module gains
+  `pub const AUTHN: Option<AuthnRequirement>`, and its authorize step calls
+  `cratestack::require_authn(AUTHN.as_ref(), ctx)` right after `@allow`/`@deny`: REST, RPC unary,
+  each RPC batch frame on its own, MCP tool calls and non-HTTP callers of `authorize`/`invoke`/
+  `invoke_with_db`. A caller `@allow` refuses still gets 403, never a step-up. The facts come from the
+  principal contract (`auth_time`, `amr`, `acr`); a missing one fails closed.
+- **The refusal is RFC 9470's**, through `AuthRefusal`: a 401 (`UNAUTHORIZED` / RPC
+  `unauthenticated`) with the envelope member `error: "insufficient_user_authentication"`, a
+  `details` of `max_age`, `acr_values` and `amr` (each only when required) and `unmet` (which of
+  `max_age`, `acr`, `amr` failed), and on REST
+  `WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="step-up
+  authentication required", max_age="300", acr_values="aal2 aal3"`. An MCP tool call returns the same
+  envelope as an `isError` result, and the tool never runs. The typed `StepUpRequired` in the
+  generated clients is a separate #1244 PR.
+- **New in `cratestack-core`:** `AuthnRequirement`, `Unmet`, `require_authn`, `require_authn_at`,
+  `STEP_UP_ERROR`, `STEP_UP_MESSAGE`; `schema::{parse_authn_attribute, authn_attribute,
+  ParsedAuthn, AUTHN_ATTRIBUTE, AUTHN_KEYS, AUTHN_MAX_AGE_LIMIT}`. `@authn` is on the op contract's
+  drop list: it changes no wire shape.
+- **CrateStack's own providers fill the facts.** `cratestack-auth`'s id token gains optional
+  `auth_time` (set to the mint time by `default_id_token_claims`) and `amr` claims, carried on
+  `UserPrincipal`; both mappers emit `auth_time` and `amr`, the token's methods plus `pop` (RFC 8176
+  proof of possession), since every request is signed with the bound key. A service caller's `amr` is
+  `["pop"]` with no `auth_time`, and so is a COSE-verified signer's (`CoseAuthProvider`).
+
+#### Migrating
+
+- `IdTokenClaims` and `UserPrincipal` gain the fields `auth_time` and `amr`, which breaks a struct
+  literal; add `auth_time: None, amr: Vec::new()` (or real values).
+- A context from `cratestack-auth` or `cratestack-cose` now carries `amr` (and, for a user, usually
+  `auth_time`). A schema whose `auth` block declared either with another type fails to check
+  (ADR 0021's reserved names).
+
 ## 0.17.0 (2026-10-28)
 
 ### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)

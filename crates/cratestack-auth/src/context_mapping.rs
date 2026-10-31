@@ -11,6 +11,7 @@
 
 mod contract;
 mod mapper;
+mod service;
 #[cfg(test)]
 mod tests;
 
@@ -20,6 +21,11 @@ use crate::id_token::RequestPrincipal;
 
 pub use contract::principal_to_contract_context;
 pub use mapper::PrincipalMapper;
+use service::service_principal_to_cratestack_context;
+
+/// The `amr` value every request through `SignedRequestAuthProvider` earns:
+/// it was signed with the caller's bound key (RFC 8176 `pop`, ADR 0022).
+pub const PROOF_OF_POSSESSION: &str = "pop";
 
 /// The product mapping: today's claims, plus the contract's `sub` (the user
 /// id, or `svc:<key id>` for a service caller), `roles` (the one verified
@@ -81,6 +87,9 @@ pub fn principal_to_cratestack_context(
         sub: &'a str,
         roles: [&'a str; 1],
         cnf: Confirmation<'a>,
+        #[serde(rename = "auth_time", skip_serializing_if = "Option::is_none")]
+        auth_time: Option<i64>,
+        amr: Vec<&'a str>,
         actor: ActorPrincipal,
         session: SessionPrincipal,
         id: String,
@@ -107,6 +116,8 @@ pub fn principal_to_cratestack_context(
             kid: &user.bound_key_id,
             jkt: user.bound_key_jkt.as_deref(),
         },
+        auth_time: user.auth_time,
+        amr: amr_with_pop(&user.amr),
         actor: ActorPrincipal {
             id: user.user_id.clone(),
             enrollment_status: user.enrollment_status.clone(),
@@ -141,52 +152,11 @@ pub fn principal_to_cratestack_context(
     }))
 }
 
-pub(super) fn service_principal_to_cratestack_context(
-    principal: &RequestPrincipal,
-    role: Option<&str>,
-) -> cratestack_core::CratestackContext {
-    let caller_id = format!("svc:{}", principal.transport.key_id);
-    let role = role.unwrap_or("caller");
-    cratestack_core::CratestackContext::authenticated([
-        (
-            "sub".to_owned(),
-            cratestack_core::Value::String(caller_id.clone()),
-        ),
-        (
-            "roles".to_owned(),
-            cratestack_core::Value::List(vec![cratestack_core::Value::String(role.to_owned())]),
-        ),
-        (
-            "id".to_owned(),
-            cratestack_core::Value::String(caller_id.clone()),
-        ),
-        (
-            "clientId".to_owned(),
-            cratestack_core::Value::String(caller_id),
-        ),
-        (
-            "enrollmentStatus".to_owned(),
-            cratestack_core::Value::String("trusted_signature".to_owned()),
-        ),
-        (
-            "boundKeyId".to_owned(),
-            cratestack_core::Value::String(principal.transport.key_id.clone()),
-        ),
-        (
-            "role".to_owned(),
-            cratestack_core::Value::String(role.to_owned()),
-        ),
-        (
-            "callerService".to_owned(),
-            cratestack_core::Value::String(principal.transport.key_id.clone()),
-        ),
-        (
-            "serviceName".to_owned(),
-            cratestack_core::Value::String(principal.transport.key_id.clone()),
-        ),
-        (
-            "actorType".to_owned(),
-            cratestack_core::Value::String("service".to_owned()),
-        ),
-    ])
+/// The id token's `amr`, plus `pop` once: the request itself proved the key.
+pub(super) fn amr_with_pop(amr: &[String]) -> Vec<&str> {
+    let mut methods: Vec<&str> = amr.iter().map(String::as_str).collect();
+    if !methods.contains(&PROOF_OF_POSSESSION) {
+        methods.push(PROOF_OF_POSSESSION);
+    }
+    methods
 }

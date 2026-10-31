@@ -16,7 +16,8 @@ fn every_legitimate_procedure_attribute_still_parses() {
          @authorize(Account, update, args.accountId)\n  @api_version(\"v2\")\n  \
          @status(202)\n  @deprecated(\"use transfer2\")\n  @no_idempotency\n  \
          @no_rate_limit\n  @isolation(\"serializable\")\n  @allow(auth().note == \"a@b // c\")\n\n\
-         procedure feed(args: TransferInput): Many[]\n  @allow(true)\n  @stream\n  @deprecated\n"
+         procedure feed(args: TransferInput): Many[]\n  @allow(true)\n  @stream\n  @deprecated\n  \
+         @authn(maxAge: 300, amr: [\"hwk\", \"user\"], acr: [\"aal2\"])\n"
     );
     let schema = parse_schema(&source).unwrap_or_else(|error| panic!("should parse: {error}"));
     assert_eq!(schema.procedures[0].attributes.len(), 10);
@@ -24,5 +25,5 @@ fn every_legitimate_procedure_attribute_still_parses() {
         schema.procedures[0].attributes[9].raw,
         "@allow(auth().note == \"a@b // c\")"
     );
-    assert_eq!(schema.procedures[1].attributes.len(), 3);
+    assert_eq!(schema.procedures[1].attributes.len(), 4);
 }

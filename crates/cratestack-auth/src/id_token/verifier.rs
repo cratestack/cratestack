@@ -68,6 +68,8 @@ impl IdTokenVerifier {
             expires_at: claims.exp,
             bound_key_id: claims.cnf.kid,
             bound_key_jkt,
+            auth_time: claims.auth_time,
+            amr: claims.amr,
             profile_version: claims.profile_version,
             enrollment_status: claims.enrollment_status,
             kyc_status: claims.kyc_status,

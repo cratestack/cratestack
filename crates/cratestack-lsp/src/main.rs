@@ -1,5 +1,6 @@
 mod analyze;
 mod attribute_completion;
+mod authn_completion;
 mod capabilities;
 mod completion;
 mod definition;
