@@ -2,36 +2,18 @@
 
 ## 0.17.1 (2026-10-31)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.17.0..HEAD at f78e71d2382cf873acf8c7d1a6d89d26f84cffb5 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Features
-
-- @authn, a procedure's authentication requirement, and RFC 9470's step-up refusal (#1244) (#1257)
-- AuthProvider conformance kit, passed by both in-house providers; CoseAuthProvider is a first-success chain; auth-library independence guard (#1243) (#1251)
-- an AuthProvider refusal shapes its response on every transport; MCP credential presence is pluggable (#1208, #1243) (#1246)
-- first_success provider chain, AuthProvider::credential, MCP ask_provider; the canonical request is pinned (#1243) (#1248)
-- the principal contract: reserved claims, a builder, typed readers, hasRole over roles (#1243) (#1250)
-- a step-up refusal is typed as StepUpRequired in every generated client, with a retry-once helper (#1244) (#1256)
-- typed AuthRefusal members, details and challenges on REST and RPC errors (#1243) (#1249)
-- one schema, three auth providers (two Authkestra); MCP accepts a non-bearer credential (#1245) (#1254)
-- step-up end to end in Rust, Flutter and React, on `@authn` (#1245) (#1258)
-- one generated dispatcher behind every binding; extension webtransport (S5a) (#1255)
-- subscriptions design + WebTransport binding (slice S5b) (#1238)
-
-#### Fixes
-
-- apply the subscriber's read policy to every SSE event (#1253)
-
-#### Documentation
-
-- claim ADR 0021 for the AuthProvider seam (in cratestack-docs) (#1247)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares. This release
+  is about authentication on the server and in the generated clients
+  (`@authn` and step-up, cratestack#1244; the `AuthProvider` seam,
+  cratestack#1243), none of which this package exposes. The crates it builds
+  on changed only additively: `cratestack-codec-cbor` gained a Rust
+  `CborSeqChunkDecoder` for `application/cbor-seq` streams (not exposed
+  here), and its error envelopes now carry optional extra members
+  (cratestack#1208) without changing a byte of an envelope that has none,
+  which `tests/error_envelope_bytes.rs` pins; `cratestack-cose`'s changes are
+  server-side (a COSE signer's principal now reports `amr: ["pop"]`), so
+  sealing and opening are unchanged.
 
 ## 0.17.0 (2026-10-28)
 
