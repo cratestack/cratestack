@@ -1,0 +1,31 @@
+[package]
+name = "step-up-procedures-example"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Step-up end to end (cratestack#1245): a procedure declares `@authn(maxAge, amr)`, CrateStack's in-house signed-request provider fills `auth_time` and `amr` from the id token, and the generated Rust client meets `StepUpRequired`, re-proves and retries once, on REST and on RPC (unary and batch). No database."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "step-up-procedures"
+path = "src/main.rs"
+
+[dependencies]
+# One facade for both halves: `cratestack-api` serves the `db = None`
+# schema and re-exports `include_client_schema!` for the client half.
+cratestack = { package = "cratestack-api", path = "../../crates/cratestack-api" }
+# The in-house provider (`SignedRequestAuthProvider`), the id token it reads
+# `auth_time` and `amr` from, and the signing helpers the client uses.
+# `axum` for `jwks_router`, which serves the issuer's keys.
+cratestack-auth = { workspace = true, features = ["axum"] }
+cratestack-client-rust = { path = "../../crates/cratestack-client-rust" }
+cratestack-codec-cbor = { path = "../../crates/cratestack-codec-cbor" }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+ed25519-dalek = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["net"] }
+url = { workspace = true }

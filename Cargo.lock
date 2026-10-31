@@ -7117,6 +7117,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff7589a1859b09232522bb9edf076ca7fcf14ded96685d3fa629db73023ffbb7"
 
 [[package]]
+name = "step-up-procedures-example"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "cratestack-api",
+ "cratestack-auth",
+ "cratestack-client-rust",
+ "cratestack-codec-cbor",
+ "ed25519-dalek",
+ "serde",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "string_cache"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -49,6 +49,7 @@ members = [
     "examples/rpc-streaming",
     "examples/rpc-streaming-client-rust",
     "examples/rpc-client",
+    "examples/step-up-procedures",
     "examples/rpc-batch",
     "examples/rpc-batch-debounce",
     "examples/embedded-browser-vite",
