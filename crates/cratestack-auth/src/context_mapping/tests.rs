@@ -34,6 +34,8 @@ fn user(jkt: Option<&str>) -> RequestPrincipal {
             expires_at: 1_793_000_600,
             bound_key_id: "key-1".to_owned(),
             bound_key_jkt: jkt.map(str::to_owned),
+            auth_time: Some(1_700_000_000),
+            amr: vec!["otp".to_owned()],
             profile_version: 3,
             enrollment_status: "active".to_owned(),
             kyc_status: Some("verified".to_owned()),
@@ -78,6 +80,9 @@ fn the_product_shape_also_carries_the_contract_names() {
     assert_eq!(ctx.roles(), Some(vec!["admin"]));
     assert_eq!(ctx.cnf("kid"), Some(&Value::String("key-1".to_owned())));
     assert_eq!(ctx.cnf_jkt(), Some("jkt-1"));
+    // ADR 0022: the token's facts, plus `pop` for the signed request.
+    assert_eq!(ctx.auth_time(), Some(1_700_000_000));
+    assert_eq!(ctx.amr(), Some(vec!["otp", "pop"]));
 
     let no_jwk = principal_to_cratestack_context(&user(None), None, false).unwrap();
     assert_eq!(no_jwk.cnf_jkt(), None);
@@ -92,6 +97,12 @@ fn a_service_caller_is_svc_key_with_its_default_role() {
     assert_eq!(ctx.roles(), Some(vec!["caller"]));
     assert_eq!(string(&ctx, "role").as_deref(), Some("caller"));
     assert_eq!(ctx.cnf("kid"), None);
+    assert_eq!(ctx.amr(), Some(vec!["pop"]));
+    assert_eq!(
+        ctx.auth_time(),
+        None,
+        "a service key is no user authentication"
+    );
 
     let refused = principal_to_cratestack_context(&service(), Some("caller"), false).unwrap();
     assert!(!refused.is_authenticated());
@@ -109,6 +120,8 @@ fn the_contract_mapping_emits_only_the_contract_and_the_selection() {
     assert_eq!(ctx.subject().as_deref(), Some("usr_1"));
     assert_eq!(ctx.roles(), Some(vec!["admin"]));
     assert_eq!(ctx.cnf_jkt(), Some("jkt-1"));
+    assert_eq!(ctx.auth_time(), Some(1_700_000_000));
+    assert_eq!(ctx.amr(), Some(vec!["otp", "pop"]));
     assert_eq!(string(&ctx, "kycStatus").as_deref(), Some("verified"));
     assert_eq!(string(&ctx, "session.boundKeyId").as_deref(), Some("key-1"));
     for absent in ["id", "role", "actor.id", "clientId", "notAClaim"] {
@@ -119,6 +132,7 @@ fn the_contract_mapping_emits_only_the_contract_and_the_selection() {
         principal_to_contract_context::<&str>(&service(), Some("caller"), true, &[]).unwrap();
     assert_eq!(service.subject().as_deref(), Some("svc:key-1"));
     assert_eq!(service.roles(), Some(vec!["caller"]));
+    assert_eq!(service.amr(), Some(vec!["pop"]));
     assert_eq!(service.auth_field("role"), None);
 
     let refused =

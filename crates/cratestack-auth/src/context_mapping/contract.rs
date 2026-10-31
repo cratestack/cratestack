@@ -10,8 +10,9 @@ use super::principal_to_cratestack_context;
 
 /// The contract's names for `principal`: `sub` (the user id, or
 /// `svc:<key id>` for a service caller), `roles` (the verified `role`, or
-/// `role` — default `caller` — for a service caller) and, for a user, `cnf`
-/// (`kid`, plus `jkt` when the id token carried the key). Each name in
+/// `role` — default `caller` — for a service caller), `amr` (the id token's
+/// methods plus `pop`, ADR 0022) and, for a user, `auth_time` when the id
+/// token carried it and `cnf` (`kid`, plus `jkt` when it carried the key). Each name in
 /// `selected` is then copied from the product mapping's top-level claims
 /// when it has one: `id`, `role`, `clientId`, `enrollmentStatus`,
 /// `boundKeyId`, `kycStatus`, `kycDossierId`, the `actor` and `session`
@@ -30,9 +31,13 @@ pub fn principal_to_contract_context<S: AsRef<str>>(
     let product = principal_to_cratestack_context(principal, role, allow_transport_caller)?;
     let mut builder = match principal.user.as_ref() {
         Some(user) => {
-            let builder = CratestackContext::builder(user.user_id.clone())
+            let mut builder = CratestackContext::builder(user.user_id.clone())
                 .roles([user.role.clone()])
+                .amr(super::amr_with_pop(&user.amr))
                 .cnf("kid", Value::String(user.bound_key_id.clone()));
+            if let Some(auth_time) = user.auth_time {
+                builder = builder.auth_time(auth_time);
+            }
             match &user.bound_key_jkt {
                 Some(jkt) => builder.cnf_jkt(jkt.clone()),
                 None => builder,
@@ -41,6 +46,7 @@ pub fn principal_to_contract_context<S: AsRef<str>>(
         None if allow_transport_caller => {
             CratestackContext::builder(format!("svc:{}", principal.transport.key_id))
                 .roles([role.unwrap_or("caller")])
+                .amr([super::PROOF_OF_POSSESSION])
         }
         None => return Ok(CratestackContext::anonymous()),
     };

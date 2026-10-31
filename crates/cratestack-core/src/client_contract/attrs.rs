@@ -57,6 +57,10 @@ pub(crate) const DROPPED_ATTRIBUTES: &[(&str, &str)] = &[
     ("@no_idempotency", "retry policy, not a shape"),
     ("@no_rate_limit", "rate-limit participation"),
     ("@isolation", "transaction isolation of the handler"),
+    (
+        "@authn",
+        "authentication requirement (ADR 0022): decides who may call, not how bytes decode",
+    ),
     ("@length", "validator: only rejects"),
     ("@range", "validator"),
     ("@regex", "validator"),
