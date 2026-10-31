@@ -41,9 +41,9 @@ use support::pg;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Always authenticates as principal `1` — subscribe dispatch only
-/// needs a successful `AuthProvider::authenticate`, the same header-
-/// based contract every other HTTP RPC binding uses (§3.4a).
+/// Always authenticates as principal `1`, which the fixture's
+/// `@@allow("read", auth() != null)` lets read every widget event. Per-event
+/// read-policy filtering has its own test, `rpc_subscribe_read_policy.rs`.
 #[derive(Clone)]
 struct AlwaysAuthProvider;
 

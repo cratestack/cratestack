@@ -11,9 +11,10 @@
 //! and exactly one final `event: error` (`data:` is `{"id": <u64>,
 //! "err": RpcErrorBody}`) when the underlying stream ends — see
 //! `super::subscription_bridge`'s module doc for why "the stream ends"
-//! only ever means backpressure overflow here, never an ordinary client
-//! disconnect (which just drops this whole future instead, so this code
-//! never runs for that case).
+//! means backpressure overflow (or a read policy that could not be
+//! decided, `super::subscription_bridge::readable_events`), never an
+//! ordinary client disconnect (which just drops this whole future
+//! instead, so this code never runs for that case).
 //!
 //! Payload encoding is always JSON regardless of which `CratestackCodec` the
 //! server negotiates for its unary/batch RPC routes: SSE is a
