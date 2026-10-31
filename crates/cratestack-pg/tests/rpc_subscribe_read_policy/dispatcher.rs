@@ -6,9 +6,10 @@
 //! `rpc_subscribe_sse.rs`), the WebTransport server another
 //! (`webtransport_model_feed.rs`).
 //!
-//! Postgres-backed: run it with `CRATESTACK_REQUIRE_DB=1`, or a missing
-//! database is a skip that still prints `ok` (CLAUDE.md, "Critical test
-//! gotcha").
+//! A module of the `rpc_subscribe_read_policy` binary, which compiles the same
+//! fixture, rather than a test binary of its own. Postgres-backed: run it with
+//! `CRATESTACK_REQUIRE_DB=1`, or a missing database is a skip that still prints
+//! `ok` (CLAUDE.md, "Critical test gotcha").
 
 use std::time::Duration;
 
@@ -16,15 +17,11 @@ use cratestack::futures::StreamExt;
 use cratestack::serde_json::{Value as Json, json};
 use cratestack::{
     CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen, Value,
-    include_server_schema,
 };
 use tokio::time::timeout;
 
-include_server_schema!("tests/fixtures/subscribe_read_policy.cstack", db = Postgres);
-
-mod support;
-
-use support::pg;
+use super::cratestack_schema;
+use super::support::pg;
 
 fn caller(id: i64) -> CratestackContext {
     CratestackContext::authenticated([("id".to_owned(), Value::Int(id))])

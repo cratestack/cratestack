@@ -831,7 +831,7 @@ subscription op that exists):
   WebTransport server to the generated dispatcher. Declaring it in a schema with no subscription op is
   a compile error, as is declaring it under `include_embedded_schema!`. `cratestack-client`'s
   `webtransport` feature is a schema-compatibility switch only: the generated clients are S6.
-- Tests: the dispatcher against Postgres (`subscription_dispatcher.rs`), and the dispatcher served over
+- Tests: the dispatcher against Postgres (`rpc_subscribe_read_policy/dispatcher.rs`), and the dispatcher served over
   real QUIC against Postgres (`webtransport_model_feed.rs`, CI job `webtransport-browser`).
 
 Not in S5a: the open-time refusal of §5.1 (a caller whose read policy is `False` before any row,
