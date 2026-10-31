@@ -130,7 +130,7 @@ Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and r
   one, decided (ADR 0002 D5): it carries an opt-in subset of procedures for agents, not the
   application API, so a feature reaches MCP only when someone deliberately extends MCP.
 - **Docs and skills parity: a feature is not done until all three repos agree.** A user-facing
-  change has two companions — `cratestack/cratestack-docs` (Mintlify site, for humans) and
+  change has two companions — `cratestack/cratestack-docs` (VitePress site, for humans) and
   `cratestack/cratestack-skills` (agent skills, `npx skills add cratestack/cratestack-skills`).
   They fail differently: docs go stale, while stale skills actively teach coding agents to emit
   code against a surface that no longer exists. Any PR adding a `### ` entry under

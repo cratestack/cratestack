@@ -233,7 +233,7 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   MCP is therefore not a parity gap; one missing from RPC still is.
 - **Docs and skills parity — a feature is not done until all three repos agree.** A user-facing
   change has two companions, and they drift in opposite directions: `cratestack/cratestack-docs`
-  (Mintlify, for humans) goes stale, and `cratestack/cratestack-skills` (agent skills, installed
+  (VitePress, for humans) goes stale, and `cratestack/cratestack-skills` (agent skills, installed
   with `npx skills add cratestack/cratestack-skills`) actively teaches coding agents to generate
   code against a surface that no longer exists — which is worse than a gap, because the agent is
   confident. Any PR that adds a `### ` entry under `## Unreleased` must therefore fill in section 9
