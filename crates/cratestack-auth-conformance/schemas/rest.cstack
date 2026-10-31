@@ -1,0 +1,20 @@
+// The REST and MCP half of the AuthProvider conformance kit (ADR 0021 §6):
+// one procedure every caller with an identity may call, returning the
+// subject the provider's context carries, so the kit compares verdicts by
+// transport.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+type Identity {
+  subject String
+}
+
+procedure whoAmI(tag: String): Identity
+  @allow(auth() != null)
+  @mcp(tool)

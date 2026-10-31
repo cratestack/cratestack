@@ -15,6 +15,7 @@ use crate::validate::enum_ordinals::{refuse_ordinal_auth_fields, validate_enum_o
 use crate::validate::field_attributes::{FieldHost, validate_field_attributes};
 use crate::validate::fields::validate_field_reserved_identifier;
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
+use crate::validate::reserved_claims::validate_reserved_claims;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::server_only_placement as server_only;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
@@ -256,6 +257,7 @@ pub(super) fn validate_auth(
             validate_field_attributes(FieldHost::Auth, &auth.name, field)?;
             validate_key_and_relation_attributes("auth block", &auth.name, field)?;
         }
+        validate_reserved_claims(schema, auth)?;
     }
     Ok(())
 }

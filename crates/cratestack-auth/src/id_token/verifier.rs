@@ -15,7 +15,7 @@ use reqwest::Client;
 use super::{
     claims::{DEFAULT_ID_TOKEN_AUDIENCE, ID_TOKEN_AUDIENCE_ENV, IdTokenClaims},
     disclosure::{split_sd_jwt, verify_disclosures},
-    jwk::verifying_key_from_jwk,
+    jwk::{jwk_thumbprint, verifying_key_from_jwk},
     principal::UserPrincipal,
     token_parsing::parse_token_parts,
 };
@@ -58,6 +58,7 @@ impl IdTokenVerifier {
         let (claims, disclosure_strings) =
             self.verified_claims(token, expected_request_key_id).await?;
         let disclosed_claims = verify_disclosures(&claims, &disclosure_strings)?;
+        let bound_key_jkt = claims.cnf.jwk.as_ref().and_then(jwk_thumbprint);
 
         Ok(UserPrincipal {
             user_id: claims.sub,
@@ -66,6 +67,7 @@ impl IdTokenVerifier {
             issued_at: claims.iat,
             expires_at: claims.exp,
             bound_key_id: claims.cnf.kid,
+            bound_key_jkt,
             profile_version: claims.profile_version,
             enrollment_status: claims.enrollment_status,
             kyc_status: claims.kyc_status,

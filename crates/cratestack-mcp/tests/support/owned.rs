@@ -39,7 +39,7 @@ impl OwnedResources {
     }
 
     fn reader(&self, ctx: &CratestackContext) -> Option<String> {
-        let reader = ctx.principal_actor_id().map(str::to_owned);
+        let reader = ctx.subject().map(std::borrow::Cow::into_owned);
         self.readers.lock().unwrap().push(reader.clone());
         reader
     }

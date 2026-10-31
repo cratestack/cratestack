@@ -41,7 +41,7 @@ use http_body::Body;
 use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 
-use super::auth::{Bearer, Credential, authenticate, bearer, missing_token};
+use super::auth::authenticate;
 use super::caller::hand_over;
 use super::origin::AllowedOrigins;
 use super::presence::CredentialPresence;
@@ -130,34 +130,6 @@ impl<T: McpTools, A: AuthProvider> Shared<T, A> {
         self.inner
             .handle(Request::from_parts(parts, Full::new(body)))
             .await
-    }
-}
-
-impl<T: McpTools, A> Shared<T, A> {
-    /// The request's credential under the configured rule, or the 400
-    /// (an `Authorization` the guard will not guess at, whatever the rule)
-    /// or 401 that refuses it before the body is read.
-    fn credential(&self, parts: &http::request::Parts) -> Result<Credential, Box<Reply>> {
-        let token = match bearer(&parts.headers) {
-            Bearer::Token(token) => Some(token),
-            Bearer::Missing => None,
-            Bearer::Malformed => {
-                let header = self.resource.challenge(Some("invalid_request"));
-                return Err(Box::new(reply::challenge(StatusCode::BAD_REQUEST, header)));
-            }
-        };
-        if !self.presence.present(parts, token.is_some()) {
-            let reason = if self.presence.is_bearer() {
-                "no bearer token"
-            } else {
-                "no credential"
-            };
-            return Err(Box::new(missing_token(&self.resource, reason)));
-        }
-        Ok(Credential {
-            bearer: token.is_some(),
-            secrets: self.presence.secrets(parts, token),
-        })
     }
 }
 

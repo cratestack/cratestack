@@ -39,3 +39,21 @@ fn verifying_key_jwk_roundtrips() {
         Err(AuthError::InvalidPublicKey(_))
     ));
 }
+
+/// RFC 8037 Appendix A.3: the thumbprint of the Ed25519 key of A.2.
+#[test]
+fn jwk_thumbprint_matches_rfc_8037() {
+    let mut jwk = crate::id_token::verifying_key_jwk(
+        &SigningKey::from_bytes(&[9u8; 32]).verifying_key(),
+        "ignored",
+    );
+    jwk.x = Some("11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo".to_owned());
+    assert_eq!(
+        crate::jwk_thumbprint(&jwk).as_deref(),
+        Some("kPrK_qmxVWaYVA9wwBF6Iuo3vVzz7TxHCTwXBygrS4k")
+    );
+    jwk.x = None;
+    assert_eq!(crate::jwk_thumbprint(&jwk), None);
+    jwk.kty = "EC".to_owned();
+    assert_eq!(crate::jwk_thumbprint(&jwk), None);
+}

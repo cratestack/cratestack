@@ -56,10 +56,66 @@ export interface CratestackResponseEnvelope<T> {
   response: Response;
 }
 
+const RESERVED_ERROR_MEMBERS: ReadonlySet<string> = new Set(["code", "message", "details"]);
+
+/** The members of a decoded error body beyond `code`, `message` and
+ *  `details`: what an `AuthProvider` refusal adds (cratestack#1208), such
+ *  as `{ error: "attestation_expired" }`. Every member is kept, as decoded;
+ *  empty when `body` is not an object. */
+function extraErrorMembers(body: unknown): Readonly<Record<string, unknown>> {
+  const extra: Record<string, unknown> = {};
+  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+    for (const [name, value] of Object.entries(body)) {
+      if (!RESERVED_ERROR_MEMBERS.has(name)) {
+        extra[name] = value;
+      }
+    }
+  }
+  return Object.freeze(extra);
+}
+
+/** The answer's `WWW-Authenticate` value, raw and unparsed (cratestack#1243);
+ *  empty when there is none. `Headers` joins two challenge lines with `, `,
+ *  so they arrive as one entry holding both. */
+function challengesOf(headers: Headers | undefined): readonly string[] {
+  const value = headers?.get("www-authenticate");
+  return Object.freeze(value ? [value] : []);
+}
+
+/** The error envelope a CrateStack server answers with. Mirrors
+ *  `cratestack_core::CratestackErrorResponse`; the members an
+ *  `AuthProvider` refusal adds beside these three are on
+ *  {@link CratestackHttpError.extra}. */
+export interface CratestackErrorResponse {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+function isErrorResponse(payload: unknown): payload is CratestackErrorResponse {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    typeof (payload as { code?: unknown }).code === "string"
+  );
+}
+
+/** Thrown when the server answers with a non-2xx status. `payload` is the
+ *  whole decoded body; the envelope's members are typed beside it: `body`
+ *  (`code`, `message`, `details`), `extra` (every other member, as an
+ *  `AuthProvider` refusal adds them) and `challenges` (the
+ *  `WWW-Authenticate` value). */
 export class CratestackHttpError extends Error {
   readonly status: number;
   readonly response: Response;
   readonly payload: unknown;
+  /** The decoded envelope, or `undefined` when the payload is not one. */
+  readonly body: CratestackErrorResponse | undefined;
+  /** The envelope's `code` (`UNAUTHORIZED`, `FORBIDDEN`, ...). */
+  readonly code: string | undefined;
+  readonly details: unknown;
+  readonly extra: Readonly<Record<string, unknown>>;
+  readonly challenges: readonly string[];
 
   constructor(response: Response, payload: unknown) {
     super(`CrateStack request failed with status ${response.status}`);
@@ -67,6 +123,11 @@ export class CratestackHttpError extends Error {
     this.status = response.status;
     this.response = response;
     this.payload = payload;
+    this.body = isErrorResponse(payload) ? payload : undefined;
+    this.code = this.body?.code;
+    this.details = this.body?.details;
+    this.extra = extraErrorMembers(this.body);
+    this.challenges = challengesOf(response.headers);
   }
 }
 

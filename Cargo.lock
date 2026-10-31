@@ -1202,6 +1202,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cratestack-auth-conformance"
+version = "0.17.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "cratestack-api",
+ "cratestack-auth",
+ "cratestack-codec-json",
+ "cratestack-cose",
+ "ed25519-dalek",
+ "http",
+ "http-body-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "cratestack-axum"
 version = "0.17.0"
 dependencies = [

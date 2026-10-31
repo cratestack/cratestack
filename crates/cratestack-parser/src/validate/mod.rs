@@ -39,6 +39,7 @@ mod query_placeholders;
 mod query_signature;
 mod removed_attributes;
 mod rename_attributes;
+mod reserved_claims;
 mod reserved_idents;
 mod route_collisions;
 mod server_only_placement;

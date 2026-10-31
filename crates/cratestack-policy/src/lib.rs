@@ -18,6 +18,8 @@ mod tests_claim_comparison_unchanged;
 #[cfg(test)]
 mod tests_compare;
 #[cfg(test)]
+mod tests_has_role_contract;
+#[cfg(test)]
 mod tests_procedure_context_predicates;
 #[cfg(test)]
 mod tests_procedure_input_predicates;
