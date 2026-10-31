@@ -156,3 +156,27 @@ code {
   padding: 0.1em 0.35em;
   border-radius: 0.25em;
 }
+
+/* Step-up (cratestack#1245): the refusal banner and the step-up dialog. */
+.banner {
+  border: 1px solid var(--danger);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.banner p {
+  margin: 0 0 0.25rem;
+}
+
+.dialog {
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 0.75rem 0;
+}
+
+.dialog h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}

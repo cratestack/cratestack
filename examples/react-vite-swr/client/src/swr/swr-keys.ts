@@ -60,5 +60,6 @@ export const swrKeys = {
   procedure: {
     estimateFocusMinutes: (args: EstimateFocusMinutesArgs | null | undefined) =>
       args == null ? null : (["/$procs/estimateFocusMinutes", args] as const),
+    clearDoneTasks: () => ["/$procs/clearDoneTasks"] as const,
   },
 } as const;

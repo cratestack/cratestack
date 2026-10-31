@@ -9,6 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "pretest": "pnpm --filter react-vite-swr-client run build",
+    "test": "tsx --test test/*.test.ts",
     "lint": "biome check .",
     "seed": "tsx scripts/seed.ts"
   },

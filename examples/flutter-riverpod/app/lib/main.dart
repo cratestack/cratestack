@@ -3,9 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod_client/flutter_riverpod_client.dart';
 
 import 'src/runtime.dart';
+import 'src/session.dart';
 import 'src/screens/boards_screen.dart';
 
 void main() {
+  // The demo session starts as a password sign-in twenty minutes old, so
+  // "Clear done tasks" (`@authn` in the schema) asks for a step-up.
+  final session = DemoSession.stalePassword();
   runApp(
     ProviderScope(
       overrides: [
@@ -18,10 +22,10 @@ void main() {
         // enough to point the *entire* generated surface at a real
         // server, which is exactly what this override demonstrates.
         flutterRiverpodClientAdapterProvider.overrideWithValue(
-          buildAppAdapter(),
+          buildAppAdapter(session),
         ),
       ],
-      child: const RiverpodExampleApp(),
+      child: SessionScope(session: session, child: const RiverpodExampleApp()),
     ),
   );
 }

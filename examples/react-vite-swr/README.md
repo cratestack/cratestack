@@ -81,12 +81,36 @@ in `BoardsScreen.tsx`. Click a board for its detail screen: tasks (`useTasks`), 
 
 | Path | What |
 |---|---|
-| [`schema.cstack`](schema.cstack) | `Board`/`Task` models (one relation) + `estimateFocusMinutes` procedure |
-| [`src/lib.rs`](src/lib.rs) | `include_server_schema!`, header auth, the procedure impl, `build_router`/`ensure_schema` |
+| [`schema.cstack`](schema.cstack) | `Board`/`Task` models (one relation) + `estimateFocusMinutes` procedure + `clearDoneTasks`, under `@authn` (step-up) |
+| [`src/lib.rs`](src/lib.rs) | `include_server_schema!`, the procedure impls, `build_router`/`ensure_schema` |
+| [`src/auth.rs`](src/auth.rs) | Header auth: `x-auth-id`, plus `x-auth-time`/`x-auth-amr` for `@authn` |
 | [`src/main.rs`](src/main.rs) | Server entry point — binds `127.0.0.1:3210`, routes under `/api` |
 | [`tests/smoke.rs`](tests/smoke.rs) | Offline router-build test + a real-Postgres CRUD/procedure round trip (`CRATESTACK_TEST_DATABASE_URL`) |
+| [`tests/step_up.rs`](tests/step_up.rs) | `clearDoneTasks`'s step-up 401 offline, and the successful call against Postgres |
 | [`client/`](client) | Generated `--swr` package (checked in) |
-| [`web/`](web) | The React + Vite app — `src/screens/`, `src/runtime.ts`, `scripts/seed.ts` |
+| [`web/`](web) | The React + Vite app — `src/screens/`, `src/stepUp/`, `src/session.ts`, `src/runtime.ts`, `scripts/seed.ts`, `test/` |
+
+## Step-up (cratestack#1245)
+
+`clearDoneTasks` deletes a board's done tasks, and its schema declares
+`@authn(maxAge: 300, amr: ["hwk"])`: the user must have authenticated in the last five minutes with
+a hardware-bound key. The app's session starts as a password sign-in twenty minutes old, so the
+**Clear done tasks** button is refused with RFC 9470's step-up 401. The generated client reads it as
+`StepUpRequired` (`CratestackHttpError.stepUp`), and `web/src/stepUp/ClearDoneTasks.tsx` hands the
+call to the generated `retryAfterStepUp`: the step-up dialog shows what is required, and confirming
+retries the call once. A declined step-up, or any other refusal, shows `RefusalBanner`, keyed on the
+refusal code (the `error` member, such as `insufficient_user_authentication`, else the envelope's
+`code`).
+
+The session's facts travel as stand-in headers (`x-auth-time`, `x-auth-amr`), read by
+`src/auth.rs`, and "confirming with a security key" just updates them. That is a demo shortcut a real
+provider must never take: it reads `auth_time` and `amr` from a credential it verified, and the
+re-proof is its auth library's ceremony. See [`../step-up-procedures`](../step-up-procedures) for
+the same flow with CrateStack's in-house provider and a signed id token.
+
+```bash
+pnpm --filter react-vite-swr-web test   # the flow on the generated client, against a fake server
+```
 
 ## Run the Rust tests
 
@@ -102,8 +126,8 @@ CRATESTACK_TEST_DATABASE_URL=postgres://cratestack:cratestack@localhost:55432/cr
 - `list()`'s server-side filtering (`where`/structured filters) isn't wired into the generated
   functions yet — `BoardDetailScreen` reads the full task list and filters by `boardId`
   client-side rather than relying on that.
-- No login screen — a static `x-auth-id: 1` header stands in for real auth (`src/runtime.ts`),
-  matching every other example in this repo.
+- No login screen — stand-in headers (`x-auth-id: 1`, and the step-up facts above) take the place of
+  real auth (`web/src/session.ts`), matching every other example in this repo.
 
 ## Ergonomic findings from building this (see the PR description for the full writeup)
 
