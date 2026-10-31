@@ -84,11 +84,12 @@ fn with_touch(attrs: &str) -> String {
 }
 
 #[test]
-fn authorize_isolation_and_rate_limit_markers_move_nothing() {
+fn authorize_isolation_authn_and_rate_limit_markers_move_nothing() {
     let plain = digest_of(&with_touch(""), "procedure.touch");
     for attrs in [
         "  @authorize(Note, update, args.id)\n",
         "  @isolation(\"serializable\")\n",
+        "  @authn(maxAge: 300, amr: [\"hwk\"], acr: [\"aal2\"])\n",
     ] {
         assert_eq!(
             digest_of(&with_touch(attrs), "procedure.touch"),

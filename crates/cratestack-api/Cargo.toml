@@ -252,6 +252,11 @@ path = "tests/mcp_tools.rs"
 required-features = ["mcp"]
 
 [[test]]
+name = "mcp_authn"
+path = "tests/mcp_authn.rs"
+required-features = ["mcp"]
+
+[[test]]
 name = "mcp_admission"
 path = "tests/mcp_admission.rs"
 required-features = ["mcp"]

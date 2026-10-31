@@ -4,6 +4,7 @@
 
 mod attribute_syntax;
 pub mod attribute_text;
+pub mod authn_attribute;
 pub mod composite_key;
 pub mod composite_unique;
 pub mod computed_attribute;
@@ -31,6 +32,10 @@ use serde::{Deserialize, Serialize};
 
 pub use attribute_text::{
     PRIMARY_KEY_ATTRIBUTE, field_attribute_name, is_primary_key_attribute, is_relation_attribute,
+};
+pub use authn_attribute::{
+    AUTHN_ATTRIBUTE, AUTHN_KEYS, AUTHN_MAX_AGE_LIMIT, ParsedAuthn, authn_attribute,
+    parse_authn_attribute,
 };
 pub use composite_key::parse_composite_id_attribute;
 pub use composite_unique::{ParsedCompositeUnique, parse_composite_unique_attribute};

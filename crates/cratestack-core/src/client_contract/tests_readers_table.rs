@@ -123,6 +123,9 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-sqlx/src/isolated_run.rs",
         ],
     ),
+    // Read through `cratestack_core::schema::authn_attribute`; the LSP
+    // only shows the attribute in its completion popup.
+    ("@authn", &["cratestack-lsp/src/authn_completion.rs"]),
     (
         "@length",
         &[
