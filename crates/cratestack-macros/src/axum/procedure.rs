@@ -130,7 +130,10 @@ pub(crate) fn generate_procedure_axum_handler(
                 let ctx = match state.auth_provider.authenticate(&request).await {
                     Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
                     Err(error) => {
+                        // Before any body runs: an idempotency layer releases
+                        // the key rather than record it (cratestack#1261).
                         let error: ::cratestack::CratestackError = error.into();
+                        let error = error.__generated_claim_auth_refusal();
                         ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_procedure = #procedure_name, cratestack_operation = "procedure", cratestack_error = error.code(),
                         cratestack_detail = error.detail().unwrap_or(""), "cratestack procedure auth failed");
                         let result: Result<super::procedures::#module_ident::Output, ::cratestack::CratestackError> = Err(error);

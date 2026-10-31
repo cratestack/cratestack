@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### A refusal before the body no longer burns the `Idempotency-Key` (#1261)
+
+**What was wrong.** The idempotency layer recorded a 401 or 403 like any other error and replayed it
+to the next call under the same `Idempotency-Key`. The documented answer to a 401 is to renew the
+credential, or step up (`@authn`, ADR 0022; RFC 9470 §3), and send **the same request again under the
+same key**, which is what the generated clients' `retry_after_step_up` / `retryAfterStepUp` do. That
+retry got the stored 401 back, so a keyed write could never complete after a refusal.
+
+**What changed.** A refusal the generated dispatch produces before any procedure body runs is no
+longer recorded: the layer releases the reservation, as it already did for an `@isolation`
+procedure's own exhausted retries (GHSA-r67q-4qqq-g9gm), and the same key then runs the call once.
+That covers the `AuthProvider::authenticate` refusal (procedures and model routes, REST and RPC),
+the `@allow`/`@deny` check, the `@authn` requirement and an `@authorize` model check, on REST, RPC
+unary and MCP tools (`/rpc/batch` already refuses the header). A refusal a procedure body returns is
+still recorded and replayed, because the body may have written first.
+
+- `AuthRefusal::is_dispatch_owned()` is new. The mark is set only by the `#[doc(hidden)]`
+  `CratestackError::__generated_claim_auth_refusal`, which generated code calls, and
+  `CratestackError::is_idempotency_replayable` is `false` for a claimed refusal. A claimed
+  `Unauthorized`/`Forbidden` becomes an `AuthRefused` with the same code, status and message, so
+  responses are unchanged byte for byte.
+- Each procedure module gains a `#[doc(hidden)]` `__generated_dispatch_with_db`, which the generated
+  REST, RPC and MCP dispatch now call: `invoke_with_db` with the claim of its own authorization
+  refusal on. The public `invoke_with_db` is unchanged and never claims; both disown a refusal that
+  comes out of the body.
+- Design: `docs/design/procedure-isolation.md` §6, "Dispatch-owned refusals".
+
 ## 0.17.1 (2026-10-31)
 
 ### Step-up end to end: `examples/step-up-procedures`, and a step-up screen in the Flutter and React examples (#1245)

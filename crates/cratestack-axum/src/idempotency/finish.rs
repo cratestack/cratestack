@@ -64,8 +64,9 @@ pub(super) async fn finish_response<E>(
         return response;
     };
     // An outcome that must not be replayed (`super::unrecorded`: an
-    // `@isolation` procedure out of retries, nothing committed): give the
-    // key back so the same `Idempotency-Key` runs the call again.
+    // `@isolation` procedure out of retries, or the dispatch's own refusal
+    // before any body ran; nothing committed): give the key back so the
+    // same `Idempotency-Key` runs the call again.
     if super::tag_of(&response).is_some() {
         executor.release(principal, key, token).await;
         return response;

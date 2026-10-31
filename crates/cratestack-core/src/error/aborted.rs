@@ -90,14 +90,21 @@ impl TransactionAbort {
 
 impl CratestackError {
     /// Whether an idempotency layer may record this outcome and replay it to
-    /// a later call under the same `Idempotency-Key`. `false` only for a
-    /// [`Self::TransactionAborted`] whose ownership is
-    /// [`AbortOwnership::Claimed`]: the answering dispatch owns the
-    /// transaction that ran out of retries and nothing was committed, so the
-    /// layer releases the reservation instead and the same key can be sent
-    /// again. Any other `TransactionAborted` — one a caller propagated out of
-    /// its own body — is recorded like every other error, because that
-    /// caller may have committed work before propagating it.
+    /// a later call under the same `Idempotency-Key`. `false` for two
+    /// outcomes the answering dispatch owns, after which nothing was
+    /// committed, so the layer releases the reservation instead and the same
+    /// key can be sent again:
+    ///
+    /// - a [`Self::TransactionAborted`] whose ownership is
+    ///   [`AbortOwnership::Claimed`]: the dispatch's own transaction ran out
+    ///   of retries. Any other `TransactionAborted` — one a caller propagated
+    ///   out of its own body — is recorded, because that caller may have
+    ///   committed work before propagating it.
+    /// - a refusal the generated dispatch produced before any body ran
+    ///   ([`AuthRefusal::is_dispatch_owned`](super::AuthRefusal::is_dispatch_owned),
+    ///   cratestack#1261), so a client that renews its credential or steps up
+    ///   can send the same request again under the same key. A refusal a body
+    ///   returned is recorded, for the same reason.
     pub fn is_idempotency_replayable(&self) -> bool {
         !matches!(
             self,
@@ -105,7 +112,7 @@ impl CratestackError {
                 ownership: AbortOwnership::Claimed,
                 ..
             })
-        )
+        ) && !self.is_dispatch_owned_refusal()
     }
 
     /// **Generated code only.** The generated dispatch (REST, RPC, MCP) of

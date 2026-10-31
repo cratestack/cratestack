@@ -16,8 +16,11 @@ pub(in crate::procedure) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStre
         ///
         /// This is also the sanctioned way to invoke a procedure from
         /// non-HTTP code (a cron job, background worker, or admin tool):
-        /// the generated axum/RPC handlers call this same function,
-        /// nothing more privileged is available to them.
+        /// the generated axum/RPC/MCP handlers call the same code, through
+        /// `__generated_dispatch_with_db`, which authorizes identically and
+        /// only marks its own authorization refusal for the idempotency
+        /// layer (cratestack#1261); nothing more privileged is available to
+        /// them.
         ///
         /// cratestack#611: this example is illustrative pseudocode — it
         /// references a procedure (`reconcile_accounts`) and free
@@ -64,6 +67,40 @@ pub(in crate::procedure) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStre
             F: FnOnce(Authorized) -> Fut,
             Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
         {
+            invoke_with_db_as(db, args, ctx, false, f).await
+        }
+
+        /// **Generated dispatch only** (REST, RPC, MCP). [`invoke_with_db`],
+        /// except that a refusal of this procedure's own authorization step
+        /// (`@allow`/`@deny`, `@authn`, `@authorize`) is claimed as the
+        /// dispatch's: no body ran, so an idempotency layer releases the
+        /// request's key instead of recording the refusal (cratestack#1261).
+        /// It authorizes exactly as [`invoke_with_db`] does.
+        #[doc(hidden)]
+        pub async fn __generated_dispatch_with_db<F, Fut, T>(
+            db: &super::super::Cratestack,
+            args: &Args,
+            ctx: &::cratestack::CratestackContext,
+            f: F,
+        ) -> Result<T, ::cratestack::CratestackError>
+        where
+            F: FnOnce(Authorized) -> Fut,
+            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
+        {
+            invoke_with_db_as(db, args, ctx, true, f).await
+        }
+
+        async fn invoke_with_db_as<F, Fut, T>(
+            db: &super::super::Cratestack,
+            args: &Args,
+            ctx: &::cratestack::CratestackContext,
+            dispatch: bool,
+            f: F,
+        ) -> Result<T, ::cratestack::CratestackError>
+        where
+            F: FnOnce(Authorized) -> Fut,
+            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
+        {
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_procedure_invoke_with_db",
                 cratestack_procedure = NAME,
@@ -76,8 +113,13 @@ pub(in crate::procedure) fn invoke_with_db_fn_tokens() -> proc_macro2::TokenStre
                 async move {
                     let started = ::std::time::Instant::now();
                     ::cratestack::ProcedureArgs::validate_fields(args)?;
-                    let authorized = authorize_validated_with_db(db, args, ctx).await?;
-                    let result = f(authorized).await;
+                    let authorized = authorize_validated_with_db(db, args, ctx)
+                        .await
+                        .map_err(|error| claimed_by(dispatch, error))?;
+                    // A refusal out of the body is the body's (cratestack#1261).
+                    let result = f(authorized)
+                        .await
+                        .map_err(::cratestack::CratestackError::disown_auth_refusal);
                     match &result {
                         Ok(_) => ::cratestack::tracing::info!(
                             target: "cratestack",

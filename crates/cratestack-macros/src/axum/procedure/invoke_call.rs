@@ -111,7 +111,7 @@ pub(super) fn procedure_invoke_block_tokens(
             let call_ctx = ctx.clone();
             // Only this dispatch's own exhausted retries may release the
             // `Idempotency-Key` (docs/design/procedure-isolation.md §6).
-            let result = super::procedures::#module_ident::invoke_with_db(&db, &args, &ctx, move |tx_db, authorized| async move {
+            let result = super::procedures::#module_ident::__generated_dispatch_with_db(&db, &args, &ctx, move |tx_db, authorized| async move {
                 #body
             })
             .await
@@ -130,7 +130,7 @@ pub(super) fn procedure_invoke_block_tokens(
         // `authorize_with_db` call inside it) — `#invoke_call` threads
         // that witness into the `ProcedureRegistry` method call, which
         // is the only place a value of that type is allowed to end up.
-        let result = super::procedures::#module_ident::invoke_with_db(&auth_db, &args, &ctx, |authorized| async move {
+        let result = super::procedures::#module_ident::__generated_dispatch_with_db(&auth_db, &args, &ctx, |authorized| async move {
             #invoke_call
         })
         .await;

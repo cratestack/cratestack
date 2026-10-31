@@ -261,6 +261,12 @@ name = "mcp_admission"
 path = "tests/mcp_admission.rs"
 required-features = ["mcp"]
 
+# cratestack#1261: refusals under a `_meta` idempotency key.
+[[test]]
+name = "mcp_authn_idempotency"
+path = "tests/mcp_authn_idempotency.rs"
+required-features = ["mcp"]
+
 # cratestack#1039: the generated table over Streamable HTTP.
 [[test]]
 name = "mcp_http"
