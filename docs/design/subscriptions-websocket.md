@@ -916,6 +916,62 @@ The rest:
   dispatcher, and every refusal) and `rpc_subscribe_read_policy/rest.rs` (a REST schema's feed, its
   filter, its anonymous refusal and its paging refusal).
 
+**S4 status (as built, 2026-11-01).** Subscription procedures and topics, on every binding.
+- **Grammar (§3.2, §3.4)**: `subscription procedure name(args: T): Item` and
+  `topic Name(key: String | Int | Uuid): Payload`. They live in IR lists of their own,
+  `Schema::subscription_procedures` and `Schema::topics`. This is the `queries` precedent: no unary
+  route, op descriptor or client stub iterates them by accident. The parser enforces:
+  - a single item type;
+  - `@stream`, `@isolation`, `@no_idempotency`, `@status`, `@no_rate_limit` and `@mcp` are refused,
+    each with its reason;
+  - `@allow`, `@deny`, `@authn`, `@authorize` and `@api_version` are kept;
+  - a subscription procedure's name is unique among all procedures (same op id);
+  - a topic key is one `String`, `Int` or `Uuid`.
+- **Handler (§3.3)**: a `ProcedureRegistry` method returning
+  `Future<Output = Result<SubscriptionStream<name::Output>, CratestackError>>`. The item type is
+  the procedure's `Output`, since its module is a procedure's module. The design's `Item` alias was
+  not added. The procedure's own `authorize_with_db` produces the `Authorized` witness: field
+  validators, `@allow`/`@deny`, `@authn`, `@authorize`. A setup `Err` refuses before `Ready`. A
+  stream that ends ends the subscription: SSE closes, WebTransport sends `end`. Unlike a model feed,
+  this is not an error. A policy refusal of an anonymous caller is `403`, as for a unary procedure.
+- **Input**: the procedure's `Args` object, the input a unary procedure takes over RPC.
+  - **SSE `GET`** carries each argument as a query parameter whose value is that argument's JSON
+    (`?args={"roomId":"r1"}`), so an `EventSource` can open it.
+  - **`POST /rpc/subscribe/{op_id}`** (§7.1, now built, for model feeds too) takes the JSON input
+    as its body.
+  - **REST serves `GET <procedure path>`** (`/$procs/<name>`, `@api_version` applied) rather than
+    §7.2's `POST`, because an `EventSource` can only `GET`. Its op key is `GET <path>`.
+- **Dispatcher**: with subscription procedures it holds the registry. It is
+  `SubscriptionDispatch<R>`, built by `db.subscriptions(registry)`. Without them it stays
+  `db.subscriptions()`. REST's model `$subscribe` route opens its feed directly, since its router
+  holds no registry.
+- **Topics**: `db.topics().room_message(&room_id)` returns a `cratestack::Topic<ChatMessage>` on
+  the runtime's backplane (channel `cratestack.topic.<Topic>.<key>`).
+  - `publish(&msg)` publishes immediately.
+  - `publish_in_tx(tx, &msg)` sends `pg_notify` inside the transaction. The message is delivered
+    only if the transaction commits, in commit order with its model events. It is refused with a
+    backplane the transaction cannot notify (`InProcessBackplane`).
+  - `subscribe().await` resolves once the subscription is live. It ends `unavailable` on lag or
+    resync.
+  - A message must encode under Postgres' `NOTIFY` limit.
+- **`db = None`**: subscription procedures work, with the handler's stream as the source. A topic is
+  a compile error, because `cratestack-api` has no backplane yet; moving `InProcessBackplane` out of
+  `cratestack-sqlx` is the follow-up.
+- Not in S4:
+  - `IsolatedCratestack` has no `topics()`. Inside an `@isolation` procedure, publish after commit.
+  - The LSP does not index the new declarations.
+  - Client methods come in S6.
+- Tests: `cratestack-pg/tests/subscription_procedures.rs`. It covers:
+  - RPC `GET`, `POST` and the dispatcher;
+  - refusals by policy, by setup and for bad arguments;
+  - key isolation;
+  - `publish_in_tx` commit and rollback;
+  - REST;
+  - contract parity.
+
+  `cratestack-api/tests/subscription_procedure_no_database.rs` covers `db = None` and a natural
+  end. There are also parser, generator and runtime unit tests.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The

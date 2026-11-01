@@ -24,6 +24,7 @@ pub mod rename_attribute;
 pub mod selection;
 pub mod spatial;
 mod sql_body;
+pub mod topic;
 pub mod view;
 
 use std::collections::BTreeSet;
@@ -55,6 +56,7 @@ pub use query::{QUERY_SQL_ATTRIBUTE, Query, scan_sql_placeholders};
 pub use rename_attribute::{RENAME_ARGUMENT_FORM, parse_rename_from, rename_marker_from};
 pub use selection::SelectionQuery;
 pub use spatial::{canonical_geometry_subtype, geometry_subtype_names};
+pub use topic::Topic;
 pub use view::{View, ViewSource};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -160,6 +162,19 @@ pub struct Schema {
     /// be forgotten at one of five sites (design §1/§5).
     #[serde(default)]
     pub queries: Vec<Query>,
+    /// `subscription procedure` declarations
+    /// (`docs/design/subscriptions-websocket.md` §3.2, slice S4). A list of
+    /// their own, like [`Self::queries`]: every unary route, op descriptor
+    /// and client stub iterates [`Self::procedures`], and none of them may
+    /// emit a unary call for a subscription. A [`Procedure`] here has
+    /// `kind == ProcedureKind::Query`, which means nothing for it.
+    /// `skip_serializing_if` keeps a schema without any serializing exactly
+    /// as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subscription_procedures: Vec<Procedure>,
+    /// `topic` declarations (§3.4, slice S4): server-internal, no route.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<Topic>,
     #[serde(default)]
     pub transport: TransportStyle,
     /// Opt-in framework/database capabilities this schema declared via

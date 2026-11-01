@@ -47,6 +47,7 @@ mod server_only_placement;
 mod snake_case_collisions;
 mod spatial_type;
 mod stream_attribute;
+mod subscriptions;
 mod type_field_attributes;
 mod type_names;
 mod type_validator_reach;
@@ -206,6 +207,14 @@ pub(crate) fn validate_schema_collecting(
     });
     collect::record(&mut errors, || {
         validate_procedures(schema, &type_names, &page_item_type_names, &model_names)
+    });
+    collect::record(&mut errors, || {
+        self::subscriptions::validate_subscriptions(
+            schema,
+            &type_names,
+            &page_item_type_names,
+            &model_names,
+        )
     });
     self::views::validate_views_collecting(schema, &mut errors);
     self::queries::validate_queries_collecting(schema, &type_names, &mut errors);

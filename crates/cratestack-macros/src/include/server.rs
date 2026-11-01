@@ -76,7 +76,7 @@ pub(super) fn compose_server_schema(
     with_decimal_backend(decimal_backend, move || {
         let resolved_literal = resolved.display().to_string();
 
-        let collected = match collect_server_schema(&schema, schema_path) {
+        let collected = match collect_server_schema(&schema, schema_path, db) {
             Ok(collected) => collected,
             Err(error) => return error,
         };
@@ -149,12 +149,9 @@ pub(super) fn compose_server_schema(
             ServerDb::Postgres => generated_event_module,
             ServerDb::None => proc_macro2::TokenStream::new(),
         };
-        // Model feeds need a model, so the subscription module is empty under
-        // `db = None` too (until slice S4's subscription procedures).
-        let generated_subscription_module = match db {
-            ServerDb::Postgres => generated_subscription_module,
-            ServerDb::None => proc_macro2::TokenStream::new(),
-        };
+        // Under `db = None` the subscription module serves only
+        // `subscription procedure`s (slice S4): no model feeds, no topics,
+        // no backplane builder. `collect_server_schema` decides, from `db`.
 
         // `datasource { provider = "none" }` schemas can never declare a
         // `model` either, so `pg_from_row_impls`/`model_structs`/etc. below

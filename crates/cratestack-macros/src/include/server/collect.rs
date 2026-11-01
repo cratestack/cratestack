@@ -23,9 +23,9 @@ use crate::event::generate_event_module;
 use crate::shared::schema_lit;
 use crate::transport::{
     generate_model_op_descriptors, generate_model_rpc_dispatch_arms,
-    generate_model_subscribe_dispatch_arm, generate_model_subscribe_op_descriptor,
-    generate_procedure_op_descriptor, generate_procedure_rpc_dispatch_arm,
-    generate_subscription_module,
+    generate_model_subscribe_op_descriptor, generate_procedure_op_descriptor,
+    generate_procedure_rpc_dispatch_arm, generate_subscription_module,
+    generate_subscription_procedure_op_descriptor, generate_topics_module,
 };
 use crate::types::{generate_enum_type, generate_type_struct};
 use crate::validators::{Validating, generate_type_validate_impl};
@@ -82,7 +82,11 @@ pub(super) struct ServerCollected {
     pub(super) op_descriptor_entries: Vec<Ts>,
     pub(super) route_transport_entries: Vec<Ts>,
     pub(super) rpc_dispatch_arms: Vec<Ts>,
-    pub(super) rpc_subscribe_dispatch_arms: Vec<Ts>,
+    /// Every subscription op id, as string literals, for `/rpc/subscribe`.
+    pub(super) rpc_subscription_ops: Vec<Ts>,
+    /// The expression, over an RPC handler's `state`, that builds the
+    /// schema's `SubscriptionDispatch`.
+    pub(super) subscription_dispatcher: Ts,
     pub(super) generated_client_module: Ts,
     pub(super) generated_event_module: Ts,
     pub(super) generated_subscription_module: Ts,
@@ -91,7 +95,9 @@ pub(super) struct ServerCollected {
 pub(super) fn collect_server_schema(
     schema: &Schema,
     schema_path: &LitStr,
+    db: super::super::parse::ServerDb,
 ) -> Result<ServerCollected, TokenStream> {
+    let postgres = db == super::super::parse::ServerDb::Postgres;
     let model_name_set = schema
         .models
         .iter()
@@ -213,6 +219,12 @@ pub(super) fn collect_server_schema(
                 ops.push(subscribe_op);
             }
         }
+        for procedure in &schema.subscription_procedures {
+            ops.push(generate_subscription_procedure_op_descriptor(
+                procedure,
+                auth_required_default,
+            ));
+        }
         (ops, Vec::new())
     } else {
         let mut routes = Vec::new();
@@ -234,18 +246,32 @@ pub(super) fn collect_server_schema(
         Vec::new()
     };
 
-    // `GET /rpc/subscribe/{op_id}` (§3.4a) dispatch arms — one per
-    // `@@subscribe`d model, empty for schemas with none (or that aren't
-    // `transport rpc` at all; the parser already rejects `@@subscribe`
-    // outside `transport rpc`, so this is just defense in depth).
-    let rpc_subscribe_dispatch_arms: Vec<Ts> = if is_rpc {
-        let mut arms = Vec::new();
-        for model in &schema.models {
-            arms.extend(generate_model_subscribe_dispatch_arm(model));
-        }
-        arms
+    // `/rpc/subscribe/{op_id}` (§3.4a): every subscription op, model feeds
+    // (`db = Postgres`) and `subscription procedure`s (slice S4).
+    let rpc_subscription_ops: Vec<Ts> = if is_rpc {
+        let feeds = schema
+            .models
+            .iter()
+            .filter(|_| postgres)
+            .filter(|model| {
+                cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Subscribe)
+            })
+            .map(|model| cratestack_core::ModelVerb::Subscribe.rpc_op_id(&model.name));
+        let procedures = schema
+            .subscription_procedures
+            .iter()
+            .map(|procedure| cratestack_core::subscription_procedure_op_key(procedure, true));
+        feeds
+            .chain(procedures)
+            .map(|op| quote::quote! { #op })
+            .collect()
     } else {
         Vec::new()
+    };
+    let subscription_dispatcher = if schema.subscription_procedures.is_empty() {
+        quote::quote! { state.db.subscriptions() }
+    } else {
+        quote::quote! { state.db.subscriptions(state.registry.clone()) }
     };
 
     let generated_client_module = generate_client_module(
@@ -259,15 +285,23 @@ pub(super) fn collect_server_schema(
         generate_event_module(&schema.models).map_err(|e| compile_error(schema_path, e))?;
     // The transport-neutral subscription dispatcher (slice S5a) the SSE
     // arms above open through; empty for a schema with no `@@subscribe`.
-    let generated_subscription_module = generate_subscription_module(
-        &schema.models,
-        &model_name_set,
-        &enum_name_set,
-        schema
-            .declared_extensions
-            .contains(&cratestack_core::ExtensionKind::Webtransport),
-    )
-    .map_err(|e| compile_error(schema_path, e))?;
+    let mut generated_subscription_module =
+        generate_subscription_module(&crate::transport::SubscriptionSchema {
+            models: &schema.models,
+            model_names: &model_name_set,
+            enum_names: &enum_name_set,
+            procedures: &schema.subscription_procedures,
+            webtransport: schema
+                .declared_extensions
+                .contains(&cratestack_core::ExtensionKind::Webtransport),
+            postgres,
+        })
+        .map_err(|e| compile_error(schema_path, e))?;
+    // Topics (slice S4) ride in the same token stream: `pub mod topics`.
+    generated_subscription_module.extend(
+        generate_topics_module(&schema.topics, &schema.types, &enum_name_set, postgres)
+            .map_err(|e| compile_error(schema_path, e))?,
+    );
 
     // View emission — see ADR-0003. Views participate in the server
     // composer only when they declare `@@server_sql` (or `@@sql` as a
@@ -360,7 +394,8 @@ pub(super) fn collect_server_schema(
         op_descriptor_entries,
         route_transport_entries,
         rpc_dispatch_arms,
-        rpc_subscribe_dispatch_arms,
+        rpc_subscription_ops,
+        subscription_dispatcher,
         generated_client_module,
         generated_event_module,
         generated_subscription_module,

@@ -66,7 +66,7 @@ pub(super) fn generate(
         quote! { ::cratestack::SqlColumnValue { column: #column, value: #value } }
     });
     let function = quote! {
-        async fn #open_ident(
+        pub(super) async fn #open_ident(
             db: &super::Cratestack,
             query: Option<String>,
             ctx: ::cratestack::CratestackContext,

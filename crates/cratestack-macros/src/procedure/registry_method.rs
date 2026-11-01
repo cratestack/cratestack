@@ -94,3 +94,32 @@ pub(crate) fn generate_procedure_registry_method(
         ) -> impl ::core::future::Future<Output = Result<#module_ident::Output, ::cratestack::CratestackError>> + Send;
     })
 }
+
+/// The `ProcedureRegistry` trait method for one `subscription procedure`
+/// (`docs/design/subscriptions-websocket.md` §3.3, slice S4). Two phases:
+/// the future is setup, and its error refuses the subscription before
+/// `Ready`; the stream it resolves to is the subscription, `'static`
+/// because it outlives the request. Each item is the procedure's declared
+/// return type, `#module_ident::Output`.
+pub(crate) fn generate_subscription_registry_method(
+    procedure: &Procedure,
+) -> proc_macro2::TokenStream {
+    let method_ident = ident(&to_snake_case(&procedure.name));
+    let module_ident = ident(&to_snake_case(&procedure.name));
+    quote! {
+        /// A subscription: resolve to the stream once setup succeeds; return
+        /// `Err` to refuse before the client is told it is ready.
+        fn #method_ident(
+            &self,
+            db: &super::Cratestack,
+            ctx: &::cratestack::CratestackContext,
+            args: #module_ident::Args,
+            _authorized: #module_ident::Authorized,
+        ) -> impl ::core::future::Future<
+            Output = Result<
+                ::cratestack::SubscriptionStream<#module_ident::Output>,
+                ::cratestack::CratestackError,
+            >,
+        > + Send;
+    }
+}

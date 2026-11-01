@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+### Subscription procedures and topics
+
+**What was missing.** The only subscription was a model feed. Live data that is not a row change,
+such as chat messages, progress or presence, had no op, no policy and no way to reach other
+replicas.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.2–3.4, §7.1).
+
+- **`subscription procedure roomMessages(args: RoomArgs): ChatMessage`**, with `@allow`/`@deny`,
+  `@authn`, `@authorize` and `@api_version`.
+  - Its `ProcedureRegistry` method resolves to a `cratestack::SubscriptionStream<Output>` once setup
+    succeeds. An `Err` refuses before `Ready`.
+  - It is served as `procedure.roomMessages` on `/rpc/subscribe` and over WebTransport, and as
+    `GET /$procs/roomMessages` on REST. Arguments are JSON-valued query parameters
+    (`?args={"roomId":"r1"}`) or the JSON body of `POST /rpc/subscribe/{op_id}`.
+  - It works under `db = None` too.
+- **`topic RoomMessage(roomId: String): ChatMessage`** generates `db.topics().room_message(&id)`,
+  a typed `cratestack::Topic` on the subscription backplane.
+  - `publish` delivers to every replica.
+  - `publish_in_tx` delivers only if the transaction commits. It needs the default
+    `PgNotifyBackplane`.
+  - `subscribe().await` is what a handler usually returns.
+- **The dispatcher holds the registry** when the schema has subscription procedures:
+  `db.subscriptions(registry)`. Without them it stays `db.subscriptions()`.
+- **`POST /rpc/subscribe/{op_id}`** takes a subscription's input as a JSON body, model feeds
+  included.
+- Topics need `db = Postgres`. A topic under `db = None` is a compile error.
+
 ### Subscriptions take a filter, a projection and operations, and REST serves them
 
 **What was missing.** A model feed delivered every readable event of its model; a client wanting

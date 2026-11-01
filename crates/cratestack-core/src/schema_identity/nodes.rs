@@ -5,6 +5,7 @@
 
 use super::canon::*;
 use super::members::{attributes, field, mcp_config, model_mcp, procedure, query, sorted, view};
+use super::members_topic::topic;
 use crate::schema::{
     AuthBlock, ConfigBlock, ConfigEntry, Datasource, EnumDecl, EnumVariant, MixinDecl, Model,
     Schema, TypeDecl,
@@ -28,6 +29,8 @@ fn canonical_schema(schema: &Schema) -> CSchema<'_> {
         procedures,
         views,
         queries,
+        subscription_procedures,
+        topics,
         transport,
         declared_extensions,
         mcp,
@@ -43,6 +46,8 @@ fn canonical_schema(schema: &Schema) -> CSchema<'_> {
         models: sorted(models, |m| &m.name, model),
         procedures: sorted(procedures, |p| &p.name, procedure),
         queries: sorted(queries, |q| &q.name, query),
+        subscription_procedures: sorted(subscription_procedures, |p| &p.name, procedure),
+        topics: sorted(topics, |t| &t.name, topic),
         transport: transport.as_str(),
         types: sorted(types, |t| &t.name, type_decl),
         views: sorted(views, |v| &v.name, view),

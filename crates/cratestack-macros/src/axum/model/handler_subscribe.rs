@@ -1,6 +1,6 @@
 //! REST's `GET /<plural>/$subscribe` (`docs/design/subscriptions-websocket.md`
 //! §7.2, slice S3): the SSE binding on a REST schema. Same shape as the RPC
-//! arm (`transport/subscribe_dispatch.rs`): check `Accept`, authenticate the
+//! handler (`include/server/rpc_module/subscribe.rs`): check `Accept`, authenticate the
 //! canonical request, open through the schema's dispatcher with the query
 //! string as the feed's input, encode. Errors before the stream are JSON with
 //! their own status.
@@ -16,7 +16,7 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
     }
     let handler = subscribe_handler_ident(model);
     let route = cratestack_core::model_subscribe_route(&model.name);
-    let op_id = ModelVerb::Subscribe.rpc_op_id(&model.name);
+    let open = ident(&format!("open_{}", to_snake_case(&model.name)));
     quote! {
         async fn #handler<CR, C, Auth>(
             State(state): State<ModelRouterState<CR, C, Auth>>,
@@ -40,7 +40,9 @@ pub(super) fn build_subscribe_handler(model: &Model) -> proc_macro2::TokenStream
                     return ::cratestack::__private::encode_subscribe_error(&error);
                 }
             };
-            match state.db.subscriptions().open_query(#op_id, raw_query, ctx).await {
+            // The model's own feed, not the dispatcher: this router holds no
+            // `ProcedureRegistry` for a schema's subscription procedures.
+            match super::subscriptions::#open(&state.db, raw_query, ctx).await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
                 Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }

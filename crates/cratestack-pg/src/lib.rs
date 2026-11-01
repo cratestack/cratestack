@@ -198,6 +198,8 @@ pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 pub use cratestack_sqlx::backplane::{InProcessBackplane, PgNotifyBackplane};
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::sqlx;
+/// A schema `topic`'s handle (slice S4): `db.topics().<topic>(key)`.
+pub use cratestack_sqlx::topic::Topic;
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
     Aggregate, AggregateColumn, AggregateCount, CreateRecord, DeleteMany, DeleteRecord, FindMany,
@@ -295,6 +297,8 @@ pub mod __private {
         project_event_fields, split_subscribe_query, subscribe_input_query, subscription_channel,
         until_credential_expires, validate_subscribe_accept_header,
     };
+    /// A `subscription procedure`'s arguments and items (slice S4).
+    pub use cratestack_axum::rpc::{procedure_feed, procedure_input_query, procedure_query_args};
     /// A subscription feed's filter, decided in memory per event (slice S3).
     pub use cratestack_sql::{filter_in_memory_columns, filter_matches};
     /// The subscriber's read policy, decided per event in the same

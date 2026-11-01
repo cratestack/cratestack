@@ -135,6 +135,17 @@ pub fn procedure_op_key(procedure: &Procedure, rpc: bool) -> String {
     }
 }
 
+/// The op key of a `subscription procedure` (slice S4): `procedure.<name>`
+/// on RPC, as a unary procedure; `GET <path>` on REST, its stream served
+/// over SSE at the path a unary procedure would `POST` to.
+pub fn subscription_procedure_op_key(procedure: &Procedure, rpc: bool) -> String {
+    if rpc {
+        format!("procedure.{}", procedure.name)
+    } else {
+        format!("GET {}", procedure_rest_route_path(procedure))
+    }
+}
+
 /// The five RPC op ids of a model, for a generator's template context, so a
 /// template never spells `"model.<Name>.list"` itself. A verb `@@internal`
 /// suppresses still has an id here: the template only reads the ones its own

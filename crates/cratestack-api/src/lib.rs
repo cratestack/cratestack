@@ -184,8 +184,13 @@ pub mod __private {
     /// without `cratestack-sqlx`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
 
-    /// The JSON refusal `/rpc/subscribe/{op_id}` answers with, which a
-    /// `db = None` schema's router answers every op with: it has no
-    /// subscription op (`include/server/rpc_module/subscribe.rs`).
-    pub use cratestack_axum::rpc::encode_subscribe_error;
+    /// The SSE subscription endpoints and dispatcher: the refusal every
+    /// RPC router's `/rpc/subscribe/{op_id}` answers with, and what a
+    /// `subscription procedure` is served through (slice S4), the only
+    /// subscriptions a `db = None` schema has.
+    pub use cratestack_axum::rpc::{
+        encode_subscribe_error, encode_subscription_sse_response, procedure_feed,
+        procedure_input_query, procedure_query_args, subscribe_input_query,
+        until_credential_expires, validate_subscribe_accept_header,
+    };
 }

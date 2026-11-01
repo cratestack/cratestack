@@ -1,0 +1,29 @@
+// `subscription procedure` + `topic` (slice S4,
+// `tests/subscription_procedures.rs`).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type RoomArgs {
+  roomId String
+}
+
+type ChatMessage {
+  roomId String
+  body String
+}
+
+/// A room's messages, on every replica.
+topic RoomMessage(roomId: String): ChatMessage
+
+/// Live messages of one room.
+subscription procedure roomMessages(args: RoomArgs): ChatMessage
+  @allow(auth() != null)

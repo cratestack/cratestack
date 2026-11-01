@@ -92,7 +92,7 @@ pub use context::{
 // see `decimal`'s module doc (cratestack#505 Direction 2).
 pub use backplane::{
     BackplaneFuture, BackplaneMessage, BackplaneReceiver, SubscriptionBackplane,
-    model_event_channel,
+    model_event_channel, topic_channel,
 };
 pub use client_contract::{
     AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ContractLock, Generation,
@@ -131,7 +131,7 @@ pub use lenient_bytes::{
 pub use limits::{DEFAULT_BODY_LIMIT_BYTES, MAX_RESPONSE_REBUFFER_BYTES};
 pub use op_list::{
     ModelOpIds, ModelVerb, detail_route_of, model_detail_route, model_list_route, model_op_key,
-    model_subscribe_route, model_verbs, procedure_op_key,
+    model_subscribe_route, model_verbs, procedure_op_key, subscription_procedure_op_key,
 };
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use patch::deserialize_double_option;
@@ -142,10 +142,10 @@ pub use schema::{
     INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName, MixinDecl, Model, ModelMcpExposure,
     OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE, ParsedCompositeUnique, ParsedIndexAttribute,
     Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query,
-    ReservedOrdinals, Schema, SchemaSummary, SelectionQuery, SourceSpan, TransportStyle, TypeArity,
-    TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype, computed_params_type_name,
-    field_attribute_name, geometry_subtype_names, is_computed_attribute, is_computed_field,
-    is_primary_key_attribute, is_relation_attribute, model_internal_actions,
+    ReservedOrdinals, Schema, SchemaSummary, SelectionQuery, SourceSpan, Topic, TransportStyle,
+    TypeArity, TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype,
+    computed_params_type_name, field_attribute_name, geometry_subtype_names, is_computed_attribute,
+    is_computed_field, is_primary_key_attribute, is_relation_attribute, model_internal_actions,
     parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
     parse_index_attribute, parse_internal_attribute, scan_sql_placeholders,
 };

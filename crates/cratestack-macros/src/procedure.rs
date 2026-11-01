@@ -37,7 +37,9 @@ use instrument::{
     isolation_and_invoke_with_db_tokens,
 };
 use policies::collect_procedure_policies;
-pub(crate) use registry_method::generate_procedure_registry_method;
+pub(crate) use registry_method::{
+    generate_procedure_registry_method, generate_subscription_registry_method,
+};
 use types::procedure_stream_item_tokens;
 
 pub(crate) use types::procedure_client_output_item_tokens;

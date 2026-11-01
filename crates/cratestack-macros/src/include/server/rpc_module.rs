@@ -12,7 +12,8 @@ use quote::quote;
 pub(super) fn build_rpc_module(
     is_rpc: bool,
     rpc_dispatch_arms: &[proc_macro2::TokenStream],
-    rpc_subscribe_dispatch_arms: &[proc_macro2::TokenStream],
+    rpc_subscription_ops: &[proc_macro2::TokenStream],
+    subscription_dispatcher: &proc_macro2::TokenStream,
 ) -> proc_macro2::TokenStream {
     if !is_rpc {
         return quote! {};
@@ -20,7 +21,8 @@ pub(super) fn build_rpc_module(
 
     let dispatch_block = build_dispatch_block(rpc_dispatch_arms);
     let batch_block = batch::build_batch_block();
-    let subscribe_block = subscribe::build_subscribe_block(rpc_subscribe_dispatch_arms);
+    let subscribe_block =
+        subscribe::build_subscribe_block(rpc_subscription_ops, subscription_dispatcher);
 
     quote! {
         #[derive(Clone)]
@@ -80,7 +82,7 @@ pub(super) fn build_rpc_module(
                 )
                 .route(
                     ::cratestack::rpc::RPC_SUBSCRIBE_PATH,
-                    axum::routing::get(rpc_subscribe_dispatch),
+                    axum::routing::get(rpc_subscribe_dispatch).post(rpc_subscribe_post_dispatch),
                 )
                 .route(
                     ::cratestack::rpc::RPC_UNARY_PATH,
@@ -100,6 +102,9 @@ fn build_dispatch_block(arms: &[proc_macro2::TokenStream]) -> proc_macro2::Token
         /// REST shape) are post-processed into `RpcErrorBody` shape
         /// before returning, so callers always see one error
         /// vocabulary on the wire.
+        // A schema whose only ops are subscriptions has no arm but the
+        // diverging fallback, which leaves the conversion below unreachable.
+        #[allow(unreachable_code)]
         async fn rpc_dispatch_inner<R, CR, C, Auth>(
             state: RpcRouterState<R, CR, C, Auth>,
             headers: ::cratestack::axum::http::HeaderMap,

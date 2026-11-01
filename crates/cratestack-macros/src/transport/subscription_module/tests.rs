@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::generate_subscription_module;
+use super::{SubscriptionSchema, generate_subscription_module};
 
 const FEED: &str = r#"
 transport rpc
@@ -24,8 +24,15 @@ fn generate(source: &str, webtransport: bool) -> Result<String, String> {
     let schema = cratestack_parser::parse_schema(source).expect("schema should parse");
     let model_names: BTreeSet<&str> = schema.models.iter().map(|m| m.name.as_str()).collect();
     let enum_names = BTreeSet::new();
-    generate_subscription_module(&schema.models, &model_names, &enum_names, webtransport)
-        .map(|tokens| tokens.to_string())
+    generate_subscription_module(&SubscriptionSchema {
+        models: &schema.models,
+        model_names: &model_names,
+        enum_names: &enum_names,
+        procedures: &schema.subscription_procedures,
+        webtransport,
+        postgres: true,
+    })
+    .map(|tokens| tokens.to_string())
 }
 
 #[test]
@@ -58,4 +65,32 @@ fn no_feed_generates_nothing() {
 fn extension_webtransport_with_nothing_to_serve_is_an_error() {
     let error = generate(NO_FEED, true).unwrap_err();
     assert!(error.contains("no subscription op"), "{error}");
+}
+
+const PROCEDURE: &str = r#"
+type Room {
+  roomId String
+}
+
+type Message {
+  body String
+}
+
+subscription procedure roomMessages(args: Room): Message
+  @allow(auth() != null)
+"#;
+
+#[test]
+fn a_subscription_procedure_gets_an_arm_over_the_registry() {
+    let code = generate(PROCEDURE, false).unwrap();
+    assert!(
+        code.contains("SubscriptionDispatcher for SubscriptionDispatch < R >"),
+        "{code}"
+    );
+    assert!(code.contains("fn subscriptions < R : super :: procedures :: ProcedureRegistry >"));
+    assert!(code.contains("\"procedure.roomMessages\" => open_procedure_room_messages (& self . db , & self . registry"));
+    assert!(code.contains("room_messages :: authorize_with_db"));
+    assert!(code.contains("procedure_input_query"));
+    // No model feed, so no feed query parser.
+    assert!(!code.contains("fn feed_query"));
 }
