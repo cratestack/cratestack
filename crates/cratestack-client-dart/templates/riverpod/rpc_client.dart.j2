@@ -17,6 +17,32 @@ class {{ client_class_name }} {
 {% else %}
   ProceduresApi get procedures => const ProceduresApi();
 {% endif %}
+{% if has_subscriptions %}
+
+  /// Opens a subscription over SSE (slice S6), through the HTTP adapter's
+  /// transport: nothing is emitted until the server says `Ready`.
+  Stream<Object?> subscribe(
+    String opId,
+    String? query, {
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    final adapter = _adapter;
+    if (adapter is! CratestackRpcHttpAdapter) {
+      return Stream<Object?>.error(UnsupportedError(
+        'Subscriptions need a CratestackRpcHttpAdapter; ${adapter.runtimeType} cannot stream.',
+      ));
+    }
+    return cratestackSubscribeSse(
+      adapter.transport,
+      adapter.baseUri,
+      '/rpc/subscribe/$opId',
+      query,
+      headers: headers,
+      onReady: onReady,
+    );
+  }
+{% endif %}
 }
 
 {% if is_fespalier %}

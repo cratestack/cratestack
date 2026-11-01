@@ -645,7 +645,9 @@ QUIC.
   `cratestack run` and the examples generate one at startup and print its hash, and the TS client
   takes it as `webtransport: { certificateHashes }`.
   *As built:* `DevCertificate::generate(hosts)` behind the crate's `dev-cert` feature. It returns
-  the chain, the key and the SHA-256 hash. Wiring it into `cratestack run` comes with S6.
+  the chain, the key and the SHA-256 hash. `examples/realtime-chat` makes one at startup and prints
+  the hash (S6). `cratestack run` is not wired, because it serves the studio, not the application,
+  and the studio has no subscriptions. An application server makes its own, as the example does.
 
 ### 6a.6 Running it in production
 
@@ -1040,6 +1042,94 @@ The rest:
     against Postgres, model feed and procedure;
   - `cratestack-client/tests/subscriptions.rs` covers the client role's surface;
   - there are SSE parser units.
+
+**S6 status, TypeScript (as built, 2026-11-01).** The generated package subscribes.
+- **Files**: `src/subscriptions.ts` (the API, `"auto"`, SSE) and `src/subscription-sockets.ts`
+  (WebTransport, WebSocket). They are emitted for REST and RPC packages only when the schema has a
+  subscription op, so every other package, and every committed snapshot, is unchanged. The runtime
+  gains `subscriptions?: SubscriptionClientOptions` under the same condition.
+- **The call** is `client.<model>.subscribe(input, { signal, onReady, headers })` and
+  `client.procedures.<name>(args, options)`. It returns `AsyncIterable<Item>`; the first `next()`
+  resolves after `Ready`. Items are revived like unary responses. A model event's `operation` is
+  `"Created" | "Updated" | "Deleted"`, the server's spelling. Errors are
+  `CratestackSubscriptionError { code, message, details, status }`.
+- **Bindings**, all with JSON frames:
+  - **WebTransport** uses one session per URL and credentials, `?codec=json`, an `Init` with the
+    client's headers, and one bidirectional stream per subscription (the `Request` is written,
+    then the writer is closed; cancel is `reader.cancel()`). The URL is client configuration
+    (`webTransport.url`), because the listener is a separate UDP address.
+  - **WebSocket** uses one shared socket per URL and credentials, multiplexed by id, with `cancel`
+    and a 5 s linger.
+  - **SSE** is `fetch` with a stream parser, not `EventSource`, because it needs headers.
+- **`"auto"`** tries WebTransport (only with `webTransport.url` and a platform `WebTransport`), then
+  WebSocket, then SSE. A transport that never opens raises `SocketUnreachable` and falls back. A
+  refusal is thrown. A WebTransport attempt not `Ready{0}` within 3 s is remembered in
+  `localStorage` (inside a try/catch) for 10 minutes per origin. Node has no `WebTransport`, so
+  there it starts at the WebSocket (Node 22's global) or SSE.
+- **Framework layer**:
+  - `--swr` gets a generic `useSubscription(key, open)` over `swr/subscription`.
+  - `--tanstack` gets `useSubscriptionQuery(key, open, { onItem, queryOptions })`, built from
+    `useQuery` and `useQueryClient` only, since that layout declares no `react` dependency. Its
+    `subscriptionQueryOptions` writes each item with `setQueryData` rather than using TanStack's
+    `streamedQuery`, which is still experimental and changed shape within 5.x, beyond the
+    package's `^5.0.0` floor. The query is pending until the first item, then holds the latest
+    one. Its last observer leaving cancels the query, which aborts the subscription. To keep a
+    list fresh, invalidate its key in `onItem`.
+- Tests:
+  - `tests/subscriptions_runtime.rs` runs vitest against an SSE `fetch` and a fake socket: Ready
+    gating, revival, terminal error, multiplexing and cancel, `"auto"`'s fallback and its refusal;
+    and `subscriptionQueryOptions` under a real `QueryClient` (items in the cache, abort on the
+    last observer leaving);
+  - `just verify-typescript` builds the subscription fixture with `--swr --tanstack` through
+    `tsc`;
+  - `tests/browser/webtransport.cjs` runs the generated modules in headless Chromium against
+    `browser_harness`: items, credentials through `Init`, refusal, cancel, and a second credential
+    getting its own refused session. `just test-ts-webtransport-browser` runs it, in CI's
+    WebTransport job.
+
+**S6 status, Dart (as built, 2026-11-01).** SSE through the HTTP seam.
+- **The call**: `client.<model>.subscribe(input: CratestackSubscribeInput(...), headers, onReady)`
+  returns `Stream<CratestackModelEvent<Model>>`; `client.procedures.<name>(args, ...)` returns
+  `Stream<Item>`. Items decode like unary results. A refusal or terminal error is a
+  `CratestackSubscriptionException`. Cancelling the listen completes the request's `abort`.
+- **The binding**: SSE only, over `CratestackHttpTransport` (`cratestackSubscribeSse` in the
+  runtime). It therefore runs on every transport an app already uses, the Rust transport included
+  (which is how Flutter native reaches the Rust client). It needs the generated HTTP adapter
+  (`CratestackHttpAdapter` / `CratestackRpcHttpAdapter`); any other adapter gets an
+  `UnsupportedError` stream.
+- **riverpod** (`--preset riverpod`, and fespalier, which shares its builders): the API files carry
+  the same methods, and each op gets a `@riverpod` stream provider, `<model>Events(input:)` and
+  `<procedure>(args)`, named after the five model providers and every unary procedure provider, so
+  no existing name moves. `CratestackSubscribeInput` compares by its query string, so a family
+  keyed by an equal input reuses its subscription.
+- **Not built in Dart yet**:
+  - WebSocket (`web_socket_channel`, a new dependency);
+  - WebTransport (JS interop on Flutter web);
+- Tests: `tests/subscriptions.rs` and `tests/subscriptions_riverpod.rs` pin the generated surface
+  (and its absence elsewhere). `subscriptions_rpc` is also a riverpod fixture of `just verify-dart`:
+  `build_runner`, `flutter analyze --fatal-warnings`, and `subscriptions_rpc_riverpod_test.dart`
+  reading both stream providers through a `ProviderContainer`.
+  `fixtures/subscriptions_rpc_test.dart` runs under `just verify-dart` (CI's Dart job) against an
+  SSE-answering transport: Ready, items, the request, the refusal and the terminal error.
+
+**S6 status, the example (as built, 2026-11-01).** `examples/realtime-chat`.
+- **What it has**:
+  - messages (`@@subscribe`);
+  - `RoomTyping`, a topic behind the `typing` subscription procedure;
+  - `sendTyping`, a unary mutation that publishes.
+- **Where it is served**:
+  - unary calls, SSE and the WebSocket on the HTTP listener, with JSON on the wire;
+  - WebTransport on a UDP listener with a `DevCertificate`. Its hash and both addresses are printed
+    as one JSON line on startup.
+- **`just test-realtime-chat`** (CI's WebTransport job, Postgres in a container):
+  - `tests/chat.rs` runs the generated Rust client:
+    - the model feed over the WebSocket;
+    - the topic over SSE, published by the unary call;
+    - `Auto` falling back to SSE when the WebSocket route is absent.
+  - `tests/browser/fallback.cjs` runs the generated TypeScript client's `"auto"` in Chromium:
+    - UDP open: WebTransport, with no WebSocket and no SSE request seen;
+    - UDP blocked (the URL names a dead UDP port): the WebSocket;
+    - SSE when chosen.
 
 ## 12. Decisions for the maintainer
 

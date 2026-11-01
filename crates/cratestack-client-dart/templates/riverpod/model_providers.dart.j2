@@ -199,3 +199,16 @@ class {{ operations.delete_controller_name }} extends _${{ operations.delete_con
   }
 }
 {% endif %}
+{% if operations.subscribe_function_name %}
+
+// Slice S6: the model's live events, one subscription per distinct
+// `CratestackSubscribeInput` (it compares by its query string). Disposed,
+// and so cancelled, once nothing watches it.
+@riverpod
+Stream<CratestackModelEvent<{{ model_api.model_name }}>> {{ operations.subscribe_function_name }}(
+  Ref ref, {
+  CratestackSubscribeInput input = const CratestackSubscribeInput(),
+}) {
+  return ref.watch({{ accessor.provider_name }}).subscribe(input: input);
+}
+{% endif %}

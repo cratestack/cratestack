@@ -1,0 +1,251 @@
+// Subscriptions (docs/design/subscriptions-websocket.md §8): one contract
+// whatever the binding. `subscribe(...)` returns an `AsyncIterable` whose
+// first `next()` resolves only after the server says `Ready` (and calls
+// `onReady`); then items, until the server ends it or throws its error.
+// Breaking out of the `for await`, or aborting `signal`, cancels it.
+//
+// The binding is client configuration (`subscriptions.transport`), never
+// part of a generated method's name. `"auto"` (the default) tries
+// WebTransport when `subscriptions.webTransport.url` names the server's
+// WebTransport listener and the platform has `WebTransport`, then a
+// WebSocket, then SSE. A WebTransport attempt that has not reached
+// `Ready{0}` within 3 s counts as failed, and the failure is remembered per
+// origin for 10 minutes, so a UDP-blocked network pays that wait once. A
+// refusal (401, 403, a policy or setup error) is the server's answer: it is
+// thrown, never a reason to fall back.
+
+import { openSocketSubscription, openWebTransportSubscription, SocketUnreachable } from "./subscription-sockets.js";
+
+export type SubscriptionTransport = "auto" | "webtransport" | "websocket" | "sse";
+
+export interface SubscriptionClientOptions {
+  /** Default `"auto"`. */
+  transport?: SubscriptionTransport;
+  /** The server's WebTransport listener (`SubscriptionDispatch::webtransport`),
+   *  a separate UDP address: `https://api.example.com:4433/rpc/wt`. Without
+   *  it, `"auto"` starts at the WebSocket. */
+  webTransport?: {
+    url: string;
+    serverCertificateHashes?: { algorithm: "sha-256"; value: BufferSource }[];
+  };
+}
+
+/** What a generated client's runtime offers a subscription. */
+export interface SubscriptionHost {
+  readonly origin: string;
+  readonly basePath: string;
+  readonly fetchFn: typeof fetch;
+  readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+  readonly subscriptions?: SubscriptionClientOptions;
+}
+
+export interface SubscriptionOptions {
+  signal?: AbortSignal;
+  /** Called once the subscription is live: nothing committed after this is missed. */
+  onReady?: () => void;
+  headers?: HeadersInit;
+}
+
+/** Where one subscription is served, filled in by the generated client. */
+export interface SubscriptionTarget {
+  /** `model.<Model>.subscribe` or `procedure.<name>`. */
+  opId: string;
+  /** A socket `Request`'s input. */
+  input: unknown;
+  /** The SSE route (`/rpc/subscribe/<op>`, `/<plural>/$subscribe`, `/$procs/<name>`). */
+  ssePath: string;
+  /** The input as that route's query string, without `?`. */
+  sseQuery: string;
+  /** `/rpc/ws`, or `/$ws` on REST. */
+  socketPath: string;
+}
+
+/** A refusal or a terminal error from the server, on any binding. */
+export class CratestackSubscriptionError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly details?: unknown,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = "CratestackSubscriptionError";
+  }
+}
+
+/** One event of an `@@subscribe` model's feed. */
+export interface ModelEvent<T> {
+  event_id: string;
+  model: string;
+  operation: "Created" | "Updated" | "Deleted";
+  occurred_at: string;
+  data: T;
+}
+
+/** A model feed's input: `list`'s filters, plus `operations` and `fields`. */
+export interface SubscribeInput {
+  where?: string;
+  or?: string;
+  filters?: { key: string; value: string }[];
+  fields?: string[];
+  operations?: ("created" | "updated" | "deleted")[];
+}
+
+/** `SubscribeInput` as the SSE query string (the server's `RpcSubscribeInput::to_query`). */
+export function subscribeInputQuery(input: SubscribeInput): string {
+  const query = new URLSearchParams();
+  if (input.where !== undefined) query.append("where", input.where);
+  if (input.or !== undefined) query.append("or", input.or);
+  for (const filter of input.filters ?? []) query.append(filter.key, filter.value);
+  if (input.fields !== undefined) query.append("fields", input.fields.join(","));
+  if (input.operations !== undefined) query.append("operations", input.operations.join(","));
+  return query.toString();
+}
+
+/** A subscription procedure's arguments as its SSE query string: each a JSON value. */
+export function procedureQuery(args: unknown): string {
+  const query = new URLSearchParams();
+  for (const [name, value] of Object.entries((args ?? {}) as Record<string, unknown>)) {
+    query.append(name, JSON.stringify(value));
+  }
+  return query.toString();
+}
+
+/** What every binding yields: `Ready`, then items; it throws a terminal error. */
+export type Frame = { kind: "ready" } | { kind: "item"; value: unknown };
+
+export function subscribe<T>(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  options: SubscriptionOptions,
+  revive: (value: unknown) => T,
+): AsyncIterable<T> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for await (const frame of open(host, target, options)) {
+        if (frame.kind === "ready") {
+          options.onReady?.();
+        } else {
+          yield revive(frame.value);
+        }
+      }
+    },
+  };
+}
+
+const WT_FAILED_FOR_MS = 10 * 60 * 1000;
+
+async function* open(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  options: SubscriptionOptions,
+): AsyncGenerator<Frame> {
+  const transport = host.subscriptions?.transport ?? "auto";
+  const headers = await subscriptionHeaders(host, options.headers);
+  const wtUrl = host.subscriptions?.webTransport?.url;
+  if (transport === "webtransport" || (transport === "auto" && wtUrl !== undefined && canWebTransport(wtUrl))) {
+    try {
+      yield* openWebTransportSubscription(host, target, headers, options.signal);
+      return;
+    } catch (error) {
+      if (!(error instanceof SocketUnreachable) || transport === "webtransport") throw error;
+      rememberWebTransportFailure(wtUrl!);
+    }
+  }
+  if (transport === "websocket" || (transport === "auto" && typeof WebSocket !== "undefined")) {
+    try {
+      yield* openSocketSubscription(host, target, headers, options.signal);
+      return;
+    } catch (error) {
+      if (!(error instanceof SocketUnreachable) || transport === "websocket") throw error;
+    }
+  }
+  yield* openSse(host, target, headers, options.signal);
+}
+
+export async function subscriptionHeaders(host: SubscriptionHost, extra?: HeadersInit): Promise<Headers> {
+  const base = typeof host.defaultHeaders === "function" ? await host.defaultHeaders() : host.defaultHeaders;
+  const headers = new Headers(base);
+  new Headers(extra).forEach((value, name) => headers.set(name, value));
+  return headers;
+}
+
+export function resolveUrl(host: SubscriptionHost, path: string, query?: string): string {
+  const base = host.basePath === "/" ? "" : host.basePath.replace(/\/+$/, "");
+  const url = new URL(`${base}${path}`, `${host.origin}/`);
+  if (query) url.search = query;
+  return url.toString();
+}
+
+function canWebTransport(url: string): boolean {
+  if (typeof (globalThis as { WebTransport?: unknown }).WebTransport === "undefined") return false;
+  try {
+    const failedAt = Number(globalThis.localStorage?.getItem(failureKey(url)) ?? 0);
+    return Date.now() - failedAt > WT_FAILED_FOR_MS;
+  } catch {
+    return true;
+  }
+}
+
+function rememberWebTransportFailure(url: string): void {
+  try {
+    globalThis.localStorage?.setItem(failureKey(url), String(Date.now()));
+  } catch {
+    // No storage (private mode, Node): the next attempt pays the wait again.
+  }
+}
+
+function failureKey(url: string): string {
+  return `cratestack.webtransport.failed:${new URL(url).origin}`;
+}
+
+/** SSE over `fetch` (not `EventSource`, which cannot send headers). */
+async function* openSse(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Frame> {
+  headers.set("Accept", "text/event-stream");
+  const init: RequestInit = { headers };
+  if (signal !== undefined) init.signal = signal;
+  const response = await host.fetchFn(resolveUrl(host, target.ssePath, target.sseQuery), init);
+  if (!response.ok || response.body === null) {
+    const body = (await response.json().catch(() => ({}))) as { code?: string; message?: string; details?: unknown };
+    throw new CratestackSubscriptionError(body.code ?? "unknown", body.message ?? response.statusText, body.details, response.status);
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buffer += value.replace(/\r\n/g, "\n");
+      let end: number;
+      while ((end = buffer.indexOf("\n\n")) >= 0) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const event = parseEvent(block);
+        if (event === undefined) continue;
+        const frame = JSON.parse(event.data) as { next?: unknown; err?: { code: string; message: string; details?: unknown } };
+        if (event.name === "ready") yield { kind: "ready" };
+        else if (event.name === "message") yield { kind: "item", value: frame.next };
+        else if (event.name === "error" && frame.err) {
+          throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+        }
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+function parseEvent(block: string): { name: string; data: string } | undefined {
+  let name = "message";
+  const data: string[] = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) name = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  return data.length > 0 ? { name, data: data.join("\n") } : undefined;
+}

@@ -140,7 +140,11 @@ pub(crate) fn build_template_context(
         data_classes.push(build_find_many_data_class(model, where_class.is_some()));
     }
 
-    for procedure in &schema.procedures {
+    for procedure in schema
+        .procedures
+        .iter()
+        .chain(&schema.subscription_procedures)
+    {
         let args_name = procedure_wrapper_name(procedure, &occupied_type_names);
         let fields = procedure
             .args
@@ -280,6 +284,15 @@ pub(crate) fn build_template_context(
         procedures,
         query_procedures,
         mutation_procedures,
+        subscription_procedures: schema
+            .subscription_procedures
+            .iter()
+            .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
+            .collect(),
+        has_subscriptions: !schema.subscription_procedures.is_empty()
+            || schema.models.iter().any(|model| {
+                cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Subscribe)
+            }),
         sample_model,
         preset: PresetView::new(config),
         is_rpc: schema.transport == TransportStyle::Rpc,

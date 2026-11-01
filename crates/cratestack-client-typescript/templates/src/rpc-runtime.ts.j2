@@ -14,6 +14,9 @@
 
 import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
 import { terminalStreamLink } from "./stream-terminal.js";
+{% if has_subscriptions %}
+import type { SubscriptionClientOptions } from "./subscriptions.js";
+{% endif %}
 import { encodeBinaryAsJson, encodeWireFields } from "{{ models_import_path }}";
 {% if native_cbor %}
 import { createCborCodec } from "@cratestack/cbor";
@@ -146,6 +149,11 @@ export interface CratestackRpcClientOptions {
    *  `Response`-shaped (see `./links`'s `RpcStreamLink` doc comment for
    *  why). Omitted or empty is a true no-op. */
   streamLinks?: RpcStreamLink[];
+{% if has_subscriptions %}
+  /** Which binding subscriptions use (default `"auto"`) and where the
+   *  WebTransport listener is (see `./subscriptions`). */
+  subscriptions?: SubscriptionClientOptions;
+{% endif %}
 }
 
 export interface CratestackRpcCallOptions {
@@ -450,6 +458,9 @@ export class CratestackRpcRuntime {
   readonly codec: CratestackRpcCodec;
 {% endif %}
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+{% if has_subscriptions %}
+  readonly subscriptions: SubscriptionClientOptions;
+{% endif %}
   private readonly chain: RpcLinkNext;
   private readonly streamChain: RpcStreamLinkNext;
 
@@ -467,6 +478,9 @@ export class CratestackRpcRuntime {
     this.codec = options.codec ?? jsonRpcCodec;
 {% endif %}
     this.defaultHeaders = options.headers;
+{% if has_subscriptions %}
+    this.subscriptions = options.subscriptions ?? {};
+{% endif %}
     // Empty `links`/`streamLinks` collapses `reduceRight` to the
     // terminal link unchanged — byte-identical request as before either
     // option existed.

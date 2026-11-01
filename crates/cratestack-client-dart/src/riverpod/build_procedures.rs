@@ -20,6 +20,7 @@ use crate::riverpod::imports::{
 };
 use crate::riverpod::partition::{Owner, TypePartition, referenced_name};
 use crate::riverpod::provider_naming::reserve_operation_symbol;
+use crate::riverpod::subscriptions::subscription_procedure_symbols;
 use crate::riverpod::views::{ProcedureOperationView, ProceduresFileContext};
 use crate::views::DataClassKind;
 
@@ -89,9 +90,21 @@ pub(crate) fn build_procedures_file(
             }
         })
         .collect::<Vec<_>>();
+    let subscription_procedures = schema
+        .subscription_procedures
+        .iter()
+        .map(|procedure| build_procedure(procedure, &occupied, &enum_names))
+        .collect::<Vec<_>>();
+    let subscription_symbols = subscription_procedure_symbols(
+        subscription_procedures
+            .iter()
+            .map(|view| view.method_name.as_str()),
+        provider_prefix,
+        occupied_provider_symbols,
+    );
 
     let mut data_classes = Vec::new();
-    for procedure in &schema.procedures {
+    for procedure in all_procedures(schema) {
         let args_name = procedure_wrapper_name(procedure, &occupied);
         let fields = procedure
             .args
@@ -155,7 +168,9 @@ pub(crate) fn build_procedures_file(
     // `partition::partition_types`), but `riverpod_annotation` specifically
     // is about `@riverpod` declarations, which only ever come from
     // procedures, never from a data class alone.
-    if !procedures.is_empty() {
+    // A subscription procedure's stream provider is a `@riverpod` too.
+    let has_any_procedure = !procedures.is_empty() || !schema.subscription_procedures.is_empty();
+    if has_any_procedure {
         imports.insert("import 'package:riverpod_annotation/riverpod_annotation.dart';".to_owned());
     }
     // issue #325: only when this file actually declares a
@@ -189,7 +204,7 @@ pub(crate) fn build_procedures_file(
     // existing — today that combination can't happen (see the
     // `riverpod_annotation` gate's comment above for why), but the
     // predicate shouldn't assume it never will.
-    if !procedures.is_empty() || !data_classes.is_empty() {
+    if has_any_procedure || !data_classes.is_empty() {
         imports.insert("import 'runtime.dart';".to_owned());
     }
     imports.insert("import 'client.dart';".to_owned());
@@ -206,7 +221,7 @@ pub(crate) fn build_procedures_file(
     // its own `<Model>Where`/`<Model>OrderByClause` fields. Including it
     // here was a confirmed `unused_import` `flutter analyze` failure when
     // no other procedure has a real `Page`/`PageInput` use.
-    let uses_page = schema.procedures.iter().any(|procedure| {
+    let uses_page = all_procedures(schema).any(|procedure| {
         procedure.return_type.is_page()
             || procedure
                 .args
@@ -218,7 +233,7 @@ pub(crate) fn build_procedures_file(
     }
 
     let mut referenced_models = BTreeSet::new();
-    for procedure in &schema.procedures {
+    for procedure in all_procedures(schema) {
         for arg in &procedure.args {
             let name = referenced_name(&arg.ty);
             if model_names.contains(name.as_str()) {
@@ -256,9 +271,7 @@ pub(crate) fn build_procedures_file(
     //   fields-only scan misses `procedure fetchBlob(): Bytes` entirely;
     // - the procedure-owned nested `type` decls emitted above.
     imports.extend(scalar_type_imports(
-        schema
-            .procedures
-            .iter()
+        all_procedures(schema)
             .flat_map(|procedure| {
                 procedure
                     .args
@@ -284,5 +297,16 @@ pub(crate) fn build_procedures_file(
         data_classes,
         procedures,
         procedure_operations,
+        subscription_procedures,
+        subscription_symbols,
     }
+}
+
+/// Unary and subscription procedures: both own `<Procedure>Args` data
+/// classes, and both reach the types and models this file imports.
+fn all_procedures(schema: &Schema) -> impl Iterator<Item = &cratestack_core::Procedure> {
+    schema
+        .procedures
+        .iter()
+        .chain(&schema.subscription_procedures)
 }

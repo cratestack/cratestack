@@ -53,6 +53,7 @@ members = [
     "examples/step-up-procedures",
     "examples/rpc-batch",
     "examples/rpc-batch-debounce",
+    "examples/realtime-chat",
     "examples/embedded-browser-vite",
     "examples/embedded-browser-vite-pwa",
     "examples/embedded-browser-webpack",

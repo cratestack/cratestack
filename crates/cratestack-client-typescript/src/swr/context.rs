@@ -161,6 +161,7 @@ pub(crate) fn build_shared_context(
         ordinal_enums: crate::ordinal_enums::build_ordinal_registry(schema),
         models_import_path: "../models.js",
         native_cbor: config.native_cbor,
+        has_subscriptions: false,
     }
 }
 

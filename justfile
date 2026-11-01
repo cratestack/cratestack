@@ -401,6 +401,48 @@ test-ci-db-cose *args='':
 # it; CI's `webtransport-browser` job runs it. Exports `CRATESTACK_REQUIRE_DB=1`
 # itself, so a missing database fails instead of skipping.
 # The generated subscription dispatcher over WebTransport, against Postgres.
+# The generated TypeScript client's WebTransport binding in headless Chromium
+# (slice S6): generates a package from the TS generator's `subscriptions`
+# fixture, compiles its two subscription modules with `npx tsc`, and runs
+# them against `browser_harness`. Needs what `test-webtransport-browser`
+# needs, plus `typescript` that `npx` can find.
+test-ts-webtransport-browser:
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	rm -rf target/ts-webtransport
+	cargo run -p cratestack-cli -- generate-typescript --no-native-cbor --schema crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack --out target/ts-webtransport/package
+	npx --yes --package typescript@5.9.3 tsc --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir target/ts-webtransport/js target/ts-webtransport/package/src/subscriptions.ts target/ts-webtransport/package/src/subscription-sockets.ts
+	node crates/cratestack-client-typescript/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/ts-webtransport/js
+
+# `examples/realtime-chat` end to end (slice S6): its Rust tests (the
+# generated client over the WebSocket and SSE, `Auto` falling back to SSE),
+# then headless Chromium on the generated TypeScript client's `"auto"`
+# (WebTransport with UDP open, the WebSocket with UDP blocked, SSE). Uses
+# `DATABASE_URL` when set, else a throwaway `postgres:16` container. Needs
+# `node`, a `playwright` that `require()` resolves (`NODE_PATH`), and its
+# Chromium. CI's `webtransport-browser` job runs it.
+test-realtime-chat:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ -z "${DATABASE_URL:-}" ]; then
+	  container=$(docker run -d --rm -e POSTGRES_PASSWORD=postgres -p 127.0.0.1::5432 postgres:16)
+	  trap 'docker stop "$container" >/dev/null' EXIT
+	  port=$(docker port "$container" 5432/tcp | head -n1 | sed 's/.*://')
+	  until docker exec "$container" pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+	  export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$port/postgres"
+	fi
+	cargo build -p realtime-chat-example
+	out=target/realtime-chat
+	rm -rf "$out" && mkdir -p "$out/static"
+	cargo run -p cratestack-cli -- generate-typescript --no-native-cbor \
+	  --schema examples/realtime-chat/schema.cstack --out "$out/package"
+	npx --yes --package typescript@5.9.3 tsc --target ES2022 --module ESNext --moduleResolution Bundler \
+	  --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir "$out/static" \
+	  "$out/package/src/subscriptions.ts" "$out/package/src/subscription-sockets.ts"
+	echo '<!doctype html><meta charset="utf-8"><title>realtime chat</title>' > "$out/static/index.html"
+	CRATESTACK_TEST_DATABASE_URL="$DATABASE_URL" CRATESTACK_REQUIRE_DB=1 \
+	  cargo test -p realtime-chat-example -- --test-threads=1
+	node examples/realtime-chat/tests/browser/fallback.cjs target/debug/realtime-chat-server "$out/static"
+
 test-ci-db-webtransport *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
 
@@ -1078,7 +1120,7 @@ verify-dart:
 	# own text-level tests and to `tsc`-style structure checks; only a real
 	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
 	# one.
-	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums)
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums subscriptions_rpc)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="
@@ -1115,6 +1157,14 @@ verify-dart:
 	    echo "=== flutter test (ordinal enum wire form): $pkg ==="
 	    (cd "$pkg" && flutter test test/ordinal_enums_test.dart)
 	  fi
+	  # Slice S6: the generated subscriptions over SSE, through the HTTP seam —
+	  # see the copied file's own module doc.
+	  if [ "$fixture" = "subscriptions_rpc" ]; then
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_test.dart" "$pkg/test/subscriptions_rpc_test.dart"
+	    echo "=== flutter test (subscriptions over SSE): $pkg ==="
+	    (cd "$pkg" && flutter test test/subscriptions_rpc_test.dart)
+	  fi
 	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
 	  # Dio adapters (golden requests captured from them), typed REST/RPC
 	  # errors, transport failures, abort, idempotency key and chunked
@@ -1142,7 +1192,9 @@ verify-dart:
 	  fi
 	done
 
-	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan ordinal_enums)
+	# `subscriptions_rpc` (slice S6): the model and procedure stream providers
+	# must survive `build_runner` and `flutter analyze --fatal-warnings`.
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan ordinal_enums subscriptions_rpc)
 	for fixture in "${riverpod_fixtures[@]}"; do
 	  pkg="$out/riverpod/$fixture"
 	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
@@ -1154,6 +1206,12 @@ verify-dart:
 	    --library-name "$library_name" \
 	    --preset riverpod \
 	    --no-native-cbor
+	  if [ "$fixture" = "subscriptions_rpc" ]; then
+	    # Slice S6: `verify_riverpod_pkg`'s `flutter test` runs it — see the
+	    # copied file's own module doc.
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_riverpod_test.dart" "$pkg/test/subscriptions_rpc_riverpod_test.dart"
+	  fi
 	  verify_riverpod_pkg "$pkg" "$schema" "$library_name"
 	done
 
@@ -1485,8 +1543,23 @@ verify-typescript:
 	echo "=== npm install and build (typechecks with tsc): $pkg ==="
 	(cd "$pkg" && npm install && npm run build)
 
+	# Slice S6: a schema with subscription ops emits src/subscriptions.ts,
+	# src/subscription-sockets.ts and, under the two hook layers,
+	# src/swr/subscriptions.hooks.ts and src/react-query-subscriptions.ts;
+	# none of the fixtures above has one, so nothing else typechecks them.
+	pkg="$out/subscriptions/rpc"
+	echo "=== generate-typescript (--swr --tanstack + RPC): subscriptions.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack" \
+	  --out "$pkg" \
+	  --package-name typescript-verify-subscriptions \
+	  --swr \
+	  --tanstack
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
 	echo ""
-	echo "✓ TypeScript REST, RPC, and --swr + RPC fixtures generated and typechecked successfully"
+	echo "✓ TypeScript REST, RPC, --swr + RPC, and subscription fixtures generated and typechecked successfully"
 
 # Resolve + typecheck a generated TypeScript client at the EXACT npm API
 # floors it declares (cratestack#779). CI's `typescript (generated

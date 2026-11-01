@@ -46,7 +46,8 @@ pub(crate) fn build_client_file(
         base_path_literal: escape_dart_string(&config.base_path),
         imports: render_import_lines(imports),
         model_accessors,
-        has_procedures: !schema.procedures.is_empty(),
+        has_procedures: !schema.procedures.is_empty() || !schema.subscription_procedures.is_empty(),
+        has_subscriptions: crate::riverpod::subscriptions::has_subscriptions(schema),
         is_fespalier,
     }
 }

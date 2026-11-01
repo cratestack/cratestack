@@ -2,6 +2,78 @@
 
 ## Unreleased
 
+### `examples/realtime-chat`: every binding, and the fallback proven in a browser
+
+**What was missing.** No example put the subscription pieces together. Nothing proved that
+`"auto"` falls back when UDP is blocked.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §11, S6).
+
+- `examples/realtime-chat` has:
+  - messages as a model feed;
+  - typing indicators on a topic behind a subscription procedure, published by a unary
+    `sendTyping`;
+  - SSE, WebSocket and WebTransport, the last on a `DevCertificate` made at startup, whose hash is
+    printed for the page to pin.
+- `just test-realtime-chat`, run in CI's WebTransport job, runs:
+  - the generated Rust client over the WebSocket and SSE, plus `Auto` falling back to SSE behind
+    a proxy that drops upgrades;
+  - the generated TypeScript client in Chromium. With UDP open it uses WebTransport (no WebSocket,
+    no SSE). With the WebTransport URL on a dead UDP port it falls back to the WebSocket. SSE works
+    when chosen.
+
+### The generated Dart client subscribes over SSE
+
+**What was missing.** A Flutter or Dart client had no subscription call.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes.subscribe(input: ..., onReady: ...)`** returns a
+  `Stream<CratestackModelEvent<Note>>`, and **`client.procedures.roomMessages(args)`** a
+  `Stream<ChatMessage>`, on REST and RPC packages of a schema with a subscription op.
+  - Nothing is emitted before `Ready`. A refusal or a terminal error is a
+    `CratestackSubscriptionException` (`code`, `message`, `details`, `status`).
+  - Cancelling the listen cancels the request.
+- It is SSE through the same `CratestackHttpTransport` every call uses (Dio, fespalier, the Rust
+  transport, your own). It needs the generated HTTP adapter.
+- **`--preset riverpod`** (and fespalier) carries the same methods, plus a `@riverpod` stream
+  provider each: `noteEventsProvider(input: ...)` per `@@subscribe` model and
+  `roomMessagesProvider(args)` per subscription procedure. A provider is one subscription per
+  distinct input (`CratestackSubscribeInput` compares by its query string), cancelled once nothing
+  watches it.
+- Schemas without a subscription op generate exactly as before.
+
+### The generated TypeScript client subscribes, over WebTransport, a WebSocket or SSE
+
+**What was missing.** A browser or Node client could reach a subscription only by speaking SSE or
+frames by hand. Nothing used WebTransport from the client side.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes.subscribe(input, { signal, onReady })`** and
+  **`client.procedures.roomMessages(args, options)`** return an `AsyncIterable`.
+  - Its first `next()` resolves after `Ready`.
+  - Items are revived like any response (`Decimal`, `BigInt`, bytes).
+  - A refusal or a terminal error is thrown as a `CratestackSubscriptionError`.
+  - Breaking out of the loop, or aborting `signal`, cancels the subscription.
+- **`subscriptions: { transport, webTransport: { url, serverCertificateHashes } }`** on the client
+  options. `"auto"` (the default) tries three bindings in order:
+  1. WebTransport, when `webTransport.url` names the server's listener and the platform has it.
+     A session that is not `Ready` within 3 s counts as failed, and the failure is remembered for
+     10 minutes.
+  2. A shared, multiplexed WebSocket.
+  3. SSE over `fetch`.
+
+  A refusal is never a reason to fall back. Sessions are shared only between subscriptions with
+  the same credentials.
+- Both REST and RPC packages get this, but only for schemas with a subscription op; every other
+  schema generates exactly as before. Under `--swr`, `useSubscription(key, open)` wraps any of them
+  in `swr/subscription`. Under `--tanstack`, `useSubscriptionQuery(key, open)` makes one TanStack
+  Query data (the latest item; cancelled with the query's last observer), and
+  `subscriptionQueryOptions` gives the same options to `useQueries` or a `QueryObserver`.
+- The WebTransport binding is proven in headless Chromium against the real server
+  (`just test-ts-webtransport-browser`, in CI's WebTransport job).
+
 ### The generated Rust client subscribes: `subscribe()` and subscription procedures
 
 **What was missing.** A Rust client could reach a subscription only by speaking SSE or frames by

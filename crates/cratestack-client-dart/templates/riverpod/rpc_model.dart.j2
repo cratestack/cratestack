@@ -138,6 +138,25 @@ class {{ model_api.api_class_name }} {
     return {{ model_api.model_name }}.fromWire(cratestackAsValueMap(body));
   }
 {% endif %}
+{% if model_api.allows_subscribe %}
+
+  /// Live events of `{{ model_api.model_name }}` the caller may read,
+  /// narrowed by [input]. Nothing is emitted until the subscription is live
+  /// ([onReady] fires then); an `unavailable` error means resubscribe and
+  /// refetch.
+  Stream<CratestackModelEvent<{{ model_api.model_name }}>> subscribe({
+    CratestackSubscribeInput input = const CratestackSubscribeInput(),
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    return _client
+        .subscribe('{{ model_api.subscribe_op_id }}', input.toQuery(), headers: headers, onReady: onReady)
+        .map((wire) => CratestackModelEvent<{{ model_api.model_name }}>.fromWire(
+              wire,
+              (data) => {{ model_api.model_name }}.fromWire(cratestackAsValueMap(data)),
+            ));
+  }
+{% endif %}
 }
 
 final {{ accessor.provider_name }} = Provider<{{ accessor.api_class_name }}>((ref) {

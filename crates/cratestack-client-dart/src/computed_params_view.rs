@@ -78,6 +78,10 @@ pub(crate) struct ModelApiView {
     pub(crate) allows_create: bool,
     pub(crate) allows_update: bool,
     pub(crate) allows_delete: bool,
+    /// `@@subscribe` (slice S6): the API gets `subscribe(...)`, a `Stream`.
+    pub(crate) allows_subscribe: bool,
+    pub(crate) subscribe_op_id: String,
+    pub(crate) subscribe_route: String,
 }
 
 /// One field of a model's generated `{Model}ComputedParams` class --

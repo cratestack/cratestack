@@ -1,0 +1,251 @@
+// -----------------------------------------------------------------------------
+// Subscriptions over SSE (slice S6, docs/design/subscriptions-websocket.md §8)
+//
+// A `GET` through the same `CratestackHttpTransport` every call uses, so a
+// signing layer, a captive-portal check or the Rust transport sees it like
+// any request. The stream emits nothing until the server says `Ready`
+// (`onReady` fires then), then one value per item; it ends when the server
+// ends it, or with a `CratestackSubscriptionException`. Cancelling the
+// listen cancels the request. The input is the query string: a model feed's
+// `list` filters, a subscription procedure's JSON-valued arguments.
+// -----------------------------------------------------------------------------
+
+/// A subscription refused before `Ready`, or ended by the server's error.
+final class CratestackSubscriptionException implements Exception {
+  const CratestackSubscriptionException({
+    required this.code,
+    required this.message,
+    this.details,
+    this.status,
+  });
+
+  /// The RPC error code: `unauthenticated`, `permission_denied`,
+  /// `invalid_argument`, `unavailable` (resubscribe and refetch), ...
+  final String code;
+  final String message;
+  final Object? details;
+
+  /// The HTTP status of a refusal before the stream; `null` mid-stream.
+  final int? status;
+
+  @override
+  String toString() => 'CratestackSubscriptionException($code: $message)';
+}
+
+/// One event of an `@@subscribe` model's feed.
+final class CratestackModelEvent<T> {
+  const CratestackModelEvent({
+    required this.eventId,
+    required this.model,
+    required this.operation,
+    required this.occurredAt,
+    required this.data,
+  });
+
+  /// [decodeData] reads the record from its wire map.
+  factory CratestackModelEvent.fromWire(
+    Object? wire,
+    T Function(Object? data) decodeData,
+  ) {
+    final map = cratestackAsValueMap(wire);
+    return CratestackModelEvent<T>(
+      eventId: map['event_id'] as String,
+      model: map['model'] as String,
+      operation: map['operation'] as String,
+      occurredAt: DateTime.parse(map['occurred_at'] as String),
+      data: decodeData(map['data']),
+    );
+  }
+
+  final String eventId;
+  final String model;
+
+  /// `Created`, `Updated` or `Deleted`.
+  final String operation;
+  final DateTime occurredAt;
+  final T data;
+}
+
+/// A model feed's input: `list`'s filters, plus `operations` and `fields`.
+final class CratestackSubscribeInput {
+  const CratestackSubscribeInput({
+    this.where,
+    this.or,
+    this.filters = const <String, String>{},
+    this.fields,
+    this.operations,
+  });
+
+  final String? where;
+  final String? or;
+
+  /// `field=value` / `field__op=value` pairs, as `list` takes them.
+  final Map<String, String> filters;
+  final List<String>? fields;
+
+  /// Of `created`, `updated`, `deleted`.
+  final List<String>? operations;
+
+  String? toQuery() {
+    final pairs = <String>[
+      if (where != null) 'where=${Uri.encodeQueryComponent(where!)}',
+      if (or != null) 'or=${Uri.encodeQueryComponent(or!)}',
+      for (final entry in filters.entries)
+        '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(entry.value)}',
+      if (fields != null) 'fields=${Uri.encodeQueryComponent(fields!.join(','))}',
+      if (operations != null)
+        'operations=${Uri.encodeQueryComponent(operations!.join(','))}',
+    ];
+    return pairs.isEmpty ? null : pairs.join('&');
+  }
+
+  /// Equal when they ask the server for the same thing, so a riverpod
+  /// family keyed by an input reuses its subscription.
+  @override
+  bool operator ==(Object other) =>
+      other is CratestackSubscribeInput && other.toQuery() == toQuery();
+
+  @override
+  int get hashCode => toQuery().hashCode;
+}
+
+/// A subscription procedure's arguments as its query string: each a JSON value.
+String? cratestackProcedureQuery(Map<String, Object?> args) {
+  if (args.isEmpty) {
+    return null;
+  }
+  return args.entries
+      .map((entry) =>
+          '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(jsonEncode(entry.value))}')
+      .join('&');
+}
+
+/// Opens a subscription over SSE at [path] (with [query]) under [baseUri].
+Stream<Object?> cratestackSubscribeSse(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query, {
+  Map<String, String>? headers,
+  void Function()? onReady,
+}) {
+  final abort = Completer<void>();
+  late final StreamController<Object?> controller;
+  controller = StreamController<Object?>(
+    onListen: () async {
+      try {
+        await for (final item in _cratestackSseItems(
+          transport,
+          baseUri,
+          path,
+          query,
+          headers,
+          onReady,
+          abort.future,
+        )) {
+          if (controller.isClosed) {
+            return;
+          }
+          controller.add(item);
+        }
+      } on CratestackTransportAborted {
+        // The listener cancelled.
+      } catch (error, stackTrace) {
+        if (!controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      }
+      if (!controller.isClosed) {
+        await controller.close();
+      }
+    },
+    onCancel: () {
+      if (!abort.isCompleted) {
+        abort.complete();
+      }
+    },
+  );
+  return controller.stream;
+}
+
+Stream<Object?> _cratestackSseItems(
+  CratestackHttpTransport transport,
+  Uri baseUri,
+  String path,
+  String? query,
+  Map<String, String>? headers,
+  void Function()? onReady,
+  Future<void> abort,
+) async* {
+  final response = await transport.send(
+    CratestackHttpRequest(
+      method: 'GET',
+      uri: _resolveUri(baseUri, path, query),
+      headers: _mergeHeaders([
+        <String, String>{
+          'Accept': 'text/event-stream',
+          if (cratestackSchemaSha256 != null)
+            'x-cratestack-schema-sha': cratestackSchemaSha256!,
+        },
+        headers,
+      ]),
+      abort: abort,
+    ),
+  );
+  if (response.status < 200 || response.status >= 300) {
+    final bytes = await response.bytes();
+    Object? body;
+    try {
+      body = jsonDecode(utf8.decode(bytes));
+    } on FormatException {
+      body = null;
+    }
+    final map = body is Map<String, Object?> ? body : const <String, Object?>{};
+    throw CratestackSubscriptionException(
+      code: map['code'] as String? ?? 'unknown',
+      message: map['message'] as String? ?? 'HTTP ${response.status}',
+      details: map['details'],
+      status: response.status,
+    );
+  }
+  var buffer = '';
+  await for (final chunk in response.body.cast<List<int>>().transform(utf8.decoder)) {
+    buffer += chunk.replaceAll('\r\n', '\n');
+    for (var end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
+      final block = buffer.substring(0, end);
+      buffer = buffer.substring(end + 2);
+      final event = _cratestackSseEvent(block);
+      if (event == null) {
+        continue;
+      }
+      final frame = cratestackAsValueMap(jsonDecode(event.data));
+      switch (event.name) {
+        case 'ready':
+          onReady?.call();
+        case 'message':
+          yield frame['next'];
+        case 'error':
+          final err = cratestackAsValueMap(frame['err']);
+          throw CratestackSubscriptionException(
+            code: err['code'] as String? ?? 'unknown',
+            message: err['message'] as String? ?? '',
+            details: err['details'],
+          );
+      }
+    }
+  }
+}
+
+({String name, String data})? _cratestackSseEvent(String block) {
+  var name = 'message';
+  final data = <String>[];
+  for (final line in block.split('\n')) {
+    if (line.startsWith('event:')) {
+      name = line.substring(6).trim();
+    } else if (line.startsWith('data:')) {
+      final value = line.substring(5);
+      data.add(value.startsWith(' ') ? value.substring(1) : value);
+    }
+  }
+  return data.isEmpty ? null : (name: name, data: data.join('\n'));
+}

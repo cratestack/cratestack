@@ -15,7 +15,7 @@
    `ProceduresFileContext::part_file_name`'s doc for the fuller story,
    including why this precedent already existed one condition down for
    `mapper_part_file_name` (issue #325). #}
-{% if procedures | length > 0 %}
+{% if procedures | length > 0 or subscription_procedures | length > 0 %}
 part '{{ part_file_name }}';
 {% endif %}
 {% if data_classes | length > 0 %}
@@ -35,7 +35,7 @@ part '{{ builder_part_file_name }}';
 {% endif %}
 
 {% include "riverpod/enums_and_data_classes.dart.j2" %}
-{% if procedures | length > 0 %}
+{% if procedures | length > 0 or subscription_procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -52,6 +52,19 @@ class ProceduresApi {
       options: options,
     );
     return {{ procedure.return_decode_expr }};
+  }
+
+{% endfor %}
+{% for procedure in subscription_procedures %}
+  /// Subscribes to `{{ procedure.name }}`. A policy or setup refusal is
+  /// the stream's error before any item.
+  Stream<{{ procedure.return_type }}> {{ procedure.method_name }}({{ procedure.args_name }} args, {
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    return _client
+        .subscribe('{{ procedure.route }}', cratestackProcedureQuery(args.toWire()), headers: headers, onReady: onReady)
+        .map((body) => {{ procedure.return_decode_expr }});
   }
 
 {% endfor %}

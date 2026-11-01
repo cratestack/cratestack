@@ -24,6 +24,11 @@ pub(crate) struct TemplateContext {
     pub(crate) procedures: Vec<ProcedureView>,
     pub(crate) query_procedures: Vec<ProcedureView>,
     pub(crate) mutation_procedures: Vec<ProcedureView>,
+    /// `subscription procedure`s (slice S6): a `Stream` method each.
+    pub(crate) subscription_procedures: Vec<ProcedureView>,
+    /// Any subscription op: gates the runtime's subscription half and its
+    /// imports, so every other package renders exactly as before.
+    pub(crate) has_subscriptions: bool,
     pub(crate) sample_model: Option<SampleModelView>,
     /// Which preset is rendering (`is_riverpod_preset`, `is_fespalier_preset`,
     /// `fespalier_ref`), flattened into the template context.
