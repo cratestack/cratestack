@@ -667,6 +667,7 @@ dependencies = [
  "cratestack-core",
  "cratestack-policy",
  "cratestack-sql",
+ "futures-util",
  "rust_decimal",
  "serde",
  "serde_json",
