@@ -280,6 +280,7 @@ mod tests {
         assert_eq!(ExtensionKind::Pgvector.as_str(), "pgvector");
         assert_eq!(ExtensionKind::Postgis.as_str(), "postgis");
         assert_eq!(ExtensionKind::Webtransport.as_str(), "webtransport");
+        assert_eq!(ExtensionKind::Websocket.as_str(), "websocket");
     }
 
     #[test]
@@ -305,7 +306,8 @@ mod tests {
 
     #[test]
     fn extension_kind_all_constant() {
-        assert_eq!(ExtensionKind::ALL.len(), 4);
+        assert_eq!(ExtensionKind::ALL.len(), 5);
+        assert!(ExtensionKind::ALL.contains(&ExtensionKind::Websocket));
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::RateLimit));
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::Pgvector));
         assert!(ExtensionKind::ALL.contains(&ExtensionKind::Postgis));

@@ -1015,6 +1015,32 @@ The rest:
   - `cratestack-pg/tests/websocket_subscriptions.rs` runs a model feed and a subscription procedure
     on one socket against Postgres, in CI's db job.
 
+**S6 status, Rust (as built, 2026-11-01).** `cratestack-client-rust` subscribes.
+- **The call** is `subscribe(&RpcSubscribeInput)` on a model client and `<procedure>(&Args)` on
+  `ProceduresClient`, generated for REST and RPC clients and for `include_client_schema!`. It
+  resolves at `Ready` to a `ClientSubscription<Item>`, a bounded `mpsc::Receiver<Result<Item,
+  ClientError>>`. A model feed's item is `ModelEvent<Model>`. With `fields` it is partial, so read
+  it as `ModelEvent<serde_json::Value>` through `runtime().subscribe`.
+- **Bindings** (`ClientConfig::subscription_transport`):
+  - **SSE** is always `GET`, with the input as the query string: a model feed's `list` filters, a
+    procedure's JSON-valued arguments. It goes through `request_streamed_with_query_and_accept`,
+    so the request authorizer signs it like any call. A JSON `POST` body would not match the
+    authorizer's canonical request, which names the codec's content type.
+  - **WebSocket** (`ws` feature, native targets: `tokio-tungstenite`, rustls with native roots)
+    uses one socket per subscription. The upgrade carries the authorizer's headers for
+    `GET <socket path>`, and the socket sends an empty `Init` and a `Request`. Dropping the
+    receiver sends `Cancel`. A shared, multiplexed socket is a later optimisation; per-subscription
+    sockets keep the client simple.
+  - **`Auto`** tries the socket, then SSE, but only when no socket opens (`Unreachable`, as
+    opposed to `Refused`).
+  - **WebTransport from Rust** is not built yet. The server binding exists; a native client needs
+    a public client half of `cratestack-webtransport`.
+- Tests:
+  - `cratestack-pg/tests/websocket_subscriptions.rs` runs the generated client over each binding
+    against Postgres, model feed and procedure;
+  - `cratestack-client/tests/subscriptions.rs` covers the client role's surface;
+  - there are SSE parser units.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The

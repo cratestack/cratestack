@@ -16,6 +16,8 @@ use crate::shared::{ident, to_snake_case};
 struct Surface {
     runtime: proc_macro2::TokenStream,
     error: proc_macro2::TokenStream,
+    /// Turns the runtime's `Result<_, ClientError>` into the method's.
+    finish: proc_macro2::TokenStream,
     socket_path: &'static str,
 }
 
@@ -24,12 +26,14 @@ fn surface(rpc: bool) -> Surface {
         Surface {
             runtime: quote! { self.rpc.inner() },
             error: quote! { ::cratestack::client_rust::RpcClientError },
+            finish: quote! { .map_err(::core::convert::Into::into) },
             socket_path: "/rpc/ws",
         }
     } else {
         Surface {
             runtime: quote! { self.runtime },
             error: quote! { ::cratestack::client_rust::ClientError },
+            finish: quote! {},
             socket_path: "/$ws",
         }
     }
@@ -43,6 +47,7 @@ pub(crate) fn model_subscribe_method(model: &Model, rpc: bool) -> proc_macro2::T
     let Surface {
         runtime,
         error,
+        finish,
         socket_path,
     } = surface(rpc);
     let op_id = ModelVerb::Subscribe.rpc_op_id(&model.name);
@@ -74,7 +79,7 @@ pub(crate) fn model_subscribe_method(model: &Model, rpc: bool) -> proc_macro2::T
                 sse_query: input.to_query(),
                 socket_path: #socket_path,
             };
-            Ok(#runtime.subscribe(target).await?)
+            #runtime.subscribe(target).await #finish
         }
     }
 }
@@ -87,6 +92,7 @@ pub(super) fn procedure_subscribe_method(
     let Surface {
         runtime,
         error,
+        finish,
         socket_path,
     } = surface(rpc);
     let method_ident = ident(&to_snake_case(&procedure.name));
@@ -118,7 +124,7 @@ pub(super) fn procedure_subscribe_method(
                 sse_path: #sse_path.to_owned(),
                 socket_path: #socket_path,
             };
-            Ok(#runtime.subscribe(target).await?)
+            #runtime.subscribe(target).await #finish
         }
     }
 }

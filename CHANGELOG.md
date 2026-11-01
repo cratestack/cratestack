@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### The generated Rust client subscribes: `subscribe()` and subscription procedures
+
+**What was missing.** A Rust client could reach a subscription only by speaking SSE or frames by
+hand.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes().subscribe(&input)`** on an `@@subscribe` model's client, and
+  **`client.procedures().room_messages(&args)`** for a subscription procedure, on both REST and
+  RPC clients (`include_server_schema!` and `include_client_schema!`).
+  - Each resolves once the server says `Ready` to a `ClientSubscription<Item>` (a channel of
+    `Result<Item, ClientError>`).
+  - A refusal is the call's `Err`, never an item. Dropping the subscription cancels it.
+- **The binding is configuration**:
+  `ClientConfig::with_subscription_transport(SubscriptionTransport::{Auto, WebSocket, Sse})`.
+  - `Auto` (the default) uses a WebSocket with the client's `ws` feature (`client-ws` on
+    `cratestack-pg`/`cratestack-api`, native targets).
+  - It falls back to SSE only when no socket can be opened, never on a refusal.
+  - SSE is a `GET` with the input as the query string, signed like any other call.
+- `RpcClientError` now implements `From<ClientError>`.
+
 ### Subscriptions over WebSocket: `extension websocket { }`
 
 **What was missing.** A client on a network that blocks UDP could not use the WebTransport
