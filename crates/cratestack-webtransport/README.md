@@ -23,7 +23,13 @@ The binding runtime: session admission, authentication, the stream-per-subscript
 limits and the frame codec. It is driven through `cratestack_core::SubscriptionDispatcher`, which
 the schema macro implements once for every binding (design §11 S5a): a schema with `@@subscribe`
 models gets `Cratestack::subscriptions()`. You can also implement the trait by hand. Datagram
-subscriptions (`@datagram`, S5c) and the generated clients (S6) are later slices.
+subscriptions (`@datagram`, S5c) are a later slice.
+
+The `client` feature adds the native client half: `WebTransportClient::connect(url, trust,
+headers)` opens and authenticates a session, and `subscribe(op, input)` opens one stream per
+subscription; dropping a `Subscription` cancels it. `ServerTrust` is the platform's roots or
+pinned certificate hashes. The generated Rust client uses it through `cratestack-client-rust`'s
+`webtransport` feature (`ClientConfig::with_webtransport`).
 
 ## Use
 
@@ -90,6 +96,8 @@ short-lived self-signed certificate and the SHA-256 hash a page passes as
 
 - `cargo test -p cratestack-webtransport`: codec and admission units, and native-client
   integration tests over real QUIC.
+- `cargo test -p cratestack-webtransport --features client --test client`: the client half
+  against the real server.
 - `just test-webtransport-browser`: headless Chromium end to end (CI job
   `webtransport-browser`).
 

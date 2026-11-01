@@ -35,6 +35,8 @@
 //! for networks that block UDP) is in the design doc, §6a.6.
 
 mod admission;
+#[cfg(feature = "client")]
+mod client;
 mod codec;
 mod config;
 #[cfg(feature = "dev-cert")]
@@ -48,6 +50,8 @@ mod session;
 mod subscription;
 mod transport;
 
+#[cfg(feature = "client")]
+pub use client::{ClientFailure, Subscription, WebTransportClient};
 pub use codec::{CBOR_PROTOCOL, FrameDecoder, JSON_PROTOCOL, WireCodec};
 pub use config::{PrincipalKeyFn, WebTransportConfig, WebTransportLimits};
 #[cfg(feature = "dev-cert")]
@@ -56,4 +60,6 @@ pub use frame::{ClientFrame, ClientMessage, Empty, InitBody, ServerFrame, close_
 pub use origin::OriginPolicy;
 pub use principal::default_principal_key;
 pub use server::WebTransportServer;
+#[cfg(feature = "client")]
+pub use transport::client::ServerTrust;
 pub use transport::{CertificateDer, PrivateKeyDer};

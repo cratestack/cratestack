@@ -18,8 +18,9 @@ The server serves both over three bindings:
 | SSE | `GET /rpc/subscribe/<op>` | when no socket opens |
 
 The generated clients choose with `"auto"` (TypeScript) or
-`SubscriptionTransport::Auto` (Rust). The Rust client has no WebTransport, so it
-starts at the WebSocket.
+`SubscriptionTransport::Auto` (Rust). The Rust client tries WebTransport when its
+config names the listener (`ClientConfig::with_webtransport`, feature
+`client-webtransport`), and starts at the WebSocket otherwise.
 
 ## Run it
 
@@ -70,6 +71,9 @@ two sets of tests:
 - `tests/chat.rs`: the generated Rust client, with messages over the WebSocket and
   typing over SSE, published by a unary `sendTyping`. It also checks that `Auto`
   falls back to SSE behind a proxy that drops upgrades.
+- `tests/webtransport.rs`: the generated Rust client over WebTransport, pinned to the
+  dev certificate. It delivers with no HTTP server reachable, and with UDP blocked
+  `Auto` falls back to the WebSocket within 3 s, then does not wait again.
 - `tests/browser/fallback.cjs`: the generated TypeScript client in headless
   Chromium, on `"auto"`:
   - with UDP open, it delivers over WebTransport and opens neither a WebSocket nor

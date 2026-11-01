@@ -88,6 +88,11 @@ middleware = ["cratestack-client-rust/middleware"]
 # tries a socket first, then SSE. Native targets only; pulls
 # `tokio-tungstenite`, never `axum`.
 client-ws = ["cratestack-client-rust/ws"]
+# The generated Rust client's subscriptions over WebTransport (§6a, §8):
+# `SubscriptionTransport::WebTransport`, and `Auto`'s first choice once
+# `ClientConfig::with_webtransport` names the listener. Native targets;
+# pulls `cratestack-webtransport`'s client half (QUIC), never `axum`.
+client-webtransport = ["cratestack-client-rust/webtransport"]
 # Serves the schema's `@mcp(tool)` procedures to agents over MCP (ADR 0002
 # D3, cratestack#1038) — tools only: a `db = None` schema has no models, so
 # it has no resources to serve. Pulls `cratestack-mcp` (and through it

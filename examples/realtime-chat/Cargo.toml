@@ -18,6 +18,7 @@ cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", f
   "websocket",
   "webtransport",
   "client-ws",
+  "client-webtransport",
 ] }
 # `DevCertificate` (`cratestack::webtransport::DevCertificate`) is behind
 # this crate's `dev-cert` feature; production serves a real certificate.
@@ -30,3 +31,4 @@ tower-http = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
 async-trait = { workspace = true }
+url = { workspace = true }

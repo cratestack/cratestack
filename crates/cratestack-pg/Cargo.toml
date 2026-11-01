@@ -147,6 +147,11 @@ middleware = ["cratestack-client-rust/middleware"]
 # tries a socket first, then SSE. Native targets only; pulls
 # `tokio-tungstenite`, never `axum`.
 client-ws = ["cratestack-client-rust/ws"]
+# The generated Rust client's subscriptions over WebTransport (§6a, §8):
+# `SubscriptionTransport::WebTransport`, and `Auto`'s first choice once
+# `ClientConfig::with_webtransport` names the listener. Native targets;
+# pulls `cratestack-webtransport`'s client half (QUIC), never `axum`.
+client-webtransport = ["cratestack-client-rust/webtransport"]
 # NOT YET FUNCTIONAL — enabling this feature is a hard compile_error!, not a
 # working FIPS mode. It exists only as a reserved name so a future PR can
 # wire it up without a breaking rename. `aws-lc-rs` is not a dependency of

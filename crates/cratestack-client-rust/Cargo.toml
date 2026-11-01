@@ -46,6 +46,11 @@ middleware = ["dep:reqwest-middleware"]
 # roots and the crypto provider this crate already installs). Off by default:
 # without it `Auto` is SSE and nothing new enters the graph.
 ws = ["dep:tokio-tungstenite"]
+# Subscriptions over WebTransport (docs/design/subscriptions-websocket.md §6a,
+# §8): `SubscriptionTransport::WebTransport`, and the first choice of `Auto`
+# when `ClientConfig::with_webtransport` names the listener. Native targets;
+# pulls `cratestack-webtransport`'s client half (QUIC), never `axum`.
+webtransport = ["dep:cratestack-webtransport"]
 # The signed transport (ADR 0006, cratestack#1007): `with_envelope` seals
 # every request and opens every response as COSE_Sign1 / COSE_Mac0, over REST
 # and RPC. Off by default and additive: `cratestack-cose` (and with it `p256`,
@@ -80,11 +85,13 @@ decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
     "cratestack-codec-json?/decimal-rust-decimal",
+    "cratestack-webtransport?/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json?/decimal-bigdecimal",
+    "cratestack-webtransport?/decimal-bigdecimal",
 ]
 
 [dependencies]
@@ -133,6 +140,7 @@ url.workspace = true
 # reqwest goes through the browser's `fetch`, which does TLS itself.
 rustls.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+cratestack-webtransport = { workspace = true, optional = true, default-features = false, features = ["client"] }
 tokio-tungstenite = { version = "0.29", optional = true, default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 
 # `uuid`'s `js` feature: `cratestack-core` depends on `uuid` with `v4` and no

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### The Rust client subscribes over WebTransport
+
+**What was missing.** The generated Rust client spoke WebSocket and SSE only. A native client could not
+use the WebTransport listener at all.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §6a, §8).
+
+- `cratestack-webtransport` has a `client` feature. `WebTransportClient::connect(url, trust, headers)`
+  opens and authenticates a session; `subscribe(op, input)` opens one stream per subscription, and
+  dropping it cancels. `ServerTrust` is the platform's roots, or pinned SHA-256 hashes for a
+  `DevCertificate`.
+- `cratestack-client-rust` has a `webtransport` feature (`client-webtransport` on `cratestack-pg` and
+  `cratestack-api`; the existing `webtransport` feature on `cratestack-client` now turns it on).
+  - `ClientConfig::with_webtransport(url, trust)` names the listener.
+  - `SubscriptionTransport::WebTransport` pins the binding.
+  - `Auto` now tries WebTransport first, then the WebSocket, then SSE. A session not open within 3 s
+    counts as unreachable, and that is remembered for 10 minutes.
+- Native targets only. It pulls QUIC and never `axum`, so `cratestack-client` stays axum-free.
+- Without the feature nothing changes: `Auto` starts at the WebSocket, as before.
+
 ### `examples/realtime-chat`: every binding, and the fallback proven in a browser
 
 **What was missing.** No example put the subscription pieces together. Nothing proved that

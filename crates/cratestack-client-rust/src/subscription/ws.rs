@@ -13,6 +13,7 @@ use serde::de::DeserializeOwned;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
+use super::failure::Failure;
 use super::frames::{item, rpc_error_to_client};
 use super::{ClientSubscription, SubscriptionTarget};
 use crate::client::CratestackClient;
@@ -24,23 +25,6 @@ const ID: u64 = 1;
 
 type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
-/// Why a socket subscription did not open.
-pub(super) enum Failure {
-    /// No socket: the route is missing, an upgrade is blocked, the network
-    /// failed. `Auto` falls back to SSE.
-    Unreachable(ClientError),
-    /// The server answered: a refusal, a bad input. Never a fallback.
-    Refused(ClientError),
-}
-
-impl Failure {
-    pub(super) fn into_error(self) -> ClientError {
-        match self {
-            Self::Unreachable(error) | Self::Refused(error) => error,
-        }
-    }
-}
 
 pub(super) async fn open<C: HttpClientCodec, T: DeserializeOwned + Send + 'static>(
     client: &CratestackClient<C>,
