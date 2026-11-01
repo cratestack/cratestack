@@ -1,0 +1,22 @@
+// The client role's subscription surface (slice S6,
+// `tests/subscriptions.rs`).
+
+transport rpc
+
+model Note {
+  id Int @id
+  body String
+
+  @@emit(created)
+  @@subscribe
+}
+
+type Room {
+  roomId String
+}
+
+type Line {
+  body String
+}
+
+subscription procedure lines(args: Room): Line

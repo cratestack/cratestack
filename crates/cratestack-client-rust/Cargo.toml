@@ -40,6 +40,12 @@ codec-json = ["dep:cratestack-codec-json"]
 # extension is only observable through `reqwest_middleware`'s own
 # `http::Extensions` bag, which only exists on this path.
 middleware = ["dep:reqwest-middleware"]
+# Subscriptions over WebSocket (docs/design/subscriptions-websocket.md §8):
+# `SubscriptionTransport::WebSocket`, and the first choice of `Auto`, on
+# native targets (`tokio-tungstenite`, TLS through rustls with the platform's
+# roots and the crypto provider this crate already installs). Off by default:
+# without it `Auto` is SSE and nothing new enters the graph.
+ws = ["dep:tokio-tungstenite"]
 # The signed transport (ADR 0006, cratestack#1007): `with_envelope` seals
 # every request and opens every response as COSE_Sign1 / COSE_Mac0, over REST
 # and RPC. Off by default and additive: `cratestack-cose` (and with it `p256`,
@@ -127,6 +133,7 @@ url.workspace = true
 # reqwest goes through the browser's `fetch`, which does TLS itself.
 rustls.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+tokio-tungstenite = { version = "0.29", optional = true, default-features = false, features = ["connect", "rustls-tls-native-roots"] }
 
 # `uuid`'s `js` feature: `cratestack-core` depends on `uuid` with `v4` and no
 # wasm32 randomness source, which is a `compile_error!` on this target —

@@ -83,6 +83,11 @@ websocket = ["cratestack-macros/websocket", "dep:cratestack-websocket"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# The generated Rust client's subscriptions over WebSocket
+# (docs/design/subscriptions-websocket.md §8): `SubscriptionTransport::Auto`
+# tries a socket first, then SSE. Native targets only; pulls
+# `tokio-tungstenite`, never `axum`.
+client-ws = ["cratestack-client-rust/ws"]
 # Serves the schema's `@mcp(tool)` procedures to agents over MCP (ADR 0002
 # D3, cratestack#1038) — tools only: a `db = None` schema has no models, so
 # it has no resources to serve. Pulls `cratestack-mcp` (and through it

@@ -102,9 +102,11 @@ pub(super) fn compose_client_schema(
                     .into();
             }
         };
+        // Subscription procedures (slice S4) get the same `Args` module.
         let procedure_modules = match schema
             .procedures
             .iter()
+            .chain(&schema.subscription_procedures)
             .map(|procedure| {
                 generate_client_procedure_module(procedure, &schema.types, &enum_name_set)
             })
@@ -122,6 +124,7 @@ pub(super) fn compose_client_schema(
         let generated_client_module = match generate_client_module(
             &schema.models,
             &schema.procedures,
+            &schema.subscription_procedures,
             schema.transport,
             &BTreeSet::new(),
         ) {

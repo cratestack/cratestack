@@ -277,6 +277,7 @@ pub(super) fn collect_server_schema(
     let generated_client_module = generate_client_module(
         &schema.models,
         &schema.procedures,
+        &schema.subscription_procedures,
         schema.transport,
         &bearing,
     )

@@ -16,6 +16,7 @@ mod state;
 mod step_up;
 mod streaming;
 mod streaming_callback;
+mod subscription;
 mod task;
 
 #[cfg(test)]
@@ -25,7 +26,8 @@ pub use cratestack_codec_cbor::CborCodec;
 #[cfg(feature = "codec-json")]
 pub use cratestack_codec_json::JsonCodec;
 pub use cratestack_core::rpc::{
-    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame, rpc_code,
+    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame, RpcSubscribeInput,
+    rpc_code,
 };
 
 pub use auth::{AuthorizationRequest, RequestAuthorizer};
@@ -73,3 +75,6 @@ pub use step_up::{
 };
 pub use streaming::CborSeqChunkDecoder;
 pub use streaming_callback::RuntimeChunkWire;
+pub use subscription::{
+    ClientSubscription, SubscriptionTarget, SubscriptionTransport, rpc_error_to_client,
+};

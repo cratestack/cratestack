@@ -194,3 +194,125 @@ async fn a_socket_carries_a_feed_and_a_procedure() {
     assert_eq!(frames[1].id, 2);
     assert_eq!(frames[1].next.as_ref().unwrap()["body"], "hello");
 }
+
+/// Caller 1, on every request the generated client sends (the socket's
+/// upgrade included).
+struct AsCallerOne;
+
+#[async_trait::async_trait]
+impl cratestack::client_rust::RequestAuthorizer for AsCallerOne {
+    async fn authorize(
+        &self,
+        _request: &cratestack::client_rust::AuthorizationRequest,
+    ) -> Result<Vec<(String, String)>, cratestack::client_rust::ClientError> {
+        Ok(vec![("authorization".to_owned(), "Bearer 1".to_owned())])
+    }
+}
+
+/// The generated Rust client (slice S6) over both bindings: a model feed
+/// over the socket, a subscription procedure over SSE, the same items.
+#[tokio::test]
+async fn the_generated_client_subscribes_over_either_binding() {
+    use cratestack::client_rust::{ClientConfig, CratestackClient, SubscriptionTransport};
+
+    let Some(test_pg) = pg::connect_or_skip().await else {
+        return;
+    };
+    let _guard = pg::serial_guard().await;
+    for statement in [
+        "DROP TABLE IF EXISTS ws_notes",
+        "CREATE TABLE ws_notes (id BIGINT PRIMARY KEY, owner_id BIGINT NOT NULL, body TEXT NOT NULL)",
+        "DROP TABLE IF EXISTS cratestack_event_outbox",
+    ] {
+        cratestack::sqlx::query(statement)
+            .execute(&test_pg.pool)
+            .await
+            .expect(statement);
+    }
+    let db = cratestack_schema::Cratestack::builder(test_pg.pool.clone()).build();
+    let app = cratestack_schema::axum::rpc_router(
+        db.clone(),
+        Lines,
+        (),
+        CborCodec,
+        BearerId,
+        cratestack::DEFAULT_BODY_LIMIT_BYTES,
+    )
+    .merge(
+        db.subscriptions(Lines)
+            .websocket(WebSocketConfig::new(), BearerId),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/", listener.local_addr().unwrap());
+    tokio::spawn(async move { cratestack::axum::serve(listener, app).await.unwrap() });
+    let client = |transport| {
+        let config =
+            ClientConfig::new(base.parse().unwrap()).with_subscription_transport(transport);
+        cratestack_schema::client::Client::new(
+            CratestackClient::cbor(config)
+                .with_request_authorizer(std::sync::Arc::new(AsCallerOne)),
+        )
+    };
+
+    let mut notes = client(SubscriptionTransport::WebSocket)
+        .ws_notes()
+        .subscribe(&Default::default())
+        .await
+        .expect("the feed opens over the socket");
+    let args = lines::Args {
+        args: cratestack_schema::Room {
+            roomId: "r9".to_owned(),
+        },
+    };
+    let mut sse = client(SubscriptionTransport::Sse)
+        .procedures()
+        .lines(&args)
+        .await
+        .expect("the procedure opens over SSE");
+    let mut auto = client(SubscriptionTransport::Auto)
+        .procedures()
+        .lines(&args)
+        .await
+        .expect("auto opens the socket");
+
+    db.ws_note()
+        .bind(CratestackContext::authenticated([(
+            "id".to_owned(),
+            Value::Int(1),
+        )]))
+        .create(cratestack_schema::CreateWsNoteInput {
+            id: 7,
+            ownerId: 1,
+            body: "mine".to_owned(),
+        })
+        .run()
+        .await
+        .expect("note created");
+    db.topics()
+        .room_line("r9")
+        .publish(&cratestack_schema::Line {
+            body: "typed".to_owned(),
+        })
+        .await
+        .expect("published");
+
+    let within = Duration::from_secs(5);
+    let event = tokio::time::timeout(within, notes.recv())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!((event.data.id, event.data.body.as_str()), (7, "mine"));
+    let line = tokio::time::timeout(within, sse.recv())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(line.body, "typed");
+    let line = tokio::time::timeout(within, auto.recv())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(line.body, "typed");
+}
