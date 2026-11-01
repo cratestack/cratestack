@@ -68,6 +68,7 @@ mod tests_update;
 mod tests_update_many;
 #[cfg(test)]
 mod tests_upsert_conflict_predicate;
+pub mod topic;
 mod transaction;
 
 pub use partial_row::FromPartialPgRow;

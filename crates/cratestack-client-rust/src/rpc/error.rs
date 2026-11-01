@@ -177,3 +177,9 @@ where
         }))
     }
 }
+
+impl From<ClientError> for RpcClientError {
+    fn from(error: ClientError) -> Self {
+        client_error_to_rpc(error)
+    }
+}

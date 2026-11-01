@@ -145,7 +145,9 @@ The dependency flow is roughly: **parser → core/policy/sql → macros → back
   concern: `include/` (the three entry macros + server collectors), `model/`, `procedure/`, `view/`,
   `relation/`, `policy/`, `transport/` (REST vs RPC dispatch), `axum/`, `client/` (rust/dart/ts, rest/rpc).
 - Backend runtimes: `cratestack-sqlx` (Postgres), `cratestack-rusqlite` (embedded), `cratestack-axum`
-  (route integration), `cratestack-redis` (server idempotency/rate-limit stores).
+  (route integration), `cratestack-redis` (server idempotency/rate-limit stores), and the
+  subscription bindings `cratestack-webtransport` (HTTP/3) and `cratestack-websocket` (axum `ws`),
+  which share `cratestack_core::subscription_wire`.
 - Clients: `cratestack-client-rust`, `-dart`, `-typescript`, `-flutter`, plus client state stores
   (`-store-sqlite`, `-store-redis`).
 - Codecs: `cratestack-codec-cbor` (default wire format), `cratestack-codec-json`.

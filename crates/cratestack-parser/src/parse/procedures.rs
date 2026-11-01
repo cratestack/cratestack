@@ -16,11 +16,15 @@ pub(super) fn parse_procedure(
     docs: Vec<String>,
 ) -> Result<(Procedure, usize), SchemaError> {
     let line = &lines[start];
-    let (kind, signature) =
+    // A `subscription procedure` (slice S4) parses as a query procedure; the
+    // caller files it under `Schema::subscription_procedures`.
+    let (kind, keyword, signature) =
         if let Some(remainder) = line.trimmed.strip_prefix("mutation procedure ") {
-            (ProcedureKind::Mutation, remainder)
+            (ProcedureKind::Mutation, "mutation procedure ", remainder)
+        } else if let Some(remainder) = line.trimmed.strip_prefix("subscription procedure ") {
+            (ProcedureKind::Query, "subscription procedure ", remainder)
         } else if let Some(remainder) = line.trimmed.strip_prefix("procedure ") {
-            (ProcedureKind::Query, remainder)
+            (ProcedureKind::Query, "procedure ", remainder)
         } else {
             return Err(SchemaError::new(
                 "expected procedure declaration",
@@ -63,15 +67,7 @@ pub(super) fn parse_procedure(
 
     let (mcp, attributes) = extract_procedure_mcp(name, attributes)?;
     let (procedure_docs, arg_docs) = split_procedure_docs(docs);
-    let procedure_name_span = name_span_in_line(
-        line,
-        line.trimmed,
-        if kind == ProcedureKind::Mutation {
-            "mutation procedure "
-        } else {
-            "procedure "
-        },
-    )?;
+    let procedure_name_span = name_span_in_line(line, line.trimmed, keyword)?;
     let return_type_offset = line.raw.rfind(return_src).ok_or_else(|| {
         SchemaError::new(
             "failed to locate return type in procedure declaration",

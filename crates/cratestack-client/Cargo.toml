@@ -59,6 +59,11 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# The generated Rust client's subscriptions over WebSocket
+# (docs/design/subscriptions-websocket.md §8): `SubscriptionTransport::Auto`
+# tries a socket first, then SSE. Native targets only; pulls
+# `tokio-tungstenite`, never `axum`.
+ws = ["cratestack-client-rust/ws"]
 # The signed transport, client half (ADR 0006, cratestack#1007): adds
 # `CratestackClient::with_envelope` and re-exports `cratestack-cose` as
 # `cratestack::cose` to build the envelope with. Off by default and additive;
@@ -100,6 +105,8 @@ rate_limit = ["cratestack-macros/rate_limit"]
 # serves WebTransport. The client stubs do not use it yet; the generated
 # subscription clients are design slice S6.
 webtransport = ["cratestack-macros/webtransport"]
+# `extension websocket { }`: the same schema-compatibility switch.
+websocket = ["cratestack-macros/websocket"]
 
 [dependencies]
 chrono.workspace = true

@@ -5,152 +5,146 @@
 //! `SubscriptionDispatch::open` matches the op id and opens the
 //! subscription: policy, setup, event-bus registration, the per-event read
 //! policy ([`model_feed`]). A binding only moves frames: the SSE handler
-//! (`super::subscribe_dispatch`) authenticates, opens through this
+//! (`include/server/rpc_module/subscribe.rs`) authenticates, opens through this
 //! dispatcher and encodes; the WebTransport server
 //! (`cratestack-webtransport`) is handed the same dispatcher. So the policy
 //! code exists once, whatever the transport.
 //!
-//! Emitted for `db = Postgres` server schemas with at least one
-//! `@@subscribe` model (only model feeds exist until slice S4 adds
-//! subscription procedures). `extension webtransport { }` adds
+//! Emitted for a server schema with at least one subscription op: an
+//! `@@subscribe` model (`db = Postgres`) or a `subscription procedure`
+//! (slice S4, either `db`). With subscription procedures the dispatcher
+//! holds the `ProcedureRegistry` their handlers live on, so it is
+//! `SubscriptionDispatch<R>`, built by `Cratestack::subscriptions(registry)`;
+//! without, it is built by `Cratestack::subscriptions()`.
+//! `extension webtransport { }` adds
 //! `SubscriptionDispatch::webtransport`, which binds the WebTransport
 //! server to this dispatcher; declaring it with no subscription op to serve
 //! is a compile error rather than an extension that silently does nothing.
 
+mod dispatch;
 mod feed_query;
 mod model_feed;
+mod procedure_feed;
 
 use std::collections::BTreeSet;
 
-use cratestack_core::Model;
+use cratestack_core::{Model, Procedure};
 use quote::quote;
 
+/// What the schema declares that the module serves.
+pub(crate) struct SubscriptionSchema<'a> {
+    pub(crate) models: &'a [Model],
+    pub(crate) model_names: &'a BTreeSet<&'a str>,
+    pub(crate) enum_names: &'a BTreeSet<&'a str>,
+    pub(crate) procedures: &'a [Procedure],
+    pub(crate) webtransport: bool,
+    /// `extension websocket { }`.
+    pub(crate) websocket: bool,
+    /// `transport rpc`: the WebSocket route is `/rpc/ws`, else `/$ws`.
+    pub(crate) rpc: bool,
+    /// `db = Postgres`: model feeds and the backplane builder method.
+    pub(crate) postgres: bool,
+}
+
 pub(crate) fn generate_subscription_module(
-    models: &[Model],
-    model_names: &BTreeSet<&str>,
-    enum_names: &BTreeSet<&str>,
-    webtransport: bool,
+    schema: &SubscriptionSchema<'_>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let mut feeds = Vec::new();
-    for model in models {
-        if let Some(feed) = model_feed::generate(model, model_names, enum_names)? {
-            feeds.push(feed);
+    if schema.postgres {
+        for model in schema.models {
+            if let Some(feed) = model_feed::generate(model, schema.model_names, schema.enum_names)?
+            {
+                feeds.push(feed);
+            }
         }
     }
-    if feeds.is_empty() {
-        return if webtransport {
-            Err(
-                "schema declares `extension webtransport { }`, but has no subscription op to \
-                 serve over it: add `@@subscribe` to a model, or drop \
-                 the extension block"
-                    .to_owned(),
-            )
-        } else {
-            Ok(proc_macro2::TokenStream::new())
+    let procedures: Vec<_> = schema
+        .procedures
+        .iter()
+        .map(procedure_feed::generate)
+        .collect();
+    if feeds.is_empty() && procedures.is_empty() {
+        let declared = [
+            (schema.webtransport, "webtransport"),
+            (schema.websocket, "websocket"),
+        ];
+        return match declared.into_iter().find(|(declared, _)| *declared) {
+            Some((_, name)) => Err(format!(
+                "schema declares `extension {name} {{ }}`, but has no subscription op to \
+                 serve over it: add `@@subscribe` to a model or declare a \
+                 `subscription procedure`, or drop the extension block"
+            )),
+            None => Ok(proc_macro2::TokenStream::new()),
         };
     }
-    let arms = feeds.iter().map(|feed| {
+    let model_arms = feeds.iter().map(|feed| {
         let (op_id, open) = (&feed.op_id, &feed.open_ident);
         quote! { #op_id => #open(&self.db, query, ctx).await, }
     });
-    let functions = feeds.iter().map(|feed| &feed.function);
-    let webtransport_impl = webtransport.then(webtransport_impl);
-    let feed_query = feed_query::tokens();
+    let procedure_arms = procedures.iter().map(|feed| {
+        let (op_id, open) = (&feed.op_id, &feed.open_ident);
+        quote! { #op_id => #open(&self.db, &self.registry, query, ctx).await, }
+    });
+    let functions = feeds
+        .iter()
+        .map(|feed| &feed.function)
+        .chain(procedures.iter().map(|feed| &feed.function));
+    let dispatch = dispatch::tokens(
+        !procedures.is_empty(),
+        schema.postgres,
+        quote! { #(#model_arms)* #(#procedure_arms)* },
+    );
+    let webtransport_impl = schema
+        .webtransport
+        .then(|| webtransport_impl(!procedures.is_empty()));
+    let websocket_impl = schema
+        .websocket
+        .then(|| websocket_impl(!procedures.is_empty(), schema.rpc));
+    let feed_query = (!feeds.is_empty()).then(feed_query::tokens);
 
     Ok(quote! {
         /// The schema's subscription ops behind one transport-neutral
-        /// [`::cratestack::SubscriptionDispatcher`]: the SSE endpoint opens
+        /// [`::cratestack::SubscriptionDispatcher`]: the SSE endpoints open
         /// through it, and so does any other binding it is handed to.
         pub mod subscriptions {
-            /// Opens this schema's subscriptions by op id. Get one with
-            /// `Cratestack::subscriptions()`.
-            #[derive(Clone)]
-            pub struct SubscriptionDispatch {
-                db: super::Cratestack,
-            }
-
-            impl SubscriptionDispatch {
-                pub fn new(db: super::Cratestack) -> Self {
-                    Self { db }
-                }
-            }
-
-            impl super::Cratestack {
-                /// This schema's subscription dispatcher, for a binding
-                /// other than the generated SSE endpoint.
-                pub fn subscriptions(&self) -> SubscriptionDispatch {
-                    SubscriptionDispatch::new(self.clone())
-                }
-            }
-
-            impl super::CratestackBuilder {
-                /// Replace the subscription backplane, which carries model
-                /// events to subscribers on every replica (default:
-                /// `PgNotifyBackplane`, Postgres `LISTEN`/`NOTIFY` on this
-                /// pool). Pass an `InProcessBackplane` for a single replica
-                /// whose connections cannot hold `LISTEN` (PgBouncer in
-                /// transaction mode).
-                pub fn with_backplane(
-                    mut self,
-                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
-                ) -> Self {
-                    self.runtime = self.runtime.with_backplane(backplane);
-                    self
-                }
-            }
-
-            impl ::cratestack::SubscriptionDispatcher for SubscriptionDispatch {
-                fn open(
-                    &self,
-                    request: ::cratestack::SubscriptionOpen,
-                ) -> impl ::core::future::Future<
-                    Output = Result<
-                        ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
-                        ::cratestack::CratestackError,
-                    >,
-                > + Send {
-                    let this = self.clone();
-                    async move {
-                        let ::cratestack::SubscriptionOpen { op_id, input, ctx } = request;
-                        let query = ::cratestack::__private::subscribe_input_query(input)?;
-                        this.open_query(&op_id, query, ctx).await
-                    }
-                }
-            }
-
-            impl SubscriptionDispatch {
-                /// Opens `op_id` with its input as the REST query
-                /// (`GET /<plural>/$subscribe?status=open&operations=created`).
-                pub async fn open_query(
-                    &self,
-                    op_id: &str,
-                    query: Option<String>,
-                    ctx: ::cratestack::CratestackContext,
-                ) -> Result<
-                    ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
-                    ::cratestack::CratestackError,
-                > {
-                    match op_id {
-                        #(#arms)*
-                        other => Err(::cratestack::CratestackError::NotFound(format!(
-                            "unknown subscription op `{other}`",
-                        ))),
-                    }
-                }
-            }
+            #dispatch
 
             #feed_query
 
             #(#functions)*
 
             #webtransport_impl
+
+            #websocket_impl
         }
     })
 }
 
-fn webtransport_impl() -> proc_macro2::TokenStream {
+fn websocket_impl(registry: bool, rpc: bool) -> proc_macro2::TokenStream {
+    let (generics, ty) = dispatch::generics(registry);
+    let path = if rpc { "/rpc/ws" } else { "/$ws" };
     quote! {
-        impl SubscriptionDispatch {
+        impl #generics #ty {
+            /// The WebSocket route (`extension websocket { }`) serving this
+            /// schema's subscriptions at `/rpc/ws` (`/$ws` on REST) unless
+            /// `config` names another path, authenticating sockets with
+            /// `auth`, normally the router's own provider. Merge it into
+            /// the application's router.
+            pub fn websocket<A: ::cratestack::AuthProvider>(
+                self,
+                config: ::cratestack::websocket::WebSocketConfig,
+                auth: A,
+            ) -> ::cratestack::axum::Router {
+                ::cratestack::websocket::router(config.default_path(#path), auth, self)
+            }
+        }
+    }
+}
+
+fn webtransport_impl(registry: bool) -> proc_macro2::TokenStream {
+    let (generics, ty) = dispatch::generics(registry);
+    quote! {
+        impl #generics #ty {
             /// Binds a WebTransport server (`extension webtransport { }`)
             /// that serves this schema's subscriptions, authenticating
             /// sessions with `auth`, normally the router's own provider.

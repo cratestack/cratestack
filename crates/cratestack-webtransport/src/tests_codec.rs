@@ -114,6 +114,7 @@ fn client_frames_classify_by_the_key_present() {
         init: None,
         op: Some("op".into()),
         input: None,
+        cancel: None,
     };
     assert_eq!(
         request.classify().unwrap(),
@@ -128,6 +129,7 @@ fn client_frames_classify_by_the_key_present() {
         init: Some(Default::default()),
         op: Some("op".into()),
         input: None,
+        cancel: None,
     };
     assert!(both.classify().is_err());
     let late_init = ClientFrame {
@@ -140,6 +142,16 @@ fn client_frames_classify_by_the_key_present() {
         init: None,
         op: None,
         input: None,
+        cancel: None,
     };
     assert!(neither.classify().is_err());
+    assert_eq!(
+        ClientFrame::cancel(3).classify().unwrap(),
+        ClientMessage::Cancel { id: 3 }
+    );
+    let cancel_and_op = ClientFrame {
+        cancel: Some(Default::default()),
+        ..ClientFrame::request(3, "op", serde_json::Value::Null)
+    };
+    assert!(cancel_and_op.classify().is_err());
 }

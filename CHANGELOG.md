@@ -2,6 +2,86 @@
 
 ## Unreleased
 
+### The generated Rust client subscribes: `subscribe()` and subscription procedures
+
+**What was missing.** A Rust client could reach a subscription only by speaking SSE or frames by
+hand.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes().subscribe(&input)`** on an `@@subscribe` model's client, and
+  **`client.procedures().room_messages(&args)`** for a subscription procedure, on both REST and
+  RPC clients (`include_server_schema!` and `include_client_schema!`).
+  - Each resolves once the server says `Ready` to a `ClientSubscription<Item>` (a channel of
+    `Result<Item, ClientError>`).
+  - A refusal is the call's `Err`, never an item. Dropping the subscription cancels it.
+- **The binding is configuration**:
+  `ClientConfig::with_subscription_transport(SubscriptionTransport::{Auto, WebSocket, Sse})`.
+  - `Auto` (the default) uses a WebSocket with the client's `ws` feature (`client-ws` on
+    `cratestack-pg`/`cratestack-api`, native targets).
+  - It falls back to SSE only when no socket can be opened, never on a refusal.
+  - SSE is a `GET` with the input as the query string, signed like any other call.
+- `RpcClientError` now implements `From<ClientError>`.
+
+### Subscriptions over WebSocket: `extension websocket { }`
+
+**What was missing.** A client on a network that blocks UDP could not use the WebTransport
+binding. Its only other option was SSE: one connection per subscription, JSON only, and no way to
+refresh credentials on a live stream.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §6).
+
+- **The new `cratestack-websocket` crate** serves a schema's subscriptions over one WebSocket,
+  using the same frames as WebTransport.
+  - `Init`, then `Request`s multiplexed by id, each answered with `Ready`, items, and one `end` or
+    `err`.
+  - `{id, cancel: {}}` ends a subscription.
+  - Binary messages carry CBOR (`cratestack.rpc.v1+cbor`) and text messages carry JSON (`+json`).
+- **`extension websocket { }` with the facade's `websocket` feature** (`cratestack-pg`,
+  `cratestack-api`) adds `SubscriptionDispatch::websocket(config, auth)`, a router with
+  `/rpc/ws` (`/$ws` on REST) to merge into yours.
+- **Authentication** uses the router's `AuthProvider`, over the upgrade headers or, for a
+  browser, over `Init`'s.
+  - A refusal sends `{id: 0, err}` and then closes with 4401, 4403, 4400 or 4500.
+  - A further `Init` refreshes the credentials; it must name the same principal.
+  - The socket closes with 4401 when the credential expires.
+  - Origins are same-origin by default.
+- **Limits** (`WebSocketLimits`):
+  - 64 subscriptions per socket and 8 sockets per principal;
+  - the body limit per message;
+  - a 1024-frame outbound queue;
+  - a ping every 15 s.
+- The frames, admission, `OriginPolicy` and the session registry now live in
+  `cratestack_core::subscription_wire`. `cratestack-webtransport` re-exports them unchanged.
+
+### Subscription procedures and topics
+
+**What was missing.** The only subscription was a model feed. Live data that is not a row change,
+such as chat messages, progress or presence, had no op, no policy and no way to reach other
+replicas.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.2–3.4, §7.1).
+
+- **`subscription procedure roomMessages(args: RoomArgs): ChatMessage`**, with `@allow`/`@deny`,
+  `@authn`, `@authorize` and `@api_version`.
+  - Its `ProcedureRegistry` method resolves to a `cratestack::SubscriptionStream<Output>` once setup
+    succeeds. An `Err` refuses before `Ready`.
+  - It is served as `procedure.roomMessages` on `/rpc/subscribe` and over WebTransport, and as
+    `GET /$procs/roomMessages` on REST. Arguments are JSON-valued query parameters
+    (`?args={"roomId":"r1"}`) or the JSON body of `POST /rpc/subscribe/{op_id}`.
+  - It works under `db = None` too.
+- **`topic RoomMessage(roomId: String): ChatMessage`** generates `db.topics().room_message(&id)`,
+  a typed `cratestack::Topic` on the subscription backplane.
+  - `publish` delivers to every replica.
+  - `publish_in_tx` delivers only if the transaction commits. It needs the default
+    `PgNotifyBackplane`.
+  - `subscribe().await` is what a handler usually returns.
+- **The dispatcher holds the registry** when the schema has subscription procedures:
+  `db.subscriptions(registry)`. Without them it stays `db.subscriptions()`.
+- **`POST /rpc/subscribe/{op_id}`** takes a subscription's input as a JSON body, model feeds
+  included.
+- Topics need `db = Postgres`. A topic under `db = None` is a compile error.
+
 ### Subscriptions take a filter, a projection and operations, and REST serves them
 
 **What was missing.** A model feed delivered every readable event of its model; a client wanting

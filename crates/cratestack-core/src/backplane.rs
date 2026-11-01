@@ -44,6 +44,13 @@ pub fn model_event_channel(model: &str) -> String {
     format!("cratestack.model.{model}")
 }
 
+/// The backplane channel of `topic`'s messages under `key`
+/// (`topic RoomMessage(roomId: String): ChatMessage`, slice S4):
+/// `cratestack.topic.RoomMessage.<key>`.
+pub fn topic_channel(topic: &str, key: &str) -> String {
+    format!("cratestack.topic.{topic}.{key}")
+}
+
 /// Fans a published message out to every replica, this one included.
 pub trait SubscriptionBackplane: Send + Sync + 'static {
     /// Publishes `payload` on `channel`, fire and forget.
@@ -63,7 +70,8 @@ pub trait SubscriptionBackplane: Send + Sync + 'static {
 
     /// Whether model events reach this backplane from inside the writing
     /// transaction (Postgres `NOTIFY`, delivered at commit). When `false`, the
-    /// runtime publishes each model event after commit, from its outbox drain.
+    /// runtime publishes each model event after commit, from its outbox drain,
+    /// and a topic's `publish_in_tx` is refused.
     fn publishes_model_events_in_tx(&self) -> bool {
         false
     }

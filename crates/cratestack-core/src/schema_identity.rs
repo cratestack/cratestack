@@ -28,6 +28,7 @@
 mod attribute_norm;
 pub(crate) mod canon;
 pub(crate) mod members;
+mod members_topic;
 mod nodes;
 #[cfg(test)]
 mod tests;

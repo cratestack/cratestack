@@ -1,0 +1,50 @@
+[package]
+name = "cratestack-websocket"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Forwards to `cratestack-core`'s decimal backend choice, and to both
+# codecs, for the same reason every direct `cratestack-core` consumer does
+# (cratestack#495). This crate never names a decimal type itself.
+default = ["decimal-rust-decimal"]
+decimal-rust-decimal = [
+    "cratestack-core/decimal-rust-decimal",
+    "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
+]
+decimal-bigdecimal = [
+    "cratestack-core/decimal-bigdecimal",
+    "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
+]
+
+[dependencies]
+axum = { workspace = true, features = ["ws"] }
+cratestack-core.workspace = true
+cratestack-codec-cbor.workspace = true
+cratestack-codec-json.workspace = true
+futures-util.workspace = true
+http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["net", "time", "macros", "rt-multi-thread"] }
+tokio-tungstenite = "0.29"

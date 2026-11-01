@@ -1,0 +1,19 @@
+// A `subscription procedure` under `db = None` (slice S4,
+// `tests/subscription_procedure_no_database.rs`): the handler is the source.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type CountArgs {
+  to Int
+}
+
+type Tick {
+  n Int
+}
+
+subscription procedure countdown(args: CountArgs): Tick
+  @allow(auth() != null)

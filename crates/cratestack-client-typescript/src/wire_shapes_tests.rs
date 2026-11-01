@@ -21,6 +21,8 @@ fn schema(models: Vec<cratestack_core::Model>, types: Vec<cratestack_core::TypeD
         // so this fixture has nothing to say about them beyond being
         // constructible.
         queries: Vec::new(),
+        subscription_procedures: Vec::new(),
+        topics: Vec::new(),
         transport: TransportStyle::Rest,
         declared_extensions: Default::default(),
         mcp: None,

@@ -17,7 +17,7 @@ fn render(
     transport: TransportStyle,
     bearing: &BTreeSet<String>,
 ) -> String {
-    generate_client_module(&schema.models, &schema.procedures, transport, bearing)
+    generate_client_module(&schema.models, &schema.procedures, &[], transport, bearing)
         .expect("client module should generate")
         .to_token_stream()
         .to_string()

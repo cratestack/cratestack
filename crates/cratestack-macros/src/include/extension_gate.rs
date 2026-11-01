@@ -74,6 +74,7 @@ fn required_feature(kind: ExtensionKind) -> (&'static str, u32) {
         ExtensionKind::Pgvector => ("pgvector", 155),
         ExtensionKind::Postgis => ("postgis", 842),
         ExtensionKind::Webtransport => ("webtransport", 183),
+        ExtensionKind::Websocket => ("websocket", 183),
     }
 }
 
@@ -84,15 +85,16 @@ fn required_feature(kind: ExtensionKind) -> (&'static str, u32) {
 fn is_postgres_only(kind: ExtensionKind) -> bool {
     match kind {
         ExtensionKind::Pgvector | ExtensionKind::Postgis => true,
-        ExtensionKind::RateLimit | ExtensionKind::Webtransport => false,
+        ExtensionKind::RateLimit | ExtensionKind::Webtransport | ExtensionKind::Websocket => false,
     }
 }
 
 /// Whether `kind` is a server binding, with nothing to generate for the
 /// embedded role: `include_embedded_schema!` serves no subscriptions, so
-/// `extension webtransport { }` there could only be a silent no-op.
+/// `extension webtransport { }` (or `websocket`) there could only be a
+/// silent no-op.
 fn is_server_only(kind: ExtensionKind) -> bool {
-    matches!(kind, ExtensionKind::Webtransport)
+    matches!(kind, ExtensionKind::Webtransport | ExtensionKind::Websocket)
 }
 
 /// Whether `kind`'s required Cargo feature is enabled on *this* crate
@@ -106,6 +108,7 @@ fn feature_enabled(kind: ExtensionKind) -> bool {
         ExtensionKind::Pgvector => cfg!(feature = "pgvector"),
         ExtensionKind::Postgis => cfg!(feature = "postgis"),
         ExtensionKind::Webtransport => cfg!(feature = "webtransport"),
+        ExtensionKind::Websocket => cfg!(feature = "websocket"),
     }
 }
 

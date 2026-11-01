@@ -1,0 +1,41 @@
+// The generated dispatcher over WebSocket (slice S5,
+// `tests/websocket_subscriptions.rs`): a model feed and a subscription
+// procedure on one socket.
+
+transport rpc
+
+extension websocket {
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+model WsNote {
+  id Int @id
+  ownerId Int
+  body String
+
+  @@allow("read", ownerId == auth().id)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+}
+
+type Room {
+  roomId String
+}
+
+type Line {
+  body String
+}
+
+topic RoomLine(roomId: String): Line
+
+subscription procedure lines(args: Room): Line
+  @allow(auth() != null)

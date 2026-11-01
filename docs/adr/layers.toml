@@ -223,6 +223,9 @@ cratestack-mcp = 4
 # WebTransport subscription binding: a second (QUIC) listener beside the
 # axum router, so the same layer as `cratestack-axum` (design §6a.5).
 cratestack-webtransport = 4
+# WebSocket subscription binding: an axum route, the same layer as
+# `cratestack-axum` (design §6); depends on `cratestack-core` and the codecs.
+cratestack-websocket = 4
 
 # --- L5: Facades -----------------------------------------------------------
 cratestack-pg = 5

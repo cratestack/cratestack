@@ -148,7 +148,7 @@ pub(crate) fn generate_procedure_op_descriptor(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn op_descriptor(
+pub(super) fn op_descriptor(
     op_id: &str,
     kind: proc_macro2::TokenStream,
     input_ty: &str,

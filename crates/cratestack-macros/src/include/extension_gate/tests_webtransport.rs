@@ -42,3 +42,10 @@ fn webtransport_is_server_only_not_postgres_only() {
     assert!(!super::is_server_only(ExtensionKind::RateLimit));
     assert!(!super::is_server_only(ExtensionKind::Pgvector));
 }
+
+/// `extension websocket { }` (slice S5) is a server binding too.
+#[test]
+fn websocket_is_server_only_not_postgres_only() {
+    assert!(super::is_server_only(ExtensionKind::Websocket));
+    assert!(!super::is_postgres_only(ExtensionKind::Websocket));
+}
