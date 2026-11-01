@@ -183,4 +183,9 @@ pub mod __private {
     /// `db = Postgres` runtime handle, which this crate cannot offer
     /// without `cratestack-sqlx`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
+
+    /// The JSON refusal `/rpc/subscribe/{op_id}` answers with, which a
+    /// `db = None` schema's router answers every op with: it has no
+    /// subscription op (`include/server/rpc_module/subscribe.rs`).
+    pub use cratestack_axum::rpc::encode_subscribe_error;
 }
