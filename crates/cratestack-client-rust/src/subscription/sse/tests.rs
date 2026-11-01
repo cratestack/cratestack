@@ -35,7 +35,9 @@ async fn events_split_across_chunks() {
 #[tokio::test]
 async fn utf8_and_crlf_split_across_chunks() {
     let chunks = vec![
-        Ok(Bytes::from_static(b"event: message\r\ndata: {\"next\":\"caf\xc3")),
+        Ok(Bytes::from_static(
+            b"event: message\r\ndata: {\"next\":\"caf\xc3",
+        )),
         Ok(Bytes::from_static(b"\xa9\"}\r\n\r")),
         Ok(Bytes::from_static(b"\n")),
     ];

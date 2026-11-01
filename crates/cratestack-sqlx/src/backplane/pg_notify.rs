@@ -3,7 +3,8 @@
 //! (`docs/design/subscriptions-websocket.md` §4.2, §4.3).
 //!
 //! One listener connection per process, opened by the first subscription and
-//! kept for the life of the backplane; local subscribers fan out from it. Model
+//! kept for the life of the backplane (dropping the backplane closes it, idle
+//! or not); local subscribers fan out from it. Model
 //! events are notified by the writing transaction itself
 //! (`enqueue_event_outbox`), so Postgres delivers them only if it commits, to
 //! every listener, in commit order. When the listener's connection drops,
@@ -14,7 +15,7 @@ use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use cratestack_core::{BackplaneFuture, BackplaneReceiver, CratestackError, SubscriptionBackplane};
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, watch};
 
 use super::LocalHub;
 use super::notify_payload::{NOTIFY_CHANNEL, Notification, encode};
@@ -26,6 +27,9 @@ pub struct PgNotifyBackplane {
     pool: sqlx::PgPool,
     hub: Arc<LocalHub>,
     listening: OnceCell<()>,
+    /// Dropped with the backplane, which ends the listener task: `try_recv`
+    /// on an idle connection would otherwise wait forever.
+    alive: watch::Sender<()>,
 }
 
 impl PgNotifyBackplane {
@@ -37,6 +41,7 @@ impl PgNotifyBackplane {
             pool,
             hub: Arc::default(),
             listening: OnceCell::new(),
+            alive: watch::channel(()).0,
         }
     }
 
@@ -54,6 +59,7 @@ impl PgNotifyBackplane {
                     listener,
                     Arc::downgrade(&self.hub),
                     self.pool.clone(),
+                    self.alive.subscribe(),
                 ));
                 Ok(())
             })
@@ -103,11 +109,21 @@ impl SubscriptionBackplane for PgNotifyBackplane {
     }
 }
 
-/// Runs until the backplane is dropped. `try_recv` reports a lost connection
-/// as `Ok(None)` and reconnects (re-`LISTEN`ing) on the next call.
-async fn listen(mut listener: PgListener, hub: Weak<LocalHub>, pool: sqlx::PgPool) {
+/// Runs until the backplane is dropped, then closes its connection.
+/// `try_recv` reports a lost connection as `Ok(None)` and reconnects
+/// (re-`LISTEN`ing) on the next call.
+async fn listen(
+    mut listener: PgListener,
+    hub: Weak<LocalHub>,
+    pool: sqlx::PgPool,
+    mut alive: watch::Receiver<()>,
+) {
     loop {
-        let received = listener.try_recv().await;
+        let received = tokio::select! {
+            received = listener.try_recv() => received,
+            // `Err` once the backplane (the only sender) is dropped.
+            _ = alive.changed() => return,
+        };
         let Some(hub) = hub.upgrade() else { return };
         match received {
             Ok(Some(notification)) => deliver(&hub, &pool, notification.payload()).await,
