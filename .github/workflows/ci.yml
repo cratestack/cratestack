@@ -664,7 +664,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pw"
           cd "$RUNNER_TEMP/pw"
           npm init -y > /dev/null
-          npm install --no-audit --no-fund playwright@1.63.0 typescript@5.9.3
+          npm install --no-audit --no-fund playwright@1.63.0
           npx playwright install --with-deps chromium
       - name: WebTransport end to end in Chromium
         env:
@@ -674,8 +674,7 @@ jobs:
         # Slice S6: the generated `subscriptions.ts` against the same harness.
         env:
           NODE_PATH: ${{ runner.temp }}/pw/node_modules
-          PATH_PREFIX: ${{ runner.temp }}/pw/node_modules/.bin
-        run: PATH="$PATH_PREFIX:$PATH" just test-ts-webtransport-browser
+        run: just test-ts-webtransport-browser
       - name: Generated dispatcher over WebTransport (testcontainers Postgres)
         # Slice S5a: `db.subscriptions().webtransport(..)` serving a
         # `@@subscribe` feed with its read policy. `required-features =
@@ -688,8 +687,7 @@ jobs:
         # WebSocket with UDP blocked, SSE.
         env:
           NODE_PATH: ${{ runner.temp }}/pw/node_modules
-          PATH_PREFIX: ${{ runner.temp }}/pw/node_modules/.bin
-        run: PATH="$PATH_PREFIX:$PATH" just test-realtime-chat
+        run: just test-realtime-chat
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to

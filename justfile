@@ -410,7 +410,7 @@ test-ts-webtransport-browser:
 	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
 	rm -rf target/ts-webtransport
 	cargo run -p cratestack-cli -- generate-typescript --no-native-cbor --schema crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack --out target/ts-webtransport/package
-	npx --yes tsc --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir target/ts-webtransport/js target/ts-webtransport/package/src/subscriptions.ts target/ts-webtransport/package/src/subscription-sockets.ts
+	npx --yes --package typescript@5.9.3 tsc --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir target/ts-webtransport/js target/ts-webtransport/package/src/subscriptions.ts target/ts-webtransport/package/src/subscription-sockets.ts
 	node crates/cratestack-client-typescript/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/ts-webtransport/js
 
 # `examples/realtime-chat` end to end (slice S6): its Rust tests (the
@@ -435,7 +435,7 @@ test-realtime-chat:
 	rm -rf "$out" && mkdir -p "$out/static"
 	cargo run -p cratestack-cli -- generate-typescript --no-native-cbor \
 	  --schema examples/realtime-chat/schema.cstack --out "$out/package"
-	npx --yes tsc --target ES2022 --module ESNext --moduleResolution Bundler \
+	npx --yes --package typescript@5.9.3 tsc --target ES2022 --module ESNext --moduleResolution Bundler \
 	  --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir "$out/static" \
 	  "$out/package/src/subscriptions.ts" "$out/package/src/subscription-sockets.ts"
 	echo '<!doctype html><meta charset="utf-8"><title>realtime chat</title>' > "$out/static/index.html"
