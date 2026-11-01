@@ -25,6 +25,10 @@ use crate::codec::WireCodec;
 use crate::server::Shared;
 use crate::subscription::{self, Outbound};
 
+mod io;
+
+use io::{expiry_of, next_frame, send, sleep_until};
+
 pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
     shared: Arc<Shared<A, D>>,
     socket: WebSocket,
@@ -168,44 +172,5 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
     }
     for task in open.into_values() {
         task.abort();
-    }
-}
-
-async fn next_frame(
-    stream: &mut futures_util::stream::SplitStream<WebSocket>,
-    codec: WireCodec,
-) -> Option<Result<ClientFrame, CratestackError>> {
-    loop {
-        match stream.next().await? {
-            Ok(Message::Ping(_) | Message::Pong(_)) => continue,
-            Ok(message @ (Message::Text(_) | Message::Binary(_))) => {
-                return Some(codec.decode(&message));
-            }
-            Ok(Message::Close(_)) | Err(_) => return None,
-        }
-    }
-}
-
-async fn send(sink: &mut Sink, codec: WireCodec, frame: &ServerFrame) -> Result<(), ()> {
-    let message = codec.encode(frame).map_err(|error| {
-        tracing::warn!(target: "cratestack", %error, "WebSocket frame failed to encode");
-    })?;
-    sink.send(message).await.map_err(|_| ())
-}
-
-/// When the context's `exp` claim passes, if it has one.
-fn expiry_of(ctx: &CratestackContext) -> Option<Instant> {
-    let exp = ctx.expires_at()?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs() as i64;
-    Some(Instant::now() + std::time::Duration::from_secs(exp.saturating_sub(now).max(0) as u64))
-}
-
-async fn sleep_until(deadline: Option<Instant>) {
-    match deadline {
-        Some(deadline) => tokio::time::sleep_until(deadline).await,
-        None => std::future::pending().await,
     }
 }

@@ -1,6 +1,5 @@
-//! `include_client_schema!` composer — emits the HTTP client surface:
-//! model/input/procedure stubs for talking to a server over the wire.
-//! No DB at all.
+//! `include_client_schema!` composer — emits the HTTP client surface: model/input/procedure
+//! stubs for talking to a server over the wire. No DB at all.
 
 mod input_structs;
 
@@ -102,7 +101,6 @@ pub(super) fn compose_client_schema(
                     .into();
             }
         };
-        // Subscription procedures (slice S4) get the same `Args` module.
         let procedure_modules = match schema
             .procedures
             .iter()
@@ -119,8 +117,7 @@ pub(super) fn compose_client_schema(
                     .into();
             }
         };
-        // Always an empty bearing set: this composer's own `models`/
-        // `types` already ARE the wire shape — see `crate::client`'s doc.
+        // Empty bearing set: these `models`/`types` ARE the wire shape (`crate::client`).
         let generated_client_module = match generate_client_module(
             &schema.models,
             &schema.procedures,
