@@ -25,6 +25,7 @@ mod build_shared_types;
 mod imports;
 mod partition;
 mod provider_naming;
+mod subscriptions;
 mod templates;
 mod views;
 

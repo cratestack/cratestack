@@ -6,7 +6,8 @@
 use cratestack_client_dart::{DartGeneratorConfig, generate_package};
 
 fn files(fixture: &str) -> (String, String) {
-    let schema = cratestack_parser::parse_schema_file(fixture).expect("fixture schema should parse");
+    let schema =
+        cratestack_parser::parse_schema_file(fixture).expect("fixture schema should parse");
     let package = generate_package(
         &schema,
         &DartGeneratorConfig {
@@ -31,7 +32,10 @@ fn files(fixture: &str) -> (String, String) {
 #[test]
 fn a_schema_with_subscriptions_gets_streams_over_sse() {
     let (apis, runtime) = files("tests/fixtures/subscriptions_rpc.cstack");
-    assert!(apis.contains("Stream<CratestackModelEvent<Note>> subscribe({"), "{apis}");
+    assert!(
+        apis.contains("Stream<CratestackModelEvent<Note>> subscribe({"),
+        "{apis}"
+    );
     assert!(apis.contains(".subscribe('model.Note.subscribe', input.toQuery()"));
     assert!(apis.contains("Stream<Line> lines(LinesArgs args, {"));
     assert!(apis.contains("cratestackProcedureQuery(args.toWire())"));
@@ -43,9 +47,15 @@ fn a_schema_with_subscriptions_gets_streams_over_sse() {
 #[test]
 fn a_rest_schema_subscribes_at_its_escaped_routes() {
     let (apis, _) = files("../cratestack-pg/tests/fixtures/subscribe_rest.cstack");
-    assert!(apis.contains(".subscribe('/sub_notes/\\$subscribe', input.toQuery()"), "{apis}");
+    assert!(
+        apis.contains(".subscribe('/sub_notes/\\$subscribe', input.toQuery()"),
+        "{apis}"
+    );
     let (apis, _) = files("../cratestack-pg/tests/fixtures/subscription_procedures_rest.cstack");
-    assert!(apis.contains(".subscribe('/\\$procs/roomMessages',"), "{apis}");
+    assert!(
+        apis.contains(".subscribe('/\\$procs/roomMessages',"),
+        "{apis}"
+    );
 }
 
 #[test]

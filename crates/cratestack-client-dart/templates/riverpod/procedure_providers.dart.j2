@@ -35,3 +35,15 @@ Future<{{ procedure.return_type }}> {{ operation.symbol }}(Ref ref, {{ procedure
 
 {% endif %}
 {% endfor %}
+{% for procedure in subscription_procedures %}
+{% if loop.first %}
+// Slice S6: one stream provider per subscription procedure, one live
+// subscription per distinct `args` (data classes compare by value),
+// cancelled once nothing watches it.
+{% endif %}
+@riverpod
+Stream<{{ procedure.return_type }}> {{ subscription_symbols[loop.index0] }}(Ref ref, {{ procedure.args_name }} args) {
+  return ref.watch({{ provider_prefix }}ProceduresApiProvider).{{ procedure.method_name }}(args);
+}
+
+{% endfor %}

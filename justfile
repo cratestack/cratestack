@@ -1162,7 +1162,9 @@ verify-dart:
 	  fi
 	done
 
-	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan ordinal_enums)
+	# `subscriptions_rpc` (slice S6): the model and procedure stream providers
+	# must survive `build_runner` and `flutter analyze --fatal-warnings`.
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan ordinal_enums subscriptions_rpc)
 	for fixture in "${riverpod_fixtures[@]}"; do
 	  pkg="$out/riverpod/$fixture"
 	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
@@ -1174,6 +1176,12 @@ verify-dart:
 	    --library-name "$library_name" \
 	    --preset riverpod \
 	    --no-native-cbor
+	  if [ "$fixture" = "subscriptions_rpc" ]; then
+	    # Slice S6: `verify_riverpod_pkg`'s `flutter test` runs it — see the
+	    # copied file's own module doc.
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_riverpod_test.dart" "$pkg/test/subscriptions_rpc_riverpod_test.dart"
+	  fi
 	  verify_riverpod_pkg "$pkg" "$schema" "$library_name"
 	done
 

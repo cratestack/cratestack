@@ -98,6 +98,15 @@ final class CratestackSubscribeInput {
     ];
     return pairs.isEmpty ? null : pairs.join('&');
   }
+
+  /// Equal when they ask the server for the same thing, so a riverpod
+  /// family keyed by an input reuses its subscription.
+  @override
+  bool operator ==(Object other) =>
+      other is CratestackSubscribeInput && other.toQuery() == toQuery();
+
+  @override
+  int get hashCode => toQuery().hashCode;
 }
 
 /// A subscription procedure's arguments as its query string: each a JSON value.

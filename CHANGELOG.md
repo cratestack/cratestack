@@ -16,6 +16,11 @@
   - Cancelling the listen cancels the request.
 - It is SSE through the same `CratestackHttpTransport` every call uses (Dio, fespalier, the Rust
   transport, your own). It needs the generated HTTP adapter.
+- **`--preset riverpod`** (and fespalier) carries the same methods, plus a `@riverpod` stream
+  provider each: `noteEventsProvider(input: ...)` per `@@subscribe` model and
+  `roomMessagesProvider(args)` per subscription procedure. A provider is one subscription per
+  distinct input (`CratestackSubscribeInput` compares by its query string), cancelled once nothing
+  watches it.
 - Schemas without a subscription op generate exactly as before.
 
 ### The generated TypeScript client subscribes, over WebTransport, a WebSocket or SSE

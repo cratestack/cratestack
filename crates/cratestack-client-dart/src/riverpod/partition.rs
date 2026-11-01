@@ -134,13 +134,17 @@ pub(crate) fn partition_types(schema: &Schema) -> TypePartition {
         );
     }
 
-    let procedure_seeds = schema.procedures.iter().flat_map(|procedure| {
-        procedure
-            .args
-            .iter()
-            .map(|arg| referenced_name(&arg.ty))
-            .chain(std::iter::once(referenced_name(&procedure.return_type)))
-    });
+    let procedure_seeds = schema
+        .procedures
+        .iter()
+        .chain(&schema.subscription_procedures)
+        .flat_map(|procedure| {
+            procedure
+                .args
+                .iter()
+                .map(|arg| referenced_name(&arg.ty))
+                .chain(std::iter::once(referenced_name(&procedure.return_type)))
+        });
     reachable.insert(
         Owner::Procedures,
         reachable_closure(procedure_seeds, &type_by_name, &enum_names),

@@ -1086,12 +1086,18 @@ The rest:
   (which is how Flutter native reaches the Rust client). It needs the generated HTTP adapter
   (`CratestackHttpAdapter` / `CratestackRpcHttpAdapter`); any other adapter gets an
   `UnsupportedError` stream.
+- **riverpod** (`--preset riverpod`, and fespalier, which shares its builders): the API files carry
+  the same methods, and each op gets a `@riverpod` stream provider, `<model>Events(input:)` and
+  `<procedure>(args)`, named after the five model providers and every unary procedure provider, so
+  no existing name moves. `CratestackSubscribeInput` compares by its query string, so a family
+  keyed by an equal input reuses its subscription.
 - **Not built in Dart yet**:
   - WebSocket (`web_socket_channel`, a new dependency);
   - WebTransport (JS interop on Flutter web);
-  - riverpod `StreamProvider`s. The `--preset riverpod` API files do not carry the methods yet,
-    though its runtime does.
-- Tests: `tests/subscriptions.rs` pins the generated surface (and its absence elsewhere).
+- Tests: `tests/subscriptions.rs` and `tests/subscriptions_riverpod.rs` pin the generated surface
+  (and its absence elsewhere). `subscriptions_rpc` is also a riverpod fixture of `just verify-dart`:
+  `build_runner`, `flutter analyze --fatal-warnings`, and `subscriptions_rpc_riverpod_test.dart`
+  reading both stream providers through a `ProviderContainer`.
   `fixtures/subscriptions_rpc_test.dart` runs under `just verify-dart` (CI's Dart job) against an
   SSE-answering transport: Ready, items, the request, the refusal and the terminal error.
 

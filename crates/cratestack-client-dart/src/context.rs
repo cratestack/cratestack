@@ -140,7 +140,11 @@ pub(crate) fn build_template_context(
         data_classes.push(build_find_many_data_class(model, where_class.is_some()));
     }
 
-    for procedure in schema.procedures.iter().chain(&schema.subscription_procedures) {
+    for procedure in schema
+        .procedures
+        .iter()
+        .chain(&schema.subscription_procedures)
+    {
         let args_name = procedure_wrapper_name(procedure, &occupied_type_names);
         let fields = procedure
             .args
