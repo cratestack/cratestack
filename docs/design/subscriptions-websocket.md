@@ -1076,6 +1076,25 @@ The rest:
     getting its own refused session. `just test-ts-webtransport-browser` runs it, in CI's
     WebTransport job.
 
+**S6 status, Dart (as built, 2026-11-01).** SSE through the HTTP seam.
+- **The call**: `client.<model>.subscribe(input: CratestackSubscribeInput(...), headers, onReady)`
+  returns `Stream<CratestackModelEvent<Model>>`; `client.procedures.<name>(args, ...)` returns
+  `Stream<Item>`. Items decode like unary results. A refusal or terminal error is a
+  `CratestackSubscriptionException`. Cancelling the listen completes the request's `abort`.
+- **The binding**: SSE only, over `CratestackHttpTransport` (`cratestackSubscribeSse` in the
+  runtime). It therefore runs on every transport an app already uses, the Rust transport included
+  (which is how Flutter native reaches the Rust client). It needs the generated HTTP adapter
+  (`CratestackHttpAdapter` / `CratestackRpcHttpAdapter`); any other adapter gets an
+  `UnsupportedError` stream.
+- **Not built in Dart yet**:
+  - WebSocket (`web_socket_channel`, a new dependency);
+  - WebTransport (JS interop on Flutter web);
+  - riverpod `StreamProvider`s. The `--preset riverpod` API files do not carry the methods yet,
+    though its runtime does.
+- Tests: `tests/subscriptions.rs` pins the generated surface (and its absence elsewhere).
+  `fixtures/subscriptions_rpc_test.dart` runs under `just verify-dart` (CI's Dart job) against an
+  SSE-answering transport: Ready, items, the request, the refusal and the terminal error.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### The generated Dart client subscribes over SSE
+
+**What was missing.** A Flutter or Dart client had no subscription call.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes.subscribe(input: ..., onReady: ...)`** returns a
+  `Stream<CratestackModelEvent<Note>>`, and **`client.procedures.roomMessages(args)`** a
+  `Stream<ChatMessage>`, on REST and RPC packages of a schema with a subscription op.
+  - Nothing is emitted before `Ready`. A refusal or a terminal error is a
+    `CratestackSubscriptionException` (`code`, `message`, `details`, `status`).
+  - Cancelling the listen cancels the request.
+- It is SSE through the same `CratestackHttpTransport` every call uses (Dio, fespalier, the Rust
+  transport, your own). It needs the generated HTTP adapter.
+- Schemas without a subscription op generate exactly as before.
+
 ### The generated TypeScript client subscribes, over WebTransport, a WebSocket or SSE
 
 **What was missing.** A browser or Node client could reach a subscription only by speaking SSE or

@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-{% if model_apis | length > 0 or procedures | length > 0 %}
+{% if model_apis | length > 0 or procedures | length > 0 or subscription_procedures | length > 0 %}
 {# cratestack#785: `models.dart` is reached from the per-model API classes
    (`{{ model.model_name }}`, `Page<T>`) and from each procedure's
    generated `{{ procedure.args_name }}` wrapper — and from nowhere else,
@@ -46,10 +46,36 @@ class {{ client_class_name }} {
 {% for accessor in model_accessors %}
   {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
 {% endfor %}
-{% if procedures | length > 0 %}
+{% if procedures | length > 0 or subscription_procedures | length > 0 %}
   ProceduresApi get procedures => ProceduresApi(this);
 {% else %}
   ProceduresApi get procedures => const ProceduresApi();
+{% endif %}
+{% if has_subscriptions %}
+
+  /// Opens a subscription over SSE (slice S6), through the HTTP adapter's
+  /// transport: nothing is emitted until the server says `Ready`.
+  Stream<Object?> subscribe(
+    String path,
+    String? query, {
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    final adapter = _adapter;
+    if (adapter is! CratestackHttpAdapter) {
+      return Stream<Object?>.error(UnsupportedError(
+        'Subscriptions need a CratestackHttpAdapter; ${adapter.runtimeType} cannot stream.',
+      ));
+    }
+    return cratestackSubscribeSse(
+      adapter.transport,
+      adapter.baseUri,
+      '$basePath$path',
+      query,
+      headers: headers,
+      onReady: onReady,
+    );
+  }
 {% endif %}
 }
 
@@ -218,10 +244,28 @@ class {{ model.api_class_name }} {
     return {{ model.model_name }}.fromWire(cratestackAsValueMap(body));
   }
 {% endif %}
+{% if model.allows_subscribe %}
+
+  /// Live events of `{{ model.model_name }}` the caller may read, narrowed by
+  /// [input]. Nothing is emitted until the subscription is live ([onReady]
+  /// fires then); an `unavailable` error means resubscribe and refetch.
+  Stream<CratestackModelEvent<{{ model.model_name }}>> subscribe({
+    CratestackSubscribeInput input = const CratestackSubscribeInput(),
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    return _client
+        .subscribe('{{ model.subscribe_route }}', input.toQuery(), headers: headers, onReady: onReady)
+        .map((wire) => CratestackModelEvent<{{ model.model_name }}>.fromWire(
+              wire,
+              (data) => {{ model.model_name }}.fromWire(cratestackAsValueMap(data)),
+            ));
+  }
+{% endif %}
 }
 
 {% endfor %}
-{% if procedures | length > 0 %}
+{% if procedures | length > 0 or subscription_procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -238,6 +282,19 @@ class ProceduresApi {
       options: options,
     );
     return {{ procedure.return_decode_expr }};
+  }
+
+{% endfor %}
+{% for procedure in subscription_procedures %}
+  /// Subscribes to `{{ procedure.name }}`. A policy or setup refusal is the
+  /// stream's error before any item.
+  Stream<{{ procedure.return_type }}> {{ procedure.method_name }}({{ procedure.args_name }} args, {
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    return _client
+        .subscribe('{{ procedure.route }}', cratestackProcedureQuery(args.toWire()), headers: headers, onReady: onReady)
+        .map((body) => {{ procedure.return_decode_expr }});
   }
 
 {% endfor %}

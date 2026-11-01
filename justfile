@@ -1090,7 +1090,7 @@ verify-dart:
 	# own text-level tests and to `tsc`-style structure checks; only a real
 	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
 	# one.
-	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums)
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums subscriptions_rpc)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="
@@ -1126,6 +1126,14 @@ verify-dart:
 	    cp "crates/cratestack-client-dart/tests/fixtures/ordinal_enums_test.dart" "$pkg/test/ordinal_enums_test.dart"
 	    echo "=== flutter test (ordinal enum wire form): $pkg ==="
 	    (cd "$pkg" && flutter test test/ordinal_enums_test.dart)
+	  fi
+	  # Slice S6: the generated subscriptions over SSE, through the HTTP seam —
+	  # see the copied file's own module doc.
+	  if [ "$fixture" = "subscriptions_rpc" ]; then
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_test.dart" "$pkg/test/subscriptions_rpc_test.dart"
+	    echo "=== flutter test (subscriptions over SSE): $pkg ==="
+	    (cd "$pkg" && flutter test test/subscriptions_rpc_test.dart)
 	  fi
 	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
 	  # Dio adapters (golden requests captured from them), typed REST/RPC

@@ -5,3 +5,7 @@
 {% include "rpc_runtime/cbor_seq.dart.j2" %}
 
 {% include "rpc_runtime/cbor_seq_scanner.dart.j2" %}
+{% if has_subscriptions %}
+
+{% include "http_runtime/subscriptions.dart.j2" %}
+{% endif %}

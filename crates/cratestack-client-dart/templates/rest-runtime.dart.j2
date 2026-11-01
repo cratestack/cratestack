@@ -1,3 +1,6 @@
+{% if has_subscriptions %}
+import 'dart:async';
+{% endif %}
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -205,3 +208,7 @@ abstract interface class CratestackClientAdapter {
 }
 
 {% include "rest_runtime/http_adapter.dart.j2" %}
+{% if has_subscriptions %}
+
+{% include "http_runtime/subscriptions.dart.j2" %}
+{% endif %}
