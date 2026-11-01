@@ -18,6 +18,7 @@ mod patch_touch;
 mod preset_view;
 mod release_line;
 mod riverpod;
+mod subscription_specs;
 mod templates;
 mod templates_fespalier;
 mod templates_fragments;

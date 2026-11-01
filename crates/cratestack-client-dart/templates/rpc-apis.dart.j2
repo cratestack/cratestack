@@ -11,9 +11,15 @@ import 'models.dart';
 import 'runtime.dart';
 
 class {{ client_class_name }} {
-  {{ client_class_name }}(this._adapter);
+  {{ client_class_name }}(this._adapter{% if has_subscriptions %}, {this.subscriptions = const CratestackSubscriptionOptions()}{% endif %});
 
   final CratestackRpcAdapter _adapter;
+{% if has_subscriptions %}
+
+  /// How this client subscribes: the binding, the WebTransport listener, the
+  /// socket credentials.
+  final CratestackSubscriptionOptions subscriptions;
+{% endif %}
 
   CratestackRpcAdapter get adapter => _adapter;
 
@@ -27,11 +33,11 @@ class {{ client_class_name }} {
 {% endif %}
 {% if has_subscriptions %}
 
-  /// Opens a subscription over SSE (slice S6), through the HTTP adapter's
-  /// transport: nothing is emitted until the server says `Ready`.
+  /// Opens a subscription over the binding [subscriptions] chooses (slice
+  /// S6): nothing is emitted until the server says `Ready`. It needs the
+  /// generated HTTP adapter, for the base URI and SSE.
   Stream<Object?> subscribe(
-    String opId,
-    String? query, {
+    CratestackSubscriptionTarget target, {
     Map<String, String>? headers,
     void Function()? onReady,
   }) {
@@ -41,11 +47,12 @@ class {{ client_class_name }} {
         'Subscriptions need a CratestackRpcHttpAdapter; ${adapter.runtimeType} cannot stream.',
       ));
     }
-    return cratestackSubscribeSse(
-      adapter.transport,
-      adapter.baseUri,
-      '/rpc/subscribe/$opId',
-      query,
+    return cratestackSubscribe(
+      options: subscriptions,
+      transport: adapter.transport,
+      baseUri: adapter.baseUri,
+      basePath: '',
+      target: target,
       headers: headers,
       onReady: onReady,
     );
@@ -57,8 +64,23 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref
   throw UnimplementedError('Override {{ provider_prefix }}AdapterProvider before reading the generated CrateStack client.');
 });
 
+{% if has_subscriptions %}
+/// How the client subscribes (slice S6). Override it to set the
+/// WebTransport listener, the socket credentials or a fixed binding.
+final {{ provider_prefix }}SubscriptionOptionsProvider = Provider<CratestackSubscriptionOptions>(
+  (ref) => const CratestackSubscriptionOptions(),
+);
+
+{% endif %}
 final {{ provider_prefix }}ClientProvider = Provider<{{ client_class_name }}>((ref) {
+{% if has_subscriptions %}
+  return {{ client_class_name }}(
+    ref.watch({{ provider_prefix }}AdapterProvider),
+    subscriptions: ref.watch({{ provider_prefix }}SubscriptionOptionsProvider),
+  );
+{% else %}
   return {{ client_class_name }}(ref.watch({{ provider_prefix }}AdapterProvider));
+{% endif %}
 });
 
 {% for accessor in model_accessors %}
@@ -183,7 +205,17 @@ class {{ model.api_class_name }} {
     void Function()? onReady,
   }) {
     return _client
-        .subscribe('{{ model.subscribe_op_id }}', input.toQuery(), headers: headers, onReady: onReady)
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ model.subscribe_op_id }}',
+            input: input.toWire(),
+            ssePath: '/rpc/subscribe/{{ model.subscribe_op_id }}',
+            sseQuery: input.toQuery(),
+            socketPath: '/rpc/ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
         .map((wire) => CratestackModelEvent<{{ model.model_name }}>.fromWire(
               wire,
               (data) => {{ model.model_name }}.fromWire(cratestackAsValueMap(data)),
@@ -220,7 +252,17 @@ class ProceduresApi {
     void Function()? onReady,
   }) {
     return _client
-        .subscribe('{{ procedure.op_id }}', cratestackProcedureQuery(args.toWire()), headers: headers, onReady: onReady)
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ procedure.op_id }}',
+            input: args.toWire(),
+            ssePath: '/rpc/subscribe/{{ procedure.op_id }}',
+            sseQuery: cratestackProcedureQuery(args.toWire()),
+            socketPath: '/rpc/ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
         .map((body) => {{ procedure.return_decode_expr }});
   }
 

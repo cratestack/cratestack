@@ -10,7 +10,7 @@ use crate::riverpod::provider_naming::reserve_operation_symbol;
 
 /// Whether the schema has any subscription op: the client's `subscribe`.
 pub(crate) fn has_subscriptions(schema: &Schema) -> bool {
-    !schema.subscription_procedures.is_empty() || schema.models.iter().any(allows_subscribe)
+    crate::subscription_specs::has_subscriptions(schema)
 }
 
 pub(crate) fn allows_subscribe(model: &Model) -> bool {

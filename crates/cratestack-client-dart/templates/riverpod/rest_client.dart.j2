@@ -3,10 +3,16 @@
 {% endfor %}
 
 class {{ client_class_name }} {
-  {{ client_class_name }}(this._adapter, {this.basePath = '{{ base_path_literal }}'});
+  {{ client_class_name }}(this._adapter, {this.basePath = '{{ base_path_literal }}'{% if has_subscriptions %}, this.subscriptions = const CratestackSubscriptionOptions(){% endif %}});
 
   final CratestackClientAdapter _adapter;
   final String basePath;
+{% if has_subscriptions %}
+
+  /// How this client subscribes: the binding, the WebTransport listener, the
+  /// socket credentials.
+  final CratestackSubscriptionOptions subscriptions;
+{% endif %}
 
   Future<Object?> execute(
     String method,
@@ -36,11 +42,11 @@ class {{ client_class_name }} {
 {% endif %}
 {% if has_subscriptions %}
 
-  /// Opens a subscription over SSE (slice S6), through the HTTP adapter's
-  /// transport: nothing is emitted until the server says `Ready`.
+  /// Opens a subscription over the binding [subscriptions] chooses (slice
+  /// S6): nothing is emitted until the server says `Ready`. It needs the
+  /// generated HTTP adapter, for the base URI and SSE.
   Stream<Object?> subscribe(
-    String path,
-    String? query, {
+    CratestackSubscriptionTarget target, {
     Map<String, String>? headers,
     void Function()? onReady,
   }) {
@@ -50,11 +56,12 @@ class {{ client_class_name }} {
         'Subscriptions need a CratestackHttpAdapter; ${adapter.runtimeType} cannot stream.',
       ));
     }
-    return cratestackSubscribeSse(
-      adapter.transport,
-      adapter.baseUri,
-      '$basePath$path',
-      query,
+    return cratestackSubscribe(
+      options: subscriptions,
+      transport: adapter.transport,
+      baseUri: adapter.baseUri,
+      basePath: basePath,
+      target: target,
       headers: headers,
       onReady: onReady,
     );
@@ -129,9 +136,20 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackClientAdapter>((
 
 final {{ provider_prefix }}BasePathProvider = Provider<String>((ref) => '{{ base_path_literal }}');
 
+{% if has_subscriptions %}
+/// How the client subscribes (slice S6). Override it to set the
+/// WebTransport listener, the socket credentials or a fixed binding.
+final {{ provider_prefix }}SubscriptionOptionsProvider = Provider<CratestackSubscriptionOptions>(
+  (ref) => const CratestackSubscriptionOptions(),
+);
+
+{% endif %}
 final {{ provider_prefix }}ClientProvider = Provider<{{ client_class_name }}>((ref) {
   return {{ client_class_name }}(
     ref.watch({{ provider_prefix }}AdapterProvider),
     basePath: ref.watch({{ provider_prefix }}BasePathProvider),
+{% if has_subscriptions %}
+    subscriptions: ref.watch({{ provider_prefix }}SubscriptionOptionsProvider),
+{% endif %}
   );
 });

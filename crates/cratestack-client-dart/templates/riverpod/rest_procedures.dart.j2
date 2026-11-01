@@ -63,7 +63,17 @@ class ProceduresApi {
     void Function()? onReady,
   }) {
     return _client
-        .subscribe('{{ procedure.route }}', cratestackProcedureQuery(args.toWire()), headers: headers, onReady: onReady)
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ procedure.op_id }}',
+            input: args.toWire(),
+            ssePath: '{{ procedure.route }}',
+            sseQuery: cratestackProcedureQuery(args.toWire()),
+            socketPath: '/\$ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
         .map((body) => {{ procedure.return_decode_expr }});
   }
 
