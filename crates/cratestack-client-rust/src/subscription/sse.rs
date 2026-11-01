@@ -87,36 +87,51 @@ pub(super) struct Event {
 }
 
 /// The events of an SSE body. A block with no `data:` (a comment, a
-/// keepalive) yields nothing.
+/// keepalive) yields nothing. The buffer holds raw bytes until a whole
+/// block has arrived, so a multi-byte character or a `\r\n` split across
+/// two transport chunks is decoded only once it is complete.
 pub(super) fn events<S>(bytes: S) -> impl Stream<Item = Result<Event, ClientError>>
 where
     S: Stream<Item = Result<Bytes, reqwest::Error>> + Unpin,
 {
     futures_util::stream::unfold(
-        (bytes, String::new()),
+        (bytes, Vec::<u8>::new()),
         |(mut bytes, mut buffer)| async move {
             loop {
-                if let Some(end) = buffer.find("\n\n") {
-                    let block: String = buffer.drain(..end + 2).collect();
-                    if let Some(event) = parse_block(&block) {
+                if let Some(end) = block_end(&buffer) {
+                    let block: Vec<u8> = buffer.drain(..end).collect();
+                    let Ok(text) = std::str::from_utf8(&block) else {
+                        let error =
+                            ClientError::InvalidResponse("SSE body is not UTF-8".to_owned());
+                        return Some((Err(error), (bytes, buffer)));
+                    };
+                    if let Some(event) = parse_block(&text.replace("\r\n", "\n")) {
                         return Some((Ok(event), (bytes, buffer)));
                     }
                     continue;
                 }
                 match bytes.next().await? {
-                    Ok(chunk) => match std::str::from_utf8(&chunk) {
-                        Ok(text) => buffer.push_str(&text.replace("\r\n", "\n")),
-                        Err(_) => {
-                            let error =
-                                ClientError::InvalidResponse("SSE body is not UTF-8".to_owned());
-                            return Some((Err(error), (bytes, buffer)));
-                        }
-                    },
+                    Ok(chunk) => buffer.extend_from_slice(&chunk),
                     Err(error) => return Some((Err(error.into()), (bytes, buffer))),
                 }
             }
         },
     )
+}
+
+/// The end (exclusive) of the first complete block: a blank line, written
+/// `\n\n` or `\r\n\r\n`, whichever comes first.
+fn block_end(buffer: &[u8]) -> Option<usize> {
+    let find = |needle: &[u8]| {
+        buffer
+            .windows(needle.len())
+            .position(|window| window == needle)
+            .map(|at| at + needle.len())
+    };
+    match (find(b"\n\n"), find(b"\r\n\r\n")) {
+        (Some(lf), Some(crlf)) => Some(lf.min(crlf)),
+        (lf, crlf) => lf.or(crlf),
+    }
 }
 
 pub(super) fn parse_block(block: &str) -> Option<Event> {
@@ -140,38 +155,4 @@ pub(super) fn parse_block(block: &str) -> Option<Event> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn blocks_parse_and_comments_yield_nothing() {
-        assert_eq!(
-            parse_block("event: ready\ndata: {\"id\":1,\"ready\":{}}\n\n"),
-            Some(Event {
-                name: "ready".into(),
-                data: "{\"id\":1,\"ready\":{}}".into()
-            })
-        );
-        assert_eq!(parse_block(": keepalive\n\n"), None);
-        assert_eq!(parse_block("data: a\ndata: b\n\n").unwrap().data, "a\nb");
-    }
-
-    #[tokio::test]
-    async fn events_split_across_chunks() {
-        let chunks = vec![
-            Ok(Bytes::from_static(b"event: ready\ndata: {}\n")),
-            Ok(Bytes::from_static(b"\n: keepalive\n\nevent: message\nda")),
-            Ok(Bytes::from_static(b"ta: {\"next\":1}\n\n")),
-        ];
-        let events: Vec<_> = events(futures_util::stream::iter(chunks)).collect().await;
-        let names: Vec<_> = events
-            .iter()
-            .map(|e| e.as_ref().unwrap().name.as_str())
-            .collect();
-        assert_eq!(names, ["ready", "message"]);
-        assert_eq!(
-            next_of::<i64>(&events[1].as_ref().unwrap().data).unwrap(),
-            1
-        );
-    }
-}
+mod tests;
