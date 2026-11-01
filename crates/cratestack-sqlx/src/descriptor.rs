@@ -1,4 +1,6 @@
+mod drain;
 mod event_outbox;
+mod outbox_read;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -6,14 +8,13 @@ use std::sync::atomic::AtomicBool;
 use crate::sqlx;
 
 use cratestack_core::{
-    AuditSink, CratestackError, CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture,
-    ModelEventKind, NoopAuditSink, SubscriptionHandle,
+    AuditSink, CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEventKind,
+    NoopAuditSink, SubscriptionBackplane, SubscriptionHandle,
 };
 
-use crate::error::cratestack_error_from_sqlx;
-use event_outbox::EventOutboxRow;
-
+pub(crate) use event_outbox::enqueue_model_event;
 pub use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
+pub(crate) use outbox_read::outbox_envelope_json;
 
 #[derive(Clone)]
 pub struct SqlxRuntime {
@@ -40,6 +41,11 @@ pub struct SqlxRuntime {
     // transaction instead of the pool (docs/design/procedure-isolation.md §4).
     pub(crate) bound: Option<Arc<crate::bound::BoundTx>>,
     pub(crate) isolation_max_retries: u32,
+    // Where model events reach subscribers on every replica
+    // (docs/design/subscriptions-websocket.md §4). `PgNotifyBackplane` by
+    // default; `with_backplane` swaps it (an `InProcessBackplane` for a
+    // single replica behind a pooler that drops `LISTEN`).
+    backplane: Arc<dyn SubscriptionBackplane>,
 }
 
 // `dyn AuditSink` has no `Debug` bound (matching `IdempotencyStore` /
@@ -65,6 +71,8 @@ impl std::fmt::Debug for SqlxRuntime {
 
 impl SqlxRuntime {
     pub fn new(pool: sqlx::PgPool) -> Self {
+        let backplane: Arc<dyn SubscriptionBackplane> =
+            Arc::new(crate::backplane::PgNotifyBackplane::new(pool.clone()));
         Self {
             pool,
             events: CratestackEventBus::default(),
@@ -72,6 +80,7 @@ impl SqlxRuntime {
             audit_sink: Arc::new(NoopAuditSink),
             bound: None,
             isolation_max_retries: crate::isolation::MAX_RETRIES_DEFAULT,
+            backplane,
         }
     }
 
@@ -92,6 +101,17 @@ impl SqlxRuntime {
     pub fn with_audit_sink(mut self, sink: Arc<dyn AuditSink>) -> Self {
         self.audit_sink = sink;
         self
+    }
+
+    /// Replace the subscription backplane (default: `PgNotifyBackplane` on
+    /// this runtime's pool).
+    pub fn with_backplane(mut self, backplane: Arc<dyn SubscriptionBackplane>) -> Self {
+        self.backplane = backplane;
+        self
+    }
+
+    pub fn backplane(&self) -> &Arc<dyn SubscriptionBackplane> {
+        &self.backplane
     }
 
     pub(crate) fn audit_sink(&self) -> &Arc<dyn AuditSink> {
@@ -118,60 +138,5 @@ impl SqlxRuntime {
     #[doc(hidden)]
     pub fn events_bus(&self) -> CratestackEventBus {
         self.events.clone()
-    }
-
-    #[doc(hidden)]
-    pub async fn drain_event_outbox(&self) -> Result<usize, CratestackError> {
-        // Inside an `@isolation` procedure the outbox rows are still
-        // uncommitted: remember to drain once the attempt commits.
-        if let Some(bound) = self.bound() {
-            bound.request_drain();
-            return Ok(0);
-        }
-        ensure_event_outbox_table(&self.pool).await?;
-
-        let rows = sqlx::query_as::<_, EventOutboxRow>(
-            "SELECT event_id, model, operation, occurred_at, payload, attempts, last_error \
-             FROM cratestack_event_outbox \
-             WHERE delivered_at IS NULL \
-             ORDER BY occurred_at ASC, event_id ASC",
-        )
-        .fetch_all(&self.pool)
-        .await
-        .map_err(cratestack_error_from_sqlx)?;
-
-        let mut delivered = 0usize;
-        for row in rows {
-            let event_id = row.event_id;
-            let envelope = row.try_into_envelope()?;
-            match self.events.emit(envelope).await {
-                Ok(()) => {
-                    sqlx::query(
-                        "UPDATE cratestack_event_outbox \
-                         SET delivered_at = NOW(), last_error = NULL, attempts = attempts + 1 \
-                         WHERE event_id = $1",
-                    )
-                    .bind(event_id)
-                    .execute(&self.pool)
-                    .await
-                    .map_err(cratestack_error_from_sqlx)?;
-                    delivered += 1;
-                }
-                Err(error) => {
-                    sqlx::query(
-                        "UPDATE cratestack_event_outbox \
-                         SET attempts = attempts + 1, last_error = $2 \
-                         WHERE event_id = $1",
-                    )
-                    .bind(event_id)
-                    .bind(error.to_string())
-                    .execute(&self.pool)
-                    .await
-                    .map_err(cratestack_error_from_sqlx)?;
-                }
-            }
-        }
-
-        Ok(delivered)
     }
 }

@@ -91,7 +91,8 @@ sqlx-core.workspace = true
 sqlx-postgres.workspace = true
 # `sync` for the `@isolation` transaction lock, `time` for its retry
 # backoff (docs/design/procedure-isolation.md).
-tokio = { workspace = true, features = ["sync", "time"] }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+futures-util.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 rust_decimal = { workspace = true, optional = true }

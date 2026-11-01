@@ -9,7 +9,7 @@ use cratestack_core::{
 };
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::{enqueue_model_event, ensure_event_outbox_table};
 use crate::query::support::{PolicyDb, evaluate_create_policies};
 use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
 
@@ -184,7 +184,8 @@ where
     };
 
     if emits_event {
-        enqueue_event_outbox(&mut **tx, descriptor.schema_name, event_kind, &record).await?;
+        let target = descriptor.event_target();
+        enqueue_model_event(&mut **tx, target, event_kind, &record).await?;
     }
     let mut audit_event = None;
     if audit_enabled {

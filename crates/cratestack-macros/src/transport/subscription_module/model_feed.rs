@@ -36,7 +36,8 @@ pub(super) fn generate(
     if !cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Subscribe) {
         return Ok(None);
     }
-    let emitted = model_emitted_events(model).map_err(|error| {
+    // Validated here too, so a feed never opens on a model with no events.
+    model_emitted_events(model).map_err(|error| {
         format!(
             "failed to parse emitted events for `{}`: {error}",
             model.name
@@ -44,7 +45,7 @@ pub(super) fn generate(
     })?;
     let model_name = model.name.as_str();
     let model_snake = to_snake_case(model_name);
-    let event_alias = ident(&format!("{model_name}CreatedEvent"));
+    let model_ident = ident(model_name);
     let op_id = cratestack_core::ModelVerb::Subscribe.rpc_op_id(model_name);
     let open_ident = ident(&format!("open_{model_snake}"));
     let descriptor = ident(&format!("{}_MODEL", model_snake.to_uppercase()));
@@ -63,22 +64,8 @@ pub(super) fn generate(
         );
         quote! { ::cratestack::SqlColumnValue { column: #column, value: #value } }
     });
-    let registrations = emitted.iter().map(|operation| {
-        let method_ident = ident(&format!("on_{model_snake}_{}", operation.as_str()));
-        quote! {
-            {
-                let push = push.clone();
-                let handle = events.#method_ident(move |event| {
-                    push.push(event);
-                    ::core::future::ready(Ok(()))
-                });
-                guard.track(handle);
-            }
-        }
-    });
-
     let function = quote! {
-        fn #open_ident(
+        async fn #open_ident(
             db: &super::Cratestack,
             input: ::cratestack::serde_json::Value,
             ctx: ::cratestack::CratestackContext,
@@ -102,17 +89,18 @@ pub(super) fn generate(
                     #model_name,
                 )));
             }
-            let events = db.events();
-            let mut guard = ::cratestack::SubscriptionGuard::new(events.__event_bus());
-            let (push, rx) =
-                ::cratestack::__private::subscription_channel::<super::events::#event_alias>();
-            #(#registrations)*
-            drop(push);
-            let stream = ::cratestack::__private::guarded_receiver_stream(rx, guard);
+            // Live before this returns: nothing committed from here on is
+            // missed (design §2.1), whichever replica commits it.
+            let receiver = db
+                .runtime
+                .backplane()
+                .subscribe(&::cratestack::model_event_channel(#model_name))
+                .await?;
+            let stream = ::cratestack::__private::model_events::<super::models::#model_ident>(receiver);
             let pool = db.pool().clone();
             Ok(::cratestack::__private::model_feed(
                 stream,
-                move |event: &super::events::#event_alias| {
+                move |event: &::cratestack::ModelEvent<super::models::#model_ident>| {
                     let record = &event.data;
                     let values = vec![#(#policy_values),*];
                     let (pool, ctx) = (pool.clone(), ctx.clone());

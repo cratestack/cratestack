@@ -8,6 +8,7 @@ mod defaults;
 mod embedded_defaults;
 mod model_impls;
 mod read_source;
+mod subscribed;
 mod view;
 
 #[cfg(test)]
@@ -16,6 +17,7 @@ mod tests_view;
 pub use defaults::{CreateDefault, CreateDefaultType, GeneratedDefault, GeneratedValue};
 pub use embedded_defaults::{DatabaseDefault, LiteralDefault};
 pub use read_source::{ReadSource, WriteSource};
+pub use subscribed::EventTarget;
 pub use view::ViewDescriptor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +55,9 @@ pub struct ModelDescriptor<M, PK> {
     /// Required columns only the database can fill; see [`DatabaseDefault`].
     pub database_defaults: &'static [DatabaseDefault],
     pub emitted_events: &'static [ModelEventKind],
+    /// `true` when the model declared `@@subscribe`: its events are also
+    /// notified to the subscription backplane; see [`EventTarget`].
+    pub subscribed: bool,
     /// Column name of the optimistic-locking version field, set when the
     /// model declares an `@version` field. `None` for non-versioned models,
     /// which keeps update semantics unchanged.
@@ -149,6 +154,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
             literal_defaults: &[],
             database_defaults: &[],
             emitted_events,
+            subscribed: false,
             version_column,
             audit_enabled,
             pii_columns,

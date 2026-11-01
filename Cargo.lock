@@ -1794,6 +1794,7 @@ dependencies = [
  "cratestack-core",
  "cratestack-policy",
  "cratestack-sql",
+ "futures-util",
  "pgvector",
  "rust_decimal",
  "serde",

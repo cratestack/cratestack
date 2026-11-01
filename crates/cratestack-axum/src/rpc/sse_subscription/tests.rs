@@ -29,8 +29,9 @@ async fn items_then_the_terminal_error_on_the_existing_wire() {
     assert_eq!(content_type, "text/event-stream");
     assert_eq!(
         body,
-        "event: message\ndata: {\"id\":1,\"next\":{\"n\":1}}\n\n\
-         event: error\ndata: {\"id\":2,\"err\":{\"code\":\"unavailable\",\"message\":\"subscription lagged\"}}\n\n",
+        "event: ready\ndata: {\"id\":1,\"ready\":{}}\n\n\
+         event: message\ndata: {\"id\":2,\"next\":{\"n\":1}}\n\n\
+         event: error\ndata: {\"id\":3,\"err\":{\"code\":\"unavailable\",\"message\":\"subscription lagged\"}}\n\n",
         "nothing is sent after the terminal error",
     );
 }
@@ -38,5 +39,8 @@ async fn items_then_the_terminal_error_on_the_existing_wire() {
 #[tokio::test]
 async fn a_stream_that_ends_sends_nothing_more() {
     let (_, body) = body_of(vec![Ok(serde_json::json!(7))]).await;
-    assert_eq!(body, "event: message\ndata: {\"id\":1,\"next\":7}\n\n");
+    assert_eq!(
+        body,
+        "event: ready\ndata: {\"id\":1,\"ready\":{}}\n\nevent: message\ndata: {\"id\":2,\"next\":7}\n\n"
+    );
 }

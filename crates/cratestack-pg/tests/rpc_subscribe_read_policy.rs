@@ -24,6 +24,8 @@ include_server_schema!("tests/fixtures/subscribe_read_policy.cstack", db = Postg
 
 #[path = "rpc_subscribe_read_policy/dispatcher.rs"]
 mod dispatcher;
+#[path = "rpc_subscribe_read_policy/replicas.rs"]
+mod replicas;
 mod support;
 
 use support::pg;
@@ -97,6 +99,8 @@ async fn subscribers_receive_only_the_events_they_may_read() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    // The tests of this binary reset the same tables.
+    let _guard = pg::serial_guard().await;
     let pool = &test_pg.pool;
     for statement in [
         "DROP TABLE IF EXISTS sub_notes",

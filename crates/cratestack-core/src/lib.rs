@@ -11,6 +11,7 @@
 
 pub mod audit;
 pub mod authn;
+pub mod backplane;
 pub mod batch;
 pub mod bigint;
 pub mod builder;
@@ -89,6 +90,10 @@ pub use context::{
 // active; `RustDecimal`/`BigDecimal` each only exist under their own
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
+pub use backplane::{
+    BackplaneFuture, BackplaneMessage, BackplaneReceiver, SubscriptionBackplane,
+    model_event_channel,
+};
 pub use client_contract::{
     AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ContractLock, Generation,
     Incompatible, LOCK_FORMAT, LockError, OP_CONTRACT_DOMAIN, OpContracts, Pruned, Verdict,

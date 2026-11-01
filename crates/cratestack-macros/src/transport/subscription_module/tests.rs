@@ -29,16 +29,15 @@ fn generate(source: &str, webtransport: bool) -> Result<String, String> {
 }
 
 #[test]
-fn a_feed_gets_a_dispatcher_arm_and_its_registrations() {
+fn a_feed_gets_a_dispatcher_arm_on_the_backplane() {
     let code = generate(FEED, false).unwrap();
     assert!(code.contains("impl :: cratestack :: SubscriptionDispatcher for SubscriptionDispatch"));
     assert!(code.contains("\"model.Widget.subscribe\" => open_widget"));
-    assert!(code.contains("on_widget_created"));
-    assert!(code.contains("on_widget_deleted"));
-    assert!(
-        !code.contains("on_widget_updated"),
-        "only emitted operations register"
-    );
+    // Events come off the backplane (every replica), not this process's bus.
+    assert!(code.contains("model_event_channel (\"Widget\")"));
+    assert!(code.contains("model_events :: < super :: models :: Widget >"));
+    assert!(!code.contains("on_widget_created"));
+    assert!(code.contains("fn with_backplane"));
     assert!(code.contains("missing_policy_columns"));
     assert!(!code.contains("fn webtransport"));
 }

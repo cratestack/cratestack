@@ -25,8 +25,9 @@ mod relation_scope;
 mod values;
 
 pub use descriptor::{
-    CreateDefault, CreateDefaultType, DatabaseDefault, GeneratedDefault, GeneratedValue,
-    LiteralDefault, ModelColumn, ModelDescriptor, ReadSource, ViewDescriptor, WriteSource,
+    CreateDefault, CreateDefaultType, DatabaseDefault, EventTarget, GeneratedDefault,
+    GeneratedValue, LiteralDefault, ModelColumn, ModelDescriptor, ReadSource, ViewDescriptor,
+    WriteSource,
 };
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
 pub use filter::{

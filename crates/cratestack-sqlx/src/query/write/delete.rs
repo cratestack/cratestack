@@ -14,7 +14,7 @@ use crate::audit::{
     RunInTxOutcome, build_audit_event, dispatch_audit_sink, enqueue_audit_event,
     ensure_audit_table, fetch_for_audit,
 };
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::{ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 use super::delete_exec::{delete_record_in_conn, delete_returning_record};
@@ -99,9 +99,9 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
         let record =
             delete_record_in_conn(tx, self.descriptor, self.id, ctx, self.if_match).await?;
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut **tx,
-                self.descriptor.schema_name,
+                self.descriptor.event_target(),
                 ModelEventKind::Deleted,
                 &record,
             )
@@ -176,9 +176,9 @@ impl<'a, M: 'static, PK: 'static> DeleteRecord<'a, M, PK> {
                 delete_record_in_conn(&mut tx, self.descriptor, self.id, ctx, self.if_match)
                     .await?;
             if emits_event {
-                enqueue_event_outbox(
+                crate::descriptor::enqueue_model_event(
                     &mut *tx,
-                    self.descriptor.schema_name,
+                    self.descriptor.event_target(),
                     ModelEventKind::Deleted,
                     &record,
                 )

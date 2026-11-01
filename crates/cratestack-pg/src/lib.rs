@@ -191,6 +191,11 @@ pub use cratestack_webtransport as webtransport;
 // `datasource { provider = "none" }` schema.
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
+/// Subscription backplanes (`docs/design/subscriptions-websocket.md` §4):
+/// `PgNotifyBackplane` is the default; `InProcessBackplane` serves a single
+/// replica. Swap with `Cratestack::builder(pool).with_backplane(..)`.
+#[cfg(feature = "postgres")]
+pub use cratestack_sqlx::backplane::{InProcessBackplane, PgNotifyBackplane};
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::sqlx;
 #[cfg(feature = "postgres")]
@@ -286,7 +291,7 @@ pub mod __private {
     /// of this module.
     pub use cratestack_axum::rpc::{
         encode_model_event_sse_response, encode_subscription_sse_response, guarded_receiver_stream,
-        model_feed, subscription_channel, validate_subscribe_accept_header,
+        model_events, model_feed, subscription_channel, validate_subscribe_accept_header,
     };
     /// The subscriber's read policy, decided per event in the same
     /// dispatch (an event has no query to push the policy into).

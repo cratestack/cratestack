@@ -4,7 +4,11 @@
 //! write path calls in-transaction. Split out of `descriptor.rs` to
 //! keep that file under the project's ~200-line-per-file convention.
 
-use cratestack_core::{CratestackError, CratestackEventEnvelope, ModelEventKind};
+use cratestack_core::{
+    CratestackError, CratestackEventEnvelope, ModelEventKind, model_event_channel,
+};
+
+use crate::backplane::notify_payload;
 
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
@@ -102,18 +106,84 @@ where
     E: sqlx::Executor<'e, Database = sqlx::Postgres>,
     T: serde::Serialize,
 {
+    // A caller outside the generated write paths (Studio) cannot know whether
+    // the model is `@@subscribe`, so it always notifies.
+    enqueue(executor, model, true, operation, data).await
+}
+
+/// The generated write paths' enqueue: notifies subscribers only for an
+/// `@@subscribe` model (`target.notify_subscribers`).
+pub(crate) async fn enqueue_model_event<'e, E, T>(
+    executor: E,
+    target: cratestack_sql::EventTarget,
+    operation: ModelEventKind,
+    data: &T,
+) -> Result<(), CratestackError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    T: serde::Serialize,
+{
+    enqueue(
+        executor,
+        target.model,
+        target.notify_subscribers,
+        operation,
+        data,
+    )
+    .await
+}
+
+async fn enqueue<'e, E, T>(
+    executor: E,
+    model: &str,
+    notify: bool,
+    operation: ModelEventKind,
+    data: &T,
+) -> Result<(), CratestackError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+    T: serde::Serialize,
+{
     let payload = serde_json::to_value(data).map_err(|error| {
         CratestackError::Codec(format!("failed to encode event payload: {error}"))
     })?;
+    let envelope = CratestackEventEnvelope {
+        event_id: uuid::Uuid::new_v4(),
+        model: model.to_owned(),
+        operation,
+        occurred_at: chrono::Utc::now(),
+        data: payload,
+    };
+    // The subscription backplane's notification, sent by this same statement
+    // so Postgres delivers it only if the transaction commits
+    // (docs/design/subscriptions-websocket.md §4.3). Nobody listening costs
+    // nothing; a `PgNotifyBackplane` listener on any replica receives it.
+    let envelope_json = serde_json::to_string(&envelope).map_err(|error| {
+        CratestackError::Codec(format!("failed to encode event envelope: {error}"))
+    })?;
+    let notification = if notify {
+        notify_payload::encode(
+            &model_event_channel(model),
+            &envelope_json,
+            Some(envelope.event_id),
+        )
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
     sqlx::query(
-        "INSERT INTO cratestack_event_outbox (event_id, model, operation, occurred_at, payload) \
-         VALUES ($1, $2, $3, $4, $5)",
+        "WITH inserted AS (\
+            INSERT INTO cratestack_event_outbox (event_id, model, operation, occurred_at, payload) \
+            VALUES ($1, $2, $3, $4, $5) RETURNING event_id\
+         ) SELECT pg_notify($6, $7) FROM inserted WHERE $7 <> ''",
     )
-    .bind(uuid::Uuid::new_v4())
+    .bind(envelope.event_id)
     .bind(model)
     .bind(operation.as_str())
-    .bind(chrono::Utc::now())
-    .bind(payload)
+    .bind(envelope.occurred_at)
+    .bind(envelope.data)
+    .bind(notify_payload::NOTIFY_CHANNEL)
+    .bind(notification)
     .execute(executor)
     .await
     .map_err(cratestack_error_from_sqlx)?;

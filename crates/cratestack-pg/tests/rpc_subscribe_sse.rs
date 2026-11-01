@@ -202,7 +202,12 @@ async fn subscribe_sse_receives_model_events_as_they_happen() {
     // arrived.
     let mut body = Vec::new();
     loop {
-        if find_subslice(&body, b"\n\n").is_some() {
+        // `event: ready` comes first (the subscription is live); read on to
+        // the first complete message event.
+        if let Some(start) = find_subslice(&body, b"event: message\n")
+            && find_subslice(&body[start..], b"\n\n").is_some()
+        {
+            body.drain(..start);
             break;
         }
         let chunk = timeout(READ_TIMEOUT, response.chunk())
@@ -251,7 +256,12 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
     let pool = &test_pg.pool;
     reset_widgets_table(pool).await;
 
-    let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    // In-process backplane: model events are published synchronously from
+    // the drain each create runs on commit, so the overflow below does not
+    // race a listener connection.
+    let db = cratestack_schema::Cratestack::builder(pool.clone())
+        .with_backplane(std::sync::Arc::new(cratestack::InProcessBackplane::new()))
+        .build();
     let router = cratestack_schema::axum::rpc_router(
         db.clone(),
         RpcProcedures,
@@ -272,8 +282,8 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
         .expect("subscribe dispatch should succeed");
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Past this point the subscription is live (the handler is
-    // registered on `CratestackEventBus`) but nothing has polled the response
+    // Past this point the subscription is live (subscribed on the
+    // backplane) but nothing has polled the response
     // body yet, so every `push()` below runs synchronously in this
     // task, uncontested — the 65th create is guaranteed to observe a
     // genuinely full channel, not a race against a consumer.
@@ -309,6 +319,13 @@ async fn subscribe_sse_emits_unavailable_error_and_ends_stream_on_overflow() {
     let body_text = String::from_utf8(collected).expect("SSE body should be valid UTF-8");
 
     let events: Vec<&str> = body_text.split("\n\n").filter(|s| !s.is_empty()).collect();
+    assert!(
+        events
+            .first()
+            .is_some_and(|event| event.starts_with("event: ready")),
+        "the stream opens with the ready event: {body_text}"
+    );
+    let events = &events[1..];
     assert!(
         !events.is_empty(),
         "expected at least the terminal error event"

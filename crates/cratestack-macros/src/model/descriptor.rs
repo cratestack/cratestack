@@ -123,6 +123,11 @@ pub(crate) fn generate_model_descriptor(
     let sensitive_columns = cols.sensitive_columns;
     let upsert_update_columns = cols.upsert_update_columns;
 
+    // `@@subscribe`: the model's events are also notified to subscribers.
+    let subscribed = cratestack_core::model_verbs(model)
+        .contains(&cratestack_core::ModelVerb::Subscribe)
+        .then(|| quote! { .with_subscribed() });
+
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ModelDescriptor<#model_ident, #primary_key_type> =
             ::cratestack::ModelDescriptor::new(
@@ -154,7 +159,8 @@ pub(crate) fn generate_model_descriptor(
                 &[#(#upsert_update_columns),*],
             )
             .with_generated_defaults(&[#(#generated_defaults),*])
-            #embedded_defaults;
+            #embedded_defaults
+            #subscribed;
     })
 }
 

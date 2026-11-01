@@ -9,7 +9,7 @@ use crate::audit::{
     build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
     fetch_for_audit,
 };
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
 
 use super::update_exec::{update_record_in_conn, update_record_with_executor};
@@ -61,9 +61,9 @@ where
             .and_then(|m| serde_json::to_value(m).ok());
         let record = update_record_in_conn(&mut tx, descriptor, id, input, ctx, if_match).await?;
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut *tx,
-                descriptor.schema_name,
+                descriptor.event_target(),
                 ModelEventKind::Updated,
                 &record,
             )

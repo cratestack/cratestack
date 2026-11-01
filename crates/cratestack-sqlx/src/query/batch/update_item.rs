@@ -8,7 +8,6 @@ use cratestack_core::{
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event, fetch_for_audit};
-use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
 use crate::{ModelDescriptor, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
 
@@ -60,9 +59,9 @@ where
             update_one_in_savepoint(&mut item_tx, descriptor, id, &values, ctx, if_match).await?;
 
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut *item_tx,
-                descriptor.schema_name,
+                descriptor.event_target(),
                 ModelEventKind::Updated,
                 &record,
             )

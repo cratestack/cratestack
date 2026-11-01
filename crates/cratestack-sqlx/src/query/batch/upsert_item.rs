@@ -10,7 +10,6 @@ use cratestack_core::{
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
-use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{
     PolicyDb, apply_create_defaults, evaluate_create_policies, find_column_value,
 };
@@ -118,8 +117,13 @@ where
         };
 
         if emits_this_event {
-            enqueue_event_outbox(&mut *item_tx, descriptor.schema_name, event_kind, &record)
-                .await?;
+            crate::descriptor::enqueue_model_event(
+                &mut *item_tx,
+                descriptor.event_target(),
+                event_kind,
+                &record,
+            )
+            .await?;
         }
         if audit_enabled {
             let after = serde_json::to_value(&record).ok();

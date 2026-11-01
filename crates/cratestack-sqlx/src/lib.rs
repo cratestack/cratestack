@@ -1,6 +1,7 @@
 pub mod sqlx;
 
 mod audit;
+pub mod backplane;
 mod bound;
 mod delegate;
 mod descriptor;

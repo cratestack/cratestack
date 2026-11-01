@@ -47,6 +47,8 @@ async fn an_owner_receives_its_own_readable_records_as_json() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    // The tests of this binary reset the same tables.
+    let _guard = pg::serial_guard().await;
     let pool = &test_pg.pool;
     for statement in [
         "DROP TABLE IF EXISTS sub_notes",
