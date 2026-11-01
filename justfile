@@ -1513,8 +1513,23 @@ verify-typescript:
 	echo "=== npm install and build (typechecks with tsc): $pkg ==="
 	(cd "$pkg" && npm install && npm run build)
 
+	# Slice S6: a schema with subscription ops emits src/subscriptions.ts,
+	# src/subscription-sockets.ts and, under the two hook layers,
+	# src/swr/subscriptions.hooks.ts and src/react-query-subscriptions.ts;
+	# none of the fixtures above has one, so nothing else typechecks them.
+	pkg="$out/subscriptions/rpc"
+	echo "=== generate-typescript (--swr --tanstack + RPC): subscriptions.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack" \
+	  --out "$pkg" \
+	  --package-name typescript-verify-subscriptions \
+	  --swr \
+	  --tanstack
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
 	echo ""
-	echo "✓ TypeScript REST, RPC, and --swr + RPC fixtures generated and typechecked successfully"
+	echo "✓ TypeScript REST, RPC, --swr + RPC, and subscription fixtures generated and typechecked successfully"
 
 # Resolve + typecheck a generated TypeScript client at the EXACT npm API
 # floors it declares (cratestack#779). CI's `typescript (generated

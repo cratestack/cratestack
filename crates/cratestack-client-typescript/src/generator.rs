@@ -52,6 +52,9 @@ fn generate_default_package(
         template_specs_for(schema.transport, config.refine, config.tanstack, config.rtk)?;
     if crate::subscriptions::has_subscriptions(schema) {
         specs.extend_from_slice(crate::subscriptions::SUBSCRIPTION_TEMPLATE_SPECS);
+        if config.tanstack {
+            specs.extend_from_slice(crate::subscriptions::TANSTACK_SUBSCRIPTION_TEMPLATE_SPECS);
+        }
     }
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config)?;

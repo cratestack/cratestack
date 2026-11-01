@@ -3,7 +3,8 @@
 //! `src/subscription-sockets.ts` (WebTransport, WebSocket, SSE, `"auto"`),
 //! emitted only for a schema with a subscription op, so every other schema
 //! renders byte-for-byte as before. Under `--swr`, `src/swr/subscriptions.hooks.ts`
-//! adds a generic `useSubscription` over the package's client.
+//! adds a generic `useSubscription` over the package's client; under
+//! `--tanstack`, `src/react-query-subscriptions.ts` adds `useSubscriptionQuery`.
 
 use cratestack_core::{ModelVerb, Schema};
 
@@ -30,6 +31,14 @@ pub(crate) const SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[
         default_source: include_str!("../templates/src/subscription-sockets.ts.j2"),
     },
 ];
+
+/// `--tanstack`: `useSubscriptionQuery` and the `subscriptionQueryOptions`
+/// behind it, generic over any of the client's subscriptions.
+pub(crate) const TANSTACK_SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
+    template_name: "react-query-subscriptions.ts.j2",
+    output_path: OutputPath::Fixed("src/react-query-subscriptions.ts"),
+    default_source: include_str!("../templates/src/react-query-subscriptions.ts.j2"),
+}];
 
 /// `--swr`: `useSubscription`, generic over any of the client's subscriptions.
 pub(crate) const SWR_SUBSCRIPTION_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {

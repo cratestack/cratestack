@@ -1066,11 +1066,20 @@ The rest:
   there it starts at the WebSocket (Node 22's global) or SSE.
 - **Framework layer**:
   - `--swr` gets a generic `useSubscription(key, open)` over `swr/subscription`.
-  - The `--tanstack` layout declares no `react` types, so it has no hook yet. Use the
-    `AsyncIterable` in an effect and invalidate there. A `useLiveQuery` is a follow-up.
+  - `--tanstack` gets `useSubscriptionQuery(key, open, { onItem, queryOptions })`, built from
+    `useQuery` and `useQueryClient` only, since that layout declares no `react` dependency. Its
+    `subscriptionQueryOptions` writes each item with `setQueryData` rather than using TanStack's
+    `streamedQuery`, which is still experimental and changed shape within 5.x, beyond the
+    package's `^5.0.0` floor. The query is pending until the first item, then holds the latest
+    one. Its last observer leaving cancels the query, which aborts the subscription. To keep a
+    list fresh, invalidate its key in `onItem`.
 - Tests:
   - `tests/subscriptions_runtime.rs` runs vitest against an SSE `fetch` and a fake socket: Ready
     gating, revival, terminal error, multiplexing and cancel, `"auto"`'s fallback and its refusal;
+    and `subscriptionQueryOptions` under a real `QueryClient` (items in the cache, abort on the
+    last observer leaving);
+  - `just verify-typescript` builds the subscription fixture with `--swr --tanstack` through
+    `tsc`;
   - `tests/browser/webtransport.cjs` runs the generated modules in headless Chromium against
     `browser_harness`: items, credentials through `Init`, refusal, cancel, and a second credential
     getting its own refused session. `just test-ts-webtransport-browser` runs it, in CI's

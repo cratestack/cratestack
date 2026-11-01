@@ -48,7 +48,9 @@ frames by hand. Nothing used WebTransport from the client side.
   the same credentials.
 - Both REST and RPC packages get this, but only for schemas with a subscription op; every other
   schema generates exactly as before. Under `--swr`, `useSubscription(key, open)` wraps any of them
-  in `swr/subscription`.
+  in `swr/subscription`. Under `--tanstack`, `useSubscriptionQuery(key, open)` makes one TanStack
+  Query data (the latest item; cancelled with the query's last observer), and
+  `subscriptionQueryOptions` gives the same options to `useQueries` or a `QueryObserver`.
 - The WebTransport binding is proven in headless Chromium against the real server
   (`just test-ts-webtransport-browser`, in CI's WebTransport job).
 

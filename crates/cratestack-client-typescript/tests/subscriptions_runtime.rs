@@ -2,7 +2,8 @@
 //! (slice S6, `docs/design/subscriptions-websocket.md` §8): generate a
 //! package from `tests/fixtures/subscriptions.cstack` (a model feed and a
 //! subscription procedure), copy `tests/js/subscriptions/*` beside it,
-//! `npm install`, `npx vitest run`. The test file stands in for the server
+//! `npm install`, `npx vitest run`. `tanstack.test.ts` drives `--tanstack`'s
+//! `subscriptionQueryOptions` under a real `QueryClient`. The other test file stands in for the server
 //! with an SSE `fetch` and a fake `WebSocket`; the Rust server side of the
 //! same wire is proven by `cratestack-pg/tests/websocket_subscriptions.rs`.
 //!
@@ -17,7 +18,7 @@ use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 /// Keep in lockstep with `tests/js/subscriptions/subscriptions.test.ts` — a
 /// successful vitest exit alone cannot tell a genuinely green run from an
 /// accidentally-empty one (the same guard `decimal_round_trip.rs` uses).
-const EXPECTED_PASSING: &str = "4 passed";
+const EXPECTED_PASSING: &str = "5 passed";
 
 #[test]
 fn subscriptions_run_over_sse_and_a_socket() {
@@ -36,6 +37,8 @@ fn subscriptions_run_over_sse_and_a_socket() {
         &schema,
         &TypeScriptGeneratorConfig {
             native_cbor: false,
+            // `src/react-query-subscriptions.ts`, run by `tanstack.test.ts`.
+            tanstack: true,
             ..TypeScriptGeneratorConfig::default()
         },
     )
@@ -55,7 +58,12 @@ fn subscriptions_run_over_sse_and_a_socket() {
     // actually run the test below — same reason `decimal_round_trip.rs`
     // does this for its own fixture.
     let js_fixture_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/js/subscriptions");
-    for asset in ["package.json", "vitest.config.ts", "subscriptions.test.ts"] {
+    for asset in [
+        "package.json",
+        "vitest.config.ts",
+        "subscriptions.test.ts",
+        "tanstack.test.ts",
+    ] {
         fs::copy(format!("{js_fixture_dir}/{asset}"), dir.path().join(asset))
             .unwrap_or_else(|error| panic!("copy {asset} into generated package dir: {error}"));
     }
