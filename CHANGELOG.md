@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### `examples/realtime-chat`: every binding, and the fallback proven in a browser
+
+**What was missing.** No example put the subscription pieces together. Nothing proved that
+`"auto"` falls back when UDP is blocked.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §11, S6).
+
+- `examples/realtime-chat` has:
+  - messages as a model feed;
+  - typing indicators on a topic behind a subscription procedure, published by a unary
+    `sendTyping`;
+  - SSE, WebSocket and WebTransport, the last on a `DevCertificate` made at startup, whose hash is
+    printed for the page to pin.
+- `just test-realtime-chat`, run in CI's WebTransport job, runs:
+  - the generated Rust client over the WebSocket and SSE, plus `Auto` falling back to SSE behind
+    a proxy that drops upgrades;
+  - the generated TypeScript client in Chromium. With UDP open it uses WebTransport (no WebSocket,
+    no SSE). With the WebTransport URL on a dead UDP port it falls back to the WebSocket. SSE works
+    when chosen.
+
 ### The generated Dart client subscribes over SSE
 
 **What was missing.** A Flutter or Dart client had no subscription call.

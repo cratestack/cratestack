@@ -413,6 +413,36 @@ test-ts-webtransport-browser:
 	npx --yes tsc --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir target/ts-webtransport/js target/ts-webtransport/package/src/subscriptions.ts target/ts-webtransport/package/src/subscription-sockets.ts
 	node crates/cratestack-client-typescript/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/ts-webtransport/js
 
+# `examples/realtime-chat` end to end (slice S6): its Rust tests (the
+# generated client over the WebSocket and SSE, `Auto` falling back to SSE),
+# then headless Chromium on the generated TypeScript client's `"auto"`
+# (WebTransport with UDP open, the WebSocket with UDP blocked, SSE). Uses
+# `DATABASE_URL` when set, else a throwaway `postgres:16` container. Needs
+# `node`, a `playwright` that `require()` resolves (`NODE_PATH`), and its
+# Chromium. CI's `webtransport-browser` job runs it.
+test-realtime-chat:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ -z "${DATABASE_URL:-}" ]; then
+	  container=$(docker run -d --rm -e POSTGRES_PASSWORD=postgres -p 127.0.0.1::5432 postgres:16)
+	  trap 'docker stop "$container" >/dev/null' EXIT
+	  port=$(docker port "$container" 5432/tcp | head -n1 | sed 's/.*://')
+	  until docker exec "$container" pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+	  export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$port/postgres"
+	fi
+	cargo build -p realtime-chat-example
+	out=target/realtime-chat
+	rm -rf "$out" && mkdir -p "$out/static"
+	cargo run -p cratestack-cli -- generate-typescript --no-native-cbor \
+	  --schema examples/realtime-chat/schema.cstack --out "$out/package"
+	npx --yes tsc --target ES2022 --module ESNext --moduleResolution Bundler \
+	  --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir "$out/static" \
+	  "$out/package/src/subscriptions.ts" "$out/package/src/subscription-sockets.ts"
+	echo '<!doctype html><meta charset="utf-8"><title>realtime chat</title>' > "$out/static/index.html"
+	CRATESTACK_TEST_DATABASE_URL="$DATABASE_URL" CRATESTACK_REQUIRE_DB=1 \
+	  cargo test -p realtime-chat-example -- --test-threads=1
+	node examples/realtime-chat/tests/browser/fallback.cjs target/debug/realtime-chat-server "$out/static"
+
 test-ci-db-webtransport *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
 

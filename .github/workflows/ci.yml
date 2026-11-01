@@ -638,7 +638,7 @@ jobs:
         run: ./.ci/auth-pluggable-check.sh
 
   webtransport-browser:
-    timeout-minutes: 30
+    timeout-minutes: 40
     name: webtransport (cratestack-webtransport, real Chromium end to end)
     runs-on: ubuntu-latest
     # The native integration tests (`cargo test -p cratestack-webtransport`)
@@ -682,6 +682,14 @@ jobs:
         # ["webtransport"]`, so the db shard never builds it; here because
         # this job already builds the QUIC stack.
         run: just test-ci-db-webtransport --locked -- --test-threads=1
+      - name: examples/realtime-chat end to end (Postgres container, Chromium)
+        # Slice S6: the example's Rust tests, then the generated TypeScript
+        # client's `"auto"` in Chromium: WebTransport with UDP open, the
+        # WebSocket with UDP blocked, SSE.
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+          PATH_PREFIX: ${{ runner.temp }}/pw/node_modules/.bin
+        run: PATH="$PATH_PREFIX:$PATH" just test-realtime-chat
 
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to

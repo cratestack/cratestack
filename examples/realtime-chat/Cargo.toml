@@ -1,0 +1,32 @@
+[package]
+name = "realtime-chat-example"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "A chat that is live over WebTransport, WebSocket and SSE: a model feed, a topic behind a subscription procedure, a dev certificate for local WebTransport, and the generated clients' \"auto\" fallback."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "realtime-chat-server"
+path = "src/main.rs"
+
+[dependencies]
+cratestack = { package = "cratestack-pg", path = "../../crates/cratestack-pg", features = [
+  "websocket",
+  "webtransport",
+  "client-ws",
+] }
+# `DevCertificate` (`cratestack::webtransport::DevCertificate`) is behind
+# this crate's `dev-cert` feature; production serves a real certificate.
+cratestack-webtransport = { path = "../../crates/cratestack-webtransport", features = ["dev-cert"] }
+cratestack-codec-json = { path = "../../crates/cratestack-codec-json" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true, features = ["fs"] }
+
+[dev-dependencies]
+async-trait = { workspace = true }

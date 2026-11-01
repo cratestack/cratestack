@@ -645,7 +645,9 @@ QUIC.
   `cratestack run` and the examples generate one at startup and print its hash, and the TS client
   takes it as `webtransport: { certificateHashes }`.
   *As built:* `DevCertificate::generate(hosts)` behind the crate's `dev-cert` feature. It returns
-  the chain, the key and the SHA-256 hash. Wiring it into `cratestack run` comes with S6.
+  the chain, the key and the SHA-256 hash. `examples/realtime-chat` makes one at startup and prints
+  the hash (S6). `cratestack run` is not wired, because it serves the studio, not the application,
+  and the studio has no subscriptions. An application server makes its own, as the example does.
 
 ### 6a.6 Running it in production
 
@@ -1109,6 +1111,25 @@ The rest:
   reading both stream providers through a `ProviderContainer`.
   `fixtures/subscriptions_rpc_test.dart` runs under `just verify-dart` (CI's Dart job) against an
   SSE-answering transport: Ready, items, the request, the refusal and the terminal error.
+
+**S6 status, the example (as built, 2026-11-01).** `examples/realtime-chat`.
+- **What it has**:
+  - messages (`@@subscribe`);
+  - `RoomTyping`, a topic behind the `typing` subscription procedure;
+  - `sendTyping`, a unary mutation that publishes.
+- **Where it is served**:
+  - unary calls, SSE and the WebSocket on the HTTP listener, with JSON on the wire;
+  - WebTransport on a UDP listener with a `DevCertificate`. Its hash and both addresses are printed
+    as one JSON line on startup.
+- **`just test-realtime-chat`** (CI's WebTransport job, Postgres in a container):
+  - `tests/chat.rs` runs the generated Rust client:
+    - the model feed over the WebSocket;
+    - the topic over SSE, published by the unary call;
+    - `Auto` falling back to SSE when the WebSocket route is absent.
+  - `tests/browser/fallback.cjs` runs the generated TypeScript client's `"auto"` in Chromium:
+    - UDP open: WebTransport, with no WebSocket and no SSE request seen;
+    - UDP blocked (the URL names a dead UDP port): the WebSocket;
+    - SSE when chosen.
 
 ## 12. Decisions for the maintainer
 
