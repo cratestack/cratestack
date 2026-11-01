@@ -1042,7 +1042,10 @@ The rest:
     minutes across clones of the config, as in the TypeScript client.
 - **The client half of `cratestack-webtransport`** (feature `client`, as built 2026-11-01).
   - `WebTransportClient::connect(url, trust, headers)` CONNECTs, offers the CBOR subprotocol, sends
-    `Init` with the headers, and resolves at `Ready{0}`. It keeps the control stream open, because
+    `Init` with the headers, and resolves at `Ready{0}`. The generated client fills `headers` from
+    its request authorizer for `CONNECT <path>`, the request the server authenticates (§6a.4), so a
+    signing authorizer signs what is verified. Frames up to `DEFAULT_BODY_LIMIT_BYTES` are accepted,
+    the server's own default inbound limit. It keeps the control stream open, because
     the server ends a session whose control stream ends.
   - `subscribe(op, input)` opens one bidirectional stream, writes the `Request`, finishes the send
     half and resolves at `Ready{id}`. Dropping the `Subscription` stops the stream, which is the

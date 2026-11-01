@@ -44,14 +44,24 @@ async fn database() -> Option<Cratestack> {
     Some(Cratestack::builder(pool).build())
 }
 
-struct AsUserOne;
+/// User 1, recording each request it is asked to sign: a signing
+/// authorizer must sign what the server authenticates, `CONNECT <path>` for
+/// a WebTransport session (§6a.4).
+#[derive(Default)]
+struct AsUserOne {
+    signed: std::sync::Mutex<Vec<(String, String)>>,
+}
 
 #[async_trait::async_trait]
 impl RequestAuthorizer for AsUserOne {
     async fn authorize(
         &self,
-        _request: &AuthorizationRequest,
+        request: &AuthorizationRequest,
     ) -> Result<Vec<(String, String)>, ClientError> {
+        self.signed
+            .lock()
+            .unwrap()
+            .push((request.method.clone(), request.path.clone()));
         Ok(vec![("authorization".to_owned(), "Bearer 1".to_owned())])
     }
 }
@@ -88,8 +98,15 @@ fn dead_port() -> u16 {
 }
 
 fn client(config: ClientConfig) -> cratestack_schema::client::Client<JsonCodec> {
+    client_signed_by(config, Arc::default())
+}
+
+fn client_signed_by(
+    config: ClientConfig,
+    authorizer: Arc<AsUserOne>,
+) -> cratestack_schema::client::Client<JsonCodec> {
     cratestack_schema::client::Client::new(
-        CratestackClient::new(config, JsonCodec).with_request_authorizer(Arc::new(AsUserOne)),
+        CratestackClient::new(config, JsonCodec).with_request_authorizer(authorizer),
     )
 }
 
@@ -138,12 +155,18 @@ async fn pinned_and_auto_subscribe_over_webtransport() {
         let config = ClientConfig::new(nowhere.clone())
             .with_subscription_transport(transport)
             .with_webtransport(url.clone(), trust.clone());
-        let mut typing = client(config)
+        let authorizer = Arc::new(AsUserOne::default());
+        let mut typing = client_signed_by(config, Arc::clone(&authorizer))
             .procedures()
             .typing(&room("wt"))
             .await
             .unwrap_or_else(|error| panic!("{transport:?} opens over WebTransport: {error:?}"));
         assert_eq!(publish_then_receive(&db, "wt", &mut typing).await, "ada");
+        assert_eq!(
+            authorizer.signed.lock().unwrap().as_slice(),
+            [("CONNECT".to_owned(), "/rpc/wt".to_owned())],
+            "{transport:?} signs the request the server authenticates"
+        );
     }
 }
 

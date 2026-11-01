@@ -1,7 +1,8 @@
 //! A subscription over WebTransport (`docs/design/subscriptions-websocket.md`
 //! §6a, feature `webtransport`, native targets): one session per
 //! subscription, CBOR frames, through `cratestack-webtransport`'s client.
-//! `Init` carries the request authorizer's headers for `GET <session path>`;
+//! `Init` carries the request authorizer's headers for `CONNECT <session path>`,
+//! the request the server authenticates;
 //! the call resolves at the subscription's `Ready`. Dropping the
 //! subscription stops its stream, which is the cancel.
 
@@ -34,7 +35,16 @@ pub(super) async fn connect<C: HttpClientCodec>(
     endpoint: &WebTransportEndpoint,
 ) -> Result<WebTransportClient, Failure> {
     let headers = client
-        .build_header_map(&Method::GET, endpoint.url.path(), None, None, &[], "*/*")
+        // The server authenticates the session as `CONNECT <path>` (§6a.4),
+        // so a signing authorizer signs that.
+        .build_header_map(
+            &Method::CONNECT,
+            endpoint.url.path(),
+            None,
+            None,
+            &[],
+            "*/*",
+        )
         .await
         .map_err(Failure::Refused)?;
     let headers: BTreeMap<String, String> = headers

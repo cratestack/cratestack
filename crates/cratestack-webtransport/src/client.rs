@@ -32,8 +32,10 @@ use crate::transport::{SendHalf, Session};
 mod bodies;
 use bodies::{closed_body, going_away};
 
-/// Frames larger than this are refused, as on the server.
-const MAX_FRAME_BYTES: usize = 1 << 20;
+/// Frames larger than this are refused: the server's own default inbound
+/// limit (`WebTransportLimits::max_frame_bytes`), so any frame a default
+/// server accepts, a client accepts back.
+const MAX_FRAME_BYTES: usize = cratestack_core::DEFAULT_BODY_LIMIT_BYTES;
 /// How long the server has to answer `Init` or a `Request`.
 const READY_WITHIN: Duration = Duration::from_secs(10);
 
