@@ -48,7 +48,11 @@ fn generate_default_package(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<Vec<GeneratedTypeScriptFile>, TypeScriptGeneratorError> {
-    let specs = template_specs_for(schema.transport, config.refine, config.tanstack, config.rtk)?;
+    let mut specs =
+        template_specs_for(schema.transport, config.refine, config.tanstack, config.rtk)?;
+    if crate::subscriptions::has_subscriptions(schema) {
+        specs.extend_from_slice(crate::subscriptions::SUBSCRIPTION_TEMPLATE_SPECS);
+    }
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config)?;
     specs

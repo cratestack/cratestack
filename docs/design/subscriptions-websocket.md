@@ -1041,6 +1041,41 @@ The rest:
   - `cratestack-client/tests/subscriptions.rs` covers the client role's surface;
   - there are SSE parser units.
 
+**S6 status, TypeScript (as built, 2026-11-01).** The generated package subscribes.
+- **Files**: `src/subscriptions.ts` (the API, `"auto"`, SSE) and `src/subscription-sockets.ts`
+  (WebTransport, WebSocket). They are emitted for REST and RPC packages only when the schema has a
+  subscription op, so every other package, and every committed snapshot, is unchanged. The runtime
+  gains `subscriptions?: SubscriptionClientOptions` under the same condition.
+- **The call** is `client.<model>.subscribe(input, { signal, onReady, headers })` and
+  `client.procedures.<name>(args, options)`. It returns `AsyncIterable<Item>`; the first `next()`
+  resolves after `Ready`. Items are revived like unary responses. A model event's `operation` is
+  `"Created" | "Updated" | "Deleted"`, the server's spelling. Errors are
+  `CratestackSubscriptionError { code, message, details, status }`.
+- **Bindings**, all with JSON frames:
+  - **WebTransport** uses one session per URL and credentials, `?codec=json`, an `Init` with the
+    client's headers, and one bidirectional stream per subscription (the `Request` is written,
+    then the writer is closed; cancel is `reader.cancel()`). The URL is client configuration
+    (`webTransport.url`), because the listener is a separate UDP address.
+  - **WebSocket** uses one shared socket per URL and credentials, multiplexed by id, with `cancel`
+    and a 5 s linger.
+  - **SSE** is `fetch` with a stream parser, not `EventSource`, because it needs headers.
+- **`"auto"`** tries WebTransport (only with `webTransport.url` and a platform `WebTransport`), then
+  WebSocket, then SSE. A transport that never opens raises `SocketUnreachable` and falls back. A
+  refusal is thrown. A WebTransport attempt not `Ready{0}` within 3 s is remembered in
+  `localStorage` (inside a try/catch) for 10 minutes per origin. Node has no `WebTransport`, so
+  there it starts at the WebSocket (Node 22's global) or SSE.
+- **Framework layer**:
+  - `--swr` gets a generic `useSubscription(key, open)` over `swr/subscription`.
+  - The `--tanstack` layout declares no `react` types, so it has no hook yet. Use the
+    `AsyncIterable` in an effect and invalidate there. A `useLiveQuery` is a follow-up.
+- Tests:
+  - `tests/subscriptions_runtime.rs` runs vitest against an SSE `fetch` and a fake socket: Ready
+    gating, revival, terminal error, multiplexing and cancel, `"auto"`'s fallback and its refusal;
+  - `tests/browser/webtransport.cjs` runs the generated modules in headless Chromium against
+    `browser_harness`: items, credentials through `Init`, refusal, cancel, and a second credential
+    getting its own refused session. `just test-ts-webtransport-browser` runs it, in CI's
+    WebTransport job.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The

@@ -401,6 +401,18 @@ test-ci-db-cose *args='':
 # it; CI's `webtransport-browser` job runs it. Exports `CRATESTACK_REQUIRE_DB=1`
 # itself, so a missing database fails instead of skipping.
 # The generated subscription dispatcher over WebTransport, against Postgres.
+# The generated TypeScript client's WebTransport binding in headless Chromium
+# (slice S6): generates a package from the TS generator's `subscriptions`
+# fixture, compiles its two subscription modules with `npx tsc`, and runs
+# them against `browser_harness`. Needs what `test-webtransport-browser`
+# needs, plus `typescript` that `npx` can find.
+test-ts-webtransport-browser:
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	rm -rf target/ts-webtransport
+	cargo run -p cratestack-cli -- generate-typescript --no-native-cbor --schema crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack --out target/ts-webtransport/package
+	npx --yes tsc --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir target/ts-webtransport/js target/ts-webtransport/package/src/subscriptions.ts target/ts-webtransport/package/src/subscription-sockets.ts
+	node crates/cratestack-client-typescript/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/ts-webtransport/js
+
 test-ci-db-webtransport *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
 

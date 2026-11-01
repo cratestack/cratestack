@@ -50,6 +50,13 @@ pub(crate) struct TemplateContext {
     procedures: Vec<ProcedureView>,
     query_procedures: Vec<ProcedureView>,
     mutation_procedures: Vec<ProcedureView>,
+    /// `subscription procedure`s (slice S6): a method each on the procedures
+    /// API, returning an `AsyncIterable`.
+    subscription_procedures: Vec<ProcedureView>,
+    /// Any subscription op at all: gates `subscriptions.ts`, its imports and
+    /// the runtime's `subscriptions` option, so a schema without one renders
+    /// exactly as before.
+    has_subscriptions: bool,
     /// One row per model/`type` in the schema — the generated
     /// `wireShapes` registry `models.ts.j2` renders and every decode
     /// call site looks a name up in (`crate::decimal`'s module doc has the
@@ -279,7 +286,11 @@ pub(crate) fn build_template_context(
             interfaces.push(computed_params_interface);
         }
     }
-    for procedure in &schema.procedures {
+    for procedure in schema
+        .procedures
+        .iter()
+        .chain(&schema.subscription_procedures)
+    {
         let fields = procedure
             .args
             .iter()
@@ -378,6 +389,17 @@ pub(crate) fn build_template_context(
         procedures,
         query_procedures,
         mutation_procedures,
+        has_subscriptions: crate::subscriptions::has_subscriptions(schema),
+        subscription_procedures: schema
+            .subscription_procedures
+            .iter()
+            .map(|procedure| {
+                let mut view =
+                    build_procedure(procedure, &occupied_type_names, &enum_names, &model_names);
+                view.kind = "subscription";
+                view
+            })
+            .collect(),
         wire_shapes,
         ordinal_enums: crate::ordinal_enums::build_ordinal_registry(schema),
         refine: config.refine,

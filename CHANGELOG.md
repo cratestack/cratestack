@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### The generated TypeScript client subscribes, over WebTransport, a WebSocket or SSE
+
+**What was missing.** A browser or Node client could reach a subscription only by speaking SSE or
+frames by hand. Nothing used WebTransport from the client side.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes.subscribe(input, { signal, onReady })`** and
+  **`client.procedures.roomMessages(args, options)`** return an `AsyncIterable`.
+  - Its first `next()` resolves after `Ready`.
+  - Items are revived like any response (`Decimal`, `BigInt`, bytes).
+  - A refusal or a terminal error is thrown as a `CratestackSubscriptionError`.
+  - Breaking out of the loop, or aborting `signal`, cancels the subscription.
+- **`subscriptions: { transport, webTransport: { url, serverCertificateHashes } }`** on the client
+  options. `"auto"` (the default) tries three bindings in order:
+  1. WebTransport, when `webTransport.url` names the server's listener and the platform has it.
+     A session that is not `Ready` within 3 s counts as failed, and the failure is remembered for
+     10 minutes.
+  2. A shared, multiplexed WebSocket.
+  3. SSE over `fetch`.
+
+  A refusal is never a reason to fall back. Sessions are shared only between subscriptions with
+  the same credentials.
+- Both REST and RPC packages get this, but only for schemas with a subscription op; every other
+  schema generates exactly as before. Under `--swr`, `useSubscription(key, open)` wraps any of them
+  in `swr/subscription`.
+- The WebTransport binding is proven in headless Chromium against the real server
+  (`just test-ts-webtransport-browser`, in CI's WebTransport job).
+
 ### The generated Rust client subscribes: `subscribe()` and subscription procedures
 
 **What was missing.** A Rust client could reach a subscription only by speaking SSE or frames by

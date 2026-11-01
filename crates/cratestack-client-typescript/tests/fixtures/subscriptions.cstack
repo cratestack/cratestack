@@ -1,0 +1,25 @@
+// Slice S6 fixture: a generated TypeScript client's subscriptions
+// (`tests/subscriptions_runtime.rs`): a model feed and a subscription
+// procedure, over SSE, a WebSocket, and `"auto"`'s fallback.
+
+transport rpc
+
+model Note {
+  id Int @id
+  body String
+  amount Decimal
+
+  @@allow("read", true)
+  @@emit(created)
+  @@subscribe
+}
+
+type Room {
+  roomId String
+}
+
+type Line {
+  body String
+}
+
+subscription procedure lines(args: Room): Line

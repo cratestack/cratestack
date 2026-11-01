@@ -664,12 +664,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pw"
           cd "$RUNNER_TEMP/pw"
           npm init -y > /dev/null
-          npm install --no-audit --no-fund playwright@1.63.0
+          npm install --no-audit --no-fund playwright@1.63.0 typescript@5.9.3
           npx playwright install --with-deps chromium
       - name: WebTransport end to end in Chromium
         env:
           NODE_PATH: ${{ runner.temp }}/pw/node_modules
         run: just test-webtransport-browser
+      - name: The generated TypeScript client over WebTransport in Chromium
+        # Slice S6: the generated `subscriptions.ts` against the same harness.
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+          PATH_PREFIX: ${{ runner.temp }}/pw/node_modules/.bin
+        run: PATH="$PATH_PREFIX:$PATH" just test-ts-webtransport-browser
       - name: Generated dispatcher over WebTransport (testcontainers Postgres)
         # Slice S5a: `db.subscriptions().webtransport(..)` serving a
         # `@@subscribe` feed with its read policy. `required-features =

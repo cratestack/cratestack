@@ -75,6 +75,11 @@ pub(crate) struct ModelApiView {
     pub(crate) allows_create: bool,
     pub(crate) allows_update: bool,
     pub(crate) allows_delete: bool,
+    /// `@@subscribe` (slice S6): the client gets `subscribe(input, options)`.
+    pub(crate) allows_subscribe: bool,
+    /// `model.<Model>.subscribe`, and REST's `/<plural>/$subscribe`.
+    pub(crate) subscribe_op_id: String,
+    pub(crate) subscribe_route: String,
     pub(crate) create_input_name: String,
     pub(crate) update_input_name: String,
     pub(crate) list_return_type: String,
@@ -212,6 +217,9 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         allows_create: model_allows_create(model) && verbs.contains(&ModelVerb::Create),
         allows_update: verbs.contains(&ModelVerb::Update),
         allows_delete: verbs.contains(&ModelVerb::Delete),
+        allows_subscribe: verbs.contains(&ModelVerb::Subscribe),
+        subscribe_op_id: ModelVerb::Subscribe.rpc_op_id(&model.name),
+        subscribe_route: cratestack_core::model_subscribe_route(&model.name),
         create_input_name: format!("Create{}Input", model.name),
         update_input_name: format!("Update{}Input", model.name),
         list_return_type: if is_paged {

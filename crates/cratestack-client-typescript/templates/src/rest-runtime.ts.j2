@@ -3,6 +3,9 @@
 // established by `rpc-runtime.ts.j2`'s identical import: the other leg is
 // `import type`, which is erased entirely at compile time.
 import { encodeBinaryAsJson } from "{{ models_import_path }}";
+{% if has_subscriptions %}
+import type { SubscriptionClientOptions } from "./subscriptions.js";
+{% endif %}
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -35,6 +38,11 @@ export interface CratestackClientOptions {
   basePath?: string;
   fetch?: typeof fetch;
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+{% if has_subscriptions %}
+  /** Which binding subscriptions use (default `"auto"`) and where the
+   *  WebTransport listener is (see `./subscriptions`). */
+  subscriptions?: SubscriptionClientOptions;
+{% endif %}
 }
 
 export interface CratestackRequestOptions {
@@ -230,6 +238,9 @@ export class CratestackRuntime {
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+{% if has_subscriptions %}
+  readonly subscriptions: SubscriptionClientOptions;
+{% endif %}
 
   constructor(origin: string, options: CratestackClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
@@ -244,6 +255,9 @@ export class CratestackRuntime {
     // supplied `options.fetch` is trusted to already be correctly bound.
     this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.defaultHeaders = options.headers;
+{% if has_subscriptions %}
+    this.subscriptions = options.subscriptions ?? {};
+{% endif %}
   }
 
   async request<T>(

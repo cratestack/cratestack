@@ -128,6 +128,10 @@ pub(crate) struct SwrSchemaContext {
     /// falsy (minijinja's `UndefinedBehavior::Lenient`) and the two runtimes
     /// in one package disagree on the wire codec — cratestack#765.
     pub(crate) native_cbor: bool,
+    /// Always `false`: the runtime templates read it (slice S6), and the
+    /// `--swr` layout does not carry subscriptions yet, so its runtime
+    /// renders exactly as before.
+    pub(crate) has_subscriptions: bool,
 }
 
 /// The per-model context `swr-models-{rest,rpc}.ts.j2` renders once per

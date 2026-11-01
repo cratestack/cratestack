@@ -12,6 +12,7 @@ mod procedure_views;
 mod refine;
 mod release_line;
 mod rtk;
+mod subscriptions;
 mod swr;
 mod tanstack_collisions;
 mod templates;
