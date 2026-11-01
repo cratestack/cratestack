@@ -15,7 +15,10 @@ use crate::model::{
     generate_model_struct_only, generate_pg_from_row_impl, generate_primary_key_accessor_impl,
     generate_update_input_struct, generate_upsert_input_struct,
 };
-use crate::transport::{generate_model_transport_constants, generate_model_transport_entries};
+use crate::transport::{
+    generate_model_subscribe_route_transport, generate_model_transport_constants,
+    generate_model_transport_entries,
+};
 use crate::validators::{Validating, generate_model_validate_impl};
 
 use super::{Ts, compile_error};
@@ -129,15 +132,26 @@ pub(super) fn collect_models(
         .iter()
         .map(generate_model_axum_routes)
         .collect();
+    let subscribe_routes: Vec<_> = schema
+        .models
+        .iter()
+        .filter_map(generate_model_subscribe_route_transport)
+        .collect();
     let transport_constants = schema
         .models
         .iter()
         .map(generate_model_transport_constants)
+        .chain(
+            subscribe_routes
+                .iter()
+                .map(|(constant, _)| constant.clone()),
+        )
         .collect();
     let transport_entries = schema
         .models
         .iter()
         .flat_map(generate_model_transport_entries)
+        .chain(subscribe_routes.into_iter().map(|(_, entry)| entry))
         .collect();
 
     Ok(ModelCollected {

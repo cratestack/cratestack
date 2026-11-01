@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use cratestack_core::{Model, TransportStyle, parse_emit_attribute, parse_internal_attribute};
+use cratestack_core::{Model, parse_emit_attribute, parse_internal_attribute};
 
 use crate::diagnostics::{SchemaError, span_error};
 
@@ -16,7 +16,6 @@ use super::rename_attributes::validate_model_rename_count;
 pub(super) fn validate_model_attributes(
     model: &Model,
     model_names: &BTreeSet<&str>,
-    transport: TransportStyle,
 ) -> Result<(), SchemaError> {
     let mut saw_emit_attribute = false;
     let mut saw_paged_attribute = false;
@@ -75,17 +74,8 @@ pub(super) fn validate_model_attributes(
         } else if attribute.raw == "@@audit" || attribute.raw == "@@soft_delete" {
             // recognised; descriptor wiring lives in the macro
         } else if attribute.raw == "@@subscribe" {
-            if !matches!(transport, TransportStyle::Rpc) {
-                return Err(span_error(
-                    format!(
-                        "model `{}` declares `@@subscribe`, which requires the schema to \
-                         declare `transport rpc` — subscriptions are only dispatched via \
-                         `GET /rpc/subscribe/{{op_id}}` (docs/design/rpc-transport.md §3.4a)",
-                        model.name,
-                    ),
-                    attribute.span,
-                ));
-            }
+            // Served on both transports since slice S3: `GET /rpc/subscribe/{op_id}`
+            // and REST's `GET /<plural>/$subscribe`.
             subscribe_attribute = Some(attribute);
         } else if attribute.raw.starts_with("@@retain(") {
             validate_retain_attribute(model, attribute)?;

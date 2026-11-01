@@ -31,7 +31,7 @@ pub(crate) fn generate_model_subscribe_dispatch_arm(
             if let Err(error) = ::cratestack::__private::validate_subscribe_accept_header(&headers) {
                 return ::cratestack::__private::encode_subscribe_error(&error);
             }
-            let request = request_context("GET", #canonical_path, None, &headers, &[], &client_ip_ctx.extensions);
+            let request = request_context("GET", #canonical_path, raw_query.as_deref(), &headers, &[], &client_ip_ctx.extensions);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
                 Err(error) => {
@@ -39,12 +39,9 @@ pub(crate) fn generate_model_subscribe_dispatch_arm(
                     return ::cratestack::__private::encode_subscribe_error(&error);
                 }
             };
-            let open = ::cratestack::SubscriptionOpen {
-                op_id: #op_id.to_owned(),
-                input: ::cratestack::serde_json::Value::Null,
-                ctx,
-            };
-            match ::cratestack::SubscriptionDispatcher::open(&state.db.subscriptions(), open).await {
+            // The feed's input is the query string, `list`'s filter syntax
+            // plus `operations` (slice S3), as on REST's `$subscribe`.
+            match state.db.subscriptions().open_query(#op_id, raw_query, ctx).await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
                 Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }

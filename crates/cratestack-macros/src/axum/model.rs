@@ -13,6 +13,7 @@ mod builders;
 mod computed;
 #[cfg(test)]
 mod computed_tests;
+mod handler_subscribe;
 mod handlers_crud;
 mod handlers_list;
 mod handlers_list_mount;
@@ -102,6 +103,7 @@ pub(crate) fn generate_model_axum_handlers(
     let get_handler = handlers_crud::build_get_handler(&p);
     let update_handler = handlers_update::build_update_handler(&p);
     let delete_handler = handlers_crud::build_delete_handler(&p);
+    let subscribe_handler = handler_subscribe::build_subscribe_handler(model);
 
     let _ = TypeArity::List; // ensure import used (referenced via prep)
 
@@ -118,5 +120,6 @@ pub(crate) fn generate_model_axum_handlers(
         #get_handler
         #update_handler
         #delete_handler
+        #subscribe_handler
     })
 }

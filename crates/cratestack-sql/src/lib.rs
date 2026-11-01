@@ -30,6 +30,7 @@ pub use descriptor::{
     WriteSource,
 };
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
+pub use filter::eval::{in_memory_columns as filter_in_memory_columns, matches as filter_matches};
 pub use filter::{
     CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, VectorDistanceExpr,

@@ -24,7 +24,8 @@ pub enum ModelVerb {
     Create,
     Update,
     Delete,
-    /// Only for `@@subscribe` models, and only under `transport rpc`.
+    /// Only for `@@subscribe` models: `GET /rpc/subscribe/{op_id}` on RPC,
+    /// `GET /<plural>/$subscribe` on REST.
     Subscribe,
 }
 
@@ -51,8 +52,8 @@ impl ModelVerb {
         }
     }
 
-    /// `(REST method, is it the detail route?)`; `None` for `subscribe`,
-    /// which only exists under `transport rpc`.
+    /// `(REST method, is it the detail route?)`. `subscribe` is neither the
+    /// collection nor the detail route: `model_op_key` gives it its own.
     pub const fn rest(self) -> Option<(&'static str, bool)> {
         Some(match self {
             Self::List => ("GET", false),
@@ -60,7 +61,8 @@ impl ModelVerb {
             Self::Get => ("GET", true),
             Self::Update => ("PATCH", true),
             Self::Delete => ("DELETE", true),
-            Self::Subscribe => return None,
+            // Its own route, `<list route>/$subscribe`; see `model_op_key`.
+            Self::Subscribe => ("GET", false),
         })
     }
 
@@ -90,6 +92,11 @@ pub fn model_list_route(model: &str) -> String {
     format!("/{}", model_route_segment(model))
 }
 
+/// The subscription route of a model on REST: `/widgets/$subscribe`.
+pub fn model_subscribe_route(model: &str) -> String {
+    format!("{}/$subscribe", model_list_route(model))
+}
+
 /// The detail route of a model on REST: `/widgets/{id}`.
 pub fn model_detail_route(model: &str) -> String {
     detail_route_of(&model_list_route(model))
@@ -108,7 +115,9 @@ pub fn model_op_key(model: &str, verb: ModelVerb, rpc: bool) -> Option<String> {
         return Some(verb.rpc_op_id(model));
     }
     let (method, detail) = verb.rest()?;
-    let route = if detail {
+    let route = if verb == ModelVerb::Subscribe {
+        model_subscribe_route(model)
+    } else if detail {
         model_detail_route(model)
     } else {
         model_list_route(model)

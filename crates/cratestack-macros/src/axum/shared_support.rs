@@ -6,7 +6,9 @@ use quote::quote;
 
 pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
     quote! {
-        fn parse_model_list_query(raw_query: Option<&str>) -> Result<ModelListQuery, CratestackError> {
+        // `pub(super)`: the generated subscription dispatcher filters feeds
+        // with the same parser (slice S3).
+        pub(super) fn parse_model_list_query(raw_query: Option<&str>) -> Result<ModelListQuery, CratestackError> {
             let mut query = ModelListQuery::default();
             for (key, value) in ::cratestack::parse_query_pairs(raw_query)? {
                 match key.as_str() {

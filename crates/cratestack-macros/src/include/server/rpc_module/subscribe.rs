@@ -13,6 +13,8 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
                 ::cratestack::axum::extract::State<RpcRouterState<R, CR, C, Auth>>,
             ::cratestack::axum::extract::Path(mut op_params):
                 ::cratestack::axum::extract::Path<Vec<String>>,
+            ::cratestack::axum::extract::RawQuery(raw_query):
+                ::cratestack::axum::extract::RawQuery,
             headers: ::cratestack::axum::http::HeaderMap,
             client_ip_ctx: ClientIpContext,
         ) -> ::cratestack::axum::response::Response

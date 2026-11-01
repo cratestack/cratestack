@@ -47,7 +47,8 @@ pub(super) fn build_query_helpers(
             }
         }
 
-        fn #query_expr_builder_ident(
+        // `pub(super)`: also builds a subscription feed's filter (slice S3).
+        pub(super) fn #query_expr_builder_ident(
             expr: &::cratestack::QueryExpr,
         ) -> Result<::cratestack::FilterExpr, CratestackError> {
             match expr {

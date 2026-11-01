@@ -12,6 +12,7 @@ mod idempotency;
 mod op_descriptors;
 mod rate_limit;
 mod rest;
+mod rest_subscribe;
 mod rpc;
 mod subscribe_dispatch;
 mod subscription_module;
@@ -26,6 +27,7 @@ pub(crate) use rest::{
     model_read_transport_capabilities_tokens, model_write_transport_capabilities_tokens,
     procedure_transport_capabilities_tokens,
 };
+pub(crate) use rest_subscribe::generate_model_subscribe_route_transport;
 pub(crate) use rpc::{generate_model_rpc_dispatch_arms, generate_procedure_rpc_dispatch_arm};
 pub(crate) use subscribe_dispatch::generate_model_subscribe_dispatch_arm;
 pub(crate) use subscription_module::generate_subscription_module;

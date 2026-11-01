@@ -33,6 +33,7 @@ mod model_feed;
 mod sse;
 mod sse_subscription;
 mod subscribe_error;
+mod subscribe_query;
 mod subscription_bridge;
 mod synthesize;
 pub(crate) mod util;
@@ -72,6 +73,9 @@ pub use model_feed::{model_events, model_feed};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
 pub use sse_subscription::encode_subscription_sse_response;
 pub use subscribe_error::encode_subscribe_error;
+pub use subscribe_query::{
+    SubscribeQuery, project_event_fields, split_subscribe_query, subscribe_input_query,
+};
 pub use subscription_bridge::{SubscriptionPush, guarded_receiver_stream, subscription_channel};
 pub use synthesize::{synthesize_get_query, synthesize_list_query};
 

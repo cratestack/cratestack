@@ -24,8 +24,12 @@ include_server_schema!("tests/fixtures/subscribe_read_policy.cstack", db = Postg
 
 #[path = "rpc_subscribe_read_policy/dispatcher.rs"]
 mod dispatcher;
+#[path = "rpc_subscribe_read_policy/filters.rs"]
+mod filters;
 #[path = "rpc_subscribe_read_policy/replicas.rs"]
 mod replicas;
+#[path = "rpc_subscribe_read_policy/rest.rs"]
+mod rest;
 mod support;
 
 use support::pg;

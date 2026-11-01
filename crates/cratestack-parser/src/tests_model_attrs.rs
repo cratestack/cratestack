@@ -243,8 +243,9 @@ model Widget {
 }
 
 #[test]
-fn rejects_subscribe_outside_transport_rpc() {
-    let error = parse_schema(
+fn accepts_subscribe_under_transport_rest() {
+    // REST serves it at `GET /<plural>/$subscribe` (slice S3).
+    parse_schema(
         r#"
 model Widget {
   id Int @id
@@ -254,14 +255,7 @@ model Widget {
 }
 "#,
     )
-    .expect_err("@@subscribe under the default `transport rest` should fail");
-
-    assert!(
-        error
-            .to_string()
-            .contains("requires the schema to declare `transport rpc`"),
-        "error: {error}",
-    );
+    .expect("@@subscribe under the default `transport rest` parses");
 }
 
 #[test]
