@@ -206,6 +206,7 @@ pub use cratestack_sqlx::backplane::{InProcessBackplane, PgNotifyBackplane};
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::sqlx;
 /// A schema `topic`'s handle (slice S4): `db.topics().<topic>(key)`.
+#[cfg(feature = "postgres")]
 pub use cratestack_sqlx::topic::Topic;
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::{
