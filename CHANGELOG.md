@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Subscriptions reach every replica: the subscription backplane
+
+**What was missing.** A model event reached only the subscribers of the replica that committed
+the write. The write path drained the outbox into that process's own event bus, and nothing told
+the other replicas. Behind a load balancer, a subscriber on replica B never saw a write handled by
+replica A, and nothing reported it.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §4, slice S2).
+
+- **`cratestack_core::SubscriptionBackplane`** carries published messages to every replica. There
+  are two implementations, re-exported by `cratestack-pg`:
+  - **`PgNotifyBackplane` is the default.** It uses Postgres `LISTEN`/`NOTIFY`, with one listener
+    connection per process, opened by the first subscription.
+  - **`InProcessBackplane`** serves a single replica.
+
+  Swap with `Cratestack::builder(pool).with_backplane(Arc::new(..))`. Use the in-process one behind
+  a pooler that cannot hold `LISTEN`, such as PgBouncer in transaction mode.
+- **Model events of `@@subscribe` models are notified by the writing transaction.** The
+  notification is sent by the same statement as the outbox insert, so it is delivered only on
+  commit, to every replica, in commit order. `@@emit`-only models send none.
+- **Every subscription binding reads the backplane**, through the generated dispatcher, so SSE and
+  WebTransport subscribers on any replica see writes committed on any other. If the listener's
+  connection drops, events may have been lost: every subscription on that replica ends with
+  `unavailable` / `"subscription interrupted"`, and the client resubscribes. Lag still ends a
+  subscription with `"subscription lagged"`.
+- **SSE sends `event: ready`** (`{"id": 1, "ready": {}}`) before any item. The subscription is live
+  from that point; items now start at id 2. A client that expected the first event to be a
+  `message` must skip it.
+- **The outbox drain claims rows with `FOR UPDATE SKIP LOCKED`**, so two replicas draining at once
+  never both run an `on_<model>_<op>` handler for the same row.
+- `ModelDescriptor` gains `subscribed` (`with_subscribed()`, `event_target()`).
+
 ## 0.17.2 (2026-10-31)
 
 ### A refusal before the body no longer burns the `Idempotency-Key` (#1261)

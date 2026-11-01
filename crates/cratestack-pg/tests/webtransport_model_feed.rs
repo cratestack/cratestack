@@ -3,7 +3,8 @@
 //! (`db.subscriptions().webtransport(config, auth)`, slice S5a), with the
 //! same per-event read policy as the SSE endpoint: an owner receives its
 //! own readable records, an archived one (`@@deny`) never, and an
-//! anonymous session nothing.
+//! anonymous session nothing. The server runs on a second replica of the
+//! database, so the events reach it only through the subscription backplane.
 //!
 //! The client is `cratestack-webtransport`'s native test client, by
 //! `#[path]`. Postgres-backed: run it with `CRATESTACK_REQUIRE_DB=1`, or a
@@ -83,6 +84,8 @@ async fn model_feeds_over_webtransport_pass_the_read_policy() {
     let Some(test_pg) = pg::connect_or_skip().await else {
         return;
     };
+    // The tests of this binary reset the same tables.
+    let _guard = pg::serial_guard().await;
     let pool = &test_pg.pool;
     for statement in [
         "DROP TABLE IF EXISTS wt_notes",
@@ -94,12 +97,21 @@ async fn model_feeds_over_webtransport_pass_the_read_policy() {
             .await
             .expect(statement);
     }
+    // Writes go through replica A; the WebTransport server runs on replica B,
+    // with its own pool and so its own backplane listener: every event below
+    // crosses replicas through Postgres `NOTIFY` (design §4, slice S2).
     let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
+    let pool_b = cratestack::sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&test_pg.url)
+        .await
+        .expect("replica B's own pool");
+    let replica_b = cratestack_schema::Cratestack::builder(pool_b).build();
 
     let (chain, key, _hash) = wt::cert();
     let cert = chain[0].clone();
     let config = WebTransportConfig::new("127.0.0.1:0".parse().unwrap(), chain, key);
-    let server = db
+    let server = replica_b
         .subscriptions()
         .webtransport(config, BearerId)
         .expect("the server binds");

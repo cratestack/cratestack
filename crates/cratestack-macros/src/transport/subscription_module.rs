@@ -50,7 +50,7 @@ pub(crate) fn generate_subscription_module(
     }
     let arms = feeds.iter().map(|feed| {
         let (op_id, open) = (&feed.op_id, &feed.open_ident);
-        quote! { #op_id => #open(&self.db, input, ctx), }
+        quote! { #op_id => #open(&db, input, ctx).await, }
     });
     let functions = feeds.iter().map(|feed| &feed.function);
     let webtransport_impl = webtransport.then(webtransport_impl);
@@ -81,6 +81,22 @@ pub(crate) fn generate_subscription_module(
                 }
             }
 
+            impl super::CratestackBuilder {
+                /// Replace the subscription backplane, which carries model
+                /// events to subscribers on every replica (default:
+                /// `PgNotifyBackplane`, Postgres `LISTEN`/`NOTIFY` on this
+                /// pool). Pass an `InProcessBackplane` for a single replica
+                /// whose connections cannot hold `LISTEN` (PgBouncer in
+                /// transaction mode).
+                pub fn with_backplane(
+                    mut self,
+                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                ) -> Self {
+                    self.runtime = self.runtime.with_backplane(backplane);
+                    self
+                }
+            }
+
             impl ::cratestack::SubscriptionDispatcher for SubscriptionDispatch {
                 fn open(
                     &self,
@@ -91,14 +107,16 @@ pub(crate) fn generate_subscription_module(
                         ::cratestack::CratestackError,
                     >,
                 > + Send {
-                    let ::cratestack::SubscriptionOpen { op_id, input, ctx } = request;
-                    let opened = match op_id.as_str() {
-                        #(#arms)*
-                        other => Err(::cratestack::CratestackError::NotFound(format!(
-                            "unknown subscription op `{other}`",
-                        ))),
-                    };
-                    ::core::future::ready(opened)
+                    let db = self.db.clone();
+                    async move {
+                        let ::cratestack::SubscriptionOpen { op_id, input, ctx } = request;
+                        match op_id.as_str() {
+                            #(#arms)*
+                            other => Err(::cratestack::CratestackError::NotFound(format!(
+                                "unknown subscription op `{other}`",
+                            ))),
+                        }
+                    }
                 }
             }
 

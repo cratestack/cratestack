@@ -839,6 +839,36 @@ such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, nev
 `ready` event and keepalive on SSE (S1/S2), and the byte-stream frame codec for clients, which
 `CborSeqChunkDecoder`'s move to `cratestack-codec-cbor` in S5b already shares.
 
+**S2 status (as built, 2026-11-01).**
+- **The contract**, `cratestack_core::SubscriptionBackplane`: `publish`, and an async `subscribe`
+  that resolves only once the subscription is live, so a binding that then sends `Ready` has missed
+  nothing. `BackplaneMessage` has `Payload`, `Resync` (the listener reconnected) and `Lagged` (this
+  receiver fell behind its 64-item buffer). The trait lives in `cratestack-core`. Both implementations
+  live in `cratestack-sqlx`, because core has no async runtime (it also targets wasm):
+  `InProcessBackplane` and `PgNotifyBackplane`. The Redis one is S7.
+- **`PgNotifyBackplane` is the default (decision O6, as proposed).** One `PgListener` per process,
+  opened by the first subscription, on the single Postgres channel `cratestack_events`. Backplane
+  channels (`cratestack.model.<Model>`) are multiplexed inside the payload. A dropped listener connection
+  sends `Resync` to every local subscription, which ends with `unavailable` / `"subscription
+  interrupted"`. Swap it with `Cratestack::builder(pool).with_backplane(..)`: an `InProcessBackplane`
+  for a single replica behind a pooler that drops `LISTEN`.
+- **Model events are notified by the writing transaction.** `enqueue_event_outbox` sends
+  `pg_notify` from the same statement as its `INSERT` (a data-modifying CTE), so Postgres delivers it
+  only on commit, to every replica, in commit order. It does this only for `@@subscribe` models: the
+  descriptor's new `subscribed` flag, read through `EventTarget`, so an `@@emit`-only model never
+  takes Postgres' commit-time `NOTIFY` lock. An event over the 8000-byte limit goes as a reference to
+  its outbox row, which the listener reads.
+- **The drain claims rows with `FOR UPDATE SKIP LOCKED`** in one transaction. When the backplane is
+  not notified in-transaction (in-process), the drain publishes each row's event after commit, on
+  its first attempt only (at most once).
+- **The generated dispatcher subscribes on the backplane** instead of registering event-bus
+  handlers. `cratestack_axum::rpc::model_events` decodes the payloads into `ModelEvent<T>`.
+- **SSE sends `event: ready`** (`{"id": 1, "ready": {}}`) first. Items follow from id 2.
+- Tests: `rpc_subscribe_read_policy/replicas.rs` (two replicas, each with its own pool and listener:
+  a write on A reaches an SSE subscriber on B, and the read policy still applies on B), and
+  `webtransport_model_feed.rs` (the WebTransport server runs on replica B). The SSE overflow test pins
+  the in-process backplane, which publishes synchronously from the drain.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The
@@ -849,7 +879,8 @@ such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, nev
   staleness and leave it to the §2.1 refetch loop.
 - **O4. `extension websocket { }`** (proposed, matches extensions.md) or feature-only.
 - **O5. Unary over WS**: keep gated (proposed) or schedule with S5.
-- **O6. Backplane default under `cratestack-pg`**: `PgNotifyBackplane` automatically (proposed; it
+- **O6. Backplane default under `cratestack-pg`** — *decided in S2: `PgNotifyBackplane`, swappable
+  with `with_backplane`*: `PgNotifyBackplane` automatically (proposed; it
   has a pool, and `cratestack-sync` already listens), or in-process until configured (safer for
   single-replica apps behind PgBouncer in transaction mode, where `LISTEN` does not work — the
   listener needs a direct connection, configurable separately).

@@ -7,7 +7,7 @@ use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelE
 use crate::audit::{
     RunInTxOutcome, build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
 };
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::{CreateModelInput, ModelDescriptor, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
 use super::create_exec::{create_record_in_conn, create_record_with_executor};
@@ -79,9 +79,9 @@ where
         }
         let record = create_record_in_conn(tx, self.descriptor, self.input, ctx).await?;
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut **tx,
-                self.descriptor.schema_name,
+                self.descriptor.event_target(),
                 ModelEventKind::Created,
                 &record,
             )
@@ -134,9 +134,9 @@ where
             }
             let record = create_record_in_conn(&mut tx, self.descriptor, self.input, ctx).await?;
             if emits_event {
-                enqueue_event_outbox(
+                crate::descriptor::enqueue_model_event(
                     &mut *tx,
-                    self.descriptor.schema_name,
+                    self.descriptor.event_target(),
                     ModelEventKind::Created,
                     &record,
                 )

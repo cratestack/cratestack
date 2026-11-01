@@ -5,7 +5,7 @@ use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelE
 use crate::audit::{
     RunInTxOutcome, build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit,
 };
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
 
 use super::preview::render_update_preview_sql;
@@ -100,9 +100,9 @@ where
             update_record_in_conn(tx, self.descriptor, self.id, self.input, ctx, self.if_match)
                 .await?;
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut **tx,
-                self.descriptor.schema_name,
+                self.descriptor.event_target(),
                 ModelEventKind::Updated,
                 &record,
             )
