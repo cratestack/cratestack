@@ -1,5 +1,6 @@
 // -----------------------------------------------------------------------------
-// Subscriptions over SSE (slice S6, docs/design/subscriptions-websocket.md §8)
+// Subscriptions over SSE (slice S6, docs/design/subscriptions-websocket.md §8);
+// the socket bindings and the binding choice are `subscription_sockets.dart`.
 //
 // A `GET` through the same `CratestackHttpTransport` every call uses, so a
 // signing layer, a captive-portal check or the Rust transport sees it like
@@ -98,6 +99,19 @@ final class CratestackSubscribeInput {
     ];
     return pairs.isEmpty ? null : pairs.join('&');
   }
+
+  /// The input a socket's `Request` carries (`RpcSubscribeInput`).
+  Map<String, Object?> toWire() => <String, Object?>{
+        if (where != null) 'where': where,
+        if (or != null) 'or': or,
+        if (filters.isNotEmpty)
+          'filters': <Map<String, String>>[
+            for (final entry in filters.entries)
+              <String, String>{'key': entry.key, 'value': entry.value},
+          ],
+        if (fields != null) 'fields': fields,
+        if (operations != null) 'operations': operations,
+      };
 
   /// Equal when they ask the server for the same thing, so a riverpod
   /// family keyed by an input reuses its subscription.
@@ -210,7 +224,8 @@ Stream<Object?> _cratestackSseItems(
   }
   var buffer = '';
   await for (final chunk in response.body.cast<List<int>>().transform(utf8.decoder)) {
-    buffer += chunk.replaceAll('\r\n', '\n');
+    // Normalized after joining, so a `\r\n` split across two chunks is one.
+    buffer = (buffer + chunk).replaceAll('\r\n', '\n');
     for (var end = buffer.indexOf('\n\n'); end >= 0; end = buffer.indexOf('\n\n')) {
       final block = buffer.substring(0, end);
       buffer = buffer.substring(end + 2);

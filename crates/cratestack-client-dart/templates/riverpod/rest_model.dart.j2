@@ -191,7 +191,17 @@ class {{ model_api.api_class_name }} {
     void Function()? onReady,
   }) {
     return _client
-        .subscribe('{{ model_api.subscribe_route }}', input.toQuery(), headers: headers, onReady: onReady)
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ model_api.subscribe_op_id }}',
+            input: input.toWire(),
+            ssePath: '{{ model_api.subscribe_route }}',
+            sseQuery: input.toQuery(),
+            socketPath: '/\$ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
         .map((wire) => CratestackModelEvent<{{ model_api.model_name }}>.fromWire(
               wire,
               (data) => {{ model_api.model_name }}.fromWire(cratestackAsValueMap(data)),

@@ -1130,15 +1130,55 @@ The rest:
   `<procedure>(args)`, named after the five model providers and every unary procedure provider, so
   no existing name moves. `CratestackSubscribeInput` compares by its query string, so a family
   keyed by an equal input reuses its subscription.
-- **Not built in Dart yet**:
-  - WebSocket (`web_socket_channel`, a new dependency);
-  - WebTransport (JS interop on Flutter web);
+- **WebSocket and WebTransport** (as built 2026-11-01). A schema with a subscription op adds
+  `lib/src/subscription_sockets.dart`, plus a WebTransport module that a conditional import picks:
+  `subscription_webtransport_web.dart` (`package:web`, the browser's `WebTransport`) when
+  `dart.library.js_interop` exists, a stub elsewhere. The package gains `web_socket_channel` and
+  `web`; every other package is unchanged.
+  - **Options**: `CratestackSubscriptionOptions { transport, webTransportUrl,
+    serverCertificateHashes, webSocketUrl, credentials }` is passed to the generated client's
+    constructor (`subscriptions:`), or overrides `<prefix>SubscriptionOptionsProvider` in the
+    riverpod preset.
+  - **Frames**: JSON on both sockets. WebSocket uses the `cratestack.rpc.v1+json` subprotocol and
+    text frames. WebTransport uses `?codec=json` and one document per line. Each opens one socket
+    or session per subscription: `Init` with `credentials`, one `Request`, `Ready`, items, `end` or
+    `err`. A WebSocket cancel sends `{id, cancel}`. A WebTransport cancel stops reading and closes
+    the session. On WebTransport the control stream stays open, because the server ends a session
+    whose control stream ends.
+  - **`auto`**: WebTransport (web only, with `webTransportUrl`), then the WebSocket, then SSE. It
+    moves on only when a binding cannot be opened. Like the TypeScript client, it has a 3 s
+    WebTransport bound and remembers a failure for 10 minutes per origin.
+  - **Credentials**: a socket does not go through `CratestackHttpTransport`, so it cannot carry
+    what that transport adds (a Dio interceptor's token, fespalier's session). `credentials`
+    supplies `Init`'s headers. Until it is set, `auto` stays on SSE, because a socket would
+    otherwise connect anonymously and be refused, and a refusal never falls back. A pinned
+    `webSocket` or `webTransport` binding uses whatever is given.
+  - Native Dart has no WebTransport, so there `auto` starts at the WebSocket. Flutter native can
+    still reach WebTransport through the Rust transport.
+- The SSE reader now normalises `\r\n` after joining chunks, so a CRLF split across two chunks
+  still ends its event, the same fix as the Rust client's.
 - Tests: `tests/subscriptions.rs` and `tests/subscriptions_riverpod.rs` pin the generated surface
   (and its absence elsewhere). `subscriptions_rpc` is also a riverpod fixture of `just verify-dart`:
   `build_runner`, `flutter analyze --fatal-warnings`, and `subscriptions_rpc_riverpod_test.dart`
   reading both stream providers through a `ProviderContainer`.
   `fixtures/subscriptions_rpc_test.dart` runs under `just verify-dart` (CI's Dart job) against an
   SSE-answering transport: Ready, items, the request, the refusal and the terminal error.
+  `fixtures/subscriptions_rpc_socket_test.dart` runs there too, against a `dart:io` WebSocket
+  server in the test process. It covers:
+  - the pinned socket, with the subprotocol, `Init`'s credentials, the request input, the items and
+    the end;
+  - `auto` taking the socket, with cancel sending `cancel`;
+  - `auto` falling back to SSE when no socket opens, across a split CRLF;
+  - a socket refusal thrown with no SSE request made;
+  - no socket attempted without credentials.
+  `tests/browser/webtransport_entry.dart`, compiled to JavaScript, runs in Chromium against
+  `browser_harness` (`just test-dart-webtransport-browser`, CI's WebTransport job). It covers:
+  - items after `Ready`;
+  - credentials reaching the `AuthProvider` through `Init`;
+  - refused opens and sessions;
+  - cancel;
+  - `auto` taking WebTransport with no HTTP request made;
+  - `auto` moving on within its bound when UDP is blocked.
 
 **S6 status, the example (as built, 2026-11-01).** `examples/realtime-chat`.
 - **What it has**:

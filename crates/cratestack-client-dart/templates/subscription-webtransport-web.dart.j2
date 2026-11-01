@@ -1,0 +1,150 @@
+// WebTransport in a browser (docs/design/subscriptions-websocket.md §6a),
+// through the platform's `WebTransport`: one session per subscription, JSON
+// frames (`?codec=json`, one document per line). The control stream carries
+// `Init` and stays open, because the server ends a session whose control
+// stream ends; the subscription's own stream carries its one `Request`.
+// Cancelling stops reading that stream and closes the session.
+import 'dart:async';
+import 'dart:convert';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
+
+import 'package:web/web.dart' as web;
+
+import 'runtime.dart';
+
+bool get cratestackWebTransportSupported =>
+    globalContext.has('WebTransport');
+
+Future<Stream<Object?>> cratestackOpenWebTransport(
+  Uri url,
+  List<List<int>> serverCertificateHashes,
+  Map<String, String> headers,
+  String opId,
+  Object? input,
+  Duration? within,
+) async {
+  final query = <String, String>{...url.queryParameters, 'codec': 'json'};
+  final options = web.WebTransportOptions(
+    serverCertificateHashes: <web.WebTransportHash>[
+      for (final hash in serverCertificateHashes)
+        web.WebTransportHash(
+          algorithm: 'sha-256',
+          value: Uint8List.fromList(hash).toJS,
+        ),
+    ].toJS,
+  );
+  final web.WebTransport session;
+  final _Lines control;
+  try {
+    session = web.WebTransport(url.replace(queryParameters: query).toString(), options);
+    final opened = () async {
+      await session.ready.toDart;
+      final stream = await session.createBidirectionalStream().toDart;
+      final lines = _Lines(stream);
+      await lines.write(<String, Object?>{
+        'id': 0,
+        'init': <String, Object?>{'headers': headers},
+      });
+      return lines;
+    }();
+    control = within == null
+        ? await opened
+        : await opened.timeout(
+            within,
+            onTimeout: () => throw const CratestackSocketUnreachable(
+              'no WebTransport session in time',
+            ),
+          );
+  } on CratestackSocketUnreachable {
+    rethrow;
+  } catch (error) {
+    throw CratestackSocketUnreachable('WebTransport $url: $error');
+  }
+
+  void close() {
+    try {
+      session.close();
+    } catch (_) {
+      // Already closed.
+    }
+  }
+
+  try {
+    await cratestackExpectReady(control.next, 0);
+    final stream = await session.createBidirectionalStream().toDart;
+    final lines = _Lines(stream);
+    await lines.write(<String, Object?>{'id': 1, 'op': opId, 'input': input});
+    await lines.closeWriter();
+    await cratestackExpectReady(lines.next, 1);
+    return cratestackItems(
+      next: lines.next,
+      id: 1,
+      cancel: () async {
+        await lines.cancel();
+        close();
+      },
+      done: () async => close(),
+    );
+  } on CratestackSubscriptionException {
+    close();
+    rethrow;
+  } on CratestackSocketUnreachable {
+    close();
+    rethrow;
+  } catch (error) {
+    close();
+    throw CratestackSocketUnreachable('WebTransport $url: $error');
+  }
+}
+
+/// One bidirectional stream as NDJSON frames.
+final class _Lines {
+  _Lines(web.WebTransportBidirectionalStream stream)
+      : _writer = (stream.writable as web.WritableStream).getWriter(),
+        _reader = (stream.readable as web.ReadableStream).getReader()
+            as web.ReadableStreamDefaultReader;
+
+  final web.WritableStreamDefaultWriter _writer;
+  final web.ReadableStreamDefaultReader _reader;
+  final _decoder = const Utf8Decoder(allowMalformed: false);
+  var _buffer = <int>[];
+
+  Future<void> write(Map<String, Object?> frame) async {
+    final bytes = Uint8List.fromList(utf8.encode('${jsonEncode(frame)}\n'));
+    await _writer.write(bytes.toJS).toDart;
+  }
+
+  Future<void> closeWriter() async {
+    await _writer.close().toDart;
+  }
+
+  Future<void> cancel() async {
+    try {
+      await _reader.cancel().toDart;
+    } catch (_) {
+      // The stream already ended.
+    }
+  }
+
+  /// The next frame; `null` at the end of the stream.
+  Future<Map<String, Object?>?> next() async {
+    while (true) {
+      final newline = _buffer.indexOf(0x0a);
+      if (newline >= 0) {
+        final line = _decoder.convert(_buffer.sublist(0, newline));
+        _buffer = _buffer.sublist(newline + 1);
+        if (line.trim().isEmpty) {
+          continue;
+        }
+        return cratestackAsValueMap(jsonDecode(line));
+      }
+      final result = await _reader.read().toDart;
+      if (result.done) {
+        return null;
+      }
+      _buffer = <int>[..._buffer, ...(result.value as JSUint8Array).toDart];
+    }
+  }
+}

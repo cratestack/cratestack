@@ -446,6 +446,28 @@ test-realtime-chat:
 	  cargo test -p realtime-chat-example -- --test-threads=1
 	node examples/realtime-chat/tests/browser/fallback.cjs target/debug/realtime-chat-server "$out/static"
 
+# The generated Dart client's WebTransport binding in headless Chromium
+# (slice S6): `tests/browser/webtransport_entry.dart`, compiled to JavaScript
+# against a package generated off the subscriptions fixture, against
+# `cratestack-webtransport`'s `browser_harness`. Needs `flutter` (for
+# `pub get`), `dart`, `node` and a `playwright` that `require()` resolves
+# (`NODE_PATH`) with its Chromium. CI's `webtransport-browser` job runs it.
+test-dart-webtransport-browser:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	pkg=target/dart-webtransport/package
+	rm -rf target/dart-webtransport
+	cargo run -p cratestack-cli -- generate-dart --no-native-cbor \
+	  --schema crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc.cstack \
+	  --out "$pkg" --library-name dart_verify_subscriptions_rpc
+	printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n' "$PWD" "$PWD" > "$pkg/pubspec_overrides.yaml"
+	(cd "$pkg" && flutter pub get)
+	mkdir -p "$pkg/tool"
+	cp crates/cratestack-client-dart/tests/browser/webtransport_entry.dart "$pkg/tool/"
+	(cd "$pkg" && dart compile js -O1 -o ../js/main.dart.js tool/webtransport_entry.dart)
+	node crates/cratestack-client-dart/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/dart-webtransport/js
+
 test-ci-db-webtransport *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
 
@@ -1169,8 +1191,9 @@ verify-dart:
 	  if [ "$fixture" = "subscriptions_rpc" ]; then
 	    mkdir -p "$pkg/test"
 	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_test.dart" "$pkg/test/subscriptions_rpc_test.dart"
-	    echo "=== flutter test (subscriptions over SSE): $pkg ==="
-	    (cd "$pkg" && flutter test test/subscriptions_rpc_test.dart)
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_socket_test.dart" "$pkg/test/subscriptions_rpc_socket_test.dart"
+	    echo "=== flutter test (subscriptions over SSE and a WebSocket): $pkg ==="
+	    (cd "$pkg" && flutter test test/subscriptions_rpc_test.dart test/subscriptions_rpc_socket_test.dart)
 	  fi
 	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
 	  # Dio adapters (golden requests captured from them), typed REST/RPC

@@ -1,0 +1,381 @@
+// Subscriptions over a WebSocket or WebTransport, and the binding choice
+// (slice S6, docs/design/subscriptions-websocket.md §6, §6a, §8). Emitted
+// only for a schema with a subscription op.
+//
+// The binding is client configuration ([CratestackSubscriptionOptions]),
+// never part of a method's name. `auto` (the default) tries WebTransport
+// (on the web, when [CratestackSubscriptionOptions.webTransportUrl] names
+// the listener), then a WebSocket, then SSE, moving on only when a binding
+// cannot be opened: a refusal is the server's answer and is thrown. A socket
+// does not go through the HTTP transport, so it cannot carry the credentials
+// that transport adds; until [CratestackSubscriptionOptions.credentials] is
+// set, `auto` stays on SSE, which does go through it. A
+// WebTransport session not open within 3 s counts as unreachable, and that
+// is remembered for 10 minutes, so a UDP-blocked network pays the wait once.
+//
+// Both sockets speak JSON frames: `Init` with
+// [CratestackSubscriptionOptions.credentials], then one `Request`, `Ready`,
+// the items, and one `end` or `err`. One socket or session per subscription.
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:web_socket_channel/web_socket_channel.dart';
+
+import 'constants.dart';
+import 'runtime.dart';
+import 'subscription_webtransport_stub.dart'
+    if (dart.library.js_interop) 'subscription_webtransport_web.dart';
+
+/// Which binding a subscription uses.
+enum CratestackSubscriptionTransport { auto, webTransport, webSocket, sse }
+
+/// How a client subscribes. Pass it to the generated client's constructor.
+final class CratestackSubscriptionOptions {
+  const CratestackSubscriptionOptions({
+    this.transport = CratestackSubscriptionTransport.auto,
+    this.webTransportUrl,
+    this.serverCertificateHashes = const <List<int>>[],
+    this.webSocketUrl,
+    this.credentials,
+  });
+
+  final CratestackSubscriptionTransport transport;
+
+  /// The server's WebTransport listener, a separate UDP address:
+  /// `https://api.example.com:4433/rpc/wt`. Web only; without it `auto`
+  /// starts at the WebSocket.
+  final Uri? webTransportUrl;
+
+  /// SHA-256 hashes of a self-signed development certificate the browser
+  /// should accept (`serverCertificateHashes`).
+  final List<List<int>> serverCertificateHashes;
+
+  /// The WebSocket URL; by default the base URI with a `ws`/`wss` scheme and
+  /// the schema's socket path (`/rpc/ws`, or `/$ws` on REST).
+  final Uri? webSocketUrl;
+
+  /// The headers a socket's `Init` carries for the server's `AuthProvider`:
+  /// what your HTTP transport adds to every request, such as
+  /// `authorization`. A socket does not go through the HTTP transport, so
+  /// `auto` uses a socket only once this is set (return `{}` for a server
+  /// that allows anonymous subscriptions).
+  final FutureOr<Map<String, String>> Function()? credentials;
+}
+
+/// Where one subscription is served; the generated client fills it in.
+final class CratestackSubscriptionTarget {
+  const CratestackSubscriptionTarget({
+    required this.opId,
+    required this.input,
+    required this.ssePath,
+    required this.sseQuery,
+    required this.socketPath,
+  });
+
+  /// `model.<Model>.subscribe` or `procedure.<name>`.
+  final String opId;
+
+  /// A socket `Request`'s input.
+  final Object? input;
+
+  /// The SSE route, relative to the base path.
+  final String ssePath;
+
+  /// The input as that route's query string.
+  final String? sseQuery;
+
+  /// `/rpc/ws`, or `/$ws` on REST, relative to the base path.
+  final String socketPath;
+}
+
+/// A binding that could not be opened. `auto` moves on; a pinned binding
+/// throws it.
+final class CratestackSocketUnreachable implements Exception {
+  const CratestackSocketUnreachable(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'CratestackSocketUnreachable($reason)';
+}
+
+const _cratestackJsonProtocol = 'cratestack.rpc.v1+json';
+const _cratestackSubscriptionId = 1;
+const _cratestackWebTransportWithin = Duration(seconds: 3);
+const _cratestackRememberFailure = Duration(minutes: 10);
+final _cratestackWebTransportFailedAt = <String, DateTime>{};
+
+/// Opens [target] over the binding [options] chooses. Nothing is emitted
+/// until the subscription is live ([onReady] fires then); cancelling the
+/// listen cancels it.
+Stream<Object?> cratestackSubscribe({
+  required CratestackSubscriptionOptions options,
+  required CratestackHttpTransport transport,
+  required Uri baseUri,
+  required String basePath,
+  required CratestackSubscriptionTarget target,
+  Map<String, String>? headers,
+  void Function()? onReady,
+}) {
+  Stream<Object?> sse() => cratestackSubscribeSse(
+        transport,
+        baseUri,
+        '$basePath${target.ssePath}',
+        target.sseQuery,
+        headers: headers,
+        onReady: onReady,
+      );
+  Future<Stream<Object?>> webSocket() async {
+    final stream = await _cratestackOpenWebSocket(options, baseUri, basePath, target, headers);
+    onReady?.call();
+    return stream;
+  }
+
+  Future<Stream<Object?>> webTransport(bool auto) async {
+    final url = options.webTransportUrl;
+    if (url == null || !cratestackWebTransportSupported) {
+      throw const CratestackSocketUnreachable('WebTransport is not available here');
+    }
+    try {
+      final stream = await cratestackOpenWebTransport(
+        url,
+        options.serverCertificateHashes,
+        await _cratestackCredentials(options, headers),
+        target.opId,
+        target.input,
+        auto ? _cratestackWebTransportWithin : null,
+      );
+      onReady?.call();
+      return stream;
+    } on CratestackSocketUnreachable {
+      _cratestackWebTransportFailedAt[url.origin] = DateTime.now();
+      rethrow;
+    }
+  }
+
+  return switch (options.transport) {
+    CratestackSubscriptionTransport.sse => sse(),
+    CratestackSubscriptionTransport.webSocket => _cratestackDeferred(webSocket),
+    CratestackSubscriptionTransport.webTransport => _cratestackDeferred(() => webTransport(false)),
+    CratestackSubscriptionTransport.auto when options.credentials == null => sse(),
+    CratestackSubscriptionTransport.auto => _cratestackDeferred(() async {
+        final url = options.webTransportUrl;
+        final failedAt = url == null ? null : _cratestackWebTransportFailedAt[url.origin];
+        final recentlyFailed =
+            failedAt != null && DateTime.now().difference(failedAt) < _cratestackRememberFailure;
+        if (url != null && cratestackWebTransportSupported && !recentlyFailed) {
+          try {
+            return await webTransport(true);
+          } on CratestackSocketUnreachable {
+            // UDP blocked, or no listener: the WebSocket.
+          }
+        }
+        try {
+          return await webSocket();
+        } on CratestackSocketUnreachable {
+          return sse();
+        }
+      }),
+  };
+}
+
+/// A stream whose binding opens when it is listened to.
+Stream<Object?> _cratestackDeferred(Future<Stream<Object?>> Function() open) {
+  StreamSubscription<Object?>? inner;
+  late final StreamController<Object?> controller;
+  controller = StreamController<Object?>(
+    onListen: () async {
+      try {
+        final stream = await open();
+        if (controller.isClosed) {
+          return;
+        }
+        inner = stream.listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+        await controller.close();
+      }
+    },
+    onCancel: () => inner?.cancel(),
+  );
+  return controller.stream;
+}
+
+Future<Map<String, String>> _cratestackCredentials(
+  CratestackSubscriptionOptions options,
+  Map<String, String>? headers,
+) async {
+  return <String, String>{
+    if (cratestackSchemaSha256 != null) 'x-cratestack-schema-sha': cratestackSchemaSha256!,
+    ...?(await options.credentials?.call()),
+    ...?headers,
+  };
+}
+
+Uri _cratestackSocketUri(
+  CratestackSubscriptionOptions options,
+  Uri baseUri,
+  String basePath,
+  String socketPath,
+) {
+  final explicit = options.webSocketUrl;
+  if (explicit != null) {
+    return explicit;
+  }
+  final base = baseUri.path.endsWith('/')
+      ? baseUri.path.substring(0, baseUri.path.length - 1)
+      : baseUri.path;
+  return baseUri.replace(
+    scheme: baseUri.scheme == 'https' ? 'wss' : 'ws',
+    path: '$base$basePath$socketPath',
+    query: null,
+  );
+}
+
+Future<Stream<Object?>> _cratestackOpenWebSocket(
+  CratestackSubscriptionOptions options,
+  Uri baseUri,
+  String basePath,
+  CratestackSubscriptionTarget target,
+  Map<String, String>? headers,
+) async {
+  final uri = _cratestackSocketUri(options, baseUri, basePath, target.socketPath);
+  final WebSocketChannel channel;
+  try {
+    channel = WebSocketChannel.connect(uri, protocols: const [_cratestackJsonProtocol]);
+    await channel.ready;
+  } catch (error) {
+    throw CratestackSocketUnreachable('WebSocket $uri: $error');
+  }
+  final frames = StreamIterator<Object?>(channel.stream);
+  Future<void> fail() async {
+    await frames.cancel();
+    await channel.sink.close();
+  }
+
+  try {
+    channel.sink.add(jsonEncode(<String, Object?>{
+      'id': 0,
+      'init': <String, Object?>{'headers': await _cratestackCredentials(options, headers)},
+    }));
+    await cratestackExpectReady(() => _cratestackNextSocketFrame(frames), 0);
+    channel.sink.add(jsonEncode(<String, Object?>{
+      'id': _cratestackSubscriptionId,
+      'op': target.opId,
+      'input': target.input,
+    }));
+    await cratestackExpectReady(() => _cratestackNextSocketFrame(frames), _cratestackSubscriptionId);
+  } catch (_) {
+    await fail();
+    rethrow;
+  }
+
+  return cratestackItems(
+    next: () => _cratestackNextSocketFrame(frames),
+    id: _cratestackSubscriptionId,
+    cancel: () async {
+      channel.sink.add(jsonEncode(<String, Object?>{
+        'id': _cratestackSubscriptionId,
+        'cancel': <String, Object?>{},
+      }));
+      await fail();
+    },
+    done: fail,
+  );
+}
+
+Future<Map<String, Object?>?> _cratestackNextSocketFrame(StreamIterator<Object?> frames) async {
+  while (await frames.moveNext()) {
+    final message = frames.current;
+    if (message is String) {
+      return cratestackAsValueMap(jsonDecode(message));
+    }
+  }
+  return null;
+}
+
+/// Waits for `Ready{id}`. A frame stream that ends first is unreachable; an
+/// `err` frame is the server's refusal.
+Future<void> cratestackExpectReady(
+  Future<Map<String, Object?>?> Function() next,
+  int id,
+) async {
+  final frame = await next().timeout(
+    const Duration(seconds: 10),
+    onTimeout: () => throw CratestackSocketUnreachable('no Ready{$id} in time'),
+  );
+  if (frame == null) {
+    throw CratestackSocketUnreachable('the socket closed before Ready{$id}');
+  }
+  final err = frame['err'];
+  if (err != null) {
+    throw cratestackSubscriptionError(err);
+  }
+  if (frame['id'] != id || frame['ready'] == null) {
+    throw CratestackSocketUnreachable('expected Ready{$id}');
+  }
+}
+
+/// The items of subscription [id], from frames [next] reads.
+Stream<Object?> cratestackItems({
+  required Future<Map<String, Object?>?> Function() next,
+  required int id,
+  required Future<void> Function() cancel,
+  required Future<void> Function() done,
+}) {
+  late final StreamController<Object?> controller;
+  var finished = false;
+  controller = StreamController<Object?>(
+    onListen: () async {
+      try {
+        while (!controller.isClosed) {
+          final frame = await next();
+          if (frame == null) {
+            break;
+          }
+          if (frame['id'] != id) {
+            continue;
+          }
+          if (frame.containsKey('next')) {
+            controller.add(frame['next']);
+          } else if (frame['err'] != null) {
+            controller.addError(cratestackSubscriptionError(frame['err']));
+            break;
+          } else {
+            break;
+          }
+        }
+      } catch (error, stackTrace) {
+        if (!controller.isClosed) {
+          controller.addError(error, stackTrace);
+        }
+      }
+      if (!controller.isClosed) {
+        finished = true;
+        await done();
+        await controller.close();
+      }
+    },
+    onCancel: () async {
+      if (!finished) {
+        finished = true;
+        await cancel();
+      }
+    },
+  );
+  return controller.stream;
+}
+
+/// An `err` frame's body as the exception every binding throws.
+CratestackSubscriptionException cratestackSubscriptionError(Object? err) {
+  final map = cratestackAsValueMap(err);
+  return CratestackSubscriptionException(
+    code: map['code'] as String? ?? 'unknown',
+    message: map['message'] as String? ?? '',
+    details: map['details'],
+  );
+}

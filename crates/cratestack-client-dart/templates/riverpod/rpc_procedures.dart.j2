@@ -45,7 +45,17 @@ class ProceduresApi {
     void Function()? onReady,
   }) {
     return _client
-        .subscribe('{{ procedure.op_id }}', cratestackProcedureQuery(args.toWire()), headers: headers, onReady: onReady)
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ procedure.op_id }}',
+            input: args.toWire(),
+            ssePath: '/rpc/subscribe/{{ procedure.op_id }}',
+            sseQuery: cratestackProcedureQuery(args.toWire()),
+            socketPath: '/rpc/ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
         .map((body) => {{ procedure.return_decode_expr }});
   }
 

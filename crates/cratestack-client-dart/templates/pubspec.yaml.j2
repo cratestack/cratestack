@@ -66,6 +66,12 @@ dependencies:
     `--no-native-cbor` output that
     `no_native_cbor_falls_back_to_package_cbor` asserts is free of it. #}
   cratestack_annotations: '{{ cratestack_annotations_version_requirement }}'
+{% if has_subscriptions %}
+  # Slice S6: subscriptions over a WebSocket (native and web), and over
+  # WebTransport in a browser through the platform's own API.
+  web_socket_channel: ^3.0.0
+  web: ^1.1.0
+{% endif %}
 
 dev_dependencies:
   flutter_lints: ^6.0.0

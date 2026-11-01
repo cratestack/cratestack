@@ -34,14 +34,19 @@ const RPC: &str = "tests/fixtures/subscriptions_rpc.cstack";
 fn the_rpc_client_and_model_subscribe() {
     let client = file(RPC, "lib/src/client.dart");
     assert!(client.contains("Stream<Object?> subscribe("), "{client}");
-    assert!(client.contains("'/rpc/subscribe/$opId'"));
+    assert!(client.contains("return cratestackSubscribe("));
+    assert!(
+        client.contains("SubscriptionOptionsProvider = Provider<CratestackSubscriptionOptions>")
+    );
+    assert!(client.contains("subscriptions: ref.watch("));
 
     let model = file(RPC, "lib/src/models/note.dart");
     assert!(
         model.contains("Stream<CratestackModelEvent<Note>> subscribe({"),
         "{model}"
     );
-    assert!(model.contains(".subscribe('model.Note.subscribe', input.toQuery()"));
+    assert!(model.contains("opId: 'model.Note.subscribe',"), "{model}");
+    assert!(model.contains("socketPath: '/rpc/ws',"));
     assert!(model.contains("@riverpod\nStream<CratestackModelEvent<Note>> noteEvents("));
     assert!(model.contains("NoteApiProvider).subscribe(input: input);"));
 }
@@ -71,14 +76,14 @@ fn a_rest_schema_subscribes_at_its_routes() {
         "lib/src/models/sub_note.dart",
     );
     assert!(
-        model.contains(".subscribe('/sub_notes/\\$subscribe', input.toQuery()"),
+        model.contains("ssePath: '/sub_notes/\\$subscribe',"),
         "{model}"
     );
     let client = file(
         "../cratestack-pg/tests/fixtures/subscribe_rest.cstack",
         "lib/src/client.dart",
     );
-    assert!(client.contains("'$basePath$path'"), "{client}");
+    assert!(client.contains("basePath: basePath,"), "{client}");
 }
 
 #[test]

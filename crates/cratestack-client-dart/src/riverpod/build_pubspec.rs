@@ -37,9 +37,14 @@ pub(crate) struct PubspecFileContext {
     /// The git ref `fespalier_transport` is pinned at, already escaped for a
     /// single-quoted YAML scalar. Empty unless `is_fespalier`.
     pub(crate) fespalier_ref: String,
+    /// A subscription op (slice S6): `web_socket_channel` and `web`.
+    pub(crate) has_subscriptions: bool,
 }
 
-pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileContext {
+pub(crate) fn build_pubspec_file(
+    schema: &cratestack_core::Schema,
+    config: &DartGeneratorConfig,
+) -> PubspecFileContext {
     // cratestack#779: a floor, not `^{CARGO_PKG_VERSION}` — same
     // constant this preset's `default` sibling emits
     // (`crate::context::build_template_context`), for the same reason.
@@ -57,6 +62,7 @@ pub(crate) fn build_pubspec_file(config: &DartGeneratorConfig) -> PubspecFileCon
         // `^{CARGO_PKG_VERSION}` — see `crate::package_floors`.
         cratestack_annotations_version_requirement: requirement(CRATESTACK_ANNOTATIONS_FLOOR),
         cratestack_builder_version_requirement: requirement(CRATESTACK_BUILDER_FLOOR),
+        has_subscriptions: crate::subscription_specs::has_subscriptions(schema),
         is_fespalier,
         fespalier_ref: if is_fespalier {
             config.fespalier_ref.replace('\'', "''")

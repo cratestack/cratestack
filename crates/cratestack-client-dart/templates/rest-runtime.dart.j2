@@ -11,6 +11,10 @@ import 'package:cbor/simple.dart' as cbor;
 {% endif %}
 
 import 'constants.dart';
+{% if has_subscriptions %}
+
+export 'subscription_sockets.dart';
+{% endif %}
 
 {% include "http_runtime/seam.dart.j2" %}
 

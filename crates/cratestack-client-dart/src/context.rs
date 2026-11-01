@@ -289,10 +289,7 @@ pub(crate) fn build_template_context(
             .iter()
             .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
             .collect(),
-        has_subscriptions: !schema.subscription_procedures.is_empty()
-            || schema.models.iter().any(|model| {
-                cratestack_core::model_verbs(model).contains(&cratestack_core::ModelVerb::Subscribe)
-            }),
+        has_subscriptions: crate::subscription_specs::has_subscriptions(schema),
         sample_model,
         preset: PresetView::new(config),
         is_rpc: schema.transport == TransportStyle::Rpc,

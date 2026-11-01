@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### The Dart client subscribes over WebSocket and WebTransport
+
+**What was missing.** The generated Dart client spoke SSE only.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8, S6 Dart).
+
+- A package generated from a schema with a subscription op gains a WebSocket binding (native and web,
+  `web_socket_channel`) and a WebTransport binding (Flutter web, the browser's own `WebTransport`
+  through `package:web`). It also gains `CratestackSubscriptionOptions`, passed to the client as
+  `subscriptions:` or, in the riverpod preset, through `<prefix>SubscriptionOptionsProvider`.
+- `auto` (the default) tries WebTransport (with `webTransportUrl`), then the WebSocket, then SSE. It
+  moves on only when a binding cannot be opened. A refusal is thrown, as before.
+- A socket cannot carry the credentials your HTTP transport adds, so set `credentials` (the headers
+  `Init` sends). Until you do, `auto` stays on SSE. A pinned `webSocket` or `webTransport` uses
+  whatever is given. Self-signed development certificates are pinned with
+  `serverCertificateHashes`.
+- The client's `subscribe` now takes a `CratestackSubscriptionTarget`. The generated model and
+  procedure methods are unchanged.
+- The SSE reader no longer misses an event whose `\r\n` is split across two chunks.
+- Packages without a subscription op are byte-identical.
 ### The Rust client subscribes over WebTransport
 
 **What was missing.** The generated Rust client spoke WebSocket and SSE only. A native client could not
