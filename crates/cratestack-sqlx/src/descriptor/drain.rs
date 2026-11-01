@@ -51,10 +51,11 @@ impl SqlxRuntime {
             let event_id = row.event_id;
             let first_attempt = row.attempts == 0;
             let envelope = row.try_into_envelope()?;
-            if publish && first_attempt {
-                if let Ok(json) = serde_json::to_string(&envelope) {
-                    to_publish.push((model_event_channel(&envelope.model), json));
-                }
+            if publish
+                && first_attempt
+                && let Ok(json) = serde_json::to_string(&envelope)
+            {
+                to_publish.push((model_event_channel(&envelope.model), json));
             }
             match self.events.emit(envelope).await {
                 Ok(()) => {

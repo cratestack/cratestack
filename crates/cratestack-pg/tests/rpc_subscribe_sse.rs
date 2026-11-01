@@ -204,11 +204,11 @@ async fn subscribe_sse_receives_model_events_as_they_happen() {
     loop {
         // `event: ready` comes first (the subscription is live); read on to
         // the first complete message event.
-        if let Some(start) = find_subslice(&body, b"event: message\n") {
-            if find_subslice(&body[start..], b"\n\n").is_some() {
-                body.drain(..start);
-                break;
-            }
+        if let Some(start) = find_subslice(&body, b"event: message\n")
+            && find_subslice(&body[start..], b"\n\n").is_some()
+        {
+            body.drain(..start);
+            break;
         }
         let chunk = timeout(READ_TIMEOUT, response.chunk())
             .await

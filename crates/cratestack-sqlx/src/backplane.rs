@@ -47,10 +47,10 @@ impl LocalHub {
     /// Delivers to `channel`'s subscribers; forgets the channel once it has none.
     pub(crate) fn deliver(&self, channel: &str, payload: Arc<str>) {
         let mut channels = self.lock();
-        if let Some(sender) = channels.get(channel) {
-            if sender.send(BackplaneMessage::Payload(payload)).is_err() {
-                channels.remove(channel);
-            }
+        if let Some(sender) = channels.get(channel)
+            && sender.send(BackplaneMessage::Payload(payload)).is_err()
+        {
+            channels.remove(channel);
         }
     }
 
