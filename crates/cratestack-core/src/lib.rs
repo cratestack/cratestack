@@ -45,6 +45,7 @@ pub mod schema;
 pub mod schema_identity;
 pub mod store;
 pub mod subscription;
+pub mod subscription_wire;
 pub mod transport;
 pub mod validators;
 pub mod value;

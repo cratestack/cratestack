@@ -972,6 +972,49 @@ The rest:
   `cratestack-api/tests/subscription_procedure_no_database.rs` covers `db = None` and a natural
   end. There are also parser, generator and runtime unit tests.
 
+**S5 status (as built, 2026-11-01).** The WebSocket binding, `cratestack-websocket` (L4, axum `ws`).
+- **Shared with WebTransport**: frames, admission (`Init`, `authenticate_session`, refusal close
+  codes), `OriginPolicy` and the per-principal session registry moved into
+  `cratestack_core::subscription_wire`. `cratestack-webtransport` re-exports them under its old
+  names. `ClientFrame` gains `cancel` (`{id, cancel: {}}`), which is what WebSocket needs instead
+  of WebTransport's stream reset.
+- **Route (§6.1)**: `extension websocket { }` plus the facades' `websocket` feature (decision O4,
+  as proposed). Declaring one without the other is a compile error. Both `cratestack-pg` and
+  `cratestack-api` have the feature, so `db = None` subscription procedures can be served over
+  WebSocket too. The extension adds `SubscriptionDispatch::websocket(config, auth)`, an
+  `axum::Router` with the one route, `/rpc/ws` (`/$ws` on REST) unless `WebSocketConfig::path`
+  says otherwise. The application merges it into its router.
+- **Subprotocol (§6.2)**: the first offered of `cratestack.rpc.v1+cbor` / `+json`, else the
+  `codec` query parameter, else CBOR (406 for an unknown one). Binary messages carry CBOR and text
+  messages carry JSON; a message of the wrong kind closes with 4400.
+- **Authentication (§6.3)**: the first frame must be `Init` within 10 s. It is always required, as
+  on WebTransport: a native client sends its headers on the upgrade and an empty `Init`; a browser
+  puts them in `Init`. The handling of `Init` and its refusals follows WebTransport:
+  - a refusal is `{id: 0, err}`, then close 4401/4403/4400/4500;
+  - re-authentication with a further `Init` must name the same principal (else 4403);
+  - the socket closes 4401 when the context's `exp` passes without a refresh.
+- **Origin**: `SameOrigin` by default. Because an upgrade can arrive over plain HTTP behind a
+  TLS-terminating proxy, the authority's `http` origin is accepted too
+  (`OriginPolicy::permits_any_scheme`). An origin that is not allowed gets 403 on the upgrade.
+- **Frames (§6.4)**:
+  - a `Request` id already in use, or id 0, gets `Error{invalid_argument}`;
+  - past the subscription limit, a `Request` gets `Error{resource_exhausted}`;
+  - an unknown op gets the dispatcher's `not_found`;
+  - `Cancel` gets `end`;
+  - a stream that ends gets `end`.
+- **Keepalive and limits (§6.5, §6.6)**, all in `WebSocketLimits`:
+  - a ping every 15 s, and close 1001 after 30 s without a pong;
+  - 64 subscriptions per socket and 8 sockets per principal (close 4429);
+  - the body limit per message (1009, from tungstenite);
+  - a 1024-frame outbound queue, which closes the socket 1013 when full.
+- **O5 decided: unary over WebSocket stays gated** (§6.7). The dispatcher only knows subscription
+  ops, so any other op is `not_found`.
+- Tests:
+  - `cratestack-websocket/tests/session.rs` uses a real socket: multiplexing, id reuse, `Cancel`,
+    the 4401 refusal, JSON over text, and `Origin`;
+  - `cratestack-pg/tests/websocket_subscriptions.rs` runs a model feed and a subscription procedure
+    on one socket against Postgres, in CI's db job.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The
@@ -982,7 +1025,8 @@ The rest:
   staleness and leave it to the §2.1 refetch loop. **Decided (S3): document the staleness**;
   filter-exit events stay in S7.
 - **O4. `extension websocket { }`** (proposed, matches extensions.md) or feature-only.
-- **O5. Unary over WS**: keep gated (proposed) or schedule with S5.
+  **Decided (S5): the extension, as proposed.**
+- **O5. Unary over WS**: keep gated (proposed) or schedule with S5. **Decided (S5): gated.**
 - **O6. Backplane default under `cratestack-pg`** — *decided in S2: `PgNotifyBackplane`, swappable
   with `with_backplane`*: `PgNotifyBackplane` automatically (proposed; it
   has a pool, and `cratestack-sync` already listens), or in-process until configured (safer for

@@ -163,6 +163,10 @@ pub use cratestack_axum::rpc;
 #[cfg(feature = "mcp")]
 pub use cratestack_mcp as mcp;
 
+/// The WebSocket binding (`extension websocket { }`); see `SubscriptionDispatch::websocket`.
+#[cfg(feature = "websocket")]
+pub use cratestack_websocket as websocket;
+
 mod envelope_fn;
 
 #[doc(hidden)]

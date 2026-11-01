@@ -100,6 +100,8 @@ rate_limit = ["cratestack-macros/rate_limit"]
 # serves WebTransport. The client stubs do not use it yet; the generated
 # subscription clients are design slice S6.
 webtransport = ["cratestack-macros/webtransport"]
+# `extension websocket { }`: the same schema-compatibility switch.
+websocket = ["cratestack-macros/websocket"]
 
 [dependencies]
 chrono.workspace = true

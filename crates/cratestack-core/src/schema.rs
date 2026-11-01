@@ -104,16 +104,20 @@ pub enum ExtensionKind {
     /// The WebTransport subscription binding
     /// (`docs/design/subscriptions-websocket.md` §6a, §9).
     Webtransport,
+    /// The WebSocket subscription binding
+    /// (`docs/design/subscriptions-websocket.md` §6, §9, decision O4).
+    Websocket,
 }
 
 impl ExtensionKind {
     /// Every recognized extension name, in a stable order — used to build
     /// clear "expected one of: ..." error messages.
-    pub const ALL: [ExtensionKind; 4] = [
+    pub const ALL: [ExtensionKind; 5] = [
         ExtensionKind::RateLimit,
         ExtensionKind::Pgvector,
         ExtensionKind::Postgis,
         ExtensionKind::Webtransport,
+        ExtensionKind::Websocket,
     ];
 
     pub const fn as_str(&self) -> &'static str {
@@ -122,6 +126,7 @@ impl ExtensionKind {
             ExtensionKind::Pgvector => "pgvector",
             ExtensionKind::Postgis => "postgis",
             ExtensionKind::Webtransport => "webtransport",
+            ExtensionKind::Websocket => "websocket",
         }
     }
 

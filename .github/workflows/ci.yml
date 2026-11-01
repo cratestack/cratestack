@@ -717,6 +717,11 @@ jobs:
         # above never builds it; `CRATESTACK_REQUIRE_DB` (job env) makes a
         # missing database fail rather than skip.
         run: just test-ci-db-mcp --locked -- --test-threads=1
+      - name: cargo test (generated dispatcher over WebSocket, testcontainers Postgres)
+        # Slice S5: a model feed and a subscription procedure multiplexed on
+        # one socket. Gated `required-features = ["websocket"]`, so the
+        # default-feature step above never builds it.
+        run: just test-ci-db-websocket --locked -- --test-threads=1
       - name: cargo test (signed Rust client over models, testcontainers Postgres)
         # cratestack#1007: the generated client seals model calls and opens
         # their answers over REST and RPC, through the real envelope layer and

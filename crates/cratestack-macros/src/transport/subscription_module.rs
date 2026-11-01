@@ -38,6 +38,10 @@ pub(crate) struct SubscriptionSchema<'a> {
     pub(crate) enum_names: &'a BTreeSet<&'a str>,
     pub(crate) procedures: &'a [Procedure],
     pub(crate) webtransport: bool,
+    /// `extension websocket { }`.
+    pub(crate) websocket: bool,
+    /// `transport rpc`: the WebSocket route is `/rpc/ws`, else `/$ws`.
+    pub(crate) rpc: bool,
     /// `db = Postgres`: model feeds and the backplane builder method.
     pub(crate) postgres: bool,
 }
@@ -60,15 +64,17 @@ pub(crate) fn generate_subscription_module(
         .map(procedure_feed::generate)
         .collect();
     if feeds.is_empty() && procedures.is_empty() {
-        return if schema.webtransport {
-            Err(
-                "schema declares `extension webtransport { }`, but has no subscription op to \
+        let declared = [
+            (schema.webtransport, "webtransport"),
+            (schema.websocket, "websocket"),
+        ];
+        return match declared.into_iter().find(|(declared, _)| *declared) {
+            Some((_, name)) => Err(format!(
+                "schema declares `extension {name} {{ }}`, but has no subscription op to \
                  serve over it: add `@@subscribe` to a model or declare a \
                  `subscription procedure`, or drop the extension block"
-                    .to_owned(),
-            )
-        } else {
-            Ok(proc_macro2::TokenStream::new())
+            )),
+            None => Ok(proc_macro2::TokenStream::new()),
         };
     }
     let model_arms = feeds.iter().map(|feed| {
@@ -91,6 +97,9 @@ pub(crate) fn generate_subscription_module(
     let webtransport_impl = schema
         .webtransport
         .then(|| webtransport_impl(!procedures.is_empty()));
+    let websocket_impl = schema
+        .websocket
+        .then(|| websocket_impl(!procedures.is_empty(), schema.rpc));
     let feed_query = (!feeds.is_empty()).then(feed_query::tokens);
 
     Ok(quote! {
@@ -105,8 +114,31 @@ pub(crate) fn generate_subscription_module(
             #(#functions)*
 
             #webtransport_impl
+
+            #websocket_impl
         }
     })
+}
+
+fn websocket_impl(registry: bool, rpc: bool) -> proc_macro2::TokenStream {
+    let (generics, ty) = dispatch::generics(registry);
+    let path = if rpc { "/rpc/ws" } else { "/$ws" };
+    quote! {
+        impl #generics #ty {
+            /// The WebSocket route (`extension websocket { }`) serving this
+            /// schema's subscriptions at `/rpc/ws` (`/$ws` on REST) unless
+            /// `config` names another path, authenticating sockets with
+            /// `auth`, normally the router's own provider. Merge it into
+            /// the application's router.
+            pub fn websocket<A: ::cratestack::AuthProvider>(
+                self,
+                config: ::cratestack::websocket::WebSocketConfig,
+                auth: A,
+            ) -> ::cratestack::axum::Router {
+                ::cratestack::websocket::router(config.default_path(#path), auth, self)
+            }
+        }
+    }
 }
 
 fn webtransport_impl(registry: bool) -> proc_macro2::TokenStream {

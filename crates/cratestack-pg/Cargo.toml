@@ -105,6 +105,7 @@ decimal-rust-decimal = [
     "cratestack-sqlx?/decimal-rust-decimal",
     "cratestack-mcp?/decimal-rust-decimal",
     "cratestack-webtransport?/decimal-rust-decimal",
+    "cratestack-websocket?/decimal-rust-decimal",
 ]
 # Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
 # (cratestack#495).
@@ -122,6 +123,7 @@ decimal-bigdecimal = [
     "cratestack-sqlx?/decimal-bigdecimal",
     "cratestack-mcp?/decimal-bigdecimal",
     "cratestack-webtransport?/decimal-bigdecimal",
+    "cratestack-websocket?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. On by default
 # so `include_client_schema!` keeps offering both CBOR and JSON; disable
@@ -190,6 +192,13 @@ postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
 # which adds `SubscriptionDispatch::webtransport` to the generated
 # `subscriptions` module. Without it no QUIC dependency enters the graph.
 webtransport = ["cratestack-macros/webtransport", "dep:cratestack-webtransport"]
+# Serves the schema's subscriptions over WebSocket for schemas that declare
+# `extension websocket { }` (docs/design/subscriptions-websocket.md §6, §9):
+# pulls `cratestack-websocket` (axum's `ws`, tungstenite), re-exported as
+# `cratestack::websocket`, and forwards `cratestack-macros/websocket`, which
+# adds `SubscriptionDispatch::websocket` to the generated `subscriptions`
+# module.
+websocket = ["cratestack-macros/websocket", "dep:cratestack-websocket"]
 # Serves the schema's `@mcp(tool)` procedures and `@@mcp(resource: ...)`
 # models to agents over MCP (ADR 0002, cratestack#1038, cratestack#1040):
 # pulls `cratestack-mcp` (and through it `rmcp`), and
@@ -240,6 +249,7 @@ cratestack-sql.workspace = true
 cratestack-sqlx = { workspace = true, optional = true }
 cratestack-mcp = { workspace = true, optional = true }
 cratestack-webtransport = { workspace = true, optional = true, default-features = false }
+cratestack-websocket = { workspace = true, optional = true, default-features = false }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -288,6 +298,8 @@ testcontainers-modules.workspace = true
 # `io-util`: `tests/mcp_policy_pg.rs` (cratestack#1038) drives the MCP stdio
 # server over an in-memory `tokio::io::duplex`.
 tokio = { workspace = true, features = ["io-util"] }
+# `tests/websocket_subscriptions.rs` (`--features websocket`): its client.
+tokio-tungstenite = "0.29"
 tower.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
@@ -418,3 +430,11 @@ required-features = ["mcp"]
 name = "webtransport_model_feed"
 path = "tests/webtransport_model_feed.rs"
 required-features = ["webtransport"]
+
+# The generated dispatcher served over WebSocket, end to end against Postgres
+# (docs/design/subscriptions-websocket.md §6, slice S5). The fixture declares
+# `extension websocket { }`, a `compile_error!` without the feature.
+[[test]]
+name = "websocket_subscriptions"
+path = "tests/websocket_subscriptions.rs"
+required-features = ["websocket"]

@@ -294,6 +294,10 @@ pub(super) fn collect_server_schema(
             webtransport: schema
                 .declared_extensions
                 .contains(&cratestack_core::ExtensionKind::Webtransport),
+            websocket: schema
+                .declared_extensions
+                .contains(&cratestack_core::ExtensionKind::Websocket),
+            rpc: is_rpc,
             postgres,
         })
         .map_err(|e| compile_error(schema_path, e))?;

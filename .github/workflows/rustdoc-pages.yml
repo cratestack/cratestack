@@ -94,7 +94,8 @@ jobs:
             -p cratestack-rusqlite \
             -p cratestack-sql \
             -p cratestack-sqlx \
-            -p cratestack-webtransport
+            -p cratestack-webtransport \
+            -p cratestack-websocket
 
       - name: Prepare Pages content
         run: |

@@ -50,7 +50,7 @@ pub(super) fn embedded_postgres_only_error(
         ),
         // `is_postgres_only` gates every caller, so no other kind
         // reaches here.
-        ExtensionKind::RateLimit | ExtensionKind::Webtransport => {
+        ExtensionKind::RateLimit | ExtensionKind::Webtransport | ExtensionKind::Websocket => {
             unreachable!("only a Postgres-only extension reaches this error")
         }
     };

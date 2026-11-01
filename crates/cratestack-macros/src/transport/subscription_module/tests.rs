@@ -30,6 +30,8 @@ fn generate(source: &str, webtransport: bool) -> Result<String, String> {
         enum_names: &enum_names,
         procedures: &schema.subscription_procedures,
         webtransport,
+        websocket: false,
+        rpc: true,
         postgres: true,
     })
     .map(|tokens| tokens.to_string())
@@ -93,4 +95,26 @@ fn a_subscription_procedure_gets_an_arm_over_the_registry() {
     assert!(code.contains("procedure_input_query"));
     // No model feed, so no feed query parser.
     assert!(!code.contains("fn feed_query"));
+}
+
+#[test]
+fn extension_websocket_adds_the_route_at_the_transports_path() {
+    let schema = cratestack_parser::parse_schema(PROCEDURE).expect("schema should parse");
+    let names = BTreeSet::new();
+    let generate = |rpc: bool| {
+        generate_subscription_module(&SubscriptionSchema {
+            models: &schema.models,
+            model_names: &names,
+            enum_names: &names,
+            procedures: &schema.subscription_procedures,
+            webtransport: false,
+            websocket: true,
+            rpc,
+            postgres: true,
+        })
+        .unwrap()
+        .to_string()
+    };
+    assert!(generate(true).contains("websocket :: router (config . default_path (\"/rpc/ws\")"));
+    assert!(generate(false).contains("default_path (\"/$ws\")"));
 }

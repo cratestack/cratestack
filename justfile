@@ -404,6 +404,12 @@ test-ci-db-cose *args='':
 test-ci-db-webtransport *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
 
+# Slice S5: `db.subscriptions(registry).websocket(..)` serving a model feed and
+# a subscription procedure on one socket. `required-features = ["websocket"]`,
+# so `test-ci-db` never builds it.
+test-ci-db-websocket *args='':
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features websocket --test websocket_subscriptions {{args}}
+
 # Headless Chromium, through Playwright, against `cratestack-webtransport`'s
 # `browser_harness` example, speaking the binding's JSON codec via the
 # browser's own `WebTransport` API (docs/design/subscriptions-websocket.md

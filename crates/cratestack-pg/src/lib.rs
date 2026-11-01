@@ -182,6 +182,13 @@ pub use cratestack_mcp as mcp;
 #[cfg(feature = "webtransport")]
 pub use cratestack_webtransport as webtransport;
 
+/// The WebSocket subscription binding
+/// (`docs/design/subscriptions-websocket.md` §6). A schema declaring
+/// `extension websocket { }` mounts it with
+/// `router.merge(db.subscriptions().websocket(config, auth))`.
+#[cfg(feature = "websocket")]
+pub use cratestack_websocket as websocket;
+
 // Everything below is sqlx (Postgres)-backed and only compiled in when the
 // default-on `postgres` feature is enabled (cratestack#329). A `db = None`
 // -only consumer builds with `default-features = false` (or explicitly

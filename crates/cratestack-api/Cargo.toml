@@ -51,6 +51,7 @@ decimal-rust-decimal = [
     "cratestack-codec-cbor/decimal-rust-decimal",
     "cratestack-codec-json/decimal-rust-decimal",
     "cratestack-mcp?/decimal-rust-decimal",
+    "cratestack-websocket?/decimal-rust-decimal",
 ]
 # Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
 # (cratestack#495).
@@ -65,11 +66,16 @@ decimal-bigdecimal = [
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json/decimal-bigdecimal",
     "cratestack-mcp?/decimal-bigdecimal",
+    "cratestack-websocket?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg` for rationale. On by default so `include_client_schema!`
 # keeps offering both CBOR and JSON.
 codec-json = ["cratestack-client-rust/codec-json"]
+# Serves a `db = None` schema's `subscription procedure`s over WebSocket
+# (`extension websocket { }`, docs/design/subscriptions-websocket.md §6):
+# pulls `cratestack-websocket`, re-exported as `cratestack::websocket`.
+websocket = ["cratestack-macros/websocket", "dep:cratestack-websocket"]
 # Forwards `cratestack-client-rust`'s pluggable HTTP transport
 # (cratestack#926) so a consumer reaching this facade can hand the
 # generated client a `reqwest_middleware::ClientWithMiddleware` —
@@ -122,6 +128,7 @@ cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
 cratestack-macros.workspace = true
 cratestack-mcp = { workspace = true, optional = true }
+cratestack-websocket = { workspace = true, optional = true, default-features = false }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true

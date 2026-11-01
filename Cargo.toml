@@ -39,6 +39,7 @@ members = [
     "crates/cratestack-studio",
     "crates/cratestack-sync",
     "crates/cratestack-webtransport",
+    "crates/cratestack-websocket",
     "examples/embedded-cli",
     "examples/embedded-daemon",
     "examples/embedded-webhook",
@@ -328,6 +329,7 @@ cratestack-sync = { path = "crates/cratestack-sync", version = "0.17.2", default
 # §6a). `default-features = false` for the same decimal-forwarding reason
 # as `cratestack-axum` above.
 cratestack-webtransport = { path = "crates/cratestack-webtransport", version = "0.17.2", default-features = false }
+cratestack-websocket = { path = "crates/cratestack-websocket", version = "0.17.2", default-features = false }
 minijinja = { version = "3", features = ["serde"] }
 # Was pinned to the `0` line via the `rustls-tls` feature (reqwest 0.12-only
 # name) until #435: that name doesn't exist on reqwest 0.13, so Cargo could

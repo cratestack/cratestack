@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Subscriptions over WebSocket: `extension websocket { }`
+
+**What was missing.** A client on a network that blocks UDP could not use the WebTransport
+binding. Its only other option was SSE: one connection per subscription, JSON only, and no way to
+refresh credentials on a live stream.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §6).
+
+- **The new `cratestack-websocket` crate** serves a schema's subscriptions over one WebSocket,
+  using the same frames as WebTransport.
+  - `Init`, then `Request`s multiplexed by id, each answered with `Ready`, items, and one `end` or
+    `err`.
+  - `{id, cancel: {}}` ends a subscription.
+  - Binary messages carry CBOR (`cratestack.rpc.v1+cbor`) and text messages carry JSON (`+json`).
+- **`extension websocket { }` with the facade's `websocket` feature** (`cratestack-pg`,
+  `cratestack-api`) adds `SubscriptionDispatch::websocket(config, auth)`, a router with
+  `/rpc/ws` (`/$ws` on REST) to merge into yours.
+- **Authentication** uses the router's `AuthProvider`, over the upgrade headers or, for a
+  browser, over `Init`'s.
+  - A refusal sends `{id: 0, err}` and then closes with 4401, 4403, 4400 or 4500.
+  - A further `Init` refreshes the credentials; it must name the same principal.
+  - The socket closes with 4401 when the credential expires.
+  - Origins are same-origin by default.
+- **Limits** (`WebSocketLimits`):
+  - 64 subscriptions per socket and 8 sockets per principal;
+  - the body limit per message;
+  - a 1024-frame outbound queue;
+  - a ping every 15 s.
+- The frames, admission, `OriginPolicy` and the session registry now live in
+  `cratestack_core::subscription_wire`. `cratestack-webtransport` re-exports them unchanged.
+
 ### Subscription procedures and topics
 
 **What was missing.** The only subscription was a model feed. Live data that is not a row change,

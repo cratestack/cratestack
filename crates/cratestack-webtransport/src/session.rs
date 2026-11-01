@@ -41,6 +41,7 @@ pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
             return incoming.reject(StatusCode::NOT_ACCEPTABLE).await;
         };
         let connect = Connect {
+            method: "CONNECT",
             path: incoming.path().to_owned(),
             query: incoming.query().map(str::to_owned),
             headers: incoming.headers().clone(),
