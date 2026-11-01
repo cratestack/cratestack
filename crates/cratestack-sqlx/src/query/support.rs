@@ -37,6 +37,7 @@ mod values;
 mod version_probe;
 
 pub(crate) use auth_literal::{Position, auth_literal_sql};
+pub(crate) use comparison::Truth;
 pub(crate) use conditions::{ReadPolicyKind, authorize_record_action, push_scoped_conditions};
 /// The create path evaluates predicates in-process rather than pushing
 /// them into SQL, so it is a second evaluator `AuthIsSystem` has to be
@@ -45,7 +46,7 @@ pub(crate) use conditions::{ReadPolicyKind, authorize_record_action, push_scoped
 /// instead of restating its match arms.
 #[cfg(test)]
 pub(crate) use create::evaluate_input_predicate as evaluate_input_predicate_for_tests;
-pub(crate) use create::{apply_create_defaults, evaluate_create_policies};
+pub(crate) use create::{apply_create_defaults, evaluate_create_policies, evaluate_input_truth};
 pub(crate) use db::PolicyDb;
 pub(crate) use filter::{push_filter_expr_query, push_filter_query};
 pub(crate) use order::push_order_and_paging;

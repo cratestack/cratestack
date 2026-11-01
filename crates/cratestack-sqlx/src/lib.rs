@@ -96,7 +96,9 @@ pub use migrations::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
 };
-pub use record_policy::{missing_policy_columns, record_readable};
+pub use record_policy::{
+    may_read_some_row, missing_policy_columns, record_readable, refuse_unreadable_subscription,
+};
 pub use transaction::Tx;
 
 pub use cratestack_policy::{PolicyExpr, PolicyLiteral, ReadPolicy, ReadPredicate};

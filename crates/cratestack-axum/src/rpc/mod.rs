@@ -27,10 +27,12 @@
 
 mod batch;
 mod codec_helpers;
+mod credential_expiry;
 mod error_encode;
 mod model_feed;
 mod sse;
 mod sse_subscription;
+mod subscribe_error;
 mod subscription_bridge;
 mod synthesize;
 pub(crate) mod util;
@@ -64,10 +66,12 @@ pub use cratestack_core::rpc::{
 
 pub use batch::response_to_frame;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
+pub use credential_expiry::until_credential_expires;
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
 pub use model_feed::{model_events, model_feed};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
 pub use sse_subscription::encode_subscription_sse_response;
+pub use subscribe_error::encode_subscribe_error;
 pub use subscription_bridge::{SubscriptionPush, guarded_receiver_stream, subscription_channel};
 pub use synthesize::{synthesize_get_query, synthesize_list_query};
 

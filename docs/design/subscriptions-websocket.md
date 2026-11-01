@@ -869,6 +869,27 @@ such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, nev
   `webtransport_model_feed.rs` (the WebTransport server runs on replica B). The SSE overflow test pins
   the in-process backplane, which publishes synchronously from the drain.
 
+**S1 status (as built, 2026-11-01).** Its per-event half shipped first, in cratestack#1253 and S5a.
+The class-A/B split of §5.2 became one evaluator: the create path's, which runs row-local predicates
+in memory and probes relations with `EXISTS`. That leaves no class-B refetch for S3b and no
+seen-set tombstones (O2 moot): a delete event carries the deleted row and is decided like any other.
+The rest:
+- **Open-time refusal (§5.1)**: `cratestack_sqlx::refuse_unreadable_subscription`. Each predicate
+  is reduced to the truth values it can take over all rows. A caller-only predicate is decided now.
+  A column compared with an `auth()` claim the caller lacks is `FALSE` for every row, as the SQL
+  path renders it. Any other column predicate can take any value. If no `@allow` can be `True`, or
+  some `@deny` can never be `False`, the subscription is refused before `Ready`: `unauthenticated`
+  for an anonymous caller, else `permission_denied`. Predicates are treated as independent, so it
+  can open a feed that will deliver nothing; it never refuses one that could deliver something.
+- **The SSE endpoint's errors are JSON with the error's own status** (`encode_subscribe_error`),
+  `WWW-Authenticate` included. They used to go through the unary encoder's codec negotiation, which
+  answered an `EventSource` client (`Accept: text/event-stream`) with `406` for every refusal.
+- **SSE keepalive**: a `: keepalive` comment after 15 s without an item.
+- **Credential expiry (§6.3)**: a subscription ends with `unauthenticated` / `"credential expired"`
+  when the opening context's `exp` claim passes (`until_credential_expires`); the client resubscribes
+  with a fresh credential. WebTransport re-authentication refreshes the context for streams opened
+  after it, not for streams already open.
+
 ## 12. Decisions for the maintainer
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The

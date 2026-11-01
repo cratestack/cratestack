@@ -32,10 +32,8 @@ pub(super) fn build_subscribe_block(arms: &[proc_macro2::TokenStream]) -> proc_m
                         cratestack_op_id = other,
                         "unknown subscription op id",
                     );
-                    rpc_dispatch_error(
-                        &state,
-                        &headers,
-                        ::cratestack::CratestackError::NotFound(format!(
+                    ::cratestack::__private::encode_subscribe_error(
+                        &::cratestack::CratestackError::NotFound(format!(
                             "unknown subscription op `{other}`",
                         )),
                     )

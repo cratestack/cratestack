@@ -117,5 +117,5 @@ uuid.workspace = true
 
 [dev-dependencies]
 minicbor-serde.workspace = true
-tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "test-util", "time"] }
 tracing-subscriber.workspace = true

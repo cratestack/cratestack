@@ -89,6 +89,9 @@ pub(super) fn generate(
                     #model_name,
                 )));
             }
+            // A caller whose policy no row could pass is refused now
+            // (design §5.1), not handed a feed that never delivers.
+            ::cratestack::__private::refuse_unreadable_subscription(#model_name, allow, deny, &ctx)?;
             // Live before this returns: nothing committed from here on is
             // missed (design §2.1), whichever replica commits it.
             let receiver = db
@@ -98,7 +101,8 @@ pub(super) fn generate(
                 .await?;
             let stream = ::cratestack::__private::model_events::<super::models::#model_ident>(receiver);
             let pool = db.pool().clone();
-            Ok(::cratestack::__private::model_feed(
+            let expires_at = ctx.expires_at();
+            let feed = ::cratestack::__private::model_feed(
                 stream,
                 move |event: &::cratestack::ModelEvent<super::models::#model_ident>| {
                     let record = &event.data;
@@ -108,7 +112,9 @@ pub(super) fn generate(
                         ::cratestack::__private::record_readable(&pool, allow, deny, &values, &ctx).await
                     }
                 },
-            ))
+            );
+            // It lives no longer than the credential that opened it (§6.3).
+            Ok(::cratestack::__private::until_credential_expires(feed, expires_at))
         }
     };
     Ok(Some(ModelFeed {

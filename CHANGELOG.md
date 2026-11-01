@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Subscriptions refuse a caller who can read nothing, end when the credential expires, and keep SSE alive
+
+**What was missing.** A caller whose read policy no row could pass, such as an anonymous caller on
+an `auth() != null` model, got `Ready` and an empty feed that never delivered. A refusal from the
+SSE endpoint reached an `EventSource` client as `406`, because its `Accept: text/event-stream`
+names no RPC codec. A subscription outlived the credential that opened it. A quiet SSE stream was
+dropped by idle-timeout proxies.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §5.1, §6.3, §7.1).
+
+- **Refused at open** when no row could pass the read policy: `unauthenticated` for an anonymous
+  caller, else `permission_denied`. This applies on every binding (SSE, WebTransport). A
+  row-dependent `@deny`, such as `archived`, never refuses at open.
+- **The SSE endpoint's errors are JSON with the error's own status** (401, 403, 500 and so on,
+  plus `WWW-Authenticate` for a refusal), whatever the RPC codec.
+- **A subscription ends with `unauthenticated` / `"credential expired"`** when its context's `exp`
+  claim passes. Resubscribe with a fresh credential.
+- **SSE sends a `: keepalive` comment** after 15 s without an item.
+
 ### Subscriptions reach every replica: the subscription backplane
 
 **What was missing.** A model event reached only the subscribers of the replica that committed

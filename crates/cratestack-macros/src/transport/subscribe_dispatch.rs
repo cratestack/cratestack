@@ -9,8 +9,9 @@
 //! §6.1, slice S5a): it checks `Accept`, authenticates, and opens the
 //! subscription through the schema's generated `SubscriptionDispatcher`
 //! ([`super::subscription_module`]), which owns the policy and the
-//! per-event read check. A refusal at open is an ordinary RPC error
-//! response; once open, the stream is encoded by
+//! per-event read check. A refusal at open is a JSON error response with
+//! the refusal's own status (`encode_subscribe_error`); once open, the stream
+//! is encoded by
 //! `encode_subscription_sse_response`, on the same wire as before.
 
 use cratestack_core::Model;
@@ -28,14 +29,14 @@ pub(crate) fn generate_model_subscribe_dispatch_arm(
     Some(quote! {
         #op_id => {
             if let Err(error) = ::cratestack::__private::validate_subscribe_accept_header(&headers) {
-                return rpc_dispatch_error(&state, &headers, error);
+                return ::cratestack::__private::encode_subscribe_error(&error);
             }
             let request = request_context("GET", #canonical_path, None, &headers, &[], &client_ip_ctx.extensions);
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
                 Err(error) => {
                     let error: ::cratestack::CratestackError = error.into();
-                    return rpc_dispatch_error(&state, &headers, error);
+                    return ::cratestack::__private::encode_subscribe_error(&error);
                 }
             };
             let open = ::cratestack::SubscriptionOpen {
@@ -45,7 +46,7 @@ pub(crate) fn generate_model_subscribe_dispatch_arm(
             };
             match ::cratestack::SubscriptionDispatcher::open(&state.db.subscriptions(), open).await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
-                Err(error) => rpc_dispatch_error(&state, &headers, error),
+                Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }
         }
     })

@@ -13,7 +13,11 @@
 //! column (`#[serde(skip)]`), so [`missing_policy_columns`] is checked when
 //! a subscription opens, and a policy it cannot decide is refused there.
 
+mod open_check;
+
 use cratestack_core::{CratestackContext, CratestackError};
+
+pub use open_check::{may_read_some_row, refuse_unreadable_subscription};
 
 use crate::query::{PolicyDb, evaluate_create_policies};
 use crate::{PolicyExpr, ReadPolicy, ReadPredicate, SqlColumnValue, sqlx};
