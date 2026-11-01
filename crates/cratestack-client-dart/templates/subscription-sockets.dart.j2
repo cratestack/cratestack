@@ -179,15 +179,21 @@ Stream<Object?> cratestackSubscribe({
   };
 }
 
-/// A stream whose binding opens when it is listened to.
+/// A stream whose binding opens when it is listened to. Cancelled while
+/// the binding is still opening, it closes the binding once it opens: the
+/// socket would otherwise stay open with nobody reading it.
 Stream<Object?> _cratestackDeferred(Future<Stream<Object?>> Function() open) {
   StreamSubscription<Object?>? inner;
+  var cancelled = false;
   late final StreamController<Object?> controller;
   controller = StreamController<Object?>(
     onListen: () async {
       try {
         final stream = await open();
-        if (controller.isClosed) {
+        if (cancelled || controller.isClosed) {
+          // Listening, then cancelling, runs the binding's own cancel:
+          // the `cancel` frame, the socket or session closed.
+          await stream.listen(null).cancel();
           return;
         }
         inner = stream.listen(
@@ -200,7 +206,10 @@ Stream<Object?> _cratestackDeferred(Future<Stream<Object?>> Function() open) {
         await controller.close();
       }
     },
-    onCancel: () => inner?.cancel(),
+    onCancel: () {
+      cancelled = true;
+      return inner?.cancel();
+    },
   );
   return controller.stream;
 }

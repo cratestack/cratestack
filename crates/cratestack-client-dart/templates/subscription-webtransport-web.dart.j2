@@ -35,10 +35,10 @@ Future<Stream<Object?>> cratestackOpenWebTransport(
         ),
     ].toJS,
   );
-  final web.WebTransport session;
+  web.WebTransport? opening;
   final _Lines control;
   try {
-    session = web.WebTransport(url.replace(queryParameters: query).toString(), options);
+    final session = opening = web.WebTransport(url.replace(queryParameters: query).toString(), options);
     final opened = () async {
       await session.ready.toDart;
       final stream = await session.createBidirectionalStream().toDart;
@@ -57,11 +57,20 @@ Future<Stream<Object?>> cratestackOpenWebTransport(
               'no WebTransport session in time',
             ),
           );
-  } on CratestackSocketUnreachable {
-    rethrow;
   } catch (error) {
+    // UDP blocked, no listener, the bound passed: close the half-open
+    // session rather than leave it to the browser.
+    try {
+      opening?.close();
+    } catch (_) {
+      // Never opened.
+    }
+    if (error is CratestackSocketUnreachable) {
+      rethrow;
+    }
     throw CratestackSocketUnreachable('WebTransport $url: $error');
   }
+  final session = opening;
 
   void close() {
     try {

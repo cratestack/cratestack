@@ -156,6 +156,21 @@ void main() {
     expect(transport.requests, isEmpty);
   });
 
+  test('cancelling while the socket opens still closes it', () async {
+    final transport = _SseTransport();
+    final events = _client(
+      transport,
+      CratestackSubscriptionOptions(webSocketUrl: server.url, credentials: _asUserOne),
+    ).notes.subscribe();
+    // Cancelled before the socket has even connected.
+    await events.listen((_) {}).cancel();
+    for (var i = 0; i < 50 && server.cancels.isEmpty; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(server.requests, hasLength(1));
+    expect(server.cancels, <Object?>[1]);
+  });
+
   test('auto falls back to SSE when no socket opens, across a split CRLF', () async {
     final transport = _SseTransport();
     final closed = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
