@@ -36,6 +36,8 @@ pub use client::{
 };
 pub use codec::HttpClientCodec;
 pub use config::ClientConfig;
+#[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
+pub use config::WebTransportEndpoint;
 pub use cratestack_core::ProjectionDecoder;
 /// Back-compat alias — the trait moved to `cratestack-core` and was
 /// renamed `ProjectionDecoder` to free up the `Projection` name for
@@ -47,6 +49,10 @@ pub use cratestack_core::ProjectionDecoder;
 pub use cratestack_core::ProjectionDecoder as Projection;
 #[cfg(feature = "cose")]
 pub use cratestack_cose as cose;
+/// Which certificates a WebTransport listener may show (feature
+/// `webtransport`): the platform's roots, or pinned SHA-256 hashes.
+#[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
+pub use cratestack_webtransport::ServerTrust;
 #[cfg(feature = "cose")]
 pub use envelope::{ClientEnvelope, OpenedResponse, PendingResponse, SealCall, SealedCall};
 pub use envelope_error::EnvelopeError;

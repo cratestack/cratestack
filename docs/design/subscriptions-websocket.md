@@ -1033,11 +1033,39 @@ The rest:
     `GET <socket path>`, and the socket sends an empty `Init` and a `Request`. Dropping the
     receiver sends `Cancel`. A shared, multiplexed socket is a later optimisation; per-subscription
     sockets keep the client simple.
-  - **`Auto`** tries the socket, then SSE, but only when no socket opens (`Unreachable`, as
-    opposed to `Refused`).
-  - **WebTransport from Rust** is not built yet. The server binding exists; a native client needs
-    a public client half of `cratestack-webtransport`.
+  - **WebTransport** (`webtransport` feature, native targets) uses one session per subscription,
+    through `cratestack-webtransport`'s client half (below). `ClientConfig::with_webtransport(url,
+    trust)` names the listener, a separate UDP address.
+  - **`Auto`** tries WebTransport (when configured), then the socket, then SSE. It moves on only
+    when a binding cannot be opened (`Unreachable`, as opposed to `Refused`). A WebTransport
+    session not open within 3 s counts as unreachable, and the failure is remembered for 10
+    minutes across clones of the config, as in the TypeScript client.
+- **The client half of `cratestack-webtransport`** (feature `client`, as built 2026-11-01).
+  - `WebTransportClient::connect(url, trust, headers)` CONNECTs, offers the CBOR subprotocol, sends
+    `Init` with the headers, and resolves at `Ready{0}`. The generated client fills `headers` from
+    its request authorizer for `CONNECT <path>`, the request the server authenticates (§6a.4), so a
+    signing authorizer signs what is verified. Frames up to `DEFAULT_BODY_LIMIT_BYTES` are accepted,
+    the server's own default inbound limit. It keeps the control stream open, because
+    the server ends a session whose control stream ends.
+  - `subscribe(op, input)` opens one bidirectional stream, writes the `Request`, finishes the send
+    half and resolves at `Ready{id}`. Dropping the `Subscription` stops the stream, which is the
+    cancel (§6a.2).
+  - `ServerTrust` is `NativeRoots`, or `CertificateHashes` for a `DevCertificate`. The pinned
+    verifier still checks the handshake signature.
+  - The endpoint binds the address family of the server: `web-transport-quinn`'s builder binds
+    `[::]:0`, which fails on hosts without IPv6. 0-RTT is off, as on the server.
+  - Failures are `Unreachable` (network, UDP, certificate) or `Refused` (an `err` frame, or a
+    close code with no frame: 4401 is `unauthenticated`, 4403 `permission_denied`, 4429
+    `resource_exhausted`).
 - Tests:
+  - `cratestack-webtransport/tests/client.rs` runs the client half against the real server: two
+    subscriptions on one session, the clean end, refusals at `Init` and `Request`, a terminal
+    error, the cancel reaching the dispatcher, and a wrong pin or an unrooted certificate being
+    unreachable;
+  - `examples/realtime-chat/tests/webtransport.rs` runs the generated Rust client against the
+    example's QUIC listener and Postgres: pinned to WebTransport and on `Auto`, with no HTTP server
+    reachable, so only WebTransport could deliver; and `Auto` with UDP blocked falling back to the
+    WebSocket within the 3 s bound, then not waiting again;
   - `cratestack-pg/tests/websocket_subscriptions.rs` runs the generated client over each binding
     against Postgres, model feed and procedure;
   - `cratestack-client/tests/subscriptions.rs` covers the client role's surface;

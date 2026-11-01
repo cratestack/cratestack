@@ -3,20 +3,20 @@
 //! `Ready`, then the stream yields items and ends, or ends with an error.
 //!
 //! The binding is client configuration ([`SubscriptionTransport`]), never
-//! part of a generated method's name. `Auto` uses a WebSocket when the `ws`
-//! feature is on (native targets) and falls back to SSE when the socket
-//! cannot be opened; a refusal is never a reason to fall back.
+//! part of a generated method's name. `Auto` tries WebTransport when the
+//! `webtransport` feature is on and the config names the listener, then a
+//! WebSocket when the `ws` feature is on, then SSE (native targets for the
+//! first two). It moves on only when a binding cannot be opened; a refusal
+//! is never a reason to fall back.
 
+mod failure;
 mod frames;
+mod open;
 mod sse;
 #[cfg(all(feature = "ws", not(target_arch = "wasm32")))]
 mod ws;
-
-use serde::de::DeserializeOwned;
-
-use crate::client::CratestackClient;
-use crate::codec::HttpClientCodec;
-use crate::error::ClientError;
+#[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
+mod wt;
 
 pub use frames::rpc_error_to_client;
 
@@ -25,13 +25,18 @@ pub use frames::rpc_error_to_client;
 /// procedure whose source ran out). Dropping it cancels the subscription.
 pub type ClientSubscription<T> = tokio::sync::mpsc::Receiver<Result<T, ClientError>>;
 
+use crate::error::ClientError;
+
 /// Which binding a subscription uses.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SubscriptionTransport {
-    /// A WebSocket when this build has the `ws` feature, else SSE; SSE as
-    /// well when the socket cannot be opened.
+    /// WebTransport, then a WebSocket, then SSE: each binding this build
+    /// has and the config allows, moving on only when one cannot be opened.
     #[default]
     Auto,
+    /// One WebTransport session per subscription (`webtransport` feature,
+    /// native targets, `ClientConfig::with_webtransport`).
+    WebTransport,
     /// One WebSocket per subscription (`ws` feature, native targets).
     WebSocket,
     /// `text/event-stream` over HTTP.
@@ -66,65 +71,5 @@ impl SubscriptionTarget {
             query.append_pair(name, &value.to_string());
         }
         Some(query.finish())
-    }
-}
-
-impl<C: HttpClientCodec> CratestackClient<C> {
-    /// Opens `target`, resolving once the server says `Ready`.
-    pub async fn subscribe<T>(
-        &self,
-        target: SubscriptionTarget,
-    ) -> Result<ClientSubscription<T>, ClientError>
-    where
-        T: DeserializeOwned + Send + 'static,
-    {
-        match self.config.subscription_transport {
-            SubscriptionTransport::Sse => sse::open(self, &target).await,
-            SubscriptionTransport::WebSocket => self.subscribe_ws(&target).await,
-            SubscriptionTransport::Auto => self.subscribe_auto(&target).await,
-        }
-    }
-
-    #[cfg(all(feature = "ws", not(target_arch = "wasm32")))]
-    async fn subscribe_ws<T: DeserializeOwned + Send + 'static>(
-        &self,
-        target: &SubscriptionTarget,
-    ) -> Result<ClientSubscription<T>, ClientError> {
-        ws::open(self, target)
-            .await
-            .map_err(ws::Failure::into_error)
-    }
-
-    #[cfg(not(all(feature = "ws", not(target_arch = "wasm32"))))]
-    async fn subscribe_ws<T: DeserializeOwned + Send + 'static>(
-        &self,
-        _target: &SubscriptionTarget,
-    ) -> Result<ClientSubscription<T>, ClientError> {
-        Err(ClientError::BadInput(
-            "WebSocket subscriptions need the `ws` feature on a native target".to_owned(),
-        ))
-    }
-
-    #[cfg(all(feature = "ws", not(target_arch = "wasm32")))]
-    async fn subscribe_auto<T: DeserializeOwned + Send + 'static>(
-        &self,
-        target: &SubscriptionTarget,
-    ) -> Result<ClientSubscription<T>, ClientError> {
-        match ws::open(self, target).await {
-            Ok(subscription) => Ok(subscription),
-            // The socket could not be opened (no route, a proxy that blocks
-            // upgrades): SSE. A refusal is the server's answer, not a
-            // transport failure, and is returned as is.
-            Err(ws::Failure::Unreachable(_)) => sse::open(self, target).await,
-            Err(failure) => Err(failure.into_error()),
-        }
-    }
-
-    #[cfg(not(all(feature = "ws", not(target_arch = "wasm32"))))]
-    async fn subscribe_auto<T: DeserializeOwned + Send + 'static>(
-        &self,
-        target: &SubscriptionTarget,
-    ) -> Result<ClientSubscription<T>, ClientError> {
-        sse::open(self, target).await
     }
 }

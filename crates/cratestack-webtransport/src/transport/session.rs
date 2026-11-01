@@ -61,7 +61,11 @@ impl Incoming {
             response = response.with_protocol(protocol);
         }
         let inner = self.request.respond(response).await.map_err(internal)?;
-        Ok(Session { inner })
+        Ok(Session {
+            inner,
+            #[cfg(feature = "client")]
+            _client: None,
+        })
     }
 
     /// Answers with `status`, then holds the connection until the client
@@ -77,13 +81,42 @@ impl Incoming {
     }
 }
 
-/// An accepted session.
+/// An accepted session, or (feature `client`) one this process opened.
 #[derive(Clone)]
 pub(crate) struct Session {
     inner: wtq::Session,
+    /// A client session keeps its endpoint for as long as it lives.
+    #[cfg(feature = "client")]
+    _client: Option<wtq::Client>,
 }
 
 impl Session {
+    #[cfg(feature = "client")]
+    pub(super) fn client(inner: wtq::Session, client: wtq::Client) -> Self {
+        Self {
+            inner,
+            _client: Some(client),
+        }
+    }
+
+    /// Opens a bidirectional stream; `None` once the session is gone.
+    #[cfg(feature = "client")]
+    pub(crate) async fn open_bi(&self) -> Option<(SendHalf, RecvHalf)> {
+        let (send, recv) = self.inner.open_bi().await.ok()?;
+        Some((SendHalf::new(send), RecvHalf::new(recv)))
+    }
+
+    /// The session's close code, once the server has closed it.
+    #[cfg(feature = "client")]
+    pub(crate) async fn closed_code(&self) -> Option<u32> {
+        match self.inner.closed().await {
+            wtq::SessionError::WebTransportError(wtq::WebTransportError::Closed(code, _)) => {
+                Some(code)
+            }
+            _ => None,
+        }
+    }
+
     /// The next client-opened bidirectional stream; `None` once the session
     /// is gone.
     pub(crate) async fn accept_bi(&self) -> Option<(SendHalf, RecvHalf)> {

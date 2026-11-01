@@ -18,7 +18,7 @@ workspace = true
 
 # `DevCertificate` is behind `dev-cert`, which docs.rs would otherwise skip.
 [package.metadata.docs.rs]
-features = ["dev-cert"]
+features = ["dev-cert", "client"]
 
 [features]
 # Forwards to `cratestack-core`'s decimal backend choice, and to both
@@ -39,6 +39,11 @@ decimal-bigdecimal = [
 # hash, for browsers' `serverCertificateHashes` during local development
 # (design §6a.5). Never needed in production, so never on by default.
 dev-cert = ["dep:rcgen", "dep:time", "dep:sha2"]
+# `WebTransportClient`: the native client half (design §6a.2) — a session,
+# `Init`, one stream per subscription — for `cratestack-client-rust`'s
+# `webtransport` feature and native services. Trusts the platform's roots
+# or pinned certificate hashes. Off by default: a server never needs it.
+client = ["dep:url", "dep:rustls-native-certs", "tokio/net"]
 
 [dependencies]
 cratestack-core.workspace = true
@@ -54,6 +59,10 @@ tracing.workspace = true
 # crate names it (design §6a.5, "behind our own seam").
 web-transport-quinn.workspace = true
 rcgen = { workspace = true, optional = true }
+# `client`: the CONNECT URL type `web-transport-quinn` takes, and the
+# platform roots (already in the graph through `web-transport-quinn`).
+rustls-native-certs = { version = "0.8", optional = true }
+url = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 time = { workspace = true, optional = true }
 
@@ -67,6 +76,10 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "ti
 url.workspace = true
 
 # The server half of the real-browser end-to-end check (`tests/browser/`).
+[[test]]
+name = "client"
+required-features = ["client"]
+
 [[example]]
 name = "browser_harness"
 required-features = ["dev-cert"]

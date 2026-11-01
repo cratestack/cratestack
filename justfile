@@ -226,7 +226,10 @@ lint:
 	cargo clippy -p cratestack-cose --features auth --all-targets -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-webtransport`'s off-by-default `dev-cert`
 	# feature (design §6a.5): `DevCertificate` only exists under it.
-	cargo clippy -p cratestack-webtransport --features dev-cert --all-targets -- -D warnings {{clippy_allow}}
+	cargo clippy -p cratestack-webtransport --features dev-cert,client --all-targets -- -D warnings {{clippy_allow}}
+	# The Rust client's WebTransport binding (`webtransport`, off by default)
+	# with the WebSocket one beside it, as `Auto` combines them.
+	cargo clippy -p cratestack-client-rust --features ws,webtransport --all-targets -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-axum`'s off-by-default `envelope` and
 	# `cose` features (cratestack#1006): `envelope_layer` and the
 	# `cose_envelope_*` targets of `cratestack-api` only exist under them, and
@@ -712,6 +715,10 @@ test-ci-host *args='':
 	cargo test -p cratestack-pg --features rate_limit --test rate_limit_runtime {{args}} || status=1
 	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
 	cargo test -p cratestack-client --features pgvector,rate_limit,webtransport --test extension_feature_forwarding {{args}} || status=1
+	# The native WebTransport client (`cratestack-webtransport`'s `client`
+	# feature) against the real server: `required-features`, so the
+	# `--workspace` run above compiles it to nothing. No database needed.
+	cargo test -p cratestack-webtransport --features client --test client {{args}} || status=1
 	# cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
 	# round-trip suite. `required-features = ["decimal-bigdecimal", "mcp"]`
 	# (the schemas are read from the generated MCP table since #1038), so the

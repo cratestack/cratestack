@@ -19,6 +19,8 @@ use wtq::quinn::rustls;
 
 pub use wtq::quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 
+#[cfg(feature = "client")]
+pub(crate) mod client;
 mod session;
 mod stream;
 

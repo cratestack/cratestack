@@ -548,6 +548,7 @@ dependencies = [
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
+ "cratestack-webtransport",
  "futures-util",
  "minicbor",
  "minicbor-serde",
@@ -753,10 +754,12 @@ dependencies = [
  "cratestack-core",
  "futures-util",
  "http",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "tokio",
  "tracing",
+ "url",
  "web-transport-quinn",
 ]
 
