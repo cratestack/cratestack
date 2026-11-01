@@ -66,15 +66,19 @@ async fn an_owner_receives_its_own_readable_records_as_json() {
         .open(open("model.SubNote.subscribe", Json::Null, caller(1)))
         .await
         .expect("an owner may subscribe");
-    // An empty object is the same as no input.
-    let mut anonymous = dispatch
+    // No row passes `ownerId == auth().id` without an id: refused at open.
+    // (An empty object is the same as no input.)
+    let refused = dispatch
         .open(open(
             "model.SubNote.subscribe",
             json!({}),
             CratestackContext::anonymous(),
         ))
-        .await
-        .expect("anonymous may subscribe: it sees nothing, it is not refused");
+        .await;
+    assert!(
+        matches!(refused, Err(CratestackError::Unauthorized(_))),
+        "anonymous is refused at open",
+    );
 
     for (id, owner_id, archived) in [(1, 1, false), (2, 1, true), (3, 2, false)] {
         db.sub_note()
@@ -105,12 +109,6 @@ async fn an_owner_receives_its_own_readable_records_as_json() {
             .await
             .is_err(),
         "no other note is readable by owner 1",
-    );
-    assert!(
-        timeout(Duration::from_millis(200), anonymous.next())
-            .await
-            .is_err(),
-        "anonymous reads nothing",
     );
 }
 

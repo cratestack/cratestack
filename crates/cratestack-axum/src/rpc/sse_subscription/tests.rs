@@ -44,3 +44,17 @@ async fn a_stream_that_ends_sends_nothing_more() {
         "event: ready\ndata: {\"id\":1,\"ready\":{}}\n\nevent: message\ndata: {\"id\":2,\"next\":7}\n\n"
     );
 }
+
+#[tokio::test(start_paused = true)]
+async fn a_quiet_subscription_gets_keepalive_comments() {
+    use futures_util::StreamExt;
+
+    let quiet: SubscriptionStream<serde_json::Value> = Box::pin(stream::pending());
+    let mut body = encode_subscription_sse_response(quiet)
+        .into_body()
+        .into_data_stream();
+    let ready = body.next().await.unwrap().unwrap();
+    assert!(ready.starts_with(b"event: ready"));
+    let keepalive = body.next().await.unwrap().unwrap();
+    assert_eq!(&keepalive[..], b": keepalive\n\n");
+}

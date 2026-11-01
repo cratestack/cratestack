@@ -103,8 +103,10 @@ impl RpcResponseFrame {
 // `cratestack_core::rpc::RpcListInput` path — and `cratestack-axum::rpc`'s
 // verbatim re-export of it — resolves unchanged.
 mod inputs;
+mod subscribe_input;
 
 pub use inputs::*;
+pub use subscribe_input::RpcSubscribeInput;
 
 // The error body, split out when cratestack#1208 gave it extra members and a
 // hand-written serde (see `error_body.rs`).

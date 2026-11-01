@@ -3,7 +3,7 @@
 //! (`db.subscriptions().webtransport(config, auth)`, slice S5a), with the
 //! same per-event read policy as the SSE endpoint: an owner receives its
 //! own readable records, an archived one (`@@deny`) never, and an
-//! anonymous session nothing. The server runs on a second replica of the
+//! anonymous session is refused before `Ready`. The server runs on a second replica of the
 //! database, so the events reach it only through the subscription backplane.
 //!
 //! The client is `cratestack-webtransport`'s native test client, by
@@ -125,14 +125,20 @@ async fn model_feeds_over_webtransport_pass_the_read_policy() {
     let anonymous = session(&url, &cert, None).await;
     let op = "model.WtNote.subscribe";
     let mut owner_feed = owner.subscribe(1, op, serde_json::Value::Null).await;
+    let ready = owner_feed.next().await.expect("a Ready frame");
+    assert!(
+        ready.ready.is_some() && ready.id == 1,
+        "expected Ready{{1}}, got {ready:?}"
+    );
+    // No row passes `ownerId == auth().id` without an id: the subscription is
+    // refused before Ready (design §5.1), as an error frame on its stream.
     let mut anonymous_feed = anonymous.subscribe(1, op, serde_json::Value::Null).await;
-    for feed in [&mut owner_feed, &mut anonymous_feed] {
-        let ready = feed.next().await.expect("a Ready frame");
-        assert!(
-            ready.ready.is_some() && ready.id == 1,
-            "expected Ready{{1}}, got {ready:?}"
-        );
-    }
+    let refused = anonymous_feed.next().await.expect("a refusal frame");
+    assert_eq!(
+        refused.err.as_ref().map(|err| err.code.as_str()),
+        Some("unauthenticated"),
+        "expected an unauthenticated refusal, got {refused:?}"
+    );
 
     for (id, owner_id, archived) in [(1, 1, false), (2, 1, true), (3, 2, false)] {
         db.wt_note()
@@ -155,21 +161,16 @@ async fn model_feeds_over_webtransport_pass_the_read_policy() {
     let event = frame.next.expect("an item, not an error or end");
     assert_eq!(event["model"], "WtNote");
     assert_eq!(event["data"]["id"], 1);
-    // Nothing else reaches either feed: note 2 is archived, note 3 is owner
-    // 2's, and anonymous reads nothing. (`Stream::next` panics after 5s, so
-    // absence is read off the raw stream.)
-    for (who, feed) in [
-        ("owner 1", &mut owner_feed),
-        ("anonymous", &mut anonymous_feed),
-    ] {
-        let more = tokio::time::timeout(
-            Duration::from_millis(600),
-            feed.recv.read_chunk(64 * 1024, true),
-        )
-        .await;
-        assert!(
-            more.is_err(),
-            "{who} received more than it may read: {more:?}"
-        );
-    }
+    // Nothing else reaches the owner: note 2 is archived, note 3 is owner
+    // 2's. (`Stream::next` panics after 5s, so absence is read off the raw
+    // stream.)
+    let more = tokio::time::timeout(
+        Duration::from_millis(600),
+        owner_feed.recv.read_chunk(64 * 1024, true),
+    )
+    .await;
+    assert!(
+        more.is_err(),
+        "owner 1 received more than it may read: {more:?}"
+    );
 }

@@ -24,8 +24,12 @@ include_server_schema!("tests/fixtures/subscribe_read_policy.cstack", db = Postg
 
 #[path = "rpc_subscribe_read_policy/dispatcher.rs"]
 mod dispatcher;
+#[path = "rpc_subscribe_read_policy/filters.rs"]
+mod filters;
 #[path = "rpc_subscribe_read_policy/replicas.rs"]
 mod replicas;
+#[path = "rpc_subscribe_read_policy/rest.rs"]
+mod rest;
 mod support;
 
 use support::pg;
@@ -122,15 +126,18 @@ async fn subscribers_receive_only_the_events_they_may_read() {
         cratestack::DEFAULT_BODY_LIMIT_BYTES,
     );
 
-    // Subscribed before any write: each handler is registered on the bus
-    // by the time its response is returned.
+    // Subscribed before any write: each subscription is live on the
+    // backplane by the time its response is returned.
     let op = "model.SubNote.subscribe";
-    let anonymous = subscribe(&router, op, None).await;
     let owner_one = subscribe(&router, op, Some(1)).await;
     let owner_two = subscribe(&router, op, Some(2)).await;
-    for response in [&anonymous, &owner_one, &owner_two] {
+    for response in [&owner_one, &owner_two] {
         assert_eq!(response.status(), StatusCode::OK);
     }
+    // No row passes `ownerId == auth().id` without an id: refused at open
+    // (design §5.1) with a real 401, though the client accepts only SSE.
+    let anonymous = subscribe(&router, op, None).await;
+    assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
 
     for (id, owner, archived) in [(1, 1, false), (2, 1, true), (3, 2, false)] {
         let ctx = CratestackContext::authenticated([("id".to_owned(), Value::Int(owner))]);
@@ -148,20 +155,8 @@ async fn subscribers_receive_only_the_events_they_may_read() {
     }
 
     let window = Duration::from_millis(750);
-    let (anonymous, owner_one, owner_two) = tokio::join!(
-        received(anonymous, window),
-        received(owner_one, window),
-        received(owner_two, window),
-    );
-    assert_eq!(
-        delivered_ids(&anonymous),
-        Vec::<i64>::new(),
-        "anonymous: {anonymous}"
-    );
-    assert!(
-        !anonymous.contains("note "),
-        "anonymous saw a record: {anonymous}"
-    );
+    let (owner_one, owner_two) =
+        tokio::join!(received(owner_one, window), received(owner_two, window),);
     assert_eq!(delivered_ids(&owner_one), [1], "owner 1: {owner_one}");
     assert_eq!(delivered_ids(&owner_two), [3], "owner 2: {owner_two}");
 }

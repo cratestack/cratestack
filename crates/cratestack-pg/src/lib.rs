@@ -290,11 +290,17 @@ pub mod __private {
     /// part of the public API surface for the same reason as the rest
     /// of this module.
     pub use cratestack_axum::rpc::{
-        encode_model_event_sse_response, encode_subscription_sse_response, guarded_receiver_stream,
-        model_events, model_feed, subscription_channel, validate_subscribe_accept_header,
+        SubscribeQuery, encode_model_event_sse_response, encode_subscribe_error,
+        encode_subscription_sse_response, guarded_receiver_stream, model_events, model_feed,
+        project_event_fields, split_subscribe_query, subscribe_input_query, subscription_channel,
+        until_credential_expires, validate_subscribe_accept_header,
     };
+    /// A subscription feed's filter, decided in memory per event (slice S3).
+    pub use cratestack_sql::{filter_in_memory_columns, filter_matches};
     /// The subscriber's read policy, decided per event in the same
     /// dispatch (an event has no query to push the policy into).
     #[cfg(feature = "postgres")]
-    pub use cratestack_sqlx::{missing_policy_columns, record_readable};
+    pub use cratestack_sqlx::{
+        missing_policy_columns, record_readable, refuse_unreadable_subscription,
+    };
 }

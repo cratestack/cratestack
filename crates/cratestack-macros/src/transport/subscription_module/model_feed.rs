@@ -48,6 +48,7 @@ pub(super) fn generate(
     let model_ident = ident(model_name);
     let op_id = cratestack_core::ModelVerb::Subscribe.rpc_op_id(model_name);
     let open_ident = ident(&format!("open_{model_snake}"));
+    let query_expr = ident(&format!("build_{model_snake}_query_expr"));
     let descriptor = ident(&format!("{}_MODEL", model_snake.to_uppercase()));
     let policy_fields: Vec<&Field> = scalar_model_fields(model, model_names)
         .into_iter()
@@ -67,16 +68,22 @@ pub(super) fn generate(
     let function = quote! {
         async fn #open_ident(
             db: &super::Cratestack,
-            input: ::cratestack::serde_json::Value,
+            query: Option<String>,
             ctx: ::cratestack::CratestackContext,
         ) -> Result<
             ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
             ::cratestack::CratestackError,
         > {
-            no_input(#op_id, &input)?;
             let descriptor = &super::models::#descriptor;
+            let record_columns: &[&str] = &[#(#policy_columns),*];
+            let feed_query = feed_query(
+                query.as_deref(),
+                super::axum::#query_expr,
+                record_columns,
+                descriptor.allowed_fields,
+            )?;
             let (allow, deny) = (descriptor.detail_allow_policies, descriptor.detail_deny_policies);
-            let missing = ::cratestack::__private::missing_policy_columns(allow, deny, &[#(#policy_columns),*]);
+            let missing = ::cratestack::__private::missing_policy_columns(allow, deny, record_columns);
             if !missing.is_empty() {
                 ::cratestack::tracing::error!(
                     target: "cratestack",
@@ -89,6 +96,9 @@ pub(super) fn generate(
                     #model_name,
                 )));
             }
+            // A caller whose policy no row could pass is refused now
+            // (design §5.1), not handed a feed that never delivers.
+            ::cratestack::__private::refuse_unreadable_subscription(#model_name, allow, deny, &ctx)?;
             // Live before this returns: nothing committed from here on is
             // missed (design §2.1), whichever replica commits it.
             let receiver = db
@@ -98,17 +108,28 @@ pub(super) fn generate(
                 .await?;
             let stream = ::cratestack::__private::model_events::<super::models::#model_ident>(receiver);
             let pool = db.pool().clone();
-            Ok(::cratestack::__private::model_feed(
+            let expires_at = ctx.expires_at();
+            let FeedQuery { operations, filter, fields } = feed_query;
+            let feed = ::cratestack::__private::model_feed(
                 stream,
                 move |event: &::cratestack::ModelEvent<super::models::#model_ident>| {
                     let record = &event.data;
                     let values = vec![#(#policy_values),*];
+                    // The subscriber's own filter first: it needs no query.
+                    let wanted = operations.as_ref().is_none_or(|ops| ops.contains(&event.operation))
+                        && ::cratestack::__private::filter_matches(&filter, &values);
                     let (pool, ctx) = (pool.clone(), ctx.clone());
                     async move {
+                        if !wanted {
+                            return Ok(false);
+                        }
                         ::cratestack::__private::record_readable(&pool, allow, deny, &values, &ctx).await
                     }
                 },
-            ))
+            );
+            let feed = ::cratestack::__private::project_event_fields(feed, fields);
+            // It lives no longer than the credential that opened it (§6.3).
+            Ok(::cratestack::__private::until_credential_expires(feed, expires_at))
         }
     };
     Ok(Some(ModelFeed {
@@ -118,16 +139,16 @@ pub(super) fn generate(
     }))
 }
 
-/// The fields a read policy can compare: with a literal or an `auth()`
-/// claim (`String`, `Int`, `BigInt`, `Boolean`, an enum), or across a
-/// relation join (those and `Uuid`, `Cuid`). Only these go into the
-/// record a policy is decided on; a policy over any other column is
-/// refused at open by `missing_policy_columns`.
+/// The fields that go into the record a policy and a feed filter are decided
+/// on: those a read policy can compare (with a literal or an `auth()` claim:
+/// `String`, `Int`, `BigInt`, `Boolean`, an enum; across a relation join: those
+/// and `Uuid`, `Cuid`), and those a filter can order (`Float`, `DateTime`). A
+/// policy or filter over any other column is refused at open.
 fn policy_comparable(field: &Field, enum_names: &BTreeSet<&str>) -> bool {
     !matches!(field.ty.arity, TypeArity::List)
         && (enum_names.contains(field.ty.name.as_str())
             || matches!(
                 field.ty.name.as_str(),
-                "String" | "Cuid" | "Int" | "BigInt" | "Boolean" | "Uuid"
+                "String" | "Cuid" | "Int" | "BigInt" | "Boolean" | "Uuid" | "Float" | "DateTime"
             ))
 }

@@ -17,6 +17,7 @@
 //! server to this dispatcher; declaring it with no subscription op to serve
 //! is a compile error rather than an extension that silently does nothing.
 
+mod feed_query;
 mod model_feed;
 
 use std::collections::BTreeSet;
@@ -40,7 +41,7 @@ pub(crate) fn generate_subscription_module(
         return if webtransport {
             Err(
                 "schema declares `extension webtransport { }`, but has no subscription op to \
-                 serve over it: add `@@subscribe` to a model (under `transport rpc`), or drop \
+                 serve over it: add `@@subscribe` to a model, or drop \
                  the extension block"
                     .to_owned(),
             )
@@ -50,10 +51,11 @@ pub(crate) fn generate_subscription_module(
     }
     let arms = feeds.iter().map(|feed| {
         let (op_id, open) = (&feed.op_id, &feed.open_ident);
-        quote! { #op_id => #open(&db, input, ctx).await, }
+        quote! { #op_id => #open(&self.db, query, ctx).await, }
     });
     let functions = feeds.iter().map(|feed| &feed.function);
     let webtransport_impl = webtransport.then(webtransport_impl);
+    let feed_query = feed_query::tokens();
 
     Ok(quote! {
         /// The schema's subscription ops behind one transport-neutral
@@ -107,33 +109,37 @@ pub(crate) fn generate_subscription_module(
                         ::cratestack::CratestackError,
                     >,
                 > + Send {
-                    let db = self.db.clone();
+                    let this = self.clone();
                     async move {
                         let ::cratestack::SubscriptionOpen { op_id, input, ctx } = request;
-                        match op_id.as_str() {
-                            #(#arms)*
-                            other => Err(::cratestack::CratestackError::NotFound(format!(
-                                "unknown subscription op `{other}`",
-                            ))),
-                        }
+                        let query = ::cratestack::__private::subscribe_input_query(input)?;
+                        this.open_query(&op_id, query, ctx).await
                     }
                 }
             }
 
-            /// A model feed takes no input until slice S3 adds its filters;
-            /// an empty object is the same as none.
-            fn no_input(
-                op_id: &str,
-                input: &::cratestack::serde_json::Value,
-            ) -> Result<(), ::cratestack::CratestackError> {
-                match input {
-                    ::cratestack::serde_json::Value::Null => Ok(()),
-                    ::cratestack::serde_json::Value::Object(map) if map.is_empty() => Ok(()),
-                    _ => Err(::cratestack::CratestackError::BadRequest(format!(
-                        "`{op_id}` takes no input",
-                    ))),
+            impl SubscriptionDispatch {
+                /// Opens `op_id` with its input as the REST query
+                /// (`GET /<plural>/$subscribe?status=open&operations=created`).
+                pub async fn open_query(
+                    &self,
+                    op_id: &str,
+                    query: Option<String>,
+                    ctx: ::cratestack::CratestackContext,
+                ) -> Result<
+                    ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
+                    ::cratestack::CratestackError,
+                > {
+                    match op_id {
+                        #(#arms)*
+                        other => Err(::cratestack::CratestackError::NotFound(format!(
+                            "unknown subscription op `{other}`",
+                        ))),
+                    }
                 }
             }
+
+            #feed_query
 
             #(#functions)*
 

@@ -69,9 +69,17 @@ pub(crate) fn generate_model_axum_routes(model: &Model) -> proc_macro2::TokenStr
     .map(|router| quote! { .route(#detail_route, #router) })
     .unwrap_or_default();
 
+    // REST's subscription route (slice S3): `GET /<plural>/$subscribe`.
+    let subscribe_router = verbs.contains(&ModelVerb::Subscribe).then(|| {
+        let route = cratestack_core::model_subscribe_route(&model.name);
+        let handler = super::handler_subscribe::subscribe_handler_ident(model);
+        quote! { .route(#route, axum::routing::get(#handler)) }
+    });
+
     quote! {
         #list_router
         #detail_router
+        #subscribe_router
     }
 }
 
