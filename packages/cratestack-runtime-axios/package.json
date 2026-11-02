@@ -38,7 +38,7 @@
     "lint": "biome check ."
   },
   "peerDependencies": {
-    "axios": "^1.7.0"
+    "axios": "^1.21.0"
   },
   "peerDependenciesMeta": {
     "axios": {
@@ -46,7 +46,7 @@
     }
   },
   "devDependencies": {
-    "axios": "^1.7.0",
+    "axios": "^1.21.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   },

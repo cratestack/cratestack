@@ -74,8 +74,8 @@
   },
   "devDependencies": {
     "@reduxjs/toolkit": "^2.13.0",
-    "@tanstack/query-core": "^5.104.3",
-    "axios": "^1.7.0",
+    "@tanstack/query-core": "^5.105.0",
+    "axios": "^1.21.0",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5",
     "yup": "^1.4.0",
