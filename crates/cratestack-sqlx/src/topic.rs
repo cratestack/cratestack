@@ -92,15 +92,23 @@ where
         nested_in_bound(attempt, async |tx| self.notify(tx, &payload).await).await
     }
 
-    /// Delivers `message` only if `tx` commits, when it commits. Refused
-    /// with a backplane the transaction cannot notify (`InProcessBackplane`):
-    /// call [`Self::publish`] after the commit instead.
+    /// Delivers `message` only if `tx` commits, when it commits. On a topic
+    /// from an `@isolation` procedure's handle, a backplane the transaction
+    /// cannot notify gets it queued until the attempt commits (dropped if
+    /// this `db.transaction(..)` rolls back). Otherwise such a backplane
+    /// (`InProcessBackplane`) is refused: call [`Self::publish`] after the
+    /// commit instead.
     pub async fn publish_in_tx(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         message: &T,
     ) -> Result<(), CratestackError> {
         if !self.backplane.publishes_model_events_in_tx() {
+            if let Some(attempt) = &self.attempt {
+                let payload = encode_message(message)?;
+                attempt.defer_publish(self.backplane.clone(), self.channel.clone(), payload);
+                return Ok(());
+            }
             return Err(CratestackError::Internal(
                 "`publish_in_tx` needs a backplane the transaction notifies (PgNotifyBackplane); \
                  with this one, `publish` after the commit"

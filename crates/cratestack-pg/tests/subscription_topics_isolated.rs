@@ -25,6 +25,8 @@ include_server_schema!(
     db = Postgres
 );
 
+#[path = "subscription_topics_isolated/nested.rs"]
+mod nested;
 mod support;
 
 use cratestack_schema::procedures::post;
@@ -164,27 +166,4 @@ async fn identical_isolated_publishes_are_each_delivered() {
         plain.publish(&message("dup", "same")).await.unwrap();
     }
     assert_eq!(drain(stream).await, ["same"; 4]);
-}
-
-#[tokio::test]
-async fn publish_in_tx_inside_the_handles_transaction_rides_the_attempt() {
-    let Some(test_pg) = pg::connect_or_skip().await else {
-        return;
-    };
-    let db = Cratestack::builder(pool(&test_pg.url).await).build();
-    let stream = db.topics().room_message("tx").subscribe().await.unwrap();
-    let (outcome, _) = run_post(&db, "tx", |tx_db, _| async move {
-        let topic = tx_db.topics().room_message("tx");
-        tx_db
-            .transaction(async |tx| {
-                // `publish` would need the transaction this closure holds.
-                let refused = topic.publish(&message("tx", "refused")).await;
-                assert!(refused.unwrap_err().to_string().contains("publish_in_tx"));
-                topic.publish_in_tx(tx, &message("tx", "in tx")).await
-            })
-            .await
-    })
-    .await;
-    outcome.expect("commits");
-    assert_eq!(drain(stream).await, ["in tx"]);
 }

@@ -17,7 +17,12 @@ in one transaction were delivered once, because Postgres folds identical notific
 - With `PgNotifyBackplane` it notifies inside the transaction. With a backplane a transaction cannot
   notify (`InProcessBackplane`) the message is queued and sent after the commit, like the attempt's
   audit events. Both are discarded with a rolled-back attempt or savepoint.
-- Inside `tx_db.transaction(..)`, call `publish_in_tx(tx, &msg)` on the topic.
+- Inside `tx_db.transaction(..)`, call `publish_in_tx(tx, &msg)` on the topic, on either backplane.
+  A `transaction(..)` that rolls back drops its messages even when the attempt commits.
+- Fixed with it: a `tx_db.transaction(..)` that rolled back inside a committing `@isolation`
+  attempt still dispatched the audit events it had queued (`dispatch_audit_sink` with a
+  `run_in_tx` outcome) to the `AuditSink`. It now drops them,
+  as a rolled-back joined call already did.
 - Topics from a plain `Cratestack` are unchanged, including the handle given to `@authorize`
   probes and `@computed` resolvers.
 - Every topic and model-event `NOTIFY` carries a per-message nonce, so identical messages from one

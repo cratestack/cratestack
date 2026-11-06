@@ -978,8 +978,11 @@ The rest:
   - A publish error (an oversize message) rolls back only that publish's savepoint. If the body
     ignores it, the attempt still commits.
   - Inside `tx_db.transaction(..)` the handle's lock is held, so `publish` is refused with a message
-    that names `publish_in_tx(tx, &msg)`. That is the call there, and it needs `PgNotifyBackplane`.
-    (A queued publish takes no lock, so it works there.)
+    that names `publish_in_tx(tx, &msg)`. That is the call there, on both backplanes: with
+    `PgNotifyBackplane` it notifies inside `tx`, with any other it is queued for the attempt's
+    commit. A `transaction(..)` that rolls back takes back what it queued, as a rolled-back joined
+    call does, so its message is never sent even though the attempt commits. (This also drops the
+    audit events such a `transaction(..)` queued, which it previously did not.)
   - Every `NOTIFY` this crate sends now carries a per-message nonce (`n`). Postgres folds identical
     notifications of one transaction into one, so two identical `publish`es used to arrive once.
     Readers ignore the field. This also fixes plain `publish_in_tx`.
@@ -997,7 +1000,8 @@ The rest:
 
   `cratestack-pg/tests/subscription_topics_isolated.rs` covers an `@isolation` publish on commit,
   on error and on retry, on both backplanes; identical messages; and `publish_in_tx` inside
-  `tx_db.transaction(..)`. `cratestack-api/tests/subscription_procedure_no_database.rs` covers
+  `tx_db.transaction(..)`, including one that rolls back inside a committing attempt, on both
+  backplanes (`subscription_topics_isolated/nested.rs`). `cratestack-api/tests/subscription_procedure_no_database.rs` covers
   `db = None` and a natural end. There are also parser, generator and runtime unit tests.
 
 **S5 status (as built, 2026-11-01).** The WebSocket binding, `cratestack-websocket` (L4, axum `ws`).
