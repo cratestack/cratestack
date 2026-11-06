@@ -33,10 +33,20 @@
 /// final bytes = codec.encodeJson('{"hello":"world"}');
 /// final json = codec.decodeJson(bytes);
 /// ```
+///
+/// [createCompactKeys] adds compact wire keys
+/// (`docs/design/compact-wire-keys.md`) on the same two backends: the key
+/// tables of a generated client, swapping field names for integers on the
+/// wire and back. Wire it to the generated client's `compact` hooks.
 library;
 
 export 'src/cbor_codec.dart' show CratestackCborCodec, CratestackCborCodecError;
+export 'src/compact_keys.dart' show CompactKeys;
 export 'src/unsupported_cbor_codec.dart'
     if (dart.library.io) 'src/native/native_cbor_codec.dart'
     if (dart.library.js_interop) 'src/web/web_cbor_codec.dart'
     show createCborCodec, isCborRuntimeInitialized;
+export 'src/unsupported_compact_keys.dart'
+    if (dart.library.io) 'src/native/native_compact_keys.dart'
+    if (dart.library.js_interop) 'src/web/web_compact_keys.dart'
+    show createCompactKeys;

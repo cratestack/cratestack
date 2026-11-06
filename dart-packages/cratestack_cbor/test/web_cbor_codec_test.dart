@@ -24,6 +24,7 @@ import 'dart:convert';
 import 'package:cratestack_cbor/cratestack_cbor.dart';
 import 'package:test/test.dart';
 
+import 'compact_keys_shared.dart';
 import 'shared_fixtures.dart';
 
 String _hex(List<int> bytes) =>
@@ -97,4 +98,6 @@ void main() {
       throwsA(isA<CratestackCborCodecError>()),
     );
   });
+
+  compactKeysTests();
 }

@@ -50,6 +50,7 @@ pub(super) fn build(db: ServerDb) -> proc_macro2::TokenStream {
             {
                 model_router(db.clone(), resolvers.clone(), codec.clone(), auth_provider.clone())
                     .merge(procedure_router(db, registry, resolvers, codec, auth_provider))
+                    .layer(compact_layer(body_limit_bytes))
                     .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
             }
         },
@@ -69,6 +70,7 @@ pub(super) fn build(db: ServerDb) -> proc_macro2::TokenStream {
                 Auth: AuthProvider,
             {
                 procedure_router(db, registry, resolvers, codec, auth_provider)
+                    .layer(compact_layer(body_limit_bytes))
                     .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
             }
         },

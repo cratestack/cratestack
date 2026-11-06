@@ -1,0 +1,41 @@
+// Fixture of the compact wire keys server tests (`tests/compact_*.rs`): a
+// nested type with an optional and a list field, a list, a `Page`, a
+// `@stream` list and a procedure that fails.
+
+datasource db {
+  provider = "none"
+}
+
+type Address {
+  street String
+  city String
+}
+
+type Order {
+  id Int
+  name String
+  note String?
+  address Address
+  tags String[]
+}
+
+type Item {
+  id Int
+  label String
+}
+
+procedure echoOrder(order: Order): Order
+  @allow(true)
+
+procedure listItems(limit: Int): Item[]
+  @allow(true)
+
+procedure pageItems(limit: Int): Page<Item>
+  @allow(true)
+
+procedure ticks(count: Int): Item[]
+  @allow(true)
+  @stream
+
+procedure boom(order: Order): Order
+  @allow(true)

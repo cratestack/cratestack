@@ -15,6 +15,9 @@ pub(crate) struct TemplateContext {
     /// `[escaped op key, hex]` per op: `bound_contracts` (cratestack#1123).
     pub(crate) op_contracts: Vec<[String; 2]>,
     pub(crate) client_contract_sha256: String,
+    /// Base64 of `cratestack_core::compact::KeyTables::to_bytes`: the compact
+    /// wire key tables for every op, emitted as `cratestackKeyTables`.
+    pub(crate) key_tables_b64: String,
     pub(crate) enum_types: Vec<EnumView>,
     pub(crate) data_classes: Vec<DataClassView>,
     pub(crate) selection_groups: Vec<SelectionGroupView>,

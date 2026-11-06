@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 /// Hex-encoded SHA-256 of the `.cstack` schema source this client was
 /// generated from (issue #178). Sent as `x-cratestack-schema-sha` on
 /// every outgoing request so the server-side drift-detection middleware
@@ -37,6 +40,22 @@ const Map<String, String> cratestackOpContracts = <String, String>{
 
 /// Hex of the whole-contract digest: moves when any op's contract does.
 const String cratestackClientContractSha256 = '6233d9c56994306cca7cf14e719addb198141a6aa0f3106d951212b6d31ece23';
+
+/// The compact wire key tables of every op (`docs/design/compact-wire-keys.md`),
+/// the artifact `createCompactKeys` of `package:cratestack_cbor` reads. Only a
+/// client that opts into compact keys touches it:
+///
+/// ```dart
+/// final keys = await createCompactKeys(cratestackKeyTables);
+/// final hooks = CratestackCompactHooks(
+///   toCompact: keys.toCompact,
+///   fromCompact: keys.fromCompact,
+///   selector: keys.selector,
+/// );
+/// ```
+final Uint8List cratestackKeyTables = base64Decode(
+  'gwGJhGJpZABkbmFtZQCEYmlkAGRuYW1lAIplYm9hcmQCZ2JvYXJkSWQAZGRvbmUAYmlkAGV0aXRsZQCCZ2JvYXJkSWQAgmdyZW1vdmVkAIJkYXJncwSEbm1pbnV0ZXNQZXJUYXNrAGl0YXNrQ291bnQAgmx0b3RhbE1pbnV0ZXMAgmRhcmdzB4yEc0RFTEVURSAvYm9hcmRzL3tpZH1YICJ2RWDzn4dHSlUaMaU35I1Ws0ntTtJ7GFg+PgzypDeaAAGEckRFTEVURSAvdGFza3Mve2lkfVgguAtO7at+ZiO1jjMhb2cgLEnGHzer/269PG+WxJ2Yk0wAA4RrR0VUIC9ib2FyZHNYIImUbqXefIcOVSi/C6vUvp/7EyIAbHVbySrHfly9TVwjAIIAAYRwR0VUIC9ib2FyZHMve2lkfVggc+/8rwmhiuXLaq2sQp8XnJ0qOteYCX6cA8zf6EEwluYAAYRqR0VUIC90YXNrc1ggNNfeeDvLk9aU6EjbNHH5yGxckgSYTvsXNz6cL20EB54AggADhG9HRVQgL3Rhc2tzL3tpZH1YID9nSGNdrJ/zIwLuODwOiR4j4NfwvZbPk+3Y8sgL3LYaAAOEclBBVENIIC9ib2FyZHMve2lkfVggSNp7g2IXcJq89PoyU8CQ7mjyuGGJ+OpiQMbPQ5dXFuoBAYRxUEFUQ0ggL3Rhc2tzL3tpZH1YILxbRAs1CCp/qYlHdpNSL0jBzOAhAfDJW0RA/d/TlO1JAwOEeBtQT1NUIC8kcHJvY3MvY2xlYXJEb25lVGFza3NYIOYctZp5NoLVTYj1vMOmndgvaHeYMH0QfMVuz8hCnx3eBgWEeCFQT1NUIC8kcHJvY3MvZXN0aW1hdGVGb2N1c01pbnV0ZXNYIKlq9hzymY2Ldsabr1+Qe3aGDz6qW2TPNRNBkqQGAj5RCQiEbFBPU1QgL2JvYXJkc1ggOjSK9oVdcBCSGIwvGTZoGMBZpZ9ncOKO15Rc2EwS45QBAYRrUE9TVCAvdGFza3NYIDXKCCWFPD88V3FZ6cNWhhLfEMY9PKbBudglq92mDLRKAwM=',
+);
 
 abstract final class BoardFieldNames {
   static const String id = 'id';

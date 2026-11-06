@@ -1,0 +1,166 @@
+// Compact wire keys for the RPC runtime (opt-in: `compactKeys: true` on
+// `CratestackRpcClientOptions`; off, nothing here runs and the wire is the
+// one the runtime always spoke).
+//
+// With the option on, a call advertises that it can read integer-keyed
+// bodies (`Accept: <compact type>, <plain type>` plus `Cratestack-Contract`,
+// the selector of this client's contract for the op), turns a compact
+// response back into the plain bytes the normal codec decodes, and — only
+// once that op has answered compact — sends its own request body compact
+// too, so an older server is never sent a body it cannot read. Batch frames
+// and error bodies stay named.
+//
+// The transcoder is `createCompactKeys` of `@cratestack/cbor`, feature-
+// detected on the module the runtime already imports: a release without it
+// leaves the option silently inert (the wire stays named).
+
+import * as cborModule from "@cratestack/cbor";
+
+export const COMPACT_CBOR_CONTENT_TYPE = "application/vnd.cratestack.compact+cbor";
+export const COMPACT_JSON_CONTENT_TYPE = "application/vnd.cratestack.compact+json";
+export const COMPACT_CBOR_SEQ_CONTENT_TYPE = "application/vnd.cratestack.compact+cbor-seq";
+/** The header naming which contract digest an op's keys were numbered at. */
+export const CONTRACT_HEADER = "Cratestack-Contract";
+
+type Direction = "request" | "response";
+
+/** The subset of `@cratestack/cbor`'s `CompactKeys` this runtime calls. */
+export interface CompactKeys {
+  toCompact(named: Uint8Array, op: string, direction: Direction): Uint8Array;
+  fromCompact(compact: Uint8Array, op: string, direction: Direction): Uint8Array;
+  toCompactJson(named: string, op: string, direction: Direction): string;
+  fromCompactJson(compact: string, op: string, direction: Direction): string;
+  selector(op: string): string | undefined;
+}
+
+type CompactKeysFactory = (tables: Uint8Array) => Promise<CompactKeys>;
+
+/** What one call needs from the compact layer. Built by
+ *  {@link RpcCompactSession.begin}; carried on the link request so only the
+ *  terminal link (which owns the real headers and body) acts on it. */
+export interface RpcCompactCall {
+  /** The compact media type a response must carry to be transcoded. */
+  readonly responseType: string;
+  /** Overlays `Accept`, `Cratestack-Contract` and, when this op already
+   *  answered compact, the compact `Content-Type`. */
+  applyHeaders(headers: Headers): void;
+  /** The request body, transcoded when this op already answered compact. */
+  encodeBody(body: BodyInit): BodyInit;
+  /** A compact response body (or one `cbor-seq` item) as plain bytes; also
+   *  records that this op answers compact. */
+  decodeResponse(bytes: Uint8Array): Uint8Array;
+}
+
+function bytesOfBase64(encoded: string): Uint8Array {
+  return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+}
+
+const MAX_REMEMBERED_ENCODINGS = 512;
+
+export class RpcCompactSession {
+  private keys: Promise<CompactKeys | undefined> | undefined;
+  private readonly compactOps = new Set<string>();
+  private readonly encodingByIdempotencyKey = new Map<string, boolean>();
+
+  constructor(private readonly tablesBase64: string) {}
+
+  private resolveKeys(): Promise<CompactKeys | undefined> {
+    if (this.keys !== undefined) {
+      return this.keys;
+    }
+    const factory = (cborModule as unknown as { createCompactKeys?: unknown }).createCompactKeys;
+    if (typeof factory !== "function") {
+      // An older `@cratestack/cbor`: stay named, and do not look again.
+      this.keys = Promise.resolve(undefined);
+      return this.keys;
+    }
+    const pending = (factory as CompactKeysFactory)(bytesOfBase64(this.tablesBase64)).then(
+      (keys): CompactKeys | undefined => keys,
+      (): CompactKeys | undefined => {
+        // A transient failure (e.g. the wasm asset) is retried on the next call.
+        this.keys = undefined;
+        return undefined;
+      },
+    );
+    this.keys = pending;
+    return pending;
+  }
+
+  /** The compact plan for one call, or `undefined` to stay named: no
+   *  binding, an op the tables do not know, or a codec that is neither
+   *  CBOR nor JSON (a stream is CBOR only). */
+  async begin(
+    op: string,
+    codec: { readonly contentType: string },
+    kind: "unary" | "stream",
+    idempotencyKey?: string,
+  ): Promise<RpcCompactCall | undefined> {
+    const plain = codec.contentType.split(";", 1)[0]?.trim() ?? "";
+    const json = plain === "application/json";
+    if (plain !== "application/cbor" && !(json && kind === "unary")) {
+      return undefined;
+    }
+    const keys = await this.resolveKeys();
+    const selector = keys?.selector(op);
+    if (keys === undefined || selector === undefined) {
+      return undefined;
+    }
+    const compactType = json
+      ? COMPACT_JSON_CONTENT_TYPE
+      : kind === "stream"
+        ? COMPACT_CBOR_SEQ_CONTENT_TYPE
+        : COMPACT_CBOR_CONTENT_TYPE;
+    // A retry under the same `Idempotency-Key` reuses the first attempt's encoding.
+    const remembered =
+      idempotencyKey === undefined ? undefined : this.encodingByIdempotencyKey.get(idempotencyKey);
+    const sendCompact = remembered ?? this.compactOps.has(op);
+    if (idempotencyKey !== undefined && remembered === undefined) {
+      this.encodingByIdempotencyKey.set(idempotencyKey, sendCompact);
+      if (this.encodingByIdempotencyKey.size > MAX_REMEMBERED_ENCODINGS) {
+        const oldest = this.encodingByIdempotencyKey.keys().next().value;
+        if (oldest !== undefined) {
+          this.encodingByIdempotencyKey.delete(oldest);
+        }
+      }
+    }
+    const compactOps = this.compactOps;
+    return {
+      responseType: compactType,
+      applyHeaders(headers: Headers): void {
+        headers.set(
+          "Accept",
+          kind === "stream"
+            ? `${compactType}, application/cbor-seq, ${codec.contentType}`
+            : `${compactType}, ${codec.contentType}`,
+        );
+        headers.set(CONTRACT_HEADER, selector);
+        if (sendCompact) {
+          headers.set("Content-Type", json ? COMPACT_JSON_CONTENT_TYPE : COMPACT_CBOR_CONTENT_TYPE);
+        }
+      },
+      encodeBody(body: BodyInit): BodyInit {
+        if (!sendCompact) {
+          return body;
+        }
+        if (typeof body === "string") {
+          return keys.toCompactJson(body, op, "request");
+        }
+        if (body instanceof Uint8Array) {
+          return keys.toCompact(body, op, "request") as Uint8Array<ArrayBuffer>;
+        }
+        if (body instanceof ArrayBuffer) {
+          return keys.toCompact(new Uint8Array(body), op, "request") as Uint8Array<ArrayBuffer>;
+        }
+        throw new Error(`compactKeys: cannot transcode a ${Object.prototype.toString.call(body)} request body`);
+      },
+      decodeResponse(bytes: Uint8Array): Uint8Array {
+        compactOps.add(op);
+        if (json) {
+          const named = keys.fromCompactJson(new TextDecoder().decode(bytes), op, "response");
+          return new TextEncoder().encode(named);
+        }
+        return keys.fromCompact(bytes, op, "response");
+      },
+    };
+  }
+}

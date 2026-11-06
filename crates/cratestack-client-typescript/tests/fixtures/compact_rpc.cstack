@@ -1,0 +1,17 @@
+// Compact wire keys (`compactKeys`) over `transport rpc`: a model, a unary
+// procedure and a sequence-returning one, so the vitest suite drives unary,
+// signed-body and `cbor-seq` paths of the generated runtime.
+
+transport rpc
+
+model Widget {
+  id Int @id
+  name String
+  weight Int?
+
+  @@allow("create", auth() != null)
+}
+
+procedure echoName(name: String): String
+
+procedure ticks(count: Int): Int[]

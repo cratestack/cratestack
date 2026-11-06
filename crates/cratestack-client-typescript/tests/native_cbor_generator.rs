@@ -188,9 +188,21 @@ fn rpc_schemas_always_depend_on_and_default_to_native_cbor() {
     // and the manifest, not every mention.)
     let rest = generate(REST_FIXTURE, config);
     let rest_package_json = file(&rest, "package.json");
+    // The one exception is the OPTIONAL peer `compactKeys` loads lazily: it
+    // must never appear in `dependencies`, and must be marked optional.
+    let manifest: serde_json::Value =
+        serde_json::from_str(rest_package_json).expect("REST package.json parses");
     assert!(
-        !rest_package_json.contains("@cratestack/cbor"),
+        manifest["dependencies"].get("@cratestack/cbor").is_none()
+            && manifest["devDependencies"]
+                .get("@cratestack/cbor")
+                .is_none(),
         "REST: package.json must never depend on @cratestack/cbor:\n{rest_package_json}"
+    );
+    assert_eq!(
+        manifest["peerDependenciesMeta"]["@cratestack/cbor"]["optional"],
+        serde_json::Value::Bool(true),
+        "REST: @cratestack/cbor may only be an optional peer:\n{rest_package_json}"
     );
     for generated in &rest.files {
         assert!(

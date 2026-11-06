@@ -154,6 +154,7 @@ pub(crate) fn build_shared_context(
         schema_sha256: config.schema_sha256.clone(),
         op_contracts: crate::context::op_contract_rows(schema),
         client_contract_sha256: crate::context::client_contract_hex(schema),
+        key_tables_b64: crate::context::key_tables_base64(schema),
         shared,
         models,
         procedures_file,

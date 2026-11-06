@@ -33,6 +33,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
     required this.baseUri,
     this.format = CratestackWireFormat.cbor,
     this.cborSeqDecoder,
+    this.compact,
   });
 
   final CratestackHttpTransport transport;
@@ -49,20 +50,33 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
   /// which is pure Dart.
   final CborSeqDecoderHandle Function()? cborSeqDecoder;
 
+  /// Opts the adapter into compact wire keys (CBOR only; see
+  /// [CratestackCompactHooks]). `null`, the default, keeps the wire exactly
+  /// as it always was. `/rpc/batch` and error bodies stay named either way.
+  final CratestackCompactHooks? compact;
+
   @override
   Future<Object?> call(
     String opId,
     Object? input, {
     CratestackRpcCallOptions? options,
   }) async {
+    final plan = _cratestackCompactBegin(
+      this,
+      compact,
+      format,
+      opId,
+      idempotencyKey: options?.idempotencyKey,
+    );
     final response = await _post(
       '/rpc/${Uri.encodeComponent(opId)}',
       input,
       accept: _acceptForUnary,
       options: options,
       idempotent: true,
+      compact: plan,
     );
-    return _decodeSuccess(response);
+    return _decodeSuccess(response, plan);
   }
 
   @override
@@ -76,7 +90,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
       accept: _acceptForUnary,
       options: options,
     );
-    final frames = await _decodeSuccess(response) as List<dynamic>;
+    final frames = await _decodeSuccess(response, null) as List<dynamic>;
     return frames
         .map((frame) => RpcResponseFrame.fromWire(frame))
         .toList(growable: false);
@@ -88,6 +102,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
     Object? input, {
     CratestackRpcCallOptions? options,
   }) async* {
+    final plan = _cratestackCompactBegin(this, compact, format, opId, stream: true);
     final response = await _post(
       '/rpc/${Uri.encodeComponent(opId)}',
       input,
@@ -95,9 +110,12 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
           ? 'application/json, application/cbor-seq;q=0.9'
           : 'application/cbor-seq, application/cbor, application/json;q=0.9',
       options: options,
+      compact: plan,
     );
+    final responseType = response.headers['content-type'];
+    final compactItems = plan != null && plan.matches(responseType);
     if (response.status >= 200 && response.status < 300 &&
-        _isCborSeqContentType(response.headers['content-type'])) {
+        (_isCborSeqContentType(responseType) || compactItems)) {
       // Frame by frame: items are yielded as their bytes arrive, the body is
       // never buffered.
       final decoder = (cborSeqDecoder ?? CratestackCborSeqScanner.new)();
@@ -117,12 +135,17 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
             body: RpcErrorBody.fromWire(error),
           );
         }
-        yield await _decodeBody(item, 'application/cbor', 'CratestackRpcHttpAdapter');
+        // The in-band error item above is never compact; an output item is.
+        yield await _decodeBody(
+          compactItems ? plan.decode(item) : item,
+          'application/cbor',
+          'CratestackRpcHttpAdapter',
+        );
       }
       return;
     }
     // The server answered with one array (`application/cbor` or JSON).
-    final decoded = await _decodeSuccess(response);
+    final decoded = await _decodeSuccess(response, null);
     if (decoded == null) {
       return;
     }
@@ -143,15 +166,17 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
     required String? accept,
     required CratestackRpcCallOptions? options,
     bool idempotent = false,
+    _CompactCall? compact,
   }) async {
-    final encoded = await _encodeBody(format, body);
+    final plainBody = await _encodeBody(format, body);
+    final encoded = compact?.encode(plainBody) ?? plainBody;
     return transport.send(
       CratestackHttpRequest(
         method: 'POST',
         uri: _resolveUri(baseUri, path, null),
         headers: _mergeHeaders([
           <String, String>{
-            if (accept != null) 'Accept': accept,
+            if (accept != null) 'Accept': compact?.accept(accept) ?? accept,
             'Content-Type': format == CratestackWireFormat.json
                 ? 'application/json'
                 : 'application/cbor',
@@ -160,6 +185,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
             if (idempotent && options?.idempotencyKey != null)
               'Idempotency-Key': options!.idempotencyKey!,
           },
+          compact?.headers(hasBody: encoded != null),
           options?.headers,
         ]),
         body: encoded,
@@ -170,9 +196,12 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
 
   /// Reads a unary answer: the decoded body on 2xx, a
   /// [CratestackRpcException] otherwise.
-  Future<Object?> _decodeSuccess(CratestackHttpResponse response) async {
-    final bytes = await response.bytes();
-    final contentType = response.headers['content-type'];
+  Future<Object?> _decodeSuccess(
+    CratestackHttpResponse response,
+    _CompactCall? compact,
+  ) async {
+    var bytes = await response.bytes();
+    var contentType = response.headers['content-type'];
     if (response.status < 200 || response.status >= 300) {
       final data = await _decodeErrorBody(bytes, contentType);
       throw CratestackRpcException(
@@ -185,6 +214,10 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
         ),
         headers: response.headers,
       );
+    }
+    if (compact != null && bytes.isNotEmpty && compact.matches(contentType)) {
+      bytes = compact.decode(bytes);
+      contentType = 'application/cbor';
     }
     return _decodeBody(bytes, contentType, 'CratestackRpcHttpAdapter');
   }

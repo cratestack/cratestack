@@ -153,6 +153,23 @@ describe.skipIf(!cborNodeIsBuilt)(
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
+    it("exposes createCompactKeys from the native addon, without calling fetch", async () => {
+      const { createCompactKeys } = await import("@cratestack/cbor");
+      // One op, `shop.put`, whose request is `{amount: 0, id: 1}`; the
+      // artifact is the one @cratestack/cbor-node's compact suite pins.
+      const artifact =
+        "8301818466616d6f756e74006269640081846873686f702e707574582007070707070707070707070707070707070707070707070707070707070707070100";
+      const keys = await createCompactKeys(
+        Uint8Array.from(artifact.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16)),
+      );
+
+      expect(keys.toCompactJson('{"id":"a","amount":5}', "shop.put", "request")).toBe(
+        '{"1":"a","0":5}',
+      );
+      expect(keys.selector("shop.put")).toBe("BwcHBwcHBwc");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     it("throws a catchable JS error on malformed CBOR input", async () => {
       const { createCborCodec } = await import("@cratestack/cbor");
       const codec = await createCborCodec();

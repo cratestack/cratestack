@@ -254,6 +254,24 @@ building this check:
   bin/llvm-strip`) rather than the host `strip` binary Linux vendoring uses — GNU `strip`'s
   `--strip-unneeded` does not list an AArch64 Android target among its supported output formats.
 
+## Compact wire keys (`createCompactKeys`)
+
+`createCompactKeys(Uint8List tables)` returns a `CompactKeys` (`toCompact`, `fromCompact`, `toCompactJson`,
+`fromCompactJson`, `selector`) over a generated client's key-table artifact (`cratestackKeyTables`; design in
+`docs/design/compact-wire-keys.md`). It is **not** behind `cose`: it is in the codec-only npm builds and in
+every Dart build. `direction` is the string `'request'` / `'response'`.
+
+- **Native:** `crates/cratestack-client-flutter/src/cbor/compact.rs`, the opaque `FlutterCompactKeys`, under
+  `crate::cbor` so the codegen input is unchanged. No data-carrying enum and no fixed array crosses the
+  bridge (CI's glue gate forbids the imports they bring). `ci.yml`'s `cbor-glue` job and `release-cli.yml`'s
+  pre-publish check both require `FlutterCompactKeys` in the glue.
+- **Web:** `crates/cratestack-cbor-wasm/src/compact.rs`, the `CompactKeys` wasm class
+  (`window.__cratestackCborWasmBridge.CompactKeys`). Named so that `.ci/cbor-web-codec-only.sh` stays green.
+- **npm:** `createCompactKeys` in `@cratestack/cbor-node`, `-web` and the `@cratestack/cbor` umbrella.
+- The pure logic (op lookup, direction, selector) is in `compact_keys.rs` of the napi and wasm crates and in
+  `compact.rs` of the flutter crate, so `cargo test` runs it. Every suite hardcodes the same artifact hex
+  (`test/shared_fixtures.dart` documents the copies); the napi crate pins it.
+
 ## The COSE signed transport (`cose.dart`, cratestack#1026)
 
 `package:cratestack_cbor/cose.dart` seals requests and opens responses with `cratestack-cose`, one Rust
@@ -453,6 +471,7 @@ dart-packages/cratestack_cbor/
 │   ├── cratestack_cbor.dart          # conditional export: picks a backend
 │   └── src/
 │       ├── cbor_codec.dart           # the uniform API
+│       ├── compact_keys.dart         # CompactKeys (+ native/web/unsupported backends)
 │       ├── native/native_cbor_codec.dart
 │       ├── native/rust/              # GENERATED frb glue (gitignored)
 │       ├── web/web_cbor_codec.dart

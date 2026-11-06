@@ -41,6 +41,7 @@ decimal-bigdecimal = [
 ]
 
 [dependencies]
+base64.workspace = true
 cratestack-core.workspace = true
 minijinja.workspace = true
 serde.workspace = true

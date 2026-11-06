@@ -124,6 +124,24 @@ against, using the **same** hex fixtures `cratestack-cbor-napi`,
 `cratestack-cbor-wasm`, and `crates/cratestack-client-flutter`'s own test
 suites assert (three independent bindings agreeing on the same wire bytes).
 
+## Compact wire keys
+
+`createCompactKeys` loads the key tables a generated client emits
+(`cratestackKeyTables`) and swaps schema field names for integer keys on the
+wire, and back. It works on both backends and needs nothing beyond the codec:
+
+```dart
+final keys = await createCompactKeys(cratestackKeyTables);
+final hooks = CratestackCompactHooks(
+  toCompact: keys.toCompact,
+  fromCompact: keys.fromCompact,
+  selector: keys.selector,
+);
+```
+
+`direction` is the string `'request'` or `'response'`. A bad op, direction or
+body throws `CratestackCborCodecError`.
+
 ## Signed transport (COSE) — `package:cratestack_cbor/cose.dart`
 
 A server behind CrateStack's envelope layer (ADR 0006) accepts only

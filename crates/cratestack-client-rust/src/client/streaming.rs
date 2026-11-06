@@ -69,14 +69,15 @@ where
         Output: DeserializeOwned + Send + 'static,
     {
         let body = self.codec.encode(input)?;
-        let response = self
-            .request_streamed_with_query_and_accept(
+        let (response, items) = self
+            .request_streamed_compact(
                 Method::POST,
                 path,
                 Some(body),
                 None,
                 headers,
                 self.codec.sequence_accept_header_value(),
+                true,
             )
             .await?;
 
@@ -88,6 +89,7 @@ where
             response,
             tx,
             std::convert::identity,
+            items,
         ));
         Ok(rx)
     }

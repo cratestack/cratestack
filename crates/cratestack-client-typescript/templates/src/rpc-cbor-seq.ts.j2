@@ -89,13 +89,18 @@ export class CborSeqBoundaryScanner {
 export function classifyCborSeqItem<O>(
   itemBytes: Uint8Array,
   codec: CratestackRpcCodec,
+  fromCompact?: (compactItem: Uint8Array) => Uint8Array,
 ): RpcStreamFrame<O> {
   const tag = readLeadingTag(itemBytes);
   if (tag !== null && tag.tagNumber === RPC_STREAM_ERROR_TAG) {
     const error = codec.decode(itemBytes.slice(tag.headerLength)) as RpcErrorBody;
     return { kind: "error", error };
   }
-  return { kind: "output", output: codec.decode(itemBytes) as O };
+  // The in-band error item is never compact; only an output item is.
+  return {
+    kind: "output",
+    output: codec.decode(fromCompact ? fromCompact(itemBytes) : itemBytes) as O,
+  };
 }
 
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {

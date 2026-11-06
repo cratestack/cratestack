@@ -7,7 +7,11 @@
 // crates/cratestack-cbor-napi (the FFI boundary); nothing here
 // reimplements or alters that behavior.
 import type { CratestackRpcCodec } from "@cratestack/ts-types";
-import { decode as decodeNative, encode as encodeNative } from "../native.mjs";
+import {
+  decode as decodeNative,
+  encode as encodeNative,
+  CompactKeys as NativeCompactKeys,
+} from "../native.mjs";
 
 /**
  * CBOR codec backed by `cratestack-codec-cbor`'s Rust `CborCodec` (via the
@@ -43,3 +47,43 @@ export const cborCodec = {
 } satisfies CratestackRpcCodec;
 
 export default cborCodec;
+
+/** Which side of an op a body belongs to. */
+export type CompactDirection = "request" | "response";
+
+/**
+ * The compact-wire-key tables of one client (`docs/design/compact-wire-keys.md`):
+ * swaps schema field names for integer keys on the wire and back. Pure
+ * functions of bytes; a bad input throws a catchable `Error`.
+ */
+export interface CompactKeys {
+  /** Named CBOR bytes to compact CBOR bytes. */
+  toCompact(named: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+  /** Compact CBOR bytes back to named CBOR bytes. */
+  fromCompact(compact: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+  /** Named JSON text to compact JSON text (keys become decimal strings). */
+  toCompactJson(named: string, op: string, direction: CompactDirection): string;
+  /** Compact JSON text back to named JSON text. */
+  fromCompactJson(compact: string, op: string, direction: CompactDirection): string;
+  /** The `Cratestack-Contract` header value of the op's current contract. */
+  selector(op: string): string | undefined;
+}
+
+/**
+ * Builds the {@link CompactKeys} of a generated client's key-table artifact
+ * (its `KEY_TABLES`). Async for call-site parity with
+ * `@cratestack/cbor-web`; the native addon needs no initialization.
+ */
+export async function createCompactKeys(tables: Uint8Array): Promise<CompactKeys> {
+  const keys = NativeCompactKeys.fromTables(tables);
+  return {
+    // `new Uint8Array(...)` re-wraps for the same typed-array-generics
+    // reason as `cborCodec.encode` above.
+    toCompact: (named, op, direction) => new Uint8Array(keys.toCompact(named, op, direction)),
+    fromCompact: (compact, op, direction) =>
+      new Uint8Array(keys.fromCompact(compact, op, direction)),
+    toCompactJson: (named, op, direction) => keys.toCompactJson(named, op, direction),
+    fromCompactJson: (compact, op, direction) => keys.fromCompactJson(compact, op, direction),
+    selector: (op) => keys.selector(op) ?? undefined,
+  };
+}

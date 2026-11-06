@@ -47,14 +47,18 @@ default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
 ]
 
 [dependencies]
 cratestack-codec-cbor = { workspace = true, default-features = false }
+# Compact wire keys (`CompactKeys`): the JSON transcoder.
+cratestack-codec-json = { workspace = true, default-features = false }
 cratestack-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

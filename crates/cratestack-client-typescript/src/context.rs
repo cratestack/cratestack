@@ -11,6 +11,7 @@ use crate::find_many_views::{
 use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::package_deps::{
     DependencyEntry, dependencies_for, dev_dependencies_for, peer_dependencies_for,
+    rest_compact_peer,
 };
 use crate::package_floors::{CRATESTACK_ADAPTER_RTK_FLOOR, CRATESTACK_REFINE_FLOOR, requirement};
 use crate::procedure_views::{ProcedureView, build_procedure};
@@ -42,6 +43,13 @@ pub(crate) struct TemplateContext {
     /// `runtime.ts` for the sealers EXT-13 will add.
     op_contracts: Vec<[String; 2]>,
     client_contract_sha256: String,
+    /// Base64 of `cratestack_core::compact::KeyTables::to_bytes`: the compact
+    /// wire key tables for every op, baked into `runtime.ts` as `KEY_TABLES`.
+    key_tables_b64: String,
+    /// Peer dependencies `package.json` marks optional through
+    /// `peerDependenciesMeta`: `@cratestack/cbor` on REST, where only
+    /// `compactKeys` reaches for it.
+    optional_peer_dependencies: Vec<&'static str>,
     enums: Vec<EnumView>,
     interfaces: Vec<InterfaceView>,
     models: Vec<ModelApiView>,
@@ -364,6 +372,12 @@ pub(crate) fn build_template_context(
         schema_sha256: config.schema_sha256.clone(),
         op_contracts: op_contract_rows(schema),
         client_contract_sha256: client_contract_hex(schema),
+        key_tables_b64: key_tables_base64(schema),
+        optional_peer_dependencies: if is_rpc_transport {
+            Vec::new()
+        } else {
+            vec!["@cratestack/cbor"]
+        },
         enums,
         interfaces,
         models,
@@ -402,11 +416,17 @@ pub(crate) fn build_template_context(
         tanstack: config.tanstack,
         rtk: config.rtk,
         rtk_adapter_version_requirement: rtk_adapter_version_requirement.clone(),
-        peer_dependencies: peer_dependencies_for(
-            config,
-            &refine_version_requirement,
-            &rtk_adapter_version_requirement,
-        ),
+        peer_dependencies: {
+            let mut peers = peer_dependencies_for(
+                config,
+                &refine_version_requirement,
+                &rtk_adapter_version_requirement,
+            );
+            if !is_rpc_transport {
+                peers.push(rest_compact_peer());
+            }
+            peers
+        },
         dev_dependencies: dev_dependencies_for(
             config,
             &refine_version_requirement,
@@ -434,4 +454,12 @@ pub(crate) fn op_contract_rows(schema: &Schema) -> Vec<[String; 2]> {
 /// The whole-contract digest, in hex.
 pub(crate) fn client_contract_hex(schema: &Schema) -> String {
     cratestack_core::digest_hex(&cratestack_core::client_contract_digest(schema))
+}
+
+/// The compact wire key tables (`cratestack_core::compact`) as base64: the
+/// `KEY_TABLES` constant the runtimes decode lazily when `compactKeys` is on.
+pub(crate) fn key_tables_base64(schema: &Schema) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .encode(cratestack_core::compact::KeyTables::from_schema(schema).to_bytes())
 }

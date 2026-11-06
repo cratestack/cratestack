@@ -55,6 +55,7 @@ pub(super) fn generate_generated_client_module(
         .map(|procedure| generate_generated_procedure_client_method(procedure, bearing))
         .collect::<Result<Vec<_>, String>>()?;
 
+    let compact_ctor = super::compact_ctor::compact_constructor();
     Ok(quote! {
         pub mod client {
             #[derive(Clone)]
@@ -82,6 +83,7 @@ pub(super) fn generate_generated_client_module(
                     }
                 }
 
+                #compact_ctor
                 pub fn runtime(&self) -> &::cratestack::client_rust::CratestackClient<C> {
                     &self.runtime
                 }

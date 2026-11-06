@@ -1,5 +1,18 @@
 ## Unreleased
 
+- New: `createCompactKeys(Uint8List tables)` and the `CompactKeys` interface
+  (compact wire keys, `docs/design/compact-wire-keys.md`). Built from the
+  `cratestackKeyTables` a generated client emits, it swaps a schema's field
+  names for integer keys on the wire and back: `toCompact` / `fromCompact`
+  over CBOR bytes, `toCompactJson` / `fromCompactJson` over JSON text, and
+  `selector(op)` for the `Cratestack-Contract` header value. `direction` is
+  the string `'request'` or `'response'`, so the method tear-offs fit the
+  generated client's `CratestackCompactHooks` without a shared type. The
+  native backend adds the opaque `FlutterCompactKeys` to the
+  `flutter_rust_bridge` glue and the web backend a `CompactKeys` class to the
+  wasm build (in the codec-only build too, not behind `cose`). Failures are
+  `CratestackCborCodecError`. Additive: nothing existing changes.
+
 ## 0.17.2 (2026-10-31)
 
 - No functional changes. Version kept in lockstep with the CrateStack

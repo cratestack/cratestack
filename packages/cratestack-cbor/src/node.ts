@@ -34,3 +34,8 @@ import type { CratestackRpcCodec } from "@cratestack/ts-types";
 export async function createCborCodec(): Promise<CratestackRpcCodec> {
   return cborCodec;
 }
+
+// Compact wire keys (`docs/design/compact-wire-keys.md`). Feature-detectable:
+// older releases of this package do not export `createCompactKeys`.
+export type { CompactDirection, CompactKeys } from "@cratestack/cbor-node";
+export { createCompactKeys } from "@cratestack/cbor-node";

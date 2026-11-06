@@ -94,6 +94,21 @@ Wire format:
 - `format: CratestackWireFormat.json` writes JSON bodies and prefers a JSON answer
 - either way the answer is decoded by its own `Content-Type`
 
+Compact wire keys (opt-in, CBOR only): hand the adapter hooks built from `cratestackKeyTables` and field names travel as integer keys, in both directions, once the server has answered an op compact. Without `compact:` the wire is unchanged. JSON, error bodies stay named:
+
+```dart
+final keys = await createCompactKeys(cratestackKeyTables); // package:cratestack_cbor
+final adapter = CratestackHttpAdapter(
+  transport,
+  baseUri: Uri.parse('https://api.example.com'),
+  compact: CratestackCompactHooks(
+    toCompact: keys.toCompact,
+    fromCompact: keys.fromCompact,
+    selector: keys.selector,
+  ),
+);
+```
+
 Errors:
 
 - an HTTP error answer is a `CratestackRestException` (`status`, the decoded `body`, and its typed `code`, `message`, `details`, `extra` and `challenges`)
@@ -127,6 +142,7 @@ Generated providers include:
 - `tinyRestClientTransportProvider` (a `Provider<HttpTransport>`; throws until you override it)
 - `tinyRestClientBaseUriProvider` (a `Provider<Uri>`; throws until you override it)
 - `tinyRestClientAdapterProvider` (defaults to the HTTP adapter over `CratestackFespalierTransport(tinyRestClientTransportProvider)`)
+- `tinyRestClientCompactProvider` (a `Provider<CratestackCompactHooks?>`, `null` by default; override it with the hooks above to opt in to compact wire keys)
 - `tinyRestClientBasePathProvider`
 - `tinyRestClientClientProvider`
 - `tinyRestClientWidgetApiProvider`

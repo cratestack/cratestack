@@ -2195,6 +2195,13 @@ jobs:
           for symbol in FlutterClientEnvelope FlutterCoseError coseContractHeaderValue; do
             grep -rq "$symbol" lib/src/native/rust || cose_glue_ok=0
           done
+          # Compact wire keys (`createCompactKeys`) are in the codec-only
+          # build as well as the COSE one: both backends must carry them.
+          compact_ok=1
+          grep -rq 'FlutterCompactKeys' lib/src/native/rust || compact_ok=0
+          for symbol in 'class CompactKeys' toCompactJson; do
+            grep -q "$symbol" lib/src/web/wasm-pkg/cratestack_cbor_wasm.js || compact_ok=0
+          done
           cose_glue_listed=$(grep -c 'envelope\.dart' <<<"$dry_run_output" || true)
           cose_web_ok=1
           for symbol in 'export class ClientEnvelope' sealRequest openResponse; do
@@ -2204,6 +2211,10 @@ jobs:
           fail=0
           if [ "$cose_glue_ok" -ne 1 ] || [ "$cose_glue_listed" -lt 1 ]; then
             echo "::error::the COSE bridge is missing from the native flutter_rust_bridge glue (lib/src/native/rust/cose/) or from the archive listing. cbor-vendor-glue did not run with --rust-input crate::cbor,crate::cose — DO NOT PUBLISH." >&2
+            fail=1
+          fi
+          if [ "$compact_ok" -ne 1 ]; then
+            echo "::error::the compact wire keys bridge (FlutterCompactKeys natively, CompactKeys in the vendored wasm JS) is missing. cbor-vendor-glue / cbor-vendor-web did not generate it — DO NOT PUBLISH." >&2
             fail=1
           fi
           if [ "$cose_web_ok" -ne 1 ]; then

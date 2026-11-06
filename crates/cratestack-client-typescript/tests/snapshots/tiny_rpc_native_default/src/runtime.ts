@@ -16,6 +16,8 @@ import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLink
 import { terminalStreamLink } from "./stream-terminal.js";
 import { encodeBinaryAsJson, encodeWireFields } from "./models.js";
 import { createCborCodec } from "@cratestack/cbor";
+import { RpcCompactSession } from "./compact.js";
+import type { RpcCompactCall } from "./compact.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -47,6 +49,11 @@ export const OP_CONTRACTS: Readonly<Record<string, string>> = {
 };
 // Hex of the whole-contract digest: moves when any op's contract does.
 export const CLIENT_CONTRACT_SHA256: string = "061926fefca5dba532237ef0c84e15ea03242b8225c2a157405e051d36f8fb92";
+
+// Base64 of the compact wire key tables for every op above (the artifact
+// `cratestack_core::compact::KeyTables::to_bytes` writes), read only when
+// `compactKeys` is on (see `./compact`).
+export const KEY_TABLES: string = "gwGChmJpZABkbmFtZQBmd2VpZ2h0AIJkbmFtZQCGhHNtb2RlbC5XaWRnZXQuY3JlYXRlWCAijahN/yvjz+vZd90YHXfLrJwW7Cm2j/Na4uJMuaj85QEBhHNtb2RlbC5XaWRnZXQuZGVsZXRlWCBef+b7c+MVQar0wvTesMp2tdYvLNoPgY/9JgWfh7o1pAABhHBtb2RlbC5XaWRnZXQuZ2V0WCCObrW2+jhcnru4sTOBTUX/qdEEpkwNDqupHHfBOZH7pQABhHFtb2RlbC5XaWRnZXQubGlzdFggolvIFlHDoAnf80MIc2TU+U0Ac7hmAbOmiW8FpOgYrfIAggABhHNtb2RlbC5XaWRnZXQudXBkYXRlWCD3ASlqOHuECZBWhincnpJJmQWjIkeF3xaGvnMqLUIOjgEBhHJwcm9jZWR1cmUuZWNob05hbWVYICA0Hew+1btJ8kfv/jztYF1h+WMLMIHS6ZPyoSmiAlr1AgA=";
 
 /** Plugs into {@link CratestackRpcRuntime} to control how request bodies
  *  are encoded and response bodies are decoded. `contentType` is sent as
@@ -141,6 +148,14 @@ export interface CratestackRpcClientOptions {
    *  `Response`-shaped (see `./links`'s `RpcStreamLink` doc comment for
    *  why). Omitted or empty is a true no-op. */
   streamLinks?: RpcStreamLink[];
+  /** Opt in to compact wire keys: schema-declared fields travel as integer
+   *  keys. Default `false`, which leaves the wire byte-identical to a client
+   *  without the option. The request body goes compact only after the op has
+   *  answered compact once, so an older server is never sent a body it cannot
+   *  read. Needs a `@cratestack/cbor` that exports `createCompactKeys`;
+   *  without one the option is silently inert. Batch frames and error bodies
+   *  stay named. */
+  compactKeys?: boolean;
 }
 
 export interface CratestackRpcCallOptions {
@@ -415,10 +430,20 @@ export const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
  *  native one. */
 const terminalLink: RpcLinkNext = async (request) => {
   const url = request.kind === "batch" ? request.urls.batch() : request.urls.unary(request.opId);
+  let headers = request.headers;
+  let body = request.codec.encode(encodeWireFields(request.input));
+  // Compact keys (`./compact`) are applied here, on a copy, and not to
+  // `request.headers`: a batching link re-sends `request.headers` on
+  // `/rpc/batch`, which is never compact.
+  if (request.compact !== undefined && request.kind === "unary") {
+    headers = new Headers(headers);
+    request.compact.applyHeaders(headers);
+    body = request.compact.encodeBody(body);
+  }
   const response = await request.fetchFn(url, {
     method: "POST",
-    headers: request.headers,
-    body: request.codec.encode(encodeWireFields(request.input)),
+    headers,
+    body,
     signal: request.signal,
   });
   return { response };
@@ -441,6 +466,7 @@ export class CratestackRpcRuntime {
   private readonly explicitCodec: CratestackRpcCodec | undefined;
   private codecPromise: Promise<CratestackRpcCodec> | undefined;
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+  private readonly compact: RpcCompactSession | undefined;
   private readonly chain: RpcLinkNext;
   private readonly streamChain: RpcStreamLinkNext;
 
@@ -454,6 +480,7 @@ export class CratestackRpcRuntime {
     this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.explicitCodec = options.codec;
     this.defaultHeaders = options.headers;
+    this.compact = options.compactKeys === true ? new RpcCompactSession(KEY_TABLES) : undefined;
     // Empty `links`/`streamLinks` collapses `reduceRight` to the
     // terminal link unchanged — byte-identical request as before either
     // option existed.
@@ -520,6 +547,7 @@ export class CratestackRpcRuntime {
       headers.set("Idempotency-Key", options.idempotencyKey);
     }
 
+    const compact = await this.compact?.begin(opId, codec, "unary", options.idempotencyKey);
     const { response } = await this.chain({
       kind: "unary",
       opId,
@@ -528,11 +556,12 @@ export class CratestackRpcRuntime {
       signal: options.signal ?? null,
       ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
       codec,
+      ...(compact !== undefined ? { compact } : {}),
       fetchFn: this.fetchFn,
       urls: this.linkUrls(),
     });
 
-    return (await this.readUnaryResponse(response)) as O;
+    return (await this.readUnaryResponse(response, compact)) as O;
   }
 
   /** POST /rpc/batch — batched calls. Per-frame errors do not poison
@@ -582,12 +611,14 @@ export class CratestackRpcRuntime {
     headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${codec.contentType}`);
     headers.set("Content-Type", codec.contentType);
 
+    const compact = await this.compact?.begin(opId, codec, "stream");
     for await (const frame of this.streamChain({
       opId,
       input: input ?? null,
       headers,
       signal: options.signal ?? null,
       codec,
+      ...(compact !== undefined ? { compact } : {}),
       fetchFn: this.fetchFn,
       url: this.url(`/rpc/${encodeURIComponent(opId)}`),
     })) {
@@ -598,13 +629,19 @@ export class CratestackRpcRuntime {
     }
   }
 
-  private async readUnaryResponse(response: Response): Promise<unknown> {
+  private async readUnaryResponse(response: Response, compact?: RpcCompactCall): Promise<unknown> {
     const codec = await this.resolveCodec();
     if (response.ok) {
       if (response.status === 204) {
         return undefined;
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
+      if (
+        compact !== undefined &&
+        matchesContentType(response.headers.get("Content-Type") ?? "", compact.responseType)
+      ) {
+        return codec.decode(compact.decodeResponse(bytes));
+      }
       return codec.decode(bytes);
     }
 

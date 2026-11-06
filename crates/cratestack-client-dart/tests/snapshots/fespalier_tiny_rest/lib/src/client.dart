@@ -63,6 +63,22 @@ final tinyRestClientBaseUriProvider = Provider<Uri>((ref) {
   throw UnimplementedError('Override tinyRestClientBaseUriProvider with the server\'s origin before reading the generated CrateStack client.');
 });
 
+/// Compact wire keys (opt-in): `null` keeps the wire named. Override it with
+/// the hooks built from `cratestackKeyTables` to put CBOR calls on integer
+/// keys:
+///
+/// ```dart
+/// final keys = await createCompactKeys(cratestackKeyTables);
+/// tinyRestClientCompactProvider.overrideWithValue(
+///   CratestackCompactHooks(
+///     toCompact: keys.toCompact,
+///     fromCompact: keys.fromCompact,
+///     selector: keys.selector,
+///   ),
+/// )
+/// ```
+final tinyRestClientCompactProvider = Provider<CratestackCompactHooks?>((ref) => null);
+
 /// The adapter every generated API sends through: the HTTP adapter over
 /// [tinyRestClientTransportProvider]. Override it only to change the wire
 /// format or to use another adapter.
@@ -70,6 +86,7 @@ final tinyRestClientAdapterProvider = Provider<CratestackClientAdapter>((ref) {
   return CratestackHttpAdapter(
     CratestackFespalierTransport(ref.watch(tinyRestClientTransportProvider)),
     baseUri: ref.watch(tinyRestClientBaseUriProvider),
+    compact: ref.watch(tinyRestClientCompactProvider),
   );
 });
 

@@ -83,6 +83,22 @@ final {{ provider_prefix }}BaseUriProvider = Provider<Uri>((ref) {
   throw UnimplementedError('Override {{ provider_prefix }}BaseUriProvider with the server\'s origin before reading the generated CrateStack client.');
 });
 
+/// Compact wire keys (opt-in): `null` keeps the wire named. Override it with
+/// the hooks built from `cratestackKeyTables` to put CBOR calls on integer
+/// keys:
+///
+/// ```dart
+/// final keys = await createCompactKeys(cratestackKeyTables);
+/// {{ provider_prefix }}CompactProvider.overrideWithValue(
+///   CratestackCompactHooks(
+///     toCompact: keys.toCompact,
+///     fromCompact: keys.fromCompact,
+///     selector: keys.selector,
+///   ),
+/// )
+/// ```
+final {{ provider_prefix }}CompactProvider = Provider<CratestackCompactHooks?>((ref) => null);
+
 /// The adapter every generated API sends through: the HTTP adapter over
 /// [{{ provider_prefix }}TransportProvider]. Override it only to change the wire
 /// format or to use another adapter.
@@ -90,6 +106,7 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref
   return CratestackRpcHttpAdapter(
     CratestackFespalierTransport(ref.watch({{ provider_prefix }}TransportProvider)),
     baseUri: ref.watch({{ provider_prefix }}BaseUriProvider),
+    compact: ref.watch({{ provider_prefix }}CompactProvider),
   );
 });
 {% else %}

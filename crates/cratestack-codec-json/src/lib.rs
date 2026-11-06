@@ -1,6 +1,8 @@
 use cratestack_core::{CratestackCodec, CratestackError};
 use serde::{Deserialize, Serialize};
 
+pub mod compact;
+
 #[derive(Debug, Clone, Default)]
 pub struct JsonCodec;
 

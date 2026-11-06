@@ -88,6 +88,7 @@ pub(super) fn build_rpc_module(
                     ::cratestack::rpc::RPC_UNARY_PATH,
                     axum::routing::post(rpc_dispatch),
                 )
+                .layer(compact_layer(body_limit_bytes))
                 .layer(::cratestack::axum::extract::DefaultBodyLimit::max(body_limit_bytes))
                 .with_state(state)
         }

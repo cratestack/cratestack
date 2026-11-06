@@ -100,11 +100,13 @@ middleware = ["cratestack-client-rust/middleware"]
 decimal-rust-decimal = [
     "cratestack-client-rust/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
     "cratestack-core/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-client-rust/decimal-bigdecimal",
     "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
     "cratestack-core/decimal-bigdecimal",
 ]
 
@@ -114,6 +116,9 @@ cratestack-client-rust.workspace = true
 # `CborCodec` directly for the flutter_rust_bridge-facing encode/decode
 # entry points — see `src/cbor.rs`.
 cratestack-codec-cbor.workspace = true
+# Compact wire keys (`cbor::compact`): the JSON transcoder. Plain `serde_json`
+# text over the bridge needs no codec feature, so it is always linked.
+cratestack-codec-json = { workspace = true, default-features = false }
 cratestack-core.workspace = true
 # `cose` only: the envelope behind `src/cose/`. `bytes` is the type its
 # open methods take.

@@ -26,6 +26,7 @@
 // design rationale (why two chains, not one; why not just reuse
 // `RpcLinkRequest`).
 
+import type { RpcCompactCall } from "./compact.js";
 import type { CratestackRpcCodec, RpcErrorBody } from "./runtime.js";
 
 /** One request going through the chain — either a single unary call
@@ -41,6 +42,9 @@ export interface RpcLinkRequest {
   readonly signal: AbortSignal | null;
   readonly idempotencyKey?: string;
   readonly codec: CratestackRpcCodec;
+  /** Present only on a unary call of a client built with `compactKeys`
+   *  (`./compact`); the terminal link acts on it, a link may ignore it. */
+  readonly compact?: RpcCompactCall;
   readonly fetchFn: typeof fetch;
   readonly urls: {
     unary(opId: string): string;
@@ -94,6 +98,8 @@ export interface RpcStreamLinkRequest {
   readonly headers: Headers;
   readonly signal: AbortSignal | null;
   readonly codec: CratestackRpcCodec;
+  /** Present only on a `stream()` of a client built with `compactKeys`. */
+  readonly compact?: RpcCompactCall;
   readonly fetchFn: typeof fetch;
   readonly url: string;
 }

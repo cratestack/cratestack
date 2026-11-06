@@ -34,7 +34,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   return realFetch(url, init);
 }) as typeof fetch;
 
-const { createCborCodec } = await import("../dist/index.js");
+const { createCborCodec, createCompactKeys } = await import("../dist/index.js");
 
 describe("createCborCodec (built package)", () => {
   let codec: CratestackRpcCodec;
@@ -268,5 +268,53 @@ describe("BigInt text-string fixtures (ADR 0019 D2)", () => {
     expect(bytesToHex(asString)).toBe("a168616d6f756e7445386131");
     expect(codec.decode(asNumber)).toEqual({ amountE8: 1 });
     expect(codec.decode(asString)).toEqual({ amountE8: "1" });
+  });
+});
+
+// The artifact is the one `crates/cratestack-cbor-napi/src/compact_keys/
+// tests.rs` pins and @cratestack/cbor-node's compact suite hardcodes: one
+// op, `shop.put`, whose request is `{amount: 0, id: 1}` and whose response
+// is opaque.
+describe("createCompactKeys (built package)", () => {
+  const artifact =
+    "8301818466616d6f756e74006269640081846873686f702e707574582007070707070707070707070707070707070707070707070707070707070707070100";
+  const named = Uint8Array.from("a2626964616166616d6f756e7405".match(/../g) ?? [], (pair) =>
+    Number.parseInt(pair, 16),
+  );
+  const compact = Uint8Array.from("a20161610005".match(/../g) ?? [], (pair) =>
+    Number.parseInt(pair, 16),
+  );
+  const load = () =>
+    createCompactKeys(Uint8Array.from(artifact.match(/../g) ?? [], (p) => Number.parseInt(p, 16)));
+
+  it("rewrites CBOR keys to integers and back", async () => {
+    const keys = await load();
+    expect(Array.from(keys.toCompact(named, "shop.put", "request"))).toEqual(Array.from(compact));
+    expect(Array.from(keys.fromCompact(compact, "shop.put", "request"))).toEqual(Array.from(named));
+  });
+
+  it("rewrites JSON keys to decimal strings and back", async () => {
+    const keys = await load();
+    expect(keys.toCompactJson('{"id":"a","amount":5}', "shop.put", "request")).toBe(
+      '{"1":"a","0":5}',
+    );
+    expect(keys.fromCompactJson('{"1":"a","0":5}', "shop.put", "request")).toBe(
+      '{"id":"a","amount":5}',
+    );
+  });
+
+  it("names the Cratestack-Contract selector, or undefined for an unknown op", async () => {
+    const keys = await load();
+    expect(keys.selector("shop.put")).toBe("BwcHBwcHBwc");
+    expect(keys.selector("shop.missing")).toBeUndefined();
+  });
+
+  it("throws a catchable Error, never a trap, on bad input", async () => {
+    const keys = await load();
+    expect(() => keys.toCompact(named, "shop.missing", "request")).toThrow();
+    expect(() => keys.toCompact(new Uint8Array([0x1b]), "shop.put", "request")).toThrow();
+    // The module is still usable after the failures above.
+    expect(keys.toCompactJson('{"id":"a"}', "shop.put", "request")).toBe('{"1":"a"}');
+    await expect(createCompactKeys(new Uint8Array([1, 2, 3]))).rejects.toThrow();
   });
 });

@@ -11,4 +11,5 @@
 // have their own dedicated compiled entry point, distinct from
 // src/node.ts, rather than sharing one file whose behavior would need to
 // branch at runtime.
-export { createCborCodec } from "@cratestack/cbor-web";
+export type { CompactDirection, CompactKeys } from "@cratestack/cbor-web";
+export { createCborCodec, createCompactKeys } from "@cratestack/cbor-web";

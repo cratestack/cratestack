@@ -54,6 +54,7 @@
 //! ~200-LoC file-size convention (mirrors `cratestack-cbor-napi`'s own
 //! `lib.rs`/`json_value.rs` split).
 
+pub mod compact;
 mod json_value;
 
 use serde_json::Value;

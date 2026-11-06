@@ -20,6 +20,7 @@
 //! role.
 
 mod client;
+mod client_key_tables;
 mod contracts;
 mod datasource_guard;
 mod decimal_arg;
@@ -31,6 +32,7 @@ mod parse;
 mod schema_args;
 mod schema_sha;
 mod server;
+mod server_key_tables;
 
 use proc_macro::TokenStream;
 use syn::parse_macro_input;
