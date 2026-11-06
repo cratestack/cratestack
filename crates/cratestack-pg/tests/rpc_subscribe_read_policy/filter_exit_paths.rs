@@ -207,5 +207,9 @@ async fn an_update_of_a_unique_column_holds_the_row_against_key_share() {
     };
     assert!(non_key_free, "a non-key update leaves FOR KEY SHARE free");
     let key_free = key_share_is_free_after(input(Some("b"), Some(2))).await;
-    assert_eq!(key_free, Some(false), "a unique-column update holds the row");
+    assert_eq!(
+        key_free,
+        Some(false),
+        "a unique-column update holds the row"
+    );
 }
