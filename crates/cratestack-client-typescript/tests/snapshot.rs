@@ -248,9 +248,7 @@ fn generated_rpc_runtime_satisfies_exact_optional_property_types() {
          (verified with a real `tsc --noEmit` run, issue #182's link-chain plumbing):\n{runtime}"
     );
     assert!(
-        runtime.contains(
-            "...(idempotencyKey !== undefined ? { idempotencyKey } : {}),"
-        ),
+        runtime.contains("...(idempotencyKey !== undefined ? { idempotencyKey } : {}),"),
         "call()'s RpcLinkRequest must conditionally spread idempotencyKey:\n{runtime}"
     );
     assert!(
