@@ -10,8 +10,9 @@
 //! `subscription procedure` handler usually returns.
 //!
 //! A topic taken from an `@isolation` procedure's handle is bound to the
-//! procedure's attempt: its `publish` is `publish_in_tx` on that
-//! transaction (`docs/design/procedure-isolation.md` §3).
+//! procedure's attempt: its `publish` is delivered only if the attempt
+//! commits, whichever backplane carries it (`PgNotifyBackplane` notifies
+//! inside the transaction, any other sends after the commit).
 
 use std::fmt::Display;
 use std::marker::PhantomData;
@@ -26,6 +27,7 @@ use serde::de::DeserializeOwned;
 
 use crate::SqlxRuntime;
 use crate::backplane::notify_payload::{NOTIFY_CHANNEL, encode};
+use crate::bound::{BoundTx, nested_in_bound};
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
 
@@ -34,7 +36,7 @@ pub struct Topic<T> {
     backplane: Arc<dyn SubscriptionBackplane>,
     channel: String,
     /// The `@isolation` attempt a `publish` rides, when there is one.
-    attempt: Option<SqlxRuntime>,
+    attempt: Option<Arc<BoundTx>>,
     message: PhantomData<fn() -> T>,
 }
 
@@ -52,10 +54,11 @@ where
         }
     }
 
-    /// Binds `publish` to `runtime`'s transaction when it is an `@isolation`
-    /// attempt's runtime; any other runtime leaves the topic as it was.
-    pub fn bound_to(mut self, runtime: &SqlxRuntime) -> Self {
-        self.attempt = runtime.bound().is_some().then(|| runtime.clone());
+    /// Binds `publish` to `runtime`'s `@isolation` attempt. A runtime that
+    /// is not one, or none, leaves the topic as it was.
+    #[doc(hidden)]
+    pub fn in_attempt(mut self, runtime: Option<&SqlxRuntime>) -> Self {
+        self.attempt = runtime.and_then(|runtime| runtime.bound.clone());
         self
     }
 
@@ -65,17 +68,28 @@ where
     }
 
     /// Delivers `message` to every current subscriber, on every replica.
-    /// From an `@isolation` procedure's handle it is [`Self::publish_in_tx`]
-    /// on the procedure's transaction instead: delivered if the attempt
-    /// commits, never for one that rolls back or retries.
+    /// From an `@isolation` procedure's handle it is delivered only if the
+    /// attempt commits, never for one that rolls back or retries: with
+    /// `PgNotifyBackplane` as [`Self::publish_in_tx`] in a savepoint of the
+    /// attempt, with any other backplane queued and sent after the commit.
+    /// Inside `db.transaction(..)` there, use `publish_in_tx(tx, ..)`.
     pub async fn publish(&self, message: &T) -> Result<(), CratestackError> {
-        if let Some(runtime) = &self.attempt {
-            return runtime
-                .transaction(async |tx| self.publish_in_tx(tx, message).await)
-                .await;
-        }
         let payload = encode_message(message)?;
-        self.backplane.publish(&self.channel, &payload).await
+        let Some(attempt) = &self.attempt else {
+            return self.backplane.publish(&self.channel, &payload).await;
+        };
+        if !self.backplane.publishes_model_events_in_tx() {
+            attempt.defer_publish(self.backplane.clone(), self.channel.clone(), payload);
+            return Ok(());
+        }
+        attempt.lock().map(drop).map_err(|_| {
+            CratestackError::Internal(
+                "a topic publish is refused while `db.transaction(..)` runs on this handle: \
+                 call `publish_in_tx(tx, &message)` with its `tx`"
+                    .to_owned(),
+            )
+        })?;
+        nested_in_bound(attempt, async |tx| self.notify(tx, &payload).await).await
     }
 
     /// Delivers `message` only if `tx` commits, when it commits. Refused
@@ -88,13 +102,21 @@ where
     ) -> Result<(), CratestackError> {
         if !self.backplane.publishes_model_events_in_tx() {
             return Err(CratestackError::Internal(
-                "publishing in a transaction needs a backplane the transaction notifies \
-                 (PgNotifyBackplane); with this one, `publish` after the commit"
+                "`publish_in_tx` needs a backplane the transaction notifies (PgNotifyBackplane); \
+                 with this one, `publish` after the commit"
                     .to_owned(),
             ));
         }
-        let payload = encode_message(message)?;
-        let notification = encode(&self.channel, &payload, None).ok_or_else(|| {
+        self.notify(tx, &encode_message(message)?).await
+    }
+
+    /// `pg_notify` of `payload` inside `tx`.
+    async fn notify(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        payload: &str,
+    ) -> Result<(), CratestackError> {
+        let notification = encode(&self.channel, payload, None).ok_or_else(|| {
             CratestackError::BadRequest(
                 "a topic message must stay under Postgres' 8000-byte NOTIFY limit".to_owned(),
             )

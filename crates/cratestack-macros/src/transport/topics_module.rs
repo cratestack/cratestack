@@ -56,8 +56,8 @@ pub(crate) fn generate_topics_module(
         quote! {
             #docs
             pub fn #module(&self, #key: #key_ty) -> ::cratestack::Topic<#module::Payload> {
-                ::cratestack::Topic::new(self.runtime.backplane().clone(), #module::NAME, #key)
-                    .bound_to(&self.runtime)
+                ::cratestack::Topic::new(self.backplane.clone(), #module::NAME, #key)
+                    .in_attempt(self.attempt.as_ref())
             }
         }
     });
@@ -70,10 +70,20 @@ pub(crate) fn generate_topics_module(
             /// One method per `topic`. Get it with `Cratestack::topics()`.
             #[derive(Clone)]
             pub struct Topics {
-                runtime: ::cratestack::__private::SqlxRuntime,
+                backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                /// Set only by `IsolatedCratestack::topics()`.
+                attempt: Option<::cratestack::__private::SqlxRuntime>,
             }
 
             impl Topics {
+                /// The topics of an `@isolation` procedure's attempt.
+                pub(super) fn in_attempt(runtime: ::cratestack::__private::SqlxRuntime) -> Self {
+                    Self {
+                        backplane: runtime.backplane().clone(),
+                        attempt: Some(runtime),
+                    }
+                }
+
                 #(#accessors)*
             }
 
@@ -81,7 +91,8 @@ pub(crate) fn generate_topics_module(
                 /// This schema's topics, on the runtime's backplane.
                 pub fn topics(&self) -> Topics {
                     Topics {
-                        runtime: self.runtime.clone(),
+                        backplane: self.runtime.backplane().clone(),
+                        attempt: None,
                     }
                 }
             }
@@ -112,7 +123,10 @@ topic Room(roomId: String): Message
         let code = generate(true).unwrap();
         assert!(code.contains("pub fn room (& self , room_id : & str) -> :: cratestack :: Topic < room :: Payload >"), "{code}");
         assert!(code.contains("self . runtime . backplane ()"));
-        assert!(code.contains(". bound_to (& self . runtime)"), "{code}");
+        assert!(
+            code.contains(". in_attempt (self . attempt . as_ref ())"),
+            "{code}"
+        );
     }
 
     #[test]

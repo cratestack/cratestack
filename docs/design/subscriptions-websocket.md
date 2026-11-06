@@ -959,19 +959,31 @@ The rest:
 - **`db = None`**: subscription procedures work, with the handler's stream as the source. A topic is
   a compile error, because `cratestack-api` has no backplane yet; moving `InProcessBackplane` out of
   `cratestack-sqlx` is the follow-up.
-- **`IsolatedCratestack::topics()`**: the same `Topics`, taken from the procedure's transaction-bound
-  runtime, so each topic it hands out is bound to that attempt (`Topic::bound_to`).
-  - `publish(&msg)` on such a topic is `publish_in_tx` inside a savepoint of the attempt's
-    transaction, not an immediate send. It is delivered if the attempt commits, in commit order with
-    the attempt's model events. A rolled-back attempt, and an attempt retried after `40001`/`40P01`,
-    deliver nothing; only the attempt that commits does.
-  - `InProcessBackplane` cannot notify inside a transaction. The publish is refused with
-    `publish_in_tx`'s error, which fails and rolls back the attempt. It does not silently send at
-    once, which would deliver a message for a transaction that may still roll back or retry, and it
-    does not defer to after the commit, which would need a second, commit-time hook beside
-    `pg_notify` for the one backplane that has no transaction. One rule, then, for both ways in:
-    a publish inside a transaction needs a backplane the transaction notifies.
-  - `subscribe` is unaffected. A topic from a plain `Cratestack` is unchanged.
+- **`IsolatedCratestack::topics()`**: the same `Topics`, built over the procedure's
+  transaction-bound runtime, so each topic it hands out is bound to that attempt
+  (`Topic::in_attempt`). A plain `Cratestack::topics()` is not bound, including the handle that an
+  `@authorize` probe or a `@computed` resolver receives.
+  - `publish(&msg)` on a bound topic is delivered only if the attempt commits. A rolled-back
+    attempt, and an attempt retried after `40001`/`40P01`, deliver nothing; only the attempt that
+    commits does. How depends on the backplane, because a transaction can only notify through
+    Postgres:
+    - `PgNotifyBackplane`: `publish_in_tx` in a savepoint of the attempt's transaction. It is
+      delivered on commit, in commit order with the attempt's model events.
+    - Any other backplane (`InProcessBackplane`): the encoded message is queued on the attempt,
+      with the audit events and the outbox drain it already defers, and sent after the commit. The
+      check is made before any savepoint, so it costs no round trip. It is discarded with a retried
+      attempt, and with a rolled-back savepoint or joined call, by the same mark/truncate that
+      drops their audit events. A send that fails after the commit is logged, as the `AuditSink`'s
+      is, not returned.
+  - A publish error (an oversize message) rolls back only that publish's savepoint. If the body
+    ignores it, the attempt still commits.
+  - Inside `tx_db.transaction(..)` the handle's lock is held, so `publish` is refused with a message
+    that names `publish_in_tx(tx, &msg)`. That is the call there, and it needs `PgNotifyBackplane`.
+    (A queued publish takes no lock, so it works there.)
+  - Every `NOTIFY` this crate sends now carries a per-message nonce (`n`). Postgres folds identical
+    notifications of one transaction into one, so two identical `publish`es used to arrive once.
+    Readers ignore the field. This also fixes plain `publish_in_tx`.
+  - `subscribe` is unaffected.
 - Not in S4:
   - The LSP does not index the new declarations.
   - Client methods come in S6.
@@ -984,7 +996,8 @@ The rest:
   - contract parity.
 
   `cratestack-pg/tests/subscription_topics_isolated.rs` covers an `@isolation` publish on commit,
-  on error and on retry. `cratestack-api/tests/subscription_procedure_no_database.rs` covers
+  on error and on retry, on both backplanes; identical messages; and `publish_in_tx` inside
+  `tx_db.transaction(..)`. `cratestack-api/tests/subscription_procedure_no_database.rs` covers
   `db = None` and a natural end. There are also parser, generator and runtime unit tests.
 
 **S5 status (as built, 2026-11-01).** The WebSocket binding, `cratestack-websocket` (L4, axum `ws`).

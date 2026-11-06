@@ -6,17 +6,22 @@
 
 **What was missing.** `IsolatedCratestack` had no `topics()`. An `@isolation` procedure could not
 publish to a topic from inside its transaction, and a publish through another handle was delivered
-even when the attempt rolled back or was retried.
+even when the attempt rolled back or was retried. Separately, two identical `publish_in_tx` messages
+in one transaction were delivered once, because Postgres folds identical notifications.
 
 **What changed** (`docs/design/subscriptions-websocket.md` §3.4, S4 status).
 
-- `IsolatedCratestack::topics()` returns the same `Topics`, bound to the procedure's transaction.
-  `publish` on one of its topics is `publish_in_tx` on that transaction: delivered if the attempt
-  commits, never for an attempt that errors or is retried after a serialization failure.
-- With a backplane the transaction cannot notify (`InProcessBackplane`) the publish is refused, as
-  `publish_in_tx` already is, and fails the attempt.
-- Topics from a plain `Cratestack` are unchanged. `publish_in_tx`'s refusal message now reads
-  "publishing in a transaction needs a backplane...".
+- `IsolatedCratestack::topics()` returns the schema's `Topics`, bound to the procedure's attempt. A
+  topic's `publish` is delivered only if the attempt commits, never for an attempt that errors or is
+  retried after a serialization failure.
+- With `PgNotifyBackplane` it notifies inside the transaction. With a backplane a transaction cannot
+  notify (`InProcessBackplane`) the message is queued and sent after the commit, like the attempt's
+  audit events. Both are discarded with a rolled-back attempt or savepoint.
+- Inside `tx_db.transaction(..)`, call `publish_in_tx(tx, &msg)` on the topic.
+- Topics from a plain `Cratestack` are unchanged, including the handle given to `@authorize`
+  probes and `@computed` resolvers.
+- Every topic and model-event `NOTIFY` carries a per-message nonce, so identical messages from one
+  transaction are each delivered. Older readers ignore it.
 
 ### The Dart client subscribes over WebSocket and WebTransport
 

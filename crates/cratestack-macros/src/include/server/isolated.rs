@@ -92,13 +92,15 @@ pub(super) fn isolated_handle_tokens(
         proc_macro2::TokenStream::new()
     } else {
         quote! {
-            /// This schema's topics, bound to the procedure's transaction: a
-            /// topic's `publish` is delivered when the attempt commits, never
-            /// for one that rolls back or is retried. Refused with a
-            /// backplane the transaction cannot notify (`InProcessBackplane`),
-            /// as `publish_in_tx` is; `subscribe` is unaffected.
+            /// This schema's topics, bound to the procedure's transaction:
+            /// a topic's `publish` is delivered only if the attempt commits,
+            /// never for one that rolls back or is retried. With
+            /// `PgNotifyBackplane` it notifies inside the transaction, with
+            /// any other backplane it is queued and sent after the commit.
+            /// Inside `db.transaction(..)`, call `publish_in_tx(tx, &msg)`
+            /// on the topic instead.
             pub fn topics(&self) -> topics::Topics {
-                self.inner.topics()
+                topics::Topics::in_attempt(self.inner.runtime.clone())
             }
         }
     };

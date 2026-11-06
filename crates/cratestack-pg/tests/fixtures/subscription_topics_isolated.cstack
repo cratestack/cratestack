@@ -27,3 +27,7 @@ topic RoomMessage(roomId: String): ChatMessage
 mutation procedure post(args: RoomArgs): ChatMessage
   @isolation("serializable")
   @allow(auth() != null)
+
+/// Gives the generated builder its `with_backplane`.
+subscription procedure roomMessages(args: RoomArgs): ChatMessage
+  @allow(auth() != null)
