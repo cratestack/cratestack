@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 
+use super::compact_json;
 use cratestack_codec_cbor::CborSeqChunkDecoder;
 use cratestack_codec_cbor::compact::{cbor_from_compact, cbor_to_compact};
-use cratestack_codec_json::compact::{json_from_compact, json_to_compact};
 use cratestack_core::CratestackError;
 use cratestack_core::compact::{
     COMPACT_CBOR, COMPACT_CBOR_SEQ, COMPACT_JSON, Direction, compact_media_type_for,
@@ -75,7 +75,7 @@ impl CompactCall {
         let bytes = if target == COMPACT_CBOR {
             cbor_to_compact(tables, node, named)
         } else if target == COMPACT_JSON {
-            json_to_compact(tables, node, named)
+            compact_json::to_compact(tables, node, named)
         } else {
             return None;
         };
@@ -116,7 +116,7 @@ impl CompactCall {
             }
             out
         } else if media_type_matches(&compact_type, COMPACT_JSON) {
-            json_from_compact(tables, node, &response.body)?
+            compact_json::from_compact(tables, node, &response.body)?
         } else {
             cbor_from_compact(tables, node, &response.body)?
         };
