@@ -1,0 +1,23 @@
+[package]
+name = "signed-compact-server"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Server half of the signed-compact example: a procedures-only (db = None) RPC service behind a COSE EnvelopeLayer that also opts in to compact wire keys under the seal."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "signed-compact-server"
+path = "src/main.rs"
+
+[dependencies]
+# `cose` implies `envelope`: the layer, the generated `envelope_layer(..)`
+# helper, and `cratestack::cose` to build the envelope with.
+cratestack = { package = "cratestack-api", path = "../../../crates/cratestack-api", features = ["cose"] }
+cratestack-codec-cbor = { path = "../../../crates/cratestack-codec-cbor" }
+cratestack-codec-json = { path = "../../../crates/cratestack-codec-json" }
+serde = { workspace = true }
+tokio = { workspace = true, features = ["net", "signal"] }

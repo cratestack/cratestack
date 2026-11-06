@@ -59,6 +59,8 @@ members = [
     "examples/embedded-browser-webpack",
     "examples/sync-notes/server",
     "examples/sync-notes/client",
+    "examples/signed-compact/server",
+    "examples/signed-compact/client",
     "examples/react-vite-daisyui",
     "examples/react-vite-swr",
     "examples/react-vite-refine",
