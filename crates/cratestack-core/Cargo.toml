@@ -58,6 +58,8 @@ rusqlite = ["dep:rusqlite"]
 [dependencies]
 async-trait.workspace = true
 base64.workspace = true
+# The key-table artifact (`compact`) is CBOR; no serde, no std-only features.
+minicbor = { workspace = true, features = ["alloc"] }
 bytes.workspace = true
 chrono.workspace = true
 futures-core.workspace = true

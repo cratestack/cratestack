@@ -18,6 +18,7 @@ pub mod builder;
 pub mod chain;
 pub mod client_contract;
 pub mod codec;
+pub mod compact;
 pub mod composite_id;
 pub mod context;
 pub mod credential;
