@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.18.0 (2026-11-06)
+
 ### Compact wire keys: integer field keys negotiated per op contract
 
 **What was missing.** Every CBOR and JSON body repeated its field names. Single procedure calls
