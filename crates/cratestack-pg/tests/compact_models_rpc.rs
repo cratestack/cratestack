@@ -137,7 +137,8 @@ async fn model_ops_speak_compact_json_over_rpc() {
         r#"{"0":1,"1":2}"#.to_owned(),
     )
     .await;
-    assert_eq!(code, StatusCode::OK, "{body}");
+    // A create answers 201 on RPC as on REST (`bigint_end_to_end_rpc.rs`).
+    assert_eq!(code, StatusCode::CREATED, "{body}");
     assert_eq!(kind.as_deref(), Some(COMPACT_JSON));
     assert_eq!(body, r#"{"0":1,"1":2}"#);
 
