@@ -138,6 +138,16 @@ String? _cratestackRestOp(String method, String path) {
   return best?.op;
 }
 
+String? _preparedRestOp(String method, String path, String basePath) {
+  if (!const ['POST', 'PUT', 'PATCH', 'DELETE'].contains(method)) return null;
+  final prefix = basePath.replaceAll(RegExp(r'/+$'), '');
+  if (!path.startsWith('$prefix/')) return null;
+  final tail = path.substring(prefix.length);
+  final op = _cratestackRestOp(method, tail);
+  if (op == null || _pathSegments(tail).length != _pathSegments(op.substring(op.indexOf(' ') + 1)).length) return null;
+  return op;
+}
+
 /// The REST adapter, written once over a [CratestackHttpTransport].
 ///
 /// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
@@ -169,6 +179,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
     required this.baseUri,
     this.format = CratestackWireFormat.cbor,
     this.useRustTransport = false,
+    this.preparedBasePath = '{{ base_path_literal }}',
     this.compact,
   });
 
@@ -185,6 +196,9 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
   /// [CratestackHttpRequest.extra] (never on the wire), for a host
   /// interceptor that routes marked requests through the Rust runtime.
   final bool useRustTransport;
+
+  /// Generated service prefix used to validate prepared request routes.
+  final String preparedBasePath;
 
   /// Opts the adapter into compact wire keys (CBOR only; see
   /// [CratestackCompactHooks]). `null`, the default, keeps the wire exactly
@@ -205,8 +219,10 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
   Future<CratestackPreparedCall> prepare(
     CratestackRequest request, {CratestackCallOptions? options}
   ) async {
+    final expectedOp = _preparedRestOp(request.method, request.path, preparedBasePath);
+    if (expectedOp == null) throw const FormatException('Invalid prepared route');
     final (wire, plan, op) = await _prepareRequest(request, options);
-    if (_effectivePreparedKey(options?.idempotencyKey, [request.headers, options?.headers])?.isNotEmpty != true || op == null) {
+    if (op != expectedOp || _effectivePreparedKey(options?.idempotencyKey, [request.headers, options?.headers])?.isNotEmpty != true || op == null) {
       throw const FormatException('A known operation and idempotency key are required');
     }
     return _prepareSnapshot(wire, op, plan?._selector, format);
@@ -218,8 +234,8 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
       (method, uri) {
         final prefix = baseUri.path.replaceAll(RegExp(r'/+$'), '');
         if (!uri.path.startsWith('$prefix/')) return null;
-        return _cratestackRestOp(method, uri.path.substring(prefix.length));
-      }, abort, authorization);
+        return _preparedRestOp(method, uri.path.substring(prefix.length), preparedBasePath);
+      }, abort, authorization, useRustTransport: useRustTransport);
     return _decodeResponse(await transport.send(wire), plan);
   }
 

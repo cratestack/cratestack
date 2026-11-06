@@ -306,4 +306,27 @@ describe.each(layouts)("%s", (_name, mod) => {
     expect(sent).toHaveLength(0);
   });
 
+  it("preserves absent conditional headers across fresh defaults", async () => {
+    const { fetchFn, sent } = transport(() => Promise.resolve(new Response('{}', { headers: { 'Content-Type': 'application/json' } })));
+    let defaults: Record<string, string> = {};
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn, codec: mod.jsonRpcCodec, headers: () => defaults });
+    const saved = await runtime.prepare("procedure.echoName", {}, { idempotencyKey: "original" });
+    defaults = { "idempotency-key": "replacement", "if-match": "new-etag", authorization: "fresh" };
+    await runtime.executePrepared(saved);
+    expect(sent[0]?.headers.get("idempotency-key")).toBe("original");
+    expect(sent[0]?.headers.get("if-match")).toBeNull();
+    expect(sent[0]?.headers.get("authorization")).toBe("fresh");
+    const bad = { ...saved, headers: saved.headers.filter(([name]) => name !== "idempotency-key") };
+    await expect(runtime.executePrepared(bad)).rejects.toThrow();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("rejects malformed or trailing CBOR before transport", async () => {
+    const { fetchFn, sent } = transport(() => plainCbor("hi"));
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn });
+    const saved = await runtime.prepare("procedure.echoName", { name: "a" }, { idempotencyKey: "k" });
+    for (const bodyBase64 of ["/w==", "AAA="]) await expect(runtime.executePrepared({ ...saved, bodyBase64 })).rejects.toThrow();
+    expect(sent).toHaveLength(0);
+  });
+
 });

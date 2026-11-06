@@ -67,7 +67,8 @@ const _create = 'model.Author.create';
 /// generated adapter seam: when each hook is called, with which op and
 /// direction, and what goes on the wire.
 class _StandInKeys {
-  static const _marker = [0xC0, 0xDE];
+  // A valid CBOR tag wrapping the named item, so structural validation applies.
+  static const _marker = [0xD8, 0x2A];
 
   Uint8List toCompact(Uint8List named, String op, String direction) =>
       Uint8List.fromList([..._marker, ...named]);
@@ -126,6 +127,10 @@ void main() {
     expect(transport.requests[1].body, transport.requests[2].body);
     expect(transport.requests[1].headers['Content-Type'], _compactCbor);
     expect(transport.requests[2].headers['Idempotency-Key'], 'persisted');
+    for (final invalid in [<int>[255], <int>[0, 0]]) {
+      final malformed = saved.toJson()..['body'] = base64Encode(invalid);
+      await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(malformed)), throwsFormatException);
+    }
     final bad = saved.toJson()..['contract'] = 'old';
     await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(bad)), throwsFormatException);
     for (final entry in <String, Object?>{

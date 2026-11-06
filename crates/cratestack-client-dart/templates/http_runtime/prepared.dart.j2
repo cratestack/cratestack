@@ -58,6 +58,7 @@ CratestackPreparedCall _prepareSnapshot(
   Object owner, CratestackPreparedCall call, Uri baseUri,
   CratestackCompactHooks? hooks, CratestackWireFormat format,
   String? Function(String, Uri) resolveOp, Future<void>? abort, String? authorization,
+  {bool useRustTransport = false}
 ) {
   final data = call._data;
   try {
@@ -101,7 +102,10 @@ CratestackPreparedCall _prepareSnapshot(
     if (bodyText != null && base64Encode(body!) != bodyText) throw const FormatException('Invalid prepared body');
     if (body != null && contentType == null) throw const FormatException('Missing prepared content type');
     if (body != null && format == CratestackWireFormat.json) jsonDecode(utf8.decode(body));
-    if (data['version'] != 1 || (body?.length ?? 0) > 8 * 1024 * 1024 ||
+    if (body != null && format == CratestackWireFormat.cbor && _cratestackSkipCborItem(body, 0, 0) != body.length) {
+      throw const FormatException('Invalid prepared CBOR');
+    }
+    if (!const ['POST', 'PUT', 'PATCH', 'DELETE'].contains(method) || data['version'] != 1 || (body?.length ?? 0) > 8 * 1024 * 1024 ||
         uri.scheme != baseUri.scheme || uri.authority != baseUri.authority ||
         (baseUri.path.isNotEmpty && !uri.path.startsWith('${baseUri.path.replaceAll(RegExp(r'/+$'), '')}/')) ||
         data['format'] != (format == CratestackWireFormat.json ? 'json' : 'cbor') ||
@@ -122,7 +126,9 @@ CratestackPreparedCall _prepareSnapshot(
       op, selector, false, false,
     );
     return (CratestackHttpRequest(method: method, uri: uri, headers: headers,
-      body: body, abort: abort), plan);
+      body: body, abort: abort, extra: <String, Object?>{
+        if (useRustTransport) 'cratestackUseRustTransport': true,
+      }), plan);
   } on FormatException { rethrow; } catch (_) {
     throw const FormatException('Invalid prepared call');
   }

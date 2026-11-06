@@ -164,6 +164,27 @@ mod tests {
     }
 
     #[test]
+    fn restores_identity_header_absence_after_authorization() {
+        let value = call();
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("idempotency-key", "replacement".parse().unwrap());
+        headers.insert("if-match", "new-etag".parse().unwrap());
+        headers.insert("authorization", "fresh".parse().unwrap());
+        value.restore_identity_headers(&mut headers).unwrap();
+        assert_eq!(headers["idempotency-key"], "key");
+        assert!(!headers.contains_key("if-match"));
+        assert_eq!(headers["authorization"], "fresh");
+        let mut with_match = value;
+        with_match.headers.push(RuntimeHeader {
+            name: "If-Match".into(),
+            value: "original".into(),
+        });
+        headers.insert("if-match", "new-etag".parse().unwrap());
+        with_match.restore_identity_headers(&mut headers).unwrap();
+        assert_eq!(headers["if-match"], "original");
+    }
+
+    #[test]
     fn refuses_route_changes_and_unknown_fields() {
         let mut value = call();
         value.path = "/widgets/other/7".into();

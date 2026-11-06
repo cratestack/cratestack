@@ -61,7 +61,8 @@ const _author = {'id': 1, 'name': 'Ada'};
 /// generated adapter seam: when each hook is called, with which op and
 /// direction, and what goes on the wire.
 class _StandInKeys {
-  static const _marker = [0xC0, 0xDE];
+  // A valid CBOR tag wrapping the named item, so structural validation applies.
+  static const _marker = [0xD8, 0x2A];
 
   Uint8List toCompact(Uint8List named, String op, String direction) =>
       Uint8List.fromList([..._marker, ...named]);
@@ -106,8 +107,10 @@ void main() {
       (_) => _cbor(200, 'application/cbor', named),
       (_) => _cbor(200, 'application/cbor', named),
     ]);
-    final adapter = _adapter(transport, hooks);
+    final adapter = CratestackHttpAdapter(transport, baseUri: Uri.parse('http://127.0.0.1:9'), compact: hooks, useRustTransport: true);
     const request = CratestackRequest(method: 'POST', path: '/api/authors', body: _author);
+    await expectLater(adapter.prepare(const CratestackRequest(method: 'GET', path: '/api/authors'), options: const CratestackCallOptions(idempotencyKey: 'x')), throwsFormatException);
+    await expectLater(adapter.prepare(const CratestackRequest(method: 'POST', path: '/api/other/authors', body: _author), options: const CratestackCallOptions(idempotencyKey: 'x')), throwsFormatException);
     await adapter.execute(request);
     await expectLater(adapter.prepare(request, options: const CratestackCallOptions(
       idempotencyKey: 'a', headers: {'idempotency-key': 'b'})), throwsFormatException);
@@ -121,6 +124,13 @@ void main() {
     expect(transport.requests[1].body, transport.requests[2].body);
     expect(transport.requests[1].headers['Content-Type'], _compactCbor);
     expect(transport.requests[2].headers['Idempotency-Key'], 'persisted');
+    expect(transport.requests[1].extra[cratestackUseRustTransportExtraKey], isTrue);
+    final moved = saved.toJson()..['uri'] = 'http://127.0.0.1:9/api/other/authors';
+    await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(moved)), throwsFormatException);
+    for (final invalid in [<int>[255], <int>[0, 0]]) {
+      final malformed = saved.toJson()..['body'] = base64Encode(invalid);
+      await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(malformed)), throwsFormatException);
+    }
     final bad = saved.toJson()..['contract'] = 'old';
     await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(bad)), throwsFormatException);
     for (final entry in <String, Object?>{

@@ -82,11 +82,11 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
   /// Encode a unary call before its first network write.
   Future<CratestackPreparedCall> prepareCall(String opId, Object? input,
       {CratestackRpcCallOptions? options}) async {
-    if (_effectivePreparedKey(options?.idempotencyKey, [options?.headers])?.isNotEmpty != true || !cratestackOpContracts.containsKey(opId)) {
+    if (_effectivePreparedKey(options?.idempotencyKey, [options?.headers])?.isNotEmpty != true || opId == 'batch' || !cratestackOpContracts.containsKey(opId)) {
       throw const FormatException('A known operation and idempotency key are required');
     }
     final plan = _cratestackCompactBegin(this, compact, format, opId,
-      idempotencyKey: options?.idempotencyKey);
+      idempotencyKey: _effectivePreparedKey(options?.idempotencyKey, [options?.headers]));
     final wire = await _buildPost('/rpc/${Uri.encodeComponent(opId)}', input,
       accept: _acceptForUnary, options: options, idempotent: true, compact: plan);
     return _prepareSnapshot(wire, opId, plan?._selector, format);
@@ -100,6 +100,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
         final parts = uri.pathSegments;
         if (parts.length < 2 || parts[parts.length - 2] != 'rpc') return null;
         final op = parts.last;
+        if (op == 'batch') return null;
         if (uri.path != _resolveUri(baseUri, '/rpc/${Uri.encodeComponent(op)}', null).path) return null;
         return op;
       }, abort, authorization);

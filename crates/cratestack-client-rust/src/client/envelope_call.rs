@@ -91,6 +91,9 @@ where
                 envelope.media_type(),
             )
             .await?;
+        if let Some(call) = prepared {
+            call.restore_identity_headers(&mut header_map)?;
+        }
         // What is bound is what the request carries: the caller's headers
         // and the authorizer's included.
         let bound = bound_headers(&header_map)?;

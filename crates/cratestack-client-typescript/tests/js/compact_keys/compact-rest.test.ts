@@ -168,4 +168,19 @@ describe.each([
     expect(sent).toHaveLength(0);
   });
 
+  it("preserves absent and present conditional headers across fresh defaults", async () => {
+    const { fetchFn, sent } = transport(() => plainResponse({}));
+    let defaults: Record<string, string> = {};
+    const runtime = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn, headers: () => defaults });
+    const saved = await runtime.prepare("POST", "/widgets", { body: {}, headers: { "idempotency-key": "original" } });
+    defaults = { "idempotency-key": "replacement", "if-match": "new-etag", authorization: "fresh" };
+    await runtime.executePrepared(saved);
+    expect(sent[0]?.headers.get("idempotency-key")).toBe("original");
+    expect(sent[0]?.headers.get("if-match")).toBeNull();
+    expect(sent[0]?.headers.get("authorization")).toBe("fresh");
+    const bad = { ...saved, headers: saved.headers.filter(([name]) => name !== "idempotency-key") };
+    await expect(runtime.executePrepared(bad)).rejects.toThrow();
+    expect(sent).toHaveLength(1);
+  });
+
 });

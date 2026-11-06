@@ -119,7 +119,8 @@ where
                 content_type,
             )
             .await?;
-        if prepared.is_some() {
+        if let Some(call) = prepared {
+            call.restore_identity_headers(&mut header_map)?;
             // An authorizer may supply credentials, but cannot change the
             // media types bound to the saved inner request.
             header_map.insert(

@@ -497,6 +497,158 @@ _CompactCall? _cratestackCompactBegin(
   return _CompactCall._(hooks, memory, op, selector, sendCompact, stream);
 }
 
+// Shared single-item CBOR structural walker.
+const int _cratestackCborMaxDepth = 256;
+
+/// The offset just past the item starting at [offset], or `null` when more
+/// bytes are needed. Throws a [FormatException] for bytes no further data can
+/// make valid.
+int? _cratestackSkipCborItem(Uint8List bytes, int offset, int depth) {
+  if (depth > _cratestackCborMaxDepth) {
+    throw const FormatException('cbor-seq item is nested too deeply');
+  }
+  if (offset >= bytes.length) {
+    return null;
+  }
+  final initial = bytes[offset];
+  final major = initial >> 5;
+  final info = initial & 0x1f;
+  final cursor = offset + 1;
+
+  if (major == 7) {
+    return _cratestackSkipSimple(bytes, cursor, info);
+  }
+  if (info == 31) {
+    if (major == 0 || major == 1 || major == 6) {
+      throw FormatException('major type $major cannot be indefinite-length');
+    }
+    return _cratestackSkipIndefinite(bytes, cursor, major, depth);
+  }
+  final argument = _cratestackReadArgument(bytes, cursor, info);
+  if (argument == null) {
+    return null;
+  }
+  final (value, next) = argument;
+  switch (major) {
+    case 0:
+    case 1:
+      return next;
+    case 2:
+    case 3:
+      final end = next + value;
+      return end > bytes.length ? null : end;
+    case 4:
+      return _cratestackSkipItems(bytes, next, value, depth);
+    case 5:
+      return _cratestackSkipItems(bytes, next, value * 2, depth);
+    default:
+      return _cratestackSkipCborItem(bytes, next, depth + 1);
+  }
+}
+
+int? _cratestackSkipItems(Uint8List bytes, int start, int count, int depth) {
+  var cursor = start;
+  for (var i = 0; i < count; i++) {
+    final end = _cratestackSkipCborItem(bytes, cursor, depth + 1);
+    if (end == null) {
+      return null;
+    }
+    cursor = end;
+  }
+  return cursor;
+}
+
+int? _cratestackSkipIndefinite(Uint8List bytes, int start, int major, int depth) {
+  var cursor = start;
+  while (true) {
+    if (cursor >= bytes.length) {
+      return null;
+    }
+    if (bytes[cursor] == 0xff) {
+      return cursor + 1;
+    }
+    if (major == 2 || major == 3) {
+      // RFC 8949 §3.2.3: chunks are definite-length strings of the same type.
+      if (bytes[cursor] >> 5 != major || (bytes[cursor] & 0x1f) == 31) {
+        throw const FormatException('malformed indefinite-length cbor string');
+      }
+    }
+    final end = _cratestackSkipCborItem(bytes, cursor, depth + 1);
+    if (end == null) {
+      return null;
+    }
+    cursor = end;
+    if (major == 5) {
+      final valueEnd = _cratestackSkipCborItem(bytes, cursor, depth + 1);
+      if (valueEnd == null) {
+        return null;
+      }
+      cursor = valueEnd;
+    }
+  }
+}
+
+int? _cratestackSkipSimple(Uint8List bytes, int cursor, int info) {
+  final int width;
+  if (info <= 23) {
+    return cursor;
+  } else if (info == 24) {
+    width = 1;
+  } else if (info == 25) {
+    width = 2;
+  } else if (info == 26) {
+    width = 4;
+  } else if (info == 27) {
+    width = 8;
+  } else if (info == 31) {
+    throw const FormatException('unexpected cbor break code');
+  } else {
+    throw FormatException('reserved cbor additional info $info');
+  }
+  return cursor + width > bytes.length ? null : cursor + width;
+}
+
+/// `(value, offsetAfterArgument)`, or `null` when the argument's bytes have
+/// not all arrived.
+(int, int)? _cratestackReadArgument(Uint8List bytes, int cursor, int info) {
+  if (info <= 23) {
+    return (info, cursor);
+  }
+  final width = switch (info) {
+    24 => 1,
+    25 => 2,
+    26 => 4,
+    27 => 8,
+    _ => throw FormatException('reserved cbor additional info $info'),
+  };
+  if (cursor + width > bytes.length) {
+    return null;
+  }
+  // Past 2^53 a length is not exactly representable on every platform, and no
+  // real frame is that large.
+  if (width == 8 && (bytes[cursor] != 0 || bytes[cursor + 1] > 0x1f)) {
+    throw const FormatException('cbor-seq item length exceeds what is supported');
+  }
+  var value = 0;
+  for (var i = 0; i < width; i++) {
+    value = value * 256 + bytes[cursor + i];
+  }
+  return (value, cursor + width);
+}
+
+/// `(tagNumber, headerLength)` when [item] starts with a CBOR tag, else
+/// `null`. Reads only the tag header, never the tagged content.
+(int, int)? _cratestackReadLeadingTag(Uint8List item) {
+  if (item.isEmpty || item[0] >> 5 != 6) {
+    return null;
+  }
+  try {
+    return _cratestackReadArgument(item, 1, item[0] & 0x1f);
+  } on FormatException {
+    return null;
+  }
+}
+
 /// A versioned, caller-owned request snapshot. Persist [toJson] before send.
 /// It contains inner wire bytes, never a transport's sealed envelope.
 final class CratestackPreparedCall {
@@ -557,6 +709,7 @@ CratestackPreparedCall _prepareSnapshot(
   Object owner, CratestackPreparedCall call, Uri baseUri,
   CratestackCompactHooks? hooks, CratestackWireFormat format,
   String? Function(String, Uri) resolveOp, Future<void>? abort, String? authorization,
+  {bool useRustTransport = false}
 ) {
   final data = call._data;
   try {
@@ -600,7 +753,10 @@ CratestackPreparedCall _prepareSnapshot(
     if (bodyText != null && base64Encode(body!) != bodyText) throw const FormatException('Invalid prepared body');
     if (body != null && contentType == null) throw const FormatException('Missing prepared content type');
     if (body != null && format == CratestackWireFormat.json) jsonDecode(utf8.decode(body));
-    if (data['version'] != 1 || (body?.length ?? 0) > 8 * 1024 * 1024 ||
+    if (body != null && format == CratestackWireFormat.cbor && _cratestackSkipCborItem(body, 0, 0) != body.length) {
+      throw const FormatException('Invalid prepared CBOR');
+    }
+    if (!const ['POST', 'PUT', 'PATCH', 'DELETE'].contains(method) || data['version'] != 1 || (body?.length ?? 0) > 8 * 1024 * 1024 ||
         uri.scheme != baseUri.scheme || uri.authority != baseUri.authority ||
         (baseUri.path.isNotEmpty && !uri.path.startsWith('${baseUri.path.replaceAll(RegExp(r'/+$'), '')}/')) ||
         data['format'] != (format == CratestackWireFormat.json ? 'json' : 'cbor') ||
@@ -621,7 +777,9 @@ CratestackPreparedCall _prepareSnapshot(
       op, selector, false, false,
     );
     return (CratestackHttpRequest(method: method, uri: uri, headers: headers,
-      body: body, abort: abort), plan);
+      body: body, abort: abort, extra: <String, Object?>{
+        if (useRustTransport) 'cratestackUseRustTransport': true,
+      }), plan);
   } on FormatException { rethrow; } catch (_) {
     throw const FormatException('Invalid prepared call');
   }
@@ -1064,6 +1222,16 @@ String? _cratestackRestOp(String method, String path) {
   return best?.op;
 }
 
+String? _preparedRestOp(String method, String path, String basePath) {
+  if (!const ['POST', 'PUT', 'PATCH', 'DELETE'].contains(method)) return null;
+  final prefix = basePath.replaceAll(RegExp(r'/+$'), '');
+  if (!path.startsWith('$prefix/')) return null;
+  final tail = path.substring(prefix.length);
+  final op = _cratestackRestOp(method, tail);
+  if (op == null || _pathSegments(tail).length != _pathSegments(op.substring(op.indexOf(' ') + 1)).length) return null;
+  return op;
+}
+
 /// The REST adapter, written once over a [CratestackHttpTransport].
 ///
 /// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
@@ -1084,6 +1252,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
     required this.baseUri,
     this.format = CratestackWireFormat.cbor,
     this.useRustTransport = false,
+    this.preparedBasePath = '/api',
     this.compact,
   });
 
@@ -1100,6 +1269,9 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
   /// [CratestackHttpRequest.extra] (never on the wire), for a host
   /// interceptor that routes marked requests through the Rust runtime.
   final bool useRustTransport;
+
+  /// Generated service prefix used to validate prepared request routes.
+  final String preparedBasePath;
 
   /// Opts the adapter into compact wire keys (CBOR only; see
   /// [CratestackCompactHooks]). `null`, the default, keeps the wire exactly
@@ -1120,8 +1292,10 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
   Future<CratestackPreparedCall> prepare(
     CratestackRequest request, {CratestackCallOptions? options}
   ) async {
+    final expectedOp = _preparedRestOp(request.method, request.path, preparedBasePath);
+    if (expectedOp == null) throw const FormatException('Invalid prepared route');
     final (wire, plan, op) = await _prepareRequest(request, options);
-    if (_effectivePreparedKey(options?.idempotencyKey, [request.headers, options?.headers])?.isNotEmpty != true || op == null) {
+    if (op != expectedOp || _effectivePreparedKey(options?.idempotencyKey, [request.headers, options?.headers])?.isNotEmpty != true || op == null) {
       throw const FormatException('A known operation and idempotency key are required');
     }
     return _prepareSnapshot(wire, op, plan?._selector, format);
@@ -1133,8 +1307,8 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
       (method, uri) {
         final prefix = baseUri.path.replaceAll(RegExp(r'/+$'), '');
         if (!uri.path.startsWith('$prefix/')) return null;
-        return _cratestackRestOp(method, uri.path.substring(prefix.length));
-      }, abort, authorization);
+        return _preparedRestOp(method, uri.path.substring(prefix.length), preparedBasePath);
+      }, abort, authorization, useRustTransport: useRustTransport);
     return _decodeResponse(await transport.send(wire), plan);
   }
 

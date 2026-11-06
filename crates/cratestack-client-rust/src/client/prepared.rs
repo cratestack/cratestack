@@ -58,6 +58,25 @@ impl PreparedCall {
         Ok(call)
     }
 
+    pub(super) fn restore_identity_headers(
+        &self,
+        headers: &mut reqwest::header::HeaderMap,
+    ) -> Result<(), ClientError> {
+        for name in ["idempotency-key", "if-match"] {
+            headers.remove(name);
+            if let Some(saved) = self
+                .headers
+                .iter()
+                .find(|h| h.name.eq_ignore_ascii_case(name))
+            {
+                let value = reqwest::header::HeaderValue::from_str(&saved.value)
+                    .map_err(|e| bad(e.to_string()))?;
+                headers.insert(reqwest::header::HeaderName::from_static(name), value);
+            }
+        }
+        Ok(())
+    }
+
     /// Final inner bytes; these are preserved across every attempt.
     pub fn payload(&self) -> &[u8] {
         &self.body

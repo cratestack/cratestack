@@ -20,6 +20,8 @@ business payloads. The same key with changed input is still a conflict.
   unsupported for prepared calls and rejected during preparation.
 - Dart: call the HTTP adapter's `prepare` or `prepareCall`, persist `toJson`,
   restore with `CratestackPreparedCall.fromJson`, and call `executePrepared`.
+  If the generated client uses a custom REST base path, configure the same
+  `preparedBasePath` on its adapter for route validation.
 
 Snapshots freeze the inner bytes, media type, route, key, conditional write
 header, and contract information. Only `Idempotency-Key` and `If-Match` are

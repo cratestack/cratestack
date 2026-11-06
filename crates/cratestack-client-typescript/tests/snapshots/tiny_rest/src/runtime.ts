@@ -330,12 +330,13 @@ export class CratestackRuntime {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(prepared.method) || routes.opOf(prepared.method, prepared.path) !== prepared.op ||
       this.url(prepared.path).split("?")[0] !== prepared.url.split("?")[0] ||
       (prepared.body !== null && new TextEncoder().encode(prepared.body).length > 8 * 1024 * 1024)) throw new Error("invalid prepared route or body");
+    const saved = new Headers(prepared.headers);
+    if (!saved.get("Idempotency-Key")) throw new Error("invalid prepared key");
     const headers = new Headers(await resolveHeaders(this.defaultHeaders));
-    for (const [key, value] of new Headers(prepared.headers)) headers.set(key, value);
-    if (!headers.get("Idempotency-Key")) throw new Error("invalid prepared key");
+    for (const name of ["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"]) headers.delete(name);
+    for (const [key, value] of saved) headers.set(key, value);
     const compact = await this.compact?.begin(prepared.method, prepared.path, headers.get("Idempotency-Key") ?? undefined);
     if (headers.has("Cratestack-Contract") && compact === undefined) throw new Error("compact decoder unavailable");
-    const saved = new Headers(prepared.headers);
     const expected = new Headers();
     if (compact !== undefined) compact.applyHeaders(expected, prepared.body !== null);
     const contentType = saved.get("content-type");

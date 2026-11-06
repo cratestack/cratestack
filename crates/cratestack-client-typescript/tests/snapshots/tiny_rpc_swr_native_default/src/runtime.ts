@@ -17,6 +17,7 @@ import { terminalStreamLink } from "./stream-terminal.js";
 import { encodeBinaryAsJson, encodeWireFields } from "./models.js";
 import { createCborCodec } from "@cratestack/cbor";
 import { RpcCompactSession } from "./compact.js";
+import { skipItem } from "./cbor-item.js";
 import type { RpcCompactCall } from "./compact.js";
 
 /** Serializable unary request, prepared before its first network attempt. */
@@ -607,12 +608,15 @@ export class CratestackRpcRuntime {
     const bytes = Uint8Array.from(atob(prepared.bodyBase64), (char) => char.charCodeAt(0));
     if (bytes.length > 8 * 1024 * 1024 || btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")) !== prepared.bodyBase64) throw new Error("invalid prepared body");
     if (prepared.codec === "application/json") JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-    const headers = await this.buildHeaders(prepared.headers);
-    const idempotencyKey = headers.get("Idempotency-Key");
+    else if (skipItem(bytes, 0) !== bytes.length) throw new Error("invalid prepared CBOR");
+    const saved = new Headers(prepared.headers);
+    const idempotencyKey = saved.get("Idempotency-Key");
     if (!idempotencyKey) throw new Error("invalid prepared key");
+    const headers = await this.buildHeaders();
+    for (const name of ["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"]) headers.delete(name);
+    for (const [name, value] of saved) headers.set(name, value);
     const compact = await this.compact?.begin(prepared.op, codec, "unary", idempotencyKey);
     if (headers.has("Cratestack-Contract") && compact === undefined) throw new Error("compact decoder unavailable");
-    const saved = new Headers(prepared.headers);
     const expected = new Headers();
     if (compact !== undefined) compact.applyHeaders(expected);
     const contentType = saved.get("content-type");
