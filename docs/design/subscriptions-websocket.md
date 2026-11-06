@@ -359,12 +359,87 @@ checks, `and`/`or`/`not` over the model's own scalar fields), evaluated in memor
 evaluator. A relation filter is refused at open with `invalid_argument`.
 
 A filter is checked against the event's row: the post-image for create and update, the pre-image for
-delete. One consequence: a row that is *updated out of* the filter produces no event for that
-subscriber, so the subscriber's copy goes stale. The pre-image already exists for audit on the
-update path loads a pre-image today, but only when `@@audit` is on (`query/write/update.rs:91`).
-Loading it for every `@@subscribe` model as well costs one extra read per update, and makes
-"left the filter" events (`ModelEvent { operation: Updated, matches: false }`) buildable.
-Decision O3.
+delete. A row that is *updated out of* the filter would then produce no event, and the subscriber's
+copy would go stale. Decision O3 first left it so; **O3 is reversed (2026-11-06)**: the subscriber is
+sent a *filter-exit event*.
+
+**How it is built.** The update path already read a pre-image for `@@audit`. It now reads it for an
+`@@subscribe` model that emits `updated` as well: **one extra round trip per update** of such a model,
+shared with audit when both are on (`fetch_before_image`). The read takes the lock the `UPDATE` is going
+to take, up front: `FOR UPDATE` when the update sets the primary key or a unique column (`@unique`,
+`@@unique`, recorded on the descriptor as `unique_columns`), else `FOR NO KEY UPDATE`. A plain `FOR
+UPDATE` would conflict with the `FOR KEY SHARE` an insert into a referencing table takes, making such
+inserts wait (or deadlock, in "insert child, then update parent") for every `@@subscribe` model,
+subscribers or not. Reading under `FOR NO KEY UPDATE` before a key update would be worse: a referencing
+insert could slip in between, and the `UPDATE`, taking `FOR UPDATE` after all, would deadlock against it.
+Referencing inserts can still wait on a key update, and on the upserts' conflict probes, which take `FOR
+UPDATE` (as they did before this work). A delete's pre-image keeps `FOR UPDATE`. The pre-image rides the
+event envelope (`CratestackEventEnvelope::before`, the outbox's `payload_before` column, and so the
+backplane notification and the over-the-`NOTIFY`-limit outbox read), and the outbox row keeps it only for
+an `@@subscribe` model. Server-side `@@emit` handlers receive the envelope with `before` set. It reaches
+the subscriber's feed as `FeedEvent { event, before }` and goes on the wire only as a filter-exit event's
+`data`, below.
+
+*The outbox column.* `ensure_event_outbox_table` stays the plain per-write `CREATE TABLE IF NOT
+EXISTS` (now with `payload_before`). Reading the outbox (the drain, the large-event read) does not name
+the column (`to_jsonb(o) -> 'payload_before'`), so a table without it works. A table an earlier version
+created is upgraded separately, in its own short transaction (`ADD COLUMN IF NOT EXISTS`, so concurrent
+upgrades both succeed), on the table `to_regclass` resolves through the `search_path`, as the `INSERT`
+does. An `ALTER` waiting for its lock makes every later writer of the table queue behind it, so it gives
+up after 100 ms, runs one at a time per runtime, and after a failure is not retried for a minute. It
+runs only where the code owns its connection, at the start of an update or upsert of an `@@subscribe`
+model that opens its own transaction. A write inside a caller's transaction (`run_in_tx`) cannot take a
+second pool connection without risking a deadlock on a small pool; it checks the catalog and, while the
+column is missing, stores no pre-image: that update sends no exit event, and nothing fails. (An app that
+only updates inside its own transactions never upgrades a legacy table; add the column in a migration.)
+Events without a pre-image use an `INSERT` that does not name the column. If an `INSERT` naming it fails
+with `undefined_column`, the runtime forgets that the column exists and checks again.
+
+*Paths that send no exit event:* `update_many` (a pre-image would take a `SELECT ... FOR UPDATE` of
+every matched row, the cost its audit path declines for the same reason), Studio's routed update
+(`enqueue_event_outbox`, which stores no pre-image), and an update inside a caller's transaction
+before the column exists. Single-row updates, batch updates, and the update branch of single and batch
+upserts carry the pre-image.
+
+**What each subscriber is sent** (`route_event`, per subscriber, `Updated` events). `visible(row)` is
+"the row passes the subscriber's filter and its read policy", the checks every event passes:
+
+| `visible(post-image)` | `visible(pre-image)` | The subscriber receives |
+|---|---|---|
+| yes | any | the event as before (`matches: true`) |
+| no | yes | a filter-exit event: `operation: Updated`, `matches: false` |
+| no | no, or no pre-image | nothing |
+
+`matches` is a new field of the event. It is serialized only when `false`, so every ordinary event is
+byte-identical to before, and a payload without it reads as `true`. That does not make the feature
+invisible to an old client: it now also receives the `Updated` event of a row leaving its filter, with
+the pre-image as `data` and nothing marking it. A client that upserts on every `Updated` would
+re-insert a row that left its filter; it must read `matches` (or ignore updates it cannot place).
+
+**What a filter-exit event carries, and why.** Its `data` is the **pre-image, never the post-image**,
+projected by the subscriber's `fields` like any event.
+
+- *Nothing new is revealed.* The pre-image passed the subscriber's filter and read policy
+  (`visible(pre-image)`), so it is a row the subscriber could read and, having subscribed, normally
+  holds: it is what a `Deleted` event already carries (§5.2). The event adds one fact, that the row
+  no longer matches, and the subscriber could learn that by refetching, which is the §2.1 remedy this
+  replaces.
+- *The post-image is exactly what may not be sent.* The row left the feed because it no longer passes
+  the filter or, worse, the read policy: its new values may be ones the caller may not read. They are
+  never in the event.
+- *Typed clients keep decoding.* A key-only `data` would not decode as the model in the generated
+  Rust and Dart clients (their `data` is the whole model, as `fields` already warns). The pre-image
+  does, and carries the primary key the client needs to drop its copy.
+
+**A row that moves out of the read policy** (not only the filter) is the same event, for the same
+reason: to the subscriber the row is gone, as if deleted, and its copy would otherwise go on showing a
+row it may no longer see. Nothing distinguishes the two causes on the wire, so an exit never says
+*why* the row left. A subscriber that was never allowed to read the pre-image (`visible(pre-image)`
+false) gets nothing, so a row entering and leaving a policy it never satisfied is silent. A policy
+that probes a relation is decided against the database as it is now, for the pre-image as for the
+post-image.
+
+**`operations`.** An exit is an `updated` event: a feed that excludes `updated` gets none.
 
 ## 6. The WebSocket binding
 
@@ -793,7 +868,7 @@ cratestack-skills companions (CLAUDE.md, "Docs and skills parity").
 | S5b | **WebTransport binding.** Starts with a time-boxed interop spike: each O8 candidate against current Chrome, Firefox and Safari (Playwright drives all three) on draft negotiation, protocol negotiation, datagrams, migration. Then `cratestack-webtransport` (L4) with the `WtAcceptor` seam, session, control stream, stream-per-subscription adapter, CONNECT/`Init` auth, Origin, 0-RTT refusal, limits, `extension webtransport`, dev certificates via `serverCertificateHashes`. CI: a browser interop job, and a multi-replica test with a write on A observed over WebTransport on B. | S5a; independent of S5, so S5 and S5b can land in either order |
 | S5c | **`@datagram` subscriptions** (§6a.7). | S5b |
 | S6 | **Clients**: Rust, TS (links, swr, react-query), Dart (riverpod; Flutter native over the Rust client); `transport: "auto"` WT → WS → SSE; an `examples/realtime-chat` exercising topics, a model feed and all three bindings, including a forced-fallback test with UDP blocked; docs (including §6a.6's deployment requirements) and skills. | S5, S5b |
-| S7 | Later, each gated on a concrete case: `RedisBackplane`, `@topic` shorthand, filter-exit events (O3), unary over WS/WT (§6.7). | — |
+| S7 | Later, each gated on a concrete case: `RedisBackplane`, `@topic` shorthand, unary over WS/WT (§6.7). (Filter-exit events, O3, were built on 2026-11-06.) | — |
 
 Because WebTransport is a production requirement, S5b may go ahead of S5. The only thing they share
 is S5a. S6 is listed last for dependency order only.
@@ -912,12 +987,30 @@ The rest:
 - **REST**: `GET /<plural>/$subscribe` (`model_subscribe_route`), same dispatcher, same SSE wire.
   `@@subscribe` no longer requires `transport rpc`. Its route descriptor is
   `MODEL_<SNAKE>_SUBSCRIBE_GET`, so REST's op/route parity (`op_contract_parity`) covers it.
-- **O3 decided: no filter-exit events.** A row updated out of a subscriber's filter produces no
-  event for it, and the subscriber's copy goes stale. This is documented, and the §2.1 refetch loop
-  is the remedy. The pre-image read stays `@@audit`-only.
+- **O3 decided: no filter-exit events.** A row updated out of a subscriber's filter produced no
+  event for it, and the subscriber's copy went stale; the §2.1 refetch loop was the remedy. The
+  pre-image read stayed `@@audit`-only. **Reversed 2026-11-06, at the maintainer's request; see the
+  filter-exit block below.**
 - Tests: `rpc_subscribe_read_policy/filters.rs` (filter, projection, operations, on SSE and the
   dispatcher, and every refusal) and `rpc_subscribe_read_policy/rest.rs` (a REST schema's feed, its
   filter, its anonymous refusal and its paging refusal).
+
+**Filter-exit events (as built, 2026-11-06; reverses O3).** An update that moves a row out of a
+subscriber's filter or read policy sends that subscriber `matches: false`, with the row as it last
+matched (§5.3: design, security argument and `update_many` limit).
+- **Server**: the pre-image is read for `@@subscribe` models on update (`fetch_before_image`, shared
+  with `@@audit`, under the lock the `UPDATE` will take), stored in the outbox's new `payload_before`
+  column (upgraded outside write transactions, with a backoff) and carried on the envelope.
+  `route_event` decides per subscriber, on the same filter and read policy checks.
+- **Clients**: `ModelEvent.matches` in the generated Rust client (the core type), `matches?: boolean`
+  in TypeScript, `CratestackModelEvent.matches` in Dart (default `true`). Packages without a
+  subscription op are byte-identical.
+- Tests: `rpc_subscribe_read_policy/filter_exit.rs` (a row out of a filter, out of the read policy,
+  neither, a stranger with its subscribe status checked, the dispatcher), `filter_exit_paths.rs`
+  (single update, batch update, batch upsert and single upsert on an `@@audit` + `@@subscribe` model;
+  the `FOR KEY SHARE NOWAIT` lock probes, including a unique-column update), `outbox_upgrade.rs` (a
+  legacy table, a two-schema `search_path`, a table that could not be upgraded still draining and
+  serving large events) and `route_event`'s unit tests.
 
 **S4 status (as built, 2026-11-01).** Subscription procedures and topics, on every binding.
 - **Grammar (§3.2, §3.4)**: `subscription procedure name(args: T): Item` and
@@ -1246,7 +1339,7 @@ The rest:
   (simpler, and a surprising gap).
 - **O3. Filter-exit events**: add `matches: false` updates from a pre-image read, or document the
   staleness and leave it to the §2.1 refetch loop. **Decided (S3): document the staleness**;
-  filter-exit events stay in S7.
+  filter-exit events stay in S7. **Reversed 2026-11-06, at the maintainer's request: built** (§5.3).
 - **O4. `extension websocket { }`** (proposed, matches extensions.md) or feature-only.
   **Decided (S5): the extension, as proposed.**
 - **O5. Unary over WS**: keep gated (proposed) or schedule with S5. **Decided (S5): gated.**

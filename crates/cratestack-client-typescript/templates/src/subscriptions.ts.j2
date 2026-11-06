@@ -79,6 +79,13 @@ export interface ModelEvent<T> {
   model: string;
   operation: "Created" | "Updated" | "Deleted";
   occurred_at: string;
+  /**
+   * `false` on a filter-exit event: an update moved the row out of the feed's
+   * filter (or out of your read access), and `data` is the row as you last saw
+   * it, never the new values. Drop it from your copy. Absent (the server
+   * sends it only when `false`) means `true`: test `matches === false`.
+   */
+  matches?: boolean;
   data: T;
 }
 

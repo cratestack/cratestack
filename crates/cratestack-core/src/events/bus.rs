@@ -154,6 +154,7 @@ mod tests {
             operation,
             occurred_at: chrono::Utc::now(),
             data: serde_json::json!({"id": 1}),
+            before: None,
         }
     }
 

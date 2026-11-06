@@ -8,6 +8,7 @@ mod columns;
 mod defaults;
 mod embedded;
 mod generated;
+mod unique;
 
 use cratestack_core::{EnumDecl, Field, Model, TypeDecl};
 use quote::quote;
@@ -23,6 +24,7 @@ use columns::collect_column_lists;
 use defaults::collect_create_defaults;
 use embedded::collect_embedded_defaults;
 use generated::collect_generated_defaults;
+use unique::unique_column_names;
 
 pub(crate) fn generate_model_descriptor(
     model: &Model,
@@ -128,6 +130,10 @@ pub(crate) fn generate_model_descriptor(
         .contains(&cratestack_core::ModelVerb::Subscribe)
         .then(|| quote! { .with_subscribed() });
 
+    let unique_columns = unique_column_names(model);
+    let unique = (!unique_columns.is_empty())
+        .then(|| quote! { .with_unique_columns(&[#(#unique_columns),*]) });
+
     Ok(quote! {
         pub const #descriptor_ident: ::cratestack::ModelDescriptor<#model_ident, #primary_key_type> =
             ::cratestack::ModelDescriptor::new(
@@ -160,7 +166,8 @@ pub(crate) fn generate_model_descriptor(
             )
             .with_generated_defaults(&[#(#generated_defaults),*])
             #embedded_defaults
-            #subscribed;
+            #subscribed
+            #unique;
     })
 }
 

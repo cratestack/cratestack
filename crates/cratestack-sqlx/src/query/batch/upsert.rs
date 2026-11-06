@@ -45,12 +45,21 @@ where
         let emits_updated = self.descriptor.emits(ModelEventKind::Updated);
         let audit_enabled = self.descriptor.audit_enabled;
 
+        // Before the transaction takes a connection (`outbox_upgrade.rs`).
+        self.runtime
+            .upgrade_event_outbox(self.descriptor, emits_updated)
+            .await;
+
         // A savepoint of the `@isolation` transaction when there is one
         // (docs/design/procedure-isolation.md §4).
         let (per_item, audit_events) = crate::bound::in_write_tx!(self.runtime, |tx| async {
             if emits_created || emits_updated {
                 ensure_event_outbox_table(&mut **tx).await?;
             }
+            let keep = self
+                .runtime
+                .keeps_before(&mut **tx, self.descriptor, emits_updated)
+                .await?;
             if audit_enabled {
                 ensure_audit_table(self.runtime, &mut **tx).await?;
             }
@@ -65,7 +74,7 @@ where
                     input,
                     ctx,
                     emits_created,
-                    emits_updated,
+                    (emits_updated, keep),
                     audit_enabled,
                 )
                 .await?;

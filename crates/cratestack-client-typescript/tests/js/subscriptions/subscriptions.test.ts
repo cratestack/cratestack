@@ -63,6 +63,23 @@ describe("SSE", () => {
     expect(calls[0]).toBe("http://api.test/api/rpc/subscribe/model.Note.subscribe?operations=created");
   });
 
+  it("delivers a filter-exit event with its matches flag", async () => {
+    const exit = { ...event, operation: "Updated", matches: false };
+    const client = new CratestackClient("http://api.test", {
+      fetch: sse([
+        'event: ready\ndata: {"id":1,"ready":{}}\n\n',
+        `event: message\ndata: ${JSON.stringify({ id: 2, next: event })}\n\n`,
+        `event: message\ndata: ${JSON.stringify({ id: 3, next: exit })}\n\n`,
+      ]),
+      subscriptions: { transport: "sse" },
+    });
+    const items = [];
+    for await (const item of client.notes.subscribe({})) items.push(item);
+    // Absent on the wire (a server that predates exits) reads as undefined, not false.
+    expect(items.map((item) => item.matches)).toEqual([undefined, false]);
+    expect(items[1]!.operation).toBe("Updated");
+  });
+
   it("throws the terminal error and the refusal", async () => {
     const client = new CratestackClient("http://api.test", {
       fetch: sse([

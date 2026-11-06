@@ -16,8 +16,9 @@ pub(crate) async fn outbox_envelope_json(
     event_id: uuid::Uuid,
 ) -> Result<String, CratestackError> {
     let row = sqlx::query_as::<_, EventOutboxRow>(
-        "SELECT event_id, model, operation, occurred_at, payload, attempts, last_error \
-         FROM cratestack_event_outbox WHERE event_id = $1",
+        "SELECT o.event_id, o.model, o.operation, o.occurred_at, o.payload, \
+                to_jsonb(o) -> 'payload_before' AS payload_before, o.attempts, o.last_error \
+         FROM cratestack_event_outbox o WHERE o.event_id = $1",
     )
     .bind(event_id)
     .fetch_one(pool)

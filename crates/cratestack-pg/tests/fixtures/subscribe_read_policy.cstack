@@ -22,7 +22,34 @@ model SubNote {
   @@allow("read", ownerId == auth().id)
   @@deny("read", archived)
   @@allow("create", auth() != null)
-  @@emit(created)
+  @@allow("update", ownerId == auth().id)
+  @@emit(created, updated)
+  @@subscribe
+}
+
+// A unique column: changing it takes `FOR UPDATE`, not `FOR NO KEY UPDATE`.
+model SubKeyed {
+  id Int @id
+  code String @unique
+  n Int
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@emit(created, updated)
+  @@subscribe
+}
+
+// Audited as well as subscribed: both read the row before an update, once.
+model SubAudited {
+  id Int @id
+  body String
+
+  @@audit
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@emit(created, updated)
   @@subscribe
 }
 

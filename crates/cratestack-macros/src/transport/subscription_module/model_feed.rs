@@ -74,6 +74,12 @@ pub(super) fn generate(
             ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
             ::cratestack::CratestackError,
         > {
+            // The columns a policy and a filter are decided on, of one row.
+            fn values_of(
+                record: &super::models::#model_ident,
+            ) -> Vec<::cratestack::SqlColumnValue> {
+                vec![#(#policy_values),*]
+            }
             let descriptor = &super::models::#descriptor;
             let record_columns: &[&str] = &[#(#policy_columns),*];
             let feed_query = feed_query(
@@ -110,20 +116,30 @@ pub(super) fn generate(
             let pool = db.pool().clone();
             let expires_at = ctx.expires_at();
             let FeedQuery { operations, filter, fields } = feed_query;
+            let filter = ::std::sync::Arc::new(filter);
             let feed = ::cratestack::__private::model_feed(
                 stream,
-                move |event: &::cratestack::ModelEvent<super::models::#model_ident>| {
-                    let record = &event.data;
-                    let values = vec![#(#policy_values),*];
-                    // The subscriber's own filter first: it needs no query.
-                    let wanted = operations.as_ref().is_none_or(|ops| ops.contains(&event.operation))
-                        && ::cratestack::__private::filter_matches(&filter, &values);
-                    let (pool, ctx) = (pool.clone(), ctx.clone());
+                move |event: ::cratestack::__private::FeedEvent<super::models::#model_ident>| {
+                    let wanted = operations
+                        .as_ref()
+                        .is_none_or(|ops| ops.contains(&event.event.operation));
+                    let (pool, ctx, filter) = (pool.clone(), ctx.clone(), filter.clone());
                     async move {
-                        if !wanted {
-                            return Ok(false);
-                        }
-                        ::cratestack::__private::record_readable(&pool, allow, deny, &values, &ctx).await
+                        // The post-image, or for a filter-exit event the
+                        // pre-image: each is decided the same way.
+                        ::cratestack::__private::route_event(
+                            event,
+                            wanted,
+                            |record| ::cratestack::__private::filter_matches(&filter, &values_of(record)),
+                            |record| {
+                                let values = values_of(record);
+                                let (pool, ctx) = (&pool, &ctx);
+                                async move {
+                                    ::cratestack::__private::record_readable(pool, allow, deny, &values, ctx).await
+                                }
+                            },
+                        )
+                        .await
                     }
                 },
             );
