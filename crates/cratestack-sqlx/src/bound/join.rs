@@ -34,7 +34,7 @@ const JOIN_SAVEPOINT: &str = "cratestack_isolated_join";
 /// Never retries and never produces `TransactionAborted`: a retriable
 /// failure taints the outer attempt, which rolls back and re-runs the whole
 /// thing — this call included. On `Err` the savepoint is rolled back and
-/// the audit events queued inside it are dropped with its writes.
+/// the audit events and topic publishes queued inside it are dropped with its writes.
 pub(crate) async fn join_bound<F, Fut, T>(
     runtime: &SqlxRuntime,
     bound: &BoundTx,
@@ -81,7 +81,7 @@ where
         bound,
         finished: false,
     };
-    let mark = bound.audit_mark();
+    let mark = bound.mark();
     let begun = statement(bound, "SAVEPOINT", JOIN_SAVEPOINT).await;
     bound.observe(&begun);
     if let Err(error) = begun {
@@ -100,7 +100,7 @@ where
             }
         },
         Err(error) => {
-            bound.truncate_audit(mark);
+            bound.truncate(mark);
             let rolled_back = match statement(bound, "ROLLBACK TO SAVEPOINT", JOIN_SAVEPOINT).await
             {
                 Ok(()) => statement(bound, "RELEASE SAVEPOINT", JOIN_SAVEPOINT).await,
@@ -174,21 +174,4 @@ fn poison(bound: &BoundTx, cause: &CratestackError) {
          rolled back",
         cause.code(),
     )));
-}
-
-impl BoundTx {
-    /// How many audit events are queued, to drop the ones a rolled-back
-    /// joined call queued ([`Self::truncate_audit`]).
-    fn audit_mark(&self) -> usize {
-        self.audit_events
-            .lock()
-            .map(|events| events.len())
-            .unwrap_or(0)
-    }
-
-    fn truncate_audit(&self, mark: usize) {
-        if let Ok(mut events) = self.audit_events.lock() {
-            events.truncate(mark);
-        }
-    }
 }

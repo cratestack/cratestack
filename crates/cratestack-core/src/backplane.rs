@@ -2,9 +2,11 @@
 //! how a published message reaches every replica, so a subscriber connected
 //! to one replica sees a write committed on another.
 //!
-//! This module holds the contract only. The implementations live where their
-//! runtime does: `InProcessBackplane` (one replica) and `PgNotifyBackplane`
-//! (Postgres `LISTEN`/`NOTIFY`) in `cratestack-sqlx`.
+//! This module holds the contract, the one-replica [`InProcessBackplane`]
+//! (and the [`LocalHub`] fan-out it shares with Postgres' `PgNotifyBackplane`,
+//! in `cratestack-sqlx`), and the [`TopicHandle`] a schema `topic` is read
+//! and written through. None of it touches a database, so a `db = None`
+//! schema's topics ride on it too.
 //!
 //! Delivery is at-most-once (§2.1). A backplane that may have lost messages
 //! says so with [`BackplaneMessage::Resync`], and every subscription on that
@@ -18,6 +20,14 @@ use std::sync::Arc;
 use futures_core::Stream;
 
 use crate::error::CratestackError;
+
+mod in_process;
+mod local_hub;
+mod topic;
+
+pub use in_process::InProcessBackplane;
+pub use local_hub::{LocalHub, SUBSCRIPTION_BUFFER_CAPACITY};
+pub use topic::TopicHandle;
 
 /// One delivery on a backplane channel.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,3 +86,6 @@ pub trait SubscriptionBackplane: Send + Sync + 'static {
         false
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -3,7 +3,7 @@
 use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelEventKind};
 
 use crate::audit::{
-    RunInTxOutcome, build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_for_audit,
+    RunInTxOutcome, build_audit_event, enqueue_audit_event, ensure_audit_table, fetch_before_image,
 };
 use crate::descriptor::ensure_event_outbox_table;
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, sqlx};
@@ -88,28 +88,37 @@ where
         if audit_enabled {
             ensure_audit_table(self.runtime, &mut **tx).await?;
         }
-        let before_record = if audit_enabled {
-            fetch_for_audit(&mut **tx, self.descriptor, self.id.clone()).await?
-        } else {
-            None
-        };
-        let before_snapshot = before_record
-            .as_ref()
-            .and_then(|m| serde_json::to_value(m).ok());
+        let values = self.input.sql_values();
+        let keep = self
+            .runtime
+            .keeps_before(&mut **tx, self.descriptor, emits_event)
+            .await?;
+        let before_record = fetch_before_image(
+            &mut **tx,
+            self.descriptor,
+            self.id.clone(),
+            keep.is_some(),
+            &values,
+        )
+        .await?;
         let record =
             update_record_in_conn(tx, self.descriptor, self.id, self.input, ctx, self.if_match)
                 .await?;
         if emits_event {
-            crate::descriptor::enqueue_model_event(
+            crate::descriptor::enqueue_model_update(
                 &mut **tx,
                 self.descriptor.event_target(),
-                ModelEventKind::Updated,
                 &record,
+                before_record.as_ref(),
+                keep,
             )
             .await?;
         }
         let mut audit_event = None;
         if audit_enabled {
+            let before_snapshot = before_record
+                .as_ref()
+                .and_then(|m| serde_json::to_value(m).ok());
             let after = serde_json::to_value(&record).ok();
             let event = build_audit_event(
                 self.descriptor,

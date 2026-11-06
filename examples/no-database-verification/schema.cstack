@@ -16,3 +16,7 @@ type PingReply {
 
 procedure ping(args: PingArgs): PingReply
   @allow(auth() != null)
+
+// A topic under `db = None`: on `cratestack-pg` with its `postgres` feature
+// off, `cratestack::Topic` is the backplane-only handle (smoke.rs).
+topic PingEcho(room: String): PingReply

@@ -18,7 +18,7 @@ use cratestack_client_typescript::{TypeScriptGeneratorConfig, generate_package};
 /// Keep in lockstep with `tests/js/subscriptions/subscriptions.test.ts` — a
 /// successful vitest exit alone cannot tell a genuinely green run from an
 /// accidentally-empty one (the same guard `decimal_round_trip.rs` uses).
-const EXPECTED_PASSING: &str = "5 passed";
+const EXPECTED_PASSING: &str = "6 passed";
 
 #[test]
 fn subscriptions_run_over_sse_and_a_socket() {

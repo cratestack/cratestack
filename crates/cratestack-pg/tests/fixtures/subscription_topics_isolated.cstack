@@ -1,0 +1,33 @@
+// A `topic` published from an `@isolation` procedure
+// (`tests/subscription_topics_isolated.rs`).
+
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+type RoomArgs {
+  roomId String
+}
+
+type ChatMessage {
+  roomId String
+  body String
+}
+
+/// A room's messages, on every replica.
+topic RoomMessage(roomId: String): ChatMessage
+
+mutation procedure post(args: RoomArgs): ChatMessage
+  @isolation("serializable")
+  @allow(auth() != null)
+
+/// Gives the generated builder its `with_backplane`.
+subscription procedure roomMessages(args: RoomArgs): ChatMessage
+  @allow(auth() != null)

@@ -24,10 +24,16 @@ include_server_schema!("tests/fixtures/subscribe_read_policy.cstack", db = Postg
 
 #[path = "rpc_subscribe_read_policy/dispatcher.rs"]
 mod dispatcher;
+#[path = "rpc_subscribe_read_policy/filter_exit.rs"]
+mod filter_exit;
+#[path = "rpc_subscribe_read_policy/filter_exit_paths.rs"]
+mod filter_exit_paths;
 #[path = "rpc_subscribe_read_policy/filters.rs"]
 mod filters;
 #[path = "rpc_subscribe_read_policy/listener.rs"]
 mod listener;
+#[path = "rpc_subscribe_read_policy/outbox_upgrade.rs"]
+mod outbox_upgrade;
 #[path = "rpc_subscribe_read_policy/replicas.rs"]
 mod replicas;
 #[path = "rpc_subscribe_read_policy/rest.rs"]

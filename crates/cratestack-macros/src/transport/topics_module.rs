@@ -3,9 +3,11 @@
 //! `cratestack::Topic<ChatMessage>` on the runtime's subscription backplane,
 //! to `publish`, `publish_in_tx` or `subscribe`.
 //!
-//! A topic is server-internal: no op, no route, no policy. Only `db =
-//! Postgres` has a backplane to carry it, so a topic under `db = None` is a
-//! compile error rather than a handle with nowhere to publish.
+//! A topic is server-internal: no op, no route, no policy. Under `db =
+//! Postgres` the handle is `cratestack-pg`'s `Topic` (with `publish_in_tx`),
+//! under `db = None` the backplane-only one from `cratestack-api`; the
+//! generated code is the same either way, only where the backplane lives
+//! differs.
 
 use std::collections::BTreeSet;
 
@@ -20,17 +22,41 @@ pub(crate) fn generate_topics_module(
     types: &[TypeDecl],
     enum_names: &BTreeSet<&str>,
     postgres: bool,
-) -> Result<proc_macro2::TokenStream, String> {
+) -> proc_macro2::TokenStream {
     if topics.is_empty() {
-        return Ok(proc_macro2::TokenStream::new());
+        return proc_macro2::TokenStream::new();
     }
-    if !postgres {
-        return Err(format!(
-            "topic `{}` needs a subscription backplane, and `db = None` has none yet: \
-             return the subscription procedure's stream from your own source instead",
-            topics[0].name,
-        ));
-    }
+    // Only `db = Postgres` has `@isolation` attempts to bind a topic to
+    // (`IsolatedCratestack::topics()`); `db = None` has no sqlx at all.
+    let (backplane, attempt_field, attempt_ctor, attempt_init, bind) = if postgres {
+        (
+            quote! { self.runtime.backplane().clone() },
+            quote! {
+                /// Set only by `IsolatedCratestack::topics()`.
+                attempt: Option<::cratestack::__private::SqlxRuntime>,
+            },
+            quote! {
+                /// The topics of an `@isolation` procedure's attempt.
+                pub(super) fn in_attempt(runtime: ::cratestack::__private::SqlxRuntime) -> Self {
+                    Self {
+                        backplane: runtime.backplane().clone(),
+                        attempt: Some(runtime),
+                    }
+                }
+            },
+            quote! { attempt: None, },
+            quote! { .in_attempt(self.attempt.as_ref()) },
+        )
+    } else {
+        let none = proc_macro2::TokenStream::new;
+        (
+            quote! { self.backplane.clone() },
+            none(),
+            none(),
+            none(),
+            none(),
+        )
+    };
     let aliases = topics.iter().map(|topic| {
         let module = ident(&to_snake_case(&topic.name));
         // Nested one module deeper, at a procedure module's depth, so the
@@ -56,11 +82,11 @@ pub(crate) fn generate_topics_module(
         quote! {
             #docs
             pub fn #module(&self, #key: #key_ty) -> ::cratestack::Topic<#module::Payload> {
-                ::cratestack::Topic::new(self.backplane.clone(), #module::NAME, #key)
+                ::cratestack::Topic::new(self.backplane.clone(), #module::NAME, #key) #bind
             }
         }
     });
-    Ok(quote! {
+    quote! {
         /// The schema's `topic` declarations: typed messages carried to
         /// every replica by the subscription backplane.
         pub mod topics {
@@ -70,9 +96,12 @@ pub(crate) fn generate_topics_module(
             #[derive(Clone)]
             pub struct Topics {
                 backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                #attempt_field
             }
 
             impl Topics {
+                #attempt_ctor
+
                 #(#accessors)*
             }
 
@@ -80,12 +109,13 @@ pub(crate) fn generate_topics_module(
                 /// This schema's topics, on the runtime's backplane.
                 pub fn topics(&self) -> Topics {
                     Topics {
-                        backplane: self.runtime.backplane().clone(),
+                        backplane: #backplane,
+                        #attempt_init
                     }
                 }
             }
         }
-    })
+    }
 }
 
 #[cfg(test)]
@@ -100,22 +130,31 @@ type Message {
 topic Room(roomId: String): Message
 "#;
 
-    fn generate(postgres: bool) -> Result<String, String> {
+    fn generate(postgres: bool) -> String {
         let schema = cratestack_parser::parse_schema(SCHEMA).expect("parses");
         super::generate_topics_module(&schema.topics, &schema.types, &BTreeSet::new(), postgres)
-            .map(|tokens| tokens.to_string())
+            .to_string()
     }
 
     #[test]
     fn a_topic_gets_a_typed_accessor_on_the_backplane() {
-        let code = generate(true).unwrap();
+        let code = generate(true);
         assert!(code.contains("pub fn room (& self , room_id : & str) -> :: cratestack :: Topic < room :: Payload >"), "{code}");
         assert!(code.contains("self . runtime . backplane ()"));
+        assert!(
+            code.contains(". in_attempt (self . attempt . as_ref ())"),
+            "{code}"
+        );
     }
 
     #[test]
-    fn a_topic_without_a_database_is_an_error() {
-        let error = generate(false).unwrap_err();
-        assert!(error.contains("`db = None` has none yet"), "{error}");
+    fn a_topic_without_a_database_reads_the_runtimes_own_backplane() {
+        let code = generate(false);
+        assert!(
+            code.contains("backplane : self . backplane . clone ()"),
+            "{code}"
+        );
+        assert!(!code.contains("self . runtime"), "{code}");
+        assert!(!code.contains("attempt"), "{code}");
     }
 }

@@ -39,12 +39,12 @@ fn pick_backend(has_url: bool, use_testcontainers: bool, require: bool) -> Backe
     }
 }
 
-pub(super) struct TestPg {
+pub(crate) struct TestPg {
     pub pool: PgPool,
     _container: Option<ContainerAsync<Postgres>>,
 }
 
-pub(super) async fn connect_or_skip() -> Option<TestPg> {
+pub(crate) async fn connect_or_skip() -> Option<TestPg> {
     let require = std::env::var("CRATESTACK_REQUIRE_DB").is_ok();
     let url = std::env::var("CRATESTACK_TEST_DATABASE_URL").ok();
     let backend = pick_backend(

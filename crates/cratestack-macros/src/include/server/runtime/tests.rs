@@ -14,7 +14,7 @@ use super::build_runtime_block;
 
 #[test]
 fn postgres_runtime_block_still_takes_a_pgpool_builder() {
-    let generated = build_runtime_block(ServerDb::Postgres, &[], &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::Postgres, &[], &[], &[], &[], false).to_string();
 
     assert!(
         generated.contains("fn builder (pool : :: cratestack :: sqlx :: PgPool)"),
@@ -27,7 +27,7 @@ fn postgres_runtime_block_still_takes_a_pgpool_builder() {
 
 #[test]
 fn none_runtime_block_builder_takes_no_pool_parameter() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false).to_string();
 
     assert!(
         generated.contains("fn builder () -> CratestackBuilder"),
@@ -38,7 +38,7 @@ fn none_runtime_block_builder_takes_no_pool_parameter() {
 
 #[test]
 fn none_runtime_block_never_mentions_pgpool_or_sqlx() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false).to_string();
 
     assert!(
         !generated.contains("PgPool"),
@@ -57,7 +57,7 @@ fn none_runtime_block_never_mentions_pgpool_or_sqlx() {
 
 #[test]
 fn none_runtime_block_cratestack_type_is_a_zero_field_marker() {
-    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[]).to_string();
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], false).to_string();
 
     // Not `struct Cratestack { runtime: ... }`, not `struct Cratestack {
     // pool: Option<PgPool> }` — a bare marker with no fields at all, so
@@ -65,4 +65,13 @@ fn none_runtime_block_cratestack_type_is_a_zero_field_marker() {
     assert!(generated.contains("pub struct Cratestack ;"));
     assert!(!generated.contains("fn events"));
     assert!(!generated.contains("fn views"));
+}
+
+#[test]
+fn none_runtime_block_carries_a_backplane_only_for_topics() {
+    let generated = build_runtime_block(ServerDb::None, &[], &[], &[], &[], true).to_string();
+
+    assert!(generated.contains("pub struct Cratestack { backplane :"));
+    assert!(generated.contains("fn with_backplane"));
+    assert!(!generated.contains("sqlx"), "{generated}");
 }

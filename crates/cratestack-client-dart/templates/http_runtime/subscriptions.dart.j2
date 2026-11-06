@@ -40,6 +40,7 @@ final class CratestackModelEvent<T> {
     required this.model,
     required this.operation,
     required this.occurredAt,
+    this.matches = true,
     required this.data,
   });
 
@@ -54,6 +55,7 @@ final class CratestackModelEvent<T> {
       model: map['model'] as String,
       operation: map['operation'] as String,
       occurredAt: DateTime.parse(map['occurred_at'] as String),
+      matches: map['matches'] as bool? ?? true,
       data: decodeData(map['data']),
     );
   }
@@ -64,6 +66,12 @@ final class CratestackModelEvent<T> {
   /// `Created`, `Updated` or `Deleted`.
   final String operation;
   final DateTime occurredAt;
+
+  /// `false` on a filter-exit event: an update moved the row out of the feed's
+  /// filter (or out of the caller's read access), and [data] is the row as the
+  /// caller last saw it, never the new values. Drop it from the local copy.
+  /// The server sends the field only when `false`; absent means `true`.
+  final bool matches;
   final T data;
 }
 

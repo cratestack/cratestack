@@ -92,8 +92,8 @@ pub use context::{
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
 pub use backplane::{
-    BackplaneFuture, BackplaneMessage, BackplaneReceiver, SubscriptionBackplane,
-    model_event_channel, topic_channel,
+    BackplaneFuture, BackplaneMessage, BackplaneReceiver, InProcessBackplane,
+    SubscriptionBackplane, TopicHandle, model_event_channel, topic_channel,
 };
 pub use client_contract::{
     AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ContractLock, Generation,

@@ -34,10 +34,11 @@ impl SqlxRuntime {
             .await
             .map_err(cratestack_error_from_sqlx)?;
         let rows = sqlx::query_as::<_, EventOutboxRow>(
-            "SELECT event_id, model, operation, occurred_at, payload, attempts, last_error \
-             FROM cratestack_event_outbox \
-             WHERE delivered_at IS NULL \
-             ORDER BY occurred_at ASC, event_id ASC \
+            "SELECT o.event_id, o.model, o.operation, o.occurred_at, o.payload, \
+                    to_jsonb(o) -> 'payload_before' AS payload_before, o.attempts, o.last_error \
+             FROM cratestack_event_outbox o \
+             WHERE o.delivered_at IS NULL \
+             ORDER BY o.occurred_at ASC, o.event_id ASC \
              FOR UPDATE SKIP LOCKED",
         )
         .fetch_all(&mut *tx)
