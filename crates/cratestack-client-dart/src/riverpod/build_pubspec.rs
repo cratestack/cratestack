@@ -8,8 +8,8 @@
 //! plus the `riverpod_generator`/`build_runner` dev dependencies this
 //! preset's `part '<file>.g.dart'` directives need are riverpod-only, so
 //! they get their own template instead of a conditional branch inside the
-//! shared one. `flutter_riverpod`/`cbor`/`dio`/`flutter_lints` stay
-//! exactly as `pubspec.yaml.j2` already pins them — this is additive, not
+//! shared one. `flutter_riverpod`/`cratestack_cbor`/`dio`/`flutter_lints`
+//! stay exactly as `pubspec.yaml.j2` already pins them — this is additive, not
 //! a redesign.
 use crate::config::{DartGeneratorConfig, DartPreset};
 use crate::package_floors::{
@@ -20,10 +20,9 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct PubspecFileContext {
     pub(crate) package_name: String,
-    /// `config.native_cbor` (issue #563) — see
-    /// `crate::views::TemplateContext::native_cbor`'s doc comment; this
-    /// preset needs its own copy because it needs its own `pubspec.yaml`
-    /// (see this module's doc), not because the flag's meaning differs.
+    /// Always `true` — see `crate::views::TemplateContext::native_cbor`;
+    /// kept so a custom riverpod `pubspec.yaml.j2` that still tests it
+    /// renders the `cratestack_cbor` branch.
     pub(crate) native_cbor: bool,
     /// See `crate::views::TemplateContext::cratestack_cbor_version_requirement`.
     pub(crate) cratestack_cbor_version_requirement: String,
@@ -48,15 +47,11 @@ pub(crate) fn build_pubspec_file(
     // cratestack#779: a floor, not `^{CARGO_PKG_VERSION}` — same
     // constant this preset's `default` sibling emits
     // (`crate::context::build_template_context`), for the same reason.
-    let cratestack_cbor_version_requirement = if config.native_cbor {
-        requirement(CRATESTACK_CBOR_FLOOR)
-    } else {
-        String::new()
-    };
+    let cratestack_cbor_version_requirement = requirement(CRATESTACK_CBOR_FLOOR);
     let is_fespalier = config.preset == DartPreset::Fespalier;
     PubspecFileContext {
         package_name: config.library_name.clone(),
-        native_cbor: config.native_cbor,
+        native_cbor: true,
         cratestack_cbor_version_requirement,
         // cratestack#754: API-compatibility floors, deliberately not
         // `^{CARGO_PKG_VERSION}` — see `crate::package_floors`.

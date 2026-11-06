@@ -9,7 +9,7 @@
 //! | run | fixture | vitest file |
 //! |---|---|---|
 //! | REST, default + `--swr` layouts | `bigint_scalar.cstack` | `bigint.test.ts`, `bigint-swr.test.ts` |
-//! | RPC on the pure-TS codec, plus `@cratestack/link-batch` | `bigint_scalar_rpc.cstack` | `bigint-rpc.test.ts` |
+//! | RPC on the pure-TS codec (`codec: jsonRpcCodec`), plus `@cratestack/link-batch` | `bigint_scalar_rpc.cstack` | `bigint-rpc.test.ts` |
 //! | REST `computedParams` | `bigint_computed_params.cstack` | `bigint-computed-rest.test.ts` |
 //! | RPC `computedParams` | `bigint_computed_params_rpc.cstack` | `bigint-computed-rpc.test.ts` |
 //!
@@ -56,7 +56,6 @@ fn rpc_client_holds_bigint_exactly_and_batches_it_as_a_string() {
         "tests/fixtures/bigint_scalar_rpc.cstack",
         TypeScriptGeneratorConfig {
             package_name: "bigint-round-trip-rpc-check".to_owned(),
-            native_cbor: false,
             ..TypeScriptGeneratorConfig::default()
         },
         &["bigint-rpc.test.ts"],
@@ -85,7 +84,6 @@ fn rpc_computed_params_convert_a_bigint_before_json_stringify() {
         "tests/fixtures/bigint_computed_params_rpc.cstack",
         TypeScriptGeneratorConfig {
             package_name: "bigint-computed-rpc-check".to_owned(),
-            native_cbor: false,
             ..TypeScriptGeneratorConfig::default()
         },
         &["bigint-computed-rpc.test.ts"],

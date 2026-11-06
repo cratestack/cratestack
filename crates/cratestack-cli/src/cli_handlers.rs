@@ -27,7 +27,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             preset,
             fespalier_ref,
             run_build_runner,
-            no_native_cbor,
         } => handle_generate_dart(
             schema,
             out,
@@ -38,10 +37,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             preset,
             fespalier_ref,
             run_build_runner,
-            // The CLI surface is inverted (`--no-native-cbor`, defaulting to
-            // off i.e. native-on) but the generator API stays in terms of
-            // `native_cbor` — only this boundary converts between the two.
-            !no_native_cbor,
         )?,
         Command::GenerateTypeScript {
             schema,
@@ -54,7 +49,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             swr,
             refine,
             tanstack,
-            no_native_cbor,
             rtk,
         } => handle_generate_typescript(
             schema,
@@ -67,11 +61,6 @@ pub(crate) fn run(cli: Cli) -> Result<()> {
             swr,
             refine,
             tanstack,
-            // Same inversion boundary as `GenerateDart`'s `no_native_cbor`
-            // above: the CLI surface is `--no-native-cbor` (default off,
-            // i.e. native-on), but the generator API stays in terms of
-            // `native_cbor`.
-            !no_native_cbor,
             rtk,
         )?,
         Command::GenerateWiremock {
@@ -145,7 +134,6 @@ fn handle_generate_dart(
     preset: DartPresetArg,
     fespalier_ref: Option<String>,
     run_build_runner: bool,
-    native_cbor: bool,
 ) -> Result<()> {
     if fespalier_ref.is_some() && preset != DartPresetArg::Fespalier {
         bail!("--fespalier-ref only applies to --preset fespalier");
@@ -160,7 +148,6 @@ fn handle_generate_dart(
             template_dir,
             preset: preset.into(),
             schema_sha256,
-            native_cbor,
             fespalier_ref: fespalier_ref
                 .unwrap_or_else(|| cratestack_client_dart::DEFAULT_FESPALIER_REF.to_owned()),
         },
@@ -197,7 +184,6 @@ fn handle_generate_typescript(
     swr: bool,
     refine: bool,
     tanstack: bool,
-    native_cbor: bool,
     rtk: bool,
 ) -> Result<()> {
     let parsed = parse_schema_or_render(&schema)?;
@@ -213,7 +199,6 @@ fn handle_generate_typescript(
             refine,
             tanstack,
             schema_sha256,
-            native_cbor,
             rtk,
         },
     )?;

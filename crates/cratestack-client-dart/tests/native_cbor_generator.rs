@@ -1,37 +1,22 @@
-//! `native_cbor` (issue #563): gates whether the generated runtime uses
-//! the published `cratestack_cbor` package (flutter_rust_bridge natively,
-//! wasm-bindgen on web) instead of pure-Dart `package:cbor`. Mirrors the
-//! shape of `cratestack-client-typescript`'s `--tanstack`/`--refine`/`--swr`
-//! tests: a genuine reads-the-real-default guard, a presence/shape check
-//! with the flag off (CLI: `--no-native-cbor`), and an over-emission guard
-//! proving the flag only touches the two files that legitimately depend on
-//! the codec choice (`pubspec.yaml`, `lib/src/runtime.dart`).
+//! Every generated package encodes and decodes CBOR through the published
+//! `cratestack_cbor` package (flutter_rust_bridge natively, wasm-bindgen on
+//! web, issue #563). This was once a choice (`native_cbor`, and the CLI's
+//! `--no-native-cbor` opt-out to pure-Dart `package:cbor`); the pure-Dart
+//! mode is gone, so this file pins the one remaining output: the
+//! `cratestack_cbor` dependency in `pubspec.yaml`, its import and cached
+//! async codec in `lib/src/runtime.dart`, and no trace of `package:cbor`.
 //!
-//! **Native is now the default** (`DartGeneratorConfig::DEFAULT_NATIVE_CBOR`
-//! is `true` — see its doc comment for the history). The original reason it
-//! was opt-in (`cratestack_cbor` supported only Linux x86_64/Android/web, so
-//! defaulting would crash generated clients on iOS) and the reason it
-//! stayed opt-in after that (the published package lagging the repo) are
-//! both closed: cratestack#563 landed Windows, macOS and iOS support, and
-//! `cratestack_cbor` 0.8.7 carrying that matrix is published on pub.dev.
-//! Only Linux arm64 remains unsupported, reached via `--no-native-cbor`.
-//! `default_config_uses_native_cbor` below reads `DartGeneratorConfig::
-//! default()` directly (not a hardcoded bool) so it fails if the constant
-//! is ever flipped back without updating this test.
-//!
-//! Structural coverage only (source-level assertions) — the real-compiler
+//! Structural coverage only (source-level assertions). The real-compiler
 //! proof (`flutter pub get` + `flutter analyze` + a functional HTTP round
 //! trip through the real `cratestack_cbor` codec, both REST and RPC, both
-//! happy path and the async exception-decode path) originally ran only
-//! once by hand against a generated package while landing this issue
-//! (cratestack#647); `just verify-dart` now re-runs that proof on every CI
-//! run, from the `native_cbor_echo{,_rpc}.cstack` and
-//! `native_cbor_echo_{rest,rpc}_test.dart` fixtures — see that recipe's own
-//! comment. This crate has no existing `tests/*_tsc.rs`-style "shell out to
-//! the real toolchain" `cargo test` pattern for Dart (unlike
-//! `cratestack-client-typescript`); `just verify-dart` is this crate's
-//! equivalent gate, wired into the `dart-verify` CI job, and it runs
-//! against fixtures on disk rather than as a `cargo test`.
+//! happy path and the async exception-decode path) runs under
+//! `just verify-dart`, from the `native_cbor_echo{,_rpc}.cstack` and
+//! `native_cbor_echo_{rest,rpc}_test.dart` fixtures, and the codec cache's
+//! retry behaviour under `tests/native_cbor_codec_memoization.rs`.
+
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use cratestack_client_dart::{
     DartGeneratorConfig, DartPreset, GeneratedDartPackage, generate_package,
@@ -150,218 +135,96 @@ fn literal_matches_the_real_floor() {
 
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
 
-/// The check this replaces (`without_the_flag_output_matches_the_default_config_exactly`)
-/// compared `generate(fixture, DartPreset::Default, false)` against itself —
-/// both arguments hardcoded `false` — so it never actually constructed
-/// `DartGeneratorConfig::default()` and would pass regardless of what
-/// `DEFAULT_NATIVE_CBOR` was set to. This version reads the real default by
-/// constructing `DartGeneratorConfig::default()` and asserting on its
-/// `native_cbor` field and its generated output directly, so flipping
-/// `DEFAULT_NATIVE_CBOR` back to `false` fails this test.
+const PRESETS: [DartPreset; 3] = [
+    DartPreset::Default,
+    DartPreset::Riverpod,
+    DartPreset::Fespalier,
+];
+
+/// Every preset, both transports: the pubspec depends on `cratestack_cbor`
+/// at the floor, and on nothing from `package:cbor`. The riverpod and
+/// fespalier presets render their own `pubspec.yaml` from a separate
+/// template, so each is checked, not inferred from the default's.
 #[test]
-fn default_config_uses_native_cbor() {
+fn every_pubspec_depends_on_cratestack_cbor_and_not_on_package_cbor() {
     for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let fixture_path = format!("tests/fixtures/{fixture}.cstack");
-        let schema = cratestack_parser::parse_schema_file(&fixture_path)
-            .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
-
-        let config = DartGeneratorConfig::default();
-        assert!(
-            config.native_cbor,
-            "{fixture}: DartGeneratorConfig::default().native_cbor must be true \
-             (DEFAULT_NATIVE_CBOR) now that cratestack_cbor 0.8.7 covers every platform but \
-             Linux arm64"
-        );
-
-        let package = generate_package(&schema, &config)
-            .unwrap_or_else(|error| panic!("{fixture}: generation should succeed: {error}"));
-
-        let pubspec = file(&package, "pubspec.yaml");
-        assert!(
-            pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())),
-            "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must depend on \
-             cratestack_cbor by default:\n{pubspec}"
-        );
-        assert!(
-            !pubspec.contains("cbor: ^6.5.1"),
-            "{fixture}: DartGeneratorConfig::default()'s pubspec.yaml must NOT depend on \
-             package:cbor by default:\n{pubspec}"
-        );
-
-        let runtime = file(&package, "lib/src/runtime.dart");
-        assert!(
-            runtime.contains(
-                "import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;"
-            ),
-            "{fixture}: DartGeneratorConfig::default()'s runtime.dart must import \
-             cratestack_cbor:\n{runtime}"
-        );
-        assert!(
-            !runtime.contains("package:cbor/simple.dart"),
-            "{fixture}: DartGeneratorConfig::default()'s runtime.dart must NOT import \
-             package:cbor:\n{runtime}"
-        );
-    }
-}
-
-#[test]
-fn no_native_cbor_falls_back_to_package_cbor() {
-    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let plain = generate(fixture, DartPreset::Default, false);
-
-        let pubspec = file(&plain, "pubspec.yaml");
-        assert!(
-            pubspec.contains("cbor: ^6.5.1"),
-            "{fixture}: native_cbor: false pubspec.yaml must depend on package:cbor:\n{pubspec}"
-        );
-        assert!(
-            !pubspec.contains("cratestack_cbor"),
-            "{fixture}: native_cbor: false pubspec.yaml must not mention cratestack_cbor:\n{pubspec}"
-        );
-
-        let runtime = file(&plain, "lib/src/runtime.dart");
-        assert!(
-            runtime.contains("import 'package:cbor/simple.dart' as cbor;"),
-            "{fixture}: native_cbor: false runtime.dart must import package:cbor:\n{runtime}"
-        );
-        assert!(
-            !runtime.contains("cratestack_cbor"),
-            "{fixture}: native_cbor: false runtime.dart must not mention cratestack_cbor:\n{runtime}"
-        );
-    }
-}
-
-#[test]
-fn the_flag_swaps_the_pubspec_dependency_and_the_runtime_import() {
-    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let package = generate(fixture, DartPreset::Default, true);
-
-        let pubspec = file(&package, "pubspec.yaml");
-        assert!(
-            pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())),
-            "{fixture}: pubspec.yaml should depend on cratestack_cbor, pinned to this crate's \
-             version (lockstep with dart-packages/cratestack_cbor's own version):\n{pubspec}"
-        );
-        assert!(
-            !pubspec.contains("cbor: ^6.5.1"),
-            "{fixture}: pubspec.yaml must not also depend on package:cbor under the flag:\n{pubspec}"
-        );
-
-        let runtime = file(&package, "lib/src/runtime.dart");
-        assert!(
-            runtime.contains(
-                "import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;"
-            ),
-            "{fixture}: runtime.dart should import cratestack_cbor:\n{runtime}"
-        );
-        assert!(
-            !runtime.contains("package:cbor/simple.dart"),
-            "{fixture}: runtime.dart must not also import package:cbor under the flag:\n{runtime}"
-        );
-        assert!(
-            runtime.contains("Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec()"),
-            "{fixture}: runtime.dart should define the cached async codec accessor:\n{runtime}"
-        );
-        assert!(
-            runtime.contains(
-                "Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async {"
-            ),
-            "{fixture}: _encodeBody must be async (cratestack_cbor's createCborCodec() is \
-             async):\n{runtime}"
-        );
-    }
-}
-
-#[test]
-fn the_flag_is_additive_only_pubspec_and_runtime_differ() {
-    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let plain = generate(fixture, DartPreset::Default, false);
-        let native = generate(fixture, DartPreset::Default, true);
-
-        assert_eq!(
-            plain.files.len(),
-            native.files.len(),
-            "{fixture}: native_cbor must not add or remove files, only change contents"
-        );
-
-        for plain_file in &plain.files {
-            let counterpart = native
-                .files
-                .iter()
-                .find(|candidate| candidate.file_name == plain_file.file_name)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{fixture}: native_cbor: true dropped {}",
-                        plain_file.file_name
-                    )
-                });
-            if matches!(
-                plain_file.file_name.as_str(),
-                "pubspec.yaml" | "lib/src/runtime.dart"
-            ) {
-                assert_ne!(
-                    plain_file.contents, counterpart.contents,
-                    "{fixture}: {} was expected to differ under native_cbor: true but didn't",
-                    plain_file.file_name
-                );
-                continue;
-            }
-            assert_eq!(
-                plain_file.contents, counterpart.contents,
-                "{fixture}: native_cbor: true changed {} — it must only touch pubspec.yaml and \
-                 lib/src/runtime.dart",
-                plain_file.file_name
+        for preset in PRESETS {
+            let package = generate(fixture, preset);
+            let pubspec = file(&package, "pubspec.yaml");
+            assert!(
+                pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())),
+                "{fixture}/{preset:?}: pubspec.yaml must depend on cratestack_cbor at the \
+                 floor:\n{pubspec}"
             );
+            assert!(
+                !pubspec.contains("cbor: ^"),
+                "{fixture}/{preset:?}: pubspec.yaml must not depend on package:cbor:\n{pubspec}"
+            );
+        }
+    }
+}
+
+/// Every preset, both transports: one runtime, importing `cratestack_cbor`,
+/// with the cached async codec accessor, and no `package:cbor` call or the
+/// `cratestackNormalizeWire` shim that existed only to reshape its maps. The
+/// riverpod presets reuse the default preset's `lib/src/runtime.dart`
+/// verbatim (see `crate::riverpod`'s module doc), which this also holds to.
+#[test]
+fn every_runtime_imports_cratestack_cbor_and_nothing_from_package_cbor() {
+    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
+        for preset in PRESETS {
+            let package = generate(fixture, preset);
+            let runtime = file(&package, "lib/src/runtime.dart");
+            let label = format!("{fixture}/{preset:?}");
+            for needle in [
+                "import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;",
+                "Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec()",
+                "Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async {",
+            ] {
+                assert!(
+                    runtime.contains(needle),
+                    "{label}: runtime.dart lacks `{needle}`:\n{runtime}"
+                );
+            }
+            for needle in ["package:cbor", "cbor.cbor.", "cratestackNormalizeWire"] {
+                assert!(
+                    !runtime.contains(needle),
+                    "{label}: runtime.dart still names `{needle}`:\n{runtime}"
+                );
+            }
         }
     }
 }
 
 /// cratestack#1204: the codec work lives in one fragment (`http_runtime/
-/// codec.dart.j2`) shared by the REST and RPC adapters, and is async whichever
-/// CBOR implementation backs it — so the old "sync under `package:cbor`, async
-/// under `cratestack_cbor`" fork (and its six `throw await _exceptionFromDio`
-/// call sites) is gone. What the flag still changes is exactly the CBOR calls.
+/// codec.dart.j2`) shared by the REST and RPC adapters, and is async — so the
+/// old "sync under `package:cbor`, async under `cratestack_cbor`" fork (and
+/// its six `throw await _exceptionFromDio` call sites) is gone.
 #[test]
-fn the_flag_changes_only_the_cbor_calls_inside_the_shared_codec_fragment() {
+fn the_shared_codec_fragment_goes_through_one_cached_cratestack_cbor_codec() {
     for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let plain = file(
-            &generate(fixture, DartPreset::Default, false),
-            "lib/src/runtime.dart",
-        )
-        .to_owned();
-        let native = file(
-            &generate(fixture, DartPreset::Default, true),
-            "lib/src/runtime.dart",
-        )
-        .to_owned();
-
-        for (name, runtime) in [("plain", &plain), ("native", &native)] {
-            assert!(
-                runtime.contains(
-                    "Future<Object?> _decodeBody(Uint8List bytes, String? contentType, String owner) async {"
-                ),
-                "{fixture}/{name}: decoding must be async on both codecs:\n{runtime}"
-            );
-            assert!(
-                !runtime.contains("_exceptionFromDio"),
-                "{fixture}/{name}: the Dio-specific error mapper must be gone:\n{runtime}"
-            );
-            assert_eq!(
-                runtime.matches("class _Cratestack").count(),
-                0,
-                "{fixture}/{name}: no private adapter copies"
-            );
-        }
-
-        assert!(plain.contains("cratestackNormalizeWire(cbor.cbor.decode(bytes))"));
-        assert!(plain.contains("Uint8List.fromList(cbor.cbor.encode(body))"));
-        assert!(!plain.contains("_cratestackCborCodec"));
-
-        assert!(native.contains("jsonDecode(codec.decodeJson(bytes))"));
-        assert!(native.contains("codec.encodeJson(jsonEncode(body))"));
-        assert!(native.contains("final codec = await _cratestackCborCodec();"));
+        let package = generate(fixture, DartPreset::Default);
+        let runtime = file(&package, "lib/src/runtime.dart");
+        assert!(
+            runtime.contains(
+                "Future<Object?> _decodeBody(Uint8List bytes, String? contentType, String owner) async {"
+            ),
+            "{fixture}: decoding must be async:\n{runtime}"
+        );
+        assert!(
+            !runtime.contains("_exceptionFromDio"),
+            "{fixture}: the Dio-specific error mapper must be gone:\n{runtime}"
+        );
         assert_eq!(
-            native
+            runtime.matches("class _Cratestack").count(),
+            0,
+            "{fixture}: no private adapter copies"
+        );
+        assert!(runtime.contains("jsonDecode(codec.decodeJson(bytes))"));
+        assert!(runtime.contains("codec.encodeJson(jsonEncode(body))"));
+        assert!(runtime.contains("final codec = await _cratestackCborCodec();"));
+        assert_eq!(
+            runtime
                 .matches("Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;")
                 .count(),
             1,
@@ -372,32 +235,66 @@ fn the_flag_changes_only_the_cbor_calls_inside_the_shared_codec_fragment() {
     }
 }
 
+/// `native_cbor` is still in the template context, as a constant `true`: a
+/// `--template-dir` template written when it was a choice, still testing
+/// `{% if native_cbor %}`, must keep rendering its `cratestack_cbor` branch.
+/// Templates render with minijinja's default lenient undefined, so a removed
+/// variable would not error, it would silently take the `package:cbor`
+/// branch. Checked for both pubspec templates (the riverpod preset's has its
+/// own context) and a runtime one.
 #[test]
-fn riverpod_preset_pubspec_gates_the_same_way_as_the_default_preset() {
-    for fixture in [REST_FIXTURE, RPC_FIXTURE] {
-        let plain = generate(fixture, DartPreset::Riverpod, false);
-        let native = generate(fixture, DartPreset::Riverpod, true);
+fn a_custom_template_that_still_tests_native_cbor_takes_the_cratestack_cbor_branch() {
+    const PROBE: &str = "{% if native_cbor %}cratestack_cbor{% else %}package:cbor{% endif %}";
+    let cases = [
+        (DartPreset::Default, "pubspec.yaml.j2", "pubspec.yaml"),
+        (
+            DartPreset::Default,
+            "rest-library.dart.j2",
+            "lib/tiny_rest_client.dart",
+        ),
+        (
+            DartPreset::Riverpod,
+            "riverpod/pubspec.yaml.j2",
+            "pubspec.yaml",
+        ),
+    ];
+    for (preset, template, output) in cases {
+        let template_dir = project_tmp_path("native-cbor-probe");
+        let template_path = template_dir.join(template);
+        fs::create_dir_all(template_path.parent().expect("template parent"))
+            .expect("template dir should be created");
+        fs::write(&template_path, PROBE).expect("probe template should write");
 
-        let plain_pubspec = file(&plain, "pubspec.yaml");
-        assert!(plain_pubspec.contains("cbor: ^6.5.1"));
-        assert!(!plain_pubspec.contains("cratestack_cbor"));
+        let package = generate_with(REST_FIXTURE, preset, Some(template_dir.clone()));
+        assert_eq!(
+            file(&package, output),
+            "cratestack_cbor",
+            "{preset:?}: a custom {template} testing `native_cbor` took the wrong branch"
+        );
 
-        let native_pubspec = file(&native, "pubspec.yaml");
-        assert!(native_pubspec.contains(&format!("cratestack_cbor: '{}'", expected_requirement())));
-        assert!(!native_pubspec.contains("cbor: ^6.5.1"));
-
-        // The riverpod preset reuses `lib/src/runtime.dart` verbatim from
-        // the default preset's own generation (see `crate::riverpod`'s
-        // module doc) — so it must gate exactly the same way, from the
-        // same template, not a second independently-maintained copy.
-        let plain_runtime = file(&plain, "lib/src/runtime.dart");
-        let native_runtime = file(&native, "lib/src/runtime.dart");
-        assert!(plain_runtime.contains("package:cbor/simple.dart"));
-        assert!(native_runtime.contains("package:cratestack_cbor/cratestack_cbor.dart"));
+        fs::remove_dir_all(&template_dir).expect("template dir should be removable");
     }
 }
 
-fn generate(fixture_stem: &str, preset: DartPreset, native_cbor: bool) -> GeneratedDartPackage {
+fn project_tmp_path(label: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time should move forward")
+        .as_nanos();
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tmp/client-dart-tests")
+        .join(format!("{label}-{suffix}"))
+}
+
+fn generate(fixture_stem: &str, preset: DartPreset) -> GeneratedDartPackage {
+    generate_with(fixture_stem, preset, None)
+}
+
+fn generate_with(
+    fixture_stem: &str,
+    preset: DartPreset,
+    template_dir: Option<PathBuf>,
+) -> GeneratedDartPackage {
     let fixture_path = format!("tests/fixtures/{fixture_stem}.cstack");
     let schema = cratestack_parser::parse_schema_file(&fixture_path)
         .unwrap_or_else(|error| panic!("fixture {fixture_path:?} should parse: {error}"));
@@ -406,10 +303,9 @@ fn generate(fixture_stem: &str, preset: DartPreset, native_cbor: bool) -> Genera
         &DartGeneratorConfig {
             library_name: format!("{fixture_stem}_client"),
             base_path: "/api".to_owned(),
-            template_dir: None,
+            template_dir,
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor,
             ..DartGeneratorConfig::default()
         },
     )

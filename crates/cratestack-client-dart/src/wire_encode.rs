@@ -74,9 +74,10 @@ fn encode_required_scalar(expr: &str, ty: &TypeRef, enum_names: &BTreeSet<&str>)
         // ADR 0019: a `BigInt` goes on the wire as its canonical decimal
         // string. `BigInt.toString()` is base 10, never signed zero, never
         // scientific, and exact on every Dart target. It must not be left
-        // as a bare `BigInt`: `jsonEncode` throws on one, and `package:cbor`
-        // would write a CBOR integer or bignum, never the text string the
-        // server requires.
+        // as a bare `BigInt`: `jsonEncode` throws on one, and every CBOR
+        // body crosses `cratestack_cbor`'s JSON-text boundary through
+        // `jsonEncode`. A CBOR integer or bignum would not do either: the
+        // server requires the text string.
         "BigInt" => format!("{expr}.toString()"),
         // cratestack#498: `Decimal.toString()` (unlike `bigdecimal`'s
         // `Display`) never switches to scientific notation, so a value

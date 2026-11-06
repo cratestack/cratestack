@@ -1,6 +1,6 @@
 // Fixture for the cratestack#647 verification gap closure: a single echo
 // procedure, mirroring `status_override.cstack`'s shape, used to drive a
-// REAL request/response round trip through a `--native-cbor`-generated
+// REAL request/response round trip through a generated
 // REST client's actual `cratestack_cbor` codec (not just `flutter analyze`
 // typechecking it). No `@status` override here (unlike
 // `status_override.cstack`) so the identical procedure also compiles under
@@ -14,7 +14,7 @@
 // generated `lib/src/apis.dart`'s unconditional `import 'queries.dart';`
 // (and `queries.dart`'s own `import 'models.dart';`) genuinely unused,
 // which trips `flutter analyze --fatal-warnings` — a pre-existing,
-// `--native-cbor`-unrelated generator gap, not something this fixture is
+// codec-unrelated generator gap, not something this fixture is
 // trying to paper over (`status_override.cstack` sidesteps it by simply
 // never running `flutter analyze`, only `flutter test`; this fixture
 // instead gets a real analyze pass by not hitting the gap at all).

@@ -47,7 +47,6 @@ fn generate(source: &str, preset: DartPreset) -> GeneratedDartPackage {
             template_dir: None,
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )

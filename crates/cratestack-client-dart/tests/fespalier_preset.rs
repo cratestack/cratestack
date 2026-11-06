@@ -18,7 +18,6 @@ const FIXTURES: [&str; 2] = ["tiny_rest", "tiny_rpc"];
 fn try_generate(
     fixture: &str,
     preset: DartPreset,
-    native_cbor: bool,
     fespalier_ref: &str,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
     let path = format!("tests/fixtures/{fixture}.cstack");
@@ -29,15 +28,14 @@ fn try_generate(
         &DartGeneratorConfig {
             library_name: format!("{fixture}_client"),
             preset,
-            native_cbor,
             fespalier_ref: fespalier_ref.to_owned(),
             ..DartGeneratorConfig::default()
         },
     )
 }
 
-fn generate(fixture: &str, preset: DartPreset, native_cbor: bool) -> GeneratedDartPackage {
-    try_generate(fixture, preset, native_cbor, DEFAULT_FESPALIER_REF)
+fn generate(fixture: &str, preset: DartPreset) -> GeneratedDartPackage {
+    try_generate(fixture, preset, DEFAULT_FESPALIER_REF)
         .unwrap_or_else(|error| panic!("{fixture}: generation should succeed: {error}"))
 }
 
@@ -89,37 +87,34 @@ fn the_default_ref_is_the_release_the_generator_targets() {
 }
 
 #[test]
-fn no_dio_in_lib_or_the_pubspec_for_any_combination() {
+fn no_dio_in_lib_or_the_pubspec_for_either_transport() {
     for fixture in FIXTURES {
-        for native_cbor in [false, true] {
-            let package = generate(fixture, DartPreset::Fespalier, native_cbor);
-            let label = format!("{fixture}/native_cbor={native_cbor}");
-            for generated in &package.files {
-                if generated.file_name.starts_with("lib/") {
-                    assert!(
-                        !names_dio(&code_only(&generated.contents)),
-                        "{label}: {} names Dio in code",
-                        generated.file_name
-                    );
-                }
+        let package = generate(fixture, DartPreset::Fespalier);
+        for generated in &package.files {
+            if generated.file_name.starts_with("lib/") {
+                assert!(
+                    !names_dio(&code_only(&generated.contents)),
+                    "{fixture}: {} names Dio in code",
+                    generated.file_name
+                );
             }
-            let pubspec = file(&package, "pubspec.yaml");
-            assert!(
-                !pubspec.to_lowercase().contains("dio"),
-                "{label}: the pubspec names dio:\n{pubspec}"
-            );
-            assert!(
-                !has_file(&package, "lib/src/dio_transport.dart"),
-                "{label}: dio_transport.dart must not be emitted"
-            );
         }
+        let pubspec = file(&package, "pubspec.yaml");
+        assert!(
+            !pubspec.to_lowercase().contains("dio"),
+            "{fixture}: the pubspec names dio:\n{pubspec}"
+        );
+        assert!(
+            !has_file(&package, "lib/src/dio_transport.dart"),
+            "{fixture}: dio_transport.dart must not be emitted"
+        );
     }
 }
 
 #[test]
 fn the_pubspec_pins_fespalier_transport_by_git() {
     for fixture in FIXTURES {
-        let package = generate(fixture, DartPreset::Fespalier, false);
+        let package = generate(fixture, DartPreset::Fespalier);
         let pubspec = file(&package, "pubspec.yaml");
         assert!(
             pubspec.contains(
@@ -136,15 +131,15 @@ fn the_pubspec_pins_fespalier_transport_by_git() {
 
 #[test]
 fn fespalier_ref_overrides_the_pin_and_is_quoted() {
-    let package = try_generate("tiny_rest", DartPreset::Fespalier, false, "0123abcd")
+    let package = try_generate("tiny_rest", DartPreset::Fespalier, "0123abcd")
         .expect("a commit sha is a valid ref");
     assert!(file(&package, "pubspec.yaml").contains("      ref: '0123abcd'\n"));
     // A quote in the ref cannot break out of the YAML scalar.
-    let package = try_generate("tiny_rest", DartPreset::Fespalier, false, "feat/it's")
+    let package = try_generate("tiny_rest", DartPreset::Fespalier, "feat/it's")
         .expect("a branch name is a valid ref");
     assert!(file(&package, "pubspec.yaml").contains("      ref: 'feat/it''s'\n"));
     // The ref is the fespalier preset's alone.
-    let riverpod = try_generate("tiny_rest", DartPreset::Riverpod, false, "0123abcd")
+    let riverpod = try_generate("tiny_rest", DartPreset::Riverpod, "0123abcd")
         .expect("riverpod ignores the ref");
     assert!(!file(&riverpod, "pubspec.yaml").contains("0123abcd"));
 }
@@ -152,7 +147,7 @@ fn fespalier_ref_overrides_the_pin_and_is_quoted() {
 #[test]
 fn a_malformed_fespalier_ref_is_an_error() {
     for bad in ["", "v0.22 .0", "a\nb", "\t"] {
-        let error = try_generate("tiny_rest", DartPreset::Fespalier, false, bad)
+        let error = try_generate("tiny_rest", DartPreset::Fespalier, bad)
             .expect_err("a git ref has no whitespace and is not empty");
         assert!(
             matches!(error, DartGeneratorError::InvalidFespalierRef(_)),
@@ -164,7 +159,7 @@ fn a_malformed_fespalier_ref_is_an_error() {
 #[test]
 fn the_library_exports_the_fespalier_transport_not_dios() {
     for fixture in FIXTURES {
-        let package = generate(fixture, DartPreset::Fespalier, false);
+        let package = generate(fixture, DartPreset::Fespalier);
         let library = file(&package, &format!("lib/{fixture}_client.dart"));
         assert!(library.contains("export 'src/fespalier_transport.dart';"));
         assert!(!library.contains("dio_transport"));
@@ -173,7 +168,7 @@ fn the_library_exports_the_fespalier_transport_not_dios() {
 
 #[test]
 fn the_transport_maps_requests_responses_and_failures() {
-    let package = generate("tiny_rest", DartPreset::Fespalier, false);
+    let package = generate("tiny_rest", DartPreset::Fespalier);
     let transport = file(&package, "lib/src/fespalier_transport.dart");
     for needle in [
         "import 'package:fespalier_transport/fespalier_transport.dart';",
@@ -211,7 +206,7 @@ fn the_providers_default_the_adapter_to_the_http_adapter_over_the_transport() {
             "CratestackRpcAdapter",
         ),
     ] {
-        let package = generate(fixture, DartPreset::Fespalier, false);
+        let package = generate(fixture, DartPreset::Fespalier);
         let client = file(&package, "lib/src/client.dart");
         let prefix = format!("{}Client", to_camel(fixture));
         for needle in [
@@ -233,7 +228,7 @@ fn the_providers_default_the_adapter_to_the_http_adapter_over_the_transport() {
             );
         }
         // The riverpod preset keeps its unimplemented adapter provider.
-        let riverpod = generate(fixture, DartPreset::Riverpod, false);
+        let riverpod = generate(fixture, DartPreset::Riverpod);
         let riverpod_client = file(&riverpod, "lib/src/client.dart");
         assert!(!riverpod_client.contains("TransportProvider"));
         assert!(riverpod_client.contains(&format!(
@@ -260,8 +255,8 @@ fn to_camel(fixture: &str) -> String {
 #[test]
 fn fespalier_differs_from_riverpod_only_where_the_transport_shows() {
     for fixture in FIXTURES {
-        let riverpod = generate(fixture, DartPreset::Riverpod, false);
-        let fespalier = generate(fixture, DartPreset::Fespalier, false);
+        let riverpod = generate(fixture, DartPreset::Riverpod);
+        let fespalier = generate(fixture, DartPreset::Fespalier);
         let (riverpod, fespalier) = (contents(&riverpod), contents(&fespalier));
 
         let mut only_riverpod: Vec<&str> = riverpod
@@ -307,8 +302,8 @@ fn fespalier_differs_from_riverpod_only_where_the_transport_shows() {
 #[test]
 fn the_runtime_differs_from_riverpods_only_in_doc_comments() {
     for fixture in FIXTURES {
-        let riverpod = generate(fixture, DartPreset::Riverpod, false);
-        let fespalier = generate(fixture, DartPreset::Fespalier, false);
+        let riverpod = generate(fixture, DartPreset::Riverpod);
+        let fespalier = generate(fixture, DartPreset::Fespalier);
         assert_eq!(
             code_only(&strip_doc_comments(file(&riverpod, "lib/src/runtime.dart"))),
             code_only(&strip_doc_comments(file(
@@ -332,7 +327,7 @@ fn strip_doc_comments(source: &str) -> String {
 fn only_the_fespalier_preset_has_the_transport_file_and_readme_section() {
     for fixture in FIXTURES {
         for preset in [DartPreset::Default, DartPreset::Riverpod] {
-            let package = generate(fixture, preset, false);
+            let package = generate(fixture, preset);
             assert!(
                 !has_file(&package, "lib/src/fespalier_transport.dart"),
                 "{preset:?}"
@@ -342,11 +337,7 @@ fn only_the_fespalier_preset_has_the_transport_file_and_readme_section() {
                 "{preset:?}"
             );
         }
-        let readme = file(
-            &generate(fixture, DartPreset::Fespalier, false),
-            "README.md",
-        )
-        .to_owned();
+        let readme = file(&generate(fixture, DartPreset::Fespalier), "README.md").to_owned();
         for needle in [
             "CratestackFespalierTransport",
             "--preset fespalier --run-build-runner",

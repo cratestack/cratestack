@@ -24,7 +24,6 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -56,7 +55,8 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(pubspec.contains("flutter:"));
     assert!(pubspec.contains("sdk: flutter"));
     assert!(pubspec.contains("flutter_riverpod: ^3.3.1"));
-    assert!(pubspec.contains("cbor: ^6.5.1"));
+    assert!(pubspec.contains("cratestack_cbor: '"));
+    assert!(!pubspec.contains("cbor: ^"));
     assert!(pubspec.contains("dio: ^5.8.0+1"));
     assert!(pubspec.contains("flutter_lints: ^6.0.0"));
     assert!(pubspec.contains("flutter_test:"));
@@ -78,7 +78,11 @@ fn generates_runtime_based_and_riverpod_client_for_blog_schema() {
     assert!(library.contains("export 'src/runtime.dart';"));
     assert!(library.contains("export 'src/dio_transport.dart';"));
     assert!(library.contains("export 'src/apis.dart';"));
-    assert!(runtime.contains("import 'package:cbor/simple.dart' as cbor;"));
+    assert!(
+        runtime
+            .contains("import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;")
+    );
+    assert!(!runtime.contains("package:cbor"));
     // cratestack#1204: the runtime is pure Dart over the HTTP seam; Dio lives
     // in its own file, and the four `*DioAdapter` classes are gone.
     assert!(!runtime.contains("package:dio"));
@@ -650,7 +654,6 @@ procedure searchOrders(args: SearchOrdersArgs): SearchOrdersArgs
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -679,7 +682,6 @@ fn generates_real_dart_enums_for_schema_enum_fields_and_procedures() {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -768,7 +770,6 @@ fn prefers_template_override_directory_when_provided() {
             template_dir: Some(template_dir.clone()),
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -809,7 +810,6 @@ fn decimal_scalar_maps_to_a_real_decimal_type() {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -897,7 +897,6 @@ fn builder_edge_case_fields_survive_as_ordinary_constructor_fields() {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -993,7 +992,6 @@ fn list_field_constructor_and_annotation_are_unaffected_by_moving_the_builder_ou
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )

@@ -181,7 +181,8 @@ console.log("NATIVE_CBOR_BYTES_ENCODE_OK");
 }
 
 /// The other half of cratestack#820: the same `encodeWireFields` walk
-/// runs on the JSON RPC path too, so `--no-native-cbor` was broken by the
+/// runs on the JSON RPC path too (`codec: jsonRpcCodec`, then also the
+/// since-removed `--no-native-cbor` mode), which was broken by the
 /// identical cause in a different disguise.
 ///
 /// `encodeBinaryAsJson` exists precisely to turn a `Uint8Array` into the

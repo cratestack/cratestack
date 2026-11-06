@@ -1158,6 +1158,7 @@ dependencies = [
  "cratestack-sql",
  "cratestack-websocket",
  "ed25519-dalek",
+ "flate2",
  "futures-util",
  "hmac",
  "http",

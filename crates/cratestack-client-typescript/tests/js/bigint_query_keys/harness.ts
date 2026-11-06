@@ -4,8 +4,18 @@
 // (`/api/rpc/model.Counter.get`, `/api/rpc/procedure.balance`);
 // `tests/bigint_query_keys.rs` sets `B8_TRANSPORT` to say which.
 import { BigintQueryKeysClient } from "./src/client.js";
+import * as generatedRuntime from "./src/runtime.js";
 
 export const TRANSPORT: "rest" | "rpc" = process.env.B8_TRANSPORT === "rpc" ? "rpc" : "rest";
+
+/** RPC only: JSON on the wire, because `recordingFetch` answers in JSON and
+ *  the RPC runtime's default codec is the native `@cratestack/cbor` one. The
+ *  REST runtime has no codec option (and no `jsonRpcCodec` export, hence the
+ *  namespace lookup rather than a named import). */
+export const codecOption: Record<string, unknown> =
+  TRANSPORT === "rpc"
+    ? { codec: (generatedRuntime as Record<string, unknown>).jsonRpcCodec }
+    : {};
 
 /** 2^53, and the first integer a double cannot tell apart from it. */
 export const TWO_53 = 2n ** 53n;
@@ -53,7 +63,7 @@ export const recordingFetch =
 export function makeClient(): { client: BigintQueryKeysClient; sent: Sent[] } {
   const sent: Sent[] = [];
   return {
-    client: new BigintQueryKeysClient("http://example.invalid", { fetch: recordingFetch(sent) }),
+    client: new BigintQueryKeysClient("http://example.invalid", { fetch: recordingFetch(sent), ...codecOption }),
     sent,
   };
 }

@@ -46,11 +46,12 @@ into a catchable exception instead of aborting the Node process.
 
 Single-item encode/decode only — no CBOR-seq/streaming support (that's a separate concern; see
 epic #285). Since issue #746, `@cratestack/cbor` (this package's Node half, via the umbrella
-`@cratestack/cbor` re-export) **is** the default codec for a generated TypeScript RPC client —
-`--no-native-cbor` (`TypeScriptGeneratorConfig::native_cbor: false`) falls back to the
-pure-TypeScript `jsonRpcCodec`, needed on platforms this package doesn't ship a napi binary for
-(`win32-arm64` — see `napi.targets` in `package.json`). REST-transport
-generated clients are unaffected either way: the REST runtime has no codec seam at all.
+`@cratestack/cbor` re-export) **is** the codec of every generated TypeScript RPC client; the
+generator's `--no-native-cbor` JSON fallback was removed. A client can still put JSON on the wire
+by passing `codec: jsonRpcCodec`, but the generated runtime imports `@cratestack/cbor` at the
+top level, so the package must load: on a platform this package ships no napi binary for
+(`win32-arm64` — see `napi.targets` in `package.json`) a generated RPC client does not work.
+REST-transport generated clients are unaffected: the REST runtime has no codec seam at all.
 
 ## Supported platforms
 
@@ -77,7 +78,8 @@ Still **not** covered: `win32-arm64`. There is also no wasm/wasi fallback — th
 `@cratestack/cbor-node-wasm32-wasi` package, so that branch can only ever add another
 `Cannot find module` to the error chain. On an unsupported platform the loader raises the generic
 *"Cannot find native binding. npm has a bug related to optional dependencies…"* error, which
-blames npm rather than naming the real cause; `--no-native-cbor` is the escape hatch.
+blames npm rather than naming the real cause. There is no escape hatch: the generator's
+`--no-native-cbor` fallback was removed, so `win32-arm64` is unsupported for generated RPC clients.
 
 The per-platform packages above are an optimisation, not a requirement: this package's own tarball
 bundles every `.node` binary (`files: ["*.node"]`), and the loader tries the bundled
