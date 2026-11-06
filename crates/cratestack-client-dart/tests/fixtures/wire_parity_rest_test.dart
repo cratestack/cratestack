@@ -9,6 +9,13 @@
 // method, URI (path + canonical query), headers and body bytes, request by
 // request.
 //
+// The CBOR goldens are those captures in the key order the native
+// `cratestack_cbor` codec emits. It encodes through the Rust codec, which
+// sorts map keys, where the retired pure-Dart `package:cbor` kept insertion
+// order; every key and value is byte-identical to the capture, only the
+// order of map entries differs. They were re-derived when the
+// `--no-native-cbor` mode was removed (cratestack#1281).
+//
 // `just verify-dart` copies this file, `wire_parity_rest_ops.dart` and
 // `wire-golden/` into the default-preset package generated from
 // `ci_rest.cstack` (library name `dart_verify_ci_rest`).
