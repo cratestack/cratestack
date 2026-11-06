@@ -165,6 +165,7 @@ build_runner → run path.
 | [`rpc-streaming-client-rust/`](rpc-streaming-client-rust) | `include_client_schema!` | Rust client consuming the `rpc-streaming` server's cbor-seq stream through a typed, generated streaming method (`RpcStream<Tick>`) — companion to `rpc-streaming` |
 | [`realtime-chat/`](realtime-chat) | `include_server_schema!` (`transport rpc`, Postgres, `extension websocket`/`webtransport`) | A chat that is live over every binding: messages as a model feed, typing indicators on a topic behind a subscription procedure, a dev certificate for local WebTransport, and the generated clients' `"auto"` falling back WebTransport → WebSocket → SSE, proven in Chromium with UDP blocked |
 | [`rpc-client/`](rpc-client) | `include_client_schema!` (`cratestack-client` facade) | Pure RPC HTTP client consuming a `transport rpc` server — unary `BatchableCall` `.await` **and** a batched `POST /rpc/batch` round-trip via `BatchBuilder`/`queue`/`take`. Companion to `rpc-procedures`. First client example to use the pure `cratestack-client` facade |
+| [`signed-compact/`](signed-compact) | `include_server_schema!` (`transport rpc`, `db = None`) **and** `include_client_schema!` (two crates) | COSE-sealed RPC (ADR 0006) with compact wire keys under the seal: the server's `EnvelopeLayer` opts the compact payload types in, the generated client uses `with_envelope` + `with_compact_keys`; first call named -> compact answer, second call compact both ways, outer `application/cose` throughout |
 
 ```bash
 cargo run -p rpc-procedures-example
@@ -177,6 +178,10 @@ REMOTE_URL=http://localhost:3001 cargo run -p rpc-streaming-client-rust-example
 
 # rpc-client needs rpc-procedures running in another terminal:
 REMOTE_URL=http://localhost:3000 cargo run -p rpc-client-example
+
+# signed-compact: server in one terminal, client in another (port 3000)
+cargo run -p signed-compact-server
+cargo run -p signed-compact-client
 ```
 
 ## Phase G — MCP operator (standalone workspace)

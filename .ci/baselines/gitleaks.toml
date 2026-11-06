@@ -31,4 +31,16 @@ description = "Known false positives — see .ci/baselines/README.md"
 #   test-target lookup key, never a credential of any kind).
 # Expires: 2026-11-11 (90 days out; remove once cratestack#516 merges,
 #   since squash-merging collapses this commit out of main's history).
-commits = ["2358563feaa9d21f096dee38a9d041b55f368be6"]
+commits = [
+  "2358563feaa9d21f096dee38a9d041b55f368be6",
+  # cratestack#1294: `generic-api-key` flagged the published demo HMAC key of
+  # examples/signed-compact (a 32-byte string literal named `DEMO_SECRET` in
+  # server/src/lib.rs and client/src/lib.rs). It is a deliberately public,
+  # local-only example key, commented as such and overridden by
+  # `SIGNED_COMPACT_SECRET`. A later commit on the same PR (3dd7e5f) replaced
+  # the literal with `&[0x5a; 32]`, which cannot clear this commit's diff.
+  # Reason: false positive, a documented demo value, never a credential.
+  # Expires: 2027-02-04 (90 days out; remove once cratestack#1294 merges,
+  #   since squash-merging collapses this commit out of main's history).
+  "2c2cae8fe45944741516336b59e675be6cbd5537",
+]
