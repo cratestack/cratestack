@@ -1,8 +1,11 @@
 # Compact wire keys: integer field keys selected by the op contract
 
-Status: **proposal** (2026-11-06). Not accepted; no code. This doc compares four ways to stop
-repeating field names in bodies when client and server share the `.cstack` schema, and
-recommends one (§4). Nothing here changes the wire today.
+Status: **implemented** (2026-11-06). Option C (§4) was accepted by the maintainer and built in
+one change across the server, every generated client and the three bindings; §7 records the
+decisions taken. The mode is opt-in per client, so a client that does not enable it sends and
+receives exactly what it did before. This doc first compared four ways to stop repeating field
+names in bodies when client and server share the `.cstack` schema; that comparison is kept
+below as the record of why C was chosen.
 
 Scope: CBOR and JSON request and response bodies of REST routes and RPC ops (unary, batch frames,
 WS frames, `application/cbor-seq` items), sealed or not, and the Rust, Dart and TypeScript
@@ -373,6 +376,25 @@ scoped to stay inside them.
 - **O6 — the type names.** `application/vnd.cratestack.compact+cbor` and its siblings are
   placeholders. They are unregistered vendor-tree types, and nothing here depends on the exact
   spelling. Settle the names before slice 3.
+
+### Decided (2026-11-06, maintainer-delegated)
+
+- **O1 — opt-in.** Every generated client has a compact option, off by default. Off is the
+  wire as it was.
+- **O2 — framework structs stay named.** `/rpc/batch` frames, `RpcListInput`, `RpcGetInput`,
+  error bodies and the `Page` wrapper's own keys keep text keys. Only schema-declared fields
+  are numbered.
+- **O3 — outbox and audit stay named.**
+- **O6 — the names are final:** `application/vnd.cratestack.compact+cbor`, `+json` and
+  `+cbor-seq`.
+- **Adaptive requests.** A client always asks for compact responses, and sends an op's request
+  body compact only after a compact response for that op. A server without the mode therefore
+  never receives a body it cannot read.
+- **Generated Dart clients take hooks.** Their CI resolves the published `cratestack_cbor`, and
+  Dart cannot detect a missing function, so generated Dart code names no new binding API. The
+  client accepts `CratestackCompactHooks` (three function tear-offs), and an app wires them to
+  `createCompactKeys`. Generated TypeScript clients detect `createCompactKeys` on the
+  `@cratestack/cbor` module they already import, and stay named when it is absent.
 
 ## 8. Measurements
 
