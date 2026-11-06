@@ -117,9 +117,7 @@ where
     /// detects the redirect only after the redirected request has been
     /// sent: it stops the answer being accepted, not the request being
     /// re-sent. Do not put a redirecting hop in front of a browser client.
-    ///
     /// **Compact keys** adapt under the seal as on a plain call (`compact` module docs).
-    ///
     /// **Streams** ([`RpcClient::call_streaming`](crate::RpcClient), the
     /// `*_streamed` methods, subscriptions) are refused with
     /// [`EnvelopeError::StreamsUnsupported`](crate::EnvelopeError) until
