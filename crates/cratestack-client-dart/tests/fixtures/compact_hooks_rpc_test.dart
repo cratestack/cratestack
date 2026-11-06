@@ -121,6 +121,11 @@ void main() {
       idempotencyKey: 'persisted', headers: {'Authorization': 'Bearer secret', 'X-API-Key': 'secret'}));
     expect(saved.toJson().toString(), isNot(contains('secret')));
     expect(transport.requests, hasLength(1));
+    final unsafe = CratestackRpcHttpAdapter(transport, baseUri: Uri.parse('http://user:secret@127.0.0.1:9'), compact: hooks);
+    await expectLater(unsafe.prepareCall(_create, _author, options: const CratestackRpcCallOptions(idempotencyKey: 'k')), throwsFormatException);
+    final credentialUrl = saved.toJson()..['uri'] = 'http://user:secret@127.0.0.1:9/rpc/$_create';
+    await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(credentialUrl)), throwsFormatException);
+    expect(transport.requests, hasLength(1));
     await adapter.executePrepared(saved);
     final restored = CratestackPreparedCall.fromJson(saved.toJson());
     await _adapter(transport, hooks).executePrepared(restored);

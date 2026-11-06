@@ -183,4 +183,14 @@ describe.each([
     expect(sent).toHaveLength(1);
   });
 
+  it("rejects URL userinfo before preparation and execution", async () => {
+    const { fetchFn, sent } = transport(() => plainResponse({}));
+    const unsafe = new mod.CratestackRuntime("http://user:secret@x.invalid", { fetch: fetchFn });
+    await expect(unsafe.prepare("POST", "/widgets", { body: {}, headers: { "Idempotency-Key": "k" } })).rejects.toThrow();
+    const safe = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn });
+    const saved = await safe.prepare("POST", "/widgets", { body: {}, headers: { "Idempotency-Key": "k" } });
+    await expect(safe.executePrepared({ ...saved, url: saved.url.replace("//", "//user:secret@") })).rejects.toThrow();
+    expect(sent).toHaveLength(0);
+  });
+
 });

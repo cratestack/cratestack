@@ -10,7 +10,8 @@ use crate::{ClientError, RuntimeHeader};
 /// with [`Self::from_bytes`], then execute with the same service, codec, sealing
 /// mode and op contract. A changed contract is refused: this format is not an
 /// old-schema migration mechanism. Each sealed attempt gets fresh COSE claims;
-/// this object contains neither an outer seal nor authentication credentials.
+/// this object contains neither an outer seal nor authentication headers.
+/// URL userinfo is rejected; query and body data may still contain secrets.
 /// Protect journal contents like the business payloads they contain.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -26,7 +26,8 @@ business payloads. The same key with changed input is still a conflict.
 Snapshots freeze the inner bytes, media type, route, key, conditional write
 header, and contract information. Only `Idempotency-Key` and `If-Match` are
 persisted as application headers; transport media and selector headers are
-recorded separately where needed. Authentication credentials are not stored.
+recorded separately where needed. Authentication headers are not stored and URL userinfo is rejected. Query
+strings and bodies are persisted and may themselves contain secrets.
 Supply fresh credentials through the Rust authorizer, TypeScript default
 headers, or Dart's `authorization` argument or transport on every attempt.
 Rust COSE calls create a new seal and verify each response against that attempt;
@@ -43,3 +44,10 @@ UTF-8 text, complete container pairs, and a nesting limit of 256. The check
 accepts non-preferred encodings and leaves the stored bytes unchanged. It does
 not evaluate tag semantics or reject duplicate map keys; duplicate handling
 follows the receiving codec. Protect the caller-owned journal against tampering.
+
+For ordinary Rust compact-capable calls, pass `Idempotency-Key` in the per-call
+headers. A key added only by a request authorizer is rejected before network
+I/O, because compact encoding has already been chosen when that authorizer
+runs. Headers added or changed later by a custom HTTP client's defaults or middleware
+are outside the runtime's control. Such transports must preserve the frozen
+identity headers and their absence, for ordinary and prepared calls alike.

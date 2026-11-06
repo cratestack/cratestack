@@ -111,3 +111,4 @@ prepared_sealed_wire_suite!(
     "/rpc/procedure.echoOrder",
     "/rpc/{op_id}"
 );
+sealed_authorizer_pin_suite!("procedure.echoOrder", "/rpc/procedure.echoOrder");

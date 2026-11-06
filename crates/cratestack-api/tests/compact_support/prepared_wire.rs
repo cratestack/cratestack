@@ -76,3 +76,49 @@ macro_rules! prepared_sealed_wire_suite {
         }
     };
 }
+
+#[macro_export]
+macro_rules! sealed_authorizer_pin_suite {
+    ($route:expr, $path:expr) => {
+        struct SealedAuthorizerOnlyKey;
+        #[async_trait::async_trait]
+        impl cratestack_client_rust::RequestAuthorizer for SealedAuthorizerOnlyKey {
+            async fn authorize(
+                &self,
+                _: &cratestack_client_rust::AuthorizationRequest,
+            ) -> Result<Vec<(String, String)>, cratestack_client_rust::ClientError> {
+                Ok(vec![("Idempotency-Key".into(), "authorizer-key".into())])
+            }
+        }
+        #[tokio::test]
+        async fn sealed_authorizer_only_key_is_refused_before_network() {
+            use std::sync::Arc;
+            let (addr, logs) = serve_sealed(OptIn::Both).await;
+            let runtime = sealed_runtime(addr)
+                .with_contracts(schema::OP_CONTRACTS)
+                .with_compact_key_bytes(schema::KEY_TABLES, schema::OP_CONTRACTS)
+                .unwrap()
+                .with_request_authorizer(Arc::new(SealedAuthorizerOnlyKey));
+            let scoped = runtime.at(cratestack_client_rust::RouteRef::new($route, &[]));
+            let args = client_schema::procedures::echo_order::Args { order: order() };
+            let rejected = scoped
+                .post::<_, client_schema::Order>($path, &args, &[])
+                .await;
+            assert!(matches!(
+                rejected,
+                Err(cratestack_client_rust::ClientError::BadInput(_))
+            ));
+            assert!(logs.wire.lock().unwrap().is_empty());
+            for _ in 0..2 {
+                let _: client_schema::Order = scoped
+                    .post($path, &args, &[("Idempotency-Key", "explicit")])
+                    .await
+                    .unwrap();
+            }
+            let inner = logs.inner.lock().unwrap();
+            assert_eq!(inner.len(), 2);
+            assert_eq!(inner[0].0, "application/cbor");
+            assert_eq!(inner[1].0, inner[0].0);
+        }
+    };
+}

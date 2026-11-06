@@ -1,6 +1,7 @@
 #[cfg(feature = "cose")]
 pub(crate) mod bound_headers;
 pub(crate) mod compact;
+mod compact_identity;
 mod compact_json;
 #[cfg(test)]
 mod compact_tests;

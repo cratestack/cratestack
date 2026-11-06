@@ -91,6 +91,12 @@ where
                 envelope.media_type(),
             )
             .await?;
+        super::compact_identity::check(
+            compact.is_some(),
+            prepared.is_some(),
+            headers,
+            &header_map,
+        )?;
         if let Some(call) = prepared {
             call.restore_identity_headers(&mut header_map)?;
         }

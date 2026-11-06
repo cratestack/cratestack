@@ -111,3 +111,4 @@ prepared_sealed_wire_suite!(
     "/$procs/echoOrder",
     "/$procs/echoOrder"
 );
+sealed_authorizer_pin_suite!("/$procs/echoOrder", "/$procs/echoOrder");

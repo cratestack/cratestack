@@ -565,6 +565,8 @@ export class CratestackRpcRuntime {
   /** Prepare a keyed unary call for caller-owned durable storage. */
   async prepare<I>(op: string, input: I, options: CratestackRpcCallOptions = {}): Promise<PreparedCall> {
     if (this.hasUnaryLinks) throw new Error("prepared calls cannot use custom unary links");
+    const target = new URL(this.linkUrls().unary(op));
+    if (target.username || target.password) throw new Error("prepared URL must not contain userinfo");
     const contract = OP_CONTRACTS[op];
     if (contract === undefined || op === "batch") throw new Error("unknown prepared operation");
     const headers = await this.buildHeaders(options.headers);
@@ -589,7 +591,7 @@ export class CratestackRpcRuntime {
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
     for (const name of [...headers.keys()]) if (!["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"].includes(name)) headers.delete(name);
-    const prepared: PreparedCall = { version: 1, op, url: this.linkUrls().unary(op), contract, keyTables: KEY_TABLES, codec: codec.contentType, headers: [...headers], bodyBase64: btoa(binary) };
+    const prepared: PreparedCall = { version: 1, op, url: target.toString(), contract, keyTables: KEY_TABLES, codec: codec.contentType, headers: [...headers], bodyBase64: btoa(binary) };
     if (new TextEncoder().encode(JSON.stringify(prepared)).length > 16 * 1024 * 1024) throw new Error("prepared call too large");
     return prepared;
   }
@@ -605,6 +607,8 @@ export class CratestackRpcRuntime {
       prepared.keyTables !== KEY_TABLES || !Array.isArray(prepared.headers) || typeof prepared.bodyBase64 !== "string") {
       throw new Error("invalid or incompatible prepared call");
     }
+    const target = new URL(prepared.url);
+    if (target.username || target.password) throw new Error("prepared URL must not contain userinfo");
     const names = new Set<string>();
     for (const pair of prepared.headers) {
       if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string") throw new Error("invalid prepared header");
@@ -637,7 +641,7 @@ export class CratestackRpcRuntime {
 
     const { response } = await terminalLink({ kind: "unary", opId: prepared.op, input: null, headers, signal: signal ?? null,
       idempotencyKey, codec, ...(compact !== undefined ? { compact } : {}),
-      preparedBody: prepared.codec === "application/json" ? new TextDecoder().decode(bytes) : bytes as Uint8Array<ArrayBuffer>,
+      preparedBody: bytes as Uint8Array<ArrayBuffer>,
       fetchFn: this.fetchFn, urls: this.linkUrls() });
     return (await this.readUnaryResponse(response, compact)) as O;
   }

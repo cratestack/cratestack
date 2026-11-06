@@ -37,6 +37,10 @@ impl PreparedCall {
         if !matches!(self.method.as_str(), "POST" | "PUT" | "PATCH" | "DELETE") {
             return Err(bad("prepared calls require a unary mutation method"));
         }
+        let base = reqwest::Url::parse(&self.base_url).map_err(|e| bad(e.to_string()))?;
+        if !base.username().is_empty() || base.password().is_some() {
+            return Err(bad("prepared service URL must not contain userinfo"));
+        }
         Method::from_bytes(self.method.as_bytes()).map_err(|e| bad(e.to_string()))?;
         HeaderValue::from_str(&self.content_type).map_err(|e| bad(e.to_string()))?;
         HeaderValue::from_str(&self.accept).map_err(|e| bad(e.to_string()))?;
@@ -181,6 +185,9 @@ mod tests {
     #[test]
     fn refuses_route_changes_and_unknown_fields() {
         let mut value = call();
+        value.base_url = "https://user:secret@example.test/".into();
+        assert!(value.validate().is_err());
+        value.base_url = "https://example.test/".into();
         value.path = "/widgets/other/7".into();
         assert!(value.validate().is_err());
         let mut json = serde_json::to_value(call()).unwrap();

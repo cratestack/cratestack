@@ -92,5 +92,34 @@ macro_rules! prepared_auth_suite {
                 ]
             );
         }
+        #[tokio::test]
+        async fn ordinary_authorizer_key_must_be_explicit_for_compact_pinning() {
+            let (addr, log, executions) = spawn().await;
+            let runtime = CratestackClient::cbor(ClientConfig::new(
+                reqwest::Url::parse(&format!("http://{addr}")).unwrap(),
+            ))
+            .with_compact_key_bytes(schema::KEY_TABLES, schema::OP_CONTRACTS)
+            .unwrap()
+            .with_request_authorizer(Arc::new(IdentityOverridingAuthorizer));
+            let scoped = runtime.at(cratestack_client_rust::RouteRef::new($route, &[]));
+            let rejected = scoped
+                .post::<_, client_schema::Order>($path, &echo(order()), &[])
+                .await;
+            assert!(matches!(
+                rejected,
+                Err(cratestack_client_rust::ClientError::BadInput(_))
+            ));
+            assert_eq!(executions.load(Ordering::SeqCst), 0);
+            assert!(log.lock().unwrap().is_empty());
+            for _ in 0..2 {
+                let _: client_schema::Order = scoped
+                    .post($path, &echo(order()), &[("Idempotency-Key", "original")])
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(executions.load(Ordering::SeqCst), 1);
+            let seen = log.lock().unwrap();
+            assert_eq!(seen[0].0, seen[1].0);
+        }
     };
 }

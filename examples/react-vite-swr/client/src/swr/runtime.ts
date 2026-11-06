@@ -292,6 +292,8 @@ export class CratestackRuntime {
   /** Prepare a keyed request for caller-owned durable storage before sending. */
   async prepare(method: string, path: string, options: CratestackRequestOptions = {}): Promise<PreparedCall> {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) throw new Error("prepare requires a mutation");
+    const target = new URL(this.url(path, options.query));
+    if (target.username || target.password) throw new Error("prepared URL must not contain userinfo");
     const headers = new Headers(await resolveHeaders(this.defaultHeaders));
     for (const [key, value] of new Headers(options.headers)) headers.set(key, value);
     if (!headers.get("Idempotency-Key")) throw new Error("prepare requires an Idempotency-Key");
@@ -309,7 +311,7 @@ export class CratestackRuntime {
     }
     if (body !== null && new TextEncoder().encode(body).length > 8 * 1024 * 1024) throw new Error("prepared body too large");
     for (const name of [...headers.keys()]) if (!["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"].includes(name)) headers.delete(name);
-    const prepared: PreparedCall = { version: 1, method: method.toUpperCase(), path, url: this.url(path, options.query), op, contract, keyTables: KEY_TABLES, headers: [...headers], body };
+    const prepared: PreparedCall = { version: 1, method: method.toUpperCase(), path, url: target.toString(), op, contract, keyTables: KEY_TABLES, headers: [...headers], body };
     if (new TextEncoder().encode(JSON.stringify(prepared)).length > 16 * 1024 * 1024) throw new Error("prepared call too large");
     return prepared;
   }
@@ -324,6 +326,8 @@ export class CratestackRuntime {
       !Array.isArray(prepared.headers) || (prepared.body !== null && typeof prepared.body !== "string")) {
       throw new Error("invalid or incompatible prepared call");
     }
+    const target = new URL(prepared.url);
+    if (target.username || target.password) throw new Error("prepared URL must not contain userinfo");
     if (prepared.body !== null) JSON.parse(prepared.body);
     const names = new Set<string>();
     for (const pair of prepared.headers) {

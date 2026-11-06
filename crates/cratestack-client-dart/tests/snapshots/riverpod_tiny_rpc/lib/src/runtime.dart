@@ -550,6 +550,9 @@ String? _effectivePreparedKey(String? option, List<Map<String, String>?> layers)
 CratestackPreparedCall _prepareSnapshot(
   CratestackHttpRequest request, String op, String? selector, CratestackWireFormat format,
 ) {
+  if (request.uri.userInfo.isNotEmpty) {
+    throw const FormatException('Prepared URL must not contain userinfo');
+  }
   if ((request.body?.length ?? 0) > 8 * 1024 * 1024) {
     throw const FormatException('Prepared body exceeds 8 MiB');
   }
@@ -581,6 +584,9 @@ CratestackPreparedCall _prepareSnapshot(
     }
     final method = data['method'] as String;
     final uri = Uri.parse(data['uri'] as String);
+    if (uri.userInfo.isNotEmpty || baseUri.userInfo.isNotEmpty) {
+      throw const FormatException('Prepared URL must not contain userinfo');
+    }
     final op = data['op'] as String;
     final selector = data['selector'] as String?;
     final headers = Map<String, String>.from(data['headers'] as Map);

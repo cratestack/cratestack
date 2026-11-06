@@ -351,4 +351,25 @@ describe.each(layouts)("%s", (_name, mod) => {
     }
   });
 
+  it("sends the exact JSON bytes from a codec, including a UTF-8 BOM", async () => {
+    const { fetchFn, sent } = transport(() => Promise.resolve(new Response('"ok"', { headers: { 'Content-Type': 'application/json' } })));
+    const original = Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('{"name":"a"}')]);
+    const codec = { contentType: "application/json", encode: () => original, decode: mod.jsonRpcCodec.decode };
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn, codec });
+    const saved = await runtime.prepare("procedure.echoName", { name: "a" }, { idempotencyKey: "k" });
+    await runtime.executePrepared(JSON.parse(JSON.stringify(saved)));
+    expect(sent[0]?.body).toEqual(Uint8Array.from(Buffer.from(saved.bodyBase64, "base64")));
+    expect(sent[0]?.body).toEqual(original);
+  });
+
+  it("rejects URL userinfo before preparation and execution", async () => {
+    const { fetchFn, sent } = transport(() => plainCbor("ok"));
+    const unsafe = new mod.CratestackRpcRuntime("http://user:secret@x.invalid", { fetch: fetchFn, codec: mod.jsonRpcCodec });
+    await expect(unsafe.prepare("procedure.echoName", {}, { idempotencyKey: "k" })).rejects.toThrow();
+    const safe = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn, codec: mod.jsonRpcCodec });
+    const saved = await safe.prepare("procedure.echoName", {}, { idempotencyKey: "k" });
+    await expect(safe.executePrepared({ ...saved, url: saved.url.replace("//", "//user:secret@") })).rejects.toThrow();
+    expect(sent).toHaveLength(0);
+  });
+
 });

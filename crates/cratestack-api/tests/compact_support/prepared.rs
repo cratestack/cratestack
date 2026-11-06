@@ -73,6 +73,10 @@ macro_rules! prepared_replay_suite {
                 serde_json::from_slice(&call.to_bytes().unwrap()).unwrap();
             for (field, value) in [
                 ("base_url", serde_json::json!("http://other.invalid/")),
+                (
+                    "base_url",
+                    serde_json::json!("http://user:secret@example.invalid/"),
+                ),
                 ("path", serde_json::json!("/wrong")),
                 ("content_type", serde_json::json!("text/plain")),
                 ("accept", serde_json::json!("text/plain")),
@@ -92,6 +96,23 @@ macro_rules! prepared_replay_suite {
                     );
                 }
             }
+            let unsafe_client = CratestackClient::cbor(ClientConfig::new(
+                reqwest::Url::parse(&format!("http://user:secret@{addr}")).unwrap(),
+            ))
+            .with_compact_key_bytes(schema::KEY_TABLES, schema::OP_CONTRACTS)
+            .unwrap();
+            assert!(
+                unsafe_client
+                    .prepare_call(
+                        "POST",
+                        cratestack_client_rust::RouteRef::new($route, &[]),
+                        $path,
+                        &echo(order()),
+                        &[],
+                        &[("Idempotency-Key", "key")]
+                    )
+                    .is_err()
+            );
             assert_eq!(executions.load(Ordering::SeqCst), 0);
         }
         #[tokio::test]
