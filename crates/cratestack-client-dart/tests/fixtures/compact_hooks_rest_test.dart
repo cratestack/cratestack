@@ -75,7 +75,10 @@ class _StandInKeys {
     return Uint8List.sublistView(compact, 2);
   }
 
-  String? selector(String op) => 'stand-in:$op';
+  /// Like the real binding: a selector only for an op the generated tables
+  /// hold, `null` for any other, which is how the adapter knows to stay named.
+  String? selector(String op) =>
+      cratestackOpContracts.containsKey(op) ? 'stand-in:$op' : null;
 }
 
 void main() {
