@@ -11,13 +11,15 @@
 //! ```
 //!
 //! - [`envelope`]: the opaque [`FlutterClientEnvelope`].
-//! - [`types`]: the plain values that cross the bridge.
+//! - [`types`]: the plain values that cross the bridge (mapped to
+//!   `cratestack-cose`'s in `convert.rs`).
 //! - [`error`]: [`FlutterCoseError`], where every failed verification is
 //!   the same `Rejected`.
 //!
 //! Only Required mode exists on the client, as in the Rust client: a client
 //! that cannot seal does not call.
 
+mod convert;
 pub mod envelope;
 pub mod error;
 pub mod types;

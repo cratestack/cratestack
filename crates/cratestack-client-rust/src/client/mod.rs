@@ -22,6 +22,7 @@ pub(crate) mod raw_path;
 mod response;
 pub(crate) mod route;
 pub(crate) mod sealing;
+mod sealing_setup;
 mod streaming;
 mod transport;
 mod transport_stream;
