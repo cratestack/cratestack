@@ -97,7 +97,10 @@ export function classifyCborSeqItem<O>(
     return { kind: "error", error };
   }
   // The in-band error item is never compact; only an output item is.
-  return { kind: "output", output: codec.decode(fromCompact ? fromCompact(itemBytes) : itemBytes) as O };
+  return {
+    kind: "output",
+    output: codec.decode(fromCompact ? fromCompact(itemBytes) : itemBytes) as O,
+  };
 }
 
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
