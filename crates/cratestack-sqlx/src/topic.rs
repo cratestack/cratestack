@@ -1,13 +1,10 @@
-//! A schema `topic`'s runtime handle (`docs/design/subscriptions-websocket.md`
-//! §3.4, slice S4): typed messages under one key, carried to every replica
-//! by the subscription backplane.
-//!
-//! The generated `db.topics().room_message(&room_id)` returns a [`Topic`].
-//! `publish` sends now. `publish_in_tx` sends from inside a transaction, so
-//! the message is delivered only if it commits, in commit order with the
-//! transaction's model events; it needs a backplane the transaction can
-//! notify (`PgNotifyBackplane`, the default). `subscribe` is what a
-//! `subscription procedure` handler usually returns.
+//! A schema `topic`'s runtime handle on `db = Postgres`
+//! (`docs/design/subscriptions-websocket.md` §3.4, slice S4): the
+//! backplane-only [`TopicHandle`] from `cratestack-core`, plus
+//! `publish_in_tx`, which sends from inside a transaction so the message is
+//! delivered only if it commits, in commit order with the transaction's model
+//! events. It needs a backplane the transaction can notify
+//! (`PgNotifyBackplane`, the default).
 //!
 //! A topic taken from an `@isolation` procedure's handle is bound to the
 //! procedure's attempt: its `publish` is delivered only if the attempt
@@ -15,13 +12,10 @@
 //! inside the transaction, any other sends after the commit).
 
 use std::fmt::Display;
-use std::marker::PhantomData;
+use std::ops::Deref;
 use std::sync::Arc;
 
-use cratestack_core::{
-    BackplaneMessage, CratestackError, SubscriptionBackplane, SubscriptionStream, topic_channel,
-};
-use futures_util::stream::{self, StreamExt};
+use cratestack_core::{CratestackError, SubscriptionBackplane, TopicHandle};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -31,13 +25,21 @@ use crate::bound::{BoundTx, nested_in_bound};
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
 
-/// One topic under one key. Cheap to build; hold none.
+/// One topic under one key. Cheap to build; hold none. `subscribe` and
+/// `channel` are the [`TopicHandle`]'s; `publish` is this type's own, so a
+/// topic bound to an `@isolation` attempt rides it.
 pub struct Topic<T> {
-    backplane: Arc<dyn SubscriptionBackplane>,
-    channel: String,
+    handle: TopicHandle<T>,
     /// The `@isolation` attempt a `publish` rides, when there is one.
     attempt: Option<Arc<BoundTx>>,
-    message: PhantomData<fn() -> T>,
+}
+
+impl<T> Deref for Topic<T> {
+    type Target = TopicHandle<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
 }
 
 impl<T> Topic<T>
@@ -47,10 +49,8 @@ where
     /// `topic` is the declared name (`RoomMessage`), `key` the key's value.
     pub fn new(backplane: Arc<dyn SubscriptionBackplane>, topic: &str, key: impl Display) -> Self {
         Self {
-            backplane,
-            channel: topic_channel(topic, &key.to_string()),
+            handle: TopicHandle::new(backplane, topic, key),
             attempt: None,
-            message: PhantomData,
         }
     }
 
@@ -62,11 +62,6 @@ where
         self
     }
 
-    /// The backplane channel: `cratestack.topic.<Topic>.<key>`.
-    pub fn channel(&self) -> &str {
-        &self.channel
-    }
-
     /// Delivers `message` to every current subscriber, on every replica.
     /// From an `@isolation` procedure's handle it is delivered only if the
     /// attempt commits, never for one that rolls back or retries: with
@@ -74,12 +69,12 @@ where
     /// attempt, with any other backplane queued and sent after the commit.
     /// Inside `db.transaction(..)` there, use `publish_in_tx(tx, ..)`.
     pub async fn publish(&self, message: &T) -> Result<(), CratestackError> {
-        let payload = encode_message(message)?;
         let Some(attempt) = &self.attempt else {
-            return self.backplane.publish(&self.channel, &payload).await;
+            return self.handle.publish(message).await;
         };
-        if !self.backplane.publishes_model_events_in_tx() {
-            attempt.defer_publish(self.backplane.clone(), self.channel.clone(), payload);
+        let payload = self.encode(message)?;
+        if !self.backplane().publishes_model_events_in_tx() {
+            attempt.defer_publish(self.backplane().clone(), self.channel().to_owned(), payload);
             return Ok(());
         }
         attempt.lock().map(drop).map_err(|_| {
@@ -103,10 +98,10 @@ where
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         message: &T,
     ) -> Result<(), CratestackError> {
-        if !self.backplane.publishes_model_events_in_tx() {
+        if !self.backplane().publishes_model_events_in_tx() {
             if let Some(attempt) = &self.attempt {
-                let payload = encode_message(message)?;
-                attempt.defer_publish(self.backplane.clone(), self.channel.clone(), payload);
+                let payload = self.encode(message)?;
+                attempt.defer_publish(self.backplane().clone(), self.channel().to_owned(), payload);
                 return Ok(());
             }
             return Err(CratestackError::Internal(
@@ -115,7 +110,7 @@ where
                     .to_owned(),
             ));
         }
-        self.notify(tx, &encode_message(message)?).await
+        self.notify(tx, &self.encode(message)?).await
     }
 
     /// `pg_notify` of `payload` inside `tx`.
@@ -124,7 +119,7 @@ where
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         payload: &str,
     ) -> Result<(), CratestackError> {
-        let notification = encode(&self.channel, payload, None).ok_or_else(|| {
+        let notification = encode(self.channel(), payload, None).ok_or_else(|| {
             CratestackError::BadRequest(
                 "a topic message must stay under Postgres' 8000-byte NOTIFY limit".to_owned(),
             )
@@ -137,42 +132,4 @@ where
             .map_err(cratestack_error_from_sqlx)?;
         Ok(())
     }
-
-    /// Every message published from now on. Resolves once the subscription
-    /// is live. Ends with `unavailable` when it falls behind
-    /// (`"subscription lagged"`) or the backplane may have lost messages
-    /// (`"subscription interrupted"`): resubscribe and refetch.
-    pub async fn subscribe(&self) -> Result<SubscriptionStream<T>, CratestackError> {
-        let receiver = self.backplane.subscribe(&self.channel).await?;
-        Ok(Box::pin(stream::unfold(
-            Some(receiver),
-            |receiver| async move {
-                let mut receiver = receiver?;
-                let item = match receiver.next().await? {
-                    BackplaneMessage::Payload(json) => {
-                        serde_json::from_str(&json).map_err(|error| {
-                            CratestackError::Codec(format!("unreadable topic message: {error}"))
-                        })
-                    }
-                    BackplaneMessage::Lagged => Err(unavailable("subscription lagged")),
-                    BackplaneMessage::Resync => Err(unavailable("subscription interrupted")),
-                };
-                let rest = item.is_ok().then_some(receiver);
-                Some((item, rest))
-            },
-        )))
-    }
 }
-
-fn encode_message<T: Serialize>(message: &T) -> Result<String, CratestackError> {
-    serde_json::to_string(message).map_err(|error| {
-        CratestackError::Codec(format!("failed to encode a topic message: {error}"))
-    })
-}
-
-fn unavailable(message: &str) -> CratestackError {
-    CratestackError::Unavailable(message.to_owned())
-}
-
-#[cfg(test)]
-mod tests;

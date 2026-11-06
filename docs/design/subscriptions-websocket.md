@@ -845,9 +845,10 @@ such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, nev
 - **The contract**, `cratestack_core::SubscriptionBackplane`: `publish`, and an async `subscribe`
   that resolves only once the subscription is live, so a binding that then sends `Ready` has missed
   nothing. `BackplaneMessage` has `Payload`, `Resync` (the listener reconnected) and `Lagged` (this
-  receiver fell behind its 64-item buffer). The trait lives in `cratestack-core`. Both implementations
-  live in `cratestack-sqlx`, because core has no async runtime (it also targets wasm):
-  `InProcessBackplane` and `PgNotifyBackplane`. The Redis one is S7.
+  receiver fell behind its 64-item buffer). The trait lives in `cratestack-core`. `PgNotifyBackplane`
+  lives in `cratestack-sqlx`. `InProcessBackplane` was built there too, "because core has no async
+  runtime (it also targets wasm)"; that is superseded: it now lives in core (S4 status, `db = None`),
+  which depends on tokio's `sync` feature only. The Redis one is S7.
 - **`PgNotifyBackplane` is the default (decision O6, as proposed).** One `PgListener` per process,
   opened by the first subscription, on the single Postgres channel `cratestack_events`. Backplane
   channels (`cratestack.model.<Model>`) are multiplexed inside the payload. A dropped listener connection
@@ -956,9 +957,17 @@ The rest:
   - `subscribe().await` resolves once the subscription is live. It ends `unavailable` on lag or
     resync.
   - A message must encode under Postgres' `NOTIFY` limit.
-- **`db = None`**: subscription procedures work, with the handler's stream as the source. A topic is
-  a compile error, because `cratestack-api` has no backplane yet; moving `InProcessBackplane` out of
-  `cratestack-sqlx` is the follow-up.
+- **`db = None`**: subscription procedures work, with the handler's stream as the source, and so do
+  topics. `InProcessBackplane`, the `LocalHub` it fans out through and the backplane-only
+  `TopicHandle` (`new`, `publish`, `subscribe`) live in `cratestack-core`, so `cratestack-api` has them
+  with no sqlx. `cratestack-api` exports the handle as `cratestack::Topic`. `cratestack-sqlx`
+  re-exports `InProcessBackplane` and wraps the handle as its own `Topic`, which adds `publish_in_tx`.
+  - `db.topics()` reads the backplane the generated `Cratestack` carries: an `InProcessBackplane`,
+    one replica, unless `Cratestack::builder().with_backplane(..)` supplies another
+    `SubscriptionBackplane`.
+  - Only a schema that declares a `topic` has that field. Any other `db = None` `Cratestack` is still
+    the zero-field `Copy` marker, so nothing existing changed. With a topic it is `Clone`, not `Copy`.
+  - `publish_in_tx` does not exist there: there is no transaction. Publish after the work is done.
 - **`IsolatedCratestack::topics()`**: the same `Topics`, built over the procedure's
   transaction-bound runtime, so each topic it hands out is bound to that attempt
   (`Topic::in_attempt`). A plain `Cratestack::topics()` is not bound, including the handle that an

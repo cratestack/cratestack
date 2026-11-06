@@ -315,6 +315,7 @@ dependencies = [
  "bytes",
  "chrono",
  "futures-core",
+ "futures-util",
  "hmac",
  "http",
  "rust_decimal",
@@ -323,6 +324,7 @@ dependencies = [
  "sha2",
  "subtle",
  "thiserror",
+ "tokio",
  "url",
  "uuid",
 ]

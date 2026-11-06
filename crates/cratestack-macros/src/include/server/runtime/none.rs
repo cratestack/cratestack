@@ -16,6 +16,13 @@
 //! `crate::procedure::instrument` don't need a `db`-conditional branch of
 //! their own; only the *type behind* `Cratestack` changes.
 //!
+//! The one exception is a schema that declares a `topic`: it needs a
+//! backplane to publish on, so its `Cratestack` carries one (an
+//! `InProcessBackplane` shared by the process, unless `with_backplane` swaps
+//! it) and is no longer
+//! `Copy`. Every other schema keeps the zero-field marker, so adding the
+//! feature broke none of them.
+//!
 //! `events()`/`views()` are omitted entirely rather than kept as
 //! always-empty API surface: `datasource { provider = "none" }` schemas
 //! can never declare a `model` (cratestack#327), so there is provably
@@ -23,24 +30,77 @@
 
 use quote::quote;
 
-pub(super) fn build_runtime_block() -> proc_macro2::TokenStream {
+pub(super) fn build_runtime_block(topics: bool) -> proc_macro2::TokenStream {
+    let (handle, builder, new_builder, build, with_backplane) = if topics {
+        (
+            quote! {
+                #[derive(Clone)]
+                pub struct Cratestack {
+                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                }
+            },
+            quote! {
+                pub struct CratestackBuilder {
+                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                }
+            },
+            quote! {
+                // One per schema and process, so a `Cratestack` built anywhere
+                // (a router, a worker) reaches the same subscribers.
+                static SHARED: ::std::sync::LazyLock<
+                    ::std::sync::Arc<::cratestack::InProcessBackplane>,
+                > = ::std::sync::LazyLock::new(Default::default);
+                CratestackBuilder {
+                    backplane: SHARED.clone(),
+                }
+            },
+            quote! {
+                Cratestack {
+                    backplane: self.backplane,
+                }
+            },
+            quote! {
+                /// Replace the subscription backplane, which carries topic
+                /// messages to subscribers. The default is one
+                /// `InProcessBackplane` shared by every `build()` of this
+                /// schema in the process: it reaches this process only, so
+                /// run one replica or pass a backplane that reaches the others.
+                pub fn with_backplane(
+                    mut self,
+                    backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                ) -> Self {
+                    self.backplane = backplane;
+                    self
+                }
+            },
+        )
+    } else {
+        (
+            quote! {
+                #[derive(Clone, Copy)]
+                pub struct Cratestack;
+            },
+            quote! { pub struct CratestackBuilder; },
+            quote! { CratestackBuilder },
+            quote! { Cratestack },
+            proc_macro2::TokenStream::new(),
+        )
+    };
     quote! {
         /// No-database runtime handle (`db = None`). See this module's
-        /// doc comment for why this is a zero-field marker rather than an
-        /// `Option`-wrapped pool.
-        #[derive(Clone, Copy)]
-        pub struct Cratestack;
+        /// doc comment for why it holds no pool.
+        #handle
 
         #[derive(Clone)]
         pub struct BoundCratestack {
             ctx: ::cratestack::CratestackContext,
         }
 
-        pub struct CratestackBuilder;
+        #builder
 
         impl Cratestack {
             pub fn builder() -> CratestackBuilder {
-                CratestackBuilder
+                #new_builder
             }
 
             pub fn bind_context(&self, ctx: ::cratestack::CratestackContext) -> BoundCratestack {
@@ -63,8 +123,10 @@ pub(super) fn build_runtime_block() -> proc_macro2::TokenStream {
         }
 
         impl CratestackBuilder {
+            #with_backplane
+
             pub fn build(self) -> Cratestack {
-                Cratestack
+                #build
             }
         }
 

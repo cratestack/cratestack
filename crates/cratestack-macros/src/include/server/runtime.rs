@@ -22,6 +22,7 @@ pub(super) fn build_runtime_block(
     bound_model_accessors: &[proc_macro2::TokenStream],
     view_accessors: &[proc_macro2::TokenStream],
     query_accessors: &[proc_macro2::TokenStream],
+    topics: bool,
 ) -> proc_macro2::TokenStream {
     match db {
         ServerDb::Postgres => postgres::build_runtime_block(
@@ -39,6 +40,6 @@ pub(super) fn build_runtime_block(
         // (`super::query_guard`), because a schema with *no* `datasource`
         // block at all can pair `db = None` with real `query` blocks and
         // would otherwise reach here.
-        ServerDb::None => none::build_runtime_block(),
+        ServerDb::None => none::build_runtime_block(topics),
     }
 }
