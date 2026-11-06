@@ -9,7 +9,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
+    }
+,
     "./swr": {
       "types": "./dist/swr/index.d.ts",
       "import": "./dist/swr/index.js"

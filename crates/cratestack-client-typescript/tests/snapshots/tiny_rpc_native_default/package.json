@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
-  "peerDependencies": {},
+  "peerDependencies": {
+  },
   "dependencies": {
     "decimal.js": "^10.6.0",
     "@cratestack/cbor": ">=0.8.15 <0.18.0"
