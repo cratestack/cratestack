@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### Compact wire keys: integer field keys negotiated per op contract
+
+**What was missing.** Every CBOR and JSON body repeated its field names. Single procedure calls
+are a few hundred bytes, so gzip cannot help them, and field names were a third to almost half
+of each body.
+
+**What changed** (`docs/design/compact-wire-keys.md`).
+
+- **Opt-in, per client.** A client that turns compact keys on asks for
+  `application/vnd.cratestack.compact+cbor` (`+json`, `+cbor-seq` for streams) and sends
+  `Cratestack-Contract` with its op's contract digest prefix. Clients that leave it off send
+  and receive exactly what they did before.
+- **Server.** The generated router answers compact when it knows that digest: the schema's
+  current contracts, plus every older one a `contracts =` lock accepts. Each digest is served
+  with its own key numbering, so a newer server still answers an older client compactly. A
+  compact request with an unknown selector is a `415`. `/rpc/batch`, error bodies and
+  framework wrappers stay named.
+- **Numbering.** Keys come from the op contract (fields in contract order, procedure arguments
+  in declaration order). They need no schema syntax and no new ledger.
+- **One implementation, in Rust.** `cratestack_core::compact` derives the key tables, and
+  `cratestack-codec-cbor`/`-json` transcode the bodies. `@cratestack/cbor` and
+  `cratestack_cbor` expose `createCompactKeys(tables)` over the same code.
+- **Clients.**
+  - Rust: `CratestackClient::with_compact_keys` / `with_compact_key_bytes`, and a generated
+    `Client::with_compact_keys`.
+  - TypeScript: `compactKeys: true` on the RPC and REST runtimes. It feature-detects
+    `createCompactKeys`, so it stays named until that package version is installed.
+  - Dart: a `compact: CratestackCompactHooks` adapter parameter, wired to
+    `createCompactKeys`.
+  - Every generated client emits its `KEY_TABLES` artifact.
+- **Adaptive requests.** A client sends an op's request body compact only after that op answered
+  compact once, so a server without the mode is never sent a body it cannot read.
+- **Signed transport.** Compact payload types travel through `payload_media_types`.
+  `is_sealable_payload_type` now refuses any `+cbor-seq` type.
+- **Payload-size gate.** The gate gains compact columns. The transfer request goes from 130 to
+  67 bytes on CBOR and from 193 to 136 on JSON.
+
 ### Breaking: native CBOR is the only codec of generated TypeScript and Dart clients
 
 **What was there.** `cratestack generate-typescript` and `cratestack generate-dart` both took

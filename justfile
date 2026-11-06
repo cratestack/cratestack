@@ -1221,6 +1221,13 @@ verify-dart:
 	    add_cbor_test_dependency "$pkg"
 	    echo "=== flutter test (HTTP seam wire parity + behaviour): $pkg ==="
 	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test "test/wire_parity_${transport}_test.dart")
+	    # Compact wire keys: the generated `CratestackCompactHooks` seam, with
+	    # fake hooks and a recording transport (docs/design/compact-wire-keys.md
+	    # §5.8). Off is byte-identical; on sends Accept and the selector, decodes
+	    # a compact answer, and sends the next request body compact.
+	    cp "crates/cratestack-client-dart/tests/fixtures/compact_hooks_${transport}_test.dart" "$pkg/test/"
+	    echo "=== flutter test (compact key hooks): $pkg ==="
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test "test/compact_hooks_${transport}_test.dart")
 	    # cratestack#1243: an AuthProvider refusal's code, details, extra
 	    # members and WWW-Authenticate challenges, typed on both exceptions.
 	    cp "crates/cratestack-client-dart/tests/fixtures/auth_refusal_${transport}_test.dart" "$pkg/test/"
