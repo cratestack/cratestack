@@ -75,10 +75,14 @@ let sealed = server.seal_response_value(&CborCodec, &row, &response_binding).awa
   must be random: a Mac0 `kid` publishes 64 bits of the secret's thumbprint, so a guessable
   secret can be found offline.
 - **`CallBinding`:** the owned inputs of one call (`audience`, `method`, `route`,
-  `path_params`, `query`, `contract_sha`, `idempotency_key`, `if_match`) with
-  `request()` and `response(sealed_request, status)`, which build the `Binding`. The query is
-  canonicalised there (an empty one binds as `null`) and the payload type is
-  `application/cbor`. The Flutter and wasm glues (cratestack#1026) map their bridge types into
+  `path_params`, `query`, `contract_sha`, `idempotency_key`, `if_match`, `payload_type`,
+  `payload_accept`) with `request()` and `response(sealed_request, status)` (or
+  `response_for(sealed_request, status, response_type)`), which build the `Binding`. The query is
+  canonicalised there (an empty one binds as `null`). `payload_type` / `payload_accept` default to
+  `application/cbor`; set them for compact wire keys (`application/vnd.cratestack.compact+cbor`).
+  `validate()` applies the Rust client's rules (no envelope, `+cbor-seq` or multipart types),
+  `selector_headers()` returns the `Cratestack-Payload-Type` / `Cratestack-Payload-Accept` headers a
+  non-default call must send, and `response_for` refuses a response type the call did not accept. The Flutter and wasm glues (cratestack#1026) map their bridge types into
   it, so neither re-implements the canonical query or the AAD inputs; `contract_header_value`
   gives the unbound `Cratestack-Contract` value for a `contract_sha`.
 

@@ -103,7 +103,9 @@ pub(super) fn contract_sha(value: &JsValue) -> Result<[u8; 32], Fail> {
 }
 
 /// `{ method, route, pathParams, query?, contractSha, idempotencyKey?,
-/// ifMatch? }`, addressed to `audience`.
+/// ifMatch?, payloadType?, payloadAccept? }`, addressed to `audience`.
+/// `payloadType` (string) and `payloadAccept` (string[]) default to CBOR;
+/// both are validated here, before anything is sealed.
 pub(super) fn binding(binding: &JsValue, audience: &str) -> Result<CallBinding, Fail> {
     let params = field(binding, "pathParams")?;
     if !Array::is_array(&params) {
@@ -117,7 +119,7 @@ pub(super) fn binding(binding: &JsValue, audience: &str) -> Result<CallBinding, 
                 .ok_or_else(|| misuse("`pathParams` must be an array of strings"))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(CallBinding {
+    let call = CallBinding {
         audience: audience.to_owned(),
         method: string(binding, "method")?,
         route: string(binding, "route")?,
@@ -126,7 +128,27 @@ pub(super) fn binding(binding: &JsValue, audience: &str) -> Result<CallBinding, 
         contract_sha: contract_sha(&field(binding, "contractSha")?)?,
         idempotency_key: opt_string(binding, "idempotencyKey")?,
         if_match: opt_string(binding, "ifMatch")?,
-    })
+        payload_type: opt_string(binding, "payloadType")?,
+        payload_accept: opt_string_array(binding, "payloadAccept")?,
+    };
+    call.validate().map_err(super::error::from_error)?;
+    Ok(call)
+}
+
+fn opt_string_array(object: &JsValue, name: &str) -> Result<Option<Vec<String>>, Fail> {
+    let value = field(object, name)?;
+    if value.is_undefined() || value.is_null() {
+        return Ok(None);
+    }
+    let misuse = || misuse(&format!("`{name}` must be an array of strings"));
+    if !Array::is_array(&value) {
+        return Err(misuse());
+    }
+    Array::from(&value)
+        .iter()
+        .map(|entry| entry.as_string().ok_or_else(misuse))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
 }
 
 /// `{ fixedIat?, fixedCti? }`, for tests that must reproduce the shared

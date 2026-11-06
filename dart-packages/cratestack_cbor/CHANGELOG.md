@@ -1,5 +1,19 @@
 ## Unreleased
 
+- New: compact wire key payloads can be sealed. `CallBinding` gains
+  `String? payloadType` (the type the request payload is sealed under, bound
+  in the AAD; `null` is `application/cbor`, compact keys are
+  `application/vnd.cratestack.compact+cbor`) and `List<String>? payloadAccept`
+  (the types the answer may come back in). `ClientEnvelope.selectorHeaders(binding)`
+  returns the `Cratestack-Payload-Type` / `Cratestack-Payload-Accept` headers
+  to send when they are not the CBOR default (empty otherwise).
+  `openResponse` takes the response's `Cratestack-Payload-Type` as
+  `responsePayloadType` and `Opened` gains `payloadType`; a response type the
+  call did not accept is `CoseRejected`, a type that cannot be sealed
+  (`+cbor-seq`, an envelope, multipart) is `CoseMisuse`. The rules are the
+  Rust client's, in `cratestack-cose`'s `CallBinding`; native (frb) and web
+  (wasm) both carry them. Additive: a default call is byte-identical.
+
 - New: `createCompactKeys(Uint8List tables)` and the `CompactKeys` interface
   (compact wire keys, `docs/design/compact-wire-keys.md`). Built from the
   `cratestackKeyTables` a generated client emits, it swaps a schema's field

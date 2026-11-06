@@ -19,8 +19,10 @@
 mod convert;
 mod envelope;
 mod error;
+mod opened;
 
 #[cfg(test)]
 mod tests;
 
-pub use envelope::{ClientEnvelope, contract_header_value};
+pub use envelope::ClientEnvelope;
+pub use opened::contract_header_value;

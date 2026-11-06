@@ -389,3 +389,16 @@ required-features = ["cose"]
 name = "cose_auth_provider_rpc"
 path = "tests/cose_auth_provider_rpc.rs"
 required-features = ["cose"]
+
+# Compact wire keys under the COSE envelope: the generated Rust client with
+# `with_envelope` + `with_compact_keys` against the generated server behind
+# an `EnvelopeLayer` that opted the compact payload types in.
+[[test]]
+name = "compact_client_sealed_rest"
+path = "tests/compact_client_sealed_rest.rs"
+required-features = ["cose"]
+
+[[test]]
+name = "compact_client_sealed_rpc"
+path = "tests/compact_client_sealed_rpc.rs"
+required-features = ["cose"]

@@ -8,8 +8,17 @@
 //! response is turned back into named bytes before the normal decode. The
 //! request body goes out compact only once a response for that op has come
 //! back compact (a per-op flag held in memory), so an old server is never
-//! sent a body it cannot read. Sealed (COSE) calls and `/rpc/batch` stay
-//! named.
+//! sent a body it cannot read. `/rpc/batch` stays named.
+//!
+//! **Sealed (COSE) calls** are adaptive the same way: the compact types
+//! lead `Cratestack-Payload-Accept`, the request is sealed under
+//! `application/vnd.cratestack.compact+cbor` (or `+json`) only once the op
+//! answered compact, and a compact sealed answer is transcoded after it is
+//! opened. The server must opt the compact types in
+//! (`EnvelopeLayerBuilder::payload_media_types`); against one that has not,
+//! the answer is plain and the client stays named, and an unsigned `415`
+//! (the compact request type refused) turns the op back to named for the
+//! next call. That failed call is returned, not retried.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -135,8 +144,7 @@ where
         Ok(self)
     }
 
-    /// The plan for the call in flight, or `None` (compact off, a sealed
-    /// client, no route named, or an op the tables lack such as `batch`).
+    /// The plan for the call in flight, or `None` (compact off, no route named, or an op the tables lack such as `batch`).
     pub(crate) fn compact_call(
         &self,
         method: &Method,
@@ -144,10 +152,6 @@ where
         has_body: bool,
     ) -> Option<CompactCall> {
         let state = self.compact.as_ref()?;
-        #[cfg(feature = "cose")]
-        if self.sealing.envelope.is_some() {
-            return None;
-        }
         let template = self.compact_route.as_deref()?;
         let (op, index) = match state.by_op.get(template) {
             Some(index) => (template.to_owned(), *index),

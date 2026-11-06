@@ -51,7 +51,7 @@ async fn the_signed_request_responses_open_and_tampered_ones_reject() {
         let body = unhex(case["cose"].as_str().unwrap());
         let client = envelope(&keys, key, None);
         let open = |body: &[u8], request: &[u8], status: u16| {
-            client.open_response(body, &binding(&case["binding"]), request, status)
+            client.open_response(body, &binding(&case["binding"]), request, status, None)
         };
         let result = settle(open(&body, &request, status))
             .await

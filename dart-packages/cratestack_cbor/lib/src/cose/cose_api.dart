@@ -67,19 +67,33 @@ abstract interface class ClientEnvelope {
   /// The signer's 8-byte `kid`.
   Uint8List get kid;
 
-  /// Seals [payload] (already CBOR) as the request [binding] describes.
-  /// Resolves to the bytes to send.
+  /// Seals [payload] (already encoded as [CallBinding.payloadType], CBOR by
+  /// default) as the request [binding] describes. Resolves to the bytes to
+  /// send.
   Future<Uint8List> sealRequest(Uint8List payload, CallBinding binding);
+
+  /// The payload-type selector headers [binding] needs sent with the sealed
+  /// body: `Cratestack-Payload-Type` when [CallBinding.payloadType] is not
+  /// CBOR and `Cratestack-Payload-Accept` when [CallBinding.payloadAccept] is
+  /// not just CBOR. Empty for a default call. Throws [CoseMisuse] for a type
+  /// that cannot be sealed.
+  Map<String, String> selectorHeaders(CallBinding binding);
 
   /// Opens the response [body] to [sealedRequest] (the exact bytes that were
   /// sent), which came back with HTTP [status].
   ///
-  /// Throws [CoseRejected] for every failed check, whatever failed.
+  /// [responsePayloadType] is the response's `Cratestack-Payload-Type`
+  /// header (`null` when absent, which means CBOR). It must be one of
+  /// [CallBinding.payloadAccept]; [Opened.payloadType] reports it.
+  ///
+  /// Throws [CoseRejected] for every failed check, whatever failed, a
+  /// response type the call did not accept included.
   Future<Opened> openResponse(
     Uint8List body, {
     required CallBinding binding,
     required Uint8List sealedRequest,
     required int status,
+    String? responsePayloadType,
   });
 }
 

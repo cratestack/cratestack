@@ -186,6 +186,16 @@ final reply = codec.decodeJson(opened.payload);
   comes with the callback signer of a later release (`CoseSignerCancelled`,
   `CoseSignerTimedOut` and `CoseSignerFailed` are already in the exception
   hierarchy for it).
+- **Compact wire keys / other payload types.** `CallBinding(payloadType: ..,
+  payloadAccept: [..])` seals the payload under that media type (bound in the
+  AAD; compact keys are `application/vnd.cratestack.compact+cbor`) and lets
+  the answer come back in the listed types, as the Rust client's `seal_call`
+  does. Send `envelope.selectorHeaders(binding)` (the
+  `Cratestack-Payload-Type` / `Cratestack-Payload-Accept` headers, empty for a
+  default call) with the body, pass the response's `Cratestack-Payload-Type`
+  header to `openResponse(responsePayloadType: ..)`, and read
+  `Opened.payloadType`. A type the call did not accept is `CoseRejected`; a
+  type that cannot be sealed is `CoseMisuse`.
 - **Mount parameters come first.** `CallBinding.pathParams` are the values the
   server's router matched, in order: if it is mounted under a path with
   parameters (`nest("/t/{tenant}", ..)`), the mount's values precede the

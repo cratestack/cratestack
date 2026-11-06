@@ -12,6 +12,8 @@ fn call() -> CallBinding {
         contract_sha: [9; 32],
         idempotency_key: Some("idem-7f3a".to_owned()),
         if_match: Some("\"3\"".to_owned()),
+        payload_type: None,
+        payload_accept: None,
     }
 }
 

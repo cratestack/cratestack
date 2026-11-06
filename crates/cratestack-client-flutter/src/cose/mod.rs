@@ -26,7 +26,7 @@ pub use envelope::FlutterClientEnvelope;
 pub use error::{FlutterCoseError, FlutterCoseErrorKind};
 pub use types::{
     FlutterCallBinding, FlutterCoseAlg, FlutterCoseMode, FlutterOpened, FlutterSealOptions,
-    FlutterServerKey,
+    FlutterSelectorHeader, FlutterServerKey,
 };
 
 /// The `Cratestack-Contract` header value for an op contract digest (11

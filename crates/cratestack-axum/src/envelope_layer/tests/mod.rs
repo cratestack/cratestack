@@ -49,6 +49,8 @@ mod payload_types_builder;
 #[cfg(feature = "cose")]
 mod payload_types_charset;
 #[cfg(feature = "cose")]
+mod payload_types_compact;
+#[cfg(feature = "cose")]
 mod payload_types_compat;
 #[cfg(feature = "cose")]
 mod payload_types_optional;

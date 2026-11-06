@@ -44,11 +44,17 @@ extension type _JsEnvelope._(JSObject _) implements JSObject {
     JSObject binding,
     JSUint8Array sealedRequest,
     int status,
+    String? responsePayloadType,
   );
+
+  external JSObject selectorHeaders(JSObject binding);
 }
 
 @JS('window.__cratestackCborWasmBridge.ClientEnvelope')
 external JSAny? get _clientEnvelopeExport;
+
+@JS('Object.keys')
+external JSArray<JSString> _keys(JSObject object);
 
 @JS('window.__cratestackCborWasmBridge.contractHeaderValue')
 external String _contractHeaderValue(JSUint8Array contractSha);
@@ -140,11 +146,25 @@ final class _WebEnvelope implements ClientEnvelope {
   }
 
   @override
+  Map<String, String> selectorHeaders(CallBinding binding) {
+    try {
+      final headers = _handle.selectorHeaders(_binding(binding));
+      return {
+        for (final name in _keys(headers).toDart)
+          name.toDart: (headers.getProperty(name) as JSString).toDart,
+      };
+    } catch (error) {
+      throw _exception(error);
+    }
+  }
+
+  @override
   Future<Opened> openResponse(
     Uint8List body, {
     required CallBinding binding,
     required Uint8List sealedRequest,
     required int status,
+    String? responsePayloadType,
   }) async {
     try {
       final opened = await _handle
@@ -153,10 +173,13 @@ final class _WebEnvelope implements ClientEnvelope {
             _binding(binding),
             sealedRequest.toJS,
             status,
+            responsePayloadType,
           )
           .toDart;
       return Opened(
         payload: (opened.getProperty('payload'.toJS) as JSUint8Array).toDart,
+        payloadType:
+            (opened.getProperty('payloadType'.toJS) as JSString).toDart,
         kid: (opened.getProperty('kid'.toJS) as JSUint8Array).toDart,
         alg: _algFrom((opened.getProperty('alg'.toJS) as JSString).toDart),
         thumbprint:
@@ -188,6 +211,10 @@ JSObject _binding(CallBinding binding) => _object({
       'contractSha': binding.contractSha.toJS,
       'idempotencyKey': binding.idempotencyKey?.toJS,
       'ifMatch': binding.ifMatch?.toJS,
+      'payloadType': binding.payloadType?.toJS,
+      'payloadAccept': binding.payloadAccept == null
+          ? null
+          : [for (final type in binding.payloadAccept!) type.toJS].toJS,
     });
 
 String _alg(CoseAlg alg) => switch (alg) {

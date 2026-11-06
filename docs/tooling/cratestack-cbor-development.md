@@ -286,6 +286,15 @@ implementation, reached over the bridge the codec already uses. Nothing in `lib/
 - **Web:** `crates/cratestack-cbor-wasm/src/cose/` (feature `cose`, wasm32-only). `just cbor-vendor-web`
   builds with `--features cose`; `@cratestack/cbor-web` on npm does not, and `release-cli.yml` asserts its
   wasm has no `ClientEnvelope`.
+- **Payload types (compact wire keys).** The web binding object takes optional `payloadType` (string) and
+  `payloadAccept` (string[]) beside `method`, `route`, `pathParams`, `query?`, `contractSha`, `idempotencyKey?`,
+  `ifMatch?`; `selectorHeaders(binding)` returns the `Cratestack-Payload-Type` / `Cratestack-Payload-Accept`
+  header object to send; `openResponse(body, binding, sealedRequest, status, responsePayloadType?)` takes the
+  response's `Cratestack-Payload-Type` and resolves to `{ payload, payloadType, kid, alg, thumbprint }`. The
+  wasm-bindgen `.d.ts` types the binding as `any`, so there is no checked-in TypeScript declaration to update.
+  Native: `FlutterCallBinding` gains `payload_type` / `payload_accept`, `FlutterOpened` gains `payload_type`,
+  `FlutterClientEnvelope::selector_headers` and `open_response(.., response_payload_type)`. The frb glue and the
+  generated Dart (`lib/src/native/rust`) are not checked in; CI regenerates them from these Rust signatures.
 - **Both glues map into `cratestack_cose::CallBinding`**, so the canonical query and the AAD inputs live
   once. The shared vectors (`crates/cratestack-cose/tests/vectors`) are read in place by every test suite,
   never copied into a package: `cargo test -p cratestack-client-flutter --features cose`, `wasm-pack test
