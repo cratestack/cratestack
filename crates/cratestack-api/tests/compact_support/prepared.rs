@@ -96,7 +96,7 @@ macro_rules! prepared_replay_suite {
         }
         #[tokio::test]
         async fn malformed_cbor_snapshots_never_send() {
-            let (addr, _, executions) = spawn().await;
+            let (addr, log, executions) = spawn().await;
             let runtime = CratestackClient::cbor(ClientConfig::new(
                 reqwest::Url::parse(&format!("http://{addr}")).unwrap(),
             ))
@@ -130,6 +130,9 @@ macro_rules! prepared_replay_suite {
             ] {
                 let mut changed = original.clone();
                 changed["body"] = serde_json::json!(body);
+                let direct: cratestack_client_rust::PreparedCall =
+                    serde_json::from_value(changed.clone()).unwrap();
+                assert!(runtime.execute_prepared(&direct).await.is_err());
                 assert!(
                     cratestack_client_rust::PreparedCall::from_bytes(
                         &serde_json::to_vec(&changed).unwrap()
@@ -138,6 +141,7 @@ macro_rules! prepared_replay_suite {
                 );
             }
             assert_eq!(executions.load(Ordering::SeqCst), 0);
+            assert!(log.lock().unwrap().is_empty());
         }
 
         #[tokio::test]

@@ -134,5 +134,8 @@ mod tests {
         assert!(validate(&nested).is_ok());
         nested.insert(0, 0x81);
         assert!(validate(&nested).is_err());
+        let mut chunks = vec![0x81; 256];
+        chunks.extend([0x7f, 0x61, 0x61, 0xff]);
+        assert!(validate(&chunks).is_ok());
     }
 }

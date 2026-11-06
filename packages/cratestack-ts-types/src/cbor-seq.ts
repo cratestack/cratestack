@@ -38,7 +38,7 @@ export class CborSeqBoundaryScanner {
 
   /** Append `chunk` and return every complete top-level item now
    *  available, oldest first. Throws (a `MalformedCborSeqError`) only
-   *  for structurally invalid CBOR — a genuinely truncated final item
+   *  for invalid CBOR framing or text, or excessive nesting — a truncated final item
    *  just stays buffered, it never throws here. */
   feedChunk(chunk: Uint8Array): Uint8Array[] {
     this.buffer = concatBytes(this.buffer, chunk);

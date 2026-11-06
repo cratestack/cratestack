@@ -135,7 +135,7 @@ function skipIndefinite(bytes: Uint8Array, start: number, majorType: number, dep
         );
       }
     }
-    cursor = skipItem(bytes, cursor, depth + 1); // array element, map key, or string chunk
+    cursor = skipItem(bytes, cursor, majorType === 2 || majorType === 3 ? depth : depth + 1);
     if (majorType === 5) {
       cursor = skipItem(bytes, cursor, depth + 1); // map value half of the pair
     }

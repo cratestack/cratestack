@@ -1157,7 +1157,7 @@ int? _cratestackSkipIndefinite(Uint8List bytes, int start, int major, int depth)
         throw const FormatException('malformed indefinite-length cbor string');
       }
     }
-    final end = _cratestackSkipCborItem(bytes, cursor, depth + 1);
+    final end = _cratestackSkipCborItem(bytes, cursor, major == 2 || major == 3 ? depth : depth + 1);
     if (end == null) {
       return null;
     }

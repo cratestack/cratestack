@@ -148,14 +148,16 @@ void main() {
 
   test('validates one CBOR item without changing the wire bytes', () async {
     final named = await _named(codec, _author);
-    final transport = _Script(List.generate(12, (_) => (_) => _answer(200, 'application/cbor', named)));
+    final transport = _Script(List.generate(13, (_) => (_) => _answer(200, 'application/cbor', named)));
     final adapter = _adapter(transport, null);
     final saved = await adapter.prepareCall(_create, _author, options: const CratestackRpcCallOptions(idempotencyKey: 'k'));
     List<int> hex(String value) => [for (var i = 0; i < value.length; i += 2) int.parse(value.substring(i, i + 2), radix: 16)];
-    const invalid = ['', '0000', '18', '1c', 'ff', '81ff', 'bf00ff', '5f6161ff', '5f5fffff',
+    final invalid = ['', '0000', '18', '1c', 'ff', '81ff', 'bf00ff', '5f6161ff', '5f5fffff',
       'f800', 'f818', 'f81f', '61ff', '62c080', '63eda080', '64f4908080', '7f61c261a2ff'];
-    const valid = ['a10102', 'a1810102', '1bffffffffffffffff', '3bffffffffffffffff', 'dbffffffffffffffff00',
+    final valid = ['a10102', 'a1810102', '1bffffffffffffffff', '3bffffffffffffffff', 'dbffffffffffffffff00',
       '9f8101bf0001ffff', '5f4100420102ff', '7f62c2a26161ff', 'f97e00', 'fa7f800000', 'f820', '1800'];
+    invalid.add('${List.filled(257, '81').join()}00');
+    valid.add('${List.filled(256, '81').join()}7f6161ff');
     for (final value in invalid) {
       final altered = saved.toJson()..['body'] = base64Encode(hex(value));
       await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(altered)), throwsFormatException);
@@ -167,6 +169,21 @@ void main() {
       await adapter.executePrepared(CratestackPreparedCall.fromJson(altered));
       expect(transport.requests.last.body, bytes);
     }
+  });
+
+  test('streaming scanner waits for complete text and simple values', () async {
+    final text = CratestackCborSeqScanner();
+    expect(await text.feed(Uint8List.fromList([0x62, 0xc2])), isEmpty);
+    expect(await text.feed(Uint8List.fromList([0xa2])), [[0x62, 0xc2, 0xa2]]);
+    final invalid = CratestackCborSeqScanner();
+    expect(await invalid.feed(Uint8List.fromList([0x62, 0xc0])), isEmpty);
+    expect(() => invalid.feed(Uint8List.fromList([0x80])), throwsFormatException);
+    final simple = CratestackCborSeqScanner();
+    expect(await simple.feed(Uint8List.fromList([0xf8])), isEmpty);
+    expect(await simple.feed(Uint8List.fromList([0x20])), [[0xf8, 0x20]]);
+    final invalidSimple = CratestackCborSeqScanner();
+    expect(await invalidSimple.feed(Uint8List.fromList([0xf8])), isEmpty);
+    expect(() => invalidSimple.feed(Uint8List.fromList([0x00])), throwsFormatException);
   });
 
   test('full pin memory keeps old keys and leaves new keys named', () async {
