@@ -1,12 +1,13 @@
 # Compact wire keys: integer field keys selected by the op contract
 
 Status: **proposal** (2026-11-06). Not accepted; no code. This doc compares four ways to stop
-repeating field names in CBOR bodies when client and server share the `.cstack` schema, and
+repeating field names in bodies when client and server share the `.cstack` schema, and
 recommends one (§4). Nothing here changes the wire today.
 
-Scope: CBOR request and response bodies of REST routes and RPC ops (unary, batch frames, WS
-frames, `application/cbor-seq` items), and the Rust, Dart and TypeScript clients that encode and
-decode them. JSON, query strings, error bodies, WireMock, MCP and Studio stay named (§5.5).
+Scope: CBOR and JSON request and response bodies of REST routes and RPC ops (unary, batch frames,
+WS frames, `application/cbor-seq` items), sealed or not, and the Rust, Dart and TypeScript
+clients that encode and decode them. Query strings, error bodies, WireMock, MCP and Studio stay
+named (§5.5).
 
 **Evidence convention.** `path:line` anchors were READ on `claude/relaxed-brahmagupta-krvnpc`
 at `801d14d` (2026-11-06). Byte counts were RAN with the probe in §8, which drives
@@ -53,7 +54,21 @@ Read it in two directions:
   `Content-Encoding`. That is the profile `enum-ordinals.md` §1 found for enums.
 
 Positional arrays save another 4–8 % over integer keys. They are not proposed: absent optional
-fields, tolerant decoding (§4.3) and dropping unknown fields (§4.4) all need a key.
+fields, tolerant decoding (§5.3) and dropping unknown fields (§5.4) all need a key.
+
+The same shapes in JSON, where an integer key becomes a numeric string (`"3"`):
+
+| Payload | JSON names | gz | JSON integer keys | gz |
+|---|---|---|---|---|
+| createProduct request | 264 | 229 | **201** (−24 %) | 181 |
+| createProduct response | 404 | 297 | **321** (−21 %) | 242 |
+| transfer request | 183 | 161 | **130** (−29 %) | 126 |
+| transfer response | 346 | 257 | **248** (−28 %) | 196 |
+| 500-row list | 66 463 | 18 193 | 52 963 (−20 %) | 17 876 |
+
+JSON saves less than CBOR, because each key keeps its quotes, but 21–29 % on a single call is
+still the largest lever JSON has. It matters most for the TypeScript REST client, which speaks
+only JSON (§5.8). The mode therefore covers JSON too (§5.1).
 
 Op ids: a batch frame carrying the transfer request with integer keys is 100 B with
 `op: "procedure.transferFunds"` and 78 B with the op as an integer. So the op id is about 22 B
@@ -145,7 +160,7 @@ Dart and TypeScript runtimes, and browser support is Chromium-only. It stays ope
 
 | | A | B | C | D |
 |---|---|---|---|---|
-| Single-call saving | 32–47 %, only while digests match | 32–47 % | 32–47 % | ~0–16 % |
+| Single-call saving (CBOR / JSON) | 32–47 % / 21–29 %, only while digests match | 32–47 % / 21–29 % | 32–47 % / 21–29 % | ~0–16 % |
 | Server newer than client | names | compact | compact, if the lock accepts the client's contract | compact |
 | Schema syntax | none | a number per field + `@@reserved` | none | none |
 | New ledger to enforce | none | yes | none (reuses `ContractLock`) | none |
@@ -154,26 +169,57 @@ Dart and TypeScript runtimes, and browser support is Chromium-only. It stays ope
 
 ## 5. Proposal C in detail
 
-### 5.1 Negotiation
+### 5.1 Negotiation: one media-type family, plain, sealed and streamed
 
-- A client opts in per call by sending the media-type parameter
-  `application/cbor; keys=contract` in `Content-Type` (for its request body) and `Accept` (for the
-  response), plus `Cratestack-Contract` for the op. Generated clients would send both when the
-  call's codec is CBOR.
-- The server decodes a compact request with the table of the selected digest. It answers compact,
-  marked with the same media-type parameter, only when the request asked and the selector names an
-  accepted digest. Otherwise it answers with names and plain `application/cbor`. A server never
-  sends integer keys to a client that did not ask, so no client breaks.
-- Responses carry `Vary: Accept, Cratestack-Contract`.
+Key mode is a property of the payload's media type, so it is negotiated wherever a payload type
+already is:
+
+| Body | Named (today) | Compact keys |
+|---|---|---|
+| CBOR | `application/cbor` | `application/vnd.cratestack.compact+cbor` |
+| JSON | `application/json` | `application/vnd.cratestack.compact+json` |
+| CBOR sequence (`@stream`, subscriptions) | `application/cbor-seq` | `application/vnd.cratestack.compact+cbor-seq` |
+| Sealed (COSE) | outer `application/cose`, inner payload type `application/cbor` | outer unchanged, inner payload type `application/vnd.cratestack.compact+cbor` (or `+json`) |
+
+- **Plain calls.** The client sends the compact type in `Content-Type` for its request body and
+  first in `Accept` for the response, with the named type after it as a fallback, plus
+  `Cratestack-Contract` for the op.
+- **Sealed calls.** `Accept: application/cose` names the *envelope*, not what is inside it. The
+  inner type is negotiated by the selector headers that exist for exactly this,
+  `Cratestack-Payload-Type` and `Cratestack-Payload-Accept`
+  (`crates/cratestack-core/src/codec/payload_type.rs`, cratestack#1168). A client sends
+  `Cratestack-Payload-Accept: application/vnd.cratestack.compact+cbor, application/cbor`. The
+  server opts in per op through `EnvelopeLayerBuilder::payload_media_types`
+  (`crates/cratestack-axum/src/envelope_layer/builder_payload.rs`).
+- **Why a distinct type, and not `application/cbor; keys=compact`.** The payload-type grammar is
+  deliberately parameter-free: lowercase `type/subtype`, "no parameters, no wildcard", one
+  grammar with no normalisation, so the two sides cannot disagree (`payload_type.rs`). A
+  parameter would have to reopen that rule. A distinct type fits it as it stands, and it brings a
+  property for free: the AAD binds the whole payload media type (`Binding::payload_media_type`),
+  so **a sealed compact body is bound to its key mode with no binding-version change**. A
+  parameter is fine HTTP for unsealed calls, but then the same mode would have two spellings, so
+  the family uses one everywhere.
+- **Streams.** `+cbor-seq` is the structured-syntax suffix RFC 8742 registers for CBOR
+  sequences. `is_sealable_payload_type` refuses a stream by exact match on `application/cbor-seq`
+  today, so it must learn the `+cbor-seq` suffix as well. Otherwise the compact stream type would
+  read as sealable. Streams take the table once, from the opening request (§5.7).
+- **Server.** It decodes a compact request with the table of the selected digest. It answers
+  compact only when the client listed the compact type and the selector names an accepted digest.
+  Otherwise it answers with names under the named type. A server never sends integer keys to a
+  client that did not ask, so no client breaks.
+- Unsealed responses carry `Vary: Accept, Cratestack-Contract`.
 - A selector that names no accepted digest is **not** an error on an unsigned call: the server
   falls back to names. The `426 contract_unsupported` refusal stays specific to sealed calls.
 
 ### 5.2 Key table derivation
 
 For every model, type and view in the op's contract closure, the wire fields in the order
-`wire_fields` already produces, numbered from 0. Keys are CBOR unsigned integers, so 1 B up to 23
-fields and 2 B up to 255. The RPC frame and input structs the framework owns (`RpcListInput`,
-`RpcGetInput`, the batch frame) keep text keys in v1 (O2).
+`wire_fields` already produces, numbered from 0. On CBOR, keys are unsigned integers: 1 B up to 23
+fields, 2 B up to 255. On JSON they are decimal strings (`"3"`). A `.cstack` field name is a
+chumsky `text::ident` (`crates/cratestack-parser/src/parse/types.rs`), which cannot start with a
+digit, so in tolerant decoding (§5.3) a numeric key and a field name can never collide. The RPC
+frame and input structs the framework owns (`RpcListInput`, `RpcGetInput`, the batch frame)
+keep text keys in v1 (O2).
 
 ### 5.3 Decoding is tolerant, encoding is strict
 
@@ -191,8 +237,6 @@ older contract if the server can read what that client sends, so a compact reque
 
 ### 5.5 What stays named
 
-- **JSON.** JSON object keys are strings, so `"3"` saves less and reads worse. Compact keys are
-  CBOR-only.
 - **Query strings, error bodies (`RpcErrorBody`), WireMock stubs, MCP tool I/O, Studio, and
   logs.** These are the human-facing surfaces.
 - **Outbox and audit payloads.** They outlive the contract that wrote them, so they stay named
@@ -212,10 +256,10 @@ table later; it is not worth the churn now.
   named for the same `Idempotency-Key` therefore reads as a conflict. Rule: a client never
   switches key mode within one idempotency key.
 - **Signed envelopes.** A sealed body is sealed in its compact form. The AAD already binds the op
-  contract digest, which fixes the table, but it must also bind the key mode. Otherwise the same
-  bytes could be presented as a different encoding. That means a payload-type change
-  (`crates/cratestack-core/src/codec/payload_type.rs`) and a binding-version note in ADR 0006
-  (cratestack-docs `internals/cose-envelope-adr.md`).
+  contract digest, which fixes the table, and the payload media type, which fixes the key mode
+  (§5.1). Nothing new has to be bound. What remains is ADR 0006 (cratestack-docs
+  `internals/cose-envelope-adr.md`) naming the compact types, and the `+cbor-seq` sealability
+  fix (§5.1).
 - **Projections.** `?fields=` responses go through `ProjectedValue`
   (`crates/cratestack-axum/src/projection.rs`), which builds maps by field name at runtime. It
   needs the table too. A projected field keeps its full-contract number, so a projection is a
@@ -229,16 +273,17 @@ table later; it is not worth the churn now.
 
 ### 5.8 Implementation sketch (per surface)
 
-- **Rust, server and client.** A `serde` adapter around `minicbor-serde`'s serializer and
-  deserializer. On `serialize_struct` and `serialize_field` it swaps the field's name for its key
-  from a generated `&'static` table, keyed by struct name and field name. On decode it maps an
-  integer back to the name and hands it to the derive's field visitor. There is no change to the
-  generated structs, and this stays one module in `cratestack-codec-cbor`, under the 200-LoC
-  ceiling. Codegen emits one table per accepted digest.
+- **Rust, server and client.** A `serde` adapter around the codec's serializer and deserializer
+  (`minicbor-serde` and `serde_json` alike). On `serialize_struct` and `serialize_field` it swaps
+  the field's name for its key from a generated `&'static` table, keyed by struct name and field
+  name. On decode it maps an integer, or a numeric string on JSON, back to the name and hands it
+  to the derive's field visitor. There is no change to the generated structs. The adapter is one
+  format-agnostic module, under the 200-LoC ceiling, that both codecs wrap. Codegen emits one
+  table per accepted digest.
 - **TypeScript.** The RPC runtime's CBOR path already revives per type (`wireShapes` beside
   `ordinalEnumNames`), so the remap goes there. The REST runtime is JSON-only and has no codec
-  seam, so it gets nothing until it speaks CBOR. That alone shrinks a transfer request from 183 to
-  123 B, before any key change (§2).
+  seam, but `+json` compact keys reach it without one: a transfer request goes from 183 to 130 B.
+  Moving it to CBOR is a separate lever (183 to 123 B with names, 65 B with compact keys).
 - **Dart.** Generated `fromJson`/`toJson` work on `Map<String, dynamic>`. Codegen would emit a
   second pair keyed by integer from the same table, chosen by the HTTP runtime's codec.
 - **Transport parity** (CLAUDE.md). REST and RPC ship together, with every generated client and
@@ -262,8 +307,8 @@ scoped to stay inside them.
 
 - **O1 — default.** Should generated clients opt in by default once the server supports it, or
   only behind a client option? Responses are never compact unless asked (§5.1), so a default-on
-  client cannot break a server that lacks the mode. But it does make every CBOR body unreadable to
-  `curl … | cbor2json` debugging.
+  client cannot break a server that lacks the mode. But it does make every body unreadable
+  without the schema, to `curl … | cbor2json` and to a JSON body in browser dev tools alike.
 - **O2 — framework-owned structs.** Should `RpcListInput`, `RpcGetInput` and the frame envelope
   get a fixed integer table, versioned by the RPC subprotocol (`cratestack.rpc.v1+cbor`)?
 - **O3 — outbox and audit.** Should a model's `@@emit` payload be compact when its consumers are
@@ -274,6 +319,9 @@ scoped to stay inside them.
 - **O5 — time and decimals.** After keys, the largest remaining bytes are `DateTime` as RFC 3339
   text (21–32 B) and `Decimal` as a string. Tag 1 or RFC 9581 tag 1001 for time is the next lever
   (`enum-ordinals.md` §6) and is independent of this design.
+- **O6 — the type names.** `application/vnd.cratestack.compact+cbor` and its siblings are
+  placeholders. They are unregistered vendor-tree types, and nothing here depends on the exact
+  spelling. Settle the names before slice 3.
 
 ## 8. Measurements
 
@@ -306,6 +354,17 @@ transfer response        names=   242 gz=   253 zstd=   236 zstd+dict=   164 (+d
 batch frame, op as text=100 B, op as integer=78 B (transfer input, integer keys)
 ```
 
+JSON, from a second run of the same probe, where `serde_json` writes the `u8` map keys as
+numeric strings:
+
+```text
+createProduct request    json names=   264 gz=   229 | json intkeys=   201 (-24 %) gz=   181
+createProduct response   json names=   404 gz=   297 | json intkeys=   321 (-21 %) gz=   242
+transfer request         json names=   183 gz=   161 | json intkeys=   130 (-29 %) gz=   126
+transfer response        json names=   346 gz=   257 | json intkeys=   248 (-28 %) gz=   196
+500-row list             json names= 66463 gz= 18193 | json intkeys= 52963 (-20 %) gz= 17876
+```
+
 The encoder, as in `enum-ordinals.md` §8, and the integer-key impl the probe generates per struct:
 
 ```rust
@@ -336,14 +395,15 @@ impl Serialize for Keyed<'_, TransferInput> {
 1. **Core.** Derive the key table from an op contract (`cratestack-core/src/client_contract/`),
    with golden tests that a field reorder leaves the table unchanged and an added field yields a
    new digest with a new table.
-2. **Codec.** The `serde` adapter in `cratestack-codec-cbor`, with tolerant decode (§5.3) and
-   unknown-field drop (§5.4), and round-trip tests against derive-generated structs, including
-   `Uuid`, `Decimal`, `Option` and nested types.
+2. **Codecs.** The `serde` adapter in `cratestack-codec-cbor` and `cratestack-codec-json`,
+   with tolerant decode (§5.3) and unknown-field drop (§5.4), and round-trip tests against
+   derive-generated structs, including `Uuid`, `Decimal`, `Option` and nested types.
 3. **Server.** Negotiation (§5.1), `ACCEPTED_CONTRACTS` tables from the lock, `ProjectedValue`,
    streams. REST and RPC in one PR, with batch frames still named.
-4. **Clients.** Rust, Dart and TypeScript RPC, plus the swr, riverpod and fespalier layers, run
+4. **Clients.** Rust, Dart, TypeScript RPC and TypeScript REST (`+json`), plus the swr, riverpod and fespalier layers, run
    through `just regen-examples`. Then an end-to-end test of an older generated client against a
    newer server whose lock accepts it, on Postgres.
-5. **Signed transport.** The key-mode binding (§5.7), and an ADR 0006 amendment.
+5. **Signed transport.** The compact types in `payload_media_types`, the `+cbor-seq`
+   sealability fix (§5.1), and an ADR 0006 amendment naming the types. No binding-version change.
 6. **Docs and skills.** `guides/payload-size.md` in cratestack-docs, and the payload/transport
    skill in cratestack-skills (`COVERAGE.md`).
