@@ -210,6 +210,17 @@ jobs:
             --test fespalier_snapshot
           CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-typescript --test snapshot
           just regen-examples
+          # `examples/react-vite-swr` is its own pnpm workspace with its own
+          # `pnpm-lock.yaml`, which records the generated client's
+          # `@cratestack/cbor` peer range verbatim. A minor bump moves that
+          # range's upper bound (`<0.18.0` -> `<0.19.0`), so the lockfile must
+          # follow or CI's `pnpm install --frozen-lockfile` in that directory
+          # fails with ERR_PNPM_OUTDATED_LOCKFILE (the v0.18.0 release PR,
+          # #1289). `dedupe` keeps CI's `pnpm dedupe --check` green too. A
+          # patch bump leaves both byte-identical.
+          (cd examples/react-vite-swr \
+            && pnpm install --lockfile-only --ignore-scripts \
+            && pnpm dedupe)
 
       - name: Validate (cargo check + tests)
         run: just release-check
@@ -363,7 +374,8 @@ jobs:
             ':(glob)packages/*/package.json' ':(glob)dart-packages/*/pubspec.yaml' \
             ':(glob)dart-packages/*/*/*.podspec' \
             ':(glob)crates/cratestack-client-*/tests/snapshots/**' \
-            examples/flutter-riverpod/client examples/react-vite-swr/client
+            examples/flutter-riverpod/client examples/react-vite-swr/client \
+            examples/react-vite-swr/pnpm-lock.yaml
           # THE GUARD (cratestack#563 follow-up). Every pathspec above was
           # added reactively, after a release shipped something stale:
           #

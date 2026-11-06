@@ -224,9 +224,6 @@ enum CratestackWireFormat {
   json,
 }
 
-/// The `Accept` of a CBOR adapter: CBOR preferred, JSON accepted.
-const String _cratestackPlainCborAccept = 'application/cbor, application/json;q=0.9';
-
 String _cratestackMimeOf(String? contentType) =>
     (contentType ?? '').split(';').first.trim().toLowerCase();
 
@@ -897,6 +894,12 @@ final class _RouteTemplate {
     return true;
   }
 }
+
+/// The `Accept` of a CBOR REST adapter: CBOR preferred, JSON accepted. Here
+/// and not in the shared codec fragment, which the RPC runtime also includes:
+/// only REST reads it, and an unused private constant fails
+/// `flutter analyze --fatal-warnings`.
+const String _cratestackPlainCborAccept = 'application/cbor, application/json;q=0.9';
 
 /// A path's non-empty segments. Both the request path (`/api/posts/1`) and a
 /// route template (`/posts/{id}`) start with `/`, so a plain split leads with
