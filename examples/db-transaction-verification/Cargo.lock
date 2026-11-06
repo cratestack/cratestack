@@ -594,6 +594,7 @@ dependencies = [
  "bytes",
  "chrono",
  "futures-core",
+ "futures-util",
  "hmac",
  "http",
  "rust_decimal",
@@ -604,6 +605,7 @@ dependencies = [
  "sqlx-postgres",
  "subtle",
  "thiserror",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -717,7 +719,6 @@ dependencies = [
  "cratestack-core",
  "cratestack-policy",
  "cratestack-sql",
- "futures-util",
  "rust_decimal",
  "serde",
  "serde_json",

@@ -159,6 +159,13 @@ where
             return Ok(bound.settle(outcome, emits));
         }
         let runtime = self.runtime;
+        // Before this transaction takes a connection (`outbox_upgrade.rs`).
+        let emits_updated = self
+            .descriptor
+            .emits(cratestack_core::ModelEventKind::Updated);
+        runtime
+            .upgrade_event_outbox(self.descriptor, emits_updated)
+            .await;
         let mut tx = runtime
             .pool()
             .begin()

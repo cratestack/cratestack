@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:cbor/simple.dart' as cbor;
+import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
 
 import 'constants.dart';
 
@@ -180,6 +180,39 @@ final class CratestackTransportBroken extends CratestackTransportException {
 // response by its `Content-Type`, or on how a URI and the headers are built.
 // -----------------------------------------------------------------------------
 
+// cratestack#563: `createCborCodec()` is async (it loads a
+// vendored native library / wasm module on first use), so the codec is
+// resolved once and cached here rather than per call — every
+// `_cratestackCborCodec()` caller after the first just awaits the same
+// already-in-flight (or already-resolved) `Future`.
+//
+// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
+// `??=` never re-evaluates once the field holds a settled *rejected*
+// future, so one transient failure — a wasm asset that 404s on web, a
+// vendored library that was not there yet — would brick every later
+// request in the isolate, replaying the same error forever instead of
+// giving the next caller a fresh attempt. `onError` clears the cache so
+// it can retry, and rethrows with the original stack trace so nothing is
+// swallowed. Same rule, for the same reason, as the generated TypeScript
+// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
+// `createCborCodec()`.
+Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+
+Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        // Hung off the future rather than written as a `try`/`catch`
+        // around the call so it cannot run before the `??=` has
+        // assigned: an `onError` callback is always asynchronous,
+        // whereas a `catch` body fires synchronously for anything thrown
+        // before the factory's first `await`, and the assignment would
+        // then immediately re-cache the very failure it just cleared.
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
+}
+
 /// The wire format a request body is written in and an `Accept` header
 /// prefers. Responses are always decoded by their own `Content-Type`, so an
 /// adapter set to one format still reads the other.
@@ -216,14 +249,21 @@ Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async 
     case CratestackWireFormat.json:
       return Uint8List.fromList(utf8.encode(jsonEncode(body)));
     case CratestackWireFormat.cbor:
-      return Uint8List.fromList(cbor.cbor.encode(body));
+      final codec = await _cratestackCborCodec();
+      return codec.encodeJson(jsonEncode(body));
   }
 }
 
 /// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
 /// decoders expect.
 Future<Object?> _decodeCbor(Uint8List bytes) async {
-  return cratestackNormalizeWire(cbor.cbor.decode(bytes));
+  // `cratestack_cbor`'s wire boundary is JSON text, and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values
+  // (ISO-8601 strings for `DateTime`, `List<int>` for `Bytes`, decimal and
+  // `BigInt` text), so `jsonDecode` alone gives the `Map<String, Object?>`
+  // shape the decoders expect.
+  final codec = await _cratestackCborCodec();
+  return jsonDecode(codec.decodeJson(bytes));
 }
 
 /// Decodes a response body by its `Content-Type`: an empty body is `null`,
@@ -473,34 +513,6 @@ BigInt cratestackDecodeBigInt(Object? value, String site) {
 final RegExp _cratestackCanonicalBigInt = RegExp(r'^(0|-?[1-9][0-9]*)$');
 
 typedef CratestackValueMap = Map<String, Object?>;
-
-/// Recursively rewrites decoded containers into the `Map<String, Object?>`
-/// / `List<Object?>` shapes the generated `fromWire` decoders expect.
-///
-/// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
-/// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
-/// — casting it directly throws a `TypeError` (`_Map<Object?, Object?>`
-/// is not a subtype of `Map<String, dynamic>`) at runtime. JSON-decoded
-/// bodies already have `String` keys, so for them this is a cheap
-/// structural walk.
-Object? cratestackNormalizeWire(Object? value) {
-  // `Uint8List` implements `List<int>`, so it must be matched before the
-  // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
-  // get exploded into per-byte `List<Object?>`, breaking `is Uint8List`
-  // decoders and recursing over every byte.
-  if (value is Uint8List) {
-    return value;
-  }
-  if (value is Map) {
-    return value.map(
-      (key, entry) => MapEntry(key.toString(), cratestackNormalizeWire(entry)),
-    );
-  }
-  if (value is List) {
-    return value.map(cratestackNormalizeWire).toList(growable: false);
-  }
-  return value;
-}
 
 CratestackValueMap cratestackAsValueMap(Object? value) {
   if (value is CratestackValueMap) {

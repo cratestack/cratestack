@@ -85,7 +85,6 @@ mod tests {
                 preset,
                 fespalier_ref,
                 run_build_runner,
-                no_native_cbor,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
                 assert_eq!(out, PathBuf::from("out"));
@@ -99,20 +98,16 @@ mod tests {
                     !run_build_runner,
                     "--run-build-runner must default to off (issue #303: opt-in, not default)"
                 );
-                assert!(
-                    !no_native_cbor,
-                    "native cbor must default to ON (cratestack#563 follow-up: \
-                     cratestack_cbor 0.8.7 covers every platform but Linux arm64); \
-                     --no-native-cbor must be passed explicitly to turn it off"
-                );
             }
             _ => panic!("expected generate-dart command"),
         }
     }
 
     #[test]
-    fn generate_dart_clap_accepts_no_native_cbor_flag() {
-        let cli = Cli::parse_from([
+    fn generate_dart_clap_rejects_no_native_cbor_flag() {
+        // The flag was removed: native CBOR is the only codec a generated
+        // client is built with, so the old spelling is an unknown flag.
+        let parsed = Cli::try_parse_from([
             "cratestack",
             "generate-dart",
             "--schema",
@@ -121,13 +116,7 @@ mod tests {
             "out",
             "--no-native-cbor",
         ]);
-
-        match cli.command {
-            Command::GenerateDart { no_native_cbor, .. } => {
-                assert!(no_native_cbor);
-            }
-            _ => panic!("expected generate-dart command"),
-        }
+        assert!(parsed.is_err(), "--no-native-cbor must be an unknown flag");
     }
 
     #[test]
@@ -257,7 +246,6 @@ mod tests {
                 swr,
                 refine,
                 tanstack,
-                no_native_cbor,
                 rtk,
             } => {
                 assert_eq!(schema, PathBuf::from("schema.cstack"));
@@ -280,12 +268,6 @@ mod tests {
                     "--tanstack must default to off (issue #617: opt-in, additive)"
                 );
                 assert!(
-                    !no_native_cbor,
-                    "native cbor must default to ON for RPC-transport schemas (issue #746: \
-                     @cratestack/cbor is now the default RPC codec); --no-native-cbor must be \
-                     passed explicitly to turn it off"
-                );
-                assert!(
                     !rtk,
                     "--rtk must default to off (issue #906: opt-in, additive)"
                 );
@@ -295,8 +277,10 @@ mod tests {
     }
 
     #[test]
-    fn generate_typescript_clap_accepts_no_native_cbor_flag() {
-        let cli = Cli::parse_from([
+    fn generate_typescript_clap_rejects_no_native_cbor_flag() {
+        // The flag was removed: native CBOR is the only codec a generated
+        // client is built with, so the old spelling is an unknown flag.
+        let parsed = Cli::try_parse_from([
             "cratestack",
             "generate-typescript",
             "--schema",
@@ -305,13 +289,7 @@ mod tests {
             "out",
             "--no-native-cbor",
         ]);
-
-        match cli.command {
-            Command::GenerateTypeScript { no_native_cbor, .. } => {
-                assert!(no_native_cbor);
-            }
-            _ => panic!("expected generate-typescript command"),
-        }
+        assert!(parsed.is_err(), "--no-native-cbor must be an unknown flag");
     }
 
     #[test]

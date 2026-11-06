@@ -277,6 +277,9 @@ jobs:
             cargo tree --locked | grep -i sqlx
             exit 1
           fi
+      - name: topic under db = None builds and delivers (no-database-verification, postgres feature off)
+        working-directory: examples/no-database-verification
+        run: cargo test --locked
       - name: sqlx present behind the postgres feature (no-database-verification)
         working-directory: examples/no-database-verification
         run: |
@@ -1322,7 +1325,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, incl. --native-cbor)
+      - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, native cbor)
         run: just verify-dart
 
   # ---- dart-packages/{cratestack_annotations,cratestack_builder} --------
@@ -2319,22 +2322,15 @@ jobs:
         run: |
           cd examples/flutter-riverpod/client && flutter pub get
           cd "$GITHUB_WORKSPACE"
-          # `--no-native-cbor` must match `just regen-examples` and the
-          # committed `client/` (cratestack#708). Native is the DEFAULT codec
-          # since the cratestack#563 follow-up, so without this flag the
-          # regeneration below overwrites the committed pubspec with
-          # `cratestack_cbor: ^<workspace version>` — which pub.dev does not
-          # have until *after* that version is published, so `flutter pub get`
-          # fails on every release-bump PR while passing on `main`. The native
-          # path has its own end-to-end coverage in the `native_cbor_*` block;
-          # this fixture is deliberately codec-orthogonal. See the justfile's
-          # `--no-native-cbor` comment for the full rationale.
+          # No codec flag: native `cratestack_cbor` is the only mode, and it is
+          # what `just regen-examples` and the committed `client/` use. Its
+          # constraint is the published floor (`CRATESTACK_CBOR_FLOOR`,
+          # cratestack#779), so a release-bump PR still resolves.
           cargo run -p cratestack-cli -- generate-dart \
             --schema examples/react-vite-swr/schema.cstack \
             --out examples/flutter-riverpod/client \
             --library-name flutter_riverpod_client \
             --preset riverpod \
-            --no-native-cbor \
             --run-build-runner
       - name: flutter analyze (client)
         if: ${{ !cancelled() }}
@@ -2343,7 +2339,12 @@ jobs:
       - name: flutter test (client)
         if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/client
-        run: flutter test
+        # `flutter_tester` cannot resolve `cratestack_cbor`'s vendored library
+        # itself; point it at the one `flutter pub get` fetched (the justfile's
+        # `native_cbor_vendored_lib_for` explains why).
+        run: |
+          lib="$(python3 -c "import json; c = json.load(open('.dart_tool/package_config.json')); print([e for e in c['packages'] if e['name'] == 'cratestack_cbor'][0]['rootUri'].removeprefix('file://') + '/blobs/linux-x64/libcratestack_client_flutter.so')")"
+          CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test
       - name: flutter pub get (app)
         if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/app
@@ -2402,10 +2403,9 @@ jobs:
           }
           annotations="$(floor CRATESTACK_ANNOTATIONS_FLOOR)"
           builder="$(floor CRATESTACK_BUILDER_FLOOR)"
-          # cratestack#779: this client depends on cratestack_cbor now
-          # that `just regen-examples` no longer passes --no-native-cbor,
-          # so its floor gets pinned and analyzed here on the same terms
-          # as the other two.
+          # cratestack#779: this client depends on cratestack_cbor (native
+          # CBOR is the only codec mode), so its floor gets pinned and
+          # analyzed here on the same terms as the other two.
           cbor="$(floor CRATESTACK_CBOR_FLOOR)"
           if [ -z "$annotations" ] || [ -z "$builder" ] || [ -z "$cbor" ]; then
             echo "::error::could not read the API floors out of package_floors.rs — did the constants get renamed or reformatted? This step is meaningless until it can read them." >&2

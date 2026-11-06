@@ -255,6 +255,36 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   never under the newest dated section. A release bump promotes `## Unreleased` into a dated section and
   re-seeds a fresh, empty one above it (`.ci/changelog-seed.sh`), so it's always there for the next PR.
 
+### Vendored Rust skills (`.claude/skills/`)
+
+Two third-party agent skills are committed under `.claude/skills/`, installed with the `npx skills`
+CLI and recorded in `skills-lock.json`: `rust-best-practices` (apollographql/skills) and
+`rust-async-patterns` (wshobson/agents). The lock holds each skill's source and a content hash but no
+upstream commit, so the committed copies are the pin. They are copied **unmodified**, so
+`npx skills update -p -y` can refresh them to upstream HEAD; review that diff like any other
+third-party change before committing it. Their file names follow upstream, so the kebab-case naming
+convention does not apply inside `.claude/skills/`.
+
+They are general Rust advice. Where they disagree with this file, **this file wins**:
+
+- **Gates.** The bar is `just all-checks` / `just lint` (above), not the skill's
+  `cargo clippy --all-targets --all-features --locked`. `--all-features` does not compile in this
+  workspace (see "Plain tests" above).
+- **No `#![deny(missing_docs)]`.** The workspace lints are `[workspace.lints]` in the root `Cargo.toml`;
+  don't add crate-level lint denials the rest of the workspace doesn't carry.
+- **`unwrap`/`expect`.** Not banned outside tests here; clippy as `just lint` runs it is the rule. Prefer
+  `?` and typed errors on fallible paths, and keep an `expect` only for a genuine invariant, with a
+  message that says which.
+- **Tests.** "One assertion per test" does not apply: PG and end-to-end tests here assert a whole
+  scenario (a stream of frames, a commit and its retry) in one test because setup is expensive. Name
+  tests for the behaviour they prove.
+- **Dependencies.** Don't copy the async skill's quick-start `Cargo.toml` (`tokio = { features =
+  ["full"] }`, `anyhow`, …). Add dependencies through `[workspace.dependencies]` with the narrowest
+  features that build. `cratestack-core` and the client crates must still build for
+  `wasm32-unknown-unknown`, and `anyhow` belongs in binaries only.
+- **Files.** The 200-LoC ceiling and the facade disjointness rule above outrank any
+  "extract a function / keep it together" advice in the skills.
+
 <!-- BEGIN: AI Governance stanza (managed by ADORSYS-GIS/ai-governance) -->
 ## AI Governance
 

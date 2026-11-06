@@ -73,40 +73,6 @@ pub(crate) enum Command {
         /// itself fails.
         #[arg(long)]
         run_build_runner: bool,
-        /// Fall back to `pubspec.yaml`/runtime dependencies on pure-Dart
-        /// `package:cbor` instead of the published `cratestack_cbor`
-        /// package (flutter_rust_bridge natively, wasm-bindgen on web —
-        /// issue #563), which is now the default.
-        ///
-        /// **Breaking change (maintainer decision, cratestack#563
-        /// follow-up):** this replaces the old opt-in `--native-cbor` flag
-        /// — an existing `--native-cbor` invocation is now an unknown-flag
-        /// error, not a no-op. `cratestack_cbor` 0.8.7 is published on
-        /// pub.dev with Linux x86_64, Windows x64, macOS (universal), iOS
-        /// (device + simulator), Android (3 ABIs) and web all verified
-        /// there; native is now the default because both reasons the old
-        /// flag was opt-in (a platform-support gap, and the published
-        /// package lagging the repo) are closed.
-        ///
-        /// Pass `--no-native-cbor` when targeting Linux arm64, the one
-        /// unsupported platform — `createCborCodec()` still throws
-        /// `UnsupportedError` there (see
-        /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`)
-        /// — or for any consumer that just wants the dependency-free
-        /// pure-Dart codec.
-        ///
-        /// That gap is blocked upstream, not pending work: Flutter
-        /// publishes no arm64 Linux SDK on any channel, and `cratestack_
-        /// cbor` requires the Flutter SDK to resolve at all (it declares
-        /// `flutter.plugin.platforms`, which obliges `environment.flutter`)
-        /// — so plain `dart test`/`dart run` is not a way around it either,
-        /// contrary to what this comment claimed before cratestack#823
-        /// measured it. See the package README.
-        ///
-        /// Purely additive: every other emitted file is byte-identical
-        /// with and without it.
-        #[arg(long)]
-        no_native_cbor: bool,
     },
     #[command(name = "generate-typescript", alias = "generate-ts")]
     GenerateTypeScript {
@@ -178,28 +144,6 @@ pub(crate) enum Command {
         /// Composes freely with `--swr`/`--refine`.
         #[arg(long)]
         tanstack: bool,
-        /// Fall back to the pure-TypeScript `jsonRpcCodec` instead of the
-        /// published `@cratestack/cbor` package (napi-rs on Node,
-        /// wasm-bindgen in the browser — issue #746), which is now the
-        /// default RPC codec. **No effect on a REST-transport schema** —
-        /// `rest-runtime.ts.j2` has no codec seam at all, so REST output
-        /// never depends on this flag.
-        ///
-        /// `@cratestack/cbor-node`'s napi target matrix covers
-        /// `x86_64`/`aarch64` on macOS, glibc Linux and musl Linux
-        /// (Alpine, since cratestack#850) plus `x86_64-pc-windows-msvc` —
-        /// `win32-arm64` is the one remaining gap. There the napi loader
-        /// fails with a generic "Cannot find native binding…" error rather
-        /// than naming the real cause. Pass `--no-native-cbor` on that
-        /// target to fall back to `jsonRpcCodec`, which has no native
-        /// dependency and works everywhere.
-        ///
-        /// Purely additive: with an RPC-transport schema, every other
-        /// emitted file is byte-identical with and without it; with a
-        /// REST-transport schema, output is byte-identical regardless of
-        /// this flag.
-        #[arg(long)]
-        no_native_cbor: bool,
         /// Also emit `src/rtk-api.ts` (issue #906): a typed RTK Query
         /// `createApi` endpoint set — one entry per model operation and
         /// per `procedure` — dispatching through `@cratestack/adapter-rtk`'s

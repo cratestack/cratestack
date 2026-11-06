@@ -9,6 +9,7 @@ mod embedded_defaults;
 mod model_impls;
 mod read_source;
 mod subscribed;
+mod unique_columns;
 mod view;
 
 #[cfg(test)]
@@ -58,6 +59,9 @@ pub struct ModelDescriptor<M, PK> {
     /// `true` when the model declared `@@subscribe`: its events are also
     /// notified to the subscription backplane; see [`EventTarget`].
     pub subscribed: bool,
+    /// Columns under a `@unique` or `@@unique` constraint; see
+    /// [`ModelDescriptor::is_key_column`].
+    pub unique_columns: &'static [&'static str],
     /// Column name of the optimistic-locking version field, set when the
     /// model declares an `@version` field. `None` for non-versioned models,
     /// which keeps update semantics unchanged.
@@ -155,6 +159,7 @@ impl<M, PK> ModelDescriptor<M, PK> {
             database_defaults: &[],
             emitted_events,
             subscribed: false,
+            unique_columns: &[],
             version_column,
             audit_enabled,
             pii_columns,

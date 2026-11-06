@@ -70,7 +70,7 @@ pub use batch::response_to_frame;
 pub use codec_helpers::{decode_rpc_body, encode_rpc_value};
 pub use credential_expiry::until_credential_expires;
 pub use error_encode::{convert_handler_error_response, encode_rpc_error};
-pub use model_feed::{model_events, model_feed};
+pub use model_feed::{FeedEvent, model_events, model_feed, route_event};
 pub use procedure_subscription::{procedure_feed, procedure_input_query, procedure_query_args};
 pub use sse::{encode_model_event_sse_response, validate_subscribe_accept_header};
 pub use sse_subscription::encode_subscription_sse_response;

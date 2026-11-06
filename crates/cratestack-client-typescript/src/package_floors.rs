@@ -16,7 +16,7 @@
 //!
 //! # Why a constant, and not the `^{major}.{minor}.0` this replaced
 //!
-//! `native_cbor_version_requirement` used to call a
+//! The `@cratestack/cbor` requirement used to call a
 //! `minor_floor_version_requirement(env!("CARGO_PKG_VERSION"))` helper,
 //! introduced by #746 as a partial fix. Its own doc comment stated the
 //! residual gap honestly: a minor floor is still *derived from the
@@ -90,8 +90,7 @@
 pub(crate) const CRATESTACK_REFINE_FLOOR: &str = "0.8.0";
 
 /// `@cratestack/cbor` — the native RPC codec a generated client lists
-/// under `dependencies` when `native_cbor` is on (the default) *and* the
-/// schema is `transport rpc`. A REST client never gets this dependency
+/// under `dependencies` whenever the schema is `transport rpc`. A REST client never gets this dependency
 /// at all; `rest-runtime.ts.j2` has no codec seam.
 ///
 /// **`0.8.15`, not `0.8.0`, and the reason is a wire-format fix rather

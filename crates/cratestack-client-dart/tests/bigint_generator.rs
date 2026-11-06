@@ -37,7 +37,6 @@ fn render(schema: &cratestack_core::Schema, preset: DartPreset) -> GeneratedDart
             template_dir: None,
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )

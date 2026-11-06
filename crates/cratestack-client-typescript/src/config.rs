@@ -15,20 +15,11 @@ use std::path::PathBuf;
 /// provide.
 pub const DEFAULT_TANSTACK: bool = false;
 
-/// Whether a schema with no `--no-native-cbor`/`native_cbor: ...` given at
-/// all makes the generated RPC runtime's default codec `@cratestack/cbor`'s
-/// `createCborCodec()` instead of the pure-TypeScript `jsonRpcCodec`.
-/// Mirrors `cratestack-client-dart`'s `DEFAULT_NATIVE_CBOR` (issue #563) —
-/// see [`TypeScriptGeneratorConfig::native_cbor`]'s doc comment for the
-/// current reasoning and the one open platform gap.
-pub const DEFAULT_NATIVE_CBOR: bool = true;
-
 /// Whether a schema with no `--rtk`/`rtk: ...` given at all emits
 /// `src/rtk-api.ts`. `false` — same posture `DEFAULT_TANSTACK` documents:
-/// a brand-new opt-in framework binding defaults off, unlike
-/// `DEFAULT_NATIVE_CBOR` (an established default this crate is merely
-/// mirroring from Dart). See [`TypeScriptGeneratorConfig::rtk`]'s doc
-/// comment for what the flag emits.
+/// a brand-new opt-in framework binding defaults off. See
+/// [`TypeScriptGeneratorConfig::rtk`]'s doc comment for what the flag
+/// emits.
 pub const DEFAULT_RTK: bool = false;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,58 +89,6 @@ pub struct TypeScriptGeneratorConfig {
     /// used as a library directly, or in tests) — the generated client
     /// simply omits the header in that case.
     pub schema_sha256: String,
-    /// Issue #746's seam: use the published `@cratestack/cbor` package
-    /// (napi-rs on Node via `@cratestack/cbor-node`, wasm-bindgen in the
-    /// browser via `@cratestack/cbor-web`) as the generated RPC runtime's
-    /// default codec, instead of the pure-TypeScript `jsonRpcCodec` — see
-    /// `templates/src/rpc-runtime.ts.j2` and `templates/package.json.j2`.
-    /// **REST-only clients ignore this field entirely** —
-    /// `rest-runtime.ts.j2` hardcodes JSON and has no codec seam at all
-    /// (a separate, larger feature; not this ticket's scope).
-    ///
-    /// **The default as of this doc (`DEFAULT_NATIVE_CBOR` is `true`).**
-    /// TypeScript was the one client language where a first-party,
-    /// published CBOR codec existed (`@cratestack/cbor{,-node,-web}`,
-    /// cratestack#285-288) and was never wired into the generator — Dart
-    /// has defaulted to its own native codec since cratestack#563.
-    ///
-    /// **Known platform gap.** `@cratestack/cbor-node` ships prebuilt napi
-    /// binaries for exactly seven targets: `x86_64-apple-darwin`,
-    /// `aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
-    /// `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`,
-    /// `aarch64-unknown-linux-musl`, and `x86_64-pc-windows-msvc`. The two
-    /// musl targets — Alpine, the default base image for a large share of
-    /// Node backend containers — were added by cratestack#850; the
-    /// remaining gap is **`win32-arm64`**. There the napi dispatcher fails
-    /// with a generic *"Cannot find native binding. npm has a bug related
-    /// to optional dependencies…"* error that blames npm rather than
-    /// naming the real cause (unsupported platform) — nothing like Dart's
-    /// explicit `UnsupportedError` on Linux arm64. `--no-native-cbor`
-    /// (`native_cbor: false`) is the escape hatch: it falls back to
-    /// `jsonRpcCodec`, which has no native dependency and works
-    /// everywhere. Closing the remaining win32-arm64 gap in
-    /// `@cratestack/cbor-node`'s own napi target matrix is out of this
-    /// ticket's scope (a prerequisite ticket, not a generator change).
-    ///
-    /// Purely additive with respect to every other emitted file for a
-    /// REST-transport schema (byte-identical, no `@cratestack/cbor`
-    /// dependency ever appears) and for an RPC-transport schema leaves
-    /// every file byte-identical apart from `package.json` (the
-    /// dependency) and `src/runtime.ts` (the codec resolution) — pinned by
-    /// `tests/native_cbor_generator.rs`.
-    ///
-    /// `@cratestack/cbor`'s `createCborCodec()` is async on both
-    /// platforms (Node's underlying codec is actually synchronous — the
-    /// `async` there is pure call-site parity with the browser build,
-    /// where WASM instantiation genuinely has no sync equivalent — see
-    /// `packages/cratestack-cbor/src/node.ts`'s doc comment) while
-    /// `jsonRpcCodec` is a plain synchronous object. The runtime bridges
-    /// the two via a lazily-created, cached `Promise<CratestackRpcCodec>`
-    /// resolved once and awaited at the top of each already-`async`
-    /// method, rather than making the `CratestackRpcRuntime` constructor
-    /// itself async — that would break every existing consumer's
-    /// construction call (swr/tanstack/refine layers, every example).
-    pub native_cbor: bool,
     /// Issue #906 (epic #893's `#897`): additionally emit `src/rtk-api.ts` —
     /// an RTK Query `createApi` endpoint set, built on the existing
     /// `@cratestack/adapter-rtk` `createRpcBaseQuery` primitive for an
@@ -178,7 +117,6 @@ impl Default for TypeScriptGeneratorConfig {
             refine: false,
             tanstack: DEFAULT_TANSTACK,
             schema_sha256: String::new(),
-            native_cbor: DEFAULT_NATIVE_CBOR,
             rtk: DEFAULT_RTK,
         }
     }

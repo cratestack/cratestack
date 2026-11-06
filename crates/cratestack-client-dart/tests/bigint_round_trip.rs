@@ -23,22 +23,23 @@
 //! `PATH`. No Rust CI job in this repo provisions Flutter, so neither of these
 //! runs there; `just verify-dart` is the Flutter-provisioned job.
 //!
-//! Four packages are generated, because the transport and the preset each have
-//! their own generated code:
+//! Five packages are generated, because the transport and the preset each have
+//! their own generated code, and every one uses the `cratestack_cbor` codec:
 //!
-//! | test                      | transport | preset   | codec            |
-//! |---------------------------|-----------|----------|------------------|
-//! | `..._rest_client`         | REST      | default  | pure `package:cbor` |
-//! | `..._rpc_client`          | RPC       | default  | pure `package:cbor` |
-//! | `..._riverpod_*`          | REST, RPC | riverpod | pure `package:cbor` |
-//! | `..._native_..._codec`    | REST      | default  | `cratestack_cbor` native |
+//! | test                      | transport | preset   | runs                  |
+//! |---------------------------|-----------|----------|-----------------------|
+//! | `..._rest_client`         | REST      | default  | runtime matrix        |
+//! | `..._rpc_client`          | RPC       | default  | runtime matrix        |
+//! | `..._riverpod_*`          | REST, RPC | riverpod | runtime matrix        |
+//! | `..._native_..._codec`    | REST      | default  | pinned CBOR bytes, VM |
 //!
-//! Beyond the runtime matrix there are two codec legs, both on the VM because
-//! they need `dart:io`'s `HttpServer`: pure-Dart `package:cbor` and the
-//! `cratestack_cbor` native codec (flutter_rust_bridge over a JSON-text
-//! boundary), each driving the generated client against pinned CBOR bytes.
-//! The native leg needs the vendored library, which the published package
-//! ships for dev-mode `flutter test` on linux-x64 only; elsewhere point
+//! The runtime-matrix suites drive the generated client through a recording
+//! adapter, so they never load the codec. The codec leg runs on the VM only,
+//! because it needs `dart:io`'s `HttpServer`: the `cratestack_cbor` native
+//! codec (flutter_rust_bridge over a JSON-text boundary) drives the generated
+//! client against pinned CBOR bytes, judged by an independent `package:cbor`
+//! decoder. It needs the vendored library, which the published package ships
+//! for dev-mode `flutter test` on linux-x64 only; elsewhere point
 //! `CRATESTACK_CBOR_NATIVE_LIB` at a built `libcratestack_client_flutter`, or
 //! it prints `SKIPPED`. The web codec of `cratestack_cbor` (wasm-bindgen over
 //! JS `JSON.parse`) is covered in the `cratestack_cbor` package's own
@@ -49,6 +50,7 @@
 //! `bigint_harness` for the one Flutter-channel conflict that makes them skip.
 
 mod bigint_harness;
+mod cratestack_cbor_support;
 
 use bigint_harness::{Package, Runtime, flutter_available};
 use cratestack_client_dart::DartPreset;
@@ -85,9 +87,7 @@ fn resolve_or_skip(package: &Package, test: &str) -> bool {
     }
 }
 
-/// The REST client, default preset, pure-Dart `package:cbor`. One generated
-/// package serves the runtime matrix and the pure-cbor wire leg, because the
-/// work that dominates is `pub get` and `build_runner`, not the tests.
+/// The REST client, default preset, across the runtime matrix.
 #[test]
 fn bigint_round_trips_through_the_generated_rest_client() {
     if skip_without_flutter("bigint_round_trips_through_the_generated_rest_client") {
@@ -98,25 +98,14 @@ fn bigint_round_trips_through_the_generated_rest_client() {
         "bigint_scalar",
         "bigint_round_trip_check",
         DartPreset::Default,
-        false,
     );
     package.add_test(REST_TEST, REST_TEST);
-    // The echo test imports the package under its own name; here that is the
-    // one this package already has.
-    package.add_test_with_library(
-        ECHO_TEST,
-        ECHO_TEST,
-        "bigint_native_cbor_echo_rest_verify",
-        "bigint_round_trip_check",
-    );
     assert!(resolve_or_skip(&package, "the default-preset REST client"));
     package.analyze();
 
     for runtime in Runtime::ALL {
         package.run_on(REST_TEST, runtime);
     }
-    // Pure `package:cbor`, VM only (`dart:io`).
-    package.run_on(ECHO_TEST, Runtime::Vm);
     package.cleanup();
 }
 
@@ -132,7 +121,6 @@ fn bigint_round_trips_through_the_generated_rpc_client() {
         "bigint_scalar_rpc",
         "bigint_rpc_round_trip_check",
         DartPreset::Default,
-        false,
     );
     package.add_test(RPC_TEST, RPC_TEST);
     assert!(resolve_or_skip(&package, "the default-preset RPC client"));
@@ -157,7 +145,6 @@ fn bigint_round_trips_through_the_riverpod_preset_rest_client() {
         "bigint_scalar",
         "bigint_round_trip_check",
         DartPreset::Riverpod,
-        false,
     );
     package.add_test(REST_TEST, REST_TEST);
     package.add_test(RIVERPOD_TEST, RIVERPOD_TEST);
@@ -186,7 +173,6 @@ fn bigint_round_trips_through_the_riverpod_preset_rpc_client() {
         "bigint_scalar_rpc",
         "bigint_rpc_round_trip_check",
         DartPreset::Riverpod,
-        false,
     );
     package.add_test(RPC_TEST, RPC_TEST);
     if !resolve_or_skip(&package, "the riverpod-preset RPC client") {
@@ -209,7 +195,7 @@ fn bigint_bytes_round_trip_through_the_native_cratestack_cbor_codec() {
     if skip_without_flutter("bigint_bytes_round_trip_through_the_native_cratestack_cbor_codec") {
         return;
     }
-    if let Err(reason) = bigint_harness::native_cbor_available() {
+    if let Err(reason) = bigint_harness::native_codec_available() {
         assert!(
             !bigint_harness::require_runtimes(),
             "CRATESTACK_REQUIRE_DART_RUNTIMES is set but the native codec cannot run here: {reason}"
@@ -222,10 +208,8 @@ fn bigint_bytes_round_trip_through_the_native_cratestack_cbor_codec() {
         "bigint_scalar",
         "bigint_native_cbor_echo_rest_verify",
         DartPreset::Default,
-        true,
     );
     package.add_cbor_dev_dependency();
-    package.allow_any_cratestack_cbor();
     package.add_test(ECHO_TEST, ECHO_TEST);
     assert!(resolve_or_skip(&package, "the native-cbor REST client"));
     package.analyze();

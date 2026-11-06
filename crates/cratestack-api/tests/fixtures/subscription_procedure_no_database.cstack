@@ -1,5 +1,6 @@
-// A `subscription procedure` under `db = None` (slice S4,
-// `tests/subscription_procedure_no_database.rs`): the handler is the source.
+// A `subscription procedure` and a `topic` under `db = None` (slice S4,
+// `tests/subscription_procedure_no_database.rs`): the handler is the source,
+// or a topic on the in-process backplane.
 
 transport rpc
 
@@ -16,4 +17,14 @@ type Tick {
 }
 
 subscription procedure countdown(args: CountArgs): Tick
+  @allow(auth() != null)
+
+type RoomArgs {
+  roomId String
+}
+
+/// A room's ticks: no database, carried by the in-process backplane.
+topic RoomTick(roomId: String): Tick
+
+subscription procedure watchRoom(args: RoomArgs): Tick
   @allow(auth() != null)

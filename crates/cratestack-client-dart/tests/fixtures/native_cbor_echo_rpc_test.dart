@@ -10,8 +10,8 @@
 // path.
 //
 // `just verify-dart` copies this file into a `default`-preset package
-// generated from `native_cbor_echo_rpc.cstack` with `--native-cbor` and
-// runs it with `flutter test`.
+// generated from `native_cbor_echo_rpc.cstack` and runs it with
+// `flutter test`.
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -38,7 +38,7 @@ Future<HttpServer> _startCborServer(
 
 void main() {
   test(
-    'generated --native-cbor RPC client round-trips a real request and '
+    'generated RPC client round-trips a real request and '
     'response through the real cratestack_cbor codec',
     () async {
       Object? capturedRequestBody;
@@ -48,7 +48,7 @@ void main() {
         await for (final chunk in request) {
           bytes.addAll(chunk);
         }
-        capturedRequestBody = cratestackNormalizeWire(
+        capturedRequestBody = _normalizeCbor(
           cbor.cbor.decode(Uint8List.fromList(bytes)),
         );
 
@@ -79,7 +79,7 @@ void main() {
   );
 
   test(
-    'generated --native-cbor RPC client awaits and decodes a real 4xx CBOR '
+    'generated RPC client awaits and decodes a real 4xx CBOR '
     'error body through the real cratestack_cbor codec (the async '
     'error-body decode)',
     () async {
@@ -116,4 +116,24 @@ void main() {
       );
     },
   );
+}
+
+/// `package:cbor` decodes maps as `Map<Object?, Object?>`; this rewrites them
+/// (recursively) to the `Map<String, Object?>` shape an `expect` compares
+/// against. Byte strings stay `Uint8List`. The generated runtime used to
+/// export this as `cratestackNormalizeWire`, back when it could decode with
+/// `package:cbor` itself.
+Object? _normalizeCbor(Object? value) {
+  if (value is Uint8List) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (key, entry) => MapEntry(key.toString(), _normalizeCbor(entry)),
+    );
+  }
+  if (value is List) {
+    return value.map(_normalizeCbor).toList(growable: false);
+  }
+  return value;
 }

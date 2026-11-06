@@ -196,6 +196,10 @@ pub use cratestack_websocket as websocket;
 // graph entirely — nothing generated under `db = None` ever references these
 // symbols, since models (the only consumers of them) can never exist in a
 // `datasource { provider = "none" }` schema.
+/// Without `postgres` (`db = None`) the backplane-only handle, which
+/// `cratestack-api` exports too, rather than the glob's schema-AST `Topic`.
+#[cfg(not(feature = "postgres"))]
+pub use cratestack_core::TopicHandle as Topic;
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 /// Subscription backplanes (`docs/design/subscriptions-websocket.md` §4):
@@ -300,10 +304,10 @@ pub mod __private {
     /// part of the public API surface for the same reason as the rest
     /// of this module.
     pub use cratestack_axum::rpc::{
-        SubscribeQuery, encode_model_event_sse_response, encode_subscribe_error,
+        FeedEvent, SubscribeQuery, encode_model_event_sse_response, encode_subscribe_error,
         encode_subscription_sse_response, guarded_receiver_stream, model_events, model_feed,
-        project_event_fields, split_subscribe_query, subscribe_input_query, subscription_channel,
-        until_credential_expires, validate_subscribe_accept_header,
+        project_event_fields, route_event, split_subscribe_query, subscribe_input_query,
+        subscription_channel, until_credential_expires, validate_subscribe_accept_header,
     };
     /// A `subscription procedure`'s arguments and items (slice S4).
     pub use cratestack_axum::rpc::{procedure_feed, procedure_input_query, procedure_query_args};

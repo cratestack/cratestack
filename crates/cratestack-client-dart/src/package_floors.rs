@@ -126,9 +126,8 @@ pub(crate) const CRATESTACK_ANNOTATIONS_FLOOR: &str = "0.8.10";
 /// first that publishes the `>=0.8.10 <0.10.0` range.
 pub(crate) const CRATESTACK_BUILDER_FLOOR: &str = "0.9.3";
 
-/// `cratestack_cbor` — the native CBOR codec a generated client lists
-/// under `dependencies:` when `native_cbor` is on (the default;
-/// `--no-native-cbor` opts out). cratestack#779.
+/// `cratestack_cbor` — the native CBOR codec every generated client lists
+/// under `dependencies:`. cratestack#779.
 ///
 /// `0.8.0` is the earliest release published to pub.dev at all (the
 /// version list runs `0.8.0, 0.8.2, 0.8.3, …` — there is no `0.7.x`), and

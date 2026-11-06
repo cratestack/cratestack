@@ -31,11 +31,14 @@
 //! matching `tests/decimal_round_trip.rs` — no Rust-only CI job in this
 //! repo provisions Flutter.
 
+mod cratestack_cbor_support;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use cratestack_cbor_support::CratestackCbor;
 use cratestack_client_dart::{DartGeneratorConfig, DartPreset, generate_package};
 
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
@@ -79,7 +82,12 @@ fn the_generated_codec_future_is_memoized_and_retried_after_a_failure() {
         write_generated_package(fixture, library_name, &package_dir);
         let stub_dir = root.join("cratestack_cbor_stub");
         copy_dir(Path::new(STUB_FIXTURE_DIR), &stub_dir);
-        override_cratestack_cbor(&package_dir, &stub_dir);
+        // The stub stands in for the real codec, so no native library is
+        // named for `flutter test` below.
+        cratestack_cbor_support::write_pubspec_overrides(
+            &package_dir,
+            CratestackCbor::Path(&stub_dir),
+        );
 
         let test_dir = package_dir.join("test");
         fs::create_dir_all(&test_dir).expect("create test dir");
@@ -115,9 +123,6 @@ fn write_generated_package(fixture: &str, library_name: &str, dir: &Path) {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            // The whole point — the cached codec accessor only exists on
-            // the native path.
-            native_cbor: true,
             ..DartGeneratorConfig::default()
         },
     )
@@ -130,44 +135,6 @@ fn write_generated_package(fixture: &str, library_name: &str, dir: &Path) {
         }
         fs::write(&path, &file.contents).expect("write generated file");
     }
-}
-
-/// Points the generated package's `cratestack_cbor` dependency at the stub.
-///
-/// A `pubspec_overrides.yaml` rather than an edit to the generated
-/// `pubspec.yaml`, for the same reason `justfile`'s
-/// `override_cratestack_cbor_for_verification` uses one: the generated file
-/// stays byte-for-byte what the generator emitted, so nothing here can mask
-/// a regression in what it emits.
-fn override_cratestack_cbor(package_dir: &Path, stub_dir: &Path) {
-    let stub_path = stub_dir
-        .canonicalize()
-        .expect("stub dir should exist by now");
-    // `cratestack_builder`/`cratestack_annotations` are overridden to this
-    // repo's own `dart-packages/` in the SAME file, because pub allows only
-    // one `pubspec_overrides.yaml` per package. Without them, a commit that
-    // raises the generator's annotations floor and the builder's own
-    // `cratestack_annotations` constraint together cannot resolve here: the
-    // builder pub.dev still serves forbids the annotations release the
-    // generator now asks for. See `package_floors.rs`'s module doc on the
-    // chicken-and-egg in the lockstep publishing model.
-    let dart_packages = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dart-packages")
-        .canonicalize()
-        .expect("dart-packages/ should exist in this repo");
-    fs::write(
-        package_dir.join("pubspec_overrides.yaml"),
-        format!(
-            "dependency_overrides:\n  \
-             cratestack_cbor:\n    path: {}\n  \
-             cratestack_annotations:\n    path: {}/cratestack_annotations\n  \
-             cratestack_builder:\n    path: {}/cratestack_builder\n",
-            stub_path.display(),
-            dart_packages.display(),
-            dart_packages.display()
-        ),
-    )
-    .expect("write pubspec_overrides.yaml");
 }
 
 fn copy_dir(from: &Path, to: &Path) {

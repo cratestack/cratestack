@@ -32,8 +32,6 @@ fn generate(fixture: &str, package_name: &str) -> GeneratedTypeScriptPackage {
             refine: false,
             tanstack: false,
             schema_sha256: String::new(),
-            // JSON on the wire, so the stub below answers in JSON.
-            native_cbor: false,
             rtk: false,
         },
     )
@@ -139,13 +137,23 @@ fn run_against_stub(fixture: &str, package_name: &str, class: &str, code: &str) 
     let response = refusal_response(code);
     let server = std::thread::spawn(move || answer_once(&listener, &response));
 
+    // JSON on the wire, so the stub answers in JSON: the RPC runtime
+    // defaults to the native `@cratestack/cbor` codec, so pass the JSON one.
+    let (codec_import, codec_option) = if fixture == "tiny_rpc" {
+        (
+            "import { jsonRpcCodec } from \"./src/runtime\";\n",
+            ", codec: jsonRpcCodec",
+        )
+    } else {
+        ("", "")
+    };
     std::fs::write(
         dir.path().join("smoke.ts"),
         format!(
             r#"
 import {{ {class} }} from "./src/client";
-
-const client = new {class}("http://127.0.0.1:{port}", {{ basePath: "/api" }});
+{codec_import}
+const client = new {class}("http://127.0.0.1:{port}", {{ basePath: "/api"{codec_option} }});
 try {{
   await client.procedures.echoName({{ name: "x" }});
   throw new Error("the call did not fail");

@@ -121,12 +121,12 @@ pub(crate) struct SwrSchemaContext {
     /// below the shared `src/models.ts` (never duplicated into
     /// `src/swr/`).
     pub(crate) models_import_path: &'static str,
-    /// See `crate::context::TemplateContext::native_cbor`'s doc comment for
-    /// the full rationale. `rpc-runtime.ts.j2` renders from this context for
-    /// `src/swr/runtime.ts` too (`crate::swr::templates`), so without this
-    /// field every `{% if native_cbor %}` site there silently evaluates
-    /// falsy (minijinja's `UndefinedBehavior::Lenient`) and the two runtimes
-    /// in one package disagree on the wire codec — cratestack#765.
+    /// Always `true` — see `crate::context::TemplateContext::native_cbor`.
+    /// `rpc-runtime.ts.j2` renders from this context for
+    /// `src/swr/runtime.ts` too (`crate::swr::templates`); kept only so a
+    /// `--template-dir` custom template that still tests
+    /// `{% if native_cbor %}` keeps rendering here as well (cratestack#765
+    /// was this field's absence diverging the two runtimes' codec).
     pub(crate) native_cbor: bool,
     /// Always `false`: the runtime templates read it (slice S6), and the
     /// `--swr` layout does not carry subscriptions yet, so its runtime

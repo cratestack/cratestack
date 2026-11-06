@@ -1,6 +1,7 @@
 // RPC-transport counterpart to `bigint.test.ts` (ADR 0019), on the pure
-// TypeScript `jsonRpcCodec` (`native_cbor: false`; the real
-// `@cratestack/cbor` is covered by `tests/native_cbor_bigint_encode.rs`).
+// TypeScript `jsonRpcCodec`, passed explicitly as `codec` (the runtime's
+// default is the native `@cratestack/cbor` codec, covered by
+// `tests/native_cbor_bigint_encode.rs`).
 // Run against the package generated from `tests/fixtures/bigint_scalar_rpc.cstack`
 // with `packages/cratestack-link-batch/src` copied in beside it as
 // `./link-batch`, so the batch path is the repository's real one.
@@ -30,7 +31,7 @@ function runtimeResponding(
       headers: { "Content-Type": "application/json" },
     });
   };
-  return { runtime: new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn, ...options }), sent };
+  return { runtime: new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn, codec: jsonRpcCodec, ...options }), sent };
 }
 
 describe("rpc decode", () => {

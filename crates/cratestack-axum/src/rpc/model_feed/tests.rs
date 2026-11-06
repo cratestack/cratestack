@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
-use cratestack_core::{BackplaneMessage, BackplaneReceiver, CratestackError};
+use cratestack_core::{BackplaneMessage, BackplaneReceiver, CratestackError, ModelEventKind};
 use futures_util::StreamExt;
 use futures_util::stream;
 
-use super::{model_events, model_feed};
+use super::{FeedEvent, model_events, model_feed, route_event};
 
 async fn collect(
     items: Vec<Result<u32, CratestackError>>,
     readable: impl FnMut(&u32) -> Result<bool, CratestackError> + Send + 'static,
 ) -> Vec<Result<serde_json::Value, CratestackError>> {
     let mut readable = readable;
-    model_feed(stream::iter(items), move |item: &u32| {
-        let verdict = readable(item);
+    model_feed(stream::iter(items), move |item: u32| {
+        let verdict = readable(&item).map(|readable| readable.then_some(item));
         async move { verdict }
     })
     .collect()
@@ -80,11 +80,101 @@ async fn backplane_messages_decode_or_end_the_feed() {
         BackplaneMessage::Resync,
     ]));
     let decoded: Vec<_> = model_events::<u32>(receiver).collect().await;
-    assert_eq!(decoded[0].as_ref().unwrap().data, 7);
+    assert_eq!(decoded[0].as_ref().unwrap().event.data, 7);
     assert!(
         matches!(&decoded[1], Err(CratestackError::Unavailable(m)) if m == "subscription lagged")
     );
     assert!(
         matches!(&decoded[2], Err(CratestackError::Unavailable(m)) if m == "subscription interrupted")
     );
+}
+
+/// An event as it comes off the wire, `matches` absent: it defaults to `true`.
+fn feed(operation: ModelEventKind, data: u32, before: Option<u32>) -> FeedEvent<u32> {
+    let event = serde_json::from_value(serde_json::json!({
+        "event_id": "00000000-0000-0000-0000-000000000000",
+        "model": "Widget",
+        "operation": operation,
+        "occurred_at": "2026-11-06T00:00:00Z",
+        "data": data,
+    }))
+    .unwrap();
+    FeedEvent { event, before }
+}
+
+/// A subscriber filtering on `< 10` that may read only even rows.
+async fn route(feed: FeedEvent<u32>) -> Option<(bool, u32)> {
+    route_event(
+        feed,
+        true,
+        |n| *n < 10,
+        |n| {
+            let readable = n % 2 == 0;
+            async move { Ok(readable) }
+        },
+    )
+    .await
+    .unwrap()
+    .map(|event| (event.matches, event.data))
+}
+
+#[tokio::test]
+async fn an_event_in_the_filter_is_delivered_as_is() {
+    assert_eq!(
+        route(feed(ModelEventKind::Created, 4, None)).await,
+        Some((true, 4))
+    );
+    // The pre-image is not consulted when the post-image passes.
+    assert_eq!(
+        route(feed(ModelEventKind::Updated, 4, Some(40))).await,
+        Some((true, 4))
+    );
+}
+
+#[tokio::test]
+async fn an_update_out_of_the_filter_delivers_the_pre_image_only() {
+    // 4 matched; 12 (the post-image) does not: the subscriber gets 4, not 12.
+    assert_eq!(
+        route(feed(ModelEventKind::Updated, 12, Some(4))).await,
+        Some((false, 4))
+    );
+}
+
+#[tokio::test]
+async fn an_update_out_of_the_read_policy_delivers_the_pre_image_only() {
+    // 5 is in the filter but unreadable: the row left the policy, and 4 is
+    // what the subscriber held.
+    assert_eq!(
+        route(feed(ModelEventKind::Updated, 5, Some(4))).await,
+        Some((false, 4))
+    );
+}
+
+#[tokio::test]
+async fn an_update_the_subscriber_never_saw_is_dropped() {
+    // Neither image in the filter.
+    assert_eq!(
+        route(feed(ModelEventKind::Updated, 14, Some(12))).await,
+        None
+    );
+    // The pre-image was in the filter but unreadable: nothing was held.
+    assert_eq!(
+        route(feed(ModelEventKind::Updated, 14, Some(5))).await,
+        None
+    );
+    // No pre-image (a bulk update): no exit event.
+    assert_eq!(route(feed(ModelEventKind::Updated, 12, None)).await, None);
+}
+
+#[tokio::test]
+async fn an_unwanted_operation_is_dropped_whatever_the_images() {
+    let dropped = route_event(
+        feed(ModelEventKind::Updated, 12, Some(4)),
+        false,
+        |_| true,
+        |_| async { Ok(true) },
+    )
+    .await
+    .unwrap();
+    assert!(dropped.is_none());
 }

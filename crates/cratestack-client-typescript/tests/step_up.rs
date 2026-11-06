@@ -29,7 +29,6 @@ fn generate(fixture: &str, package_name: &str) -> GeneratedTypeScriptPackage {
             refine: false,
             tanstack: false,
             schema_sha256: String::new(),
-            native_cbor: false,
             rtk: false,
         },
     )
@@ -75,10 +74,18 @@ fn both_runtimes_export_the_step_up_surface() {
 
 /// The smoke script: a `fetch` that answers each call with the next scripted
 /// answer, then every case, each printed as one `CASE <name> <json>` line.
-fn smoke(class: &str, code: &str) -> String {
+///
+/// `rpc` passes `codec: jsonRpcCodec`: the RPC runtime defaults to the native
+/// `@cratestack/cbor` codec, and the scripted answers are JSON.
+fn smoke(class: &str, code: &str, rpc: bool) -> String {
+    let (codec_import, codec_option) = if rpc {
+        (", jsonRpcCodec", ", codec: jsonRpcCodec")
+    } else {
+        ("", "")
+    };
     format!(
         r#"
-import {{ {class}, retryAfterStepUp, stepUpOf }} from "./src/index";
+import {{ {class}, retryAfterStepUp, stepUpOf{codec_import} }} from "./src/index";
 
 const refusal = (details: unknown, error = "insufficient_user_authentication", code = "{code}") =>
   ({{ status: 401, body: {{ code, message: "step-up authentication required", details, error }} }});
@@ -90,7 +97,7 @@ function client(answers: {{ status: number; body: unknown }}[]) {{
     const {{ status, body }} = answers[state.sent++]!;
     return new Response(JSON.stringify(body), {{ status, headers: {{ "content-type": "application/json" }} }});
   }};
-  return {{ state, api: new {class}("http://127.0.0.1:9", {{ basePath: "/api", fetch: fetch as typeof globalThis.fetch }}) }};
+  return {{ state, api: new {class}("http://127.0.0.1:9", {{ basePath: "/api", fetch: fetch as typeof globalThis.fetch{codec_option} }}) }};
 }}
 
 async function failure(answers: {{ status: number; body: unknown }}[]): Promise<any> {{
@@ -156,7 +163,11 @@ fn run(fixture: &str, package_name: &str, class: &str, code: &str, frame: &str) 
         "npm install failed:\n{}",
         command_report(&install, &installed)
     );
-    std::fs::write(dir.path().join("smoke.ts"), smoke(class, code)).expect("write smoke");
+    std::fs::write(
+        dir.path().join("smoke.ts"),
+        smoke(class, code, fixture == "tiny_rpc"),
+    )
+    .expect("write smoke");
     let mut tsx = tsx_command(dir.path(), "smoke.ts");
     let output = tsx.output().expect("run tsx");
     assert!(

@@ -178,10 +178,9 @@ fn generate_into(dir: &Path, rpc: bool) -> Value {
             tanstack: true,
             rtk: true,
             swr: true,
-            // The pure-TypeScript codec: the native one is
-            // `tests/native_cbor_bigint_encode.rs`, and it would add an npm
-            // dependency to a suite that is about cache keys.
-            native_cbor: false,
+            // On RPC the suites pass `codec: jsonRpcCodec` (`harness.ts`):
+            // the native codec is `tests/native_cbor_bigint_encode.rs`'s
+            // subject, not this cache-key suite's.
             ..TypeScriptGeneratorConfig::default()
         },
     )

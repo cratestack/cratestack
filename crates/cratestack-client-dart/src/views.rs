@@ -36,31 +36,23 @@ pub(crate) struct TemplateContext {
     pub(crate) preset: PresetView,
     /// RPC schema (#1204): the shared README names the RPC adapter.
     pub(crate) is_rpc: bool,
-    /// `config.native_cbor` (issue #563) — gates whether the generated
-    /// runtime imports `package:cbor` (sync, pure Dart) or
-    /// `cratestack_cbor` (async, native) and whether `pubspec.yaml`
-    /// depends on `cbor` or `cratestack_cbor`. `false` for every render
-    /// that doesn't pass it explicitly, which is what keeps the default
-    /// output byte-identical — see `DartGeneratorConfig::native_cbor`'s
-    /// doc comment for the full rationale.
+    /// Always `true`. The pure-Dart `package:cbor` codec mode is gone and
+    /// every package uses `cratestack_cbor`; the variable stays in the
+    /// context so a custom `--template-dir` template that still tests
+    /// `{% if native_cbor %}` keeps rendering the `cratestack_cbor` branch
+    /// rather than silently falling to its `else`.
     pub(crate) native_cbor: bool,
     /// `cratestack_cbor: {{ cratestack_cbor_version_requirement }}` in
-    /// `pubspec.yaml` when `native_cbor` is set.
+    /// `pubspec.yaml`.
     ///
     /// cratestack#779: this is `crate::package_floors::
     /// CRATESTACK_CBOR_FLOOR`, an API-compatibility floor, on the same
     /// terms as the two `cratestack_annotations`/`cratestack_builder`
     /// floors below. It used to be `^{CARGO_PKG_VERSION}` — the lockstep
-    /// convention — which is what forced `just regen-examples` to
-    /// hardcode `--no-native-cbor` (#707): a committed example client
-    /// pinning the workspace version drifts on every `just bump` and
-    /// cannot resolve during the release window, because the version is
-    /// not on pub.dev until the release the bump is preparing publishes
-    /// it. With a constant, the committed example can take the default
-    /// codec like every other generated client.
-    ///
-    /// Empty string when `native_cbor` is `false` (unused by the template
-    /// in that case).
+    /// convention — under which a committed example client pinning the
+    /// workspace version drifted on every `just bump` and could not
+    /// resolve during the release window, because the version is not on
+    /// pub.dev until the release the bump is preparing publishes it.
     pub(crate) cratestack_cbor_version_requirement: String,
     /// Whether any entry in `model_apis` has a `computed_params_class_name`
     /// — gates `models.dart.j2`'s `import 'dart:convert';`, needed by
@@ -76,18 +68,15 @@ pub(crate) struct TemplateContext {
     ///
     /// cratestack#754: this is `crate::package_floors::
     /// CRATESTACK_ANNOTATIONS_FLOOR`, an API-compatibility floor —
-    /// **not** `^{CARGO_PKG_VERSION}`, and explicitly *not* the lockstep
-    /// convention `cratestack_cbor_version_requirement` above still
-    /// follows. Deriving it from the release version made every generated
-    /// client name a version pub.dev could not serve until the release
-    /// tag was pushed, which took down `Prepare Release` for 0.8.14; see
+    /// **not** `^{CARGO_PKG_VERSION}`. Deriving it from the release
+    /// version made every generated client name a version pub.dev could
+    /// not serve until the release tag was pushed, which took down `Prepare Release` for 0.8.14; see
     /// `crate::package_floors`' module doc for the full mechanism and for
     /// why a constant (rather than a "minor floor") is what actually
     /// closes the window.
     ///
-    /// Unlike `cratestack_cbor_version_requirement`, never empty — every
-    /// generated package carries the `@CratestackBuilder` annotation on
-    /// every data class, unconditionally.
+    /// Never empty — every generated package carries the
+    /// `@CratestackBuilder` annotation on every data class, unconditionally.
     pub(crate) cratestack_annotations_version_requirement: String,
     /// `cratestack_builder: {{ cratestack_builder_version_requirement }}`
     /// in `pubspec.yaml`'s `dev_dependencies:`, alongside `build_runner` —

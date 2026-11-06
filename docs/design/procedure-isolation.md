@@ -84,6 +84,7 @@ Its surface is exactly what can be routed through the transaction:
 | `bind_context` / `bind_auth` | the usual `BoundCratestack`, over the same bound runtime |
 | `transaction(async \|tx\| ..)` | a `SAVEPOINT` inside the isolated transaction (§7); `tx` is the raw-SQL door |
 | `dispatch_audit_sink(events)` | deferred until the isolated transaction commits (§6) |
+| `topics()` | the schema's topics, each `publish` delivered only if the attempt commits (§6; `subscriptions-websocket.md` §3.4) |
 
 Deliberately absent: `pool()` (the escape hatch), `events()` (its `drain()`
 writes delivery marks on the pool), `views()` and `queries()` (both execute
@@ -287,6 +288,7 @@ time.
 | model writes, `@@audit` rows, `@@emit` outbox rows | inside the isolated transaction | rolled back with the attempt |
 | `AuditSink` fan-out (automatic after `run()`, or explicit `dispatch_audit_sink`) | deferred; dispatched once, after the committed attempt | discarded |
 | outbox drain (automatic after an emitting `run()`) | deferred; once, after commit | not performed |
+| topic `publish` from `db.topics()` | `PgNotifyBackplane`: `pg_notify` inside the transaction (a savepoint), delivered on commit. Any other backplane: queued, sent once after commit | rolled back with the attempt / discarded; a rolled-back savepoint or joined call takes back what it queued |
 | `@computed` output composition | inside the attempt, after the body, before `COMMIT` | repeated with the attempt; a resolver error fails the attempt |
 | `Idempotency-Key` reservation and completion | the tower layer around the whole handler (HTTP), `admit_and_run` (MCP) | once per request; retries are invisible to it |
 | rate-limit admission | the tower layer / MCP admission, before dispatch | once per request |
