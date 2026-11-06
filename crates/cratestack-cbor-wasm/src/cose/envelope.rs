@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use cratestack_cose::{
-    CoseEnvelope, CoseSigner, Ed25519Signer, HmacSigner, Opened, StaticVerifierResolver,
+    CoseEnvelope, CoseSigner, Ed25519Signer, HmacSigner, StaticVerifierResolver,
 };
 use js_sys::{Object, Promise, Reflect, Uint8Array};
 use wasm_bindgen::prelude::*;
@@ -13,6 +13,7 @@ use zeroize::Zeroizing;
 
 use super::convert;
 use super::error::{from_error, misuse};
+use super::opened::opened_object;
 
 /// Seals requests and opens responses for one service (ADR 0006).
 ///
@@ -90,9 +91,13 @@ impl ClientEnvelope {
         self.kid.clone()
     }
 
-    /// Seal `payload` (already CBOR) as the request `binding` describes:
+    /// Seal `payload` (already encoded) as the request `binding` describes:
     /// `{ method, route, pathParams, query?, contractSha, idempotencyKey?,
-    /// ifMatch? }`. Resolves to the sealed bytes.
+    /// ifMatch?, payloadType?, payloadAccept? }`. `payloadType` is the type
+    /// the payload is encoded as (default `application/cbor`; compact wire
+    /// keys: `application/vnd.cratestack.compact+cbor`) and is bound in the
+    /// AAD; `payloadAccept` lists the types the answer may come back in.
+    /// Resolves to the sealed bytes.
     #[wasm_bindgen(js_name = sealRequest)]
     pub fn seal_request(&self, payload: &[u8], binding: &JsValue) -> Promise {
         let this = self.clone();
@@ -109,10 +114,29 @@ impl ClientEnvelope {
         })
     }
 
+    /// The payload-type selector headers `binding` needs sent, as an object
+    /// of header name to value: `Cratestack-Payload-Type` when `payloadType`
+    /// is not CBOR, `Cratestack-Payload-Accept` when `payloadAccept` is not
+    /// just CBOR. `{}` for a default call. Send them with the sealed body.
+    #[wasm_bindgen(js_name = selectorHeaders)]
+    pub fn selector_headers(&self, binding: &JsValue) -> Result<JsValue, JsValue> {
+        let call = convert::binding(binding, &self.audience)?;
+        let object = Object::new();
+        for (name, value) in call.selector_headers() {
+            // Setting a property on a fresh plain object cannot fail.
+            let _ = Reflect::set(&object, &name.into(), &value.into());
+        }
+        Ok(object.into())
+    }
+
     /// Open the response `body` to `sealedRequest` (the exact bytes that
-    /// were sent), which came back with HTTP `status`. Resolves to
-    /// `{ payload, kid, alg, thumbprint }`; every failed check rejects with
-    /// the same `{ code: "rejected", message: "" }`.
+    /// were sent), which came back with HTTP `status`.
+    /// `responsePayloadType` is the response's `Cratestack-Payload-Type`
+    /// header (absent or `undefined`: CBOR); it must be one of the binding's
+    /// `payloadAccept`. Resolves to `{ payload, payloadType, kid, alg,
+    /// thumbprint }`, `payloadType` being the type the response was sealed
+    /// under; every failed check, a type that was not asked for included,
+    /// rejects with the same `{ code: "rejected", message: "" }`.
     #[wasm_bindgen(js_name = openResponse)]
     pub fn open_response(
         &self,
@@ -120,6 +144,7 @@ impl ClientEnvelope {
         binding: &JsValue,
         sealed_request: &[u8],
         status: u16,
+        response_payload_type: Option<String>,
     ) -> Promise {
         let this = self.clone();
         let body = Bytes::copy_from_slice(body);
@@ -127,12 +152,15 @@ impl ClientEnvelope {
         let binding = convert::binding(binding, &self.audience);
         future_to_promise(async move {
             let call = binding?;
+            let bind = call
+                .response_for(&sealed_request, status, response_payload_type.as_deref())
+                .map_err(from_error)?;
             let opened = this
                 .inner
-                .open_response(body, &call.response(&sealed_request, status))
+                .open_response(body, &bind)
                 .await
                 .map_err(from_error)?;
-            opened_object(&opened)
+            opened_object(&opened, &bind.payload_media_type)
         })
     }
 }
@@ -167,31 +195,4 @@ impl ClientEnvelope {
             kid,
         })
     }
-}
-
-fn opened_object(opened: &Opened) -> Result<JsValue, JsValue> {
-    let object = Object::new();
-    let set = |name: &str, value: JsValue| {
-        // Setting a property on a fresh plain object cannot fail.
-        let _ = Reflect::set(&object, &name.into(), &value);
-    };
-    set("payload", Uint8Array::from(opened.payload.as_ref()).into());
-    set("kid", Uint8Array::from(&opened.kid[..]).into());
-    set("alg", convert::alg_name(opened.alg)?.into());
-    set(
-        "thumbprint",
-        Uint8Array::from(&opened.thumbprint[..]).into(),
-    );
-    Ok(object.into())
-}
-
-/// The `Cratestack-Contract` header value for a 32-byte op contract digest
-/// (11 characters of unpadded base64url). The header is unbound; send it
-/// with every sealed call.
-#[wasm_bindgen(js_name = contractHeaderValue)]
-pub fn contract_header_value(contract_sha: &[u8]) -> Result<String, JsValue> {
-    let digest: [u8; 32] = contract_sha
-        .try_into()
-        .map_err(|_| misuse("`contractSha` is 32 bytes"))?;
-    Ok(cratestack_cose::contract_header_value(&digest))
 }

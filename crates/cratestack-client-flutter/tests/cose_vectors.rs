@@ -56,6 +56,8 @@ fn call(binding: &Value) -> FlutterCallBinding {
         contract_sha: unhex(binding["contract_sha"].as_str().expect("sha")),
         idempotency_key: opt(&binding["bound_headers"]["idempotency_key"]),
         if_match: opt(&binding["bound_headers"]["if_match"]),
+        payload_type: None,
+        payload_accept: None,
     }
 }
 
@@ -196,6 +198,7 @@ async fn the_signed_request_responses_open_and_the_unsigned_ones_are_not_this_cl
                 call(&case["binding"]),
                 request,
                 u16::try_from(case["binding"]["status"].as_u64().unwrap()).unwrap(),
+                None,
             )
             .await
             .unwrap_or_else(|error| panic!("{name}: {error}"));
@@ -233,7 +236,7 @@ async fn a_tampered_response_is_rejected_and_says_nothing_else() {
         let body = unhex(case["cose"].as_str().unwrap());
         let client = envelope(&keys, &key, &key, None);
         let open = |body: Vec<u8>, binding: FlutterCallBinding, request: Vec<u8>, status: u16| {
-            client.open_response(body, binding, request, status)
+            client.open_response(body, binding, request, status, None)
         };
         let mut attempts = Vec::new();
         // One flipped bit at the start, the middle and the end.
@@ -280,7 +283,13 @@ async fn a_response_of_the_other_mode_or_key_is_rejected() {
     let body = unhex(case["cose"].as_str().unwrap());
     for (key, server) in [("ed25519", "ed25519_other"), ("hmac-256-64", "hmac-256-64")] {
         let error = envelope(&keys, key, server, None)
-            .open_response(body.clone(), call(&case["binding"]), request.clone(), 200)
+            .open_response(
+                body.clone(),
+                call(&case["binding"]),
+                request.clone(),
+                200,
+                None,
+            )
             .await
             .expect_err(key);
         assert_eq!(error, FlutterCoseError::rejected(), "{key}");
@@ -370,4 +379,53 @@ fn a_server_key_never_prints_its_bytes() {
         !shown.contains("171") && !shown.to_lowercase().contains("ab,"),
         "{shown}"
     );
+}
+
+#[tokio::test]
+async fn a_compact_payload_type_changes_the_seal_and_names_its_headers() {
+    const COMPACT: &str = "application/vnd.cratestack.compact+cbor";
+    let keys = vectors("keys.json");
+    let unary = vectors("unary.json");
+    let case = unary["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["direction"] == "request")
+        .unwrap();
+    let key = text(case, "key");
+    let iat = i64::try_from(case["iat"].as_u64().unwrap()).unwrap();
+    let pin = Some((iat, case["cti"].as_str().unwrap()));
+    let payload = unhex(case["payload"].as_str().unwrap());
+    let plain = call(&case["binding"]);
+    let mut compact = plain.clone();
+    compact.payload_type = Some(COMPACT.to_owned());
+    compact.payload_accept = Some(vec![COMPACT.to_owned(), "application/cbor".to_owned()]);
+
+    let envelope = envelope(&keys, &key, &key, pin);
+    assert!(envelope.selector_headers(plain.clone()).unwrap().is_empty());
+    let headers = envelope.selector_headers(compact.clone()).unwrap();
+    assert_eq!(
+        headers
+            .iter()
+            .map(|header| (header.name.as_str(), header.value.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("Cratestack-Payload-Type", COMPACT),
+            (
+                "Cratestack-Payload-Accept",
+                "application/vnd.cratestack.compact+cbor, application/cbor"
+            ),
+        ]
+    );
+    let default = envelope.seal_request(payload.clone(), plain).await.unwrap();
+    let typed = envelope
+        .seal_request(payload.clone(), compact.clone())
+        .await
+        .unwrap();
+    assert_ne!(default, typed, "the payload type is bound in the AAD");
+
+    // A stream type is refused before anything is sealed.
+    compact.payload_type = Some(format!("{COMPACT}-seq"));
+    let error = envelope.seal_request(payload, compact).await.unwrap_err();
+    assert_eq!(error.kind, FlutterCoseErrorKind::Misuse);
 }

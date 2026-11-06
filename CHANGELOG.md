@@ -34,8 +34,22 @@ of each body.
   - Every generated client emits its `KEY_TABLES` artifact.
 - **Adaptive requests.** A client sends an op's request body compact only after that op answered
   compact once, so a server without the mode is never sent a body it cannot read.
-- **Signed transport.** Compact payload types travel through `payload_media_types`.
-  `is_sealable_payload_type` now refuses any `+cbor-seq` type.
+- **Signed transport (COSE).** A sealed body carries compact keys under the compact payload type,
+  bound in the AAD like any other (`Cratestack-Payload-Type` / `Cratestack-Payload-Accept`), with
+  no binding-version change.
+  - Server: list the compact types in the envelope layer's `payload_media_types`, for requests and
+    responses together. A route's declared payload types name the plain shape, so a route permits a
+    compact type exactly when it permits its plain one. `/rpc/batch` stays CBOR.
+    `is_sealable_payload_type` refuses any `+cbor-seq` type, so a signed stream is never compact.
+  - Rust client: `with_envelope` plus `with_compact_keys` is adaptive, as unsealed. It asks for the
+    compact types first, seals its request compact once the op answered compact, and goes back to
+    named after an unsigned `415` (that one call fails and is not retried).
+  - `@cratestack/cbor` (web) and `cratestack_cbor` sealers: the call binding takes an optional
+    `payloadType` and `payloadAccept`, `openResponse` takes the response's `Cratestack-Payload-Type`
+    and reports `payloadType`, and `selectorHeaders(binding)` returns the two headers to send. The
+    default is CBOR and byte-identical to before. **Breaking for Rust callers** that build
+    `cratestack_cose::CallBinding` with a struct literal: it gains `payload_type` and
+    `payload_accept` (set both to `None` for the old behaviour).
 - **Payload-size gate.** The gate gains compact columns. The transfer request goes from 130 to
   67 bytes on CBOR and from 193 to 136 on JSON.
 

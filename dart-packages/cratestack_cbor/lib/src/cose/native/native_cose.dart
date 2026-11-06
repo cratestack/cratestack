@@ -93,11 +93,25 @@ final class _NativeEnvelope implements ClientEnvelope {
       );
 
   @override
+  Map<String, String> selectorHeaders(CallBinding binding) {
+    try {
+      return {
+        for (final header
+            in _handle.selectorHeaders(binding: _binding(binding)))
+          header.name: header.value,
+      };
+    } on rust_error.FlutterCoseError catch (error) {
+      throw _exception(error);
+    }
+  }
+
+  @override
   Future<Opened> openResponse(
     Uint8List body, {
     required CallBinding binding,
     required Uint8List sealedRequest,
     required int status,
+    String? responsePayloadType,
   }) =>
       _guard<Opened>(() async {
         final opened = await _handle.openResponse(
@@ -105,9 +119,11 @@ final class _NativeEnvelope implements ClientEnvelope {
           binding: _binding(binding),
           sealedRequest: sealedRequest,
           status: status,
+          responsePayloadType: responsePayloadType,
         );
         return Opened(
           payload: opened.payload,
+          payloadType: opened.payloadType,
           kid: opened.kid,
           alg: _algFrom(opened.alg),
           thumbprint: Uint8List.fromList(opened.thumbprint),
@@ -124,6 +140,8 @@ rust_types.FlutterCallBinding _binding(CallBinding binding) =>
       contractSha: binding.contractSha,
       idempotencyKey: binding.idempotencyKey,
       ifMatch: binding.ifMatch,
+      payloadType: binding.payloadType,
+      payloadAccept: binding.payloadAccept,
     );
 
 rust_types.FlutterCoseAlg _alg(CoseAlg alg) => switch (alg) {

@@ -13,7 +13,7 @@ use zeroize::{Zeroize, Zeroizing};
 use super::error::FlutterCoseError;
 use super::types::{
     FlutterCallBinding, FlutterCoseAlg, FlutterCoseMode, FlutterOpened, FlutterSealOptions,
-    FlutterServerKey,
+    FlutterSelectorHeader, FlutterServerKey,
 };
 
 /// Seals requests and opens responses for one service.
@@ -123,7 +123,28 @@ impl FlutterClientEnvelope {
         self.kid.clone()
     }
 
-    /// Seal `payload` (already CBOR) as the request described by `binding`.
+    /// The payload-type selector headers `binding` needs sent:
+    /// `Cratestack-Payload-Type` when its type is not CBOR,
+    /// `Cratestack-Payload-Accept` when its accept list is not just CBOR.
+    /// Empty for a default call.
+    #[cfg_attr(feature = "frb-glue", flutter_rust_bridge::frb(sync))]
+    pub fn selector_headers(
+        &self,
+        binding: FlutterCallBinding,
+    ) -> Result<Vec<FlutterSelectorHeader>, FlutterCoseError> {
+        let call = binding.with_audience(&self.audience)?;
+        Ok(call
+            .selector_headers()
+            .into_iter()
+            .map(|(name, value)| FlutterSelectorHeader {
+                name: name.to_owned(),
+                value,
+            })
+            .collect())
+    }
+
+    /// Seal `payload` (already encoded as the binding's payload type) as
+    /// the request described by `binding`.
     pub async fn seal_request(
         &self,
         payload: Vec<u8>,
@@ -136,18 +157,20 @@ impl FlutterClientEnvelope {
 
     /// Open the response `body` to `sealed_request` (the exact bytes that
     /// were sent), which came back with HTTP `status`.
+    /// `response_payload_type` is the response's `Cratestack-Payload-Type`
+    /// header (`None`: CBOR); it must be one of the binding's
+    /// `payload_accept`, or the answer is refused as `Rejected`.
     pub async fn open_response(
         &self,
         body: Vec<u8>,
         binding: FlutterCallBinding,
         sealed_request: Vec<u8>,
         status: u16,
+        response_payload_type: Option<String>,
     ) -> Result<FlutterOpened, FlutterCoseError> {
         let call = binding.with_audience(&self.audience)?;
-        let opened = self
-            .inner
-            .open_response(Bytes::from(body), &call.response(&sealed_request, status))
-            .await?;
-        opened.try_into()
+        let bind = call.response_for(&sealed_request, status, response_payload_type.as_deref())?;
+        let opened = self.inner.open_response(Bytes::from(body), &bind).await?;
+        FlutterOpened::new(opened, &bind.payload_media_type)
     }
 }

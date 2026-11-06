@@ -79,3 +79,53 @@ fn the_contract_header_value_is_the_unbound_selector() {
     assert_eq!(contract_header_value(&digest).unwrap(), "AAECAwQFBgc");
     assert!(contract_header_value(&digest[..5]).is_err());
 }
+
+#[wasm_bindgen_test]
+fn payload_types_are_validated_and_name_their_selector_headers() {
+    let keys: Value = KEYS.parse().unwrap();
+    let unary: Value = UNARY.parse().unwrap();
+    let requests = cases(&unary, "request");
+    let binding_json = &requests[0]["binding"];
+    let envelope = ClientEnvelope::ed25519_seed(
+        &[7; 32],
+        &server_keys(&keys, "ed25519"),
+        "payments",
+        &JsValue::UNDEFINED,
+    )
+    .unwrap();
+    let compact = "application/vnd.cratestack.compact+cbor";
+
+    let plain = binding(binding_json);
+    let headers = envelope.selector_headers(&plain).unwrap();
+    assert_eq!(js_sys::Object::keys(&headers.into()).length(), 0);
+
+    let typed = binding(binding_json);
+    set(&typed, "payloadType", compact);
+    set(
+        &typed,
+        "payloadAccept",
+        js_sys::Array::of2(&compact.into(), &"application/cbor".into()),
+    );
+    let headers = envelope.selector_headers(&typed).unwrap();
+    assert_eq!(
+        get(&headers, "Cratestack-Payload-Type")
+            .as_string()
+            .as_deref(),
+        Some(compact)
+    );
+    assert_eq!(
+        get(&headers, "Cratestack-Payload-Accept")
+            .as_string()
+            .as_deref(),
+        Some("application/vnd.cratestack.compact+cbor, application/cbor")
+    );
+
+    let stream = binding(binding_json);
+    set(
+        &stream,
+        "payloadType",
+        "application/vnd.cratestack.compact+cbor-seq",
+    );
+    let error = envelope.selector_headers(&stream).expect_err("refused");
+    assert_eq!(get(&error, "code").as_string().as_deref(), Some("misuse"));
+}

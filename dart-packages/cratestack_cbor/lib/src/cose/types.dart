@@ -123,7 +123,11 @@ final class CallBinding {
     required Uint8List contractSha,
     this.idempotencyKey,
     this.ifMatch,
+    this.payloadType,
+    List<String>? payloadAccept,
   })  : pathParams = List.unmodifiable(pathParams),
+        payloadAccept =
+            payloadAccept == null ? null : List.unmodifiable(payloadAccept),
         contractSha = Uint8List.fromList(contractSha) {
     if (contractSha.length != 32) {
       throw ArgumentError.value(
@@ -160,6 +164,23 @@ final class CallBinding {
 
   /// The `If-Match` the request will carry, bound exactly as sent.
   final String? ifMatch;
+
+  /// The media type the request payload is encoded as, and sealed under
+  /// (bound in the AAD). `null` is `application/cbor`. For compact wire keys
+  /// (`docs/design/compact-wire-keys.md` §5.1) it is
+  /// `application/vnd.cratestack.compact+cbor`.
+  ///
+  /// When it is not CBOR the request must also carry the
+  /// `Cratestack-Payload-Type` header: send what
+  /// [ClientEnvelope.selectorHeaders] returns. An envelope, a `+cbor-seq`
+  /// stream or a multipart type is [CoseMisuse].
+  final String? payloadType;
+
+  /// The media types the call reads its answer in, in order of preference.
+  /// `null` is just `application/cbor`. An answer sealed under any other
+  /// type is [CoseRejected]. When it is not just CBOR the request must also
+  /// carry `Cratestack-Payload-Accept` ([ClientEnvelope.selectorHeaders]).
+  final List<String>? payloadAccept;
 }
 
 /// A response that verified.
@@ -170,10 +191,15 @@ final class Opened {
     required this.kid,
     required this.alg,
     required this.thumbprint,
+    this.payloadType = 'application/cbor',
   });
 
-  /// The payload, exactly as signed (CBOR).
+  /// The payload, exactly as signed, encoded as [payloadType].
   final Uint8List payload;
+
+  /// The media type the response was sealed under: one of the call's
+  /// [CallBinding.payloadAccept] (`application/cbor` by default).
+  final String payloadType;
 
   /// The signer's 8-byte `kid`.
   final Uint8List kid;

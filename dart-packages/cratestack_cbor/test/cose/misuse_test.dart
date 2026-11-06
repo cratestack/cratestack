@@ -165,4 +165,48 @@ void main() {
     expect(const CoseRejected().message, '');
     expect(const CoseMisuse('x').toString(), 'CoseMisuse: x');
   });
+
+  group('payload types', () {
+    const compact = 'application/vnd.cratestack.compact+cbor';
+
+    CallBinding typed({String? type, List<String>? accept}) => CallBinding(
+          method: 'POST',
+          route: 'procedure.echo',
+          contractSha: bytes(32),
+          payloadType: type,
+          payloadAccept: accept,
+        );
+
+    test('a default call sends no selector header', () async {
+      final envelope = await ed25519();
+      expect(envelope.selectorHeaders(binding()), isEmpty);
+    });
+
+    test('a compact call names its types in the selector headers', () async {
+      final envelope = await ed25519();
+      expect(
+        envelope.selectorHeaders(
+          typed(type: compact, accept: [compact, 'application/cbor']),
+        ),
+        {
+          'Cratestack-Payload-Type': compact,
+          'Cratestack-Payload-Accept': '$compact, application/cbor',
+        },
+      );
+    });
+
+    test('a type that cannot be sealed is misuse', () async {
+      final envelope = await ed25519();
+      for (final bad in ['$compact-seq', 'application/cose', 'Application/Cbor']) {
+        expect(
+          () => envelope.selectorHeaders(typed(type: bad)),
+          throwsA(misuse()),
+        );
+        expect(
+          envelope.sealRequest(Uint8List(0), typed(accept: ['application/cbor', bad])),
+          throwsA(misuse()),
+        );
+      }
+    });
+  });
 }

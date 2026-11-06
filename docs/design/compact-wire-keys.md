@@ -280,9 +280,11 @@ table later; it is not worth the churn now.
   switches key mode within one idempotency key.
 - **Signed envelopes.** A sealed body is sealed in its compact form. The AAD already binds the op
   contract digest, which fixes the table, and the payload media type, which fixes the key mode
-  (§5.1). Nothing new has to be bound. What remains is ADR 0006 (cratestack-docs
-  `internals/cose-envelope-adr.md`) naming the compact types, and the `+cbor-seq` sealability
-  fix (§5.1).
+  (§5.1). Nothing new has to be bound. Built: ADR 0006 (cratestack-docs
+  `internals/cose-envelope-adr.md`) names the compact types, `+cbor-seq` is unsealable, a
+  route permits a compact type exactly when it permits its plain one
+  (`envelope_layer/payload.rs`), the Rust client is adaptive under a seal, and the Dart and wasm
+  sealers take a payload type (`cratestack_cose::CallBinding::payload_type`).
 - **Projections.** `?fields=` responses go through `ProjectedValue`
   (`crates/cratestack-axum/src/projection.rs`), which builds maps by field name at runtime. It
   needs the table too. A projected field keeps its full-contract number, so a projection is a

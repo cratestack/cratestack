@@ -12,7 +12,10 @@
 //! intersected with the route's declared set
 //! ([`ResolvedRoute::with_payload_types`], which the built-in resolvers
 //! fill from the schema's descriptors; an empty declared list is "no
-//! constraint", as everywhere else). `/rpc/batch` is CBOR whatever either
+//! constraint", as everywhere else). A route declares named shapes, so a
+//! compact type (`cratestack_core::compact::plain_media_type_for`) is
+//! permitted by the route iff its plain counterpart is; the layer's opt-in
+//! set still has to list it. `/rpc/batch` is CBOR whatever either
 //! says: its frames are CBOR.
 //!
 //! **An empty payload has no type to refuse.** A `GET`, `HEAD` or `DELETE`
@@ -25,6 +28,7 @@
 //!
 //! [`EnvelopeLayerBuilder::payload_media_types`]: super::EnvelopeLayerBuilder::payload_media_types
 
+use cratestack_core::compact::plain_media_type_for;
 use cratestack_core::{
     CratestackError, DEFAULT_PAYLOAD_MEDIA_TYPE, PAYLOAD_ACCEPT_HEADER, PAYLOAD_TYPE_HEADER,
     parse_payload_accept, parse_payload_type,
@@ -70,8 +74,13 @@ fn permits(layer: &[String], route: Option<&[&str]>, batch: bool, media_type: &s
     if batch && media_type != DEFAULT_PAYLOAD_MEDIA_TYPE {
         return false;
     }
+    // A route declares the *named* shapes it speaks. A compact type is the
+    // same shape under short keys (compact wire keys), so the route permits
+    // it exactly when it permits its plain counterpart; the layer still has
+    // to have opted in to the compact type itself.
+    let shape = plain_media_type_for(media_type).unwrap_or(media_type);
     layer.iter().any(|allowed| allowed == media_type)
-        && route.is_none_or(|declared| declared.is_empty() || declared.contains(&media_type))
+        && route.is_none_or(|declared| declared.is_empty() || declared.contains(&shape))
 }
 
 /// Whether `method` carries a payload of its own. `GET`, `HEAD` and

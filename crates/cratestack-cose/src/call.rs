@@ -20,6 +20,9 @@
 //!     contract_sha: [7; 32],
 //!     idempotency_key: None,
 //!     if_match: None,
+//!     // `None` is CBOR both ways; see [`CallBinding::payload_type`].
+//!     payload_type: None,
+//!     payload_accept: None,
 //! };
 //! let request = call.request();
 //! assert_eq!(request.query.as_deref(), Some("a=1&b=2"));
@@ -36,9 +39,6 @@ use cratestack_core::{
     Binding, BoundHeaders, ContractSelector, PathParams, ResponseBinding, canonical_query,
     request_digest,
 };
-
-/// The payload media type of every Dart and wasm call: the CBOR codec's.
-const PAYLOAD_MEDIA_TYPE: &str = "application/cbor";
 
 /// Everything one call binds, owned.
 ///
@@ -65,6 +65,17 @@ pub struct CallBinding {
     pub idempotency_key: Option<String>,
     /// The request's `If-Match` header value, if it carries one.
     pub if_match: Option<String>,
+    /// The type the request payload is sealed under; `None` is
+    /// `application/cbor`. Bound in the AAD. For compact wire keys (compact
+    /// wire keys design §5.1) it is `application/vnd.cratestack.compact+cbor`.
+    /// When it is not CBOR the request must also carry
+    /// `Cratestack-Payload-Type` ([`selector_headers`](Self::selector_headers)).
+    pub payload_type: Option<String>,
+    /// The types the call reads its answer in, in order of preference;
+    /// `None` is just `application/cbor`. A response sealed under another
+    /// type is refused ([`response_for`](Self::response_for)). When it is
+    /// not just CBOR the request must also carry `Cratestack-Payload-Accept`.
+    pub payload_accept: Option<Vec<String>>,
 }
 
 impl CallBinding {
@@ -78,7 +89,7 @@ impl CallBinding {
             path_params: PathParams::Owned(self.path_params.clone()),
             query: query.map(Cow::Owned),
             contract_sha: self.contract_sha,
-            payload_media_type: Cow::Borrowed(PAYLOAD_MEDIA_TYPE),
+            payload_media_type: Cow::Borrowed(self.request_payload_type()),
             bound_headers: BoundHeaders {
                 idempotency_key: self.idempotency_key.as_deref().map(Cow::Borrowed),
                 if_match: self.if_match.as_deref().map(Cow::Borrowed),
@@ -89,6 +100,8 @@ impl CallBinding {
 
     /// The binding of the response to `sealed_request` (the exact bytes
     /// that travelled) with the HTTP `status` it came back with.
+    /// This is the CBOR-answer binding; for a call that accepts other types
+    /// use [`response_for`](Self::response_for).
     pub fn response(&self, sealed_request: &[u8], status: u16) -> Binding<'_> {
         Binding {
             response: Some(ResponseBinding {
@@ -108,5 +121,6 @@ pub fn contract_header_value(contract_sha: &[u8; 32]) -> String {
     ContractSelector::of(contract_sha).to_header_value()
 }
 
+mod payload;
 #[cfg(test)]
 mod tests;

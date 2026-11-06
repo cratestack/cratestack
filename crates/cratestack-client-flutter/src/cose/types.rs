@@ -61,6 +61,22 @@ pub struct FlutterCallBinding {
     pub idempotency_key: Option<String>,
     /// The `If-Match` the request will carry, if any.
     pub if_match: Option<String>,
+    /// The type the request payload is sealed under (bound in the AAD);
+    /// `None` is `application/cbor`. Compact wire keys:
+    /// `application/vnd.cratestack.compact+cbor`.
+    pub payload_type: Option<String>,
+    /// The types the answer may come back in, in order of preference;
+    /// `None` is just `application/cbor`.
+    pub payload_accept: Option<Vec<String>>,
+}
+
+/// One header the caller must send with a sealed call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlutterSelectorHeader {
+    /// `Cratestack-Payload-Type` or `Cratestack-Payload-Accept`.
+    pub name: String,
+    /// Its value.
+    pub value: String,
 }
 
 /// A response that verified.
@@ -68,6 +84,9 @@ pub struct FlutterCallBinding {
 pub struct FlutterOpened {
     /// The payload, exactly as signed.
     pub payload: Vec<u8>,
+    /// The type the response was sealed under: one of the call's
+    /// `payload_accept` (`application/cbor` by default).
+    pub payload_type: String,
     /// The signer's 8-byte `kid`.
     pub kid: Vec<u8>,
     /// The algorithm it verified with.
@@ -133,11 +152,11 @@ impl From<CoseMode> for FlutterCoseMode {
     }
 }
 
-impl TryFrom<Opened> for FlutterOpened {
-    type Error = FlutterCoseError;
-
-    fn try_from(opened: Opened) -> Result<Self, Self::Error> {
+impl FlutterOpened {
+    /// `opened`, reported with the `payload_type` it verified under.
+    pub(crate) fn new(opened: Opened, payload_type: &str) -> Result<Self, FlutterCoseError> {
         Ok(Self {
+            payload_type: payload_type.to_owned(),
             payload: opened.payload.to_vec(),
             kid: opened.kid.to_vec(),
             alg: opened.alg.try_into()?,
@@ -173,7 +192,7 @@ impl FlutterCallBinding {
             .as_slice()
             .try_into()
             .map_err(|_| FlutterCoseError::misuse("the op contract digest is 32 bytes"))?;
-        Ok(CallBinding {
+        let call = CallBinding {
             audience: audience.to_owned(),
             method: self.method,
             route: self.route,
@@ -182,6 +201,10 @@ impl FlutterCallBinding {
             contract_sha,
             idempotency_key: self.idempotency_key,
             if_match: self.if_match,
-        })
+            payload_type: self.payload_type,
+            payload_accept: self.payload_accept,
+        };
+        call.validate()?;
+        Ok(call)
     }
 }
