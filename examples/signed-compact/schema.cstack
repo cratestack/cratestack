@@ -1,0 +1,32 @@
+transport rpc
+
+// Shared by `server/` (include_server_schema!) and `client/`
+// (include_client_schema!). One procedure, two multi-field types: enough
+// field names that the compact wire keys visibly shrink the payload.
+
+datasource db {
+  provider = "none"
+}
+
+type TransferInput {
+  fromAccount String
+  toAccount String
+  amountMinor Int
+  currency String
+  reference String
+  memo String?
+}
+
+type Transaction {
+  id String
+  status String
+  fromAccount String
+  toAccount String
+  amountMinor Int
+  currency String
+  reference String
+  createdAtUnix Int
+}
+
+procedure transferFunds(input: TransferInput): Transaction
+  @allow(true)

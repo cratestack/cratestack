@@ -1,8 +1,7 @@
 //! The value types of the COSE bridge, and their mapping to
 //! `cratestack-cose`'s.
 
-use cratestack_core::CratestackError;
-use cratestack_cose::{CoseAlg, CoseMode, CoseVerifyKey, Opened};
+use cratestack_cose::{CoseAlg, CoseMode};
 
 use super::error::FlutterCoseError;
 
@@ -151,37 +150,3 @@ impl From<CoseMode> for FlutterCoseMode {
         }
     }
 }
-
-impl FlutterOpened {
-    /// `opened`, reported with the `payload_type` it verified under.
-    pub(crate) fn new(opened: Opened, payload_type: &str) -> Result<Self, FlutterCoseError> {
-        Ok(Self {
-            payload_type: payload_type.to_owned(),
-            payload: opened.payload.to_vec(),
-            kid: opened.kid.to_vec(),
-            alg: opened.alg.try_into()?,
-            thumbprint: opened.thumbprint.to_vec(),
-        })
-    }
-}
-
-impl FlutterServerKey {
-    /// The typed verification key; a key of the wrong shape for its
-    /// algorithm is misuse.
-    pub(crate) fn to_verify_key(&self) -> Result<CoseVerifyKey, FlutterCoseError> {
-        let alg = CoseAlg::from(self.alg);
-        let key = match alg {
-            CoseAlg::Ed25519 => {
-                let public: [u8; 32] = self.bytes.as_slice().try_into().map_err(|_| {
-                    CratestackError::Validation("an Ed25519 server key is 32 bytes".to_owned())
-                })?;
-                CoseVerifyKey::ed25519(&public)
-            }
-            CoseAlg::Esp256 => CoseVerifyKey::p256_sec1(&self.bytes),
-            _ => CoseVerifyKey::hmac(alg, self.bytes.clone()),
-        };
-        Ok(key?)
-    }
-}
-
-mod binding;

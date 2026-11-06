@@ -1,0 +1,28 @@
+[package]
+name = "signed-compact-client"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Client half of the signed-compact example: the generated Rust client with a COSE envelope (with_envelope) and compact wire keys (with_compact_keys), against signed-compact-server."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "signed-compact-client"
+path = "src/main.rs"
+
+[dependencies]
+# The pure HTTP-client facade; `cose` turns on `cratestack::cose` and the
+# signed client (`CratestackClient::with_envelope`). axum stays out.
+cratestack = { package = "cratestack-client", path = "../../../crates/cratestack-client", features = ["cose"] }
+# `ClientConfig`, `ClientEnvelope`, `CborCodec`: the runtime types the facade
+# does not re-export by name. Cargo unifies this with the facade's own copy.
+cratestack-client-rust = { path = "../../../crates/cratestack-client-rust" }
+serde = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+signed-compact-server = { path = "../server" }

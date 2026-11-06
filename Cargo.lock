@@ -6889,6 +6889,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "signed-compact-client"
+version = "0.1.0"
+dependencies = [
+ "cratestack-client",
+ "cratestack-client-rust",
+ "serde",
+ "signed-compact-server",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "signed-compact-server"
+version = "0.1.0"
+dependencies = [
+ "cratestack-api",
+ "cratestack-codec-cbor",
+ "cratestack-codec-json",
+ "serde",
+ "tokio",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

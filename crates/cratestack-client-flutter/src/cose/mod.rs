@@ -18,6 +18,7 @@
 //! Only Required mode exists on the client, as in the Rust client: a client
 //! that cannot seal does not call.
 
+mod convert;
 pub mod envelope;
 pub mod error;
 pub mod types;
