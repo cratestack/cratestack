@@ -192,3 +192,8 @@ macro_rules! compact_procedures {
         }
     };
 }
+
+pub mod idempotency;
+
+mod prepared;
+mod prepared_sealed;

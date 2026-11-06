@@ -32,7 +32,8 @@ pub use cratestack_core::rpc::{
 
 pub use auth::{AuthorizationRequest, RequestAuthorizer};
 pub use client::{
-    CratestackClient, RouteRef, TypedResponse, encode_path_segment, ensure_crypto_provider,
+    CratestackClient, PreparedCall, RouteRef, TypedResponse, encode_path_segment,
+    ensure_crypto_provider,
 };
 pub use codec::HttpClientCodec;
 pub use config::ClientConfig;

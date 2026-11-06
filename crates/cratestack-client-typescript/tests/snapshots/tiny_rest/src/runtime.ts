@@ -56,6 +56,19 @@ export interface CratestackClientOptions {
   compactKeys?: boolean;
 }
 
+/** Serializable request prepared before its first network attempt. */
+export interface PreparedCall {
+  version: 1;
+  method: string;
+  path: string;
+  url: string;
+  op: string;
+  contract: string;
+  keyTables: string;
+  headers: [string, string][];
+  body: string | null;
+}
+
 export interface CratestackRequestOptions {
   body?: unknown;
   headers?: HeadersInit | undefined;
@@ -270,6 +283,73 @@ export class CratestackRuntime {
         : undefined;
   }
 
+  /** Prepare a keyed request for caller-owned durable storage before sending. */
+  async prepare(method: string, path: string, options: CratestackRequestOptions = {}): Promise<PreparedCall> {
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) throw new Error("prepare requires a mutation");
+    const headers = new Headers(await resolveHeaders(this.defaultHeaders));
+    for (const [key, value] of new Headers(options.headers)) headers.set(key, value);
+    if (!headers.get("Idempotency-Key")) throw new Error("prepare requires an Idempotency-Key");
+    const routes = this.compact ?? new RestCompactSession(KEY_TABLES, Object.keys(OP_CONTRACTS));
+    const op = routes.opOf(method, path);
+    const contract = op === undefined ? undefined : OP_CONTRACTS[op];
+    if (op === undefined || contract === undefined) throw new Error("unknown prepared route");
+    let body = options.body === undefined ? null : JSON.stringify(encodeBinaryAsJson(options.body));
+    headers.set("Accept", "application/json");
+    if (body !== null) headers.set("Content-Type", "application/json");
+    const compact = await this.compact?.begin(method, path, headers.get("Idempotency-Key") ?? undefined);
+    if (compact !== undefined) {
+      compact.applyHeaders(headers, body !== null);
+      if (body !== null) body = compact.encodeBody(body);
+    }
+    if (body !== null && new TextEncoder().encode(body).length > 8 * 1024 * 1024) throw new Error("prepared body too large");
+    for (const name of [...headers.keys()]) if (!["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"].includes(name)) headers.delete(name);
+    const prepared: PreparedCall = { version: 1, method: method.toUpperCase(), path, url: this.url(path, options.query), op, contract, keyTables: KEY_TABLES, headers: [...headers], body };
+    if (new TextEncoder().encode(JSON.stringify(prepared)).length > 16 * 1024 * 1024) throw new Error("prepared call too large");
+    return prepared;
+  }
+
+  async executePrepared<T>(prepared: PreparedCall, signal?: AbortSignal): Promise<T> {
+    const serialized = JSON.stringify(prepared);
+    if (new TextEncoder().encode(serialized).length > 16 * 1024 * 1024) throw new Error("prepared call too large");
+    prepared = JSON.parse(serialized) as PreparedCall;
+    if (Object.keys(prepared).sort().join(",") !== "body,contract,headers,keyTables,method,op,path,url,version" || prepared.version !== 1 ||
+      typeof prepared.method !== "string" || typeof prepared.path !== "string" || typeof prepared.url !== "string" ||
+      typeof prepared.op !== "string" || typeof prepared.contract !== "string" || prepared.contract !== OP_CONTRACTS[prepared.op] || prepared.keyTables !== KEY_TABLES ||
+      !Array.isArray(prepared.headers) || (prepared.body !== null && typeof prepared.body !== "string")) {
+      throw new Error("invalid or incompatible prepared call");
+    }
+    if (prepared.body !== null) JSON.parse(prepared.body);
+    const names = new Set<string>();
+    for (const pair of prepared.headers) {
+      if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string") throw new Error("invalid prepared header");
+      const name = pair[0].toLowerCase();
+      if (names.has(name) || !["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"].includes(name) || new TextEncoder().encode(pair[1]).length > 8192) throw new Error("invalid prepared header");
+      names.add(name);
+    }
+    const routes = this.compact ?? new RestCompactSession(KEY_TABLES, Object.keys(OP_CONTRACTS));
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(prepared.method) || routes.opOf(prepared.method, prepared.path) !== prepared.op ||
+      this.url(prepared.path).split("?")[0] !== prepared.url.split("?")[0] ||
+      (prepared.body !== null && new TextEncoder().encode(prepared.body).length > 8 * 1024 * 1024)) throw new Error("invalid prepared route or body");
+    const headers = new Headers(await resolveHeaders(this.defaultHeaders));
+    for (const [key, value] of new Headers(prepared.headers)) headers.set(key, value);
+    if (!headers.get("Idempotency-Key")) throw new Error("invalid prepared key");
+    const compact = await this.compact?.begin(prepared.method, prepared.path, headers.get("Idempotency-Key") ?? undefined);
+    if (headers.has("Cratestack-Contract") && compact === undefined) throw new Error("compact decoder unavailable");
+    const saved = new Headers(prepared.headers);
+    const expected = new Headers();
+    if (compact !== undefined) compact.applyHeaders(expected, prepared.body !== null);
+    const contentType = saved.get("content-type");
+    if (saved.get("accept") !== (compact ? expected.get("accept") : "application/json") ||
+        saved.get("cratestack-contract") !== expected.get("cratestack-contract") ||
+        (prepared.body !== null && contentType !== "application/json" && contentType !== "application/vnd.cratestack.compact+json") ||
+        (contentType === "application/vnd.cratestack.compact+json" && compact === undefined)) throw new Error("invalid prepared media or selector");
+
+    const response = await this.fetchFn(prepared.url, { method: prepared.method, headers, body: prepared.body, signal: signal ?? null });
+    const payload = await readResponsePayload(response, compact);
+    if (!response.ok) throw new CratestackHttpError(response, payload);
+    return payload as T;
+  }
+
   async request<T>(
     method: string,
     path: string,
@@ -294,7 +374,9 @@ export class CratestackRuntime {
     }
     headers.set("Accept", "application/json");
 
-    const compact = await this.compact?.begin(method, path);
+    const effectiveHeaders = new Headers(headers);
+    for (const [key, value] of new Headers(options.headers)) effectiveHeaders.set(key, value);
+    const compact = await this.compact?.begin(method, path, effectiveHeaders.get("Idempotency-Key") ?? undefined);
     let body: BodyInit | undefined;
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");

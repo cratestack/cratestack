@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Durable compact idempotent calls
+
+Keyed calls retain their initial encoding while a client instance lives, even
+when its bounded key memory fills. For retries across client recreation, the
+Rust, TypeScript and Dart runtimes expose prepared unary mutation snapshots;
+store the snapshot before sending and restore it with the same service and
+contract. See [prepared calls](docs/design/prepared-idempotent-calls.md).
+
+
 ## 0.18.0 (2026-11-06)
 
 ### Compact wire keys: integer field keys negotiated per op contract

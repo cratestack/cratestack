@@ -54,22 +54,59 @@ where
         headers: &[HeaderPair<'_>],
         accept_override: Option<&'static str>,
     ) -> Result<RuntimeResponseWire, ClientError> {
+        self.send_buffered(
+            method,
+            path,
+            body,
+            canonical_query,
+            headers,
+            accept_override,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn send_buffered(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Vec<u8>>,
+        canonical_query: Option<&str>,
+        headers: &[HeaderPair<'_>],
+        accept_override: Option<&'static str>,
+        prepared: Option<&super::prepared::PreparedCall>,
+    ) -> Result<RuntimeResponseWire, ClientError> {
         #[cfg(feature = "cose")]
         if let Some(envelope) = &self.sealing.envelope {
             // A sealed call names its own `Accept`: only the seal is asked for.
             return self
-                .request_sealed(envelope, method, path, body, canonical_query, headers)
+                .request_sealed(
+                    envelope,
+                    method,
+                    path,
+                    body,
+                    canonical_query,
+                    headers,
+                    prepared,
+                )
                 .await;
         }
         let url = build_url(&self.config.base_url, path, canonical_query)?;
         let plain_accept = accept_override.unwrap_or_else(|| self.codec.accept_header_value());
-        let compact = self.compact_call(&method, headers, body.is_some());
-        let (body, content_type, accept) = match &compact {
-            Some(call) => {
-                let sent = call.prepare(body, C::CONTENT_TYPE, plain_accept, false);
-                (sent.body, sent.content_type, sent.accept)
+        let compact = match prepared {
+            Some(call) => Some(self.prepared_compact(call)?),
+            None => self.compact_call(&method, headers, body.is_some()),
+        };
+        let (body, content_type, accept) = if let Some(call) = prepared {
+            (body, call.wire_type::<C>()?, call.accept.clone())
+        } else {
+            match &compact {
+                Some(call) => {
+                    let sent = call.prepare(body, C::CONTENT_TYPE, plain_accept, false);
+                    (sent.body, sent.content_type, sent.accept)
+                }
+                None => (body, C::CONTENT_TYPE, plain_accept.to_owned()),
             }
-            None => (body, C::CONTENT_TYPE, plain_accept.to_owned()),
         };
         let mut header_map = self
             .build_header_map_as(
@@ -82,6 +119,19 @@ where
                 content_type,
             )
             .await?;
+        if prepared.is_some() {
+            // An authorizer may supply credentials, but cannot change the
+            // media types bound to the saved inner request.
+            header_map.insert(
+                reqwest::header::ACCEPT,
+                reqwest::header::HeaderValue::from_str(&accept)
+                    .map_err(|error| ClientError::BadInput(error.to_string()))?,
+            );
+            header_map.insert(
+                reqwest::header::CONTENT_TYPE,
+                reqwest::header::HeaderValue::from_static(content_type),
+            );
+        }
         if let Some(call) = &compact {
             call.stamp_selector(&mut header_map)?;
         }

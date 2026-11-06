@@ -181,6 +181,47 @@ describe.each(layouts)("%s", (_name, mod) => {
     ]);
   });
 
+  it("pins a key supplied as a header and rejects conflicting sources", async () => {
+    const { fetchFn, sent } = transport(() => compactCbor("hi"));
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn, compactKeys: true });
+    await runtime.call("procedure.echoName", { name: "a" }, { headers: { "idempotency-key": "k" } });
+    await runtime.call("procedure.echoName", { name: "a" }, { headers: { "Idempotency-Key": "k" } });
+    expect(sent.map((request) => request.headers.get("content-type"))).toEqual(["application/cbor", "application/cbor"]);
+    await expect(runtime.call("procedure.echoName", {}, { idempotencyKey: "a", headers: { "idempotency-key": "b" } })).rejects.toThrow();
+    expect(sent).toHaveLength(2);
+  });
+
+  it("retains an old keyed encoding after more than 512 different keys", async () => {
+    const { fetchFn, sent } = transport(() => compactCbor("hi"));
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", {
+      fetch: fetchFn, compactKeys: true,
+    });
+    for (let key = 0; key < 513; key += 1) {
+      await runtime.call("procedure.echoName", { name: "a" }, { idempotencyKey: `key-${key}` });
+    }
+    await runtime.call("procedure.echoName", { name: "a" }, { idempotencyKey: "key-0" });
+    expect(sent[513]?.headers.get("content-type")).toBe(sent[0]?.headers.get("content-type"));
+    expect(sent[513]?.body).toEqual(sent[0]?.body);
+  });
+
+  it.each(["cbor", "json"] as const)("persists %s compact bytes across runtime recreation", async (format) => {
+    const { fetchFn, sent } = transport(() => format === "json"
+      ? Promise.resolve(new Response(JSON.stringify({ c: JSON.stringify("hi") }), { headers: { "Content-Type": COMPACT_JSON } }))
+      : compactCbor("hi"));
+    const opts = { fetch: fetchFn, compactKeys: true, ...(format === "json" ? { codec: mod.jsonRpcCodec } : {}) };
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", opts);
+    await runtime.call("procedure.echoName", { name: "warm" });
+    const prepared = await runtime.prepare("procedure.echoName", { name: "a" }, { idempotencyKey: "persist" });
+    expect(sent).toHaveLength(1);
+    const restored = JSON.parse(JSON.stringify(prepared));
+    const restarted = new mod.CratestackRpcRuntime("http://x.invalid", opts);
+    await restarted.executePrepared(restored);
+    await restarted.executePrepared(restored);
+    expect(sent[1]?.headers.get("content-type")).toBe(format === "json" ? COMPACT_JSON : COMPACT_CBOR);
+    expect(sent[2]?.body).toEqual(sent[1]?.body);
+    await expect(restarted.executePrepared({ ...restored, contract: "changed" })).rejects.toThrow();
+  });
+
   it("the JSON codec negotiates compact+json", async () => {
     const { fetchFn, sent } = transport((_request, index) =>
       Promise.resolve(
@@ -252,4 +293,17 @@ describe.each(layouts)("%s", (_name, mod) => {
     expect(sent[0]?.headers.has("cratestack-contract")).toBe(false);
     expect(fake.calls).toEqual([]);
   });
+  it("rejects altered bindings and credentials before sending", async () => {
+    const { fetchFn, sent } = transport(() => plainJson({}));
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn, codec: mod.jsonRpcCodec,
+      headers: { Authorization: "Bearer secret", Cookie: "session=secret", "X-API-Key": "secret" } });
+    const saved = await runtime.prepare("procedure.echoName", { name: "a" }, { idempotencyKey: "k" });
+    expect(JSON.stringify(saved)).not.toContain("secret");
+    const elsewhere = new mod.CratestackRpcRuntime("http://other.invalid", { fetch: fetchFn, codec: mod.jsonRpcCodec });
+    await expect(elsewhere.executePrepared(saved)).rejects.toThrow();
+    await expect(runtime.executePrepared({ ...saved, headers: [...saved.headers, ["authorization", "Bearer injected"]] })).rejects.toThrow();
+    await expect(runtime.prepare("procedure.echoName", {}, { idempotencyKey: "a", headers: { "IDEMPOTENCY-KEY": "b" } })).rejects.toThrow();
+    expect(sent).toHaveLength(0);
+  });
+
 });

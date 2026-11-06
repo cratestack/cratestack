@@ -18,24 +18,21 @@
 //! `Remote` error mapping, cbor-seq lists, RPC frames) is the code a plain
 //! call runs, with no second path to keep in step with it.
 
-use cratestack_core::PAYLOAD_TYPE_HEADER;
 use reqwest::Method;
 use reqwest::StatusCode;
-use reqwest::header::{
-    CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, TRANSFER_ENCODING,
-};
 
+use super::envelope_headers::opened_headers;
 use crate::client::bound_headers::{bound_headers, refuse_duplicates};
 use crate::client::core::CratestackClient;
 use crate::client::envelope_refusal::refused_op;
-use crate::client::helpers::{build_url, headers_to_runtime};
+use crate::client::helpers::build_url;
 use crate::client::route::RouteRef;
 use crate::codec::HttpClientCodec;
 use crate::envelope::{ClientEnvelope, SealCall, SealedCall, is_cose};
 use crate::envelope_error::EnvelopeError;
 use crate::error::{ClientError, HeaderPair};
 use crate::idempotency::RequestIdempotency;
-use crate::runtime::wire::{RuntimeHeader, RuntimeResponseWire};
+use crate::runtime::wire::RuntimeResponseWire;
 
 impl<C> CratestackClient<C>
 where
@@ -49,6 +46,7 @@ where
         body: Option<Vec<u8>>,
         canonical: Option<&str>,
         headers: &[HeaderPair<'_>],
+        prepared: Option<&super::prepared::PreparedCall>,
     ) -> Result<RuntimeResponseWire, ClientError> {
         let route = self.sealing.route.as_ref().ok_or_else(|| {
             ClientError::BadInput(
@@ -62,14 +60,24 @@ where
         // Compact keys, when opted in: the request payload goes out compact
         // once this op has answered compact, and the payload accept names
         // the compact types first. Neither touches the seal's own framing.
-        let compact = self.compact_call(&method, headers, body.is_some());
+        let compact = match prepared {
+            Some(call) => Some(self.prepared_compact(call)?),
+            None => self.compact_call(&method, headers, body.is_some()),
+        };
         let plain_accept = self.codec.payload_accept();
-        let (body, payload_type, payload_accept) = match &compact {
-            Some(call) => {
-                let sent = call.prepare(body, C::CONTENT_TYPE, plain_accept, false);
-                (sent.body, sent.content_type, sent.accept)
+        let (body, payload_type, payload_accept) = if let Some(call) = prepared {
+            if contract_sha != call.contract {
+                return Err(super::prepared::bad("prepared sealed contract differs"));
             }
-            None => (body, C::CONTENT_TYPE, plain_accept.to_owned()),
+            (body, call.wire_type::<C>()?, call.accept.clone())
+        } else {
+            match &compact {
+                Some(call) => {
+                    let sent = call.prepare(body, C::CONTENT_TYPE, plain_accept, false);
+                    (sent.body, sent.content_type, sent.accept)
+                }
+                None => (body, C::CONTENT_TYPE, plain_accept.to_owned()),
+            }
         };
         // The authorizer runs over the inner payload, exactly what the
         // server's `AuthProvider` will see once it has opened the seal.
@@ -167,32 +175,4 @@ where
             None => Ok(wire),
         }
     }
-}
-
-/// The response's headers as the plain call would have seen them: the body
-/// is the opened payload, so its framing headers (and the layer's own
-/// `Cratestack-Payload-Type`) go and its type is the one it was sealed under.
-/// Everything else (`ETag`, `Retry-After`, `Idempotency-Replayed`) is passed
-/// on, and stays unauthenticated.
-fn opened_headers(headers: &HeaderMap, payload_type: &str) -> Vec<RuntimeHeader> {
-    let dropped = |name: &str| {
-        [
-            CONTENT_TYPE.as_str(),
-            CONTENT_LENGTH.as_str(),
-            CONTENT_ENCODING.as_str(),
-            TRANSFER_ENCODING.as_str(),
-            PAYLOAD_TYPE_HEADER,
-        ]
-        .iter()
-        .any(|dropped| name.eq_ignore_ascii_case(dropped))
-    };
-    let mut kept: Vec<RuntimeHeader> = headers_to_runtime(headers)
-        .into_iter()
-        .filter(|header| !dropped(&header.name))
-        .collect();
-    kept.push(RuntimeHeader {
-        name: CONTENT_TYPE.as_str().to_owned(),
-        value: payload_type.to_owned(),
-    });
-    kept
 }

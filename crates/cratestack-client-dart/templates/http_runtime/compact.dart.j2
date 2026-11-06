@@ -144,13 +144,14 @@ _CompactCall? _cratestackCompactBegin(
   final remembered = idempotencyKey == null
       ? null
       : memory.encodingByIdempotencyKey[idempotencyKey];
-  final sendCompact = remembered ?? memory.compactOps.contains(op);
+  final sendCompact = remembered ??
+      (idempotencyKey != null &&
+              memory.encodingByIdempotencyKey.length >= _cratestackRememberedEncodings
+          ? false
+          : memory.compactOps.contains(op));
   if (idempotencyKey != null && remembered == null) {
-    memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
-    if (memory.encodingByIdempotencyKey.length > _cratestackRememberedEncodings) {
-      memory.encodingByIdempotencyKey.remove(
-        memory.encodingByIdempotencyKey.keys.first,
-      );
+    if (memory.encodingByIdempotencyKey.length < _cratestackRememberedEncodings) {
+      memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
     }
   }
   return _CompactCall._(hooks, memory, op, selector, sendCompact, stream);

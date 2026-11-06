@@ -100,3 +100,9 @@ async fn stream_refused(client: &client_schema::client::Client) -> bool {
 }
 
 sealed_compact_suite!();
+
+prepared_sealed_suite!(
+    schema::axum::rpc_router,
+    "procedure.echoOrder",
+    "/rpc/procedure.echoOrder"
+);

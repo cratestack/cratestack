@@ -56,6 +56,10 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/http_runtime/compact.dart.j2"),
     ),
     (
+        "http_runtime/prepared.dart.j2",
+        include_str!("../templates/http_runtime/prepared.dart.j2"),
+    ),
+    (
         "http_runtime/refusal.dart.j2",
         include_str!("../templates/http_runtime/refusal.dart.j2"),
     ),

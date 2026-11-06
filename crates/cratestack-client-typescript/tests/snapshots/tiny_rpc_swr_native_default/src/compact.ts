@@ -113,15 +113,10 @@ export class RpcCompactSession {
     // A retry under the same `Idempotency-Key` reuses the first attempt's encoding.
     const remembered =
       idempotencyKey === undefined ? undefined : this.encodingByIdempotencyKey.get(idempotencyKey);
-    const sendCompact = remembered ?? this.compactOps.has(op);
-    if (idempotencyKey !== undefined && remembered === undefined) {
+    const sendCompact = remembered ?? (idempotencyKey !== undefined && this.encodingByIdempotencyKey.size >= MAX_REMEMBERED_ENCODINGS
+      ? false : this.compactOps.has(op));
+    if (idempotencyKey !== undefined && remembered === undefined && this.encodingByIdempotencyKey.size < MAX_REMEMBERED_ENCODINGS) {
       this.encodingByIdempotencyKey.set(idempotencyKey, sendCompact);
-      if (this.encodingByIdempotencyKey.size > MAX_REMEMBERED_ENCODINGS) {
-        const oldest = this.encodingByIdempotencyKey.keys().next().value;
-        if (oldest !== undefined) {
-          this.encodingByIdempotencyKey.delete(oldest);
-        }
-      }
     }
     const compactOps = this.compactOps;
     return {

@@ -31,8 +31,8 @@ use crate::client::core::CratestackClient;
 use crate::codec::HttpClientCodec;
 use crate::error::{ClientError, HeaderPair};
 
-/// Idempotency keys remembered for their request encoding; past this the
-/// memo is dropped wholesale (a retry far enough apart to miss is rare).
+/// Maximum encoding pins retained for the lifetime of this compact state.
+/// Once full, previously unseen keys stay named without evicting any pin.
 const MAX_REMEMBERED_KEYS: usize = 1024;
 
 /// What a client opted into compact keys carries; shared by every clone.
@@ -94,11 +94,16 @@ impl CompactClient {
             return wanted;
         };
         let mut seen = lock(&self.idempotent);
-        if seen.len() >= MAX_REMEMBERED_KEYS {
-            seen.clear();
+        if let Some(remembered) = seen.get(key) {
+            return *remembered;
         }
-        // A retry reuses its first attempt's encoding.
-        *seen.entry(key.to_owned()).or_insert(wanted)
+        if seen.len() >= MAX_REMEMBERED_KEYS {
+            // Occupancy never shrinks: every unrecorded overflow key therefore
+            // stays named for this instance. Existing compact pins are retained.
+            return false;
+        }
+        seen.insert(key.to_owned(), wanted);
+        wanted
     }
 }
 
@@ -181,3 +186,7 @@ where
         })
     }
 }
+
+#[cfg(test)]
+#[path = "compact_idempotency_tests.rs"]
+mod idempotency_tests;
