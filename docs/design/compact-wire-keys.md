@@ -222,6 +222,27 @@ already is:
   so **a sealed compact body is bound to its key mode with no binding-version change**. A
   parameter is fine HTTP for unsealed calls, but then the same mode would have two spellings, so
   the family uses one everywhere.
+- **Why not `application/vnd.cratestack.compact+cose` (or `application/cose; keys=compact`).**
+  A sealed compact call keeps the outer type `application/cose` and says "compact" only in the
+  inner payload type. Four reasons:
+  1. *The outer type names the envelope.* `application/cose` and its `cose-type` parameter
+     (RFC 9052 §2) say which COSE structure the body is, Sign1 or Mac0. Key mode belongs to the
+     payload inside it. A `+cose` type would mix the two layers, and need a Sign1 and a Mac0
+     variant of its own.
+  2. *Only the inner type is authenticated.* The AAD binds the payload media type (ADR 0006 §4,
+     element 8). The outer `Content-Type` is not bound. A key mode signalled outside would sit
+     in an unsigned header, and the inner type would still have to name it for the AAD, so the
+     same fact would live in two places that can disagree.
+  3. *It is how every other payload type travels.* JSON under a seal is `application/cose`
+     outside and `Cratestack-Payload-Type: application/json` inside (cratestack#1168); there is
+     no `json+cose`. Compact takes the same path, which is why it needed no binding-version
+     change.
+  4. *Nothing else has to learn a new type.* The client's `is_cose` check on a response and the
+     envelope layer's media-type matching stay as they are.
+
+  The cost: a sealed compact call is not visible from `Content-Type` alone. It shows in
+  `Cratestack-Payload-Type`, which is unbound but cannot lie, because the type it names is in
+  the AAD.
 - **Streams.** `+cbor-seq` is the structured-syntax suffix RFC 8742 registers for CBOR
   sequences. `is_sealable_payload_type` refuses a stream by exact match on `application/cbor-seq`
   today, so it must learn the `+cbor-seq` suffix as well. Otherwise the compact stream type would
