@@ -76,6 +76,11 @@ pub struct CratestackClient<C = CborCodec> {
     /// inert, unless the `cose` feature is on and `with_envelope` was called.
     #[cfg_attr(not(feature = "cose"), allow(dead_code))]
     pub(crate) sealing: Sealing,
+    /// Compact wire keys (`client/compact.rs`); `None` — the default — is
+    /// today's wire, byte for byte.
+    pub(crate) compact: Option<Arc<crate::client::compact::CompactClient>>,
+    /// The route template of the call in flight, set by [`Self::at`].
+    pub(crate) compact_route: Option<Arc<str>>,
 }
 
 impl CratestackClient<CborCodec> {
@@ -99,6 +104,8 @@ where
             schema_sha: None,
             idempotency: None,
             sealing: Sealing::default(),
+            compact: None,
+            compact_route: None,
         }
     }
 
@@ -119,6 +126,8 @@ where
             schema_sha: None,
             idempotency: None,
             sealing: Sealing::default(),
+            compact: None,
+            compact_route: None,
         }
     }
 

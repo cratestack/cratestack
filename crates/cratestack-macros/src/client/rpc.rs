@@ -73,6 +73,7 @@ pub(super) fn generate_generated_rpc_client_module(
         .map(|procedure| generate_generated_rpc_procedure_client_method(procedure, bearing))
         .collect::<Result<Vec<_>, String>>()?;
 
+    let compact_ctor = super::compact_ctor::compact_constructor();
     Ok(quote! {
         pub mod client {
             #[derive(Clone)]
@@ -105,6 +106,8 @@ pub(super) fn generate_generated_rpc_client_module(
                         ),
                     }
                 }
+
+                #compact_ctor
 
                 /// Underlying `RpcClient`. Use for ops not covered by
                 /// the typed surface (raw `call(op_id, &input)`, batch,

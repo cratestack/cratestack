@@ -9,6 +9,7 @@ mod http_transport;
 mod internal;
 mod media_type;
 mod stream_sequence;
+pub(crate) use stream_sequence::encode_error_sentinel;
 mod validate;
 
 pub const CBOR_SEQUENCE_CONTENT_TYPE: &str = "application/cbor-seq";

@@ -19,6 +19,10 @@ impl<C> CratestackClient<C>
 where
     C: HttpClientCodec,
 {
+    #[cfg_attr(
+        not(any(feature = "cose", feature = "ws", feature = "webtransport")),
+        allow(dead_code)
+    )]
     /// Build a reqwest `HeaderMap` for a request, applying ACCEPT,
     /// CONTENT_TYPE, authorizer-emitted headers, and per-call extras.
     /// Returns the resolved content type (so the journal entry can
@@ -33,7 +37,31 @@ where
         body: Option<&[u8]>,
         canonical_query: Option<&str>,
         headers: &[HeaderPair<'_>],
-        accept: &'static str,
+        accept: &str,
+    ) -> Result<HeaderMap, ClientError> {
+        self.build_header_map_as(
+            method,
+            path,
+            body,
+            canonical_query,
+            headers,
+            accept,
+            C::CONTENT_TYPE,
+        )
+        .await
+    }
+
+    /// [`Self::build_header_map`] with the body's `Content-Type` named, for
+    /// a body the codec did not write as is (a compact one).
+    pub(crate) async fn build_header_map_as(
+        &self,
+        method: &Method,
+        path: &str,
+        body: Option<&[u8]>,
+        canonical_query: Option<&str>,
+        headers: &[HeaderPair<'_>],
+        accept: &str,
+        body_content_type: &'static str,
     ) -> Result<HeaderMap, ClientError> {
         let mut header_map = HeaderMap::new();
         if let Some(schema_sha) = self.schema_sha {
@@ -43,10 +71,15 @@ where
             // macro-expansion time, never user input.
             header_map.insert(SCHEMA_SHA_HEADER, HeaderValue::from_static(schema_sha));
         }
-        header_map.insert(ACCEPT, HeaderValue::from_static(accept));
+        header_map.insert(
+            ACCEPT,
+            HeaderValue::from_str(accept).map_err(|error| {
+                ClientError::BadInput(format!("invalid Accept value '{accept}': {error}"))
+            })?,
+        );
         let content_type = if body.is_some() {
-            header_map.insert(CONTENT_TYPE, HeaderValue::from_static(C::CONTENT_TYPE));
-            Some(C::CONTENT_TYPE.to_owned())
+            header_map.insert(CONTENT_TYPE, HeaderValue::from_static(body_content_type));
+            Some(body_content_type.to_owned())
         } else {
             None
         };

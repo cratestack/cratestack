@@ -9,6 +9,8 @@
 //! - [`query`]: URL query parsing and the filter expression grammar.
 //! - [`rpc`]: the RPC binding (`POST /rpc/{op_id}` and
 //!   `POST /rpc/batch`).
+//! - [`compact_layer`]: the compact-wire-keys layer (integer keys for
+//!   schema field names, negotiated by media type and `Cratestack-Contract`).
 //! - [`idempotency`]: idempotency-key middleware and storage trait.
 //! - `middleware_error` (private): the shared, codec-negotiated error
 //!   envelope both middleware layers emit (cratestack#846).
@@ -31,6 +33,7 @@ pub use cratestack_cose as cose;
 
 mod auth_challenge;
 pub mod codec;
+pub mod compact_layer;
 #[cfg(feature = "envelope")]
 pub mod envelope_layer;
 pub mod headers;

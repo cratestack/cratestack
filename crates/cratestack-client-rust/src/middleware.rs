@@ -131,6 +131,8 @@ where
             schema_sha: None,
             idempotency: None,
             sealing: Default::default(),
+            compact: None,
+            compact_route: None,
         }
     }
 }

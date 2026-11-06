@@ -181,5 +181,8 @@ pub fn is_sealable_payload_type(media_type: &str) -> bool {
     has_type_grammar(media_type)
         && !media_type.starts_with("application/cose")
         && !matches!(media_type, "application/cbor-seq" | "text/event-stream")
+        // Any structured-syntax `+cbor-seq` type, such as
+        // `application/vnd.cratestack.compact+cbor-seq`, is a stream too.
+        && !media_type.ends_with("+cbor-seq")
         && !media_type.starts_with("multipart/")
 }

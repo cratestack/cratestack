@@ -1,5 +1,9 @@
 #[cfg(feature = "cose")]
 pub(crate) mod bound_headers;
+pub(crate) mod compact;
+#[cfg(test)]
+mod compact_tests;
+pub(crate) mod compact_wire;
 #[cfg(feature = "cose")]
 pub(crate) mod contract;
 mod core;
@@ -19,6 +23,7 @@ pub(crate) mod route;
 pub(crate) mod sealing;
 mod streaming;
 mod transport;
+mod transport_stream;
 mod views;
 
 pub use core::{CratestackClient, ensure_crypto_provider};

@@ -21,7 +21,14 @@ use syn::LitStr;
 pub(super) fn accepted_from_lock(
     lock_path: &LitStr,
     schema: &cratestack_core::Schema,
-) -> Result<(Vec<(String, Vec<[u8; 32]>)>, TokenStream), syn::Error> {
+) -> Result<
+    (
+        Vec<(String, Vec<[u8; 32]>)>,
+        TokenStream,
+        cratestack_core::ContractLock,
+    ),
+    syn::Error,
+> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
     let resolved = PathBuf::from(manifest_dir).join(lock_path.value());
     let fail = |message: String| syn::Error::new(lock_path.span(), message);
@@ -43,7 +50,7 @@ pub(super) fn accepted_from_lock(
         // Makes cargo rebuild when the lock changes.
         const _: &[u8] = include_bytes!(#path);
     };
-    Ok((table, track))
+    Ok((table, track, lock))
 }
 
 #[cfg(test)]
@@ -78,7 +85,7 @@ mod tests {
     fn a_compatible_lock_adds_the_old_digests_after_the_current_one() {
         let lit = write("compatible", &locked(V1).to_json());
         let new = schema(&V1.replace("  name String\n", "  name String\n  note String?\n"));
-        let (table, track) = accepted_from_lock(&lit, &new).expect("compatible");
+        let (table, track, _) = accepted_from_lock(&lit, &new).expect("compatible");
         let create = &table
             .iter()
             .find(|(k, _)| k == "model.Widget.create")

@@ -168,15 +168,17 @@ where
             .encode(input)
             .map_err(RpcClientError::Codec)?;
         let path = format!("/rpc/{}", op_id);
-        let response = self
+        let (response, items) = self
             .inner
-            .request_streamed_with_query_and_accept(
+            .at(RouteRef::rpc(op_id))
+            .request_streamed_compact(
                 Method::POST,
                 &path,
                 Some(body),
                 None,
                 &[],
                 self.inner.codec.sequence_accept_header_value(),
+                true,
             )
             .await
             .map_err(client_error_to_rpc)?;
@@ -189,6 +191,7 @@ where
             response,
             tx,
             client_error_to_rpc,
+            items,
         ));
         Ok(rx)
     }

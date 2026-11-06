@@ -132,7 +132,10 @@ where
 /// `Infallible`, so this can't fail); the map payload reuses the same
 /// codec every ordinary item goes through, so `RpcErrorBody`'s field
 /// encoding stays consistent with the rest of the wire format.
-fn encode_error_sentinel<C: CratestackCodec>(codec: &C, error: &CratestackError) -> Vec<u8> {
+pub(crate) fn encode_error_sentinel<C: CratestackCodec>(
+    codec: &C,
+    error: &CratestackError,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     minicbor::Encoder::new(&mut bytes)
         .tag(minicbor::data::Tag::new(RPC_STREAM_ERROR_TAG))

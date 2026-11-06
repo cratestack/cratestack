@@ -120,6 +120,8 @@ fn envelopes_streams_and_multiparts_are_never_sealable() {
         "application/json",
         "application/x-www-form-urlencoded",
         "text/plain",
+        "application/vnd.cratestack.compact+cbor",
+        "application/vnd.cratestack.compact+json",
     ] {
         assert!(is_sealable_payload_type(yes), "{yes}");
     }
@@ -128,6 +130,8 @@ fn envelopes_streams_and_multiparts_are_never_sealable() {
         "application/cose; cose-type=\"cose-sign1\"",
         "application/cose-key",
         "application/cbor-seq",
+        "application/vnd.cratestack.compact+cbor-seq",
+        "application/x-anything+cbor-seq",
         "text/event-stream",
         "multipart/form-data",
         "multipart/mixed",

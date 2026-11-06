@@ -33,12 +33,24 @@ pub(super) fn compose_server_schema(
             Ok(parsed) => parsed,
             Err(error) => return error,
         };
-    let (schema_sha_consts, lock_track) = match contracts {
-        None => (schema_sha_consts, quote! {}),
+    let (schema_sha_consts, lock_track, key_tables) = match contracts {
+        None => (
+            schema_sha_consts,
+            quote! {},
+            super::server_key_tables::build(&schema, None, &[]),
+        ),
         Some(lock_path) => match super::lock_arg::accepted_from_lock(lock_path, &schema) {
-            Ok((table, track)) => (schema_sha_consts.with_accepted(table), track),
+            Ok((table, track, lock)) => {
+                let tables =
+                    super::server_key_tables::build(&schema, Some((&lock, lock_path)), &table);
+                (schema_sha_consts.with_accepted(table), track, tables)
+            }
             Err(error) => return error.to_compile_error().into(),
         },
+    };
+    let key_tables = match key_tables {
+        Ok(tables) => super::server_key_tables::emit(&tables),
+        Err(error) => return error.to_compile_error().into(),
     };
     let accepted_contracts = schema_sha_consts.accepted();
     let mcp_plan = match super::mcp_gate::guard_server_mcp(schema_path, &schema, decimal) {
@@ -263,6 +275,7 @@ pub(super) fn compose_server_schema(
                 /// never rejects. See issue #178.
                 #schema_sha_consts
                 #accepted_contracts
+                #key_tables
                 #lock_track
                 pub const MIXINS: &[&str] = &[#(#mixin_names),*];
                 pub const MODELS: &[&str] = &[#(#model_names),*];

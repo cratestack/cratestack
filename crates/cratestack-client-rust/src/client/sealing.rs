@@ -55,6 +55,7 @@ where
         let _ = route;
         #[allow(unused_mut)]
         let mut client = self.clone();
+        client.compact_route = client.compact.as_ref().map(|_| route.template().into());
         #[cfg(feature = "cose")]
         if client.sealing.envelope.is_some() {
             client.sealing.route = Some(OwnedRoute {

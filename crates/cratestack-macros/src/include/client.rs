@@ -41,9 +41,7 @@ pub(super) fn compose_client_schema(
         Err(error) => return error,
     };
 
-    // Wraps the rest of composition — see `include::embedded`'s matching
-    // comment for why this needs to scope this widely (cratestack#505
-    // Direction 2).
+    // Scoped this widely for the decimal backend — see `include::embedded`.
     with_decimal_backend(decimal_backend, move || {
         let resolved_literal = resolved.display().to_string();
 
@@ -117,7 +115,6 @@ pub(super) fn compose_client_schema(
                     .into();
             }
         };
-        // Empty bearing set: these `models`/`types` ARE the wire shape (`crate::client`).
         let generated_client_module = match generate_client_module(
             &schema.models,
             &schema.procedures,
@@ -133,6 +130,7 @@ pub(super) fn compose_client_schema(
             }
         };
 
+        let key_tables = super::client_key_tables::emit(&schema);
         let expanded = quote! {
             pub mod cratestack_schema {
                 pub const SCHEMA_PATH: &str = #schema_relative;
@@ -146,6 +144,7 @@ pub(super) fn compose_client_schema(
                 /// server-side counterpart `tracing::warn!`s on mismatch, never
                 /// rejects. See issue #178.
                 #schema_sha_consts
+                #key_tables
                 pub const MODELS: &[&str] = &[#(#model_names),*];
                 pub const TYPES: &[&str] = &[#(#type_names),*];
                 pub const ENUMS: &[&str] = &[#(#enum_names),*];

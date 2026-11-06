@@ -14,8 +14,10 @@
 // -----------------------------------------------------------------------------
 
 use cratestack_core::CratestackError;
+use cratestack_core::compact::COMPACT_CBOR_SEQ;
 use serde::de::DeserializeOwned;
 
+use crate::client::compact_wire::ItemTranscoder;
 use crate::codec::{CBOR_SEQUENCE_CONTENT_TYPE, HttpClientCodec, media_type_matches};
 use crate::error::ClientError;
 
@@ -50,6 +52,7 @@ pub(crate) async fn pump_streamed_response_typed<C, T, E, F>(
     response: reqwest::Response,
     tx: tokio::sync::mpsc::Sender<Result<T, E>>,
     convert_error: F,
+    items: Option<ItemTranscoder>,
 ) where
     C: HttpClientCodec,
     T: DeserializeOwned + Send + 'static,
@@ -65,7 +68,10 @@ pub(crate) async fn pump_streamed_response_typed<C, T, E, F>(
         .unwrap_or_default()
         .to_owned();
 
-    if !media_type_matches(&content_type, CBOR_SEQUENCE_CONTENT_TYPE) {
+    // A compact sequence is framed like any cbor-seq; the client only
+    // offers one when it hands `items` over, which then rewrites each item.
+    let compact = media_type_matches(&content_type, COMPACT_CBOR_SEQ);
+    if !compact && !media_type_matches(&content_type, CBOR_SEQUENCE_CONTENT_TYPE) {
         pump_buffered_fallback(codec, response, &content_type, tx, convert_error).await;
         return;
     }
@@ -82,14 +88,26 @@ pub(crate) async fn pump_streamed_response_typed<C, T, E, F>(
                 return;
             }
         };
-        let items = match decoder.feed_chunk(&chunk) {
+        let frames = match decoder.feed_chunk(&chunk) {
             Ok(items) => items,
             Err(error) => {
                 let _ = tx.send(Err(convert_error(ClientError::Codec(error)))).await;
                 return;
             }
         };
-        for item_bytes in items {
+        for item_bytes in frames {
+            let item_bytes = match items
+                .as_ref()
+                .filter(|_| compact)
+                .map(|t| t.item(&item_bytes))
+            {
+                Some(Ok(named)) => named,
+                Some(Err(error)) => {
+                    let _ = tx.send(Err(convert_error(ClientError::Codec(error)))).await;
+                    return;
+                }
+                None => item_bytes,
+            };
             let decoded: Result<T, E> = minicbor_serde::from_slice(&item_bytes).map_err(|error| {
                 convert_error(ClientError::Codec(CratestackError::Codec(format!(
                     "decode cbor-seq item: {error}",
