@@ -37,3 +37,9 @@ route, key table or operation contract is rejected before network I/O. Keep the
 matching client version available until its journal is drained. Snapshot formats
 are bounded and versioned; applications should handle invalid or incompatible
 snapshots as errors rather than reconstructing a request under the old key.
+
+CBOR snapshots are checked as one well-formed item before sending, including
+UTF-8 text, complete container pairs, and a nesting limit of 256. The check
+accepts non-preferred encodings and leaves the stored bytes unchanged. It does
+not evaluate tag semantics or reject duplicate map keys; duplicate handling
+follows the receiving codec. Protect the caller-owned journal against tampering.

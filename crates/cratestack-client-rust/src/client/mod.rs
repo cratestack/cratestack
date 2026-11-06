@@ -20,6 +20,7 @@ mod headers;
 pub(crate) mod helpers;
 pub(crate) mod http;
 mod prepared;
+mod prepared_cbor;
 mod prepared_client;
 mod prepared_validation;
 #[cfg(feature = "cose")]

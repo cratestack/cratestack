@@ -46,13 +46,7 @@ impl PreparedCall {
                     .map_err(|error| bad(format!("invalid prepared JSON: {error}")))?;
             }
             "application/cbor" | "application/vnd.cratestack.compact+cbor" => {
-                let mut decoder = minicbor::Decoder::new(&self.body);
-                decoder
-                    .skip()
-                    .map_err(|error| bad(format!("invalid prepared CBOR: {error}")))?;
-                if decoder.position() != self.body.len() {
-                    return Err(bad("trailing prepared CBOR"));
-                }
+                super::prepared_cbor::validate(&self.body)?;
             }
             _ => return Err(bad("invalid prepared content type")),
         }

@@ -106,3 +106,8 @@ prepared_sealed_suite!(
     "procedure.echoOrder",
     "/rpc/procedure.echoOrder"
 );
+prepared_sealed_wire_suite!(
+    "procedure.echoOrder",
+    "/rpc/procedure.echoOrder",
+    "/rpc/{op_id}"
+);

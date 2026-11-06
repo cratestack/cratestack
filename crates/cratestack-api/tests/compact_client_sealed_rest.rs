@@ -106,3 +106,8 @@ prepared_sealed_suite!(
     "/$procs/echoOrder",
     "/$procs/echoOrder"
 );
+prepared_sealed_wire_suite!(
+    "/$procs/echoOrder",
+    "/$procs/echoOrder",
+    "/$procs/echoOrder"
+);

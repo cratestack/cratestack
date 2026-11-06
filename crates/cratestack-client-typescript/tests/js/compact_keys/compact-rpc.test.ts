@@ -329,4 +329,24 @@ describe.each(layouts)("%s", (_name, mod) => {
     expect(sent).toHaveLength(0);
   });
 
+  it("validates one CBOR item without changing its bytes", async () => {
+    const { fetchFn, sent } = transport(() => plainCbor("ok"));
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn });
+    const saved = await runtime.prepare("procedure.echoName", { name: "a" }, { idempotencyKey: "k" });
+    const invalid = ["", "0000", "18", "1c", "ff", "81ff", "bf00ff", "5f6161ff", "5f5fffff",
+      "f800", "f818", "f81f", "61ff", "62c080", "63eda080", "64f4908080", "7f61c261a2ff"];
+    const valid = ["a10102", "a1810102", "1bffffffffffffffff", "3bffffffffffffffff", "dbffffffffffffffff00",
+      "9f8101bf0001ffff", "5f4100420102ff", "7f62c2a26161ff", "f97e00", "fa7f800000", "f820", "1800"];
+    for (const hex of invalid) {
+      const bodyBase64 = Buffer.from(hex, "hex").toString("base64");
+      await expect(runtime.executePrepared({ ...saved, bodyBase64 })).rejects.toThrow();
+    }
+    expect(sent).toHaveLength(0);
+    for (const hex of valid) {
+      const bytes = Buffer.from(hex, "hex");
+      await runtime.executePrepared({ ...saved, bodyBase64: bytes.toString("base64") });
+      expect(Buffer.from(sent.at(-1)?.body as Uint8Array)).toEqual(bytes);
+    }
+  });
+
 });

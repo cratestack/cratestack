@@ -524,19 +524,23 @@ int? _cratestackSkipCborItem(Uint8List bytes, int offset, int depth) {
     }
     return _cratestackSkipIndefinite(bytes, cursor, major, depth);
   }
+  if (major == 0 || major == 1 || major == 6) {
+    final next = _cratestackSkipArgument(bytes, cursor, info);
+    if (next == null) return null;
+    return major == 6 ? _cratestackSkipCborItem(bytes, next, depth + 1) : next;
+  }
   final argument = _cratestackReadArgument(bytes, cursor, info);
   if (argument == null) {
     return null;
   }
   final (value, next) = argument;
   switch (major) {
-    case 0:
-    case 1:
-      return next;
     case 2:
     case 3:
       final end = next + value;
-      return end > bytes.length ? null : end;
+      if (end > bytes.length) return null;
+      if (major == 3) utf8.decode(bytes.sublist(next, end));
+      return end;
     case 4:
       return _cratestackSkipItems(bytes, next, value, depth);
     case 5:
@@ -605,6 +609,17 @@ int? _cratestackSkipSimple(Uint8List bytes, int cursor, int info) {
   } else {
     throw FormatException('reserved cbor additional info $info');
   }
+  if (cursor + width > bytes.length) return null;
+  if (info == 24 && bytes[cursor] < 32) throw const FormatException('invalid CBOR simple value');
+  return cursor + width;
+}
+
+int? _cratestackSkipArgument(Uint8List bytes, int cursor, int info) {
+  if (info <= 23) return cursor;
+  final width = switch (info) {
+    24 => 1, 25 => 2, 26 => 4, 27 => 8,
+    _ => throw FormatException('reserved cbor additional info $info'),
+  };
   return cursor + width > bytes.length ? null : cursor + width;
 }
 

@@ -226,3 +226,8 @@ async fn an_idempotent_retry_survives_1024_distinct_keys() {
 }
 
 prepared_replay_suite!("/$procs/echoOrder", "/$procs/echoOrder");
+prepared_auth_suite!(
+    schema::axum::router,
+    "/$procs/echoOrder",
+    "/$procs/echoOrder"
+);

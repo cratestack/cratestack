@@ -95,6 +95,78 @@ macro_rules! prepared_replay_suite {
             assert_eq!(executions.load(Ordering::SeqCst), 0);
         }
         #[tokio::test]
+        async fn malformed_cbor_snapshots_never_send() {
+            let (addr, _, executions) = spawn().await;
+            let runtime = CratestackClient::cbor(ClientConfig::new(
+                reqwest::Url::parse(&format!("http://{addr}")).unwrap(),
+            ))
+            .with_compact_key_bytes(schema::KEY_TABLES, schema::OP_CONTRACTS)
+            .unwrap();
+            let call = runtime
+                .prepare_call(
+                    "POST",
+                    cratestack_client_rust::RouteRef::new($route, &[]),
+                    $path,
+                    &echo(order()),
+                    &[],
+                    &[("Idempotency-Key", "k")],
+                )
+                .unwrap();
+            let original: serde_json::Value =
+                serde_json::from_slice(&call.to_bytes().unwrap()).unwrap();
+            for body in [
+                vec![],
+                vec![0, 0],
+                vec![0x1c],
+                vec![0xff],
+                vec![0x81, 0xff],
+                vec![0xbf, 0, 0xff],
+                vec![0xf8, 0],
+                vec![0x61, 0xff],
+                vec![0x62, 0xc0, 0x80],
+                vec![0x63, 0xed, 0xa0, 0x80],
+                vec![0x64, 0xf4, 0x90, 0x80, 0x80],
+                vec![0x7f, 0x61, 0xc2, 0x61, 0xa2, 0xff],
+            ] {
+                let mut changed = original.clone();
+                changed["body"] = serde_json::json!(body);
+                assert!(
+                    cratestack_client_rust::PreparedCall::from_bytes(
+                        &serde_json::to_vec(&changed).unwrap()
+                    )
+                    .is_err()
+                );
+            }
+            assert_eq!(executions.load(Ordering::SeqCst), 0);
+        }
+
+        #[tokio::test]
+        async fn integer_key_map_prepares_and_restores_without_json_conversion() {
+            let (addr, _, executions) = spawn().await;
+            let runtime = CratestackClient::cbor(ClientConfig::new(
+                reqwest::Url::parse(&format!("http://{addr}")).unwrap(),
+            ))
+            .with_compact_key_bytes(schema::KEY_TABLES, schema::OP_CONTRACTS)
+            .unwrap();
+            let input = std::collections::BTreeMap::from([(1_u8, 2_u8)]);
+            let call = runtime
+                .prepare_call(
+                    "POST",
+                    cratestack_client_rust::RouteRef::new($route, &[]),
+                    $path,
+                    &input,
+                    &[],
+                    &[("Idempotency-Key", "integer-map")],
+                )
+                .unwrap();
+            let restored =
+                cratestack_client_rust::PreparedCall::from_bytes(&call.to_bytes().unwrap())
+                    .unwrap();
+            assert_eq!(restored.payload(), call.payload());
+            assert_eq!(executions.load(Ordering::SeqCst), 0);
+        }
+
+        #[tokio::test]
         async fn persisted_named_replays_after_restart_and_pressure() {
             prepared_replay(false).await;
         }
