@@ -23,10 +23,54 @@ declare module "@cratestack/cbor-node" {
   import type { CratestackRpcCodec } from "@cratestack/ts-types";
 
   export const cborCodec: CratestackRpcCodec;
+
+  /** Which side of an op a body belongs to. */
+  export type CompactDirection = "request" | "response";
+
+  /**
+   * The compact-wire-key tables of one client (`docs/design/compact-wire-keys.md`):
+   * swaps schema field names for integer keys on the wire and back. Pure
+   * functions of bytes; a bad input throws a catchable `Error`.
+   */
+  export interface CompactKeys {
+    /** Named CBOR bytes to compact CBOR bytes. */
+    toCompact(named: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+    /** Compact CBOR bytes back to named CBOR bytes. */
+    fromCompact(compact: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+    /** Named JSON text to compact JSON text (keys become decimal strings). */
+    toCompactJson(named: string, op: string, direction: CompactDirection): string;
+    /** Compact JSON text back to named JSON text. */
+    fromCompactJson(compact: string, op: string, direction: CompactDirection): string;
+    /** The `Cratestack-Contract` header value of the op's current contract. */
+    selector(op: string): string | undefined;
+  }
+  export function createCompactKeys(tables: Uint8Array): Promise<CompactKeys>;
 }
 
 declare module "@cratestack/cbor-web" {
   import type { CratestackRpcCodec } from "@cratestack/ts-types";
 
   export function createCborCodec(): Promise<CratestackRpcCodec>;
+
+  /** Which side of an op a body belongs to. */
+  export type CompactDirection = "request" | "response";
+
+  /**
+   * The compact-wire-key tables of one client (`docs/design/compact-wire-keys.md`):
+   * swaps schema field names for integer keys on the wire and back. Pure
+   * functions of bytes; a bad input throws a catchable `Error`.
+   */
+  export interface CompactKeys {
+    /** Named CBOR bytes to compact CBOR bytes. */
+    toCompact(named: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+    /** Compact CBOR bytes back to named CBOR bytes. */
+    fromCompact(compact: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+    /** Named JSON text to compact JSON text (keys become decimal strings). */
+    toCompactJson(named: string, op: string, direction: CompactDirection): string;
+    /** Compact JSON text back to named JSON text. */
+    fromCompactJson(compact: string, op: string, direction: CompactDirection): string;
+    /** The `Cratestack-Contract` header value of the op's current contract. */
+    selector(op: string): string | undefined;
+  }
+  export function createCompactKeys(tables: Uint8Array): Promise<CompactKeys>;
 }

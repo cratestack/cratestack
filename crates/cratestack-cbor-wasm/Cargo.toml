@@ -38,10 +38,12 @@ default = ["decimal-rust-decimal"]
 decimal-rust-decimal = [
     "cratestack-core/decimal-rust-decimal",
     "cratestack-codec-cbor/decimal-rust-decimal",
+    "cratestack-codec-json/decimal-rust-decimal",
 ]
 decimal-bigdecimal = [
     "cratestack-core/decimal-bigdecimal",
     "cratestack-codec-cbor/decimal-bigdecimal",
+    "cratestack-codec-json/decimal-bigdecimal",
 ]
 
 # Off by default, and kept out of `@cratestack/cbor-web`: the npm package is
@@ -58,6 +60,8 @@ cose = ["dep:bytes", "dep:cratestack-cose", "dep:js-sys", "dep:wasm-bindgen-futu
 # `cose` only: the type `open_response` takes.
 bytes = { workspace = true, optional = true }
 cratestack-codec-cbor = { workspace = true, default-features = false }
+# Compact wire keys (`createCompactKeys`): the JSON transcoder.
+cratestack-codec-json = { workspace = true, default-features = false }
 cratestack-core.workspace = true
 # `cose` only: the one implementation of the envelope.
 cratestack-cose = { workspace = true, optional = true }

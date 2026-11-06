@@ -1260,6 +1260,7 @@ name = "cratestack-cbor-napi"
 version = "0.17.2"
 dependencies = [
  "cratestack-codec-cbor",
+ "cratestack-codec-json",
  "cratestack-core",
  "napi",
  "napi-build",
@@ -1275,6 +1276,7 @@ dependencies = [
  "bytes",
  "console_error_panic_hook",
  "cratestack-codec-cbor",
+ "cratestack-codec-json",
  "cratestack-core",
  "cratestack-cose",
  "js-sys",
@@ -1353,6 +1355,7 @@ dependencies = [
  "chrono",
  "cratestack-client-rust",
  "cratestack-codec-cbor",
+ "cratestack-codec-json",
  "cratestack-core",
  "cratestack-cose",
  "flutter_rust_bridge",
@@ -1425,6 +1428,7 @@ dependencies = [
 name = "cratestack-client-typescript"
 version = "0.17.2"
 dependencies = [
+ "base64 0.23.1",
  "cratestack-axum",
  "cratestack-core",
  "cratestack-parser",

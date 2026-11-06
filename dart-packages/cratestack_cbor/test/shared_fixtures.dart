@@ -60,3 +60,26 @@ List<int> unhex(String hex) => [
   for (var i = 0; i < hex.length; i += 2)
     int.parse(hex.substring(i, i + 2), radix: 16),
 ];
+
+/// The compact-wire-key fixture: one op, `shop.put`, whose request type is
+/// `{amount: 0, id: 1}` and whose response is opaque. `compactKeysArtifactHex`
+/// is the key-table artifact for it, byte-identical to the copies in
+/// `cratestack-cbor-napi`'s `compact_keys/tests.rs` (which pins it),
+/// `cratestack-client-flutter`'s `cbor/compact/tests.rs` and the vitest
+/// suites of `@cratestack/cbor{,-node,-web}`.
+const compactKeysArtifactHex =
+    '8301818466616d6f756e74006269640081846873686f702e7075745820'
+    '0707070707070707070707070707070707070707070707070707070707070707'
+    '0100';
+
+/// `{"id":"a","amount":5}` as CBOR, and its compact form `{1:"a",0:5}`.
+const compactNamedHex = 'a2626964616166616d6f756e7405';
+const compactCompactHex = 'a20161610005';
+
+/// The same body as JSON text, named and compact (decimal-string keys).
+const compactNamedJson = '{"id":"a","amount":5}';
+const compactCompactJson = '{"1":"a","0":5}';
+
+/// The `Cratestack-Contract` value of `shop.put`: the first 8 bytes of its
+/// digest (`0x07` x 8), unpadded base64url.
+const compactSelector = 'BwcHBwcHBwc';

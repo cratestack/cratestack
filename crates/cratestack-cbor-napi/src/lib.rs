@@ -37,6 +37,7 @@
 //! specifically, not what turns `Result::Err` into a JS exception (that
 //! part just works, verified by this crate's own tests below).
 
+mod compact_keys;
 mod js_value;
 
 use cratestack_codec_cbor::CborCodec;
@@ -109,7 +110,12 @@ mod addon {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+mod compact;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub use addon::*;
+#[cfg(not(target_arch = "wasm32"))]
+pub use compact::CompactKeys;
 
 #[cfg(test)]
 mod tests {

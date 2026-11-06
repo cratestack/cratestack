@@ -10,13 +10,18 @@
 //! --workspace` never require the wasm32 target or `wasm-bindgen-cli`.
 //! Only `wasm-pack build --target web` (which needs the wasm32 target)
 //! produces the real `.wasm` artifact this package ships.
+mod compact_keys;
 mod value_bridge;
 
+#[cfg(target_arch = "wasm32")]
+mod compact;
 #[cfg(all(target_arch = "wasm32", feature = "cose"))]
 mod cose;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
+#[cfg(target_arch = "wasm32")]
+pub use compact::*;
 #[cfg(all(target_arch = "wasm32", feature = "cose"))]
 pub use cose::*;
 #[cfg(target_arch = "wasm32")]

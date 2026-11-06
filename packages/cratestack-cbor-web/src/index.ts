@@ -3,7 +3,12 @@ import type { CratestackRpcCodec } from "@cratestack/ts-types";
 // (see `pnpm run wasm:build` / `../../examples/scripts/wasm-build.mjs`) — not
 // hand-written, regenerated on every build, excluded from lint/format (see
 // root `biome.json`) and from git (see `.gitignore`).
-import init, { contentType, decode, encode } from "./wasm-pkg/cratestack_cbor_wasm.js";
+import init, {
+  contentType,
+  decode,
+  encode,
+  CompactKeys as WasmCompactKeys,
+} from "./wasm-pkg/cratestack_cbor_wasm.js";
 
 // Memoized across calls so concurrent/repeated `createCborCodec()` callers
 // share one WASM instantiation instead of re-fetching/re-compiling the
@@ -63,5 +68,49 @@ export async function createCborCodec(): Promise<CratestackRpcCodec> {
     decode(bytes: Uint8Array): unknown {
       return decode(bytes);
     },
+  };
+}
+
+/** Which side of an op a body belongs to. */
+export type CompactDirection = "request" | "response";
+
+/**
+ * The compact-wire-key tables of one client (`docs/design/compact-wire-keys.md`):
+ * swaps schema field names for integer keys on the wire and back. Pure
+ * functions of bytes; a bad input throws a catchable `Error`.
+ */
+export interface CompactKeys {
+  /** Named CBOR bytes to compact CBOR bytes. */
+  toCompact(named: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+  /** Compact CBOR bytes back to named CBOR bytes. */
+  fromCompact(compact: Uint8Array, op: string, direction: CompactDirection): Uint8Array;
+  /** Named JSON text to compact JSON text (keys become decimal strings). */
+  toCompactJson(named: string, op: string, direction: CompactDirection): string;
+  /** Compact JSON text back to named JSON text. */
+  fromCompactJson(compact: string, op: string, direction: CompactDirection): string;
+  /** The `Cratestack-Contract` header value of the op's current contract. */
+  selector(op: string): string | undefined;
+}
+
+/**
+ * Builds the {@link CompactKeys} of a generated client's key-table artifact
+ * (its `KEY_TABLES`). Shares the one-time WASM instantiation with
+ * {@link createCborCodec}; the returned calls are synchronous.
+ *
+ * @example
+ * ```ts
+ * const keys = await createCompactKeys(tables);
+ * const compact = keys.toCompact(codec.encode(body), "model.User.create", "request");
+ * ```
+ */
+export async function createCompactKeys(tables: Uint8Array): Promise<CompactKeys> {
+  await ensureInitialized();
+  const keys = WasmCompactKeys.fromTables(tables);
+  return {
+    toCompact: (named, op, direction) => keys.toCompact(named, op, direction),
+    fromCompact: (compact, op, direction) => keys.fromCompact(compact, op, direction),
+    toCompactJson: (named, op, direction) => keys.toCompactJson(named, op, direction),
+    fromCompactJson: (compact, op, direction) => keys.fromCompactJson(compact, op, direction),
+    selector: (op) => keys.selector(op),
   };
 }

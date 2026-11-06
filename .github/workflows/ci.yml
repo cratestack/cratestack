@@ -1797,10 +1797,14 @@ jobs:
           set -euo pipefail
           dart_glue=dart-packages/cratestack_cbor/lib/src/native/rust
           rust_glue=crates/cratestack-client-flutter/src/frb_generated.rs
-          for symbol in FlutterClientEnvelope FlutterCoseError FlutterCallBinding coseContractHeaderValue; do
+          for symbol in FlutterClientEnvelope FlutterCoseError FlutterCallBinding coseContractHeaderValue FlutterCompactKeys; do
             grep -rq "$symbol" "$dart_glue" || { echo "::error::$symbol missing from the generated Dart glue"; exit 1; }
           done
           grep -q 'cose_contract_header_value' "$rust_glue" || { echo "::error::the cose bridge is missing from the generated Rust glue"; exit 1; }
+          # Compact wire keys live under `crate::cbor` (`FlutterCompactKeys`,
+          # `src/cbor/compact.rs`), so the codec's own input covers them; this
+          # catches a bridge that stopped generating without a build error.
+          grep -q 'FlutterCompactKeys' "$rust_glue" || { echo "::error::the compact-keys bridge is missing from the generated Rust glue"; exit 1; }
           if grep -rlE "package:(freezed_annotation|collection)/" "$dart_glue"; then
             echo "::error::the generated Dart glue imports a package cratestack_cbor does not depend on"
             exit 1
