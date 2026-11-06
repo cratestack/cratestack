@@ -828,6 +828,7 @@ dependencies = [
  "futures-util",
  "hmac 0.13.0",
  "http",
+ "minicbor",
  "rust_decimal",
  "serde",
  "serde_json",
