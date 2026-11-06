@@ -1,6 +1,7 @@
 // Compact wire keys over REST: the adapter's `compact:` hooks, driven through
-// a scripted transport with a reversible stand-in for `createCompactKeys` (see
-// `_StandInKeys`). Covers the negotiation (`Accept`,
+// a scripted transport, with the real `createCompactKeys` from the
+// published `cratestack_cbor`, built over the generated
+// `cratestackKeyTables`. Covers the negotiation (`Accept`,
 // `Cratestack-Contract`), the compact response being turned back into named
 // values, the request body going compact only once the op has answered
 // compact, an unknown route and an error body staying named, and an adapter
@@ -53,45 +54,15 @@ CratestackHttpAdapter _adapter(
 
 const _author = {'id': 1, 'name': 'Ada'};
 
-/// A reversible stand-in for `cratestack_cbor`'s `CompactKeys`, with the same
-/// three tear-offs the hooks take. This fixture runs against the PUBLISHED
-/// `cratestack_cbor` (`just verify-dart` resolves it from pub.dev), which
-/// predates `createCompactKeys`; the real transcoding is proven by that
-/// package's own suite, built from source. What this file proves is the
-/// generated adapter seam: when each hook is called, with which op and
-/// direction, and what goes on the wire.
-class _StandInKeys {
-  static const _marker = [0xC0, 0xDE];
-
-  Uint8List toCompact(Uint8List named, String op, String direction) =>
-      Uint8List.fromList([..._marker, ...named]);
-
-  Uint8List fromCompact(Uint8List compact, String op, String direction) {
-    if (compact.length < 2 ||
-        compact[0] != _marker[0] ||
-        compact[1] != _marker[1]) {
-      throw StateError('not a stand-in compact body for $op ($direction)');
-    }
-    return Uint8List.sublistView(compact, 2);
-  }
-
-  /// Like the real binding: a selector only for an op the generated tables
-  /// hold, `null` for any other, which is how the adapter knows to stay named.
-  String? selector(String op) =>
-      cratestackOpContracts.containsKey(op) ? 'stand-in:$op' : null;
-}
-
 void main() {
   late CratestackCborCodec codec;
-  late _StandInKeys keys;
+  late CompactKeys keys;
   late CratestackCompactHooks hooks;
 
   setUpAll(() async {
     codec = await createCborCodec();
-    // The generated constant exists and is non-empty; the stand-in does
-    // not read it.
-    expect(cratestackKeyTables, isNotEmpty);
-    keys = _StandInKeys();
+    // The real binding, built from the generated tables, as an app does.
+    keys = await createCompactKeys(cratestackKeyTables);
     hooks = CratestackCompactHooks(
       toCompact: keys.toCompact,
       fromCompact: keys.fromCompact,
@@ -113,10 +84,13 @@ void main() {
 
   test('advertises compact, names the contract, and decodes a compact answer',
       () async {
-    final compactBody = keys.toCompact(
-      await _named(codec, _author),
-      'GET /authors/{id}',
-      'response',
+    final named = await _named(codec, _author);
+    final compactBody = keys.toCompact(named, 'GET /authors/{id}', 'response');
+    // Real integer keys: shorter than the named body, and reversible.
+    expect(compactBody.length, lessThan(named.length));
+    expect(
+      keys.fromCompact(compactBody, 'GET /authors/{id}', 'response'),
+      named,
     );
     final transport = _Script([(_) => _cbor(200, _compactCbor, compactBody)]);
     final value = await _adapter(transport, hooks).execute(
