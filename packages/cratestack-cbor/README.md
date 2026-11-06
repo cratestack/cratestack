@@ -66,7 +66,7 @@ its `"."` entry:
 Conditional `exports` resolution isn't perfectly consistent across every
 bundler/SSR setup — some SSR frameworks resolve the `"node"` condition even
 for a module that will also ship to the client (their SSR build sets
-`"node"` because the code *runs* under Node during the server render, even
+`"node"` because the code _runs_ under Node during the server render, even
 though the same module graph gets bundled for the browser too). When
 automatic resolution doesn't do what you need, import the platform build
 directly:
@@ -143,7 +143,7 @@ to typecheck a thin re-export wrapper.
 Practical effect: `pnpm turbo run build test lint --filter='./packages/cratestack-cbor'`
 type-checks cleanly and passes lint anywhere, but its Node round-trip
 tests (`tests/node.test.ts`) only run for real if `@cratestack/cbor-node`
-is *already* built — otherwise they skip (not fail) with a console
+is _already_ built — otherwise they skip (not fail) with a console
 warning. For real coverage while developing, build the sibling first:
 
 ```sh

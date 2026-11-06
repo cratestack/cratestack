@@ -57,19 +57,19 @@ const [a, b, c] = await Promise.all([
   no idempotency key are never auto-collapsed, since the server does no dedup of its own and
   silently merging two textually-identical but unmarked mutations would be unsafe. Pass a custom
   `dedupe` for full value-based collapsing, or `() => null` to disable dedup and only batch. Dedup
-  runs *within* a partition — it never collapses calls across two different envelopes.
+  runs _within_ a partition — it never collapses calls across two different envelopes.
 - **Correlation**: results are fanned back out by matching each response frame's `id`, not array
   position — the server's `/rpc/batch` contract already guarantees order (see
   `docs/design/rpc-transport.md` §3.2), but id-based matching is strictly more robust and mirrors
   the repo's own Rust client-side batch debouncer (`examples/rpc-batch-debounce`).
 - **Failure isolation**: a partition that fails (network error, non-OK response) only rejects the
-  callers queued in *that* partition — it never affects a concurrently in-flight partition.
+  callers queued in _that_ partition — it never affects a concurrently in-flight partition.
 
 ### Known limitations
 
 - Aborting an individual call's `AbortSignal` only cancels it if its batch hasn't been sent yet —
   it does not cancel an in-flight `/rpc/batch` request.
 - **(Fixed in #273, kept here for anyone reading an older version's docs)** Before #273, the
-  synthesized `/rpc/batch` request reused the *first* queued call's `headers`/`fetchFn`/`codec` for
+  synthesized `/rpc/batch` request reused the _first_ queued call's `headers`/`fetchFn`/`codec` for
   the whole flush — per-call custom headers on later calls in the same window were silently dropped
   from the aggregate request instead of applied. This is why partitioning exists now.

@@ -22,7 +22,7 @@ provider does.
 
 A `DataProvider` needs four things per resource — the generated API object itself, the model's
 primary-key field name, whether it declares `@@paged`, and whether/where it declares `@version`.
-None of them has a *runtime* discovery path: the generated client carries no `$meta` object and no
+None of them has a _runtime_ discovery path: the generated client carries no `$meta` object and no
 introspection endpoint, nothing beyond what its TypeScript **types** already encode at compile time
 (confirmed against the real generated `client.ts`/`models.ts` this package's own tests drive — see
 [tests/](./tests)). So the provider itself has to be a hand-written runtime function; there is
@@ -135,16 +135,16 @@ Applies to both providers. refine's `CrudFilters` (`{ field, operator, value }`)
 just in different container shapes on the wire. Same operator set the generated client's shared
 filter types (`EqualityFilter`/`ComparableFilter`/`StringFilter`) expose:
 
-| refine operator | cratestack query key |
-| --- | --- |
-| `eq` | `field` (no suffix) |
-| `ne` | `field__ne` |
-| `in` | `field__in` (comma-separated) |
+| refine operator             | cratestack query key                     |
+| --------------------------- | ---------------------------------------- |
+| `eq`                        | `field` (no suffix)                      |
+| `ne`                        | `field__ne`                              |
+| `in`                        | `field__in` (comma-separated)            |
 | `lt` / `lte` / `gt` / `gte` | `field__lt` / `__lte` / `__gt` / `__gte` |
-| `contains` | `field__contains` |
-| `startswith` | `field__startsWith` |
-| `null` | `field__isNull=true` |
-| `nnull` | `field__isNull=false` |
+| `contains`                  | `field__contains`                        |
+| `startswith`                | `field__startsWith`                      |
+| `null`                      | `field__isNull=true`                     |
+| `nnull`                     | `field__isNull=false`                    |
 
 **Every other refine operator throws** — `endswith`, `between`, `nin`, `containss`, refine's
 `or`/`and` filter groups, and anything else not in the table above. Dropping an unsupported filter
@@ -170,14 +170,14 @@ Applies to both providers. refine assumes every record has `id: BaseKey`. crates
 (`primaryKey` in the resource config above). Every returned record gets a synthetic `id` field
 alongside its real primary key so refine's row-selection machinery has something to key off;
 writes (`get`/`update`/`deleteOne`) receive that same value back and pass it straight through as
-the real primary key — no translation needed, since the *value space* is identical. The one place
+the real primary key — no translation needed, since the _value space_ is identical. The one place
 this bites: a `<Create>` form's fields must use the schema's real primary-key field name (e.g.
 `sku`), not `id` — a create payload has no record yet to synthesize an `id` from.
 
 ## Optimistic locking (`@version` / `If-Match`)
 
 **The single most important correctness point in this package, and it holds on both transports.**
-A `@version` model requires `If-Match` on both update *and* delete (cratestack#493/#519/#538) —
+A `@version` model requires `If-Match` on both update _and_ delete (cratestack#493/#519/#538) —
 missing or stale `If-Match` returns `412 Precondition Failed` and leaves the row untouched, whether
 the request went out as an RPC unary call or a REST `PATCH`/`DELETE` (see
 [RPC transport](#rpc-transport) for why the RPC dispatch path enforces this identically to REST).
@@ -192,7 +192,7 @@ this" message instead of a generic one.
 Pass `meta: { ifMatch: <version> }` to `update`/`deleteOne` to override the cache explicitly (e.g.
 optimistic-lock-aware bulk workflows). Calling `update`/`deleteOne` on a `@version` resource with no
 known version and no override throws rather than silently omitting `If-Match` — omitting it doesn't
-fail on the wire the way a *stale* value does, so this package refuses to make that mistake for you.
+fail on the wire the way a _stale_ value does, so this package refuses to make that mistake for you.
 
 ## Errors
 
@@ -204,7 +204,7 @@ list methods and the four single-record methods disagreed, and which one you hit
 screen the user was on).
 
 Conversion **annotates the thrown value in place** rather than replacing it. If your transport
-throws a typed error, the value your `onError` handler receives *is* that error:
+throws a typed error, the value your `onError` handler receives _is_ that error:
 
 ```ts
 class DeviceNotEnrolledError extends Error {}
@@ -273,7 +273,7 @@ await dataProvider.custom!({
 **A known, pre-existing gap this package inherits rather than causes:** route suppression
 (cratestack#514) isn't implemented, so a policy-denied `create`/`update`/`delete` still generates a
 working-looking client method — `config.api.create` being present only proves the model declares
-*some* `@@allow("create", ...)`, not that the current caller satisfies it. A refine `<Create>`
+_some_ `@@allow("create", ...)`, not that the current caller satisfies it. A refine `<Create>`
 button wired to such a resource renders and then `403`s on submit for a caller who can't actually
 create one. Until #514 ships, gate that in refine's own `resources` config
 (`create: false`/`edit: false`/`delete: false`) per caller role, not on this package's method

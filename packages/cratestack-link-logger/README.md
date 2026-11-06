@@ -24,5 +24,5 @@ createLoggerLink(myPinoLogger);
 ```
 
 Order matters: put `createLoggerLink()` before `@cratestack/link-batch` in the `links` array if
-you want it to see the *batched* request, or after it if you want it to see each real per-call
+you want it to see the _batched_ request, or after it if you want it to see each real per-call
 outcome — see that package's README for the composition details.

@@ -7,17 +7,17 @@ so existing `import { createBatchLink } from "@cratestack/api"` code keeps worki
 
 ## The split
 
-| Package | What it does |
-| --- | --- |
-| [`@cratestack/ts-types`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-ts-types) | Shared `RpcLink`/wire-frame interfaces. Types only — no runtime code. |
-| [`@cratestack/link-batch`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-link-batch) | Automatic batch-scheduler `RpcLink`. |
-| [`@cratestack/link-logger`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-link-logger) | Reference logging `RpcLink`. |
-| [`@cratestack/runtime-fetch`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-runtime-fetch) | `typeof fetch` transport with an optional timeout. |
-| [`@cratestack/runtime-axios`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-runtime-axios) | `typeof fetch` transport backed by axios. |
-| [`@cratestack/validator-zod`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-validator-zod) | Input-validating `RpcLink`, zod schemas. |
-| [`@cratestack/validator-yup`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-validator-yup) | Input-validating `RpcLink`, yup schemas. |
-| [`@cratestack/adapter-tanstack-query`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-adapter-tanstack-query) | Generic TanStack Query option builders. |
-| [`@cratestack/adapter-rtk`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-adapter-rtk) | RTK Query `BaseQueryFn` adapter. |
+| Package                                                                                                                               | What it does                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| [`@cratestack/ts-types`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-ts-types)                             | Shared `RpcLink`/wire-frame interfaces. Types only — no runtime code. |
+| [`@cratestack/link-batch`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-link-batch)                         | Automatic batch-scheduler `RpcLink`.                                  |
+| [`@cratestack/link-logger`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-link-logger)                       | Reference logging `RpcLink`.                                          |
+| [`@cratestack/runtime-fetch`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-runtime-fetch)                   | `typeof fetch` transport with an optional timeout.                    |
+| [`@cratestack/runtime-axios`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-runtime-axios)                   | `typeof fetch` transport backed by axios.                             |
+| [`@cratestack/validator-zod`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-validator-zod)                   | Input-validating `RpcLink`, zod schemas.                              |
+| [`@cratestack/validator-yup`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-validator-yup)                   | Input-validating `RpcLink`, yup schemas.                              |
+| [`@cratestack/adapter-tanstack-query`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-adapter-tanstack-query) | Generic TanStack Query option builders.                               |
+| [`@cratestack/adapter-rtk`](https://github.com/cratestack/cratestack/tree/main/packages/cratestack-adapter-rtk)                       | RTK Query `BaseQueryFn` adapter.                                      |
 
 ## Usage
 

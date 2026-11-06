@@ -13,7 +13,11 @@ Query framework binding builds on.
 ## Usage
 
 ```ts
-import { rpcQueryOptions, rpcMutationOptions, isRpcErrorCode } from "@cratestack/adapter-tanstack-query";
+import {
+  rpcQueryOptions,
+  rpcMutationOptions,
+  isRpcErrorCode,
+} from "@cratestack/adapter-tanstack-query";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { client } from "./generated/client"; // your project's generated client instance
 
