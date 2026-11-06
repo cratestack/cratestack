@@ -8,6 +8,10 @@
 //! transaction's model events; it needs a backplane the transaction can
 //! notify (`PgNotifyBackplane`, the default). `subscribe` is what a
 //! `subscription procedure` handler usually returns.
+//!
+//! A topic taken from an `@isolation` procedure's handle is bound to the
+//! procedure's attempt: its `publish` is `publish_in_tx` on that
+//! transaction (`docs/design/procedure-isolation.md` §3).
 
 use std::fmt::Display;
 use std::marker::PhantomData;
@@ -20,6 +24,7 @@ use futures_util::stream::{self, StreamExt};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::SqlxRuntime;
 use crate::backplane::notify_payload::{NOTIFY_CHANNEL, encode};
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
@@ -28,6 +33,8 @@ use crate::sqlx;
 pub struct Topic<T> {
     backplane: Arc<dyn SubscriptionBackplane>,
     channel: String,
+    /// The `@isolation` attempt a `publish` rides, when there is one.
+    attempt: Option<SqlxRuntime>,
     message: PhantomData<fn() -> T>,
 }
 
@@ -40,8 +47,16 @@ where
         Self {
             backplane,
             channel: topic_channel(topic, &key.to_string()),
+            attempt: None,
             message: PhantomData,
         }
+    }
+
+    /// Binds `publish` to `runtime`'s transaction when it is an `@isolation`
+    /// attempt's runtime; any other runtime leaves the topic as it was.
+    pub fn bound_to(mut self, runtime: &SqlxRuntime) -> Self {
+        self.attempt = runtime.bound().is_some().then(|| runtime.clone());
+        self
     }
 
     /// The backplane channel: `cratestack.topic.<Topic>.<key>`.
@@ -50,7 +65,15 @@ where
     }
 
     /// Delivers `message` to every current subscriber, on every replica.
+    /// From an `@isolation` procedure's handle it is [`Self::publish_in_tx`]
+    /// on the procedure's transaction instead: delivered if the attempt
+    /// commits, never for one that rolls back or retries.
     pub async fn publish(&self, message: &T) -> Result<(), CratestackError> {
+        if let Some(runtime) = &self.attempt {
+            return runtime
+                .transaction(async |tx| self.publish_in_tx(tx, message).await)
+                .await;
+        }
         let payload = encode_message(message)?;
         self.backplane.publish(&self.channel, &payload).await
     }
@@ -65,8 +88,8 @@ where
     ) -> Result<(), CratestackError> {
         if !self.backplane.publishes_model_events_in_tx() {
             return Err(CratestackError::Internal(
-                "`publish_in_tx` needs a backplane the transaction notifies (PgNotifyBackplane); \
-                 with this one, `publish` after the commit"
+                "publishing in a transaction needs a backplane the transaction notifies \
+                 (PgNotifyBackplane); with this one, `publish` after the commit"
                     .to_owned(),
             ));
         }

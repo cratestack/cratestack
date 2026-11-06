@@ -56,7 +56,8 @@ pub(crate) fn generate_topics_module(
         quote! {
             #docs
             pub fn #module(&self, #key: #key_ty) -> ::cratestack::Topic<#module::Payload> {
-                ::cratestack::Topic::new(self.backplane.clone(), #module::NAME, #key)
+                ::cratestack::Topic::new(self.runtime.backplane().clone(), #module::NAME, #key)
+                    .bound_to(&self.runtime)
             }
         }
     });
@@ -69,7 +70,7 @@ pub(crate) fn generate_topics_module(
             /// One method per `topic`. Get it with `Cratestack::topics()`.
             #[derive(Clone)]
             pub struct Topics {
-                backplane: ::std::sync::Arc<dyn ::cratestack::SubscriptionBackplane>,
+                runtime: ::cratestack::__private::SqlxRuntime,
             }
 
             impl Topics {
@@ -80,7 +81,7 @@ pub(crate) fn generate_topics_module(
                 /// This schema's topics, on the runtime's backplane.
                 pub fn topics(&self) -> Topics {
                     Topics {
-                        backplane: self.runtime.backplane().clone(),
+                        runtime: self.runtime.clone(),
                     }
                 }
             }
@@ -111,6 +112,7 @@ topic Room(roomId: String): Message
         let code = generate(true).unwrap();
         assert!(code.contains("pub fn room (& self , room_id : & str) -> :: cratestack :: Topic < room :: Payload >"), "{code}");
         assert!(code.contains("self . runtime . backplane ()"));
+        assert!(code.contains(". bound_to (& self . runtime)"), "{code}");
     }
 
     #[test]

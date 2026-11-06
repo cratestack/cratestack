@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### `topics()` on the `@isolation` handle
+
+**What was missing.** `IsolatedCratestack` had no `topics()`. An `@isolation` procedure could not
+publish to a topic from inside its transaction, and a publish through another handle was delivered
+even when the attempt rolled back or was retried.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.4, S4 status).
+
+- `IsolatedCratestack::topics()` returns the same `Topics`, bound to the procedure's transaction.
+  `publish` on one of its topics is `publish_in_tx` on that transaction: delivered if the attempt
+  commits, never for an attempt that errors or is retried after a serialization failure.
+- With a backplane the transaction cannot notify (`InProcessBackplane`) the publish is refused, as
+  `publish_in_tx` already is, and fails the attempt.
+- Topics from a plain `Cratestack` are unchanged. `publish_in_tx`'s refusal message now reads
+  "publishing in a transaction needs a backplane...".
+
 ### The Dart client subscribes over WebSocket and WebTransport
 
 **What was missing.** The generated Dart client spoke SSE only.

@@ -87,6 +87,21 @@ pub(super) fn isolated_handle_tokens(
         return proc_macro2::TokenStream::new();
     }
     let accessors = schema.models.iter().map(generate_isolated_model_accessor);
+    // `pub mod topics` exists only when the schema declares a topic.
+    let topics = if schema.topics.is_empty() {
+        proc_macro2::TokenStream::new()
+    } else {
+        quote! {
+            /// This schema's topics, bound to the procedure's transaction: a
+            /// topic's `publish` is delivered when the attempt commits, never
+            /// for one that rolls back or is retried. Refused with a
+            /// backplane the transaction cannot notify (`InProcessBackplane`),
+            /// as `publish_in_tx` is; `subscribe` is unaffected.
+            pub fn topics(&self) -> topics::Topics {
+                self.inner.topics()
+            }
+        }
+    };
     quote! {
         /// The database handle of an `@isolation` procedure: every
         /// operation made through it runs inside the procedure's own
@@ -118,6 +133,8 @@ pub(super) fn isolated_handle_tokens(
             ) -> Result<BoundCratestack<'_>, ::cratestack::CratestackError> {
                 self.inner.bind_auth(principal)
             }
+
+            #topics
 
             /// A savepoint inside the procedure's transaction: released when
             /// `body` returns `Ok`, rolled back to when it returns `Err`.

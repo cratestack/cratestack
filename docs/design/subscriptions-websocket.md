@@ -959,8 +959,20 @@ The rest:
 - **`db = None`**: subscription procedures work, with the handler's stream as the source. A topic is
   a compile error, because `cratestack-api` has no backplane yet; moving `InProcessBackplane` out of
   `cratestack-sqlx` is the follow-up.
+- **`IsolatedCratestack::topics()`**: the same `Topics`, taken from the procedure's transaction-bound
+  runtime, so each topic it hands out is bound to that attempt (`Topic::bound_to`).
+  - `publish(&msg)` on such a topic is `publish_in_tx` inside a savepoint of the attempt's
+    transaction, not an immediate send. It is delivered if the attempt commits, in commit order with
+    the attempt's model events. A rolled-back attempt, and an attempt retried after `40001`/`40P01`,
+    deliver nothing; only the attempt that commits does.
+  - `InProcessBackplane` cannot notify inside a transaction. The publish is refused with
+    `publish_in_tx`'s error, which fails and rolls back the attempt. It does not silently send at
+    once, which would deliver a message for a transaction that may still roll back or retry, and it
+    does not defer to after the commit, which would need a second, commit-time hook beside
+    `pg_notify` for the one backplane that has no transaction. One rule, then, for both ways in:
+    a publish inside a transaction needs a backplane the transaction notifies.
+  - `subscribe` is unaffected. A topic from a plain `Cratestack` is unchanged.
 - Not in S4:
-  - `IsolatedCratestack` has no `topics()`. Inside an `@isolation` procedure, publish after commit.
   - The LSP does not index the new declarations.
   - Client methods come in S6.
 - Tests: `cratestack-pg/tests/subscription_procedures.rs`. It covers:
@@ -971,8 +983,9 @@ The rest:
   - REST;
   - contract parity.
 
-  `cratestack-api/tests/subscription_procedure_no_database.rs` covers `db = None` and a natural
-  end. There are also parser, generator and runtime unit tests.
+  `cratestack-pg/tests/subscription_topics_isolated.rs` covers an `@isolation` publish on commit,
+  on error and on retry. `cratestack-api/tests/subscription_procedure_no_database.rs` covers
+  `db = None` and a natural end. There are also parser, generator and runtime unit tests.
 
 **S5 status (as built, 2026-11-01).** The WebSocket binding, `cratestack-websocket` (L4, axum `ws`).
 - **Shared with WebTransport**: frames, admission (`Init`, `authenticate_session`, refusal close
