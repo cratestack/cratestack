@@ -160,11 +160,9 @@ async fn the_pre_image_read_does_not_block_a_referencing_insert() {
 }
 
 /// Whether a foreign-key check on the row can still take its `FOR KEY SHARE`
-/// while `update` is open on it.
-async fn key_share_is_free_after(update: cratestack_schema::UpdateSubKeyedInput) -> bool {
-    let Some(test_pg) = pg::connect_or_skip().await else {
-        return true;
-    };
+/// while `update` is open on it; `None` when there is no database (a skip).
+async fn key_share_is_free_after(update: cratestack_schema::UpdateSubKeyedInput) -> Option<bool> {
+    let test_pg = pg::connect_or_skip().await?;
     for statement in [
         "DROP TABLE IF EXISTS sub_keyeds",
         "CREATE TABLE sub_keyeds (id BIGINT PRIMARY KEY, code TEXT NOT NULL UNIQUE, n BIGINT NOT NULL)",
@@ -194,7 +192,7 @@ async fn key_share_is_free_after(update: cratestack_schema::UpdateSubKeyedInput)
             .execute(&pool)
             .await;
     tx.commit().await.expect("commit");
-    probe.is_ok()
+    Some(probe.is_ok())
 }
 
 #[tokio::test]
@@ -204,6 +202,10 @@ async fn an_update_of_a_unique_column_holds_the_row_against_key_share() {
         code: code.map(str::to_owned),
         n,
     };
-    assert!(key_share_is_free_after(input(None, Some(2))).await);
-    assert!(!key_share_is_free_after(input(Some("b"), Some(2))).await);
+    let Some(non_key_free) = key_share_is_free_after(input(None, Some(2))).await else {
+        return;
+    };
+    assert!(non_key_free, "a non-key update leaves FOR KEY SHARE free");
+    let key_free = key_share_is_free_after(input(Some("b"), Some(2))).await;
+    assert_eq!(key_free, Some(false), "a unique-column update holds the row");
 }
