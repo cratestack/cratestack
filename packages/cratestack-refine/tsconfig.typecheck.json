@@ -22,14 +22,17 @@
   // `paths` maps this package's own public name to its source: the
   // generated `refine.ts` imports `@cratestack/refine` by name (it is
   // written for a consumer, not for us), and inside the package that
-  // specifier has nothing to resolve to.
+  // specifier has nothing to resolve to. `@cratestack/cbor` maps to the
+  // test stub for the reason `tests/support/cbor-stub.ts` gives: the
+  // generated runtime imports it, and this job builds no native addon.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
     "paths": {
-      "@cratestack/refine": ["./src/index.ts"]
+      "@cratestack/refine": ["./src/index.ts"],
+      "@cratestack/cbor": ["./tests/support/cbor-stub.ts"]
     }
   },
-  "include": ["src/**/*.ts", "tests/typecheck/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/typecheck/**/*.ts", "tests/support/cbor-stub.ts"]
 }

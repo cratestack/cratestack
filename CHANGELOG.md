@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+### Breaking: native CBOR is the only codec of generated TypeScript and Dart clients
+
+**What was there.** `cratestack generate-typescript` and `cratestack generate-dart` both took
+`--no-native-cbor`. On TypeScript it swapped the RPC runtime's `@cratestack/cbor` codec for the
+pure-TypeScript `jsonRpcCodec`. On Dart it swapped `cratestack_cbor` for pure-Dart `package:cbor`.
+
+**What changed.** Both flags are removed, and passing either is an unknown-argument error.
+
+- **TypeScript.**
+  - Every RPC-transport package depends on `@cratestack/cbor`.
+  - The runtime resolves its codec as the native-default mode always did. `codec: jsonRpcCodec`
+    still puts JSON on the wire, for a server or a test double that speaks JSON.
+  - Removed from `cratestack-client-typescript`: `DEFAULT_NATIVE_CBOR` and
+    `TypeScriptGeneratorConfig::native_cbor`.
+  - Removed from the generated JSON-mode runtime: the public `codec` property.
+  - REST-transport output is unchanged.
+- **Dart.**
+  - Every generated package depends on `cratestack_cbor`.
+  - Removed from `cratestack-client-dart`: `DEFAULT_NATIVE_CBOR` and
+    `DartGeneratorConfig::native_cbor`.
+- **Custom templates.** Templates still see `native_cbor`, always `true`, so a `--template-dir`
+  template that tests it keeps rendering.
+
+**What this drops.**
+
+- **TypeScript on `win32-arm64`:** `@cratestack/cbor-node` has no binding there, and the runtime
+  imports `@cratestack/cbor` at the top level, so a generated RPC client does not load.
+- **Dart on Linux arm64:** `cratestack_cbor` has no library there.
+- **Plain Dart programs:** `cratestack_cbor` is a Flutter FFI plugin, so generated Dart clients now
+  need the Flutter SDK. CLIs and servers on the standalone Dart SDK are out.
+
+**Why.** One codec, implemented once in Rust, is what every generated client runs. That is the
+ground the compact-wire-keys proposal (`docs/design/compact-wire-keys.md`) builds on.
+
+### A payload-size gate
+
+`cratestack-api`'s `tests/payload_sizes.rs` encodes three representative bodies through the real
+`CborCodec` and `JsonCodec`, raw and gzipped, and compares the sizes with the committed
+`tests/payload_sizes.baseline`:
+
+- a product create;
+- a money transfer;
+- a 500-row list.
+
+A change that grows or shrinks a body fails the plain workspace test run until it is
+re-baselined with `CRATESTACK_UPDATE_PAYLOAD_SIZES=1`.
+
 ### The Dart client subscribes over WebSocket and WebTransport
 
 **What was missing.** The generated Dart client spoke SSE only.

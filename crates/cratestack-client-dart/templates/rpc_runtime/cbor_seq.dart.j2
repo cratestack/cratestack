@@ -44,9 +44,10 @@
 //     ),
 //   );
 //
+//   final codec = await cratestack_cbor.createCborCodec();
 //   final items = response.data!.stream
 //     .transform(CborSeqStreamTransformer(decoder))
-//     .map((bytes) => MyType.fromWire(cbor.cbor.decode(bytes)));
+//     .map((bytes) => MyType.fromWire(jsonDecode(codec.decodeJson(bytes))));
 //
 //   await for (final item in items) renderRow(item);
 //
@@ -88,7 +89,8 @@ abstract interface class CborSeqDecoderHandle {
 /// Wraps any [CborSeqDecoderHandle]. Compose with any HTTP client's
 /// response stream — dio, `package:http`, `dart:io`, a test mock.
 /// Per-item CBOR decoding is the consumer's responsibility (typically
-/// `cbor.cbor.decode(bytes)`), so the transformer stays codec-agnostic
+/// `jsonDecode(codec.decodeJson(bytes))` with a `cratestack_cbor` codec),
+/// so the transformer stays codec-agnostic
 /// at the boundary level and keeps decode cost out of the
 /// transformer's hot loop.
 ///

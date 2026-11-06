@@ -409,7 +409,7 @@ void main() {
       );
       expect(contentType, 'application/cbor');
       expect(
-        cratestackNormalizeWire(cbor.cbor.decode(Uint8List.fromList(received))),
+        _normalizeCbor(cbor.cbor.decode(Uint8List.fromList(received))),
         {'title': 'Hello, wörld'},
       );
     });
@@ -424,4 +424,24 @@ class _ThrowingTransport implements CratestackHttpTransport {
   @override
   Future<CratestackHttpResponse> send(CratestackHttpRequest request) =>
       Future<CratestackHttpResponse>.error(error);
+}
+
+/// `package:cbor` decodes maps as `Map<Object?, Object?>`; this rewrites them
+/// (recursively) to the `Map<String, Object?>` shape an `expect` compares
+/// against. Byte strings stay `Uint8List`. The generated runtime used to
+/// export this as `cratestackNormalizeWire`, back when it could decode with
+/// `package:cbor` itself.
+Object? _normalizeCbor(Object? value) {
+  if (value is Uint8List) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (key, entry) => MapEntry(key.toString(), _normalizeCbor(entry)),
+    );
+  }
+  if (value is List) {
+    return value.map(_normalizeCbor).toList(growable: false);
+  }
+  return value;
 }

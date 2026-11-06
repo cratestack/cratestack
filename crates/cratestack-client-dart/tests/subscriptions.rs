@@ -12,7 +12,6 @@ fn files(fixture: &str) -> (String, String) {
         &schema,
         &DartGeneratorConfig {
             library_name: "subscriptions_client".to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -78,7 +77,6 @@ fn the_socket_modules_come_only_with_subscriptions() {
             &schema,
             &DartGeneratorConfig {
                 library_name: "subscriptions_client".to_owned(),
-                native_cbor: false,
                 ..DartGeneratorConfig::default()
             },
         )

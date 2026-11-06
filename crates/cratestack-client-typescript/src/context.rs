@@ -12,9 +12,7 @@ use crate::naming::{occupied_type_names, package_class_stem, to_pascal_case};
 use crate::package_deps::{
     DependencyEntry, dependencies_for, dev_dependencies_for, peer_dependencies_for,
 };
-use crate::package_floors::{
-    CRATESTACK_ADAPTER_RTK_FLOOR, CRATESTACK_CBOR_FLOOR, CRATESTACK_REFINE_FLOOR, requirement,
-};
+use crate::package_floors::{CRATESTACK_ADAPTER_RTK_FLOOR, CRATESTACK_REFINE_FLOOR, requirement};
 use crate::procedure_views::{ProcedureView, build_procedure};
 use crate::refine::{RefineResourceView, build_refine_resources, refine_resource_map_type};
 use crate::rtk::collisions::reject_rtk_endpoint_name_collisions;
@@ -78,7 +76,7 @@ pub(crate) struct TemplateContext {
     ///
     /// cratestack#779: this is `crate::package_floors::
     /// CRATESTACK_REFINE_FLOOR`, an API-compatibility constant, on the
-    /// same terms as `native_cbor_version_requirement` below. It used to
+    /// same terms as `CRATESTACK_CBOR_FLOOR`. It used to
     /// be derived from this crate's own `CARGO_PKG_VERSION`, justified by
     /// `just bump` moving that in lockstep with the npm package — but
     /// lockstep is exactly the problem: the bump lands *before* the tag
@@ -133,29 +131,17 @@ pub(crate) struct TemplateContext {
     dev_dependencies: Vec<DependencyEntry>,
     /// `package.json.j2`'s `dependencies` entries — see
     /// `crate::package_deps::dependencies_for`. Always carries
-    /// `decimal.js`; additionally carries `@cratestack/cbor` when
-    /// `native_cbor` is set on an RPC-transport schema.
+    /// `decimal.js`; additionally carries `@cratestack/cbor` on every
+    /// RPC-transport schema.
     dependencies: Vec<DependencyEntry>,
-    /// Issue #746 (on by default; `--no-native-cbor` opts out — see
-    /// `TypeScriptGeneratorConfig::native_cbor`'s doc comment). Read
-    /// directly by `rpc-runtime.ts.j2` to choose between
-    /// `@cratestack/cbor`'s `createCborCodec()` and the plain
-    /// `jsonRpcCodec` as the default codec. `rest-runtime.ts.j2` never
-    /// reads this field — REST has no codec seam to gate.
+    /// Always `true`. The generated RPC runtime unconditionally uses
+    /// `@cratestack/cbor`'s `createCborCodec()` as its default codec since
+    /// the JSON-fallback mode (`--no-native-cbor`, issue #746) was
+    /// removed; no shipped template reads this any more. Kept so a
+    /// `--template-dir` custom template that still tests
+    /// `{% if native_cbor %}` keeps rendering under
+    /// `UndefinedBehavior::Strict` (`crate::templates`) instead of failing.
     native_cbor: bool,
-    /// The semver range `package.json`'s `@cratestack/cbor` dependency is
-    /// pinned to under `native_cbor` on an RPC-transport schema.
-    ///
-    /// cratestack#779: this is `crate::package_floors::
-    /// CRATESTACK_CBOR_FLOOR`, an API-compatibility constant. It was a
-    /// `^{major}.{minor}.0` floor *derived from* `CARGO_PKG_VERSION`
-    /// (#746's partial fix), which still moved at a minor bump — see
-    /// `crate::package_floors`' module doc for why only a constant closes
-    /// the window, and for the one known gap in the value chosen.
-    ///
-    /// Empty when `native_cbor` is off or the schema is REST transport,
-    /// where no template reads it.
-    native_cbor_version_requirement: String,
     /// Issue #610: `README.md.j2`'s "Optimistic concurrency" section
     /// documents `getWithResponse`/`ifMatch`, which only exist on REST
     /// output (RPC has no per-route `If-Match`/`ETag` concept — see
@@ -347,11 +333,6 @@ pub(crate) fn build_template_context(
         String::new()
     };
     let is_rpc_transport = schema.transport == cratestack_core::TransportStyle::Rpc;
-    let native_cbor_version_requirement = if config.native_cbor && is_rpc_transport {
-        requirement(CRATESTACK_CBOR_FLOOR)
-    } else {
-        String::new()
-    };
     // `@cratestack/adapter-rtk` is an RPC-only dependency (`crate::rtk`'s
     // module doc) — empty on REST regardless of `config.rtk`.
     let rtk_adapter_version_requirement = if config.rtk && is_rpc_transport {
@@ -431,9 +412,8 @@ pub(crate) fn build_template_context(
             &refine_version_requirement,
             &rtk_adapter_version_requirement,
         ),
-        dependencies: dependencies_for(config, is_rpc_transport, &native_cbor_version_requirement),
-        native_cbor: config.native_cbor,
-        native_cbor_version_requirement,
+        dependencies: dependencies_for(is_rpc_transport),
+        native_cbor: true,
         is_rest_transport: schema.transport == cratestack_core::TransportStyle::Rest,
         has_versioned_model: schema
             .models

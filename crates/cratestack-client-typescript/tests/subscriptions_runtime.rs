@@ -36,7 +36,6 @@ fn subscriptions_run_over_sse_and_a_socket() {
     let package = generate_package(
         &schema,
         &TypeScriptGeneratorConfig {
-            native_cbor: false,
             // `src/react-query-subscriptions.ts`, run by `tanstack.test.ts`.
             tanstack: true,
             ..TypeScriptGeneratorConfig::default()

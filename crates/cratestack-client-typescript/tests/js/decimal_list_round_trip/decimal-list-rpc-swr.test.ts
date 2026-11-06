@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { Decimal } from "./src/swr/models/shared.js";
 import { getLedger } from "./src/swr/models/ledger.js";
 import { quote } from "./src/swr/procedures.js";
-import { CratestackRpcRuntime } from "./src/swr/runtime.js";
+import { CratestackRpcRuntime, jsonRpcCodec } from "./src/swr/runtime.js";
 
 function runtimeReturning(body: unknown): CratestackRpcRuntime {
   const fetchFn: typeof fetch = async () =>
@@ -14,7 +14,7 @@ function runtimeReturning(body: unknown): CratestackRpcRuntime {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  return new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn });
+  return new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn, codec: jsonRpcCodec });
 }
 
 describe("RPC swr layout: Decimal[] on a model (cratestack#1155)", () => {

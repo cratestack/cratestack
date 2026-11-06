@@ -73,7 +73,8 @@ pub(crate) fn build_environment(
     //
     // minijinja's default is `Lenient`, under which `{% if missing %}`
     // silently takes the else-branch. Two shipped defects came from
-    // exactly that within one week — `native_cbor` (#765) and
+    // exactly that within one week — `native_cbor` (#765; that flag has
+    // since been removed, the field is now a constant `true`) and
     // `models_import_path` (#764) — each a field present on
     // `TemplateContext` and absent from `SwrSchemaContext` while both
     // render the same template. The generator emitted plausible,

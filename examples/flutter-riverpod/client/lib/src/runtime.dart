@@ -257,12 +257,11 @@ Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async 
 /// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
 /// decoders expect.
 Future<Object?> _decodeCbor(Uint8List bytes) async {
-  // `cratestack_cbor`'s wire boundary is JSON text (see
-  // `DartGeneratorConfig::native_cbor`'s doc comment), and every generated
-  // `toWire()`/`fromWire` already produces/expects JSON-plain values —
-  // `jsonDecode` alone gives the exact `Map<String, Object?>` shape
-  // `cratestackNormalizeWire` exists to reconstruct from the `cbor` package's
-  // `Map<Object?, Object?>`, so it isn't needed on this path.
+  // `cratestack_cbor`'s wire boundary is JSON text, and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values
+  // (ISO-8601 strings for `DateTime`, `List<int>` for `Bytes`, decimal and
+  // `BigInt` text), so `jsonDecode` alone gives the `Map<String, Object?>`
+  // shape the decoders expect.
   final codec = await _cratestackCborCodec();
   return jsonDecode(codec.decodeJson(bytes));
 }
@@ -514,34 +513,6 @@ BigInt cratestackDecodeBigInt(Object? value, String site) {
 final RegExp _cratestackCanonicalBigInt = RegExp(r'^(0|-?[1-9][0-9]*)$');
 
 typedef CratestackValueMap = Map<String, Object?>;
-
-/// Recursively rewrites decoded containers into the `Map<String, Object?>`
-/// / `List<Object?>` shapes the generated `fromWire` decoders expect.
-///
-/// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
-/// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
-/// — casting it directly throws a `TypeError` (`_Map<Object?, Object?>`
-/// is not a subtype of `Map<String, dynamic>`) at runtime. JSON-decoded
-/// bodies already have `String` keys, so for them this is a cheap
-/// structural walk.
-Object? cratestackNormalizeWire(Object? value) {
-  // `Uint8List` implements `List<int>`, so it must be matched before the
-  // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
-  // get exploded into per-byte `List<Object?>`, breaking `is Uint8List`
-  // decoders and recursing over every byte.
-  if (value is Uint8List) {
-    return value;
-  }
-  if (value is Map) {
-    return value.map(
-      (key, entry) => MapEntry(key.toString(), cratestackNormalizeWire(entry)),
-    );
-  }
-  if (value is List) {
-    return value.map(cratestackNormalizeWire).toList(growable: false);
-  }
-  return value;
-}
 
 CratestackValueMap cratestackAsValueMap(Object? value) {
   if (value is CratestackValueMap) {
