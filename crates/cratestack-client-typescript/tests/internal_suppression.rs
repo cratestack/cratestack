@@ -59,9 +59,9 @@ fn config(swr: bool) -> TypeScriptGeneratorConfig {
         refine: false,
         tanstack: false,
         schema_sha256: "deadbeef".to_owned(),
-        // `native_cbor` (#746) is irrelevant to route suppression — read the
-        // real default rather than pinning a value, so this test keeps
-        // exercising whatever a user actually gets.
+        // Read the real default for every other flag rather than pinning
+        // a value, so this test keeps exercising whatever a user actually
+        // gets.
         ..Default::default()
     }
 }

@@ -14,7 +14,6 @@ fn file(fixture: &str, name: &str) -> String {
         &DartGeneratorConfig {
             library_name: "subscriptions_client".to_owned(),
             preset: DartPreset::Riverpod,
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )

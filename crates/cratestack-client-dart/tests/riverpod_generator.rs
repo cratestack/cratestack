@@ -21,7 +21,6 @@ fn generate(fixture: &str, library_name: &str, preset: DartPreset) -> GeneratedD
             template_dir: None,
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -47,7 +46,6 @@ fn generate_from_source(
             template_dir: None,
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -90,7 +88,6 @@ fn omitting_preset_matches_explicit_default_preset() {
         template_dir: None,
         preset: DartPreset::default(),
         schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-        native_cbor: false,
         ..DartGeneratorConfig::default()
     };
     let config_explicit_default = DartGeneratorConfig {

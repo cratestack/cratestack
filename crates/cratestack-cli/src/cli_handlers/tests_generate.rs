@@ -114,14 +114,6 @@ fn generate_ts_with_all_flags(
         swr,
         refine,
         tanstack,
-        // Every fixture in this file is REST transport (see
-        // INITIAL_SCHEMA/EXTENDED_SCHEMA above) — `native_cbor` has no
-        // effect on REST output (issue #746: RPC-only), so `true`
-        // (matching the real CLI default) is as good a value as `false`
-        // here. `cratestack-client-typescript`'s own
-        // `tests/native_cbor_generator.rs` covers the flag's actual
-        // behavior on RPC-transport schemas.
-        true,
         rtk,
     )
 }
@@ -155,7 +147,6 @@ fn generate_dart_with_ref(
         check,
         preset,
         fespalier_ref,
-        false,
         false,
     )
 }

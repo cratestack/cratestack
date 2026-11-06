@@ -1,11 +1,11 @@
 // RPC-transport counterpart to `decimal-list.test.ts` (cratestack#1155), on
-// the pure-TypeScript JSON codec (`native_cbor: false`): a `Decimal[]` field
+// the pure-TypeScript JSON codec (`codec: jsonRpcCodec`): a `Decimal[]` field
 // on a model and on a `type` revives element by element. Run against the
 // package generated from `tests/fixtures/decimal_list_rpc.cstack`.
 import { describe, expect, it } from "vitest";
 import { Decimal } from "./src/models.js";
 import { LedgerApi, ProceduresApi } from "./src/client.js";
-import { CratestackRpcRuntime } from "./src/runtime.js";
+import { CratestackRpcRuntime, jsonRpcCodec } from "./src/runtime.js";
 
 function runtimeReturning(body: unknown): CratestackRpcRuntime {
   const fetchFn: typeof fetch = async () =>
@@ -13,7 +13,7 @@ function runtimeReturning(body: unknown): CratestackRpcRuntime {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  return new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn });
+  return new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn, codec: jsonRpcCodec });
 }
 
 describe("RPC Decimal[] on a model (cratestack#1155)", () => {

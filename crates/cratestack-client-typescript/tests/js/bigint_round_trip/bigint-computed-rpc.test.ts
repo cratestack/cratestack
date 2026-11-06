@@ -3,10 +3,10 @@
 // the generated client does that `JSON.stringify` itself, so a `bigint`
 // inside it threw before the conversion moved in front of it. Run against the
 // package generated from `tests/fixtures/bigint_computed_params_rpc.cstack`
-// (`native_cbor: false`).
+// (`codec: jsonRpcCodec`, so the params text is visible in a JSON body).
 import { describe, expect, it } from "vitest";
 import { QuoteApi } from "./src/client.js";
-import { CratestackRpcRuntime } from "./src/runtime.js";
+import { CratestackRpcRuntime, jsonRpcCodec } from "./src/runtime.js";
 
 function runtime(bodies: string[]): CratestackRpcRuntime {
   const fetchFn: typeof fetch = async (_input, init) => {
@@ -16,7 +16,7 @@ function runtime(bodies: string[]): CratestackRpcRuntime {
       headers: { "Content-Type": "application/json" },
     });
   };
-  return new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn });
+  return new CratestackRpcRuntime("http://example.invalid", { fetch: fetchFn, codec: jsonRpcCodec });
 }
 
 describe("RPC computedParams with a bigint", () => {

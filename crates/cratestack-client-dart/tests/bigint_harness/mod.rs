@@ -34,6 +34,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use cratestack_client_dart::{DartGeneratorConfig, DartPreset, generate_package};
 
+use crate::cratestack_cbor_support::{self, CratestackCbor};
+
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
 
 /// Every `flutter` and `dart` invocation in this binary takes this lock.
@@ -96,7 +98,7 @@ pub fn require_runtimes() -> bool {
 
 /// `Ok` when `cratestack_cbor`'s native backend can load on this host under
 /// `flutter test`; `Err(reason)` otherwise. See the module doc.
-pub fn native_cbor_available() -> Result<(), String> {
+pub fn native_codec_available() -> Result<(), String> {
     let overridden = std::env::var_os("CRATESTACK_CBOR_NATIVE_LIB")
         .is_some_and(|path| Path::new(&path).is_file());
     if overridden || cfg!(all(target_os = "linux", target_arch = "x86_64")) {
@@ -169,15 +171,11 @@ pub struct Package {
     is_riverpod: bool,
 }
 
-/// Generates `fixture` as a package named `library_name`, resolves it against
-/// this working tree's `dart-packages/`, and expands its builder parts.
-pub fn generate(
-    label: &str,
-    fixture: &str,
-    library_name: &str,
-    preset: DartPreset,
-    native_cbor: bool,
-) -> Package {
+/// Generates `fixture` as a package named `library_name`, with the
+/// `pubspec_overrides.yaml` every generated package gets here (see
+/// `cratestack_cbor_support`). [`Package::resolve_and_build`] resolves it and
+/// expands its builder parts.
+pub fn generate(label: &str, fixture: &str, library_name: &str, preset: DartPreset) -> Package {
     let fixture_path = format!("tests/fixtures/{fixture}.cstack");
     let schema = cratestack_parser::parse_schema_file(&fixture_path)
         .unwrap_or_else(|error| panic!("{fixture_path} should parse: {error}"));
@@ -189,7 +187,6 @@ pub fn generate(
             template_dir: None,
             preset,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor,
             ..DartGeneratorConfig::default()
         },
     )
@@ -204,7 +201,7 @@ pub fn generate(
         fs::create_dir_all(path.parent().expect("parent")).expect("create parent dir");
         fs::write(&path, &file.contents).expect("write generated file");
     }
-    override_in_repo_dart_packages(&dir);
+    cratestack_cbor_support::write_pubspec_overrides(&dir, CratestackCbor::Published);
     Package {
         dir,
         label: label.to_owned(),
@@ -213,33 +210,12 @@ pub fn generate(
 }
 
 impl Package {
-    /// Adds `package:cbor` as a dev dependency. A `native_cbor` package has no
+    /// Adds `package:cbor` as a dev dependency. A generated package has no
     /// `cbor` dependency of its own, but the echo test decodes the client's
     /// request with it on purpose: an independent decoder, not the codec under
     /// test (the same move `just verify-dart` makes for the native echo tests).
     pub fn add_cbor_dev_dependency(&self) {
-        let path = self.dir.join("pubspec.yaml");
-        let pubspec = fs::read_to_string(&path).expect("read pubspec.yaml");
-        let patched = pubspec.replacen(
-            "dev_dependencies:\n",
-            "dev_dependencies:\n  cbor: ^6.5.1\n",
-            1,
-        );
-        assert_ne!(
-            pubspec, patched,
-            "pubspec.yaml has no dev_dependencies block"
-        );
-        fs::write(&path, patched).expect("write pubspec.yaml");
-    }
-
-    /// `cratestack_cbor` is version-locked to this crate's own version, which a
-    /// bump PR has not published yet, so resolve it as `any` (what
-    /// `verify-dart` does for its native packages). Verification-only.
-    pub fn allow_any_cratestack_cbor(&self) {
-        let path = self.dir.join("pubspec_overrides.yaml");
-        let mut overrides = fs::read_to_string(&path).expect("read pubspec_overrides.yaml");
-        overrides.push_str("  cratestack_cbor: any\n");
-        fs::write(&path, overrides).expect("write pubspec_overrides.yaml");
+        cratestack_cbor_support::add_cbor_dev_dependency(&self.dir);
     }
 
     pub fn add_test(&self, source_fixture: &str, as_name: &str) {
@@ -250,31 +226,6 @@ impl Package {
         fs::create_dir_all(target.parent().expect("test dir")).expect("create test dir");
         fs::copy(&source, &target)
             .unwrap_or_else(|error| panic!("copy {source:?} to {target:?}: {error}"));
-    }
-
-    /// Like [`Package::add_test`], for a test file written against the
-    /// package named `from` that is to run in the package named `to`: every
-    /// `package:<from>/` and `<from>` class-prefix reference is repointed. The
-    /// echo test is shared between a pure-`package:cbor` and a native package.
-    pub fn add_test_with_library(&self, source_fixture: &str, as_name: &str, from: &str, to: &str) {
-        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures")
-            .join(source_fixture);
-        let text =
-            fs::read_to_string(&source).unwrap_or_else(|error| panic!("read {source:?}: {error}"));
-        let rewritten = text
-            .replace(
-                &format!("package:{from}/{from}.dart"),
-                &format!("package:{to}/{to}.dart"),
-            )
-            .replace(&pascal_client(from), &pascal_client(to));
-        assert_ne!(
-            text, rewritten,
-            "{source_fixture} does not mention package {from}"
-        );
-        let target = self.dir.join("test").join(as_name);
-        fs::create_dir_all(target.parent().expect("test dir")).expect("create test dir");
-        fs::write(&target, rewritten).expect("write test file");
     }
 
     /// `flutter pub get` then the `build_runner` pass `models.dart`'s
@@ -402,7 +353,7 @@ impl Package {
         }
         let _flutter = lock_flutter();
         let mut command = Command::new("flutter");
-        command
+        cratestack_cbor_support::point_at_native_lib(&mut command, &self.dir)
             .arg("test")
             .args(runtime.flutter_args())
             .arg(format!("test/{test_file}"))
@@ -444,23 +395,6 @@ impl Package {
     }
 }
 
-/// `bigint_round_trip_check` becomes `BigintRoundTripCheckCratestackClient`,
-/// the name the generator gives the client class.
-fn pascal_client(library_name: &str) -> String {
-    let mut name: String = library_name
-        .split('_')
-        .map(|part| {
-            let mut chars = part.chars();
-            chars
-                .next()
-                .map(|first| first.to_uppercase().collect::<String>() + chars.as_str())
-                .unwrap_or_default()
-        })
-        .collect();
-    name.push_str("CratestackClient");
-    name
-}
-
 fn project_tmp_path(label: &str) -> PathBuf {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -469,24 +403,4 @@ fn project_tmp_path(label: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp/client-dart-tests")
         .join(format!("{label}-{suffix}"))
-}
-
-/// Points `cratestack_builder` and `cratestack_annotations` at this repo's
-/// own `dart-packages/`, so `pub get` resolves the working tree's constraints
-/// rather than the last published release's (see `decimal_round_trip.rs`).
-fn override_in_repo_dart_packages(dir: &Path) {
-    let dart_packages = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dart-packages")
-        .canonicalize()
-        .expect("dart-packages/ should exist in this repo");
-    fs::write(
-        dir.join("pubspec_overrides.yaml"),
-        format!(
-            "dependency_overrides:\n  \
-             cratestack_annotations:\n    path: {0}/cratestack_annotations\n  \
-             cratestack_builder:\n    path: {0}/cratestack_builder\n",
-            dart_packages.display()
-        ),
-    )
-    .expect("write pubspec_overrides.yaml");
 }

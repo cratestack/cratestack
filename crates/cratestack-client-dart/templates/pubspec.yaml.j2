@@ -16,12 +16,10 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.3.1
-{% if native_cbor %}
   # cratestack#563: flutter_rust_bridge/wasm-bindgen codec, vendored
   # prebuilt binaries for Linux x86_64, Windows x64, macOS (universal), iOS
-  # (device + simulator), Android (3 ABIs) and web — the default since the
-  # native-cbor follow-up landed. Linux arm64 is the only target still
-  # unsupported (regenerate with `--no-native-cbor` for that target) — see
+  # (device + simulator), Android (3 ABIs) and web. It is the only codec a
+  # generated client has. Linux arm64 is not supported — see
   # dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart's
   # `Abi.current()` checks. That gap is blocked upstream, and cratestack#823
   # measured that plain `dart test`/`dart run` is not a way around it — this
@@ -43,9 +41,6 @@ dependencies:
     Do not write a closing comment marker in this text — minijinja ends
     the comment at the first one and renders the remainder as YAML. #}
   cratestack_cbor: '{{ cratestack_cbor_version_requirement }}'
-{% else %}
-  cbor: ^6.5.1
-{% endif %}
   dio: ^5.8.0+1
   # cratestack#498: backs every `Decimal`-typed field with a real
   # arbitrary-precision value (`models.dart.j2`'s `DecimalFilter`/
@@ -60,11 +55,7 @@ dependencies:
   # comment for why merging them would leak `analyzer`/`build`/`source_gen`
   # into this package's runtime dependency graph.
 {# The floor that is actually a range, hence the quotes — see the note
-    at the codec dependency above. Keeping this non-rendering matters
-    twice over here: that note sits inside the `native_cbor` branch, so a
-    rendered YAML comment naming that package would leak the string into
-    `--no-native-cbor` output that
-    `no_native_cbor_falls_back_to_package_cbor` asserts is free of it. #}
+    at the codec dependency above. #}
   cratestack_annotations: '{{ cratestack_annotations_version_requirement }}'
 {% if has_subscriptions %}
   # Slice S6: subscriptions over a WebSocket (native and web), and over

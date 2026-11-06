@@ -2,14 +2,11 @@
 // codec, against pinned bytes. Modelled on `native_cbor_echo_rest_test.dart`:
 // a real `dart:io` `HttpServer`, a real `dio`, no fake adapter.
 //
-// `tests/bigint_round_trip.rs` copies this one file into two packages generated
-// from `bigint_scalar.cstack` with the same library name
-// (`bigint_native_cbor_echo_rest_verify`) and runs it with `flutter test` in
-// each, so the identical expectations hold for both codec choices:
-//
-//   * `native_cbor: true`   `cratestack_cbor`, flutter_rust_bridge over a JSON
-//                           text boundary (`jsonEncode` then Rust, and back),
-//   * `native_cbor: false`  pure-Dart `package:cbor` (`src/config.rs`).
+// `tests/bigint_round_trip.rs` copies this file into a package generated from
+// `bigint_scalar.cstack` (library `bigint_native_cbor_echo_rest_verify`) and
+// runs it with `flutter test`. The client's codec is `cratestack_cbor`,
+// flutter_rust_bridge over a JSON text boundary (`jsonEncode` then Rust, and
+// back) — the only codec a generated client has.
 //
 // What goes on the wire is `{"amountE8": "<decimal>"}`: a CBOR map of one pair
 // whose value is a text string (major type 3), never an integer (major 0/1) and
@@ -112,7 +109,7 @@ void main() {
       // major type 3 (text string), never 0 or 1 (integer) nor a tag.
       expect(requestBodies.single[10] >> 5, 3);
       // Judged by an independent decoder too, not only by the bytes.
-      final decoded = cratestackNormalizeWire(
+      final decoded = _normalizeCbor(
         cbor.cbor.decode(requestBodies.single),
       );
       expect(decoded, <String, Object?>{'amountE8': fixture.decimal});
@@ -156,4 +153,24 @@ void main() {
       ),
     );
   });
+}
+
+/// `package:cbor` decodes maps as `Map<Object?, Object?>`; this rewrites them
+/// (recursively) to the `Map<String, Object?>` shape an `expect` compares
+/// against. Byte strings stay `Uint8List`. The generated runtime used to
+/// export this as `cratestackNormalizeWire`, back when it could decode with
+/// `package:cbor` itself.
+Object? _normalizeCbor(Object? value) {
+  if (value is Uint8List) {
+    return value;
+  }
+  if (value is Map) {
+    return value.map(
+      (key, entry) => MapEntry(key.toString(), _normalizeCbor(entry)),
+    );
+  }
+  if (value is List) {
+    return value.map(_normalizeCbor).toList(growable: false);
+  }
+  return value;
 }

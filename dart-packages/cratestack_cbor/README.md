@@ -94,10 +94,9 @@ that half of the pair.
    the Dart *and* Rust dependency for you. The cost is the re-validation:
    this regenerates that package's bridge glue, so budget for re-testing its
    native surface, not just for the version edit.
-2. **Use the pure-Dart CBOR codec**, which has no flutter_rust_bridge
-   dependency at all: pass `--no-native-cbor` to `cratestack generate-dart`.
-   You give up the native codec's throughput, not correctness — the pure-Dart
-   path round-trips the same wire bytes.
+2. There is no pure-Dart fallback any more: `cratestack generate-dart`'s
+   `--no-native-cbor` (pure-Dart `package:cbor`) was removed, so a generated
+   client always depends on this package, and option 1 is the only way.
 3. **Tell us which version you need.** The pin is a maintainer decision that
    tracks one flutter_rust_bridge release at a time; if adoption is
    concentrating on a newer one, that is worth knowing. Open an issue on
@@ -263,8 +262,10 @@ follow-up work — it is blocked upstream:
   all. The standalone Dart SDK *does* ship arm64 Linux
   (`dartsdk-linux-arm64-release.zip`, 236 MB at 3.13.2) — true, and not
   sufficient. An arm64 Linux user fails at `pub get`, before
-  `createCborCodec()` is ever called. Use `--no-native-cbor` (pure-Dart
-  `package:cbor`, works everywhere) for that target.
+  `createCborCodec()` is ever called. Linux arm64 is therefore unsupported:
+  the pure-Dart `--no-native-cbor` fallback that used to cover it was removed,
+  so generated clients are Flutter-only and need a platform this package
+  ships a library for.
 
 ## Flutter app integration — proven, not just `dart test`
 

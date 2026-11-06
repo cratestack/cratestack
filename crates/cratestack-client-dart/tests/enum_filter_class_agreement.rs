@@ -88,7 +88,6 @@ fn generate(preset: DartPreset) -> GeneratedDartPackage {
             template_dir: None,
             preset,
             schema_sha256: "0".repeat(64),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )

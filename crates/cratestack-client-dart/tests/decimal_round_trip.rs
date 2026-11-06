@@ -26,16 +26,23 @@
 //! it entirely, and is the same invocation this repo's own CI already
 //! trusts for exactly this kind of package.
 //!
+//! The package resolves `cratestack_cbor` from pub.dev like every generated
+//! package (see `tests/cratestack_cbor_support`); this suite never reaches
+//! the codec, it decodes and encodes wire maps directly.
+//!
 //! Skips (printed, not silently swallowed) when `flutter` isn't on
 //! `PATH` — no Rust CI job in this repo currently provisions Flutter
 //! (the Flutter-provisioned job, `dart-verify`, only runs `just
 //! verify-dart`, not this crate's own `cargo test`).
+
+mod cratestack_cbor_support;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use cratestack_cbor_support::CratestackCbor;
 use cratestack_client_dart::{DartGeneratorConfig, DartPreset, generate_package};
 
 const TEST_SCHEMA_SHA256: &str = "13914fdc4b27216d09632c23cec2aa5ea971843166fec36df790de94f2fccccb";
@@ -159,7 +166,6 @@ fn decimal_round_trips_through_the_generated_dart_client() {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: TEST_SCHEMA_SHA256.to_owned(),
-            native_cbor: false,
             ..DartGeneratorConfig::default()
         },
     )
@@ -185,7 +191,7 @@ fn decimal_round_trips_through_the_generated_dart_client() {
     fs::create_dir_all(test_path.parent().expect("test/ parent")).expect("create test dir");
     fs::write(&test_path, CHECK_TEST).expect("write check test");
 
-    override_in_repo_dart_packages(&dir);
+    cratestack_cbor_support::write_pubspec_overrides(&dir, CratestackCbor::Published);
     let pub_get = Command::new("flutter")
         .args(["pub", "get"])
         .current_dir(&dir)
@@ -223,7 +229,7 @@ fn decimal_round_trips_through_the_generated_dart_client() {
 
     assert_touch_flag_setter_stays_suppressed(&dir);
 
-    let run = Command::new("flutter")
+    let run = cratestack_cbor_support::point_at_native_lib(&mut Command::new("flutter"), &dir)
         .args(["test", "test/decimal_round_trip_test.dart"])
         .current_dir(&dir)
         .output()
@@ -329,43 +335,4 @@ fn project_tmp_path(label: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp/client-dart-tests")
         .join(format!("{label}-{suffix}"))
-}
-
-/// Points `cratestack_builder` and `cratestack_annotations` at this repo's
-/// own `dart-packages/`, so `pub get` resolves the constraints in the
-/// WORKING TREE rather than the ones the last release published.
-///
-/// Without it this test checks history, not the change in front of it, and
-/// it fails in exactly one situation: a commit that raises the generator's
-/// annotations floor and `cratestack_builder`'s own `cratestack_annotations`
-/// constraint together. pub.dev still serves the previous builder, which
-/// forbids the annotations release the generator now asks for —
-///
-/// ```text
-/// Because cratestack_builder >=0.8.14 depends on cratestack_annotations
-/// ^0.8.10 and <client> depends on cratestack_annotations ^0.9.1,
-/// cratestack_builder >=0.8.14 is forbidden.
-/// ```
-///
-/// — the chicken-and-egg `package_floors.rs`'s module doc names. A
-/// `pubspec_overrides.yaml` rather than an edit to the generated
-/// `pubspec.yaml`, so the generated file stays byte-for-byte what the
-/// generator emitted. `cratestack_cbor` is deliberately NOT overridden: it
-/// resolves from pub.dev, which is what proves the emitted floor names a
-/// really published release.
-fn override_in_repo_dart_packages(dir: &std::path::Path) {
-    let dart_packages = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../dart-packages")
-        .canonicalize()
-        .expect("dart-packages/ should exist in this repo");
-    fs::write(
-        dir.join("pubspec_overrides.yaml"),
-        format!(
-            "dependency_overrides:\n  \
-             cratestack_annotations:\n    path: {0}/cratestack_annotations\n  \
-             cratestack_builder:\n    path: {0}/cratestack_builder\n",
-            dart_packages.display()
-        ),
-    )
-    .expect("write pubspec_overrides.yaml");
 }

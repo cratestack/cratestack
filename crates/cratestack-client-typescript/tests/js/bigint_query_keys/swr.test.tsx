@@ -8,6 +8,7 @@ import { createElement, type ReactNode } from "react";
 import { SWRConfig, unstable_serialize } from "swr";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  codecOption,
   countRequests,
   recordingFetch,
   type Sent,
@@ -25,7 +26,7 @@ afterEach(cleanup);
 
 const runtimeFor = (sent: Sent[]) =>
   TRANSPORT === "rpc"
-    ? new swrRuntime.CratestackRpcRuntime("http://example.invalid", { fetch: recordingFetch(sent) })
+    ? new swrRuntime.CratestackRpcRuntime("http://example.invalid", { fetch: recordingFetch(sent), ...codecOption })
     : new swrRuntime.CratestackRuntime("http://example.invalid", { fetch: recordingFetch(sent) });
 
 const search = (after: bigint) => ({ query: { where: { hitsE8: { gt: after } } } });

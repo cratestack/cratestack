@@ -3,6 +3,7 @@ import { createCratestackDataProvider, toRefineError } from "../src/index.js";
 import { createCratestackRpcDataProvider } from "../src/rpc-provider.js";
 import { RefineFixtureClientClient } from "./fixtures/generated-client/src/client.js";
 import { RefineFixtureRpcClientClient } from "./fixtures/generated-client-rpc/src/client.js";
+import { jsonRpcCodec } from "./fixtures/generated-client-rpc/src/runtime.js";
 
 /** cratestack#786: the data provider used to handle errors two different
  *  ways depending on which method threw — `getList`/`getMany` rethrew the
@@ -52,6 +53,8 @@ function rpcProvider() {
   const client = new RefineFixtureRpcClientClient("https://example.test", {
     basePath: "/api",
     fetch: refusingFetch,
+    // Native CBOR is stubbed in these tests (`support/cbor-stub.ts`).
+    codec: jsonRpcCodec,
   });
   return createCratestackRpcDataProvider(
     { widgets: { api: client.widgets, primaryKey: "id", paged: false } },

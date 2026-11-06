@@ -16,7 +16,20 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_riverpod: ^3.3.1
-  cbor: ^6.5.1
+  # cratestack#563: flutter_rust_bridge/wasm-bindgen codec, vendored
+  # prebuilt binaries for Linux x86_64, Windows x64, macOS (universal), iOS
+  # (device + simulator), Android (3 ABIs) and web. It is the only codec a
+  # generated client has. Linux arm64 is not supported — see
+  # dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart's
+  # `Abi.current()` checks. That gap is blocked upstream, and cratestack#823
+  # measured that plain `dart test`/`dart run` is not a way around it — this
+  # package needs the Flutter SDK to resolve at all. An
+  # API-compatibility FLOOR, not this generator's own
+  # crate version: cratestack#779 stopped it moving with `just bump` (which
+  # still rewrites dart-packages/*/pubspec.yaml itself) — the value is
+  # crates/cratestack-client-dart/src/package_floors.rs's
+  # `CRATESTACK_CBOR_FLOOR`.
+  cratestack_cbor: '>=0.9.3 <0.18.0'
   dio: ^5.8.0+1
   # cratestack#498: backs every `Decimal`-typed field with a real
   # arbitrary-precision value (`models.dart.j2`'s `DecimalFilter`/

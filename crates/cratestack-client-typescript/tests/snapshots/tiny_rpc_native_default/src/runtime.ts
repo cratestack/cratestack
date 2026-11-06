@@ -62,8 +62,8 @@ export interface CratestackRpcCodec {
   decode(bytes: Uint8Array): unknown;
 }
 
-/** Fallback codec — pass `codec: jsonRpcCodec` explicitly to opt back
- *  into it; `@cratestack/cbor`'s native codec is the default (issue
+/** JSON codec — pass `codec: jsonRpcCodec` explicitly to put JSON on the
+ *  wire instead; `@cratestack/cbor`'s native codec is the default (issue
  *  #746). */
 export const jsonRpcCodec: CratestackRpcCodec = {
   contentType: "application/json",
@@ -82,10 +82,6 @@ export const jsonRpcCodec: CratestackRpcCodec = {
     // batch of RAW inputs with the request's codec and never runs
     // `terminalLink`, so a conversion that lived only there would be
     // skipped by exactly the path that batches.
-    //
-    // (Deliberately no package name in this comment: `native_cbor: false`
-    // builds assert that `runtime.ts` never mentions the native codec
-    // package at all — see `tests/native_cbor_generator.rs`.)
     return JSON.stringify(encodeBinaryAsJson(value) ?? null);
   },
   decode(bytes: Uint8Array): unknown {
@@ -472,9 +468,10 @@ export class CratestackRpcRuntime {
   }
   /** Resolves the runtime's codec, awaited right after `buildHeaders()`
    *  at every already-`async` call site (issue #746) — that ordering
-   *  (headers first, codec second) is deliberate: it matches the
-   *  `--no-native-cbor` path's ordering exactly, so a user's
-   *  `options.headers` callback fires at the same point in both. An
+   *  (headers first, codec second) is deliberate: it is the order the
+   *  runtime had before the native codec existed, so a user's
+   *  `options.headers` callback fires at the same point whichever codec
+   *  is in use. An
    *  explicit `options.codec` always wins and needs no async resolution (it
    *  is used exactly as given: `terminalLink` still converts a `bigint` or
    *  `Decimal` for every request it builds, but a custom codec that other
