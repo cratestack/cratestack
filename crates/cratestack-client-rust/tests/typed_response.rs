@@ -77,6 +77,7 @@ async fn handle_patch(State(state): State<AppState>, headers: HeaderMap, body: B
             code: "PRECONDITION_FAILED".to_owned(),
             message: "stale or missing If-Match".to_owned(),
             details: None,
+            extra: Default::default(),
         };
         let body = state.codec.encode(&error).expect("error should encode");
         return (

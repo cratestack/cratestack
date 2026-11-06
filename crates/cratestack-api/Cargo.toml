@@ -51,6 +51,7 @@ decimal-rust-decimal = [
     "cratestack-codec-cbor/decimal-rust-decimal",
     "cratestack-codec-json/decimal-rust-decimal",
     "cratestack-mcp?/decimal-rust-decimal",
+    "cratestack-websocket?/decimal-rust-decimal",
 ]
 # Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
 # (cratestack#495).
@@ -65,11 +66,16 @@ decimal-bigdecimal = [
     "cratestack-codec-cbor/decimal-bigdecimal",
     "cratestack-codec-json/decimal-bigdecimal",
     "cratestack-mcp?/decimal-bigdecimal",
+    "cratestack-websocket?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. See
 # `cratestack-pg` for rationale. On by default so `include_client_schema!`
 # keeps offering both CBOR and JSON.
 codec-json = ["cratestack-client-rust/codec-json"]
+# Serves a `db = None` schema's `subscription procedure`s over WebSocket
+# (`extension websocket { }`, docs/design/subscriptions-websocket.md §6):
+# pulls `cratestack-websocket`, re-exported as `cratestack::websocket`.
+websocket = ["cratestack-macros/websocket", "dep:cratestack-websocket"]
 # Forwards `cratestack-client-rust`'s pluggable HTTP transport
 # (cratestack#926) so a consumer reaching this facade can hand the
 # generated client a `reqwest_middleware::ClientWithMiddleware` —
@@ -77,6 +83,16 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# The generated Rust client's subscriptions over WebSocket
+# (docs/design/subscriptions-websocket.md §8): `SubscriptionTransport::Auto`
+# tries a socket first, then SSE. Native targets only; pulls
+# `tokio-tungstenite`, never `axum`.
+client-ws = ["cratestack-client-rust/ws"]
+# The generated Rust client's subscriptions over WebTransport (§6a, §8):
+# `SubscriptionTransport::WebTransport`, and `Auto`'s first choice once
+# `ClientConfig::with_webtransport` names the listener. Native targets;
+# pulls `cratestack-webtransport`'s client half (QUIC), never `axum`.
+client-webtransport = ["cratestack-client-rust/webtransport"]
 # Serves the schema's `@mcp(tool)` procedures to agents over MCP (ADR 0002
 # D3, cratestack#1038) — tools only: a `db = None` schema has no models, so
 # it has no resources to serve. Pulls `cratestack-mcp` (and through it
@@ -122,6 +138,7 @@ cratestack-client-rust.workspace = true
 cratestack-core.workspace = true
 cratestack-macros.workspace = true
 cratestack-mcp = { workspace = true, optional = true }
+cratestack-websocket = { workspace = true, optional = true, default-features = false }
 cratestack-parser.workspace = true
 cratestack-policy.workspace = true
 cratestack-sql.workspace = true
@@ -170,6 +187,10 @@ p256.workspace = true
 # gains it (`cargo tree -p cratestack-api -e normal | grep -c jsonschema`
 # is 0).
 jsonschema.workspace = true
+# `tests/payload_sizes.rs`: the payload-size gate gzips each body to record
+# its compressed size. Already resolved (a normal dependency of
+# `cratestack-studio`), so this is a dev-only edge to an existing node.
+flate2.workspace = true
 # cratestack#1039, `tests/mcp_http.rs`: the example audience-checking
 # `AuthProvider` signs its test tokens with HMAC-SHA256 over base64url claims
 # (`base64`, `hmac`, `sha2`), requests are built and read with `http` and
@@ -252,8 +273,19 @@ path = "tests/mcp_tools.rs"
 required-features = ["mcp"]
 
 [[test]]
+name = "mcp_authn"
+path = "tests/mcp_authn.rs"
+required-features = ["mcp"]
+
+[[test]]
 name = "mcp_admission"
 path = "tests/mcp_admission.rs"
+required-features = ["mcp"]
+
+# cratestack#1261: refusals under a `_meta` idempotency key.
+[[test]]
+name = "mcp_authn_idempotency"
+path = "tests/mcp_authn_idempotency.rs"
 required-features = ["mcp"]
 
 # cratestack#1039: the generated table over Streamable HTTP.

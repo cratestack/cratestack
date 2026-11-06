@@ -66,6 +66,18 @@ the token's audience** against the resource identifier: MCP requires it, and Cra
 provider in v1 (ADR 0002 Q5).
 `tests/support/token.rs` is an example.
 
+**A provider that does not use bearer tokens** *(unreleased, cratestack#1243)*. By default the guard
+asks for `Authorization: Bearer` before your provider runs. A provider that authenticates another way
+(a device signature, a COSE envelope, mTLS in the request's extensions) chooses the rule with
+`with_credential_presence`: `CredentialPresence::provider_decides()` sends every request to the
+provider, and `CredentialPresence::when(|parts| ...)` tests the request head. Name the headers that
+carry the credential with `.with_credential_headers([...])`. They are removed before `rmcp` sees the
+request, as `Authorization` is, and their values are cut out of the provider's logged detail. A
+request found without a credential still gets the 401 `resource_metadata` challenge. An
+`AuthRefusal` from the provider keeps its status, its envelope members and `details`, and its
+`WWW-Authenticate` challenges follow the guard's own. `tests/http_credential.rs` and
+`tests/http_refusal.rs` show both.
+
 ## What a call goes through
 
 1. The tool name is looked up. Unknown → JSON-RPC `-32602`.

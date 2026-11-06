@@ -1,4 +1,33 @@
 {% for enum_type in enum_types %}
+{% if enum_type.is_ordinal %}
+enum {{ enum_type.name }} {
+{% for variant in enum_type.variants %}
+  {{ variant.identifier }}({{ variant.ordinal }}, '{{ variant.wire_name }}'){% if loop.last %};{% else %},{% endif %}
+{% endfor %}
+
+  const {{ enum_type.name }}(this.wireValue, this.wireName);
+
+  /// The number this value is stored and sent as.
+  final int wireValue;
+
+  /// The variant's name in the schema; query-string filters use it.
+  final String wireName;
+
+  /// Takes the number, or the name a peer that still sends names uses.
+  static {{ enum_type.name }} fromWire(Object? value) {
+    switch (value) {
+{% for variant in enum_type.variants %}
+      case {{ variant.ordinal }}:
+      case '{{ variant.wire_name }}':
+        return {{ enum_type.name }}.{{ variant.identifier }};
+{% endfor %}
+    }
+    throw ArgumentError.value(value, 'value', 'Unknown {{ enum_type.name }} value');
+  }
+
+  Object toWire() => wireValue;
+}
+{% else %}
 enum {{ enum_type.name }} {
 {% for variant in enum_type.variants %}
   {{ variant.identifier }}('{{ variant.wire_name }}'){% if loop.last %};{% else %},{% endif %}
@@ -21,6 +50,7 @@ enum {{ enum_type.name }} {
 
   Object toWire() => wireName;
 }
+{% endif %}
 
 {% endfor %}
 {% for data_class in data_classes %}

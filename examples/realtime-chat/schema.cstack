@@ -1,0 +1,55 @@
+// A chat that is live over every binding (slice S6,
+// docs/design/subscriptions-websocket.md §11): a model feed of messages,
+// and typing indicators on a topic behind a subscription procedure. Served
+// over WebTransport, WebSocket and SSE; the generated clients pick one with
+// `"auto"`.
+
+transport rpc
+
+extension websocket {
+}
+
+extension webtransport {
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+/// A posted message. Everyone signed in reads every room.
+model Message {
+  id Int @id
+  roomId String
+  authorId Int
+  body String
+
+  @@allow("read", auth() != null)
+  @@allow("create", authorId == auth().id)
+  @@emit(created)
+  @@subscribe
+}
+
+type Room {
+  roomId String
+}
+
+type Typing {
+  roomId String
+  who String
+}
+
+/// Who is typing in a room, on every replica. Not stored.
+topic RoomTyping(roomId: String): Typing
+
+/// Live typing indicators of one room.
+subscription procedure typing(args: Room): Typing
+  @allow(auth() != null)
+
+/// Say you are typing.
+mutation procedure sendTyping(args: Typing): Typing
+  @allow(auth() != null)

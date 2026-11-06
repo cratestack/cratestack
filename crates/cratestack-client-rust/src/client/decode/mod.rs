@@ -7,6 +7,7 @@ use crate::codec::{
     CBOR_SEQUENCE_CONTENT_TYPE, HttpClientCodec, decode_cbor_sequence, media_type_matches,
 };
 use crate::error::ClientError;
+use crate::remote_refusal::www_authenticate;
 use crate::runtime::wire::RuntimeResponseWire;
 
 /// Decodes a 2xx response body to `Output`, discarding status and
@@ -73,8 +74,9 @@ where
         Err(ClientError::Remote {
             status: StatusCode::from_u16(response.status_code)
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            error,
+            error: error.map(Box::new),
             message,
+            challenges: www_authenticate(&response.headers),
         })
     }
 }
@@ -106,8 +108,9 @@ where
     ClientError::Remote {
         status: StatusCode::from_u16(response.status_code)
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-        error,
+        error: error.map(Box::new),
         message,
+        challenges: www_authenticate(&response.headers),
     }
 }
 
@@ -157,8 +160,9 @@ where
         Err(ClientError::Remote {
             status: StatusCode::from_u16(response.status_code)
                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            error,
+            error: error.map(Box::new),
             message,
+            challenges: www_authenticate(&response.headers),
         })
     }
 }

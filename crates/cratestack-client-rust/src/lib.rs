@@ -9,11 +9,14 @@ mod error;
 mod idempotency;
 #[cfg(feature = "middleware")]
 mod middleware;
+mod remote_refusal;
 mod rpc;
 mod runtime;
 mod state;
+mod step_up;
 mod streaming;
 mod streaming_callback;
+mod subscription;
 mod task;
 
 #[cfg(test)]
@@ -23,7 +26,8 @@ pub use cratestack_codec_cbor::CborCodec;
 #[cfg(feature = "codec-json")]
 pub use cratestack_codec_json::JsonCodec;
 pub use cratestack_core::rpc::{
-    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame, rpc_code,
+    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame, RpcSubscribeInput,
+    rpc_code,
 };
 
 pub use auth::{AuthorizationRequest, RequestAuthorizer};
@@ -32,6 +36,8 @@ pub use client::{
 };
 pub use codec::HttpClientCodec;
 pub use config::ClientConfig;
+#[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
+pub use config::WebTransportEndpoint;
 pub use cratestack_core::ProjectionDecoder;
 /// Back-compat alias — the trait moved to `cratestack-core` and was
 /// renamed `ProjectionDecoder` to free up the `Projection` name for
@@ -43,6 +49,10 @@ pub use cratestack_core::ProjectionDecoder;
 pub use cratestack_core::ProjectionDecoder as Projection;
 #[cfg(feature = "cose")]
 pub use cratestack_cose as cose;
+/// Which certificates a WebTransport listener may show (feature
+/// `webtransport`): the platform's roots, or pinned SHA-256 hashes.
+#[cfg(all(feature = "webtransport", not(target_arch = "wasm32")))]
+pub use cratestack_webtransport::ServerTrust;
 #[cfg(feature = "cose")]
 pub use envelope::{ClientEnvelope, OpenedResponse, PendingResponse, SealCall, SealedCall};
 pub use envelope_error::EnvelopeError;
@@ -50,6 +60,7 @@ pub use error::{ClientError, HeaderPair, QueryPair};
 pub use idempotency::RequestIdempotency;
 #[cfg(feature = "middleware")]
 pub use middleware::MiddlewareError;
+pub use remote_refusal::Challenges;
 pub use rpc::batch::{BatchBuilder, BatchResults};
 pub use rpc::batch_call::{BatchHandle, BatchableCall};
 pub use rpc::client::RpcClient;
@@ -65,5 +76,11 @@ pub use state::{
     ClientStateStore, InMemoryStateStore, JsonFileStateStore, PersistedClientState,
     RequestJournalEntry,
 };
+pub use step_up::{
+    INSUFFICIENT_USER_AUTHENTICATION, StepUpError, StepUpRequired, retry_after_step_up,
+};
 pub use streaming::CborSeqChunkDecoder;
 pub use streaming_callback::RuntimeChunkWire;
+pub use subscription::{
+    ClientSubscription, SubscriptionTarget, SubscriptionTransport, rpc_error_to_client,
+};

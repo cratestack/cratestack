@@ -28,7 +28,7 @@
 //! `vitest` against `JSON.stringify`-based bodies — neither exercises the
 //! RPC codec seam at all, which is the actual gap that let this bug
 //! escape (noted in this ticket's own review). `native_cbor_generator.rs`
-//! is close in *subject* (the `native_cbor` flag) but wrong in
+//! is close in *subject* (the native RPC codec) but wrong in
 //! *mechanism* for this proof: every test in it but one is a source-text
 //! assertion, and the one real Node-driven test in it deliberately stubs
 //! the codec for an unrelated property (see above). This file's mechanism

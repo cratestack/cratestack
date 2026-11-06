@@ -6,6 +6,7 @@ mod context;
 mod dart_types;
 mod data_class_view;
 mod enum_filter_view;
+mod enum_view;
 mod field_view;
 mod find_many_order;
 mod find_many_views;
@@ -17,6 +18,7 @@ mod patch_touch;
 mod preset_view;
 mod release_line;
 mod riverpod;
+mod subscription_specs;
 mod templates;
 mod templates_fespalier;
 mod templates_fragments;
@@ -25,7 +27,7 @@ mod wire_decode;
 mod wire_encode;
 
 pub use config::{
-    DEFAULT_FESPALIER_REF, DEFAULT_NATIVE_CBOR, DartGeneratorConfig, DartGeneratorError,
-    DartPreset, GeneratedDartFile, GeneratedDartPackage,
+    DEFAULT_FESPALIER_REF, DartGeneratorConfig, DartGeneratorError, DartPreset, GeneratedDartFile,
+    GeneratedDartPackage,
 };
 pub use generator::generate_package;

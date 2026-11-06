@@ -59,6 +59,11 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# The generated Rust client's subscriptions over WebSocket
+# (docs/design/subscriptions-websocket.md §8): `SubscriptionTransport::Auto`
+# tries a socket first, then SSE. Native targets only; pulls
+# `tokio-tungstenite`, never `axum`.
+ws = ["cratestack-client-rust/ws"]
 # The signed transport, client half (ADR 0006, cratestack#1007): adds
 # `CratestackClient::with_envelope` and re-exports `cratestack-cose` as
 # `cratestack::cose` to build the envelope with. Off by default and additive;
@@ -95,6 +100,15 @@ cose = ["cratestack-client-rust/cose"]
 pgvector = ["cratestack-macros/pgvector"]
 postgis = ["cratestack-macros/postgis"]
 rate_limit = ["cratestack-macros/rate_limit"]
+# `extension webtransport { }`: lets a client be generated against a schema
+# whose server serves WebTransport, and turns on the client's own
+# WebTransport binding (`ClientConfig::with_webtransport`,
+# `SubscriptionTransport::WebTransport`, `Auto`'s first choice). Pulls
+# `cratestack-webtransport`'s client half (QUIC); still never `axum`, so the
+# facade-disjointness proof holds.
+webtransport = ["cratestack-macros/webtransport", "cratestack-client-rust/webtransport"]
+# `extension websocket { }`: the same schema-compatibility switch.
+websocket = ["cratestack-macros/websocket"]
 
 [dependencies]
 chrono.workspace = true
@@ -117,4 +131,4 @@ url.workspace = true
 [[test]]
 name = "extension_feature_forwarding"
 path = "tests/extension_feature_forwarding.rs"
-required-features = ["pgvector", "rate_limit"]
+required-features = ["pgvector", "rate_limit", "webtransport"]

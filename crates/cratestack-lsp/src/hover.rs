@@ -1,11 +1,13 @@
-use cratestack_core::{ProcedureKind, Schema, TypeRef};
+use cratestack_core::{ProcedureKind, Schema};
 
 use crate::state::SymbolInfo;
 use crate::text::span_contains;
+use crate::type_hover::named_type_symbol;
 use crate::type_ref::{render_type_ref, type_ref_at_offset};
 
 pub(crate) fn locate_symbol(schema: &Schema, offset: usize) -> Option<SymbolInfo> {
-    if let Some(symbol) = crate::mcp_hover::hover_symbol(schema, offset) {
+    let early = crate::mcp_hover::hover_symbol(schema, offset);
+    if let Some(symbol) = early.or_else(|| crate::type_hover::enum_symbol(schema, offset)) {
         return Some(symbol);
     }
     if let Some(datasource) = &schema.datasource
@@ -158,42 +160,4 @@ fn field_symbol(field: &cratestack_core::Field) -> SymbolInfo {
         docs: field.docs.clone(),
         selection_span: field.name_span,
     }
-}
-
-pub(crate) fn named_type_symbol(
-    schema: &Schema,
-    ty: &TypeRef,
-    offset: usize,
-) -> Option<SymbolInfo> {
-    if let Some(inner) = ty
-        .generic_args
-        .iter()
-        .find(|inner| type_ref_at_offset(inner, offset))
-    {
-        return named_type_symbol(schema, inner, offset);
-    }
-    schema
-        .models
-        .iter()
-        .find(|model| model.name == ty.name)
-        .map(|model| SymbolInfo {
-            kind: "model",
-            name: model.name.clone(),
-            detail: "model".to_owned(),
-            docs: model.docs.clone(),
-            selection_span: model.name_span,
-        })
-        .or_else(|| {
-            schema
-                .types
-                .iter()
-                .find(|decl| decl.name == ty.name)
-                .map(|decl| SymbolInfo {
-                    kind: "type",
-                    name: decl.name.clone(),
-                    detail: "type".to_owned(),
-                    docs: decl.docs.clone(),
-                    selection_span: decl.name_span,
-                })
-        })
 }

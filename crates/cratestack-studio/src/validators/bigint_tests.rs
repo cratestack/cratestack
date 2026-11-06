@@ -29,6 +29,7 @@ fn errors_for_amount(amount: serde_json::Value) -> Vec<super::FieldError> {
     let schema = parse(LEDGER);
     let model = schema.models.iter().find(|m| m.name == "Ledger").unwrap();
     validate_payload(
+        &schema,
         model,
         &payload(&[
             ("id", serde_json::json!("l1")),
@@ -115,6 +116,7 @@ fn range_is_enforced_on_a_bigint_string() {
     let model = schema.models.iter().find(|m| m.name == "Ledger").unwrap();
     let check = |capped: &str| {
         validate_payload(
+            &schema,
             model,
             &payload(&[
                 ("id", serde_json::json!("l1")),
@@ -144,6 +146,7 @@ fn int_fields_still_take_numbers_and_refuse_strings() {
     let model = schema.models.iter().find(|m| m.name == "Counter").unwrap();
     let check = |hits: serde_json::Value| {
         validate_payload(
+            &schema,
             model,
             &payload(&[("id", serde_json::json!("c")), ("hits", hits)]),
             false,

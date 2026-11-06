@@ -50,6 +50,11 @@ pub enum CheckKind {
         /// Whether the column is a list (`Status[]` → `TEXT[]`), which
         /// needs array containment rather than scalar membership.
         list: bool,
+        /// An ordinal enum's numbers, parallel to `variants`; the CHECK
+        /// lists these instead of the names. Absent on a string enum, so
+        /// its snapshot JSON is unchanged.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ordinals: Option<Vec<i64>>,
     },
     /// An opaque CHECK predicate, captured verbatim as SQL text rather
     /// than reverse-mapped to one of the kinds above.

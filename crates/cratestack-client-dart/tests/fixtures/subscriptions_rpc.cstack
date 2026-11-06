@@ -1,0 +1,24 @@
+// Slice S6: the generated Dart client's subscriptions over SSE
+// (`subscriptions_rpc_test.dart`, run by `just verify-dart`): a model feed
+// and a subscription procedure.
+
+transport rpc
+
+model Note {
+  id Int @id
+  body String
+
+  @@allow("read", true)
+  @@emit(created)
+  @@subscribe
+}
+
+type Room {
+  roomId String
+}
+
+type Line {
+  body String
+}
+
+subscription procedure lines(args: Room): Line

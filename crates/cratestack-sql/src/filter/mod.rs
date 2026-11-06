@@ -1,4 +1,5 @@
 mod coalesce;
+pub mod eval;
 mod expr;
 mod expr_relations;
 mod field_ref;

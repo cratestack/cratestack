@@ -30,7 +30,7 @@ pub async fn create_record(
     let model_decl = target_model(target, &model)?;
     let mode = require_write_mode(target, model_decl)?;
     let unsafe_write = mode == WriteMode::Bypassed;
-    let errors = validate_payload(model_decl, &payload, false);
+    let errors = validate_payload(&target.schema, model_decl, &payload, false);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
     }
@@ -64,7 +64,7 @@ pub async fn update_record(
     let model_decl = target_model(target, &model)?;
     let mode = require_write_mode(target, model_decl)?;
     let unsafe_write = mode == WriteMode::Bypassed;
-    let errors = validate_payload(model_decl, &payload, true);
+    let errors = validate_payload(&target.schema, model_decl, &payload, true);
     if !errors.is_empty() {
         return Err(ApiError::Validation(errors));
     }

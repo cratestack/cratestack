@@ -3,6 +3,7 @@ import { useBoard } from "react-vite-swr-client/swr/models/board.hooks";
 import { useCreateTask, useTasks } from "react-vite-swr-client/swr/models/task.hooks";
 import { useEstimateFocusMinutesQuery } from "react-vite-swr-client/swr/procedures.hooks";
 import { runtime } from "../runtime.ts";
+import { ClearDoneTasks } from "../stepUp/ClearDoneTasks.tsx";
 import { TaskRow } from "./TaskRow.tsx";
 
 const MINUTES_PER_TASK = 25; // one pomodoro — the estimate procedure's own unit.
@@ -65,6 +66,8 @@ export function BoardDetailScreen({ boardId, onBack }: { boardId: number; onBack
           {isMutating ? "Adding…" : "Add task"}
         </button>
       </form>
+
+      <ClearDoneTasks boardId={boardId} />
 
       {isLoading && <p className="muted">Loading tasks…</p>}
       {error && <p className="error">Failed to load tasks: {error.message}</p>}

@@ -6,6 +6,7 @@
 //! for partial writes.
 
 use crate::data::Row;
+use crate::data::common::ordinal_of;
 use crate::data::model_info::ModelSqlInfo;
 
 /// Map the payload object to `(columns, bound_values)`. Both vectors
@@ -29,9 +30,13 @@ pub(super) fn build_payload_bindings(
             continue;
         };
         columns.push(col.column_name.clone());
-        values.push(match col.scalar {
-            "BigInt" => bigint_to_sqlite(json_value),
-            _ => json_to_sqlite(json_value),
+        // An ordinal enum's name is stored as its number: the embedded
+        // runtime reads that column back as an integer.
+        let ordinal = col.ordinal_enum.and_then(|e| ordinal_of(e, json_value));
+        values.push(match (ordinal, col.scalar) {
+            (Some(ordinal), _) => rusqlite::types::Value::Integer(ordinal),
+            (None, "BigInt") => bigint_to_sqlite(json_value),
+            (None, _) => json_to_sqlite(json_value),
         });
     }
     (columns, values)

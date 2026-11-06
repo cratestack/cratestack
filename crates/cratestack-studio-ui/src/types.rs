@@ -38,6 +38,20 @@ pub struct FieldSummary {
     pub is_enum: bool,
     #[serde(default)]
     pub enum_variants: Vec<String>,
+    /// For an ordinal enum (`Pending = 1`), each variant's ordinal in
+    /// `enum_variants` order; empty for a string enum.
+    #[serde(default)]
+    pub enum_ordinals: Vec<i64>,
+}
+
+impl FieldSummary {
+    /// The variant an ordinal enum cell's stored number stands for. The
+    /// row holds the number; the table and the edit form use the name.
+    pub fn enum_name_of(&self, value: &serde_json::Value) -> Option<&str> {
+        let ordinal = value.as_i64()?;
+        let index = self.enum_ordinals.iter().position(|o| *o == ordinal)?;
+        self.enum_variants.get(index).map(String::as_str)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

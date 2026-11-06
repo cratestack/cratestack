@@ -2,13 +2,11 @@
 //! probe, UPDATE ... RETURNING with policy + If-Match, event/audit
 //! fan-out. Per-item failures rollback the savepoint.
 
-use cratestack_core::{
-    AuditEvent, AuditOperation, CratestackContext, CratestackError, ModelEventKind,
-};
+use cratestack_core::{AuditEvent, AuditOperation, CratestackContext, CratestackError};
 use sqlx_core::acquire::Acquire as _;
 
-use crate::audit::{build_audit_event, enqueue_audit_event, fetch_for_audit};
-use crate::descriptor::enqueue_event_outbox;
+use crate::audit::{build_audit_event, enqueue_audit_event, fetch_before_image};
+use crate::descriptor::OutboxColumn;
 use crate::query::support::{classify_unique_violation, push_action_policy_query, push_bind_value};
 use crate::{ModelDescriptor, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
 
@@ -23,7 +21,7 @@ pub(super) async fn run_update_item<'tx, M, PK, I>(
     descriptor: &'static ModelDescriptor<M, PK>,
     item: BatchUpdateItem<PK, I>,
     ctx: &CratestackContext,
-    emits_event: bool,
+    (emits_event, keep): (bool, Option<&OutboxColumn>),
     audit_enabled: bool,
 ) -> Result<(Result<M, CratestackError>, Option<AuditEvent>), CratestackError>
 where
@@ -50,21 +48,25 @@ where
         }
 
         // Capture before-snapshot under FOR UPDATE for clean audit timing.
-        let before = if audit_enabled {
-            fetch_for_audit(&mut *item_tx, descriptor, id.clone()).await?
-        } else {
-            None
-        };
+        let before = fetch_before_image(
+            &mut *item_tx,
+            descriptor,
+            id.clone(),
+            keep.is_some(),
+            &values,
+        )
+        .await?;
 
         let record =
             update_one_in_savepoint(&mut item_tx, descriptor, id, &values, ctx, if_match).await?;
 
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_update(
                 &mut *item_tx,
-                descriptor.schema_name,
-                ModelEventKind::Updated,
+                descriptor.event_target(),
                 &record,
+                before.as_ref(),
+                keep,
             )
             .await?;
         }

@@ -10,12 +10,15 @@ use syn::LitStr;
 
 use crate::axum::{generate_model_axum_handlers, generate_model_axum_routes};
 use crate::model::{
-    generate_bound_model_accessor, generate_create_input_struct, generate_field_module,
+    InputRole, generate_bound_model_accessor, generate_create_input_struct, generate_field_module,
     generate_find_many_input, generate_model_accessor, generate_model_descriptor,
     generate_model_struct_only, generate_pg_from_row_impl, generate_primary_key_accessor_impl,
     generate_update_input_struct, generate_upsert_input_struct,
 };
-use crate::transport::{generate_model_transport_constants, generate_model_transport_entries};
+use crate::transport::{
+    generate_model_subscribe_route_transport, generate_model_transport_constants,
+    generate_model_transport_entries,
+};
 use crate::validators::{Validating, generate_model_validate_impl};
 
 use super::{Ts, compile_error};
@@ -72,7 +75,14 @@ pub(super) fn collect_models(
         .models
         .iter()
         .map(|model| {
-            generate_model_descriptor(model, &schema.models, &schema.types, &schema.enums, auth)
+            generate_model_descriptor(
+                model,
+                &schema.models,
+                &schema.types,
+                &schema.enums,
+                auth,
+                false,
+            )
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| compile_error(schema_path, e))?;
@@ -85,7 +95,9 @@ pub(super) fn collect_models(
     let create_input_structs = schema
         .models
         .iter()
-        .map(|model| generate_create_input_struct(model, model_name_set, enum_name_set))
+        .map(|model| {
+            generate_create_input_struct(model, model_name_set, enum_name_set, InputRole::Server)
+        })
         .collect();
     let update_input_structs = schema
         .models
@@ -120,15 +132,26 @@ pub(super) fn collect_models(
         .iter()
         .map(generate_model_axum_routes)
         .collect();
+    let subscribe_routes: Vec<_> = schema
+        .models
+        .iter()
+        .filter_map(generate_model_subscribe_route_transport)
+        .collect();
     let transport_constants = schema
         .models
         .iter()
         .map(generate_model_transport_constants)
+        .chain(
+            subscribe_routes
+                .iter()
+                .map(|(constant, _)| constant.clone()),
+        )
         .collect();
     let transport_entries = schema
         .models
         .iter()
         .flat_map(generate_model_transport_entries)
+        .chain(subscribe_routes.into_iter().map(|(_, entry)| entry))
         .collect();
 
     Ok(ModelCollected {

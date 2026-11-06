@@ -28,11 +28,14 @@
 mod attribute_norm;
 pub(crate) mod canon;
 pub(crate) mod members;
+mod members_topic;
 mod nodes;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_bytes;
+#[cfg(test)]
+mod tests_enum_ordinals;
 
 use sha2::{Digest, Sha256};
 

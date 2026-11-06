@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model, TypeArity};
 use quote::quote;
 
+use super::row_pg_enum::pg_enum_decode_expr;
 use crate::shared::{ident, scalar_model_fields, to_snake_case};
 
 /// Emit `impl sqlx::FromRow<'_, sqlx::postgres::PgRow> for Model` only.
@@ -87,57 +88,7 @@ fn row_field_decode_expr(field: &Field, enum_names: &BTreeSet<&str>) -> proc_mac
         return quote! { row.try_get(#field_name)? };
     }
 
-    let enum_ident = ident(&field.ty.name);
-    let parse_error = |error: proc_macro2::TokenStream| {
-        quote! {
-            sqlx::Error::Decode(Box::new(::std::io::Error::new(
-                ::std::io::ErrorKind::InvalidData,
-                #error,
-            )))
-        }
-    };
-    match field.ty.arity {
-        TypeArity::Required => {
-            let decode_error = parse_error(quote! { error });
-            quote! {
-                {
-                    let raw: String = row.try_get(#field_name)?;
-                    raw.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)?
-                }
-            }
-        }
-        TypeArity::Optional => {
-            let decode_error = parse_error(quote! { error });
-            quote! {
-                {
-                    let raw: Option<String> = row.try_get(#field_name)?;
-                    raw.map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)).transpose()?
-                }
-            }
-        }
-        // Unreachable in practice as of #229: `cratestack-parser` now
-        // rejects a list-arity enum model field on any `datasource`-bearing
-        // schema before this macro ever expands, so no valid input can
-        // reach this arm. Left in place (rather than collapsed to a
-        // 2-variant match + `unreachable!()`) because `TypeArity` is a
-        // shared enum matched exhaustively across the codegen surface, and
-        // because the arm is independently wrong on its own terms even if
-        // it were reached: it `try_get`s a `Vec<String>` against what is,
-        // since #233, a plain `TEXT`/CHECK column, not a Postgres `mood[]`
-        // array. Fixing that decode shape is part of implementing real list
-        // support end-to-end, not this fix.
-        TypeArity::List => {
-            let decode_error = parse_error(quote! { error });
-            quote! {
-                {
-                    let raw: Vec<String> = row.try_get(#field_name)?;
-                    raw.into_iter()
-                        .map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error))
-                        .collect::<Result<Vec<_>, sqlx::Error>>()?
-                }
-            }
-        }
-    }
+    pg_enum_decode_expr(field_name, &field.ty.name, field.ty.arity)
 }
 
 fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::TokenStream {
@@ -160,49 +111,9 @@ fn row_field_tokens(field: &Field, enum_names: &BTreeSet<&str>) -> proc_macro2::
             #field_ident: row.try_get(#field_name)?,
         };
     }
-
-    let enum_ident = ident(&field.ty.name);
-    let parse_error = |error: proc_macro2::TokenStream| {
-        quote! {
-            sqlx::Error::Decode(Box::new(::std::io::Error::new(
-                ::std::io::ErrorKind::InvalidData,
-                #error,
-            )))
-        }
-    };
-
-    match field.ty.arity {
-        TypeArity::Required => {
-            let decode_error = parse_error(quote! { error });
-            quote! {
-                #field_ident: {
-                    let raw: String = row.try_get(#field_name)?;
-                    raw.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)?
-                },
-            }
-        }
-        TypeArity::Optional => {
-            let decode_error = parse_error(quote! { error });
-            quote! {
-                #field_ident: {
-                    let raw: Option<String> = row.try_get(#field_name)?;
-                    raw.map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)).transpose()?
-                },
-            }
-        }
-        // See the matching comment on the `TypeArity::List` arm in
-        // `row_field_decode_expr` above — same #229 rationale applies here.
-        TypeArity::List => {
-            let decode_error = parse_error(quote! { error });
-            quote! {
-                #field_ident: {
-                    let raw: Vec<String> = row.try_get(#field_name)?;
-                    raw.into_iter()
-                        .map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error))
-                        .collect::<Result<Vec<_>, sqlx::Error>>()?
-                },
-            }
-        }
+    let decode_expr = row_field_decode_expr(field, enum_names);
+    quote! {
+        #field_ident: #decode_expr,
     }
 }
 

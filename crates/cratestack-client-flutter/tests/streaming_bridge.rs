@@ -451,6 +451,7 @@ async fn handle_error(_state: State<AppState>) -> Response<Body> {
             code: "INTERNAL_ERROR".to_owned(),
             message: "synthetic upstream failure".to_owned(),
             details: None,
+            extra: Default::default(),
         })
         .expect("encode error");
     Response::builder()

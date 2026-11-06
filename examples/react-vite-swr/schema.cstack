@@ -62,3 +62,20 @@ type FocusEstimateResult {
 // script (`scripts/seed.mjs`).
 procedure estimateFocusMinutes(args: FocusEstimateArgs): FocusEstimateResult
   @allow(auth() != null)
+
+type ClearDoneTasksArgs {
+  boardId Int
+}
+
+type ClearDoneTasksResult {
+  removed Int
+}
+
+// Step-up (cratestack#1245, `@authn` of cratestack#1244): removing tasks for
+// good needs a user who authenticated in the last five minutes with a
+// hardware-bound key (RFC 8176 `hwk`). Anyone else signed in is refused with
+// RFC 9470's step-up 401 before the procedure runs; the generated clients read
+// it as `StepUpRequired`, and the apps re-prove and retry once.
+mutation procedure clearDoneTasks(args: ClearDoneTasksArgs): ClearDoneTasksResult
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk"])

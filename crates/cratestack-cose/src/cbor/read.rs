@@ -15,7 +15,7 @@
 
 use std::ops::Range;
 
-use super::write::{MAJOR_BSTR, MAJOR_NINT, MAJOR_UINT};
+use super::write::{MAJOR_BSTR, MAJOR_NINT, MAJOR_TSTR, MAJOR_UINT};
 use crate::error::Reject;
 
 pub(crate) struct Reader<'a> {
@@ -95,6 +95,19 @@ impl<'a> Reader<'a> {
         let start = self.pos;
         self.take(len)?;
         Ok(start..self.pos)
+    }
+
+    /// A definite-length byte string, as the slice itself.
+    pub(crate) fn bstr(&mut self) -> Result<&'a [u8], Reject> {
+        let len = usize::try_from(self.expect(MAJOR_BSTR)?).map_err(|_| Reject)?;
+        self.take(len)
+    }
+
+    /// A definite-length text string, which must be valid UTF-8 (RFC 8949
+    /// §3.1: invalid UTF-8 is not well-formed text).
+    pub(crate) fn tstr(&mut self) -> Result<&'a str, Reject> {
+        let len = usize::try_from(self.expect(MAJOR_TSTR)?).map_err(|_| Reject)?;
+        std::str::from_utf8(self.take(len)?).map_err(|_| Reject)
     }
 
     pub(crate) fn uint(&mut self) -> Result<u64, Reject> {

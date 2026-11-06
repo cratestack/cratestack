@@ -25,6 +25,7 @@ mod build_shared_types;
 mod imports;
 mod partition;
 mod provider_naming;
+mod subscriptions;
 mod templates;
 mod views;
 
@@ -182,7 +183,7 @@ pub(crate) fn generate_package(
         contents: render(&environment, templates::LIBRARY, &library_context)?,
     });
 
-    let pubspec_context = build_pubspec_file(config);
+    let pubspec_context = build_pubspec_file(schema, config);
     files.push(GeneratedDartFile {
         file_name: "pubspec.yaml".to_owned(),
         contents: render(&environment, templates::PUBSPEC, &pubspec_context)?,

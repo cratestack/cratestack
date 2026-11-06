@@ -218,7 +218,9 @@ fn adding_a_variant_rebuilds_the_membership_check() {
 
 /// Native Postgres enums cannot drop a variant at all, so the old
 /// emitter ignored removals. Under the CHECK model the constraint is
-/// simply rebuilt narrower.
+/// rebuilt narrower, and that is Blocking: a row still holding the
+/// removed value fails it, so `up.pre.sql` is scaffolded with the
+/// backfill that moves those rows (`ir::blocking::narrowing`).
 #[test]
 fn removing_a_variant_rebuilds_the_check_narrower() {
     let prev = schema(&order_schema(
@@ -238,10 +240,17 @@ fn removing_a_variant_rebuilds_the_check_narrower() {
         "up was: {}",
         migration.up
     );
+    assert!(migration.has_blocking, "up was: {}", migration.up);
+    assert!(!migration.has_lossy);
+    let pre = migration
+        .up_pre
+        .as_deref()
+        .expect("a blocking migration scaffolds up.pre.sql");
     assert!(
-        !migration.up.contains("'Shipped'"),
-        "up was: {}",
-        migration.up
+        pre.contains(
+            "UPDATE orders SET status = <a value the enum keeps> WHERE status IN ('Shipped');"
+        ),
+        "up.pre.sql was: {pre}"
     );
 }
 

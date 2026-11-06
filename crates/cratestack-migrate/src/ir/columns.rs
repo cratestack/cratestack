@@ -39,8 +39,15 @@ pub enum ColumnArity {
 pub enum ColumnType {
     /// `.cstack` built-in scalar (`String`, `Int`, `Uuid`, …).
     Scalar(String),
-    /// User-defined enum declared via `enum Name { … }`.
+    /// User-defined enum declared via `enum Name { … }`, stored as its
+    /// variant names (`TEXT`).
     Enum(String),
+    /// An enum whose variants carry explicit ordinals (`Pending = 1`),
+    /// stored as the number (`SMALLINT`; an integer on SQLite). A separate
+    /// variant rather than a flag on `Enum`, so a snapshot's string enums
+    /// keep their `{"Enum": "X"}` JSON and switching an enum between the
+    /// two is a real type change (`docs/design/enum-ordinals.md` §4).
+    OrdinalEnum(String),
     /// User-defined composite type declared via `type Name { … }`.
     ///
     /// As of #230, `cratestack-parser` rejects a model field whose type

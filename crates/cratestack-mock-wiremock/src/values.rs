@@ -182,15 +182,13 @@ fn synthesize_named_reference(
         return synthesize_object(schema, owner, name, &type_decl.fields, in_progress);
     }
     if let Some(enum_decl) = schema.enums.iter().find(|enum_decl| enum_decl.name == name) {
-        return enum_decl
-            .variants
-            .first()
-            .map(|variant| json!(variant.name))
-            .ok_or_else(|| WireMockGeneratorError::UnsupportedReturnType {
+        return crate::model_attrs::enum_example(enum_decl).ok_or_else(|| {
+            WireMockGeneratorError::UnsupportedReturnType {
                 owner: owner.to_owned(),
                 type_name: name.to_owned(),
                 reason: "enum declares no variants to pick an example from",
-            });
+            }
+        });
     }
 
     Err(WireMockGeneratorError::UnknownType {

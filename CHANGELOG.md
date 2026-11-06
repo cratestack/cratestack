@@ -2,6 +2,1203 @@
 
 ## Unreleased
 
+### Breaking: native CBOR is the only codec of generated TypeScript and Dart clients
+
+**What was there.** `cratestack generate-typescript` and `cratestack generate-dart` both took
+`--no-native-cbor`. On TypeScript it swapped the RPC runtime's `@cratestack/cbor` codec for the
+pure-TypeScript `jsonRpcCodec`. On Dart it swapped `cratestack_cbor` for pure-Dart `package:cbor`.
+
+**What changed.** Both flags are removed, and passing either is an unknown-argument error.
+
+- **TypeScript.**
+  - Every RPC-transport package depends on `@cratestack/cbor`.
+  - The runtime resolves its codec as the native-default mode always did. `codec: jsonRpcCodec`
+    still puts JSON on the wire, for a server or a test double that speaks JSON.
+  - Removed from `cratestack-client-typescript`: `DEFAULT_NATIVE_CBOR` and
+    `TypeScriptGeneratorConfig::native_cbor`.
+  - Removed from the generated JSON-mode runtime: the public `codec` property.
+  - REST-transport output is unchanged.
+- **Dart.**
+  - Every generated package depends on `cratestack_cbor`.
+  - Removed from `cratestack-client-dart`: `DEFAULT_NATIVE_CBOR` and
+    `DartGeneratorConfig::native_cbor`.
+- **Custom templates.** Templates still see `native_cbor`, always `true`, so a `--template-dir`
+  template that tests it keeps rendering.
+
+**What this drops.**
+
+- **TypeScript on `win32-arm64`:** `@cratestack/cbor-node` has no binding there, and the runtime
+  imports `@cratestack/cbor` at the top level, so a generated RPC client does not load.
+- **Dart on Linux arm64:** `cratestack_cbor` has no library there.
+- **Plain Dart programs:** `cratestack_cbor` is a Flutter FFI plugin, so generated Dart clients now
+  need the Flutter SDK. CLIs and servers on the standalone Dart SDK are out.
+
+**Why.** One codec, implemented once in Rust, is what every generated client runs. That is the
+ground the compact-wire-keys proposal (`docs/design/compact-wire-keys.md`) builds on.
+
+### A payload-size gate
+
+`cratestack-api`'s `tests/payload_sizes.rs` encodes three representative bodies through the real
+`CborCodec` and `JsonCodec`, raw and gzipped, and compares the sizes with the committed
+`tests/payload_sizes.baseline`:
+
+- a product create;
+- a money transfer;
+- a 500-row list.
+
+A change that grows or shrinks a body fails the plain workspace test run until it is
+re-baselined with `CRATESTACK_UPDATE_PAYLOAD_SIZES=1`.
+
+### A model feed tells a subscriber when a row leaves its filter — breaking for hand-written event code
+
+**What was missing.** A row updated out of a subscriber's filter, or out of its read policy, produced
+no event for that subscriber, so its copy of the row went stale until it refetched.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §5.3; decision O3 is reversed).
+
+- An update that moves a row out of a feed's filter or read policy now sends that subscriber an
+  `Updated` event with `matches: false`. Its `data` is the row as the subscriber last saw it (the
+  pre-image), never the new values, so nothing it may not read is sent. A subscriber the row never
+  matched hears nothing, and an update that stays in the filter is the event it always was.
+- `ModelEvent` gains `matches`, `true` unless the event is an exit. It is sent only when `false`, so
+  ordinary events are unchanged on the wire, and a payload without it reads as `true`. The generated
+  Rust, TypeScript (`matches?: boolean`) and Dart (`matches`) clients expose it, on every binding
+  (SSE, WebSocket, WebTransport, REST `$subscribe`). An older client now also receives the exit
+  `Updated` event, carrying the pre-image: one that upserts on every `Updated` would re-insert a row
+  that left its filter.
+- Updates of an `@@subscribe` model that emits `updated` read the row first: one extra round trip per
+  update (already done for `@@audit`, and shared with it). The read takes the lock the `UPDATE` will:
+  `FOR NO KEY UPDATE`, or `FOR UPDATE` when the update sets the primary key or a `@unique`/`@@unique`
+  column. So an ordinary update does not make inserts into referencing tables wait; a key update still
+  does, as do the upserts' conflict probes (`FOR UPDATE`, unchanged).
+- The pre-image is stored in a new `payload_before` column of `cratestack_event_outbox`. A table an
+  earlier version created gets the column in its own short transaction (100 ms lock timeout, one
+  attempt at a time, retried at most once a minute) at the start of an update or upsert of an
+  `@@subscribe` model that opens its own transaction. Until then, and for an app that only writes inside
+  its own transactions (`run_in_tx`), updates send no exit event; nothing fails, and the outbox drain
+  and the large-event read work on the old table. Add the column in a migration to be sure.
+- Single updates, batch updates and the update branch of single and batch upserts carry the
+  pre-image. `update_many` and Studio's routed update do not, so they send no exit event.
+- **Breaking, for code that builds or consumes these types by hand.** `ModelEvent` and
+  `CratestackEventEnvelope` gain public fields (`matches`, `before`), so struct literals need them.
+  `cratestack_axum::rpc::model_events` now yields `FeedEvent<T>`, and `model_feed` takes a route
+  function returning `Option<event>` instead of a read predicate. Raw `CratestackEventBus` handlers now
+  receive `before` on `Updated` envelopes of an `@@subscribe` model: they see the pre-image.
+- Packages without a subscription op are byte-identical.
+
+### Topics work in `db = None` schemas
+
+**What was missing.** A `topic` in an `include_server_schema!(.., db = None)` schema was a compile
+error, because `cratestack-api` had no backplane. A procedures-only service could stream a subscription
+procedure's own source but not publish to its subscribers from another handler.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §9).
+
+- `InProcessBackplane` moved from `cratestack-sqlx` to `cratestack-core`, with the `LocalHub` fan-out it
+  shares with `PgNotifyBackplane`. `cratestack_sqlx::backplane::InProcessBackplane` and
+  `cratestack::InProcessBackplane` on `cratestack-pg` still resolve. `cratestack-api` now exports it too.
+- `Topic`'s backplane half (`new`, `publish`, `subscribe`, `channel`) is `cratestack_core::TopicHandle`,
+  exported as `cratestack::Topic` by `cratestack-api` (and by `cratestack-pg` without its `postgres`
+  feature). There, `cratestack::Topic` now names the handle, not the schema-AST `Topic` the glob
+  re-export used to give. `cratestack-pg`'s `Topic<T>` wraps the handle, derefs to it, and adds
+  `publish_in_tx`; its methods are unchanged.
+- A `db = None` schema with a `topic` gets `db.topics().<topic>(key)` and
+  `Cratestack::builder().with_backplane(..)`. The default is one `InProcessBackplane` shared by every
+  `build()` of that schema in the process, so handles built in different places (a router, a worker)
+  reach the same subscribers. It is single replica: pass your own `SubscriptionBackplane` to reach
+  other replicas.
+- A `db = None` schema with a `topic` has a `Cratestack` that is `Clone` but no longer `Copy`, since it
+  holds the backplane. Schemas without a topic are unchanged.
+- `cratestack-core` now depends on `tokio` (`sync` only) and `futures-util`. It still builds for
+  `wasm32-unknown-unknown`, and `cratestack-api` still has no sqlx in its graph.
+
+### `topics()` on the `@isolation` handle
+
+**What was missing.** `IsolatedCratestack` had no `topics()`. An `@isolation` procedure could not
+publish to a topic from inside its transaction, and a publish through another handle was delivered
+even when the attempt rolled back or was retried. Separately, two identical `publish_in_tx` messages
+in one transaction were delivered once, because Postgres folds identical notifications.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.4, S4 status).
+
+- `IsolatedCratestack::topics()` returns the schema's `Topics`, bound to the procedure's attempt. A
+  topic's `publish` is delivered only if the attempt commits, never for an attempt that errors or is
+  retried after a serialization failure.
+- With `PgNotifyBackplane` it notifies inside the transaction. With a backplane a transaction cannot
+  notify (`InProcessBackplane`) the message is queued and sent after the commit, like the attempt's
+  audit events. Both are discarded with a rolled-back attempt or savepoint.
+- Inside `tx_db.transaction(..)`, call `publish_in_tx(tx, &msg)` on the topic, on either backplane.
+  A `transaction(..)` that rolls back drops its messages even when the attempt commits.
+- Fixed with it: a `tx_db.transaction(..)` that rolled back inside a committing `@isolation`
+  attempt still dispatched the audit events it had queued (`dispatch_audit_sink` with a
+  `run_in_tx` outcome) to the `AuditSink`. It now drops them,
+  as a rolled-back joined call already did.
+- Topics from a plain `Cratestack` are unchanged, including the handle given to `@authorize`
+  probes and `@computed` resolvers.
+- Every topic and model-event `NOTIFY` carries a per-message nonce, so identical messages from one
+  transaction are each delivered. Older readers ignore it.
+
+### The Dart client subscribes over WebSocket and WebTransport
+
+**What was missing.** The generated Dart client spoke SSE only.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8, S6 Dart).
+
+- A package generated from a schema with a subscription op gains a WebSocket binding (native and web,
+  `web_socket_channel`) and a WebTransport binding (Flutter web, the browser's own `WebTransport`
+  through `package:web`). It also gains `CratestackSubscriptionOptions`, passed to the client as
+  `subscriptions:` or, in the riverpod preset, through `<prefix>SubscriptionOptionsProvider`.
+- `auto` (the default) tries WebTransport (with `webTransportUrl`), then the WebSocket, then SSE. It
+  moves on only when a binding cannot be opened. A refusal is thrown, as before.
+- A socket cannot carry the credentials your HTTP transport adds, so set `credentials` (the headers
+  `Init` sends). Until you do, `auto` stays on SSE. A pinned `webSocket` or `webTransport` uses
+  whatever is given. Self-signed development certificates are pinned with
+  `serverCertificateHashes`.
+- The client's `subscribe` now takes a `CratestackSubscriptionTarget`. The generated model and
+  procedure methods are unchanged.
+- The SSE reader no longer misses an event whose `\r\n` is split across two chunks.
+- Packages without a subscription op are byte-identical.
+### The Rust client subscribes over WebTransport
+
+**What was missing.** The generated Rust client spoke WebSocket and SSE only. A native client could not
+use the WebTransport listener at all.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §6a, §8).
+
+- `cratestack-webtransport` has a `client` feature. `WebTransportClient::connect(url, trust, headers)`
+  opens and authenticates a session; `subscribe(op, input)` opens one stream per subscription, and
+  dropping it cancels. `ServerTrust` is the platform's roots, or pinned SHA-256 hashes for a
+  `DevCertificate`.
+- `cratestack-client-rust` has a `webtransport` feature (`client-webtransport` on `cratestack-pg` and
+  `cratestack-api`; the existing `webtransport` feature on `cratestack-client` now turns it on).
+  - `ClientConfig::with_webtransport(url, trust)` names the listener.
+  - `SubscriptionTransport::WebTransport` pins the binding.
+  - `Auto` now tries WebTransport first, then the WebSocket, then SSE. A session not open within 3 s
+    counts as unreachable, and that is remembered for 10 minutes.
+- Native targets only. It pulls QUIC and never `axum`, so `cratestack-client` stays axum-free.
+- Without the feature nothing changes: `Auto` starts at the WebSocket, as before.
+
+### `examples/realtime-chat`: every binding, and the fallback proven in a browser
+
+**What was missing.** No example put the subscription pieces together. Nothing proved that
+`"auto"` falls back when UDP is blocked.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §11, S6).
+
+- `examples/realtime-chat` has:
+  - messages as a model feed;
+  - typing indicators on a topic behind a subscription procedure, published by a unary
+    `sendTyping`;
+  - SSE, WebSocket and WebTransport, the last on a `DevCertificate` made at startup, whose hash is
+    printed for the page to pin.
+- `just test-realtime-chat`, run in CI's WebTransport job, runs:
+  - the generated Rust client over the WebSocket and SSE, plus `Auto` falling back to SSE behind
+    a proxy that drops upgrades;
+  - the generated TypeScript client in Chromium. With UDP open it uses WebTransport (no WebSocket,
+    no SSE). With the WebTransport URL on a dead UDP port it falls back to the WebSocket. SSE works
+    when chosen.
+
+### The generated Dart client subscribes over SSE
+
+**What was missing.** A Flutter or Dart client had no subscription call.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes.subscribe(input: ..., onReady: ...)`** returns a
+  `Stream<CratestackModelEvent<Note>>`, and **`client.procedures.roomMessages(args)`** a
+  `Stream<ChatMessage>`, on REST and RPC packages of a schema with a subscription op.
+  - Nothing is emitted before `Ready`. A refusal or a terminal error is a
+    `CratestackSubscriptionException` (`code`, `message`, `details`, `status`).
+  - Cancelling the listen cancels the request.
+- It is SSE through the same `CratestackHttpTransport` every call uses (Dio, fespalier, the Rust
+  transport, your own). It needs the generated HTTP adapter.
+- **`--preset riverpod`** (and fespalier) carries the same methods, plus a `@riverpod` stream
+  provider each: `noteEventsProvider(input: ...)` per `@@subscribe` model and
+  `roomMessagesProvider(args)` per subscription procedure. A provider is one subscription per
+  distinct input (`CratestackSubscribeInput` compares by its query string), cancelled once nothing
+  watches it.
+- Schemas without a subscription op generate exactly as before.
+
+### The generated TypeScript client subscribes, over WebTransport, a WebSocket or SSE
+
+**What was missing.** A browser or Node client could reach a subscription only by speaking SSE or
+frames by hand. Nothing used WebTransport from the client side.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes.subscribe(input, { signal, onReady })`** and
+  **`client.procedures.roomMessages(args, options)`** return an `AsyncIterable`.
+  - Its first `next()` resolves after `Ready`.
+  - Items are revived like any response (`Decimal`, `BigInt`, bytes).
+  - A refusal or a terminal error is thrown as a `CratestackSubscriptionError`.
+  - Breaking out of the loop, or aborting `signal`, cancels the subscription.
+- **`subscriptions: { transport, webTransport: { url, serverCertificateHashes } }`** on the client
+  options. `"auto"` (the default) tries three bindings in order:
+  1. WebTransport, when `webTransport.url` names the server's listener and the platform has it.
+     A session that is not `Ready` within 3 s counts as failed, and the failure is remembered for
+     10 minutes.
+  2. A shared, multiplexed WebSocket.
+  3. SSE over `fetch`.
+
+  A refusal is never a reason to fall back. Sessions are shared only between subscriptions with
+  the same credentials.
+- Both REST and RPC packages get this, but only for schemas with a subscription op; every other
+  schema generates exactly as before. Under `--swr`, `useSubscription(key, open)` wraps any of them
+  in `swr/subscription`. Under `--tanstack`, `useSubscriptionQuery(key, open)` makes one TanStack
+  Query data (the latest item; cancelled with the query's last observer), and
+  `subscriptionQueryOptions` gives the same options to `useQueries` or a `QueryObserver`.
+- The WebTransport binding is proven in headless Chromium against the real server
+  (`just test-ts-webtransport-browser`, in CI's WebTransport job).
+
+### The generated Rust client subscribes: `subscribe()` and subscription procedures
+
+**What was missing.** A Rust client could reach a subscription only by speaking SSE or frames by
+hand.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §8).
+
+- **`client.notes().subscribe(&input)`** on an `@@subscribe` model's client, and
+  **`client.procedures().room_messages(&args)`** for a subscription procedure, on both REST and
+  RPC clients (`include_server_schema!` and `include_client_schema!`).
+  - Each resolves once the server says `Ready` to a `ClientSubscription<Item>` (a channel of
+    `Result<Item, ClientError>`).
+  - A refusal is the call's `Err`, never an item. Dropping the subscription cancels it.
+- **The binding is configuration**:
+  `ClientConfig::with_subscription_transport(SubscriptionTransport::{Auto, WebSocket, Sse})`.
+  - `Auto` (the default) uses a WebSocket with the client's `ws` feature (`client-ws` on
+    `cratestack-pg`/`cratestack-api`, native targets).
+  - It falls back to SSE only when no socket can be opened, never on a refusal.
+  - SSE is a `GET` with the input as the query string, signed like any other call.
+- `RpcClientError` now implements `From<ClientError>`.
+
+### Subscriptions over WebSocket: `extension websocket { }`
+
+**What was missing.** A client on a network that blocks UDP could not use the WebTransport
+binding. Its only other option was SSE: one connection per subscription, JSON only, and no way to
+refresh credentials on a live stream.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §6).
+
+- **The new `cratestack-websocket` crate** serves a schema's subscriptions over one WebSocket,
+  using the same frames as WebTransport.
+  - `Init`, then `Request`s multiplexed by id, each answered with `Ready`, items, and one `end` or
+    `err`.
+  - `{id, cancel: {}}` ends a subscription.
+  - Binary messages carry CBOR (`cratestack.rpc.v1+cbor`) and text messages carry JSON (`+json`).
+- **`extension websocket { }` with the facade's `websocket` feature** (`cratestack-pg`,
+  `cratestack-api`) adds `SubscriptionDispatch::websocket(config, auth)`, a router with
+  `/rpc/ws` (`/$ws` on REST) to merge into yours.
+- **Authentication** uses the router's `AuthProvider`, over the upgrade headers or, for a
+  browser, over `Init`'s.
+  - A refusal sends `{id: 0, err}` and then closes with 4401, 4403, 4400 or 4500.
+  - A further `Init` refreshes the credentials; it must name the same principal.
+  - The socket closes with 4401 when the credential expires.
+  - Origins are same-origin by default.
+- **Limits** (`WebSocketLimits`):
+  - 64 subscriptions per socket and 8 sockets per principal;
+  - the body limit per message;
+  - a 1024-frame outbound queue;
+  - a ping every 15 s.
+- The frames, admission, `OriginPolicy` and the session registry now live in
+  `cratestack_core::subscription_wire`. `cratestack-webtransport` re-exports them unchanged.
+
+### Subscription procedures and topics
+
+**What was missing.** The only subscription was a model feed. Live data that is not a row change,
+such as chat messages, progress or presence, had no op, no policy and no way to reach other
+replicas.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.2–3.4, §7.1).
+
+- **`subscription procedure roomMessages(args: RoomArgs): ChatMessage`**, with `@allow`/`@deny`,
+  `@authn`, `@authorize` and `@api_version`.
+  - Its `ProcedureRegistry` method resolves to a `cratestack::SubscriptionStream<Output>` once setup
+    succeeds. An `Err` refuses before `Ready`.
+  - It is served as `procedure.roomMessages` on `/rpc/subscribe` and over WebTransport, and as
+    `GET /$procs/roomMessages` on REST. Arguments are JSON-valued query parameters
+    (`?args={"roomId":"r1"}`) or the JSON body of `POST /rpc/subscribe/{op_id}`.
+  - It works under `db = None` too.
+- **`topic RoomMessage(roomId: String): ChatMessage`** generates `db.topics().room_message(&id)`,
+  a typed `cratestack::Topic` on the subscription backplane.
+  - `publish` delivers to every replica.
+  - `publish_in_tx` delivers only if the transaction commits. It needs the default
+    `PgNotifyBackplane`.
+  - `subscribe().await` is what a handler usually returns.
+- **The dispatcher holds the registry** when the schema has subscription procedures:
+  `db.subscriptions(registry)`. Without them it stays `db.subscriptions()`.
+- **`POST /rpc/subscribe/{op_id}`** takes a subscription's input as a JSON body, model feeds
+  included.
+- Topics need a backplane. `db = Postgres` has one; `db = None` gained one afterwards (see "Topics work in
+  `db = None` schemas" above).
+
+### Subscriptions take a filter, a projection and operations, and REST serves them
+
+**What was missing.** A model feed delivered every readable event of its model; a client wanting
+one owner's notes, only creates, or two fields filtered on its side. `@@subscribe` required
+`transport rpc`, so a REST schema had no feed at all.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.1, §5.3, §7.2).
+
+- **A feed takes `list`'s filter syntax**, plus `operations` and `fields`: for example
+  `?body__contains=keep&operations=created&fields=id,body`. On SSE it is the query string. Over
+  WebTransport it is the request's input, `{"filters": [{"key": "id", "value": "2"}], "fields": [...],
+  "operations": [...]}`, or `where`/`or`. The filter narrows what the read policy allows and never
+  widens it.
+- **Refused at open with `invalid_argument`**: `limit`, `offset`, `sort`, `include` and the other
+  paging keys, relation and full-text filters, a filter over a `@server_only` column, an unknown
+  operation or field.
+- **REST serves `GET /<plural>/$subscribe`**, and `@@subscribe` no longer requires `transport rpc`.
+- A row updated out of a filter produces no event. Refetch on reconnect, as the delivery contract
+  already asks.
+
+### Subscriptions refuse a caller who can read nothing, end when the credential expires, and keep SSE alive
+
+**What was missing.** A caller whose read policy no row could pass, such as an anonymous caller on
+an `auth() != null` model, got `Ready` and an empty feed that never delivered. A refusal from the
+SSE endpoint reached an `EventSource` client as `406`, because its `Accept: text/event-stream`
+names no RPC codec. A subscription outlived the credential that opened it. A quiet SSE stream was
+dropped by idle-timeout proxies.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §5.1, §6.3, §7.1).
+
+- **Refused at open** when no row could pass the read policy: `unauthenticated` for an anonymous
+  caller, else `permission_denied`. This applies on every binding (SSE, WebTransport). A
+  row-dependent `@deny`, such as `archived`, never refuses at open.
+- **The SSE endpoint's errors are JSON with the error's own status** (401, 403, 500 and so on,
+  plus `WWW-Authenticate` for a refusal), whatever the RPC codec.
+- **A subscription ends with `unauthenticated` / `"credential expired"`** when its context's `exp`
+  claim passes. Resubscribe with a fresh credential.
+- **SSE sends a `: keepalive` comment** after 15 s without an item.
+
+### Subscriptions reach every replica: the subscription backplane
+
+**What was missing.** A model event reached only the subscribers of the replica that committed
+the write. The write path drained the outbox into that process's own event bus, and nothing told
+the other replicas. Behind a load balancer, a subscriber on replica B never saw a write handled by
+replica A, and nothing reported it.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §4, slice S2).
+
+- **`cratestack_core::SubscriptionBackplane`** carries published messages to every replica. There
+  are two implementations, re-exported by `cratestack-pg`:
+  - **`PgNotifyBackplane` is the default.** It uses Postgres `LISTEN`/`NOTIFY`, with one listener
+    connection per process, opened by the first subscription.
+  - **`InProcessBackplane`** serves a single replica.
+
+  Swap with `Cratestack::builder(pool).with_backplane(Arc::new(..))`. Use the in-process one behind
+  a pooler that cannot hold `LISTEN`, such as PgBouncer in transaction mode.
+- **Model events of `@@subscribe` models are notified by the writing transaction.** The
+  notification is sent by the same statement as the outbox insert, so it is delivered only on
+  commit, to every replica, in commit order. `@@emit`-only models send none.
+- **Every subscription binding reads the backplane**, through the generated dispatcher, so SSE and
+  WebTransport subscribers on any replica see writes committed on any other. If the listener's
+  connection drops, events may have been lost: every subscription on that replica ends with
+  `unavailable` / `"subscription interrupted"`, and the client resubscribes. Lag still ends a
+  subscription with `"subscription lagged"`.
+- **SSE sends `event: ready`** (`{"id": 1, "ready": {}}`) before any item. The subscription is live
+  from that point; items now start at id 2. A client that expected the first event to be a
+  `message` must skip it.
+- **The outbox drain claims rows with `FOR UPDATE SKIP LOCKED`**, so two replicas draining at once
+  never both run an `on_<model>_<op>` handler for the same row.
+- `ModelDescriptor` gains `subscribed` (`with_subscribed()`, `event_target()`).
+
+## 0.17.2 (2026-10-31)
+
+### A refusal before the body no longer burns the `Idempotency-Key` (#1261)
+
+**What was wrong.** The idempotency layer recorded a 401 or 403 like any other error and replayed it
+to the next call under the same `Idempotency-Key`. The documented answer to a 401 is to renew the
+credential, or step up (`@authn`, ADR 0022; RFC 9470 §3), and send **the same request again under the
+same key**, which is what the generated clients' `retry_after_step_up` / `retryAfterStepUp` do. That
+retry got the stored 401 back, so a keyed write could never complete after a refusal.
+
+**What changed.** A refusal the generated dispatch produces before any procedure body runs is no
+longer recorded: the layer releases the reservation, as it already did for an `@isolation`
+procedure's own exhausted retries (GHSA-r67q-4qqq-g9gm), and the same key then runs the call once.
+That covers the `AuthProvider::authenticate` refusal (procedures and model routes, REST and RPC),
+the `@allow`/`@deny` check, the `@authn` requirement and an `@authorize` model check, on REST, RPC
+unary and MCP tools (`/rpc/batch` already refuses the header). A refusal a procedure body returns is
+still recorded and replayed, because the body may have written first.
+
+- `AuthRefusal::is_dispatch_owned()` is new. The mark is set only by the `#[doc(hidden)]`
+  `CratestackError::__generated_claim_auth_refusal`, which generated code calls, and
+  `CratestackError::is_idempotency_replayable` is `false` for a claimed refusal. A claimed
+  `Unauthorized`/`Forbidden` becomes an `AuthRefused` with the same code, status and message, so
+  responses are unchanged byte for byte.
+- Each procedure module gains a `#[doc(hidden)]` `__generated_dispatch_with_db`, which the generated
+  REST, RPC and MCP dispatch now call: `invoke_with_db` with the claim of its own authorization
+  refusal on. The public `invoke_with_db` is unchanged and never claims; both disown a refusal that
+  comes out of the body.
+- Design: `docs/design/procedure-isolation.md` §6, "Dispatch-owned refusals".
+
+## 0.17.1 (2026-10-31)
+
+### Step-up end to end: `examples/step-up-procedures`, and a step-up screen in the Flutter and React examples (#1245)
+
+**What was missing.** #1244 lets a procedure state how fresh and how strong the caller's
+authentication must be (`@authn`), refuses with RFC 9470's step-up signal, and types the refusal as
+`StepUpRequired` in every generated client. No example ran the whole path, from the schema through a
+real provider and the generated clients to a UI, so nothing showed that the pieces fit.
+
+**What changed.**
+
+- **New example `examples/step-up-procedures`** (a workspace member, no database, no Authkestra).
+  `payInvoice` declares `@authn(maxAge: 300, amr: ["hwk"])` and `balance` declares nothing. The
+  server is the generated REST and RPC routers behind `SignedRequestAuthProvider`, CrateStack's
+  in-house provider, which copies the id token's `auth_time` and `amr` (plus `pop`) onto the
+  principal. The generated Rust clients sign every request with a device key and carry the id token.
+  A password session from twenty minutes ago reads the balance, meets `StepUpRequired` on the
+  payment, re-proves, and pays through `retry_after_step_up`: on REST, an RPC unary call and an RPC
+  batch, where only the payment's frame is refused. Its tests (`cargo test -p
+  step-up-procedures-example`) also cover the wire shape, a declined re-proof (no retry) and a
+  re-proof that still falls short (one retry, then the second refusal is returned).
+- **`examples/react-vite-swr`'s schema gains `clearDoneTasks`**, under `@authn(maxAge: 300, amr:
+  ["hwk"])`. The example's `HeaderAuthProvider` (now `src/auth.rs`) also fills `auth_time` and `amr`,
+  from two stand-in headers, `x-auth-time` and `x-auth-amr`, like the `x-auth-id` it already
+  trusted. `tests/step_up.rs` checks the step-up 401 with no database, and the successful call
+  against Postgres. Both committed clients are regenerated (`just regen-examples`).
+- **`examples/flutter-riverpod`**: a "Clear done tasks" button through the generated
+  `ClearDoneTasksController`, wrapped in `retryAfterStepUp`. The refusal opens a step-up screen
+  driven by `StepUpRequired`; confirming retries once. A declined step-up, or any other refusal,
+  shows a banner keyed on the refusal code (`error` member, else `code`). Widget tests:
+  `app/test/step_up_test.dart`.
+- **`examples/react-vite-swr/web`**: the same flow on the generated `useClearDoneTasksMutation`,
+  with a step-up dialog and a refusal banner. `web/test/step-up.test.ts` (`pnpm --filter
+  react-vite-swr-web test`, tsx and `node:test`, no new dependency) runs the generated
+  `clearDoneTasks` and `retryAfterStepUp` against a fake server; CI's `js (react-vite-swr example)`
+  job now runs it.
+
+The two app examples send the session's facts as headers, which a real provider must never trust;
+their READMEs say so and point at `step-up-procedures`, where the facts come from a verified token.
+
+### Every generated client types a step-up refusal as `StepUpRequired`, and retries once after a re-proof (#1244)
+
+**What was missing.** #1244 lets an operation require a fresher or stronger authentication than the
+caller presented, and refuses it with an `AuthRefusal` (ADR 0022): 401 on REST, code
+`unauthenticated` on RPC, the extra member `error: "insufficient_user_authentication"` (RFC 9470)
+and a `details` naming the requirements (`max_age`, `acr_values`, `amr`) and which of them the
+caller failed (`unmet`). #1243 made those members readable, but raw: a caller had to compare the
+`error` member by hand, walk an untyped `details`, and write its own "re-prove, then send again
+once" loop, in each language.
+
+**What changed.** Each client reads a step-up refusal the same way, on both transports (REST, RPC
+unary and RPC batch frames): a refusal is a step-up only when its status is 401 (REST) or its code
+`unauthenticated` (RPC) **and** its `error` member is `insufficient_user_authentication`. Reading
+never throws: a missing or mistyped field reads as absent or empty.
+
+- **Rust** (`cratestack-client-rust`): `StepUpRequired { max_age: Option<u64>, acr_values,
+  amr, unmet: Vec<String> }`; `ClientError::step_up()`, `RpcClientError::step_up()` and
+  `RpcRemoteError::step_up()` (a batch frame's error); the `StepUpError` trait over the three;
+  `retry_after_step_up(call, reprove)`, which runs `call`, and on a step-up runs `reprove` and,
+  when it answers `true`, runs `call` once more and returns that result, a second refusal
+  included. `call` may return anything `.await` takes, so a generated RPC method's call fits.
+  Also `INSUFFICIENT_USER_AUTHENTICATION`.
+- **Dart** (every preset: default, riverpod, fespalier): a `StepUpRequired` class (`maxAge`,
+  `acrValues`, `amr`, `unmet`), a `stepUp` getter on `CratestackRestException` and
+  `CratestackRpcException` (`null` when the error is not a step-up), and
+  `retryAfterStepUp(call, reprove)` with the same rule (`reprove` returns `Future<bool>`; `false`
+  rethrows the first refusal). The riverpod providers already rethrow and store the exception
+  itself in `AsyncError`, and the fespalier transport's refusals reach the same exception
+  classes, so `stepUp` reads the same there.
+- **TypeScript**: a `StepUpRequired` interface, a `stepUp` field on `CratestackHttpError` and
+  `CratestackRpcError`, `stepUpOf(error)` (in the RPC runtime it also reads a batch frame's
+  `error` body), and `retryAfterStepUp(call, reprove)`. The `--rtk` REST error gains an optional
+  `stepUp`; `--swr` hooks surface the same error instances.
+
+The committed example clients (`examples/flutter-riverpod/client`, `examples/react-vite-swr/client`)
+are regenerated. This is the client side only: the server side that declares the requirement and
+emits the refusal is a separate #1244 PR, and nothing here changes what a server sends.
+
+**Migrating.** Nothing to change. The new names (`StepUpRequired`, `retryAfterStepUp`,
+`stepUpOf`, `cratestackInsufficientUserAuthentication`, `INSUFFICIENT_USER_AUTHENTICATION`) are
+new exports of the generated runtimes and of `cratestack-client-rust`; a hand-written declaration
+of the same name in a file that imports the whole runtime would now clash.
+
+### Subscriptions open through one generated dispatcher; `extension webtransport` serves them over WebTransport
+
+**What was missing.** The SSE endpoint carried its own copy of the subscription logic: event-bus
+registration and the per-event read policy were generated inline in the axum handler. The
+WebTransport binding (`cratestack-webtransport`) was driven through
+`cratestack_core::SubscriptionDispatcher`, but nothing generated one, so an application had to
+implement it by hand to serve its model feeds over WebTransport.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §11 S5a).
+
+- **The generated `subscriptions` module.** A `db = Postgres` server schema with a `@@subscribe`
+  model gets `SubscriptionDispatch`, which implements `SubscriptionDispatcher`.
+  `Cratestack::subscriptions()` returns one. Its `open` takes the op id
+  (`model.<Model>.subscribe`) and the authenticated context, and owns the policy: it refuses a read
+  policy that cannot be decided on an event, and filters every event through the subscriber's read
+  policy. A model feed takes no input yet: anything but `null` or `{}` is refused with
+  `invalid_argument`.
+- **The SSE endpoint is an adapter over it, on the same wire.** `GET /rpc/subscribe/{op_id}`
+  checks `Accept`, authenticates, opens through the dispatcher and encodes the stream. Items and the
+  overflow frame (`unavailable` / `"subscription lagged"`) are unchanged. A read policy that cannot
+  be decided for one event now ends the stream with that error instead of `"subscription lagged"`.
+- **`extension webtransport { }`**, gated by a same-named Cargo feature on `cratestack-pg`, like
+  `pgvector`. The feature pulls in `cratestack-webtransport` (re-exported as
+  `cratestack::webtransport`), and the extension adds `db.subscriptions().webtransport(config,
+  auth)`, which binds the WebTransport server to the generated dispatcher. It is a compile error to
+  declare the extension without the feature, in a schema with no subscription op, or under
+  `include_embedded_schema!`. `cratestack-client` gains a `webtransport` feature as a
+  schema-compatibility switch, so a client can still be generated from such a schema; the generated
+  subscription clients are a later slice.
+- `cratestack_core::ExtensionKind` gains `Webtransport`: a `match` on it needs the new arm.
+
+### WebTransport subscription binding: `cratestack-webtransport` (#1238)
+
+**What is new.** A new crate serves subscriptions over an HTTP/3 WebTransport session. Inside the
+session, a control stream carries `Init`/re-authentication and **each subscription gets its own
+QUIC stream**: one `Request` in, then `Ready`, items and a terminal `end`/`err` out. Streams don't
+hold each other up, a client cancels by stopping a stream, and a session survives the client
+changing networks. Design: `docs/design/subscriptions-websocket.md` §6a (slice S5b).
+
+- **Server:** `WebTransportServer::bind(WebTransportConfig, auth_provider, dispatcher)`, then
+  `serve()` or `serve_with_shutdown(signal)`. It is a second listener (UDP, QUIC) beside the axum
+  router, using the same `AuthProvider`.
+- **Codec:** CBOR or JSON, negotiated as the `cratestack.rpc.v1+cbor` / `+json` WebTransport
+  subprotocol, with a `?codec=` fallback.
+- **Admission:**
+  - `Init` must arrive within 10 s; browsers present credentials in it.
+  - A later `Init` re-authenticates and must name the same principal.
+  - A refused session first gets `{id: 0, err: RpcErrorBody}` on the control stream, carrying an
+    `AuthRefusal`'s `details` and extra members (ADR 0021 §1), then closes: 4401 for a 401, 4403
+    for a 403 or a changed principal, 4400 for a malformed `Init`, and 4500 when the provider could
+    not decide (a 5xx such as a key server outage, which is not a verdict on the credentials).
+  - `Origin` allowlist, defaulting to same-origin. 0-RTT is refused.
+- **Limits** (`WebTransportLimits`): subscriptions per session (`resource_exhausted` past it),
+  sessions per principal (close 4429), frame size, keepalive and idle timeout.
+- **`dev-cert` feature:** `DevCertificate::generate`, a short-lived self-signed certificate plus
+  the SHA-256 hash browsers take as `serverCertificateHashes`, for local development.
+- **Opening a subscription** goes through the new transport-neutral
+  `cratestack_core::SubscriptionDispatcher` (with `SubscriptionOpen` and `SubscriptionStream`).
+  The schema macro will implement it for every binding in a later slice. The binding is
+  deliberately **not wired into generated code yet**, so for now an application implements the
+  dispatcher itself.
+
+The QUIC/WebTransport implementation is `web-transport-quinn`. An interop spike against Chromium
+chose it over `wtransport`, which did not negotiate the subprotocol, did not map stream reset
+codes, and lost session close codes (design §6a.5).
+
+**Also in this change.**
+
+- `CborSeqChunkDecoder` moved from `cratestack-client-rust` to `cratestack-codec-cbor`, so the
+  server-side binding shares it. `cratestack_client_rust::CborSeqChunkDecoder` re-exports it, and
+  every existing path still compiles.
+- `Cargo.lock` moves `quinn-proto` 0.11.17 → 0.11.19 (with `quinn` 0.11.12, `quinn-udp`
+  0.5.16), past RUSTSEC-2026-0338, -0340 and -0343. `main`'s lockfile already carried 0.11.17,
+  through `reqwest`.
+- New `just test-webtransport-browser` and CI job `webtransport-browser`: headless Chromium, end
+  to end, against the binding.
+
+### Security: `@@subscribe` events pass the subscriber's read policy
+
+**What was wrong.** `GET /rpc/subscribe/{op_id}` authenticated the caller and then sent it every
+event of the model. Row-level `@@allow`/`@@deny` read rules were not applied, so any caller the
+`AuthProvider` admitted, including an anonymous one, received every created, updated and
+deleted record of a `@@subscribe` model, and `list`/`get` policies did not limit that.
+
+**What changed.**
+
+- Each event is checked against the subscriber's read policy, the model's `detail` and `read`
+  rules that `get` applies, before it is sent. An event the subscriber may not read is
+  dropped. The check runs in-process against the event's record, with the create path's
+  evaluator; a relation predicate still probes the database.
+- A policy that reads a column the event does not carry (a `@server_only` field) cannot be
+  decided, so the subscription is refused when it opens: 500, with the columns named in the
+  server log.
+- A policy that cannot be decided for one event, for example when a relation probe fails, ends
+  the stream with `Error{unavailable}`, the same terminal event as overflow. The client
+  reconnects.
+- No schema change is needed. An anonymous subscriber to a model whose read policy requires
+  `auth()` now gets a stream that stays open and empty.
+
+Runtime additions: `cratestack_sqlx::{record_readable, missing_policy_columns}` and
+`cratestack_axum::rpc::readable_events`, reached by generated code through
+`cratestack::__private`.
+### The principal contract: reserved claims, a builder, typed readers, `hasRole` over `roles` (#1243)
+
+**What was missing.** Nothing named the claims the framework itself reads. Each reader of "who"
+had its own lookup: the audit actor (`principal_actor_id()`) took only a string `id`, MCP's
+admission key restated that lookup to accept an integer, and a sync resolver read whatever its
+author chose. `hasRole` read only a single `role`, so a provider whose caller has several roles
+could not express them. A provider had to know the `actor` / `session` / `tenant` facet layout to
+build a context. ADR 0021 §2 (cratestack-docs `internals/auth-seam-adr.md`) fixes the contract.
+
+**What changed.**
+
+- **Reserved claim names with fixed types** (`cratestack::RESERVED_CLAIMS`, `ClaimType`):
+  `sub` (string), `roles` (list of strings), `role` (legacy string), `tenant.id` (string),
+  `auth_time` (integer seconds), `amr` (list of strings), `acr` (string), `cnf` (map, RFC 7800
+  members; `cnf.jkt` a string), `key_role` (`ambient` or `user_present`), `exp` (integer
+  seconds). `id` is **not** reserved. Every other name stays free-form.
+- **`CratestackContext::builder(sub)`** returns a `CratestackContextBuilder` with `.roles(..)`,
+  `.tenant(..)`, `.auth_time(..)`, `.amr(..)`, `.acr(..)`, `.cnf_jkt(..)`, `.cnf(member, value)`,
+  `.key_role(KeyRole::..)`, `.expires_at(..)`, `.claim(name, value)` and `.build()`. It fills
+  `auth` and `principal` exactly as `from_principal` does for the same claims, so `auth().<path>`
+  and every existing reader see the result. It sets no system flag and no verified signer.
+- **Typed readers** on `CratestackContext`, each `None` for an absent **or mistyped** claim:
+  `subject()`, `roles()`, `auth_time()`, `amr()`, `acr()`, `cnf(member)`, `cnf_jkt()`,
+  `key_role()`, `expires_at()`.
+- **One "who".** `subject()` reads `sub` (a string), then `actor.id`, then `id`, an integer
+  rendered as its decimal digits. The audit actor, MCP's idempotency and rate-limit namespace, and
+  the new sync default (`SyncPrincipal::from_subject`, `cratestack_sync::server::subject_resolver`)
+  all read it.
+- **`hasRole(r)`** is true when `roles` contains `r`, or `role` equals `r`, or `actor.role` equals
+  `r`, on every path: procedure policies, read policies lowered to SQL, and the create-time check.
+- **The semantic checker** refuses an `auth` block that declares a reserved name with another type
+  (`roles String`, `auth_time String`, `cnf String`, or a `tenant` type whose `id` is not a
+  string). String-like types (`String`, `Cuid`, `Uuid`, a string enum) count as strings, and a
+  `type` or `Json` as a map.
+- **`cratestack-auth`.** `principal_to_cratestack_context` also emits `sub` (the user id, or
+  `svc:<key id>` for a service caller), `roles` (the verified `role`, or the service caller's
+  default role) and, for a user, `cnf` (`kid`, the bound key's id, and `jkt`, its RFC 7638
+  thumbprint when the id token carried `cnf.jwk`). Nothing it emitted before is removed. The new
+  `principal_to_contract_context` emits only the contract names plus the product claims a
+  deployment selects. `SignedRequestAuthProvider::principal_mapper(PrincipalMapper::..)` picks one
+  (`product()`, the default; `contract([..])`; or `custom(..)`). New `jwk_thumbprint` and
+  `UserPrincipal::bound_key_jkt`.
+
+**Behaviour changes.**
+
+- The audit actor's id now follows `subject()`: an integer `id` is recorded as its digits (it was
+  recorded as no actor), a `sub` wins over `actor.id` and `id`, and a context made with
+  `CratestackContext::authenticated([("actor", {id})..])` now records the `actor.id`.
+- A who-candidate of another kind (a boolean `actor.id`) is skipped and the next one read, where
+  the first present candidate used to answer `None`.
+- `hasRole` reads `role` and `actor.role` independently: a context whose `role` is `user` and
+  whose `actor.role` is `merchant` now passes `hasRole("merchant")`. It used to stop at `role`.
+- MCP's namespace for a context with `sub` hashes `sub`, so a provider that adds `sub` next to a
+  different `id` moves its callers to a new idempotency and rate-limit namespace once.
+- The product mapping's contexts gain the top-level claims `sub`, `roles` and `cnf`.
+
+**Migrating.**
+
+- `principal_actor_id()` returns `Option<Cow<'_, str>>` (it was `Option<&str>`): `.as_deref()` gives
+  the old shape; `.map(str::to_owned)` becomes `.map(Cow::into_owned)`. Prefer `subject()`.
+- A schema whose `auth` block declares a reserved name with another type now fails to check. Declare
+  the contract's type (`roles String[]`, `auth_time Int`) or rename the field.
+- `UserPrincipal` gains `bound_key_jkt`: a struct literal adds `bound_key_jkt: None`.
+
+Not in this change: the `auth_time` / `amr` policy operators and `cratestack-auth`'s `auth_time` /
+`amr` claims (#1244), `CoseAuthProvider` on the builder (a later story of #1243).
+
+### An `AuthProvider` refusal can shape its response: extra members and `WWW-Authenticate` (#1208)
+
+**What was missing.** A provider could only refuse with `CratestackError::Unauthorized` or
+`Forbidden`, so every refusal reached the client as the same `UNAUTHORIZED` /
+`unauthenticated` code with a message. A client that must tell "renew your credential and retry
+once" from "your key is gone, sign out" could not. Device-signed sessions classify refusals by an
+`error` member, and OAuth resource servers by `WWW-Authenticate`. Such a provider had to verify
+and refuse in a tower layer in front of the generated router.
+
+**What changed.**
+
+- **`AuthRefusal`** (`cratestack::AuthRefusal`), turned into the new
+  `CratestackError::AuthRefused` by `refusal.into_error()`. There is deliberately no
+  `From<AuthRefusal> for CratestackError`: a second `From` impl on `CratestackError` would make
+  every `?` whose error type was inferred through `From<T> for T` ambiguous (E0283), in generated
+  code and in an app's code alike.
+  - `AuthRefusal::unauthenticated(message)` is a 401 and `AuthRefusal::forbidden(message)` a 403.
+    The codes stay `UNAUTHORIZED` / `FORBIDDEN`, and on RPC `unauthenticated` /
+    `permission_denied`, so existing clients read a refusal as before.
+  - `.with_member(name, value)` adds a top-level envelope member next to `code` and `message`.
+    The names `code`, `message` and `details` are ignored (`RESERVED_ENVELOPE_MEMBERS`).
+  - `.with_details(value)` sets `details`.
+  - `.with_challenge(value)` adds a `WWW-Authenticate` header. A value that is not printable
+    ASCII is ignored.
+- **The envelopes carry the members.** `CratestackErrorResponse` and `RpcErrorBody` gain a public
+  `extra` map. It is written after `code`, `message` and `details`, and it collects the unknown
+  members of an envelope read from the wire.
+- **Same on both transports.** REST, RPC unary and RPC batch send the same status, members and
+  challenges. A batch refusal still answers the whole batch, since the envelope is authenticated
+  once. The RPC binding's re-encoding of a handler's error keeps the `WWW-Authenticate` header.
+  The SSE and middleware error paths attach it too.
+- **No byte changes elsewhere.** Both envelopes' serde is now written by hand: always a
+  known-length map, never `#[serde(flatten)]`. An envelope without extra members encodes byte
+  for byte as before, in JSON and in CBOR (`cratestack-codec-cbor/tests/error_envelope_bytes.rs`).
+
+**Migrating.** Code that builds `CratestackErrorResponse { .. }` or `RpcErrorBody { .. }` with a
+struct literal must add `extra: Default::default()` (both now implement `Default`, so
+`..Default::default()` works too). In `cratestack-client-rust`, `ClientError::Remote`'s `error`
+is now `Option<Box<CratestackErrorResponse>>`: field access through it is unchanged, but code that
+builds the variant wraps the envelope in `Box::new`, and a pattern that names the envelope's fields
+inside `Some(..)` matches on `Some(boxed)` and then reads `boxed.code`. Inline, the larger envelope
+made every `Result<_, ClientError>` trip `clippy::result_large_err`. Code that matches on
+`CratestackError` already has a wildcard arm (the enum is `#[non_exhaustive]`). Providers that
+return `Unauthorized` / `Forbidden` are unchanged.
+
+Not in this change: `cratestack-sync` and `cratestack-mcp` (the next entry), and the principal
+contract (the rest of #1243).
+
+### MCP and sync render an `AuthRefusal`; MCP's credential check is pluggable (#1243)
+
+**What was missing.** Two surfaces outside REST and RPC ignored #1208's refusals. MCP's
+Streamable HTTP guard required `Authorization: Bearer` before the provider ran, so a provider
+that authenticates another way (a device signature, a COSE envelope, mTLS) could never
+authenticate an MCP call, and a refusal reached the client as the guard's fixed 401 or 403. The
+sync endpoints turned every provider error into `401 unauthenticated` with the error's `Display`
+text, which for an `Internal` or `Database` error is the operator's detail.
+
+**What changed.**
+
+- **`CredentialPresence`** (`cratestack::mcp::CredentialPresence`), set with
+  `StreamableHttpServer::with_credential_presence`, decides before the body is read whether a
+  request carries a credential at all:
+  - `CredentialPresence::bearer()` is the default and today's rule, unchanged.
+  - `CredentialPresence::provider_decides()` sends every request to the provider.
+  - `CredentialPresence::when(|parts| ...)` takes a predicate over the request head.
+  - `.with_credential_headers([...])` names the headers that carry the credential. They are
+    removed before `rmcp` sees the request, as `Authorization` always is, and their values are cut
+    out of a provider's logged detail. A token is still never passed on to a tool.
+
+  A request the rule finds without a credential still gets the RFC 9728
+  `Bearer resource_metadata="..."` challenge. Two `Authorization` headers are still 400 under any
+  rule. The challenge's `error` (`invalid_token`, `insufficient_scope`) now appears only when the
+  request carried a bearer token, which under the default rule is always.
+- **MCP renders an `AuthRefusal`** with its status, REST's full envelope (its message,
+  `details` and members), and its challenges as further `WWW-Authenticate` headers after the
+  guard's own. A plain provider error reads as before.
+- **Sync renders a provider error as REST does.** An `AuthRefusal` keeps its status, its
+  `details` and members (top-level in the sync error body, as on REST) and its challenges. A
+  plain error now sends its public message, never the operator detail. A `Forbidden` is the new
+  `403 forbidden` code, not a 401. A provider that could not decide (a 5xx) is
+  `500 internal error`, not a 401 that would send the client to sign in again. The sync client
+  treats `forbidden` like `unauthenticated` (`Recovery::Halt`).
+
+**Migrating.** `SyncErrorBody` gains `details`, `extra` and `challenges` (not on the wire; sent as
+headers), so a struct literal needs the new fields or `..SyncErrorBody::new(code, message)`. `SyncErrorCode` gains
+`Forbidden`, so an exhaustive `match` needs an arm for it.
+
+### Compose `AuthProvider`s with a first-success chain; a provider can say whether a request carries its credential (#1243)
+
+**What was missing.** An application that accepts more than one kind of credential (a bearer token
+from an OAuth server and a device signature, say) had to write a wrapper provider by hand, as
+`CoseAuthProvider` does, and each wrapper chose its own rules for a refused credential. MCP's
+`CredentialPresence` could not ask the provider itself whether a request carries a credential.
+
+**What changed.**
+
+- `AuthProvider` gains a defaulted method, `credential(&RequestContext) -> Credential`, read from
+  the request head (the body may be empty when it is asked). `Credential` is `Unknown` (the
+  default: the provider is always called, exactly as before), `Absent`, `Present { redact }` or
+  `Malformed(reason)`. `Credential::bearer(headers)` reads an `Authorization: Bearer` token the way
+  MCP does, and `Credential::header(headers, name)` a credential carried in one header. Existing
+  providers need no change.
+- `first_success(a).or(b).or(c)` composes providers into one, statically (no `dyn`). Each member,
+  in order: skipped without being called when its credential is `Absent`; its authenticated
+  context is the answer; its error is the answer, so **a credential one member refuses is never
+  rescued by another**; an anonymous answer goes on to the next member. No member authenticating
+  is anonymous (the first anonymous context a member returned, so its extensions are kept), and
+  policy decides. The chain's own `credential` is present if any member's is.
+- MCP Streamable HTTP: `CredentialPresence::ask_provider()` lets the provider's `credential`
+  decide before the body is read. `Absent` gets the 401 challenge with `resource_metadata`,
+  `Malformed` a 400 `invalid_request`, `Present` reaches the provider with its `redact` value cut
+  out of logged detail, and `Unknown` reaches the provider as under `provider_decides()`. The
+  default stays `CredentialPresence::bearer()`, so a deployment that does not opt in keeps a
+  spec-conformant MCP resource server (ADR 0002).
+
+ADR 0021 (cratestack-docs `internals/auth-seam-adr.md`) proposed `Credential::bearer` as the
+trait's default. The default is `Unknown` instead: with a bearer default, a provider that reads a
+cookie or a signature and does not override the method would be silently skipped by every chain.
+
+### The canonical request a provider sees is a stated rule, pinned by tests; sync passes its declared route (#1243)
+
+`RequestContext`'s documentation now states what a provider is handed (ADR 0021 §3): the
+operation's declared method, its declared route relative to the router's root (a mount prefix
+never appears), the raw query only where the operation reads one, and the exact body bytes,
+before decoding. Tests pin it on the generated REST and RPC routers (unary and batch) nested under
+a prefix, and on the sync endpoints.
+
+**Changed:** the sync endpoints handed the provider the request URI's path. Under axum's `nest`
+that already lacked the prefix, but it was whatever the client sent; it is now the declared route
+(`/sync/register`, `/sync/push`, `/sync/pull`, `/sync/poke`).
+
+### Every generated client types a refusal's members, `details` and challenges, on REST and RPC (#1243)
+
+**What was missing.** #1208 let an `AuthProvider` refusal add top-level envelope members, a
+`details` and `WWW-Authenticate` challenges, but the generated clients did not all surface them.
+The Dart RPC `RpcErrorBody.fromWire` dropped every member but `code`, `message` and `details`; the
+Dart REST `CratestackRestException` kept them only inside its raw `body`; neither Dart exception
+nor the TypeScript `CratestackRpcError` kept the response headers, so no challenge was reachable;
+and the Rust client read the members but dropped the `WWW-Authenticate` header on both transports.
+
+**What changed.** Each client and transport now types the same five things: the wire `code`,
+`message`, `details`, the other members (`extra`, never dropped, CBOR and JSON) and the
+`WWW-Authenticate` challenges (raw, unparsed).
+
+- **Rust** (`cratestack-client-rust`): `ClientError::Remote` and `RpcRemoteError` gain a
+  `challenges: Challenges` field (a new exported type that reads as a `[String]`, every
+  `WWW-Authenticate` value in order). New accessors: `ClientError::remote_error()` (the decoded
+  `CratestackErrorResponse`, whose `extra` already held the members) and `ClientError::challenges()`,
+  `RpcClientError::remote()` and `RpcClientError::challenges()`. A batch frame's error has no
+  headers, so its `challenges` is empty.
+- **Dart**: `RpcErrorBody.extra` keeps every unknown member. `CratestackRpcException` and
+  `CratestackRestException` take the answer's `headers` (an optional constructor argument) and
+  expose `extra` and `challenges`; `CratestackRestException` also gets typed `code`, `message` and
+  `details` getters over its `body`, which is unchanged. The HTTP seam joins a repeated header with
+  `, `, so two challenge lines arrive as one entry. Every preset (default, riverpod, fespalier)
+  shares the runtime.
+- **TypeScript**: `CratestackHttpError` gains `body` (the typed `CratestackErrorResponse`, a new
+  exported interface), `code`, `details`, `extra` and `challenges`; `CratestackRpcError` takes the
+  response's `headers` (an optional third constructor argument) and exposes `extra`, `headers` and
+  `challenges`; `CratestackRpcStreamError` gets `extra`. The `--rtk` REST error
+  (`RtkRestQueryError`) carries `code`, `extra` and `challenges` as optional fields. `--swr` hooks
+  surface the same error instances.
+
+**Migrating.** Nothing changes for Dart or TypeScript code. In Rust, a pattern that lists every
+field of `ClientError::Remote { status, error, message }` or `RpcRemoteError { status, body }`
+without `..` must add `..` (or bind `challenges`), and code that builds an `RpcRemoteError` with a
+struct literal adds `challenges: Default::default()`. The Flutter FFI error wire
+(`RuntimeErrorWire`) still carries the envelope (members included) but not the challenges.
+
+### An `AuthProvider` conformance kit; `CoseAuthProvider` is a first-success chain; a CI guard keeps auth libraries out (#1243)
+
+**What was missing.** Nothing proved that a provider behaves the same on every transport, so an
+external authentication library (or CrateStack's own) had no test to pass, and parity between REST,
+RPC and MCP was asserted transport by transport. `CoseAuthProvider` wrapped its inner provider by
+hand.
+
+**What changed.**
+
+- **New crate `cratestack-auth-conformance`** (ADR 0021 §6), a dev-dependency of a provider's tests:
+  `auth_conformance(provider).accepts(subject, sign).refuses(name, sign, expected).run().await`.
+  It compiles its own schemas and drives the provider through REST, RPC unary and RPC batch (each at
+  the root and under a mount prefix) and MCP Streamable HTTP (with
+  `CredentialPresence::ask_provider()`), and asserts the same subject (`CratestackContext::subject()`) or the same refusal (status,
+  code, message, members, `details`, challenges), the canonical request exactly, and one provider call
+  per request. A signer is handed the `Canonical` request before it is sent and returns headers, or
+  `Credentials` with request extensions for an in-process credential such as a verified COSE signer.
+  `Expected::refusal(&AuthRefusal)`, `Expected::unauthorized(..)` and `Expected::forbidden(..)`
+  describe a refusal. On MCP a plain (non-`AuthRefusal`) error reads with MCP's own fixed message, so
+  the kit compares only its status and code there. Not driven yet: SSE model subscriptions and sync,
+  which need a database.
+- **`CoseAuthProvider` is now `first_success(inner).or(CoseSignerProvider)`**, and
+  `CoseSignerProvider`, the verified signer as a provider of its own, is public, so an application can
+  put it in a chain of its own. Its credential is present exactly when the envelope layer recorded a
+  verified signer. Behaviour is unchanged, and it passes the kit.
+- **`SignedRequestAuthProvider` passes the kit too**: a client that signs the canonical request (the
+  declared route, no mount prefix, the exact body) is accepted on every transport, and one that signs
+  another path is refused on every transport.
+- **CI job `auth library independence (ADR 0021)`** (`.ci/auth-independence-check.sh`): the
+  workspace's `Cargo.lock` must contain no `authkestra*` package, so no framework crate depends on
+  an external authentication library (ADR 0021 §7).
+
+### Examples: one schema, three auth providers (two of them Authkestra); MCP accepts a non-bearer credential (#1245)
+
+**What was missing.** Nothing showed an external authentication library plugged into a CrateStack
+server, so "the in-house auth and an external library plug in equally" (ADR 0021) was a claim, not a
+test. The MCP example authenticated with `Authorization: Bearer` only.
+
+**What changed.**
+
+- **New example `examples/auth-pluggable`**, a standalone workspace (listed in the root `exclude`):
+  one schema (`whoAmI`, and `adminReport` under `@allow(hasRole("admin"))`), one test suite, and
+  three binaries that differ only in their provider, each one file on the public seam:
+  - `inhouse`: `SignedRequestAuthProvider` then a COSE-verified signer (`CoseAuthProvider`'s chain);
+  - `authkestra-devsig`: `authkestra_devsig::verify` (an `X-Signature` per request and an
+    `X-Attestation`), with refusals as `401 {"error": "<code>"}`;
+  - `authkestra-oidc`: `authkestra-resource`'s `JwtStrategy` with DPoP-bound access tokens, mapped
+    onto `sub`, `roles`, `amr`, `acr`, `auth_time` and `cnf.jkt`. Its tests start `authkestra-op`
+    in-process and send real DPoP proofs.
+
+  The suite runs each provider through `cratestack-auth-conformance` (REST, RPC unary and batch,
+  MCP) and through the example's own policies. Authkestra is pinned to one commit. The README lists
+  what the providers work around in Authkestra (no refusal reason from `JwtStrategy`, no DPoP nonce,
+  JWKS only over HTTP, no device-signature profile or vectors yet).
+- **CI job `auth-pluggable`**: lockfile, `fmt`, `clippy`, the three suites, and
+  `.ci/auth-pluggable-check.sh`, which runs `cargo tree` on every CrateStack crate in the example's
+  graph and fails if one reaches an `authkestra*` package (and checks the example itself does, so the
+  check can fail).
+- **`examples/mcp-operator`** runs its Streamable HTTP endpoint with
+  `CredentialPresence::ask_provider()`. Its provider (now `src/provider.rs`) also accepts the token in
+  an `X-Agent-Token` header, refused exactly like a bearer token; a request with neither still gets
+  MCP's own 401. `tests/agent_token.rs` and two MCP Inspector conformance cases cover it, and the
+  Postgres-backed tests take `CRATESTACK_TEST_DATABASE_URL` when it is set.
+- `examples/README.md` gains a "Phase H — Authentication" table. (#1245 named it "Phase E", which the
+  Dart presets already use.)
+
+### `@authn`: a procedure states how fresh and how strong the caller's authentication must be; unmet is RFC 9470's step-up (#1244)
+
+**What was missing.** A policy could say *who* may call a procedure, never *how recently* or *how
+strongly* they must have authenticated. Every product hand-wrote that check and invented its own
+refusal, and a client could not tell "re-authenticate" from "never allowed".
+
+**What changed** (ADR 0022, cratestack-docs `internals/authn-requirements-adr.md`):
+
+- **New procedure attribute `@authn(maxAge: 300, amr: ["hwk"], acr: ["aal2", "aal3"])`.** Any of
+  `maxAge` (seconds since the user last authenticated, 1 to one year), `amr` (methods that must all
+  be present, RFC 8176) and `acr` (acceptable classes; the caller's must be one). The parser reads it
+  with the one reader the generator uses (`cratestack_core::schema::parse_authn_attribute`) and
+  refuses anything else: an unknown key, a repeat, a non-list, an empty list, a value outside
+  letters, digits and `._:/~+-`, a second `@authn`. The LSP completes it.
+- **Generated enforcement on every path to a procedure.** Each procedure module gains
+  `pub const AUTHN: Option<AuthnRequirement>`, and its authorize step calls
+  `cratestack::require_authn(AUTHN.as_ref(), ctx)` right after `@allow`/`@deny`: REST, RPC unary,
+  each RPC batch frame on its own, MCP tool calls and non-HTTP callers of `authorize`/`invoke`/
+  `invoke_with_db`. A caller `@allow` refuses still gets 403, never a step-up. The facts come from the
+  principal contract (`auth_time`, `amr`, `acr`); a missing one fails closed.
+- **The refusal is RFC 9470's**, through `AuthRefusal`: a 401 (`UNAUTHORIZED` / RPC
+  `unauthenticated`) with the envelope member `error: "insufficient_user_authentication"`, a
+  `details` of `max_age`, `acr_values` and `amr` (each only when required) and `unmet` (which of
+  `max_age`, `acr`, `amr` failed), and on REST
+  `WWW-Authenticate: Bearer error="insufficient_user_authentication", error_description="step-up
+  authentication required", max_age="300", acr_values="aal2 aal3"`. An MCP tool call returns the same
+  envelope as an `isError` result, and the tool never runs. The typed `StepUpRequired` in the
+  generated clients is a separate #1244 PR.
+- **New in `cratestack-core`:** `AuthnRequirement`, `Unmet`, `require_authn`, `require_authn_at`,
+  `STEP_UP_ERROR`, `STEP_UP_MESSAGE`; `schema::{parse_authn_attribute, authn_attribute,
+  ParsedAuthn, AUTHN_ATTRIBUTE, AUTHN_KEYS, AUTHN_MAX_AGE_LIMIT}`. `@authn` is on the op contract's
+  drop list: it changes no wire shape.
+- **CrateStack's own providers fill the facts.** `cratestack-auth`'s id token gains optional
+  `auth_time` (set to the mint time by `default_id_token_claims`) and `amr` claims, carried on
+  `UserPrincipal`; both mappers emit `auth_time` and `amr`, the token's methods plus `pop` (RFC 8176
+  proof of possession), since every request is signed with the bound key. A service caller's `amr` is
+  `["pop"]` with no `auth_time`, and so is a COSE-verified signer's (`CoseAuthProvider`).
+
+#### Migrating
+
+- `IdTokenClaims` and `UserPrincipal` gain the fields `auth_time` and `amr`, which breaks a struct
+  literal; add `auth_time: None, amr: Vec::new()` (or real values).
+- A context from `cratestack-auth` or `cratestack-cose` now carries `amr` (and, for a user, usually
+  `auth_time`). A schema whose `auth` block declared either with another type fails to check
+  (ADR 0021's reserved names).
+
+## 0.17.0 (2026-10-28)
+
+### Every `@default` works on the embedded runtime, and literal defaults are type-checked — breaking (#1234)
+
+**What was wrong.** On the embedded runtime, every `@default` except `now()`, `uuid()` and
+`cuid()` was written as NULL, so the create failed while decoding the row. That covered literals
+(`@default(false)`, `@default("draft")`, enums), `auth().field`, `dbgenerated()` and registered
+functions. The embedded tables carried no `DEFAULT` clauses, the runtime bound nothing, and the
+create input left those fields out. Separately, a double-quoted string literal was written to
+migrations verbatim as `DEFAULT "draft"`, which Postgres reads as a column reference, and no
+literal was checked against its field's type.
+
+**What changed.**
+
+- **Literal defaults on embedded:** the runtime binds them on create, which also works on tables
+  an older version created. `create_table_sql` now writes the same values as `DEFAULT` clauses,
+  plus the SQLite expressions for `now()` and `uuid()`, for rows inserted with raw SQL.
+- **`@default(auth().field)` on embedded:** the field stays in the embedded `Create…Input` as a
+  required field, so the app passes the value. The server input is unchanged.
+- **`@default(dbgenerated())` and registered functions on embedded:** the field stays in the
+  embedded input as an `Option`. A set value is bound; an unset one is left to an app trigger or
+  `DEFAULT`. A required column that comes back NULL is refused with the new
+  `RusqliteError::UnfilledDefault` (`VALIDATION_ERROR` for a batch item), and the insert is rolled
+  back.
+- **Migrations:** a string literal is written single-quoted (`DEFAULT 'draft'`, inner quotes
+  doubled), on both trees. An older snapshot holding `"draft"` reads back as `'draft'`, so the
+  next diff sees no change.
+- **`check` refuses a literal that does not fit its field:**
+  - a non-integer on an `Int`;
+  - an unquoted word on a `String` (`@default(draft)`);
+  - an SQL expression such as `CURRENT_TIMESTAMP` (use `now()`);
+  - a malformed `Uuid`, `Cuid` or RFC 3339 `DateTime`;
+  - `null`;
+  - any literal on `Json`, `Bytes`, a list or a composite type.
+
+**Migrating.**
+
+- Quote string defaults: `@default(draft)` → `@default("draft")`.
+- `@default(CURRENT_TIMESTAMP)` → `@default(now())`.
+- Embedded code that constructs a `Create…Input` for a model with `auth()`, `dbgenerated()` or
+  registered-function defaults now sets those fields.
+- Exhaustive matches on `RusqliteError` need an `UnfilledDefault` arm.
+
+Design: `docs/design/default-functions.md`.
+
+### `migrate diff` blocks a migration that removes an enum value rows may still hold
+
+**What was wrong.** Removing a variant from an enum, or retiring an ordinal into `@@reserved`,
+rebuilds the column's membership `CHECK` with fewer values, and every row still holding the
+removed one makes that `ALTER TABLE` fail. `migrate diff` classified every enum `CHECK` as safe,
+because adding a variant only widens it, so the migration was written with no warning and failed
+when it ran against data.
+
+**What changed.** A rebuilt enum `CHECK` that loses a value is now **blocking**, like a `NOT
+NULL` promotion: `up.sql` opens with the warning, and on Postgres `up.pre.sql` is scaffolded with
+the backfill to adapt:
+
+```sql
+UPDATE orders SET status = <a value the enum keeps> WHERE status IN ('Shipped');
+```
+
+Adding a variant, reordering, renaming an ordinal enum's variant, and switching an enum between
+names and numbers are unchanged; the last is already lossy through its type change.
+
+**Upgrading.** A migration that removes an enum variant now comes with an `up.pre.sql`. Fill it
+in, or leave it as comments if you know no row holds the value.
+
+### Ordinal enums: an enum can be stored and sent as declared numbers (enum ordinals)
+
+Number every variant of an enum and it is stored and sent as that number instead of its name:
+
+```cstack
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)   // retired; never reuse
+}
+```
+
+`Pending` costs 1 byte in a CBOR or JSON body instead of 8 (CBOR) or 9 (JSON), and 2 bytes in a
+Postgres row and every index on it instead of 8. The numbers are the stored meaning of every row, so they are
+append-only, and `cratestack migrate diff` enforces that. Enums without numbers are unchanged:
+the same DDL, wire form, snapshots and digests.
+
+| Surface | Ordinal enum |
+|---|---|
+| Postgres | `SMALLINT` with `CHECK (status IN (1, 2, 5))`; `@default(Pending)` emits `DEFAULT 1` |
+| SQLite | the integer, in the usual `BLOB`-declared column (no `CHECK`, as for a string enum) |
+| CBOR and JSON bodies, REST and RPC | the number; a server decodes the number **or** the name, so a client still sending names keeps working |
+| Query strings (`?status=Approved`, `__in`) | names only; `?status=2` is a `400` naming the accepted values |
+| Policies | names in the source (`status != Refunded`), compared as numbers |
+| Rust type | `#[repr(i16)]`; `ordinal()`, `TryFrom<i16>`; `Display`/`FromStr` keep the names |
+| TypeScript client | the type is still `'Pending' \| 'Approved' \| 'Refunded'`: responses are revived to names; requests send names |
+| Dart client | the same constants, with `int wireValue` beside `wireName`; `fromWire` takes either form |
+| JSON Schema / MCP | `{"type": "integer", "oneOf": [{"const": 1, "title": "Pending"}, …]}` |
+| WireMock | the first variant's number; a model field is not echoed from the request |
+| Studio | shows `Pending (1)`, writes by name or number |
+| LSP | hovering an enum or a variant shows the numbers |
+
+**Rules.** Besides the parse-time ones of part 1 below, `check` refuses an `auth` field of an
+ordinal enum type (a claim's encoding is the auth provider's choice, so a comparison could fail
+open), and `migrate diff` refuses changing a variant's number, removing a variant without
+`@@reserved`-ing its number, dropping a number from `@@reserved`, and reusing a reserved number.
+
+**Converting an existing enum.** Adding the numbers to a string enum makes `migrate diff` emit
+the conversion: on Postgres the column's type changes with `USING (CASE … END)` (a table rewrite
+under an exclusive lock), on SQLite an `UPDATE … SET status = CASE …`. Either way it is classified
+lossy, so `migrate diff` writes it only with `--allow-destructive`.
+Taking the numbers away converts back the same way. On the wire it is a breaking change for
+clients you do not regenerate and deploy with the server. `@api_version` can serve a procedure's
+new shape beside the old one, but model routes are not versioned, so an enum that installed apps
+read through a model can only become ordinal once they have updated. `docs/design/enum-ordinals.md`
+§4 has the rollout.
+
+**Known limits** (§9.1 of the design): introspecting a live Postgres reports drift on an ordinal
+column; sorting by an ordinal enum orders by number.
+
+### `cratestack diff` reports enum changes; it ignored enums entirely (enum ordinals, slice 2)
+
+**What was wrong.** `cratestack diff` compared models and procedures and never read the schema's
+enums. Removing or renaming a variant breaks every client that receives it, and the command
+reported "no structural changes detected" and exited 0, so a CI gate built on it let the change
+through.
+
+**What changed.** Enums are matched by name, and their changes are classified:
+
+| Change | Severity | Category |
+|---|---|---|
+| enum removed | breaking | `enum_removed` |
+| enum added | additive | `enum_added` |
+| variant removed | breaking | `enum_variant_removed` |
+| variant added, enum appears in a response | breaking | `enum_variant_added` |
+| variant added, enum appears only in requests | additive | `enum_variant_added` |
+| variants reordered (string enum) | internal | `enum_variants_reordered` |
+
+An added variant is breaking in a response because a client generated from the old schema refuses
+a value it does not know: the generated Dart decoders throw `ArgumentError`, and the Rust ones
+fail to deserialize. "Appears in a response" means the enum is reachable from any model, view,
+procedure result or query result, through fields, `type`s and generic arguments. The check is
+deliberately conservative: a `@server_only` field still counts.
+
+A rename still shows up as a removal plus an addition, as it does for fields. Ordinal enums
+(`Pending = 1`, see the entry above) are matched by number. For them a rename is
+`enum_variant_renamed`, breaking only for generated identifiers because the wire is unchanged, and
+switching between names and ordinals is `enum_encoding_changed`.
+
+**Upgrading.** A schema PR that adds a variant to an enum your responses carry now fails a
+`cratestack diff` gate. That is the intended signal: ship the regenerated clients first.
+
+### `cratestack-cose` signs and opens standalone claim objects, with no freshness or replay check
+
+**What was missing.** The crate could only seal and open a *transport envelope*: a `COSE_Sign1` bound
+to one request, whose protected header is exactly `{1: alg, 4: kid, ? 15: {6: iat, 7: cti}}`, and
+which the opener refuses outside a ±300 s `iat` window (`DEFAULT_SKEW_SECS`) or on a repeated `cti`.
+A consumer that needs an object signed offline by one device and delivered later by another cannot
+use that: the envelope is dead by the time it arrives, and its freshness is not the application's to
+decide. The pieces to do better were all `pub(crate)` (the header parser, the `Sig_structure`
+builder, verification).
+
+**What changed.** Two functions, over a new public `claims` module and re-exported from the crate
+root:
+
+```rust
+let bytes = sign_claims(&signer, "application/vnd.example.grant+cwt", &claims, payload, aad).await?;
+let opened = open_claims(&resolver, &bytes, "application/vnd.example.grant+cwt", aad).await?;
+// opened.claims.exp, .aud, .iat, .cti: yours to enforce; opened.payload: the bytes signed
+```
+
+- **The object** is a tagged `COSE_Sign1` (tag 18) with protected header
+  `{1: alg, 4: kid, ? 15: {3: aud, 4: exp, 6: iat, 7: cti}, 16: typ}`, an empty unprotected header
+  and an embedded payload. The CWT claims (RFC 8392, RFC 9597) are written only when present; the
+  `typ` (RFC 9596) is mandatory. Encoding is deterministic (RFC 8949 §4.2.1), ESP256 is low-`s`, and
+  the opener is exactly as strict as the envelope's: no unknown or out-of-order label, no non-minimal
+  or indefinite head, nothing unprotected, no detached payload, no trailing bytes.
+- **`open_claims` checks the signature and nothing else.** There is no skew window and no nonce
+  store: whether `exp` has passed, whether `aud` is this service and whether a `cti` was already
+  accepted are the caller's to enforce on the returned `OpenedClaims`. An object without `exp` never
+  expires. This is documented, with a doctest, on the function.
+- **A claim object never opens as a transport envelope, and the reverse.** The envelope's parser
+  already refuses header label 16; the claim opener requires it. `tests/claims_domain_separation.rs`
+  checks both directions, with correctly signed objects and the other format's AAD.
+- **Signature algorithms only.** Ed25519 and ESP256, through the existing `CoseSigner` (in-process,
+  KMS or HSM) and `CoseVerifierResolver`. An HMAC signer is `ClaimsError::Misuse` and an HMAC `alg`
+  in a received object is `ClaimsError::Malformed`.
+- **`ClaimsError`** (`thiserror`): `Malformed`, `WrongType`, `Unverified` (an unknown `kid` and a bad
+  signature are not told apart), `Resolver` and `Signer` (backend outages) and `Misuse`.
+  `into_error()` maps them onto the envelope's coarse `401` / `500`.
+- **Interop.** `tests/claims_interop_coset.rs` has `coset` build the same bytes from the same
+  inputs, parse and verify what `sign_claims` writes, and sign objects that `open_claims` opens.
+  `tests/claims_malformed.rs` is a table of malformed objects plus every truncation and every
+  single-byte change of valid ones, none of which may open or panic.
+
+The transport envelope is untouched: same wire format, same `BINDING_VERSION`, same errors. The
+crate gains one dependency, `thiserror`, already in the workspace; it still compiles for
+`wasm32-unknown-unknown` and still depends on `cratestack-core` alone without its `auth` feature.
+
+**Migrating.** Additive; nothing to do. Do not use a claim object where a transport envelope is
+needed: it carries no binding to a request and does no replay protection.
+
+### Enum bodies read explicit ordinals and `@@reserved` (enum ordinals, part 1)
+
+The first slice of `docs/design/enum-ordinals.md`, where an enum is stored and sent as a declared
+number (`Pending = 1`) instead of its name: the syntax and its rules. The entry "Ordinal enums"
+above covers what is generated from it.
+
+```cstack
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(4)   // was Settled; never reuse
+}
+```
+
+`check` enforces these, refusing a violation at its span:
+
+- every variant is numbered, or none is;
+- an ordinal is an integer from 0 to 32767, used by one variant only;
+- `@@reserved(n, …)` appears at most once, only on an ordinal enum, and no variant uses a number
+  it lists.
+
+**Also changed for every enum:**
+
+- A trailing `//` comment on a variant line is a comment. It used to be refused.
+- A line starting with `@` is refused unless it is `@@reserved(..)`. Before, a line with no
+  whitespace, such as `@@map("x")`, was read as a variant with that name.
+
+String enums are otherwise untouched: the same IR (the new `EnumVariant::ordinal` and
+`EnumDecl::reserved` fields are skipped when serialized while empty), the same schema digest and
+the same op contracts. The contract classifier already compares ordinal enums by number, so a
+rename keeps the contract compatible and a renumbering does not.
+
 ### `now()`, `uuid()` and `cuid()` are built-in defaults; any other function must be registered — breaking (#1209)
 
 **What was wrong.** A `@default(fn())` went into the migration's `DEFAULT` clause verbatim.

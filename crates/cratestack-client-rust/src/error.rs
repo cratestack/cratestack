@@ -1,6 +1,7 @@
 use cratestack_core::{CratestackError, CratestackErrorResponse};
 
 use crate::envelope_error::EnvelopeError;
+use crate::remote_refusal::Challenges;
 use reqwest::StatusCode;
 
 pub type HeaderPair<'a> = (&'a str, &'a str);
@@ -75,8 +76,15 @@ pub enum ClientError {
     #[error("remote call failed with status {status}: {message}")]
     Remote {
         status: StatusCode,
-        error: Option<CratestackErrorResponse>,
+        /// The decoded error envelope, boxed since cratestack#1208 gave it
+        /// an `extra` map: inline, it made every `Result<_, ClientError>`
+        /// carry it (`clippy::result_large_err`).
+        error: Option<Box<CratestackErrorResponse>>,
         message: String,
+        /// Every `WWW-Authenticate` value the answer carried, raw and in
+        /// order (cratestack#1243): an `AuthRefusal`'s challenges. Empty
+        /// when there were none. [`ClientError::challenges`] reads it.
+        challenges: Challenges,
     },
 }
 

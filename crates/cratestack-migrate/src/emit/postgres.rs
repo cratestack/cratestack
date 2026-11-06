@@ -21,6 +21,7 @@ mod checks;
 mod columns;
 mod defaults;
 mod down;
+mod enum_cast;
 mod extensions;
 mod foreign_keys;
 mod idents;

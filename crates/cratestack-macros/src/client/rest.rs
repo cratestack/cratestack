@@ -23,6 +23,7 @@ use model::generate_generated_model_client;
 pub(super) fn generate_generated_client_module(
     models: &[Model],
     procedures: &[Procedure],
+    subscription_methods: &[proc_macro2::TokenStream],
     bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let mut model_accessors = Vec::new();
@@ -111,6 +112,8 @@ pub(super) fn generate_generated_client_module(
                 }
 
                 #(#procedure_methods)*
+
+                #(#subscription_methods)*
             }
         }
     })

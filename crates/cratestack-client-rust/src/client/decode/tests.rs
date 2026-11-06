@@ -92,6 +92,7 @@ fn decode_typed_response_with_metadata_maps_error_status_like_the_plain_path() {
         code: "PRECONDITION_FAILED".to_owned(),
         message: "stale If-Match".to_owned(),
         details: None,
+        extra: Default::default(),
     };
     let response = RuntimeResponseWire {
         status_code: 412,

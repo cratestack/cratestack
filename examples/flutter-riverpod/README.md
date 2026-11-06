@@ -85,10 +85,30 @@ the open-task count changes.
 | Path | What |
 |---|---|
 | [`client/`](client) | Generated `--preset riverpod` package (checked in; `.g.dart` build_runner output is not — see `client/.gitignore`) |
-| [`app/`](app) | The Flutter app — `lib/main.dart` (the one adapter override), `lib/src/screens/`, `test/boards_screen_test.dart` |
+| [`app/`](app) | The Flutter app — `lib/main.dart` (the one adapter override), `lib/src/screens/`, `lib/src/step_up/`, `lib/src/session.dart`, `test/boards_screen_test.dart`, `test/step_up_test.dart` |
 
 `../react-vite-swr/schema.cstack` and `../react-vite-swr/src/lib.rs` are this example's schema and
 server — see that example's own README for their layout.
+
+## Step-up (cratestack#1245)
+
+The reused schema's `clearDoneTasks` declares `@authn(maxAge: 300, amr: ["hwk"])`: the user must
+have authenticated in the last five minutes with a hardware-bound key. The app's `DemoSession`
+starts as a password sign-in twenty minutes old, so **Clear done tasks** on a board is refused with
+RFC 9470's step-up 401. `lib/src/step_up/clear_done_tasks.dart` calls the generated
+`ClearDoneTasksController` through the generated `retryAfterStepUp`: the refusal's
+`CratestackRestException.stepUp` (a `StepUpRequired`) opens `StepUpScreen`, which shows what is
+required, and confirming retries the call once. A declined step-up, or any other refusal, shows
+`RefusalBanner`, keyed on the refusal code (the `error` member, such as
+`insufficient_user_authentication`, else the envelope's `code`). `test/step_up_test.dart` pumps the
+flow against a fake adapter that refuses the way the server does.
+
+The session's facts travel as stand-in headers (`x-auth-time`, `x-auth-amr`, set by a Dio
+interceptor in `lib/src/runtime.dart`), and "confirming with a security key" just updates them.
+That is a demo shortcut a real provider must never take: it reads `auth_time` and `amr` from a
+credential it verified, and the re-proof is its auth library's ceremony. See
+[`../step-up-procedures`](../step-up-procedures) for the same flow with CrateStack's in-house
+provider and a signed id token.
 
 ## Run the Dart/Flutter checks
 
@@ -118,8 +138,8 @@ CI).
   filtering (`where`/structured filters) **is** wired into the generated `@riverpod` providers as of
   issue #331 (`board`/`boardList`/`task`/`taskList` all take an optional typed `query`); this app just
   doesn't exercise it on-screen yet (see `BoardDetailScreen`'s doc comment above).
-- No login screen — a static `x-auth-id: 1` header (`app/lib/src/runtime.dart`) stands in for real
-  auth, matching every other example in this repo.
+- No login screen — stand-in headers (`x-auth-id: 1`, and the step-up facts above, from
+  `app/lib/src/session.dart`) take the place of real auth, matching every other example in this repo.
 - `TaskUpdateController`/`TaskDeleteController` are single global controllers (their `save`/`delete`
   methods take the target `id` as an argument, rather than the provider being keyed by id) — see
   `model_providers.dart.j2`'s own header comment. Fine at this app's scale.

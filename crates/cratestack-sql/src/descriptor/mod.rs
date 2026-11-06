@@ -5,15 +5,20 @@ use cratestack_core::ModelEventKind;
 use cratestack_policy::ReadPolicy;
 
 mod defaults;
+mod embedded_defaults;
 mod model_impls;
 mod read_source;
+mod subscribed;
+mod unique_columns;
 mod view;
 
 #[cfg(test)]
 mod tests_view;
 
 pub use defaults::{CreateDefault, CreateDefaultType, GeneratedDefault, GeneratedValue};
+pub use embedded_defaults::{DatabaseDefault, LiteralDefault};
 pub use read_source::{ReadSource, WriteSource};
+pub use subscribed::EventTarget;
 pub use view::ViewDescriptor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,7 +49,19 @@ pub struct ModelDescriptor<M, PK> {
     pub create_defaults: &'static [CreateDefault],
     /// `@default(now())`, `uuid()`, `cuid()` columns; see [`GeneratedDefault`].
     pub generated_defaults: &'static [GeneratedDefault],
+    /// Literal `@default` columns, which the embedded runtime binds itself;
+    /// see [`LiteralDefault`]. The server leaves them to the migration's
+    /// `DEFAULT` clause.
+    pub literal_defaults: &'static [LiteralDefault],
+    /// Required columns only the database can fill; see [`DatabaseDefault`].
+    pub database_defaults: &'static [DatabaseDefault],
     pub emitted_events: &'static [ModelEventKind],
+    /// `true` when the model declared `@@subscribe`: its events are also
+    /// notified to the subscription backplane; see [`EventTarget`].
+    pub subscribed: bool,
+    /// Columns under a `@unique` or `@@unique` constraint; see
+    /// [`ModelDescriptor::is_key_column`].
+    pub unique_columns: &'static [&'static str],
     /// Column name of the optimistic-locking version field, set when the
     /// model declares an `@version` field. `None` for non-versioned models,
     /// which keeps update semantics unchanged.
@@ -138,7 +155,11 @@ impl<M, PK> ModelDescriptor<M, PK> {
             delete_deny_policies,
             create_defaults,
             generated_defaults: &[],
+            literal_defaults: &[],
+            database_defaults: &[],
             emitted_events,
+            subscribed: false,
+            unique_columns: &[],
             version_column,
             audit_enabled,
             pii_columns,

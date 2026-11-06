@@ -48,6 +48,14 @@ pub(super) fn reject_duplicate_sql_values(values: &[SqlValue]) -> Result<(), Rus
 /// SQLITE_CONSTRAINT_PRIMARYKEY (1555); matching on the broad code lets
 /// either land as `CONFLICT` without us having to enumerate every subtype.
 pub(super) fn item_error(error: rusqlite::Error) -> BatchItemError {
+    if let rusqlite::Error::ToSqlConversionFailure(inner) = &error
+        && let Some(unfilled) = inner.downcast_ref::<crate::UnfilledDefault>()
+    {
+        return BatchItemError {
+            code: "VALIDATION_ERROR".to_owned(),
+            message: unfilled.to_string(),
+        };
+    }
     let is_constraint_violation = matches!(
         &error,
         rusqlite::Error::SqliteFailure(err, _)

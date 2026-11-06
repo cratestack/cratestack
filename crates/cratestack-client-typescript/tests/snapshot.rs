@@ -4,8 +4,10 @@
 //   * tiny_rest.cstack — default transport (REST). Generator emits
 //     the fetch-based runtime + REST-shaped API classes.
 //   * tiny_rpc.cstack  — `transport rpc`. Generator emits the
-//     CratestackRpcRuntime + API classes calling
-//     `runtime.call('model.<Name>.<verb>', input)`.
+//     CratestackRpcRuntime (defaulting to `@cratestack/cbor`'s native
+//     codec) + API classes calling `runtime.call('model.<Name>.<verb>',
+//     input)`. Its golden tree is `tiny_rpc_native_default/` (and
+//     `tiny_rpc_swr_native_default/` for `--swr`).
 //
 // To update the snapshots after intentional changes, run with
 // `CRATESTACK_UPDATE_SNAPSHOTS=1 cargo test -p cratestack-client-typescript`.
@@ -22,20 +24,12 @@ fn rest_snapshot_matches_fixture() {
     run_snapshot("tiny_rest", "tiny-rest-client");
 }
 
-#[test]
-fn rpc_snapshot_matches_fixture() {
-    run_snapshot("tiny_rpc", "tiny-rpc-client");
-}
-
-/// Issue #746 review finding #4: the fixture above pins `native_cbor:
-/// false` (see `generate_for_with_full_config`'s own doc comment for why
-/// — it predates the flag and has its own dedicated coverage in
-/// `tests/native_cbor_generator.rs`), which means it no longer represents
-/// what `cratestack generate-typescript` actually emits by default. This
-/// fixture generates with the REAL `TypeScriptGeneratorConfig::default()`
-/// (`native_cbor: true`, via `DEFAULT_NATIVE_CBOR`) so the default a user
-/// actually gets — `@cratestack/cbor` wired in as the runtime's codec —
-/// has byte-reviewed golden coverage too, not just structural assertions.
+/// The `transport rpc` golden tree. Generates with the REAL
+/// `TypeScriptGeneratorConfig::default()` so it tracks what a bare
+/// `cratestack generate-typescript` invocation on an RPC schema emits —
+/// `@cratestack/cbor` wired in as the runtime's codec (the only mode since
+/// the JSON-codec mode was removed). This replaced a separate `tiny_rpc/`
+/// tree that pinned the removed JSON mode.
 #[test]
 fn rpc_native_default_snapshot_matches_fixture() {
     let package = generate_default_for("tiny_rpc", "tiny-rpc-native-default-client");
@@ -49,8 +43,8 @@ fn rpc_native_default_snapshot_matches_fixture() {
 
 /// Cratestack#765: `--swr` on an RPC schema renders `src/swr/runtime.ts`
 /// from the same shared template as `src/runtime.ts`, through a
-/// separately-maintained context (`SwrSchemaContext`) that silently missed
-/// `native_cbor` until this ticket. No `--swr` + `transport rpc` snapshot
+/// separately-maintained context (`SwrSchemaContext`) that once silently
+/// missed a field the default context had. No `--swr` + `transport rpc` snapshot
 /// fixture existed before this test — that absence is the direct reason
 /// the gap shipped unnoticed (see the issue's own "Verification evidence"
 /// section). Mirrors `rpc_native_default_snapshot_matches_fixture` above,
@@ -175,6 +169,10 @@ fn rpc_runtime_exposes_pluggable_codec_option() {
     // hardcode "application/json" as both Content-Type and Accept in
     // call()/batch()/stream(), with no way for a consumer whose backend
     // defaults to CBOR to plug in a different codec.
+    //
+    // The default is `@cratestack/cbor`'s native codec (issue #746); the
+    // option must still let a caller override it — notably with the
+    // still-exported `jsonRpcCodec`, to put JSON on the wire.
     let package = generate_for("tiny_rpc", "tiny-rpc-client");
     let runtime = package_file(&package, "src/runtime.ts");
     assert!(
@@ -183,25 +181,26 @@ fn rpc_runtime_exposes_pluggable_codec_option() {
     );
     assert!(
         runtime.contains("export const jsonRpcCodec: CratestackRpcCodec"),
-        "runtime.ts must export a default jsonRpcCodec"
+        "runtime.ts must still export jsonRpcCodec for callers who want JSON on the wire"
     );
     assert!(
         runtime.contains("codec?: CratestackRpcCodec;"),
         "CratestackRpcClientOptions must accept a codec override"
     );
     assert!(
-        runtime.contains("this.codec = options.codec ?? jsonRpcCodec;"),
-        "runtime must default to jsonRpcCodec when no codec option is supplied"
+        runtime.contains("this.explicitCodec = options.codec;"),
+        "the constructor must capture a caller-supplied codec:\n{runtime}"
+    );
+    assert!(
+        runtime.contains("if (this.explicitCodec !== undefined) {\n      return Promise.resolve(this.explicitCodec);"),
+        "resolveCodec() must prefer a caller-supplied codec over the native default:\n{runtime}"
     );
     assert!(
         runtime.contains("headers.set(\"Accept\", codec.contentType);")
             && runtime.contains("headers.set(\"Content-Type\", codec.contentType);"),
-        // Issue #746's shared-body collapse (review finding #3): `call()`/
-        // `batch()`/`stream()`/`readUnaryResponse()` are now one body
-        // shared with the native-codec path, gated only on how the local
-        // `codec` binding is obtained (`this.codec` vs `await
-        // this.resolveCodec()`) — every use downstream of that reads the
-        // local `codec`, never `this.codec` directly.
+        // `call()`/`batch()`/`stream()`/`readUnaryResponse()` each resolve
+        // a local `codec` (`await this.resolveCodec()`), and every use
+        // downstream of that reads the local binding.
         "call()/batch()/stream() must derive Accept/Content-Type from the resolved codec"
     );
     assert_eq!(
@@ -690,15 +689,6 @@ fn generate_for_with_full_config(
             refine: false,
             tanstack: false,
             schema_sha256: schema_sha256.to_owned(),
-            // Issue #746's flag defaults to `true`, but these golden
-            // fixtures (and `rpc_runtime_exposes_pluggable_codec_option`'s
-            // own `jsonRpcCodec`-specific assertions below) predate the
-            // flag and pin the pure-TypeScript codec path — pinned
-            // `false` like every other flag this helper hardcodes rather
-            // than reading `TypeScriptGeneratorConfig::default()`. The
-            // native-on path has its own dedicated coverage in
-            // `tests/native_cbor_generator.rs`.
-            native_cbor: false,
             // Issue #906: these golden fixtures predate `--rtk` too —
             // pinned `false` like every other flag this helper hardcodes.
             // The on path has its own dedicated coverage in
@@ -713,8 +703,8 @@ fn generate_for_with_full_config(
 /// than `generate_for_with_full_config`'s hardcoded flag set — used only
 /// by `rpc_native_default_snapshot_matches_fixture` above, so that
 /// fixture tracks whatever a bare `cratestack generate-typescript`
-/// invocation actually emits (including `native_cbor`, and any future
-/// flag whose default changes) instead of a snapshot of one fixed,
+/// invocation actually emits (including any future flag whose default
+/// changes) instead of a snapshot of one fixed,
 /// possibly-stale flag combination.
 fn generate_default_for(fixture_stem: &str, package_name: &str) -> GeneratedTypeScriptPackage {
     let fixture_path = fixture_root().join(format!("{fixture_stem}.cstack"));

@@ -26,14 +26,9 @@ pub fn ctx(user: &str) -> CratestackContext {
     CratestackContext::authenticated([("id".to_owned(), AuthValue::String(user.to_owned()))])
 }
 
+/// The default resolver shape: the principal is `ctx.subject()`.
 pub fn resolver(ctx: &CratestackContext) -> Option<SyncPrincipal> {
-    match ctx.auth_field("id") {
-        Some(AuthValue::String(id)) => Some(SyncPrincipal {
-            id: id.clone(),
-            scopes: vec![format!("user:{id}")],
-        }),
-        _ => None,
-    }
+    SyncPrincipal::from_subject(ctx, |id| vec![format!("user:{id}")])
 }
 
 struct Todos(PgPool);

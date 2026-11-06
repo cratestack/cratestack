@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-{% if model_apis | length > 0 or procedures | length > 0 %}
+{% if model_apis | length > 0 or procedures | length > 0 or subscription_procedures | length > 0 %}
 {# cratestack#785, RPC's half of the same gate the REST template carries
    (transport parity): `models.dart` is reached only from the per-model
    API classes and from each procedure's generated args wrapper. There is
@@ -11,19 +11,52 @@ import 'models.dart';
 import 'runtime.dart';
 
 class {{ client_class_name }} {
-  {{ client_class_name }}(this._adapter);
+  {{ client_class_name }}(this._adapter{% if has_subscriptions %}, {this.subscriptions = const CratestackSubscriptionOptions()}{% endif %});
 
   final CratestackRpcAdapter _adapter;
+{% if has_subscriptions %}
+
+  /// How this client subscribes: the binding, the WebTransport listener, the
+  /// socket credentials.
+  final CratestackSubscriptionOptions subscriptions;
+{% endif %}
 
   CratestackRpcAdapter get adapter => _adapter;
 
 {% for accessor in model_accessors %}
   {{ accessor.api_class_name }} get {{ accessor.accessor }} => {{ accessor.api_class_name }}(this);
 {% endfor %}
-{% if procedures | length > 0 %}
+{% if procedures | length > 0 or subscription_procedures | length > 0 %}
   ProceduresApi get procedures => ProceduresApi(this);
 {% else %}
   ProceduresApi get procedures => const ProceduresApi();
+{% endif %}
+{% if has_subscriptions %}
+
+  /// Opens a subscription over the binding [subscriptions] chooses (slice
+  /// S6): nothing is emitted until the server says `Ready`. It needs the
+  /// generated HTTP adapter, for the base URI and SSE.
+  Stream<Object?> subscribe(
+    CratestackSubscriptionTarget target, {
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    final adapter = _adapter;
+    if (adapter is! CratestackRpcHttpAdapter) {
+      return Stream<Object?>.error(UnsupportedError(
+        'Subscriptions need a CratestackRpcHttpAdapter; ${adapter.runtimeType} cannot stream.',
+      ));
+    }
+    return cratestackSubscribe(
+      options: subscriptions,
+      transport: adapter.transport,
+      baseUri: adapter.baseUri,
+      basePath: '',
+      target: target,
+      headers: headers,
+      onReady: onReady,
+    );
+  }
 {% endif %}
 }
 
@@ -31,8 +64,23 @@ final {{ provider_prefix }}AdapterProvider = Provider<CratestackRpcAdapter>((ref
   throw UnimplementedError('Override {{ provider_prefix }}AdapterProvider before reading the generated CrateStack client.');
 });
 
+{% if has_subscriptions %}
+/// How the client subscribes (slice S6). Override it to set the
+/// WebTransport listener, the socket credentials or a fixed binding.
+final {{ provider_prefix }}SubscriptionOptionsProvider = Provider<CratestackSubscriptionOptions>(
+  (ref) => const CratestackSubscriptionOptions(),
+);
+
+{% endif %}
 final {{ provider_prefix }}ClientProvider = Provider<{{ client_class_name }}>((ref) {
+{% if has_subscriptions %}
+  return {{ client_class_name }}(
+    ref.watch({{ provider_prefix }}AdapterProvider),
+    subscriptions: ref.watch({{ provider_prefix }}SubscriptionOptionsProvider),
+  );
+{% else %}
   return {{ client_class_name }}(ref.watch({{ provider_prefix }}AdapterProvider));
+{% endif %}
 });
 
 {% for accessor in model_accessors %}
@@ -146,10 +194,38 @@ class {{ model.api_class_name }} {
     return {{ model.model_name }}.fromWire(cratestackAsValueMap(body));
   }
 {% endif %}
+{% if model.allows_subscribe %}
+
+  /// Live events of `{{ model.model_name }}` the caller may read, narrowed by
+  /// [input]. Nothing is emitted until the subscription is live ([onReady]
+  /// fires then); an `unavailable` error means resubscribe and refetch.
+  Stream<CratestackModelEvent<{{ model.model_name }}>> subscribe({
+    CratestackSubscribeInput input = const CratestackSubscribeInput(),
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    return _client
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ model.subscribe_op_id }}',
+            input: input.toWire(),
+            ssePath: '/rpc/subscribe/{{ model.subscribe_op_id }}',
+            sseQuery: input.toQuery(),
+            socketPath: '/rpc/ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
+        .map((wire) => CratestackModelEvent<{{ model.model_name }}>.fromWire(
+              wire,
+              (data) => {{ model.model_name }}.fromWire(cratestackAsValueMap(data)),
+            ));
+  }
+{% endif %}
 }
 
 {% endfor %}
-{% if procedures | length > 0 %}
+{% if procedures | length > 0 or subscription_procedures | length > 0 %}
 class ProceduresApi {
   const ProceduresApi(this._client);
 
@@ -165,6 +241,29 @@ class ProceduresApi {
       options: options,
     );
     return {{ procedure.return_decode_expr }};
+  }
+
+{% endfor %}
+{% for procedure in subscription_procedures %}
+  /// Subscribes to `{{ procedure.name }}`. A policy or setup refusal is the
+  /// stream's error before any item.
+  Stream<{{ procedure.return_type }}> {{ procedure.method_name }}({{ procedure.args_name }} args, {
+    Map<String, String>? headers,
+    void Function()? onReady,
+  }) {
+    return _client
+        .subscribe(
+          CratestackSubscriptionTarget(
+            opId: '{{ procedure.op_id }}',
+            input: args.toWire(),
+            ssePath: '/rpc/subscribe/{{ procedure.op_id }}',
+            sseQuery: cratestackProcedureQuery(args.toWire()),
+            socketPath: '/rpc/ws',
+          ),
+          headers: headers,
+          onReady: onReady,
+        )
+        .map((body) => {{ procedure.return_decode_expr }});
   }
 
 {% endfor %}

@@ -21,11 +21,6 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
             // `TypeScriptGeneratorConfig::default()` (tanstack off).
             tanstack: true,
             schema_sha256: "blogschemasha256testvalue0000000000000000000000000000000000".to_owned(),
-            // `blog.cstack` is REST transport, where `native_cbor` (issue
-            // #746) has no effect either way — `true` here matches the
-            // real `TypeScriptGeneratorConfig::default()` this test would
-            // otherwise get if it used `..Default::default()`.
-            native_cbor: true,
             // Issue #906: not this test's concern (its name says
             // `tanstack`), same reasoning as every other field here that
             // isn't `..Default::default()`.

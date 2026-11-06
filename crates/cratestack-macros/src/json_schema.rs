@@ -67,6 +67,8 @@ mod tests;
 #[cfg(test)]
 mod tests_bigint;
 #[cfg(test)]
+mod tests_enum_ordinals;
+#[cfg(test)]
 mod tests_shapes;
 
 use cratestack_core::{Procedure, Schema, TypeArity};

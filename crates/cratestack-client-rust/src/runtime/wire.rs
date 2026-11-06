@@ -149,10 +149,13 @@ impl From<ClientError> for RuntimeErrorWire {
                 message: error.to_string(),
                 remote_body: None,
             },
+            // The challenges stay on the Rust side: the FFI error wire has
+            // no slot for headers.
             ClientError::Remote {
                 status,
                 error,
                 message,
+                ..
             } => Self {
                 code: RuntimeErrorCode::Remote,
                 http_status: Some(status.as_u16()),

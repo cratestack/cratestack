@@ -54,7 +54,6 @@ fn config(preset: DartPreset) -> DartGeneratorConfig {
         // Same fingerprint on both sides on purpose — the two schema texts
         // genuinely differ, and that difference is not what is under test.
         schema_sha256: "deadbeef".to_owned(),
-        native_cbor: false,
         ..DartGeneratorConfig::default()
     }
 }

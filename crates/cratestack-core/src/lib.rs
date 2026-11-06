@@ -10,13 +10,17 @@
 //! submodule paths directly.
 
 pub mod audit;
+pub mod authn;
+pub mod backplane;
 pub mod batch;
 pub mod bigint;
 pub mod builder;
+pub mod chain;
 pub mod client_contract;
 pub mod codec;
 pub mod composite_id;
 pub mod context;
+pub mod credential;
 pub mod cuid;
 pub mod decimal;
 pub mod envelope;
@@ -40,6 +44,8 @@ pub mod rust_keywords;
 pub mod schema;
 pub mod schema_identity;
 pub mod store;
+pub mod subscription;
+pub mod subscription_wire;
 pub mod transport;
 pub mod validators;
 pub mod value;
@@ -54,11 +60,15 @@ pub use audit::{
     AuditActor, AuditEvent, AuditOperation, AuditSink, MulticastAuditSink, NoopAuditSink,
     TransactionIsolation,
 };
+pub use authn::{
+    AuthnRequirement, STEP_UP_ERROR, STEP_UP_MESSAGE, Unmet, require_authn, require_authn_at,
+};
 pub use batch::{
     BATCH_MAX_ITEMS, BatchItemError, BatchItemResult, BatchItemStatus, BatchRequest, BatchResponse,
     BatchSummary, find_duplicate_position,
 };
 pub use bigint::{BigInt, ParseBigIntError};
+pub use chain::{FirstSuccess, Or, first_success};
 pub use codec::{
     Binding, BodyShape, BoundHeaders, CONTRACT_HEADER, CONTRACT_HEADER_VALUE_LEN,
     CONTRACT_SELECTOR_LEN, CONTRACT_UNSUPPORTED_CODE, CONTRACT_UNSUPPORTED_REST_CODE,
@@ -73,19 +83,25 @@ pub use codec::{
     request_digest_unsigned,
 };
 pub use context::{
-    AuthProvider, CachedAuthProvider, CratestackAuthIdentity, CratestackContext, PrincipalContext,
-    PrincipalFacet, RequestContext, SystemContext, VerifiedSigner,
+    AuthProvider, CachedAuthProvider, ClaimType, CratestackAuthIdentity, CratestackContext,
+    CratestackContextBuilder, KeyRole, PrincipalContext, PrincipalFacet, RESERVED_CLAIMS,
+    RequestContext, ReservedClaim, SystemContext, VerifiedSigner,
 };
 // `Decimal` only exists when EXACTLY ONE decimal backend feature is
 // active; `RustDecimal`/`BigDecimal` each only exist under their own
 // feature independently of the other; `DecimalValue` is unconditional —
 // see `decimal`'s module doc (cratestack#505 Direction 2).
+pub use backplane::{
+    BackplaneFuture, BackplaneMessage, BackplaneReceiver, InProcessBackplane,
+    SubscriptionBackplane, TopicHandle, model_event_channel, topic_channel,
+};
 pub use client_contract::{
     AcceptedContracts, BATCH_CONTRACT_KEY, CLIENT_CONTRACT_DOMAIN, ContractLock, Generation,
     Incompatible, LOCK_FORMAT, LockError, OP_CONTRACT_DOMAIN, OpContracts, Pruned, Verdict,
     bound_contracts, classify, client_contract_digest, digest_hex, find_contract,
     op_contract_digest, op_contract_digests, op_contract_json, op_keys,
 };
+pub use credential::Credential;
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;
 #[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
@@ -99,8 +115,8 @@ pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };
 pub use error::{
-    AbortOwnership, CratestackError, CratestackErrorResponse, DbErrorInfo, TransactionAbort,
-    parse_cuid,
+    AbortOwnership, AuthRefusal, AuthRefusalKind, CratestackError, CratestackErrorResponse,
+    DbErrorInfo, RESERVED_ENVELOPE_MEMBERS, TransactionAbort, parse_cuid,
 };
 pub use events::{
     CratestackEventBus, CratestackEventEnvelope, CratestackEventFuture, ModelEvent, ModelEventKind,
@@ -116,23 +132,23 @@ pub use lenient_bytes::{
 pub use limits::{DEFAULT_BODY_LIMIT_BYTES, MAX_RESPONSE_REBUFFER_BYTES};
 pub use op_list::{
     ModelOpIds, ModelVerb, detail_route_of, model_detail_route, model_list_route, model_op_key,
-    model_verbs, procedure_op_key,
+    model_subscribe_route, model_verbs, procedure_op_key, subscription_procedure_op_key,
 };
 pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{
-    Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource, EnumDecl,
-    EnumVariant, ExtensionKind, Field, INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName,
-    MixinDecl, Model, ModelMcpExposure, OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE,
-    ParsedCompositeUnique, ParsedIndexAttribute, Procedure, ProcedureArg, ProcedureKind,
-    ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query, Schema, SchemaSummary, SelectionQuery,
-    SourceSpan, TransportStyle, TypeArity, TypeDecl, TypeRef, View, ViewSource,
-    canonical_geometry_subtype, computed_params_type_name, field_attribute_name,
-    geometry_subtype_names, is_computed_attribute, is_computed_field, is_primary_key_attribute,
-    is_relation_attribute, model_internal_actions, parse_composite_id_attribute,
-    parse_composite_unique_attribute, parse_computed_params_arg, parse_index_attribute,
-    parse_internal_attribute, scan_sql_placeholders,
+    Attribute, AuthBlock, ComputedParamsArg, ConfigBlock, ConfigEntry, Datasource,
+    ENUM_ORDINAL_MAX, ENUM_RESERVED_ATTRIBUTE, EnumDecl, EnumVariant, ExtensionKind, Field,
+    INTERNAL_ACTIONS, MCP_MAX_PAGE_SIZE, McpConfig, McpName, MixinDecl, Model, ModelMcpExposure,
+    OwnedSchemaSummary, PRIMARY_KEY_ATTRIBUTE, ParsedCompositeUnique, ParsedIndexAttribute,
+    Procedure, ProcedureArg, ProcedureKind, ProcedureMcpExposure, QUERY_SQL_ATTRIBUTE, Query,
+    ReservedOrdinals, Schema, SchemaSummary, SelectionQuery, SourceSpan, Topic, TransportStyle,
+    TypeArity, TypeDecl, TypeRef, View, ViewSource, canonical_geometry_subtype,
+    computed_params_type_name, field_attribute_name, geometry_subtype_names, is_computed_attribute,
+    is_computed_field, is_primary_key_attribute, is_relation_attribute, model_internal_actions,
+    parse_composite_id_attribute, parse_composite_unique_attribute, parse_computed_params_arg,
+    parse_index_attribute, parse_internal_attribute, scan_sql_placeholders,
 };
 pub use schema_identity::{schema_digest, schema_digest_hex};
 pub use store::{
@@ -140,6 +156,7 @@ pub use store::{
     InMemoryStateStore, JsonFileStateStore, MAX_TTL_SECS, PersistedClientState, RateLimitConfig,
     RateLimitDecision, RateLimitStore, RequestJournalEntry, bucket_ttl_secs, scope_ttl_secs,
 };
+pub use subscription::{SubscriptionDispatcher, SubscriptionOpen, SubscriptionStream};
 pub use transport::{
     OpDescriptor, OpKind, RouteTransportCapabilities, RouteTransportDescriptor, canonical_query,
     canonical_request_string,

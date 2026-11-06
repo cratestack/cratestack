@@ -14,7 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:cbor/simple.dart' as cbor;
+import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
 
 import 'constants.dart';
 
@@ -193,6 +193,39 @@ final class CratestackTransportBroken extends CratestackTransportException {
 // response by its `Content-Type`, or on how a URI and the headers are built.
 // -----------------------------------------------------------------------------
 
+// cratestack#563: `createCborCodec()` is async (it loads a
+// vendored native library / wasm module on first use), so the codec is
+// resolved once and cached here rather than per call — every
+// `_cratestackCborCodec()` caller after the first just awaits the same
+// already-in-flight (or already-resolved) `Future`.
+//
+// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
+// `??=` never re-evaluates once the field holds a settled *rejected*
+// future, so one transient failure — a wasm asset that 404s on web, a
+// vendored library that was not there yet — would brick every later
+// request in the isolate, replaying the same error forever instead of
+// giving the next caller a fresh attempt. `onError` clears the cache so
+// it can retry, and rethrows with the original stack trace so nothing is
+// swallowed. Same rule, for the same reason, as the generated TypeScript
+// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
+// `createCborCodec()`.
+Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+
+Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        // Hung off the future rather than written as a `try`/`catch`
+        // around the call so it cannot run before the `??=` has
+        // assigned: an `onError` callback is always asynchronous,
+        // whereas a `catch` body fires synchronously for anything thrown
+        // before the factory's first `await`, and the assignment would
+        // then immediately re-cache the very failure it just cleared.
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
+}
+
 /// The wire format a request body is written in and an `Accept` header
 /// prefers. Responses are always decoded by their own `Content-Type`, so an
 /// adapter set to one format still reads the other.
@@ -229,14 +262,21 @@ Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async 
     case CratestackWireFormat.json:
       return Uint8List.fromList(utf8.encode(jsonEncode(body)));
     case CratestackWireFormat.cbor:
-      return Uint8List.fromList(cbor.cbor.encode(body));
+      final codec = await _cratestackCborCodec();
+      return codec.encodeJson(jsonEncode(body));
   }
 }
 
 /// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
 /// decoders expect.
 Future<Object?> _decodeCbor(Uint8List bytes) async {
-  return cratestackNormalizeWire(cbor.cbor.decode(bytes));
+  // `cratestack_cbor`'s wire boundary is JSON text, and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values
+  // (ISO-8601 strings for `DateTime`, `List<int>` for `Bytes`, decimal and
+  // `BigInt` text), so `jsonDecode` alone gives the `Map<String, Object?>`
+  // shape the decoders expect.
+  final codec = await _cratestackCborCodec();
+  return jsonDecode(codec.decodeJson(bytes));
 }
 
 /// Decodes a response body by its `Content-Type`: an empty body is `null`,
@@ -311,35 +351,145 @@ Uri _resolveUri(Uri baseUri, String path, String? query) {
   return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
 }
 
-typedef CratestackValueMap = Map<String, Object?>;
+// -----------------------------------------------------------------------------
+// What an error answer says beyond its code (cratestack#1208, cratestack#1243)
+//
+// An `AuthProvider` refusal keeps the fixed code (`UNAUTHORIZED`, RPC
+// `unauthenticated`) and may add top-level members to the error body, a
+// `details` member and `WWW-Authenticate` challenges. These two helpers read
+// them for `CratestackRestException` and `CratestackRpcException`.
+// -----------------------------------------------------------------------------
 
-/// Recursively rewrites decoded containers into the `Map<String, Object?>`
-/// / `List<Object?>` shapes the generated `fromWire` decoders expect.
-///
-/// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
-/// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
-/// — casting it directly throws a `TypeError` (`_Map<Object?, Object?>`
-/// is not a subtype of `Map<String, dynamic>`) at runtime. JSON-decoded
-/// bodies already have `String` keys, so for them this is a cheap
-/// structural walk.
-Object? cratestackNormalizeWire(Object? value) {
-  // `Uint8List` implements `List<int>`, so it must be matched before the
-  // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
-  // get exploded into per-byte `List<Object?>`, breaking `is Uint8List`
-  // decoders and recursing over every byte.
-  if (value is Uint8List) {
-    return value;
+/// The members of an error body that are not `code`, `message` or `details`,
+/// unmodifiable and in wire order. Empty when [body] is not a map. Nothing is
+/// dropped: a member this client does not know is kept here, as decoded.
+Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {
+  if (body is! Map) {
+    return const <String, Object?>{};
   }
-  if (value is Map) {
-    return value.map(
-      (key, entry) => MapEntry(key.toString(), cratestackNormalizeWire(entry)),
-    );
-  }
-  if (value is List) {
-    return value.map(cratestackNormalizeWire).toList(growable: false);
-  }
-  return value;
+  const reserved = <String>{'code', 'message', 'details'};
+  return Map<String, Object?>.unmodifiable(<String, Object?>{
+    for (final entry in body.entries)
+      if (!reserved.contains(entry.key.toString()))
+        entry.key.toString(): entry.value,
+  });
 }
+
+/// The `WWW-Authenticate` value of an answer's [headers], raw and unparsed,
+/// as a list: empty when there is none. [CratestackHttpResponse] joins a
+/// repeated header with `, `, so two challenges sent as two header lines
+/// arrive as one entry holding both.
+List<String> _cratestackChallenges(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    final value = entry.value;
+    if (entry.key.toLowerCase() == 'www-authenticate' && value.isNotEmpty) {
+      return List<String>.unmodifiable(<String>[value]);
+    }
+  }
+  return const <String>[];
+}
+
+// -----------------------------------------------------------------------------
+// A step-up refusal, typed (cratestack#1244)
+//
+// An operation that requires a fresher or stronger authentication than the
+// caller presented is refused with an `AuthRefusal` whose extra member
+// `error` is `insufficient_user_authentication` (RFC 9470): HTTP 401 on REST,
+// code `unauthenticated` on RPC, unary or in a batch frame. Its `details` say
+// what the operation requires and which requirement the caller failed.
+// -----------------------------------------------------------------------------
+
+/// The extra member `error` of a step-up refusal (RFC 9470).
+const String cratestackInsufficientUserAuthentication =
+    'insufficient_user_authentication';
+
+/// What a step-up refusal asks for: read from the exception's `stepUp`. Each
+/// requirement is present only when the refused operation declares it.
+class StepUpRequired {
+  const StepUpRequired({
+    this.maxAge,
+    this.acrValues = const <String>[],
+    this.amr = const <String>[],
+    this.unmet = const <String>[],
+  });
+
+  /// The longest time, in seconds, since the caller last authenticated.
+  final int? maxAge;
+
+  /// The authentication context classes the operation accepts.
+  final List<String> acrValues;
+
+  /// The authentication methods the operation requires.
+  final List<String> amr;
+
+  /// Which requirements the caller failed: a subset of `max_age`, `acr` and
+  /// `amr`.
+  final List<String> unmet;
+
+  @override
+  String toString() =>
+      'StepUpRequired(maxAge=$maxAge, acrValues=$acrValues, amr=$amr, unmet=$unmet)';
+}
+
+/// Reads a step-up refusal once the transport's own test ([refused]: a 401,
+/// or `unauthenticated`) passed. Never throws: a missing or mistyped field
+/// reads as absent or empty.
+StepUpRequired? _cratestackStepUp(
+  bool refused,
+  Object? details,
+  Map<String, Object?> extra,
+) {
+  if (!refused || extra['error'] != cratestackInsufficientUserAuthentication) {
+    return null;
+  }
+  final map = details is Map ? details : const <Object?, Object?>{};
+  List<String> strings(String name) {
+    final value = map[name];
+    return value is List
+        ? List<String>.unmodifiable(value.whereType<String>())
+        : const <String>[];
+  }
+
+  final maxAge = map['max_age'];
+  return StepUpRequired(
+    maxAge: maxAge is int && maxAge >= 0 ? maxAge : null,
+    acrValues: strings('acr_values'),
+    amr: strings('amr'),
+    unmet: strings('unmet'),
+  );
+}
+
+/// Runs [call]; when it fails with a step-up refusal, hands the refusal to
+/// [reprove] and, when that answers `true` (the user authenticated again),
+/// runs [call] **once** more and returns what it gives, even a second
+/// refusal. Never loops.
+///
+/// [reprove] answers `false` when the user declined or the re-proof failed;
+/// the first refusal is then rethrown. Any other error, and an error thrown
+/// by [reprove] itself, propagates as it is.
+///
+/// ```dart
+/// final receipt = await retryAfterStepUp(
+///   () => api.procedures.transfer(args),
+///   (stepUp) => session.reauthenticate(maxAge: stepUp.maxAge),
+/// );
+/// ```
+Future<T> retryAfterStepUp<T>(
+  Future<T> Function() call,
+  Future<bool> Function(StepUpRequired stepUp) reprove,
+) async {
+  try {
+    return await call();
+  } catch (error) {
+    final stepUp = _cratestackStepUpOf(error);
+    if (stepUp == null || !await reprove(stepUp)) {
+      rethrow;
+    }
+  }
+  return call();
+}
+
+typedef CratestackValueMap = Map<String, Object?>;
 
 CratestackValueMap cratestackAsValueMap(Object? value) {
   if (value is CratestackValueMap) {
@@ -438,35 +588,6 @@ class CratestackRpcErrorCodes {
   static const String internal = 'internal';
 }
 
-/// Wire shape of an RPC error body. Mirrors
-/// `cratestack_core::rpc::RpcErrorBody`.
-class RpcErrorBody {
-  const RpcErrorBody({
-    required this.code,
-    required this.message,
-    this.details,
-  });
-
-  final String code;
-  final String message;
-  final Object? details;
-
-  factory RpcErrorBody.fromWire(Object? value) {
-    if (value is! Map) {
-      return RpcErrorBody(
-        code: CratestackRpcErrorCodes.internal,
-        message: value?.toString() ?? 'unknown RPC error',
-      );
-    }
-    final map = value;
-    return RpcErrorBody(
-      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
-      message: (map['message'] as String?) ?? '',
-      details: map['details'],
-    );
-  }
-}
-
 /// Wire shape of a single batch request frame. Mirrors
 /// `cratestack_core::rpc::RpcRequest`.
 class RpcRequest {
@@ -514,26 +635,106 @@ class RpcResponseFrame {
   }
 }
 
+/// Wire shape of an RPC error body. Mirrors
+/// `cratestack_core::rpc::RpcErrorBody`.
+class RpcErrorBody {
+  const RpcErrorBody({
+    required this.code,
+    required this.message,
+    this.details,
+    this.extra = const <String, Object?>{},
+  });
+
+  final String code;
+  final String message;
+  final Object? details;
+
+  /// Every top-level member of the body other than `code`, `message` and
+  /// `details`, as decoded: what an `AuthProvider` refusal adds, such as
+  /// `{'error': 'attestation_expired'}` (cratestack#1208). Empty when the
+  /// server sent none; a member this client does not know is kept, never
+  /// dropped.
+  final Map<String, Object?> extra;
+
+  factory RpcErrorBody.fromWire(Object? value) {
+    if (value is! Map) {
+      return RpcErrorBody(
+        code: CratestackRpcErrorCodes.internal,
+        message: value?.toString() ?? 'unknown RPC error',
+      );
+    }
+    final map = value;
+    return RpcErrorBody(
+      code: (map['code'] as String?) ?? CratestackRpcErrorCodes.internal,
+      message: (map['message'] as String?) ?? '',
+      details: map['details'],
+      extra: _cratestackExtraErrorMembers(map),
+    );
+  }
+}
+
 /// Thrown by an RPC adapter when a remote call fails with an
 /// `RpcErrorBody` payload. Carries the gRPC-style `code` directly so
 /// callers can switch on it without parsing.
+///
+/// A refusal from the server's `AuthProvider` keeps its fixed code
+/// (`unauthenticated` or `permission_denied`); what it adds is in [details],
+/// [extra] and [challenges]:
+///
+/// ```dart
+/// on CratestackRpcException catch (e) {
+///   if (e.code == CratestackRpcErrorCodes.unauthenticated &&
+///       e.extra['error'] == 'attestation_expired') {
+///     // renew the credential and send again, once
+///   }
+/// }
+/// ```
 class CratestackRpcException implements Exception {
   CratestackRpcException({
     required this.status,
     required this.body,
+    this.headers = const <String, String>{},
   });
 
   final int status;
   final RpcErrorBody body;
 
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `). Empty for an error that arrived inside a batch frame or as a
+  /// stream's final item, which have no headers of their own.
+  final Map<String, String> headers;
+
   String get code => body.code;
   String get message => body.message;
   Object? get details => body.details;
+
+  /// [RpcErrorBody.extra]: the body's members beyond `code`, `message` and
+  /// `details`.
+  Map<String, Object?> get extra => body.extra;
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
+
+  /// The step-up refusal this answer is (cratestack#1244): code
+  /// `unauthenticated` and the [extra] member `error` set to
+  /// `insufficient_user_authentication`, read from [details]; a batch frame
+  /// reads the same. `null` for any other error; reading never throws.
+  StepUpRequired? get stepUp => _cratestackStepUp(
+        code == CratestackRpcErrorCodes.unauthenticated,
+        details,
+        extra,
+      );
 
   @override
   String toString() =>
       'CratestackRpcException(status=$status, code=${body.code}, message=${body.message})';
 }
+
+/// What [retryAfterStepUp] reads: the step-up refusal of a
+/// [CratestackRpcException], `null` for anything else.
+StepUpRequired? _cratestackStepUpOf(Object error) =>
+    error is CratestackRpcException ? error.stepUp : null;
 
 /// Per-call settings for the RPC adapter.
 class CratestackRpcCallOptions {
@@ -755,6 +956,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
             'message': 'HTTP ${response.status}',
           },
         ),
+        headers: response.headers,
       );
     }
     return _decodeBody(bytes, contentType, 'CratestackRpcHttpAdapter');
@@ -807,9 +1009,10 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
 //     ),
 //   );
 //
+//   final codec = await cratestack_cbor.createCborCodec();
 //   final items = response.data!.stream
 //     .transform(CborSeqStreamTransformer(decoder))
-//     .map((bytes) => MyType.fromWire(cbor.cbor.decode(bytes)));
+//     .map((bytes) => MyType.fromWire(jsonDecode(codec.decodeJson(bytes))));
 //
 //   await for (final item in items) renderRow(item);
 //
@@ -851,7 +1054,8 @@ abstract interface class CborSeqDecoderHandle {
 /// Wraps any [CborSeqDecoderHandle]. Compose with any HTTP client's
 /// response stream — dio, `package:http`, `dart:io`, a test mock.
 /// Per-item CBOR decoding is the consumer's responsibility (typically
-/// `cbor.cbor.decode(bytes)`), so the transformer stays codec-agnostic
+/// `jsonDecode(codec.decodeJson(bytes))` with a `cratestack_cbor` codec),
+/// so the transformer stays codec-agnostic
 /// at the boundary level and keeps decode cost out of the
 /// transformer's hot loop.
 ///

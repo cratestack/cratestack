@@ -1,0 +1,99 @@
+// -----------------------------------------------------------------------------
+// A step-up refusal, typed (cratestack#1244)
+//
+// An operation that requires a fresher or stronger authentication than the
+// caller presented is refused with an `AuthRefusal` whose extra member
+// `error` is `insufficient_user_authentication` (RFC 9470): HTTP 401 on REST,
+// code `unauthenticated` on RPC, unary or in a batch frame. Its `details` say
+// what the operation requires and which requirement the caller failed.
+// -----------------------------------------------------------------------------
+
+/// The extra member `error` of a step-up refusal (RFC 9470).
+const String cratestackInsufficientUserAuthentication =
+    'insufficient_user_authentication';
+
+/// What a step-up refusal asks for: read from the exception's `stepUp`. Each
+/// requirement is present only when the refused operation declares it.
+class StepUpRequired {
+  const StepUpRequired({
+    this.maxAge,
+    this.acrValues = const <String>[],
+    this.amr = const <String>[],
+    this.unmet = const <String>[],
+  });
+
+  /// The longest time, in seconds, since the caller last authenticated.
+  final int? maxAge;
+
+  /// The authentication context classes the operation accepts.
+  final List<String> acrValues;
+
+  /// The authentication methods the operation requires.
+  final List<String> amr;
+
+  /// Which requirements the caller failed: a subset of `max_age`, `acr` and
+  /// `amr`.
+  final List<String> unmet;
+
+  @override
+  String toString() =>
+      'StepUpRequired(maxAge=$maxAge, acrValues=$acrValues, amr=$amr, unmet=$unmet)';
+}
+
+/// Reads a step-up refusal once the transport's own test ([refused]: a 401,
+/// or `unauthenticated`) passed. Never throws: a missing or mistyped field
+/// reads as absent or empty.
+StepUpRequired? _cratestackStepUp(
+  bool refused,
+  Object? details,
+  Map<String, Object?> extra,
+) {
+  if (!refused || extra['error'] != cratestackInsufficientUserAuthentication) {
+    return null;
+  }
+  final map = details is Map ? details : const <Object?, Object?>{};
+  List<String> strings(String name) {
+    final value = map[name];
+    return value is List
+        ? List<String>.unmodifiable(value.whereType<String>())
+        : const <String>[];
+  }
+
+  final maxAge = map['max_age'];
+  return StepUpRequired(
+    maxAge: maxAge is int && maxAge >= 0 ? maxAge : null,
+    acrValues: strings('acr_values'),
+    amr: strings('amr'),
+    unmet: strings('unmet'),
+  );
+}
+
+/// Runs [call]; when it fails with a step-up refusal, hands the refusal to
+/// [reprove] and, when that answers `true` (the user authenticated again),
+/// runs [call] **once** more and returns what it gives, even a second
+/// refusal. Never loops.
+///
+/// [reprove] answers `false` when the user declined or the re-proof failed;
+/// the first refusal is then rethrown. Any other error, and an error thrown
+/// by [reprove] itself, propagates as it is.
+///
+/// ```dart
+/// final receipt = await retryAfterStepUp(
+///   () => api.procedures.transfer(args),
+///   (stepUp) => session.reauthenticate(maxAge: stepUp.maxAge),
+/// );
+/// ```
+Future<T> retryAfterStepUp<T>(
+  Future<T> Function() call,
+  Future<bool> Function(StepUpRequired stepUp) reprove,
+) async {
+  try {
+    return await call();
+  } catch (error) {
+    final stepUp = _cratestackStepUpOf(error);
+    if (stepUp == null || !await reprove(stepUp)) {
+      rethrow;
+    }
+  }
+  return call();
+}

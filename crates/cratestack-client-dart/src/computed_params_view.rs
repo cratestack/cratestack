@@ -23,9 +23,9 @@ pub(crate) struct ModelApiView {
     /// The Dart expression that puts the RPC methods' `id` parameter on
     /// the wire (`{'id': <this>}`): `id` itself for every scalar that is
     /// already a JSON/CBOR value, `id.toString()` for a `BigInt` key
-    /// (ADR 0019), which would otherwise reach `jsonEncode` or
-    /// `package:cbor` as a bare `BigInt`. REST interpolates `$id` into the
-    /// path, which already calls `toString()`.
+    /// (ADR 0019), which would otherwise reach `jsonEncode` (and through
+    /// it the `cratestack_cbor` codec) as a bare `BigInt`. REST interpolates
+    /// `$id` into the path, which already calls `toString()`.
     pub(crate) primary_key_wire_expr: String,
     pub(crate) is_paged: bool,
     pub(crate) list_return_type: String,
@@ -78,6 +78,10 @@ pub(crate) struct ModelApiView {
     pub(crate) allows_create: bool,
     pub(crate) allows_update: bool,
     pub(crate) allows_delete: bool,
+    /// `@@subscribe` (slice S6): the API gets `subscribe(...)`, a `Stream`.
+    pub(crate) allows_subscribe: bool,
+    pub(crate) subscribe_op_id: String,
+    pub(crate) subscribe_route: String,
 }
 
 /// One field of a model's generated `{Model}ComputedParams` class --

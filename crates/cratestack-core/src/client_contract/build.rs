@@ -28,7 +28,8 @@ pub(super) fn contract<'a>(schema: &'a Schema, op: &'a ClientOp<'a>) -> COpContr
             transport,
             verb: verb.as_str(),
         },
-        OpTarget::Procedure(p) => procedure_contract(schema, op, p, transport),
+        OpTarget::Procedure(p) => procedure_contract(schema, op, p, transport, false),
+        OpTarget::SubscriptionProcedure(p) => procedure_contract(schema, op, p, transport, true),
     }
 }
 
@@ -37,6 +38,7 @@ fn procedure_contract<'a>(
     op: &'a ClientOp<'a>,
     p: &'a Procedure,
     transport: &'static str,
+    subscription: bool,
 ) -> COpContract<'a> {
     let Procedure {
         docs: _,
@@ -55,6 +57,7 @@ fn procedure_contract<'a>(
         project::type_names(&arg.ty, &mut roots);
     }
     let kind = match kind {
+        _ if subscription => "subscription",
         ProcedureKind::Query => "query",
         ProcedureKind::Mutation => "mutation",
     };
@@ -62,7 +65,9 @@ fn procedure_contract<'a>(
         closure: project::closure(schema, &roots),
         events: None,
         key: &op.key,
-        kind: if return_type.arity == TypeArity::List {
+        kind: if subscription {
+            "subscription"
+        } else if return_type.arity == TypeArity::List {
             "sequence"
         } else {
             "unary"

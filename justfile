@@ -224,6 +224,12 @@ lint:
 	# test targets only exist under it, and nothing in the workspace turns
 	# it on.
 	cargo clippy -p cratestack-cose --features auth --all-targets -- -D warnings {{clippy_allow}}
+	# Same blind spot for `cratestack-webtransport`'s off-by-default `dev-cert`
+	# feature (design §6a.5): `DevCertificate` only exists under it.
+	cargo clippy -p cratestack-webtransport --features dev-cert,client --all-targets -- -D warnings {{clippy_allow}}
+	# The Rust client's WebTransport binding (`webtransport`, off by default)
+	# with the WebSocket one beside it, as `Auto` combines them.
+	cargo clippy -p cratestack-client-rust --features ws,webtransport --all-targets -- -D warnings {{clippy_allow}}
 	# Same blind spot for `cratestack-axum`'s off-by-default `envelope` and
 	# `cose` features (cratestack#1006): `envelope_layer` and the
 	# `cose_envelope_*` targets of `cratestack-api` only exist under them, and
@@ -389,6 +395,99 @@ test-ci-db-mcp *args='':
 # MCP sibling, so a missing database fails instead of skipping.
 test-ci-db-cose *args='':
 	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features cose --test cose_client_models {{args}}
+
+# The generated subscription dispatcher served over WebTransport, against
+# Postgres (docs/design/subscriptions-websocket.md §6a, slice S5a): a schema
+# declaring `extension webtransport { }` serves its `@@subscribe` feeds
+# through `db.subscriptions().webtransport(..)`, with the per-event read
+# policy. `required-features = ["webtransport"]`, so `test-ci-db` never builds
+# it; CI's `webtransport-browser` job runs it. Exports `CRATESTACK_REQUIRE_DB=1`
+# itself, so a missing database fails instead of skipping.
+# The generated subscription dispatcher over WebTransport, against Postgres.
+# The generated TypeScript client's WebTransport binding in headless Chromium
+# (slice S6): generates a package from the TS generator's `subscriptions`
+# fixture, compiles its two subscription modules with `npx tsc`, and runs
+# them against `browser_harness`. Needs what `test-webtransport-browser`
+# needs, plus `typescript` that `npx` can find.
+test-ts-webtransport-browser:
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	rm -rf target/ts-webtransport
+	cargo run -p cratestack-cli -- generate-typescript --schema crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack --out target/ts-webtransport/package
+	npx --yes --package typescript@5.9.3 tsc --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir target/ts-webtransport/js target/ts-webtransport/package/src/subscriptions.ts target/ts-webtransport/package/src/subscription-sockets.ts
+	node crates/cratestack-client-typescript/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/ts-webtransport/js
+
+# `examples/realtime-chat` end to end (slice S6): its Rust tests (the
+# generated client over the WebSocket and SSE, `Auto` falling back to SSE),
+# then headless Chromium on the generated TypeScript client's `"auto"`
+# (WebTransport with UDP open, the WebSocket with UDP blocked, SSE). Uses
+# `DATABASE_URL` when set, else a throwaway `postgres:16` container. Needs
+# `node`, a `playwright` that `require()` resolves (`NODE_PATH`), and its
+# Chromium. CI's `webtransport-browser` job runs it.
+test-realtime-chat:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if [ -z "${DATABASE_URL:-}" ]; then
+	  container=$(docker run -d --rm -e POSTGRES_PASSWORD=postgres -p 127.0.0.1::5432 postgres:16)
+	  trap 'docker stop "$container" >/dev/null' EXIT
+	  port=$(docker port "$container" 5432/tcp | head -n1 | sed 's/.*://')
+	  until docker exec "$container" pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
+	  export DATABASE_URL="postgres://postgres:postgres@127.0.0.1:$port/postgres"
+	fi
+	cargo build -p realtime-chat-example
+	out=target/realtime-chat
+	rm -rf "$out" && mkdir -p "$out/static"
+	cargo run -p cratestack-cli -- generate-typescript \
+	  --schema examples/realtime-chat/schema.cstack --out "$out/package"
+	npx --yes --package typescript@5.9.3 tsc --target ES2022 --module ESNext --moduleResolution Bundler \
+	  --lib ES2022,DOM,DOM.Iterable --strict --skipLibCheck --outDir "$out/static" \
+	  "$out/package/src/subscriptions.ts" "$out/package/src/subscription-sockets.ts"
+	echo '<!doctype html><meta charset="utf-8"><title>realtime chat</title>' > "$out/static/index.html"
+	CRATESTACK_TEST_DATABASE_URL="$DATABASE_URL" CRATESTACK_REQUIRE_DB=1 \
+	  cargo test -p realtime-chat-example -- --test-threads=1
+	node examples/realtime-chat/tests/browser/fallback.cjs target/debug/realtime-chat-server "$out/static"
+
+# The generated Dart client's WebTransport binding in headless Chromium
+# (slice S6): `tests/browser/webtransport_entry.dart`, compiled to JavaScript
+# against a package generated off the subscriptions fixture, against
+# `cratestack-webtransport`'s `browser_harness`. Needs `flutter` (for
+# `pub get`), `dart`, `node` and a `playwright` that `require()` resolves
+# (`NODE_PATH`) with its Chromium. CI's `webtransport-browser` job runs it.
+test-dart-webtransport-browser:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	pkg=target/dart-webtransport/package
+	rm -rf target/dart-webtransport
+	cargo run -p cratestack-cli -- generate-dart \
+	  --schema crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc.cstack \
+	  --out "$pkg" --library-name dart_verify_subscriptions_rpc
+	printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n  cratestack_cbor: any\n' "$PWD" "$PWD" > "$pkg/pubspec_overrides.yaml"
+	(cd "$pkg" && flutter pub get)
+	mkdir -p "$pkg/tool"
+	cp crates/cratestack-client-dart/tests/browser/webtransport_entry.dart "$pkg/tool/"
+	(cd "$pkg" && dart compile js -O1 -o ../js/main.dart.js tool/webtransport_entry.dart)
+	node crates/cratestack-client-dart/tests/browser/webtransport.cjs target/debug/examples/browser_harness target/dart-webtransport/js
+
+test-ci-db-webtransport *args='':
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features webtransport --test webtransport_model_feed {{args}}
+
+# Slice S5: `db.subscriptions(registry).websocket(..)` serving a model feed and
+# a subscription procedure on one socket. `required-features = ["websocket"]`,
+# so `test-ci-db` never builds it.
+test-ci-db-websocket *args='':
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features websocket,client-ws --test websocket_subscriptions {{args}}
+
+# Headless Chromium, through Playwright, against `cratestack-webtransport`'s
+# `browser_harness` example, speaking the binding's JSON codec via the
+# browser's own `WebTransport` API (docs/design/subscriptions-websocket.md
+# §6a). Needs `node` and a `playwright` that `require()` resolves (set
+# `NODE_PATH` if it is installed outside this repo) with its Chromium
+# installed (`npx playwright install chromium`). CI's `webtransport-browser`
+# job runs it.
+# Real-browser end-to-end check of the WebTransport subscription binding.
+test-webtransport-browser:
+	cargo build -p cratestack-webtransport --features dev-cert --example browser_harness
+	node crates/cratestack-webtransport/tests/browser/run.cjs target/debug/examples/browser_harness
 
 # MCP conformance with a real third-party client (cratestack#1041, ADR 0002
 # phase 6): the official MCP Inspector CLI drives `examples/mcp-operator`
@@ -637,7 +736,11 @@ test-ci-host *args='':
 	# `codec-json` is a `cratestack-pg` default.
 	cargo test -p cratestack-pg --features rate_limit --test rate_limit_runtime {{args}} || status=1
 	cargo test -p cratestack-pg --features pgvector --test pgvector_feature_forwarding {{args}} || status=1
-	cargo test -p cratestack-client --features pgvector,rate_limit --test extension_feature_forwarding {{args}} || status=1
+	cargo test -p cratestack-client --features pgvector,rate_limit,webtransport --test extension_feature_forwarding {{args}} || status=1
+	# The native WebTransport client (`cratestack-webtransport`'s `client`
+	# feature) against the real server: `required-features`, so the
+	# `--workspace` run above compiles it to nothing. No database needed.
+	cargo test -p cratestack-webtransport --features client --test client {{args}} || status=1
 	# cratestack#1037: the `decimal = BigDecimal` half of the JSON Schema
 	# round-trip suite. `required-features = ["decimal-bigdecimal", "mcp"]`
 	# (the schemas are read from the generated MCP table since #1038), so the
@@ -859,9 +962,16 @@ verify-dart:
 	# published to pub.dev — until then, this recipe proves the FIX is
 	# correct, not that today's real `flutter pub get` from a clean
 	# checkout gets it.
+	# Every generated package depends on the version-locked `cratestack_cbor`
+	# (the only codec since `--no-native-cbor` was removed), so this one
+	# override file always carries `cratestack_cbor: any` beside the in-tree
+	# builder: see `override_cratestack_cbor_for_verification` below for why
+	# `any` is safe and why a release PR deadlocks without it. One writer for
+	# the file, because each `printf >` replaces whatever an earlier helper
+	# wrote.
 	local_builder_override() {
 	  local pkg="$1"
-	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n' "$repo_root" "$repo_root" > "$pkg/pubspec_overrides.yaml"
+	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n  cratestack_cbor: any\n' "$repo_root" "$repo_root" > "$pkg/pubspec_overrides.yaml"
 	}
 
 	verify_pkg() {
@@ -901,6 +1011,19 @@ verify-dart:
 	  # build. See the PR that introduced this recipe for the follow-up
 	  # issue tracking them.
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
+	}
+
+	# A verification-only `cbor` dev dependency for the hand-written test
+	# fixtures that decode bodies with plain `package:cbor`, independently of
+	# the codec under test. Generated packages no longer carry `cbor` (native
+	# `cratestack_cbor` is the only codec), so it is added here, after the
+	# last regeneration that rewrites `pubspec.yaml`, then resolved.
+	add_cbor_test_dependency() {
+	  local pkg="$1"
+	  if ! grep -q '^  cbor:' "$pkg/pubspec.yaml"; then
+	    sed -i '/^dev_dependencies:/a\  cbor: ^6.5.1' "$pkg/pubspec.yaml"
+	    (cd "$pkg" && flutter pub get)
+	  fi
 	}
 
 	# cratestack#647 gap closure helpers, used by the native-cbor block
@@ -960,8 +1083,7 @@ verify-dart:
 	# melos uses for local workspace pinning), honoured by `flutter pub get`
 	# without any flag.
 	override_cratestack_cbor_for_verification() {
-	  local pkg="$1"
-	  printf 'dependency_overrides:\n  cratestack_cbor: any\n' > "$pkg/pubspec_overrides.yaml"
+	  local_builder_override "$1"
 	}
 
 	# `cratestack_cbor`'s native backend resolves its vendored `.so` two
@@ -1007,18 +1129,12 @@ verify-dart:
 	# which would make this recipe permanently fail). Order is therefore
 	# pub get -> build_runner -> analyze -> test, matching the acceptance
 	# criteria's own "dart analyze is clean AFTER build_runner" wording.
-	# `--no-native-cbor` on every call in this helper and the two loops below:
-	# native is now the DEFAULT codec (cratestack#563 follow-up), and the
-	# dedicated native_cbor_* block further down already proves the native
-	# path end to end (real `flutter pub get` against the published
-	# `cratestack_cbor`, real HTTP round trip). These generic fixtures exist
-	# to verify the generator's output across many schema shapes, orthogonal
-	# to codec choice — keeping them on the pure-Dart `package:cbor` path
-	# means they resolve without needing `pubspec_overrides.yaml`'s
-	# `cratestack_cbor: any` escape hatch (see `override_cratestack_cbor_for_verification`'s
-	# comment for why a version-locked dependency on an unpublished next
-	# version deadlocks a release PR otherwise). Left unflagged, every one of
-	# these packages would need that override just to resolve.
+	# Every package here resolves `cratestack_cbor` through
+	# `local_builder_override`'s `cratestack_cbor: any`, and every
+	# `flutter test` gets `CRATESTACK_CBOR_NATIVE_LIB` (see
+	# `native_cbor_vendored_lib_for`) so a test that reaches the codec loads
+	# the vendored library from `flutter_tester`. The pure-Dart
+	# `package:cbor` mode these fixtures used to run in was removed.
 	verify_riverpod_pkg() {
 	  local pkg="$1"
 	  local schema="$2"
@@ -1032,12 +1148,11 @@ verify-dart:
 	    --out "$pkg" \
 	    --library-name "$library_name" \
 	    --preset riverpod \
-	    --no-native-cbor \
 	    --run-build-runner
 	  echo "=== flutter analyze (post build_runner): $pkg ==="
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
 	  echo "=== flutter test: $pkg ==="
-	  (cd "$pkg" && flutter test)
+	  (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test)
 	}
 
 	# `procedures_only_rest` (cratestack#785): a schema with zero `model`
@@ -1046,15 +1161,14 @@ verify-dart:
 	# own text-level tests and to `tsc`-style structure checks; only a real
 	# `flutter analyze --fatal-warnings` (what `verify_pkg` runs) fails on
 	# one.
-	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc)
+	fixtures=(ci_rest ci_rpc builder_edge_cases procedures_only_rest bigint_scalar bigint_scalar_rpc ordinal_enums subscriptions_rpc)
 	for fixture in "${fixtures[@]}"; do
 	  pkg="$out/default/$fixture"
 	  echo "=== generate-dart --preset default: $fixture -> $pkg ==="
 	  cargo run --quiet -p cratestack-cli -- generate-dart \
 	    --schema "crates/cratestack-client-dart/tests/fixtures/$fixture.cstack" \
 	    --out "$pkg" \
-	    --library-name "dart_verify_${fixture}" \
-	    --no-native-cbor
+	    --library-name "dart_verify_${fixture}"
 	  verify_pkg "$pkg"
 	  # issue #661: a real, running proof (beside `cratestack-client-dart`'s
 	  # own text-level `tests/generator.rs` assertions) that the generated
@@ -1065,14 +1179,32 @@ verify-dart:
 	    mkdir -p "$pkg/test"
 	    cp "crates/cratestack-client-dart/tests/fixtures/builder_edge_cases_list_test.dart" "$pkg/test/builder_edge_cases_list_test.dart"
 	    echo "=== flutter test (list-field builder proof): $pkg ==="
-	    (cd "$pkg" && flutter test test/builder_edge_cases_list_test.dart)
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/builder_edge_cases_list_test.dart)
 	    # cratestack#663: a real, running proof that an untouched
 	    # `Update{Model}Input` field (every arity) is absent from the wire,
 	    # while a nullable field explicitly cleared still serializes as an
 	    # explicit `null` — see the copied file's own module doc.
 	    cp "crates/cratestack-client-dart/tests/fixtures/builder_edge_cases_patch_test.dart" "$pkg/test/builder_edge_cases_patch_test.dart"
 	    echo "=== flutter test (untouched-vs-cleared patch field proof): $pkg ==="
-	    (cd "$pkg" && flutter test test/builder_edge_cases_patch_test.dart)
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/builder_edge_cases_patch_test.dart)
+	  fi
+	  # Ordinal enums (docs/design/enum-ordinals.md): a running proof that a
+	  # generated ordinal enum sends its number and decodes either form —
+	  # see the copied file's own module doc.
+	  if [ "$fixture" = "ordinal_enums" ]; then
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/ordinal_enums_test.dart" "$pkg/test/ordinal_enums_test.dart"
+	    echo "=== flutter test (ordinal enum wire form): $pkg ==="
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/ordinal_enums_test.dart)
+	  fi
+	  # Slice S6: the generated subscriptions over SSE, through the HTTP seam —
+	  # see the copied file's own module doc.
+	  if [ "$fixture" = "subscriptions_rpc" ]; then
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_test.dart" "$pkg/test/subscriptions_rpc_test.dart"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_socket_test.dart" "$pkg/test/subscriptions_rpc_socket_test.dart"
+	    echo "=== flutter test (subscriptions over SSE and a WebSocket): $pkg ==="
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/subscriptions_rpc_test.dart test/subscriptions_rpc_socket_test.dart)
 	  fi
 	  # cratestack#1204: wire parity of the HTTP-seam adapters with the retired
 	  # Dio adapters (golden requests captured from them), typed REST/RPC
@@ -1086,12 +1218,25 @@ verify-dart:
 	    cp "crates/cratestack-client-dart/tests/fixtures/wire_parity_${transport}_test.dart" "$pkg/test/"
 	    cp "crates/cratestack-client-dart/tests/fixtures/wire_parity_${transport}_ops.dart" "$pkg/test/"
 	    cp crates/cratestack-client-dart/tests/fixtures/wire-golden/${transport}-*.json "$pkg/test/wire-golden/"
+	    add_cbor_test_dependency "$pkg"
 	    echo "=== flutter test (HTTP seam wire parity + behaviour): $pkg ==="
-	    (cd "$pkg" && flutter test "test/wire_parity_${transport}_test.dart")
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test "test/wire_parity_${transport}_test.dart")
+	    # cratestack#1243: an AuthProvider refusal's code, details, extra
+	    # members and WWW-Authenticate challenges, typed on both exceptions.
+	    cp "crates/cratestack-client-dart/tests/fixtures/auth_refusal_${transport}_test.dart" "$pkg/test/"
+	    echo "=== flutter test (AuthProvider refusal members + challenges): $pkg ==="
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test "test/auth_refusal_${transport}_test.dart")
+	    # cratestack#1244: a step-up refusal typed as `stepUp`, and the
+	    # retry-at-most-once helper `retryAfterStepUp`.
+	    cp "crates/cratestack-client-dart/tests/fixtures/step_up_${transport}_test.dart" "$pkg/test/"
+	    echo "=== flutter test (step-up refusal + retryAfterStepUp): $pkg ==="
+	    (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test "test/step_up_${transport}_test.dart")
 	  fi
 	done
 
-	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan)
+	# `subscriptions_rpc` (slice S6): the model and procedure stream providers
+	# must survive `build_runner` and `flutter analyze --fatal-warnings`.
+	riverpod_fixtures=(ci_rest ci_rpc riverpod_shared_ownership riverpod_provider_collision riverpod_shared_type_orphan ordinal_enums subscriptions_rpc)
 	for fixture in "${riverpod_fixtures[@]}"; do
 	  pkg="$out/riverpod/$fixture"
 	  schema="crates/cratestack-client-dart/tests/fixtures/$fixture.cstack"
@@ -1101,8 +1246,13 @@ verify-dart:
 	    --schema "$schema" \
 	    --out "$pkg" \
 	    --library-name "$library_name" \
-	    --preset riverpod \
-	    --no-native-cbor
+	    --preset riverpod
+	  if [ "$fixture" = "subscriptions_rpc" ]; then
+	    # Slice S6: `verify_riverpod_pkg`'s `flutter test` runs it — see the
+	    # copied file's own module doc.
+	    mkdir -p "$pkg/test"
+	    cp "crates/cratestack-client-dart/tests/fixtures/subscriptions_rpc_riverpod_test.dart" "$pkg/test/subscriptions_rpc_riverpod_test.dart"
+	  fi
 	  verify_riverpod_pkg "$pkg" "$schema" "$library_name"
 	done
 
@@ -1125,17 +1275,12 @@ verify-dart:
 	status_test="crates/cratestack-client-dart/tests/fixtures/status_override_202_test.dart"
 	status_library="dart_status_verify"
 
-	# `--no-native-cbor` here too, for the same reason as the fixtures loops
-	# above: this block only proves `@status(202)` handling, unrelated to
-	# codec choice, and staying on pure-Dart `package:cbor` avoids needing
-	# the version-locked-dependency override on a release PR.
 	status_default_pkg="$out/status-202/default"
 	echo "=== generate-dart --preset default: status_override -> $status_default_pkg ==="
 	cargo run --quiet -p cratestack-cli -- generate-dart \
 	  --schema "$status_schema" \
 	  --out "$status_default_pkg" \
-	  --library-name "$status_library" \
-	  --no-native-cbor
+	  --library-name "$status_library"
 	# These two status-202 blocks were the only generated-package paths in
 	# this recipe that resolved `cratestack_builder` from pub.dev instead of
 	# from the working tree — `verify_pkg`/`verify_riverpod_pkg` both call
@@ -1155,12 +1300,12 @@ verify-dart:
 	  --schema "$status_schema" \
 	  --out "$status_default_pkg" \
 	  --library-name "$status_library" \
-	  --no-native-cbor \
 	  --run-build-runner
 	mkdir -p "$status_default_pkg/test"
 	cp "$status_test" "$status_default_pkg/test/status_202_test.dart"
+	add_cbor_test_dependency "$status_default_pkg"
 	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_default_pkg ==="
-	(cd "$status_default_pkg" && flutter test test/status_202_test.dart)
+	(lib="$(native_cbor_vendored_lib_for "$status_default_pkg")" && cd "$status_default_pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/status_202_test.dart)
 
 	status_riverpod_pkg="$out/status-202/riverpod"
 	echo "=== generate-dart --preset riverpod: status_override -> $status_riverpod_pkg ==="
@@ -1168,8 +1313,7 @@ verify-dart:
 	  --schema "$status_schema" \
 	  --out "$status_riverpod_pkg" \
 	  --library-name "$status_library" \
-	  --preset riverpod \
-	  --no-native-cbor
+	  --preset riverpod
 	# Same override as the default block above, for the same reason.
 	local_builder_override "$status_riverpod_pkg"
 	(cd "$status_riverpod_pkg" && flutter pub get)
@@ -1179,12 +1323,12 @@ verify-dart:
 	  --out "$status_riverpod_pkg" \
 	  --library-name "$status_library" \
 	  --preset riverpod \
-	  --no-native-cbor \
 	  --run-build-runner
 	mkdir -p "$status_riverpod_pkg/test"
 	cp "$status_test" "$status_riverpod_pkg/test/status_202_test.dart"
+	add_cbor_test_dependency "$status_riverpod_pkg"
 	echo "=== flutter test (real HTTP round trip, @status(202) proof): $status_riverpod_pkg ==="
-	(cd "$status_riverpod_pkg" && flutter test test/status_202_test.dart)
+	(lib="$(native_cbor_vendored_lib_for "$status_riverpod_pkg")" && cd "$status_riverpod_pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test test/status_202_test.dart)
 
 	# cratestack#647 gap closure: native-cbor generation was proven to
 	# compile and round-trip exactly ONCE, by hand, during that PR —
@@ -1206,10 +1350,9 @@ verify-dart:
 	# needs its own pubspec/analyze proof that its differently-shaped
 	# `pubspec.yaml`/`apis.dart` still resolves and typechecks against it.
 	#
-	# Native is now the DEFAULT (cratestack#563 follow-up), so the explicit
-	# `--native-cbor` flag these four `generate-dart` calls used to pass is
-	# gone (that flag no longer exists — `--no-native-cbor` is its opposite
-	# now) and simply omitted below. The dev-dependency/override helpers
+	# Native is the only codec mode (the `--native-cbor` opt-in and later the
+	# `--no-native-cbor` opt-out are both gone), so these four `generate-dart`
+	# calls pass no codec flag. The dev-dependency/override helpers
 	# (`add_cbor_dev_dependency_for_verification`,
 	# `override_cratestack_cbor_for_verification`) still run unconditionally
 	# for every package generated in this block, same as before the flip —
@@ -1253,15 +1396,7 @@ verify-dart:
 	  bash -c "cd '$native_cbor_rpc_pkg' && flutter test test/native_cbor_echo_rpc_test.dart"
 
 	# Riverpod preset, analyze-only (see the block comment above for why a
-	# second functional round trip isn't needed here). Deliberately NOT
-	# `verify_riverpod_pkg` above: that helper's own `--run-build-runner`
-	# regeneration step now explicitly passes `--no-native-cbor` (see its
-	# own comment), which would silently overwrite this package's
-	# native-cbor pubspec/runtime with the pure-Dart ones before analyzing
-	# them — exactly the kind of drift this whole gap-closure exists to
-	# catch — so it gets its own inline copy that generates with no cbor
-	# flag at all (native is the default) on every call, instead of
-	# forwarding to a helper written to force the opposite.
+	# second functional round trip isn't needed here).
 	for fixture_pair in "$native_cbor_rest_schema:rest" "$native_cbor_rpc_schema:rpc"; do
 	  schema="${fixture_pair%%:*}"
 	  transport="${fixture_pair##*:}"
@@ -1345,16 +1480,31 @@ verify-dart-fespalier:
 	fixtures_dir="$repo_root/crates/cratestack-client-dart/tests/fixtures"
 	transport_path="$(cd "$FESPALIER_TRANSPORT_PATH" && pwd)"
 
+	# The vendored `cratestack_cbor` library `flutter test` loads; the same
+	# lookup as `verify-dart`'s `native_cbor_vendored_lib_for`, whose comment
+	# explains why `flutter_tester` needs `CRATESTACK_CBOR_NATIVE_LIB`.
+	native_cbor_vendored_lib_for() {
+	  local pkg="$1"
+	  python3 -c "import json,sys; config = json.load(open('$pkg/.dart_tool/package_config.json')); entries = [e for e in config['packages'] if e['name'] == 'cratestack_cbor']; sys.exit('cratestack_cbor not found in $pkg/.dart_tool/package_config.json — was flutter pub get run?') if not entries else print(entries[0]['rootUri'].removeprefix('file://') + '/blobs/linux-x64/libcratestack_client_flutter.so')"
+	}
+
+	# Same as `verify-dart`'s `add_cbor_test_dependency`: the copied fixtures
+	# decode with plain `package:cbor`, which generated packages no longer carry.
+	add_cbor_test_dependency() {
+	  local pkg="$1"
+	  if ! grep -q '^  cbor:' "$pkg/pubspec.yaml"; then
+	    sed -i '/^dev_dependencies:/a\  cbor: ^6.5.1' "$pkg/pubspec.yaml"
+	    (cd "$pkg" && flutter pub get)
+	  fi
+	}
+
 	# Survives the `--run-build-runner` regeneration below, which rewrites
 	# `pubspec.yaml` but never `pubspec_overrides.yaml`.
 	write_overrides() {
-	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n  fespalier_transport:\n    path: %s\n' \
+	  printf 'dependency_overrides:\n  cratestack_builder:\n    path: %s/dart-packages/cratestack_builder\n  cratestack_annotations:\n    path: %s/dart-packages/cratestack_annotations\n  fespalier_transport:\n    path: %s\n  cratestack_cbor: any\n' \
 	    "$repo_root" "$repo_root" "$transport_path" > "$1/pubspec_overrides.yaml"
 	}
 
-	# `--no-native-cbor`, as the riverpod legs of `verify-dart`: the codec is
-	# orthogonal to the transport, and pure-Dart `package:cbor` needs no
-	# `cratestack_cbor` override.
 	for fixture in ci_rest ci_rpc; do
 	  transport="${fixture#ci_}"
 	  pkg="$out/$fixture"
@@ -1363,22 +1513,23 @@ verify-dart-fespalier:
 	  echo "=== generate-dart --preset fespalier: $fixture -> $pkg ==="
 	  cargo run --quiet -p cratestack-cli -- generate-dart \
 	    --schema "$schema" --out "$pkg" --library-name "$library_name" \
-	    --preset fespalier --no-native-cbor
+	    --preset fespalier
 	  write_overrides "$pkg"
 	  echo "=== flutter pub get: $pkg ==="
 	  (cd "$pkg" && flutter pub get)
 	  echo "=== generate-dart --preset fespalier --run-build-runner: $pkg ==="
 	  cargo run --quiet -p cratestack-cli -- generate-dart \
 	    --schema "$schema" --out "$pkg" --library-name "$library_name" \
-	    --preset fespalier --no-native-cbor --run-build-runner
+	    --preset fespalier --run-build-runner
 	  echo "=== flutter analyze (post build_runner): $pkg ==="
 	  (cd "$pkg" && flutter analyze --fatal-warnings --no-fatal-infos)
 	  mkdir -p "$pkg/test/wire-golden"
 	  cp "$fixtures_dir/fespalier_transport_${transport}_test.dart" "$pkg/test/"
 	  cp "$fixtures_dir/wire_parity_${transport}_ops.dart" "$pkg/test/"
 	  cp "$fixtures_dir"/wire-golden/${transport}-*.json "$pkg/test/wire-golden/"
+	  add_cbor_test_dependency "$pkg"
 	  echo "=== flutter test (FakeTransport: golden wire, abort, failures, providers): $pkg ==="
-	  (cd "$pkg" && flutter test)
+	  (lib="$(native_cbor_vendored_lib_for "$pkg")" && cd "$pkg" && CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test)
 	done
 
 # Verify the TypeScript client generator's OUTPUT actually typechecks,
@@ -1434,8 +1585,23 @@ verify-typescript:
 	echo "=== npm install and build (typechecks with tsc): $pkg ==="
 	(cd "$pkg" && npm install && npm run build)
 
+	# Slice S6: a schema with subscription ops emits src/subscriptions.ts,
+	# src/subscription-sockets.ts and, under the two hook layers,
+	# src/swr/subscriptions.hooks.ts and src/react-query-subscriptions.ts;
+	# none of the fixtures above has one, so nothing else typechecks them.
+	pkg="$out/subscriptions/rpc"
+	echo "=== generate-typescript (--swr --tanstack + RPC): subscriptions.cstack -> $pkg ==="
+	cargo run --quiet -p cratestack-cli -- generate-typescript \
+	  --schema "crates/cratestack-client-typescript/tests/fixtures/subscriptions.cstack" \
+	  --out "$pkg" \
+	  --package-name typescript-verify-subscriptions \
+	  --swr \
+	  --tanstack
+	echo "=== npm install and build (typechecks with tsc): $pkg ==="
+	(cd "$pkg" && npm install && npm run build)
+
 	echo ""
-	echo "✓ TypeScript REST, RPC, and --swr + RPC fixtures generated and typechecked successfully"
+	echo "✓ TypeScript REST, RPC, --swr + RPC, and subscription fixtures generated and typechecked successfully"
 
 # Resolve + typecheck a generated TypeScript client at the EXACT npm API
 # floors it declares (cratestack#779). CI's `typescript (generated
@@ -1621,38 +1787,21 @@ refine-fixture:
 # `CratestackRpcModelApi` independent of the manifest generator, same as
 # every hand-written example in the package README.
 #
-# `--no-native-cbor` IS DELIBERATE (issue #746 made `@cratestack/cbor` the
-# generator's default RPC codec) — do not remove it to "use the default".
-# Tried the alternative first: adding `@cratestack/cbor` to
-# `packages/cratestack-refine`'s `devDependencies` (the workspace already
-# links same-version `packages/*` siblings via `link-workspace-packages`,
-# see `.npmrc`) DOES fix `tsc --noEmit -p tsconfig.typecheck.json` — the
-# type-only half of this package's `test` script — but the `vitest run`
-# half then fails for real: `tests/support/rpc-client.ts` imports this
-# fixture's generated `src/runtime.ts`, whose top-level
-# `import { createCborCodec } from "@cratestack/cbor"` statically resolves
-# (via `@cratestack/cbor`'s Node conditional export) to
-# `@cratestack/cbor-node`'s napi addon — which CI's `js (@cratestack/refine)`
-# job never builds (that job only sets up a Rust toolchain for the CLI
-# binary, not a `napi build`; building it is deliberately excluded from
-# `@cratestack/cbor`'s own turbo build graph too, see `turbo.json`'s
-# `@cratestack/cbor#build` override comment). Vite's static ESM import
-# analysis resolves that entry unconditionally, even though
-# `createCborCodec()` itself is never called by these tests, and fails with
-# "Failed to resolve entry for package '@cratestack/cbor-node'" before a
-# single test body runs. `--no-native-cbor` keeps this fixture on the
-# dependency-free `jsonRpcCodec` fallback so the fixture exercises the real
-# generator without requiring a native build this job doesn't do — same
-# trade `regen-examples` makes for the Flutter example, for an analogous
-# reason (see that recipe's own comment).
+# The generated RPC runtime always imports `@cratestack/cbor` (native CBOR is
+# the only codec mode since `--no-native-cbor` was removed). On Node that
+# resolves to `@cratestack/cbor-node`'s napi addon, which CI's
+# `js (@cratestack/refine)` job never builds, and Vite resolves a static
+# import even when nothing calls it. The package's tests therefore map
+# `@cratestack/cbor` to a throwing stub (`tests/support/cbor-stub.ts`, via
+# `vitest.config.ts` and `tsconfig.typecheck.json`) and pass
+# `codec: jsonRpcCodec`, because their `FakeRpcServer` speaks JSON.
 refine-rpc-fixture:
 	rm -rf packages/cratestack-refine/tests/fixtures/generated-client-rpc
 	cargo run -p cratestack-cli -- generate-typescript \
 	  --schema packages/cratestack-refine/tests/fixtures/refine_fixture_rpc.cstack \
 	  --out packages/cratestack-refine/tests/fixtures/generated-client-rpc \
 	  --refine \
-	  --package-name refine-fixture-rpc-client \
-	  --no-native-cbor
+	  --package-name refine-fixture-rpc-client
 
 # Generates BOTH build-output artifacts `examples/react-vite-refine/web`
 # needs: the `--refine` TypeScript client (into `web/generated/`) and the

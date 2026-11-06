@@ -44,6 +44,11 @@ pub struct FieldSummary {
     /// variant names declared on the matching `enum`.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub enum_variants: Vec<String>,
+    /// For an ordinal enum (`Pending = 1`), each variant's ordinal, in
+    /// `enum_variants` order: the row holds the number, the UI shows and
+    /// sends the name. Empty, and absent from the JSON, otherwise.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub enum_ordinals: Vec<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -61,16 +66,8 @@ pub async fn list_models(
     let schema = &target.schema;
     let model_names: std::collections::HashSet<&str> =
         schema.models.iter().map(|m| m.name.as_str()).collect();
-    let enum_lookup: std::collections::HashMap<&str, Vec<String>> = schema
-        .enums
-        .iter()
-        .map(|e| {
-            (
-                e.name.as_str(),
-                e.variants.iter().map(|v| v.name.clone()).collect(),
-            )
-        })
-        .collect();
+    let enum_lookup: std::collections::HashMap<&str, &cratestack_core::EnumDecl> =
+        schema.enums.iter().map(|e| (e.name.as_str(), e)).collect();
 
     let models = schema
         .models
@@ -85,10 +82,11 @@ pub async fn list_models(
                 .fields
                 .iter()
                 .map(|f| {
-                    let enum_variants = enum_lookup
-                        .get(f.ty.name.as_str())
-                        .cloned()
-                        .unwrap_or_default();
+                    let enum_decl = enum_lookup.get(f.ty.name.as_str());
+                    let variants = enum_decl.map_or(&[][..], |e| &e.variants[..]);
+                    let enum_variants: Vec<String> =
+                        variants.iter().map(|v| v.name.clone()).collect();
+                    let enum_ordinals = variants.iter().filter_map(|v| v.ordinal).collect();
                     let is_enum = !enum_variants.is_empty();
                     FieldSummary {
                         name: f.name.clone(),
@@ -98,6 +96,7 @@ pub async fn list_models(
                         is_relation: model_names.contains(f.ty.name.as_str()),
                         is_enum,
                         enum_variants,
+                        enum_ordinals,
                     }
                 })
                 .collect();

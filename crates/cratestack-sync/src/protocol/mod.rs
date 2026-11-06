@@ -19,7 +19,7 @@ mod error;
 mod messages;
 
 pub use cursor::{Cursor, CursorParseError};
-pub use error::{SyncErrorBody, SyncErrorCode};
+pub use error::{RESERVED_SYNC_ERROR_MEMBERS, SyncErrorBody, SyncErrorCode};
 pub use messages::{
     ACK_MODEL, Change, ChangeOp, Mutation, MutationOutcome, MutationResult, PullRequest,
     PullResponse, PushRequest, PushResponse, RegisterRequest, RegisterResponse, RejectCode,

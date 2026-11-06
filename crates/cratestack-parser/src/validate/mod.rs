@@ -1,5 +1,6 @@
 mod attribute_shape;
 mod attribute_spelling;
+mod authn_attribute;
 mod block_attributes;
 mod builder_collisions;
 mod builder_setter_collisions;
@@ -13,6 +14,7 @@ mod computed_resolver_names;
 mod db_enforce;
 mod default_functions;
 mod default_markers;
+mod enum_ordinals;
 mod field_attribute_tables;
 mod field_attributes;
 mod fields;
@@ -38,12 +40,14 @@ mod query_placeholders;
 mod query_signature;
 mod removed_attributes;
 mod rename_attributes;
+mod reserved_claims;
 mod reserved_idents;
 mod route_collisions;
 mod server_only_placement;
 mod snake_case_collisions;
 mod spatial_type;
 mod stream_attribute;
+mod subscriptions;
 mod type_field_attributes;
 mod type_names;
 mod type_validator_reach;
@@ -204,6 +208,14 @@ pub(crate) fn validate_schema_collecting(
     collect::record(&mut errors, || {
         validate_procedures(schema, &type_names, &page_item_type_names, &model_names)
     });
+    collect::record(&mut errors, || {
+        self::subscriptions::validate_subscriptions(
+            schema,
+            &type_names,
+            &page_item_type_names,
+            &model_names,
+        )
+    });
     self::views::validate_views_collecting(schema, &mut errors);
     self::queries::validate_queries_collecting(schema, &type_names, &mut errors);
     if !errors.is_empty() {
@@ -330,6 +342,7 @@ fn validate_procedures(
         validate_procedure_stream_attribute(procedure)?;
         validate_procedure_no_rate_limit_attribute(procedure, schema)?;
         validate_procedure_no_idempotency_attribute(procedure)?;
+        self::authn_attribute::validate_procedure_authn_attribute(procedure)?;
         validate_procedure_status_attribute(procedure, schema)?;
         self::procedure_attributes::validate_procedure_attributes(procedure)?;
     }

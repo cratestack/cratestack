@@ -22,6 +22,7 @@ pub(crate) fn error_response(status: StatusCode, code: &str, message: &str) -> R
         code: code.to_string(),
         message: message.to_string(),
         details: None,
+        extra: Default::default(),
     };
     (status, axum::Json(body)).into_response()
 }

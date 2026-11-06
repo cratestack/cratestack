@@ -30,7 +30,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use cratestack::serde_json::{Map, Value as Json, json};
-use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
+use cratestack::{CratestackContext, CratestackError, Value};
 use hmac::{Hmac, KeyInit, Mac};
 
 /// The issuer every example token names, and the authorization server the
@@ -127,7 +127,7 @@ fn context(claims: &Map<String, Json>) -> Result<CratestackContext, CratestackEr
     ]))
 }
 
-fn refuse(reason: &str) -> CratestackError {
+pub(crate) fn refuse(reason: &str) -> CratestackError {
     CratestackError::Unauthorized(reason.to_owned())
 }
 
@@ -154,36 +154,4 @@ pub fn mint_claims(key: &[u8], claims: &Json) -> String {
     mac.update(payload.as_bytes());
     let signature = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
     format!("{payload}.{signature}")
-}
-
-/// The HTTP side: a bearer token from `Authorization`, checked by a
-/// [`TokenVerifier`] whose audience is the MCP endpoint's URL.
-#[derive(Clone)]
-pub struct AudienceProvider {
-    verifier: TokenVerifier,
-}
-
-impl AudienceProvider {
-    pub fn new(verifier: TokenVerifier) -> Self {
-        Self { verifier }
-    }
-}
-
-impl AuthProvider for AudienceProvider {
-    type Error = CratestackError;
-
-    async fn authenticate(
-        &self,
-        request: &RequestContext<'_>,
-    ) -> Result<CratestackContext, CratestackError> {
-        let header = request
-            .headers
-            .get("authorization")
-            .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| refuse("no token"))?;
-        let token = header
-            .strip_prefix("Bearer ")
-            .ok_or_else(|| refuse("not a bearer token"))?;
-        self.verifier.verify(token)
-    }
 }

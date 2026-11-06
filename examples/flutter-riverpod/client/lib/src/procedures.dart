@@ -84,6 +84,132 @@ required this.args,
 // `dart_mappable`'s own list handling.
 @MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
 @CratestackBuilder()
+class ClearDoneTasksProcedureArgs with ClearDoneTasksProcedureArgsMappable {
+  const ClearDoneTasksProcedureArgs({
+required this.args,
+  });
+
+  final ClearDoneTasksArgs args;
+
+  factory ClearDoneTasksProcedureArgs.fromWire(CratestackValueMap value) {
+    return ClearDoneTasksProcedureArgs(
+      args: ClearDoneTasksArgs.fromWire(cratestackAsValueMap(cratestackRequireWireValue('ClearDoneTasksProcedureArgs', 'args', value['args']))),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'args': args.toWire(),
+    };
+  }
+}
+
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
+class ClearDoneTasksArgs with ClearDoneTasksArgsMappable {
+  const ClearDoneTasksArgs({
+required this.boardId,
+  });
+
+  final int boardId;
+
+  factory ClearDoneTasksArgs.fromWire(CratestackValueMap value) {
+    return ClearDoneTasksArgs(
+      boardId: (cratestackRequireWireValue('ClearDoneTasksArgs', 'boardId', value['boardId']) as num).toInt(),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'boardId': boardId,
+    };
+  }
+}
+
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
+class ClearDoneTasksResult with ClearDoneTasksResultMappable {
+  const ClearDoneTasksResult({
+required this.removed,
+  });
+
+  final int removed;
+
+  factory ClearDoneTasksResult.fromWire(CratestackValueMap value) {
+    return ClearDoneTasksResult(
+      removed: (cratestackRequireWireValue('ClearDoneTasksResult', 'removed', value['removed']) as num).toInt(),
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'removed': removed,
+    };
+  }
+}
+
+// issue #325: `@MappableClass()` (expanded by `dart_mappable_builder`
+// alongside `riverpod_generator` in the same `build_runner` pass) gives
+// this class real `operator ==`/`hashCode`/`copyWith` — every generated
+// data class needs this under the `riverpod` preset because any of them
+// can end up as a `@riverpod` family provider's argument type (see
+// `EstimateFocusMinutesArgs` in `procedures.dart`), and riverpod's family
+// cache dedupes provider instances by argument *value* equality, not
+// identity. `generateMethods: GenerateMethods.equals | GenerateMethods.copy`
+// deliberately does NOT ask for `encode`/`decode`/`stringify` — this
+// generator already hand-rolls `fromWire`/`toWire` below (different
+// method names, so there's no collision either way), and duplicating a
+// second, unused `toMap`/`fromMap`/`toJson`/`fromJson` surface per class
+// would be pure noise. Relation fields (e.g. `Task.board` -> `Board?`)
+// get deep equality "for free": the referenced type is itself a
+// `@MappableClass()`-annotated generated class in this same preset, so
+// the field-by-field comparison this class's own `==` performs recurses
+// into the related type's generated `==` rather than falling back to
+// object identity; list-valued relations get the same element-wise
+// (not `List.==`/identity) comparison automatically from
+// `dart_mappable`'s own list handling.
+@MappableClass(generateMethods: GenerateMethods.equals | GenerateMethods.copy)
+@CratestackBuilder()
 class FocusEstimateArgs with FocusEstimateArgsMappable {
   const FocusEstimateArgs({
 required this.taskCount,
@@ -167,6 +293,18 @@ class ProceduresApi {
     return FocusEstimateResult.fromWire(cratestackAsValueMap(cratestackRequireWireValue('Procedure', 'estimateFocusMinutes', body)));
   }
 
+  Future<ClearDoneTasksResult> clearDoneTasks(ClearDoneTasksProcedureArgs args, {
+    CratestackCallOptions? options,
+  }) async {
+    final body = await _client.execute(
+      'POST',
+      '/\$procs/clearDoneTasks',
+      body: args.toWire(),
+      options: options,
+    );
+    return ClearDoneTasksResult.fromWire(cratestackAsValueMap(cratestackRequireWireValue('Procedure', 'clearDoneTasks', body)));
+  }
+
 }
 
 final flutterRiverpodClientProceduresApiProvider = Provider<ProceduresApi>((ref) {
@@ -184,5 +322,23 @@ final flutterRiverpodClientProceduresApiProvider = Provider<ProceduresApi>((ref)
 @riverpod
 Future<FocusEstimateResult> estimateFocusMinutes(Ref ref, EstimateFocusMinutesArgs args) {
   return ref.watch(flutterRiverpodClientProceduresApiProvider).estimateFocusMinutes(args);
+}
+
+@riverpod
+class ClearDoneTasksController extends _$ClearDoneTasksController {
+  @override
+  FutureOr<ClearDoneTasksResult?> build() => null;
+
+  Future<ClearDoneTasksResult> clearDoneTasks(ClearDoneTasksProcedureArgs args) async {
+    state = const AsyncValue.loading();
+    try {
+      final result = await ref.read(flutterRiverpodClientProceduresApiProvider).clearDoneTasks(args);
+      state = AsyncValue.data(result);
+      return result;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      rethrow;
+    }
+  }
 }
 

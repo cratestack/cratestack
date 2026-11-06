@@ -332,6 +332,7 @@ mod rpc {
             model: "SoOutWidget".to_owned(),
             operation: cratestack::ModelEventKind::Created,
             occurred_at: cratestack::chrono::DateTime::UNIX_EPOCH,
+            matches: true,
             data: widget(1, LABEL),
         };
         let response = cratestack::__private::encode_model_event_sse_response(

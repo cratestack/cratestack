@@ -12,7 +12,7 @@ use cratestack_client_dart::{
 
 const DIO_TRANSPORT: &str = "lib/src/dio_transport.dart";
 
-fn generate(fixture: &str, preset: DartPreset, native_cbor: bool) -> GeneratedDartPackage {
+fn generate(fixture: &str, preset: DartPreset) -> GeneratedDartPackage {
     let path = format!("tests/fixtures/{fixture}.cstack");
     let schema = cratestack_parser::parse_schema_file(&path)
         .unwrap_or_else(|error| panic!("fixture {path:?} should parse: {error}"));
@@ -21,7 +21,6 @@ fn generate(fixture: &str, preset: DartPreset, native_cbor: bool) -> GeneratedDa
         &DartGeneratorConfig {
             library_name: format!("{fixture}_client"),
             preset,
-            native_cbor,
             ..DartGeneratorConfig::default()
         },
     )
@@ -38,17 +37,12 @@ fn file<'a>(package: &'a GeneratedDartPackage, name: &str) -> &'a str {
         .as_str()
 }
 
-/// Every default/riverpod x REST/RPC x pure-Dart/native-CBOR combination.
+/// Every default/riverpod x REST/RPC combination.
 fn every_package() -> Vec<(String, GeneratedDartPackage)> {
     let mut packages = Vec::new();
     for fixture in ["tiny_rest", "tiny_rpc"] {
         for preset in [DartPreset::Default, DartPreset::Riverpod] {
-            for native_cbor in [false, true] {
-                packages.push((
-                    format!("{fixture}/{preset:?}/native_cbor={native_cbor}"),
-                    generate(fixture, preset, native_cbor),
-                ));
-            }
+            packages.push((format!("{fixture}/{preset:?}"), generate(fixture, preset)));
         }
     }
     packages
@@ -145,69 +139,57 @@ fn every_runtime_declares_the_seam_and_the_sealed_transport_exceptions() {
 
 #[test]
 fn rest_runtime_has_the_http_adapter_the_typed_error_and_the_new_call_options() {
-    for native_cbor in [false, true] {
-        let package = generate("tiny_rest", DartPreset::Default, native_cbor);
-        let runtime = file(&package, "lib/src/runtime.dart");
-        for needle in [
-            "class CratestackHttpAdapter implements CratestackClientAdapter {",
-            "class CratestackRestException implements Exception {",
-            "String? cratestackCanonicalizeQuery(Map<String, Object?>? queryParameters) {",
-            "if (options?.idempotencyKey != null)",
-            "'Idempotency-Key': options!.idempotencyKey!,",
-            "abort: options?.abort,",
-            "if (useRustTransport) cratestackUseRustTransportExtraKey: true,",
-        ] {
-            assert!(
-                runtime.contains(needle),
-                "native_cbor={native_cbor}: lacks `{needle}`"
-            );
-        }
-        // Both call-option fields, on the REST options class.
-        let options = &runtime[runtime
-            .find("class CratestackCallOptions {")
-            .expect("REST call options")..];
-        assert!(options.contains("final String? idempotencyKey;"));
-        assert!(options.contains("final Future<void>? abort;"));
-        assert!(!runtime.contains("class CratestackRpcHttpAdapter"));
+    let package = generate("tiny_rest", DartPreset::Default);
+    let runtime = file(&package, "lib/src/runtime.dart");
+    for needle in [
+        "class CratestackHttpAdapter implements CratestackClientAdapter {",
+        "class CratestackRestException implements Exception {",
+        "String? cratestackCanonicalizeQuery(Map<String, Object?>? queryParameters) {",
+        "if (options?.idempotencyKey != null)",
+        "'Idempotency-Key': options!.idempotencyKey!,",
+        "abort: options?.abort,",
+        "if (useRustTransport) cratestackUseRustTransportExtraKey: true,",
+    ] {
+        assert!(runtime.contains(needle), "runtime.dart lacks `{needle}`");
     }
+    // Both call-option fields, on the REST options class.
+    let options = &runtime[runtime
+        .find("class CratestackCallOptions {")
+        .expect("REST call options")..];
+    assert!(options.contains("final String? idempotencyKey;"));
+    assert!(options.contains("final Future<void>? abort;"));
+    assert!(!runtime.contains("class CratestackRpcHttpAdapter"));
 }
 
 #[test]
 fn rpc_runtime_has_the_http_adapter_the_streaming_scanner_and_the_new_call_options() {
-    for native_cbor in [false, true] {
-        let package = generate("tiny_rpc", DartPreset::Default, native_cbor);
-        let runtime = file(&package, "lib/src/runtime.dart");
-        for needle in [
-            "class CratestackRpcHttpAdapter implements CratestackRpcAdapter {",
-            "class CratestackCborSeqScanner implements CborSeqDecoderHandle {",
-            "response.body.transform(",
-            "CborSeqStreamTransformer(decoder)",
-            "abort: options?.abort,",
-        ] {
-            assert!(
-                runtime.contains(needle),
-                "native_cbor={native_cbor}: lacks `{needle}`"
-            );
-        }
-        let options = &runtime[runtime
-            .find("class CratestackRpcCallOptions {")
-            .expect("RPC call options")..];
-        assert!(options.contains("final String? idempotencyKey;"));
-        assert!(options.contains("final Future<void>? abort;"));
-        // `stream()` must not buffer the body any more.
-        assert!(
-            !runtime.contains("TODO: stream `application/cbor-seq`"),
-            "the buffering TODO should be resolved"
-        );
-        assert!(
-            !runtime.contains("class CratestackHttpAdapter implements CratestackClientAdapter")
-        );
+    let package = generate("tiny_rpc", DartPreset::Default);
+    let runtime = file(&package, "lib/src/runtime.dart");
+    for needle in [
+        "class CratestackRpcHttpAdapter implements CratestackRpcAdapter {",
+        "class CratestackCborSeqScanner implements CborSeqDecoderHandle {",
+        "response.body.transform(",
+        "CborSeqStreamTransformer(decoder)",
+        "abort: options?.abort,",
+    ] {
+        assert!(runtime.contains(needle), "runtime.dart lacks `{needle}`");
     }
+    let options = &runtime[runtime
+        .find("class CratestackRpcCallOptions {")
+        .expect("RPC call options")..];
+    assert!(options.contains("final String? idempotencyKey;"));
+    assert!(options.contains("final Future<void>? abort;"));
+    // `stream()` must not buffer the body any more.
+    assert!(
+        !runtime.contains("TODO: stream `application/cbor-seq`"),
+        "the buffering TODO should be resolved"
+    );
+    assert!(!runtime.contains("class CratestackHttpAdapter implements CratestackClientAdapter"));
 }
 
 #[test]
 fn the_readme_documents_the_seam_and_no_longer_lists_a_missing_typed_error() {
-    let rest = generate("tiny_rest", DartPreset::Default, false);
+    let rest = generate("tiny_rest", DartPreset::Default);
     let readme = file(&rest, "README.md");
     assert!(readme.contains("CratestackHttpAdapter("), "{readme}");
     assert!(readme.contains("CratestackDioTransport(myDio)"), "{readme}");
@@ -216,7 +198,7 @@ fn the_readme_documents_the_seam_and_no_longer_lists_a_missing_typed_error() {
     assert!(!readme.contains("CratestackCborDioAdapter"), "{readme}");
     assert!(!readme.contains("typed remote-error"), "{readme}");
 
-    let rpc = generate("tiny_rpc", DartPreset::Default, false);
+    let rpc = generate("tiny_rpc", DartPreset::Default);
     let readme = file(&rpc, "README.md");
     assert!(readme.contains("CratestackRpcHttpAdapter("), "{readme}");
     assert!(readme.contains("CratestackRpcException"), "{readme}");
@@ -224,11 +206,50 @@ fn the_readme_documents_the_seam_and_no_longer_lists_a_missing_typed_error() {
 
 #[test]
 fn riverpod_adapter_provider_docs_show_the_http_adapter_over_the_dio_transport() {
-    let rest = generate("tiny_rest", DartPreset::Riverpod, false);
+    let rest = generate("tiny_rest", DartPreset::Riverpod);
     let client = file(&rest, "lib/src/client.dart");
     assert!(client.contains("CratestackHttpAdapter(\n///         CratestackDioTransport(dio),"));
 
-    let rpc = generate("tiny_rpc", DartPreset::Riverpod, false);
+    let rpc = generate("tiny_rpc", DartPreset::Riverpod);
     let client = file(&rpc, "lib/src/client.dart");
     assert!(client.contains("CratestackRpcHttpAdapter(\n///         CratestackDioTransport(dio),"));
+}
+
+/// cratestack#1243: both exceptions type an `AuthProvider` refusal's members,
+/// `details` and `WWW-Authenticate` challenges, and `RpcErrorBody` no longer
+/// drops the members it does not know. The behavioural proof is
+/// `tests/fixtures/auth_refusal_{rest,rpc}_test.dart`, under `just verify-dart`.
+#[test]
+fn both_exceptions_type_the_refusal_members_and_the_challenges() {
+    for (label, package) in every_package() {
+        let runtime = file(&package, "lib/src/runtime.dart");
+        let common = [
+            "Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {",
+            "List<String> _cratestackChallenges(Map<String, String> headers) {",
+            "this.headers = const <String, String>{},",
+            "List<String> get challenges => _cratestackChallenges(headers);",
+        ];
+        let rest = [
+            "String? get code => _envelopeMember('code') as String?;",
+            "Map<String, Object?> get extra => _cratestackExtraErrorMembers(body);",
+            "        headers: response.headers,\n      );",
+        ];
+        let rpc = [
+            "final Map<String, Object?> extra;",
+            "extra: _cratestackExtraErrorMembers(map),",
+            "Map<String, Object?> get extra => body.extra;",
+            "        headers: response.headers,\n      );",
+        ];
+        let specific: &[&str] = if label.starts_with("tiny_rest") {
+            &rest
+        } else {
+            &rpc
+        };
+        for needle in common.iter().chain(specific) {
+            assert!(
+                runtime.contains(needle),
+                "{label}: runtime.dart lacks `{needle}`"
+            );
+        }
+    }
 }

@@ -7,9 +7,9 @@ use cratestack_core::{AuditOperation, CratestackContext, CratestackError, ModelE
 
 use crate::audit::{
     build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
-    fetch_for_audit,
+    fetch_before_image,
 };
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::{ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx};
 
 use super::update_exec::{update_record_in_conn, update_record_with_executor};
@@ -38,6 +38,8 @@ where
     let needs_tx = emits_event || audit_enabled;
     let mut audit_event = None;
     let record = if needs_tx {
+        // Before this transaction takes a connection (`outbox_upgrade.rs`).
+        runtime.upgrade_event_outbox(descriptor, emits_event).await;
         let mut tx = runtime
             .pool()
             .begin()
@@ -51,25 +53,27 @@ where
         }
         // Before-snapshot under row lock so concurrent mutations
         // can't race.
-        let before_record = if audit_enabled {
-            fetch_for_audit(&mut *tx, descriptor, id.clone()).await?
-        } else {
-            None
-        };
-        let before_snapshot = before_record
-            .as_ref()
-            .and_then(|m| serde_json::to_value(m).ok());
+        let values = input.sql_values();
+        let keep = runtime
+            .keeps_before(&mut *tx, descriptor, emits_event)
+            .await?;
+        let before_record =
+            fetch_before_image(&mut *tx, descriptor, id.clone(), keep.is_some(), &values).await?;
         let record = update_record_in_conn(&mut tx, descriptor, id, input, ctx, if_match).await?;
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_update(
                 &mut *tx,
-                descriptor.schema_name,
-                ModelEventKind::Updated,
+                descriptor.event_target(),
                 &record,
+                before_record.as_ref(),
+                keep,
             )
             .await?;
         }
         if audit_enabled {
+            let before_snapshot = before_record
+                .as_ref()
+                .and_then(|m| serde_json::to_value(m).ok());
             let after = serde_json::to_value(&record).ok();
             let event = build_audit_event(
                 descriptor,

@@ -28,6 +28,7 @@ pub(super) fn generate_generated_rpc_model_client(
     // consulted once here for every RPC client method this function
     // emits.
     let verbs = cratestack_core::model_verbs(model);
+    let subscribe_method = crate::client::subscribe::model_subscribe_method(model, true);
     let model_name = &model.name;
     let client_ident = ident(&format!("{}Client", model.name));
     let create_input_ident = ident(&format!("Create{}Input", model.name));
@@ -186,6 +187,8 @@ pub(super) fn generate_generated_rpc_model_client(
             #update_group
 
             #delete_group
+
+            #subscribe_method
         }
     })
 }

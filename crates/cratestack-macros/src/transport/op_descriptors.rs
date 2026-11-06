@@ -82,8 +82,7 @@ pub(crate) fn generate_model_op_descriptors(
 
 /// `model.<X>.subscribe` op descriptor — only for models declaring
 /// `@@subscribe` (the parser guarantees such a model also declares
-/// `@@emit(...)`, and only under `transport rpc`, see
-/// `cratestack-parser::validate::model_attributes`). Mirrors the shape
+/// `@@emit(...)`, see `cratestack-parser::validate::model_attributes`). Mirrors the shape
 /// of the CRUD descriptors above but with `OpKind::Subscription`, no
 /// input, and an output type naming the streamed envelope rather than
 /// the bare model — see `docs/design/rpc-transport.md` §3.4a.
@@ -149,7 +148,7 @@ pub(crate) fn generate_procedure_op_descriptor(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn op_descriptor(
+pub(super) fn op_descriptor(
     op_id: &str,
     kind: proc_macro2::TokenStream,
     input_ty: &str,

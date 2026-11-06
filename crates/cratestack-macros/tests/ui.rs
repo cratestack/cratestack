@@ -114,6 +114,16 @@ fn extension_feature_gate_compile_fail() {
         );
         t.compile_fail(generated_dir.join("rate_limit_feature_missing.rs"));
     }
+    if !cfg!(feature = "webtransport") {
+        write_fixture(
+            &manifest_dir,
+            staging_dir,
+            &generated_dir,
+            "webtransport_feature_missing.rs",
+            "tests/fixtures/webtransport_extension.cstack",
+        );
+        t.compile_fail(generated_dir.join("webtransport_feature_missing.rs"));
+    }
 
     // Distinct scenario from the two above, and run unconditionally: on
     // `include_embedded_schema!`, `pgvector` is rejected regardless of
@@ -143,6 +153,19 @@ fn extension_feature_gate_compile_fail() {
         "tests/fixtures/postgis_extension_embedded.cstack",
     );
     t.compile_fail(generated_dir.join("postgis_rejected_on_embedded.rs"));
+
+    // `webtransport` on embedded: a server binding with nothing to serve
+    // there, rejected whatever the features, with its own message rather
+    // than falling through to "enable the feature" (which would then
+    // generate nothing).
+    write_embedded_pgvector_fixture(
+        &manifest_dir,
+        staging_dir,
+        &generated_dir,
+        "webtransport_rejected_on_embedded.rs",
+        "tests/fixtures/webtransport_extension_embedded.cstack",
+    );
+    t.compile_fail(generated_dir.join("webtransport_rejected_on_embedded.rs"));
 
     // Distinct scenario again (cratestack computed-fields feature,
     // docs/design/computed-fields.md decision 3): `@computed` fields are

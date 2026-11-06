@@ -12,7 +12,7 @@ use cratestack_core::{
 use crate::audit::{
     build_audit_event, dispatch_audit_sink, enqueue_audit_event, ensure_audit_table,
 };
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::query::support::push_action_policy_query;
 use crate::{ModelDescriptor, ModelPrimaryKey, SqlxRuntime, cratestack_error_from_sqlx, sqlx};
 
@@ -108,9 +108,9 @@ impl<'a, M: 'static, PK: 'static> BatchDelete<'a, M, PK> {
             let mut audit_events = Vec::new();
             for record in &deleted {
                 if emits_event {
-                    enqueue_event_outbox(
+                    crate::descriptor::enqueue_model_event(
                         &mut **tx,
-                        self.descriptor.schema_name,
+                        self.descriptor.event_target(),
                         ModelEventKind::Deleted,
                         record,
                     )

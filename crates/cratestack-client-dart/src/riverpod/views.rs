@@ -77,6 +77,9 @@ pub(crate) struct ModelOperationsView {
     pub(crate) create_controller_name: String,
     pub(crate) update_controller_name: String,
     pub(crate) delete_controller_name: String,
+    /// `@riverpod Stream<CratestackModelEvent<Model>> {name}(Ref ref,
+    /// CratestackSubscribeInput input)` — only for an `@@subscribe` model.
+    pub(crate) subscribe_function_name: Option<String>,
 }
 
 /// Renders `lib/src/models/shared_types.dart` — always emitted (unlike
@@ -204,6 +207,11 @@ pub(crate) struct ProceduresFileContext {
     /// the separate `client.dart` file.
     pub(crate) procedures: Vec<ProcedureView>,
     pub(crate) procedure_operations: Vec<ProcedureOperationView>,
+    /// `subscription procedure`s (slice S6): a `Stream` method on
+    /// `ProceduresApi` and a `@riverpod` stream provider each, named by the
+    /// index-parallel `subscription_symbols`.
+    pub(crate) subscription_procedures: Vec<ProcedureView>,
+    pub(crate) subscription_symbols: Vec<String>,
 }
 
 /// One procedure's `@riverpod` provider identifier plus which shape it
@@ -261,6 +269,8 @@ pub(crate) struct ClientFileContext {
     /// checks it — `ClientFileContext` never otherwise carries the
     /// procedure list.
     pub(crate) has_procedures: bool,
+    /// Any subscription op (slice S6): the client gains `subscribe(...)`.
+    pub(crate) has_subscriptions: bool,
     /// `--preset fespalier` (cratestack#1204): the adapter provider defaults
     /// to the HTTP adapter over `<prefix>TransportProvider`, and the file
     /// declares that provider and `<prefix>BaseUriProvider`.

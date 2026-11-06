@@ -1,0 +1,16 @@
+// WebTransport outside a browser: not available. Native Dart has no
+// WebTransport implementation; `auto` moves on to the WebSocket.
+import 'subscription_sockets.dart';
+
+bool get cratestackWebTransportSupported => false;
+
+Future<Stream<Object?>> cratestackOpenWebTransport(
+  Uri url,
+  List<List<int>> serverCertificateHashes,
+  Map<String, String> headers,
+  String opId,
+  Object? input,
+  Duration? within,
+) {
+  throw const CratestackSocketUnreachable('WebTransport needs a browser');
+}

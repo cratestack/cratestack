@@ -1,4 +1,7 @@
 import { CratestackRuntime, type CratestackClientOptions, type CratestackResponseEnvelope } from "./runtime.js";
+{% if has_subscriptions %}
+import * as subscriptions from "./subscriptions.js";
+{% endif %}
 import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import type {
 {% for interface in interfaces %}
@@ -105,6 +108,28 @@ export class {{ model.api_name }} {
     });
   }
 {% endif %}
+{% if model.allows_subscribe %}
+  /** Live events of `{{ model.name }}` the caller may read, narrowed by `input`
+   *  (`list`'s filters, `operations`). The first `next()` resolves once the
+   *  subscription is live; nothing committed after that is missed, or the
+   *  iteration throws `unavailable` and you refetch. */
+  subscribe(
+    input: subscriptions.SubscribeInput = {},
+    options: subscriptions.SubscriptionOptions = {},
+  ): AsyncIterable<subscriptions.ModelEvent<{{ model.name }}>> {
+    const target = {
+      opId: "{{ model.subscribe_op_id }}",
+      input,
+      ssePath: "{{ model.subscribe_route }}",
+      sseQuery: subscriptions.subscribeInputQuery(input),
+      socketPath: "/$ws",
+    };
+    return subscriptions.subscribe(this.runtime, target, options, (value) => {
+      const event = value as subscriptions.ModelEvent<unknown>;
+      return { ...event, data: reviveWireFields(event.data, '{{ model.revival_shape_name }}') as {{ model.name }} };
+    });
+  }
+{% endif %}
 }
 
 {% endfor %}
@@ -123,6 +148,25 @@ export class ProceduresApi {
       .then((value) => {% if procedure.revival_paged %}revivePagedWireFields{% else %}reviveWireFields{% endif %}(value, '{{ procedure.revival_shape_name }}') as {{ procedure.return_type }});
   }
 {% endif %}
+
+{% endfor %}
+{% for procedure in subscription_procedures %}
+  /** Subscribes to `{{ procedure.name }}`. A policy or setup refusal is thrown by
+   *  the first `next()`, never yielded. */
+  {{ procedure.method_name }}(
+    args: {{ procedure.args_name }},
+    options: subscriptions.SubscriptionOptions = {},
+  ): AsyncIterable<{{ procedure.return_type }}> {
+    const target = {
+      opId: "{{ procedure.op_id }}",
+      input: args,
+      ssePath: "{{ procedure.route }}",
+      sseQuery: subscriptions.procedureQuery(args),
+      socketPath: "/$ws",
+    };
+    return subscriptions.subscribe(this.runtime, target, options, (value) =>
+      {% if procedure.revival_kind == "scalar" %}reviveWireScalar(value, "{{ procedure.revival_scalar_kind }}"){% else %}reviveWireFields(value, '{{ procedure.revival_shape_name }}'){% endif %} as {{ procedure.return_type }});
+  }
 
 {% endfor %}
 }

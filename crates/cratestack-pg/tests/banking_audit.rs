@@ -116,7 +116,7 @@ async fn audit_captures_create_with_redacted_pii() {
     assert_eq!(
         actor["id"],
         serde_json::json!("operator-7"),
-        "actor.id should mirror ctx.principal_actor_id",
+        "actor.id should mirror ctx.subject()",
     );
     assert_eq!(
         actor["ip"],

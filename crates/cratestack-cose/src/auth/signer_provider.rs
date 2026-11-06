@@ -2,11 +2,12 @@
 //! principal (cratestack#1077; ADR 0006 §12).
 //!
 //! A signed client sends no `Authorization` header, so the header-based
-//! provider has nothing to authenticate. This adapter wraps that provider and
-//! falls back to the signer the envelope layer verified, which it looks up in
-//! the registries.
+//! provider has nothing to authenticate. This adapter is the first-success
+//! chain `first_success(inner).or(CoseSignerProvider)` (ADR 0021 §5,
+//! cratestack#1243): the wrapped provider, then the signer the envelope layer
+//! verified, which [`CoseSignerProvider`] looks up in the registries.
 //!
-//! The rules, in order:
+//! The rules, in order (the chain's, applied to these two members):
 //!
 //! 1. The wrapped provider runs first. An authenticated answer (a valid
 //!    `Authorization` header) is returned as is, and the registries are not
@@ -78,10 +79,10 @@ use std::sync::Arc;
 
 use cratestack_auth::DeviceKeyResolver;
 use cratestack_core::{
-    AuthProvider, CratestackContext, CratestackError, RequestContext, VerifiedSigner,
+    AuthProvider, CratestackContext, CratestackError, Credential, RequestContext, first_success,
 };
 
-use super::signer_principal::{SignerRegistries, authenticated};
+use super::signer_member::CoseSignerProvider;
 use crate::keys::CoseVerifierResolver;
 
 /// Wraps an [`AuthProvider`] and authenticates a COSE-verified signer through
@@ -130,7 +131,7 @@ use crate::keys::CoseVerifierResolver;
 #[derive(Clone)]
 pub struct CoseAuthProvider<A> {
     inner: A,
-    registries: SignerRegistries,
+    signer: CoseSignerProvider,
 }
 
 impl<A> CoseAuthProvider<A> {
@@ -140,7 +141,7 @@ impl<A> CoseAuthProvider<A> {
     pub fn new(inner: A, devices: Arc<dyn DeviceKeyResolver>) -> Self {
         Self {
             inner,
-            registries: SignerRegistries::new(devices),
+            signer: CoseSignerProvider::new(devices),
         }
     }
 
@@ -154,7 +155,7 @@ impl<A> CoseAuthProvider<A> {
     /// Service keys ([`with_service_keys`](Self::with_service_keys)) are not
     /// affected.
     pub fn authenticate_devices(mut self, enabled: bool) -> Self {
-        self.registries = self.registries.with_devices_enabled(enabled);
+        self.signer = self.signer.authenticate_devices(enabled);
         self
     }
 
@@ -163,7 +164,7 @@ impl<A> CoseAuthProvider<A> {
     /// `services` must hold service keys only: a device key here authenticates
     /// as a service whatever the gate.
     pub fn with_service_keys(mut self, services: Arc<dyn CoseVerifierResolver>) -> Self {
-        self.registries = self.registries.with_services(services);
+        self.signer = self.signer.with_service_keys(services);
         self
     }
 }
@@ -183,16 +184,17 @@ impl<A: AuthProvider> AuthProvider for CoseAuthProvider<A> {
         &self,
         request: &RequestContext<'_>,
     ) -> Result<CratestackContext, CratestackError> {
-        let from_inner = self.inner.authenticate(request).await.map_err(Into::into)?;
-        if from_inner.is_authenticated() {
-            return Ok(from_inner);
-        }
-        let Some(signer) = request.extensions.get::<VerifiedSigner>() else {
-            return Ok(from_inner);
-        };
-        match self.registries.vouch(signer).await? {
-            Some(kind) => Ok(authenticated(signer, kind)),
-            None => Ok(from_inner),
-        }
+        // The members are cheap to clone (`Arc`s and the inner provider's own
+        // `Clone`); the chain is the public combinator, not a private path.
+        first_success(self.inner.clone())
+            .or(self.signer.clone())
+            .authenticate(request)
+            .await
+    }
+
+    fn credential<'r>(&self, request: &RequestContext<'r>) -> Credential<'r> {
+        first_success(self.inner.clone())
+            .or(self.signer.clone())
+            .credential(request)
     }
 }

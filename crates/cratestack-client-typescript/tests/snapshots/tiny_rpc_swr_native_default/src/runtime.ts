@@ -62,8 +62,8 @@ export interface CratestackRpcCodec {
   decode(bytes: Uint8Array): unknown;
 }
 
-/** Fallback codec — pass `codec: jsonRpcCodec` explicitly to opt back
- *  into it; `@cratestack/cbor`'s native codec is the default (issue
+/** JSON codec — pass `codec: jsonRpcCodec` explicitly to put JSON on the
+ *  wire instead; `@cratestack/cbor`'s native codec is the default (issue
  *  #746). */
 export const jsonRpcCodec: CratestackRpcCodec = {
   contentType: "application/json",
@@ -82,10 +82,6 @@ export const jsonRpcCodec: CratestackRpcCodec = {
     // batch of RAW inputs with the request's codec and never runs
     // `terminalLink`, so a conversion that lived only there would be
     // skipped by exactly the path that batches.
-    //
-    // (Deliberately no package name in this comment: `native_cbor: false`
-    // builds assert that `runtime.ts` never mentions the native codec
-    // package at all — see `tests/native_cbor_generator.rs`.)
     return JSON.stringify(encodeBinaryAsJson(value) ?? null);
   },
   decode(bytes: Uint8Array): unknown {
@@ -173,7 +169,9 @@ export interface RpcResponseFrame<O = JsonValue> {
 }
 
 /** Wire shape of an RPC error body. Mirrors the server-side
- *  `cratestack_core::rpc::RpcErrorBody`. */
+ *  `cratestack_core::rpc::RpcErrorBody`. Members beyond these three (an
+ *  `AuthProvider` refusal's) stay on the decoded object; read them typed
+ *  through `CratestackRpcError.extra`. */
 export interface RpcErrorBody {
   code: RpcErrorCode | string;
   message: string;
@@ -200,23 +198,168 @@ export type RpcErrorCode =
   | "canceled"
   | "internal";
 
+const RESERVED_ERROR_MEMBERS: ReadonlySet<string> = new Set(["code", "message", "details"]);
+
+/** The members of a decoded error body beyond `code`, `message` and
+ *  `details`: what an `AuthProvider` refusal adds (cratestack#1208), such
+ *  as `{ error: "attestation_expired" }`. Every member is kept, as decoded;
+ *  empty when `body` is not an object. */
+function extraErrorMembers(body: unknown): Readonly<Record<string, unknown>> {
+  const extra: Record<string, unknown> = {};
+  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+    for (const [name, value] of Object.entries(body)) {
+      if (!RESERVED_ERROR_MEMBERS.has(name)) {
+        extra[name] = value;
+      }
+    }
+  }
+  return Object.freeze(extra);
+}
+
+/** The answer's `WWW-Authenticate` value, raw and unparsed (cratestack#1243);
+ *  empty when there is none. `Headers` joins two challenge lines with `, `,
+ *  so they arrive as one entry holding both. */
+function challengesOf(headers: Headers | undefined): readonly string[] {
+  const value = headers?.get("www-authenticate");
+  return Object.freeze(value ? [value] : []);
+}
+
+/** The extra member `error` of a step-up refusal (RFC 9470, cratestack#1244). */
+export const INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication";
+
+/** What a step-up refusal asks for (cratestack#1244): an operation that
+ *  requires a fresher or stronger authentication than the caller presented.
+ *  Each requirement is present only when the refused operation declares it. */
+export interface StepUpRequired {
+  /** The longest time, in seconds, since the caller last authenticated. */
+  readonly maxAge: number | undefined;
+  /** The authentication context classes the operation accepts. */
+  readonly acrValues: readonly string[];
+  /** The authentication methods the operation requires. */
+  readonly amr: readonly string[];
+  /** Which requirements the caller failed: a subset of `"max_age"`, `"acr"`
+   *  and `"amr"`. */
+  readonly unmet: readonly string[];
+}
+
+/** Reads a step-up refusal once the transport's own test (`refused`: a 401,
+ *  or `unauthenticated`) passed: `undefined` unless the extra member `error`
+ *  is `insufficient_user_authentication`. Never throws: a missing or
+ *  mistyped field reads as absent or empty. */
+function readStepUp(
+  refused: boolean,
+  details: unknown,
+  extra: Readonly<Record<string, unknown>>,
+): StepUpRequired | undefined {
+  if (!refused || extra["error"] !== INSUFFICIENT_USER_AUTHENTICATION) {
+    return undefined;
+  }
+  const map: Record<string, unknown> =
+    typeof details === "object" && details !== null && !Array.isArray(details)
+      ? (details as Record<string, unknown>)
+      : {};
+  const strings = (name: string): readonly string[] => {
+    const value = map[name];
+    return Object.freeze(
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [],
+    );
+  };
+  const raw = map["max_age"];
+  const maxAge = typeof raw === "bigint" ? Number(raw) : raw;
+  return Object.freeze({
+    maxAge:
+      typeof maxAge === "number" && Number.isSafeInteger(maxAge) && maxAge >= 0
+        ? maxAge
+        : undefined,
+    acrValues: strings("acr_values"),
+    amr: strings("amr"),
+    unmet: strings("unmet"),
+  });
+}
+
+/** Runs `call`; when it fails with a step-up refusal, hands the refusal to
+ *  `reprove` and, when that resolves `true` (the user authenticated again),
+ *  runs `call` **once** more and returns what it gives, even a second
+ *  refusal. Never loops (cratestack#1244).
+ *
+ *  `reprove` resolves `false` when the user declined or the re-proof failed;
+ *  the first refusal is then rethrown. Any other error, and one `reprove`
+ *  itself throws, propagates as it is.
+ *
+ *  ```ts
+ *  const receipt = await retryAfterStepUp(
+ *    () => client.procedures.transfer(args),
+ *    (stepUp) => session.reauthenticate({ maxAge: stepUp.maxAge }),
+ *  );
+ *  ``` */
+export async function retryAfterStepUp<T>(
+  call: () => Promise<T>,
+  reprove: (stepUp: StepUpRequired) => Promise<boolean>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const stepUp = stepUpOf(error);
+    if (stepUp === undefined || !(await reprove(stepUp))) {
+      throw error;
+    }
+  }
+  return call();
+}
+
 /** Thrown by `CratestackRpcRuntime` when a remote call fails. Carries
  *  the wire-shaped `RpcErrorBody` directly so callers can switch on
- *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.). */
+ *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.).
+ *
+ *  An `AuthProvider` refusal keeps its fixed code (`unauthenticated` or
+ *  `permission_denied`); what it adds is in `details`, `extra` (the body's
+ *  other members, which `body` also keeps) and `challenges`. */
 export class CratestackRpcError extends Error {
   readonly status: number;
   readonly code: RpcErrorCode | string;
   readonly details: unknown;
   readonly body: RpcErrorBody;
+  readonly extra: Readonly<Record<string, unknown>>;
+  /** The answer's headers; `undefined` when it had none of its own. */
+  readonly headers: Headers | undefined;
+  readonly challenges: readonly string[];
+  /** The step-up refusal this answer is (cratestack#1244): code
+   *  `unauthenticated` and the extra member `error` set to
+   *  `insufficient_user_authentication`, read from `details`; `undefined`
+   *  for any other error. */
+  readonly stepUp: StepUpRequired | undefined;
 
-  constructor(status: number, body: RpcErrorBody) {
+  constructor(status: number, body: RpcErrorBody, headers?: Headers) {
     super(`RPC call failed with code ${body.code} (status ${status}): ${body.message}`);
     this.name = "CratestackRpcError";
     this.status = status;
     this.code = body.code;
     this.details = body.details;
     this.body = body;
+    this.extra = extraErrorMembers(body);
+    this.headers = headers;
+    this.challenges = challengesOf(headers);
+    this.stepUp = readStepUp(body.code === "unauthenticated", body.details, this.extra);
   }
+}
+
+/** The step-up refusal of a {@link CratestackRpcError} (its `stepUp`), or of
+ *  a batch frame's `error` body, which reads the same; `undefined` for
+ *  anything else (cratestack#1244). */
+export function stepUpOf(error: unknown): StepUpRequired | undefined {
+  if (error instanceof CratestackRpcError) {
+    return error.stepUp;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    !(error instanceof Error) &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    const body = error as RpcErrorBody;
+    return readStepUp(body.code === "unauthenticated", body.details, extraErrorMembers(body));
+  }
+  return undefined;
 }
 
 /** Transport-level error (network failure, malformed response,
@@ -240,6 +383,7 @@ export class CratestackRpcStreamError extends Error {
   readonly code: RpcErrorCode | string;
   readonly details: unknown;
   readonly body: RpcErrorBody;
+  readonly extra: Readonly<Record<string, unknown>>;
 
   constructor(body: RpcErrorBody) {
     super(`RPC stream failed with code ${body.code}: ${body.message}`);
@@ -247,6 +391,7 @@ export class CratestackRpcStreamError extends Error {
     this.code = body.code;
     this.details = body.details;
     this.body = body;
+    this.extra = extraErrorMembers(body);
   }
 }
 
@@ -323,9 +468,10 @@ export class CratestackRpcRuntime {
   }
   /** Resolves the runtime's codec, awaited right after `buildHeaders()`
    *  at every already-`async` call site (issue #746) — that ordering
-   *  (headers first, codec second) is deliberate: it matches the
-   *  `--no-native-cbor` path's ordering exactly, so a user's
-   *  `options.headers` callback fires at the same point in both. An
+   *  (headers first, codec second) is deliberate: it is the order the
+   *  runtime had before the native codec existed, so a user's
+   *  `options.headers` callback fires at the same point whichever codec
+   *  is in use. An
    *  explicit `options.codec` always wins and needs no async resolution (it
    *  is used exactly as given: `terminalLink` still converts a `bigint` or
    *  `Decimal` for every request it builds, but a custom codec that other
@@ -462,7 +608,11 @@ export class CratestackRpcRuntime {
       return codec.decode(bytes);
     }
 
-    throw new CratestackRpcError(response.status, await readErrorBody(response, codec));
+    throw new CratestackRpcError(
+      response.status,
+      await readErrorBody(response, codec),
+      response.headers,
+    );
   }
 
   private async buildHeaders(extra?: HeadersInit): Promise<Headers> {

@@ -1,0 +1,371 @@
+# Explicit enum ordinals: a compact, append-only enum encoding
+
+Status: **implemented** (2026-10-26). Accepted by the maintainer the same day; all six slices of
+§9 are built, and an ordinal enum is stored and sent as its number end to end. Two open questions
+are decided: the syntax is `Pending = 1` (O4), and the query string takes names only (O2); §7
+records both. Where the build differs from the proposal below, an *As built* note says so, and
+§9.1 lists what is left. The docs guide
+[Reducing payload size](https://github.com/cratestack/cratestack-docs/blob/main/guides/payload-size.md)
+links here.
+
+Scope: every place a `.cstack` enum value is stored, sent or parsed — the parser, the three
+schema macros, the sqlx and rusqlite runtimes, `cratestack-migrate`, `cratestack diff`, both
+codecs, JSON Schema and MCP, the Rust, TypeScript and Dart clients, WireMock, Studio, the
+contract digests, and the LSP / tree-sitter / VS Code grammars.
+
+**Evidence convention.** `path:line` anchors were READ on `claude/relaxed-curie-vs6j06` at
+0.16.0 + Unreleased (2026-10-26). Byte counts were RAN with the probe in §8, which drives
+`minicbor-serde` 0.7.1 configured exactly as `CborCodec::encode_into` configures it
+(`crates/cratestack-codec-cbor/src/lib.rs:53-55`) and plain `serde_json`.
+
+## 1. What an enum is today
+
+An enum is a string everywhere it travels.
+
+| Surface | Representation | Source |
+|---|---|---|
+| Rust type | unit variants, each `#[serde(rename = "<Variant>")]` | `crates/cratestack-macros/src/types/enums.rs` `variant_tokens` |
+| SQL bind | `SqlValue::String(self.to_string())` | `types/enums.rs`, both `IntoSqlValue` impls |
+| Postgres column | `TEXT` + `CHECK (col IN ('A', 'B'))`, no `CREATE TYPE` (#228) | `crates/cratestack-migrate/src/emit/postgres/columns.rs:169-176`, `emit/postgres/checks.rs:35` |
+| SQLite column | declared `BLOB` like every SQLite column, the value stored as text, with **no** membership `CHECK`: the emitter skips enum checks on SQLite, and the row decoder refuses an unknown name | `crates/cratestack-migrate/src/emit/sqlite/columns.rs:3`, `emit/sqlite/checks.rs` `is_enum_membership` |
+| CBOR / JSON body | text string | RAN, §8 |
+| TypeScript | `export type E = 'A' \| 'B'` plus `EValues` | `crates/cratestack-client-typescript/templates/src/models.ts.j2:521-527` |
+| Dart | `enum E { a('A'), … }` with `String wireName`, `fromWire` throws `ArgumentError` on an unknown value | the pattern `SortDirection` shows in `crates/cratestack-client-dart/templates/models.dart.j2:116-136` |
+
+What that costs, per value, on the wire:
+
+| Value | CBOR | JSON |
+|---|---|---|
+| `PendingReview` as today | 14 B | 15 B |
+| the same as a small integer (≤ 23) | 1 B | 1 B |
+| the same as an integer 24–255 | 2 B | 2–3 B |
+
+And in Postgres: a `TEXT` value of *n* ASCII characters is *n* + 1 bytes (short varlena
+header), so `PendingReview` is 14 B against 2 B for a `SMALLINT`, in the heap and again in every
+index that carries the column.
+
+On a realistic list response — 500 rows, 5 fields, two of them enums, varied data (§8) — the
+saving is real uncompressed and nearly gone once the body is gzipped:
+
+| 500 rows | CBOR | CBOR + gzip | JSON | JSON + gzip |
+|---|---|---|---|---|
+| today | 59 411 | 18 674 | 79 409 | 21 236 |
+| two enums as ordinals | 47 438 (−20 %) | 18 429 (−1.3 %) | 66 436 (−16 %) | 20 715 (−2.5 %) |
+
+Ordinals are therefore worth having for **uncompressed hops** (mobile clients without
+`Content-Encoding`, `application/cbor-seq` streams, the outbox, signed envelopes whose payload
+is sealed before any HTTP compression could see it), for **storage and index size**, and for
+**stability** (§3) — not as the first lever for a gzipped JSON API. The docs guide ranks the
+levers in that order.
+
+### 1.1 Two defects this design also closes
+
+1. **`cratestack diff` does not look at enums at all.** No file under
+   `crates/cratestack-cli/src/schema_diff/` reads `Schema::enums`. Removing or renaming a
+   variant is a wire-breaking change for every client, and the API-break detector reports
+   nothing. This is true today, independent of ordinals. §3.3 adds the check for both kinds of
+   enum.
+2. **The obvious shortcut is a trap.** "Store the variant's declaration index" is one line of
+   codegen and silently remaps every stored row the first time someone sorts the variants
+   alphabetically or inserts one in the middle. This design refuses implicit ordinals outright:
+   an ordinal is written down, or there is none.
+
+## 2. Proposal
+
+### 2.1 Syntax
+
+```cstack
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Rejected = 3
+  Refunded = 5
+
+  @@reserved(4)   // was Settled; retired 2026-11 — never reuse
+}
+```
+
+An enum whose variants carry `= <n>` is an **ordinal enum**. An enum without them is unchanged:
+strings everywhere, exactly as §1. Existing schemas do not move.
+
+Parse-time rules (single schema, no history needed):
+
+- **R1 — all or none.** If one variant has an ordinal, every variant must. A partially numbered
+  enum is refused, naming the unnumbered variants.
+- **R2 — range and uniqueness.** An ordinal is a decimal integer literal in `0..=32767` (fits
+  `SMALLINT` and a one-to-three-byte CBOR integer), unique within the enum.
+- **R3 — reserved means reserved.** `@@reserved(n, …)` lists retired ordinals; a variant may not
+  use one. `@@reserved` on a non-ordinal enum is refused.
+- **R4 — closed attribute list.** `@@reserved` is the only block attribute an enum accepts,
+  added to the closed lists of ADR 0019 D5 (`cratestack_parser::field_attribute_names` and the
+  block-attribute allowlist), so a misspelling is a refusal, not a silent no-op.
+- **R5 — no ordinal enum in `auth`** (added while building slice 4). An `auth` field may not have
+  an ordinal enum type. A claim is whatever JSON the auth provider returns, so a policy could not
+  know whether `auth().role` holds the name or the number, and comparing an ordinal column with a
+  string claim would fail open on the create path. Ruling the type out of `auth` also rules out
+  `field == auth().x` for an ordinal field, since both sides must have the same type.
+
+Why `= n` and not `@value(n)`: the number is the variant's identity on disk and on the wire, not
+a modifier on it; it reads the way Rust discriminants and protobuf field numbers read, which is
+what a reviewer will pattern-match against. The cost is grammar work in the chumsky parser, where
+`@value(n)` would have reused the attribute path. *As built:* the VS Code TextMate grammar
+highlights `= 1` and `@@reserved` with its generic number and attribute rules, and this repository
+has no tree-sitter grammar, so the parser was the only grammar to change. **Decided (O4):** `= n`; `@value(n)` is not accepted as an
+alternative spelling, so there is one way to number a variant.
+
+### 2.2 What each surface does with an ordinal enum
+
+Variant **names** stay the authoring and application surface everywhere a human types or reads
+one. The **ordinal** is what is stored and sent.
+
+| Surface | Ordinal enum |
+|---|---|
+| Rust type (server and client) | `#[repr(i16)]` with the declared discriminants. `Serialize`/`Deserialize` hand-emitted as an integer (no new dependency). `as_str`, `Display`, `FromStr` keep using names. New: `const fn ordinal(self) -> i16` and `TryFrom<i16>`. |
+| SQL bind | `SqlValue::Int(self.ordinal() as i64)` |
+| Postgres | `SMALLINT` + `CHECK (col IN (1, 2, 3, 5))`; row decoders `try_get::<i16>` then `TryFrom` |
+| SQLite | still a `BLOB`-declared column, the value stored as an integer. *As built:* no `CHECK`, as for a string enum (§1); the row decoder refuses an unknown number |
+| CBOR / JSON body | integer |
+| REST query string (`?status=Approved`, `__in`, sort) | **names only**, unchanged (decided, O2). The URL is the human-facing surface; codegen maps name → ordinal before binding. A digit (`?status=2`) is refused with the same `BadRequest` an unknown name gets today, naming the accepted values. |
+| RPC | frames carry integers like REST bodies; filters reach the REST parser through `cratestack-axum/src/rpc/synthesize.rs`, so filter parity is free |
+| Policy literals (`auth().role == admin`) | names in source; `policy/model/enum_literal.rs` resolves to the ordinal at codegen |
+| `@default(Pending)` | name in source; DDL emits `DEFAULT 1` |
+| JSON Schema / MCP tool input | `{"type": "integer", "oneOf": [{"const": 1, "title": "Pending"}, …]}` so an agent calling a tool still sees names |
+| TypeScript | app-facing type **unchanged**: `'Pending' \| 'Approved' \| …`. Revival maps ordinal → name on decode and name → ordinal on encode; new `EOrdinals` table. Application code does not change when an enum becomes ordinal. *As built:* decode only, through `ordinalEnumNames`/`ordinalEnumFields` beside `wireShapes`; a request still sends the name, which the server's tolerant decoder accepts (§2.3), because the TypeScript encoder has no per-type request shapes to hook. No `EOrdinals` export. |
+| Dart | enum constants unchanged; `String wireName` becomes `int wireValue`; `fromWire` switches on the integer |
+| WireMock stubs | integers. *As built:* a model field of an ordinal enum is frozen to the first variant's ordinal instead of echoed from the request, because a TypeScript client sends the name and a Rust or Dart one the number, and no single quoting renders both as valid JSON |
+| Studio | renders the name from the schema, with the stored integer alongside. *As built:* the records table shows `Name (n)` and the edit form seeds its `<select>` by name; a write accepts the name or the number and binds the number; the drawer's raw view shows the number |
+| Contract digests | the enum's wire form is part of the op contract, so making an enum ordinal changes every digest that reaches it — correctly, it is a wire break |
+
+**Transport parity** (CLAUDE.md): REST, RPC and every generated client (Rust/Dart/TS, swr and
+riverpod layers) ship in the same PR. MCP follows ADR 0002 D5 and gets the JSON Schema change
+because it consumes the same schema generator, not because parity requires it.
+
+### 2.3 Decoding is tolerant, encoding is strict
+
+Every decoder of an ordinal enum — server request bodies, generated clients — accepts **either**
+the integer or the variant's name string, and every encoder emits the integer. This costs one
+extra match arm per decoder and buys a rollout in which a client still sending names keeps
+working (§4). An unknown integer is a decode error, exactly as an unknown name is today
+(Rust serde error; Dart `ArgumentError`; TypeScript revival error). Forward compatibility for
+values a newer server adds is a separate question (O1) and is not solved by this design.
+
+## 3. Enforcement: the ordinal ↔ variant map is append-only
+
+This is the part the feature exists for. A stored row means what its ordinal meant on the day it
+was written, forever.
+
+### 3.1 Parse time
+
+R1–R4 above.
+
+### 3.2 `cratestack migrate diff` (sees the previous snapshot)
+
+Against the last committed `schema.snapshot.json`:
+
+| Change | Verdict |
+|---|---|
+| new variant, new ordinal | allowed; `CHECK` widened |
+| variant renamed, ordinal kept | allowed and **storage-neutral** — no data moves; `CHECK` unchanged |
+| a variant's ordinal changed | **refused**: "ordinal of `PaymentStatus.Approved` changed 2 → 7; ordinals are permanent. Add a new variant instead." |
+| variant removed, its ordinal not added to `@@reserved` | **refused**, naming the ordinal to reserve |
+| variant removed and reserved | allowed; `CHECK` narrowed — **destructive** (rows holding it fail the new `CHECK`), so it goes through the existing destructive classification and `up.pre.sql` path. *As built:* the narrowed `CHECK` is Blocking in context (`ir/blocking/narrowing.rs`, which pairs the `DropCheck` and `AddCheck` of the same name), and `up.pre.sql` is scaffolded with `UPDATE … WHERE status IN (5)`. The same applies to a string enum losing a variant, which used to be classified safe |
+| a previously used ordinal reused by a different name | **refused** |
+| `@@reserved` entry removed | **refused** |
+
+The snapshot only remembers one step back, which is why retirement has to be written in the
+schema (`@@reserved`) rather than inferred: a number freed three migrations ago is invisible to
+the differ otherwise.
+
+### 3.3 `cratestack diff` (API break detector)
+
+Adds enum diffing, for **both** kinds of enum (defect 1.1.1):
+
+| Change | Severity |
+|---|---|
+| variant removed | breaking |
+| variant renamed (string enum) | breaking — the wire value changed. Reported as a removal plus an addition: `diff` infers no renames, for fields either |
+| variant renamed (ordinal enum) | breaking, as `enum_variant_renamed`: wire-neutral, but generated client identifiers change |
+| variant added, enum reachable from a response | breaking: a client generated from the old schema refuses the unknown value (O1) |
+| variant added, enum only in requests | additive |
+| variants reordered (string enum) | internal; for an ordinal enum, nothing |
+| string enum ↔ ordinal enum | breaking (`enum_encoding_changed`) |
+| ordinal changed | breaking (a removal plus an addition, and already refused by 3.2) |
+
+*As built (slice 2).* `diff` has no warning level, so "warned" became a direction rule, the same
+one the op-contract classifier applies (`client_contract/compat_enum.rs`). "Reachable from a
+response" is computed over models, views, procedure and query results, through fields, `type`s
+and generic arguments (`cratestack-cli/src/schema_diff/response_reach.rs`), and is conservative.
+
+### 3.4 Tests the implementing PRs must carry
+
+- parser: each of R1–R4 refused with its span; a valid ordinal enum round-trips through
+  `print-ir`.
+- migrate: every row of §3.2's table, both dialects; the string → ordinal conversion of §4 on a
+  table with data (PG-backed, `CRATESTACK_REQUIRE_DB=1`).
+- macros: server and client `Serialize` emit integers on both codecs; `Deserialize` accepts the
+  integer and the name; an unknown integer is a decode error.
+- clients: TS revival maps both directions; Dart `fromWire(int)` and `fromWire(String)`; the
+  committed example clients regenerate (`just regen-examples`).
+- `cratestack diff`: every row of §3.3.
+
+## 4. Converting an existing string enum
+
+`migrate diff` knows both mappings, so it emits the conversion rather than leaving it to hand
+SQL (Postgres):
+
+```sql
+ALTER TABLE payments DROP CONSTRAINT payments_status_enum_check;
+ALTER TABLE payments ALTER COLUMN status DROP DEFAULT;
+ALTER TABLE payments ALTER COLUMN status TYPE SMALLINT USING
+  CASE status WHEN 'Pending' THEN 1 WHEN 'Approved' THEN 2
+              WHEN 'Rejected' THEN 3 WHEN 'Refunded' THEN 5 END;
+ALTER TABLE payments ALTER COLUMN status SET DEFAULT 1;
+ALTER TABLE payments ADD CONSTRAINT payments_status_enum_check CHECK (status IN (1, 2, 3, 5));
+```
+
+*As built* (`emit/postgres/enum_cast.rs`): the old default is dropped first, because Postgres
+cannot cast a `'Pending'` default to `SMALLINT` while the column changes type. The reverse
+conversion, ordinal back to names, is the same shape with the `CASE` inverted.
+
+It is classified **lossy** (`AlterColumnType`): it rewrites the table under an `ACCESS EXCLUSIVE`
+lock, and a stored value outside the mapping becomes `NULL` and then fails `NOT NULL`. SQLite has
+no column types to change, so it emits `UPDATE payments SET status = CASE status WHEN 'Pending'
+THEN 1 … END;` in place of a rebuild.
+
+On the wire it is a breaking change, and §2.3 narrows the window rather than closing it:
+
+1. Regenerate and ship clients against the ordinal schema. Their decoders accept names *and*
+   integers, so they keep working against the old server — but they *send* integers, which the
+   old server rejects. So in practice step 1 and step 2 deploy together, or:
+2. Deploy the server. It accepts names from clients not yet updated, and answers with integers,
+   which those clients cannot read.
+
+Clients that cannot be updated in lockstep (installed mobile apps) need the enum change to ride
+an `@api_version` bump, so old clients keep calling the old shape. That is the honest answer; no
+encoding trick avoids it. *As built:* `@api_version` versions procedures only; a model's routes
+have no version, so an enum that such clients read through a model can only become ordinal once
+they have updated.
+
+## 5. The debuggability cost
+
+The argument for ordinals is that the schema is the decoder: an agent or a human with the
+`.cstack` file in hand can read `status = 3` as `Rejected`. That holds exactly where the schema
+travels with the data, and not elsewhere:
+
+| Reader | Sees |
+|---|---|
+| generated clients, Studio | names (§2.2) |
+| `psql`, a BI tool, a backup restored years later | integers |
+| `@@audit` before/after snapshots, outbox payloads | integers, if they serialize the model's wire form |
+| logs that print a `Debug` of the Rust type | names (`#[derive(Debug)]` is unchanged) |
+
+Mitigation is O3. The recommendation in the docs guide follows from this table: ordinals for
+high-volume, stable, machine-read enums (event kinds, statuses on hot tables); names for small
+tables and anything a regulator or an on-call engineer reads raw.
+
+## 6. Out of scope, recorded so nobody re-derives it
+
+- **`DateTime` on the wire.** It is `TIMESTAMPTZ` (8 B) in Postgres, but an RFC 3339 text string
+  on **both** codecs — 21 B with whole seconds, 29 B with microseconds, 32 B with nanoseconds
+  (RAN, §8): `chrono`'s `Serialize` does not branch on
+  `is_human_readable()`, unlike `uuid::Uuid`, which does take a 16-byte binary branch on CBOR
+  (17 B against 38 B in JSON). As an `i64` epoch it would be 5–9 B. A CBOR-only compact form
+  (RFC 8949 tag 1, or RFC 9581 tag 1001 for exact sub-second precision) is a separate design with
+  its own client-decoder work; it is the second-largest uncompressed saving after field names.
+  The embedded backend stores `DateTime` values as RFC 3339 text, so there the value *is* a string at rest.
+- **Field names.** Every map key is repeated per row: `id`, `status`, `createdAt`,
+  `totalMinor` are 33 of a 66-byte CBOR row. No attribute renames a field on the wire only
+  (`@rename(from = "…")` is a migration marker), and this design does not add one.
+- **Compression.** Not a framework feature: the generated router is a plain `axum::Router`, and
+  `tower-http`'s `CompressionLayer` goes on it like any other layer.
+
+## 7. Open questions
+
+- **O1 — unknown values.** Should an enum be able to declare a fallback (`@@open`, decoding an
+  unknown ordinal to an `Unknown(i16)` variant) so that adding a variant stops being a client
+  break? Applies to string enums equally; deliberately not folded in here.
+- **O3 — a lookup relation in the database.** Should `migrate` emit
+  `cratestack_enum_payment_status(ordinal SMALLINT PRIMARY KEY, name TEXT)` (and keep it in sync)
+  so raw SQL can `JOIN` names back? Cheap to emit, one more object to migrate.
+- **O5 — default.** Ordinal stays opt-in. Making it the default for new enums would make the
+  first-time author choose numbers before they know which enums are hot; not proposed.
+
+### Decided
+
+- **O2 — names only in the query string** (maintainer, 2026-10-26). `?status=Approved` is the only
+  accepted spelling; `?status=2` is refused. One spelling per surface: integers on the wire and
+  at rest, names wherever a human types the value. RPC inherits this, since its filters re-enter
+  the REST parser (`cratestack-axum/src/rpc/synthesize.rs`). The generated clients already send
+  names in the query string, so nothing changes for them.
+- **O4 — `Pending = 1`** (maintainer, 2026-10-26), for the reasons in §2.1. The implementing PR
+  therefore owns the grammar work in the chumsky parser, the tree-sitter grammar and the VS Code
+  TextMate grammar, plus LSP completion and hover for the ordinal.
+
+## 8. Measurements
+
+RAN on 2026-10-26, `minicbor-serde` 0.7.1, `chrono` 0.4, `uuid` 1, `rust_decimal` 1 with
+`serde-str` (the workspace's feature set), `serde_json` 1, `flate2` default level for gzip. The
+enum-as-integer rows use `serde_repr` to stand in for the hand-emitted impl of §2.2.
+
+Single values (`cbor` / `json` bytes):
+
+```text
+DateTime (chrono), microseconds  cbor= 29B json= 29B   cbor_hex=781b3230…   (text string)
+DateTime as i64 epoch seconds    cbor=  5B json= 10B
+DateTime as i64 epoch millis     cbor=  9B json= 13B
+Uuid                             cbor= 17B json= 38B   cbor_hex=50…         (byte string)
+enum unit variant "PendingReview" cbor= 14B json= 15B
+enum as integer 3                cbor=  1B json=  1B
+Decimal 1234.56                  cbor=  8B json=  9B   (text string, serde-str)
+bool                             cbor=  1B json=  4B
+```
+
+500 rows of `{ id: Uuid, eventType, status, createdAt: DateTime, amount: Decimal }`, five
+event types and five statuses drawn pseudo-randomly, timestamps spread over a day:
+
+```text
+A today: string type+status        cbor= 59411 cbor+gz= 18674 json= 79409 json+gz= 21236
+B ordinal enums                    cbor= 47438 cbor+gz= 18429 json= 66436 json+gz= 20715
+C ordinal enums + epoch-us time    cbor= 37438 cbor+gz= 16231 json= 59936 json+gz= 19461
+```
+
+The probe's encoder, so the numbers can be reproduced against a later `minicbor-serde`:
+
+```rust
+fn cbor<T: serde::Serialize>(v: &T) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut s = minicbor_serde::Serializer::new(&mut out);
+    s.serialize_unit_as_null(true); // as CborCodec::encode_into
+    v.serialize(&mut s).unwrap();
+    out
+}
+```
+
+## 9. Implementation plan
+
+The feature landed in slices. Until the last one, `validate::enum_ordinals::refuse_until_generated`
+refused every well-formed ordinal enum, so no build accepted `Pending = 1` and then stored or
+sent the name anyway. The last slice deleted it, together with REST, RPC and every generated
+client agreeing (transport parity, CLAUDE.md).
+
+| Slice | Scope | State |
+|---|---|---|
+| 1. Front end | `EnumVariant::ordinal`, `EnumDecl::reserved` (`cratestack-core/src/schema/enum_ordinal.rs`); the body syntax (`cratestack-parser/src/parse/enum_body.rs`); R1–R4 and the refusal (`validate/enum_ordinals.rs`); ordinals in the schema digest and the op contract, skipped when empty so string-enum digests do not move; the contract classifier compares ordinal enums by number (`client_contract/compat_enum.rs`) | merged (#1229) |
+| 2. `cratestack diff` enums | §3.3, for string enums as well as ordinal ones: defect 1.1.1 is live today, independent of ordinals | built: `cratestack-cli/src/schema_diff/enums.rs`, `response_reach.rs` |
+| 3. Storage | `migrate diff`: `SMALLINT` + `CHECK`, `DEFAULT n`, the §3.2 refusals, the §4 conversion, both dialects; Postgres-backed tests | built: `ColumnType::OrdinalEnum`, `CheckKind::Enum::ordinals`, `Projections::enums` (the history, skipped when empty so string-enum snapshots do not move), `diff/enum_ordinals.rs`, `emit/postgres/enum_cast.rs`; the conversion on a populated table, both ways, in `cratestack-pg/tests/migrate_enum_ordinal_conversion.rs` |
+| 4. Server | `cratestack-macros`: `#[repr(i16)]`, integer `Serialize` and tolerant `Deserialize` (§2.3), `IntoSqlValue`, row decoders for both backends, names-only query parsing (O2), policy literals, `@default`; JSON Schema and MCP `oneOf` | built: `types/enums_ordinal.rs`, `model/row_pg_enum.rs`, `model/row_sqlite_enum.rs`, `policy/model/enum_literal.rs`, `json_schema/generator.rs` `enum_schema`; R5 in the parser |
+| 5. Clients and tools | Rust, TypeScript (revival both ways, `EOrdinals`), Dart (`int wireValue`), the swr, riverpod and fespalier layers, WireMock, Studio, LSP and the two editor grammars; `just regen-examples` | built, with the *As built* differences in §2.2: Rust through the shared enum generator; TypeScript `ordinal_enums.rs`; Dart `enum_view.rs` and both enum templates; WireMock `model_attrs.rs`; Studio validator, both binders and the UI; LSP enum hover (`type_hover.rs`). The committed example clients have no ordinal enum, so `just regen-examples` leaves them unchanged |
+| 6. Lift the refusal | delete `refuse_until_generated`; end-to-end REST and RPC round trips on Postgres and SQLite; docs and skills move the feature from proposed to shipped | built: `cratestack-pg/tests/enum_ordinals.rs` and `enum_ordinals_rpc.rs`, `cratestack-sqlite/tests/enum_ordinals.rs`, `cratestack-client/tests/enum_ordinals.rs`; the Dart and TypeScript generated code runs in `just verify-dart` and `cratestack-client-typescript/tests/ordinal_enums.rs` |
+
+### 9.1 Left open
+
+None of these stores or sends a wrong value; each is a limit worth knowing.
+
+- **Introspection.** `cratestack migrate` reading a live Postgres does not map `SMALLINT` (as it
+  leaves `int4` unmapped) and reads the numeric `CHECK` back as a raw expression, so a baseline
+  taken from a database with an ordinal column reports drift on it.
+- **TypeScript requests send names** (§2.2). Correct, since the server accepts both; it forgoes
+  the size saving on request bodies from that client only.
+- **Sorting** an ordinal enum (`?sort=status`) orders by number, which is declaration order only
+  if the numbers were assigned in that order.
+- **An enum `@id`** has no test, ordinal or not.

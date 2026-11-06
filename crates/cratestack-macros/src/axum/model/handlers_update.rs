@@ -84,7 +84,7 @@ pub(super) fn build_update_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenSt
             let ctx = match state.auth_provider.authenticate(&request).await {
                 Ok(ctx) => ::cratestack::enrich_context_from_envelope(::cratestack::enrich_context_from_headers(ctx, &headers, client_ip_ctx.trusted_proxy.as_ref(), client_ip_ctx.peer), &client_ip_ctx.extensions),
                 Err(error) => {
-                    return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error.into()));
+                    return ::cratestack::encode_transport_result_with_status_for::<_, super::models::#model_ident>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(::cratestack::CratestackError::__generated_claim_auth_refusal(error.into())));
                 }
             };
             let input = match ::cratestack::decode_transport_request_for::<_, super::inputs::#update_input_ident>(&state.codec, &headers, &CAPABILITIES, &body) {

@@ -100,7 +100,10 @@ pub fn snapshot_for_edit(
         .map(|f| {
             let v = match row.get(&f.name) {
                 None | Some(serde_json::Value::Null) => String::new(),
-                Some(value) => format_cell(value),
+                // An ordinal enum's number seeds its `<select>` by name.
+                Some(value) => f
+                    .enum_name_of(value)
+                    .map_or_else(|| format_cell(value), str::to_owned),
             };
             (f.name.clone(), v)
         })
@@ -121,6 +124,7 @@ mod tests {
             is_relation: false,
             is_enum: false,
             enum_variants: Vec::new(),
+            enum_ordinals: Vec::new(),
         }
     }
 
@@ -172,5 +176,19 @@ mod tests {
         let snapshot = snapshot_for_edit(&row, &model);
 
         assert_eq!(snapshot.get("nickname"), Some(&"ada".to_owned()));
+    }
+
+    #[test]
+    fn snapshot_seeds_an_ordinal_enum_by_name() {
+        let mut status = field("status", "Status", "required");
+        status.is_enum = true;
+        status.enum_variants = vec!["Pending".to_owned(), "Approved".to_owned()];
+        status.enum_ordinals = vec![1, 2];
+        let mut row = serde_json::Map::new();
+        row.insert("status".to_owned(), serde_json::json!(2));
+
+        let snapshot = snapshot_for_edit(&row, &model(vec![status]));
+
+        assert_eq!(snapshot.get("status"), Some(&"Approved".to_owned()));
     }
 }

@@ -35,6 +35,7 @@ pub(super) fn generate_generated_model_client(
     computed_params_ident: Option<&syn::Ident>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let verbs = cratestack_core::model_verbs(model);
+    let subscribe_method = crate::client::subscribe::model_subscribe_method(model, false);
     let client_ident = ident(&format!("{}Client", model.name));
     let route_path = model_list_path(&model.name);
     let paged = is_paged_model(model);
@@ -144,6 +145,8 @@ pub(super) fn generate_generated_model_client(
             #update_group
 
             #delete_group
+
+            #subscribe_method
         }
     })
 }

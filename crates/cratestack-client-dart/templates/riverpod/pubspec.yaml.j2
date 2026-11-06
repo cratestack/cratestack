@@ -17,7 +17,6 @@ dependencies:
   # `build_runner`/`riverpod_generator` comment below for why these
   # three are pinned together as one unit.
   riverpod_annotation: 4.0.3
-{% if native_cbor %}
   # cratestack#563: see the `default` preset's pubspec.yaml.j2 for the
   # full comment — identical reasoning, this preset just carries its own
   # copy of the dependency list (see this file's own header comment for
@@ -26,9 +25,6 @@ dependencies:
     pubspec.yaml.j2 for why (a floor may be a range, and an unquoted
     leading `>` is a YAML block-scalar indicator, not a string). #}
   cratestack_cbor: '{{ cratestack_cbor_version_requirement }}'
-{% else %}
-  cbor: ^6.5.1
-{% endif %}
 {% if is_fespalier %}
   # cratestack#1204: the generated `CratestackFespalierTransport` sends through
   # fespalier's `HttpTransport`. Not on pub.dev: fespalier packages are git
@@ -62,6 +58,12 @@ dependencies:
   # comment — same annotation, same reasoning, every per-model file and
   # `procedures.dart` carries `@CratestackBuilder()` here too.
   cratestack_annotations: '{{ cratestack_annotations_version_requirement }}'
+{% if has_subscriptions %}
+  # Slice S6: subscriptions over a WebSocket (native and web), and over
+  # WebTransport in a browser through the platform's own API.
+  web_socket_channel: ^3.0.0
+  web: ^1.1.0
+{% endif %}
 
 dev_dependencies:
   flutter_lints: ^6.0.0

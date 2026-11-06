@@ -10,7 +10,7 @@ use cratestack_core::{
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
-use crate::descriptor::enqueue_event_outbox;
+use crate::descriptor::OutboxColumn;
 use crate::query::support::{
     PolicyDb, apply_create_defaults, evaluate_create_policies, find_column_value,
 };
@@ -31,7 +31,7 @@ pub(super) async fn run_upsert_item<'tx, M, PK, I>(
     input: I,
     ctx: &CratestackContext,
     emits_created: bool,
-    emits_updated: bool,
+    (emits_updated, keep): (bool, Option<&OutboxColumn>),
     audit_enabled: bool,
 ) -> Result<(Result<M, CratestackError>, Option<AuditEvent>), CratestackError>
 where
@@ -101,11 +101,6 @@ where
         let record =
             upsert_one_in_savepoint::<M, PK>(&mut item_tx, descriptor, &insert_values).await?;
 
-        let event_kind = if inserted {
-            ModelEventKind::Created
-        } else {
-            ModelEventKind::Updated
-        };
         let audit_op = if inserted {
             AuditOperation::Create
         } else {
@@ -117,9 +112,23 @@ where
             emits_updated
         };
 
-        if emits_this_event {
-            enqueue_event_outbox(&mut *item_tx, descriptor.schema_name, event_kind, &record)
-                .await?;
+        if emits_this_event && inserted {
+            crate::descriptor::enqueue_model_event(
+                &mut *item_tx,
+                descriptor.event_target(),
+                ModelEventKind::Created,
+                &record,
+            )
+            .await?;
+        } else if emits_this_event {
+            crate::descriptor::enqueue_model_update(
+                &mut *item_tx,
+                descriptor.event_target(),
+                &record,
+                before_record.as_ref(),
+                keep,
+            )
+            .await?;
         }
         if audit_enabled {
             let after = serde_json::to_value(&record).ok();

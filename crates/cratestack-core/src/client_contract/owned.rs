@@ -61,6 +61,10 @@ pub(super) struct Closure {
 #[serde(deny_unknown_fields)]
 pub(super) struct Enum {
     pub(super) name: String,
+    /// An ordinal enum's numbers, parallel to `variants`; absent on a
+    /// string enum, as in every contract written before ordinals existed.
+    #[serde(default)]
+    pub(super) ordinals: Option<Vec<Option<i64>>>,
     pub(super) variants: Vec<String>,
 }
 

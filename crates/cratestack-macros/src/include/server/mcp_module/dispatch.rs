@@ -161,7 +161,7 @@ fn execute_arm(
             let db = state.db.clone();
             let call_ctx = ctx.clone();
             let call_args = args.clone();
-            let result = super::procedures::#module::invoke_with_db(
+            let result = super::procedures::#module::__generated_dispatch_with_db(
                 &state.db,
                 &args,
                 ctx,

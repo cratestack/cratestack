@@ -74,6 +74,7 @@ fn an_auth_derived_bigint_default_is_the_bigint_kind() {
         &schema.types,
         &schema.enums,
         schema.auth.as_ref(),
+        false,
     )
     .expect("a BigInt descriptor must generate");
     let rendered = render(&defaults);

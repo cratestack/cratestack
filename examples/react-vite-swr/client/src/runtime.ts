@@ -14,7 +14,7 @@ export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue
 // `tracing::warn!`, never a rejection. Empty when the CLI wasn't given a
 // schema fingerprint (e.g. this crate used as a library directly, or a
 // test) — the header is simply omitted in that case.
-export const SCHEMA_SHA256: string = "217ba18873787830e1ff660ecce902cfba0cec5a007b8773e512ec2be0a622f3";
+export const SCHEMA_SHA256: string = "02cc93609f6e33ef57205aa2bda8a1e6ea731cfe9de9468042ff673c83a8e408";
 const SCHEMA_SHA_HEADER = "x-cratestack-schema-sha";
 
 // Per-op contract digests (binding version 2, cratestack#1123): what a signed
@@ -32,12 +32,13 @@ export const OP_CONTRACTS: Readonly<Record<string, string>> = {
   "GET /tasks/{id}": "3f6748635dac9ff32302ee383c0e891e23e0d7f0bd96cf93edd8f2c80bdcb61a",
   "PATCH /boards/{id}": "48da7b836217709abcf4fa3253c090ee68f2b86189f8ea6240c6cf43975716ea",
   "PATCH /tasks/{id}": "bc5b440b35082a7fa989477693522f48c1cce02101f0c95b4440fddfd394ed49",
+  "POST /$procs/clearDoneTasks": "e61cb59a793682d54d88f5bcc3a69dd82f687798307d107cc56ecfc8429f1dde",
   "POST /$procs/estimateFocusMinutes": "a96af61cf2998d8b76c69baf5f907b76860f3eaa5b64cf35134192a406023e51",
   "POST /boards": "3a348af6855d701092188c2f19366818c059a59f6770e28ed7945cd84c12e394",
   "POST /tasks": "35ca0825853c3f3c577159e9c3568612df10c63d3ca6c1b9d825abdda60cb44a",
 };
 // Hex of the whole-contract digest: moves when any op's contract does.
-export const CLIENT_CONTRACT_SHA256: string = "3ebac1ceab8439af4e1cb1a93940dc8cd00f36c384939efee730c033af36aa93";
+export const CLIENT_CONTRACT_SHA256: string = "6233d9c56994306cca7cf14e719addb198141a6aa0f3106d951212b6d31ece23";
 
 export interface CratestackClientOptions {
   basePath?: string;
@@ -64,10 +65,153 @@ export interface CratestackResponseEnvelope<T> {
   response: Response;
 }
 
+const RESERVED_ERROR_MEMBERS: ReadonlySet<string> = new Set(["code", "message", "details"]);
+
+/** The members of a decoded error body beyond `code`, `message` and
+ *  `details`: what an `AuthProvider` refusal adds (cratestack#1208), such
+ *  as `{ error: "attestation_expired" }`. Every member is kept, as decoded;
+ *  empty when `body` is not an object. */
+function extraErrorMembers(body: unknown): Readonly<Record<string, unknown>> {
+  const extra: Record<string, unknown> = {};
+  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+    for (const [name, value] of Object.entries(body)) {
+      if (!RESERVED_ERROR_MEMBERS.has(name)) {
+        extra[name] = value;
+      }
+    }
+  }
+  return Object.freeze(extra);
+}
+
+/** The answer's `WWW-Authenticate` value, raw and unparsed (cratestack#1243);
+ *  empty when there is none. `Headers` joins two challenge lines with `, `,
+ *  so they arrive as one entry holding both. */
+function challengesOf(headers: Headers | undefined): readonly string[] {
+  const value = headers?.get("www-authenticate");
+  return Object.freeze(value ? [value] : []);
+}
+
+/** The extra member `error` of a step-up refusal (RFC 9470, cratestack#1244). */
+export const INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication";
+
+/** What a step-up refusal asks for (cratestack#1244): an operation that
+ *  requires a fresher or stronger authentication than the caller presented.
+ *  Each requirement is present only when the refused operation declares it. */
+export interface StepUpRequired {
+  /** The longest time, in seconds, since the caller last authenticated. */
+  readonly maxAge: number | undefined;
+  /** The authentication context classes the operation accepts. */
+  readonly acrValues: readonly string[];
+  /** The authentication methods the operation requires. */
+  readonly amr: readonly string[];
+  /** Which requirements the caller failed: a subset of `"max_age"`, `"acr"`
+   *  and `"amr"`. */
+  readonly unmet: readonly string[];
+}
+
+/** Reads a step-up refusal once the transport's own test (`refused`: a 401,
+ *  or `unauthenticated`) passed: `undefined` unless the extra member `error`
+ *  is `insufficient_user_authentication`. Never throws: a missing or
+ *  mistyped field reads as absent or empty. */
+function readStepUp(
+  refused: boolean,
+  details: unknown,
+  extra: Readonly<Record<string, unknown>>,
+): StepUpRequired | undefined {
+  if (!refused || extra["error"] !== INSUFFICIENT_USER_AUTHENTICATION) {
+    return undefined;
+  }
+  const map: Record<string, unknown> =
+    typeof details === "object" && details !== null && !Array.isArray(details)
+      ? (details as Record<string, unknown>)
+      : {};
+  const strings = (name: string): readonly string[] => {
+    const value = map[name];
+    return Object.freeze(
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [],
+    );
+  };
+  const raw = map["max_age"];
+  const maxAge = typeof raw === "bigint" ? Number(raw) : raw;
+  return Object.freeze({
+    maxAge:
+      typeof maxAge === "number" && Number.isSafeInteger(maxAge) && maxAge >= 0
+        ? maxAge
+        : undefined,
+    acrValues: strings("acr_values"),
+    amr: strings("amr"),
+    unmet: strings("unmet"),
+  });
+}
+
+/** Runs `call`; when it fails with a step-up refusal, hands the refusal to
+ *  `reprove` and, when that resolves `true` (the user authenticated again),
+ *  runs `call` **once** more and returns what it gives, even a second
+ *  refusal. Never loops (cratestack#1244).
+ *
+ *  `reprove` resolves `false` when the user declined or the re-proof failed;
+ *  the first refusal is then rethrown. Any other error, and one `reprove`
+ *  itself throws, propagates as it is.
+ *
+ *  ```ts
+ *  const receipt = await retryAfterStepUp(
+ *    () => client.procedures.transfer(args),
+ *    (stepUp) => session.reauthenticate({ maxAge: stepUp.maxAge }),
+ *  );
+ *  ``` */
+export async function retryAfterStepUp<T>(
+  call: () => Promise<T>,
+  reprove: (stepUp: StepUpRequired) => Promise<boolean>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const stepUp = stepUpOf(error);
+    if (stepUp === undefined || !(await reprove(stepUp))) {
+      throw error;
+    }
+  }
+  return call();
+}
+
+/** The error envelope a CrateStack server answers with. Mirrors
+ *  `cratestack_core::CratestackErrorResponse`; the members an
+ *  `AuthProvider` refusal adds beside these three are on
+ *  {@link CratestackHttpError.extra}. */
+export interface CratestackErrorResponse {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+function isErrorResponse(payload: unknown): payload is CratestackErrorResponse {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    typeof (payload as { code?: unknown }).code === "string"
+  );
+}
+
+/** Thrown when the server answers with a non-2xx status. `payload` is the
+ *  whole decoded body; the envelope's members are typed beside it: `body`
+ *  (`code`, `message`, `details`), `extra` (every other member, as an
+ *  `AuthProvider` refusal adds them) and `challenges` (the
+ *  `WWW-Authenticate` value). */
 export class CratestackHttpError extends Error {
   readonly status: number;
   readonly response: Response;
   readonly payload: unknown;
+  /** The decoded envelope, or `undefined` when the payload is not one. */
+  readonly body: CratestackErrorResponse | undefined;
+  /** The envelope's `code` (`UNAUTHORIZED`, `FORBIDDEN`, ...). */
+  readonly code: string | undefined;
+  readonly details: unknown;
+  readonly extra: Readonly<Record<string, unknown>>;
+  readonly challenges: readonly string[];
+  /** The step-up refusal this answer is (cratestack#1244): a 401 whose
+   *  extra member `error` is `insufficient_user_authentication`, read from
+   *  `details`; `undefined` for any other error. */
+  readonly stepUp: StepUpRequired | undefined;
 
   constructor(response: Response, payload: unknown) {
     super(`CrateStack request failed with status ${response.status}`);
@@ -75,7 +219,19 @@ export class CratestackHttpError extends Error {
     this.status = response.status;
     this.response = response;
     this.payload = payload;
+    this.body = isErrorResponse(payload) ? payload : undefined;
+    this.code = this.body?.code;
+    this.details = this.body?.details;
+    this.extra = extraErrorMembers(this.body);
+    this.challenges = challengesOf(response.headers);
+    this.stepUp = readStepUp(this.status === 401, this.details, this.extra);
   }
+}
+
+/** The step-up refusal of a {@link CratestackHttpError} (its `stepUp`);
+ *  `undefined` for anything else (cratestack#1244). */
+export function stepUpOf(error: unknown): StepUpRequired | undefined {
+  return error instanceof CratestackHttpError ? error.stepUp : undefined;
 }
 
 export class CratestackRuntime {

@@ -20,6 +20,7 @@
 mod computed_params;
 mod rest;
 mod rpc;
+mod subscribe;
 
 use std::collections::BTreeSet;
 
@@ -60,13 +61,21 @@ pub(super) fn model_output_type_tokens(
 pub(crate) fn generate_client_module(
     models: &[Model],
     procedures: &[Procedure],
+    subscription_procedures: &[Procedure],
     transport: TransportStyle,
     bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
+    let rpc = transport == TransportStyle::Rpc;
+    let subscriptions: Vec<_> = subscription_procedures
+        .iter()
+        .map(|procedure| subscribe::procedure_subscribe_method(procedure, rpc))
+        .collect();
     match transport {
-        TransportStyle::Rest => rest::generate_generated_client_module(models, procedures, bearing),
+        TransportStyle::Rest => {
+            rest::generate_generated_client_module(models, procedures, &subscriptions, bearing)
+        }
         TransportStyle::Rpc => {
-            rpc::generate_generated_rpc_client_module(models, procedures, bearing)
+            rpc::generate_generated_rpc_client_module(models, procedures, &subscriptions, bearing)
         }
     }
 }

@@ -1,7 +1,9 @@
 //! Server half of the `--swr`-flag end-to-end example (issue #306, the
-//! last story of epic #298). Two models (`Board` has many `Task`s) plus
-//! one stateless procedure, exposed over `transport rest` — see
-//! `schema.cstack` for why this shape and why REST.
+//! last story of epic #298). Two models (`Board` has many `Task`s), one
+//! stateless procedure, and `clearDoneTasks`, which needs a step-up
+//! (`@authn`, cratestack#1245; see `auth.rs` for where the facts it reads
+//! come from), exposed over `transport rest` — see `schema.cstack` for why
+//! this shape and why REST.
 //!
 //! Routes mount under `/api` (`Router::new().nest("/api", ...)` in
 //! `build_router` below) to match the generated TypeScript client's
@@ -13,16 +15,19 @@
 //! `tests/smoke.rs` is the real documentation: an offline router-builds
 //! test (no DB needed) plus a real-Postgres CRUD + procedure round trip,
 //! gated on `CRATESTACK_TEST_DATABASE_URL` like every other PG-backed
-//! test in this workspace.
+//! test in this workspace. `tests/step_up.rs` covers the step-up.
 
 use cratestack::axum::Router;
 use cratestack::sqlx::PgPool;
-use cratestack::{AuthProvider, CratestackContext, CratestackError, RequestContext, Value};
+use cratestack::{CratestackContext, CratestackError};
 use cratestack_codec_json::JsonCodec;
 use tower_http::cors::CorsLayer;
 
 cratestack::include_server_schema!("schema.cstack", db = Postgres);
 
+mod auth;
+
+pub use auth::HeaderAuthProvider;
 pub use cratestack_schema as schema;
 
 /// `estimateFocusMinutes` is deliberately stateless (no DB access) —
@@ -48,29 +53,27 @@ impl cratestack_schema::procedures::ProcedureRegistry for Procedures {
             totalMinutes: total_minutes,
         })
     }
-}
 
-/// Header-based auth, same convention as every other example in this
-/// repo (`x-auth-id` -> `auth().id`) — a real deployment would verify a
-/// session cookie or bearer token here instead.
-#[derive(Clone)]
-pub struct HeaderAuthProvider;
-
-impl AuthProvider for HeaderAuthProvider {
-    type Error = CratestackError;
-
-    async fn authenticate(
+    /// Deletes the board's done tasks. It only runs for a caller who meets
+    /// the schema's `@authn(maxAge: 300, amr: ["hwk"])`: the generated
+    /// dispatch refuses anyone else with the step-up 401 first, so nothing
+    /// here checks how the caller authenticated.
+    async fn clear_done_tasks(
         &self,
-        request: &RequestContext<'_>,
-    ) -> Result<CratestackContext, Self::Error> {
-        let ctx = request
-            .headers
-            .get("x-auth-id")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|raw| raw.parse::<i64>().ok())
-            .map(|id| CratestackContext::authenticated([("id".to_owned(), Value::Int(id))]))
-            .unwrap_or_else(CratestackContext::anonymous);
-        Ok(ctx)
+        db: &cratestack_schema::Cratestack,
+        _ctx: &CratestackContext,
+        args: cratestack_schema::procedures::clear_done_tasks::Args,
+        _authorized: cratestack_schema::procedures::clear_done_tasks::Authorized,
+    ) -> Result<cratestack_schema::procedures::clear_done_tasks::Output, CratestackError> {
+        let removed = cratestack::sqlx::query("DELETE FROM tasks WHERE board_id = $1 AND done")
+            .bind(args.args.boardId)
+            .execute(db.pool())
+            .await
+            .map_err(|error| CratestackError::Internal(error.to_string()))?
+            .rows_affected();
+        Ok(cratestack_schema::ClearDoneTasksResult {
+            removed: i64::try_from(removed).unwrap_or(i64::MAX),
+        })
     }
 }
 

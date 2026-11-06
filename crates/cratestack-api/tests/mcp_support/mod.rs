@@ -120,7 +120,7 @@ impl cratestack_schema::ComputedFieldResolver for Resolver {
         _source: &cratestack_schema::Badge,
         ctx: &CratestackContext,
     ) -> Result<Option<String>, CratestackError> {
-        Ok(ctx.principal_actor_id().map(|id| format!("for {id}")))
+        Ok(ctx.subject().map(|id| format!("for {id}")))
     }
 }
 

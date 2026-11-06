@@ -29,6 +29,7 @@ pub use axum;
 #[cfg(feature = "cose")]
 pub use cratestack_cose as cose;
 
+mod auth_challenge;
 pub mod codec;
 #[cfg(feature = "envelope")]
 pub mod envelope_layer;

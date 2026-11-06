@@ -1,0 +1,331 @@
+// The two session bindings behind `./subscriptions.js`
+// (docs/design/subscriptions-websocket.md §6, §6a): JSON frames (`Init`,
+// `Request`, `Ready`, `next`, `end`, `err`, `cancel`), the same on both.
+//
+// WebSocket: one shared socket per URL and credentials, opened lazily,
+// multiplexing every subscription by id, closed 5 s after the last one ends.
+// WebTransport: one session per URL and credentials, the same lifetime, one bidirectional stream per
+// subscription (reading the stream to its end, cancel by cancelling it).
+// Both authenticate with an `Init` carrying the client's headers, since a
+// browser cannot set headers on either handshake. A session that never
+// opens throws `SocketUnreachable`, which `"auto"` reads as "fall back"; a
+// refusal throws `CratestackSubscriptionError` and is final.
+
+import {
+  CratestackSubscriptionError,
+  resolveUrl,
+  type Frame,
+  type SubscriptionHost,
+  type SubscriptionTarget,
+} from "./subscriptions.js";
+
+/** The binding is not reachable here: fall back to the next one. */
+export class SocketUnreachable extends Error {}
+
+const LINGER_MS = 5000;
+const WT_READY_MS = 3000;
+const JSON_PROTOCOL = "cratestack.rpc.v1+json";
+
+interface ServerFrame {
+  id: number;
+  ready?: object;
+  next?: unknown;
+  end?: object;
+  err?: { code: string; message: string; details?: unknown };
+}
+
+/** A per-subscription queue of frames, iterated by its generator. */
+class FrameQueue {
+  private frames: Frame[] = [];
+  private waiting: ((value: void) => void) | undefined;
+  private finished = false;
+  private error: unknown;
+
+  push(frame: Frame): void {
+    this.frames.push(frame);
+    this.wake();
+  }
+
+  end(error?: unknown): void {
+    this.finished = true;
+    this.error = error;
+    this.wake();
+  }
+
+  private wake(): void {
+    this.waiting?.();
+    this.waiting = undefined;
+  }
+
+  async *drain(): AsyncGenerator<Frame> {
+    for (;;) {
+      const frame = this.frames.shift();
+      if (frame !== undefined) {
+        yield frame;
+        continue;
+      }
+      if (this.finished) {
+        if (this.error !== undefined) throw this.error;
+        return;
+      }
+      await new Promise<void>((resolve) => (this.waiting = resolve));
+    }
+  }
+}
+
+function deliver(queue: FrameQueue, frame: ServerFrame): boolean {
+  if (frame.err) {
+    queue.end(new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details));
+    return true;
+  }
+  if (frame.end) {
+    queue.end();
+    return true;
+  }
+  queue.push(frame.ready ? { kind: "ready" } : { kind: "item", value: frame.next });
+  return false;
+}
+
+function headerRecord(headers: Headers): Record<string, string> {
+  const record: Record<string, string> = {};
+  headers.forEach((value, name) => (record[name] = value));
+  return record;
+}
+
+/** A session is shared only by subscriptions with the same credentials:
+ *  `Init` authenticates the whole session. */
+function sessionKey(url: string, headers: Headers): string {
+  return `${url}\n${JSON.stringify(headerRecord(headers))}`;
+}
+
+class SharedSocket {
+  readonly ready: Promise<void>;
+  private readonly socket: WebSocket;
+  private readonly routes = new Map<number, FrameQueue>();
+  private nextId = 1;
+  private refs = 0;
+  private linger: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(private readonly key: string, url: string, headers: Headers) {
+    this.socket = new WebSocket(url, JSON_PROTOCOL);
+    this.ready = new Promise<void>((resolve, reject) => {
+      let opened = false;
+      this.socket.onopen = () => {
+        opened = true;
+        this.send({ id: 0, init: { headers: headerRecord(headers) } });
+      };
+      this.socket.onmessage = (message) => {
+        const frame = JSON.parse(String(message.data)) as ServerFrame;
+        if (frame.id === 0) {
+          if (frame.err) reject(new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details));
+          else resolve();
+          return;
+        }
+        const queue = this.routes.get(frame.id);
+        if (queue && deliver(queue, frame)) this.routes.delete(frame.id);
+      };
+      this.socket.onclose = (event) => {
+        sockets.delete(this.key);
+        if (!opened) reject(new SocketUnreachable(`WebSocket ${url} did not open`));
+        else reject(new CratestackSubscriptionError("unavailable", `socket closed (${event.code})`));
+        for (const queue of this.routes.values()) {
+          queue.end(new CratestackSubscriptionError("unavailable", `socket closed (${event.code})`));
+        }
+        this.routes.clear();
+      };
+    });
+    this.ready.catch(() => undefined);
+  }
+
+  send(frame: object): void {
+    if (this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(frame));
+  }
+
+  open(opId: string, input: unknown): { id: number; queue: FrameQueue } {
+    const id = this.nextId++;
+    const queue = new FrameQueue();
+    this.routes.set(id, queue);
+    this.send({ id, op: opId, input });
+    return { id, queue };
+  }
+
+  cancel(id: number): void {
+    if (this.routes.delete(id)) this.send({ id, cancel: {} });
+  }
+
+  acquire(): void {
+    this.refs += 1;
+    clearTimeout(this.linger);
+  }
+
+  release(): void {
+    this.refs -= 1;
+    if (this.refs === 0) {
+      this.linger = setTimeout(() => {
+        sockets.delete(this.key);
+        this.socket.close(1000);
+      }, LINGER_MS);
+    }
+  }
+}
+
+const sockets = new Map<string, SharedSocket>();
+
+export async function* openSocketSubscription(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Frame> {
+  const url = resolveUrl(host, target.socketPath).replace(/^http/, "ws");
+  const key = sessionKey(url, headers);
+  let socket = sockets.get(key);
+  if (socket === undefined) {
+    socket = new SharedSocket(key, url, headers);
+    sockets.set(key, socket);
+  }
+  socket.acquire();
+  let id: number | undefined;
+  const onAbort = () => id !== undefined && socket.cancel(id);
+  signal?.addEventListener("abort", onAbort);
+  try {
+    await socket.ready;
+    const opened = socket.open(target.opId, target.input);
+    id = opened.id;
+    yield* opened.queue.drain();
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    if (id !== undefined) socket.cancel(id);
+    socket.release();
+  }
+}
+
+interface WebTransportLike {
+  ready: Promise<void>;
+  closed: Promise<unknown>;
+  close(): void;
+  createBidirectionalStream(): Promise<{ readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> }>;
+}
+
+async function* ndjson(
+  readable: ReadableStream<Uint8Array>,
+  cancel: { reader?: ReadableStreamDefaultReader<Uint8Array> },
+): AsyncGenerator<ServerFrame> {
+  const reader = readable.getReader();
+  cancel.reader = reader;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const newline = buffer.indexOf("\n");
+    if (newline >= 0) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (line.trim()) yield JSON.parse(line) as ServerFrame;
+      continue;
+    }
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+  }
+}
+
+async function writeFrame(writable: WritableStream<Uint8Array>, frame: object, close: boolean): Promise<void> {
+  const writer = writable.getWriter();
+  await writer.write(new TextEncoder().encode(`${JSON.stringify(frame)}\n`));
+  if (close) await writer.close();
+  else writer.releaseLock();
+}
+
+class WtSession {
+  readonly ready: Promise<WebTransportLike>;
+  private refs = 0;
+  private linger: ReturnType<typeof setTimeout> | undefined;
+  private transport: WebTransportLike | undefined;
+
+  constructor(private readonly key: string, url: string, host: SubscriptionHost, headers: Headers) {
+    this.ready = this.open(url, host, headers);
+    this.ready.catch(() => sessions.delete(this.key));
+  }
+
+  private async open(url: string, host: SubscriptionHost, headers: Headers): Promise<WebTransportLike> {
+    const Ctor = (globalThis as unknown as { WebTransport: new (url: string, init?: object) => WebTransportLike }).WebTransport;
+    const hashes = host.subscriptions?.webTransport?.serverCertificateHashes;
+    const withCodec = new URL(url);
+    withCodec.searchParams.set("codec", "json");
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new SocketUnreachable("WebTransport not ready in time")), WT_READY_MS),
+    );
+    let transport: WebTransportLike;
+    let control: AsyncGenerator<ServerFrame>;
+    try {
+      transport = new Ctor(withCodec.toString(), hashes ? { serverCertificateHashes: hashes } : undefined);
+      this.transport = transport;
+      transport.closed.catch(() => undefined).finally(() => sessions.delete(this.key));
+      await Promise.race([transport.ready, timeout]);
+      const stream = await transport.createBidirectionalStream();
+      await writeFrame(stream.writable, { id: 0, init: { headers: headerRecord(headers) } }, false);
+      control = ndjson(stream.readable, {});
+    } catch (error) {
+      throw error instanceof SocketUnreachable ? error : new SocketUnreachable(String(error));
+    }
+    const first = await Promise.race([control.next(), timeout]);
+    const frame = first.value as ServerFrame | undefined;
+    if (frame?.err) throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+    if (!frame?.ready) throw new SocketUnreachable("WebTransport session did not become ready");
+    return transport;
+  }
+
+  acquire(): void {
+    this.refs += 1;
+    clearTimeout(this.linger);
+  }
+
+  release(): void {
+    this.refs -= 1;
+    if (this.refs === 0) {
+      this.linger = setTimeout(() => {
+        sessions.delete(this.key);
+        this.transport?.close();
+      }, LINGER_MS);
+    }
+  }
+}
+
+const sessions = new Map<string, WtSession>();
+let wtIds = 1;
+
+export async function* openWebTransportSubscription(
+  host: SubscriptionHost,
+  target: SubscriptionTarget,
+  headers: Headers,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<Frame> {
+  const url = host.subscriptions?.webTransport?.url;
+  if (url === undefined) throw new SocketUnreachable("no WebTransport URL configured");
+  const key = sessionKey(url, headers);
+  let session = sessions.get(key);
+  if (session === undefined) {
+    session = new WtSession(key, url, host, headers);
+    sessions.set(key, session);
+  }
+  session.acquire();
+  const cancel: { reader?: ReadableStreamDefaultReader<Uint8Array> } = {};
+  const onAbort = () => void cancel.reader?.cancel().catch(() => undefined);
+  signal?.addEventListener("abort", onAbort);
+  try {
+    const transport = await session.ready;
+    const stream = await transport.createBidirectionalStream();
+    const id = wtIds++;
+    await writeFrame(stream.writable, { id, op: target.opId, input: target.input }, true);
+    for await (const frame of ndjson(stream.readable, cancel)) {
+      if (frame.err) throw new CratestackSubscriptionError(frame.err.code, frame.err.message, frame.err.details);
+      if (frame.end) return;
+      yield frame.ready ? { kind: "ready" } : { kind: "item", value: frame.next };
+    }
+    throw new CratestackSubscriptionError("unavailable", "the subscription stream ended without end or err");
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    await cancel.reader?.cancel().catch(() => undefined);
+    session.release();
+  }
+}

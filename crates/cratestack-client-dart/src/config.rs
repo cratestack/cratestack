@@ -1,21 +1,5 @@
 use std::path::PathBuf;
 
-/// Whether a schema with no `--no-native-cbor`/`native_cbor: ...` given at
-/// all uses `cratestack_cbor` (native, via flutter_rust_bridge/wasm —
-/// cratestack#563) or `package:cbor` (pure Dart). The single place to flip
-/// this decision later — see [`DartGeneratorConfig::native_cbor`]'s doc
-/// comment for the current reasoning.
-///
-/// Flipped to `true` (maintainer decision, cratestack#563 follow-up):
-/// `cratestack_cbor` 0.8.7 is published to pub.dev with Windows, macOS and
-/// iOS support verified there, so the platform-support gap and the
-/// published-package lag that used to justify defaulting to `false` are
-/// both closed. Linux arm64 is the one remaining unsupported target —
-/// `createCborCodec()` still throws `UnsupportedError` there, so a
-/// generated client built for that target needs `--no-native-cbor` (pure
-/// Dart, works everywhere) to avoid a runtime crash.
-pub const DEFAULT_NATIVE_CBOR: bool = true;
-
 /// Selects the generated package's file layout. See issue #301 — the
 /// `riverpod` preset is a strict superset of `default`'s content,
 /// repartitioned into one file per model (types + `XApi` client +
@@ -57,6 +41,14 @@ impl DartPreset {
 /// dependencies by design, so this is a git tag, not a pub.dev version.
 pub const DEFAULT_FESPALIER_REF: &str = "v0.21.0";
 
+/// Options for [`crate::generate_package`].
+///
+/// There is no codec option: every generated package encodes and decodes
+/// CBOR through `cratestack_cbor` (the Rust codec, over flutter_rust_bridge
+/// natively and wasm-bindgen on web, cratestack#563). That package is a
+/// Flutter FFI plugin, so a generated client is Flutter-only, and it ships
+/// no Linux arm64 library. The pure-Dart `package:cbor` mode, and the
+/// `native_cbor` field that selected it, were removed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DartGeneratorConfig {
     pub library_name: String,
@@ -74,52 +66,6 @@ pub struct DartGeneratorConfig {
     /// used as a library directly, or in tests) — the generated client
     /// simply omits the header in that case.
     pub schema_sha256: String,
-    /// Issue #563's seam: use the published `cratestack_cbor` package
-    /// (flutter_rust_bridge natively, wasm-bindgen on web) instead of
-    /// pure-Dart `package:cbor` for the generated runtime's CBOR codec —
-    /// see `templates/rest-runtime.dart.j2` and
-    /// `templates/rpc_runtime/{types,dio_cbor,dio_json}.dart.j2`.
-    ///
-    /// **The default as of this doc (`DEFAULT_NATIVE_CBOR` is `true`).**
-    /// It was opt-in for a while, on a concrete, verified platform-support
-    /// gap: `cratestack_cbor` originally shipped prebuilt binaries for
-    /// Linux x86_64, Android and web only, so defaulting to it would have
-    /// made every generated Flutter client crash at runtime on iOS — the
-    /// most common Flutter target — plus macOS and Windows.
-    ///
-    /// **Both blockers are closed.** cratestack#563's platform-matrix
-    /// slices added Windows x64, macOS (universal) and iOS (device +
-    /// simulator), each verified by a real running app round-tripping the
-    /// shared fixture, and `cratestack_cbor` 0.8.7 — carrying that matrix —
-    /// is published on pub.dev, closing the published-package-lags-the-repo
-    /// gap that kept the default at `false` even after the platform work
-    /// landed. Only Linux arm64 remains unsupported: `createCborCodec()`
-    /// still throws `UnsupportedError` there — see
-    /// `dart-packages/cratestack_cbor/lib/src/native/native_cbor_codec.dart`.
-    /// A client generated for that target needs `native_cbor: false`
-    /// (CLI: `--no-native-cbor`) to fall back to pure-Dart `package:cbor`,
-    /// which works everywhere.
-    ///
-    /// Purely additive with respect to every other emitted file: this flag
-    /// leaves output byte-identical either way apart from the two files
-    /// that legitimately depend on the codec choice (pinned by
-    /// `tests/native_cbor_generator.rs`'s dedicated regression test, on
-    /// top of the pre-existing `tests/snapshot.rs` pins that never pass
-    /// this field at all and so exercise `Default::default()`).
-    ///
-    /// `cratestack_cbor`'s codec is async (`Future<CratestackCborCodec>
-    /// createCborCodec()`, `Uint8List encodeJson(String json)`, `String
-    /// decodeJson(List<int> bytes)`) where `package:cbor/simple.dart`'s is
-    /// synchronous and operates on a dynamic Dart value directly rather
-    /// than JSON text — the runtime templates bridge the two via
-    /// `jsonEncode`/`jsonDecode` around a lazily-initialized, cached codec
-    /// future, not a synchronous shim. See `wire_encode.rs`/`wire_decode.rs`
-    /// for why this is a safe bridge: every generated `toWire()`/`fromWire`
-    /// already routes fields through JSON-plain values (ISO-8601 strings
-    /// for `DateTime`, `List<int>` for `Bytes`, decimal string text) rather
-    /// than any CBOR-specific Dart type, so the body a runtime adapter
-    /// encodes/decodes was already JSON-safe before this flag existed.
-    pub native_cbor: bool,
     /// Git ref (tag, branch or commit) of `github.com/fespalier/fespalier`
     /// the `fespalier` preset pins `fespalier_transport` at in the emitted
     /// pubspec (cratestack#1204). Ignored by every other preset. Defaults to
@@ -135,7 +81,6 @@ impl Default for DartGeneratorConfig {
             template_dir: None,
             preset: DartPreset::Default,
             schema_sha256: String::new(),
-            native_cbor: DEFAULT_NATIVE_CBOR,
             fespalier_ref: DEFAULT_FESPALIER_REF.to_owned(),
         }
     }

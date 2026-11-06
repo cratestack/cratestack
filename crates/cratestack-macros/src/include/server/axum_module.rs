@@ -29,7 +29,8 @@ pub(super) fn build_axum_module(c: &ServerCollected, db: ServerDb) -> proc_macro
     let rpc_module = super::rpc_module::build_rpc_module(
         c.is_rpc,
         &c.rpc_dispatch_arms,
-        &c.rpc_subscribe_dispatch_arms,
+        &c.rpc_subscription_ops,
+        &c.subscription_dispatcher,
     );
     let dtos = super::axum_dtos::build_axum_dtos();
 

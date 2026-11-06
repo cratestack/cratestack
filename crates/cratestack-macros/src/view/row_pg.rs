@@ -8,9 +8,10 @@
 
 use std::collections::BTreeSet;
 
-use cratestack_core::{TypeArity, View};
+use cratestack_core::View;
 use quote::quote;
 
+use crate::model::row_pg_enum::pg_enum_decode_expr;
 use crate::shared::ident;
 
 pub(crate) fn generate_view_pg_from_row_impl(
@@ -51,33 +52,8 @@ pub(crate) fn row_field_tokens(
             #field_ident: row.try_get(#field_name)?,
         };
     }
-    let enum_ident = ident(&field.ty.name);
-    let decode_error = quote! {
-        sqlx::Error::Decode(Box::new(::std::io::Error::new(
-            ::std::io::ErrorKind::InvalidData,
-            error,
-        )))
-    };
-    match field.ty.arity {
-        TypeArity::Required => quote! {
-            #field_ident: {
-                let raw: String = row.try_get(#field_name)?;
-                raw.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)?
-            },
-        },
-        TypeArity::Optional => quote! {
-            #field_ident: {
-                let raw: Option<String> = row.try_get(#field_name)?;
-                raw.map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)).transpose()?
-            },
-        },
-        TypeArity::List => quote! {
-            #field_ident: {
-                let raw: Vec<String> = row.try_get(#field_name)?;
-                raw.into_iter()
-                    .map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error))
-                    .collect::<Result<Vec<_>, sqlx::Error>>()?
-            },
-        },
+    let decode_expr = pg_enum_decode_expr(field_name, &field.ty.name, field.ty.arity);
+    quote! {
+        #field_ident: #decode_expr,
     }
 }

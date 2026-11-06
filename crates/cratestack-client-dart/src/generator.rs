@@ -54,7 +54,10 @@ pub(crate) fn generate_default_package(
     schema: &Schema,
     config: &DartGeneratorConfig,
 ) -> Result<GeneratedDartPackage, DartGeneratorError> {
-    let specs = template_specs_for(schema.transport, config.preset);
+    let mut specs = template_specs_for(schema.transport, config.preset);
+    if crate::subscription_specs::has_subscriptions(schema) {
+        specs.extend_from_slice(crate::subscription_specs::SUBSCRIPTION_TEMPLATE_SPECS);
+    }
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let context = build_template_context(schema, config)?;
     let files = specs

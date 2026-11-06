@@ -87,7 +87,8 @@ Wire format:
 
 Errors:
 
-- an HTTP error answer is a `CratestackRestException` (`status` and the decoded `body`)
+- an HTTP error answer is a `CratestackRestException` (`status`, the decoded `body`, and its typed `code`, `message`, `details`, `extra` and `challenges`)
+- a refusal from the server's `AuthProvider` keeps its fixed code; the members it adds (`{"error": "attestation_expired"}`) are in `extra`, and its `WWW-Authenticate` value, raw, is in `challenges`
 - a call that got no answer is a `CratestackTransportException`: `CratestackTransportUnsent` (provably never left the device, always safe to resend), `CratestackTransportAborted`, `CratestackTransportTimedOut` or `CratestackTransportBroken`. Never a Dio type.
 
 Cancelling a call:
@@ -382,11 +383,12 @@ Query procedures:
 
 Mutation procedures:
 
-- none in this schema
+- `client.procedures.clearDoneTasks(ClearDoneTasksProcedureArgs(...), options: options)`
 
 Full generated procedure inventory:
 
 - `query` `client.procedures.estimateFocusMinutes(...)` returns `FocusEstimateResult`
+- `mutation` `client.procedures.clearDoneTasks(...)` returns `ClearDoneTasksResult`
 
 ## Query Parameters
 
@@ -547,6 +549,7 @@ Model entry points:
 Procedure entry points:
 
 - `client.procedures.estimateFocusMinutes(...)`
+- `client.procedures.clearDoneTasks(...)`
 
 ## Bridge Contract
 

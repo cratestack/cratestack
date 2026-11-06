@@ -1,6 +1,6 @@
 # Function-shaped `@default(...)` values
 
-Status: implemented by the PR that closes cratestack#1209.
+Status: implemented by the PRs that close cratestack#1209 and cratestack#1234.
 
 ## The problem
 
@@ -15,7 +15,7 @@ Four failures came out of that:
 - **Unknown functions.** `uuid()` and `cuid()`, the Prisma spellings, do not exist in Postgres: `function uuid() does not exist`.
 - **SQLite syntax.** SQLite accepts a function call in `DEFAULT` only inside parentheses, so *every* function default failed there, `now()` included: `near "(": syntax error`.
 - **Auth defaults in DDL.** `@default(auth().id)` was emitted as `DEFAULT auth().id`.
-- **Embedded runtime.** The embedded tables (`cratestack_rusqlite::ddl::create_table_sql`) carry no `DEFAULT` clauses at all. Any `@default` column was therefore written as NULL, and the create failed when it decoded the returned row.
+- **Embedded runtime.** The embedded tables (`cratestack_rusqlite::ddl::create_table_sql`) carried no `DEFAULT` clauses at all. Any `@default` column was therefore written as NULL, and the create failed when it decoded the returned row. #1209 fixed the builtins; the rest is cratestack#1234, below.
 
 cratestack#1167 closed the `autoincrement()` spelling the same way and left this as its follow-up.
 
@@ -84,7 +84,44 @@ All of these go through `cratestack_core::schema::default_functions::classify_de
 - On Postgres, a `cuid()` column backfills nothing. A required one is therefore blocking, like a column with no default.
 - On SQLite, any expression default fails with "Cannot add a column with non-constant default" once the table has rows. The SQLite emitter writes a note there, as it already does for the other `ALTER` forms SQLite lacks.
 
+## Literal defaults and the embedded runtime (cratestack#1234)
+
+Checking the embedded runtime after #1209 showed the gap was wider than this note first said: every `@default` except the three builtins was written as NULL there, literals included. The maintainer's decisions are recorded on cratestack#1234.
+
+### Literals are typed
+
+`cratestack_core::schema::default_literal::literal_default` reads a literal for its field. The parser, the migration emitter and the embedded descriptor all go through it.
+
+| Field type | Accepted | SQL written |
+| --- | --- | --- |
+| `Boolean` | `true`, `false`, any case | `true` / `false` |
+| `Int`, `BigInt` | a decimal integer inside `i64` | the number |
+| `Float` | a finite decimal number, exponent allowed | as written |
+| `Decimal` | a plain decimal number, bare or quoted | as written (a quoted one single-quoted) |
+| `String`, `Cuid`, `Uuid`, `DateTime` | a quoted string, `"…"` or `'…'`; a `Cuid`, UUID or RFC 3339 timestamp where the type needs one | a single-quoted SQL string |
+| an enum | a variant, bare or quoted | `'Variant'`, or the ordinal |
+
+`check` refuses anything else:
+
+- a literal that does not fit (`@default(abc)` on an `Int`);
+- an unquoted word on a text-like field (`@default(draft)`);
+- an SQL expression (`@default(CURRENT_TIMESTAMP)`, pointing at `now()`);
+- `null`;
+- any literal on `Json`, `Bytes`, a list, or a composite type.
+
+A double-quoted string used to be written as `DEFAULT "draft"`. Postgres reads that as a column reference, so the migration failed. It is now `DEFAULT 'draft'`, and an old snapshot holding `"draft"` reads back as `'draft'`, so the next diff sees no change.
+
+### The embedded runtime
+
+`create_table_sql` is `CREATE TABLE IF NOT EXISTS`, so it never alters a table an older version created. The runtime therefore does not rely on `DEFAULT` clauses.
+
+- **Literals** are bound on create, from `ModelDescriptor::literal_defaults` (`LiteralDefault`, a `fn() -> SqlValue` the macro builds from the typed literal). New tables also get the `DEFAULT` clause, rendered from that same value through the same binder (`cratestack_rusqlite::ddl`), for rows inserted with raw SQL.
+- **`now()` and `uuid()`** get the same SQLite `DEFAULT` expressions migrate's SQLite tree writes, shared through `BuiltinDefault::sqlite_default`. `cuid()` still has none.
+- **`auth().field`:** nothing fills it on the device, so the embedded `Create…Input` keeps the field as declared, for the app to pass the current user's value. The server input is unchanged.
+- **`dbgenerated()` and registered functions** are the database's. The embedded input takes them as an `Option`. A set value is bound; an unset one leaves the column to an app trigger or `DEFAULT`. A required column that then comes back NULL is refused with `RusqliteError::UnfilledDefault` (`VALIDATION_ERROR` per batch item), and the insert is rolled back to a savepoint.
+
+Only `include_embedded_schema!` emits the literal and database-filled tables (`with_embedded_defaults`). The server leaves both to the database, so its generated code is unchanged.
+
 ## Known gaps, not addressed here
 
-- **Embedded runtime:** it still applies no `@default(auth().field)` and no `dbgenerated()` default, because `create_table_sql` has no `DEFAULT` clauses. Such a column is written as NULL.
-- **Other function defaults through cratestack:** registered functions and `dbgenerated()` are filled only by the database.
+- **Other function defaults through cratestack on the server:** registered functions and `dbgenerated()` are filled only by the database.

@@ -191,6 +191,9 @@ pub(crate) fn build_model_api(model: &Model) -> ModelApiView {
         allows_create: verbs.contains(&ModelVerb::Create),
         allows_update: verbs.contains(&ModelVerb::Update),
         allows_delete: verbs.contains(&ModelVerb::Delete),
+        allows_subscribe: verbs.contains(&ModelVerb::Subscribe),
+        subscribe_op_id: ModelVerb::Subscribe.rpc_op_id(&model.name),
+        subscribe_route: cratestack_core::model_subscribe_route(&model.name).replace('$', "\\$"),
     }
 }
 

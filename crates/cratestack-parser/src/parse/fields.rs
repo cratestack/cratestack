@@ -1,8 +1,8 @@
 use cratestack_core::schema::attribute_text::strip_comment;
-use cratestack_core::{Attribute, EnumVariant, Field, SourceSpan};
+use cratestack_core::{Attribute, Field, SourceSpan};
 
 use crate::diagnostics::SchemaError;
-use crate::line_helpers::{Line, parse_doc_comment, trimmed_span};
+use crate::line_helpers::{Line, parse_doc_comment};
 use crate::parse::attribute_spacing::split_field_attributes;
 use crate::parse::format_chars::refuse_invisible_characters;
 use crate::parse::types::parse_type_ref;
@@ -26,38 +26,6 @@ pub(super) fn parse_fields(lines: &[Line<'_>]) -> Result<Vec<Field>, SchemaError
         fields.push(parse_field(line, std::mem::take(&mut pending_docs))?);
     }
     Ok(fields)
-}
-
-pub(super) fn parse_enum_variants(lines: &[Line<'_>]) -> Result<Vec<EnumVariant>, SchemaError> {
-    let mut variants = Vec::new();
-    let mut pending_docs = Vec::new();
-    for line in lines {
-        if let Some(doc) = parse_doc_comment(line) {
-            pending_docs.push(doc.to_owned());
-            continue;
-        }
-        if line.trimmed.is_empty() {
-            pending_docs.clear();
-            continue;
-        }
-        if line.trimmed.starts_with("//") {
-            pending_docs.clear();
-            continue;
-        }
-        if line.trimmed.chars().any(char::is_whitespace) {
-            return Err(SchemaError::new(
-                "enum variants must be declared as a single identifier per line",
-                line.start..line.start + line.raw.len(),
-                line.number,
-            ));
-        }
-        variants.push(EnumVariant {
-            docs: std::mem::take(&mut pending_docs),
-            name: line.trimmed.to_owned(),
-            span: trimmed_span(line),
-        });
-    }
-    Ok(variants)
 }
 
 /// Length of the type token at the start of `rest`, treating whitespace

@@ -25,10 +25,12 @@ mod relation_scope;
 mod values;
 
 pub use descriptor::{
-    CreateDefault, CreateDefaultType, GeneratedDefault, GeneratedValue, ModelColumn,
-    ModelDescriptor, ReadSource, ViewDescriptor, WriteSource,
+    CreateDefault, CreateDefaultType, DatabaseDefault, EventTarget, GeneratedDefault,
+    GeneratedValue, LiteralDefault, ModelColumn, ModelDescriptor, ReadSource, ViewDescriptor,
+    WriteSource,
 };
 pub use dialect::{Dialect, PostgresDialect, SqliteDialect};
+pub use filter::eval::{in_memory_columns as filter_in_memory_columns, matches as filter_matches};
 pub use filter::{
     CoalesceExpr, CoalesceFilter, FieldRef, Filter, FilterExpr, FilterOp, IntoColumnName,
     JsonFilter, JsonTextPath, RelationFilter, RelationQuantifier, VectorDistanceExpr,

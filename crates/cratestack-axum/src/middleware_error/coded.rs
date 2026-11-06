@@ -27,6 +27,7 @@ pub(crate) fn middleware_coded_response(
             code: rpc_code.to_owned(),
             message: message.to_owned(),
             details: None,
+            extra: Default::default(),
         };
         encode_with_status(&codec, headers, status, &body)
     } else {
@@ -34,6 +35,7 @@ pub(crate) fn middleware_coded_response(
             code: rest_code.to_owned(),
             message: message.to_owned(),
             details: None,
+            extra: Default::default(),
         };
         encode_with_status(&codec, headers, status, &body)
     }

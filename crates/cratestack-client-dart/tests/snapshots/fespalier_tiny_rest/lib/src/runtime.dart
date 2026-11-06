@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:cbor/simple.dart' as cbor;
+import 'package:cratestack_cbor/cratestack_cbor.dart' as cratestack_cbor;
 
 import 'constants.dart';
 
@@ -180,6 +180,39 @@ final class CratestackTransportBroken extends CratestackTransportException {
 // response by its `Content-Type`, or on how a URI and the headers are built.
 // -----------------------------------------------------------------------------
 
+// cratestack#563: `createCborCodec()` is async (it loads a
+// vendored native library / wasm module on first use), so the codec is
+// resolved once and cached here rather than per call — every
+// `_cratestackCborCodec()` caller after the first just awaits the same
+// already-in-flight (or already-resolved) `Future`.
+//
+// cratestack#798: only a SUCCESSFUL resolution stays cached. A plain
+// `??=` never re-evaluates once the field holds a settled *rejected*
+// future, so one transient failure — a wasm asset that 404s on web, a
+// vendored library that was not there yet — would brick every later
+// request in the isolate, replaying the same error forever instead of
+// giving the next caller a fresh attempt. `onError` clears the cache so
+// it can retry, and rethrows with the original stack trace so nothing is
+// swallowed. Same rule, for the same reason, as the generated TypeScript
+// RPC runtime's `resolveCodec()` and `cratestack_cbor`'s own
+// `createCborCodec()`.
+Future<cratestack_cbor.CratestackCborCodec>? _cratestackCborCodecFuture;
+
+Future<cratestack_cbor.CratestackCborCodec> _cratestackCborCodec() {
+  return _cratestackCborCodecFuture ??= cratestack_cbor
+      .createCborCodec()
+      .onError<Object>((error, stackTrace) {
+        // Hung off the future rather than written as a `try`/`catch`
+        // around the call so it cannot run before the `??=` has
+        // assigned: an `onError` callback is always asynchronous,
+        // whereas a `catch` body fires synchronously for anything thrown
+        // before the factory's first `await`, and the assignment would
+        // then immediately re-cache the very failure it just cleared.
+        _cratestackCborCodecFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
+      });
+}
+
 /// The wire format a request body is written in and an `Accept` header
 /// prefers. Responses are always decoded by their own `Content-Type`, so an
 /// adapter set to one format still reads the other.
@@ -216,14 +249,21 @@ Future<Uint8List?> _encodeBody(CratestackWireFormat format, Object? body) async 
     case CratestackWireFormat.json:
       return Uint8List.fromList(utf8.encode(jsonEncode(body)));
     case CratestackWireFormat.cbor:
-      return Uint8List.fromList(cbor.cbor.encode(body));
+      final codec = await _cratestackCborCodec();
+      return codec.encodeJson(jsonEncode(body));
   }
 }
 
 /// Decodes a CBOR body to the JSON-plain value graph the generated `fromWire`
 /// decoders expect.
 Future<Object?> _decodeCbor(Uint8List bytes) async {
-  return cratestackNormalizeWire(cbor.cbor.decode(bytes));
+  // `cratestack_cbor`'s wire boundary is JSON text, and every generated
+  // `toWire()`/`fromWire` already produces/expects JSON-plain values
+  // (ISO-8601 strings for `DateTime`, `List<int>` for `Bytes`, decimal and
+  // `BigInt` text), so `jsonDecode` alone gives the `Map<String, Object?>`
+  // shape the decoders expect.
+  final codec = await _cratestackCborCodec();
+  return jsonDecode(codec.decodeJson(bytes));
 }
 
 /// Decodes a response body by its `Content-Type`: an empty body is `null`,
@@ -298,6 +338,144 @@ Uri _resolveUri(Uri baseUri, String path, String? query) {
   return Uri.parse('$origin$basePath$tail$suffix').normalizePath();
 }
 
+// -----------------------------------------------------------------------------
+// What an error answer says beyond its code (cratestack#1208, cratestack#1243)
+//
+// An `AuthProvider` refusal keeps the fixed code (`UNAUTHORIZED`, RPC
+// `unauthenticated`) and may add top-level members to the error body, a
+// `details` member and `WWW-Authenticate` challenges. These two helpers read
+// them for `CratestackRestException` and `CratestackRpcException`.
+// -----------------------------------------------------------------------------
+
+/// The members of an error body that are not `code`, `message` or `details`,
+/// unmodifiable and in wire order. Empty when [body] is not a map. Nothing is
+/// dropped: a member this client does not know is kept here, as decoded.
+Map<String, Object?> _cratestackExtraErrorMembers(Object? body) {
+  if (body is! Map) {
+    return const <String, Object?>{};
+  }
+  const reserved = <String>{'code', 'message', 'details'};
+  return Map<String, Object?>.unmodifiable(<String, Object?>{
+    for (final entry in body.entries)
+      if (!reserved.contains(entry.key.toString()))
+        entry.key.toString(): entry.value,
+  });
+}
+
+/// The `WWW-Authenticate` value of an answer's [headers], raw and unparsed,
+/// as a list: empty when there is none. [CratestackHttpResponse] joins a
+/// repeated header with `, `, so two challenges sent as two header lines
+/// arrive as one entry holding both.
+List<String> _cratestackChallenges(Map<String, String> headers) {
+  for (final entry in headers.entries) {
+    final value = entry.value;
+    if (entry.key.toLowerCase() == 'www-authenticate' && value.isNotEmpty) {
+      return List<String>.unmodifiable(<String>[value]);
+    }
+  }
+  return const <String>[];
+}
+
+// -----------------------------------------------------------------------------
+// A step-up refusal, typed (cratestack#1244)
+//
+// An operation that requires a fresher or stronger authentication than the
+// caller presented is refused with an `AuthRefusal` whose extra member
+// `error` is `insufficient_user_authentication` (RFC 9470): HTTP 401 on REST,
+// code `unauthenticated` on RPC, unary or in a batch frame. Its `details` say
+// what the operation requires and which requirement the caller failed.
+// -----------------------------------------------------------------------------
+
+/// The extra member `error` of a step-up refusal (RFC 9470).
+const String cratestackInsufficientUserAuthentication =
+    'insufficient_user_authentication';
+
+/// What a step-up refusal asks for: read from the exception's `stepUp`. Each
+/// requirement is present only when the refused operation declares it.
+class StepUpRequired {
+  const StepUpRequired({
+    this.maxAge,
+    this.acrValues = const <String>[],
+    this.amr = const <String>[],
+    this.unmet = const <String>[],
+  });
+
+  /// The longest time, in seconds, since the caller last authenticated.
+  final int? maxAge;
+
+  /// The authentication context classes the operation accepts.
+  final List<String> acrValues;
+
+  /// The authentication methods the operation requires.
+  final List<String> amr;
+
+  /// Which requirements the caller failed: a subset of `max_age`, `acr` and
+  /// `amr`.
+  final List<String> unmet;
+
+  @override
+  String toString() =>
+      'StepUpRequired(maxAge=$maxAge, acrValues=$acrValues, amr=$amr, unmet=$unmet)';
+}
+
+/// Reads a step-up refusal once the transport's own test ([refused]: a 401,
+/// or `unauthenticated`) passed. Never throws: a missing or mistyped field
+/// reads as absent or empty.
+StepUpRequired? _cratestackStepUp(
+  bool refused,
+  Object? details,
+  Map<String, Object?> extra,
+) {
+  if (!refused || extra['error'] != cratestackInsufficientUserAuthentication) {
+    return null;
+  }
+  final map = details is Map ? details : const <Object?, Object?>{};
+  List<String> strings(String name) {
+    final value = map[name];
+    return value is List
+        ? List<String>.unmodifiable(value.whereType<String>())
+        : const <String>[];
+  }
+
+  final maxAge = map['max_age'];
+  return StepUpRequired(
+    maxAge: maxAge is int && maxAge >= 0 ? maxAge : null,
+    acrValues: strings('acr_values'),
+    amr: strings('amr'),
+    unmet: strings('unmet'),
+  );
+}
+
+/// Runs [call]; when it fails with a step-up refusal, hands the refusal to
+/// [reprove] and, when that answers `true` (the user authenticated again),
+/// runs [call] **once** more and returns what it gives, even a second
+/// refusal. Never loops.
+///
+/// [reprove] answers `false` when the user declined or the re-proof failed;
+/// the first refusal is then rethrown. Any other error, and an error thrown
+/// by [reprove] itself, propagates as it is.
+///
+/// ```dart
+/// final receipt = await retryAfterStepUp(
+///   () => api.procedures.transfer(args),
+///   (stepUp) => session.reauthenticate(maxAge: stepUp.maxAge),
+/// );
+/// ```
+Future<T> retryAfterStepUp<T>(
+  Future<T> Function() call,
+  Future<bool> Function(StepUpRequired stepUp) reprove,
+) async {
+  try {
+    return await call();
+  } catch (error) {
+    final stepUp = _cratestackStepUpOf(error);
+    if (stepUp == null || !await reprove(stepUp)) {
+      rethrow;
+    }
+  }
+  return call();
+}
+
 Object cratestackRequireWireValue(String ownerName, String fieldName, Object? value) {
   if (value == null) {
     throw FormatException('Missing required field $ownerName.$fieldName');
@@ -335,34 +513,6 @@ BigInt cratestackDecodeBigInt(Object? value, String site) {
 final RegExp _cratestackCanonicalBigInt = RegExp(r'^(0|-?[1-9][0-9]*)$');
 
 typedef CratestackValueMap = Map<String, Object?>;
-
-/// Recursively rewrites decoded containers into the `Map<String, Object?>`
-/// / `List<Object?>` shapes the generated `fromWire` decoders expect.
-///
-/// The `cbor` package hands maps back as `Map<Object?, Object?>` (and
-/// nested maps/lists likewise), which is *not* a `Map<String, dynamic>`
-/// — casting it directly throws a `TypeError` (`_Map<Object?, Object?>`
-/// is not a subtype of `Map<String, dynamic>`) at runtime. JSON-decoded
-/// bodies already have `String` keys, so for them this is a cheap
-/// structural walk.
-Object? cratestackNormalizeWire(Object? value) {
-  // `Uint8List` implements `List<int>`, so it must be matched before the
-  // generic `List` branch — otherwise CBOR byte strings (`Bytes` fields)
-  // get exploded into per-byte `List<Object?>`, breaking `is Uint8List`
-  // decoders and recursing over every byte.
-  if (value is Uint8List) {
-    return value;
-  }
-  if (value is Map) {
-    return value.map(
-      (key, entry) => MapEntry(key.toString(), cratestackNormalizeWire(entry)),
-    );
-  }
-  if (value is List) {
-    return value.map(cratestackNormalizeWire).toList(growable: false);
-  }
-  return value;
-}
 
 CratestackValueMap cratestackAsValueMap(Object? value) {
   if (value is CratestackValueMap) {
@@ -493,15 +643,65 @@ abstract interface class CratestackClientAdapter {
 /// A call that gets no answer at all fails with a
 /// [CratestackTransportException] instead, so `on CratestackRestException`
 /// means "the server said no" and nothing else.
+///
+/// The envelope's members are typed by the getters: [code], [message],
+/// [details], [extra] (every other member, as an `AuthProvider` refusal adds
+/// them, cratestack#1208) and [challenges] (the `WWW-Authenticate` value).
+/// [body] still holds the whole decoded body.
 class CratestackRestException implements Exception {
-  const CratestackRestException({required this.status, this.body});
+  const CratestackRestException({
+    required this.status,
+    this.body,
+    this.headers = const <String, String>{},
+  });
 
   final int status;
   final Object? body;
 
+  /// The answer's headers, names lower-cased (a repeated header joined with
+  /// `, `).
+  final Map<String, String> headers;
+
+  /// The envelope's `code` (`UNAUTHORIZED`, `FORBIDDEN`, ...), or `null` when
+  /// [body] is not an envelope.
+  String? get code => _envelopeMember('code') as String?;
+
+  /// The envelope's `message`, or `null` when [body] is not an envelope.
+  String? get message => _envelopeMember('message') as String?;
+
+  /// The envelope's `details`, as decoded.
+  Object? get details => _envelopeMember('details');
+
+  /// Every top-level member of the envelope other than `code`, `message` and
+  /// `details`, as decoded; empty when there is none or [body] is not a map.
+  Map<String, Object?> get extra => _cratestackExtraErrorMembers(body);
+
+  /// The answer's `WWW-Authenticate` value, raw and unparsed; empty when
+  /// there is none. A transport joins two challenge lines into one entry.
+  List<String> get challenges => _cratestackChallenges(headers);
+
+  /// The step-up refusal this answer is (cratestack#1244): a 401 whose
+  /// [extra] member `error` is `insufficient_user_authentication`, read from
+  /// [details]. `null` for any other error; reading never throws.
+  StepUpRequired? get stepUp => _cratestackStepUp(status == 401, details, extra);
+
+  Object? _envelopeMember(String name) {
+    final body = this.body;
+    if (body is! Map) {
+      return null;
+    }
+    final value = body[name];
+    return name == 'details' || value is String ? value : null;
+  }
+
   @override
   String toString() => 'CratestackRestException(status=$status, body=$body)';
 }
+
+/// What [retryAfterStepUp] reads: the step-up refusal of a
+/// [CratestackRestException], `null` for anything else.
+StepUpRequired? _cratestackStepUpOf(Object error) =>
+    error is CratestackRestException ? error.stepUp : null;
 
 /// The REST adapter, written once over a [CratestackHttpTransport].
 ///
@@ -590,6 +790,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
       throw CratestackRestException(
         status: response.status,
         body: await _decodeErrorBody(bytes, contentType),
+        headers: response.headers,
       );
     }
     return _decodeBody(bytes, contentType, 'CratestackHttpAdapter');

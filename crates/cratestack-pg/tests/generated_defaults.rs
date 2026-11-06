@@ -68,6 +68,7 @@ fn emitted_ddl_names_only_functions_postgres_has() {
     assert!(up.contains("DEFAULT gen_random_uuid()"), "{up}");
     assert!(up.contains("DEFAULT now()"), "{up}");
     assert!(up.contains("DEFAULT cs1209_ticket_label()"), "{up}");
+    assert!(up.contains("DEFAULT 'it''s open'"), "{up}");
     assert!(!up.contains("uuid()\n") && !up.contains("cuid()"), "{up}");
 }
 
@@ -104,6 +105,7 @@ async fn cratestack_and_raw_sql_writes_both_get_their_defaults() {
         uuid::Uuid::parse_str(&ticket.reference).expect("reference is a uuid");
         assert!(ticket.createdAt >= before - chrono::Duration::seconds(5));
         assert_eq!(ticket.label, "from-db", "the registered function ran");
+        assert_eq!(ticket.status, "it's open", "the string literal default");
         created.push(ticket);
     }
     assert_ne!(created[0].id, created[1].id);
@@ -113,7 +115,7 @@ async fn cratestack_and_raw_sql_writes_both_get_their_defaults() {
     // `cuid()`, which Postgres has no equivalent for, must be supplied.
     let row = query(
         "INSERT INTO tickets (code, title) VALUES ('craw0000000000000000000', 'raw') \
-         RETURNING id, reference, created_at, label",
+         RETURNING id, reference, created_at, label, status",
     )
     .fetch_one(pool)
     .await
@@ -123,6 +125,7 @@ async fn cratestack_and_raw_sql_writes_both_get_their_defaults() {
     uuid::Uuid::parse_str(row.get::<&str, _>("reference")).expect("text uuid");
     let _: chrono::DateTime<chrono::Utc> = row.get("created_at");
     assert_eq!(row.get::<&str, _>("label"), "from-db");
+    assert_eq!(row.get::<&str, _>("status"), "it's open");
 }
 
 /// Registering a function asserts it exists; Postgres checks the claim

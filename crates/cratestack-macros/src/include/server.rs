@@ -76,7 +76,7 @@ pub(super) fn compose_server_schema(
     with_decimal_backend(decimal_backend, move || {
         let resolved_literal = resolved.display().to_string();
 
-        let collected = match collect_server_schema(&schema, schema_path) {
+        let collected = match collect_server_schema(&schema, schema_path, db) {
             Ok(collected) => collected,
             Err(error) => return error,
         };
@@ -97,6 +97,7 @@ pub(super) fn compose_server_schema(
             &collected.bound_model_accessors,
             &collected.view_accessors,
             &collected.query_accessors,
+            !schema.topics.is_empty(),
         );
 
         // Destructure here for `quote!` interpolation — quoting through the
@@ -133,6 +134,7 @@ pub(super) fn compose_server_schema(
             procedure_registry_methods,
             generated_client_module,
             generated_event_module,
+            generated_subscription_module,
             ..
         } = collected;
 
@@ -148,6 +150,10 @@ pub(super) fn compose_server_schema(
             ServerDb::Postgres => generated_event_module,
             ServerDb::None => proc_macro2::TokenStream::new(),
         };
+        // Under `db = None` the subscription module serves only
+        // `subscription procedure`s and `topic`s (slice S4): no model feeds.
+        // `collect_server_schema` decides, from `db`; the backplane builder
+        // lives in the runtime block (`runtime::none`).
 
         // `datasource { provider = "none" }` schemas can never declare a
         // `model` either, so `pg_from_row_impls`/`model_structs`/etc. below
@@ -325,6 +331,7 @@ pub(super) fn compose_server_schema(
 
                 #generated_client_module
                 #generated_event_module
+                #generated_subscription_module
                 #queries_module
 
                 pub mod procedures {

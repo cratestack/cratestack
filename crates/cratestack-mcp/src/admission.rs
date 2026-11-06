@@ -70,8 +70,10 @@ pub(crate) async fn admit_and_run<T: McpTools>(
                     .await;
             } else {
                 // Nothing was committed (an `@isolation` tool out of
-                // retries): give the key back so the same one runs the call
-                // again, as HTTP's `IdempotencyLayer` does.
+                // retries, or the tool's own authorization refused before
+                // its body ran, cratestack#1261): give the key back so the
+                // same one runs the call again, as HTTP's `IdempotencyLayer`
+                // does.
                 server.executor.release(&principal, key, token).await;
             }
             ran.result

@@ -22,6 +22,7 @@
 //! caller-driven opt-in rather than something the framework does for
 //! you automatically (option (a) of cratestack#534, not option (b)).
 
+mod before_image;
 mod outcome;
 mod redact;
 mod schema;
@@ -32,6 +33,7 @@ use cratestack_core::{AuditActor, AuditEvent, AuditOperation, CratestackContext,
 use crate::ModelDescriptor;
 use crate::sqlx;
 
+pub(crate) use before_image::{fetch_before_image, fetch_for_audit};
 pub use outcome::RunInTxOutcome;
 pub use redact::{primary_key_from_snapshot, redact_snapshot, snapshot_model};
 pub use schema::AUDIT_TABLE_DDL;
@@ -73,11 +75,12 @@ where
 }
 
 /// Derive an [`AuditActor`] from the [`CratestackContext`] active at
-/// mutation time. Banks generally want the principal's id, primary
-/// claims, and source IP if the transport recorded one.
+/// mutation time. Banks generally want the principal's id (`subject()`:
+/// `sub`, then `actor.id`, then `id`), primary claims, and source IP if the
+/// transport recorded one.
 pub(crate) fn actor_from_context(ctx: &CratestackContext) -> AuditActor {
     AuditActor {
-        id: ctx.principal_actor_id().map(|s| s.to_owned()),
+        id: ctx.subject().map(std::borrow::Cow::into_owned),
         claims: ctx.audit_claims_snapshot(),
         ip: ctx.client_ip().map(|s| s.to_owned()),
     }
@@ -131,36 +134,6 @@ pub(crate) fn build_audit_event<M, PK>(
         request_id: ctx.request_id().map(|s| s.to_owned()),
         occurred_at: chrono::Utc::now(),
     }
-}
-
-/// Fetch the current state of a row for audit purposes, taking a
-/// row-level lock so concurrent mutations cannot race us. Bypasses
-/// read policies — audit reflects the actual database state, not the
-/// caller's filtered view.
-pub(crate) async fn fetch_for_audit<'e, E, M, PK>(
-    executor: E,
-    descriptor: &'static ModelDescriptor<M, PK>,
-    id: PK,
-) -> Result<Option<M>, CratestackError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    for<'r> M: Send + Unpin + sqlx::FromRow<'r, sqlx::postgres::PgRow>,
-    PK: Send + sqlx::Type<sqlx::Postgres> + for<'q> sqlx::Encode<'q, sqlx::Postgres>,
-{
-    let mut query = sqlx::QueryBuilder::<sqlx::Postgres>::new("SELECT ");
-    query.push(descriptor.select_projection());
-    query.push(" FROM ").push(descriptor.table_name);
-    query
-        .push(" WHERE ")
-        .push(descriptor.primary_key)
-        .push(" = ");
-    query.push_bind(id);
-    query.push(" FOR UPDATE");
-    query
-        .build_query_as::<M>()
-        .fetch_optional(executor)
-        .await
-        .map_err(crate::error::cratestack_error_from_sqlx)
 }
 
 #[cfg(test)]

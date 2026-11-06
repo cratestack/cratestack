@@ -212,6 +212,11 @@ pub(crate) fn build_model_file(
             provider_prefix,
             occupied_provider_symbols,
         ),
+        subscribe_function_name: crate::riverpod::subscriptions::model_subscribe_symbol(
+            model,
+            provider_prefix,
+            occupied_provider_symbols,
+        ),
     };
 
     let mut imports: BTreeSet<String> = BTreeSet::new();

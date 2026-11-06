@@ -17,6 +17,7 @@ use super::caller::Caller;
 use super::error::HttpConfigError;
 use super::guard::{MAX_BODY_BYTES, Shared, StreamableHttpService};
 use super::origin::AllowedOrigins;
+use super::presence::CredentialPresence;
 use super::resource::ProtectedResource;
 use crate::server::McpServer;
 use crate::table::McpTools;
@@ -32,6 +33,7 @@ pub struct StreamableHttpServer<T: McpTools, A: AuthProvider> {
     executor: Option<OpExecutor>,
     store_error_policy: Option<StoreErrorPolicy>,
     implementation: Option<(String, String)>,
+    presence: CredentialPresence,
 }
 
 impl<T: McpTools, A: AuthProvider> StreamableHttpServer<T, A> {
@@ -55,6 +57,7 @@ impl<T: McpTools, A: AuthProvider> StreamableHttpServer<T, A> {
             executor: None,
             store_error_policy: None,
             implementation: None,
+            presence: CredentialPresence::bearer(),
         }
     }
 
@@ -68,6 +71,18 @@ impl<T: McpTools, A: AuthProvider> StreamableHttpServer<T, A> {
         hosts: impl IntoIterator<Item = impl Into<String>>,
     ) -> Self {
         self.allowed_hosts = Some(hosts.into_iter().map(Into::into).collect());
+        self
+    }
+
+    /// How the guard decides that a request carries a credential before
+    /// the provider runs (cratestack#1243). Defaults to
+    /// [`CredentialPresence::bearer`], MCP's own `Authorization: Bearer`.
+    /// A provider that authenticates another way needs
+    /// [`CredentialPresence::provider_decides`] or
+    /// [`CredentialPresence::when`]; whatever the rule, the provider must
+    /// still check that the credential was meant for this resource.
+    pub fn with_credential_presence(mut self, presence: CredentialPresence) -> Self {
+        self.presence = presence;
         self
     }
 
@@ -135,6 +150,7 @@ impl<T: McpTools, A: AuthProvider> StreamableHttpServer<T, A> {
                     provider: self.provider,
                     origins,
                     resource,
+                    presence: self.presence,
                 }),
             },
         })

@@ -52,6 +52,22 @@ pub(super) const FRAGMENT_TEMPLATES: &[(&str, &str)] = &[
         include_str!("../templates/http_runtime/codec.dart.j2"),
     ),
     (
+        "http_runtime/refusal.dart.j2",
+        include_str!("../templates/http_runtime/refusal.dart.j2"),
+    ),
+    (
+        "http_runtime/subscriptions.dart.j2",
+        include_str!("../templates/http_runtime/subscriptions.dart.j2"),
+    ),
+    (
+        "http_runtime/step_up.dart.j2",
+        include_str!("../templates/http_runtime/step_up.dart.j2"),
+    ),
+    (
+        "rpc_runtime/errors.dart.j2",
+        include_str!("../templates/rpc_runtime/errors.dart.j2"),
+    ),
+    (
         "rest_runtime/http_adapter.dart.j2",
         include_str!("../templates/rest_runtime/http_adapter.dart.j2"),
     ),

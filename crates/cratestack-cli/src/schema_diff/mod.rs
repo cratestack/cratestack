@@ -25,21 +25,33 @@
 //! * Retyping a field/arg/return type, or narrowing arity
 //!   (optional → required, or introducing/removing `[]`), is
 //!   breaking; widening (required → optional) is additive.
+//! * Enums (`enums.rs`): removing an enum or a variant is breaking. Adding a
+//!   variant is breaking when the enum can appear in a response, since a
+//!   client generated from the old schema refuses the unknown value, and
+//!   additive when it only appears in requests (`response_reach.rs`).
+//!   Reordering a string enum's variants is internal-only. An ordinal
+//!   enum's variants are matched by number, so a rename keeps the wire and
+//!   is reported as breaking only for the generated identifiers; switching
+//!   between names and ordinals is breaking.
 //! * Other model-level attributes (`@@soft_delete`, `@@audit`,
 //!   `@@retain`, `@@emit`) are tracked as internal-only for now — they
 //!   affect server behavior, not the shape of the wire contract this
 //!   tool models. This is a known scope gap, not an oversight.
 
 mod arity;
+mod enums;
 mod fields;
 mod models;
 mod procedures;
 mod render;
+mod response_reach;
 
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests_attributes;
+#[cfg(test)]
+mod tests_enums;
 #[cfg(test)]
 mod tests_models;
 #[cfg(test)]
@@ -115,5 +127,6 @@ pub(crate) fn diff_schemas(prev: &Schema, next: &Schema) -> SchemaDiff {
     let mut changes = Vec::new();
     models::diff_models(prev, next, &mut changes);
     procedures::diff_procedures(prev, next, &mut changes);
+    enums::diff_enums(prev, next, &mut changes);
     SchemaDiff { changes }
 }

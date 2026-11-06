@@ -89,6 +89,8 @@ export const wireShapes: Readonly<Record<string, WireShape>> = {
   Task: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: { 'board': 'Board' } },
   FocusEstimateArgs: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
   FocusEstimateResult: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  ClearDoneTasksArgs: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
+  ClearDoneTasksResult: { decimalKeys: [], bigintKeys: [], bytesKeys: [], bytesListKeys: [], nested: {  } },
 };
 
 /** Decodes `value` against the named entry in {@link wireShapes},
@@ -325,13 +327,12 @@ export function reviveWireScalar(value: unknown, kind: string): unknown {
  *  Called unconditionally from `rpc-runtime.ts.j2`'s `terminalLink`/
  *  `rpc-stream-terminal.ts.j2`'s `terminalStreamLink` — the two places
  *  every unary/batch/stream request body reaches a codec's `encode()` —
- *  rather than gated on `native_cbor`: converting a `Decimal` to its
- *  `.toString()` form before `JSON.stringify` produces the byte-identical
- *  request body `jsonRpcCodec` already sends today (the same
+ *  rather than gated on which codec is in use: converting a `Decimal` to
+ *  its `.toString()` form before `JSON.stringify` produces the
+ *  byte-identical request body `jsonRpcCodec` already sends (the same
  *  `.toString()` `Decimal.prototype.toJSON` calls), so applying it
- *  unconditionally is a true no-op for the JSON path and avoids a fourth
- *  `{% if native_cbor %}` branch in these already-branchy
- *  templates. */
+ *  unconditionally is a true no-op for a caller who passes
+ *  `codec: jsonRpcCodec`. */
 /** Rewrites every `Uint8Array` in `value` into the plain integer array a
  *  `Bytes` field travels as on the wire, every `bigint` into its canonical
  *  decimal string, and every {@link Decimal} into its string, leaving
@@ -542,6 +543,14 @@ export interface FocusEstimateResult {
   totalMinutes: number;
 }
 
+export interface ClearDoneTasksArgs {
+  boardId: number;
+}
+
+export interface ClearDoneTasksResult {
+  removed: number;
+}
+
 export interface Board {
   id?: number;
   name?: string;
@@ -611,5 +620,9 @@ export interface TaskFindMany {
 
 export interface EstimateFocusMinutesArgs {
   args: FocusEstimateArgs;
+}
+
+export interface ClearDoneTasksProcedureArgs {
+  args: ClearDoneTasksArgs;
 }
 

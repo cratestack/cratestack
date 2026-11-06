@@ -62,6 +62,32 @@ pub(super) fn emit_rename_column(sql: &mut String, rename: &RenameColumn) {
 }
 
 pub(super) fn emit_alter_column_type(sql: &mut String, alter: &AlterColumnType) {
+    // An enum switching between names and ordinals is the one type change
+    // that is not a storage no-op here: the stored values themselves must
+    // be rewritten (`docs/design/enum-ordinals.md` §4).
+    if let Some(cast) = &alter.enum_cast {
+        let arms: Vec<String> = cast
+            .pairs
+            .iter()
+            .map(|(name, ordinal)| {
+                let name = format!("'{}'", name.replace('\'', "''"));
+                if cast.to_ordinals {
+                    format!("WHEN {name} THEN {ordinal}")
+                } else {
+                    format!("WHEN {ordinal} THEN {name}")
+                }
+            })
+            .collect();
+        let column = quote_ident(&alter.column);
+        writeln!(
+            sql,
+            "UPDATE {} SET {column} = CASE {column} {} END;",
+            quote_ident(&alter.table),
+            arms.join(" ")
+        )
+        .unwrap();
+        return;
+    }
     // BLOB affinity covers every `.cstack` scalar on SQLite. Pure
     // type changes (Int → String) are storage-no-ops because both
     // round-trip through BLOB. Only the list-vs-scalar shape change

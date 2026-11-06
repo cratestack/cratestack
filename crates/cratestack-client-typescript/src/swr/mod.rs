@@ -70,7 +70,10 @@ pub(crate) fn generate(
     schema: &Schema,
     config: &TypeScriptGeneratorConfig,
 ) -> Result<Vec<GeneratedTypeScriptFile>, TypeScriptGeneratorError> {
-    let specs = templates::swr_template_specs_for(schema.transport);
+    let mut specs = templates::swr_template_specs_for(schema.transport);
+    if crate::subscriptions::has_subscriptions(schema) {
+        specs.extend_from_slice(crate::subscriptions::SWR_SUBSCRIPTION_TEMPLATE_SPECS);
+    }
     let environment = build_environment(config.template_dir.as_deref(), &specs)?;
     let ownership = ownership::compute_type_ownership(schema);
     let shared_context = context::build_shared_context(schema, config, &ownership);

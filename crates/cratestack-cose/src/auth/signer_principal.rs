@@ -119,7 +119,9 @@ async fn holds(
 /// That holds only with the default `cose:` prefix: an envelope built with
 /// `ThumbprintPrincipal::with_prefix(..)` (or another principal mapper) names
 /// the signer differently, and the two ids then differ. `thumbprint` carries
-/// the bare lowercase hex either way, and `alg` the COSE algorithm id.
+/// the bare lowercase hex either way, and `alg` the COSE algorithm id. `amr`
+/// is `["pop"]` (RFC 8176): the request was sealed with the signer's key
+/// (ADR 0022); there is no `auth_time`, since a key is no user's sign-in.
 pub(super) fn authenticated(signer: &VerifiedSigner, kind: SignerKind) -> CratestackContext {
     let thumbprint: String = signer
         .thumbprint()
@@ -131,5 +133,9 @@ pub(super) fn authenticated(signer: &VerifiedSigner, kind: SignerKind) -> Crates
         ("kind".to_owned(), Value::String(kind.label().to_owned())),
         ("thumbprint".to_owned(), Value::String(thumbprint)),
         ("alg".to_owned(), Value::Int(signer.alg())),
+        (
+            "amr".to_owned(),
+            Value::List(vec![Value::String("pop".to_owned())]),
+        ),
     ])
 }

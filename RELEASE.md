@@ -6,7 +6,7 @@ CrateStack publishes through the common public Rust and editor channels:
 * CLI binaries and release notes: GitHub Releases
 * VS Code extension: the VS Code Marketplace and Open VSX, plus `.vsix` files attached to GitHub
   Releases as a fallback — all three channels live, all published per tag by the same workflow
-* Documentation site: Mintlify or equivalent static docs hosting from `docs-site/`
+* Documentation site: [cratestack.dev](https://cratestack.dev), a VitePress site (the vaam-apps Material 3 theme) built from `cratestack/cratestack-docs` and deployed to GitHub Pages on every push to its `main`
 
 ## Quickstart (CI-driven — preferred)
 

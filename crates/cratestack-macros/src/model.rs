@@ -20,6 +20,7 @@
 //!   accessors that hand out per-model delegates.
 
 mod accessor;
+mod create_fields;
 mod descriptor;
 mod field_module;
 mod find_many_input;
@@ -28,7 +29,9 @@ mod find_many_where;
 mod find_many_where_push;
 mod inputs;
 pub(crate) mod row_pg;
+pub(crate) mod row_pg_enum;
 pub(crate) mod row_sqlite;
+mod row_sqlite_enum;
 mod selection;
 mod selection_module;
 pub(crate) mod struct_only;
@@ -47,7 +50,7 @@ pub(crate) use field_module::{
 };
 pub(crate) use find_many_input::{generate_find_many_input, generate_find_many_types};
 pub(crate) use inputs::{
-    generate_client_create_input_struct, generate_client_update_input_struct,
+    InputRole, generate_client_create_input_struct, generate_client_update_input_struct,
     generate_create_input_struct, generate_update_input_struct, generate_upsert_input_struct,
 };
 pub(crate) use row_pg::generate_pg_from_row_impl;

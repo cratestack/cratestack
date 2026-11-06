@@ -79,6 +79,41 @@ fn invoke_with_db_isolated_fn_tokens() -> proc_macro2::TokenStream {
             F: FnOnce(super::super::IsolatedCratestack, Authorized) -> Fut + Clone,
             Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
         {
+            invoke_with_db_as(db, args, ctx, false, f).await
+        }
+
+        /// **Generated dispatch only** (REST, RPC, MCP). [`invoke_with_db`],
+        /// except that a refusal of this procedure's own authorization step
+        /// is claimed as the dispatch's: it comes before the body, and the
+        /// attempt it ran in is rolled back, so an idempotency layer
+        /// releases the request's key instead of recording it
+        /// (cratestack#1261). It authorizes exactly as [`invoke_with_db`]
+        /// does.
+        #[doc(hidden)]
+        pub async fn __generated_dispatch_with_db<F, Fut, T>(
+            db: &super::super::Cratestack,
+            args: &Args,
+            ctx: &::cratestack::CratestackContext,
+            f: F,
+        ) -> Result<T, ::cratestack::CratestackError>
+        where
+            F: FnOnce(super::super::IsolatedCratestack, Authorized) -> Fut + Clone,
+            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
+        {
+            invoke_with_db_as(db, args, ctx, true, f).await
+        }
+
+        async fn invoke_with_db_as<F, Fut, T>(
+            db: &super::super::Cratestack,
+            args: &Args,
+            ctx: &::cratestack::CratestackContext,
+            dispatch: bool,
+            f: F,
+        ) -> Result<T, ::cratestack::CratestackError>
+        where
+            F: FnOnce(super::super::IsolatedCratestack, Authorized) -> Fut + Clone,
+            Fut: ::core::future::Future<Output = Result<T, ::cratestack::CratestackError>>,
+        {
             let span = ::cratestack::tracing::info_span!(
                 "cratestack_procedure_invoke_with_db",
                 cratestack_procedure = NAME,
@@ -100,8 +135,13 @@ fn invoke_with_db_isolated_fn_tokens() -> proc_macro2::TokenStream {
                                 let tx_db = super::super::IsolatedCratestack {
                                     inner: super::super::Cratestack { runtime },
                                 };
-                                let authorized = authorize_validated_with_db(&tx_db.inner, args, ctx).await?;
-                                f(tx_db, authorized).await
+                                let authorized = authorize_validated_with_db(&tx_db.inner, args, ctx)
+                                    .await
+                                    .map_err(|error| claimed_by(dispatch, error))?;
+                                // A refusal out of the body is the body's (cratestack#1261).
+                                f(tx_db, authorized)
+                                    .await
+                                    .map_err(::cratestack::CratestackError::disown_auth_refusal)
                             }
                         })
                         .await;

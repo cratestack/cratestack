@@ -22,6 +22,7 @@ pub(super) fn reconstruct_enum(column: &str, predicate: &str) -> Option<CheckKin
         return Some(CheckKind::Enum {
             variants: parse_text_literals(items)?,
             list: false,
+            ordinals: None,
         });
     }
     if let Some(items) = normalized
@@ -32,6 +33,7 @@ pub(super) fn reconstruct_enum(column: &str, predicate: &str) -> Option<CheckKin
         return Some(CheckKind::Enum {
             variants: parse_text_literals(items)?,
             list: true,
+            ordinals: None,
         });
     }
     None
@@ -101,6 +103,7 @@ mod tests {
             CheckKind::Enum {
                 variants: vec!["pending".into(), "active".into(), "done".into()],
                 list: false,
+                ordinals: None,
             }
         );
     }
@@ -114,6 +117,7 @@ mod tests {
             CheckKind::Enum {
                 variants: vec!["a".into(), "b".into()],
                 list: true,
+                ordinals: None,
             }
         );
     }

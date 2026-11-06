@@ -163,6 +163,7 @@ build_runner → run path.
 | [`rpc-batch-debounce/`](rpc-batch-debounce) | `include_server_schema!` (`transport rpc`, `db = None`) | Client-side `BatchDebouncer` that coalesces independent RPC calls into a single `POST /rpc/batch`, wrapping the in-process `rpc-batch` router |
 | [`rpc-streaming/`](rpc-streaming) | `include_server_schema!` (`transport rpc`, `db = None`) | RPC server streaming a list-return procedure via `Accept: application/cbor-seq` — the same route serves a single CBOR `Vec` or a stream of CBOR chunks depending on content negotiation |
 | [`rpc-streaming-client-rust/`](rpc-streaming-client-rust) | `include_client_schema!` | Rust client consuming the `rpc-streaming` server's cbor-seq stream through a typed, generated streaming method (`RpcStream<Tick>`) — companion to `rpc-streaming` |
+| [`realtime-chat/`](realtime-chat) | `include_server_schema!` (`transport rpc`, Postgres, `extension websocket`/`webtransport`) | A chat that is live over every binding: messages as a model feed, typing indicators on a topic behind a subscription procedure, a dev certificate for local WebTransport, and the generated clients' `"auto"` falling back WebTransport → WebSocket → SSE, proven in Chromium with UDP blocked |
 | [`rpc-client/`](rpc-client) | `include_client_schema!` (`cratestack-client` facade) | Pure RPC HTTP client consuming a `transport rpc` server — unary `BatchableCall` `.await` **and** a batched `POST /rpc/batch` round-trip via `BatchBuilder`/`queue`/`take`. Companion to `rpc-procedures`. First client example to use the pure `cratestack-client` facade |
 
 ```bash
@@ -201,6 +202,49 @@ just mcp-conformance                           # from the repository root: needs
 ```
 
 See [`mcp-operator/README.md`](mcp-operator/README.md) for pointing an MCP client at each transport.
+
+## Phase H — Authentication
+
+### One schema, three providers (standalone workspace)
+
+One schema and one test suite, run against three `AuthProvider`s: CrateStack's own (signed requests
+chained with COSE signers), Authkestra device signatures, and Authkestra OIDC with DPoP-bound tokens
+(cratestack#1245, ADR 0021). Each provider is one file built only on the public seam. The example is
+its own `[workspace]` root, listed in the root `Cargo.toml`'s `exclude`, because it is the only crate
+in the repository that depends on Authkestra: the root `Cargo.lock` never sees it, and
+`.ci/auth-pluggable-check.sh` proves no CrateStack crate in its graph reaches an `authkestra*`
+package. Run its commands from its directory.
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`auth-pluggable/`](auth-pluggable) | `include_server_schema!` (`db = None`) | `whoAmI` (any caller) and `adminReport` (`hasRole("admin")`), served by three binaries that differ only in their provider. One suite runs each provider through the conformance kit (REST, RPC unary and batch, MCP) and the example's own policies; the OIDC tests start `authkestra-op` in-process and send real DPoP proofs. |
+
+```bash
+cd examples/auth-pluggable
+cargo test --locked                            # the three providers through one suite
+../../.ci/auth-pluggable-check.sh              # no CrateStack crate reaches Authkestra
+```
+
+See [`auth-pluggable/README.md`](auth-pluggable/README.md) for the three provider files side by side.
+
+### Step-up (`@authn`)
+
+Step-up authentication end to end (cratestack#1245, on #1244's `@authn` and ADR 0022): a procedure
+states how fresh and how strong the caller's authentication must be, the server refuses with RFC
+9470's step-up signal, and each generated client reads it as `StepUpRequired`, re-proves and retries
+once.
+
+| Example | Macro(s) | Shape |
+|---|---|---|
+| [`step-up-procedures/`](step-up-procedures) | `include_server_schema!` (`db = None`) **and** `include_client_schema!`, each over REST and `transport rpc` | `payInvoice` under `@authn(maxAge: 300, amr: ["hwk"])`, `balance` with no requirement, behind CrateStack's in-house `SignedRequestAuthProvider`, which fills `auth_time` and `amr` from the id token. The generated Rust clients sign with a device key, meet `StepUpRequired`, re-prove and pay through `retry_after_step_up`, on REST, an RPC unary call and an RPC batch (only the payment's frame is refused). No database. |
+| [`flutter-riverpod/`](flutter-riverpod) and [`react-vite-swr/`](react-vite-swr) | as above (Phase D, Phase E) | `clearDoneTasks` under the same `@authn`: a step-up screen driven by the generated Dart and TypeScript `StepUpRequired`, `retryAfterStepUp`, and a banner keyed on the refusal code. The session's facts travel as stand-in headers; the README of each says why a real provider must not do that. |
+
+```bash
+cargo run -p step-up-procedures-example        # the three flows against a loopback server
+cargo test -p step-up-procedures-example
+cd examples/flutter-riverpod/app && flutter test test/step_up_test.dart
+cd examples/react-vite-swr && pnpm --filter react-vite-swr-web test
+```
 
 ## Standalone verification crates (not workspace members)
 
@@ -244,6 +288,7 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | `flutter-riverpod` | n/a (no Rust crate — reuses `react-vite-swr`'s server; `client/`'s own `flutter test` is the analog) | ✅ macOS desktop | Real `react-vite-swr` server booted against Postgres; `flutter run -d macos` — created a board via the generated `BoardCreateController` and watched the list refresh (`ref.invalidate(boardListProvider)`, no manual refetch), opened its detail screen, toggled/deleted tasks via the generated `TaskUpdateController`/`TaskDeleteController` (both invalidated the list live), watched the `estimateFocusMinutes` procedure provider's estimate recompute automatically each time. Two real bugs found and fixed live during this run (a missing `Accept` header in `CratestackDioAdapter`, and a controller auto-dispose race) — see `flutter-riverpod/README.md`. |
 | `react-vite-refine` | ✅ (5 offline tests, no Docker) | ✅ | Real stateful WireMock container (built from `crates/cratestack-mock-wiremock/docker/Dockerfile`) — `pnpm run verify` (`web/scripts/verify.ts`, outside React) drove create → list → update → delete → 404 live for all three models, confirmed the falsy `published: false` round trip, and confirmed (asserted, not assumed) that a stale `If-Match` gets `200` not `412` against this mock. Also driven by hand in a real browser (Claude Preview): added/edited/deleted rows on all three tabs, confirmed against the container's own state via `fetch`. See `react-vite-refine/README.md`'s "What this demo can't prove" for the two confirmed gaps this surfaced in `cratestack-mock-wiremock`. |
 | `mcp-operator` | ✅ (`tests/token.rs` and `tests/cli.rs` offline; `tests/serve.rs` against a Postgres testcontainer) | ✅ | `just mcp-conformance`: the MCP Inspector CLI 2.8.0 (`@modelcontextprotocol/client` 2.0.0) negotiates `2026-07-28` over stdio and over Streamable HTTP. It lists tools and resources, calls a tool, sees a policy-denied call return `isError`/`FORBIDDEN` without running, reads a record and a collection, and gets "resource not found" for a hidden row, the same as for a missing one. It is refused with no token, with a token for another audience, and as a legacy `initialize` client (cratestack#1041). |
+| `step-up-procedures` | ✅ (11 tests: the real server on a loopback port, the real generated REST and RPC clients) | ✅ | `cargo run -p step-up-procedures-example`: a 20-minute-old password session is refused `payInvoice` with `StepUpRequired` (`unmet: [max_age, amr]`), re-proves, and pays once on REST, an RPC unary call and an RPC batch; the ledger lists each invoice once. |
 
 What "end-to-end" means here:
 
@@ -292,3 +337,4 @@ cargo run -p microservice-pair-example
 | Consume a generated REST/RPC TypeScript client with zero hand-written data-fetching code (SWR hooks) | [`react-vite-swr`](react-vite-swr) |
 | Consume a generated Dart/Flutter client with zero hand-written Riverpod providers | [`flutter-riverpod`](flutter-riverpod) |
 | Let an AI agent call your procedures and read your models over MCP, under the same policies | [`mcp-operator`](mcp-operator) |
+| Require a fresh, strong sign-in for one operation (step-up), and handle it in Rust, Dart and TypeScript clients | [`step-up-procedures`](step-up-procedures) |

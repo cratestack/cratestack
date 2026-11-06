@@ -1,0 +1,28 @@
+// cratestack#1261: MCP's idempotency follows the HTTP rule for refusals. A
+// step-up refusal of the generated authorize step is not recorded under a
+// `_meta` key; a refusal the tool's body returns after a write is.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+type PayArgs {
+  amount Int
+}
+
+type Receipt {
+  ok Boolean
+}
+
+mutation procedure pay(args: PayArgs): Receipt
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk"])
+  @mcp(tool: "pay", description: "Pay. Needs a fresh hardware-key proof.")
+
+mutation procedure refund(args: PayArgs): Receipt
+  @allow(auth() != null)
+  @mcp(tool: "refund", description: "Refund. Writes, then refuses the caller.")

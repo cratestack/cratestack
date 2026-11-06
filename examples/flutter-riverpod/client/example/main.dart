@@ -18,6 +18,7 @@ void main() {
 
   // Generated procedures:
   // - estimateFocusMinutes(...)
+  // - clearDoneTasks(...)
 
   assert(listQuery.limit == 20);
   assert(fetchQuery.toQueryParameters().isEmpty);

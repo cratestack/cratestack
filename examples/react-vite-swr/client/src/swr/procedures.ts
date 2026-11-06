@@ -30,8 +30,20 @@ export interface FocusEstimateResult {
   totalMinutes: number;
 }
 
+export interface ClearDoneTasksArgs {
+  boardId: number;
+}
+
+export interface ClearDoneTasksResult {
+  removed: number;
+}
+
 export interface EstimateFocusMinutesArgs {
   args: FocusEstimateArgs;
+}
+
+export interface ClearDoneTasksProcedureArgs {
+  args: ClearDoneTasksArgs;
 }
 
 export async function estimateFocusMinutes(
@@ -41,5 +53,14 @@ export async function estimateFocusMinutes(
 ): Promise<FocusEstimateResult> {
   return runtime.post<unknown>("/$procs/estimateFocusMinutes", args, options)
     .then((value) => reviveWireFields(value, 'FocusEstimateResult') as FocusEstimateResult);
+}
+
+export async function clearDoneTasks(
+  runtime: CratestackRuntime,
+  args: ClearDoneTasksProcedureArgs,
+  options: CratestackRequestConfig = {},
+): Promise<ClearDoneTasksResult> {
+  return runtime.post<unknown>("/$procs/clearDoneTasks", args, options)
+    .then((value) => reviveWireFields(value, 'ClearDoneTasksResult') as ClearDoneTasksResult);
 }
 

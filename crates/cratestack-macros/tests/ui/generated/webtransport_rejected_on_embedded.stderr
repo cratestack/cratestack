@@ -1,0 +1,5 @@
+error: schema declares `extension webtransport { }`, but `include_embedded_schema!` serves no subscriptions, so there is nothing for it to bind: webtransport is a server binding. Declare it in the schema `include_server_schema!` compiles (with its `webtransport` Cargo feature enabled), or drop the block from schemas meant for the embedded backend. See docs/design/subscriptions-websocket.md §9.
+ --> tests/ui/generated/webtransport_rejected_on_embedded.rs
+  |
+  | cratestack_macros::include_embedded_schema!("/tmp/cratestack-macros-ui-161/webtransport_extension_embedded.cstack");
+  |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

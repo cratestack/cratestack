@@ -4,7 +4,9 @@
 //! into a sibling module so the new SQLite source can reuse it without
 //! pulling Postgres-specific types.
 
-use cratestack_core::{Field, Model, ModelEventKind, Schema, TypeArity, parse_emit_attribute};
+use cratestack_core::{
+    EnumDecl, Field, Model, ModelEventKind, Schema, TypeArity, parse_emit_attribute,
+};
 use cratestack_migrate::{column_name, table_name};
 
 use super::DataError;
@@ -39,6 +41,9 @@ pub(crate) struct ColumnInfo<'a> {
     /// alone cannot tell a `BigInt` (a string on every wire) from a
     /// `String`.
     pub scalar: &'a str,
+    /// The ordinal enum (`Pending = 1`) the column stores as a number, if
+    /// any; a payload's variant name binds as its ordinal.
+    pub ordinal_enum: Option<&'a EnumDecl>,
 }
 
 /// How a primary-key value should be interpreted at the SQL layer.
@@ -74,6 +79,10 @@ pub(crate) fn resolve_model<'a>(
             field_name: f.name.as_str(),
             column_name: column_name(&f.name),
             scalar: f.ty.name.as_str(),
+            ordinal_enum: schema
+                .enums
+                .iter()
+                .find(|e| e.name == f.ty.name && e.is_ordinal()),
         })
         .collect();
 
@@ -131,7 +140,7 @@ pub(crate) fn emitted_events(model: &Model) -> Vec<ModelEventKind> {
 
 /// A field counts as scalar if its arity isn't `List` and its declared
 /// type doesn't name a model in the same schema. Enum-typed fields stay
-/// scalar (they're stored as text columns).
+/// scalar (text columns, or `SMALLINT` for an ordinal enum).
 pub(crate) fn is_scalar_field(schema: &Schema, field: &Field) -> bool {
     if matches!(field.ty.arity, TypeArity::List) {
         return false;
@@ -161,37 +170,5 @@ pub(crate) fn json_value_to_cursor(value: &serde_json::Value) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parse(text: &str) -> Schema {
-        cratestack_parser::parse_schema(text).expect("schema parses")
-    }
-
-    /// A `BigInt` key with no arm in `pk_cast_for` is refused as an
-    /// unsupported key type, which silently drops the model from
-    /// browse, relation follow and the generated find-by-key snippet.
-    #[test]
-    fn bigint_primary_key_resolves_to_the_bigint_cast() {
-        let schema = parse(
-            r#"
-                model Ledger {
-                  id BigInt @id
-                  amountE8 BigInt
-                  note String
-                }
-            "#,
-        );
-        let (_, info) = resolve_model(&schema, "Ledger").expect("BigInt key is supported");
-        assert_eq!(info.pk_cast, PkCast::BigInt);
-        let scalars: Vec<(&str, &str)> = info
-            .columns
-            .iter()
-            .map(|c| (c.field_name, c.scalar))
-            .collect();
-        assert_eq!(
-            scalars,
-            [("id", "BigInt"), ("amountE8", "BigInt"), ("note", "String")]
-        );
-    }
-}
+#[path = "model_info_tests.rs"]
+mod tests;

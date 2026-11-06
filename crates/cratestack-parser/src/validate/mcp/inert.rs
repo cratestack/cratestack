@@ -6,7 +6,8 @@
 //! attribute (or enum variant name) that still names MCP is, by
 //! construction, read by nothing — `@MCP(tool)`, `@ mcp(tool)`,
 //! `@allow(true) @mcp(tool)` on a query line, `@@allow(...) @@mcp(...)` on a
-//! view line, a bare `@@mcp` line in an enum. Each of those parsed cleanly
+//! view line, a bare `@@mcp` line in an enum (now refused earlier, by the
+//! enum body parser). Each of those parsed cleanly
 //! and exposed nothing before this rule, and a schema whose only MCP was
 //! such a spelling also slipped past the macro's release gate, which reads
 //! the typed IR (review finding on cratestack#1036; ADR 0002 § Validation:

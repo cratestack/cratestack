@@ -96,6 +96,7 @@ mod tests {
             is_relation: false,
             is_enum: false,
             enum_variants: Vec::new(),
+            enum_ordinals: Vec::new(),
         }
     }
 

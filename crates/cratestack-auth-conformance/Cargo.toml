@@ -1,0 +1,38 @@
+[package]
+name = "cratestack-auth-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The AuthProvider conformance kit (ADR 0021 §6): drives one provider through every CrateStack transport and asserts the same verdict, the same refusal rendering, the canonical request and one call per request. A dev-dependency of a provider's tests."
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# The kit compiles its own small schemas with `include_server_schema!`,
+# whose generated code names `::cratestack::...`, so the facade is imported
+# under that name. `cratestack-api` (no database) is enough for every
+# transport the kit drives; `mcp` adds the Streamable HTTP endpoint.
+cratestack = { package = "cratestack-api", path = "../cratestack-api", version = "0.17.0", features = ["mcp"] }
+cratestack-codec-json.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tower.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+cratestack-auth.workspace = true
+cratestack-cose = { workspace = true, features = ["auth"] }
+ed25519-dalek.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

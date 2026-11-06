@@ -51,8 +51,9 @@ impl GeneratedValue {
 /// A column cratestack fills on create when the input leaves it out.
 ///
 /// Generated in Rust rather than left to a database `DEFAULT`, so the
-/// value is the same on every backend: the embedded runtime's tables carry
-/// no `DEFAULT` clauses, and `cuid()` has no database equivalent at all.
+/// value is the same on every backend: an embedded runtime's table may
+/// predate its `DEFAULT` clauses (cratestack#1234), and `cuid()` has no
+/// database equivalent at all.
 /// The migration emitter still writes a matching database default where
 /// one exists, for writes that do not go through cratestack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

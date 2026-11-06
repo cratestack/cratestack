@@ -338,6 +338,7 @@ async fn enum_shaped_check_reconstructs_to_check_kind_enum() {
         CheckKind::Enum {
             variants: vec!["Pending".to_owned(), "Shipped".to_owned()],
             list: false,
+            ordinals: None,
         }
     );
 }
@@ -409,6 +410,7 @@ async fn native_enum_type_folds_into_a_check() {
         CheckKind::Enum {
             variants: vec!["Open".to_owned(), "Closed".to_owned()],
             list: false,
+            ordinals: None,
         }
     );
 }

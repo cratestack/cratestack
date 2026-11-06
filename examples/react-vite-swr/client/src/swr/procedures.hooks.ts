@@ -26,8 +26,12 @@ import { swrKeys } from "./swr-keys.js";
 import {
   estimateFocusMinutes,
   type EstimateFocusMinutesArgs,
+  clearDoneTasks,
+  type ClearDoneTasksProcedureArgs,
   type FocusEstimateArgs,
   type FocusEstimateResult,
+  type ClearDoneTasksArgs,
+  type ClearDoneTasksResult,
 } from "./procedures.js";
 
 export function useEstimateFocusMinutesQuery(
@@ -38,6 +42,27 @@ export function useEstimateFocusMinutesQuery(
   return useSWR(
     swrKeys.procedure.estimateFocusMinutes(args),
     () => estimateFocusMinutes(runtime, args as EstimateFocusMinutesArgs),
+    config,
+  );
+}
+
+export function useClearDoneTasksMutation(
+  runtime: CratestackRuntime,
+  config?: SWRMutationConfiguration<
+    ClearDoneTasksResult,
+    Error,
+    ReturnType<typeof swrKeys.procedure.clearDoneTasks>,
+    ClearDoneTasksProcedureArgs
+  >,
+): SWRMutationResponse<
+  ClearDoneTasksResult,
+  Error,
+  ReturnType<typeof swrKeys.procedure.clearDoneTasks>,
+  ClearDoneTasksProcedureArgs
+> {
+  return useSWRMutation(
+    swrKeys.procedure.clearDoneTasks(),
+    (_key, { arg }: { arg: ClearDoneTasksProcedureArgs }) => clearDoneTasks(runtime, arg),
     config,
   );
 }

@@ -72,10 +72,18 @@ fn authorize_with_construct<A: ProcedureArgs + ?Sized>(
     }
 }
 
+/// `hasRole(role)` (ADR 0021 §2): true when the contract's `roles` list
+/// contains `role`, or the legacy `role` claim equals it, or the legacy
+/// `actor.role` does. Each source is read on its own, and a mistyped one
+/// (a `roles` that is not a list of strings, a non-string `role`) counts as
+/// absent, so it can never grant. Every evaluation of `hasRole` goes through
+/// here: procedure policies, model read policies lowered to SQL, and the
+/// create-time input check.
 pub fn context_has_role(ctx: &CratestackContext, role: &str) -> bool {
-    ctx.auth_field("role")
-        .or_else(|| ctx.auth_field("actor.role"))
-        .is_some_and(|value| matches!(value, Value::String(candidate) if candidate == role))
+    ctx.roles().is_some_and(|roles| roles.contains(&role))
+        || ["role", "actor.role"].into_iter().any(|path| {
+            matches!(ctx.auth_field(path), Some(Value::String(candidate)) if candidate == role)
+        })
 }
 
 pub fn context_in_tenant(ctx: &CratestackContext, tenant_id: &str) -> bool {

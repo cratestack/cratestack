@@ -6,6 +6,8 @@ use std::collections::BTreeSet;
 use cratestack_core::{Field, Model, TypeArity};
 use quote::quote;
 
+use super::row_sqlite_enum::enum_decode_expr;
+
 use crate::shared::{ident, scalar_model_fields, to_snake_case};
 
 /// Emit `impl FromRusqliteRow for Model` only.
@@ -165,56 +167,5 @@ fn sqlite_row_field_decode_expr(
         // Default: rusqlite's built-in FromSql handles the conversion
         // (String, Int as i64, Float as f64, Bytes as Vec<u8>, Cuid as String).
         _ => quote! { row.get(#field_name)? },
-    }
-}
-
-fn enum_decode_expr(field: &Field, field_name: &str) -> proc_macro2::TokenStream {
-    let enum_ident = ident(&field.ty.name);
-    let parse_error = |error: proc_macro2::TokenStream| {
-        quote! {
-            ::cratestack::rusqlite::Error::FromSqlConversionFailure(
-                0,
-                ::cratestack::rusqlite::types::Type::Text,
-                Box::new(::std::io::Error::new(
-                    ::std::io::ErrorKind::InvalidData,
-                    #error,
-                )),
-            )
-        }
-    };
-    match field.ty.arity {
-        TypeArity::Required => {
-            let decode_error = parse_error(quote! { error.to_string() });
-            quote! {
-                {
-                    let raw: String = row.get(#field_name)?;
-                    raw.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)?
-                }
-            }
-        }
-        TypeArity::Optional => {
-            let decode_error = parse_error(quote! { error.to_string() });
-            quote! {
-                {
-                    let raw: Option<String> = row.get(#field_name)?;
-                    raw.map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error)).transpose()?
-                }
-            }
-        }
-        // Unreachable as of #229; see the matching note in `row_pg.rs`.
-        // No write-side counterpart either: `cratestack-rusqlite`'s
-        // `ToSql` (`src/value/bind.rs`) has no array case.
-        TypeArity::List => {
-            let decode_error = parse_error(quote! { error.to_string() });
-            quote! {
-                {
-                    let raw: String = row.get(#field_name)?;
-                    let strs: Vec<String> = ::serde_json::from_str(&raw).map_err(|error| #decode_error)?;
-                    strs.into_iter()
-                        .map(|value| value.parse::<super::types::#enum_ident>().map_err(|error| #decode_error))
-                        .collect::<Result<Vec<_>, _>>()?
-                }
-            }
-        }
     }
 }

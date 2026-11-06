@@ -104,6 +104,8 @@ decimal-rust-decimal = [
     "cratestack-migrate/decimal-rust-decimal",
     "cratestack-sqlx?/decimal-rust-decimal",
     "cratestack-mcp?/decimal-rust-decimal",
+    "cratestack-webtransport?/decimal-rust-decimal",
+    "cratestack-websocket?/decimal-rust-decimal",
 ]
 # Mirrors `decimal-rust-decimal` above for the `bigdecimal` backend
 # (cratestack#495).
@@ -120,6 +122,8 @@ decimal-bigdecimal = [
     "cratestack-migrate/decimal-bigdecimal",
     "cratestack-sqlx?/decimal-bigdecimal",
     "cratestack-mcp?/decimal-bigdecimal",
+    "cratestack-webtransport?/decimal-bigdecimal",
+    "cratestack-websocket?/decimal-bigdecimal",
 ]
 # Forwards the JSON codec to the generated client runtime. On by default
 # so `include_client_schema!` keeps offering both CBOR and JSON; disable
@@ -138,6 +142,16 @@ codec-json = ["cratestack-client-rust/codec-json"]
 # `cratestack-client-rust` directly. Off by default and additive: with
 # it off, nothing new enters the dependency graph.
 middleware = ["cratestack-client-rust/middleware"]
+# The generated Rust client's subscriptions over WebSocket
+# (docs/design/subscriptions-websocket.md §8): `SubscriptionTransport::Auto`
+# tries a socket first, then SSE. Native targets only; pulls
+# `tokio-tungstenite`, never `axum`.
+client-ws = ["cratestack-client-rust/ws"]
+# The generated Rust client's subscriptions over WebTransport (§6a, §8):
+# `SubscriptionTransport::WebTransport`, and `Auto`'s first choice once
+# `ClientConfig::with_webtransport` names the listener. Native targets;
+# pulls `cratestack-webtransport`'s client half (QUIC), never `axum`.
+client-webtransport = ["cratestack-client-rust/webtransport"]
 # NOT YET FUNCTIONAL — enabling this feature is a hard compile_error!, not a
 # working FIPS mode. It exists only as a reserved name so a future PR can
 # wire it up without a breaking rename. `aws-lc-rs` is not a dependency of
@@ -180,6 +194,21 @@ pgvector = ["cratestack-macros/pgvector", "cratestack-sqlx/pgvector"]
 # (spatial column bind/decode). Adds no new third-party dependency —
 # PostGIS's wire format is EWKB, i.e. bytes.
 postgis = ["cratestack-macros/postgis", "cratestack-sqlx/postgis"]
+# Serves the schema's subscriptions over WebTransport (HTTP/3) for schemas
+# that declare `extension webtransport { }`
+# (docs/design/subscriptions-websocket.md §6a, §9): pulls
+# `cratestack-webtransport` (and through it QUIC), re-exported as
+# `cratestack::webtransport`, and forwards `cratestack-macros/webtransport`,
+# which adds `SubscriptionDispatch::webtransport` to the generated
+# `subscriptions` module. Without it no QUIC dependency enters the graph.
+webtransport = ["cratestack-macros/webtransport", "dep:cratestack-webtransport"]
+# Serves the schema's subscriptions over WebSocket for schemas that declare
+# `extension websocket { }` (docs/design/subscriptions-websocket.md §6, §9):
+# pulls `cratestack-websocket` (axum's `ws`, tungstenite), re-exported as
+# `cratestack::websocket`, and forwards `cratestack-macros/websocket`, which
+# adds `SubscriptionDispatch::websocket` to the generated `subscriptions`
+# module.
+websocket = ["cratestack-macros/websocket", "dep:cratestack-websocket"]
 # Serves the schema's `@mcp(tool)` procedures and `@@mcp(resource: ...)`
 # models to agents over MCP (ADR 0002, cratestack#1038, cratestack#1040):
 # pulls `cratestack-mcp` (and through it `rmcp`), and
@@ -229,6 +258,8 @@ cratestack-policy.workspace = true
 cratestack-sql.workspace = true
 cratestack-sqlx = { workspace = true, optional = true }
 cratestack-mcp = { workspace = true, optional = true }
+cratestack-webtransport = { workspace = true, optional = true, default-features = false }
+cratestack-websocket = { workspace = true, optional = true, default-features = false }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -277,9 +308,19 @@ testcontainers-modules.workspace = true
 # `io-util`: `tests/mcp_policy_pg.rs` (cratestack#1038) drives the MCP stdio
 # server over an in-memory `tokio::io::duplex`.
 tokio = { workspace = true, features = ["io-util"] }
+# `tests/websocket_subscriptions.rs` (`--features websocket`): its client.
+tokio-tungstenite = "0.29"
 tower.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true
+# `tests/webtransport_model_feed.rs` (`--features webtransport`) reuses
+# `cratestack-webtransport`'s native test client by `#[path]`; these are
+# what that client is built from.
+http.workspace = true
+rcgen.workspace = true
+sha2.workspace = true
+time.workspace = true
+web-transport-quinn.workspace = true
 
 # Only compiled/run under `--features pgvector` — the fixture schema
 # declares `extension pgvector { }`, which is a `compile_error!`
@@ -390,3 +431,20 @@ required-features = ["mcp"]
 name = "procedure_isolation_mcp"
 path = "tests/procedure_isolation_mcp.rs"
 required-features = ["mcp"]
+
+# The generated subscription dispatcher served over WebTransport, end to end
+# against Postgres (docs/design/subscriptions-websocket.md §6a, slice S5a).
+# The fixture declares `extension webtransport { }`, a `compile_error!`
+# without the feature.
+[[test]]
+name = "webtransport_model_feed"
+path = "tests/webtransport_model_feed.rs"
+required-features = ["webtransport"]
+
+# The generated dispatcher served over WebSocket, end to end against Postgres
+# (docs/design/subscriptions-websocket.md §6, slice S5). The fixture declares
+# `extension websocket { }`, a `compile_error!` without the feature.
+[[test]]
+name = "websocket_subscriptions"
+path = "tests/websocket_subscriptions.rs"
+required-features = ["websocket", "client-ws"]

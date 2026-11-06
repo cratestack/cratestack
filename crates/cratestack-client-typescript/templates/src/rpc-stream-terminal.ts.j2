@@ -37,7 +37,11 @@ export const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
   });
 
   if (!response.ok) {
-    throw new CratestackRpcError(response.status, await readErrorBody(response, request.codec));
+    throw new CratestackRpcError(
+      response.status,
+      await readErrorBody(response, request.codec),
+      response.headers,
+    );
   }
 
   const contentType = response.headers.get("Content-Type") ?? "";

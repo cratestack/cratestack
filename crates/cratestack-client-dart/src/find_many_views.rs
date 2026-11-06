@@ -148,7 +148,10 @@ pub(crate) fn build_sort_field_enum(model: &Model, model_names: &BTreeSet<&str>)
             .map(|field| EnumVariantView {
                 identifier: dart_identifier(&field.name),
                 wire_name: field.name.clone(),
+                ordinal: None,
             })
             .collect(),
+        // A sort key travels in the query string, which carries names.
+        is_ordinal: false,
     }
 }

@@ -1,6 +1,7 @@
 use cratestack_core::schema::default_functions::{
     BuiltinDefault, DefaultValue, FunctionCall, classify_default, registered_functions,
 };
+use cratestack_core::schema::default_literal::literal_default;
 use cratestack_core::schema::default_markers::{DefaultMarker, default_inner};
 use cratestack_core::{Datasource, Field, Schema, TypeArity};
 
@@ -28,7 +29,8 @@ pub(super) fn validate_default(
         DefaultValue::Auth => None,
         DefaultValue::Builtin(builtin, call) => builtin_error(owner, field, builtin, call),
         DefaultValue::Function(call) => function_error(schema, owner, field, inner, call),
-        DefaultValue::Literal => bare_builtin_error(owner, field, inner),
+        DefaultValue::Literal => bare_builtin_error(owner, field, inner)
+            .or_else(|| literal_error(schema, owner, field, inner)),
     };
     match message {
         Some(message) => Err(span_error(message, field.span)),
@@ -120,6 +122,22 @@ fn bare_builtin_error(owner: &str, field: &Field, inner: &str) -> Option<String>
          parentheses it is a literal, which the migration would write as `DEFAULT {inner}`.",
         field.name,
         builtin.name(),
+    ))
+}
+
+/// A literal that does not fit its field (cratestack#1234): it would fail
+/// when the migration is applied, or on create on the embedded runtime,
+/// which binds the value itself.
+fn literal_error(schema: &Schema, owner: &str, field: &Field, inner: &str) -> Option<String> {
+    if inner.trim().is_empty() {
+        // `@default()`: the attribute-shape check reports it.
+        return None;
+    }
+    let decl = schema.enums.iter().find(|decl| decl.name == field.ty.name);
+    let reason = literal_default(inner, &field.ty, decl).err()?;
+    Some(format!(
+        "field `{owner}.{}` uses `@default({inner})`, but {reason}.",
+        field.name
     ))
 }
 

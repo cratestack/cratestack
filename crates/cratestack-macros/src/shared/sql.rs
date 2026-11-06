@@ -50,12 +50,18 @@ pub(crate) fn sql_value_tokens(
     enum_names: &BTreeSet<&str>,
 ) -> proc_macro2::TokenStream {
     if enum_names.contains(ty.name.as_str()) {
+        // The enum type decides: its name, or its ordinal and an integer
+        // NULL (`types/enums_ordinal.rs`). A text NULL into a `SMALLINT`
+        // column is refused by Postgres, so the NULL's type matters too.
+        let enum_ident = super::ident(&ty.name);
         return match ty.arity {
-            TypeArity::Required => quote! { ::cratestack::SqlValue::String(#value.to_string()) },
+            TypeArity::Required => {
+                quote! { ::cratestack::IntoSqlValue::into_sql_value(#value) }
+            }
             TypeArity::Optional => quote! {
                 match #value {
-                    Some(value) => ::cratestack::SqlValue::String(value.to_string()),
-                    None => ::cratestack::SqlValue::NullString,
+                    Some(value) => ::cratestack::IntoSqlValue::into_sql_value(value),
+                    None => super::types::#enum_ident::__cratestack_sql_null(),
                 }
             },
             TypeArity::List => panic!("unsupported SQLx enum list type for this slice"),

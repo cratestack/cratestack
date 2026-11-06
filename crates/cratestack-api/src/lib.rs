@@ -125,15 +125,14 @@ pub use serde_json;
 pub use tracing;
 pub use uuid;
 
-// `Json<T>` is a serde-only newtype here — there is no `postgres` feature
-// to switch on, and there never will be: `cratestack-sqlx` is not a
-// dependency of this crate under any feature. `db = None` schemas only ever
-// need a codec-friendly `Json<T>` for procedure args/returns (never
-// `sqlx::FromRow` row decoding, since models can't exist), so this is the
-// only `Json` this crate ever needs to offer. Compare `cratestack-pg`,
-// which switches between this same type and `cratestack_sqlx::sqlx::types::
-// Json` behind its `postgres` feature.
+// `Json<T>` is a serde-only newtype here: `cratestack-sqlx` is not a
+// dependency under any feature, and `db = None` schemas have no models, so
+// procedure args/returns only need a codec-friendly `Json<T>` (never
+// `sqlx::FromRow` decoding). Compare `cratestack-pg`, which switches between
+// this same type and `cratestack_sqlx::sqlx::types::Json` behind `postgres`.
 pub use cratestack_core::json::Json;
+// A schema `topic`'s handle; shadows the glob's schema-AST `Topic`.
+pub use cratestack_core::TopicHandle as Topic;
 
 // -----------------------------------------------------------------------------
 // Server surface — axum, audit/idempotency/isolation. No migrations module:
@@ -163,6 +162,10 @@ pub use cratestack_axum::rpc;
 #[cfg(feature = "mcp")]
 pub use cratestack_mcp as mcp;
 
+/// The WebSocket binding (`extension websocket { }`); see `SubscriptionDispatch::websocket`.
+#[cfg(feature = "websocket")]
+pub use cratestack_websocket as websocket;
+
 mod envelope_fn;
 
 #[doc(hidden)]
@@ -183,4 +186,14 @@ pub mod __private {
     /// `db = Postgres` runtime handle, which this crate cannot offer
     /// without `cratestack-sqlx`.
     pub use cratestack_axum::rpc::{decode_rpc_body, encode_rpc_value, response_to_frame};
+
+    /// The SSE subscription endpoints and dispatcher: the refusal every
+    /// RPC router's `/rpc/subscribe/{op_id}` answers with, and what a
+    /// `subscription procedure` is served through (slice S4), the only
+    /// subscriptions a `db = None` schema has.
+    pub use cratestack_axum::rpc::{
+        encode_subscribe_error, encode_subscription_sse_response, procedure_feed,
+        procedure_input_query, procedure_query_args, subscribe_input_query,
+        until_credential_expires, validate_subscribe_accept_header,
+    };
 }

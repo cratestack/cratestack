@@ -90,7 +90,16 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/include/mcp_gate/resources.rs",
         ],
     ),
-    ("@@subscribe", &["cratestack-core/src/op_list.rs"]),
+    // `subscription_module.rs` names it only in the compile error for an
+    // `extension webtransport { }` with nothing to serve; whether the op exists
+    // is still `op_list.rs`'s call.
+    (
+        "@@subscribe",
+        &[
+            "cratestack-core/src/op_list.rs",
+            "cratestack-macros/src/transport/subscription_module.rs",
+        ],
+    ),
     (
         "@@emit",
         &[
@@ -118,11 +127,15 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/include/server/isolated.rs",
             "cratestack-macros/src/shared/procedure_attrs.rs",
             "cratestack-sqlx/src/bound.rs",
+            "cratestack-sqlx/src/bound/deferred.rs",
             "cratestack-sqlx/src/bound/join.rs",
             "cratestack-sqlx/src/bound/nested.rs",
             "cratestack-sqlx/src/isolated_run.rs",
         ],
     ),
+    // Read through `cratestack_core::schema::authn_attribute`; the LSP
+    // only shows the attribute in its completion popup.
+    ("@authn", &["cratestack-lsp/src/authn_completion.rs"]),
     (
         "@length",
         &[
@@ -165,6 +178,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@unique",
         &[
+            "cratestack-macros/src/model/descriptor/unique.rs",
             "cratestack-migrate/src/convert/fields.rs",
             "cratestack-migrate/src/convert/renames.rs",
         ],

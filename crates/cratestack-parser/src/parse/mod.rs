@@ -2,6 +2,7 @@ mod arg_split;
 mod attribute_run;
 mod attribute_spacing;
 mod blocks;
+mod enum_body;
 mod fields;
 mod format_chars;
 mod hidden_breaks;
@@ -11,6 +12,7 @@ mod procedure_docs;
 mod procedures;
 mod queries;
 mod sql_attribute;
+mod topics;
 mod types;
 mod views;
 
@@ -28,11 +30,13 @@ use crate::line_helpers::{
 
 use self::attribute_run::{declaration_label, detached_group_error};
 use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
-use self::fields::{parse_enum_variants, parse_fields};
+use self::enum_body::parse_enum_body;
+use self::fields::parse_fields;
 use self::mcp::{extract_model_mcp, parse_mcp_block};
 use self::models::{expand_model_mixins, parse_model_body};
 use self::procedures::parse_procedure;
 use self::queries::parse_query;
+use self::topics::parse_topic;
 use self::views::parse_view_block;
 
 pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
@@ -49,6 +53,8 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut types = Vec::new();
     let mut enums = Vec::new();
     let mut procedures = Vec::new();
+    let mut subscription_procedures = Vec::new();
+    let mut topics = Vec::new();
     let mut views: Vec<View> = Vec::new();
     let mut queries: Vec<Query> = Vec::new();
     let mut transport: Option<TransportStyle> = None;
@@ -160,11 +166,13 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
 
         if line.trimmed.starts_with("enum ") {
             let (name, body, span, next) = parse_body_block(&lines, cursor, "enum")?;
+            let body = parse_enum_body(&body)?;
             enums.push(EnumDecl {
                 docs: std::mem::take(&mut pending_docs),
                 name,
                 name_span: name_span_in_line(line, line.trimmed, "enum ")?,
-                variants: parse_enum_variants(&body)?,
+                variants: body.variants,
+                reserved: body.reserved,
                 span,
             });
             cursor = next;
@@ -226,6 +234,20 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             continue;
         }
 
+        // Slice S4 (`docs/design/subscriptions-websocket.md` §3.2, §3.4).
+        if line.trimmed.starts_with("subscription procedure ") {
+            let (procedure, next) =
+                parse_procedure(&lines, cursor, std::mem::take(&mut pending_docs))?;
+            subscription_procedures.push(procedure);
+            cursor = next;
+            continue;
+        }
+        if line.trimmed.starts_with("topic ") {
+            topics.push(parse_topic(line, std::mem::take(&mut pending_docs))?);
+            cursor += 1;
+            continue;
+        }
+
         // Before `view `, and before the catch-all: `query ` is its own
         // top-level construct (cratestack#867), not a `procedure` variant
         // and not a parameterized `view` — see
@@ -265,6 +287,8 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         procedures,
         views,
         queries,
+        subscription_procedures,
+        topics,
         transport: transport.unwrap_or_default(),
         declared_extensions,
         mcp,

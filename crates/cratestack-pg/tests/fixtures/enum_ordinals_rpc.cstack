@@ -1,0 +1,26 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+transport rpc
+
+// The RPC counterpart of `enum_ordinals.cstack`, driven by
+// `tests/enum_ordinals_rpc.rs`: the same ordinal enum through the two RPC
+// endpoints, whose list filters are names as on REST (RPC re-enters the
+// REST query parser).
+enum RpcPaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)
+}
+
+model RpcPayment {
+  id Int @id
+  status RpcPaymentStatus
+
+  @@allow("create", auth() != null)
+  @@allow("read", status != Refunded)
+}

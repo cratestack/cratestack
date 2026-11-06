@@ -14,9 +14,9 @@ mod relations;
 mod renames;
 mod uniques;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cratestack_core::{Model, Schema, parse_composite_id_attribute};
+use cratestack_core::{EnumDecl, Model, Schema, parse_composite_id_attribute};
 use serde::{Deserialize, Serialize};
 
 use crate::ir::{AddCheck, AddForeignKey, AddIndex, CheckKind, Column, ColumnArity, ColumnType};
@@ -66,19 +66,15 @@ pub struct TableProjection {
 }
 
 pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
-    let known_enums: HashSet<&str> = schema.enums.iter().map(|e| e.name.as_str()).collect();
+    let known_enums: HashMap<&str, &EnumDecl> =
+        schema.enums.iter().map(|e| (e.name.as_str(), e)).collect();
     let known_types: HashSet<&str> = schema.types.iter().map(|t| t.name.as_str()).collect();
     // Variants in declaration order, so the emitted `IN (...)` list
     // reads the same way the `.cstack` enum does.
-    let enum_variants: BTreeMap<&str, Vec<String>> = schema
+    let enum_variants: BTreeMap<&str, &EnumDecl> = schema
         .enums
         .iter()
-        .map(|decl| {
-            (
-                decl.name.as_str(),
-                decl.variants.iter().map(|v| v.name.clone()).collect(),
-            )
-        })
+        .map(|decl| (decl.name.as_str(), decl))
         .collect();
 
     let table = table_name(&model.name);
@@ -198,17 +194,23 @@ pub(crate) fn project_model(model: &Model, schema: &Schema) -> TableProjection {
 /// constrain.
 fn enum_check_kind(
     column: &Column,
-    enum_variants: &BTreeMap<&str, Vec<String>>,
+    enum_variants: &BTreeMap<&str, &EnumDecl>,
 ) -> Option<CheckKind> {
-    let ColumnType::Enum(name) = &column.ty else {
+    let (ColumnType::Enum(name) | ColumnType::OrdinalEnum(name)) = &column.ty else {
         return None;
     };
-    let variants = enum_variants.get(name.as_str())?;
-    if variants.is_empty() {
+    let decl = enum_variants.get(name.as_str())?;
+    if decl.variants.is_empty() {
         return None;
     }
+    // An ordinal enum's CHECK lists its numbers, which is what the column
+    // holds (`docs/design/enum-ordinals.md` §2.2).
+    let ordinals = decl
+        .is_ordinal()
+        .then(|| decl.variants.iter().filter_map(|v| v.ordinal).collect());
     Some(CheckKind::Enum {
-        variants: variants.clone(),
+        variants: decl.variants.iter().map(|v| v.name.clone()).collect(),
         list: matches!(column.arity, ColumnArity::List),
+        ordinals,
     })
 }

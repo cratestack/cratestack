@@ -8,7 +8,7 @@
 //! | run | fixture | vitest files |
 //! |---|---|---|
 //! | REST, default + `--swr` layouts | `decimal_list.cstack` | `decimal-list.test.ts`, `decimal-list-swr.test.ts` |
-//! | RPC on the pure-TS codec, default + `--swr` layouts | `decimal_list_rpc.cstack` | `decimal-list-rpc.test.ts`, `decimal-list-rpc-swr.test.ts` |
+//! | RPC on the pure-TS codec (`codec: jsonRpcCodec`), default + `--swr` layouts | `decimal_list_rpc.cstack` | `decimal-list-rpc.test.ts`, `decimal-list-rpc-swr.test.ts` |
 //!
 //! Skips (printed, not silently swallowed) when `node`/`npm`/`npx` aren't on
 //! `PATH`, the same convention as every Node-driven test in this crate; CI
@@ -49,7 +49,6 @@ fn rpc_client_revives_decimal_list_elements_in_both_layouts() {
         TypeScriptGeneratorConfig {
             package_name: "decimal-list-round-trip-rpc-check".to_owned(),
             swr: true,
-            native_cbor: false,
             ..TypeScriptGeneratorConfig::default()
         },
         &["decimal-list-rpc.test.ts", "decimal-list-rpc-swr.test.ts"],

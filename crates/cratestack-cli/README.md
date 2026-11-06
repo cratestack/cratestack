@@ -162,35 +162,14 @@ Flags:
     --out packages/catalog-client \
     --tanstack
   ```
-- `--no-native-cbor` — fall back to the pure-TypeScript `jsonRpcCodec`
-  instead of the published `@cratestack/cbor` package (napi-rs on Node,
-  wasm-bindgen in the browser) as the generated RPC runtime's default
-  codec (issue #746). No effect on a REST-transport schema —
-  `rest-runtime.ts.j2` has no codec seam at all, so REST output never
-  depends on this flag. `@cratestack/cbor-node`'s napi target matrix
-  covers `x86_64`/`aarch64` on macOS, glibc Linux and musl Linux (Alpine,
-  since cratestack#850) plus `x86_64-pc-windows-msvc` — `win32-arm64` is
-  the one remaining gap. There the napi loader fails with a generic
-  "Cannot find native binding…" error rather than naming the real cause;
-  pass `--no-native-cbor` on that target to fall back to `jsonRpcCodec`,
-  which has no native dependency and works everywhere. Purely additive:
-  with an RPC-transport schema, every other emitted file is
-  byte-identical with and without it; with a REST-transport schema,
-  output is byte-identical regardless of this flag.
-
-  ```bash
-  cratestack generate-typescript \
-    --schema schemas/catalog.cstack \
-    --out packages/catalog-client \
-    --no-native-cbor
-  ```
-
-  **Known bug with `--swr` (issue #765):** on an RPC-transport schema,
-  `--swr`'s `src/swr/runtime.ts` ignores this flag entirely and always
-  emits `jsonRpcCodec`, while the default layout's `src/runtime.ts` still
-  honours it — so `--swr --no-native-cbor` (and even the plain default)
-  ships one package with two runtimes speaking different codecs. Not
-  intended; REST `--swr` is unaffected since REST has no codec seam.
+- **Native CBOR is the only RPC codec.** The generated RPC runtime always
+  uses the published `@cratestack/cbor` package (napi-rs on Node,
+  wasm-bindgen in the browser); the `--no-native-cbor` JSON fallback was
+  removed. To put JSON on the wire, pass `codec: jsonRpcCodec` to the
+  generated client. `@cratestack/cbor-node` ships no `win32-arm64` binding,
+  and the runtime imports `@cratestack/cbor` at the top level, so a
+  generated RPC client does not load there. REST output is unaffected: the
+  REST runtime has no codec seam.
 
 ### `--check` — drift detection (CI guard)
 

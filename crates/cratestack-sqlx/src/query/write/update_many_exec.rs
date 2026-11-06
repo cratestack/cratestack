@@ -6,7 +6,7 @@ use cratestack_core::{
 };
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::ensure_event_outbox_table;
 use crate::query::support::{push_action_policy_query, push_bind_value, push_filter_query};
 use crate::{
     FilterExpr, ModelDescriptor, SqlxRuntime, UpdateModelInput, cratestack_error_from_sqlx, sqlx,
@@ -102,9 +102,9 @@ where
     let mut audit_events = Vec::new();
     for record in &updated {
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut **tx,
-                descriptor.schema_name,
+                descriptor.event_target(),
                 ModelEventKind::Updated,
                 record,
             )

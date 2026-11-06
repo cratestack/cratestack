@@ -1,6 +1,7 @@
 pub mod sqlx;
 
 mod audit;
+pub mod backplane;
 mod bound;
 mod delegate;
 mod descriptor;
@@ -12,10 +13,13 @@ mod json;
 mod migrations;
 mod partial_row;
 mod query;
+mod record_policy;
 mod render;
 mod retriable;
 #[cfg(feature = "postgis")]
 mod spatial;
+#[cfg(test)]
+mod tests_audit_actor;
 #[cfg(test)]
 mod tests_bigint;
 #[cfg(test)]
@@ -30,6 +34,8 @@ mod tests_field_filter;
 mod tests_filter_logic;
 #[cfg(test)]
 mod tests_geography;
+#[cfg(test)]
+mod tests_has_role_contract;
 #[cfg(test)]
 mod tests_json;
 #[cfg(test)]
@@ -62,6 +68,7 @@ mod tests_update;
 mod tests_update_many;
 #[cfg(test)]
 mod tests_upsert_conflict_predicate;
+pub mod topic;
 mod transaction;
 
 pub use partial_row::FromPartialPgRow;
@@ -89,6 +96,9 @@ pub use isolation::{run_in_isolated_tx, run_in_isolated_tx_with_retries};
 pub use migrations::{
     MIGRATIONS_TABLE_DDL, Migration, MigrationState, MigrationStatus, apply_pending,
     ensure_migrations_table, status,
+};
+pub use record_policy::{
+    may_read_some_row, missing_policy_columns, record_readable, refuse_unreadable_subscription,
 };
 pub use transaction::Tx;
 

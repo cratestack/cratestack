@@ -121,6 +121,8 @@ fn split_line(raw: &str, span: SourceSpan, lines: &[Line<'_>]) -> Vec<Attribute>
 pub(super) fn declaration_label(trimmed: &str) -> Option<String> {
     const KEYWORDS: &[(&str, &str)] = &[
         ("mutation procedure ", "procedure"),
+        ("subscription procedure ", "subscription procedure"),
+        ("topic ", "topic"),
         ("procedure ", "procedure"),
         ("query ", "query"),
         ("model ", "model"),

@@ -3,6 +3,7 @@
 //! `authorize{,_with_db}` + `invoke{,_with_db}`) and the lighter
 //! client-side equivalent.
 
+mod authn;
 mod authorizer;
 mod client_types;
 mod instrument;
@@ -36,7 +37,9 @@ use instrument::{
     isolation_and_invoke_with_db_tokens,
 };
 use policies::collect_procedure_policies;
-pub(crate) use registry_method::generate_procedure_registry_method;
+pub(crate) use registry_method::{
+    generate_procedure_registry_method, generate_subscription_registry_method,
+};
 use types::procedure_stream_item_tokens;
 
 pub(crate) use types::procedure_client_output_item_tokens;
@@ -90,6 +93,7 @@ pub(crate) fn generate_procedure_module(
         quote! {}
     };
 
+    let authn_const = authn::authn_const_tokens(procedure)?;
     let authorize_fn = authorize_fn_tokens();
     let authorize_with_db_fn = authorize_with_db_fn_tokens(&model_authorizers);
     let invoke_fn = invoke_fn_tokens();
@@ -107,6 +111,7 @@ pub(crate) fn generate_procedure_module(
             pub const NAME: &str = #procedure_name;
             pub const ALLOW_POLICIES: &[::cratestack::ProcedurePolicy] = &[#(#allow_policies),*];
             pub const DENY_POLICIES: &[::cratestack::ProcedurePolicy] = &[#(#deny_policies),*];
+            #authn_const
             #isolation_const
 
             #args_struct

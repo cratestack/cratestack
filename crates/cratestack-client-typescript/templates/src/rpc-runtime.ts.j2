@@ -14,10 +14,11 @@
 
 import type { RpcLink, RpcLinkNext, RpcLinkRequest, RpcStreamLink, RpcStreamLinkNext } from "./links.js";
 import { terminalStreamLink } from "./stream-terminal.js";
-import { encodeBinaryAsJson, encodeWireFields } from "{{ models_import_path }}";
-{% if native_cbor %}
-import { createCborCodec } from "@cratestack/cbor";
+{% if has_subscriptions %}
+import type { SubscriptionClientOptions } from "./subscriptions.js";
 {% endif %}
+import { encodeBinaryAsJson, encodeWireFields } from "{{ models_import_path }}";
+import { createCborCodec } from "@cratestack/cbor";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -51,19 +52,18 @@ export const CLIENT_CONTRACT_SHA256: string = "{{ client_contract_sha256 }}";
  *  both the request `Content-Type` and the response `Accept` header, so
  *  it must match a `Content-Type` the server's `CodecSet` actually
  *  serves — e.g. `"application/cbor"` for a backend whose `CodecSet`
- *  defaults to CBOR in production.{% if native_cbor %} The runtime
+ *  defaults to CBOR in production. The runtime
  *  resolves `@cratestack/cbor`'s `createCborCodec()` by default (issue
- *  #746); pass a different one via `CratestackRpcClientOptions.codec`.{% else %} The runtime ships {@link jsonRpcCodec}
- *  by default; pass a different one via `CratestackRpcClientOptions.codec`.{% endif %} */
+ *  #746); pass a different one via `CratestackRpcClientOptions.codec`. */
 export interface CratestackRpcCodec {
   readonly contentType: string;
   encode(value: unknown): BodyInit;
   decode(bytes: Uint8Array): unknown;
 }
 
-/** {% if native_cbor %}Fallback codec — pass `codec: jsonRpcCodec` explicitly to opt back
- *  into it; `@cratestack/cbor`'s native codec is the default (issue
- *  #746).{% else %}Default codec — the runtime's behavior before `codec` existed.{% endif %} */
+/** JSON codec — pass `codec: jsonRpcCodec` explicitly to put JSON on the
+ *  wire instead; `@cratestack/cbor`'s native codec is the default (issue
+ *  #746). */
 export const jsonRpcCodec: CratestackRpcCodec = {
   contentType: "application/json",
   encode(value: unknown): BodyInit {
@@ -81,10 +81,6 @@ export const jsonRpcCodec: CratestackRpcCodec = {
     // batch of RAW inputs with the request's codec and never runs
     // `terminalLink`, so a conversion that lived only there would be
     // skipped by exactly the path that batches.
-    //
-    // (Deliberately no package name in this comment: `native_cbor: false`
-    // builds assert that `runtime.ts` never mentions the native codec
-    // package at all — see `tests/native_cbor_generator.rs`.)
     return JSON.stringify(encodeBinaryAsJson(value) ?? null);
   },
   decode(bytes: Uint8Array): unknown {
@@ -95,7 +91,6 @@ export const jsonRpcCodec: CratestackRpcCodec = {
   },
 };
 
-{% if native_cbor %}
 const wireEncodingCodecs = new WeakMap<CratestackRpcCodec, CratestackRpcCodec>();
 
 /** Wraps the native codec so `encode()` runs {@link encodeWireFields} first:
@@ -126,13 +121,12 @@ function withWireEncoding(codec: CratestackRpcCodec): CratestackRpcCodec {
   return wrapped;
 }
 
-{% endif %}
 export interface CratestackRpcClientOptions {
   basePath?: string;
   fetch?: typeof fetch;
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
-  /** Codec for request/response bodies. Defaults to {% if native_cbor %}`@cratestack/cbor`'s
-   *  native codec (issue #746){% else %}{@link jsonRpcCodec}{% endif %}. */
+  /** Codec for request/response bodies. Defaults to `@cratestack/cbor`'s
+   *  native codec (issue #746). */
   codec?: CratestackRpcCodec;
   /** Composable interceptor chain (issue #182) — logging, retry,
    *  auth-refresh, batching, etc. Runs in array order, each link
@@ -146,6 +140,11 @@ export interface CratestackRpcClientOptions {
    *  `Response`-shaped (see `./links`'s `RpcStreamLink` doc comment for
    *  why). Omitted or empty is a true no-op. */
   streamLinks?: RpcStreamLink[];
+{% if has_subscriptions %}
+  /** Which binding subscriptions use (default `"auto"`) and where the
+   *  WebTransport listener is (see `./subscriptions`). */
+  subscriptions?: SubscriptionClientOptions;
+{% endif %}
 }
 
 export interface CratestackRpcCallOptions {
@@ -174,7 +173,9 @@ export interface RpcResponseFrame<O = JsonValue> {
 }
 
 /** Wire shape of an RPC error body. Mirrors the server-side
- *  `cratestack_core::rpc::RpcErrorBody`. */
+ *  `cratestack_core::rpc::RpcErrorBody`. Members beyond these three (an
+ *  `AuthProvider` refusal's) stay on the decoded object; read them typed
+ *  through `CratestackRpcError.extra`. */
 export interface RpcErrorBody {
   code: RpcErrorCode | string;
   message: string;
@@ -201,23 +202,168 @@ export type RpcErrorCode =
   | "canceled"
   | "internal";
 
+const RESERVED_ERROR_MEMBERS: ReadonlySet<string> = new Set(["code", "message", "details"]);
+
+/** The members of a decoded error body beyond `code`, `message` and
+ *  `details`: what an `AuthProvider` refusal adds (cratestack#1208), such
+ *  as `{ error: "attestation_expired" }`. Every member is kept, as decoded;
+ *  empty when `body` is not an object. */
+function extraErrorMembers(body: unknown): Readonly<Record<string, unknown>> {
+  const extra: Record<string, unknown> = {};
+  if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+    for (const [name, value] of Object.entries(body)) {
+      if (!RESERVED_ERROR_MEMBERS.has(name)) {
+        extra[name] = value;
+      }
+    }
+  }
+  return Object.freeze(extra);
+}
+
+/** The answer's `WWW-Authenticate` value, raw and unparsed (cratestack#1243);
+ *  empty when there is none. `Headers` joins two challenge lines with `, `,
+ *  so they arrive as one entry holding both. */
+function challengesOf(headers: Headers | undefined): readonly string[] {
+  const value = headers?.get("www-authenticate");
+  return Object.freeze(value ? [value] : []);
+}
+
+/** The extra member `error` of a step-up refusal (RFC 9470, cratestack#1244). */
+export const INSUFFICIENT_USER_AUTHENTICATION = "insufficient_user_authentication";
+
+/** What a step-up refusal asks for (cratestack#1244): an operation that
+ *  requires a fresher or stronger authentication than the caller presented.
+ *  Each requirement is present only when the refused operation declares it. */
+export interface StepUpRequired {
+  /** The longest time, in seconds, since the caller last authenticated. */
+  readonly maxAge: number | undefined;
+  /** The authentication context classes the operation accepts. */
+  readonly acrValues: readonly string[];
+  /** The authentication methods the operation requires. */
+  readonly amr: readonly string[];
+  /** Which requirements the caller failed: a subset of `"max_age"`, `"acr"`
+   *  and `"amr"`. */
+  readonly unmet: readonly string[];
+}
+
+/** Reads a step-up refusal once the transport's own test (`refused`: a 401,
+ *  or `unauthenticated`) passed: `undefined` unless the extra member `error`
+ *  is `insufficient_user_authentication`. Never throws: a missing or
+ *  mistyped field reads as absent or empty. */
+function readStepUp(
+  refused: boolean,
+  details: unknown,
+  extra: Readonly<Record<string, unknown>>,
+): StepUpRequired | undefined {
+  if (!refused || extra["error"] !== INSUFFICIENT_USER_AUTHENTICATION) {
+    return undefined;
+  }
+  const map: Record<string, unknown> =
+    typeof details === "object" && details !== null && !Array.isArray(details)
+      ? (details as Record<string, unknown>)
+      : {};
+  const strings = (name: string): readonly string[] => {
+    const value = map[name];
+    return Object.freeze(
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [],
+    );
+  };
+  const raw = map["max_age"];
+  const maxAge = typeof raw === "bigint" ? Number(raw) : raw;
+  return Object.freeze({
+    maxAge:
+      typeof maxAge === "number" && Number.isSafeInteger(maxAge) && maxAge >= 0
+        ? maxAge
+        : undefined,
+    acrValues: strings("acr_values"),
+    amr: strings("amr"),
+    unmet: strings("unmet"),
+  });
+}
+
+/** Runs `call`; when it fails with a step-up refusal, hands the refusal to
+ *  `reprove` and, when that resolves `true` (the user authenticated again),
+ *  runs `call` **once** more and returns what it gives, even a second
+ *  refusal. Never loops (cratestack#1244).
+ *
+ *  `reprove` resolves `false` when the user declined or the re-proof failed;
+ *  the first refusal is then rethrown. Any other error, and one `reprove`
+ *  itself throws, propagates as it is.
+ *
+ *  ```ts
+ *  const receipt = await retryAfterStepUp(
+ *    () => client.procedures.transfer(args),
+ *    (stepUp) => session.reauthenticate({ maxAge: stepUp.maxAge }),
+ *  );
+ *  ``` */
+export async function retryAfterStepUp<T>(
+  call: () => Promise<T>,
+  reprove: (stepUp: StepUpRequired) => Promise<boolean>,
+): Promise<T> {
+  try {
+    return await call();
+  } catch (error) {
+    const stepUp = stepUpOf(error);
+    if (stepUp === undefined || !(await reprove(stepUp))) {
+      throw error;
+    }
+  }
+  return call();
+}
+
 /** Thrown by `CratestackRpcRuntime` when a remote call fails. Carries
  *  the wire-shaped `RpcErrorBody` directly so callers can switch on
- *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.). */
+ *  `error.code` (`"not_found"`, `"unauthenticated"`, etc.).
+ *
+ *  An `AuthProvider` refusal keeps its fixed code (`unauthenticated` or
+ *  `permission_denied`); what it adds is in `details`, `extra` (the body's
+ *  other members, which `body` also keeps) and `challenges`. */
 export class CratestackRpcError extends Error {
   readonly status: number;
   readonly code: RpcErrorCode | string;
   readonly details: unknown;
   readonly body: RpcErrorBody;
+  readonly extra: Readonly<Record<string, unknown>>;
+  /** The answer's headers; `undefined` when it had none of its own. */
+  readonly headers: Headers | undefined;
+  readonly challenges: readonly string[];
+  /** The step-up refusal this answer is (cratestack#1244): code
+   *  `unauthenticated` and the extra member `error` set to
+   *  `insufficient_user_authentication`, read from `details`; `undefined`
+   *  for any other error. */
+  readonly stepUp: StepUpRequired | undefined;
 
-  constructor(status: number, body: RpcErrorBody) {
+  constructor(status: number, body: RpcErrorBody, headers?: Headers) {
     super(`RPC call failed with code ${body.code} (status ${status}): ${body.message}`);
     this.name = "CratestackRpcError";
     this.status = status;
     this.code = body.code;
     this.details = body.details;
     this.body = body;
+    this.extra = extraErrorMembers(body);
+    this.headers = headers;
+    this.challenges = challengesOf(headers);
+    this.stepUp = readStepUp(body.code === "unauthenticated", body.details, this.extra);
   }
+}
+
+/** The step-up refusal of a {@link CratestackRpcError} (its `stepUp`), or of
+ *  a batch frame's `error` body, which reads the same; `undefined` for
+ *  anything else (cratestack#1244). */
+export function stepUpOf(error: unknown): StepUpRequired | undefined {
+  if (error instanceof CratestackRpcError) {
+    return error.stepUp;
+  }
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    !(error instanceof Error) &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
+    const body = error as RpcErrorBody;
+    return readStepUp(body.code === "unauthenticated", body.details, extraErrorMembers(body));
+  }
+  return undefined;
 }
 
 /** Transport-level error (network failure, malformed response,
@@ -241,6 +387,7 @@ export class CratestackRpcStreamError extends Error {
   readonly code: RpcErrorCode | string;
   readonly details: unknown;
   readonly body: RpcErrorBody;
+  readonly extra: Readonly<Record<string, unknown>>;
 
   constructor(body: RpcErrorBody) {
     super(`RPC stream failed with code ${body.code}: ${body.message}`);
@@ -248,6 +395,7 @@ export class CratestackRpcStreamError extends Error {
     this.code = body.code;
     this.details = body.details;
     this.body = body;
+    this.extra = extraErrorMembers(body);
   }
 }
 
@@ -284,7 +432,6 @@ export class CratestackRpcRuntime {
   readonly origin: string;
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
-{% if native_cbor %}
   // `@cratestack/cbor`'s `createCborCodec()` is async on every platform
   // (issue #746) — Node normalizes to async purely for call-site parity
   // with the browser build, whose WASM instantiation is genuinely async
@@ -297,10 +444,10 @@ export class CratestackRpcRuntime {
   // `resolveCodec()` below for why a rejected attempt is NOT memoized.
   private readonly explicitCodec: CratestackRpcCodec | undefined;
   private codecPromise: Promise<CratestackRpcCodec> | undefined;
-{% else %}
-  readonly codec: CratestackRpcCodec;
-{% endif %}
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+{% if has_subscriptions %}
+  readonly subscriptions: SubscriptionClientOptions;
+{% endif %}
   private readonly chain: RpcLinkNext;
   private readonly streamChain: RpcStreamLinkNext;
 
@@ -312,12 +459,11 @@ export class CratestackRpcRuntime {
     // invocation` when invoked with a receiver other than the global
     // object, which storing the bare function on `this.fetchFn` does.
     this.fetchFn = options.fetch ?? fetch.bind(globalThis);
-{% if native_cbor %}
     this.explicitCodec = options.codec;
-{% else %}
-    this.codec = options.codec ?? jsonRpcCodec;
-{% endif %}
     this.defaultHeaders = options.headers;
+{% if has_subscriptions %}
+    this.subscriptions = options.subscriptions ?? {};
+{% endif %}
     // Empty `links`/`streamLinks` collapses `reduceRight` to the
     // terminal link unchanged — byte-identical request as before either
     // option existed.
@@ -330,12 +476,12 @@ export class CratestackRpcRuntime {
       terminalStreamLink,
     );
   }
-{% if native_cbor %}
   /** Resolves the runtime's codec, awaited right after `buildHeaders()`
    *  at every already-`async` call site (issue #746) — that ordering
-   *  (headers first, codec second) is deliberate: it matches the
-   *  `--no-native-cbor` path's ordering exactly, so a user's
-   *  `options.headers` callback fires at the same point in both. An
+   *  (headers first, codec second) is deliberate: it is the order the
+   *  runtime had before the native codec existed, so a user's
+   *  `options.headers` callback fires at the same point whichever codec
+   *  is in use. An
    *  explicit `options.codec` always wins and needs no async resolution (it
    *  is used exactly as given: `terminalLink` still converts a `bigint` or
    *  `Decimal` for every request it builds, but a custom codec that other
@@ -373,16 +519,11 @@ export class CratestackRpcRuntime {
       }).then(withWireEncoding));
     return pending;
   }
-{% endif %}
 
   /** POST /rpc/{op_id} — unary call. */
   async call<I, O>(opId: string, input: I, options: CratestackRpcCallOptions = {}): Promise<O> {
     const headers = await this.buildHeaders(options.headers);
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     headers.set("Accept", codec.contentType);
     headers.set("Content-Type", codec.contentType);
     if (options.idempotencyKey !== undefined) {
@@ -412,11 +553,7 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): Promise<RpcResponseFrame<O>[]> {
     const headers = await this.buildHeaders(options.headers);
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     headers.set("Accept", codec.contentType);
     headers.set("Content-Type", codec.contentType);
 
@@ -451,11 +588,7 @@ export class CratestackRpcRuntime {
     options: CratestackRpcCallOptions = {},
   ): AsyncIterable<O> {
     const headers = await this.buildHeaders(options.headers);
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     headers.set("Accept", `${CBOR_SEQ_CONTENT_TYPE}, ${codec.contentType}`);
     headers.set("Content-Type", codec.contentType);
 
@@ -476,11 +609,7 @@ export class CratestackRpcRuntime {
   }
 
   private async readUnaryResponse(response: Response): Promise<unknown> {
-{% if native_cbor %}
     const codec = await this.resolveCodec();
-{% else %}
-    const codec = this.codec;
-{% endif %}
     if (response.ok) {
       if (response.status === 204) {
         return undefined;
@@ -489,7 +618,11 @@ export class CratestackRpcRuntime {
       return codec.decode(bytes);
     }
 
-    throw new CratestackRpcError(response.status, await readErrorBody(response, codec));
+    throw new CratestackRpcError(
+      response.status,
+      await readErrorBody(response, codec),
+      response.headers,
+    );
   }
 
   private async buildHeaders(extra?: HeadersInit): Promise<Headers> {

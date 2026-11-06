@@ -29,6 +29,8 @@ fn cratestack_error_code_to_rpc_code_covers_every_cratestack_error_variant() {
         CratestackError::Unavailable("x".into()),
         CratestackError::TooManyRequests("x".into()),
         CratestackError::TransactionAborted(Default::default()),
+        cratestack_core::AuthRefusal::unauthenticated("x").into_error(),
+        cratestack_core::AuthRefusal::forbidden("x").into_error(),
     ] {
         let cratestack_code = variant.code();
         let direct = rpc_code(&variant);
@@ -59,6 +61,7 @@ fn error_body_from_cratestack_response_translates_code_and_preserves_message() {
         code: "NOT_FOUND".to_owned(),
         message: "widget 42".to_owned(),
         details: None,
+        extra: Default::default(),
     };
     let body = RpcErrorBody::from_cratestack_response(response);
     assert_eq!(body.code, "not_found");

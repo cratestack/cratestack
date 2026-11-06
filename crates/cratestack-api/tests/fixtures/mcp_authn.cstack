@@ -1,0 +1,23 @@
+// cratestack#1244 (ADR 0022): an `@mcp(tool)` procedure with `@authn` is
+// refused with the same step-up signal over MCP.
+
+datasource db {
+  provider = "none"
+}
+
+mcp {
+  expose = [tools]
+}
+
+type PayArgs {
+  amount Int
+}
+
+type Receipt {
+  ok Boolean
+}
+
+mutation procedure pay(args: PayArgs): Receipt
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk"])
+  @mcp(tool: "pay", description: "Pay. Needs a fresh hardware-key proof.")

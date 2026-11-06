@@ -364,6 +364,7 @@ async fn handle_create_post(
         code: "FORBIDDEN".to_owned(),
         message: "forbidden: create requires authentication".to_owned(),
         details: None,
+        extra: Default::default(),
     };
     cbor_response(StatusCode::FORBIDDEN, &error)
 }

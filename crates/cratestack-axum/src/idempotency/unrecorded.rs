@@ -6,10 +6,13 @@
 //! turn a handler's error into a response tag it instead: a zero-sized
 //! response extension, never sent on the wire, set exactly when
 //! [`CratestackError::is_idempotency_replayable`] is `false`: an
-//! `@isolation` procedure's own dispatch answering that its retries ran out
-//! — nothing was committed. The layer then releases the reservation rather
-//! than completing it, so the same `Idempotency-Key` can be sent again and
-//! runs the call again.
+//! `@isolation` procedure's own dispatch answering that its retries ran out,
+//! or a refusal the generated dispatch produced before any body ran
+//! (`authenticate`, `@allow`/`@deny`, `@authn`; cratestack#1261) — nothing
+//! was committed. The layer then releases the reservation rather than
+//! completing it, so the same `Idempotency-Key` can be sent again and runs
+//! the call again: after a retry, a renewal or a step-up. A refusal a
+//! procedure body returned is recorded like any other error.
 //!
 //! A `TRANSACTION_ABORTED` the dispatch did not claim (a caller propagating
 //! another procedure's abort, after possibly committing work of its own) is

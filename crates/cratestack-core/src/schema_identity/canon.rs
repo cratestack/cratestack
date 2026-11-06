@@ -17,6 +17,12 @@ pub(super) struct CSchema<'a> {
     pub(super) models: Vec<CModel<'a>>,
     pub(super) procedures: Vec<CProcedure<'a>>,
     pub(super) queries: Vec<CQuery<'a>>,
+    /// Absent, not empty, for a schema without any: the identity of every
+    /// schema predating subscription procedures stays what it was.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) subscription_procedures: Vec<CProcedure<'a>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) topics: Vec<CTopic<'a>>,
     pub(super) transport: &'a str,
     pub(super) types: Vec<CFields<'a>>,
     pub(super) views: Vec<CView<'a>>,
@@ -58,7 +64,22 @@ pub(super) struct CModel<'a> {
 #[derive(Serialize)]
 pub(crate) struct CEnum<'a> {
     pub(crate) name: &'a str,
+    /// Each variant's ordinal, in variant order. Skipped when no variant has
+    /// one, so a string enum's bytes, and every digest over them, are
+    /// unchanged by the field's existence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) ordinals: Option<Vec<Option<i64>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reserved: Option<&'a [i64]>,
     pub(crate) variants: Vec<&'a str>,
+}
+
+/// `CEnum::ordinals` for `variants`: `None` unless a variant is numbered.
+pub(crate) fn enum_ordinals(variants: &[crate::schema::EnumVariant]) -> Option<Vec<Option<i64>>> {
+    variants
+        .iter()
+        .any(|v| v.ordinal.is_some())
+        .then(|| variants.iter().map(|v| v.ordinal).collect())
 }
 
 #[derive(Serialize)]
@@ -91,6 +112,13 @@ pub(super) struct CProcedure<'a> {
     pub(super) mcp: Option<CProcedureMcp<'a>>,
     pub(super) name: &'a str,
     pub(super) return_type: CTypeRef<'a>,
+}
+
+#[derive(Serialize)]
+pub(super) struct CTopic<'a> {
+    pub(super) key: CArg<'a>,
+    pub(super) name: &'a str,
+    pub(super) payload: CTypeRef<'a>,
 }
 
 #[derive(Serialize)]

@@ -1,0 +1,21 @@
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+// Ordinal enums (`Pending = 1`, docs/design/enum-ordinals.md) through
+// `include_client_schema!`, driven by `tests/enum_ordinals.rs`.
+enum PaymentStatus {
+  Pending = 1
+  Approved = 2
+  Refunded = 5
+
+  @@reserved(3, 4)
+}
+
+model Payment {
+  id Int @id
+  status PaymentStatus
+
+  @@allow("read", true)
+}

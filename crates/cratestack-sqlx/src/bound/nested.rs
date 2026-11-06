@@ -29,6 +29,9 @@ where
 {
     let mut guard = bound.lock()?;
     let tx = guard.tx()?;
+    // What `body` queues for after the commit (audit events, topic
+    // messages) is taken back if its savepoint rolls back.
+    let mark = bound.mark();
     let mut open = OpenSavepoint {
         bound,
         finished: false,
@@ -44,6 +47,7 @@ where
                 }
             },
             Err(error) => {
+                bound.truncate(mark);
                 if let Err(rollback_error) = savepoint_statement(tx, "ROLLBACK TO SAVEPOINT").await
                 {
                     poison(bound, &rollback_error);

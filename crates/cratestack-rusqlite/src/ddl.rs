@@ -18,10 +18,17 @@
 //! primary keys don't alias to rowid for auto-increment; production
 //! schemas typically use UUID PKs anyway.
 //!
+//! A column with a literal `@default`, `now()` or `uuid()` gets the
+//! matching `DEFAULT` clause, for rows inserted with raw SQL
+//! (cratestack#1234); cratestack's own creates bind those values
+//! themselves, so tables an older version created work unchanged.
+//!
 //! What this *does not* do: composite indexes, foreign keys, named
 //! constraints. Those are app-specific and the runtime exposes
 //! [`RusqliteRuntime::with_connection`] so the app can run any
 //! additional DDL it needs.
+
+mod defaults;
 
 use std::fmt::Write;
 
@@ -42,6 +49,9 @@ pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
         let _ = write!(&mut sql, "    {} BLOB", column.sql_name);
         if column.sql_name == descriptor.primary_key {
             sql.push_str(" PRIMARY KEY");
+        }
+        if let Some(default) = defaults::column_default(descriptor, column.sql_name) {
+            let _ = write!(&mut sql, " DEFAULT {default}");
         }
     }
     if let Some(deleted_at) = descriptor.soft_delete_column

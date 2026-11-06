@@ -4,6 +4,8 @@
 //! it doesn't fit cleanly under this module's `type`-only scope.
 
 mod enums;
+mod enums_ordinal;
+mod enums_parts;
 
 use std::collections::BTreeSet;
 

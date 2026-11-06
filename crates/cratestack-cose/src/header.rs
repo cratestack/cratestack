@@ -26,9 +26,9 @@ use crate::cbor::write::{self, MAJOR_MAP, MAJOR_UINT};
 use crate::error::Reject;
 use crate::thumbprint::KID_LEN;
 
-const LABEL_ALG: u64 = 1;
-const LABEL_KID: u64 = 4;
-const LABEL_CWT_CLAIMS: u64 = 15;
+pub(crate) const LABEL_ALG: u64 = 1;
+pub(crate) const LABEL_KID: u64 = 4;
+pub(crate) const LABEL_CWT_CLAIMS: u64 = 15;
 const CLAIM_IAT: u64 = 6;
 const CLAIM_CTI: u64 = 7;
 

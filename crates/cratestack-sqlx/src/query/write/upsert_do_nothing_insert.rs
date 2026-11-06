@@ -8,7 +8,6 @@ use cratestack_core::{
 };
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
-use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::PolicyDb;
 use crate::{ConflictTarget, ModelDescriptor, SqlColumnValue, SqlValue, sqlx};
 
@@ -43,9 +42,9 @@ where
     {
         Some(record) => {
             if emits_created {
-                enqueue_event_outbox(
+                crate::descriptor::enqueue_model_event(
                     &mut **tx,
-                    descriptor.schema_name,
+                    descriptor.event_target(),
                     ModelEventKind::Created,
                     &record,
                 )

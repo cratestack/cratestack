@@ -9,7 +9,6 @@ use cratestack_core::{
 use sqlx_core::acquire::Acquire as _;
 
 use crate::audit::{build_audit_event, enqueue_audit_event};
-use crate::descriptor::enqueue_event_outbox;
 use crate::query::support::{
     PolicyDb, apply_create_defaults, classify_unique_violation, evaluate_create_policies,
     find_column_value, push_bind_value,
@@ -78,9 +77,9 @@ where
         let record = insert_one_into_savepoint::<M, PK>(&mut item_tx, descriptor, &values).await?;
 
         if emits_event {
-            enqueue_event_outbox(
+            crate::descriptor::enqueue_model_event(
                 &mut *item_tx,
-                descriptor.schema_name,
+                descriptor.event_target(),
                 ModelEventKind::Created,
                 &record,
             )

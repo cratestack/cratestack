@@ -50,6 +50,13 @@ pub struct CratestackEventEnvelope {
     pub operation: ModelEventKind,
     pub occurred_at: chrono::DateTime<chrono::Utc>,
     pub data: serde_json::Value,
+    /// An `Updated` event's row as it was before the write, set only for an
+    /// `@@subscribe` model, so a subscriber can be told the row left its
+    /// filter. Server-side handlers see it. It never reaches a [`ModelEvent`]
+    /// as such: a client gets it only as the `data` of a filter-exit event,
+    /// once the subscriber's own read check has passed it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,7 +65,23 @@ pub struct ModelEvent<T> {
     pub model: String,
     pub operation: ModelEventKind,
     pub occurred_at: chrono::DateTime<chrono::Utc>,
+    /// `false` on a model feed's filter-exit event: the update moved the row
+    /// out of the subscriber's filter or read policy, and `data` is the row as
+    /// the subscriber last saw it, never the new values
+    /// (`docs/design/subscriptions-websocket.md` §5.3).
+    /// Left out of the wire form while `true`, so an ordinary event is
+    /// byte-identical to one from before filter-exit events.
+    #[serde(default = "matches_default", skip_serializing_if = "is_true")]
+    pub matches: bool,
     pub data: T,
+}
+
+fn matches_default() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 impl<T> TryFrom<CratestackEventEnvelope> for ModelEvent<T>
@@ -73,6 +96,7 @@ where
             model: value.model,
             operation: value.operation,
             occurred_at: value.occurred_at,
+            matches: true,
             data: serde_json::from_value(value.data).map_err(|error| {
                 CratestackError::Codec(format!("failed to decode event payload: {error}"))
             })?,

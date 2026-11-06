@@ -189,6 +189,7 @@ fn error_body() -> Vec<u8> {
         code: "not_found".to_owned(),
         message: "payment not found".to_owned(),
         details: None,
+        extra: Default::default(),
     };
     CborCodec.encode(&body).expect("encode error body")
 }

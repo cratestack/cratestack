@@ -20,11 +20,12 @@ use futures_util::Stream;
 use futures_util::stream;
 use tokio::sync::mpsc;
 
-/// One SSE subscription's outbox capacity before it's considered lagged.
-/// A slow consumer past this many buffered, undelivered events gets
-/// disconnected with `Error{unavailable}` (see [`super::sse`]) rather
-/// than growing memory unboundedly.
-const SUBSCRIPTION_BUFFER_CAPACITY: usize = 64;
+// One SSE subscription's outbox capacity is the backplane's
+// (`SUBSCRIPTION_BUFFER_CAPACITY`) before it's considered lagged. A slow
+// consumer past this many buffered, undelivered events gets disconnected with
+// `Error{unavailable}` (see [`super::sse`]) rather than growing memory
+// unboundedly.
+use cratestack_core::backplane::SUBSCRIPTION_BUFFER_CAPACITY;
 
 /// Handed to one or more `CratestackEventBus::subscribe` callbacks registered
 /// for the same logical subscription (e.g. one per `@@emit`ted operation

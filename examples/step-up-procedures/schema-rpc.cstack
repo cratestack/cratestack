@@ -1,0 +1,41 @@
+// Step-up on a procedure (cratestack#1245 story 5, the `@authn` attribute of
+// cratestack#1244 / ADR 0022), over `transport rpc`. `schema.cstack` is the
+// same contract over `transport rest`; the two differ in that one line.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type PayInvoiceArgs {
+  invoiceId String
+  amountCents Int
+}
+
+type Receipt {
+  invoiceId String
+  amountCents Int
+  paidBy String
+}
+
+type BalanceArgs {
+  account String
+}
+
+type Balance {
+  account String
+  cents Int
+}
+
+// Paying needs a user who authenticated in the last five minutes with a
+// hardware-bound key (RFC 8176 `hwk`). A caller who signed in earlier, or
+// with a password, is refused with RFC 9470's step-up 401 before the
+// procedure runs.
+mutation procedure payInvoice(args: PayInvoiceArgs): Receipt
+  @allow(auth() != null)
+  @authn(maxAge: 300, amr: ["hwk"])
+
+// No requirement: any signed-in caller, however long ago.
+procedure balance(args: BalanceArgs): Balance
+  @allow(auth() != null)

@@ -94,7 +94,8 @@ pub(super) fn authorize_fn_tokens() -> proc_macro2::TokenStream {
         ) -> Result<(), ::cratestack::CratestackError> {
             let started = ::std::time::Instant::now();
             let result = ::cratestack::ProcedureArgs::validate_fields(args)
-                .and_then(|()| ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx));
+                .and_then(|()| ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx))
+                .and_then(|()| ::cratestack::require_authn(AUTHN.as_ref(), ctx));
             match &result {
                 Ok(()) => ::cratestack::tracing::debug!(
                     target: "cratestack",
@@ -145,6 +146,7 @@ pub(super) fn invoke_fn_tokens() -> proc_macro2::TokenStream {
                     let started = ::std::time::Instant::now();
                     ::cratestack::ProcedureArgs::validate_fields(args)?;
                     ::cratestack::authorize_procedure(ALLOW_POLICIES, DENY_POLICIES, args, ctx)?;
+                    ::cratestack::require_authn(AUTHN.as_ref(), ctx)?;
                     let result = f().await;
                     match &result {
                         Ok(_) => ::cratestack::tracing::info!(

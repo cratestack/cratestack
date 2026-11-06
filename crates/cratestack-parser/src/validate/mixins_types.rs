@@ -11,9 +11,11 @@ use crate::validate::computed_attribute::{
     ComputedFieldSupport, validate_computed_field_attribute,
 };
 use crate::validate::default_functions::validate_default;
+use crate::validate::enum_ordinals::{refuse_ordinal_auth_fields, validate_enum_ordinals};
 use crate::validate::field_attributes::{FieldHost, validate_field_attributes};
 use crate::validate::fields::validate_field_reserved_identifier;
 use crate::validate::key_relation_attributes::validate_key_and_relation_attributes;
+use crate::validate::reserved_claims::validate_reserved_claims;
 use crate::validate::reserved_idents::validate_reserved_identifier;
 use crate::validate::server_only_placement as server_only;
 use crate::validate::snake_case_collisions::validate_field_column_collisions;
@@ -199,7 +201,7 @@ pub(super) fn validate_enums_collecting(schema: &Schema, errors: &mut Vec<Schema
                     &format!("variant `{}` on enum `{}`", variant.name, enum_decl.name),
                 )?;
             }
-            Ok(())
+            validate_enum_ordinals(enum_decl)
         });
     }
 }
@@ -217,6 +219,7 @@ pub(super) fn validate_auth(
             &format!("auth block `{}`", auth.name),
         )?;
         validate_field_column_collisions(&auth.fields, "auth block", &auth.name)?;
+        refuse_ordinal_auth_fields(schema, auth)?;
 
         let mut fields = BTreeSet::new();
         for field in &auth.fields {
@@ -254,6 +257,7 @@ pub(super) fn validate_auth(
             validate_field_attributes(FieldHost::Auth, &auth.name, field)?;
             validate_key_and_relation_attributes("auth block", &auth.name, field)?;
         }
+        validate_reserved_claims(schema, auth)?;
     }
     Ok(())
 }

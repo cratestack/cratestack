@@ -277,6 +277,9 @@ jobs:
             cargo tree --locked | grep -i sqlx
             exit 1
           fi
+      - name: topic under db = None builds and delivers (no-database-verification, postgres feature off)
+        working-directory: examples/no-database-verification
+        run: cargo test --locked
       - name: sqlx present behind the postgres feature (no-database-verification)
         working-directory: examples/no-database-verification
         run: |
@@ -604,6 +607,100 @@ jobs:
       - name: Conformance with the MCP Inspector CLI (stdio + Streamable HTTP)
         run: just mcp-conformance
 
+  # `examples/auth-pluggable` (cratestack#1245) is its own `[workspace]` root
+  # because it is the one crate that depends on Authkestra: outside the root
+  # workspace, Authkestra never enters the root `Cargo.lock`
+  # (`.ci/auth-independence-check.sh`). This job runs its three providers
+  # through the same suite and checks that no CrateStack crate in its graph
+  # reaches an `authkestra*` package (`.ci/auth-pluggable-check.sh`).
+  auth-pluggable:
+    timeout-minutes: 45
+    name: auth-pluggable (examples/auth-pluggable, three providers, one suite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      # Before rust-cache, whose own `cargo metadata` would quietly rewrite
+      # a stale lockfile (the `check` job's reasoning).
+      - name: Assert Cargo.lock is up to date (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo metadata --locked --format-version=1 > /dev/null
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/auth-pluggable
+      - name: rustfmt (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo fmt --check
+      - name: clippy (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: The three providers through one suite (auth-pluggable)
+        working-directory: examples/auth-pluggable
+        run: cargo test --locked
+      - name: No CrateStack crate reaches Authkestra (auth-pluggable)
+        run: ./.ci/auth-pluggable-check.sh
+
+  webtransport-browser:
+    timeout-minutes: 40
+    name: webtransport (cratestack-webtransport, real Chromium end to end)
+    runs-on: ubuntu-latest
+    # The native integration tests (`cargo test -p cratestack-webtransport`)
+    # run in the test shards; this job adds what they cannot see: a real
+    # browser's WebTransport stack. It is what caught the binding dropping a
+    # stream's receive half early (a browser surfaces STOP_SENDING as a
+    # rejected `writer.close()`) and returning before the session-close
+    # capsule went out (a browser then reports "Connection lost", not the
+    # close code). Playwright lives outside the pnpm workspace so this job
+    # does not touch `pnpm-lock.yaml`.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Install Playwright and Chromium
+        run: |
+          mkdir -p "$RUNNER_TEMP/pw"
+          cd "$RUNNER_TEMP/pw"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: WebTransport end to end in Chromium
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: just test-webtransport-browser
+      - name: The generated TypeScript client over WebTransport in Chromium
+        # Slice S6: the generated `subscriptions.ts` against the same harness.
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: just test-ts-webtransport-browser
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: The generated Dart client over WebTransport in Chromium
+        # Slice S6: the generated Dart WebTransport binding, compiled to
+        # JavaScript, against the same harness.
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: just test-dart-webtransport-browser
+      - name: Generated dispatcher over WebTransport (testcontainers Postgres)
+        # Slice S5a: `db.subscriptions().webtransport(..)` serving a
+        # `@@subscribe` feed with its read policy. `required-features =
+        # ["webtransport"]`, so the db shard never builds it; here because
+        # this job already builds the QUIC stack.
+        run: just test-ci-db-webtransport --locked -- --test-threads=1
+      - name: examples/realtime-chat end to end (Postgres container, Chromium)
+        # Slice S6: the example's Rust tests, then the generated TypeScript
+        # client's `"auto"` in Chromium: WebTransport with UDP open, the
+        # WebSocket with UDP blocked, SSE.
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: just test-realtime-chat
+
   # ---- Test shards -----------------------------------------------------
   # The suite is split into four parallel jobs so no single runner has to
   # compile the whole workspace — pulling the tauri/wasm/napi example crates
@@ -644,6 +741,11 @@ jobs:
         # above never builds it; `CRATESTACK_REQUIRE_DB` (job env) makes a
         # missing database fail rather than skip.
         run: just test-ci-db-mcp --locked -- --test-threads=1
+      - name: cargo test (generated dispatcher over WebSocket, testcontainers Postgres)
+        # Slice S5: a model feed and a subscription procedure multiplexed on
+        # one socket. Gated `required-features = ["websocket"]`, so the
+        # default-feature step above never builds it.
+        run: just test-ci-db-websocket --locked -- --test-threads=1
       - name: cargo test (signed Rust client over models, testcontainers Postgres)
         # cratestack#1007: the generated client seals model calls and opens
         # their answers over REST and RPC, through the real envelope layer and
@@ -898,6 +1000,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Layer-direction check
         run: ./.ci/layer-direction-check.sh
+
+  # Auth-library independence (ADR 0021 §7, cratestack#1243): no package of
+  # an external authentication library (Authkestra's crates) in the
+  # workspace's resolved graph. Reads `Cargo.lock` only: no toolchain needed.
+  auth-independence:
+    timeout-minutes: 10
+    name: auth library independence (ADR 0021)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Auth-library independence check
+        run: ./.ci/auth-independence-check.sh
 
   # Workspace-lints opt-in check (cratestack#523). Manifest-only (`cargo
   # metadata --no-deps`) — same reasoning as `layer-direction` above, no
@@ -1211,7 +1325,7 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, incl. --native-cbor)
+      - name: Generate + flutter analyze/test (default + riverpod presets, REST + RPC, native cbor)
         run: just verify-dart
 
   # ---- dart-packages/{cratestack_annotations,cratestack_builder} --------
@@ -2208,22 +2322,15 @@ jobs:
         run: |
           cd examples/flutter-riverpod/client && flutter pub get
           cd "$GITHUB_WORKSPACE"
-          # `--no-native-cbor` must match `just regen-examples` and the
-          # committed `client/` (cratestack#708). Native is the DEFAULT codec
-          # since the cratestack#563 follow-up, so without this flag the
-          # regeneration below overwrites the committed pubspec with
-          # `cratestack_cbor: ^<workspace version>` — which pub.dev does not
-          # have until *after* that version is published, so `flutter pub get`
-          # fails on every release-bump PR while passing on `main`. The native
-          # path has its own end-to-end coverage in the `native_cbor_*` block;
-          # this fixture is deliberately codec-orthogonal. See the justfile's
-          # `--no-native-cbor` comment for the full rationale.
+          # No codec flag: native `cratestack_cbor` is the only mode, and it is
+          # what `just regen-examples` and the committed `client/` use. Its
+          # constraint is the published floor (`CRATESTACK_CBOR_FLOOR`,
+          # cratestack#779), so a release-bump PR still resolves.
           cargo run -p cratestack-cli -- generate-dart \
             --schema examples/react-vite-swr/schema.cstack \
             --out examples/flutter-riverpod/client \
             --library-name flutter_riverpod_client \
             --preset riverpod \
-            --no-native-cbor \
             --run-build-runner
       - name: flutter analyze (client)
         if: ${{ !cancelled() }}
@@ -2232,7 +2339,12 @@ jobs:
       - name: flutter test (client)
         if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/client
-        run: flutter test
+        # `flutter_tester` cannot resolve `cratestack_cbor`'s vendored library
+        # itself; point it at the one `flutter pub get` fetched (the justfile's
+        # `native_cbor_vendored_lib_for` explains why).
+        run: |
+          lib="$(python3 -c "import json; c = json.load(open('.dart_tool/package_config.json')); print([e for e in c['packages'] if e['name'] == 'cratestack_cbor'][0]['rootUri'].removeprefix('file://') + '/blobs/linux-x64/libcratestack_client_flutter.so')")"
+          CRATESTACK_CBOR_NATIVE_LIB="$lib" flutter test
       - name: flutter pub get (app)
         if: ${{ !cancelled() }}
         working-directory: examples/flutter-riverpod/app
@@ -2291,10 +2403,9 @@ jobs:
           }
           annotations="$(floor CRATESTACK_ANNOTATIONS_FLOOR)"
           builder="$(floor CRATESTACK_BUILDER_FLOOR)"
-          # cratestack#779: this client depends on cratestack_cbor now
-          # that `just regen-examples` no longer passes --no-native-cbor,
-          # so its floor gets pinned and analyzed here on the same terms
-          # as the other two.
+          # cratestack#779: this client depends on cratestack_cbor (native
+          # CBOR is the only codec mode), so its floor gets pinned and
+          # analyzed here on the same terms as the other two.
           cbor="$(floor CRATESTACK_CBOR_FLOOR)"
           if [ -z "$annotations" ] || [ -z "$builder" ] || [ -z "$cbor" ]; then
             echo "::error::could not read the API floors out of package_floors.rs — did the constants get renamed or reformatted? This step is meaningless until it can read them." >&2
@@ -2630,12 +2741,14 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: pnpm --filter react-vite-swr-client run build
-      - name: Typecheck + lint the web app
+      - name: Typecheck, lint and test the web app
         if: ${{ !cancelled() }}
         working-directory: examples/react-vite-swr
         run: |
           pnpm --filter react-vite-swr-web run typecheck
           pnpm --filter react-vite-swr-web run lint
+          # The step-up flow (cratestack#1245) on the generated client.
+          pnpm --filter react-vite-swr-web run test
 
   # ---- react-nextjs-daisyui example (lockfile + typecheck) ---------------
   # Blocking. Issue #1050: until this job existed, nothing in CI installed

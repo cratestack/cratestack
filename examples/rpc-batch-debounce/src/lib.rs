@@ -334,6 +334,7 @@ impl BatchDebouncer {
                     code: "internal".to_owned(),
                     message: "server omitted this frame from the batch response".to_owned(),
                     details: None,
+                    extra: Default::default(),
                 }),
             };
             let _ = responder.send(synthetic);

@@ -9,7 +9,7 @@ use cratestack_core::{
 };
 
 use crate::audit::{build_audit_event, enqueue_audit_event, ensure_audit_table};
-use crate::descriptor::{enqueue_event_outbox, ensure_event_outbox_table};
+use crate::descriptor::{enqueue_model_event, enqueue_model_update, ensure_event_outbox_table};
 use crate::query::support::{PolicyDb, evaluate_create_policies};
 use crate::{ConflictTarget, ModelDescriptor, SqlxRuntime, UpsertModelInput, sqlx};
 
@@ -167,11 +167,6 @@ where
     // did. The discriminator stays in the runtime rather than the SQL
     // (no `xmax = 0`), which keeps a future rusqlite mirror a
     // transliteration of this sequencing.
-    let event_kind = if inserted {
-        ModelEventKind::Created
-    } else {
-        ModelEventKind::Updated
-    };
     let audit_op = if inserted {
         AuditOperation::Create
     } else {
@@ -184,7 +179,14 @@ where
     };
 
     if emits_event {
-        enqueue_event_outbox(&mut **tx, descriptor.schema_name, event_kind, &record).await?;
+        let target = descriptor.event_target();
+        if inserted {
+            enqueue_model_event(&mut **tx, target, ModelEventKind::Created, &record).await?;
+        } else {
+            let keep = runtime.keeps_before(&mut **tx, descriptor, true).await?;
+            let before = resolved.before.as_ref();
+            enqueue_model_update(&mut **tx, target, &record, before, keep).await?;
+        }
     }
     let mut audit_event = None;
     if audit_enabled {

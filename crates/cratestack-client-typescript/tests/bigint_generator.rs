@@ -42,14 +42,8 @@ fn rest() -> GeneratedTypeScriptPackage {
     )
 }
 
-fn rpc(native_cbor: bool) -> GeneratedTypeScriptPackage {
-    generate(
-        "bigint_scalar_rpc",
-        TypeScriptGeneratorConfig {
-            native_cbor,
-            ..TypeScriptGeneratorConfig::default()
-        },
-    )
+fn rpc() -> GeneratedTypeScriptPackage {
+    generate("bigint_scalar_rpc", TypeScriptGeneratorConfig::default())
 }
 
 #[test]
@@ -169,7 +163,7 @@ fn bare_bigint_procedure_returns_ask_for_the_bigint_revival_not_the_shape_no_op(
             "{path} should revive all four bare-bigint procedures:\n{text}"
         );
     }
-    let rpc = rpc(true);
+    let rpc = rpc();
     assert_eq!(
         file(&rpc, "src/client.ts")
             .matches("reviveWireScalar(value, \"bigint\")")
@@ -203,8 +197,8 @@ fn every_json_encode_path_converts_a_bigint_before_json_stringify() {
 
     // RPC `computedParams` go through the shared helper, never a bare stringify.
     for (path, package) in [
-        ("src/queries.ts", rpc(true)),
-        ("src/client.ts", rpc(true)),
+        ("src/queries.ts", rpc()),
+        ("src/client.ts", rpc()),
         (
             "src/queries.ts",
             generate(
@@ -254,19 +248,15 @@ fn every_json_encode_path_converts_a_bigint_before_json_stringify() {
 
 #[test]
 fn the_codecs_convert_a_bigint_themselves_so_link_batch_cannot_skip_it() {
-    // JSON: the codec's own encode walks the value.
-    let json = rpc(false);
-    let runtime = file(&json, "src/runtime.ts");
-    assert!(runtime.contains("return JSON.stringify(encodeBinaryAsJson(value) ?? null);"));
-    assert!(
-        !runtime.contains("withWireEncoding"),
-        "a --no-native-cbor build must not mention the native codec wrapper:\n{runtime}"
-    );
+    let package = rpc();
+    let runtime = file(&package, "src/runtime.ts");
 
-    // Native CBOR: the resolved `@cratestack/cbor` codec is wrapped, once,
-    // by a memoized wrapper, and the retry-on-rejection shape is intact.
-    let native = rpc(true);
-    let runtime = file(&native, "src/runtime.ts");
+    // JSON (`codec: jsonRpcCodec`): the codec's own encode walks the value.
+    assert!(runtime.contains("return JSON.stringify(encodeBinaryAsJson(value) ?? null);"));
+
+    // Native CBOR (the default): the resolved `@cratestack/cbor` codec is
+    // wrapped, once, by a memoized wrapper, and the retry-on-rejection shape
+    // is intact.
     assert!(
         runtime.contains(
             "encode: (value: unknown): BodyInit => codec.encode(encodeWireFields(value)),"

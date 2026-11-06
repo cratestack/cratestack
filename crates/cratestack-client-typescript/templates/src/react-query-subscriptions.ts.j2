@@ -1,0 +1,71 @@
+// Subscriptions as TanStack Query data (slice S6,
+// docs/design/subscriptions-websocket.md §8). The query is pending until the
+// first item, then its `data` is the latest item; a refusal or a terminal
+// error is its `error`. The stream runs while the query has observers: when
+// the last one unmounts, TanStack cancels the query, which aborts the
+// subscription.
+//
+//   const { data: event } = useSubscriptionQuery(["notes", "events", ownerId], (signal) =>
+//     client.notes.subscribe({ filters: [{ key: "ownerId", value: String(ownerId) }] }, { signal }));
+//
+// To keep a list fresh instead, invalidate its key when an event arrives
+// (in an effect on `data`, or in `onItem` below).
+
+import {
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+  type QueryKey,
+  type UseQueryOptions,
+} from "@tanstack/react-query";
+
+export interface SubscriptionQueryOptions<T> {
+  /** Called with every item, after it is written to the cache. */
+  onItem?: (item: T, queryClient: QueryClient) => void;
+  queryOptions?: Omit<UseQueryOptions<T, Error, T, QueryKey>, "queryKey" | "queryFn">;
+}
+
+/**
+ * The query options behind `useSubscriptionQuery`, for `useQuery`,
+ * `useQueries` or a `QueryObserver`. Each item is written with
+ * `setQueryData` as it arrives, so this needs no streaming support from the
+ * installed TanStack Query.
+ */
+export function subscriptionQueryOptions<T>(
+  queryClient: QueryClient,
+  queryKey: QueryKey,
+  open: (signal: AbortSignal) => AsyncIterable<T>,
+  options: SubscriptionQueryOptions<T> = {},
+): UseQueryOptions<T, Error, T, QueryKey> {
+  return {
+    // A live query has no staleness and nothing to retry or refetch: a
+    // failure is a refusal or the end of the subscription.
+    staleTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    ...options.queryOptions,
+    queryKey,
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<T> => {
+      let last: T | undefined;
+      let any = false;
+      for await (const item of open(signal)) {
+        last = item;
+        any = true;
+        queryClient.setQueryData<T>(queryKey, item);
+        options.onItem?.(item, queryClient);
+      }
+      if (!any) throw new Error("the subscription ended before its first item");
+      return last as T;
+    },
+  };
+}
+
+/** Any subscription of the package's client as TanStack Query data. */
+export function useSubscriptionQuery<T>(
+  queryKey: QueryKey,
+  open: (signal: AbortSignal) => AsyncIterable<T>,
+  options: SubscriptionQueryOptions<T> = {},
+) {
+  return useQuery(subscriptionQueryOptions(useQueryClient(), queryKey, open, options));
+}

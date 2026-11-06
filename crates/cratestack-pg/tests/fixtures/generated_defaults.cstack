@@ -6,6 +6,9 @@
 // `cs1209_ticket_label()` is a function the database provides, registered
 // below; the test creates it before applying the emitted migration.
 //
+// `status` is a double-quoted string literal (cratestack#1234): it used to
+// be written as `DEFAULT "it's open"`, a column reference to Postgres.
+//
 // See `../generated_defaults.rs`: it parses this exact file, applies the
 // emitter's real DDL, and writes through both cratestack and raw SQL.
 
@@ -25,6 +28,7 @@ model Ticket {
   reference String   @default(uuid())
   createdAt DateTime @default(now())
   label     String   @default(cs1209_ticket_label())
+  status    String   @default("it's open")
   title     String
 
   @@allow("read", auth() != null)

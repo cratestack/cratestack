@@ -4,7 +4,9 @@
 //! consumes, and asserted equal to the macro's `OPS` and `ROUTE_TRANSPORTS`
 //! by `cratestack-pg/tests/op_contract_parity.rs`.
 
-use crate::op_list::{ModelVerb, model_op_key, model_verbs, procedure_op_key};
+use crate::op_list::{
+    ModelVerb, model_op_key, model_verbs, procedure_op_key, subscription_procedure_op_key,
+};
 use crate::schema::{Model, Procedure, Schema, TransportStyle};
 
 /// The declaration an op is about.
@@ -12,6 +14,8 @@ use crate::schema::{Model, Procedure, Schema, TransportStyle};
 pub(crate) enum OpTarget<'a> {
     Model(&'a Model, ModelVerb),
     Procedure(&'a Procedure),
+    /// A `subscription procedure` (slice S4).
+    SubscriptionProcedure(&'a Procedure),
 }
 
 /// One client-facing op.
@@ -40,6 +44,12 @@ pub(crate) fn ops(schema: &Schema) -> Vec<ClientOp<'_>> {
         out.push(ClientOp {
             key: procedure_op_key(procedure, rpc),
             target: OpTarget::Procedure(procedure),
+        });
+    }
+    for procedure in &schema.subscription_procedures {
+        out.push(ClientOp {
+            key: subscription_procedure_op_key(procedure, rpc),
+            target: OpTarget::SubscriptionProcedure(procedure),
         });
     }
     out.sort_by(|a, b| a.key.cmp(&b.key));

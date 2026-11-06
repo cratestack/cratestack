@@ -1,0 +1,30 @@
+// `@@subscribe` served over WebTransport through the generated dispatcher
+// (`tests/webtransport_model_feed.rs`).
+
+transport rpc
+
+extension webtransport {
+}
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Caller {
+  id Int
+}
+
+// Readable by its owner, unless archived.
+model WtNote {
+  id Int @id
+  ownerId Int
+  body String
+  archived Boolean
+
+  @@allow("read", ownerId == auth().id)
+  @@deny("read", archived)
+  @@allow("create", auth() != null)
+  @@emit(created)
+  @@subscribe
+}

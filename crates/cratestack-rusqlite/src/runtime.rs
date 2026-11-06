@@ -32,6 +32,10 @@ pub enum RusqliteError {
     /// error so callers can surface a fast-fail validation message rather
     /// than a generic database error.
     Validation(String),
+    /// A create left a required `dbgenerated()` or registered-function
+    /// column NULL, and nothing in the database filled it (cratestack#1234).
+    /// The insert is rolled back.
+    UnfilledDefault(crate::UnfilledDefault),
 }
 
 impl std::fmt::Display for RusqliteError {
@@ -48,6 +52,7 @@ impl std::fmt::Display for RusqliteError {
                 "duplicate primary key in batch at positions {first} and {duplicate}",
             ),
             Self::Validation(message) => write!(f, "validation error: {message}"),
+            Self::UnfilledDefault(unfilled) => write!(f, "{unfilled}"),
         }
     }
 }

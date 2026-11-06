@@ -48,6 +48,11 @@
 //! store, and the COSE enrolment challenge code moved out of
 //! `cratestack-auth`. It is this crate's only edge to `cratestack-auth`.
 //!
+//! **Claim objects** ([`claims`]): [`sign_claims`] / [`open_claims`] produce and
+//! verify a self-contained `COSE_Sign1` with a mandatory `typ`, RFC 9597 CWT
+//! claims and no freshness or replay check, for a payload signed offline and
+//! delivered later. Unrelated to the envelope: neither opens as the other.
+//!
 //! **Not here yet:** `chain` streams (P1) and `window` replay (P2).
 //!
 //! # Where this departs from the ADR's sketch
@@ -76,6 +81,7 @@ mod alg;
 pub mod auth;
 mod call;
 mod cbor;
+pub mod claims;
 mod envelope;
 mod error;
 mod header;
@@ -92,6 +98,10 @@ mod wire;
 pub use aad::{BINDING_VERSION, external_aad};
 pub use alg::{CoseAlg, CoseMode};
 pub use call::{CallBinding, contract_header_value};
+pub use claims::{
+    ClaimsError, CwtClaims, MAX_AUD_LEN, MAX_CTI_LEN, MAX_TYP_LEN, OpenedClaims, open_claims,
+    sign_claims,
+};
 /// Defined in `cratestack-core` since the cratestack#1006 API review (so
 /// the axum layer's `envelope` feature needs no COSE crate), and
 /// re-exported here unchanged: every path under `cratestack_cose` keeps

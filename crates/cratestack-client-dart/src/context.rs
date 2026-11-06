@@ -140,7 +140,11 @@ pub(crate) fn build_template_context(
         data_classes.push(build_find_many_data_class(model, where_class.is_some()));
     }
 
-    for procedure in &schema.procedures {
+    for procedure in schema
+        .procedures
+        .iter()
+        .chain(&schema.subscription_procedures)
+    {
         let args_name = procedure_wrapper_name(procedure, &occupied_type_names);
         let fields = procedure
             .args
@@ -231,23 +235,16 @@ pub(crate) fn build_template_context(
         }
     });
 
-    // Issue #563: still only computed when the flag is actually set — a
-    // `--no-native-cbor` package has no `cratestack_cbor` line to render
-    // at all. cratestack#779: but the value is now an API-compatibility
-    // floor rather than `^{CARGO_PKG_VERSION}`, so it no longer moves
-    // with `just bump` — see `crate::package_floors`.
-    let cratestack_cbor_version_requirement = if config.native_cbor {
-        requirement(CRATESTACK_CBOR_FLOOR)
-    } else {
-        String::new()
-    };
+    // cratestack#779: an API-compatibility floor rather than
+    // `^{CARGO_PKG_VERSION}`, so it does not move with `just bump` — see
+    // `crate::package_floors`.
+    let cratestack_cbor_version_requirement = requirement(CRATESTACK_CBOR_FLOOR);
 
-    // Issue #668 phase 2: unlike `cratestack_cbor_version_requirement`
-    // above, never gated — every generated package depends on both
-    // unconditionally. cratestack#754: and unlike it, these are API
-    // compatibility *floors*, not `^{CARGO_PKG_VERSION}` — see
-    // `crate::package_floors` for why deriving them from the release
-    // version is what broke `Prepare Release` for 0.8.14.
+    // Issue #668 phase 2: every generated package depends on both
+    // unconditionally. cratestack#754: API compatibility *floors*, not
+    // `^{CARGO_PKG_VERSION}` — see `crate::package_floors` for why deriving
+    // them from the release version is what broke `Prepare Release` for
+    // 0.8.14.
     let cratestack_annotations_version_requirement = requirement(CRATESTACK_ANNOTATIONS_FLOOR);
     let cratestack_builder_version_requirement = requirement(CRATESTACK_BUILDER_FLOOR);
 
@@ -280,10 +277,16 @@ pub(crate) fn build_template_context(
         procedures,
         query_procedures,
         mutation_procedures,
+        subscription_procedures: schema
+            .subscription_procedures
+            .iter()
+            .map(|procedure| build_procedure(procedure, &occupied_type_names, &enum_names))
+            .collect(),
+        has_subscriptions: crate::subscription_specs::has_subscriptions(schema),
         sample_model,
         preset: PresetView::new(config),
         is_rpc: schema.transport == TransportStyle::Rpc,
-        native_cbor: config.native_cbor,
+        native_cbor: true,
         cratestack_cbor_version_requirement,
         has_computed_params_class,
         cratestack_annotations_version_requirement,

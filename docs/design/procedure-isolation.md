@@ -84,6 +84,7 @@ Its surface is exactly what can be routed through the transaction:
 | `bind_context` / `bind_auth` | the usual `BoundCratestack`, over the same bound runtime |
 | `transaction(async \|tx\| ..)` | a `SAVEPOINT` inside the isolated transaction (§7); `tx` is the raw-SQL door |
 | `dispatch_audit_sink(events)` | deferred until the isolated transaction commits (§6) |
+| `topics()` | the schema's topics, each `publish` delivered only if the attempt commits (§6; `subscriptions-websocket.md` §3.4) |
 
 Deliberately absent: `pool()` (the escape hatch), `events()` (its `drain()`
 writes delivery marks on the pool), `views()` and `queries()` (both execute
@@ -287,6 +288,7 @@ time.
 | model writes, `@@audit` rows, `@@emit` outbox rows | inside the isolated transaction | rolled back with the attempt |
 | `AuditSink` fan-out (automatic after `run()`, or explicit `dispatch_audit_sink`) | deferred; dispatched once, after the committed attempt | discarded |
 | outbox drain (automatic after an emitting `run()`) | deferred; once, after commit | not performed |
+| topic `publish` from `db.topics()` | `PgNotifyBackplane`: `pg_notify` inside the transaction (a savepoint), delivered on commit. Any other backplane: queued, sent once after commit | rolled back with the attempt / discarded; a rolled-back savepoint or joined call takes back what it queued |
 | `@computed` output composition | inside the attempt, after the body, before `COMMIT` | repeated with the attempt; a resolver error fails the attempt |
 | `Idempotency-Key` reservation and completion | the tower layer around the whole handler (HTTP), `admit_and_run` (MCP) | once per request; retries are invisible to it |
 | rate-limit admission | the tower layer / MCP admission, before dispatch | once per request |
@@ -421,6 +423,39 @@ it.
 Every other response is recorded as before, errors included.
 `/rpc/batch` refuses an `Idempotency-Key` header outright, so no batch
 response is ever recorded under one.
+
+*Dispatch-owned refusals* (cratestack#1261). The same rule, applied to a
+401 or 403. The documented answer to one is to renew the credential, or
+step up (ADR 0022, RFC 9470 §3), and send the same request again under the
+same key; with the refusal recorded, that retry got the stored 401 back
+forever. A refusal the generated dispatch produces before any body runs
+commits nothing, so it is released, and one a body returns is recorded,
+because the body may have written first:
+
+| Refusal | Set by | Recorded under a key? |
+| --- | --- | --- |
+| `AuthProvider::authenticate`'s | the generated REST/RPC dispatch (procedures and model routes) claims it in its `authenticate` arm | **no** |
+| `@allow`/`@deny`, `@authn` (`require_authn`), `@authorize` | `__generated_dispatch_with_db`, on its own authorization step | **no** |
+| any refusal a procedure body (or an `@isolation` attempt's composition) returns | `invoke_with_db` disowns it (`disown_auth_refusal`), even one a nested generated call claimed | yes |
+| one a hand-written caller gets from `invoke_with_db` | nothing: the public function never claims | yes |
+
+The mark lives on `AuthRefusal` (`is_dispatch_owned`, a private field), and
+`CratestackError::is_idempotency_replayable` is `false` for a claimed one,
+so the HTTP encoders tag the response and MCP's `admit_and_run` releases
+the key exactly as for a claimed abort. The one way to set it is the
+`#[doc(hidden)]` `CratestackError::__generated_claim_auth_refusal`, under
+the same "generated code only" contract as the abort's claim. A plain
+`Unauthorized` or `Forbidden` is claimed by becoming an `AuthRefused` with
+the same code, status and message and nothing else, so the response does
+not change by a byte. The generated dispatch reaches a procedure through
+`__generated_dispatch_with_db`, the procedure module's `invoke_with_db`
+with a flag that claims the refusal of its own authorization step; it
+authorizes identically, and the public `invoke_with_db` never claims, so a
+hand-written handler that wrote before calling it cannot release its key
+that way. MCP authenticates before admission (the namespace is the
+context's subject), so only its authorize step's refusal reaches a
+reservation. `cratestack-api`'s `authn_idempotency_{rest,rpc}.rs` and
+`mcp_authn_idempotency.rs` pin all of it.
 
 ## 7. Nested `db.transaction(..)` inside an isolated procedure
 

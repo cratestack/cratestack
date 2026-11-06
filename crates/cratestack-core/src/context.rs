@@ -2,6 +2,8 @@
 //! principal, transport extensions, plus the [`AuthProvider`] trait
 //! that auth middlewares implement.
 
+mod builder;
+mod contract;
 mod identity;
 mod principal;
 mod system;
@@ -9,7 +11,10 @@ mod verified_signer;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_contract;
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +22,8 @@ use serde::{Deserialize, Serialize};
 use crate::error::CratestackError;
 use crate::value::Value;
 
+pub use builder::CratestackContextBuilder;
+pub use contract::{ClaimType, KeyRole, RESERVED_CLAIMS, ReservedClaim};
 pub use identity::CratestackAuthIdentity;
 pub use principal::{PrincipalContext, PrincipalFacet};
 pub use system::SystemContext;
@@ -76,6 +83,27 @@ pub struct CratestackContext {
 ///
 /// A shared reference is `Copy`, so adding this field does not affect the
 /// `Copy` derive below.
+///
+/// ## The canonical request (ADR 0021 §3)
+///
+/// What a provider is given is the **canonical request** of the
+/// operation, and a client that signs a request signs the same thing:
+///
+/// - `method` is the operation's declared method: `POST` for every RPC
+///   call (unary and batch), `GET` for a subscription.
+/// - `path` is the route CrateStack declares, relative to the router's own
+///   root. A mount prefix never appears: a router nested under `/api`
+///   hands the provider `/rpc/<op_id>`, not `/api/rpc/<op_id>`, so a client
+///   signs its request path minus its base URL's path. A REST model route
+///   carries the **decoded** `/<id>`, not its percent-encoded wire form.
+/// - `query` is the raw query string where the operation reads one (REST
+///   model reads, MCP, sync) and `None` elsewhere (RPC, REST procedures).
+/// - `body` is the exact bytes the router received, before decoding and
+///   never re-encoded; for a batch, the whole batch body, authenticated
+///   once. Behind an envelope layer it is the opened payload.
+///
+/// `crates/cratestack-api/tests/canonical_request_{rest,rpc}.rs` and
+/// `crates/cratestack-sync/tests/canonical_request.rs` pin it.
 #[derive(Debug, Clone, Copy)]
 pub struct RequestContext<'a> {
     pub method: &'a str,
@@ -102,6 +130,17 @@ pub trait AuthProvider: Clone + Send + Sync + 'static {
         &self,
         request: &RequestContext<'_>,
     ) -> impl ::core::future::Future<Output = Result<CratestackContext, Self::Error>> + Send;
+
+    /// Whether `request` carries this provider's credential, read from the
+    /// request head without authenticating (the body may be empty). The
+    /// [first-success chain](crate::first_success) skips a provider that
+    /// answers [`Credential::Absent`]. The default,
+    /// [`Credential::Unknown`], means the provider is always called, as
+    /// before this method existed. See [`Credential`].
+    fn credential<'r>(&self, request: &RequestContext<'r>) -> crate::Credential<'r> {
+        let _ = request;
+        crate::Credential::Unknown
+    }
 }
 
 impl<F, E> AuthProvider for F
@@ -256,25 +295,12 @@ impl CratestackContext {
         }
     }
 
-    /// Convenience accessor for the principal's actor id. Falls back
-    /// from `principal.actor.id` to `principal.claims.id` to
-    /// `auth.fields.id` so audit rows capture an identity regardless
-    /// of which builder the caller used.
-    pub fn principal_actor_id(&self) -> Option<&str> {
-        let from_facet = self
-            .principal
-            .as_ref()
-            .and_then(|p| p.actor.as_ref())
-            .and_then(|facet| facet.fields.get("id"));
-        let from_claims = self.principal.as_ref().and_then(|p| p.claims.get("id"));
-        let from_auth = self.auth.as_ref().and_then(|auth| auth.fields.get("id"));
-        from_facet
-            .or(from_claims)
-            .or(from_auth)
-            .and_then(|v| match v {
-                Value::String(s) => Some(s.as_str()),
-                _ => None,
-            })
+    /// The caller's identity for audit rows: [`Self::subject`] (`sub`,
+    /// then `actor.id`, then `id`, an integer as its decimal digits).
+    /// Kept as a name for existing callers; it answers exactly what
+    /// `subject()` answers.
+    pub fn principal_actor_id(&self) -> Option<Cow<'_, str>> {
+        self.subject()
     }
 
     /// Tenant id surfaced for audit/log scoping.

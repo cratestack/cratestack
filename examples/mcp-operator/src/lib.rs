@@ -2,8 +2,9 @@
 //!
 //! One Postgres-backed schema (`schema.cstack`) exposes two procedures as
 //! MCP tools and one model as a read-only MCP resource. `src/main.rs` serves
-//! them over stdio or Streamable HTTP; `src/token.rs` is the example
-//! audience-checking `AuthProvider` both transports verify callers with.
+//! them over stdio or Streamable HTTP; `src/token.rs` is the example token
+//! both transports verify callers with, and `src/provider.rs` the HTTP
+//! side's `AuthProvider`.
 //!
 //! Nothing here enforces a policy by hand. A tool call reaches
 //! [`Procedures`] only through the procedure's generated `invoke_with_db`,
@@ -11,6 +12,7 @@
 //! `@@allow` in its SQL. MCP adds no bypass (ADR 0002 § Decision).
 
 pub mod http;
+pub mod provider;
 pub mod token;
 
 use cratestack::sqlx::PgPool;

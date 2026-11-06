@@ -41,6 +41,7 @@ use procedure::generate_generated_rpc_procedure_client_method;
 pub(super) fn generate_generated_rpc_client_module(
     models: &[Model],
     procedures: &[Procedure],
+    subscription_methods: &[proc_macro2::TokenStream],
     bearing: &BTreeSet<String>,
 ) -> Result<proc_macro2::TokenStream, String> {
     let mut model_clients = Vec::new();
@@ -154,6 +155,8 @@ pub(super) fn generate_generated_rpc_client_module(
                 }
 
                 #(#procedure_methods)*
+
+                #(#subscription_methods)*
             }
         }
     })
