@@ -297,14 +297,12 @@ void main() {
     });
 
     test('a plain cbor-seq answer is left alone', () async {
+      // Built before the script: its answers are synchronous closures.
+      final body = await items([
+        {'n': 1},
+      ]);
       final transport = _Script([
-        (_) => _answer(
-          200,
-          'application/cbor-seq',
-          await items([
-            {'n': 1},
-          ]),
-        ),
+        (_) => _answer(200, 'application/cbor-seq', body),
       ]);
       final seen = await _adapter(transport, counting)
           .stream('procedure.searchPosts', const {})
