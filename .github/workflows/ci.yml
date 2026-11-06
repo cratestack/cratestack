@@ -909,6 +909,16 @@ jobs:
     env:
       CRATESTACK_REQUIRE_DB: "1"
     steps:
+      # This job builds the workspace twice (`cratestack-pg`'s ignored tests,
+      # then the rest under a different feature set), roughly double the
+      # artifacts of `tests (host)`, and ran out of disk once
+      # examples/signed-compact joined the workspace (cratestack#1294). Drop
+      # preinstalled toolchains it never uses before building.
+      - name: Free runner disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
