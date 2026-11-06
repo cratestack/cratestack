@@ -31,7 +31,7 @@ dependency on `@cratestack/ts-types` required at runtime, since it's checked via
 
 CBOR has a real `null` (RFC 8949 §3.3, simple value 22, byte `0xf6`). `cratestack-codec-cbor`'s
 underlying `minicbor-serde` backend has a documented quirk where a bare Rust unit type `()`
-encodes as the CBOR *empty array* marker (`0x80`) instead — this package's `encode` translates
+encodes as the CBOR _empty array_ marker (`0x80`) instead — this package's `encode` translates
 every JSON `null` (top-level or nested inside an object/array) through the code path that
 produces real CBOR null, matching `CborCodec`'s own `Option::None` behavior byte-for-byte. See
 `crates/cratestack-cbor-napi/src/json_value.rs` for the detail.
@@ -57,15 +57,15 @@ REST-transport generated clients are unaffected: the REST runtime has no codec s
 
 `napi.targets` in `package.json` is the source of truth; as of cratestack#850 it is:
 
-| Platform | Target triple | npm platform package |
-| --- | --- | --- |
-| macOS x64 | `x86_64-apple-darwin` | `@cratestack/cbor-node-darwin-x64` |
-| macOS arm64 | `aarch64-apple-darwin` | `@cratestack/cbor-node-darwin-arm64` |
-| Linux x64 (glibc) | `x86_64-unknown-linux-gnu` | `@cratestack/cbor-node-linux-x64-gnu` |
-| Linux arm64 (glibc) | `aarch64-unknown-linux-gnu` | `@cratestack/cbor-node-linux-arm64-gnu` |
-| Linux x64 (musl / Alpine) | `x86_64-unknown-linux-musl` | `@cratestack/cbor-node-linux-x64-musl` |
+| Platform                    | Target triple                | npm platform package                     |
+| --------------------------- | ---------------------------- | ---------------------------------------- |
+| macOS x64                   | `x86_64-apple-darwin`        | `@cratestack/cbor-node-darwin-x64`       |
+| macOS arm64                 | `aarch64-apple-darwin`       | `@cratestack/cbor-node-darwin-arm64`     |
+| Linux x64 (glibc)           | `x86_64-unknown-linux-gnu`   | `@cratestack/cbor-node-linux-x64-gnu`    |
+| Linux arm64 (glibc)         | `aarch64-unknown-linux-gnu`  | `@cratestack/cbor-node-linux-arm64-gnu`  |
+| Linux x64 (musl / Alpine)   | `x86_64-unknown-linux-musl`  | `@cratestack/cbor-node-linux-x64-musl`   |
 | Linux arm64 (musl / Alpine) | `aarch64-unknown-linux-musl` | `@cratestack/cbor-node-linux-arm64-musl` |
-| Windows x64 | `x86_64-pc-windows-msvc` | `@cratestack/cbor-node-win32-x64-msvc` |
+| Windows x64                 | `x86_64-pc-windows-msvc`     | `@cratestack/cbor-node-win32-x64-msvc`   |
 
 Both musl binaries are load-tested in CI, not just built: each `build-cbor-node` musl leg runs on
 the runner architecture it targets and, before uploading anything, loads the `.node` it just
@@ -77,7 +77,7 @@ Still **not** covered: `win32-arm64`. There is also no wasm/wasi fallback — th
 `native.mjs` loader contains a `wasm32-wasi` branch, but nothing publishes a `.wasi.cjs` or a
 `@cratestack/cbor-node-wasm32-wasi` package, so that branch can only ever add another
 `Cannot find module` to the error chain. On an unsupported platform the loader raises the generic
-*"Cannot find native binding. npm has a bug related to optional dependencies…"* error, which
+_"Cannot find native binding. npm has a bug related to optional dependencies…"_ error, which
 blames npm rather than naming the real cause. There is no escape hatch: the generator's
 `--no-native-cbor` fallback was removed, so `win32-arm64` is unsupported for generated RPC clients.
 

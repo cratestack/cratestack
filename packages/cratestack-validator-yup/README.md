@@ -24,7 +24,7 @@ const runtime = new CratestackRpcRuntime("https://api.example.com", {
 ```
 
 Ops with no configured schema pass through unvalidated — this is opt-in per op, not a blanket
-gate. On success, the schema's *cast* output (defaults, type coercion) becomes the actual request
+gate. On success, the schema's _cast_ output (defaults, type coercion) becomes the actual request
 `input`, not just a type-level assertion. On failure, the chain short-circuits — the real network
 call never happens — and the call rejects the same way a server-side validation failure would,
 with an `RpcErrorBody` carrying `code: "invalid_argument"`.

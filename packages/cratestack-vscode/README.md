@@ -6,8 +6,8 @@ This extension registers the `.cstack` language in VS Code and starts the standa
 
 Search the Extensions view for **CrateStack Schema**, or install by ID:
 
-* VS Code — [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin), or `code --install-extension cratestack.cratestack-vscode-plugin`
-* VSCodium, Cursor, Windsurf — [Open VSX listing](https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin), or `codium --install-extension cratestack.cratestack-vscode-plugin`
+- VS Code — [Marketplace listing](https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin), or `code --install-extension cratestack.cratestack-vscode-plugin`
+- VSCodium, Cursor, Windsurf — [Open VSX listing](https://open-vsx.org/extension/cratestack/cratestack-vscode-plugin), or `codium --install-extension cratestack.cratestack-vscode-plugin`
 
 Either registry serves the right platform build and auto-updates. As a fallback — air-gapped machines, editors on neither registry, or pinning a version — download the platform `.vsix` from a [GitHub Release](https://github.com/cratestack/cratestack/releases) and run `code --install-extension <file>.vsix`; that path does not auto-update.
 
@@ -15,16 +15,16 @@ When the extension package includes a staged server binary under `server/<platfo
 
 Current editor features come from the language server plus the bundled grammar:
 
-* diagnostics
-* hover
-* completion
-* go-to-definition
-* find all references
-* rename
-* document highlight
-* document symbols
-* semantic tokens
-* basic syntax highlighting
+- diagnostics
+- hover
+- completion
+- go-to-definition
+- find all references
+- rename
+- document highlight
+- document symbols
+- semantic tokens
+- basic syntax highlighting
 
 Go-to-definition (Ctrl+Click / F12) resolves every reference site in a schema:
 a field's type to its `model`, `type`, `enum` or `mixin` declaration; a
@@ -62,17 +62,17 @@ syntax error, since edits computed from the retained schema would apply at
 positions the buffer has since moved.
 Independent schema errors are reported together, so three models each naming a
 type that does not exist produce three squiggles rather than three save-and-retry
-rounds. A *syntax* error is still reported alone — parsing has no recovery, so
+rounds. A _syntax_ error is still reported alone — parsing has no recovery, so
 everything after it is unparsed rather than valid.
 
 Current limitations:
 
-* no formatting support yet
+- no formatting support yet
 
 ## Settings
 
-* `cratestack.lsp.path`: path to the `cratestack-lsp` binary. Defaults to `cratestack-lsp` on `PATH`.
-* `cratestack.lsp.args`: additional arguments passed to the language server.
+- `cratestack.lsp.path`: path to the `cratestack-lsp` binary. Defaults to `cratestack-lsp` on `PATH`.
+- `cratestack.lsp.args`: additional arguments passed to the language server.
 
 ## Local Development
 
