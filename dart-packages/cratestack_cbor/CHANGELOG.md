@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.18.0 (2026-11-06)
+
 - New: `createCompactKeys(Uint8List tables)` and the `CompactKeys` interface
   (compact wire keys, `docs/design/compact-wire-keys.md`). Built from the
   `cratestackKeyTables` a generated client emits, it swaps a schema's field
