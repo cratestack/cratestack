@@ -4423,7 +4423,11 @@ bump NEW:
 	# Scoped to the VALUE OF A `version =` KEY, on either a package-version
 	# line (`^version = "X"`, i.e. the root workspace package and the
 	# excluded studio-ui sibling) or a workspace inter-crate dependency line
-	# (which always carries `path = "crates/"`). Replacing the bare literal
+	# (which always carries `path = "crates/"`), or a member crate's own
+	# sibling path dependency (`path = "../cratestack-…"`, used where a
+	# renamed `package =` dependency cannot inherit from the workspace table:
+	# cratestack-auth-conformance pinned `version = "0.17.0"` that way and the
+	# 0.18.0 prepare-release run failed at `cargo update`). Replacing the bare literal
 	# `"X"` everywhere instead — as this recipe used to — also rewrites
 	# unrelated third-party dependencies that happen to sit at the same
 	# version: bumping 0.7.1 -> 0.7.2 turned `serde_urlencoded = "0.7.1"`
@@ -4438,7 +4442,7 @@ bump NEW:
 	  -not -path '*/node_modules/*' \
 	  -print0 | CS_CUR="$current" CS_NEW="{{NEW}}" xargs -0 perl -i -pe '
 	    BEGIN { $cur = quotemeta $ENV{CS_CUR}; $new = $ENV{CS_NEW}; }
-	    if (/^version = "$cur"/ || m{path = "crates/}) {
+	    if (/^version = "$cur"/ || m{path = "(?:crates/|\.\./cratestack-)}) {
 	      s/version = "$cur"/version = "$new"/g;
 	    }'
 	# Keep every package this repo ships under `packages/` in lockstep with
