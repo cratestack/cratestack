@@ -178,6 +178,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
     (
         "@unique",
         &[
+            "cratestack-macros/src/model/descriptor/unique.rs",
             "cratestack-migrate/src/convert/fields.rs",
             "cratestack-migrate/src/convert/renames.rs",
         ],

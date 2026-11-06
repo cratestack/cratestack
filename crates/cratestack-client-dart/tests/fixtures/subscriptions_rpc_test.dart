@@ -67,6 +67,9 @@ void main() {
       'event: message\ndata: {"id":2,"next":{"event_id":"e1","model":"Note",'
           '"operation":"Created","occurred_at":"2026-11-01T00:00:00Z",'
           '"data":{"id":7,"body":"mine"}}}\n\n',
+      'event: message\ndata: {"id":3,"next":{"event_id":"e2","model":"Note",'
+          '"operation":"Updated","occurred_at":"2026-11-01T00:00:01Z",'
+          '"matches":false,"data":{"id":7,"body":"mine"}}}\n\n',
     ]);
     final events = await _client(transport)
         .notes
@@ -77,9 +80,14 @@ void main() {
           ),
         )
         .toList();
-    expect(events.single.operation, 'Created');
-    expect(events.single.data.id, 7);
-    expect(events.single.data.body, 'mine');
+    expect(events.first.operation, 'Created');
+    expect(events.first.matches, isTrue, reason: 'absent on the wire means a match');
+    expect(events.first.data.id, 7);
+    expect(events.first.data.body, 'mine');
+    // A filter-exit event: the row left the filter, `data` is what it held.
+    expect(events.last.operation, 'Updated');
+    expect(events.last.matches, isFalse);
+    expect(events.last.data.body, 'mine');
     expect(
       transport.requests.single.uri.query,
       'body__contains=mi&operations=created',

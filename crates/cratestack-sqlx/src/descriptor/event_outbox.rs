@@ -1,14 +1,11 @@
 //! `cratestack_event_outbox` table primitives: the row shape, its
 //! hand-written `FromRow` (see the comment on the impl below for why
-//! it isn't derived), table bootstrap, and the enqueue helper each
-//! write path calls in-transaction. Split out of `descriptor.rs` to
-//! keep that file under the project's ~200-line-per-file convention.
+//! it isn't derived) and table bootstrap. The enqueue helpers each write
+//! path calls in-transaction are in [`super::event_enqueue`]. Split out of
+//! `descriptor.rs` to keep that file under the project's ~200-line-per-file
+//! convention.
 
-use cratestack_core::{
-    CratestackError, CratestackEventEnvelope, ModelEventKind, model_event_channel,
-};
-
-use crate::backplane::notify_payload;
+use cratestack_core::{CratestackError, CratestackEventEnvelope, ModelEventKind};
 
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;
@@ -20,6 +17,7 @@ pub(crate) struct EventOutboxRow {
     pub(crate) operation: String,
     pub(crate) occurred_at: chrono::DateTime<chrono::Utc>,
     pub(crate) payload: serde_json::Value,
+    pub(crate) before: Option<serde_json::Value>,
     pub(crate) attempts: i64,
     pub(crate) last_error: Option<String>,
 }
@@ -36,6 +34,11 @@ impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for EventOutboxRow {
             operation: row.try_get("operation")?,
             occurred_at: row.try_get("occurred_at")?,
             payload: row.try_get("payload")?,
+            // Read as `to_jsonb(o) -> 'payload_before'`, so a table without the
+            // column (not yet upgraded) reads as none; a NULL column is JSON null.
+            before: row
+                .try_get::<Option<serde_json::Value>, _>("payload_before")?
+                .filter(|value| !value.is_null()),
             attempts: row.try_get("attempts")?,
             last_error: row.try_get("last_error")?,
         })
@@ -52,11 +55,14 @@ impl EventOutboxRow {
             operation: ModelEventKind::parse(&self.operation)?,
             occurred_at: self.occurred_at,
             data: self.payload,
+            before: self.before,
         })
     }
 }
 
-/// Bootstraps `cratestack_event_outbox` if it doesn't already exist.
+/// Bootstraps `cratestack_event_outbox` if it doesn't already exist. A table
+/// an earlier version created lacks `payload_before`; that is added outside
+/// the write transaction, once per runtime (`outbox_upgrade.rs`).
 /// `pub` (rather than `pub(crate)`) since cratestack#507 ("option 3"):
 /// `cratestack-studio`'s `[target.db]` write path calls this directly to
 /// route Studio writes through the same outbox the generated server
@@ -73,117 +79,12 @@ where
             operation TEXT NOT NULL, \
             occurred_at TIMESTAMPTZ NOT NULL, \
             payload JSONB NOT NULL, \
+            payload_before JSONB, \
             delivered_at TIMESTAMPTZ, \
             attempts BIGINT NOT NULL DEFAULT 0, \
             last_error TEXT\
         )",
     )
-    .execute(executor)
-    .await
-    .map_err(cratestack_error_from_sqlx)?;
-
-    Ok(())
-}
-
-/// Inserts one `cratestack_event_outbox` row. `pub` for the same reason
-/// as [`ensure_event_outbox_table`] — see its doc comment.
-///
-/// `model` takes `&str` rather than the `&'static str` every in-crate
-/// caller happens to pass (generated code's model names are always
-/// `&'static str` literals): `cratestack-studio` parses `.cstack`
-/// schemas at runtime, so its model names are owned `String`s with no
-/// `'static` lifetime available. The function only ever borrows `model`
-/// long enough to bind it as a query parameter, so relaxing the bound
-/// costs nothing for the existing callers and is required for the new
-/// one.
-pub async fn enqueue_event_outbox<'e, E, T>(
-    executor: E,
-    model: &str,
-    operation: ModelEventKind,
-    data: &T,
-) -> Result<(), CratestackError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    T: serde::Serialize,
-{
-    // A caller outside the generated write paths (Studio) cannot know whether
-    // the model is `@@subscribe`, so it always notifies.
-    enqueue(executor, model, true, operation, data).await
-}
-
-/// The generated write paths' enqueue: notifies subscribers only for an
-/// `@@subscribe` model (`target.notify_subscribers`).
-pub(crate) async fn enqueue_model_event<'e, E, T>(
-    executor: E,
-    target: cratestack_sql::EventTarget,
-    operation: ModelEventKind,
-    data: &T,
-) -> Result<(), CratestackError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    T: serde::Serialize,
-{
-    enqueue(
-        executor,
-        target.model,
-        target.notify_subscribers,
-        operation,
-        data,
-    )
-    .await
-}
-
-async fn enqueue<'e, E, T>(
-    executor: E,
-    model: &str,
-    notify: bool,
-    operation: ModelEventKind,
-    data: &T,
-) -> Result<(), CratestackError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
-    T: serde::Serialize,
-{
-    let payload = serde_json::to_value(data).map_err(|error| {
-        CratestackError::Codec(format!("failed to encode event payload: {error}"))
-    })?;
-    let envelope = CratestackEventEnvelope {
-        event_id: uuid::Uuid::new_v4(),
-        model: model.to_owned(),
-        operation,
-        occurred_at: chrono::Utc::now(),
-        data: payload,
-    };
-    // The subscription backplane's notification, sent by this same statement
-    // so Postgres delivers it only if the transaction commits
-    // (docs/design/subscriptions-websocket.md §4.3). Nobody listening costs
-    // nothing; a `PgNotifyBackplane` listener on any replica receives it.
-    let envelope_json = serde_json::to_string(&envelope).map_err(|error| {
-        CratestackError::Codec(format!("failed to encode event envelope: {error}"))
-    })?;
-    let notification = if notify {
-        notify_payload::encode(
-            &model_event_channel(model),
-            &envelope_json,
-            Some(envelope.event_id),
-        )
-        .unwrap_or_default()
-    } else {
-        String::new()
-    };
-    sqlx::query(
-        "WITH inserted AS (\
-            INSERT INTO cratestack_event_outbox (event_id, model, operation, occurred_at, payload) \
-            VALUES ($1, $2, $3, $4, $5) RETURNING event_id\
-         ) SELECT pg_notify($6, $7) FROM inserted WHERE $7 <> ''",
-    )
-    .bind(envelope.event_id)
-    .bind(model)
-    .bind(operation.as_str())
-    .bind(envelope.occurred_at)
-    .bind(envelope.data)
-    .bind(notify_payload::NOTIFY_CHANNEL)
-    .bind(notification)
     .execute(executor)
     .await
     .map_err(cratestack_error_from_sqlx)?;

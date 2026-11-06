@@ -1,6 +1,8 @@
 mod drain;
+mod event_enqueue;
 mod event_outbox;
 mod outbox_read;
+mod outbox_upgrade;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -12,9 +14,11 @@ use cratestack_core::{
     NoopAuditSink, SubscriptionBackplane, SubscriptionHandle,
 };
 
-pub(crate) use event_outbox::enqueue_model_event;
-pub use event_outbox::{enqueue_event_outbox, ensure_event_outbox_table};
+pub use event_enqueue::enqueue_event_outbox;
+pub(crate) use event_enqueue::{enqueue_model_event, enqueue_model_update};
+pub use event_outbox::ensure_event_outbox_table;
 pub(crate) use outbox_read::outbox_envelope_json;
+pub(crate) use outbox_upgrade::OutboxColumn;
 
 #[derive(Clone)]
 pub struct SqlxRuntime {
@@ -27,6 +31,9 @@ pub struct SqlxRuntime {
     // the first call, which is what self-deadlocked chained
     // `run_in_tx` audit writes in a caller-managed transaction.
     audit_table_ensured: Arc<AtomicBool>,
+    // Shared for the same reason: whether the outbox table is known to have
+    // `payload_before` (`outbox_upgrade.rs`).
+    outbox_column: Arc<outbox_upgrade::OutboxColumn>,
     // Installation point for cratestack#473: defaults to `NoopAuditSink`
     // so existing callers of `new()` see no behavior change. Installed
     // via `with_audit_sink` (mirrors `IdempotencyLayer::new`/
@@ -77,6 +84,7 @@ impl SqlxRuntime {
             pool,
             events: CratestackEventBus::default(),
             audit_table_ensured: Arc::new(AtomicBool::new(false)),
+            outbox_column: Arc::default(),
             audit_sink: Arc::new(NoopAuditSink),
             bound: None,
             isolation_max_retries: crate::isolation::MAX_RETRIES_DEFAULT,

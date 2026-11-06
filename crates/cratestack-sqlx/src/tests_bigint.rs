@@ -27,7 +27,7 @@ mod create_deny_groups;
 mod create_deny_literals;
 mod create_policies;
 mod pg;
-mod pg_support;
+pub(crate) mod pg_support;
 mod read_policies;
 mod undecided_render;
 

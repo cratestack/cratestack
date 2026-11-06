@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### A model feed tells a subscriber when a row leaves its filter — breaking for hand-written event code
+
+**What was missing.** A row updated out of a subscriber's filter, or out of its read policy, produced
+no event for that subscriber, so its copy of the row went stale until it refetched.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §5.3; decision O3 is reversed).
+
+- An update that moves a row out of a feed's filter or read policy now sends that subscriber an
+  `Updated` event with `matches: false`. Its `data` is the row as the subscriber last saw it (the
+  pre-image), never the new values, so nothing it may not read is sent. A subscriber the row never
+  matched hears nothing, and an update that stays in the filter is the event it always was.
+- `ModelEvent` gains `matches`, `true` unless the event is an exit. It is sent only when `false`, so
+  ordinary events are unchanged on the wire, and a payload without it reads as `true`. The generated
+  Rust, TypeScript (`matches?: boolean`) and Dart (`matches`) clients expose it, on every binding
+  (SSE, WebSocket, WebTransport, REST `$subscribe`). An older client now also receives the exit
+  `Updated` event, carrying the pre-image: one that upserts on every `Updated` would re-insert a row
+  that left its filter.
+- Updates of an `@@subscribe` model that emits `updated` read the row first: one extra round trip per
+  update (already done for `@@audit`, and shared with it). The read takes the lock the `UPDATE` will:
+  `FOR NO KEY UPDATE`, or `FOR UPDATE` when the update sets the primary key or a `@unique`/`@@unique`
+  column. So an ordinary update does not make inserts into referencing tables wait; a key update still
+  does, as do the upserts' conflict probes (`FOR UPDATE`, unchanged).
+- The pre-image is stored in a new `payload_before` column of `cratestack_event_outbox`. A table an
+  earlier version created gets the column in its own short transaction (100 ms lock timeout, one
+  attempt at a time, retried at most once a minute) at the start of an update or upsert of an
+  `@@subscribe` model that opens its own transaction. Until then, and for an app that only writes inside
+  its own transactions (`run_in_tx`), updates send no exit event; nothing fails, and the outbox drain
+  and the large-event read work on the old table. Add the column in a migration to be sure.
+- Single updates, batch updates and the update branch of single and batch upserts carry the
+  pre-image. `update_many` and Studio's routed update do not, so they send no exit event.
+- **Breaking, for code that builds or consumes these types by hand.** `ModelEvent` and
+  `CratestackEventEnvelope` gain public fields (`matches`, `before`), so struct literals need them.
+  `cratestack_axum::rpc::model_events` now yields `FeedEvent<T>`, and `model_feed` takes a route
+  function returning `Option<event>` instead of a read predicate. Raw `CratestackEventBus` handlers now
+  receive `before` on `Updated` envelopes of an `@@subscribe` model: they see the pre-image.
+- Packages without a subscription op are byte-identical.
+
 ### Topics work in `db = None` schemas
 
 **What was missing.** A `topic` in an `include_server_schema!(.., db = None)` schema was a compile
