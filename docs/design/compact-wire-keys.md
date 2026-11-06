@@ -27,6 +27,26 @@ only … and this design does not add one").
 
 ## 2. Where the bytes go
 
+**Named bodies are gated in CI.** `crates/cratestack-api/tests/payload_sizes.rs` encodes the
+generated `Args` and `Output` of these shapes (`tests/fixtures/payload_sizes.cstack`) through the
+real `CborCodec` and `JsonCodec`, and fails the plain workspace test run when any size moves from
+`tests/payload_sizes.baseline`:
+
+```text
+body                         cbor  cbor+gz     json  json+gz
+createProduct request         212      214      274      236
+createProduct response        312      279      404      298
+transferFunds request         130      153      193      170
+transferFunds response        242      257      346      263
+listEvents request             10       30       13       33
+listEvents response         47443    15565    66441    18046
+```
+
+A request there is the real `Args` body, wrapper included (`{"input": …}`), so each one is 7 B
+above the probe's bare struct. The compact, dictionary and positional columns below are from the
+one-off probe (§8) until those modes exist. When compact keys land, the gate gains their columns
+(§9, slice 2).
+
 RAN (§8). CBOR bytes. *gz* is gzip at flate2's default level, *zstd+dict* is zstd level 3 with a
 raw-content dictionary of the schema's identifiers, and *+dcz* adds the 40-byte framing
 Compression Dictionary Transport puts in front of every `dcz` body.
@@ -271,23 +291,54 @@ table later; it is not worth the churn now.
 - **Streams and subscriptions.** `cbor-seq` items and WS frames are where the uncompressed saving
   matters most. They take the table once per stream, from the opening request.
 
-### 5.8 Implementation sketch (per surface)
+### 5.8 One implementation, in Rust, driven by a generated key table
 
-- **Rust, server and client.** A `serde` adapter around the codec's serializer and deserializer
-  (`minicbor-serde` and `serde_json` alike). On `serialize_struct` and `serialize_field` it swaps
-  the field's name for its key from a generated `&'static` table, keyed by struct name and field
-  name. On decode it maps an integer, or a numeric string on JSON, back to the name and hands it
-  to the derive's field visitor. There is no change to the generated structs. The adapter is one
-  format-agnostic module, under the 200-LoC ceiling, that both codecs wrap. Codegen emits one
-  table per accepted digest.
-- **TypeScript.** The RPC runtime's CBOR path already revives per type (`wireShapes` beside
-  `ordinalEnumNames`), so the remap goes there. The REST runtime is JSON-only and has no codec
-  seam, but `+json` compact keys reach it without one: a transfer request goes from 183 to 130 B.
-  Moving it to CBOR is a separate lever (183 to 123 B with names, 65 B with compact keys).
-- **Dart.** Generated `fromJson`/`toJson` work on `Map<String, dynamic>`. Codegen would emit a
-  second pair keyed by integer from the same table, chosen by the HTTP runtime's codec.
-- **Transport parity** (CLAUDE.md). REST and RPC ship together, with every generated client and
-  the swr, riverpod and fespalier layers. MCP is exempt (ADR 0002 D5) and stays JSON in any case.
+**The keys come from the schema, so codegen emits them.** A generic codec cannot know that key 3
+of a `Transaction` is `destinationAccountId`, and a client never reads a `.cstack` at run time. So
+every generated client and server carries a **key-table artifact**:
+
+- **What it is.** One CBOR-encoded constant per schema, derived from the op contracts (§5.2). It
+  is emitted next to `OP_CONTRACTS`: a `&'static [u8]` in Rust, a `Uint8List` in Dart, a
+  `Uint8Array` in TypeScript.
+- **Its shape is a type tree.** Per op and direction there is a root type. Per type, key *n* maps
+  to (field name, child type), in `wire_fields` order. `Json` fields are opaque and never
+  remapped. On the server, the macro emits one table set per accepted contract, the older ones
+  from `ContractLock`.
+- **No table, no integers.** A peer without a matching table never sees integer keys. The server
+  answers with names unless the selector names a digest it accepts (§5.1).
+
+**One remap, in Rust.**
+- **The core.** A table-driven walk in `cratestack-codec-cbor`, with a twin in
+  `cratestack-codec-json` for `+json`, so the codec libraries themselves stay generic. On encode
+  it swaps each field name for its key, guided by the tree. On decode it maps an integer, or a
+  numeric string on JSON, back to the name, and keeps tolerant decoding (§5.3) and the
+  unknown-field drop (§5.4).
+- **Rust clients and servers** call the core directly.
+- **Dart and TypeScript** reach the same core through the bindings that already wrap `CborCodec`
+  and reimplement no CBOR logic:
+  - `crates/cratestack-cbor-wasm` (`src/wasm.rs`; `@cratestack/cbor-web`, also the Dart web
+    backend);
+  - `crates/cratestack-cbor-napi` (`src/lib.rs`; `@cratestack/cbor-node`);
+  - `dart-packages/cratestack_cbor` (flutter_rust_bridge natively).
+- **Three new entry points** on each binding:
+  - `registerKeyTables(bytes)`, called once when the generated client is constructed;
+  - `encodeCompact(value, op, direction)`;
+  - `decodeCompact(bytes, op, direction)`.
+
+  `decodeCompact` returns the same named value `decode` returns today, so the generated Dart
+  `fromJson` and TypeScript revival do not change at all. The bindings' `cose` features seal in
+  the same Rust call.
+
+**Every client already runs this codec.** Since the generators' `--no-native-cbor` fallbacks were
+removed (CHANGELOG, `## Unreleased`), every generated TypeScript RPC and Dart client encodes
+through the Rust `CborCodec`. The compact mode therefore reaches every client with no
+per-language reimplementation, and the payload-size baseline (§8) measures every language at
+once. The one client outside it is the TypeScript REST runtime, which is JSON-only with no codec
+seam. It gets `+json` once it routes through the same binding, and moving it to CBOR is a
+separate lever (a transfer request goes from 193 to 130 B with names, §2).
+
+**Transport parity** (CLAUDE.md). REST and RPC ship together, with every generated client and the
+swr, riverpod and fespalier layers. MCP is exempt (ADR 0002 D5) and stays JSON in any case.
 
 ## 6. Relation to ADR 0017
 
@@ -395,14 +446,17 @@ impl Serialize for Keyed<'_, TransferInput> {
 1. **Core.** Derive the key table from an op contract (`cratestack-core/src/client_contract/`),
    with golden tests that a field reorder leaves the table unchanged and an added field yields a
    new digest with a new table.
-2. **Codecs.** The `serde` adapter in `cratestack-codec-cbor` and `cratestack-codec-json`,
-   with tolerant decode (§5.3) and unknown-field drop (§5.4), and round-trip tests against
-   derive-generated structs, including `Uuid`, `Decimal`, `Option` and nested types.
+2. **Codecs and bindings.** The table-driven remap in `cratestack-codec-cbor` and
+   `cratestack-codec-json` (§5.8), with tolerant decode (§5.3) and unknown-field drop (§5.4),
+   and round-trip tests including `Uuid`, `Decimal`, `Option` and nested types. Expose it on
+   `cratestack-cbor-wasm`, `cratestack-cbor-napi` and `cratestack_cbor`, and add compact columns
+   to the payload-size gate (`crates/cratestack-api/tests/payload_sizes.rs`).
 3. **Server.** Negotiation (§5.1), `ACCEPTED_CONTRACTS` tables from the lock, `ProjectedValue`,
    streams. REST and RPC in one PR, with batch frames still named.
-4. **Clients.** Rust, Dart, TypeScript RPC and TypeScript REST (`+json`), plus the swr, riverpod and fespalier layers, run
-   through `just regen-examples`. Then an end-to-end test of an older generated client against a
-   newer server whose lock accepts it, on Postgres.
+4. **Clients.** Emit the key-table constant and call the binding's entry points: Rust, Dart and
+   TypeScript RPC, plus the swr, riverpod and fespalier layers, run through
+   `just regen-examples`. Then an end-to-end test of an older generated client against a newer
+   server whose lock accepts it, on Postgres.
 5. **Signed transport.** The compact types in `payload_media_types`, the `+cbor-seq`
    sealability fix (§5.1), and an ADR 0006 amendment naming the types. No binding-version change.
 6. **Docs and skills.** `guides/payload-size.md` in cratestack-docs, and the payload/transport
