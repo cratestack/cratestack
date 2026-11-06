@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.18.0 (2026-11-06)
+
 - New: compact wire key payloads can be sealed. `CallBinding` gains
   `String? payloadType` (the type the request payload is sealed under, bound
   in the AAD; `null` is `application/cbor`, compact keys are
