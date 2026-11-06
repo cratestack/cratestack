@@ -869,12 +869,10 @@ StepUpRequired? _cratestackStepUpOf(Object error) =>
 final class _RouteTemplate {
   _RouteTemplate(this.op)
     : method = op.substring(0, op.indexOf(' ')),
-      segments = op.substring(op.indexOf(' ') + 1).split('/'),
-      literals = op
-          .substring(op.indexOf(' ') + 1)
-          .split('/')
-          .where((segment) => !segment.startsWith('{'))
-          .length;
+      segments = _pathSegments(op.substring(op.indexOf(' ') + 1)),
+      literals = _pathSegments(
+        op.substring(op.indexOf(' ') + 1),
+      ).where((segment) => !segment.startsWith('{')).length;
 
   final String op;
   final String method;
@@ -900,6 +898,13 @@ final class _RouteTemplate {
   }
 }
 
+/// A path's non-empty segments. Both the request path (`/api/posts/1`) and a
+/// route template (`/posts/{id}`) start with `/`, so a plain split leads with
+/// an empty segment; matching on the trailing segments must not compare that
+/// empty one against the base path's.
+List<String> _pathSegments(String path) =>
+    path.split('/').where((segment) => segment.isNotEmpty).toList();
+
 final List<_RouteTemplate> _cratestackRouteTemplates = <_RouteTemplate>[
   for (final op in cratestackOpContracts.keys)
     if (op.contains(' ')) _RouteTemplate(op),
@@ -910,10 +915,7 @@ final List<_RouteTemplate> _cratestackRouteTemplates = <_RouteTemplate>[
 /// (`/widgets/search` over `/widgets/{id}`).
 String? _cratestackRestOp(String method, String path) {
   final cut = path.indexOf('?');
-  final segments = (cut < 0 ? path : path.substring(0, cut)).split('/');
-  while (segments.isNotEmpty && segments.last.isEmpty) {
-    segments.removeLast();
-  }
+  final segments = _pathSegments(cut < 0 ? path : path.substring(0, cut));
   final verb = method.toUpperCase() == 'HEAD' ? 'GET' : method.toUpperCase();
   _RouteTemplate? best;
   for (final template in _cratestackRouteTemplates) {
