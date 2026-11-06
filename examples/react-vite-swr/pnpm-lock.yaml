@@ -10,6 +10,9 @@ importers:
 
   client:
     dependencies:
+      '@cratestack/cbor':
+        specifier: '>=0.8.15 <0.18.0'
+        version: 0.17.2
       decimal.js:
         specifier: ^10.6.0
         version: 10.6.0
@@ -134,6 +137,68 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@cratestack/cbor-node-darwin-arm64@0.17.2':
+    resolution: {integrity: sha512-Gw1LrRbxFrzePqsO52sXUw1wDRKSlw9VY7kkYIDZ/0vXisMJoHuAFirrr1VP9SIW5lLmJ+hlgP9UrFNL3MDfRg==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@cratestack/cbor-node-darwin-x64@0.17.2':
+    resolution: {integrity: sha512-w6R5zQMr2y6ETFam+jmX51bAuNIswUFnS88WiNbDKUiBRGFTnrb1xqxpPQRzxEwdxKV8UmGif+fff/DOEVLDEg==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@cratestack/cbor-node-linux-arm64-gnu@0.17.2':
+    resolution: {integrity: sha512-BJdMKYqORDd/Un5CoY9l6o3wbqvDPU4lZnvtvxAvYncPjKKFZ2cbrWzvoLyUNsu2Wquqp0rDVgF16SYRW4HooQ==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [glibc]
+
+  '@cratestack/cbor-node-linux-arm64-musl@0.17.2':
+    resolution: {integrity: sha512-iq1xihUwKU/0GP0TUR4ZbxpfQ82PSylSpFqvFmPOHFfwKtI6dcbAzagXLg8RuykB5yjq0khoI2oruIQQifOb2g==}
+    engines: {node: '>=24'}
+    cpu: [arm64]
+    os: [linux]
+    libc: [musl]
+
+  '@cratestack/cbor-node-linux-x64-gnu@0.17.2':
+    resolution: {integrity: sha512-8BAOWEld5pnCqYHBMzZASyiQJf8IflniNW6P+c1Na6d4dG9eCK3s5lezBfhCBc9/3gqva1jaIlpC5P6mTGBplw==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@cratestack/cbor-node-linux-x64-musl@0.17.2':
+    resolution: {integrity: sha512-xeiQIrTI+8r43IPjdYJB4xAHqGr9FYCBVG9HZSbBa5VcqFG6JJVJVdaNe2KaT3F6CKpRH+N/3m8CWGrWC0ENNg==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [linux]
+    libc: [musl]
+
+  '@cratestack/cbor-node-win32-x64-msvc@0.17.2':
+    resolution: {integrity: sha512-UVXqsD1wN5tZPhjmsWWT/fyp50ZrQixGy+JHhR6WjGnMDgjzNxi7EYTM/gwV5e/aOG0lMfURkadohKV15SGJMA==}
+    engines: {node: '>=24'}
+    cpu: [x64]
+    os: [win32]
+
+  '@cratestack/cbor-node@0.17.2':
+    resolution: {integrity: sha512-k6TE/vATIf0o9JsgE3WwJQvxSVSV0wSmdgf33HZVDK0c+lGJ87u5yfLTooawqmofu6v6sngB0BFUn0DNfQsVpg==}
+    engines: {node: '>=24'}
+
+  '@cratestack/cbor-web@0.17.2':
+    resolution: {integrity: sha512-SEDE/nKZzqzH1lkPtgnnqAP9t0j+tT2YZjoFz8aO/RcBd4/nmhq/GdrP0pbitbklnvirAYOP45qw1lphmOoQVQ==}
+    engines: {node: '>=24'}
+
+  '@cratestack/cbor@0.17.2':
+    resolution: {integrity: sha512-30I7xvYje1euAvQhuoedxjg7iAG+LHQdxe1V4pHgG7zyLfoNeJ1zcfj1LuL4aBDCBbuKbtjG9znL4eZV9SqNlw==}
+    engines: {node: '>=24'}
+
+  '@cratestack/ts-types@0.17.2':
+    resolution: {integrity: sha512-Yr0d0XbCVfHYDiPi0Fb1wuRx7FGp/t5VO3m6agOr9VIKG8jZ9DLohaM9HJ2vTQl44CRFYy+nV5xh6OrsK2W+ug==}
+    engines: {node: '>=24'}
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -792,6 +857,49 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.6.4':
     optional: true
+
+  '@cratestack/cbor-node-darwin-arm64@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node-darwin-x64@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node-linux-arm64-gnu@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node-linux-arm64-musl@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node-linux-x64-gnu@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node-linux-x64-musl@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node-win32-x64-msvc@0.17.2':
+    optional: true
+
+  '@cratestack/cbor-node@0.17.2':
+    optionalDependencies:
+      '@cratestack/cbor-node-darwin-arm64': 0.17.2
+      '@cratestack/cbor-node-darwin-x64': 0.17.2
+      '@cratestack/cbor-node-linux-arm64-gnu': 0.17.2
+      '@cratestack/cbor-node-linux-arm64-musl': 0.17.2
+      '@cratestack/cbor-node-linux-x64-gnu': 0.17.2
+      '@cratestack/cbor-node-linux-x64-musl': 0.17.2
+      '@cratestack/cbor-node-win32-x64-msvc': 0.17.2
+
+  '@cratestack/cbor-web@0.17.2':
+    dependencies:
+      '@cratestack/ts-types': 0.17.2
+
+  '@cratestack/cbor@0.17.2':
+    dependencies:
+      '@cratestack/cbor-node': 0.17.2
+      '@cratestack/cbor-web': 0.17.2
+      '@cratestack/ts-types': 0.17.2
+
+  '@cratestack/ts-types@0.17.2': {}
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true
