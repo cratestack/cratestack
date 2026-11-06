@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+### Topics work in `db = None` schemas
+
+**What was missing.** A `topic` in an `include_server_schema!(.., db = None)` schema was a compile
+error, because `cratestack-api` had no backplane. A procedures-only service could stream a subscription
+procedure's own source but not publish to its subscribers from another handler.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §9).
+
+- `InProcessBackplane` moved from `cratestack-sqlx` to `cratestack-core`, with the `LocalHub` fan-out it
+  shares with `PgNotifyBackplane`. `cratestack_sqlx::backplane::InProcessBackplane` and
+  `cratestack::InProcessBackplane` on `cratestack-pg` still resolve. `cratestack-api` now exports it too.
+- `Topic`'s backplane half (`new`, `publish`, `subscribe`, `channel`) is `cratestack_core::TopicHandle`,
+  exported as `cratestack::Topic` by `cratestack-api` (and by `cratestack-pg` without its `postgres`
+  feature). There, `cratestack::Topic` now names the handle, not the schema-AST `Topic` the glob
+  re-export used to give. `cratestack-pg`'s `Topic<T>` wraps the handle, derefs to it, and adds
+  `publish_in_tx`; its methods are unchanged.
+- A `db = None` schema with a `topic` gets `db.topics().<topic>(key)` and
+  `Cratestack::builder().with_backplane(..)`. The default is one `InProcessBackplane` shared by every
+  `build()` of that schema in the process, so handles built in different places (a router, a worker)
+  reach the same subscribers. It is single replica: pass your own `SubscriptionBackplane` to reach
+  other replicas.
+- A `db = None` schema with a `topic` has a `Cratestack` that is `Clone` but no longer `Copy`, since it
+  holds the backplane. Schemas without a topic are unchanged.
+- `cratestack-core` now depends on `tokio` (`sync` only) and `futures-util`. It still builds for
+  `wasm32-unknown-unknown`, and `cratestack-api` still has no sqlx in its graph.
+
+### `topics()` on the `@isolation` handle
+
+**What was missing.** `IsolatedCratestack` had no `topics()`. An `@isolation` procedure could not
+publish to a topic from inside its transaction, and a publish through another handle was delivered
+even when the attempt rolled back or was retried. Separately, two identical `publish_in_tx` messages
+in one transaction were delivered once, because Postgres folds identical notifications.
+
+**What changed** (`docs/design/subscriptions-websocket.md` §3.4, S4 status).
+
+- `IsolatedCratestack::topics()` returns the schema's `Topics`, bound to the procedure's attempt. A
+  topic's `publish` is delivered only if the attempt commits, never for an attempt that errors or is
+  retried after a serialization failure.
+- With `PgNotifyBackplane` it notifies inside the transaction. With a backplane a transaction cannot
+  notify (`InProcessBackplane`) the message is queued and sent after the commit, like the attempt's
+  audit events. Both are discarded with a rolled-back attempt or savepoint.
+- Inside `tx_db.transaction(..)`, call `publish_in_tx(tx, &msg)` on the topic, on either backplane.
+  A `transaction(..)` that rolls back drops its messages even when the attempt commits.
+- Fixed with it: a `tx_db.transaction(..)` that rolled back inside a committing `@isolation`
+  attempt still dispatched the audit events it had queued (`dispatch_audit_sink` with a
+  `run_in_tx` outcome) to the `AuditSink`. It now drops them,
+  as a rolled-back joined call already did.
+- Topics from a plain `Cratestack` are unchanged, including the handle given to `@authorize`
+  probes and `@computed` resolvers.
+- Every topic and model-event `NOTIFY` carries a per-message nonce, so identical messages from one
+  transaction are each delivered. Older readers ignore it.
+
 ### The Dart client subscribes over WebSocket and WebTransport
 
 **What was missing.** The generated Dart client spoke SSE only.
@@ -192,7 +244,8 @@ replicas.
   `db.subscriptions(registry)`. Without them it stays `db.subscriptions()`.
 - **`POST /rpc/subscribe/{op_id}`** takes a subscription's input as a JSON body, model feeds
   included.
-- Topics need `db = Postgres`. A topic under `db = None` is a compile error.
+- Topics need a backplane. `db = Postgres` has one; `db = None` gained one afterwards (see "Topics work in
+  `db = None` schemas" above).
 
 ### Subscriptions take a filter, a projection and operations, and REST serves them
 

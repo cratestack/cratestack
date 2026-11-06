@@ -21,6 +21,9 @@ pub(crate) struct BoundTx {
     tx: tokio::sync::Mutex<Option<Tx>>,
     audit_events: StdMutex<Vec<AuditEvent>>,
     drain_outbox: AtomicBool,
+    /// Topic messages for a backplane the transaction cannot notify, sent
+    /// after commit ([`Self::defer_publish`]).
+    publishes: StdMutex<Vec<deferred::DeferredPublish>>,
     /// SQLSTATE of the first retriable error any operation observed in
     /// this attempt. Set even when the body later swallows the error: an
     /// attempt that saw one is rolled back and retried, never committed.
@@ -55,6 +58,7 @@ impl BoundTx {
             tx: tokio::sync::Mutex::new(Some(tx)),
             audit_events: StdMutex::new(Vec::new()),
             drain_outbox: AtomicBool::new(false),
+            publishes: StdMutex::new(Vec::new()),
             tainted: StdMutex::new(None),
             poisoned: StdMutex::new(None),
             isolation,
@@ -132,15 +136,6 @@ impl BoundTx {
         outcome.value
     }
 
-    pub(crate) fn take_deferred(&self) -> (Vec<AuditEvent>, bool) {
-        let events = self
-            .audit_events
-            .lock()
-            .map(|mut deferred| std::mem::take(&mut *deferred))
-            .unwrap_or_default();
-        (events, self.drain_outbox.load(Ordering::SeqCst))
-    }
-
     /// Take the transaction out for the final commit or rollback. Waits
     /// for the lock rather than refusing: the body has returned, so
     /// nothing legitimate still holds it.
@@ -157,6 +152,7 @@ fn finished_error() -> CratestackError {
     )
 }
 
+mod deferred;
 mod join;
 mod nested;
 mod savepoint;

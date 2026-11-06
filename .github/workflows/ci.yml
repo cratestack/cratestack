@@ -277,6 +277,9 @@ jobs:
             cargo tree --locked | grep -i sqlx
             exit 1
           fi
+      - name: topic under db = None builds and delivers (no-database-verification, postgres feature off)
+        working-directory: examples/no-database-verification
+        run: cargo test --locked
       - name: sqlx present behind the postgres feature (no-database-verification)
         working-directory: examples/no-database-verification
         run: |

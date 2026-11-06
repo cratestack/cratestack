@@ -14,10 +14,10 @@
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
+use cratestack_core::backplane::LocalHub;
 use cratestack_core::{BackplaneFuture, BackplaneReceiver, CratestackError, SubscriptionBackplane};
 use tokio::sync::{OnceCell, watch};
 
-use super::LocalHub;
 use super::notify_payload::{NOTIFY_CHANNEL, Notification, encode};
 use crate::error::cratestack_error_from_sqlx;
 use crate::sqlx;

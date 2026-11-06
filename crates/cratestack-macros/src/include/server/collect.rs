@@ -303,10 +303,12 @@ pub(super) fn collect_server_schema(
         })
         .map_err(|e| compile_error(schema_path, e))?;
     // Topics (slice S4) ride in the same token stream: `pub mod topics`.
-    generated_subscription_module.extend(
-        generate_topics_module(&schema.topics, &schema.types, &enum_name_set, postgres)
-            .map_err(|e| compile_error(schema_path, e))?,
-    );
+    generated_subscription_module.extend(generate_topics_module(
+        &schema.topics,
+        &schema.types,
+        &enum_name_set,
+        postgres,
+    ));
 
     // View emission — see ADR-0003. Views participate in the server
     // composer only when they declare `@@server_sql` (or `@@sql` as a

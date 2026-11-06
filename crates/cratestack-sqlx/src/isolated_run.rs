@@ -101,11 +101,12 @@ impl SqlxRuntime {
                 .map_err(CratestackError::propagate_transaction_abort);
             match finish_attempt(&bound, result).await {
                 Attempt::Committed(value) => {
-                    let (events, drain) = bound.take_deferred();
-                    if drain {
+                    let deferred = bound.take_deferred();
+                    if deferred.drain_outbox {
                         let _ = self.drain_event_outbox().await;
                     }
-                    dispatch_audit_sink(self, &events).await;
+                    dispatch_audit_sink(self, &deferred.audit_events).await;
+                    deferred.publish().await;
                     return Ok(value);
                 }
                 Attempt::Retry(sqlstate) if attempt <= self.isolation_max_retries => {

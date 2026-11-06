@@ -4,9 +4,8 @@
 
 use std::sync::Arc;
 
-use cratestack_core::{BackplaneFuture, BackplaneReceiver, CratestackError, SubscriptionBackplane};
-
-use super::LocalHub;
+use super::{BackplaneFuture, BackplaneReceiver, LocalHub, SubscriptionBackplane};
+use crate::error::CratestackError;
 
 #[derive(Default)]
 pub struct InProcessBackplane {

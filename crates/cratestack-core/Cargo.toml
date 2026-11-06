@@ -61,12 +61,17 @@ base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 futures-core.workspace = true
+futures-util.workspace = true
 hmac.workspace = true
 http.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 subtle.workspace = true
+# Only `broadcast`, for the in-process backplane's fan-out. Not the
+# workspace's `tokio` entry: that one turns on `rt-multi-thread`, which does
+# not build for `wasm32-unknown-unknown`, and this crate reaches wasm.
+tokio = { version = "1", default-features = false, features = ["sync"] }
 thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
@@ -80,7 +85,7 @@ sqlx-postgres = { workspace = true, optional = true }
 # Installs a counting `#[global_allocator]`. It is linked only into the test
 # binary that names it (`tests/no_envelope_alloc.rs`), never into the library.
 allocation-counter.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 # Pins `Value`'s CBOR wire shape against the first-party backend. A
 # dev-dependency rather than a real one: depending on `cratestack-codec-cbor`
 # from core would be a cycle, and the wire shape is core's contract to keep.

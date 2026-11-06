@@ -196,6 +196,10 @@ pub use cratestack_websocket as websocket;
 // graph entirely — nothing generated under `db = None` ever references these
 // symbols, since models (the only consumers of them) can never exist in a
 // `datasource { provider = "none" }` schema.
+/// Without `postgres` (`db = None`) the backplane-only handle, which
+/// `cratestack-api` exports too, rather than the glob's schema-AST `Topic`.
+#[cfg(not(feature = "postgres"))]
+pub use cratestack_core::TopicHandle as Topic;
 #[cfg(feature = "postgres")]
 pub use cratestack_sqlx::AUDIT_TABLE_DDL;
 /// Subscription backplanes (`docs/design/subscriptions-websocket.md` §4):

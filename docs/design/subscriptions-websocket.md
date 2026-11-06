@@ -845,9 +845,10 @@ such as anonymous on `auth() != null`, still gets `Ready` and an empty feed, nev
 - **The contract**, `cratestack_core::SubscriptionBackplane`: `publish`, and an async `subscribe`
   that resolves only once the subscription is live, so a binding that then sends `Ready` has missed
   nothing. `BackplaneMessage` has `Payload`, `Resync` (the listener reconnected) and `Lagged` (this
-  receiver fell behind its 64-item buffer). The trait lives in `cratestack-core`. Both implementations
-  live in `cratestack-sqlx`, because core has no async runtime (it also targets wasm):
-  `InProcessBackplane` and `PgNotifyBackplane`. The Redis one is S7.
+  receiver fell behind its 64-item buffer). The trait lives in `cratestack-core`. `PgNotifyBackplane`
+  lives in `cratestack-sqlx`. `InProcessBackplane` was built there too, "because core has no async
+  runtime (it also targets wasm)"; that is superseded: it now lives in core (S4 status, `db = None`),
+  which depends on tokio's `sync` feature only. The Redis one is S7.
 - **`PgNotifyBackplane` is the default (decision O6, as proposed).** One `PgListener` per process,
   opened by the first subscription, on the single Postgres channel `cratestack_events`. Backplane
   channels (`cratestack.model.<Model>`) are multiplexed inside the payload. A dropped listener connection
@@ -956,11 +957,46 @@ The rest:
   - `subscribe().await` resolves once the subscription is live. It ends `unavailable` on lag or
     resync.
   - A message must encode under Postgres' `NOTIFY` limit.
-- **`db = None`**: subscription procedures work, with the handler's stream as the source. A topic is
-  a compile error, because `cratestack-api` has no backplane yet; moving `InProcessBackplane` out of
-  `cratestack-sqlx` is the follow-up.
+- **`db = None`**: subscription procedures work, with the handler's stream as the source, and so do
+  topics. `InProcessBackplane`, the `LocalHub` it fans out through and the backplane-only
+  `TopicHandle` (`new`, `publish`, `subscribe`) live in `cratestack-core`, so `cratestack-api` has them
+  with no sqlx. `cratestack-api` exports the handle as `cratestack::Topic`. `cratestack-sqlx`
+  re-exports `InProcessBackplane` and wraps the handle as its own `Topic`, which adds `publish_in_tx`.
+  - `db.topics()` reads the backplane the generated `Cratestack` carries: an `InProcessBackplane`,
+    one replica, unless `Cratestack::builder().with_backplane(..)` supplies another
+    `SubscriptionBackplane`.
+  - Only a schema that declares a `topic` has that field. Any other `db = None` `Cratestack` is still
+    the zero-field `Copy` marker, so nothing existing changed. With a topic it is `Clone`, not `Copy`.
+  - `publish_in_tx` does not exist there: there is no transaction. Publish after the work is done.
+- **`IsolatedCratestack::topics()`**: the same `Topics`, built over the procedure's
+  transaction-bound runtime, so each topic it hands out is bound to that attempt
+  (`Topic::in_attempt`). A plain `Cratestack::topics()` is not bound, including the handle that an
+  `@authorize` probe or a `@computed` resolver receives.
+  - `publish(&msg)` on a bound topic is delivered only if the attempt commits. A rolled-back
+    attempt, and an attempt retried after `40001`/`40P01`, deliver nothing; only the attempt that
+    commits does. How depends on the backplane, because a transaction can only notify through
+    Postgres:
+    - `PgNotifyBackplane`: `publish_in_tx` in a savepoint of the attempt's transaction. It is
+      delivered on commit, in commit order with the attempt's model events.
+    - Any other backplane (`InProcessBackplane`): the encoded message is queued on the attempt,
+      with the audit events and the outbox drain it already defers, and sent after the commit. The
+      check is made before any savepoint, so it costs no round trip. It is discarded with a retried
+      attempt, and with a rolled-back savepoint or joined call, by the same mark/truncate that
+      drops their audit events. A send that fails after the commit is logged, as the `AuditSink`'s
+      is, not returned.
+  - A publish error (an oversize message) rolls back only that publish's savepoint. If the body
+    ignores it, the attempt still commits.
+  - Inside `tx_db.transaction(..)` the handle's lock is held, so `publish` is refused with a message
+    that names `publish_in_tx(tx, &msg)`. That is the call there, on both backplanes: with
+    `PgNotifyBackplane` it notifies inside `tx`, with any other it is queued for the attempt's
+    commit. A `transaction(..)` that rolls back takes back what it queued, as a rolled-back joined
+    call does, so its message is never sent even though the attempt commits. (This also drops the
+    audit events such a `transaction(..)` queued, which it previously did not.)
+  - Every `NOTIFY` this crate sends now carries a per-message nonce (`n`). Postgres folds identical
+    notifications of one transaction into one, so two identical `publish`es used to arrive once.
+    Readers ignore the field. This also fixes plain `publish_in_tx`.
+  - `subscribe` is unaffected.
 - Not in S4:
-  - `IsolatedCratestack` has no `topics()`. Inside an `@isolation` procedure, publish after commit.
   - The LSP does not index the new declarations.
   - Client methods come in S6.
 - Tests: `cratestack-pg/tests/subscription_procedures.rs`. It covers:
@@ -971,8 +1007,11 @@ The rest:
   - REST;
   - contract parity.
 
-  `cratestack-api/tests/subscription_procedure_no_database.rs` covers `db = None` and a natural
-  end. There are also parser, generator and runtime unit tests.
+  `cratestack-pg/tests/subscription_topics_isolated.rs` covers an `@isolation` publish on commit,
+  on error and on retry, on both backplanes; identical messages; and `publish_in_tx` inside
+  `tx_db.transaction(..)`, including one that rolls back inside a committing attempt, on both
+  backplanes (`subscription_topics_isolated/nested.rs`). `cratestack-api/tests/subscription_procedure_no_database.rs` covers
+  `db = None` and a natural end. There are also parser, generator and runtime unit tests.
 
 **S5 status (as built, 2026-11-01).** The WebSocket binding, `cratestack-websocket` (L4, axum `ws`).
 - **Shared with WebTransport**: frames, admission (`Init`, `authenticate_session`, refusal close
