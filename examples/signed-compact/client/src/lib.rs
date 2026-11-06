@@ -14,7 +14,7 @@ pub const AUDIENCE: &str = "payments";
 
 /// DEMO SECRET, FOR LOCAL USE ONLY: the same published bytes the server
 /// example trusts. Never ship a secret in source.
-pub const DEMO_SECRET: &[u8; 32] = b"signed-compact-DEMO-ONLY-secret!";
+pub const DEMO_SECRET: &[u8; 32] = &[0x5a; 32];
 
 /// A client for the server at `base`: COSE Mac0 sealed (`with_envelope`) and,
 /// when `compact` is set, opted in to compact wire keys (`with_compact_keys`).

@@ -35,7 +35,7 @@ pub const AUDIENCE: &str = "payments";
 /// reads a per-client secret (or uses asymmetric keys: `Ed25519Signer`,
 /// `P256Signer`) from a secret store and never commits it. 32 bytes, as
 /// `Hmac256_64` wants. The client example carries the same bytes.
-pub const DEMO_SECRET: &[u8; 32] = b"signed-compact-DEMO-ONLY-secret!";
+pub const DEMO_SECRET: &[u8; 32] = &[0x5a; 32];
 
 /// The `Cratestack-Payload-Type` of one call, as seen on the wire (outside
 /// the envelope layer). Empty means the header was absent: plain named CBOR.
