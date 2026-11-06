@@ -231,3 +231,5 @@ prepared_auth_suite!(
     "procedure.echoOrder",
     "/rpc/procedure.echoOrder"
 );
+stream_identity_suite!("procedure.ticks", "/rpc/procedure.ticks");
+compact_duplicate_encoding_suite!("procedure.echoOrder", "/rpc/procedure.echoOrder");

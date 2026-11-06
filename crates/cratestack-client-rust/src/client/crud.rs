@@ -56,6 +56,9 @@ where
         Input: Serialize,
         Output: DeserializeOwned,
     {
+        if self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let body = self.codec.encode(input)?;
         let response = self
             .request_raw(Method::POST, path, Some(body), &[], headers)
@@ -77,6 +80,9 @@ where
         Input: Serialize,
         Output: DeserializeOwned,
     {
+        if self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let body = self.codec.encode(input)?;
         let response = self
             .request_raw(Method::POST, path, Some(body), &[], headers)
@@ -94,6 +100,9 @@ where
         Input: Serialize,
         Output: DeserializeOwned,
     {
+        if self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let body = self.codec.encode(input)?;
         let response = self
             .request_raw(Method::PATCH, path, Some(body), &[], headers)
@@ -115,6 +124,9 @@ where
         Input: Serialize,
         Output: DeserializeOwned,
     {
+        if self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let body = self.codec.encode(input)?;
         let response = self
             .request_raw(Method::PATCH, path, Some(body), &[], headers)

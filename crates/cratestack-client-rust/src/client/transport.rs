@@ -76,6 +76,9 @@ where
         accept_override: Option<&'static str>,
         prepared: Option<&super::prepared::PreparedCall>,
     ) -> Result<RuntimeResponseWire, ClientError> {
+        if self.compact.is_some() && prepared.is_none() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         #[cfg(feature = "cose")]
         if let Some(envelope) = &self.sealing.envelope {
             // A sealed call names its own `Accept`: only the seal is asked for.

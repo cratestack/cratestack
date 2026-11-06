@@ -22,6 +22,7 @@ impl<C: HttpClientCodec> CratestackClient<C> {
         query: &[QueryPair<'_>],
         headers: &[HeaderPair<'_>],
     ) -> Result<PreparedCall, ClientError> {
+        super::compact_identity::refuse_duplicates(headers)?;
         if !matches!(C::CONTENT_TYPE, "application/cbor" | "application/json") {
             return Err(bad("prepared calls require a CBOR or JSON codec"));
         }

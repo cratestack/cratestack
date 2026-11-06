@@ -121,5 +121,61 @@ macro_rules! prepared_auth_suite {
             let seen = log.lock().unwrap();
             assert_eq!(seen[0].0, seen[1].0);
         }
+        #[tokio::test]
+        async fn duplicate_identity_headers_are_refused_before_network_and_pinning() {
+            let (addr, log, executions) = spawn().await;
+            let runtime = CratestackClient::cbor(ClientConfig::new(
+                reqwest::Url::parse(&format!("http://{addr}")).unwrap(),
+            ))
+            .with_compact_key_bytes(schema::KEY_TABLES, schema::OP_CONTRACTS)
+            .unwrap();
+            let scoped = runtime.at(cratestack_client_rust::RouteRef::new($route, &[]));
+            for headers in [
+                &[
+                    ("Idempotency-Key", "first-a"),
+                    ("idempotency-key", "actual"),
+                ][..],
+                &[
+                    ("Idempotency-Key", "first-b"),
+                    ("Idempotency-Key", "actual"),
+                ][..],
+                &[
+                    ("Idempotency-Key", "actual"),
+                    ("If-Match", "a"),
+                    ("if-match", "b"),
+                ][..],
+            ] {
+                let rejected = scoped
+                    .post::<_, client_schema::Order>($path, &echo(order()), headers)
+                    .await;
+                assert!(matches!(
+                    rejected,
+                    Err(cratestack_client_rust::ClientError::BadInput(_))
+                ));
+                assert!(
+                    runtime
+                        .prepare_call(
+                            "POST",
+                            cratestack_client_rust::RouteRef::new($route, &[]),
+                            $path,
+                            &echo(order()),
+                            &[],
+                            headers
+                        )
+                        .is_err()
+                );
+            }
+            assert!(log.lock().unwrap().is_empty());
+            assert_eq!(executions.load(Ordering::SeqCst), 0);
+            for _ in 0..2 {
+                let _: client_schema::Order = scoped
+                    .post($path, &echo(order()), &[("Idempotency-Key", "actual")])
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(executions.load(Ordering::SeqCst), 1);
+            let seen = log.lock().unwrap();
+            assert_eq!(seen[0].0, seen[1].0);
+        }
     };
 }

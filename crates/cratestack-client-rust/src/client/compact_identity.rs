@@ -23,3 +23,20 @@ pub(super) fn check(
     }
     Ok(())
 }
+
+/// Identity headers must not name multiple values before a compact plan is pinned.
+pub(super) fn refuse_duplicates(explicit: &[HeaderPair<'_>]) -> Result<(), ClientError> {
+    for name in ["idempotency-key", "if-match"] {
+        if explicit
+            .iter()
+            .filter(|(given, _)| given.eq_ignore_ascii_case(name))
+            .count()
+            > 1
+        {
+            return Err(ClientError::BadInput(format!(
+                "header '{name}' is given more than once"
+            )));
+        }
+    }
+    Ok(())
+}

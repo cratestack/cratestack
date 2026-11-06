@@ -7,7 +7,9 @@
 Compact-capable keyed calls retain their initial encoding while a client instance
 lives, even when its bounded key memory fills. In Rust, the key must be supplied
 in per-call headers for pinning; an authorizer-only key is refused before send.
-Keys injected later by custom HTTP defaults or middleware are outside that guarantee. For retries across client recreation, the
+Keys injected later by custom HTTP defaults or middleware are outside that guarantee.
+Duplicate `Idempotency-Key` or `If-Match` entries are refused before compact
+planning, including on ordinary compact streaming calls. For retries across client recreation, the
 Rust, TypeScript and Dart runtimes expose prepared unary mutation snapshots;
 store the snapshot before sending and restore it with the same service and
 contract. See [prepared calls](docs/design/prepared-idempotent-calls.md).

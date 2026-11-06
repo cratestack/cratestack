@@ -51,3 +51,8 @@ I/O, because compact encoding has already been chosen when that authorizer
 runs. Headers added or changed later by a custom HTTP client's defaults or middleware
 are outside the runtime's control. Such transports must preserve the frozen
 identity headers and their absence, for ordinary and prepared calls alike.
+
+For compact-enabled Rust calls, duplicate `Idempotency-Key` or `If-Match`
+headers are rejected case-insensitively before compact planning. The same
+identity checks apply to ordinary compact streaming calls; prepared snapshots
+still support unary mutations only.

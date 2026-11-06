@@ -231,3 +231,5 @@ prepared_auth_suite!(
     "/$procs/echoOrder",
     "/$procs/echoOrder"
 );
+stream_identity_suite!("/$procs/ticks", "/$procs/ticks");
+compact_duplicate_encoding_suite!("/$procs/echoOrder", "/$procs/echoOrder");
