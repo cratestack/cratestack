@@ -127,6 +127,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
             "cratestack-macros/src/include/server/isolated.rs",
             "cratestack-macros/src/shared/procedure_attrs.rs",
             "cratestack-sqlx/src/bound.rs",
+            "cratestack-sqlx/src/bound/deferred.rs",
             "cratestack-sqlx/src/bound/join.rs",
             "cratestack-sqlx/src/bound/nested.rs",
             "cratestack-sqlx/src/isolated_run.rs",
