@@ -22,6 +22,7 @@ import {
 } from "./runtime.js";
 import type { RpcStreamLinkNext } from "./links.js";
 import { CborSeqBoundaryScanner, classifyCborSeqItem } from "./cbor-seq.js";
+import { COMPACT_CBOR_SEQ_CONTENT_TYPE } from "./compact.js";
 import { encodeWireFields } from "./models.js";
 
 // `encodeWireFields(request.input)` runs immediately before
@@ -29,10 +30,17 @@ import { encodeWireFields } from "./models.js";
 // `terminalLink` doing the same for `call()`/`batch()`. See
 // `encodeWireFields`'s own doc comment (`models.ts.j2`) for why.
 export const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
+  let headers = request.headers;
+  let body = request.codec.encode(encodeWireFields(request.input));
+  if (request.compact !== undefined) {
+    headers = new Headers(headers);
+    request.compact.applyHeaders(headers);
+    body = request.compact.encodeBody(body);
+  }
   const response = await request.fetchFn(request.url, {
     method: "POST",
-    headers: request.headers,
-    body: request.codec.encode(encodeWireFields(request.input)),
+    headers,
+    body,
     signal: request.signal,
   });
 
@@ -59,7 +67,13 @@ export const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
     return;
   }
 
-  if (!matchesContentType(contentType, CBOR_SEQ_CONTENT_TYPE) || response.body === null) {
+  // A compact sequence is read like a plain one, each item transcoded first.
+  const compactSeq =
+    request.compact !== undefined && matchesContentType(contentType, COMPACT_CBOR_SEQ_CONTENT_TYPE);
+  if (
+    !(compactSeq || matchesContentType(contentType, CBOR_SEQ_CONTENT_TYPE)) ||
+    response.body === null
+  ) {
     throw new CratestackRpcTransportError(
       `streaming response had unsupported Content-Type "${contentType}"`,
     );
@@ -89,7 +103,12 @@ export const terminalStreamLink: RpcStreamLinkNext = async function* (request) {
         );
       }
       for (const itemBytes of items) {
-        const frame = classifyCborSeqItem(itemBytes, request.codec);
+        const compact = compactSeq ? request.compact : undefined;
+        const frame = classifyCborSeqItem(
+          itemBytes,
+          request.codec,
+          compact === undefined ? undefined : (item) => compact.decodeResponse(item),
+        );
         yield frame;
         if (frame.kind === "error") {
           // The sentinel is always the last item (rpc-transport.md

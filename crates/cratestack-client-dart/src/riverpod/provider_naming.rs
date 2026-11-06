@@ -48,6 +48,7 @@ pub(crate) fn seed_occupied_symbols(
         occupied.insert(format!("{provider_prefix}{}ApiProvider", model.name));
     }
     occupied.insert(format!("{provider_prefix}AdapterProvider"));
+    occupied.insert(format!("{provider_prefix}CompactProvider"));
     occupied.insert(format!("{provider_prefix}ClientProvider"));
     occupied.insert(format!("{provider_prefix}ProceduresApiProvider"));
     occupied.insert("ProceduresApi".to_owned());

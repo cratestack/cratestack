@@ -154,6 +154,17 @@ pub(crate) fn dev_dependencies_for(
     deps
 }
 
+/// The optional `@cratestack/cbor` peer a REST package declares: only
+/// `compactKeys` loads it (a dynamic `import()`), so it is listed under
+/// `peerDependenciesMeta` as optional and a REST client that never enables
+/// the option installs nothing extra.
+pub(crate) fn rest_compact_peer() -> DependencyEntry {
+    DependencyEntry {
+        name: "@cratestack/cbor",
+        version: requirement(CRATESTACK_CBOR_FLOOR),
+    }
+}
+
 /// `package.json.j2`'s `dependencies` — `decimal.js` unconditionally (every
 /// generated client needs it regardless of flags or transport), plus
 /// `@cratestack/cbor` (issue #746) on every RPC-transport schema: the

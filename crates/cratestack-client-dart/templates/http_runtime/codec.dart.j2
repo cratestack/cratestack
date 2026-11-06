@@ -50,6 +50,9 @@ enum CratestackWireFormat {
   json,
 }
 
+/// The `Accept` of a CBOR adapter: CBOR preferred, JSON accepted.
+const String _cratestackPlainCborAccept = 'application/cbor, application/json;q=0.9';
+
 String _cratestackMimeOf(String? contentType) =>
     (contentType ?? '').split(';').first.trim().toLowerCase();
 

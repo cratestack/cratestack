@@ -1337,6 +1337,7 @@ dependencies = [
 name = "cratestack-client-dart"
 version = "0.17.2"
 dependencies = [
+ "base64 0.23.1",
  "cratestack-core",
  "cratestack-parser",
  "minijinja",

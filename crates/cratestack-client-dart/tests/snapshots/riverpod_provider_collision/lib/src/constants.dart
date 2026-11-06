@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 /// Hex-encoded SHA-256 of the `.cstack` schema source this client was
 /// generated from (issue #178). Sent as `x-cratestack-schema-sha` on
 /// every outgoing request so the server-side drift-detection middleware
@@ -36,6 +39,22 @@ const Map<String, String> cratestackOpContracts = <String, String>{
 
 /// Hex of the whole-contract digest: moves when any op's contract does.
 const String cratestackClientContractSha256 = '6f72121c70ad5acf966802e0d9077f4b98be6124d11e9d80078a543937b39288';
+
+/// The compact wire key tables of every op (`docs/design/compact-wire-keys.md`),
+/// the artifact `createCompactKeys` of `package:cratestack_cbor` reads. Only a
+/// client that opts into compact keys touches it:
+///
+/// ```dart
+/// final keys = await createCompactKeys(cratestackKeyTables);
+/// final hooks = CratestackCompactHooks(
+///   toCompact: keys.toCompact,
+///   fromCompact: keys.fromCompact,
+///   selector: keys.selector,
+/// );
+/// ```
+final Uint8List cratestackKeyTables = base64Decode(
+  'gwGDhGJpZABlbGFiZWwAhGJpZABkbmFtZQCCZG5hbWUAi4R4GURFTEVURSAvd2lkZ2V0X2xpc3RzL3tpZH1YIJlyduEbyM0a08WNz9+sBrtctUFmVk64Px8GOI5/NyBYAAGEdERFTEVURSAvd2lkZ2V0cy97aWR9WCAmVxJYNrOGXuCyuA76LMMexhEfVILPpTaSZw23mnTKnAAChHFHRVQgL3dpZGdldF9saXN0c1ggn0kfNud9xltXK74nor2rm1U89LWyQ8BN6tb7lgrpCzkAggABhHZHRVQgL3dpZGdldF9saXN0cy97aWR9WCDcCYBmGgasoNcn8be0gITS5OeYK0ub4g3ovMzOfpGxxQABhGxHRVQgL3dpZGdldHNYIN0WM5mRw97QEq407ZlSPEanBMJwAH1ESY8AEFsQT9G8AIIAAoRxR0VUIC93aWRnZXRzL3tpZH1YIBjujnifJaDvBDNfSCeIVE2lmypXF0fu4xR4XGWImTOEAAKEeBhQQVRDSCAvd2lkZ2V0X2xpc3RzL3tpZH1YIEt+FRK1G6w2moJAYKzSSl4ryqNp/ty+pK0Cly5coMtoAQGEc1BBVENIIC93aWRnZXRzL3tpZH1YIFA9PwSR8HbCG6yWyIPy+NUqaJmIDvr1jmMLJtvTVjydAgKEeBlQT1NUIC8kcHJvY3Mvd2lkZ2V0Q3JlYXRlWCCtP+8EVi2MuItZTdP9f0P81XrFzT/P/PBKBE2lyyVnIwMChHJQT1NUIC93aWRnZXRfbGlzdHNYIEDPvccdR79N8ULMvqWDfGEC3/FIvgsygA9BYY2QeFjQAQGEbVBPU1QgL3dpZGdldHNYIMy8yTd+qtuybWE05qN6QcFD6voi4kqWjv5hVsszGsMUAgI=',
+);
 
 abstract final class WidgetFieldNames {
   static const String id = 'id';

@@ -3,6 +3,8 @@
 // established by `rpc-runtime.ts.j2`'s identical import: the other leg is
 // `import type`, which is erased entirely at compile time.
 import { encodeBinaryAsJson } from "./models.js";
+import { COMPACT_JSON_CONTENT_TYPE, RestCompactSession } from "./compact.js";
+import type { RestCompactCall } from "./compact.js";
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -34,10 +36,24 @@ export const OP_CONTRACTS: Readonly<Record<string, string>> = {
 // Hex of the whole-contract digest: moves when any op's contract does.
 export const CLIENT_CONTRACT_SHA256: string = "0a3e98e53e970f4d8ed97572a9a21dcec8bcd12726fa4e7144084031f62148ed";
 
+// Base64 of the compact wire key tables for every op above (the artifact
+// `cratestack_core::compact::KeyTables::to_bytes` writes), read only when
+// `compactKeys` is on (see `./compact`).
+export const KEY_TABLES: string = "gwGChmJpZABkbmFtZQBmd2VpZ2h0AIJkbmFtZQCGhHRERUxFVEUgL3dpZGdldHMve2lkfVgg+k/MFgSxokjdpUIuSBc0kFUUL0kuDaYBmRq2tPf8N9AAAYRsR0VUIC93aWRnZXRzWCCPtdTGwOV66ZQ8z+NdRVt+QCFJKtmfEOcazGJTefEjCACCAAGEcUdFVCAvd2lkZ2V0cy97aWR9WCAEDxeyZSkTTsAjRRGlg1rZrz0V9nKKVOVFmsCtZYRXcwABhHNQQVRDSCAvd2lkZ2V0cy97aWR9WCAiQu7Acc0Zdz1cTAaReCsKKul3wS5pfrND2fJ+MTtCnAEBhHVQT1NUIC8kcHJvY3MvZWNob05hbWVYIMoI79/kGEUy6SbJ/ZFUHJTTyr7BqqOnibwwfdKpGuQQAgCEbVBPU1QgL3dpZGdldHNYIK73ls+2PC10qN6c4/7/+SEsoiajlow3yfov60t5ucALAQE=";
+
 export interface CratestackClientOptions {
   basePath?: string;
   fetch?: typeof fetch;
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
+  /** Opt in to compact wire keys: schema-declared fields travel as integer
+   *  keys (`application/vnd.cratestack.compact+json`). Default `false`, which
+   *  leaves the wire byte-identical to a client without the option. The
+   *  request body goes compact only after the op has answered compact once,
+   *  so an older server is never sent a body it cannot read. Loads the
+   *  optional peer `@cratestack/cbor` on first use; without it, or with a
+   *  release that predates `createCompactKeys`, the option is silently
+   *  inert. Error bodies stay named. */
+  compactKeys?: boolean;
 }
 
 export interface CratestackRequestOptions {
@@ -233,6 +249,7 @@ export class CratestackRuntime {
   readonly basePath: string;
   readonly fetchFn: typeof fetch;
   readonly defaultHeaders: HeadersInit | (() => HeadersInit | Promise<HeadersInit>) | undefined;
+  private readonly compact: RestCompactSession | undefined;
 
   constructor(origin: string, options: CratestackClientOptions = {}) {
     this.origin = origin.replace(/\/+$/, "");
@@ -247,6 +264,10 @@ export class CratestackRuntime {
     // supplied `options.fetch` is trusted to already be correctly bound.
     this.fetchFn = options.fetch ?? fetch.bind(globalThis);
     this.defaultHeaders = options.headers;
+    this.compact =
+      options.compactKeys === true
+        ? new RestCompactSession(KEY_TABLES, Object.keys(OP_CONTRACTS))
+        : undefined;
   }
 
   async request<T>(
@@ -273,6 +294,7 @@ export class CratestackRuntime {
     }
     headers.set("Accept", "application/json");
 
+    const compact = await this.compact?.begin(method, path);
     let body: BodyInit | undefined;
     if (options.body !== undefined) {
       headers.set("Content-Type", "application/json");
@@ -286,6 +308,12 @@ export class CratestackRuntime {
       // body is always JSON.
       body = JSON.stringify(encodeBinaryAsJson(options.body));
     }
+    if (compact !== undefined) {
+      compact.applyHeaders(headers, body !== undefined);
+      if (typeof body === "string") {
+        body = compact.encodeBody(body);
+      }
+    }
 
     for (const [key, value] of new Headers(options.headers)) {
       headers.set(key, value);
@@ -298,7 +326,7 @@ export class CratestackRuntime {
       signal: options.signal ?? null,
     });
 
-    const payload = await readResponsePayload(response);
+    const payload = await readResponsePayload(response, compact);
     if (!response.ok) {
       throw new CratestackHttpError(response, payload);
     }
@@ -349,7 +377,10 @@ async function resolveHeaders(
   return headers;
 }
 
-async function readResponsePayload(response: Response): Promise<unknown> {
+async function readResponsePayload(
+  response: Response,
+  compact?: RestCompactCall,
+): Promise<unknown> {
   if (response.status === 204) {
     return undefined;
   }
@@ -360,6 +391,14 @@ async function readResponsePayload(response: Response): Promise<unknown> {
   }
 
   const contentType = response.headers.get("Content-Type") ?? "";
+  // A compact body is transcoded back to plain JSON; an error body never is.
+  if (
+    compact !== undefined &&
+    response.ok &&
+    contentType.split(";", 1)[0]?.trim() === COMPACT_JSON_CONTENT_TYPE
+  ) {
+    return JSON.parse(compact.decodeResponse(text));
+  }
   if (contentType.includes("application/json")) {
     return JSON.parse(text);
   }

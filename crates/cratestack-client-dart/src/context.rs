@@ -268,6 +268,7 @@ pub(crate) fn build_template_context(
         client_contract_sha256: cratestack_core::digest_hex(
             &cratestack_core::client_contract_digest(schema),
         ),
+        key_tables_b64: key_tables_base64(schema),
         enum_types,
         data_classes,
         selection_groups,
@@ -292,4 +293,13 @@ pub(crate) fn build_template_context(
         cratestack_annotations_version_requirement,
         cratestack_builder_version_requirement,
     })
+}
+
+/// The compact wire key tables (`cratestack_core::compact`) as base64: the
+/// `cratestackKeyTables` constant `createCompactKeys` of `cratestack_cbor`
+/// reads.
+fn key_tables_base64(schema: &Schema) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .encode(cratestack_core::compact::KeyTables::from_schema(schema).to_bytes())
 }

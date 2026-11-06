@@ -35,6 +35,12 @@ pub(crate) const REST_TEMPLATE_SPECS: &[TemplateSpec] = &[
         output_path: OutputPath::Fixed("src/runtime.ts"),
         default_source: include_str!("../../templates/src/rest-runtime.ts.j2"),
     },
+    // Opt-in compact wire keys (`compactKeys`), imported by the runtime.
+    TemplateSpec {
+        template_name: "rest-compact.ts.j2",
+        output_path: OutputPath::Fixed("src/compact.ts"),
+        default_source: include_str!("../../templates/src/rest-compact.ts.j2"),
+    },
     TemplateSpec {
         template_name: "rest-queries.ts.j2",
         output_path: OutputPath::Fixed("src/queries.ts"),
@@ -58,6 +64,12 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
         template_name: "rpc-runtime.ts.j2",
         output_path: OutputPath::Fixed("src/runtime.ts"),
         default_source: include_str!("../../templates/src/rpc-runtime.ts.j2"),
+    },
+    // Opt-in compact wire keys (`compactKeys`), imported by the runtime.
+    TemplateSpec {
+        template_name: "rpc-compact.ts.j2",
+        output_path: OutputPath::Fixed("src/compact.ts"),
+        default_source: include_str!("../../templates/src/rpc-compact.ts.j2"),
     },
     TemplateSpec {
         template_name: "rpc-links.ts.j2",
@@ -111,17 +123,12 @@ pub(crate) const RPC_TEMPLATE_SPECS: &[TemplateSpec] = &[
 
 // Issue #617's `--tanstack` opt-in: one extra file, appended to whichever
 // mode's spec list only when `TypeScriptGeneratorConfig::tanstack` is set.
-// Unlike `REFINE_TEMPLATE_SPECS` below (one template whose *content*
-// branches on transport via the rendering context), TanStack Query has
-// two separately hand-written source templates — `rest-react-query.ts.j2`,
-// `rpc-react-query.ts.j2` — because the generated hooks call different
-// runtime APIs per transport (`CratestackFetchQuery` helpers vs
-// `CratestackRpcRuntime`), so `template_specs_for` below picks the
-// transport-appropriate one of these rather than a single const. Both used
-// to live unconditionally inside `REST_TEMPLATE_SPECS`/`RPC_TEMPLATE_SPECS`
-// above — moved out here, mirroring how `REFINE_TEMPLATE_SPECS` was kept
-// out of the unconditional lists, so `react-query.ts` no longer appears in
-// a default run (`tests/snapshot.rs` pins that).
+// TanStack Query has two hand-written templates (`rest-react-query.ts.j2`,
+// `rpc-react-query.ts.j2`) because the generated hooks call different
+// runtime APIs per transport, so `template_specs_for` picks one of these
+// rather than a single const. They stay out of the unconditional lists so
+// `react-query.ts` does not appear in a default run (`tests/snapshot.rs`
+// pins that).
 const REST_TANSTACK_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
     template_name: "rest-react-query.ts.j2",
     output_path: OutputPath::Fixed("src/react-query.ts"),
@@ -133,14 +140,9 @@ const RPC_TANSTACK_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
     default_source: include_str!("../../templates/src/rpc-react-query.ts.j2"),
 }];
 
-// Issue #571's `--refine` opt-in: one extra file, appended to the REST or
-// RPC spec list only when `TypeScriptGeneratorConfig::refine` is set (the
-// template itself picks `ResourceMap` vs `RpcResourceMap` per transport —
-// see `crate::context::build_template_context`'s `refine_resource_map_type`
-// and `crate::refine`'s module doc). Kept out of
-// `COMMON_TEMPLATE_SPECS`/`REST_TEMPLATE_SPECS`/`RPC_TEMPLATE_SPECS`
-// deliberately — those are unconditional, and `refine.ts` must not appear
-// in a default run (`tests/snapshot.rs` pins that output byte-for-byte).
+// Issue #571's `--refine` opt-in: one extra file (the template picks
+// `ResourceMap` vs `RpcResourceMap` per transport), kept out of the
+// unconditional lists so `refine.ts` does not appear in a default run.
 pub(crate) const REFINE_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
     template_name: "refine.ts.j2",
     output_path: OutputPath::Fixed("src/refine.ts"),
@@ -159,16 +161,12 @@ pub(crate) const REFINE_TEMPLATE_SPECS: &[TemplateSpec] = &[TemplateSpec {
 /// `list` input.
 ///
 /// `tanstack` (issue #617) appends one extra spec, transport-resolved from
-/// `REST_TANSTACK_TEMPLATE_SPECS`/`RPC_TANSTACK_TEMPLATE_SPECS` above.
-/// Unlike `refine`, this composes with EVERY transport — `--tanstack`
-/// gates the same `src/react-query.ts` that used to be unconditional, it
-/// does not add support for a transport that lacked it before.
-/// `refine` (issue #571) appends one extra spec for REST or RPC schemas.
-/// It is a parameter rather than folded into `mode_specs`
-/// because it is additive to an otherwise unchanged run — `refine: false`
-/// returns exactly the list this function returned before the flag
-/// existed. `tanstack`/`rtk` (issue #906, `crate::rtk::specs`) follow the
-/// same additive-parameter shape.
+/// `REST_TANSTACK_TEMPLATE_SPECS`/`RPC_TANSTACK_TEMPLATE_SPECS` above; it
+/// composes with every transport. `refine` (issue #571) appends one extra
+/// spec for REST or RPC schemas. Both are parameters rather than folded
+/// into `mode_specs` because they are additive to an otherwise unchanged
+/// run, and `tanstack`/`rtk` (issue #906, `crate::rtk::specs`) follow the
+/// same shape.
 pub(crate) fn template_specs_for(
     transport: TransportStyle,
     refine: bool,

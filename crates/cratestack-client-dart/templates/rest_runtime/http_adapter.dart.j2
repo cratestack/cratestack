@@ -66,6 +66,70 @@ class CratestackRestException implements Exception {
 StepUpRequired? _cratestackStepUpOf(Object error) =>
     error is CratestackRestException ? error.stepUp : null;
 
+/// One `<METHOD> <route template>` key of [cratestackOpContracts], split for
+/// matching a concrete request path against it.
+final class _RouteTemplate {
+  _RouteTemplate(this.op)
+    : method = op.substring(0, op.indexOf(' ')),
+      segments = op.substring(op.indexOf(' ') + 1).split('/'),
+      literals = op
+          .substring(op.indexOf(' ') + 1)
+          .split('/')
+          .where((segment) => !segment.startsWith('{'))
+          .length;
+
+  final String op;
+  final String method;
+  final List<String> segments;
+  final int literals;
+
+  /// Whether [path] ends in this template. Request paths carry the client's
+  /// base path (`/api` by default) in front of the route, which the keys of
+  /// [cratestackOpContracts] do not, so the template is matched against the
+  /// trailing segments.
+  bool matches(String requestMethod, List<String> path) {
+    if (method != requestMethod || path.length < segments.length) {
+      return false;
+    }
+    final offset = path.length - segments.length;
+    for (var index = 0; index < segments.length; index += 1) {
+      final part = segments[index];
+      if (!part.startsWith('{') && part != path[offset + index]) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+final List<_RouteTemplate> _cratestackRouteTemplates = <_RouteTemplate>[
+  for (final op in cratestackOpContracts.keys)
+    if (op.contains(' ')) _RouteTemplate(op),
+];
+
+/// The op key (`GET /widgets/{id}`) a request is, or `null` for a route the
+/// schema does not have. The template with the most literal segments wins
+/// (`/widgets/search` over `/widgets/{id}`).
+String? _cratestackRestOp(String method, String path) {
+  final cut = path.indexOf('?');
+  final segments = (cut < 0 ? path : path.substring(0, cut)).split('/');
+  while (segments.isNotEmpty && segments.last.isEmpty) {
+    segments.removeLast();
+  }
+  final verb = method.toUpperCase() == 'HEAD' ? 'GET' : method.toUpperCase();
+  _RouteTemplate? best;
+  for (final template in _cratestackRouteTemplates) {
+    if (template.matches(verb, segments) &&
+        (best == null ||
+            template.segments.length > best.segments.length ||
+            (template.segments.length == best.segments.length &&
+                template.literals > best.literals))) {
+      best = template;
+    }
+  }
+  return best?.op;
+}
+
 /// The REST adapter, written once over a [CratestackHttpTransport].
 ///
 /// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
@@ -97,6 +161,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
     required this.baseUri,
     this.format = CratestackWireFormat.cbor,
     this.useRustTransport = false,
+    this.compact,
   });
 
   final CratestackHttpTransport transport;
@@ -113,12 +178,28 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
   /// interceptor that routes marked requests through the Rust runtime.
   final bool useRustTransport;
 
+  /// Opts the adapter into compact wire keys (CBOR only; see
+  /// [CratestackCompactHooks]). `null`, the default, keeps the wire exactly
+  /// as it always was.
+  final CratestackCompactHooks? compact;
+
   @override
   Future<Object?> execute(
     CratestackRequest request, {
     CratestackCallOptions? options,
   }) async {
-    final body = await _encodeBody(format, request.body);
+    final plainBody = await _encodeBody(format, request.body);
+    final op = compact == null ? null : _cratestackRestOp(request.method, request.path);
+    final plan = op == null
+        ? null
+        : _cratestackCompactBegin(
+            this,
+            compact,
+            format,
+            op,
+            idempotencyKey: options?.idempotencyKey,
+          );
+    final body = plan?.encode(plainBody) ?? plainBody;
     final response = await transport.send(
       CratestackHttpRequest(
         method: request.method,
@@ -137,7 +218,8 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
             // (cratestack#303).
             'Accept': format == CratestackWireFormat.json
                 ? 'application/json'
-                : 'application/cbor, application/json;q=0.9',
+                : plan?.accept(_cratestackPlainCborAccept) ??
+                    _cratestackPlainCborAccept,
             if (body != null)
               'Content-Type': format == CratestackWireFormat.json
                   ? 'application/json'
@@ -147,6 +229,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
             if (options?.idempotencyKey != null)
               'Idempotency-Key': options!.idempotencyKey!,
           },
+          plan?.headers(hasBody: body != null),
           request.headers,
           options?.headers,
         ]),
@@ -158,14 +241,18 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
       ),
     );
 
-    final bytes = await response.bytes();
-    final contentType = response.headers['content-type'];
+    var bytes = await response.bytes();
+    var contentType = response.headers['content-type'];
     if (response.status < 200 || response.status >= 300) {
       throw CratestackRestException(
         status: response.status,
         body: await _decodeErrorBody(bytes, contentType),
         headers: response.headers,
       );
+    }
+    if (plan != null && bytes.isNotEmpty && plan.matches(contentType)) {
+      bytes = plan.decode(bytes);
+      contentType = 'application/cbor';
     }
     return _decodeBody(bytes, contentType, 'CratestackHttpAdapter');
   }

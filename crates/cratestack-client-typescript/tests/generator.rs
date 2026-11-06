@@ -29,7 +29,7 @@ fn generates_fetch_client_and_tanstack_hooks_for_blog_schema() {
     )
     .expect("--tanstack template should render");
 
-    assert_eq!(package.files.len(), 9);
+    assert_eq!(package.files.len(), 10);
 
     let package_json = package_file(&package, "package.json");
     let readme = package_file(&package, "README.md");

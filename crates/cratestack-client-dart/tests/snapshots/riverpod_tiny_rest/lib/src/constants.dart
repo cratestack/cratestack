@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 /// Hex-encoded SHA-256 of the `.cstack` schema source this client was
 /// generated from (issue #178). Sent as `x-cratestack-schema-sha` on
 /// every outgoing request so the server-side drift-detection middleware
@@ -31,6 +34,22 @@ const Map<String, String> cratestackOpContracts = <String, String>{
 
 /// Hex of the whole-contract digest: moves when any op's contract does.
 const String cratestackClientContractSha256 = '0a3e98e53e970f4d8ed97572a9a21dcec8bcd12726fa4e7144084031f62148ed';
+
+/// The compact wire key tables of every op (`docs/design/compact-wire-keys.md`),
+/// the artifact `createCompactKeys` of `package:cratestack_cbor` reads. Only a
+/// client that opts into compact keys touches it:
+///
+/// ```dart
+/// final keys = await createCompactKeys(cratestackKeyTables);
+/// final hooks = CratestackCompactHooks(
+///   toCompact: keys.toCompact,
+///   fromCompact: keys.fromCompact,
+///   selector: keys.selector,
+/// );
+/// ```
+final Uint8List cratestackKeyTables = base64Decode(
+  'gwGChmJpZABkbmFtZQBmd2VpZ2h0AIJkbmFtZQCGhHRERUxFVEUgL3dpZGdldHMve2lkfVgg+k/MFgSxokjdpUIuSBc0kFUUL0kuDaYBmRq2tPf8N9AAAYRsR0VUIC93aWRnZXRzWCCPtdTGwOV66ZQ8z+NdRVt+QCFJKtmfEOcazGJTefEjCACCAAGEcUdFVCAvd2lkZ2V0cy97aWR9WCAEDxeyZSkTTsAjRRGlg1rZrz0V9nKKVOVFmsCtZYRXcwABhHNQQVRDSCAvd2lkZ2V0cy97aWR9WCAiQu7Acc0Zdz1cTAaReCsKKul3wS5pfrND2fJ+MTtCnAEBhHVQT1NUIC8kcHJvY3MvZWNob05hbWVYIMoI79/kGEUy6SbJ/ZFUHJTTyr7BqqOnibwwfdKpGuQQAgCEbVBPU1QgL3dpZGdldHNYIK73ls+2PC10qN6c4/7/+SEsoiajlow3yfov60t5ucALAQE=',
+);
 
 abstract final class WidgetFieldNames {
   static const String id = 'id';

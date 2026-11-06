@@ -31,6 +31,11 @@ const REST: &[TemplateSpec] = &[
         default_source: include_str!("../../templates/src/rest-runtime.ts.j2"),
     },
     TemplateSpec {
+        template_name: "rest-compact.ts.j2",
+        output_path: OutputPath::Fixed("src/swr/compact.ts"),
+        default_source: include_str!("../../templates/src/rest-compact.ts.j2"),
+    },
+    TemplateSpec {
         template_name: "rest-queries.ts.j2",
         output_path: OutputPath::Fixed("src/swr/queries.ts"),
         default_source: include_str!("../../templates/src/rest-queries.ts.j2"),
@@ -72,6 +77,11 @@ const RPC: &[TemplateSpec] = &[
         template_name: "rpc-runtime.ts.j2",
         output_path: OutputPath::Fixed("src/swr/runtime.ts"),
         default_source: include_str!("../../templates/src/rpc-runtime.ts.j2"),
+    },
+    TemplateSpec {
+        template_name: "rpc-compact.ts.j2",
+        output_path: OutputPath::Fixed("src/swr/compact.ts"),
+        default_source: include_str!("../../templates/src/rpc-compact.ts.j2"),
     },
     TemplateSpec {
         template_name: "rpc-links.ts.j2",
