@@ -187,6 +187,10 @@ p256.workspace = true
 # gains it (`cargo tree -p cratestack-api -e normal | grep -c jsonschema`
 # is 0).
 jsonschema.workspace = true
+# `tests/payload_sizes.rs`: the payload-size gate gzips each body to record
+# its compressed size. Already resolved (a normal dependency of
+# `cratestack-studio`), so this is a dev-only edge to an existing node.
+flate2.workspace = true
 # cratestack#1039, `tests/mcp_http.rs`: the example audience-checking
 # `AuthProvider` signs its test tokens with HMAC-SHA256 over base64url claims
 # (`base64`, `hmac`, `sha2`), requests are built and read with `http` and

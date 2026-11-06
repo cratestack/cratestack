@@ -1,0 +1,92 @@
+// The payload-size gate's fixture (`tests/payload_sizes.rs`). Three
+// realistic bodies: a product create, a money transfer (both single
+// procedure calls of a few hundred bytes) and a 500-row event list. The
+// gate encodes the generated `Args` and `Output` of each through the real
+// codecs and compares the sizes with `tests/payload_sizes.baseline`.
+//
+// Change a shape here only on purpose: every edit moves the baseline.
+
+datasource db {
+  provider = "none"
+}
+
+enum EventType {
+  Created = 1
+  Updated = 2
+  Settled = 3
+  Refunded = 4
+  Disputed = 5
+}
+
+enum TxStatus {
+  Pending = 1
+  Settled = 2
+  Rejected = 3
+}
+
+type CreateProductInput {
+  name String
+  sku String
+  description String?
+  priceAmount Decimal
+  currency String
+  categoryId Uuid
+  stockQuantity Int
+  isActive Boolean
+  tags String[]
+}
+
+type Product {
+  id Uuid
+  name String
+  sku String
+  description String?
+  priceAmount Decimal
+  currency String
+  categoryId Uuid
+  stockQuantity Int
+  isActive Boolean
+  tags String[]
+  createdAt DateTime
+  updatedAt DateTime
+  version Int
+}
+
+type TransferInput {
+  sourceAccountId Uuid
+  destinationAccountId Uuid
+  amount Decimal
+  currency String
+  reference String?
+}
+
+type Transaction {
+  transactionId Uuid
+  status TxStatus
+  sourceAccountId Uuid
+  destinationAccountId Uuid
+  amount Decimal
+  currency String
+  fee Decimal
+  balanceAfter Decimal
+  reference String?
+  createdAt DateTime
+  settledAt DateTime?
+}
+
+type Event {
+  id Uuid
+  eventType EventType
+  status TxStatus
+  createdAt DateTime
+  amount Decimal
+}
+
+mutation procedure createProduct(input: CreateProductInput): Product
+  @allow(true)
+
+mutation procedure transferFunds(input: TransferInput): Transaction
+  @allow(true)
+
+procedure listEvents(limit: Int?): Event[]
+  @allow(true)
