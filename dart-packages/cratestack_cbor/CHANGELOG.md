@@ -1,5 +1,10 @@
 ## Unreleased
 
+## 0.18.1 (2026-11-07)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.18.0 (2026-11-06)
 
 - New: compact wire key payloads can be sealed. `CallBinding` gains

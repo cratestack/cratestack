@@ -21,7 +21,7 @@ workspace = true
 # whose generated code names `::cratestack::...`, so the facade is imported
 # under that name. `cratestack-api` (no database) is enough for every
 # transport the kit drives; `mcp` adds the Streamable HTTP endpoint.
-cratestack = { package = "cratestack-api", path = "../cratestack-api", version = "0.18.0", features = ["mcp"] }
+cratestack = { package = "cratestack-api", path = "../cratestack-api", version = "0.18.1", features = ["mcp"] }
 cratestack-codec-json.workspace = true
 http.workspace = true
 http-body-util.workspace = true
