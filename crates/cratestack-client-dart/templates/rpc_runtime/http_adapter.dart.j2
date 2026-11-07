@@ -93,7 +93,10 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
   }
 
   /// Send persisted inner bytes without re-encoding or renegotiating them.
-  Future<Object?> executePrepared(CratestackPreparedCall call, {Future<void>? abort, String? authorization}) async {
+  /// [headers] are per-attempt headers (never the frozen identity or media
+  /// ones); [authorization] replaces any `Authorization` among them.
+  Future<Object?> executePrepared(CratestackPreparedCall call,
+      {Future<void>? abort, String? authorization, Map<String, String>? headers}) async {
     final (wire, plan) = _restoreSnapshot(this, call, baseUri, compact, format,
       (method, uri) {
         if (method != 'POST' || uri.hasQuery) return null;
@@ -103,7 +106,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
         if (op == 'batch') return null;
         if (uri.path != _resolveUri(baseUri, '/rpc/${Uri.encodeComponent(op)}', null).path) return null;
         return op;
-      }, abort, authorization);
+      }, abort, authorization, extraHeaders: headers);
     return _decodeSuccess(await transport.send(wire), plan);
   }
 

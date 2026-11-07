@@ -5,8 +5,10 @@
 ### Durable compact idempotent calls
 
 Compact-capable keyed calls retain their initial encoding while a client instance
-lives, even when its bounded key memory fills. In Rust, the key must be supplied
-in per-call headers for pinning; an authorizer-only key is refused before send.
+lives. The pin table is bounded (1024 keys in Rust, 512 in TypeScript and Dart) and
+evicts its oldest key when full, so a prompt retry stays pinned and new keys keep
+negotiating compact. In Rust, the key must be supplied in per-call headers for
+pinning; an authorizer-only key on a call with a body is refused before send.
 Keys injected later by custom HTTP defaults or middleware are outside that guarantee.
 Duplicate `Idempotency-Key` or `If-Match` entries are refused before compact
 planning, including on ordinary compact streaming calls. For retries across client recreation, the

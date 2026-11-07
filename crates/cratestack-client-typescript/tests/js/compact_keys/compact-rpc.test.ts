@@ -191,7 +191,7 @@ describe.each(layouts)("%s", (_name, mod) => {
     expect(sent).toHaveLength(2);
   });
 
-  it("retains an old keyed encoding after more than 512 different keys", async () => {
+  it("evicts the oldest pin past 512 keys and keeps recent ones", async () => {
     const { fetchFn, sent } = transport(() => compactCbor("hi"));
     const runtime = new mod.CratestackRpcRuntime("http://x.invalid", {
       fetch: fetchFn, compactKeys: true,
@@ -199,9 +199,15 @@ describe.each(layouts)("%s", (_name, mod) => {
     for (let key = 0; key < 513; key += 1) {
       await runtime.call("procedure.echoName", { name: "a" }, { idempotencyKey: `key-${key}` });
     }
+    // key-0 went out named (no compact answer yet); the rest compact.
+    expect(sent[0]?.headers.get("content-type")).toBe("application/cbor");
+    expect(sent[512]?.headers.get("content-type")).toBe(COMPACT_CBOR);
+    // A recent key's retry keeps its first encoding.
+    await runtime.call("procedure.echoName", { name: "a" }, { idempotencyKey: "key-512" });
+    expect(sent[513]?.body).toEqual(sent[512]?.body);
+    // key-0 was the oldest and was evicted: it now follows negotiation.
     await runtime.call("procedure.echoName", { name: "a" }, { idempotencyKey: "key-0" });
-    expect(sent[513]?.headers.get("content-type")).toBe(sent[0]?.headers.get("content-type"));
-    expect(sent[513]?.body).toEqual(sent[0]?.body);
+    expect(sent[514]?.headers.get("content-type")).toBe(COMPACT_CBOR);
   });
 
   it.each(["cbor", "json"] as const)("persists %s compact bytes across runtime recreation", async (format) => {

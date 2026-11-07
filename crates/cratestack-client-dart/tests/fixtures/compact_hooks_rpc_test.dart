@@ -161,7 +161,7 @@ void main() {
     expect(() => invalidSimple.feed(Uint8List.fromList([0x00])), throwsFormatException);
   });
 
-  test('full pin memory keeps old keys and leaves new keys named', () async {
+  test('a full pin table evicts the oldest key and keeps recent ones', () async {
     final named = await _named(codec, _author);
     final transport = _Script(List.generate(515, (_) => (_) =>
       _answer(200, _compactCbor, keys.toCompact(named, _create, 'response'))));
@@ -171,12 +171,17 @@ void main() {
       final key = 'key-$i';
       await adapter.call(_create, _author, options: CratestackRpcCallOptions(idempotencyKey: key));
     }
-    for (final key in ['overflow', 'key-0', 'overflow']) {
+    for (final key in ['fresh', 'key-511', 'key-0']) {
       await adapter.call(_create, _author, options: CratestackRpcCallOptions(idempotencyKey: key));
     }
-    expect(transport.requests[512].headers['Content-Type'], 'application/cbor');
-    expect(transport.requests[513].body, transport.requests[0].body);
-    expect(transport.requests[514].body, transport.requests[512].body);
+    // key-0 went out named (no compact answer yet); later keys compact.
+    expect(transport.requests[0].headers['Content-Type'], 'application/cbor');
+    // A new key past the window still follows negotiation.
+    expect(transport.requests[512].headers['Content-Type'], _compactCbor);
+    // A recent key's retry keeps its first encoding.
+    expect(transport.requests[513].body, transport.requests[511].body);
+    // key-0 was the oldest, evicted by 'fresh': it now follows negotiation.
+    expect(transport.requests[514].headers['Content-Type'], _compactCbor);
   });
 
   test('without hooks the wire is the one it always was', () async {

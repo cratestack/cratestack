@@ -3,8 +3,10 @@
 A compact-capable client may learn to send compact bodies after an earlier
 response. Idempotency checks compare the request that arrived on the wire, so
 re-encoding a retry under the same key can cause a conflict. In-memory key pins
-preserve an encoding for one client lifetime. Their bounded storage does not
-survive a restart; once full, new keys remain named for that instance.
+preserve an encoding for one client instance. They are bounded (1024 keys in Rust,
+512 in TypeScript and Dart) and evict the oldest first attempt when full, so a
+prompt retry stays pinned while new keys keep negotiating; they do not survive a
+restart.
 
 For retries across restarts, prepare the unary mutation and persist its snapshot
 in the application's own durable journal **before the first send**. Restore that
@@ -19,7 +21,8 @@ business payloads. The same key with changed input is still a conflict.
   and pass the restored value to `executePrepared`. RPC custom unary links are
   unsupported for prepared calls and rejected during preparation.
 - Dart: call the HTTP adapter's `prepare` or `prepareCall`, persist `toJson`,
-  restore with `CratestackPreparedCall.fromJson`, and call `executePrepared`.
+  restore with `CratestackPreparedCall.fromJson`, and call `executePrepared`,
+  passing per-attempt headers (a tenant, a trace id) in its `headers` argument.
   If the generated client uses a custom REST base path, configure the same
   `preparedBasePath` on its adapter for route validation.
 
@@ -29,7 +32,7 @@ persisted as application headers; transport media and selector headers are
 recorded separately where needed. Authentication headers are not stored and URL userinfo is rejected. Query
 strings and bodies are persisted and may themselves contain secrets.
 Supply fresh credentials through the Rust authorizer, TypeScript default
-headers, or Dart's `authorization` argument or transport on every attempt.
+headers, or Dart's `authorization` and `headers` arguments or transport on every attempt.
 Rust COSE calls create a new seal and verify each response against that attempt;
 a sealed envelope is never stored in the snapshot.
 
@@ -45,10 +48,11 @@ accepts non-preferred encodings and leaves the stored bytes unchanged. It does
 not evaluate tag semantics or reject duplicate map keys; duplicate handling
 follows the receiving codec. Protect the caller-owned journal against tampering.
 
-For ordinary Rust compact-capable calls, pass `Idempotency-Key` in the per-call
-headers. A key added only by a request authorizer is rejected before network
-I/O, because compact encoding has already been chosen when that authorizer
-runs. Headers added or changed later by a custom HTTP client's defaults or middleware
+For ordinary Rust compact-capable calls with a body, pass `Idempotency-Key` in the
+per-call headers (they win over the authorizer's). A key added only by a request
+authorizer is rejected before network I/O, because compact encoding has already
+been chosen when that authorizer runs; bodiless calls pin nothing and are not
+checked. Headers added or changed later by a custom HTTP client's defaults or middleware
 are outside the runtime's control. Such transports must preserve the frozen
 identity headers and their absence, for ordinary and prepared calls alike.
 

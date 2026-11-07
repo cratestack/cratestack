@@ -144,15 +144,14 @@ _CompactCall? _cratestackCompactBegin(
   final remembered = idempotencyKey == null
       ? null
       : memory.encodingByIdempotencyKey[idempotencyKey];
-  final sendCompact = remembered ??
-      (idempotencyKey != null &&
-              memory.encodingByIdempotencyKey.length >= _cratestackRememberedEncodings
-          ? false
-          : memory.compactOps.contains(op));
+  final sendCompact = remembered ?? memory.compactOps.contains(op);
   if (idempotencyKey != null && remembered == null) {
-    if (memory.encodingByIdempotencyKey.length < _cratestackRememberedEncodings) {
-      memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
+    // A full table evicts the oldest first attempt (a Dart map keeps insertion
+    // order): a prompt retry stays pinned, and new keys keep negotiating.
+    if (memory.encodingByIdempotencyKey.length >= _cratestackRememberedEncodings) {
+      memory.encodingByIdempotencyKey.remove(memory.encodingByIdempotencyKey.keys.first);
     }
+    memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
   }
   return _CompactCall._(hooks, memory, op, selector, sendCompact, stream);
 }

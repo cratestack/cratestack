@@ -14,39 +14,43 @@ fn state() -> CompactClient {
 }
 
 #[test]
-fn saturation_preserves_named_and_compact_pins_and_bounds_storage() {
+fn a_retry_reuses_its_first_encoding_across_a_negotiation_change() {
     let state = state();
     assert!(!state.decide("op", Some("named")));
     state.set_compact("op", true);
     assert!(state.decide("op", Some("compact")));
-    for number in 2..MAX_REMEMBERED_KEYS {
-        assert!(state.decide("op", Some(&format!("key-{number}"))));
-    }
-    assert!(!state.decide("op", Some("named")));
-    assert!(state.decide("op", Some("compact")));
-    for number in 0..MAX_REMEMBERED_KEYS * 2 {
-        assert!(!state.decide("op", Some(&format!("overflow-{number}"))));
-    }
-    assert_eq!(lock(&state.idempotent).len(), MAX_REMEMBERED_KEYS);
-    assert!(state.decide("op", Some("compact")));
-    assert!(!state.decide("op", Some("named")));
-    assert!(state.decide("op", None), "unkeyed calls still compact");
+    assert!(
+        !state.decide("op", Some("named")),
+        "named pin survives upgrade"
+    );
+    state.set_compact("op", false);
+    assert!(
+        state.decide("op", Some("compact")),
+        "compact pin survives downgrade"
+    );
+    assert!(
+        !state.decide("op", None),
+        "unkeyed calls follow negotiation"
+    );
 }
 
 #[test]
-fn overflow_remains_named_across_negotiation_changes() {
+fn a_full_table_evicts_the_oldest_pin_and_keeps_negotiating() {
     let state = state();
+    assert!(!state.decide("op", Some("key-0")));
     state.set_compact("op", true);
-    for number in 0..MAX_REMEMBERED_KEYS {
+    for number in 1..MAX_REMEMBERED_KEYS {
         assert!(state.decide("op", Some(&format!("key-{number}"))));
     }
-    assert!(!state.decide("op", Some("overflow")));
+    // A new key after the window still follows negotiation, and is pinned.
+    assert!(state.decide("op", Some("fresh")));
     state.set_compact("op", false);
-    assert!(!state.decide("op", Some("overflow")));
-    assert!(
-        state.decide("op", Some("key-0")),
-        "old compact pin survives downgrade"
-    );
+    assert!(state.decide("op", Some("fresh")), "recent pin retained");
+    let last = format!("key-{}", MAX_REMEMBERED_KEYS - 1);
+    assert!(state.decide("op", Some(&last)), "recent pin retained");
+    // The oldest pin (key-0, named) was evicted: it now follows negotiation.
     state.set_compact("op", true);
-    assert!(!state.decide("op", Some("overflow")));
+    assert!(state.decide("op", Some("key-0")));
+    let pins = lock(&state.idempotent);
+    assert_eq!(pins.by_key.len(), MAX_REMEMBERED_KEYS);
 }

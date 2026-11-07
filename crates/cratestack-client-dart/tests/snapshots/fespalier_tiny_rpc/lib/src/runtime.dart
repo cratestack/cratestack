@@ -497,15 +497,14 @@ _CompactCall? _cratestackCompactBegin(
   final remembered = idempotencyKey == null
       ? null
       : memory.encodingByIdempotencyKey[idempotencyKey];
-  final sendCompact = remembered ??
-      (idempotencyKey != null &&
-              memory.encodingByIdempotencyKey.length >= _cratestackRememberedEncodings
-          ? false
-          : memory.compactOps.contains(op));
+  final sendCompact = remembered ?? memory.compactOps.contains(op);
   if (idempotencyKey != null && remembered == null) {
-    if (memory.encodingByIdempotencyKey.length < _cratestackRememberedEncodings) {
-      memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
+    // A full table evicts the oldest first attempt (a Dart map keeps insertion
+    // order): a prompt retry stays pinned, and new keys keep negotiating.
+    if (memory.encodingByIdempotencyKey.length >= _cratestackRememberedEncodings) {
+      memory.encodingByIdempotencyKey.remove(memory.encodingByIdempotencyKey.keys.first);
     }
+    memory.encodingByIdempotencyKey[idempotencyKey] = sendCompact;
   }
   return _CompactCall._(hooks, memory, op, selector, sendCompact, stream);
 }
@@ -573,7 +572,7 @@ CratestackPreparedCall _prepareSnapshot(
   Object owner, CratestackPreparedCall call, Uri baseUri,
   CratestackCompactHooks? hooks, CratestackWireFormat format,
   String? Function(String, Uri) resolveOp, Future<void>? abort, String? authorization,
-  {bool useRustTransport = false}
+  {bool useRustTransport = false, Map<String, String>? extraHeaders}
 ) {
   final data = call._data;
   try {
@@ -634,6 +633,20 @@ CratestackPreparedCall _prepareSnapshot(
         (selector != null && (format != CratestackWireFormat.cbor ||
             hooks == null || hooks.selector(op) != selector))) {
       throw const FormatException('Prepared call contract or route mismatch');
+    }
+    // Per-attempt headers an ordinary call carries: the schema digest, then
+    // the caller's (a tenant, a trace id). None may change the frozen identity
+    // or media headers above.
+    if (cratestackSchemaSha256 != null) {
+      headers['x-cratestack-schema-sha'] = cratestackSchemaSha256!;
+    }
+    for (final entry in (extraHeaders ?? const <String, String>{}).entries) {
+      final name = entry.key.toLowerCase();
+      if (_preparedHeaders.contains(name)) {
+        throw const FormatException('Per-attempt headers cannot replace a prepared header');
+      }
+      headers.removeWhere((key, _) => key.toLowerCase() == name);
+      headers[entry.key] = entry.value;
     }
     if (authorization != null) {
       headers.removeWhere((key, _) => key.toLowerCase() == 'authorization');
@@ -1321,7 +1334,10 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
   }
 
   /// Send persisted inner bytes without re-encoding or renegotiating them.
-  Future<Object?> executePrepared(CratestackPreparedCall call, {Future<void>? abort, String? authorization}) async {
+  /// [headers] are per-attempt headers (never the frozen identity or media
+  /// ones); [authorization] replaces any `Authorization` among them.
+  Future<Object?> executePrepared(CratestackPreparedCall call,
+      {Future<void>? abort, String? authorization, Map<String, String>? headers}) async {
     final (wire, plan) = _restoreSnapshot(this, call, baseUri, compact, format,
       (method, uri) {
         if (method != 'POST' || uri.hasQuery) return null;
@@ -1331,7 +1347,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
         if (op == 'batch') return null;
         if (uri.path != _resolveUri(baseUri, '/rpc/${Uri.encodeComponent(op)}', null).path) return null;
         return op;
-      }, abort, authorization);
+      }, abort, authorization, extraHeaders: headers);
     return _decodeSuccess(await transport.send(wire), plan);
   }
 

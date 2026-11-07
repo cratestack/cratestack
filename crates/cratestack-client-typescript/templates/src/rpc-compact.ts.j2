@@ -113,9 +113,14 @@ export class RpcCompactSession {
     // A retry under the same `Idempotency-Key` reuses the first attempt's encoding.
     const remembered =
       idempotencyKey === undefined ? undefined : this.encodingByIdempotencyKey.get(idempotencyKey);
-    const sendCompact = remembered ?? (idempotencyKey !== undefined && this.encodingByIdempotencyKey.size >= MAX_REMEMBERED_ENCODINGS
-      ? false : this.compactOps.has(op));
-    if (idempotencyKey !== undefined && remembered === undefined && this.encodingByIdempotencyKey.size < MAX_REMEMBERED_ENCODINGS) {
+    const sendCompact = remembered ?? this.compactOps.has(op);
+    if (idempotencyKey !== undefined && remembered === undefined) {
+      // A full table evicts the oldest first attempt (a `Map` keeps insertion
+      // order): a prompt retry stays pinned, and new keys keep negotiating.
+      if (this.encodingByIdempotencyKey.size >= MAX_REMEMBERED_ENCODINGS) {
+        const oldest = this.encodingByIdempotencyKey.keys().next().value;
+        if (oldest !== undefined) this.encodingByIdempotencyKey.delete(oldest);
+      }
       this.encodingByIdempotencyKey.set(idempotencyKey, sendCompact);
     }
     const compactOps = this.compactOps;

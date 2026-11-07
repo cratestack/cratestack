@@ -61,7 +61,7 @@ CratestackPreparedCall _prepareSnapshot(
   Object owner, CratestackPreparedCall call, Uri baseUri,
   CratestackCompactHooks? hooks, CratestackWireFormat format,
   String? Function(String, Uri) resolveOp, Future<void>? abort, String? authorization,
-  {bool useRustTransport = false}
+  {bool useRustTransport = false, Map<String, String>? extraHeaders}
 ) {
   final data = call._data;
   try {
@@ -122,6 +122,20 @@ CratestackPreparedCall _prepareSnapshot(
         (selector != null && (format != CratestackWireFormat.cbor ||
             hooks == null || hooks.selector(op) != selector))) {
       throw const FormatException('Prepared call contract or route mismatch');
+    }
+    // Per-attempt headers an ordinary call carries: the schema digest, then
+    // the caller's (a tenant, a trace id). None may change the frozen identity
+    // or media headers above.
+    if (cratestackSchemaSha256 != null) {
+      headers['x-cratestack-schema-sha'] = cratestackSchemaSha256!;
+    }
+    for (final entry in (extraHeaders ?? const <String, String>{}).entries) {
+      final name = entry.key.toLowerCase();
+      if (_preparedHeaders.contains(name)) {
+        throw const FormatException('Per-attempt headers cannot replace a prepared header');
+      }
+      headers.removeWhere((key, _) => key.toLowerCase() == name);
+      headers[entry.key] = entry.value;
     }
     if (authorization != null) {
       headers.removeWhere((key, _) => key.toLowerCase() == 'authorization');

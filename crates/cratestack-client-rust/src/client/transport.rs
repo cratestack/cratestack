@@ -124,6 +124,7 @@ where
             .await?;
         super::compact_identity::check(
             compact.is_some(),
+            body.is_some(),
             prepared.is_some(),
             headers,
             &header_map,

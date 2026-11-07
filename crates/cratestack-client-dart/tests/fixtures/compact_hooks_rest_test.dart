@@ -95,9 +95,16 @@ void main() {
     expect(transport.requests, hasLength(1));
     await adapter.executePrepared(saved);
     final restored = CratestackPreparedCall.fromJson(saved.toJson());
-    await _adapter(transport, hooks).executePrepared(restored);
+    await _adapter(transport, hooks).executePrepared(restored, headers: const {'X-Tenant': 't-1'});
     expect(transport.requests[1].body, transport.requests[2].body);
     expect(transport.requests[1].headers['Content-Type'], _compactCbor);
+    // A replay carries the schema digest an ordinary call does, plus the
+    // caller's per-attempt headers; those cannot touch a frozen header.
+    expect(transport.requests[2].headers['x-cratestack-schema-sha'],
+        transport.requests[0].headers['x-cratestack-schema-sha']);
+    expect(transport.requests[2].headers['X-Tenant'], 't-1');
+    await expectLater(adapter.executePrepared(saved, headers: const {'Idempotency-Key': 'other'}),
+        throwsFormatException);
     expect(transport.requests[2].headers['Idempotency-Key'], 'persisted');
     expect(transport.requests[1].extra[cratestackUseRustTransportExtraKey], isTrue);
     final moved = saved.toJson()..['uri'] = 'http://127.0.0.1:9/api/other/authors';
@@ -146,7 +153,7 @@ void main() {
     }
   });
 
-  test('full pin memory keeps old keys and leaves new keys named', () async {
+  test('a full pin table evicts the oldest key and keeps recent ones', () async {
     final named = await _named(codec, _author);
     final transport = _Script(List.generate(515, (_) => (_) =>
       _cbor(200, _compactCbor, keys.toCompact(named, 'POST /authors', 'response'))));
@@ -156,12 +163,17 @@ void main() {
       final key = 'key-$i';
       await adapter.execute(request, options: CratestackCallOptions(idempotencyKey: key));
     }
-    for (final key in ['overflow', 'key-0', 'overflow']) {
+    for (final key in ['fresh', 'key-511', 'key-0']) {
       await adapter.execute(request, options: CratestackCallOptions(idempotencyKey: key));
     }
-    expect(transport.requests[512].headers['Content-Type'], 'application/cbor');
-    expect(transport.requests[513].body, transport.requests[0].body);
-    expect(transport.requests[514].body, transport.requests[512].body);
+    // key-0 went out named (no compact answer yet); later keys compact.
+    expect(transport.requests[0].headers['Content-Type'], 'application/cbor');
+    // A new key past the window still follows negotiation.
+    expect(transport.requests[512].headers['Content-Type'], _compactCbor);
+    // A recent key's retry keeps its first encoding.
+    expect(transport.requests[513].body, transport.requests[511].body);
+    // key-0 was the oldest, evicted by 'fresh': it now follows negotiation.
+    expect(transport.requests[514].headers['Content-Type'], _compactCbor);
   });
 
   test('without hooks the wire is the one it always was', () async {

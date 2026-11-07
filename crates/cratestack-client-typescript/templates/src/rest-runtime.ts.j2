@@ -348,6 +348,7 @@ export class CratestackRuntime {
     const saved = new Headers(prepared.headers);
     if (!saved.get("Idempotency-Key")) throw new Error("invalid prepared key");
     const headers = new Headers(await resolveHeaders(this.defaultHeaders));
+    if (SCHEMA_SHA256 !== "") headers.set(SCHEMA_SHA_HEADER, SCHEMA_SHA256);
     for (const name of ["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"]) headers.delete(name);
     for (const [key, value] of saved) headers.set(key, value);
     const compact = await this.compact?.begin(prepared.method, prepared.path, headers.get("Idempotency-Key") ?? undefined);
