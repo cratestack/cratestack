@@ -6,6 +6,7 @@ use minijinja::{Environment, UndefinedBehavior};
 
 use crate::error::TypeScriptGeneratorError;
 
+mod rpc_specs;
 mod specs;
 
 // `templates.rs` grew a fan-out mechanism for the `swr` preset (issue

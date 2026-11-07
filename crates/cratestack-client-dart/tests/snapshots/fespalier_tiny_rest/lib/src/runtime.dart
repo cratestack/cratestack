@@ -651,19 +651,6 @@ int? _cratestackSkipArgument(Uint8List bytes, int cursor, int info) {
   return (value, cursor + width);
 }
 
-/// `(tagNumber, headerLength)` when [item] starts with a CBOR tag, else
-/// `null`. Reads only the tag header, never the tagged content.
-(int, int)? _cratestackReadLeadingTag(Uint8List item) {
-  if (item.isEmpty || item[0] >> 5 != 6) {
-    return null;
-  }
-  try {
-    return _cratestackReadArgument(item, 1, item[0] & 0x1f);
-  } on FormatException {
-    return null;
-  }
-}
-
 /// A versioned, caller-owned request snapshot. Persist [toJson] before send.
 /// It contains inner wire bytes, never a transport's sealed envelope.
 final class CratestackPreparedCall {

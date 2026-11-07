@@ -48,3 +48,16 @@ class CratestackCborSeqScanner implements CborSeqDecoderHandle {
   @override
   int pendingLen() => _buffer.length;
 }
+
+/// `(tagNumber, headerLength)` when [item] starts with a CBOR tag, else
+/// `null`. Reads only the tag header, never the tagged content.
+(int, int)? _cratestackReadLeadingTag(Uint8List item) {
+  if (item.isEmpty || item[0] >> 5 != 6) {
+    return null;
+  }
+  try {
+    return _cratestackReadArgument(item, 1, item[0] & 0x1f);
+  } on FormatException {
+    return null;
+  }
+}

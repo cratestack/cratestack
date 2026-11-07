@@ -128,6 +128,14 @@ fn assert_copies_match(template_relative: &str, pinned_relative: &str) {
 }
 
 #[test]
+fn cbor_argument_copies_do_not_drift() {
+    assert_copies_match(
+        "templates/src/rpc-cbor-argument.ts.j2",
+        "packages/cratestack-ts-types/src/cbor-argument.ts",
+    );
+}
+
+#[test]
 fn cbor_item_walker_copies_do_not_drift() {
     assert_copies_match(
         "templates/src/rpc-cbor-item.ts.j2",
