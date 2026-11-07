@@ -238,8 +238,8 @@ fn rpc_runtime_resolves_the_native_codec_lazily() {
     );
 }
 
-/// The Technical Context's own call-site inventory: `call()`, `batch()`,
-/// `stream()` and `readUnaryResponse()` — 4 already-`async` methods — must
+/// The RPC call-site inventory: `prepare()`, `executePrepared()`, `call()`,
+/// `batch()`, `stream()` and `readUnaryResponse()` must
 /// each `await this.resolveCodec()` exactly once, and `createCborCodec()`
 /// itself must be invoked from exactly one place (the memoized resolver),
 /// never inline at a call site (that would defeat the "at most once per
