@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.18.1 (2026-11-07)
+
 ### Durable compact idempotent calls
 
 Compact-capable keyed calls retain their initial encoding while a client instance

@@ -1,5 +1,29 @@
 ## Unreleased
 
+## 0.18.1 (2026-11-07)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.18.0..HEAD at efb0128c48d72e403d1aaa440ca602f5b9900685 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Tests
+
+- compact_hooks fixtures use the real createCompactKeys (#1299)
+
+#### CI
+
+- drop the signed-compact allowlist entry (#1301)
+- free runner disk before the ignored-tests report job (#1300)
+
+#### Other
+
+- Preserve encoding for idempotent compact retries (#1297)
+
 ## 0.18.0 (2026-11-06)
 
 - New: compact wire key payloads can be sealed. `CallBinding` gains
