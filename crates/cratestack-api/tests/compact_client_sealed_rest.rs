@@ -100,3 +100,15 @@ async fn stream_refused(client: &client_schema::client::Client) -> bool {
 }
 
 sealed_compact_suite!();
+
+prepared_sealed_suite!(
+    schema::axum::router,
+    "/$procs/echoOrder",
+    "/$procs/echoOrder"
+);
+prepared_sealed_wire_suite!(
+    "/$procs/echoOrder",
+    "/$procs/echoOrder",
+    "/$procs/echoOrder"
+);
+sealed_authorizer_pin_suite!("/$procs/echoOrder", "/$procs/echoOrder");

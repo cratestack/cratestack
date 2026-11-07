@@ -70,6 +70,112 @@ void main() {
     );
   });
 
+  test('prepared compact bytes survive adapter recreation and validate contracts', () async {
+    final named = await _named(codec, _author);
+    final transport = _Script([
+      (_) => _cbor(200, _compactCbor, keys.toCompact(named, 'POST /authors', 'response')),
+      (_) => _cbor(200, 'application/cbor', named),
+      (_) => _cbor(200, 'application/cbor', named),
+    ]);
+    final adapter = CratestackHttpAdapter(transport, baseUri: Uri.parse('http://127.0.0.1:9'), compact: hooks, useRustTransport: true);
+    const request = CratestackRequest(method: 'POST', path: '/api/authors', body: _author);
+    await expectLater(adapter.prepare(const CratestackRequest(method: 'GET', path: '/api/authors'), options: const CratestackCallOptions(idempotencyKey: 'x')), throwsFormatException);
+    await expectLater(adapter.prepare(const CratestackRequest(method: 'POST', path: '/api/other/authors', body: _author), options: const CratestackCallOptions(idempotencyKey: 'x')), throwsFormatException);
+    await adapter.execute(request);
+    await expectLater(adapter.prepare(request, options: const CratestackCallOptions(
+      idempotencyKey: 'a', headers: {'idempotency-key': 'b'})), throwsFormatException);
+    final saved = await adapter.prepare(request, options: const CratestackCallOptions(
+      idempotencyKey: 'persisted', headers: {'Authorization': 'Bearer secret', 'X-API-Key': 'secret'}));
+    expect(saved.toJson().toString(), isNot(contains('secret')));
+    expect(transport.requests, hasLength(1));
+    final unsafe = CratestackHttpAdapter(transport, baseUri: Uri.parse('http://user:secret@127.0.0.1:9'), compact: hooks);
+    await expectLater(unsafe.prepare(request, options: const CratestackCallOptions(idempotencyKey: 'k')), throwsFormatException);
+    final credentialUrl = saved.toJson()..['uri'] = 'http://user:secret@127.0.0.1:9/api/authors';
+    await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(credentialUrl)), throwsFormatException);
+    expect(transport.requests, hasLength(1));
+    await adapter.executePrepared(saved);
+    final restored = CratestackPreparedCall.fromJson(saved.toJson());
+    await _adapter(transport, hooks).executePrepared(restored, headers: const {'X-Tenant': 't-1'});
+    expect(transport.requests[1].body, transport.requests[2].body);
+    expect(transport.requests[1].headers['Content-Type'], _compactCbor);
+    // A replay carries the schema digest an ordinary call does, plus the
+    // caller's per-attempt headers; those cannot touch a frozen header.
+    expect(transport.requests[2].headers['x-cratestack-schema-sha'],
+        transport.requests[0].headers['x-cratestack-schema-sha']);
+    expect(transport.requests[2].headers['X-Tenant'], 't-1');
+    await expectLater(adapter.executePrepared(saved, headers: const {'Idempotency-Key': 'other'}),
+        throwsFormatException);
+    expect(transport.requests[2].headers['Idempotency-Key'], 'persisted');
+    expect(transport.requests[1].extra[cratestackUseRustTransportExtraKey], isTrue);
+    final moved = saved.toJson()..['uri'] = 'http://127.0.0.1:9/api/other/authors';
+    await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(moved)), throwsFormatException);
+    for (final invalid in [<int>[255], <int>[0, 0]]) {
+      final malformed = saved.toJson()..['body'] = base64Encode(invalid);
+      await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(malformed)), throwsFormatException);
+    }
+    final bad = saved.toJson()..['contract'] = 'old';
+    await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(bad)), throwsFormatException);
+    for (final entry in <String, Object?>{
+      'keyTables': 'different', 'selector': 'wrong', 'version': 2,
+      'uri': 'https://elsewhere.invalid/other',
+    }.entries) {
+      final altered = saved.toJson()..[entry.key] = entry.value;
+      await expectLater(() async => adapter.executePrepared(CratestackPreparedCall.fromJson(altered)), throwsFormatException);
+    }
+    final injected = saved.toJson();
+    (injected['headers'] as Map<String, dynamic>)['Authorization'] = 'Bearer injected';
+    await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(injected)), throwsFormatException);
+    expect(transport.requests, hasLength(3));
+  });
+
+  test('validates one CBOR item without changing the wire bytes', () async {
+    final named = await _named(codec, _author);
+    final transport = _Script(List.generate(13, (_) => (_) => _cbor(200, 'application/cbor', named)));
+    final adapter = _adapter(transport, null);
+    final saved = await adapter.prepare(const CratestackRequest(method: 'POST', path: '/api/authors', body: _author), options: const CratestackCallOptions(idempotencyKey: 'k'));
+    List<int> hex(String value) => [for (var i = 0; i < value.length; i += 2) int.parse(value.substring(i, i + 2), radix: 16)];
+    final invalid = ['', '0000', '18', '1c', 'ff', '81ff', 'bf00ff', '5f6161ff', '5f5fffff',
+      'f800', 'f818', 'f81f', '61ff', '62c080', '63eda080', '64f4908080', '7f61c261a2ff'];
+    final valid = ['a10102', 'a1810102', '1bffffffffffffffff', '3bffffffffffffffff', 'dbffffffffffffffff00',
+      '9f8101bf0001ffff', '5f4100420102ff', '7f62c2a26161ff', 'f97e00', 'fa7f800000', 'f820', '1800'];
+    invalid.add('${List.filled(257, '81').join()}00');
+    valid.add('${List.filled(256, '81').join()}7f6161ff');
+    for (final value in invalid) {
+      final altered = saved.toJson()..['body'] = base64Encode(hex(value));
+      await expectLater(adapter.executePrepared(CratestackPreparedCall.fromJson(altered)), throwsFormatException);
+    }
+    expect(transport.requests, isEmpty);
+    for (final value in valid) {
+      final bytes = hex(value);
+      final altered = saved.toJson()..['body'] = base64Encode(bytes);
+      await adapter.executePrepared(CratestackPreparedCall.fromJson(altered));
+      expect(transport.requests.last.body, bytes);
+    }
+  });
+
+  test('a full pin table evicts the oldest key and keeps recent ones', () async {
+    final named = await _named(codec, _author);
+    final transport = _Script(List.generate(515, (_) => (_) =>
+      _cbor(200, _compactCbor, keys.toCompact(named, 'POST /authors', 'response'))));
+    final adapter = _adapter(transport, hooks);
+    const request = CratestackRequest(method: 'POST', path: '/api/authors', body: _author);
+    for (var i = 0; i < 512; i++) {
+      final key = 'key-$i';
+      await adapter.execute(request, options: CratestackCallOptions(idempotencyKey: key));
+    }
+    for (final key in ['fresh', 'key-511', 'key-0']) {
+      await adapter.execute(request, options: CratestackCallOptions(idempotencyKey: key));
+    }
+    // key-0 went out named (no compact answer yet); later keys compact.
+    expect(transport.requests[0].headers['Content-Type'], 'application/cbor');
+    // A new key past the window still follows negotiation.
+    expect(transport.requests[512].headers['Content-Type'], _compactCbor);
+    // A recent key's retry keeps its first encoding.
+    expect(transport.requests[513].body, transport.requests[511].body);
+    // key-0 was the oldest, evicted by 'fresh': it now follows negotiation.
+    expect(transport.requests[514].headers['Content-Type'], _compactCbor);
+  });
+
   test('without hooks the wire is the one it always was', () async {
     final transport = _Script([
       (_) => _cbor(200, 'application/cbor', Uint8List(0)),

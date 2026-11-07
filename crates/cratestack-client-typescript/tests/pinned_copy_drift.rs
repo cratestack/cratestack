@@ -3,11 +3,11 @@
 //!
 //! There are two copies of this parser, and they are *not* the same file:
 //!
-//! * `templates/src/rpc-cbor-{item,seq}.ts.j2` — what actually ships into
+//! * `templates/src/rpc-cbor-{argument,item,seq}.ts.j2` — what actually ships into
 //!   every generated `transport rpc` client. Verified on the Rust side
 //!   only by `.contains(...)` assertions in `snapshot.rs`, which confirm
 //!   symbols exist but say nothing about whether the algorithm is right.
-//! * `packages/cratestack-ts-types/src/cbor-{item,seq}.ts` — the pinned
+//! * `packages/cratestack-ts-types/src/cbor-{argument,item,seq}.ts` — the pinned
 //!   npm copy, which is what all 24 behavioural vitest cases in
 //!   `packages/cratestack-ts-types/tests/cbor-seq.test.ts` actually
 //!   exercise (indefinite-length arrays/maps, truncation, byte-by-byte
@@ -21,7 +21,7 @@
 //! this work's highest risk, and it is worth a guard precisely because
 //! this is the most failure-prone code in the package.
 //!
-//! Both `.j2` files contain **no jinja at all** (no `{{`, no `{%`) — they
+//! The `.j2` files contain **no jinja at all** (no `{{`, no `{%`) — they
 //! are pure static TypeScript, so the generated output is byte-identical
 //! to the template and this comparison is exact rather than approximate.
 //!
@@ -124,6 +124,14 @@ fn assert_copies_match(template_relative: &str, pinned_relative: &str) {
          The behavioural tests exercise the pinned copy, so this drift means they are green \
          while generated clients may be broken. Apply the change to BOTH copies — do not \
          loosen this comparison. Comment headers and import prologues are already ignored."
+    );
+}
+
+#[test]
+fn cbor_argument_copies_do_not_drift() {
+    assert_copies_match(
+        "templates/src/rpc-cbor-argument.ts.j2",
+        "packages/cratestack-ts-types/src/cbor-argument.ts",
     );
 }
 

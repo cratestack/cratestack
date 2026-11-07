@@ -89,6 +89,11 @@ const RPC: &[TemplateSpec] = &[
         default_source: include_str!("../../templates/src/rpc-links.ts.j2"),
     },
     TemplateSpec {
+        template_name: "rpc-cbor-argument.ts.j2",
+        output_path: OutputPath::Fixed("src/swr/cbor-argument.ts"),
+        default_source: include_str!("../../templates/src/rpc-cbor-argument.ts.j2"),
+    },
+    TemplateSpec {
         template_name: "rpc-cbor-item.ts.j2",
         output_path: OutputPath::Fixed("src/swr/cbor-item.ts"),
         default_source: include_str!("../../templates/src/rpc-cbor-item.ts.j2"),

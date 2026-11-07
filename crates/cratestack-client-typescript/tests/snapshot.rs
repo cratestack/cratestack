@@ -204,10 +204,11 @@ fn rpc_runtime_exposes_pluggable_codec_option() {
         "call()/batch()/stream() must derive Accept/Content-Type from the resolved codec"
     );
     assert_eq!(
-        runtime.matches("\"application/json\"").count(),
-        1,
-        "\"application/json\" must appear exactly once — as jsonRpcCodec's own \
-         contentType literal — not hardcoded again in call()/batch()/stream():\n{runtime}"
+        runtime[runtime.find("/** POST /rpc/{op_id} — unary call.").unwrap()..]
+            .matches("\"application/json\"")
+            .count(),
+        0,
+        "call()/batch()/stream() must not hardcode the JSON codec:\n{runtime}"
     );
 }
 
@@ -247,9 +248,7 @@ fn generated_rpc_runtime_satisfies_exact_optional_property_types() {
          (verified with a real `tsc --noEmit` run, issue #182's link-chain plumbing):\n{runtime}"
     );
     assert!(
-        runtime.contains(
-            "...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),"
-        ),
+        runtime.contains("...(idempotencyKey !== undefined ? { idempotencyKey } : {}),"),
         "call()'s RpcLinkRequest must conditionally spread idempotencyKey:\n{runtime}"
     );
     assert!(

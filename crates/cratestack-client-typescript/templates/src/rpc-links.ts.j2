@@ -45,6 +45,8 @@ export interface RpcLinkRequest {
   /** Present only on a unary call of a client built with `compactKeys`
    *  (`./compact`); the terminal link acts on it, a link may ignore it. */
   readonly compact?: RpcCompactCall;
+  /** Exact inner wire body of a persisted request, before per-attempt sealing. */
+  readonly preparedBody?: BodyInit;
   readonly fetchFn: typeof fetch;
   readonly urls: {
     unary(opId: string): string;

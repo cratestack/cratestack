@@ -59,6 +59,9 @@ where
         if self.sealing.envelope.is_some() {
             return Err(crate::envelope_error::EnvelopeError::StreamsUnsupported.into());
         }
+        if compact && self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let url = build_url(&self.config.base_url, path, canonical_query)?;
         let plan = compact
             .then(|| self.compact_call(&method, headers, body.is_some()))
@@ -81,6 +84,13 @@ where
                 content_type,
             )
             .await?;
+        super::compact_identity::check(
+            plan.is_some(),
+            body.is_some(),
+            false,
+            headers,
+            &header_map,
+        )?;
         if let Some(call) = &plan {
             call.stamp_selector(&mut header_map)?;
         }

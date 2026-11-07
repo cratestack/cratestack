@@ -20,7 +20,7 @@
 //! (the compact request type refused) turns the op back to named for the
 //! next call. That failed call is returned, not retried.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use cratestack_core::compact::{Direction, KeyNode, KeyTables};
@@ -31,8 +31,8 @@ use crate::client::core::CratestackClient;
 use crate::codec::HttpClientCodec;
 use crate::error::{ClientError, HeaderPair};
 
-/// Idempotency keys remembered for their request encoding; past this the
-/// memo is dropped wholesale (a retry far enough apart to miss is rare).
+/// Encoding pins kept; past this the oldest first attempt's pin is evicted, so a
+/// prompt retry is covered and a long-lived instance keeps negotiating compact.
 const MAX_REMEMBERED_KEYS: usize = 1024;
 
 /// What a client opted into compact keys carries; shared by every clone.
@@ -42,7 +42,7 @@ pub(crate) struct CompactClient {
     /// Ops whose last 2xx response came back compact.
     compact_ops: Mutex<HashSet<String>>,
     /// `Idempotency-Key` -> whether its first attempt went out compact.
-    idempotent: Mutex<HashMap<String, bool>>,
+    idempotent: Mutex<Pins>,
 }
 
 impl CompactClient {
@@ -93,13 +93,26 @@ impl CompactClient {
         let Some(key) = idempotency_key else {
             return wanted;
         };
-        let mut seen = lock(&self.idempotent);
-        if seen.len() >= MAX_REMEMBERED_KEYS {
-            seen.clear();
+        let mut pins = lock(&self.idempotent);
+        if let Some(remembered) = pins.by_key.get(key) {
+            return *remembered;
         }
-        // A retry reuses its first attempt's encoding.
-        *seen.entry(key.to_owned()).or_insert(wanted)
+        if pins.by_key.len() >= MAX_REMEMBERED_KEYS
+            && let Some(oldest) = pins.order.pop_front()
+        {
+            pins.by_key.remove(&oldest);
+        }
+        pins.by_key.insert(key.to_owned(), wanted);
+        pins.order.push_back(key.to_owned());
+        wanted
     }
+}
+
+/// Idempotency-Key -> first attempt went compact, in first-attempt order.
+#[derive(Default)]
+pub(crate) struct Pins {
+    pub(crate) by_key: HashMap<String, bool>,
+    order: VecDeque<String>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -181,3 +194,7 @@ where
         })
     }
 }
+
+#[cfg(test)]
+#[path = "compact_idempotency_tests.rs"]
+mod idempotency_tests;

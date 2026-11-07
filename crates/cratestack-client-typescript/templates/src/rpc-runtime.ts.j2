@@ -20,7 +20,20 @@ import type { SubscriptionClientOptions } from "./subscriptions.js";
 import { encodeBinaryAsJson, encodeWireFields } from "{{ models_import_path }}";
 import { createCborCodec } from "@cratestack/cbor";
 import { RpcCompactSession } from "./compact.js";
+import { skipItem } from "./cbor-item.js";
 import type { RpcCompactCall } from "./compact.js";
+
+/** Serializable unary request, prepared before its first network attempt. */
+export interface PreparedCall {
+  version: 1;
+  op: string;
+  url: string;
+  contract: string;
+  keyTables: string;
+  codec: string;
+  headers: [string, string][];
+  bodyBase64: string;
+}
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
@@ -435,11 +448,11 @@ export const CBOR_SEQ_CONTENT_TYPE = "application/cbor-seq";
 const terminalLink: RpcLinkNext = async (request) => {
   const url = request.kind === "batch" ? request.urls.batch() : request.urls.unary(request.opId);
   let headers = request.headers;
-  let body = request.codec.encode(encodeWireFields(request.input));
+  let body = request.preparedBody ?? request.codec.encode(encodeWireFields(request.input));
   // Compact keys (`./compact`) are applied here, on a copy, and not to
   // `request.headers`: a batching link re-sends `request.headers` on
   // `/rpc/batch`, which is never compact.
-  if (request.compact !== undefined && request.kind === "unary") {
+  if (request.compact !== undefined && request.kind === "unary" && request.preparedBody === undefined) {
     headers = new Headers(headers);
     request.compact.applyHeaders(headers);
     body = request.compact.encodeBody(body);
@@ -475,6 +488,7 @@ export class CratestackRpcRuntime {
 {% endif %}
   private readonly compact: RpcCompactSession | undefined;
   private readonly chain: RpcLinkNext;
+  private readonly hasUnaryLinks: boolean;
   private readonly streamChain: RpcStreamLinkNext;
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
@@ -494,6 +508,7 @@ export class CratestackRpcRuntime {
     // Empty `links`/`streamLinks` collapses `reduceRight` to the
     // terminal link unchanged — byte-identical request as before either
     // option existed.
+    this.hasUnaryLinks = (options.links?.length ?? 0) > 0;
     this.chain = (options.links ?? []).reduceRight<RpcLinkNext>(
       (next, link) => (request) => link(request, next),
       terminalLink,
@@ -547,24 +562,109 @@ export class CratestackRpcRuntime {
     return pending;
   }
 
+  /** Prepare a keyed unary call for caller-owned durable storage. */
+  async prepare<I>(op: string, input: I, options: CratestackRpcCallOptions = {}): Promise<PreparedCall> {
+    if (this.hasUnaryLinks) throw new Error("prepared calls cannot use custom unary links");
+    const target = new URL(this.linkUrls().unary(op));
+    if (target.username || target.password) throw new Error("prepared URL must not contain userinfo");
+    const contract = OP_CONTRACTS[op];
+    if (contract === undefined || op === "batch") throw new Error("unknown prepared operation");
+    const headers = await this.buildHeaders(options.headers);
+    const headerKey = headers.get("Idempotency-Key");
+    if (headerKey && options.idempotencyKey && headerKey !== options.idempotencyKey) throw new Error("conflicting idempotency keys");
+    const key = options.idempotencyKey ?? headerKey;
+    if (!key) throw new Error("prepare requires an idempotency key");
+    const codec = await this.resolveCodec();
+    if (codec.contentType !== "application/json" && codec.contentType !== "application/cbor") throw new Error("unsupported prepared codec");
+    headers.set("Accept", codec.contentType);
+    headers.set("Content-Type", codec.contentType);
+    headers.set("Idempotency-Key", key);
+    let body = codec.encode(encodeWireFields(input ?? null));
+    const compact = await this.compact?.begin(op, codec, "unary", key);
+    if (compact !== undefined) {
+      compact.applyHeaders(headers);
+      body = compact.encodeBody(body);
+    }
+    const bytes = typeof body === "string" ? new TextEncoder().encode(body) :
+      body instanceof Uint8Array ? body : body instanceof ArrayBuffer ? new Uint8Array(body) : undefined;
+    if (bytes === undefined || bytes.length > 8 * 1024 * 1024) throw new Error("invalid prepared body");
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    for (const name of [...headers.keys()]) if (!["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"].includes(name)) headers.delete(name);
+    const prepared: PreparedCall = { version: 1, op, url: target.toString(), contract, keyTables: KEY_TABLES, codec: codec.contentType, headers: [...headers], bodyBase64: btoa(binary) };
+    if (new TextEncoder().encode(JSON.stringify(prepared)).length > 16 * 1024 * 1024) throw new Error("prepared call too large");
+    return prepared;
+  }
+
+  async executePrepared<O>(prepared: PreparedCall, signal?: AbortSignal): Promise<O> {
+    if (this.hasUnaryLinks) throw new Error("prepared calls cannot use custom unary links");
+    const serialized = JSON.stringify(prepared);
+    if (new TextEncoder().encode(serialized).length > 16 * 1024 * 1024) throw new Error("prepared call too large");
+    prepared = JSON.parse(serialized) as PreparedCall;
+    if (Object.keys(prepared).sort().join(",") !== "bodyBase64,codec,contract,headers,keyTables,op,url,version" || prepared.version !== 1 ||
+      prepared.url !== this.linkUrls().unary(prepared.op) ||
+      typeof prepared.op !== "string" || prepared.op === "batch" || typeof prepared.contract !== "string" || prepared.contract !== OP_CONTRACTS[prepared.op] ||
+      prepared.keyTables !== KEY_TABLES || !Array.isArray(prepared.headers) || typeof prepared.bodyBase64 !== "string") {
+      throw new Error("invalid or incompatible prepared call");
+    }
+    const target = new URL(prepared.url);
+    if (target.username || target.password) throw new Error("prepared URL must not contain userinfo");
+    const names = new Set<string>();
+    for (const pair of prepared.headers) {
+      if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== "string" || typeof pair[1] !== "string") throw new Error("invalid prepared header");
+      const name = pair[0].toLowerCase();
+      if (names.has(name) || !["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"].includes(name) || new TextEncoder().encode(pair[1]).length > 8192) throw new Error("invalid prepared header");
+      names.add(name);
+    }
+    if (names.size > 5) throw new Error("invalid prepared headers");
+    const codec = await this.resolveCodec();
+    if (codec.contentType !== prepared.codec || (prepared.codec !== "application/json" && prepared.codec !== "application/cbor")) throw new Error("incompatible prepared codec");
+    const bytes = Uint8Array.from(atob(prepared.bodyBase64), (char) => char.charCodeAt(0));
+    if (bytes.length > 8 * 1024 * 1024 || btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join("")) !== prepared.bodyBase64) throw new Error("invalid prepared body");
+    if (prepared.codec === "application/json") JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+    else if (skipItem(bytes, 0) !== bytes.length) throw new Error("invalid prepared CBOR");
+    const saved = new Headers(prepared.headers);
+    const idempotencyKey = saved.get("Idempotency-Key");
+    if (!idempotencyKey) throw new Error("invalid prepared key");
+    const headers = await this.buildHeaders();
+    for (const name of ["idempotency-key", "if-match", "accept", "content-type", "cratestack-contract"]) headers.delete(name);
+    for (const [name, value] of saved) headers.set(name, value);
+    const compact = await this.compact?.begin(prepared.op, codec, "unary", idempotencyKey);
+    if (headers.has("Cratestack-Contract") && compact === undefined) throw new Error("compact decoder unavailable");
+    const expected = new Headers();
+    if (compact !== undefined) compact.applyHeaders(expected);
+    const contentType = saved.get("content-type");
+    if (saved.get("accept") !== (compact ? expected.get("accept") : codec.contentType) ||
+        saved.get("cratestack-contract") !== expected.get("cratestack-contract") ||
+        (contentType !== codec.contentType && contentType !== `application/vnd.cratestack.compact+${codec.contentType.split("/")[1]}`) ||
+        (contentType !== codec.contentType && compact === undefined)) throw new Error("invalid prepared media or selector");
+
+    const { response } = await terminalLink({ kind: "unary", opId: prepared.op, input: null, headers, signal: signal ?? null,
+      idempotencyKey, codec, ...(compact !== undefined ? { compact } : {}),
+      preparedBody: bytes as Uint8Array<ArrayBuffer>,
+      fetchFn: this.fetchFn, urls: this.linkUrls() });
+    return (await this.readUnaryResponse(response, compact)) as O;
+  }
+
   /** POST /rpc/{op_id} — unary call. */
   async call<I, O>(opId: string, input: I, options: CratestackRpcCallOptions = {}): Promise<O> {
     const headers = await this.buildHeaders(options.headers);
     const codec = await this.resolveCodec();
     headers.set("Accept", codec.contentType);
     headers.set("Content-Type", codec.contentType);
-    if (options.idempotencyKey !== undefined) {
-      headers.set("Idempotency-Key", options.idempotencyKey);
-    }
+    const headerKey = headers.get("Idempotency-Key");
+    if (headerKey && options.idempotencyKey && headerKey !== options.idempotencyKey) throw new Error("conflicting idempotency keys");
+    const idempotencyKey = options.idempotencyKey ?? headerKey ?? undefined;
+    if (idempotencyKey !== undefined) headers.set("Idempotency-Key", idempotencyKey);
 
-    const compact = await this.compact?.begin(opId, codec, "unary", options.idempotencyKey);
+    const compact = await this.compact?.begin(opId, codec, "unary", idempotencyKey);
     const { response } = await this.chain({
       kind: "unary",
       opId,
       input: input ?? null,
       headers,
       signal: options.signal ?? null,
-      ...(options.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
+      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       codec,
       ...(compact !== undefined ? { compact } : {}),
       fetchFn: this.fetchFn,

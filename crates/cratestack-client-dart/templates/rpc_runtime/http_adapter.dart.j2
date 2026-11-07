@@ -66,7 +66,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
       compact,
       format,
       opId,
-      idempotencyKey: options?.idempotencyKey,
+      idempotencyKey: _effectivePreparedKey(options?.idempotencyKey, [options?.headers]),
     );
     final response = await _post(
       '/rpc/${Uri.encodeComponent(opId)}',
@@ -77,6 +77,37 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
       compact: plan,
     );
     return _decodeSuccess(response, plan);
+  }
+
+  /// Encode a unary call before its first network write.
+  Future<CratestackPreparedCall> prepareCall(String opId, Object? input,
+      {CratestackRpcCallOptions? options}) async {
+    if (_effectivePreparedKey(options?.idempotencyKey, [options?.headers])?.isNotEmpty != true || opId == 'batch' || !cratestackOpContracts.containsKey(opId)) {
+      throw const FormatException('A known operation and idempotency key are required');
+    }
+    final plan = _cratestackCompactBegin(this, compact, format, opId,
+      idempotencyKey: _effectivePreparedKey(options?.idempotencyKey, [options?.headers]));
+    final wire = await _buildPost('/rpc/${Uri.encodeComponent(opId)}', input,
+      accept: _acceptForUnary, options: options, idempotent: true, compact: plan);
+    return _prepareSnapshot(wire, opId, plan?._selector, format);
+  }
+
+  /// Send persisted inner bytes without re-encoding or renegotiating them.
+  /// [headers] are per-attempt headers (never the frozen identity or media
+  /// ones); [authorization] replaces any `Authorization` among them.
+  Future<Object?> executePrepared(CratestackPreparedCall call,
+      {Future<void>? abort, String? authorization, Map<String, String>? headers}) async {
+    final (wire, plan) = _restoreSnapshot(this, call, baseUri, compact, format,
+      (method, uri) {
+        if (method != 'POST' || uri.hasQuery) return null;
+        final parts = uri.pathSegments;
+        if (parts.length < 2 || parts[parts.length - 2] != 'rpc') return null;
+        final op = parts.last;
+        if (op == 'batch') return null;
+        if (uri.path != _resolveUri(baseUri, '/rpc/${Uri.encodeComponent(op)}', null).path) return null;
+        return op;
+      }, abort, authorization, extraHeaders: headers);
+    return _decodeSuccess(await transport.send(wire), plan);
   }
 
   @override
@@ -167,11 +198,17 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
     required CratestackRpcCallOptions? options,
     bool idempotent = false,
     _CompactCall? compact,
+  }) async => transport.send(await _buildPost(path, body, accept: accept,
+    options: options, idempotent: idempotent, compact: compact));
+
+  Future<CratestackHttpRequest> _buildPost(
+    String path, Object? body, {required String? accept,
+    required CratestackRpcCallOptions? options, bool idempotent = false,
+    _CompactCall? compact,
   }) async {
     final plainBody = await _encodeBody(format, body);
     final encoded = compact?.encode(plainBody) ?? plainBody;
-    return transport.send(
-      CratestackHttpRequest(
+    return CratestackHttpRequest(
         method: 'POST',
         uri: _resolveUri(baseUri, path, null),
         headers: _mergeHeaders([
@@ -190,8 +227,7 @@ class CratestackRpcHttpAdapter implements CratestackRpcAdapter {
         ]),
         body: encoded,
         abort: options?.abort,
-      ),
-    );
+      );
   }
 
   /// Reads a unary answer: the decoded body on 2xx, a

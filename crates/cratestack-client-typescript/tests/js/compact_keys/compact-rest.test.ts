@@ -77,6 +77,35 @@ describe.each([
     expect(fake.calls).toEqual([]);
   });
 
+  it("retains the first encoding when Idempotency-Key is supplied in headers", async () => {
+    const { fetchFn, sent } = transport(() => compactResponse({ id: 1 }));
+    const runtime = new mod.CratestackRuntime("http://x.invalid", {
+      fetch: fetchFn, compactKeys: true,
+    });
+    const options = { headers: { "iDeMpOtEnCy-KeY": "key-0" } };
+    await runtime.post("/widgets", { name: "a" }, options);
+    await runtime.post("/widgets", { name: "a" }, options);
+    expect(sent[1]?.headers.get("content-type")).toBe(sent[0]?.headers.get("content-type"));
+    expect(sent[1]?.body).toEqual(sent[0]?.body);
+  });
+
+  it("persists compact bytes before the first attempt across runtime recreation", async () => {
+    const { fetchFn, sent } = transport(() => compactResponse({ id: 1 }));
+    const runtime = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn, compactKeys: true });
+    await runtime.post("/widgets", { name: "warm" });
+    const prepared = await runtime.prepare("POST", "/widgets", { body: { name: "a" }, query: { a: 1 }, headers: { "Idempotency-Key": "persist" } });
+    expect(sent).toHaveLength(1);
+    const restored = JSON.parse(JSON.stringify(prepared));
+    const restarted = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn, compactKeys: true });
+    await restarted.executePrepared(restored);
+    await restarted.executePrepared(restored);
+    expect(sent[1]?.headers.get("content-type")).toBe(COMPACT_JSON);
+    expect(sent[2]?.body).toEqual(sent[1]?.body);
+    // A replay carries the schema digest exactly as an ordinary request does.
+    expect(sent[1]?.headers.get("x-cratestack-schema-sha")).toBe(sent[0]?.headers.get("x-cratestack-schema-sha"));
+    await expect(restarted.executePrepared({ ...restored, contract: "changed" })).rejects.toThrow();
+  });
+
   it("compactKeys on: keys the op by method and route template, then sends compact", async () => {
     const { fetchFn, sent } = transport((_request, index) =>
       index === 0 ? plainResponse({ id: 1 }) : compactResponse({ id: 1, name: "a" }),
@@ -130,4 +159,40 @@ describe.each([
     expect(sent[0]?.headers.get("accept")).toBe("application/json");
     expect(sent[0]?.headers.has("cratestack-contract")).toBe(false);
   });
+  it("rejects injected credentials and duplicate headers before sending", async () => {
+    const { fetchFn, sent } = transport(() => plainResponse({}));
+    const runtime = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn,
+      headers: { Authorization: "Bearer secret", Cookie: "session=secret", "X-API-Key": "secret" } });
+    const saved = await runtime.prepare("POST", "/widgets", { body: { name: "a" }, headers: { "Idempotency-Key": "k" } });
+    expect(JSON.stringify(saved)).not.toContain("secret");
+    await expect(runtime.executePrepared({ ...saved, headers: [...saved.headers, ["authorization", "Bearer injected"]] })).rejects.toThrow();
+    await expect(runtime.executePrepared({ ...saved, headers: [...saved.headers, ["IDEMPOTENCY-KEY", "other"]] })).rejects.toThrow();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("preserves absent and present conditional headers across fresh defaults", async () => {
+    const { fetchFn, sent } = transport(() => plainResponse({}));
+    let defaults: Record<string, string> = {};
+    const runtime = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn, headers: () => defaults });
+    const saved = await runtime.prepare("POST", "/widgets", { body: {}, headers: { "idempotency-key": "original" } });
+    defaults = { "idempotency-key": "replacement", "if-match": "new-etag", authorization: "fresh" };
+    await runtime.executePrepared(saved);
+    expect(sent[0]?.headers.get("idempotency-key")).toBe("original");
+    expect(sent[0]?.headers.get("if-match")).toBeNull();
+    expect(sent[0]?.headers.get("authorization")).toBe("fresh");
+    const bad = { ...saved, headers: saved.headers.filter(([name]) => name !== "idempotency-key") };
+    await expect(runtime.executePrepared(bad)).rejects.toThrow();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("rejects URL userinfo before preparation and execution", async () => {
+    const { fetchFn, sent } = transport(() => plainResponse({}));
+    const unsafe = new mod.CratestackRuntime("http://user:secret@x.invalid", { fetch: fetchFn });
+    await expect(unsafe.prepare("POST", "/widgets", { body: {}, headers: { "Idempotency-Key": "k" } })).rejects.toThrow();
+    const safe = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn });
+    const saved = await safe.prepare("POST", "/widgets", { body: {}, headers: { "Idempotency-Key": "k" } });
+    await expect(safe.executePrepared({ ...saved, url: saved.url.replace("//", "//user:secret@") })).rejects.toThrow();
+    expect(sent).toHaveLength(0);
+  });
+
 });

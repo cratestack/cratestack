@@ -138,6 +138,16 @@ String? _cratestackRestOp(String method, String path) {
   return best?.op;
 }
 
+String? _preparedRestOp(String method, String path, String basePath) {
+  if (!const ['POST', 'PUT', 'PATCH', 'DELETE'].contains(method)) return null;
+  final prefix = basePath.replaceAll(RegExp(r'/+$'), '');
+  if (!path.startsWith('$prefix/')) return null;
+  final tail = path.substring(prefix.length);
+  final op = _cratestackRestOp(method, tail);
+  if (op == null || _pathSegments(tail).length != _pathSegments(op.substring(op.indexOf(' ') + 1)).length) return null;
+  return op;
+}
+
 /// The REST adapter, written once over a [CratestackHttpTransport].
 ///
 /// It owns the headers, the CBOR/JSON choice and the dispatch on the answer's
@@ -169,6 +179,7 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
     required this.baseUri,
     this.format = CratestackWireFormat.cbor,
     this.useRustTransport = false,
+    this.preparedBasePath = '{{ base_path_literal }}',
     this.compact,
   });
 
@@ -186,6 +197,9 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
   /// interceptor that routes marked requests through the Rust runtime.
   final bool useRustTransport;
 
+  /// Generated service prefix used to validate prepared request routes.
+  final String preparedBasePath;
+
   /// Opts the adapter into compact wire keys (CBOR only; see
   /// [CratestackCompactHooks]). `null`, the default, keeps the wire exactly
   /// as it always was.
@@ -196,6 +210,41 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
     CratestackRequest request, {
     CratestackCallOptions? options,
   }) async {
+    final (wire, plan, _) = await _prepareRequest(request, options);
+    final response = await transport.send(wire);
+    return _decodeResponse(response, plan);
+  }
+
+  /// Encode and pin a request before its first network write.
+  Future<CratestackPreparedCall> prepare(
+    CratestackRequest request, {CratestackCallOptions? options}
+  ) async {
+    final expectedOp = _preparedRestOp(request.method, request.path, preparedBasePath);
+    if (expectedOp == null) throw const FormatException('Invalid prepared route');
+    final (wire, plan, op) = await _prepareRequest(request, options);
+    if (op != expectedOp || _effectivePreparedKey(options?.idempotencyKey, [request.headers, options?.headers])?.isNotEmpty != true || op == null) {
+      throw const FormatException('A known operation and idempotency key are required');
+    }
+    return _prepareSnapshot(wire, op, plan?._selector, format);
+  }
+
+  /// Send persisted inner bytes without re-encoding or renegotiating them.
+  /// [headers] are per-attempt headers (never the frozen identity or media
+  /// ones); [authorization] replaces any `Authorization` among them.
+  Future<Object?> executePrepared(CratestackPreparedCall call,
+      {Future<void>? abort, String? authorization, Map<String, String>? headers}) async {
+    final (wire, plan) = _restoreSnapshot(this, call, baseUri, compact, format,
+      (method, uri) {
+        final prefix = baseUri.path.replaceAll(RegExp(r'/+$'), '');
+        if (!uri.path.startsWith('$prefix/')) return null;
+        return _preparedRestOp(method, uri.path.substring(prefix.length), preparedBasePath);
+      }, abort, authorization, useRustTransport: useRustTransport, extraHeaders: headers);
+    return _decodeResponse(await transport.send(wire), plan);
+  }
+
+  Future<(CratestackHttpRequest, _CompactCall?, String?)> _prepareRequest(
+    CratestackRequest request, CratestackCallOptions? options,
+  ) async {
     final plainBody = await _encodeBody(format, request.body);
     final op = compact == null ? null : _cratestackRestOp(request.method, request.path);
     final plan = op == null
@@ -205,11 +254,10 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
             compact,
             format,
             op,
-            idempotencyKey: options?.idempotencyKey,
+            idempotencyKey: _effectivePreparedKey(options?.idempotencyKey, [request.headers, options?.headers]),
           );
     final body = plan?.encode(plainBody) ?? plainBody;
-    final response = await transport.send(
-      CratestackHttpRequest(
+    final wire = CratestackHttpRequest(
         method: request.method,
         uri: _resolveUri(
           baseUri,
@@ -246,9 +294,12 @@ class CratestackHttpAdapter implements CratestackClientAdapter {
         extra: <String, Object?>{
           if (useRustTransport) cratestackUseRustTransportExtraKey: true,
         },
-      ),
-    );
+      );
 
+    return (wire, plan, _cratestackRestOp(request.method, request.path));
+  }
+
+  Future<Object?> _decodeResponse(CratestackHttpResponse response, _CompactCall? plan) async {
     var bytes = await response.bytes();
     var contentType = response.headers['content-type'];
     if (response.status < 200 || response.status >= 300) {

@@ -23,6 +23,9 @@ where
         Input: Serialize,
         Output: DeserializeOwned,
     {
+        if self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let body = self.codec.encode(input)?;
         let response = self
             .request_raw_with_query_and_accept(
@@ -68,6 +71,9 @@ where
         Input: Serialize,
         Output: DeserializeOwned + Send + 'static,
     {
+        if self.compact.is_some() {
+            super::compact_identity::refuse_duplicates(headers)?;
+        }
         let body = self.codec.encode(input)?;
         let (response, items) = self
             .request_streamed_compact(

@@ -192,3 +192,12 @@ macro_rules! compact_procedures {
         }
     };
 }
+
+pub mod idempotency;
+
+mod prepared;
+mod prepared_auth;
+mod prepared_sealed;
+mod prepared_serialize;
+mod prepared_wire;
+mod stream_identity;

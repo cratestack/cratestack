@@ -238,8 +238,8 @@ fn rpc_runtime_resolves_the_native_codec_lazily() {
     );
 }
 
-/// The Technical Context's own call-site inventory: `call()`, `batch()`,
-/// `stream()` and `readUnaryResponse()` — 4 already-`async` methods — must
+/// The RPC call-site inventory: `prepare()`, `executePrepared()`, `call()`,
+/// `batch()`, `stream()` and `readUnaryResponse()` must
 /// each `await this.resolveCodec()` exactly once, and `createCborCodec()`
 /// itself must be invoked from exactly one place (the memoized resolver),
 /// never inline at a call site (that would defeat the "at most once per
@@ -263,14 +263,23 @@ fn native_codec_call_sites_are_structurally_sound() {
     let native = generate(RPC_FIXTURE, TypeScriptGeneratorConfig::default());
     let runtime = file(&native, "src/runtime.ts");
 
-    assert_eq!(
-        runtime
-            .matches("const codec = await this.resolveCodec();")
-            .count(),
-        4,
-        "call()/batch()/stream()/readUnaryResponse() should each resolve the codec exactly \
-         once:\n{runtime}"
-    );
+    for method in [
+        "async prepare<",
+        "async executePrepared<",
+        "async call<",
+        "async batch<",
+        "async *stream<",
+        "async readUnaryResponse(",
+    ] {
+        let body = runtime.split_once(method).expect("method exists").1;
+        let body = body.split_once("\n  }").expect("method ends").0;
+        assert_eq!(
+            body.matches("const codec = await this.resolveCodec();")
+                .count(),
+            1,
+            "{method}"
+        );
+    }
     // Doc comments legitimately mention `createCborCodec()` by name more
     // than once; the actual invocation (as opposed to prose referencing
     // it) is the one `createCborCodec().catch(...)` expression inside

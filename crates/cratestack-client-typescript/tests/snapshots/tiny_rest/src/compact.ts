@@ -84,6 +84,7 @@ function matches(template: RouteTemplate, method: string, segments: readonly str
 export class RestCompactSession {
   private keys: Promise<CompactKeys | undefined> | undefined;
   private readonly compactOps = new Set<string>();
+  private readonly encodingByIdempotencyKey = new Map<string, boolean>();
   private readonly templates: RouteTemplate[];
 
   constructor(
@@ -124,7 +125,7 @@ export class RestCompactSession {
   /** The op a request is, by the route templates of `OP_CONTRACTS`; the
    *  template with the most literal segments wins (`/widgets/search` over
    *  `/widgets/{id}`). */
-  private opOf(method: string, path: string): string | undefined {
+  opOf(method: string, path: string): string | undefined {
     const segments = (path.split("?", 1)[0] ?? "").replace(/\/+$/, "").split("/");
     let best: RouteTemplate | undefined;
     for (const template of this.templates) {
@@ -137,7 +138,7 @@ export class RestCompactSession {
 
   /** The compact plan for one request, or `undefined` to stay named: no
    *  binding, or a route the tables do not know. */
-  async begin(method: string, path: string): Promise<RestCompactCall | undefined> {
+  async begin(method: string, path: string, idempotencyKey?: string): Promise<RestCompactCall | undefined> {
     const op = this.opOf(method, path);
     if (op === undefined) {
       return undefined;
@@ -147,7 +148,17 @@ export class RestCompactSession {
     if (keys === undefined || selector === undefined) {
       return undefined;
     }
-    const sendCompact = this.compactOps.has(op);
+    const remembered = idempotencyKey === undefined ? undefined : this.encodingByIdempotencyKey.get(idempotencyKey);
+    const sendCompact = remembered ?? this.compactOps.has(op);
+    if (idempotencyKey !== undefined && remembered === undefined) {
+      // A full table evicts the oldest first attempt (a `Map` keeps insertion
+      // order): a prompt retry stays pinned, and new keys keep negotiating.
+      if (this.encodingByIdempotencyKey.size >= 512) {
+        const oldest = this.encodingByIdempotencyKey.keys().next().value;
+        if (oldest !== undefined) this.encodingByIdempotencyKey.delete(oldest);
+      }
+      this.encodingByIdempotencyKey.set(idempotencyKey, sendCompact);
+    }
     const compactOps = this.compactOps;
     return {
       applyHeaders(headers: Headers, hasBody: boolean): void {

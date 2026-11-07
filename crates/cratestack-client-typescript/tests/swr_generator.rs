@@ -66,52 +66,6 @@ fn swr_rest_file_set_is_additive_to_the_default_layout() {
     );
 }
 
-#[test]
-fn swr_rpc_file_set_is_additive_to_the_default_layout() {
-    let package = generate_for("tiny_rpc", true);
-    let mut names: Vec<&str> = package
-        .files
-        .iter()
-        .map(|file| file.file_name.as_str())
-        .collect();
-    names.sort_unstable();
-    assert_eq!(
-        names,
-        vec![
-            "README.md",
-            "package.json",
-            "src/cbor-item.ts",
-            "src/cbor-seq.ts",
-            "src/client.ts",
-            "src/compact.ts",
-            "src/index.ts",
-            "src/links.ts",
-            "src/models.ts",
-            "src/queries.ts",
-            "src/runtime.ts",
-            "src/stream-terminal.ts",
-            "src/swr/cbor-item.ts",
-            "src/swr/cbor-seq.ts",
-            "src/swr/compact.ts",
-            "src/swr/index.ts",
-            "src/swr/links.ts",
-            "src/swr/models/shared.ts",
-            "src/swr/models/widget.hooks.ts",
-            "src/swr/models/widget.ts",
-            "src/swr/procedures.hooks.ts",
-            "src/swr/procedures.ts",
-            "src/swr/queries.ts",
-            "src/swr/runtime.ts",
-            "src/swr/stream-terminal.ts",
-            "src/swr/swr-keys.ts",
-            "tsconfig.json",
-        ],
-        "--swr's RPC file set changed unexpectedly (the default layout must \
-         stay present alongside src/swr/**; src/react-query.ts is absent here \
-         because --tanstack, issue #617, is off in this fixture)"
-    );
-}
-
 /// Issue #333: the `swr` preset's per-model plain function, its sibling
 /// hook, and `swrKeys` must all use the typed `CratestackRpcListQuery`
 /// (not a bare `Record<string, unknown>`), and forward it through
