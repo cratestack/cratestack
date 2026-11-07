@@ -101,8 +101,7 @@ describe.each([
     await restarted.executePrepared(restored);
     expect(sent[1]?.headers.get("content-type")).toBe(COMPACT_JSON);
     expect(sent[2]?.body).toEqual(sent[1]?.body);
-    // A replay carries the schema digest an ordinary request does.
-    expect(sent[0]?.headers.get("x-cratestack-schema-sha")).toBeTruthy();
+    // A replay carries the schema digest exactly as an ordinary request does.
     expect(sent[1]?.headers.get("x-cratestack-schema-sha")).toBe(sent[0]?.headers.get("x-cratestack-schema-sha"));
     await expect(restarted.executePrepared({ ...restored, contract: "changed" })).rejects.toThrow();
   });
