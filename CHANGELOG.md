@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.0 (2026-11-08)
+
 ### Multi-file schemas: `part` / `part of` to split one schema, `import` to share types (#910)
 
 A schema can now span several files. Splitting changes nothing it compiles to: the generated
