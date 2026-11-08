@@ -18,7 +18,8 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
-use super::{handle_check, handle_print_ir};
+use super::check::handle_check;
+use super::handle_print_ir;
 use crate::cli_types::OutputFormat;
 
 const SCHEMA_WITH_QUERY: &str = r#"
@@ -69,7 +70,7 @@ fn check_accepts_a_schema_declaring_a_query() {
     let dir = TempDir::new().expect("temp dir");
     let path = write_schema(&dir, SCHEMA_WITH_QUERY);
 
-    handle_check(path, OutputFormat::Human).expect("check should accept a query block");
+    handle_check(path, OutputFormat::Human, false).expect("check should accept a query block");
 }
 
 #[test]
@@ -79,7 +80,7 @@ fn check_rejects_an_out_of_range_placeholder() {
     let dir = TempDir::new().expect("temp dir");
     let path = write_schema(&dir, SCHEMA_WITH_BAD_PLACEHOLDER);
 
-    let error = handle_check(path, OutputFormat::Human)
+    let error = handle_check(path, OutputFormat::Human, false)
         .expect_err("check should reject a `$2` with one declared parameter");
     let message = error.to_string();
     assert!(message.contains("references parameter `$2`"), "{message}");
@@ -90,7 +91,7 @@ fn print_ir_accepts_a_schema_declaring_a_query() {
     let dir = TempDir::new().expect("temp dir");
     let path = write_schema(&dir, SCHEMA_WITH_QUERY);
 
-    handle_print_ir(path.clone()).expect("print-ir should accept a query block");
+    handle_print_ir(path.clone(), false).expect("print-ir should accept a query block");
 
     // The value `print-ir` formats — asserted directly, since the handler
     // itself writes to stdout.

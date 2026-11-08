@@ -130,3 +130,43 @@ async fn allow_unsafe_writes_propagates_onto_loaded_target() {
     let opted_in_db = workspace.target("opted_in_db").expect("target present");
     assert!(opted_in_db.allow_unsafe_db_writes);
 }
+
+/// cratestack#914: a target whose schema is a split root (`part` and
+/// `import` lines) builds, because Studio loads the graph from the root.
+#[tokio::test]
+async fn a_target_whose_schema_is_a_split_root_loads() {
+    let split = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cratestack-parser/tests/fixtures/multi_file/split/schema.cstack");
+    let temp = tempfile::tempdir().expect("temp dir");
+    let config_path = temp.path().join("studio.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            r#"
+            [[target]]
+            key = "split"
+            schema = "{schema}"
+
+            [target.api]
+            base_url = "https://split.internal"
+            "#,
+            schema = split.display(),
+        ),
+    )
+    .expect("studio.toml writes");
+
+    let workspace = LoadedWorkspace::load(&config_path)
+        .await
+        .expect("a split root loads");
+    let target = workspace.target("split").expect("target present");
+    let models: Vec<_> = target
+        .schema
+        .models
+        .iter()
+        .map(|m| m.name.as_str())
+        .collect();
+    assert!(
+        models.contains(&"User") && models.contains(&"Post"),
+        "{models:?}"
+    );
+}

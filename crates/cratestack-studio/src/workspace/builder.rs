@@ -27,23 +27,17 @@ pub(super) async fn load_target(
         base_dir.join(&target.schema)
     };
 
-    let schema_text =
-        std::fs::read_to_string(&schema_path).map_err(|source| WorkspaceError::SchemaIo {
+    // `parse_schema_file` loads the whole graph from the root (the `part`s
+    // and `import`s it lists; cratestack#914) and names the real file in any
+    // error. A read failure also surfaces as `SchemaParse`, with the
+    // rendered message, so the old `SchemaIo` probe is gone.
+    let schema = cratestack_parser::parse_schema_file(&schema_path).map_err(|error| {
+        WorkspaceError::SchemaParse {
             key: target.key.clone(),
             path: schema_path.clone(),
-            source,
-        })?;
-    // `parse_schema_named` (not the anonymous `parse_schema`) so the
-    // resulting `SchemaError` carries this target's real schema path as its
-    // file identity (cratestack#916) — `error.render()` below then reflects
-    // `schema_path`, not the library's internal `"<schema>"` placeholder.
-    let schema =
-        cratestack_parser::parse_schema_named(&schema_path.display().to_string(), &schema_text)
-            .map_err(|error| WorkspaceError::SchemaParse {
-                key: target.key.clone(),
-                path: schema_path.clone(),
-                rendered: error.render(),
-            })?;
+            rendered: error.render(),
+        }
+    })?;
     let schema = Arc::new(schema);
 
     let source: Arc<dyn DataSource> = if let Some(db) = &target.db {
