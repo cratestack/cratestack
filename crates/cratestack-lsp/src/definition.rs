@@ -1,25 +1,35 @@
 use cratestack_core::{Schema, SourceSpan};
+#[cfg(test)]
 use tower_lsp_server::ls_types::{Location, Uri};
 
 use crate::mixin_use::mixin_use_names;
 use crate::relation_parse::relation_attribute_spans;
-use crate::text::{range_from_offsets, span_contains, word_at_offset};
+#[cfg(test)]
+use crate::text::range_from_offsets;
+use crate::text::{span_contains, word_at_offset};
 use crate::type_ref::nested_type_reference_name_at_offset;
 
+/// The same answer as `definition_graph::definition_in` for one file.
+#[cfg(test)]
 pub(crate) fn definition_location(
     uri: &Uri,
     text: &str,
     schema: &Schema,
     offset: usize,
 ) -> Option<Location> {
-    let span = relation_target_span(schema, offset)
-        .or_else(|| mixin_use_target_span(text, schema, offset))
-        .or_else(|| type_reference_target_span(schema, offset))
-        .or_else(|| word_at_offset(text, offset).and_then(|word| declaration_span(schema, word)))?;
+    let span = definition_span(text, schema, offset)?;
     Some(Location {
         uri: uri.clone(),
         range: range_from_offsets(text, span.start, span.end),
     })
+}
+
+/// Where the name under `offset` is declared, in the schema's address space.
+pub(crate) fn definition_span(text: &str, schema: &Schema, offset: usize) -> Option<SourceSpan> {
+    relation_target_span(schema, offset)
+        .or_else(|| mixin_use_target_span(text, schema, offset))
+        .or_else(|| type_reference_target_span(schema, offset))
+        .or_else(|| word_at_offset(text, offset).and_then(|word| declaration_span(schema, word)))
 }
 
 pub(crate) fn declaration_span(schema: &Schema, word: &str) -> Option<SourceSpan> {

@@ -4,6 +4,7 @@ mod authn_completion;
 mod capabilities;
 mod completion;
 mod definition;
+mod definition_graph;
 mod document_symbols;
 mod field_host;
 mod graph;
@@ -24,10 +25,13 @@ mod rename_error;
 mod semantic_tokens;
 mod server;
 mod state;
+mod symbol_build;
 mod symbol_target;
 mod text;
+mod token_encode;
 mod type_hover;
 mod type_ref;
+mod view;
 
 #[cfg(test)]
 mod tests;
@@ -41,6 +45,12 @@ mod tests_completion;
 mod tests_enum_hover;
 #[cfg(test)]
 mod tests_graph_analysis;
+#[cfg(test)]
+mod tests_graph_definition;
+#[cfg(test)]
+mod tests_graph_nav_support;
+#[cfg(test)]
+mod tests_graph_navigation;
 #[cfg(test)]
 mod tests_graph_refresh;
 #[cfg(test)]

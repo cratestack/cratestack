@@ -14,7 +14,8 @@ use tower_lsp_server::ls_types::{SemanticToken, SemanticTokenType};
 use crate::mixin_use::mixin_use_names;
 use crate::relation_parse::relation_attribute_spans;
 use crate::state::DocumentState;
-use crate::text::offset_to_position;
+use crate::token_encode::delta_encode;
+use crate::view::Resolved;
 
 /// Order is load-bearing: the client resolves `token_type` as an index into
 /// this array, exactly as advertised in `SemanticTokensLegend`.
@@ -42,11 +43,18 @@ const DECORATOR: u32 = 8;
 
 /// Tokens for a document, or `None` when nothing has parsed yet.
 pub(crate) fn semantic_tokens_for(document: &DocumentState) -> Option<Vec<SemanticToken>> {
-    let (text, schema) = document.resolved()?;
-    Some(semantic_tokens(text, schema))
+    Some(semantic_tokens_in(&document.view()?))
 }
 
+#[cfg(test)]
 pub(crate) fn semantic_tokens(text: &str, schema: &Schema) -> Vec<SemanticToken> {
+    semantic_tokens_in(&Resolved::single(text, schema))
+}
+
+/// The tokens of the requesting file: the schema is walked whole, and the
+/// delta encoding keeps only what lies in this file.
+fn semantic_tokens_in(view: &Resolved<'_>) -> Vec<SemanticToken> {
+    let schema = view.schema;
     let mut entries = Vec::new();
 
     for mixin in &schema.mixins {
@@ -82,11 +90,11 @@ pub(crate) fn semantic_tokens(text: &str, schema: &Schema) -> Vec<SemanticToken>
 
     // `@use(...)` is erased from the IR by `expand_model_mixins`, so its span
     // comes from source text — see `mixin_use::mixin_use_names`.
-    for used in mixin_use_names(text) {
+    for used in mixin_use_names(view.global) {
         entries.push((used.span, INTERFACE));
     }
 
-    delta_encode(text, entries)
+    delta_encode(view, entries)
 }
 
 fn collect_fields(
@@ -158,42 +166,4 @@ fn classify(schema: &Schema, name: &str) -> u32 {
         return INTERFACE;
     }
     TYPE
-}
-
-/// LSP wants tokens sorted and encoded relative to their predecessor, with
-/// lengths and columns in UTF-16 code units.
-fn delta_encode(text: &str, mut entries: Vec<(SourceSpan, u32)>) -> Vec<SemanticToken> {
-    entries.sort_by_key(|(span, _)| (span.start, span.end));
-    entries.dedup_by_key(|(span, _)| (span.start, span.end));
-
-    let mut tokens = Vec::new();
-    let mut previous_line = 0u32;
-    let mut previous_start = 0u32;
-
-    for (span, token_type) in entries {
-        let start = offset_to_position(text, span.start);
-        let end = offset_to_position(text, span.end);
-        // A multi-line token is not expressible in this encoding; the protocol
-        // has no length that spans a newline.
-        if end.line != start.line || end.character <= start.character {
-            continue;
-        }
-        let delta_line = start.line - previous_line;
-        let delta_start = if delta_line == 0 {
-            start.character - previous_start
-        } else {
-            start.character
-        };
-        tokens.push(SemanticToken {
-            delta_line,
-            delta_start,
-            length: end.character - start.character,
-            token_type,
-            token_modifiers_bitset: 0,
-        });
-        previous_line = start.line;
-        previous_start = start.character;
-    }
-
-    tokens
 }

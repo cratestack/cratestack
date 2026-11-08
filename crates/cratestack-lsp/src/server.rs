@@ -11,7 +11,7 @@ use tower_lsp_server::ls_types::{
 
 use crate::capabilities::server_capabilities;
 use crate::completion::completion_items;
-use crate::definition::definition_location;
+use crate::definition_graph::definition_in;
 use crate::document_symbols::document_symbols_for;
 use crate::field_host::host_at_position;
 use crate::hover_render::hover_at;
@@ -19,7 +19,6 @@ use crate::navigation::{highlights, reference_locations};
 use crate::rename::{prepare_rename, workspace_edit};
 use crate::semantic_tokens::semantic_tokens_for;
 use crate::state::Backend;
-use crate::text::position_to_offset;
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -66,7 +65,7 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let documents = self.documents.read().await;
         let document = documents.get(&params.text_document_position.text_document.uri);
-        let schema = document.and_then(|document| document.resolved().map(|(_, schema)| schema));
+        let schema = document.and_then(|document| document.view().map(|view| view.schema));
         // The cursor is placed in the text the editor holds now, not the last
         // text that parsed: the block it is in is what decides the list.
         let host = document
@@ -85,17 +84,13 @@ impl LanguageServer for Backend {
         let Some(document) = documents.get(&text_document_position.text_document.uri) else {
             return Ok(None);
         };
-        let Some((text, schema)) = document.resolved() else {
+        let Some(view) = document.view() else {
             return Ok(None);
         };
-        let Some(offset) = position_to_offset(text, text_document_position.position) else {
-            return Ok(None);
-        };
-        let Some(location) = definition_location(
+        let Some(location) = definition_in(
             &text_document_position.text_document.uri,
-            text,
-            schema,
-            offset,
+            &view,
+            text_document_position.position,
         ) else {
             return Ok(None);
         };

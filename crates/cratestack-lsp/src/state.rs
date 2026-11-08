@@ -8,6 +8,7 @@ use tower_lsp_server::ls_types::Uri;
 
 use crate::graph::GraphView;
 use crate::graph_store::GraphStore;
+use crate::view::Resolved;
 
 /// A schema together with the exact source text it was parsed from.
 ///
@@ -21,10 +22,8 @@ pub(crate) struct AnalyzedSchema {
     pub(crate) schema: Schema,
     /// Offset of this file's first byte in the schema's address space: spans
     /// in `schema` are global. Zero for a single-file schema.
-    #[allow(dead_code)] // read by the navigation features, next change
     pub(crate) base: usize,
     /// The whole graph, for a schema split across files.
-    #[allow(dead_code)] // read by the navigation features, next change
     pub(crate) graph: Option<Arc<GraphView>>,
 }
 
@@ -41,7 +40,9 @@ pub(crate) struct DocumentState {
 }
 
 impl DocumentState {
-    /// Source text and schema that agree with each other.
+    /// Source text and schema that agree with each other. In a part of a
+    /// split schema the spans are global and the text is the file's, so only
+    /// [`Self::view`] is safe to compare them with.
     ///
     /// Callers must take *both* from here rather than reaching for
     /// `DocumentState::text`: after a failed parse these are the older,
@@ -51,6 +52,28 @@ impl DocumentState {
         self.analyzed
             .as_ref()
             .map(|analyzed| (analyzed.text.as_str(), &analyzed.schema))
+    }
+
+    /// The same pair as [`Self::resolved`], with the file's place in the
+    /// schema's address space. Features that compare positions with schema
+    /// spans must use this: in a part, `resolved()`'s text and spans disagree.
+    pub(crate) fn view(&self) -> Option<Resolved<'_>> {
+        let analyzed = self.analyzed.as_ref()?;
+        let graph = analyzed.graph.as_deref();
+        Some(Resolved {
+            text: &analyzed.text,
+            schema: &analyzed.schema,
+            base: analyzed.base,
+            graph,
+            global: graph.map_or(analyzed.text.as_str(), |graph| graph.merged.as_str()),
+        })
+    }
+
+    /// Whether the schema spans more than one file.
+    pub(crate) fn is_split(&self) -> bool {
+        self.analyzed
+            .as_ref()
+            .is_some_and(|analyzed| analyzed.graph.is_some())
     }
 
     /// Whether the retained schema predates the current text — i.e. results are

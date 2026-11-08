@@ -24,6 +24,9 @@ pub(crate) enum RenameError {
     /// The new name is a keyword or a builtin type, either of which changes how
     /// the file parses rather than just what it calls something.
     Reserved(String),
+    /// The schema spans several files and this rename would rewrite one.
+    /// Editing only the requesting file would silently break the others.
+    MultiFile,
 }
 
 /// Refusals travel as request errors, not as an empty edit: a rename that
@@ -52,6 +55,9 @@ impl RenameError {
                 format!("`{name}` is not a valid identifier.")
             }
             Self::Conflict(name) => format!("`{name}` is already declared here."),
+            Self::MultiFile => {
+                "rename is not available yet in a schema split across files".to_owned()
+            }
             Self::Reserved(name) => {
                 format!("`{name}` is a reserved word or builtin type.")
             }

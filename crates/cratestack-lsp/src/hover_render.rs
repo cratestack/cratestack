@@ -2,19 +2,18 @@ use tower_lsp_server::ls_types::{Hover, HoverContents, MarkupContent, MarkupKind
 
 use crate::hover::locate_symbol;
 use crate::state::DocumentState;
-use crate::text::{position_to_offset, span_to_range};
 
 /// The hover response for a position, or `None` when there is nothing to show.
 pub(crate) fn hover_at(document: &DocumentState, position: Position) -> Option<Hover> {
-    let (text, schema) = document.resolved()?;
-    let offset = position_to_offset(text, position)?;
-    let symbol = locate_symbol(schema, offset)?;
+    let view = document.view()?;
+    let offset = view.global_offset(position)?;
+    let symbol = locate_symbol(view.schema, offset)?;
     Some(Hover {
         contents: HoverContents::Markup(MarkupContent {
             kind: MarkupKind::Markdown,
             value: hover_markdown(&symbol, document.is_stale()),
         }),
-        range: span_to_range(text, symbol.selection_span),
+        range: view.range(symbol.selection_span),
     })
 }
 

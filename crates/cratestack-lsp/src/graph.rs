@@ -23,6 +23,34 @@ use crate::text::range_from_offsets;
 pub(crate) struct GraphView {
     pub(crate) schema: Schema,
     pub(crate) files: Vec<SchemaFile>,
+    /// Every file's text at its base: what the schema's spans index into.
+    pub(crate) merged: String,
+}
+
+impl GraphView {
+    pub(crate) fn new(schema: Schema, files: Vec<SchemaFile>) -> Self {
+        let mut merged = String::new();
+        for file in &files {
+            // Bases leave one separator byte between files.
+            while merged.len() < file.base {
+                merged.push('\n');
+            }
+            merged.push_str(&file.source);
+        }
+        Self {
+            schema,
+            files,
+            merged,
+        }
+    }
+
+    /// The file containing a global offset, and the offset within it.
+    pub(crate) fn locate(&self, offset: usize) -> Option<(&SchemaFile, usize)> {
+        self.files
+            .iter()
+            .find(|file| file.base <= offset && offset <= file.base + file.source.len())
+            .map(|file| (file, offset - file.base))
+    }
 }
 
 /// What loading one entry file found.
@@ -60,12 +88,9 @@ pub(crate) fn analyze_graph(
     };
     let load = load_schema_diagnostics(path, &options);
     let entry_path = canonical_schema_path(path);
-    let view = load.schema.map(|loaded| {
-        Arc::new(GraphView {
-            schema: loaded.schema,
-            files: loaded.files,
-        })
-    });
+    let view = load
+        .schema
+        .map(|loaded| Arc::new(GraphView::new(loaded.schema, loaded.files)));
     let mut paths: Vec<PathBuf> = match &view {
         Some(view) => view.files.iter().map(|file| file.path.clone()).collect(),
         // Unreadable files (a missing root) are not files to publish to.
