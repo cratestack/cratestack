@@ -2,6 +2,76 @@
 
 ## Unreleased
 
+### Multi-file schemas: `part` / `part of` to split one schema, `import` to share types (#910)
+
+A schema can now span several files. Splitting changes nothing it compiles to: the generated
+code, `SCHEMA_SHA256` and the `migrate diff` snapshot are identical to the single file the parts
+replace, and a golden test holds that against a hand-written concatenation
+(`docs/design/multi-file-schemas.md`, ADR 0023 in `cratestack-docs/internals/`).
+
+- **`part "<path>"`** in the root lists a file holding more of the same schema. **`part of
+  "<path>"`** in that file names its root. Both halves must agree. Parts share the root's
+  namespace, so a model in one part can relate to a model in another and `@use` a mixin from a
+  third. `datasource`, `auth`, `transport` and `mcp` belong in the root only.
+- **`import "<path>"`** brings in another file's `type`, `enum` and `mixin` declarations: flat,
+  transitive, and loaded once however many files import it (keyed by canonical path, so `..`
+  spellings and symlinks dedupe). An imported file may declare nothing else, so an import never
+  creates a table, a route or a procedure in the importer, and a file that declares `part of`
+  cannot be imported, because a part is locked to its root. Import cycles are refused with the
+  whole cycle.
+- Paths are relative to the file that contains the directive, use `/`, and end in `.cstack`. The
+  macro argument is still relative to `CARGO_MANIFEST_DIR`. A directive resolves against the
+  directory of the holder's canonical path, so a symlinked file resolves its own `part`s and
+  `import`s from where it really is, whichever spelling loaded it first.
+- Files load in a fixed order: the root, its parts in listed order, then each file's imports.
+- Every error that involves two files names both, in the message and as a second labelled
+  location (`SchemaError::related()`).
+
+The three `include_*_schema!` macros load the whole graph. A schema spanning more than one file
+also gets `SCHEMA_FILES: &[(&str, &str)]`, one `include_str!` per file, so editing any file, or
+listing a new part, rebuilds the crate. CI proves it with real builds (`just
+verify-multi-file-rebuild`). `SCHEMA_SOURCE` is still the root file's text. A single-file schema's
+generated output is byte-identical.
+
+`cratestack_parser::parse_schema_file` loads the graph, and so does every `cratestack` command
+that takes `--schema`. The single-source entry points (`parse_schema`, `parse_schema_named`,
+`parse_schema_diagnostics`, `parse_schema_unvalidated`) refuse a directive, because they have no
+file to resolve its path against. This is additive: no existing public signature changed, and a
+schema without a directive behaves as before. New API in `cratestack-parser`: `load_schema`,
+`load_schema_diagnostics`, `LoadOptions`, `LoadedSchema`, `LoadDiagnostics`, `SchemaFile`,
+`FileRole`, `SchemaSources`, `FsSources`, `OverlaySources`, `canonical_schema_path`,
+`FileDirectives`, `PathDirective`, `RelatedSpan`, `SchemaError::related()` and
+`reserved_multi_file_keywords`; and in `cratestack-core`, `schema::without_source_positions`.
+Source spans in a multi-file `Schema` are offsets into one address space spanning all files, not
+into any single file.
+
+`examples/react-vite-swr` is split across `schema/` (#924). Its two committed generated clients
+did not change.
+
+### `cratestack check --list-files`, `check` on a part, `print-ir --no-spans` (#914)
+
+`cratestack check --schema <root> --list-files` prints the files the schema is made of, with
+their role (`root`, `part`, `import`, `import part`). In JSON it adds a `files` array.
+`check` given a part checks the whole schema through its root and says so. The other commands
+take the root and refuse a part, naming the part as given and its
+root resolved from there, so the advice works from where you ran the command. `--format json`
+diagnostics gain a `related` array when an error names a second location. Without these flags and for single-file schemas, output is unchanged.
+`cratestack print-ir --no-spans` prints the IR with every source position zeroed, the form in
+which a split schema and its single-file equivalent are identical. Studio's workspace loader
+also reads the whole graph.
+
+### LSP: multi-file schemas (#921)
+
+`cratestack-lsp` analyzes the whole schema a file belongs to, using open buffers before disk.
+Diagnostics land on the file they come from, with related locations. A part opened on its own
+is checked through its root. Editing any file refreshes the whole schema. Go-to-definition and
+completion cross files. Rename is refused in a schema split across files until cross-file rename
+lands (also in a file that carries a `part`, `part of` or `import` line). References and
+highlights stay within the current file. Closing a file reverts it to its disk text, and a file
+that an edit drops from its root is analysed on its own (a part still naming the root shows the
+"does not list it" error). The VS Code grammar highlights
+`part`, `part of` and `import`.
+
 ## 0.18.1 (2026-11-07)
 
 ### Durable compact idempotent calls

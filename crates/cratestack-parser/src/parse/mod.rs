@@ -2,15 +2,18 @@ mod arg_split;
 mod attribute_run;
 mod attribute_spacing;
 mod blocks;
+mod directives;
 mod enum_body;
 mod fields;
 mod format_chars;
 mod hidden_breaks;
 pub(crate) mod mcp;
 mod models;
+mod parsed_file;
 mod procedure_docs;
 mod procedures;
 mod queries;
+mod single_source;
 mod sql_attribute;
 mod topics;
 mod types;
@@ -24,23 +27,31 @@ use cratestack_core::{
 };
 
 use crate::diagnostics::{SchemaError, span_error};
+use crate::directives::FileDirectives;
 use crate::line_helpers::{
-    collect_lines, name_span_in_line, parse_doc_comment, split_config_entry,
+    collect_lines_at, name_span_in_line, parse_doc_comment, split_config_entry, trimmed_span,
 };
 
 use self::attribute_run::{declaration_label, detached_group_error};
 use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
+use self::directives::record_directive;
 use self::enum_body::parse_enum_body;
 use self::fields::parse_fields;
 use self::mcp::{extract_model_mcp, parse_mcp_block};
-use self::models::{expand_model_mixins, parse_model_body};
+use self::models::parse_model_body;
 use self::procedures::parse_procedure;
 use self::queries::parse_query;
 use self::topics::parse_topic;
 use self::views::parse_view_block;
 
-pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
-    let lines = collect_lines(source);
+pub(crate) use self::parsed_file::{ParsedFile, expand_mixins};
+pub(crate) use self::single_source::parse_schema_only;
+
+/// Parse one file whose first byte sits at `base` of the schema's address
+/// space (docs/design/multi-file-schemas.md section 9). Does not expand
+/// mixins: that happens after every file is merged.
+pub(crate) fn parse_file_at(source: &str, base: usize) -> Result<ParsedFile, SchemaError> {
+    let lines = collect_lines_at(source, base);
     hidden_breaks::refuse_hidden_breaks(&lines)?;
     let mut cursor = 0usize;
     let mut pending_docs = Vec::new();
@@ -59,6 +70,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
     let mut queries: Vec<Query> = Vec::new();
     let mut transport: Option<TransportStyle> = None;
     let mut transport_line: Option<usize> = None;
+    let mut directives = FileDirectives::default();
     let mut declared_extensions: BTreeSet<ExtensionKind> = BTreeSet::new();
     let mut previous: Option<String> = None;
 
@@ -195,7 +207,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
                     block.span,
                 )
             })?;
-            declared_extensions.insert(kind);
+            directives.declare_extension(&mut declared_extensions, kind, &block);
             pending_docs.clear();
             cursor = next;
             continue;
@@ -220,6 +232,13 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
             }
             transport = Some(style);
             transport_line = Some(line.number);
+            directives.transport_span = Some(trimmed_span(line));
+            pending_docs.clear();
+            cursor += 1;
+            continue;
+        }
+
+        if record_directive(line, &mut directives)? {
             pending_docs.clear();
             cursor += 1;
             continue;
@@ -274,9 +293,7 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         ));
     }
 
-    expand_model_mixins(&mixins, &mut models)?;
-
-    Ok(Schema {
+    let schema = Schema {
         datasource,
         auth,
         config_blocks: Vec::new(),
@@ -292,5 +309,6 @@ pub(crate) fn parse_schema_only(source: &str) -> Result<Schema, SchemaError> {
         transport: transport.unwrap_or_default(),
         declared_extensions,
         mcp,
-    })
+    };
+    Ok(ParsedFile { schema, directives })
 }

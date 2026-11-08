@@ -28,11 +28,16 @@ pub(super) fn compose_server_schema(
     decimal: Option<DecimalBackend>,
     contracts: Option<&LitStr>,
 ) -> TokenStream {
-    let (schema_relative, resolved, schema, schema_sha_consts) =
-        match parse_schema_literal(schema_path) {
-            Ok(parsed) => parsed,
-            Err(error) => return error,
-        };
+    let super::parse::SchemaLiteral {
+        relative: schema_relative,
+        resolved,
+        schema,
+        sha: schema_sha_consts,
+        files: included_files,
+    } = match parse_schema_literal(schema_path) {
+        Ok(parsed) => parsed,
+        Err(error) => return error,
+    };
     let (schema_sha_consts, lock_track, key_tables) = match contracts {
         None => (
             schema_sha_consts,
@@ -87,6 +92,7 @@ pub(super) fn compose_server_schema(
     // Direction 2; see `include::embedded`'s matching comment).
     with_decimal_backend(decimal_backend, move || {
         let resolved_literal = resolved.display().to_string();
+        let schema_files = super::schema_files::schema_files_const(&included_files);
 
         let collected = match collect_server_schema(&schema, schema_path, db) {
             Ok(collected) => collected,
@@ -267,6 +273,7 @@ pub(super) fn compose_server_schema(
             pub mod cratestack_schema {
                 pub const SCHEMA_PATH: &str = #schema_relative;
                 pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+                #schema_files
                 /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
                 /// once at macro-expansion time. Not cryptographic-strength
                 /// integrity — it's a drift-detection fingerprint: `axum::router()`

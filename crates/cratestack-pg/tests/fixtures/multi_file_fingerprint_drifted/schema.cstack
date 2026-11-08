@@ -1,0 +1,15 @@
+// Root of a two-file schema (cratestack#919). `parts/widget.cstack` holds
+// the model; the digest of the merged schema must equal the digest of
+// `multi_file_fingerprint_concatenated.cstack`, which is the same schema
+// written in one file.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+part "parts/widget.cstack"

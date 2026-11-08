@@ -1,0 +1,11 @@
+part "money/currency.cstack"
+
+/// An amount of money; the currency enum lives in this unit's part.
+type Money {
+  amount Int
+  currency Currency
+}
+
+mixin Audited {
+  auditedAt DateTime
+}

@@ -111,16 +111,8 @@ pub fn parse_schema_unvalidated(source: &str) -> Result<cratestack_core::Schema,
         .map_err(|error| error.with_file(&Arc::from(ANONYMOUS_SCHEMA), &Arc::from(source)))
 }
 
+/// Loads the schema at `path`, including the `part`s it lists and the
+/// files it `import`s (see [`crate::load_schema`]).
 pub fn parse_schema_file(path: impl AsRef<Path>) -> Result<cratestack_core::Schema, SchemaError> {
-    let path = path.as_ref();
-    let display_path = path.display().to_string();
-    let source = std::fs::read_to_string(path).map_err(|error| {
-        SchemaError::new(
-            format!("failed to read schema file {display_path}: {error}"),
-            0..0,
-            1,
-        )
-        .with_file(&Arc::from(display_path.as_str()), &Arc::from(""))
-    })?;
-    parse_schema_named(&display_path, &source)
+    crate::load_schema(path, &crate::LoadOptions::default()).map(|loaded| loaded.schema)
 }

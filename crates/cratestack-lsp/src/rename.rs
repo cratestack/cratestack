@@ -47,7 +47,8 @@ const KEYWORDS: &[&str] = &[
 /// Returning `None` is what stops an editor offering a rename box over a
 /// keyword, a builtin type, or a comment.
 pub(crate) fn prepare_rename(document: &DocumentState, position: Position) -> Option<Range> {
-    if document.is_stale() {
+    // Refused in a split schema: see `RenameError::MultiFile`.
+    if document.is_stale() || document.is_split() || document.has_directive() {
         return None;
     }
     let (text, schema) = document.resolved()?;
@@ -62,6 +63,9 @@ pub(crate) fn rename_ranges(
     position: Position,
     new_name: &str,
 ) -> Result<Vec<Range>, RenameError> {
+    if document.is_split() || document.has_directive() {
+        return Err(RenameError::MultiFile);
+    }
     // Checked before anything else: with a stale schema every span below is
     // measured against text the buffer no longer holds.
     if document.is_stale() {

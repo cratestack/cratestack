@@ -1,0 +1,26 @@
+part of "schema.cstack"
+import "shared/ids.cstack"
+
+/// Arguments of `userPosts`.
+type PostArgs {
+  authorId Int
+}
+
+/// A price tagged with an id.
+type Priced {
+  price Money
+  id Id
+}
+
+/// The posts of one user.
+procedure userPosts(args: PostArgs): Post[]
+  @allow(true)
+
+view PostCard from Post {
+  id Int @id @from(Post.id)
+  title String @from(Post.title)
+
+  @@server_sql("SELECT id, title FROM post")
+  @@embedded_sql("SELECT id, title FROM post")
+  @@allow("read", true)
+}

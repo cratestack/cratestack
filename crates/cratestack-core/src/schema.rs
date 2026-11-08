@@ -18,6 +18,7 @@ pub mod index_attribute;
 pub mod internal_attribute;
 pub mod mcp;
 pub mod model;
+pub mod positions;
 pub mod procedure;
 pub mod query;
 pub mod rename_attribute;
@@ -51,6 +52,7 @@ pub use mcp::{MCP_MAX_PAGE_SIZE, McpConfig, McpName, ModelMcpExposure, Procedure
 pub use model::{
     Attribute, EnumDecl, EnumVariant, Field, MixinDecl, Model, TypeArity, TypeDecl, TypeRef,
 };
+pub use positions::without_source_positions;
 pub use procedure::{Procedure, ProcedureArg, ProcedureKind};
 pub use query::{QUERY_SQL_ATTRIBUTE, Query, scan_sql_placeholders};
 pub use rename_attribute::{RENAME_ARGUMENT_FORM, parse_rename_from, rename_marker_from};

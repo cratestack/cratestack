@@ -1,0 +1,4 @@
+/// The shape of an identifier.
+type Id {
+  value Int
+}

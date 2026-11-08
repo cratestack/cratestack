@@ -1,8 +1,8 @@
 use tower_lsp_server::LanguageServer;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{
-    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbolParams,
+    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
     DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
     InitializeParams, InitializeResult, InitializedParams, Location, MessageType,
     PrepareRenameResponse, ReferenceParams, RenameParams, SemanticTokens, SemanticTokensParams,
@@ -11,15 +11,14 @@ use tower_lsp_server::ls_types::{
 
 use crate::capabilities::server_capabilities;
 use crate::completion::completion_items;
-use crate::definition::definition_location;
+use crate::definition_graph::definition_in;
 use crate::document_symbols::document_symbols_for;
 use crate::field_host::host_at_position;
 use crate::hover_render::hover_at;
-use crate::navigation::reference_ranges;
+use crate::navigation::{highlights, reference_locations};
 use crate::rename::{prepare_rename, workspace_edit};
 use crate::semantic_tokens::semantic_tokens_for;
 use crate::state::Backend;
-use crate::text::position_to_offset;
 
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
@@ -55,6 +54,10 @@ impl LanguageServer for Backend {
         }
     }
 
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        self.close_document(params.text_document.uri).await;
+    }
+
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let position = params.text_document_position_params;
         let documents = self.documents.read().await;
@@ -66,7 +69,7 @@ impl LanguageServer for Backend {
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let documents = self.documents.read().await;
         let document = documents.get(&params.text_document_position.text_document.uri);
-        let schema = document.and_then(|document| document.resolved().map(|(_, schema)| schema));
+        let schema = document.and_then(|document| document.view().map(|view| view.schema));
         // The cursor is placed in the text the editor holds now, not the last
         // text that parsed: the block it is in is what decides the list.
         let host = document
@@ -85,17 +88,13 @@ impl LanguageServer for Backend {
         let Some(document) = documents.get(&text_document_position.text_document.uri) else {
             return Ok(None);
         };
-        let Some((text, schema)) = document.resolved() else {
+        let Some(view) = document.view() else {
             return Ok(None);
         };
-        let Some(offset) = position_to_offset(text, text_document_position.position) else {
-            return Ok(None);
-        };
-        let Some(location) = definition_location(
+        let Some(location) = definition_in(
             &text_document_position.text_document.uri,
-            text,
-            schema,
-            offset,
+            &view,
+            text_document_position.position,
         ) else {
             return Ok(None);
         };
@@ -105,22 +104,13 @@ impl LanguageServer for Backend {
     async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
         let uri = params.text_document_position.text_document.uri;
         let documents = self.documents.read().await;
-        let Some(document) = documents.get(&uri) else {
-            return Ok(None);
-        };
-        Ok(reference_ranges(
-            document,
-            params.text_document_position.position,
-            params.context.include_declaration,
-        )
-        .map(|ranges| {
-            ranges
-                .into_iter()
-                .map(|range| Location {
-                    uri: uri.clone(),
-                    range,
-                })
-                .collect()
+        Ok(documents.get(&uri).and_then(|document| {
+            reference_locations(
+                &uri,
+                document,
+                params.text_document_position.position,
+                params.context.include_declaration,
+            )
         }))
     }
 
@@ -130,20 +120,9 @@ impl LanguageServer for Backend {
     ) -> Result<Option<Vec<DocumentHighlight>>> {
         let position = params.text_document_position_params;
         let documents = self.documents.read().await;
-        let Some(document) = documents.get(&position.text_document.uri) else {
-            return Ok(None);
-        };
-        Ok(
-            reference_ranges(document, position.position, true).map(|ranges| {
-                ranges
-                    .into_iter()
-                    .map(|range| DocumentHighlight {
-                        range,
-                        kind: Some(DocumentHighlightKind::TEXT),
-                    })
-                    .collect()
-            }),
-        )
+        Ok(documents
+            .get(&position.text_document.uri)
+            .and_then(|document| highlights(document, position.position)))
     }
 
     async fn semantic_tokens_full(

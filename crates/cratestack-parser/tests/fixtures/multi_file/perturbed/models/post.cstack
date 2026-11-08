@@ -1,0 +1,16 @@
+part of "../schema.cstack"
+import "../shared/ids.cstack"
+
+mixin Timestamps {
+  createdAt DateTime
+  updatedAt DateTime
+}
+
+/// A person who writes posts.
+model User {
+  @use(Timestamps)
+  id Int @id
+  name String
+
+  @@allow("read", true)
+}

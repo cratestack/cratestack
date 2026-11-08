@@ -19,18 +19,23 @@ use crate::shared::schema_lit;
 use crate::types::{generate_client_enum_type, generate_client_type_struct};
 
 use super::decimal_arg::resolve_decimal_backend;
-use super::parse::parse_schema_literal;
+use super::parse::{compile_error, parse_schema_literal};
 use input_structs::client_input_structs;
 
 pub(super) fn compose_client_schema(
     schema_path: &LitStr,
     decimal: Option<DecimalBackend>,
 ) -> TokenStream {
-    let (schema_relative, resolved, schema, schema_sha_consts) =
-        match parse_schema_literal(schema_path) {
-            Ok(parsed) => parsed,
-            Err(error) => return error,
-        };
+    let super::parse::SchemaLiteral {
+        relative: schema_relative,
+        resolved,
+        schema,
+        sha: schema_sha_consts,
+        files: included_files,
+    } = match parse_schema_literal(schema_path) {
+        Ok(module) => module,
+        Err(error) => return error,
+    };
     if let Err(error) =
         super::extension_gate::guard_client_declared_extensions(schema_path, &schema)
     {
@@ -44,6 +49,7 @@ pub(super) fn compose_client_schema(
     // Scoped this widely for the decimal backend — see `include::embedded`.
     with_decimal_backend(decimal_backend, move || {
         let resolved_literal = resolved.display().to_string();
+        let schema_files = super::schema_files::schema_files_const(&included_files);
 
         let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
         let model_name_set = schema
@@ -94,9 +100,7 @@ pub(super) fn compose_client_schema(
         {
             Ok(field_modules) => field_modules,
             Err(error) => {
-                return syn::Error::new(schema_path.span(), error)
-                    .to_compile_error()
-                    .into();
+                return compile_error(schema_path, error);
             }
         };
         let procedure_modules = match schema
@@ -110,9 +114,7 @@ pub(super) fn compose_client_schema(
         {
             Ok(modules) => modules,
             Err(error) => {
-                return syn::Error::new(schema_path.span(), error)
-                    .to_compile_error()
-                    .into();
+                return compile_error(schema_path, error);
             }
         };
         let generated_client_module = match generate_client_module(
@@ -124,9 +126,7 @@ pub(super) fn compose_client_schema(
         ) {
             Ok(module) => module,
             Err(error) => {
-                return syn::Error::new(schema_path.span(), error)
-                    .to_compile_error()
-                    .into();
+                return compile_error(schema_path, error);
             }
         };
 
@@ -135,6 +135,7 @@ pub(super) fn compose_client_schema(
             pub mod cratestack_schema {
                 pub const SCHEMA_PATH: &str = #schema_relative;
                 pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+                #schema_files
                 /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
                 /// once at macro-expansion time. Not cryptographic-strength
                 /// integrity — it's a drift-detection fingerprint: the generated

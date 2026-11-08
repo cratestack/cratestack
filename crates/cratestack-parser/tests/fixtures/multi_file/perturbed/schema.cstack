@@ -1,0 +1,13 @@
+datasource db {
+  provider = "postgresql"
+}
+
+auth Principal {
+  id Int
+}
+
+part "models/user.cstack"
+part "models/post.cstack"
+part "api.cstack"
+
+import "shared/money.cstack"

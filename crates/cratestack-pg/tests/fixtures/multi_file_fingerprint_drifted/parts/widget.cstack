@@ -1,0 +1,9 @@
+part of "../schema.cstack"
+
+model Widget {
+  id Int @id
+  name String
+  colour String?
+
+  @@allow("read", auth() != null)
+}

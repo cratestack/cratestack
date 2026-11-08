@@ -1,0 +1,85 @@
+datasource db {
+  provider = "postgresql"
+}
+
+auth Principal {
+  id Int
+}
+
+mixin Timestamps {
+  createdAt DateTime
+  updatedAt DateTime
+}
+
+/// A person who writes posts.
+model User {
+  @use(Timestamps)
+  id Int @id
+  name String
+
+  @@allow("read", true)
+}
+
+/// Where a post is in its life.
+enum PostStatus {
+  Draft
+  Published
+}
+
+/// A post, written by a user.
+model Post {
+  @use(Timestamps)
+  @use(Audited)
+  id Int @id
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+  status PostStatus
+  title String
+
+  @@allow("read", true)
+}
+
+/// Arguments of `userPosts`.
+type PostArgs {
+  authorId Int
+}
+
+/// A price tagged with an id.
+type Priced {
+  price Money
+  id Id
+}
+
+/// The posts of one user.
+procedure userPosts(args: PostArgs): Post[]
+  @allow(true)
+
+view PostCard from Post {
+  id Int @id @from(Post.id)
+  title String @from(Post.title)
+
+  @@server_sql("SELECT id, title FROM post")
+  @@embedded_sql("SELECT id, title FROM post")
+  @@allow("read", true)
+}
+
+/// An amount of money; the currency enum lives in this unit's part.
+type Money {
+  amount Int
+  currency Currency
+}
+
+mixin Audited {
+  auditedAt DateTime
+}
+
+/// Currencies we bill in.
+enum Currency {
+  EUR
+  XAF
+}
+
+/// The shape of an identifier.
+type Id {
+  value Int
+}

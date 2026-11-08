@@ -1,22 +1,35 @@
-use cratestack_core::{ProcedureKind, Schema, SourceSpan};
+use cratestack_core::ProcedureKind;
 use tower_lsp_server::ls_types::{DocumentSymbol, SymbolKind};
 
 use crate::state::DocumentState;
-use crate::text::range_from_offsets;
+use crate::symbol_build::{
+    document_symbol_leaf, document_symbol_with_children, field_document_symbol,
+};
 use crate::type_ref::render_type_ref;
+use crate::view::Resolved;
 
 /// Symbols for a document, or `None` when nothing has parsed yet.
 pub(crate) fn document_symbols_for(document: &DocumentState) -> Option<Vec<DocumentSymbol>> {
-    let (text, schema) = document.resolved()?;
-    Some(document_symbols(text, schema))
+    Some(document_symbols_in(&document.view()?))
 }
 
-pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbol> {
+#[cfg(test)]
+pub(crate) fn document_symbols(
+    text: &str,
+    schema: &cratestack_core::Schema,
+) -> Vec<DocumentSymbol> {
+    document_symbols_in(&Resolved::single(text, schema))
+}
+
+/// The outline of the requesting file: declarations in other files of a split
+/// schema are not in it.
+fn document_symbols_in(view: &Resolved<'_>) -> Vec<DocumentSymbol> {
+    let schema = view.schema;
     let mut symbols = Vec::new();
 
     if let Some(datasource) = &schema.datasource {
-        symbols.push(document_symbol_leaf(
-            text,
+        symbols.extend(document_symbol_leaf(
+            view,
             datasource.name.clone(),
             SymbolKind::OBJECT,
             Some("datasource".to_owned()),
@@ -26,8 +39,8 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
     }
 
     if let Some(auth) = &schema.auth {
-        symbols.push(document_symbol_with_children(
-            text,
+        symbols.extend(document_symbol_with_children(
+            view,
             auth.name.clone(),
             SymbolKind::OBJECT,
             Some("auth".to_owned()),
@@ -35,14 +48,14 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
             auth.span,
             auth.fields
                 .iter()
-                .map(|field| field_document_symbol(text, field))
+                .filter_map(|field| field_document_symbol(view, field))
                 .collect(),
         ));
     }
 
-    symbols.extend(schema.models.iter().map(|model| {
+    symbols.extend(schema.models.iter().filter_map(|model| {
         document_symbol_with_children(
-            text,
+            view,
             model.name.clone(),
             SymbolKind::STRUCT,
             Some("model".to_owned()),
@@ -51,14 +64,14 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
             model
                 .fields
                 .iter()
-                .map(|field| field_document_symbol(text, field))
+                .filter_map(|field| field_document_symbol(view, field))
                 .collect(),
         )
     }));
 
-    symbols.extend(schema.types.iter().map(|ty| {
+    symbols.extend(schema.types.iter().filter_map(|ty| {
         document_symbol_with_children(
-            text,
+            view,
             ty.name.clone(),
             SymbolKind::CLASS,
             Some("type".to_owned()),
@@ -66,12 +79,12 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
             ty.name_span,
             ty.fields
                 .iter()
-                .map(|field| field_document_symbol(text, field))
+                .filter_map(|field| field_document_symbol(view, field))
                 .collect(),
         )
     }));
 
-    symbols.extend(schema.procedures.iter().map(|procedure| {
+    symbols.extend(schema.procedures.iter().filter_map(|procedure| {
         let detail = match procedure.kind {
             ProcedureKind::Query => "procedure".to_owned(),
             ProcedureKind::Mutation => "mutation procedure".to_owned(),
@@ -79,9 +92,9 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
         let mut children = procedure
             .args
             .iter()
-            .map(|arg| {
+            .filter_map(|arg| {
                 document_symbol_leaf(
-                    text,
+                    view,
                     arg.name.clone(),
                     SymbolKind::VARIABLE,
                     Some(render_type_ref(&arg.ty)),
@@ -92,7 +105,7 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
             .collect::<Vec<_>>();
         children.sort_by_key(|symbol| (symbol.range.start.line, symbol.range.start.character));
         document_symbol_with_children(
-            text,
+            view,
             procedure.name.clone(),
             SymbolKind::FUNCTION,
             Some(detail),
@@ -107,13 +120,13 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
     // rather than becoming a child, matching how a procedure's return type
     // is rendered — the outline lists what a declaration *contains*, and a
     // query contains its parameters, not its result.
-    symbols.extend(schema.queries.iter().map(|query| {
+    symbols.extend(schema.queries.iter().filter_map(|query| {
         let mut children = query
             .args
             .iter()
-            .map(|arg| {
+            .filter_map(|arg| {
                 document_symbol_leaf(
-                    text,
+                    view,
                     arg.name.clone(),
                     SymbolKind::VARIABLE,
                     Some(render_type_ref(&arg.ty)),
@@ -124,7 +137,7 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
             .collect::<Vec<_>>();
         children.sort_by_key(|symbol| (symbol.range.start.line, symbol.range.start.character));
         document_symbol_with_children(
-            text,
+            view,
             query.name.clone(),
             SymbolKind::FUNCTION,
             Some(format!("query -> {}", render_type_ref(&query.result_type))),
@@ -135,62 +148,4 @@ pub(crate) fn document_symbols(text: &str, schema: &Schema) -> Vec<DocumentSymbo
     }));
 
     symbols
-}
-
-fn field_document_symbol(text: &str, field: &cratestack_core::Field) -> DocumentSymbol {
-    document_symbol_leaf(
-        text,
-        field.name.clone(),
-        SymbolKind::FIELD,
-        Some(render_type_ref(&field.ty)),
-        field.span,
-        field.name_span,
-    )
-}
-
-#[allow(deprecated)]
-fn document_symbol_with_children(
-    text: &str,
-    name: String,
-    kind: SymbolKind,
-    detail: Option<String>,
-    span: SourceSpan,
-    selection_span: SourceSpan,
-    children: Vec<DocumentSymbol>,
-) -> DocumentSymbol {
-    let range = range_from_offsets(text, span.start, span.end);
-    let selection_range = range_from_offsets(text, selection_span.start, selection_span.end);
-    DocumentSymbol {
-        name,
-        detail,
-        kind,
-        tags: None,
-        deprecated: None,
-        range,
-        selection_range,
-        children: Some(children),
-    }
-}
-
-#[allow(deprecated)]
-fn document_symbol_leaf(
-    text: &str,
-    name: String,
-    kind: SymbolKind,
-    detail: Option<String>,
-    span: SourceSpan,
-    selection_span: SourceSpan,
-) -> DocumentSymbol {
-    let range = range_from_offsets(text, span.start, span.end);
-    let selection_range = range_from_offsets(text, selection_span.start, selection_span.end);
-    DocumentSymbol {
-        name,
-        detail,
-        kind,
-        tags: None,
-        deprecated: None,
-        range,
-        selection_range,
-        children: None,
-    }
 }

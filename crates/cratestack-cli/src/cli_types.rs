@@ -18,6 +18,10 @@ pub(crate) enum Command {
         schema: PathBuf,
         #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
         format: OutputFormat,
+        /// After a successful check, list every file of the schema with its
+        /// role (root, part, import, import part).
+        #[arg(long)]
+        list_files: bool,
     },
     GenerateDart {
         #[arg(long)]
@@ -199,6 +203,10 @@ pub(crate) enum Command {
     PrintIr {
         #[arg(long)]
         schema: PathBuf,
+        /// Omit source positions, so a schema split across files prints the
+        /// same IR as the same schema in one file.
+        #[arg(long)]
+        no_spans: bool,
     },
     /// Per-op contract digests: the wire-shape identity of each op, which
     /// ignores policies, indexes, SQL and every other op (cratestack#1123).

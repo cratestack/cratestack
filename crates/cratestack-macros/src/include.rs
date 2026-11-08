@@ -30,6 +30,7 @@ mod lock_arg;
 mod mcp_gate;
 mod parse;
 mod schema_args;
+mod schema_files;
 mod schema_sha;
 mod server;
 mod server_key_tables;

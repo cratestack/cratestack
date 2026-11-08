@@ -24,7 +24,7 @@ pub(crate) fn json_check_failure(
     error: &cratestack_parser::SchemaError,
 ) -> serde_json::Value {
     let span = error.span();
-    serde_json::json!({
+    let mut payload = serde_json::json!({
         "ok": false,
         "schema": schema.display().to_string(),
         "diagnostics": [
@@ -41,7 +41,26 @@ pub(crate) fn json_check_failure(
                 "end": span.end,
             }
         ],
-    })
+    });
+    // Only when the error names a second location (a duplicate across two
+    // files), so a single-file payload keeps exactly today's keys.
+    if !error.related().is_empty() {
+        let related: Vec<_> = error
+            .related()
+            .iter()
+            .map(|r| {
+                serde_json::json!({
+                    "file": r.file(),
+                    "line": r.line(),
+                    "start": r.span().start,
+                    "end": r.span().end,
+                    "message": r.message(),
+                })
+            })
+            .collect();
+        payload["diagnostics"][0]["related"] = serde_json::Value::Array(related);
+    }
+    payload
 }
 
 pub(crate) fn parse_schema_or_render(schema: &PathBuf) -> Result<cratestack_core::Schema> {

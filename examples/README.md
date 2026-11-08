@@ -111,7 +111,7 @@ The mobile front-ends (Flutter / Expo) require platform SDKs (Flutter SDK, Xcode
 
 | Example | Macro(s) | Shape |
 |---|---|---|
-| [`react-vite-swr/`](react-vite-swr) | `include_server_schema!` (`transport rest`) | Postgres + axum REST server, plus a `cratestack generate-typescript --swr` client (checked in under `client/`) consumed by a real React + Vite app with **zero hand-written data-fetching code** — every `useSWR`/`useSWRMutation` call, cache key, and fetcher is generated. Also calls a plain generated function from a Node script, outside React, proving the swr layout's two-layer (plain functions + hooks) design is real. |
+| [`react-vite-swr/`](react-vite-swr) | `include_server_schema!` (`transport rest`) | Postgres + axum REST server, plus a `cratestack generate-typescript --swr` client (checked in under `client/`) consumed by a real React + Vite app with **zero hand-written data-fetching code** — every `useSWR`/`useSWRMutation` call, cache key, and fetcher is generated. Also calls a plain generated function from a Node script, outside React, proving the swr layout's two-layer (plain functions + hooks) design is real. The schema is split across files with `part` (cratestack#924). |
 | [`react-vite-refine/`](react-vite-refine) | No server macro — schema only (`transport rest`) | No database, no hand-written server: a `cratestack generate-typescript --refine` client + `cratestack generate-wiremock` stubs drive a real [refine.dev](https://refine.dev) admin app (`@cratestack/refine`'s `createCratestackDataProvider`) against a live, stateful WireMock container built from `crates/cratestack-mock-wiremock`. Three models exercise plain CRUD, `@@paged` + `@version` optimistic locking, and a non-`id` primary key. |
 
 ```bash

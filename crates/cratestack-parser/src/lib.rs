@@ -1,7 +1,11 @@
 mod diagnostics;
+mod diagnostics_related;
+mod directives;
 mod entry;
 mod line_helpers;
+mod load;
 mod parse;
+mod public_lists;
 mod relation_actions;
 mod relation_helpers;
 mod validate;
@@ -38,6 +42,10 @@ mod tests_computed_type_valued;
 mod tests_db_enforce_eligibility;
 #[cfg(test)]
 mod tests_detached_attributes;
+#[cfg(test)]
+mod tests_directives;
+#[cfg(test)]
+mod tests_directives_base;
 #[cfg(test)]
 mod tests_docs;
 #[cfg(test)]
@@ -124,6 +132,8 @@ mod tests_queries_support;
 #[cfg(test)]
 mod tests_query_policy_spelling;
 #[cfg(test)]
+mod tests_related_render;
+#[cfg(test)]
 mod tests_relation_actions;
 #[cfg(test)]
 mod tests_relations;
@@ -139,6 +149,8 @@ mod tests_reserved_keywords;
 mod tests_server_only_placement;
 #[cfg(test)]
 mod tests_server_only_spelling;
+#[cfg(test)]
+mod tests_single_source_directives;
 #[cfg(test)]
 mod tests_snake_case_collisions;
 #[cfg(test)]
@@ -169,32 +181,18 @@ mod tests_view_from;
 mod tests_views;
 
 pub use diagnostics::SchemaError;
+pub use diagnostics_related::RelatedSpan;
+pub use directives::{FileDirectives, PathDirective};
 pub use entry::{
     ANONYMOUS_SCHEMA, parse_schema, parse_schema_diagnostics, parse_schema_file,
     parse_schema_named, parse_schema_unvalidated,
 };
+pub use load::{
+    FileRole, FsSources, LoadDiagnostics, LoadOptions, LoadedSchema, OverlaySources, SchemaFile,
+    SchemaSources, canonical_schema_path, load_schema, load_schema_diagnostics,
+};
+pub use public_lists::{builtin_type_names, reserved_multi_file_keywords};
 pub use validate::{FieldHost, field_attribute_names};
-
-/// Canonical scalar type names built into the `.cstack` language (e.g.
-/// `String`, `Int`, `Decimal`, ...), including `Page` (which is valid only
-/// as a procedure return type — see `validate::type_names::validate_type_ref`
-/// — not as a plain field type).
-///
-/// This is the same list `cratestack-lsp`'s autocompletion and the
-/// `cratestack-pg`/`cratestack-sqlite` emitter/decoder round-trip tests
-/// assert against, so a new builtin scalar only has to be added here once —
-/// see cratestack#232 for why that matters (this list had already silently
-/// drifted from the LSP's hand-copied one before this accessor existed).
-pub fn builtin_type_names() -> &'static [&'static str] {
-    validate::builtin_type_names()
-}
-
-/// Words reserved for the multi-file schema grammar. Consumers that accept
-/// prospective identifiers, such as the LSP rename flow, must reject this
-/// canonical list before producing source the parser cannot read.
-pub fn reserved_multi_file_keywords() -> &'static [&'static str] {
-    validate::multi_file_schema_keywords()
-}
 
 #[cfg(test)]
 use relation_helpers::parse_relation_attribute;

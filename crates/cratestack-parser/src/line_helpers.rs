@@ -10,8 +10,17 @@ pub(crate) struct Line<'a> {
     pub(crate) start: usize,
 }
 
+#[cfg(test)]
 pub(crate) fn collect_lines(source: &str) -> Vec<Line<'_>> {
-    let mut offset = 0usize;
+    collect_lines_at(source, 0)
+}
+
+/// Like `collect_lines`, but every `Line::start` is offset by `base`, so a
+/// file parsed as part of a multi-file schema gets spans in the schema's one
+/// address space (docs/design/multi-file-schemas.md section 9). `number`
+/// stays the line within this file.
+pub(crate) fn collect_lines_at(source: &str, base: usize) -> Vec<Line<'_>> {
+    let mut offset = base;
     let mut lines = Vec::new();
 
     for (index, segment) in source.split_inclusive('\n').enumerate() {

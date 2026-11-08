@@ -29,11 +29,16 @@ pub(super) fn compose_embedded_schema(
     schema_path: &LitStr,
     decimal: Option<DecimalBackend>,
 ) -> TokenStream {
-    let (schema_relative, resolved, schema, schema_sha_consts) =
-        match parse_schema_literal(schema_path) {
-            Ok(parsed) => parsed,
-            Err(error) => return error,
-        };
+    let super::parse::SchemaLiteral {
+        relative: schema_relative,
+        resolved,
+        schema,
+        sha: schema_sha_consts,
+        files: included_files,
+    } = match parse_schema_literal(schema_path) {
+        Ok(parsed) => parsed,
+        Err(error) => return error,
+    };
     if let Err(error) = super::mcp_gate::guard_embedded_mcp(schema_path, &schema) {
         return error;
     }
@@ -74,6 +79,7 @@ pub(super) fn compose_embedded_schema(
         // no per-attribute wiring needed" treatment `@@audit`/`@@emit` below
         // already get.
         let resolved_literal = resolved.display().to_string();
+        let schema_files = super::schema_files::schema_files_const(&included_files);
 
         let mixin_names = schema.mixins.iter().map(|mixin| schema_lit(&mixin.name));
         let model_names = schema.models.iter().map(|model| schema_lit(&model.name));
@@ -229,6 +235,7 @@ pub(super) fn compose_embedded_schema(
             pub mod cratestack_schema {
                 pub const SCHEMA_PATH: &str = #schema_relative;
                 pub const SCHEMA_SOURCE: &str = include_str!(#resolved_literal);
+                #schema_files
                 /// Hex-encoded SHA-256 of `SCHEMA_SOURCE`'s raw bytes, computed
                 /// once at macro-expansion time. Not cryptographic-strength
                 /// integrity — it's a drift-detection fingerprint: the server's

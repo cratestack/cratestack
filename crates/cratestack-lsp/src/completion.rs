@@ -76,14 +76,11 @@ pub(crate) fn completion_items(
     // Multi-file keywords: reserved for the multi-file schema grammar
     // (cratestack#922, epic #910). Sourced from the parser rather than
     // copied, under the same "one list, N readers" rule as `builtin_types`
-    // above. The detail string carries the caveat a bare keyword cannot: the
-    // words are permanently unavailable as names, and the declarations they
-    // introduce are not implemented yet, so inserting one today is always a
-    // parse error.
-    // Worded without naming either word, so it stays true for whatever the
-    // parser's list holds.
-    const MULTI_FILE_KEYWORD_DETAIL: &str = "reserved for multi-file schemas (cratestack#910) — never valid \
-         as a name, and the declaration is not implemented yet";
+    // above. The detail string carries what a bare keyword cannot: the words
+    // are permanently unavailable as names, and what each directive does.
+    const MULTI_FILE_KEYWORD_DETAIL: &str = "reserved multi-file schema directive (cratestack#910): \
+         `part \"…\"` lists a part, `part of \"…\"` names this part's root, `import \"…\"` \
+         brings in shared types; never valid as a name";
 
     let mut items = keywords
         .into_iter()

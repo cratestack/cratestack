@@ -5,10 +5,6 @@ pub(crate) fn span_contains(span: SourceSpan, offset: usize) -> bool {
     span.start <= offset && offset <= span.end
 }
 
-pub(crate) fn span_to_range(text: &str, span: SourceSpan) -> Option<Range> {
-    Some(range_from_offsets(text, span.start, span.end))
-}
-
 pub(crate) fn range_from_offsets(text: &str, start: usize, end: usize) -> Range {
     Range {
         start: offset_to_position(text, start),

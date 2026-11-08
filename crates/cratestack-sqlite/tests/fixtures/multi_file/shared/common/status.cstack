@@ -1,0 +1,6 @@
+part of "../common.cstack"
+
+enum NoteStatus {
+  Draft
+  Published
+}
