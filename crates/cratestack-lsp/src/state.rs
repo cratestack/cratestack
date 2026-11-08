@@ -6,7 +6,8 @@ use tokio::sync::RwLock;
 use tower_lsp_server::Client;
 use tower_lsp_server::ls_types::Uri;
 
-use crate::analyze::analyze_document;
+use crate::graph::GraphView;
+use crate::graph_store::GraphStore;
 
 /// A schema together with the exact source text it was parsed from.
 ///
@@ -18,6 +19,13 @@ use crate::analyze::analyze_document;
 pub(crate) struct AnalyzedSchema {
     pub(crate) text: String,
     pub(crate) schema: Schema,
+    /// Offset of this file's first byte in the schema's address space: spans
+    /// in `schema` are global. Zero for a single-file schema.
+    #[allow(dead_code)] // read by the navigation features, next change
+    pub(crate) base: usize,
+    /// The whole graph, for a schema split across files.
+    #[allow(dead_code)] // read by the navigation features, next change
+    pub(crate) graph: Option<Arc<GraphView>>,
 }
 
 #[derive(Clone)]
@@ -67,6 +75,8 @@ pub(crate) fn next_document_state(
         Some(schema) => Some(AnalyzedSchema {
             text: text.clone(),
             schema,
+            base: 0,
+            graph: None,
         }),
         // Parse failed. Carry the last good pair forward untouched — including
         // its text, so its spans stay resolvable. A document that has never
@@ -100,6 +110,9 @@ pub(crate) struct ParsedRelationAttributeSpans {
 pub(crate) struct Backend {
     pub(crate) client: Client,
     pub(crate) documents: Arc<RwLock<HashMap<Uri, DocumentState>>>,
+    /// Every analysed schema graph and who is in it. Lock order: `documents`
+    /// is never held while waiting on `graphs`.
+    pub(crate) graphs: Arc<RwLock<GraphStore>>,
 }
 
 impl Backend {
@@ -107,20 +120,7 @@ impl Backend {
         Self {
             client,
             documents: Arc::new(RwLock::new(HashMap::new())),
+            graphs: Arc::new(RwLock::new(GraphStore::default())),
         }
-    }
-
-    pub(crate) async fn update_document(&self, uri: Uri, text: String) {
-        let (schema, diagnostics) = analyze_document(&uri, &text);
-        {
-            let mut documents = self.documents.write().await;
-            let previous = documents.remove(&uri);
-            documents.insert(uri.clone(), next_document_state(previous, text, schema));
-        }
-        // Diagnostics always describe the *current* text, never the retained
-        // schema — a stale parse must not suppress a live error.
-        self.client
-            .publish_diagnostics(uri, diagnostics, None)
-            .await;
     }
 }

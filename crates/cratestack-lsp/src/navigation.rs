@@ -1,4 +1,6 @@
-use tower_lsp_server::ls_types::{Position, Range};
+use tower_lsp_server::ls_types::{
+    DocumentHighlight, DocumentHighlightKind, Location, Position, Range, Uri,
+};
 
 use crate::references::reference_spans_at;
 use crate::state::DocumentState;
@@ -23,4 +25,38 @@ pub(crate) fn reference_ranges(
             .map(|span| range_from_offsets(text, span.start, span.end))
             .collect(),
     )
+}
+
+/// `textDocument/references`: every mention, as locations in `uri`.
+pub(crate) fn reference_locations(
+    uri: &Uri,
+    document: &DocumentState,
+    position: Position,
+    include_declaration: bool,
+) -> Option<Vec<Location>> {
+    reference_ranges(document, position, include_declaration).map(|ranges| {
+        ranges
+            .into_iter()
+            .map(|range| Location {
+                uri: uri.clone(),
+                range,
+            })
+            .collect()
+    })
+}
+
+/// `textDocument/documentHighlight`: every mention, declaration included.
+pub(crate) fn highlights(
+    document: &DocumentState,
+    position: Position,
+) -> Option<Vec<DocumentHighlight>> {
+    reference_ranges(document, position, true).map(|ranges| {
+        ranges
+            .into_iter()
+            .map(|range| DocumentHighlight {
+                range,
+                kind: Some(DocumentHighlightKind::TEXT),
+            })
+            .collect()
+    })
 }

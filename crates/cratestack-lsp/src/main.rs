@@ -6,6 +6,9 @@ mod completion;
 mod definition;
 mod document_symbols;
 mod field_host;
+mod graph;
+mod graph_store;
+mod graph_update;
 mod hover;
 mod hover_render;
 mod mcp_completion;
@@ -36,6 +39,12 @@ mod tests_block_diagnostics;
 mod tests_completion;
 #[cfg(test)]
 mod tests_enum_hover;
+#[cfg(test)]
+mod tests_graph_analysis;
+#[cfg(test)]
+mod tests_graph_refresh;
+#[cfg(test)]
+mod tests_graph_support;
 #[cfg(test)]
 mod tests_last_known_good;
 #[cfg(test)]

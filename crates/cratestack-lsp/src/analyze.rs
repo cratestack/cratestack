@@ -23,7 +23,10 @@ pub(crate) fn analyze_document(uri: &Uri, text: &str) -> (Option<Schema>, Vec<Di
     (schema, diagnostics)
 }
 
-fn schema_error_to_diagnostic(text: &str, error: &cratestack_parser::SchemaError) -> Diagnostic {
+pub(crate) fn schema_error_to_diagnostic(
+    text: &str,
+    error: &cratestack_parser::SchemaError,
+) -> Diagnostic {
     let span = precise_relation_error_span(text, error).unwrap_or_else(|| error.span());
     Diagnostic {
         range: range_from_offsets(text, span.start, span.end),
