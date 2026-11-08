@@ -3,7 +3,7 @@
 //! `schema_args.rs`, re-exported below — see that file's doc for why the
 //! split.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use proc_macro::TokenStream;
 use syn::LitStr;
@@ -13,10 +13,10 @@ use super::schema_sha::SchemaShaConsts;
 
 /// One file of the schema, as the macros see it (design §10).
 pub(super) struct IncludedFile {
-    /// Relative to `CARGO_MANIFEST_DIR`, `/`-separated, lexically folded.
+    /// Relative to `CARGO_MANIFEST_DIR`, `/`-separated (`..` when the file is
+    /// outside it).
     pub(super) manifest_relative: String,
-    /// `CARGO_MANIFEST_DIR` joined with the same, lexically folded and
-    /// deliberately not canonicalized (it feeds `include_str!`).
+    /// The canonical path the file was read from (it feeds `include_str!`).
     pub(super) absolute: PathBuf,
 }
 
@@ -54,7 +54,7 @@ pub(super) fn parse_schema_literal(schema_path: &LitStr) -> Result<SchemaLiteral
     reject_composite_primary_keys(schema_path, &schema)?;
 
     let sha = SchemaShaConsts::from_schema(&schema);
-    let files = included_files(&relative, &manifest_dir, &loaded);
+    let files = included_files(&manifest_dir, &loaded);
 
     Ok(SchemaLiteral {
         relative,
@@ -65,43 +65,42 @@ pub(super) fn parse_schema_literal(schema_path: &LitStr) -> Result<SchemaLiteral
     })
 }
 
+/// Each file is included from the path that was actually read (its canonical
+/// path), so a symlinked root, an absolute literal or a `..` import all name
+/// files that exist. The label shown beside it is that path relative to the
+/// manifest directory.
 fn included_files(
-    literal: &str,
     manifest_dir: &str,
     loaded: &cratestack_parser::LoadedSchema,
 ) -> Vec<IncludedFile> {
-    let literal_dir = std::path::Path::new(literal)
-        .parent()
-        .map(|parent| parent.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_default();
+    let manifest =
+        std::fs::canonicalize(manifest_dir).unwrap_or_else(|_| PathBuf::from(manifest_dir));
     loaded
         .files
         .iter()
-        .map(|file| {
-            let joined = format!("{literal_dir}/{}", file.relative);
-            let manifest_relative = fold_lexically(&joined);
-            let absolute = PathBuf::from(manifest_dir).join(&manifest_relative);
-            IncludedFile {
-                manifest_relative,
-                absolute,
-            }
+        .map(|file| IncludedFile {
+            manifest_relative: manifest_label(&manifest, &file.path),
+            absolute: file.path.clone(),
         })
         .collect()
 }
 
-/// Fold `.` and `a/..` segments without touching the filesystem.
-fn fold_lexically(path: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for segment in path.split('/') {
-        match segment {
-            "" | "." => {}
-            ".." if out.last().is_some_and(|last| *last != "..") => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
+/// `file` as seen from `manifest`, `/`-separated, climbing with `..`.
+fn manifest_label(manifest: &Path, file: &Path) -> String {
+    let from: Vec<_> = manifest.components().collect();
+    let to: Vec<_> = file.components().collect();
+    let common = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    if common == 0 {
+        // Nothing in common (another drive): the path itself.
+        return file.display().to_string().replace('\\', "/");
     }
-    out.join("/")
+    let mut parts: Vec<String> = vec!["..".to_owned(); from.len() - common];
+    parts.extend(
+        to[common..]
+            .iter()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned()),
+    );
+    parts.join("/")
 }
 
 /// `@@id([...])` composite primary keys are parsed and validated by
@@ -139,18 +138,12 @@ fn find_composite_id_model(schema: &cratestack_core::Schema) -> Option<&cratesta
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{find_composite_id_model, fold_lexically};
+#[path = "parse_tests.rs"]
+mod included_files_tests;
 
-    #[test]
-    fn fold_lexically_resolves_dot_and_dotdot() {
-        assert_eq!(
-            fold_lexically("tests/fixtures/a/../shared/./c.cstack"),
-            "tests/fixtures/shared/c.cstack"
-        );
-        assert_eq!(fold_lexically("/schema.cstack"), "schema.cstack");
-        assert_eq!(fold_lexically("../x/y.cstack"), "../x/y.cstack");
-    }
+#[cfg(test)]
+mod tests {
+    use super::find_composite_id_model;
 
     #[test]
     fn flags_model_with_composite_id_attribute() {
