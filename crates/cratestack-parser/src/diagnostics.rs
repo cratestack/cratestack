@@ -69,9 +69,6 @@ impl SchemaError {
 
     /// Add a second location, in the same address space as the primary span
     /// until the loader attributes both.
-    // First used by the loader's cross-file errors (docs/design/multi-file-schemas.md
-    // section 9); until it lands only tests build one.
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn with_related(mut self, message: impl Into<String>, span: SourceSpan) -> Self {
         self.related
             .push(RelatedSpan::new(message, span.start..span.end, span.line));

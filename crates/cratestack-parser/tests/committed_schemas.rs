@@ -15,9 +15,11 @@
 //! committed_schemas -- --nocapture`). A packaged crate has no repository
 //! around it, so the test returns without checking anything there.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use cratestack_parser::{LoadOptions, load_schema};
 
 /// `(path, the exact message it fails with)`: schemas that are refused on
 /// purpose, recorded from the parser as it was before field attributes
@@ -129,9 +131,57 @@ fn every_committed_schema_keeps_its_parse_result() {
     let mut parsed = 0usize;
     let mut refused = BTreeMap::new();
     let mut attributes: BTreeMap<(&str, String), usize> = BTreeMap::new();
+    // Multi-file schemas, counted once per root.
+    let mut multi_file_roots = BTreeSet::new();
     for path in &files {
-        let source = std::fs::read_to_string(root.join(path)).expect("readable schema");
-        match cratestack_parser::parse_schema_named(path, &source) {
+        let absolute = root.join(path);
+        let source = std::fs::read_to_string(&absolute).expect("readable schema");
+        let single = cratestack_parser::parse_schema_named(path, &source);
+        if let Err(error) = &single
+            && error
+                .message()
+                .contains("needs the schema to be loaded from a file")
+        {
+            // It declares `part`, `part of` or `import`: load the whole schema.
+            let options = LoadOptions {
+                follow_part_of: true,
+                ..LoadOptions::default()
+            };
+            match load_schema(&absolute, &options) {
+                Ok(loaded) => {
+                    multi_file_roots.insert(loaded.root().path.clone());
+                    tally(&loaded.schema, &mut attributes);
+                }
+                Err(error) => unexpected.push(format!("{path}: multi-file load failed: {error}")),
+            }
+            continue;
+        }
+        // No directives: the loader must return exactly what the single-source
+        // parse returns, spans included (success metric 4).
+        let display = absolute.display().to_string();
+        let same_file = cratestack_parser::parse_schema_named(&display, &source);
+        match (load_schema(&absolute, &LoadOptions::default()), same_file) {
+            (Ok(loaded), Ok(schema)) => {
+                if loaded.schema != schema || !loaded.is_single_file() {
+                    unexpected.push(format!("{path}: the loader changed a single-file schema"));
+                }
+            }
+            (Err(loaded), Err(single)) => {
+                let key = |e: &cratestack_parser::SchemaError| {
+                    (
+                        e.message().to_owned(),
+                        e.file().to_owned(),
+                        e.span(),
+                        e.line(),
+                    )
+                };
+                if key(&loaded) != key(&single) {
+                    unexpected.push(format!("{path}: the loader changed a refusal"));
+                }
+            }
+            _ => unexpected.push(format!("{path}: the loader disagrees on accept or refuse")),
+        }
+        match single {
             Ok(schema) => {
                 parsed += 1;
                 tally(&schema, &mut attributes);
@@ -162,9 +212,10 @@ fn every_committed_schema_keeps_its_parse_result() {
         }
     }
     eprintln!(
-        "committed .cstack files: {}; parse: {parsed}; negative fixtures: {}",
+        "committed .cstack files: {}; parse: {parsed}; negative fixtures: {}; multi-file roots: {}",
         files.len(),
-        refused.len()
+        refused.len(),
+        multi_file_roots.len()
     );
     for ((kind, name), count) in &attributes {
         eprintln!("  field attribute  {kind:6} {name:13} x{count}");

@@ -3,6 +3,7 @@ mod diagnostics_related;
 mod directives;
 mod entry;
 mod line_helpers;
+mod load;
 mod parse;
 mod public_lists;
 mod relation_actions;
@@ -185,6 +186,10 @@ pub use directives::{FileDirectives, PathDirective};
 pub use entry::{
     ANONYMOUS_SCHEMA, parse_schema, parse_schema_diagnostics, parse_schema_file,
     parse_schema_named, parse_schema_unvalidated,
+};
+pub use load::{
+    FileRole, FsSources, LoadDiagnostics, LoadOptions, LoadedSchema, OverlaySources, SchemaFile,
+    SchemaSources, canonical_schema_path, load_schema, load_schema_diagnostics,
 };
 pub use public_lists::{builtin_type_names, reserved_multi_file_keywords};
 pub use validate::{FieldHost, field_attribute_names};

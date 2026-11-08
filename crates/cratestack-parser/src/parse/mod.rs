@@ -34,27 +34,18 @@ use crate::line_helpers::{
 
 use self::attribute_run::{declaration_label, detached_group_error};
 use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
-use self::directives::parse_path_directive;
+use self::directives::record_directive;
 use self::enum_body::parse_enum_body;
 use self::fields::parse_fields;
 use self::mcp::{extract_model_mcp, parse_mcp_block};
-use self::models::{expand_model_mixins, parse_model_body};
+use self::models::parse_model_body;
 use self::procedures::parse_procedure;
 use self::queries::parse_query;
 use self::topics::parse_topic;
 use self::views::parse_view_block;
 
-pub(crate) use self::parsed_file::ParsedFile;
+pub(crate) use self::parsed_file::{ParsedFile, expand_mixins};
 pub(crate) use self::single_source::parse_schema_only;
-
-/// Expand `@use` mixins into the models of `schema`, once every file of it
-/// has been merged.
-pub(crate) fn expand_mixins(schema: &mut Schema) -> Result<(), SchemaError> {
-    let mixins = std::mem::take(&mut schema.mixins);
-    let result = expand_model_mixins(&mixins, &mut schema.models);
-    schema.mixins = mixins;
-    result
-}
 
 /// Parse one file whose first byte sits at `base` of the schema's address
 /// space (docs/design/multi-file-schemas.md section 9). Does not expand
@@ -247,25 +238,7 @@ pub(crate) fn parse_file_at(source: &str, base: usize) -> Result<ParsedFile, Sch
             continue;
         }
 
-        if let Some(keyword) = directive_keyword(line.trimmed) {
-            let directive = parse_path_directive(line, keyword)?;
-            match keyword {
-                "part of" => {
-                    if let Some(first) = &directives.part_of {
-                        return Err(SchemaError::new(
-                            format!(
-                                "duplicate `part of` (first declared on line {})",
-                                first.span.line
-                            ),
-                            directive.span.start..directive.span.end,
-                            line.number,
-                        ));
-                    }
-                    directives.part_of = Some(directive);
-                }
-                "part" => directives.parts.push(directive),
-                _ => directives.imports.push(directive),
-            }
+        if record_directive(line, &mut directives)? {
             pending_docs.clear();
             cursor += 1;
             continue;
@@ -338,18 +311,4 @@ pub(crate) fn parse_file_at(source: &str, base: usize) -> Result<ParsedFile, Sch
         mcp,
     };
     Ok(ParsedFile { schema, directives })
-}
-
-/// `part of` is matched before `part`, and the bare words too, so a missing
-/// path reports M16 rather than an unsupported declaration.
-fn directive_keyword(trimmed: &str) -> Option<&'static str> {
-    let is = |keyword: &str| {
-        trimmed == keyword
-            || trimmed
-                .strip_prefix(keyword)
-                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
-    };
-    ["part of", "part", "import"]
-        .into_iter()
-        .find(|keyword| is(keyword))
 }

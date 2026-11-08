@@ -1,0 +1,19 @@
+part of "schema.cstack"
+
+/// Arguments of `userPosts`.
+type PostArgs {
+  authorId Int
+}
+
+/// The posts of one user.
+procedure userPosts(args: PostArgs): Post[]
+  @allow(true)
+
+view PostCard from Post {
+  id Int @id @from(Post.id)
+  title String @from(Post.title)
+
+  @@server_sql("SELECT id, title FROM post")
+  @@embedded_sql("SELECT id, title FROM post")
+  @@allow("read", true)
+}

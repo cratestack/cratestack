@@ -23,7 +23,6 @@ pub struct RelatedSpan {
 }
 
 impl RelatedSpan {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn new(message: impl Into<String>, span: Range<usize>, line: usize) -> Self {
         Self {
             message: message.into(),

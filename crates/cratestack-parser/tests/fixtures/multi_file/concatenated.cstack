@@ -1,0 +1,57 @@
+datasource db {
+  provider = "postgresql"
+}
+
+auth Principal {
+  id Int
+}
+
+mixin Timestamps {
+  createdAt DateTime
+  updatedAt DateTime
+}
+
+/// A person who writes posts.
+model User {
+  @use(Timestamps)
+  id Int @id
+  name String
+
+  @@allow("read", true)
+}
+
+/// Where a post is in its life.
+enum PostStatus {
+  Draft
+  Published
+}
+
+/// A post, written by a user.
+model Post {
+  @use(Timestamps)
+  id Int @id
+  authorId Int
+  author User @relation(fields:[authorId],references:[id])
+  status PostStatus
+  title String
+
+  @@allow("read", true)
+}
+
+/// Arguments of `userPosts`.
+type PostArgs {
+  authorId Int
+}
+
+/// The posts of one user.
+procedure userPosts(args: PostArgs): Post[]
+  @allow(true)
+
+view PostCard from Post {
+  id Int @id @from(Post.id)
+  title String @from(Post.title)
+
+  @@server_sql("SELECT id, title FROM post")
+  @@embedded_sql("SELECT id, title FROM post")
+  @@allow("read", true)
+}
