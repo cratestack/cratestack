@@ -1,8 +1,15 @@
 part of "schema.cstack"
+import "shared/ids.cstack"
 
 /// Arguments of `userPosts`.
 type PostArgs {
   authorId Int
+}
+
+/// A price tagged with an id.
+type Priced {
+  price Money
+  id Id
 }
 
 /// The posts of one user.

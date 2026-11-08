@@ -27,6 +27,8 @@ pub struct FileDirectives {
     pub imports: Vec<PathDirective>,
     /// The `transport` line, if written: `Schema` stores only the style (#993).
     pub(crate) transport_span: Option<SourceSpan>,
+    /// Each `extension` block's name and span: `Schema` keeps only the set.
+    pub(crate) extension_spans: Vec<(String, SourceSpan)>,
 }
 
 impl FileDirectives {
@@ -38,5 +40,16 @@ impl FileDirectives {
     /// The span of the file's `transport` line, if it has one.
     pub fn transport_span(&self) -> Option<SourceSpan> {
         self.transport_span
+    }
+
+    /// Records one `extension` block; returns nothing, keeps `Schema` the same.
+    pub(crate) fn declare_extension(
+        &mut self,
+        into: &mut std::collections::BTreeSet<cratestack_core::ExtensionKind>,
+        kind: cratestack_core::ExtensionKind,
+        block: &cratestack_core::ConfigBlock,
+    ) {
+        into.insert(kind);
+        self.extension_spans.push((block.name.clone(), block.span));
     }
 }

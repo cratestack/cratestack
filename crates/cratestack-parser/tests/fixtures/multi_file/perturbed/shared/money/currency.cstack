@@ -1,0 +1,7 @@
+part of "../money.cstack"
+
+/// Currencies we bill in.
+enum Currency {
+  EUR
+  XAF
+}

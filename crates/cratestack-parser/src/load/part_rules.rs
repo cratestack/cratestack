@@ -11,7 +11,8 @@ use crate::directives::PathDirective;
 
 /// `part` was read because the root's `listing` line named it.
 pub(super) fn check_part(
-    root_abs: &Path,
+    main_abs: &Path,
+    unit_abs: &Path,
     part: &LoadedFile,
     listing: &PathDirective,
 ) -> Result<(), SchemaError> {
@@ -20,11 +21,11 @@ pub(super) fn check_part(
         .as_ref()
         .expect("a part is parsed before it is checked");
     let directives = &parsed.directives;
-    let root = root_relative(root_abs, root_abs);
+    let root = root_relative(main_abs, unit_abs);
     let name = &part.file.relative;
     match &directives.part_of {
         None => {
-            let back = lexical_relative(part.abs.parent().unwrap_or(Path::new("")), root_abs);
+            let back = lexical_relative(part.abs.parent().unwrap_or(Path::new("")), unit_abs);
             return Err(span_error(
                 format!(
                     "`{name}` is listed as a part of `{root}`, but does not declare `part of`; \
@@ -36,8 +37,8 @@ pub(super) fn check_part(
         Some(part_of) => {
             check_directive_path("part of", part_of)?;
             let target = resolve(&part.abs, &part_of.path);
-            if canonical_schema_path(&target) != canonical_schema_path(root_abs) {
-                let other = root_relative(root_abs, &target);
+            if canonical_schema_path(&target) != canonical_schema_path(unit_abs) {
+                let other = root_relative(main_abs, &target);
                 return Err(span_error(
                     format!(
                         "`{name}` is listed as a part of `{root}`, but declares itself a part of \

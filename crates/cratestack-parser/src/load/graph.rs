@@ -1,11 +1,13 @@
 //! Reading and parsing the files of one schema in load order
-//! (docs/design/multi-file-schemas.md sections 7 and 9). Imports land in a
-//! later phase; here a root and its parts.
+//! (docs/design/multi-file-schemas.md sections 7 and 9): a root, its parts,
+//! then its imports (`imports.rs`).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::attribute::attribute;
+use super::imports::Frame;
 use super::paths::{check_directive_path, display_for, resolve, root_relative};
 use super::sources::{SchemaSources, canonical_schema_path};
 use super::{FileRole, SchemaFile};
@@ -29,6 +31,10 @@ pub(super) struct Graph<'a> {
     pub(super) sources: &'a dyn SchemaSources,
     pub(super) root_abs: PathBuf,
     pub(super) root_display: String,
+    /// The units being loaded, main root first (cycle detection).
+    pub(super) stack: Vec<Frame>,
+    /// Canonical paths of imported units fully loaded (diamonds).
+    pub(super) done: HashSet<PathBuf>,
 }
 
 impl<'a> Graph<'a> {
@@ -39,6 +45,8 @@ impl<'a> Graph<'a> {
             sources,
             root_abs: PathBuf::new(),
             root_display: String::new(),
+            stack: Vec::new(),
+            done: HashSet::new(),
         }
     }
 
@@ -72,21 +80,15 @@ impl<'a> Graph<'a> {
     }
 
     fn load_parts_and_check(&mut self, directives: &FileDirectives) -> Result<(), SchemaError> {
-        self.load_parts(directives)?;
-        for file in &self.files {
-            if let Some(import) = file
-                .parsed
-                .iter()
-                .flat_map(|p| &p.directives.imports)
-                .next()
-            {
-                return Err(span_error(
-                    "`import` is not implemented yet".to_owned(),
-                    import.span,
-                ));
-            }
-        }
-        Ok(())
+        self.stack = vec![Frame {
+            path: self.files[0].file.path.clone(),
+            label: root_relative(&self.root_abs, &self.root_abs),
+            via: None,
+        }];
+        self.done.clear();
+        self.load_parts(0, directives, None)?;
+        let end = self.files.len();
+        self.load_imports(0, end)
     }
 
     /// M4: the file loaded as a root says it is a part.

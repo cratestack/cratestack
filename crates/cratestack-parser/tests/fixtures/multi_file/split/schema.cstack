@@ -9,3 +9,5 @@ auth Principal {
 part "models/user.cstack"
 part "models/post.cstack"
 part "api.cstack"
+
+import "shared/money.cstack"

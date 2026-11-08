@@ -76,3 +76,28 @@ fn spans_of_a_split_schema_are_unique_across_files() {
     assert_eq!(starts.len(), split.models.len());
     assert!(split.models[1].span.start > split.models[0].span.start);
 }
+
+#[test]
+fn the_split_fixture_loads_in_design_order_with_the_diamond_once() {
+    let loaded = load_schema(fixture("split/schema.cstack"), &LoadOptions::default()).unwrap();
+    let order: Vec<_> = loaded
+        .files
+        .iter()
+        .map(|f| (f.relative.as_str(), f.role))
+        .collect();
+    use cratestack_parser::FileRole::{Import, ImportPart, Part, Root};
+    // `shared/ids.cstack` is imported by two parts and loaded once, after the
+    // root's own import, at the first import in load order.
+    assert_eq!(
+        order,
+        [
+            ("schema.cstack", Root),
+            ("models/user.cstack", Part),
+            ("models/post.cstack", Part),
+            ("api.cstack", Part),
+            ("shared/money.cstack", Import),
+            ("shared/money/currency.cstack", ImportPart),
+            ("shared/ids.cstack", Import),
+        ]
+    );
+}

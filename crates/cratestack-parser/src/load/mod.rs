@@ -6,6 +6,8 @@ mod collisions;
 mod diagnostics;
 mod file_io;
 mod graph;
+mod import_rules;
+mod imports;
 mod merge;
 mod part_rules;
 mod parts;

@@ -1,4 +1,5 @@
 part of "../schema.cstack"
+import "../shared/ids.cstack"
 
 /// Where a post is in its life.
 enum PostStatus {
@@ -9,6 +10,7 @@ enum PostStatus {
 /// A post, written by a user.
 model Post {
   @use(Timestamps)
+  @use(Audited)
   id Int @id
   authorId Int
   author User @relation(fields:[authorId],references:[id])

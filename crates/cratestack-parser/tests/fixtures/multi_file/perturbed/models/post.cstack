@@ -1,4 +1,5 @@
 part of "../schema.cstack"
+import "../shared/ids.cstack"
 
 mixin Timestamps {
   createdAt DateTime

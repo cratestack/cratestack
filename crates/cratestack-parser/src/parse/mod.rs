@@ -207,7 +207,7 @@ pub(crate) fn parse_file_at(source: &str, base: usize) -> Result<ParsedFile, Sch
                     block.span,
                 )
             })?;
-            declared_extensions.insert(kind);
+            directives.declare_extension(&mut declared_extensions, kind, &block);
             pending_docs.clear();
             cursor = next;
             continue;
