@@ -1872,6 +1872,14 @@ verify-layering:
 verify-lints-optin:
 	./.ci/lints-workspace-check.sh
 
+# Multi-file schema rebuild proof (cratestack#919, design §10 and §15) — real
+# `cargo` builds: editing any file of a split schema rebuilds the consuming
+# crate, adding and listing a part rebuilds and exposes the new type, and an
+# unlisted `part of` file does not (the designed gap). Edits the committed
+# sqlite fixture in place and restores it on exit.
+verify-multi-file-rebuild:
+	./.ci/multi-file-rebuild-check.sh
+
 # File-length ceiling check — asserts the ~200-line-per-file convention
 # CLAUDE.md declares ("200-LoC file ceiling") over `crates/*/src`. Until this
 # recipe existed nothing enforced it, and it had drifted the same silent way

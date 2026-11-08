@@ -847,6 +847,26 @@ jobs:
           CRATESTACK_REQUIRE_DB: "1"
         run: just test-ci-studio-db --locked
 
+  # Multi-file schemas (cratestack#919, docs/design/multi-file-schemas.md §10,
+  # §15): real `cargo` builds prove that editing any file of a split schema
+  # rebuilds the consuming crate, that adding and listing a part re-expands the
+  # macro, and that an unlisted `part of` file does not (the designed gap).
+  # Cargo's own `fresh` verdict is the oracle, so this can't be satisfied by
+  # inspecting macro output.
+  multi-file-rebuild:
+    timeout-minutes: 45
+    name: multi-file rebuild (adding a part re-expands the macro)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: multi-file rebuild proof
+        run: just verify-multi-file-rebuild
+
   tests-host:
     timeout-minutes: 45
     name: tests (host — everything else)

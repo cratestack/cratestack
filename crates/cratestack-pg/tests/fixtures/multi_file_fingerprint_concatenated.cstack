@@ -1,0 +1,17 @@
+// `multi_file_fingerprint/` written as one file (cratestack#919).
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Widget {
+  id Int @id
+  name String
+
+  @@allow("read", auth() != null)
+}

@@ -1,0 +1,11 @@
+// Root of a multi-file embedded schema (cratestack#919): one `part`, one
+// `import`, and a part nested under the import. The rebuild script
+// (.ci/multi-file-rebuild-check.sh) edits these files, so keep the layout.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+part "parts/notes.cstack"
+import "shared/common.cstack"

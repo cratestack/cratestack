@@ -11,34 +11,97 @@ use syn::LitStr;
 pub(super) use super::schema_args::{SchemaPathArgs, ServerDb, ServerSchemaArgs};
 use super::schema_sha::SchemaShaConsts;
 
-pub(super) fn parse_schema_literal(
-    schema_path: &LitStr,
-) -> Result<(String, PathBuf, cratestack_core::Schema, SchemaShaConsts), TokenStream> {
-    let schema_relative = schema_path.value();
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
-    let resolved = PathBuf::from(&manifest_dir).join(&schema_relative);
-    let source = std::fs::read_to_string(&resolved).map_err(|error| {
-        TokenStream::from(
-            syn::Error::new(
-                schema_path.span(),
-                format!("failed to read schema file {}: {error}", resolved.display()),
-            )
-            .to_compile_error(),
-        )
-    })?;
+/// One file of the schema, as the macros see it (design §10).
+pub(super) struct IncludedFile {
+    /// Relative to `CARGO_MANIFEST_DIR`, `/`-separated, lexically folded.
+    pub(super) manifest_relative: String,
+    /// `CARGO_MANIFEST_DIR` joined with the same, lexically folded and
+    /// deliberately not canonicalized (it feeds `include_str!`).
+    pub(super) absolute: PathBuf,
+}
 
-    let schema = cratestack_parser::parse_schema_named(&resolved.display().to_string(), &source)
-        .map_err(|error| {
-            TokenStream::from(
-                syn::Error::new(schema_path.span(), error.render()).to_compile_error(),
-            )
-        })?;
+pub(super) struct SchemaLiteral {
+    /// The macro literal (`SCHEMA_PATH`).
+    pub(super) relative: String,
+    /// `CARGO_MANIFEST_DIR` joined with the literal.
+    pub(super) resolved: PathBuf,
+    pub(super) schema: cratestack_core::Schema,
+    pub(super) sha: SchemaShaConsts,
+    /// Load order, root first.
+    pub(super) files: Vec<IncludedFile>,
+}
+
+/// A `compile_error!` at the macro literal, as a `TokenStream`.
+pub(super) fn compile_error(schema_path: &LitStr, message: impl std::fmt::Display) -> TokenStream {
+    syn::Error::new(schema_path.span(), message.to_string())
+        .to_compile_error()
+        .into()
+}
+
+pub(super) fn parse_schema_literal(schema_path: &LitStr) -> Result<SchemaLiteral, TokenStream> {
+    let relative = schema_path.value();
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default();
+    let resolved = PathBuf::from(&manifest_dir).join(&relative);
+    let loaded =
+        cratestack_parser::load_schema(&resolved, &cratestack_parser::LoadOptions::default())
+            .map_err(|error| {
+                TokenStream::from(
+                    syn::Error::new(schema_path.span(), error.render()).to_compile_error(),
+                )
+            })?;
+    let schema = loaded.schema.clone();
 
     reject_composite_primary_keys(schema_path, &schema)?;
 
-    let schema_sha = SchemaShaConsts::from_schema(&schema);
+    let sha = SchemaShaConsts::from_schema(&schema);
+    let files = included_files(&relative, &manifest_dir, &loaded);
 
-    Ok((schema_relative, resolved, schema, schema_sha))
+    Ok(SchemaLiteral {
+        relative,
+        resolved,
+        schema,
+        sha,
+        files,
+    })
+}
+
+fn included_files(
+    literal: &str,
+    manifest_dir: &str,
+    loaded: &cratestack_parser::LoadedSchema,
+) -> Vec<IncludedFile> {
+    let literal_dir = std::path::Path::new(literal)
+        .parent()
+        .map(|parent| parent.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    loaded
+        .files
+        .iter()
+        .map(|file| {
+            let joined = format!("{literal_dir}/{}", file.relative);
+            let manifest_relative = fold_lexically(&joined);
+            let absolute = PathBuf::from(manifest_dir).join(&manifest_relative);
+            IncludedFile {
+                manifest_relative,
+                absolute,
+            }
+        })
+        .collect()
+}
+
+/// Fold `.` and `a/..` segments without touching the filesystem.
+fn fold_lexically(path: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." if out.last().is_some_and(|last| *last != "..") => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out.join("/")
 }
 
 /// `@@id([...])` composite primary keys are parsed and validated by
@@ -77,7 +140,17 @@ fn find_composite_id_model(schema: &cratestack_core::Schema) -> Option<&cratesta
 
 #[cfg(test)]
 mod tests {
-    use super::find_composite_id_model;
+    use super::{find_composite_id_model, fold_lexically};
+
+    #[test]
+    fn fold_lexically_resolves_dot_and_dotdot() {
+        assert_eq!(
+            fold_lexically("tests/fixtures/a/../shared/./c.cstack"),
+            "tests/fixtures/shared/c.cstack"
+        );
+        assert_eq!(fold_lexically("/schema.cstack"), "schema.cstack");
+        assert_eq!(fold_lexically("../x/y.cstack"), "../x/y.cstack");
+    }
 
     #[test]
     fn flags_model_with_composite_id_attribute() {

@@ -1,0 +1,9 @@
+part "common/status.cstack"
+
+mixin Stamped {
+  createdAt DateTime @default(now())
+}
+
+type NoteSummary {
+  title String
+}
