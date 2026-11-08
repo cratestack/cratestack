@@ -15,6 +15,7 @@ mod graph_store;
 mod graph_update;
 mod hover;
 mod hover_render;
+mod importers;
 mod mcp_completion;
 mod mcp_hover;
 mod mcp_tokens;
@@ -35,6 +36,7 @@ mod token_encode;
 mod type_hover;
 mod type_ref;
 mod view;
+mod workspace_roots;
 
 #[cfg(test)]
 mod tests;
@@ -76,6 +78,8 @@ mod tests_queries_rename;
 mod tests_rename;
 #[cfg(test)]
 mod tests_rename_directives;
+#[cfg(test)]
+mod tests_rename_importers;
 #[cfg(test)]
 mod tests_semantic_tokens;
 

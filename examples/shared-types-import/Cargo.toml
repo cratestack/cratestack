@@ -1,0 +1,28 @@
+[package]
+name = "shared-types-import-example"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+publish = false
+description = "Two embedded services, each with its own schema and SQLite database, that `import` one shared .cstack of types, enums and mixins (multi-file schemas, since 0.19.0)."
+
+[lints]
+workspace = true
+
+[dependencies]
+# The embedded facade. `include_embedded_schema!` is re-exported from it, and
+# the generated code names `::cratestack::*` paths.
+cratestack = { package = "cratestack-sqlite", path = "../../crates/cratestack-sqlite" }
+# The generated row decoders name `::cratestack_rusqlite::*` directly
+# (`cratestack-macros/src/model/row_sqlite.rs`), and `ModelDelegate` / `ddl`
+# live here.
+cratestack-rusqlite = { path = "../../crates/cratestack-rusqlite" }
+# The generated `#[derive(serde::Serialize, serde::Deserialize)]` resolves
+# `serde` from this crate's own dependencies.
+serde = { workspace = true }
+
+[dev-dependencies]
+# `load_schema` / `FileRole`: the file graph `cratestack check --list-files`
+# prints, and `OverlaySources` for the refused-import test.
+cratestack-parser = { path = "../../crates/cratestack-parser" }
+serde_json = { workspace = true }

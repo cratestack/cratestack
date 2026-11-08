@@ -1,5 +1,6 @@
 mod diagnostics;
 mod diagnostics_related;
+mod directive_targets;
 mod directives;
 mod entry;
 mod line_helpers;
@@ -182,6 +183,7 @@ mod tests_views;
 
 pub use diagnostics::SchemaError;
 pub use diagnostics_related::RelatedSpan;
+pub use directive_targets::{DirectiveKind, directive_targets};
 pub use directives::{FileDirectives, PathDirective};
 pub use entry::{
     ANONYMOUS_SCHEMA, parse_schema, parse_schema_diagnostics, parse_schema_file,

@@ -35,6 +35,7 @@ use crate::line_helpers::{
 use self::attribute_run::{declaration_label, detached_group_error};
 use self::blocks::{parse_body_block, parse_named_config_block, parse_transport_directive};
 use self::directives::record_directive;
+pub(crate) use self::directives::{directive_keyword, parse_path_directive};
 use self::enum_body::parse_enum_body;
 use self::fields::parse_fields;
 use self::mcp::{extract_model_mcp, parse_mcp_block};

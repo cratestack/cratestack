@@ -247,6 +247,7 @@ index in [`examples/README.md`](examples/README.md). A sample:
 | Note-taking CLI on file-backed SQLite | `cargo run -p embedded-cli-example -- --db /tmp/notes.db add "First"` |
 | Microservice: owns a DB *and* calls upstream | `cargo run -p microservice-pair-example` |
 | BFF / orchestrator fanning out to two services | `cargo run -p client-multi-service-example` |
+| Two services sharing types through `import` | `cargo run -p shared-types-import-example` |
 | Browser: wasm + OPFS + Vite | `examples/embedded-browser-vite` |
 | React 19 + Vite + Tailwind + DaisyUI | `examples/react-vite-daisyui` |
 | Next.js 16: wasm in the browser, napi on the server, typed HTTP client upstream | `examples/react-nextjs-daisyui` |

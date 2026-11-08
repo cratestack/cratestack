@@ -9,6 +9,7 @@ use tower_lsp_server::ls_types::Uri;
 use crate::graph::GraphView;
 use crate::graph_store::GraphStore;
 use crate::view::Resolved;
+use crate::workspace_roots::WorkspaceRoots;
 
 /// A schema together with the exact source text it was parsed from.
 ///
@@ -149,6 +150,8 @@ pub(crate) struct Backend {
     /// Every analysed schema graph and who is in it. Lock order: `documents`
     /// is never held while waiting on `graphs`.
     pub(crate) graphs: Arc<RwLock<GraphStore>>,
+    /// Folders the client opened; rename searches them for importers.
+    pub(crate) workspace_roots: WorkspaceRoots,
 }
 
 impl Backend {
@@ -157,6 +160,7 @@ impl Backend {
             client,
             documents: Arc::new(RwLock::new(HashMap::new())),
             graphs: Arc::new(RwLock::new(GraphStore::default())),
+            workspace_roots: WorkspaceRoots::default(),
         }
     }
 }

@@ -986,7 +986,8 @@ jobs:
           cargo build --locked \
             -p embedded-cli-example \
             -p embedded-daemon-example \
-            -p embedded-webhook-example
+            -p embedded-webhook-example \
+            -p shared-types-import-example
 
   # ---- Feature-graph regression matrix (cratestack#421, cratestack#495) -
   # Blocking. Runs a representative matrix across every crate either issue

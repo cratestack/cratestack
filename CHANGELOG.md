@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### `examples/shared-types-import`: two services `import` one shared `.cstack` (#910)
+
+The only committed multi-file example, `react-vite-swr`, splits one schema with `part`; nothing
+showed `import`, the half that exists for reuse. `examples/shared-types-import` has two embedded
+services, `billing` and `shipping`, each with its own root schema and its own SQLite database.
+Both import `shared/common.cstack` (the `Money` type and the `OrderRecord` mixin), which itself
+imports `shared/currency.cstack` (the `Currency` enum). Billing reaches `Currency` only through
+that transitive import. Shipping also imports it directly, so its graph is a diamond and the file
+loads once. The tests run in plain `cargo test` with no database server. They show that both
+services generate the same `Currency` variants and a wire-compatible `Money`, that each service
+stores the imported enum and the mixin's fields in its own table, that each `SCHEMA_FILES` lists
+the shared files in that schema's load order, and that a `model` in a shared file is refused. No
+framework code changed.
+
+### LSP refuses rename in a file another schema imports (#910)
+
+A shared file that holds only `type` / `enum` / `mixin` and has no directive of its own used to be
+renamed in place when opened alone, silently breaking every schema that imports it. The server now
+records the client's workspace roots at `initialize` and refuses `prepareRename` / `rename` when
+any `.cstack` file there (open buffers included) imports the document or lists it as a `part`,
+with the usual "rename is not available yet in a schema split across files". With no workspace
+roots, or an importer outside them, behaviour is unchanged. `cratestack-parser` gains the public
+`directive_targets(source)` and `DirectiveKind`, a lenient scan of a source's `part` / `part of` /
+`import` paths.
+
 ## 0.19.0 (2026-11-08)
 
 ### Multi-file schemas: `part` / `part of` to split one schema, `import` to share types (#910)

@@ -43,6 +43,7 @@ members = [
     "examples/embedded-cli",
     "examples/embedded-daemon",
     "examples/embedded-webhook",
+    "examples/shared-types-import",
     "examples/client-stub-rust",
     "examples/client-multi-service",
     "examples/microservice-pair",
