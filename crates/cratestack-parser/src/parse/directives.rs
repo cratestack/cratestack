@@ -8,7 +8,7 @@ use crate::line_helpers::{Line, trimmed_span};
 
 /// `keyword` is `"part of"`, `"part"` or `"import"`. Paths are stored as
 /// written; whether they are acceptable paths is the loader's concern.
-pub(super) fn parse_path_directive(
+pub(crate) fn parse_path_directive(
     line: &Line<'_>,
     keyword: &str,
 ) -> Result<PathDirective, SchemaError> {
@@ -79,7 +79,7 @@ pub(super) fn record_directive(
 
 /// `part of` is matched before `part`, and the bare words too, so a missing
 /// path reports M16 rather than an unsupported declaration.
-fn directive_keyword(trimmed: &str) -> Option<&'static str> {
+pub(crate) fn directive_keyword(trimmed: &str) -> Option<&'static str> {
     let is = |keyword: &str| {
         trimmed == keyword
             || trimmed

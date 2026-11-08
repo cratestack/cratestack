@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### LSP refuses rename in a file another schema imports (#910)
+
+A shared file that holds only `type` / `enum` / `mixin` and has no directive of its own used to be
+renamed in place when opened alone, silently breaking every schema that imports it. The server now
+records the client's workspace roots at `initialize` and refuses `prepareRename` / `rename` when
+any `.cstack` file there (open buffers included) imports the document or lists it as a `part`,
+with the usual "rename is not available yet in a schema split across files". With no workspace
+roots, or an importer outside them, behaviour is unchanged. `cratestack-parser` gains the public
+`directive_targets(source)` and `DirectiveKind`, a lenient scan of a source's `part` / `part of` /
+`import` paths.
+
 ## 0.19.0 (2026-11-08)
 
 ### Multi-file schemas: `part` / `part of` to split one schema, `import` to share types (#910)

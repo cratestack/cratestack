@@ -505,6 +505,17 @@ macro, which fails with M14. A failed expansion is always re-run on the next bui
   nothing and `rename` returns the error `rename is not available yet in a schema split across
   files`. A single-file rename of a name used in another part would silently break that part.
   Cross-file rename is *deferred*, follow-up issue.
+- **Rename is also refused in a file another schema imports or lists as a `part`**, even when
+  that file has no directive of its own and was opened alone (a shared `common.cstack` holding
+  only `type` / `enum` / `mixin`). The server records the client's workspace roots at
+  `initialize` (`workspaceFolders`, else the deprecated `rootUri`). On `prepareRename` / `rename`
+  it walks them for `*.cstack` files (skipping hidden directories, `target` and `node_modules`),
+  reads each from its open buffer if there is one, else from disk, extracts the `import` /
+  `part` targets with `cratestack_parser::directive_targets`, resolves them as the loader does
+  (§6) and compares canonical paths, so a symlinked spelling matches. The walk runs on a blocking
+  thread. Past 10,000 files or directories the search gives up and the rename is refused.
+  *Limit:* with no workspace roots, or an importer outside them, nothing can be known and rename
+  behaves as before.
 - The completion detail for `part` / `import` drops "the declaration is not implemented yet"
   (`completion.rs:85`).
 - A document with no file path (an untitled buffer) keeps today's single-text analysis.

@@ -19,9 +19,11 @@ use crate::navigation::{highlights, reference_locations};
 use crate::rename::{prepare_rename, workspace_edit};
 use crate::semantic_tokens::semantic_tokens_for;
 use crate::state::Backend;
+use crate::workspace_roots::roots_from;
 
 impl LanguageServer for Backend {
-    async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        self.workspace_roots.set(roots_from(&params));
         Ok(InitializeResult {
             server_info: Some(ServerInfo {
                 name: "cratestack-lsp".to_owned(),
@@ -145,6 +147,13 @@ impl LanguageServer for Backend {
         &self,
         params: TextDocumentPositionParams,
     ) -> Result<Option<PrepareRenameResponse>> {
+        if self
+            .check_not_imported(&params.text_document.uri)
+            .await
+            .is_err()
+        {
+            return Ok(None);
+        }
         let documents = self.documents.read().await;
         let Some(document) = documents.get(&params.text_document.uri) else {
             return Ok(None);
@@ -154,6 +163,7 @@ impl LanguageServer for Backend {
 
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
+        self.check_not_imported(&uri).await?;
         let documents = self.documents.read().await;
         let Some(document) = documents.get(&uri) else {
             return Ok(None);
