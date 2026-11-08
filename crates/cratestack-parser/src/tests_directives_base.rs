@@ -82,7 +82,7 @@ fn assert_shifted(base_zero: &Value, shifted: &Value, shift: u64) {
 #[test]
 fn parse_at_base_shifts_every_span_and_keeps_lines() {
     let sources = [
-        include_str!("../../../examples/react-vite-swr/schema.cstack"),
+        include_str!("../../../examples/react-vite-refine/schema.cstack"),
         include_str!("../../../examples/declarative-query-verification/schema.cstack"),
         RICH_INLINE,
     ];

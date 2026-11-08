@@ -3,6 +3,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use super::sources::canonical_schema_path;
 use crate::diagnostics::SchemaError;
 use crate::directives::PathDirective;
 
@@ -32,9 +33,15 @@ pub(crate) fn check_directive_path(
     ))
 }
 
-/// `rel` against the directory of `from_file`, with `.` and `..` folded.
+/// The canonical path `rel` names from `from_file`: the one rule for every
+/// directive (docs/design/multi-file-schemas.md section 5, Q3). `rel` is joined
+/// to the directory of `from_file`'s canonical path and left to the operating
+/// system to resolve, so `..` after a symlinked directory means what it means
+/// to a shell, and a file reached through a symlink resolves its own
+/// directives from where it really is.
 pub(crate) fn resolve(from_file: &Path, rel: &str) -> PathBuf {
-    fold(&from_file.parent().unwrap_or(Path::new("")).join(rel))
+    let base = canonical_schema_path(from_file);
+    canonical_schema_path(&base.parent().unwrap_or(Path::new("")).join(rel))
 }
 
 /// Folds `.` and `..` away without touching the filesystem.
@@ -75,16 +82,30 @@ fn parent_of(path: &Path) -> &Path {
     path.parent().unwrap_or(Path::new(""))
 }
 
-/// The code frame's path for `file_abs`: the root's display path with the
-/// directory part joined to the lexical path from the root's directory.
+/// The code frame's path for `file_abs` (canonical): the root's display
+/// directory joined to the path from the root's real directory. The display
+/// directory is the one the root was named by, unless that does not lead to the
+/// root's real directory (the root is a symlink), in which case it is the real
+/// one, so that a displayed path always names a file that exists.
 pub(crate) fn display_for(root_display: &str, root_abs: &Path, file_abs: &Path) -> String {
     if file_abs == root_abs {
         return root_display.to_owned();
     }
     let relative = lexical_relative(parent_of(root_abs), file_abs);
-    match Path::new(root_display).parent() {
-        Some(dir) if !dir.as_os_str().is_empty() => fold(&dir.join(relative)).display().to_string(),
-        _ => relative,
+    let written = Path::new(root_display).parent().unwrap_or(Path::new(""));
+    let probe = if written.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        written
+    };
+    match std::fs::canonicalize(probe) {
+        Ok(real) if real != parent_of(root_abs) && parent_of(root_abs).is_dir() => {
+            fold(&parent_of(root_abs).join(relative))
+                .display()
+                .to_string()
+        }
+        _ if written.as_os_str().is_empty() => relative,
+        _ => fold(&written.join(relative)).display().to_string(),
     }
 }
 

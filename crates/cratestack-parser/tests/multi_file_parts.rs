@@ -192,8 +192,8 @@ fn a_part_given_as_root_is_m4() {
     assert_primary(
         &files,
         &error,
-        "`user.cstack` is a part of `../schema.cstack`, not a schema root; point the macro or \
-         command at `../schema.cstack`",
+        "`/fixture/models/user.cstack` is a part of `/fixture/schema.cstack`, not a schema root; \
+         point the macro or command at `/fixture/schema.cstack`",
         USER,
         "part of \"../schema.cstack\"",
     );

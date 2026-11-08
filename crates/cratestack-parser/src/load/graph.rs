@@ -91,14 +91,17 @@ impl<'a> Graph<'a> {
         self.load_imports(0, end)
     }
 
-    /// M4: the file loaded as a root says it is a part.
+    /// M4: the file loaded as a root says it is a part. Both files are named
+    /// by a path that works from where the command was run: the part as it was
+    /// given, the root resolved against it.
     fn part_given_as_root(&self, part_of: &PathDirective) -> SchemaError {
-        let file = &self.files[0].file.relative;
+        let file = &self.root_display;
+        let target = resolve(&self.root_abs, &part_of.path);
+        let root = display_for(&self.root_display, &self.root_abs, &target);
         span_error(
             format!(
-                "`{file}` is a part of `{0}`, not a schema root; point the macro or command at \
-                 `{0}`",
-                part_of.path
+                "`{file}` is a part of `{root}`, not a schema root; point the macro or command \
+                 at `{root}`"
             ),
             part_of.span,
         )
@@ -113,11 +116,19 @@ impl<'a> Graph<'a> {
         let relative = root_relative(&self.root_abs, given_abs);
         let display = display_for(&self.root_display, &self.root_abs, given_abs);
         let index = self.read_and_parse(given_abs, display, relative.clone(), FileRole::Part)?;
-        let part_of = self.files[index]
+        let Some(part_of) = self.files[index]
             .parsed
             .as_ref()
             .and_then(|p| p.directives.part_of.clone())
-            .expect("the file declared `part of` when it was followed");
+        else {
+            // It declared `part of` when it was followed, so it was edited
+            // away between the two reads.
+            return Err(SchemaError::new(
+                format!("`{relative}` changed while it was being loaded; load it again"),
+                0..0,
+                1,
+            ));
+        };
         let root = root_relative(&self.root_abs, &self.root_abs);
         Err(span_error(
             format!(

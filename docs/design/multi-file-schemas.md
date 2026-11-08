@@ -216,6 +216,17 @@ spelling each import used (`../c.cstack`, `./x/../c.cstack`, a symlink to it). T
 files with identical contents are two files, and collide (M13). Hard links have distinct
 canonical paths and are treated the same way. That is documented, not worked around.
 
+**One resolution rule.** A directive's path is resolved against the directory of the canonical
+path of the file that holds it, and the result is canonicalized by the operating system; `..` is
+never folded away lexically first. A file reached through a symlink therefore resolves its own
+`import`s and `part`s from where it really is, whichever spelling loaded it first, so reordering
+imports cannot change the outcome. Consequently a symlinked part's `part of` is written relative
+to its real location. Paths shown in messages and code frames are the root's path as given, and
+every other file as its real location relative to the root's real directory, joined to the
+directory the root was given by (the root's real directory when the root is itself a symlink), so
+a displayed path always names a file that exists. The macros take each `include_str!` path from
+the path actually read, not from the macro literal.
+
 When the source comes from an editor buffer that is not on disk yet (the LSP, §12), the key falls
 back to the absolute, lexically normalized path (`std::path::absolute`, then `.`/`..` folded).
 
@@ -373,7 +384,7 @@ change for them.
 | M1 | a listed part has no `part of` | ``` `{part}` is listed as a part of `{root}`, but does not declare `part of`; add `part of "{back}"` to `{part}` ``` | the root's `part` line |
 | M2 | a listed part names another root | ``` `{part}` is listed as a part of `{root}`, but declares itself a part of `{other}` ``` | the part's `part of` line; the root's `part` line |
 | M3 | a part names a root that does not list it (reachable from `check` and the LSP, §11, §12) | ``` `{part}` declares itself a part of `{root}`, but `{root}` does not list it; add `part "{rel}"` to `{root}` ``` | the `part of` line |
-| M4 | a part is given where a root is required | ``` `{file}` is a part of `{root}`, not a schema root; point the macro or command at `{root}` ``` | the `part of` line |
+| M4 | a part is given where a root is required | ``` `{file}` is a part of `{root}`, not a schema root; point the macro or command at `{root}` ``` (`{file}` is the path as given; `{root}` is the root resolved against it, so it works from the same directory) | the `part of` line |
 | M5 | a root-only singleton in a part | ``` `{kind}` belongs in the root schema (`{root}`), not in a part ``` (cratestack#993's wording) | the declaration |
 | M6 | a part lists a part | ``` a part cannot list parts of its own; move `part "{path}"` to the root schema (`{root}`) ``` | the `part` line |
 | M7 | two `part of` in one file | ``` duplicate `part of` (first declared on line {n}) ``` (cratestack#992's wording) | the second line |

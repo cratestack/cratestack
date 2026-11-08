@@ -336,8 +336,12 @@ fn a_part_given_to_generate_typescript_is_m4() {
         &out.path().display().to_string(),
     ]);
     assert_eq!(result.status.code(), Some(1));
+    let root = fixtures().join("split/schema.cstack").display().to_string();
     assert!(
-        stderr(&result).contains("is a part of `../schema.cstack`, not a schema root"),
+        stderr(&result).contains(&format!(
+            "`{part}` is a part of `{root}`, not a schema root; point the macro or command at \
+             `{root}`"
+        )),
         "{}",
         stderr(&result)
     );

@@ -47,3 +47,14 @@ fn display_joins_the_roots_display_directory() {
         "x/schema.cstack"
     );
 }
+
+#[test]
+fn a_root_beside_the_given_part_is_shown_from_where_the_part_was_given() {
+    let part = Path::new("/w/app/schema/task.cstack");
+    let root = Path::new("/w/app/schema.cstack");
+    assert_eq!(
+        display_for("examples/app/schema/task.cstack", part, root),
+        "examples/app/schema.cstack"
+    );
+    assert_eq!(display_for("task.cstack", part, root), "../schema.cstack");
+}
