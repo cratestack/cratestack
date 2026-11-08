@@ -5,6 +5,8 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use cratestack_core::SourceSpan;
 use cratestack_core::schema::attribute_text::{escape_for_diagnostic, substitute_for_display};
 
+use crate::diagnostics_related::RelatedSpan;
+
 /// A schema error, identified by which file it came from (cratestack#916).
 ///
 /// `file`/`source_text` start out empty: every constructor below (`new`,
@@ -22,11 +24,12 @@ use cratestack_core::schema::attribute_text::{escape_for_diagnostic, substitute_
 #[derive(Clone, thiserror::Error)]
 #[error("{message}")]
 pub struct SchemaError {
-    message: String,
-    span: Range<usize>,
-    line: usize,
-    file: Arc<str>,
-    source_text: Arc<str>,
+    pub(crate) message: String,
+    pub(crate) span: Range<usize>,
+    pub(crate) line: usize,
+    pub(crate) file: Arc<str>,
+    pub(crate) source_text: Arc<str>,
+    pub(crate) related: Vec<RelatedSpan>,
 }
 
 impl std::fmt::Debug for SchemaError {
@@ -42,6 +45,7 @@ impl std::fmt::Debug for SchemaError {
             .field("line", &self.line)
             .field("file", &self.file)
             .field("source_text_len", &self.source_text.len())
+            .field("related", &self.related)
             .finish()
     }
 }
@@ -59,7 +63,19 @@ impl SchemaError {
             line,
             file: Arc::from(""),
             source_text: Arc::from(""),
+            related: Vec::new(),
         }
+    }
+
+    /// Add a second location, in the same address space as the primary span
+    /// until the loader attributes both.
+    // First used by the loader's cross-file errors (docs/design/multi-file-schemas.md
+    // section 9); until it lands only tests build one.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn with_related(mut self, message: impl Into<String>, span: SourceSpan) -> Self {
+        self.related
+            .push(RelatedSpan::new(message, span.start..span.end, span.line));
+        self
     }
 
     /// Attach this error's file identity and that file's source text.
@@ -71,6 +87,10 @@ impl SchemaError {
     pub(crate) fn with_file(mut self, file: &Arc<str>, source: &Arc<str>) -> Self {
         self.file = Arc::clone(file);
         self.source_text = Arc::clone(source);
+        for related in self.related.iter_mut().filter(|r| r.file.is_empty()) {
+            related.file = Arc::clone(file);
+            related.source_text = Arc::clone(source);
+        }
         self
     }
 
@@ -84,6 +104,11 @@ impl SchemaError {
 
     pub fn line(&self) -> usize {
         self.line
+    }
+
+    /// Other locations this error points at, usually in another file.
+    pub fn related(&self) -> &[RelatedSpan] {
+        &self.related
     }
 
     /// The file this error belongs to. Errors from the `*_named`/`*_file`
@@ -109,6 +134,9 @@ impl SchemaError {
     /// spans still line up and nothing the schema carries reaches the
     /// terminal raw (`substitute_for_display`).
     pub fn render(&self) -> String {
+        if !self.related.is_empty() {
+            return self.render_with_related();
+        }
         let mut output = Vec::new();
         let file = self.file.to_string();
         let shown = substitute_for_display(&self.source_text);
@@ -136,7 +164,7 @@ impl SchemaError {
 ///
 /// Counts the characters that start before each byte offset, so an offset
 /// past the end of `source` clamps instead of panicking.
-fn char_span(source: &str, span: &Range<usize>) -> Range<usize> {
+pub(crate) fn char_span(source: &str, span: &Range<usize>) -> Range<usize> {
     let chars_before = |byte: usize| {
         source.as_bytes()[..byte.min(source.len())]
             .iter()
