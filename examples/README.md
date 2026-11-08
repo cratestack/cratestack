@@ -23,6 +23,7 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`client-stub-rust/`](client-stub-rust) | `include_client_schema!` | Standalone HTTP client; the "Rust service that calls another Rust service" shape |
 | [`client-multi-service/`](client-multi-service) | Two `include_client_schema!` calls | BFF / orchestrator that fans out to two upstream services concurrently |
 | [`microservice-pair/`](microservice-pair) | `include_server_schema!` + `include_client_schema!` | Service that owns its own database AND calls an upstream — the canonical microservice shape |
+| [`shared-types-import/`](shared-types-import) | Two `include_embedded_schema!` calls | Two services, each with its own schema and SQLite database, `import` one shared `.cstack` of `type`/`enum`/`mixin` (multi-file schemas, 0.19.0): the same `Currency` and a wire-compatible `Money` in both, an `OrderRecord` mixin expanded into each model, a transitive import, and a shared file reached twice but loaded once |
 
 ## Phase B — Browser / wasm32 + desktop shell
 

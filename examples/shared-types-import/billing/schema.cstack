@@ -1,0 +1,20 @@
+// The billing service's schema root. Billing owns its own database and its
+// one table. The shared shapes come from `../shared/common.cstack`.
+// `Currency` is not imported here: `common.cstack` imports it, and imports
+// are transitive.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+import "../shared/common.cstack"
+
+model Invoice {
+  @use(OrderRecord)
+  id Int @id
+  customer String
+  totalMinor Int
+  currency Currency
+  paid Boolean
+}

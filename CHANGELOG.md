@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### `examples/shared-types-import`: two services `import` one shared `.cstack` (#910)
+
+The only committed multi-file example, `react-vite-swr`, splits one schema with `part`; nothing
+showed `import`, the half that exists for reuse. `examples/shared-types-import` has two embedded
+services, `billing` and `shipping`, each with its own root schema and its own SQLite database.
+Both import `shared/common.cstack` (the `Money` type and the `OrderRecord` mixin), which itself
+imports `shared/currency.cstack` (the `Currency` enum). Billing reaches `Currency` only through
+that transitive import. Shipping also imports it directly, so its graph is a diamond and the file
+loads once. The tests run in plain `cargo test` with no database server. They show that both
+services generate the same `Currency` variants and a wire-compatible `Money`, that each service
+stores the imported enum and the mixin's fields in its own table, that each `SCHEMA_FILES` lists
+the shared files in that schema's load order, and that a `model` in a shared file is refused. No
+framework code changed.
+
 ### LSP refuses rename in a file another schema imports (#910)
 
 A shared file that holds only `type` / `enum` / `mixin` and has no directive of its own used to be

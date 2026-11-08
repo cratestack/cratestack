@@ -1,0 +1,27 @@
+// The shipping service's schema root: its own database, its own table and
+// its own enum, plus the shared shapes billing uses. `Shipment` uses
+// `Currency` itself, so this root imports `currency.cstack` directly.
+// `common.cstack` imports it too, and the file is loaded once.
+
+datasource db {
+  provider = "sqlite"
+  url = env("DATABASE_URL")
+}
+
+import "../shared/currency.cstack"
+import "../shared/common.cstack"
+
+enum ShipmentStatus {
+  Pending
+  InTransit
+  Delivered
+}
+
+model Shipment {
+  @use(OrderRecord)
+  id Int @id
+  destination String
+  status ShipmentStatus
+  insuredMinor Int
+  insuredCurrency Currency
+}

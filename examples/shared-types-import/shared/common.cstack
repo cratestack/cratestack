@@ -1,0 +1,17 @@
+// Shapes both services use. This file imports `currency.cstack` itself, so a
+// schema that imports this file sees `Currency` too: imports are transitive.
+
+import "currency.cstack"
+
+/// An amount in the currency's minor unit (cents; whole francs for XAF).
+type Money {
+  amountMinor Int
+  currency Currency
+}
+
+// The fields every service row carries. `@use(OrderRecord)` copies them into
+// the importer's model, so each service stores them in its own table.
+mixin OrderRecord {
+  orderId Int
+  createdAt DateTime @default(now())
+}

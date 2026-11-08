@@ -1,0 +1,10 @@
+// Shared by both services. It has no `part of`, so it belongs to no schema
+// and any schema may import it. An imported file may declare only `type`,
+// `enum` and `mixin`.
+
+/// The currencies both services price in.
+enum Currency {
+  EUR
+  USD
+  XAF
+}
