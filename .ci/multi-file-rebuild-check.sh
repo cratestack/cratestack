@@ -50,18 +50,24 @@ build() {
   cargo test -p cratestack-sqlite --test "$TEST" --no-run \
     --message-format=json 2>"$LOG.err" | python3 -c '
 import json, sys
+# Read ALL of stdin before exiting: returning on the first match closes the
+# pipe while cargo still has messages to write (e.g. build-finished), so
+# cargo hits EPIPE ("Broken pipe"), exits non-zero, and pipefail fails us.
+found = None
 for line in sys.stdin:
     try:
         msg = json.loads(line)
     except ValueError:
         continue
     target = msg.get("target", {})
-    if (msg.get("reason") == "compiler-artifact"
+    if (found is None
+            and msg.get("reason") == "compiler-artifact"
             and target.get("name") == "'"$TEST"'"
             and "test" in target.get("kind", [])):
-        print(str(msg["fresh"]).lower(), msg["executable"])
-        sys.exit(0)
-sys.exit("no compiler-artifact for the test target")
+        found = (str(msg["fresh"]).lower(), msg["executable"])
+if found is None:
+    sys.exit("no compiler-artifact for the test target")
+print(*found)
 ' || { cat "$LOG.err" >&2; echo "error: build failed" >&2; exit 1; }
 }
 
