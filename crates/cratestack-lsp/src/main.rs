@@ -8,6 +8,9 @@ mod definition_graph;
 mod document_symbols;
 mod field_host;
 mod graph;
+mod graph_analyse;
+mod graph_close;
+mod graph_resolver;
 mod graph_store;
 mod graph_update;
 mod hover;
@@ -46,6 +49,8 @@ mod tests_enum_hover;
 #[cfg(test)]
 mod tests_graph_analysis;
 #[cfg(test)]
+mod tests_graph_close;
+#[cfg(test)]
 mod tests_graph_definition;
 #[cfg(test)]
 mod tests_graph_nav_support;
@@ -55,6 +60,8 @@ mod tests_graph_navigation;
 mod tests_graph_refresh;
 #[cfg(test)]
 mod tests_graph_support;
+#[cfg(test)]
+mod tests_graph_uris;
 #[cfg(test)]
 mod tests_last_known_good;
 #[cfg(test)]
@@ -67,6 +74,8 @@ mod tests_queries;
 mod tests_queries_rename;
 #[cfg(test)]
 mod tests_rename;
+#[cfg(test)]
+mod tests_rename_directives;
 #[cfg(test)]
 mod tests_semantic_tokens;
 

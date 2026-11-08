@@ -20,7 +20,9 @@ replace, and a golden test holds that against a hand-written concatenation
   cannot be imported, because a part is locked to its root. Import cycles are refused with the
   whole cycle.
 - Paths are relative to the file that contains the directive, use `/`, and end in `.cstack`. The
-  macro argument is still relative to `CARGO_MANIFEST_DIR`.
+  macro argument is still relative to `CARGO_MANIFEST_DIR`. A directive resolves against the
+  directory of the holder's canonical path, so a symlinked file resolves its own `part`s and
+  `import`s from where it really is, whichever spelling loaded it first.
 - Files load in a fixed order: the root, its parts in listed order, then each file's imports.
 - Every error that involves two files names both, in the message and as a second labelled
   location (`SchemaError::related()`).
@@ -51,8 +53,9 @@ did not change.
 `cratestack check --schema <root> --list-files` prints the files the schema is made of, with
 their role (`root`, `part`, `import`, `import part`). In JSON it adds a `files` array.
 `check` given a part checks the whole schema through its root and says so. The other commands
-take the root and refuse a part. `--format json` diagnostics gain a `related` array when an error
-names a second location. Without these flags and for single-file schemas, output is unchanged.
+take the root and refuse a part, naming the part as given and its
+root resolved from there, so the advice works from where you ran the command. `--format json`
+diagnostics gain a `related` array when an error names a second location. Without these flags and for single-file schemas, output is unchanged.
 `cratestack print-ir --no-spans` prints the IR with every source position zeroed, the form in
 which a split schema and its single-file equivalent are identical. Studio's workspace loader
 also reads the whole graph.
@@ -63,7 +66,10 @@ also reads the whole graph.
 Diagnostics land on the file they come from, with related locations. A part opened on its own
 is checked through its root. Editing any file refreshes the whole schema. Go-to-definition and
 completion cross files. Rename is refused in a schema split across files until cross-file rename
-lands. References and highlights stay within the current file. The VS Code grammar highlights
+lands (also in a file that carries a `part`, `part of` or `import` line). References and
+highlights stay within the current file. Closing a file reverts it to its disk text, and a file
+that an edit drops from its root is analysed on its own (a part still naming the root shows the
+"does not list it" error). The VS Code grammar highlights
 `part`, `part of` and `import`.
 
 ## 0.18.1 (2026-11-07)

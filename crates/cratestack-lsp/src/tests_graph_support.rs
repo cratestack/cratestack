@@ -33,6 +33,20 @@ pub(super) fn sources(files: &[(&str, &str)]) -> (OverlaySources, OpenUris) {
     (overlay, open)
 }
 
+/// Like [`sources`], but only `open` of the files are open buffers: the rest
+/// are read as if from the disk.
+pub(super) fn sources_open(
+    files: &[(&str, &str)],
+    open_paths: &[&str],
+) -> (OverlaySources, OpenUris) {
+    let (overlay, _) = sources(files);
+    let open = open_paths
+        .iter()
+        .map(|path| (canonical_schema_path(Path::new(path)), uri(path)))
+        .collect();
+    (overlay, open)
+}
+
 pub(super) fn analyze(entry: &str, files: &[(&str, &str)]) -> GraphAnalysis {
     let (overlay, open) = sources(files);
     analyze_graph(&uri(entry), Path::new(entry), &overlay, &open)

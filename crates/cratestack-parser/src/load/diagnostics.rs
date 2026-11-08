@@ -2,7 +2,7 @@
 //! merge, expand mixins and validate the merged schema, attributing every
 //! error to its file.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::attribute::attribute;
 use super::graph::Graph;
@@ -25,10 +25,15 @@ pub fn load_schema_diagnostics(
     let Graph {
         files, attempted, ..
     } = graph;
+    let named: Vec<(String, PathBuf)> = files
+        .iter()
+        .map(|f| (f.file.display.clone(), f.file.path.clone()))
+        .collect();
     let stop = |errors: Vec<SchemaError>| LoadDiagnostics {
         schema: None,
         errors,
         files: attempted.clone(),
+        named: named.clone(),
     };
     if let Err(error) = loaded {
         return stop(vec![error]);
@@ -66,5 +71,6 @@ pub fn load_schema_diagnostics(
         }),
         errors: Vec::new(),
         files: attempted,
+        named,
     }
 }

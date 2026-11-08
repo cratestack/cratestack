@@ -11,13 +11,12 @@ use std::sync::Arc;
 
 use cratestack_core::Schema;
 use cratestack_parser::{
-    LoadOptions, OverlaySources, SchemaError, SchemaFile, SchemaSources, canonical_schema_path,
+    LoadOptions, OverlaySources, SchemaFile, SchemaSources, canonical_schema_path,
     load_schema_diagnostics,
 };
-use tower_lsp_server::ls_types::{Diagnostic, DiagnosticRelatedInformation, Location, Uri};
+use tower_lsp_server::ls_types::{Diagnostic, Uri};
 
-use crate::analyze::schema_error_to_diagnostic;
-use crate::text::range_from_offsets;
+use crate::graph_resolver::Resolver;
 
 /// The merged schema and the files it came from.
 pub(crate) struct GraphView {
@@ -25,10 +24,13 @@ pub(crate) struct GraphView {
     pub(crate) files: Vec<SchemaFile>,
     /// Every file's text at its base: what the schema's spans index into.
     pub(crate) merged: String,
+    /// The URI each file is answered under: the one the editor opened it with,
+    /// when it is open.
+    uris: HashMap<PathBuf, Uri>,
 }
 
 impl GraphView {
-    pub(crate) fn new(schema: Schema, files: Vec<SchemaFile>) -> Self {
+    pub(crate) fn new(schema: Schema, files: Vec<SchemaFile>, uris: HashMap<PathBuf, Uri>) -> Self {
         let mut merged = String::new();
         for file in &files {
             // Bases leave one separator byte between files.
@@ -41,7 +43,16 @@ impl GraphView {
             schema,
             files,
             merged,
+            uris,
         }
+    }
+
+    /// The URI to answer with for `file`.
+    pub(crate) fn uri_of(&self, file: &SchemaFile) -> Option<Uri> {
+        self.uris
+            .get(&file.path)
+            .cloned()
+            .or_else(|| Uri::from_file_path(&file.path))
     }
 
     /// The file containing a global offset, and the offset within it.
@@ -88,11 +99,10 @@ pub(crate) fn analyze_graph(
     };
     let load = load_schema_diagnostics(path, &options);
     let entry_path = canonical_schema_path(path);
-    let view = load
-        .schema
-        .map(|loaded| Arc::new(GraphView::new(loaded.schema, loaded.files)));
-    let mut paths: Vec<PathBuf> = match &view {
-        Some(view) => view.files.iter().map(|file| file.path.clone()).collect(),
+    let named = load.named;
+    let loaded = load.schema;
+    let mut paths: Vec<PathBuf> = match &loaded {
+        Some(loaded) => loaded.files.iter().map(|file| file.path.clone()).collect(),
         // Unreadable files (a missing root) are not files to publish to.
         None => load
             .files
@@ -114,10 +124,16 @@ pub(crate) fn analyze_graph(
             uri.map(|uri| (uri, member.clone()))
         })
         .collect();
-    let root = match &view {
-        Some(view) => uri_for(&view.files[0].path, open).unwrap_or_else(|| entry.clone()),
-        None => entry.clone(),
-    };
+    let uris: HashMap<PathBuf, Uri> = members
+        .iter()
+        .map(|(uri, path)| (path.clone(), uri.clone()))
+        .collect();
+    let root = loaded
+        .as_ref()
+        .and_then(|loaded| uris.get(&loaded.files[0].path))
+        .cloned()
+        .unwrap_or_else(|| entry.clone());
+    let view = loaded.map(|loaded| Arc::new(GraphView::new(loaded.schema, loaded.files, uris)));
     let mut diagnostics: HashMap<Uri, Vec<Diagnostic>> = members
         .iter()
         .map(|(uri, _)| (uri.clone(), Vec::new()))
@@ -126,6 +142,7 @@ pub(crate) fn analyze_graph(
     let resolver = Resolver {
         overlay,
         members: &members,
+        named: &named,
         entry: (entry, entry_path),
     };
     for error in &errors {
@@ -137,53 +154,5 @@ pub(crate) fn analyze_graph(
         members,
         diagnostics,
         view,
-    }
-}
-
-/// Maps an error's file name back to a member, and reads that member's text.
-struct Resolver<'a> {
-    overlay: &'a OverlaySources,
-    members: &'a [(Uri, PathBuf)],
-    entry: (&'a Uri, PathBuf),
-}
-
-impl Resolver<'_> {
-    /// The member a displayed file name stands for. A file the graph could not
-    /// read (the root of a part) is not one: the problem is shown on the entry.
-    fn member(&self, display: &str) -> (&Uri, &Path) {
-        let path = canonical_schema_path(Path::new(display));
-        self.members
-            .iter()
-            .find(|(_, member)| *member == path)
-            .map(|(uri, member)| (uri, member.as_path()))
-            .unwrap_or((self.entry.0, self.entry.1.as_path()))
-    }
-
-    fn text(&self, path: &Path) -> String {
-        self.overlay.read(path).unwrap_or_default()
-    }
-
-    fn diagnostic(&self, error: &SchemaError) -> (Uri, Diagnostic) {
-        let (uri, path) = self.member(error.file());
-        let mut diagnostic = schema_error_to_diagnostic(&self.text(path), error);
-        let related: Vec<DiagnosticRelatedInformation> = error
-            .related()
-            .iter()
-            .map(|related| {
-                let (uri, path) = self.member(related.file());
-                let span = related.span();
-                DiagnosticRelatedInformation {
-                    location: Location {
-                        uri: uri.clone(),
-                        range: range_from_offsets(&self.text(path), span.start, span.end),
-                    },
-                    message: related.message().to_owned(),
-                }
-            })
-            .collect();
-        if !related.is_empty() {
-            diagnostic.related_information = Some(related);
-        }
-        (uri.clone(), diagnostic)
     }
 }

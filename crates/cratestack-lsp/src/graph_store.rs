@@ -1,18 +1,25 @@
 //! What the server remembers about the schema graphs it has analysed, and the
 //! rule for refreshing them. Pure data and functions: no `Client`, so the
 //! whole rule is testable without a running server.
+//!
+//! Membership is a question about files, so it is answered by canonical path:
+//! the URI an editor opened a file under need not be the one a graph first
+//! recorded it under.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
-use cratestack_parser::OverlaySources;
+use cratestack_parser::{OverlaySources, canonical_schema_path};
 use tower_lsp_server::ls_types::{Diagnostic, Uri};
 
-use crate::graph::{GraphAnalysis, OpenUris, analyze_graph};
+use crate::graph::{GraphAnalysis, OpenUris};
 
 /// One analysed graph: who is in it, and what each member was told.
 pub(crate) struct GraphRecord {
     pub(crate) members: Vec<Uri>,
-    pub(crate) diagnostics: HashMap<Uri, Vec<Diagnostic>>,
+    /// Canonical paths of `members`, in the same order.
+    pub(crate) paths: Vec<PathBuf>,
+    pub(crate) diagnostics: HashMap<PathBuf, Vec<Diagnostic>>,
     /// Whether the graph loaded. A graph that did not is keyed by the file it
     /// was started from, which may be a part of some other root.
     pub(crate) resolved: bool,
@@ -31,7 +38,11 @@ pub(crate) struct Refreshed {
 /// whose root could not be found).
 #[derive(Default)]
 pub(crate) struct GraphStore {
-    records: HashMap<Uri, GraphRecord>,
+    pub(super) records: HashMap<Uri, GraphRecord>,
+}
+
+pub(super) fn canon(uri: &Uri) -> Option<PathBuf> {
+    uri.to_file_path().map(|path| canonical_schema_path(&path))
 }
 
 impl GraphStore {
@@ -52,61 +63,49 @@ impl GraphStore {
         open: &OpenUris,
     ) -> Refreshed {
         let mut entries = vec![uri.clone()];
-        let mut others: Vec<Uri> = self
+        if let Some(path) = canon(uri) {
+            entries.extend(
+                self.roots_containing(&path)
+                    .into_iter()
+                    .filter(|root| canon(root).as_ref() != Some(&path)),
+            );
+        }
+        self.run(entries, overlay, open, Vec::new())
+    }
+
+    /// The roots of the recorded graphs that contain `path`, in a fixed order.
+    pub(super) fn roots_containing(&self, path: &PathBuf) -> Vec<Uri> {
+        let mut roots: Vec<Uri> = self
             .records
             .iter()
-            .filter(|(root, record)| record.members.contains(uri) && *root != uri)
+            .filter(|(_, record)| record.paths.contains(path))
             .map(|(root, _)| root.clone())
             .collect();
-        others.sort_by_key(|root| root.to_string());
-        entries.extend(others);
+        roots.sort_by_key(|root| root.to_string());
+        roots
+    }
 
-        let mut affected: Vec<Uri> = Vec::new();
-        let mut analyses: Vec<GraphAnalysis> = Vec::new();
-        for entry in entries {
-            // An earlier entry already analysed this root.
-            if analyses.iter().any(|done| done.root == entry) {
-                continue;
+    pub(super) fn run(
+        &mut self,
+        entries: Vec<Uri>,
+        overlay: &OverlaySources,
+        open: &OpenUris,
+        mut affected: Vec<Uri>,
+    ) -> Refreshed {
+        let mut analyses = self.analyse(entries, overlay, open, &mut affected);
+        // A file that left every graph while it is open is its own schema now
+        // (or still a part of a root that no longer lists it, which is M3).
+        let mut dropped: Vec<Uri> = Vec::new();
+        for uri in &affected {
+            let Some(path) = canon(uri) else { continue };
+            let in_graph = self.records.values().any(|r| r.paths.contains(&path));
+            if open.contains_key(&path) && !in_graph && !dropped.contains(uri) {
+                dropped.push(uri.clone());
             }
-            // An unresolved graph started from a file that a resolved graph
-            // now contains is that graph, found by another route.
-            let covered = analyses
-                .iter()
-                .any(|done| done.view.is_some() && done.members.iter().any(|(m, _)| *m == entry));
-            if covered && self.records.get(&entry).is_some_and(|r| !r.resolved) {
-                affected.extend(
-                    self.records
-                        .remove(&entry)
-                        .into_iter()
-                        .flat_map(|r| r.members),
-                );
-                continue;
-            }
-            let Some(path) = entry.to_file_path() else {
-                continue;
-            };
-            let analysis = analyze_graph(&entry, &path, overlay, open);
-            for key in [&entry, &analysis.root] {
-                if let Some(old) = self.records.remove(key) {
-                    affected.extend(old.members);
-                }
-            }
-            affected.extend(analysis.members.iter().map(|(uri, _)| uri.clone()));
-            self.records.insert(
-                analysis.root.clone(),
-                GraphRecord {
-                    members: analysis
-                        .members
-                        .iter()
-                        .map(|(uri, _)| uri.clone())
-                        .collect(),
-                    diagnostics: analysis.diagnostics.clone(),
-                    resolved: analysis.view.is_some(),
-                },
-            );
-            analyses.push(analysis);
         }
-
+        for uri in dropped {
+            analyses.extend(self.analyse(vec![uri], overlay, open, &mut affected));
+        }
         let mut seen: Vec<Uri> = Vec::new();
         let mut publish = Vec::new();
         for uri in affected {
@@ -121,13 +120,16 @@ impl GraphStore {
 
     /// What a file shows: the diagnostics of every graph it is in, each once.
     fn diagnostics_for(&self, uri: &Uri) -> Vec<Diagnostic> {
+        let Some(path) = canon(uri) else {
+            return Vec::new();
+        };
         let mut all: Vec<Diagnostic> = Vec::new();
         let mut roots: Vec<&Uri> = self.records.keys().collect();
         roots.sort_by_key(|root| root.to_string());
         for root in roots {
             for diagnostic in self.records[root]
                 .diagnostics
-                .get(uri)
+                .get(&path)
                 .into_iter()
                 .flatten()
             {

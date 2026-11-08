@@ -79,6 +79,28 @@ impl Backend {
         }
     }
 
+    /// The editor closed `uri`: its buffer stops overlaying the disk, and
+    /// every graph it was in is read again without it.
+    pub(crate) async fn close_document(&self, uri: Uri) {
+        let (overlay, open) = {
+            let mut documents = self.documents.write().await;
+            documents.remove(&uri);
+            open_sources(&documents)
+        };
+        if uri.to_file_path().is_none() {
+            // A buffer with no file path has no graph and nothing on disk.
+            self.client.publish_diagnostics(uri, Vec::new(), None).await;
+            return;
+        }
+        let refreshed = self.graphs.write().await.close(&uri, &overlay, &open);
+        apply_analyses(&mut *self.documents.write().await, &refreshed.analyses);
+        for (uri, diagnostics) in refreshed.publish {
+            self.client
+                .publish_diagnostics(uri, diagnostics, None)
+                .await;
+        }
+    }
+
     /// A buffer with no file path has no graph: it is its own schema.
     async fn update_untitled(&self, uri: Uri, text: String) {
         let (schema, diagnostics) = analyze_document(&uri, &text);

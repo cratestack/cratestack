@@ -89,6 +89,10 @@ pub struct LoadDiagnostics {
     pub schema: Option<LoadedSchema>,
     pub errors: Vec<SchemaError>,
     pub files: Vec<PathBuf>,
+    /// Each file that was read, by the name its errors carry (`SchemaError::file`)
+    /// and its canonical path, so an error is mapped to its file without
+    /// reading a display string as a path.
+    pub named: Vec<(String, PathBuf)>,
 }
 
 /// Loads and validates, returning the first error. Same checks, in the same

@@ -98,7 +98,7 @@ fn editing_an_import_refreshes_its_importer() {
 }
 
 #[test]
-fn a_file_leaving_the_graph_gets_its_diagnostics_cleared() {
+fn an_open_file_leaving_the_graph_is_analysed_on_its_own() {
     let both = root("part \"a.cstack\"\npart \"b.cstack\"\n");
     let only_a = root("part \"a.cstack\"\n");
     let a = format!("{PART_OF}type A {{\n  x Int\n}}\n");
@@ -117,7 +117,12 @@ fn a_file_leaving_the_graph_gets_its_diagnostics_cleared() {
         ROOT,
         &[(ROOT, only_a.as_str()), (A, a.as_str()), (B, b.as_str())],
     );
-    assert_eq!(shown(&second, B), Some(&[][..]), "b left the graph");
+    // B is open and still says it is a part of the root, which no longer lists
+    // it: that is M3 on B, not silence. (Not-open and not-a-part files are in
+    // `tests_graph_close`.)
+    let in_b = shown(&second, B).expect("b is published to");
+    assert_eq!(in_b.len(), 1, "{in_b:?}");
+    assert!(in_b[0].message.contains("does not list it"), "{in_b:?}");
     let members = store.members_of(&uri(ROOT)).expect("root recorded");
     assert!(!members.contains(&uri(B)));
 }

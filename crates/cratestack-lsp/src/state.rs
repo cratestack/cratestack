@@ -76,6 +76,19 @@ impl DocumentState {
             .is_some_and(|analyzed| analyzed.graph.is_some())
     }
 
+    /// Whether the text carries a `part`, `part of` or `import` line, which
+    /// makes it one file of a split schema even when no graph was loaded for
+    /// it (a shared import opened alone, or a graph that failed to load).
+    pub(crate) fn has_directive(&self) -> bool {
+        self.text.lines().any(|line| {
+            ["part of", "part", "import"].iter().any(|keyword| {
+                line.strip_prefix(keyword).is_some_and(|rest| {
+                    rest.trim_start().starts_with('"') && rest.starts_with([' ', '\t', '"'])
+                })
+            })
+        })
+    }
+
     /// Whether the retained schema predates the current text — i.e. results are
     /// being served from a stale parse.
     pub(crate) fn is_stale(&self) -> bool {

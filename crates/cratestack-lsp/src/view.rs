@@ -79,7 +79,7 @@ impl<'a> Resolved<'a> {
             end: span.end.checked_sub(file.base)?,
             line: span.line,
         };
-        let uri = Uri::from_file_path(&file.path)?;
+        let uri = graph.uri_of(file)?;
         Some((uri, graph_source(graph, file.base)?, local))
     }
 }

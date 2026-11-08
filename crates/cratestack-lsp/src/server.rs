@@ -1,12 +1,12 @@
 use tower_lsp_server::LanguageServer;
 use tower_lsp_server::jsonrpc::Result;
 use tower_lsp_server::ls_types::{
-    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidOpenTextDocumentParams,
-    DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams, DocumentSymbolResponse,
-    GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams, InitializeParams,
-    InitializeResult, InitializedParams, Location, MessageType, PrepareRenameResponse,
-    ReferenceParams, RenameParams, SemanticTokens, SemanticTokensParams, SemanticTokensResult,
-    ServerInfo, TextDocumentPositionParams, WorkspaceEdit,
+    CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
+    DidOpenTextDocumentParams, DocumentHighlight, DocumentHighlightParams, DocumentSymbolParams,
+    DocumentSymbolResponse, GotoDefinitionParams, GotoDefinitionResponse, Hover, HoverParams,
+    InitializeParams, InitializeResult, InitializedParams, Location, MessageType,
+    PrepareRenameResponse, ReferenceParams, RenameParams, SemanticTokens, SemanticTokensParams,
+    SemanticTokensResult, ServerInfo, TextDocumentPositionParams, WorkspaceEdit,
 };
 
 use crate::capabilities::server_capabilities;
@@ -52,6 +52,10 @@ impl LanguageServer for Backend {
             self.update_document(params.text_document.uri, change.text)
                 .await;
         }
+    }
+
+    async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        self.close_document(params.text_document.uri).await;
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {

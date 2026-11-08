@@ -48,7 +48,7 @@ const KEYWORDS: &[&str] = &[
 /// keyword, a builtin type, or a comment.
 pub(crate) fn prepare_rename(document: &DocumentState, position: Position) -> Option<Range> {
     // Refused in a split schema: see `RenameError::MultiFile`.
-    if document.is_stale() || document.is_split() {
+    if document.is_stale() || document.is_split() || document.has_directive() {
         return None;
     }
     let (text, schema) = document.resolved()?;
@@ -63,7 +63,7 @@ pub(crate) fn rename_ranges(
     position: Position,
     new_name: &str,
 ) -> Result<Vec<Range>, RenameError> {
-    if document.is_split() {
+    if document.is_split() || document.has_directive() {
         return Err(RenameError::MultiFile);
     }
     // Checked before anything else: with a stale schema every span below is
