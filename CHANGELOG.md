@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.1 (2026-11-08)
+
 ### `examples/shared-types-import`: two services `import` one shared `.cstack` (#910)
 
 The only committed multi-file example, `react-vite-swr`, splits one schema with `part`; nothing
