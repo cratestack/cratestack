@@ -36,12 +36,12 @@ code.)
 # 1. Bring up Postgres (repo root)
 docker compose up -d postgres
 
-# 2. Write/edit the schema
-$EDITOR examples/react-vite-swr/schema.cstack
+# 2. Write/edit the schema: the root, or one of the parts under schema/
+$EDITOR examples/react-vite-swr/schema.cstack examples/react-vite-swr/schema/*.cstack
 
 # 3. Generate the client (from the repo root) — this is what produced client/, and what
 #    regenerates it after a schema change. `client/` is committed so a fresh clone runs without
-#    a Rust toolchain; regenerate whenever schema.cstack changes.
+#    a Rust toolchain; regenerate whenever the schema (the root or any part) changes.
 cargo run -p cratestack-cli -- generate-typescript \
   --schema examples/react-vite-swr/schema.cstack \
   --out examples/react-vite-swr/client \
@@ -77,11 +77,22 @@ in `BoardsScreen.tsx`. Click a board for its detail screen: tasks (`useTasks`), 
 (`useCreateTask`/`useUpdateTask`/`useDeleteTask`), and a focus-time estimate computed by the
 `estimateFocusMinutes` procedure hook, which recomputes automatically as the task list changes.
 
+## A schema split across files
+
+The schema is split across files with `part` (cratestack#924): `schema.cstack` is the root, and each file
+under `schema/` begins `part of "../schema.cstack"`. `include_server_schema!("schema.cstack", ...)` still
+names the root; the parts share its one namespace, so `task.cstack` refers to `Board` from `board.cstack`
+without importing it. The split is behavior-neutral by construction: the generated Rust, Dart and
+TypeScript are byte-identical to the single-file schema's (`just regen-examples --check`), and
+`SCHEMA_SHA256` is unchanged. See [multi-file schemas](https://cratestack.dev/reference/multi-file-schemas).
+
 ## Layout
 
 | Path | What |
 |---|---|
-| [`schema.cstack`](schema.cstack) | `Board`/`Task` models (one relation) + `estimateFocusMinutes` procedure + `clearDoneTasks`, under `@authn` (step-up) |
+| [`schema.cstack`](schema.cstack) | The schema root: `datasource`, `auth`, and three `part` lines |
+| [`schema/`](schema) | The parts: `board.cstack` (`Board`), `task.cstack` (`Task`, one relation to `Board`), `procedures.cstack` (`estimateFocusMinutes` + `clearDoneTasks` under `@authn` (step-up), and their types) |
+| [`tests/schema_identity.rs`](tests/schema_identity.rs) | Pins the pre-split `SCHEMA_SHA256`: splitting the schema changed nothing |
 | [`src/lib.rs`](src/lib.rs) | `include_server_schema!`, the procedure impls, `build_router`/`ensure_schema` |
 | [`src/auth.rs`](src/auth.rs) | Header auth: `x-auth-id`, plus `x-auth-time`/`x-auth-amr` for `@authn` |
 | [`src/main.rs`](src/main.rs) | Server entry point — binds `127.0.0.1:3210`, routes under `/api` |

@@ -27,7 +27,7 @@ generator, not from this app.
     compiles to a `riverpod_generator` *family*, and even its zero-argument default has to be invoked.
 - **Overrides the adapter provider to point at a real local server** — `flutterRiverpodClientAdapterProvider.overrideWithValue(CratestackHttpAdapter(CratestackDioTransport(myDio), baseUri: ..., format: CratestackWireFormat.json))` in `app/lib/main.dart` (built by `buildAppAdapter()` in `app/lib/src/runtime.dart`), the one and only override every consumer of this preset needs (see `client/README.md`'s "Riverpod Setup").
 - **Reuses `react-vite-swr`'s schema and server** rather than standing up a second Postgres-backed
-  crate: `examples/react-vite-swr/schema.cstack` (`Board`/`Task` models with a relation, plus an
+  crate: `examples/react-vite-swr/schema.cstack` (split across `schema/`; `Board`/`Task` models with a relation, plus an
   `estimateFocusMinutes` procedure) and `cargo run -p react-vite-swr-example` are the "existing example
   schema" this story's acceptance criteria ask to prefer.
 

@@ -1,0 +1,14 @@
+part of "../schema.cstack"
+
+model Task {
+  id Int @id
+  title String
+  done Boolean
+  boardId Int
+  board Board @relation(fields:[boardId],references:[id])
+
+  @@allow("read", auth() != null)
+  @@allow("create", auth() != null)
+  @@allow("update", auth() != null)
+  @@allow("delete", auth() != null)
+}
