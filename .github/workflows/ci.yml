@@ -872,6 +872,14 @@ jobs:
     name: tests (host — everything else)
     runs-on: ubuntu-latest
     steps:
+      # This shard ran out of disk once the cursor-pagination tests
+      # (cratestack#1304) joined it. Reuses the cratestack#1294 fix: drop
+      # preinstalled toolchains it never uses before building.
+      - name: Free runner disk
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
