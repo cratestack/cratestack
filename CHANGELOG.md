@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.2 (2026-11-09)
+
 ### Documentation and metadata corrections: CLI list, version pins, facade claims (docs only)
 
 No behaviour change and nothing breaking. `CLAUDE.md` now lists the real top-level CLI subcommands
