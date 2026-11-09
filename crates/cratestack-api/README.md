@@ -43,7 +43,7 @@ Schema macros emit `::cratestack::*` paths. Alias this crate as
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-api", version = "0.6" }
+cratestack = { package = "cratestack-api", version = "0.19" }
 ```
 
 Then in code:

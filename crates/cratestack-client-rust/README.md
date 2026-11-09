@@ -12,7 +12,7 @@ The CBOR and JSON codecs are re-exported as `CborCodec` and `JsonCodec`.
 
 ```toml
 [dependencies]
-cratestack-client-rust = "0.7"
+cratestack-client-rust = "0.19"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 url = "2"
 ```
@@ -96,7 +96,7 @@ instead of a bare `reqwest::Client`, so retries, tracing spans, caching, or any 
 
 ```toml
 [dependencies]
-cratestack-client-rust = { version = "0.11", features = ["middleware"] }
+cratestack-client-rust = { version = "0.19", features = ["middleware"] }
 # The 0.13-era middleware crates — earlier lines require reqwest ^0.12 and
 # would fork the dependency graph in two.
 reqwest-middleware = "0.5"

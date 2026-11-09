@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "CrateStack facade for pure HTTP-client SDK crates — the `include_client_schema!` macro plus the generated Rust client runtime and the handful of type re-exports (`Page`, `Decimal`, `chrono`, `uuid`, `serde`) generated client code references, with `cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`) structurally absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-client\" }` for a crate that only ever calls a cratestack server, never runs one."
+description = "CrateStack facade for pure HTTP-client SDK crates — the `include_client_schema!` macro plus the generated Rust client runtime and the handful of type re-exports (`Page`, `Decimal`, `chrono`, `uuid`, `serde`) generated client code references, with `cratestack-axum` (and therefore `axum`) structurally absent from the dependency graph. Pick this crate via `cratestack = { package = \"cratestack-client\" }` for a crate that only ever calls a cratestack server, never runs one."
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true

@@ -9,7 +9,7 @@ Language Server Protocol implementation for `.cstack` schema files.
 ## Installation
 
 ```bash
-cargo install cratestack-lsp --version 0.7
+cargo install cratestack-lsp --version 0.19
 ```
 
 Or build from the workspace:
@@ -28,10 +28,14 @@ The binary speaks LSP over stdio.
 | `textDocument/hover`      | Supported           |
 | `textDocument/completion` | Supported (field attributes are the cursor's block's list) |
 | `textDocument/definition` | Supported           |
+| `textDocument/references` | Supported (file-local) |
+| `textDocument/documentHighlight` | Supported (file-local) |
+| `textDocument/rename` (+ prepare) | Supported; refused in split schemas and in files another workspace schema imports or lists as a part |
+| `textDocument/semanticTokens/full` | Supported |
 | `textDocument/documentSymbol` | Supported       |
 | `textDocument/publishDiagnostics` | Supported (on open and change) |
 
-Find-references, rename, and code-action capabilities are not implemented today.
+Code actions are not implemented today.
 
 ## Editor Integration
 

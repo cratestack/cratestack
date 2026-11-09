@@ -44,7 +44,7 @@ tables.
 
 ```toml
 [dependencies]
-cratestack-outbox = "0.7"
+cratestack-outbox = "0.19"
 ```
 
 ## Usage

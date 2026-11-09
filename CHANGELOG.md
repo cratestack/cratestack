@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Documentation and metadata corrections: CLI list, version pins, facade claims (docs only)
+
+No behaviour change and nothing breaking. `CLAUDE.md` now lists the real top-level CLI subcommands
+(`init|run|eject` are `studio` subcommands) and all four declared changelogs. The crate READMEs'
+dependency snippets and the root README pin the current `0.19` instead of `0.4`-`0.17`. The root
+README and `ROADMAP.md` no longer say routers lack per-request codec negotiation or that
+`application/cbor-seq` is unimplemented. `cratestack-lsp`'s README documents references, highlights
+and rename. `cratestack-client`'s description no longer claims `tower`/`hyper`/`tower-http` are absent
+(only `axum` is; they arrive through `reqwest`). Doc comments fixed: `cratestack-rusqlite`'s
+`create_table_sql` declares `BLOB` columns, the `server_basic` example curls `/articles`, and the
+nonexistent `cratestack migrate verify` is no longer cited.
+
 ## 0.19.1 (2026-11-08)
 
 ### `examples/shared-types-import`: two services `import` one shared `.cstack` (#910)

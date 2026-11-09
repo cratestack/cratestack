@@ -12,7 +12,7 @@ The crate re-exports `axum` so a service can pull a single dependency.
 
 ```toml
 [dependencies]
-cratestack-axum = "0.7"
+cratestack-axum = "0.19"
 ```
 
 ## Generated Router

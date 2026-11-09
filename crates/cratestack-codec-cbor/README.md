@@ -10,7 +10,7 @@ CBOR codec for CrateStack HTTP transport.
 
 ```toml
 [dependencies]
-cratestack-codec-cbor = "0.7"
+cratestack-codec-cbor = "0.19"
 ```
 
 ## Usage

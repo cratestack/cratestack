@@ -10,7 +10,7 @@ uses — `cratestack-pg` or `cratestack-api` (`cratestack-sqlite` and `cratestac
 embedded role enforces no policy, and the client facade serves nothing):
 
 ```toml
-cratestack = { package = "cratestack-pg", version = "0.12", features = ["mcp"] }
+cratestack = { package = "cratestack-pg", version = "0.19", features = ["mcp"] }
 ```
 
 ```cstack

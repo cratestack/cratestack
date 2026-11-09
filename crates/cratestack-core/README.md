@@ -22,7 +22,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 
 ```toml
 [dependencies]
-cratestack-core = "0.7"
+cratestack-core = "0.19"
 ```
 
 Either or both of `decimal-rust-decimal` (`Copy`, fixed 96-bit precision) and `decimal-bigdecimal` (arbitrary precision, heap-allocated, not `Copy`) may be selected — as of cratestack#505 Direction 2, they are **not** mutually exclusive. Each exposes its concrete type under its own name, `RustDecimal`/`BigDecimal`, independently of the other. The legacy `Decimal` alias (still exported for hand-written code) only exists when *exactly one* is selected — same treatment as selecting neither (cratestack#521): rather than pick one silently, an ambiguous or absent name simply isn't exported, and code that tries to use it gets rustc's own "cannot find type `Decimal`" instead of a clearer message from this crate. Generated code (`cratestack-macros`) never uses the bare alias — a schema picks its concrete backend via the `decimal = RustDecimal | BigDecimal` argument on its `include_*_schema!` macro call, not a Cargo feature, so two schemas in the same build can each get the backend they asked for.
@@ -148,7 +148,7 @@ let event = AuditEvent {
 
 ```toml
 [dependencies]
-cratestack-core = { version = "0.7", default-features = false, features = ["decimal-rust-decimal"] }
+cratestack-core = { version = "0.19", default-features = false, features = ["decimal-rust-decimal"] }
 # or: features = ["decimal-bigdecimal"]
 ```
 

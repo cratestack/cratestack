@@ -10,7 +10,7 @@ SQLx-backed Postgres runtime and delegate primitives for CrateStack models.
 
 ```toml
 [dependencies]
-cratestack-sqlx = "0.4"
+cratestack-sqlx = "0.19"
 sqlx = { version = "0.8", default-features = false, features = [
     "runtime-tokio-rustls", "postgres", "chrono", "uuid", "json", "macros",
 ] }

@@ -42,7 +42,7 @@ signing-only consumer (a `cratestack-client` SDK, say) can:
 
 ```toml
 [dependencies]
-cratestack-auth = { version = "0.7", default-features = false }
+cratestack-auth = { version = "0.19", default-features = false }
 ```
 
 and keep axum (and its own tower/hyper/matchit dependency tree) out of its
@@ -52,7 +52,7 @@ build entirely.
 
 ```toml
 [dependencies]
-cratestack-auth = "0.7"
+cratestack-auth = "0.19"
 ```
 
 ## Usage

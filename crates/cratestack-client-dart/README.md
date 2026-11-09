@@ -25,8 +25,8 @@ To call the generator from Rust:
 
 ```toml
 [dependencies]
-cratestack-client-dart = "0.7"
-cratestack-parser = "0.7"
+cratestack-client-dart = "0.19"
+cratestack-parser = "0.19"
 ```
 
 ```rust

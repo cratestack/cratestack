@@ -385,10 +385,6 @@ The React Native and Redux gaps that review also surfaced are no longer
 
 ### Deferred / known
 
-- `application/cbor-seq` is documented as a target transport mode and is not
-  implemented.
-- Generated routers enforce a single configured codec rather than negotiating
-  per request.
 - Exact typed non-Rust client generation across arbitrary projection shapes is
   still stabilizing.
 - The embedded backend does not enforce `@@allow` / `@@deny`. **This is a design

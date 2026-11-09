@@ -3,7 +3,7 @@
 The pure HTTP-client SDK facade for CrateStack (cratestack#490): the
 `include_client_schema!` macro, the generated Rust client runtime, and the
 shared schema surface generated client code actually references — with
-`cratestack-axum` (and therefore `axum`/`tower`/`hyper`/`tower-http`, a full
+`cratestack-axum` (and therefore `axum`, a full
 server framework) structurally absent from the dependency graph.
 
 ## When to use this crate
@@ -44,7 +44,7 @@ Schema macros emit `::cratestack::*` paths. Alias this crate as
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-client", version = "0.7" }
+cratestack = { package = "cratestack-client", version = "0.19" }
 ```
 
 Then in code:
@@ -146,5 +146,5 @@ dependency on. So unlike `cratestack-pg`, these forward to
 gate that would otherwise reject the schema:
 
 ```toml
-cratestack = { package = "cratestack-client", version = "0.7", features = ["pgvector"] }
+cratestack = { package = "cratestack-client", version = "0.19", features = ["pgvector"] }
 ```
