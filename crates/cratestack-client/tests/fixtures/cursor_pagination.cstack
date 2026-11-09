@@ -1,0 +1,27 @@
+// Client-side view of keyset pagination (cratestack#1304): a `@@paged` model
+// listed with `?cursor=` and a procedure returning `CursorPage<T>`.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id Int @id
+  label String
+
+  @@paged
+  @@allow("read", auth() != null)
+}
+
+type Entry {
+  id Int
+  label String
+}
+
+procedure feed(page: CursorPageInput): CursorPage<Entry>
+  @allow(auth() != null)
