@@ -15,6 +15,8 @@ contributing and quality-pipeline docs, the root `AGENTS.md`/`README.md`/`ROADMA
 already take `&'static dyn ReadSource`), and the `--tanstack` help text (`--refine` also composes with
 every transport).
 
+## 0.19.2 (2026-11-09)
+
 ### Documentation and metadata corrections: CLI list, version pins, facade claims (docs only)
 
 No behaviour change and nothing breaking. `CLAUDE.md` now lists the real top-level CLI subcommands
