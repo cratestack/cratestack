@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### `rusqlite` 0.41 bundles SQLite 3.54 (RUSTSEC-2026-0459) (dependency)
+
+`rusqlite` 0.40.2 to 0.41.1 and `libsqlite3-sys` 0.38.2 to 0.39.1. SQLite before 3.54.0 could return
+uninitialized page-cache memory when a database file is opened next to a `-wal` file whose page size differs
+(CVE-2026-119375, RUSTSEC-2026-0459); the `bundled` feature that `cratestack-rusqlite`, `cratestack-sqlite`
+and `cratestack-client-store-sqlite` use now builds the patched SQLite. No source changes were needed. A
+downstream crate that pins its own `rusqlite` must move to 0.41 too, or Cargo resolves two `libsqlite3-sys`
+versions that both declare `links = "sqlite3"`.
+
 ### Subscription `err` frames keep their RPC code in the generated Rust client (fix)
 
 `cratestack_client_rust::rpc_error_to_client` put the lowercase RPC code (`resource_exhausted`,
