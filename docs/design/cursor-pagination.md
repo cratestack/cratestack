@@ -58,8 +58,10 @@ Orders use the framework's `NULLS LAST` for both directions, so on a nullable
 column a non-null `v_i` is followed by `c_i IS NULL` as well, a `NULL` `v_i`
 contributes no strict-after term, and equality on `NULL` is `IS NULL`.
 Unsupported in cursor mode (400 `invalid_argument`): relation-path sorts
-(`author.name`), repeated sort fields, non-comparable columns, composite primary
-keys.
+(`author.name`), repeated sort fields, and columns without a total order (only
+String/Cuid/Int/BigInt/Float/DateTime/Decimal/Uuid, optional or required). Composite
+primary keys do not reach the server macros today (compile-gated, see
+`composite-primary-keys.md`).
 
 ## Errors
 

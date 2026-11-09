@@ -1,12 +1,12 @@
 //! Positive half: serde's output for the real generated `Args` and
 //! `Output` types validates against the generated schemas.
 
-use cratestack::{Page, PageInfo, PageInput};
+use cratestack::{CursorPage, CursorPageInput, Page, PageInfo, PageInput};
 use serde_json::{Value, json};
 
 use super::{assert_accepts, tool, values};
 use crate::cratestack_schema::procedures::{
-    count_scalars, echo_scalars, echo_shapes, echo_tree, page_shapes,
+    count_scalars, cursor_shapes, echo_scalars, echo_shapes, echo_tree, page_shapes,
 };
 
 fn to_json<T: serde::Serialize>(value: &T) -> Value {
@@ -81,6 +81,45 @@ fn page_and_page_input_round_trip() {
         let args = page_shapes::Args { page };
         assert_accepts(&tool.input, &to_json(&args), "pageShapes input");
     }
+}
+
+#[test]
+fn cursor_page_and_cursor_page_input_round_trip() {
+    let tool = tool("cursorShapes");
+    let output = tool.output.as_ref().expect("`CursorPage<T>` is an object");
+    let pages: [cursor_shapes::Output; 3] = [
+        CursorPage::new(Vec::new(), None),
+        CursorPage::new(values::shapes(), Some("opaque-cursor".to_owned())),
+        CursorPage::new(values::shapes(), None),
+    ];
+    for page in pages {
+        assert_accepts(output, &to_json(&page), "cursorShapes output");
+    }
+    for page in [
+        CursorPageInput::default(),
+        CursorPageInput {
+            limit: Some(1),
+            cursor: Some(String::new()),
+        },
+        CursorPageInput {
+            limit: None,
+            cursor: Some("abc".to_owned()),
+        },
+    ] {
+        let args = cursor_shapes::Args { page };
+        assert_accepts(&tool.input, &to_json(&args), "cursorShapes input");
+    }
+    // An offset `Page` may now also carry `nextCursor` from a cursor list.
+    let info = PageInfo {
+        next_cursor: Some("c".to_owned()),
+        ..PageInfo::default()
+    };
+    let page_tool = self::tool("pageShapes");
+    assert_accepts(
+        page_tool.output.as_ref().expect("object"),
+        &to_json(&Page::<Value>::new(Vec::new(), info)),
+        "pageShapes output with nextCursor",
+    );
 }
 
 #[test]

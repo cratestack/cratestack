@@ -8,10 +8,7 @@ use cratestack_core::{Field, Schema, TypeArity, TypeRef};
 use serde_json::{Map, Value, json};
 
 use super::error::JsonSchemaError;
-use super::parts::{
-    cursor_page, cursor_page_input, is_required, nullable, object_schema, page, page_input,
-    with_docs,
-};
+use super::parts::{self, is_required, nullable, object_schema, page, page_input, with_docs};
 use super::scalar::{Scalar, builtin_scalar};
 use crate::shared::decimal_backend::DecimalBackend;
 use crate::shared::{is_relation_field, is_server_only_field};
@@ -74,7 +71,7 @@ impl<'a> Generator<'a> {
     fn element(&mut self, ty: &TypeRef) -> Result<Value, JsonSchemaError> {
         if ty.is_page_input() {
             return Ok(if ty.name == "CursorPageInput" {
-                cursor_page_input()
+                parts::cursor_page_input()
             } else {
                 page_input()
             });
@@ -105,7 +102,7 @@ impl<'a> Generator<'a> {
             .type_ref(item)
             .map_err(|e| e.within(format!("`{}` item", ty.name)))?;
         Ok(if ty.is_cursor_page() {
-            cursor_page(items)
+            parts::cursor_page(items)
         } else {
             page(items)
         })

@@ -73,6 +73,10 @@ procedure pageShapes(page: PageInput): Page<Shapes>
   @allow(true)
   @mcp(tool)
 
+procedure cursorShapes(page: CursorPageInput): CursorPage<Shapes>
+  @allow(true)
+  @mcp(tool)
+
 procedure echoTree(tree: Tree): Tree
   @allow(true)
   @mcp(tool)
