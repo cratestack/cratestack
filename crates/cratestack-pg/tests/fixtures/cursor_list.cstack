@@ -1,5 +1,5 @@
 // Fixture for keyset (cursor) pagination on generated list routes
-// (cratestack#1304). `Note` is `@@paged` with a nullable sort column and a
+// (cratestack#1304). `CursorNote` is `@@paged` with a nullable sort column and a
 // row-level read policy; `Plain` is not paged, so a cursor on it is refused.
 
 datasource db {
@@ -11,7 +11,7 @@ auth Operator {
   id Int
 }
 
-model Note {
+model CursorNote {
   id Int @id
   label String
   rank Int?

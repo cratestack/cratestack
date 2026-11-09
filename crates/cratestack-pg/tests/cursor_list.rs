@@ -36,9 +36,9 @@ impl AuthProvider for AlwaysAuthProvider {
 
 async fn reset_schema(pool: &cratestack::sqlx::PgPool) {
     for sql in [
-        "DROP TABLE IF EXISTS notes",
+        "DROP TABLE IF EXISTS cursor_notes",
         "DROP TABLE IF EXISTS plains",
-        "CREATE TABLE notes (id BIGINT PRIMARY KEY, label TEXT NOT NULL, rank BIGINT, hidden BOOLEAN NOT NULL)",
+        "CREATE TABLE cursor_notes (id BIGINT PRIMARY KEY, label TEXT NOT NULL, rank BIGINT, hidden BOOLEAN NOT NULL)",
         "CREATE TABLE plains (id BIGINT PRIMARY KEY, label TEXT NOT NULL)",
     ] {
         cratestack::sqlx::query(sql).execute(pool).await.expect(sql);
@@ -52,14 +52,16 @@ async fn insert(
     rank: Option<i64>,
     hidden: bool,
 ) {
-    cratestack::sqlx::query("INSERT INTO notes (id, label, rank, hidden) VALUES ($1, $2, $3, $4)")
-        .bind(id)
-        .bind(label)
-        .bind(rank)
-        .bind(hidden)
-        .execute(pool)
-        .await
-        .expect("insert note");
+    cratestack::sqlx::query(
+        "INSERT INTO cursor_notes (id, label, rank, hidden) VALUES ($1, $2, $3, $4)",
+    )
+    .bind(id)
+    .bind(label)
+    .bind(rank)
+    .bind(hidden)
+    .execute(pool)
+    .await
+    .expect("insert note");
 }
 
 fn router(pool: &cratestack::sqlx::PgPool) -> cratestack::axum::Router {
@@ -103,7 +105,10 @@ fn next(page: &Json) -> Option<String> {
 }
 
 fn q(cursor: &str, extra: &str) -> String {
-    format!("/notes?cursor={}&{extra}", cursor.replace('=', "%3D"))
+    format!(
+        "/cursor_notes?cursor={}&{extra}",
+        cursor.replace('=', "%3D")
+    )
 }
 
 #[tokio::test]

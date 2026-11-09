@@ -1,4 +1,4 @@
-// RPC twin of cursor_list.cstack: model.Note.list shares the REST dispatch.
+// RPC twin of cursor_list.cstack: model.RpcCursorNote.list shares the REST dispatch.
 transport rpc
 
 datasource db {
@@ -10,7 +10,7 @@ auth Operator {
   id Int
 }
 
-model Note {
+model RpcCursorNote {
   id Int @id
   label String
   rank Int?

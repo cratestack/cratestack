@@ -1,6 +1,6 @@
 //! RPC parity for keyset pagination (cratestack#1304): `RpcListInput.cursor`
 //! is synthesized into `?cursor=` and re-enters the one list dispatch REST
-//! uses, so a walk over `model.Note.list` pages exactly like REST and a bad
+//! uses, so a walk over `model.RpcCursorNote.list` pages exactly like REST and a bad
 //! cursor is refused the same way. PG-backed: skips without
 //! `CRATESTACK_TEST_DATABASE_URL`.
 
@@ -44,13 +44,13 @@ async fn list(
     input: cratestack::rpc::RpcListInput,
 ) -> (
     StatusCode,
-    Option<cratestack::Page<cratestack_schema::Note>>,
+    Option<cratestack::Page<cratestack_schema::RpcCursorNote>>,
 ) {
     let codec = CborCodec;
     let response = router
         .clone()
         .oneshot(
-            Request::post("/rpc/model.Note.list")
+            Request::post("/rpc/model.RpcCursorNote.list")
                 .header("accept", CborCodec::CONTENT_TYPE)
                 .header("content-type", CborCodec::CONTENT_TYPE)
                 .body(Body::from(codec.encode(&input).expect("encode")))
@@ -76,9 +76,9 @@ async fn rpc_cursor_walk_matches_rest_semantics_and_refuses_bad_cursors() {
     };
     let pool = &test_pg.pool;
     for sql in [
-        "DROP TABLE IF EXISTS notes",
-        "CREATE TABLE notes (id BIGINT PRIMARY KEY, label TEXT NOT NULL, rank BIGINT, hidden BOOLEAN NOT NULL)",
-        "INSERT INTO notes VALUES (1,'a',3,false),(2,'b',1,false),(3,'c',3,false),(4,'d',NULL,false),(5,'e',2,true)",
+        "DROP TABLE IF EXISTS rpc_cursor_notes",
+        "CREATE TABLE rpc_cursor_notes (id BIGINT PRIMARY KEY, label TEXT NOT NULL, rank BIGINT, hidden BOOLEAN NOT NULL)",
+        "INSERT INTO rpc_cursor_notes VALUES (1,'a',3,false),(2,'b',1,false),(3,'c',3,false),(4,'d',NULL,false),(5,'e',2,true)",
     ] {
         cratestack::sqlx::query(sql).execute(pool).await.expect(sql);
     }
