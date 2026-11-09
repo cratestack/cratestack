@@ -21,7 +21,11 @@
 // sometimes a real async boundary), which defeats the point of an umbrella
 // package in the first place. See README.md's "Sync vs. async" section and
 // issue #288 for the full reasoning.
-import { cborCodec } from "@cratestack/cbor-node";
+import {
+  type CborCodecOptions,
+  cborCodec,
+  createCborCodec as createNodeCodec,
+} from "@cratestack/cbor-node";
 import type { CratestackRpcCodec } from "@cratestack/ts-types";
 
 /**
@@ -31,11 +35,12 @@ import type { CratestackRpcCodec } from "@cratestack/ts-types";
  * by the native N-API CBOR codec. Async purely for call-site parity with
  * the browser build's `createCborCodec()`, not because Node needs it.
  */
-export async function createCborCodec(): Promise<CratestackRpcCodec> {
-  return cborCodec;
+export async function createCborCodec(options?: CborCodecOptions): Promise<CratestackRpcCodec> {
+  return options ? createNodeCodec(options) : cborCodec;
 }
 
 // Compact wire keys (`docs/design/compact-wire-keys.md`). Feature-detectable:
 // older releases of this package do not export `createCompactKeys`.
 export type { CompactDirection, CompactKeys } from "@cratestack/cbor-node";
 export { createCompactKeys } from "@cratestack/cbor-node";
+export type { CborCodecOptions };

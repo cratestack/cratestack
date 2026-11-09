@@ -108,7 +108,13 @@ pub(crate) async fn pump_streamed_response_typed<C, T, E, F>(
                 }
                 None => item_bytes,
             };
-            let decoded: Result<T, E> = minicbor_serde::from_slice(&item_bytes).map_err(|error| {
+            let decoded: Result<T, E> = cratestack_codec_cbor::check_depth(
+                &item_bytes,
+                cratestack_codec_cbor::DEFAULT_MAX_DECODE_DEPTH,
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|()| minicbor_serde::from_slice(&item_bytes).map_err(|e| e.to_string()))
+            .map_err(|error| {
                 convert_error(ClientError::Codec(CratestackError::Codec(format!(
                     "decode cbor-seq item: {error}",
                 ))))

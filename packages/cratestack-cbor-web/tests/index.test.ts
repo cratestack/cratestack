@@ -318,3 +318,28 @@ describe("createCompactKeys (built package)", () => {
     await expect(createCompactKeys(new Uint8Array([1, 2, 3]))).rejects.toThrow();
   });
 });
+
+describe("decode nesting depth limit (cratestack#1315)", () => {
+  const nested = (depth: number): Uint8Array => {
+    const bytes = new Uint8Array(depth + 1).fill(0x81);
+    bytes[depth] = 0x01;
+    return bytes;
+  };
+
+  it("throws a RangeError instead of trapping the wasm module", async () => {
+    const codec = await createCborCodec();
+    expect(() => codec.decode(nested(8_000))).toThrow(RangeError);
+    expect(() => codec.decode(nested(1_000_000))).toThrow(/nesting too deep/);
+    expect(codec.decode(nested(128))).toBeDefined();
+    expect(() => codec.decode(nested(129))).toThrow(/nesting too deep/);
+    // Still usable: a trap would have poisoned the module.
+    expect(codec.decode(codec.encode({ ok: true }) as Uint8Array)).toEqual({ ok: true });
+  });
+
+  it("honours createCborCodec({ maxDepth })", async () => {
+    const codec = await createCborCodec({ maxDepth: 4 });
+    expect(codec.decode(nested(4))).toEqual([[[[1]]]]);
+    expect(() => codec.decode(nested(5))).toThrow(/nesting too deep/);
+    await expect(createCborCodec({ maxDepth: 1.5 })).rejects.toThrow(RangeError);
+  });
+});
