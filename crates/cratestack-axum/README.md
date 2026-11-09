@@ -295,6 +295,28 @@ let app = Router::new().nest("/api", router).layer(
 
 Call the same builder once per layer — `IdempotencyLayer::with_op_resolver` and `RateLimitLayer::with_op_resolver` each take their own instance (the builders return an opaque `impl Fn`, which is not `Clone`), and both run the same lookup code. `with_op_resolver` and `with_should_rate_limit_fn` replace each other; install one. The decision itself is made by `cratestack_exec::OpExecutor::admit_rate_limit`; this layer derives the bucket key, bounds the lookup, applies the store-error policy and renders the response.
 
+### Subscriptions
+
+SSE subscription opens (`/rpc/subscribe/{op}`, `GET /<plural>/$subscribe`, `GET /$procs/<name>`)
+are ordinary requests, so the layer above already charges each open once. WebSocket and
+WebTransport sessions never pass through it, so give their configs a limiter built on the same
+store, bucket, `StoreErrorPolicy` and lookup timeout:
+
+```rust
+let layer = RateLimitLayer::new(store, RateLimitConfig::new(100, 10.0));
+let ws = WebSocketConfig::new().rate_limit(layer.for_subscriptions());
+// WebTransportConfig::new(..).rate_limit(layer.for_subscriptions()) likewise.
+```
+
+One token per `Request` (per WebTransport stream), keyed `princ:<sha256>` of the session's principal
+key, else `ip:<peer>` (IPv6 /64); an anonymous WebSocket served without
+`into_make_service_with_connect_info` is refused `failed_precondition`, the same rule as the 412
+above. A refusal is an `err` frame, `resource_exhausted` with `details.retry_after_secs`, and the
+session stays open. Subscription ops cannot be `@no_rate_limit`. A WebSocket router merged under
+`.layer(RateLimitLayer)` also pays one token for its upgrade, and a browser upgrade without
+`ConnectInfo` gets 412. `SubscriptionRateLimiter::new(store, config)` builds one without a layer.
+Not breaking: without `.rate_limit(..)`, WebSocket and WebTransport opens are unlimited.
+
 ## Signed Transport (envelope layer, features `envelope` / `cose`)
 
 `envelope_layer::EnvelopeLayer` opens signed requests and seals responses for a generated

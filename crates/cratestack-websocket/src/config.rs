@@ -1,9 +1,12 @@
 //! Server configuration. Tuning numbers live here, never in `.cstack`
 //! (extensions.md: the schema declares participation, not numbers).
 
+use std::sync::Arc;
 use std::time::Duration;
 
-use cratestack_core::subscription_wire::{OriginPolicy, default_principal_key};
+use cratestack_core::subscription_wire::{
+    OriginPolicy, SubscriptionRateLimit, default_principal_key,
+};
 use cratestack_core::{CratestackContext, DEFAULT_BODY_LIMIT_BYTES};
 
 /// Per-socket and per-principal bounds (design §6.5, §6.6).
@@ -53,6 +56,7 @@ pub struct WebSocketConfig {
     pub(crate) origins: OriginPolicy,
     pub(crate) limits: WebSocketLimits,
     pub(crate) principal_key: PrincipalKeyFn,
+    pub(crate) rate_limit: Option<Arc<dyn SubscriptionRateLimit>>,
 }
 
 impl Default for WebSocketConfig {
@@ -70,6 +74,7 @@ impl WebSocketConfig {
             origins: OriginPolicy::SameOrigin,
             limits: WebSocketLimits::default(),
             principal_key: default_principal_key,
+            rate_limit: None,
         }
     }
 
@@ -97,6 +102,15 @@ impl WebSocketConfig {
 
     pub fn principal_key(mut self, principal_key: PrincipalKeyFn) -> Self {
         self.principal_key = principal_key;
+        self
+    }
+
+    /// Charge each subscription `Request` one token through `limiter`
+    /// (design §6.7), e.g. `rate_limit_layer.for_subscriptions()` from
+    /// `cratestack-axum`. Without it, opens are not rate limited. A refused
+    /// open is an `err` frame on that request's id; the socket stays open.
+    pub fn rate_limit(mut self, limiter: impl SubscriptionRateLimit) -> Self {
+        self.rate_limit = Some(Arc::new(limiter));
         self
     }
 }

@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Subscription opens over WebSocket and WebTransport can be rate-limited (opt-in, additive)
+
+`docs/design/subscriptions-websocket.md` §6.7 routes every subscription `Request` through
+`OpExecutor::admit_rate_limit`; as built in 0.18.0 neither binding called a rate limiter, so a caller could
+open subscriptions as fast as the per-socket cap let it. `WebSocketConfig::rate_limit` and
+`WebTransportConfig::rate_limit` now take a `cratestack_core::subscription_wire::SubscriptionRateLimit`, and
+`RateLimitLayer::for_subscriptions()` (or `SubscriptionRateLimiter::new(store, config)`) builds one with the
+HTTP layer's store, token bucket, `StoreErrorPolicy` and lookup timeout. Each `Request` (one stream on
+WebTransport) costs one token, charged after the per-socket cap and before the subscription's policy, in bucket
+`princ:<sha256 of the session's principal key>` or, for an anonymous session, `ip:<peer>` (IPv6 /64); an
+anonymous WebSocket served without `ConnectInfo` is refused `failed_precondition`, HTTP's 412 rule. A throttled
+open is `{id, err: {code: "resource_exhausted", details: {"retry_after_secs": N}}}` before `Ready` (the
+`details.retry_after_secs` member is new, additive and optional); the socket stays open and generated clients do
+not fall back to another binding. SSE (`/rpc/subscribe/{op}`, `GET /<plural>/$subscribe`, `GET /$procs/<name>`)
+was already charged by `RateLimitLayer` when it wraps the generated router; tests now pin that. Subscription ops
+still cannot be `@no_rate_limit`. A WebSocket router merged under `.layer(RateLimitLayer)` also pays one token
+for its upgrade request, and a browser upgrade without `ConnectInfo` gets that layer's existing 412.
+
+Not breaking: without `.rate_limit(..)` nothing changes. **Action:** if you rely on `RateLimitLayer` for abuse
+protection and serve WebSocket or WebTransport subscriptions, pass `layer.for_subscriptions()` to their
+configs; until you do, those opens remain unlimited.
+
 ### Dart: `cratestack_builder` no longer excludes the lockstep `cratestack_annotations`
 
 `cratestack_builder` constrained `cratestack_annotations` to `'>=0.8.10 <0.10.0'`, so on the 0.19.x line pub

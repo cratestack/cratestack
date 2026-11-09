@@ -15,6 +15,11 @@
 //! authentication is the same [`cratestack_core::AuthProvider`] the HTTP
 //! router uses.
 //!
+//! Opens can be rate limited, opt-in: `WebTransportConfig::rate_limit(layer.for_subscriptions())`
+//! charges each subscription stream one token (design §6.7), keyed by the session's
+//! principal, else the QUIC peer. A throttled stream gets an `err` frame,
+//! `resource_exhausted` with `details.retry_after_secs`, then FIN; the session stays up.
+//!
 //! ```no_run
 //! # use cratestack_webtransport::{OriginPolicy, WebTransportConfig, WebTransportServer};
 //! # async fn run<A: cratestack_core::AuthProvider, D: cratestack_core::SubscriptionDispatcher>(
@@ -54,6 +59,9 @@ mod transport;
 pub use client::{ClientFailure, Subscription, WebTransportClient};
 pub use codec::{CBOR_PROTOCOL, FrameDecoder, JSON_PROTOCOL, WireCodec};
 pub use config::{PrincipalKeyFn, WebTransportConfig, WebTransportLimits};
+pub use cratestack_core::subscription_wire::{
+    SubscriptionCharge, SubscriptionRateLimit, SubscriptionRefusal,
+};
 #[cfg(feature = "dev-cert")]
 pub use dev_cert::DevCertificate;
 pub use frame::{ClientFrame, ClientMessage, Empty, InitBody, ServerFrame, close_code, reset_code};
