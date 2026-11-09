@@ -1628,6 +1628,7 @@ version = "0.19.3"
 dependencies = [
  "axum",
  "chrono",
+ "cratestack-codec-cbor",
  "cratestack-core",
  "cratestack-sqlx",
  "minicbor-serde",

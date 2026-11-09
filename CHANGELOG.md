@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Security: CBOR decode had no nesting depth limit and overflowed the stack on hostile input (#1315)
+
+A run of `0x81` (one-element array) headers about 8000 deep, then one integer, made `CborCodec::decode`
+recurse until the native stack overflowed: SIGSEGV or abort, not catchable. It took down any Rust
+server or client decoding an attacker-supplied body, `@cratestack/cbor-node` (the process died) and
+`@cratestack/cbor-web` (a wasm trap that poisons the module). `minicbor-serde` has no recursion bound.
+Decoding now counts array, map and tag nesting with an explicit heap stack before serde runs
+(`cratestack_codec_cbor::check_depth`), refuses input deeper than `DEFAULT_MAX_DECODE_DEPTH` (128; a
+scalar is depth 0) with `CratestackError::Codec("... nesting too deep ...")`, and leaves the codec
+usable. Configurable: `CborCodec::with_max_depth(n)` or `decode_with_max_depth(bytes, n)` in Rust;
+`createCborCodec({ maxDepth })` in `@cratestack/cbor-node`, `-web` and `@cratestack/cbor` (a `RangeError`
+whose message contains "nesting too deep"; the raw `decode(bytes, maxDepth?)` addon/wasm export takes
+the limit as a second argument). Also applied to the Rust client's cbor-seq decoders and the outbox
+request-body decoder. Dart (`cratestack_cbor`) inherits the default through the Rust/wasm codec; its
+limit is not yet configurable. Input that legitimately nests deeper than 128 levels is now refused;
+raise the limit explicitly if you need it.
+
 ## 0.19.3 (2026-11-09)
 
 ### `rusqlite` 0.41 bundles SQLite 3.54 (RUSTSEC-2026-0459) (dependency)

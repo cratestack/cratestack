@@ -80,9 +80,19 @@ pub fn encode(value: JsValue) -> Result<Vec<u8>, JsError> {
 ///     property set to `undefined` is silently dropped by
 ///     `JSON.stringify`, which is what made this look like data loss
 ///     during development rather than a `null`-vs-`undefined` mismatch.
+///
+/// `max_depth` bounds array/map/tag nesting (default 128, cratestack#1315).
+/// The depth is counted explicitly before decoding, so deeper input throws an
+/// `Error` containing "nesting too deep" instead of overflowing the wasm
+/// stack (an uncatchable trap that would poison the module).
 #[wasm_bindgen]
-pub fn decode(bytes: &[u8]) -> Result<JsValue, JsError> {
-    let value: Value = CborCodec.decode(bytes)?;
+pub fn decode(bytes: &[u8], max_depth: Option<u32>) -> Result<JsValue, JsError> {
+    let value: Value = cratestack_codec_cbor::decode_with_max_depth(
+        bytes,
+        max_depth.map_or(cratestack_codec_cbor::DEFAULT_MAX_DECODE_DEPTH, |d| {
+            d as usize
+        }),
+    )?;
     let serializer = serde_wasm_bindgen::Serializer::new()
         .serialize_maps_as_objects(true)
         .serialize_missing_as_null(true);
@@ -106,7 +116,7 @@ mod tests {
         let json = r#"{"name":"cratestack","tags":["cool","stack"],"count":2,"note":null}"#;
         let input = js_sys::JSON::parse(json).expect("valid JSON literal");
         let bytes = encode(input).expect("encode should succeed");
-        let decoded = decode(&bytes).expect("decode should succeed");
+        let decoded = decode(&bytes, None).expect("decode should succeed");
 
         // Compare structurally (not via JSON.stringify) since
         // serde_json::Value's default map has no defined key order.
@@ -120,7 +130,7 @@ mod tests {
     fn null_field_round_trips_as_real_js_null_not_undefined() {
         let bytes = encode(js_sys::JSON::parse(r#"{"note":null}"#).expect("valid JSON"))
             .expect("encode should succeed");
-        let decoded = decode(&bytes).expect("decode should succeed");
+        let decoded = decode(&bytes, None).expect("decode should succeed");
         let note = js_sys::Reflect::get(&decoded, &JsValue::from_str("note"))
             .expect("note property should exist");
         assert!(note.is_null(), "expected JS null, got {note:?}");
@@ -162,7 +172,7 @@ mod tests {
     fn a_cbor_byte_string_decodes_back_to_a_uint8_array() {
         // The symmetric half: a server sending a `Bytes` field as major
         // type 2 must be readable here, not just writable.
-        let decoded = decode(&[0x44, 0x01, 0x02, 0x03, 0x04]).expect("decode should succeed");
+        let decoded = decode(&[0x44, 0x01, 0x02, 0x03, 0x04], None).expect("decode should succeed");
         let array = decoded
             .dyn_ref::<js_sys::Uint8Array>()
             .expect("a CBOR byte string must decode to a Uint8Array");
@@ -181,7 +191,7 @@ mod tests {
 
         let bytes = encode(input.into()).expect("encode should succeed");
         let nonce = js_sys::Reflect::get(
-            &decode(&bytes).expect("decode should succeed"),
+            &decode(&bytes, None).expect("decode should succeed"),
             &JsValue::from_str("nonce"),
         )
         .expect("nonce property should exist");
@@ -210,7 +220,7 @@ mod tests {
         let bytes = encode(input.into()).expect("encode should succeed");
         assert_eq!(bytes, vec![0x84, 0x01, 0x02, 0x03, 0x04]);
 
-        let decoded = decode(&bytes).expect("decode should succeed");
+        let decoded = decode(&bytes, None).expect("decode should succeed");
         assert!(
             js_sys::Array::is_array(&decoded),
             "an integer array must decode back as an Array, not a Uint8Array"
@@ -218,9 +228,22 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    fn deeply_nested_cbor_rejects_with_a_catchable_error_not_a_stack_overflow() {
+        // cratestack#1315: a stack overflow here is a wasm trap.
+        let mut bytes = vec![0x81; 100_000];
+        bytes.push(0x01);
+        assert!(decode(&bytes, None).is_err());
+        let mut five = vec![0x81; 5];
+        five.push(0x01);
+        assert!(decode(&five, Some(5)).is_ok());
+        assert!(decode(&five, Some(4)).is_err());
+        assert_eq!(content_type(), "application/cbor");
+    }
+
+    #[wasm_bindgen_test]
     fn malformed_cbor_rejects_with_a_catchable_error_not_a_trap() {
         let malformed = [0xff, 0x00, 0x01];
-        let result = decode(&malformed);
+        let result = decode(&malformed, None);
         assert!(
             result.is_err(),
             "malformed CBOR must not decode successfully"

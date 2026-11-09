@@ -30,6 +30,16 @@ function ensureInitialized(): Promise<void> {
   return initPromise;
 }
 
+/** Options for {@link createCborCodec}. */
+export interface CborCodecOptions {
+  /**
+   * Maximum nesting of arrays, maps and tags a `decode` accepts (a scalar is
+   * depth 0). Defaults to 128. Deeper input throws a `RangeError` whose
+   * message contains "nesting too deep"; the codec stays usable.
+   */
+  maxDepth?: number;
+}
+
 /**
  * Performs the one-time WASM module instantiation and resolves to a plain
  * object satisfying {@link CratestackRpcCodec}. Every `encode`/`decode`
@@ -48,7 +58,11 @@ function ensureInitialized(): Promise<void> {
  * const value = codec.decode(bytes);
  * ```
  */
-export async function createCborCodec(): Promise<CratestackRpcCodec> {
+export async function createCborCodec(options: CborCodecOptions = {}): Promise<CratestackRpcCodec> {
+  const { maxDepth } = options;
+  if (maxDepth !== undefined && !(Number.isInteger(maxDepth) && maxDepth >= 0)) {
+    throw new RangeError("maxDepth must be a non-negative integer");
+  }
   await ensureInitialized();
 
   return {
@@ -66,7 +80,16 @@ export async function createCborCodec(): Promise<CratestackRpcCodec> {
       return encode(value) as BodyInit;
     },
     decode(bytes: Uint8Array): unknown {
-      return decode(bytes);
+      // Depth is counted in Rust before decoding, so hostile nesting is a
+      // thrown error here, never a wasm stack-overflow trap (cratestack#1315).
+      try {
+        return decode(bytes, maxDepth);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("nesting too deep")) {
+          throw new RangeError(error.message, { cause: error });
+        }
+        throw error;
+      }
     },
   };
 }
