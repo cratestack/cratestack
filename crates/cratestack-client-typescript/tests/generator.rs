@@ -103,7 +103,9 @@ fn page_and_page_info_match_the_core_wire_shape() {
          limit: number | null;\n  \
          offset: number | null;\n  \
          hasNextPage: boolean;\n  \
-         hasPreviousPage: boolean;\n\
+         hasPreviousPage: boolean;\n  \
+         /** Keyset cursor for the next page; present only on cursor-paged list calls with more rows. */\n  \
+         nextCursor?: string | null;\n\
          }"
     ));
     assert!(models.contains(

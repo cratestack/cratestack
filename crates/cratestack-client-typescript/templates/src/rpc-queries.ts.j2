@@ -58,6 +58,8 @@ export interface RpcListPredicate {
 export interface CratestackRpcListQuery<TComputedParams = never> {
   limit?: number;
   offset?: number;
+  /** Keyset paging: `""` starts at the first page, a previous `pageInfo.nextCursor` continues. Mutually exclusive with `offset`; use with a stable `sort`. */
+  cursor?: string;
   fields?: string[];
   include?: string[];
   includeFields?: Record<string, string[]>;
@@ -107,6 +109,9 @@ export function toRpcListInput<TComputedParams = never>(
   }
   if (query.offset !== undefined) {
     input.offset = query.offset;
+  }
+  if (query.cursor !== undefined) {
+    input.cursor = query.cursor;
   }
   if (query.fields?.length) {
     input.fields = query.fields;

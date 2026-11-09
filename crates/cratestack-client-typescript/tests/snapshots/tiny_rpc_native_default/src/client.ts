@@ -15,6 +15,7 @@ import type {
   EchoNameArgs,
   WidgetSortField,
   Page,
+  CursorPage,
 } from "./models.js";
 
 export class TinyRpcNativeDefaultClientClient {

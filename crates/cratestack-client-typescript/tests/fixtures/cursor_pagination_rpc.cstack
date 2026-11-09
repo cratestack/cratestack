@@ -1,0 +1,19 @@
+transport rpc
+
+// Keyset pagination surface (cratestack#1304): a `@@paged` model whose list
+// takes a `cursor`, and a procedure using the `CursorPageInput` /
+// `CursorPage<T>` built-ins.
+
+model Post {
+  id Int @id
+  title String
+
+  @@paged
+}
+
+type Entry {
+  id Int
+  title String
+}
+
+procedure feed(page: CursorPageInput): CursorPage<Entry>
