@@ -175,6 +175,7 @@ console.log(JSON.stringify(emptyInput));
         vec!["id".to_owned(), "name".to_owned()],
     );
     let expected_input = RpcListInput {
+        cursor: None,
         limit: Some(20),
         offset: Some(40),
         fields: Some(vec!["id".to_owned(), "title".to_owned()]),

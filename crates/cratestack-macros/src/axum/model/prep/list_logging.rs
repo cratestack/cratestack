@@ -58,6 +58,7 @@ pub(super) fn list_success_tokens(paged: bool) -> proc_macro2::TokenStream {
                 offset: query.offset,
                 has_next_page: limit.is_some_and(|limit| offset + limit < total_count),
                 has_previous_page: offset > 0,
+                next_cursor: None,
             },
         ).with_total_count(Some(total_count)))
     }}

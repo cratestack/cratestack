@@ -26,6 +26,12 @@ pub struct PageInfo {
     pub offset: Option<i64>,
     pub has_next_page: bool,
     pub has_previous_page: bool,
+    /// Keyset cursor for the next page. Present only when the request
+    /// opted into cursor paging (`?cursor=` on a `@@paged` list route)
+    /// and more rows remain; omitted from the wire otherwise, so offset
+    /// responses are byte-identical to before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,5 +82,58 @@ impl PageInput {
         let limit = self.limit.unwrap_or(max_limit).clamp(0, max_limit);
         let offset = self.offset.unwrap_or(0).max(0);
         (limit, offset)
+    }
+}
+
+/// Built-in cursor (keyset) pagination input (`CursorPageInput` in
+/// `.cstack`), procedure-argument only — the keyset sibling of
+/// [`PageInput`]. `cursor` is the opaque token a previous
+/// [`CursorPage::next_cursor`] returned; absent (or empty) means "first
+/// page". See `docs/design/cursor-pagination.md`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CursorPageInput {
+    pub limit: Option<i64>,
+    pub cursor: Option<String>,
+}
+
+impl CursorPageInput {
+    /// `limit` defaulted to and clamped into `[0, max_limit]` (the same
+    /// [`MAX_LIST_LIMIT`] guard [`PageInput::resolve`] gives), and the
+    /// cursor with an empty token normalised to `None`.
+    pub fn resolve(&self, max_limit: i64) -> (i64, Option<&str>) {
+        let limit = self.limit.unwrap_or(max_limit).clamp(0, max_limit);
+        let cursor = self.cursor.as_deref().filter(|cursor| !cursor.is_empty());
+        (limit, cursor)
+    }
+}
+
+/// Built-in cursor-paginated response (`CursorPage<T>` in `.cstack`,
+/// procedure-return only): the items plus the cursor for the next page,
+/// absent on the last page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CursorPage<T> {
+    pub items: Vec<T>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+impl<T> CursorPage<T> {
+    pub fn new(items: Vec<T>, next_cursor: Option<String>) -> Self {
+        Self { items, next_cursor }
+    }
+
+    /// Build a page from rows fetched with `LIMIT limit + 1`: when the
+    /// extra row is present it is dropped and `cursor_of(last kept row)`
+    /// becomes the next cursor.
+    pub fn from_rows(mut rows: Vec<T>, limit: i64, cursor_of: impl FnOnce(&T) -> String) -> Self {
+        let limit = usize::try_from(limit).unwrap_or(0);
+        if rows.len() <= limit {
+            return Self::new(rows, None);
+        }
+        rows.truncate(limit);
+        let next = rows.last().map(cursor_of);
+        Self::new(rows, next)
     }
 }

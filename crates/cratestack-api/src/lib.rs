@@ -104,6 +104,7 @@ pub use futures_util as futures;
 // codegen references some of the same shared descriptor types, so this
 // mirrors `cratestack-pg`'s re-export list rather than trimming it.
 pub use cratestack_sql::{
+    KeysetColumn, KeysetLeaf, keyset_after, keyset_order_spec, parse_keyset_sort,
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault, GeneratedValue,
     IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor,

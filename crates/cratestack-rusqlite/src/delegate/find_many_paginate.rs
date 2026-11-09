@@ -106,6 +106,7 @@ fn assemble_page<M>(items: Vec<M>, limit: i64, offset: i64, total_count: i64) ->
             offset: Some(offset),
             has_next_page: offset + limit < total_count,
             has_previous_page: offset > 0,
+            next_cursor: None,
         },
     )
     .with_total_count(Some(total_count))

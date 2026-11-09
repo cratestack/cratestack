@@ -17,6 +17,7 @@
 mod descriptor;
 mod dialect;
 mod filter;
+mod keyset;
 mod idempotency;
 mod order;
 mod order_catalog;
@@ -41,6 +42,7 @@ pub use filter::{
 #[cfg(feature = "postgis")]
 pub use filter::{SpatialDistanceExpr, SpatialFilter, SpatialPoint, point};
 pub use idempotency::IDEMPOTENCY_TABLE_DDL;
+pub use keyset::{KeysetColumn, KeysetLeaf, keyset_after, keyset_order_spec, parse_keyset_sort};
 pub use order::{NullOrder, OrderClause, OrderTarget, SortDirection};
 pub use order_catalog::{
     OrderCatalog, OrderRelationEdge, ResolvedOrderTarget, resolve_order_target,

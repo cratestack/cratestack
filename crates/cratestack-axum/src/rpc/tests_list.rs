@@ -21,6 +21,7 @@ fn synthesize_list_query_round_trips_through_parse_query_pairs() {
     );
 
     let input = RpcListInput {
+        cursor: None,
         limit: Some(20),
         offset: Some(40),
         fields: Some(vec!["id".to_owned(), "title".to_owned()]),
@@ -51,4 +52,18 @@ fn synthesize_list_query_round_trips_through_parse_query_pairs() {
     assert!(has("where", "published=true"));
     assert!(has("authorId", "42"));
     assert!(has("computedParams", r#"{"proxyUrl":{"width":800}}"#));
+}
+
+#[test]
+fn synthesize_list_query_carries_cursor_including_the_empty_start_token() {
+    let query = |cursor: &str| {
+        let input = RpcListInput {
+            cursor: Some(cursor.to_owned()),
+            ..RpcListInput::default()
+        };
+        let query = synthesize_list_query(&input).expect("cursor alone is a query");
+        crate::parse_query_pairs(Some(&query)).expect("synthesized query parses")
+    };
+    assert_eq!(query(""), vec![("cursor".to_owned(), String::new())]);
+    assert_eq!(query("a-b_c"), vec![("cursor".to_owned(), "a-b_c".to_owned())]);
 }

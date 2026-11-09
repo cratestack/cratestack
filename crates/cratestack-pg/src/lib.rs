@@ -91,6 +91,7 @@ pub use futures_util as futures;
 // SQL primitives shared by every backend — re-exported directly from
 // `cratestack-sql` so consumers don't transit through `cratestack-sqlx`.
 pub use cratestack_sql::{
+    KeysetColumn, KeysetLeaf, keyset_after, keyset_order_spec, parse_keyset_sort,
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault, GeneratedValue,
     IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, ModelColumn, ModelDescriptor,

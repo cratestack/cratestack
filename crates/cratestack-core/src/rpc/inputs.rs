@@ -107,6 +107,11 @@ pub struct RpcListInput {
     pub limit: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub offset: Option<i64>,
+    /// Keyset cursor (`?cursor=`): `Some("")` starts cursor paging at the
+    /// first page; a previous page's `nextCursor` continues it. Mutually
+    /// exclusive with `offset`. See `docs/design/cursor-pagination.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
     /// Selection fields (`?fields=a,b,c`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<Vec<String>>,

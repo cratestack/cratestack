@@ -61,6 +61,7 @@ fn page_and_page_input_round_trip() {
         offset,
         has_next_page: next,
         has_previous_page: previous,
+        next_cursor: None,
     };
     let pages: [page_shapes::Output; 3] = [
         Page::new(Vec::new(), PageInfo::default()),

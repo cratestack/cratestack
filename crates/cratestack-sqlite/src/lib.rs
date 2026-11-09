@@ -55,6 +55,7 @@ pub use cratestack_policy::{
 // SQL primitives shared by every backend — re-exported directly from
 // `cratestack-sql` so consumers don't transit through any runtime crate.
 pub use cratestack_sql::{
+    KeysetColumn, KeysetLeaf, keyset_after, keyset_order_spec, parse_keyset_sort,
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, DatabaseDefault, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault,
     GeneratedValue, IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, LiteralDefault,
