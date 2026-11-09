@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Subscription `err` frames keep their RPC code in the generated Rust client (fix)
+
+`cratestack_client_rust::rpc_error_to_client` put the lowercase RPC code (`resource_exhausted`,
+`permission_denied`, `failed_precondition`, ...) into the REST-style error envelope, and reading it back as an
+`RpcErrorBody` mapped every such code to `internal`, so `RpcClientError::Remote.body.code` was `internal` for
+every subscription `err` frame on WebSocket, WebTransport and SSE (status and `details` were unaffected). The
+code now survives the round trip. `cratestack_core::rpc::rpc_code_to_cratestack_error_code` is the new inverse
+of `cratestack_error_code_to_rpc_code`. The Dart and TypeScript clients pass the code through verbatim and were
+not affected. **Action:** none; code that matched on `"internal"` to detect a throttle should match
+`"resource_exhausted"`.
+
 ### Subscription opens over WebSocket and WebTransport can be rate-limited (opt-in, additive)
 
 `docs/design/subscriptions-websocket.md` §6.7 routes every subscription `Request` through

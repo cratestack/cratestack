@@ -120,10 +120,9 @@ fn assert_throttle(error: RpcClientError) {
         panic!("expected a refusal, got {error:?}");
     };
     assert_eq!(remote.status, 429);
-    // Not `body.code`: the client's `err`-frame conversion re-maps the code
-    // through the REST envelope's names and reads a lowercase RPC code as
-    // `internal` (pre-existing, every binding). The status and `details`
-    // survive, and are what a backoff keys on.
+    // The `err` frame's RPC code survives the client's conversion, along
+    // with the status and `details` a backoff keys on.
+    assert_eq!(remote.body.code, "resource_exhausted");
     let retry = remote
         .body
         .details
