@@ -21,15 +21,15 @@ pub(super) type OpResolver = Arc<dyn Fn(&Request) -> OpAdmission + Send + Sync>;
 
 #[derive(Clone)]
 pub struct RateLimitLayer {
-    store: Arc<dyn RateLimitStore>,
-    config: RateLimitConfig,
+    pub(super) store: Arc<dyn RateLimitStore>,
+    pub(super) config: RateLimitConfig,
     key_fn: Option<KeyFn>,
     op_resolver: OpResolver,
-    store_error_policy: StoreErrorPolicy,
-    store_timeout: Duration,
+    pub(super) store_error_policy: StoreErrorPolicy,
+    pub(super) store_timeout: Duration,
     bucket_budget: Option<RateLimitBucketBudget>,
     unverified_auth_policy: UnverifiedAuthPolicy,
-    warnings: Arc<StoreErrorWarnings>,
+    pub(super) warnings: Arc<StoreErrorWarnings>,
     budget_warnings: Arc<BudgetWarnings>,
 }
 

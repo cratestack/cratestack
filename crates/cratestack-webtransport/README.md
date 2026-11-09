@@ -56,6 +56,12 @@ let server = db.subscriptions().webtransport(config, auth_provider)?;
 tokio::spawn(server.serve_with_shutdown(shutdown_signal));
 ```
 
+Opens can be rate limited, opt-in: add `.rate_limit(layer.for_subscriptions())` to the config,
+with `layer` the application's `cratestack_axum::ratelimit::RateLimitLayer`. Each subscription
+stream costs one token (bucket `princ:<hash>`, else `ip:<QUIC peer>`); a throttled one gets an
+`err` frame, `resource_exhausted` with `details.retry_after_secs`, then FIN, and the session
+stays up.
+
 Every `@@subscribe` model is then served at `model.<Model>.subscribe`, with the same per-event
 read policy as the SSE endpoint. Without the extension, `WebTransportServer::bind(config, auth,
 db.subscriptions())` does the same from a direct dependency on this crate.

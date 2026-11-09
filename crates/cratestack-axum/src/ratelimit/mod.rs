@@ -118,6 +118,17 @@
 //! mode. `docs/design/ratelimit-bucket-cardinality.md` states what is
 //! **not** bounded.
 
+//! ## Subscription sessions (design `subscriptions-websocket.md` §6.7)
+//!
+//! SSE subscription opens are ordinary requests and are charged by this
+//! layer. WebSocket and WebTransport sessions are not: give their configs
+//! [`RateLimitLayer::for_subscriptions`]'s [`SubscriptionRateLimiter`] (same
+//! store, bucket, [`StoreErrorPolicy`] and timeout). One token per `Request`,
+//! keyed `princ:<sha256>` of the session's principal key, else `ip:<peer>`
+//! (IPv6 /64), else refused `failed_precondition` (HTTP's 412 rule). A
+//! throttle is an `err` frame, `resource_exhausted` with
+//! `details.retry_after_secs`; the session stays open.
+
 mod budget;
 mod config;
 mod consume;
@@ -131,6 +142,7 @@ mod scope;
 mod service;
 mod store;
 mod store_error;
+mod subscription;
 
 pub use budget::RateLimitBucketBudget;
 pub use config::{_bucket_capacity_for, RateLimitConfig, RateLimitDecision};
@@ -145,6 +157,7 @@ pub use rpc_ops_filter::build_rpc_ops_filter;
 pub use scope::{UnverifiedAuthPolicy, VerifiedPrincipal};
 pub use service::RateLimitService;
 pub use store::{DEFAULT_MAX_BUCKETS, InMemoryRateLimitStore, RateLimitStore};
+pub use subscription::SubscriptionRateLimiter;
 
 #[cfg(test)]
 mod tests;
@@ -172,6 +185,8 @@ mod tests_scope_ipv6;
 mod tests_store_error;
 #[cfg(test)]
 mod tests_store_timeout;
+#[cfg(test)]
+mod tests_subscription;
 #[cfg(test)]
 mod tests_support;
 #[cfg(test)]

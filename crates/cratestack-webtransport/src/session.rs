@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use cratestack_core::subscription_wire::SessionCharger;
 use cratestack_core::{AuthProvider, CratestackError, SubscriptionDispatcher};
 use http::StatusCode;
 use tokio::sync::Semaphore;
@@ -86,6 +87,7 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
         }
     };
     let principal = (shared.principal_key)(&ctx);
+    let charger = SessionCharger::new(shared.rate_limit.clone(), principal.clone(), Some(remote));
     let key = session_key(principal.as_deref(), remote);
     let Some(_slot) = shared.registry.admit(key, limits.sessions_per_principal) else {
         return (
@@ -117,6 +119,7 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                     max_frame_bytes: limits.max_frame_bytes,
                     ctx: ctx_rx.borrow().clone(),
                     permit: Arc::clone(&subscriptions).try_acquire_owned().ok(),
+                    charger: charger.clone(),
                 };
                 tokio::spawn(subscription::run(stream, send, recv).in_current_span());
             }

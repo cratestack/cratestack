@@ -23,6 +23,76 @@ the napi addon grows by the COSE crypto and its prebuilt target list is unchange
 chunk-fed `StreamOpener` (the Rust `chain` stream opener does not exist yet, #1008) and a founder or
 intermediate trust chain (`serverKeys` is the static trust root). Design: `docs/design/ts-cose-signed-mode.md`.
 
+### `rusqlite` 0.41 bundles SQLite 3.54 (RUSTSEC-2026-0459) (dependency)
+
+`rusqlite` 0.40.2 to 0.41.1 and `libsqlite3-sys` 0.38.2 to 0.39.1. SQLite before 3.54.0 could return
+uninitialized page-cache memory when a database file is opened next to a `-wal` file whose page size differs
+(CVE-2026-119375, RUSTSEC-2026-0459); the `bundled` feature that `cratestack-rusqlite`, `cratestack-sqlite`
+and `cratestack-client-store-sqlite` use now builds the patched SQLite. No source changes were needed. A
+downstream crate that pins its own `rusqlite` must move to 0.41 too, or Cargo resolves two `libsqlite3-sys`
+versions that both declare `links = "sqlite3"`.
+
+### Subscription `err` frames keep their RPC code in the generated Rust client (fix)
+
+`cratestack_client_rust::rpc_error_to_client` put the lowercase RPC code (`resource_exhausted`,
+`permission_denied`, `failed_precondition`, ...) into the REST-style error envelope, and reading it back as an
+`RpcErrorBody` mapped every such code to `internal`, so `RpcClientError::Remote.body.code` was `internal` for
+every subscription `err` frame on WebSocket, WebTransport and SSE (status and `details` were unaffected). The
+code now survives the round trip. `cratestack_core::rpc::rpc_code_to_cratestack_error_code` is the new inverse
+of `cratestack_error_code_to_rpc_code`. The Dart and TypeScript clients pass the code through verbatim and were
+not affected. **Action:** none; code that matched on `"internal"` to detect a throttle should match
+`"resource_exhausted"`.
+
+### Subscription opens over WebSocket and WebTransport can be rate-limited (opt-in, additive)
+
+`docs/design/subscriptions-websocket.md` §6.7 routes every subscription `Request` through
+`OpExecutor::admit_rate_limit`; as built in 0.18.0 neither binding called a rate limiter, so a caller could
+open subscriptions as fast as the per-socket cap let it. `WebSocketConfig::rate_limit` and
+`WebTransportConfig::rate_limit` now take a `cratestack_core::subscription_wire::SubscriptionRateLimit`, and
+`RateLimitLayer::for_subscriptions()` (or `SubscriptionRateLimiter::new(store, config)`) builds one with the
+HTTP layer's store, token bucket, `StoreErrorPolicy` and lookup timeout. Each `Request` (one stream on
+WebTransport) costs one token, charged after the per-socket cap and before the subscription's policy, in bucket
+`princ:<sha256 of the session's principal key>` or, for an anonymous session, `ip:<peer>` (IPv6 /64); an
+anonymous WebSocket served without `ConnectInfo` is refused `failed_precondition`, HTTP's 412 rule. A throttled
+open is `{id, err: {code: "resource_exhausted", details: {"retry_after_secs": N}}}` before `Ready` (the
+`details.retry_after_secs` member is new, additive and optional); the socket stays open and generated clients do
+not fall back to another binding. SSE (`/rpc/subscribe/{op}`, `GET /<plural>/$subscribe`, `GET /$procs/<name>`)
+was already charged by `RateLimitLayer` when it wraps the generated router; tests now pin that. Subscription ops
+still cannot be `@no_rate_limit`. A WebSocket router merged under `.layer(RateLimitLayer)` also pays one token
+for its upgrade request, and a browser upgrade without `ConnectInfo` gets that layer's existing 412.
+
+Not breaking: without `.rate_limit(..)` nothing changes. **Action:** if you rely on `RateLimitLayer` for abuse
+protection and serve WebSocket or WebTransport subscriptions, pass `layer.for_subscriptions()` to their
+configs; until you do, those opens remain unlimited.
+
+### Dart: `cratestack_builder` no longer excludes the lockstep `cratestack_annotations`
+
+`cratestack_builder` constrained `cratestack_annotations` to `'>=0.8.10 <0.10.0'`, so on the 0.19.x line pub
+resolved the stale 0.9.x annotations instead of the matching release. The ceiling is now `<0.20.0`. Root
+cause: `just bump` only rewrote the `version:` line of each pubspec, so the hand-written ceiling went stale
+after cratestack#838 and nothing noticed. `just bump` now sets it to the next minor after the new version
+(the same rule generated clients use, `release_line.rs`) and fails if the rewrite does not land, and a
+`cratestack-client-dart` test pins it to the workspace release line. The floor (`0.8.10`) is an API
+requirement and is unchanged.
+
+### CI: quality pipeline honours the workflow's `SCAN_TYPE`
+
+`.ci/quality/run.sh` assigned `SCAN_TYPE="${1:-pr}"`, discarding the `SCAN_TYPE` environment variable that
+`.github/workflows/quality.yml` sets (`pr` on pull requests, `full` otherwise). Push, schedule and manual
+runs therefore did a `pr` scan, and gitleaks scanned `origin/main..HEAD` (empty on main) instead of the full
+history. Resolution is now: explicit argument, else `SCAN_TYPE`, else `pr`. Also corrects the stale script
+comment claiming the repo has no IaC files (it has one Dockerfile) and the manual-dispatch row of
+`docs/quality-pipeline.md`. Heads-up: the first push/scheduled run now scans full history and may surface
+findings the empty range hid.
+
+### WireMock procedure stubs honour `@status(<code>)`
+
+`cratestack-mock-wiremock` hardcoded `200` in every procedure stub, so a procedure declaring
+`@status(202)` (#511) was stubbed with a status the real server never returns. The generated mapping's
+`response.status` is now the procedure's declared `@status` and `200` when absent (RPC procedures, where
+`@status` is rejected at parse time, stay `200`). Regenerate committed stubs if you have any procedure
+with `@status`. Docs: `docs/design/wiremock-stubs.md` and the crate README updated.
+
 ### Documentation sweep: design docs, ADRs, tooling, contributing and READMEs brought up to 0.19.x (docs only)
 
 No behaviour change and nothing breaking. About eighty files: the design docs and ADRs under `docs/`

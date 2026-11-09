@@ -163,7 +163,7 @@ pub(super) fn default_key_fn(
 /// (`cratestack-core/src/transport.rs`) and is byte-for-byte what
 /// `format!("{:x}", …)` produced — this string is persisted/keyed on, so
 /// it must not change shape.
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(super) fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()

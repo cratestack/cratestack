@@ -5,6 +5,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use cratestack_core::subscription_wire::SubscriptionRateLimit;
 use cratestack_core::{AuthProvider, CratestackError, SubscriptionDispatcher};
 
 use crate::config::{PrincipalKeyFn, WebTransportConfig, WebTransportLimits};
@@ -22,6 +23,7 @@ pub(crate) struct Shared<A, D> {
     pub(crate) limits: WebTransportLimits,
     pub(crate) principal_key: PrincipalKeyFn,
     pub(crate) registry: Arc<SessionRegistry>,
+    pub(crate) rate_limit: Option<Arc<dyn SubscriptionRateLimit>>,
 }
 
 /// A bound WebTransport listener. Construct with [`Self::bind`], then run
@@ -48,6 +50,7 @@ impl<A: AuthProvider, D: SubscriptionDispatcher> WebTransportServer<A, D> {
             limits: config.limits,
             principal_key: config.principal_key,
             registry: Arc::default(),
+            rate_limit: config.rate_limit,
         });
         Ok(Self { listener, shared })
     }

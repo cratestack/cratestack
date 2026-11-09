@@ -146,3 +146,24 @@ fn floors_are_below_the_current_unpublished_workspace_version() {
         );
     }
 }
+
+/// The builder's own `cratestack_annotations` constraint must share the
+/// generated clients' ceiling. It is hand-written, and `just bump` is what
+/// keeps it in step with the release line: it went stale at `<0.10.0`
+/// while the workspace moved to 0.19.x, so pub resolved the 0.9.x
+/// annotations instead of the lockstep release. A client asking for
+/// `>=FLOOR <0.20.0` must also be satisfiable by the builder beside it.
+#[test]
+fn builder_annotations_ceiling_follows_the_release_line() {
+    let declared = pubspec_value("cratestack_builder", "cratestack_annotations");
+    let expected_ceiling = crate::release_line::ceiling(env!("CARGO_PKG_VERSION"));
+    assert!(
+        declared
+            .trim_matches('\'')
+            .ends_with(&format!("<{expected_ceiling}")),
+        "dart-packages/cratestack_builder/pubspec.yaml declares cratestack_annotations \
+         {declared}, expected a ceiling of <{expected_ceiling} (next minor after \
+         {}). `just bump` should rewrite it.",
+        env!("CARGO_PKG_VERSION")
+    );
+}
