@@ -42,9 +42,57 @@ export const cborCodec = {
     return new Uint8Array(encodeNative(value));
   },
   decode(bytes: Uint8Array): unknown {
-    return decodeNative(bytes);
+    return decodeWith(bytes, undefined);
   },
 } satisfies CratestackRpcCodec;
+
+/** Options for {@link createCborCodec}. */
+export interface CborCodecOptions {
+  /**
+   * Maximum nesting of arrays, maps and tags a `decode` accepts (a scalar is
+   * depth 0). Defaults to 128. Deeper input throws a `RangeError` whose
+   * message contains "nesting too deep"; the codec stays usable.
+   */
+  maxDepth?: number;
+}
+
+// The native addon reports every failure as a plain `Error`. A depth refusal
+// is a limit being exceeded, so surface it as the `RangeError` JS callers
+// expect (cratestack#1315).
+function decodeWith(bytes: Uint8Array, maxDepth: number | undefined): unknown {
+  try {
+    return decodeNative(bytes, maxDepth);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("nesting too deep")) {
+      throw new RangeError(error.message, { cause: error });
+    }
+    throw error;
+  }
+}
+
+/**
+ * Builds a codec with a custom decode depth limit.
+ *
+ * @example
+ * ```ts
+ * const codec = createCborCodec({ maxDepth: 32 });
+ * ```
+ */
+export function createCborCodec(options: CborCodecOptions = {}) {
+  const { maxDepth } = options;
+  if (maxDepth !== undefined && !(Number.isInteger(maxDepth) && maxDepth >= 0)) {
+    throw new RangeError("maxDepth must be a non-negative integer");
+  }
+  return {
+    contentType: "application/cbor",
+    encode(value: unknown): BodyInit {
+      return cborCodec.encode(value);
+    },
+    decode(bytes: Uint8Array): unknown {
+      return decodeWith(bytes, maxDepth);
+    },
+  } satisfies CratestackRpcCodec;
+}
 
 export default cborCodec;
 

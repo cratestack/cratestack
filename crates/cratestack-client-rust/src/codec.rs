@@ -163,6 +163,12 @@ where
     let mut values = Vec::new();
     let mut offset = 0usize;
     while offset < bytes.len() {
+        // One explicit depth check per item (cratestack#1315), before serde
+        // recurses into it.
+        cratestack_codec_cbor::check_depth(
+            &bytes[offset..],
+            cratestack_codec_cbor::DEFAULT_MAX_DECODE_DEPTH,
+        )?;
         let mut deserializer = minicbor_serde::Deserializer::new(&bytes[offset..]);
         values.push(T::deserialize(&mut deserializer).map_err(|error| {
             CratestackError::Codec(format!("failed to decode CBOR sequence body: {error}"))

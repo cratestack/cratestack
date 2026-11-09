@@ -35,7 +35,11 @@ pub fn decode_body<T: DeserializeOwned + Default>(
     match content_type.as_str() {
         "application/json" => serde_json::from_slice(body).map_err(|err| err.to_string()),
         "application/cbor" | "application/cbor-seq" | "" => {
-            minicbor_serde::from_slice(body).map_err(|err| err.to_string())
+            cratestack_codec_cbor::decode_with_max_depth(
+                body,
+                cratestack_codec_cbor::DEFAULT_MAX_DECODE_DEPTH,
+            )
+            .map_err(|err| err.to_string())
         }
         other => Err(format!("unsupported content type: {other}")),
     }
