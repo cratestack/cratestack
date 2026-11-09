@@ -122,3 +122,4 @@ export interface RpcCaller {
 // which `src/index.ts.j2` never re-exports either. `./cbor-seq` is the
 // public surface for boundary-scanning.
 export * from "./cbor-seq.js";
+export * from "./cose.js";
