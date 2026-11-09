@@ -193,6 +193,14 @@ mod tests {
     }
 
     #[test]
+    fn deeply_nested_cbor_returns_an_error_not_a_stack_overflow() {
+        // cratestack#1315: Dart's native `decodeJson` goes through this path.
+        let mut bytes = vec![0x81; 100_000];
+        bytes.push(0x01);
+        assert!(decode_json(bytes).is_err());
+    }
+
+    #[test]
     fn invalid_json_text_returns_an_error_not_a_panic() {
         let result = encode_json("{not valid json".to_owned());
         assert!(

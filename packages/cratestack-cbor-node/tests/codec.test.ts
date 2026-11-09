@@ -5,7 +5,7 @@
 // `build`) before `vitest run` if `native.mjs`/`*.node` aren't present
 // yet.
 import { describe, expect, it } from "vitest";
-import { cborCodec } from "../src/index.js";
+import { cborCodec, createCborCodec } from "../src/index.js";
 
 function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
@@ -259,5 +259,34 @@ describe("binary data (cratestack#783)", () => {
       expect(decoded).not.toBeInstanceOf(Uint8Array);
       expect(decoded).toEqual({ "0": 1, "1": 2 });
     }
+  });
+});
+
+describe("decode nesting depth limit (cratestack#1315)", () => {
+  // `depth` one-element-array headers around the integer 1.
+  const nested = (depth: number): Uint8Array => {
+    const bytes = new Uint8Array(depth + 1).fill(0x81);
+    bytes[depth] = 0x01;
+    return bytes;
+  };
+
+  it("throws a RangeError for ~8000 nested arrays instead of crashing the process", () => {
+    for (const depth of [8_000, 1_000_000]) {
+      expect(() => cborCodec.decode(nested(depth))).toThrow(RangeError);
+      expect(() => cborCodec.decode(nested(depth))).toThrow(/nesting too deep/);
+    }
+  });
+
+  it("accepts exactly the default limit (128) and refuses one more", () => {
+    expect(cborCodec.decode(nested(128))).toBeDefined();
+    expect(() => cborCodec.decode(nested(129))).toThrow(/nesting too deep/);
+  });
+
+  it("honours createCborCodec({ maxDepth }) and stays usable after a failure", () => {
+    const codec = createCborCodec({ maxDepth: 4 });
+    expect(codec.decode(nested(4))).toEqual([[[[1]]]]);
+    expect(() => codec.decode(nested(5))).toThrow(/nesting too deep/);
+    expect(codec.decode(codec.encode({ ok: true }) as Uint8Array)).toEqual({ ok: true });
+    expect(() => createCborCodec({ maxDepth: -1 })).toThrow(RangeError);
   });
 });

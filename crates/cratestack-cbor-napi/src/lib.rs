@@ -52,9 +52,16 @@ fn encode_value(value: &Value) -> Result<Vec<u8>, CratestackError> {
     CborCodec.encode(value)
 }
 
-/// Decodes CBOR bytes to a bridged JS value via `CborCodec`.
-fn decode_bytes(bytes: &[u8]) -> Result<Value, CratestackError> {
-    CborCodec.decode(bytes)
+/// Decodes CBOR bytes to a bridged JS value via `CborCodec`, refusing input
+/// nested deeper than `max_depth` arrays/maps/tags (default
+/// `DEFAULT_MAX_DECODE_DEPTH`; cratestack#1315). The depth is counted
+/// explicitly before any recursive decode, so hostile input is a catchable
+/// error, never a native stack overflow.
+fn decode_bytes(bytes: &[u8], max_depth: Option<usize>) -> Result<Value, CratestackError> {
+    cratestack_codec_cbor::decode_with_max_depth(
+        bytes,
+        max_depth.unwrap_or(cratestack_codec_cbor::DEFAULT_MAX_DECODE_DEPTH),
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -101,9 +108,12 @@ mod addon {
     /// a `Uint8Array`. Malformed input returns a catchable `Error` —
     /// never a native crash. See [`encode`] for the `ts_return_type`
     /// rationale.
+    ///
+    /// `max_depth` bounds array/map/tag nesting (default 128); deeper input
+    /// throws an `Error` whose message contains "nesting too deep".
     #[napi(catch_unwind, ts_return_type = "unknown")]
-    pub fn decode(bytes: Uint8Array) -> napi::Result<JsCborValue> {
-        decode_bytes(bytes.as_ref())
+    pub fn decode(bytes: Uint8Array, max_depth: Option<u32>) -> napi::Result<JsCborValue> {
+        decode_bytes(bytes.as_ref(), max_depth.map(|depth| depth as usize))
             .map(JsCborValue)
             .map_err(to_napi_error)
     }
@@ -147,7 +157,7 @@ mod tests {
         // ticket's "unit tests on the napi wrapper functions directly".
         let input = value(json!({"cratestack": ["cool", "stack"], "n": 42}));
         let bytes = encode_value(&input).expect("encode should succeed");
-        let decoded = decode_bytes(&bytes).expect("decode should succeed");
+        let decoded = decode_bytes(&bytes, None).expect("decode should succeed");
         assert_eq!(decoded, input);
     }
 
@@ -159,7 +169,7 @@ mod tests {
         let bytes = encode_value(&input).expect("encode should succeed");
         assert_eq!(bytes, vec![0x44, 0x01, 0x02, 0x03, 0x04]);
         assert_eq!(
-            decode_bytes(&bytes).expect("decode should succeed"),
+            decode_bytes(&bytes, None).expect("decode should succeed"),
             input,
             "a byte string must decode back as bytes, not as a list"
         );
@@ -174,7 +184,7 @@ mod tests {
         // warns about.
         let bytes = encode_value(&Value::Null).expect("encode null should succeed");
         assert_eq!(bytes, vec![0xf6]);
-        let decoded = decode_bytes(&bytes).expect("decode should succeed");
+        let decoded = decode_bytes(&bytes, None).expect("decode should succeed");
         assert_eq!(decoded, Value::Null);
     }
 
@@ -189,8 +199,24 @@ mod tests {
         // (no napi runtime here to catch into) and is instead covered by
         // the JS/vitest suite in packages/cratestack-cbor-node.
         let malformed = [0x1b];
-        let result = decode_bytes(&malformed);
+        let result = decode_bytes(&malformed, None);
         assert!(result.is_err(), "malformed CBOR must error, not panic");
+    }
+
+    #[test]
+    fn deeply_nested_input_errors_instead_of_overflowing_the_stack() {
+        // cratestack#1315: ~8000 `0x81` headers used to SIGSEGV the process.
+        let mut bytes = vec![0x81; 100_000];
+        bytes.push(0x01);
+        let error = decode_bytes(&bytes, None).expect_err("must refuse");
+        assert!(error.to_string().contains("nesting too deep"), "{error}");
+        // A caller-chosen limit applies, exactly at the boundary.
+        let mut five = vec![0x81; 5];
+        five.push(0x01);
+        assert!(decode_bytes(&five, Some(5)).is_ok());
+        assert!(decode_bytes(&five, Some(4)).is_err());
+        // Still usable afterwards.
+        assert!(decode_bytes(&[0x01], None).is_ok());
     }
 
     #[test]
@@ -278,7 +304,7 @@ mod tests {
             // header at index 10: major type 3, never 0/1 (integer).
             assert_eq!(bytes[10] >> 5, 3, "{decimal} must be a text string");
 
-            let decoded = decode_bytes(&unhex(expected_hex)).expect("decode");
+            let decoded = decode_bytes(&unhex(expected_hex), None).expect("decode");
             assert_eq!(decoded, input, "decode {decimal}");
             let Value::Map(fields) = decoded else {
                 panic!("fixture for {decimal} must decode to a map");

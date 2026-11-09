@@ -22,7 +22,14 @@
 declare module "@cratestack/cbor-node" {
   import type { CratestackRpcCodec } from "@cratestack/ts-types";
 
+  /** Options for `createCborCodec` (cratestack#1315). */
+  export interface CborCodecOptions {
+    /** Maximum array/map/tag nesting a `decode` accepts. Default 128. */
+    maxDepth?: number;
+  }
+
   export const cborCodec: CratestackRpcCodec;
+  export function createCborCodec(options?: CborCodecOptions): CratestackRpcCodec;
 
   /** Which side of an op a body belongs to. */
   export type CompactDirection = "request" | "response";
@@ -50,7 +57,13 @@ declare module "@cratestack/cbor-node" {
 declare module "@cratestack/cbor-web" {
   import type { CratestackRpcCodec } from "@cratestack/ts-types";
 
-  export function createCborCodec(): Promise<CratestackRpcCodec>;
+  /** Options for `createCborCodec` (cratestack#1315). */
+  export interface CborCodecOptions {
+    /** Maximum array/map/tag nesting a `decode` accepts. Default 128. */
+    maxDepth?: number;
+  }
+
+  export function createCborCodec(options?: CborCodecOptions): Promise<CratestackRpcCodec>;
 
   /** Which side of an op a body belongs to. */
   export type CompactDirection = "request" | "response";

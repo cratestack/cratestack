@@ -19,6 +19,7 @@ workspace = true
 [dependencies]
 axum.workspace = true
 chrono.workspace = true
+cratestack-codec-cbor.workspace = true
 cratestack-core.workspace = true
 # Unconditional, not feature-gated behind a `postgres` flag the way
 # `cratestack-service` gates its own `cratestack-sqlx` dependency. That gate
