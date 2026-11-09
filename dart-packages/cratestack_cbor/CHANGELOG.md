@@ -2,18 +2,8 @@
 
 ## 0.19.2 (2026-11-09)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.19.1..HEAD at 428f43b7fe5de80e1ffb37ebca243ff9f7fb5d94 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Documentation
-
-- fix stale CLI, version, facade and doc-comment claims (#1329)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
 
 ## 0.19.1 (2026-11-08)
 
