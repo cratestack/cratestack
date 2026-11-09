@@ -1,0 +1,29 @@
+// Fixture for keyset (cursor) pagination on generated list routes
+// (cratestack#1304). `Note` is `@@paged` with a nullable sort column and a
+// row-level read policy; `Plain` is not paged, so a cursor on it is refused.
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id Int @id
+  label String
+  rank Int?
+  hidden Boolean
+
+  @@paged
+  @@allow("read", auth() != null && hidden == false)
+}
+
+model Plain {
+  id Int @id
+  label String
+
+  @@allow("read", auth() != null)
+}

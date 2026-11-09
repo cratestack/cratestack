@@ -51,14 +51,19 @@ pub(super) fn list_success_tokens(paged: bool) -> proc_macro2::TokenStream {
     quote! {{
         let limit = query.limit;
         let offset = query.offset.unwrap_or(0);
+        let cursor_mode = query.cursor.is_some();
         Ok(::cratestack::Page::new(
             values,
             ::cratestack::PageInfo {
                 limit,
                 offset: query.offset,
-                has_next_page: limit.is_some_and(|limit| offset + limit < total_count),
-                has_previous_page: offset > 0,
-                next_cursor: None,
+                has_next_page: if cursor_mode {
+                    next_cursor.is_some()
+                } else {
+                    limit.is_some_and(|limit| offset + limit < total_count)
+                },
+                has_previous_page: offset > 0 || query.cursor.as_deref().is_some_and(|cursor| !cursor.is_empty()),
+                next_cursor,
             },
         ).with_total_count(Some(total_count)))
     }}

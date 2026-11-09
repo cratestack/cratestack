@@ -16,7 +16,9 @@ fn sort_parses_with_primary_key_tiebreaker_and_canonical_spec() {
     let cols = parse_keyset_sort(Some("-createdAt, score"), "id", nullable_of).unwrap();
     assert_eq!(keyset_order_spec(&cols), "-createdAt,score,id");
     assert_eq!(
-        cols.iter().map(|c| (c.descending, c.nullable)).collect::<Vec<_>>(),
+        cols.iter()
+            .map(|c| (c.descending, c.nullable))
+            .collect::<Vec<_>>(),
         vec![(true, false), (false, true), (false, false)]
     );
     let default = parse_keyset_sort(None, "id", nullable_of).unwrap();
@@ -30,7 +32,10 @@ fn sort_parses_with_primary_key_tiebreaker_and_canonical_spec() {
 fn sort_rejects_relation_paths_unknown_and_duplicate_columns() {
     for sort in ["author.name", "nope", "score,score", "score,,id"] {
         assert!(
-            matches!(parse_keyset_sort(Some(sort), "id", nullable_of), Err(CratestackError::BadRequest(_))),
+            matches!(
+                parse_keyset_sort(Some(sort), "id", nullable_of),
+                Err(CratestackError::BadRequest(_))
+            ),
             "{sort}"
         );
     }
@@ -46,9 +51,15 @@ struct Row {
 fn leaf(column: &str, leaf: KeysetLeaf<'_, String>) -> Result<FilterExpr, CratestackError> {
     let num = |v: &String| v.parse::<i64>().unwrap();
     Ok(match (column, leaf) {
-        ("createdAt", KeysetLeaf::Eq(v)) => FieldRef::<(), i64>::new("created_at").eq(num(v)).into(),
-        ("createdAt", KeysetLeaf::Gt(v)) => FieldRef::<(), i64>::new("created_at").gt(num(v)).into(),
-        ("createdAt", KeysetLeaf::Lt(v)) => FieldRef::<(), i64>::new("created_at").lt(num(v)).into(),
+        ("createdAt", KeysetLeaf::Eq(v)) => {
+            FieldRef::<(), i64>::new("created_at").eq(num(v)).into()
+        }
+        ("createdAt", KeysetLeaf::Gt(v)) => {
+            FieldRef::<(), i64>::new("created_at").gt(num(v)).into()
+        }
+        ("createdAt", KeysetLeaf::Lt(v)) => {
+            FieldRef::<(), i64>::new("created_at").lt(num(v)).into()
+        }
         ("score", KeysetLeaf::Eq(v)) => FieldRef::<(), Option<i64>>::new("score").eq(num(v)).into(),
         ("score", KeysetLeaf::Gt(v)) => FieldRef::<(), Option<i64>>::new("score").gt(num(v)).into(),
         ("score", KeysetLeaf::Lt(v)) => FieldRef::<(), Option<i64>>::new("score").lt(num(v)).into(),
@@ -62,9 +73,18 @@ fn leaf(column: &str, leaf: KeysetLeaf<'_, String>) -> Result<FilterExpr, Crates
 
 fn cols_of(row: &Row) -> Vec<SqlColumnValue> {
     vec![
-        SqlColumnValue { column: "created_at", value: SqlValue::Int(row.created_at) },
-        SqlColumnValue { column: "score", value: row.score.map_or(SqlValue::NullInt, SqlValue::Int) },
-        SqlColumnValue { column: "id", value: SqlValue::Int(row.id) },
+        SqlColumnValue {
+            column: "created_at",
+            value: SqlValue::Int(row.created_at),
+        },
+        SqlColumnValue {
+            column: "score",
+            value: row.score.map_or(SqlValue::NullInt, SqlValue::Int),
+        },
+        SqlColumnValue {
+            column: "id",
+            value: SqlValue::Int(row.id),
+        },
     ]
 }
 
@@ -90,7 +110,11 @@ fn keyset_predicate_selects_exactly_the_rows_after_the_cursor_row() {
     for created_at in [1, 2, 3] {
         for score in [Some(1), Some(2), None, Some(1)] {
             id += 1;
-            rows.push(Row { created_at, score, id });
+            rows.push(Row {
+                created_at,
+                score,
+                id,
+            });
         }
     }
     rows.sort_by(expected_order);
@@ -101,7 +125,11 @@ fn keyset_predicate_selects_exactly_the_rows_after_the_cursor_row() {
             Some(pivot.id.to_string()),
         ];
         let filter = keyset_after(&cols, &values, leaf).unwrap();
-        let got: Vec<i64> = rows.iter().filter(|r| filter_matches(&filter, &cols_of(r))).map(|r| r.id).collect();
+        let got: Vec<i64> = rows
+            .iter()
+            .filter(|r| filter_matches(&filter, &cols_of(r)))
+            .map(|r| r.id)
+            .collect();
         let want: Vec<i64> = rows[index + 1..].iter().map(|r| r.id).collect();
         assert_eq!(got, want, "after {pivot:?}");
     }

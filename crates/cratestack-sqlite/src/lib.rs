@@ -55,15 +55,15 @@ pub use cratestack_policy::{
 // SQL primitives shared by every backend — re-exported directly from
 // `cratestack-sql` so consumers don't transit through any runtime crate.
 pub use cratestack_sql::{
-    KeysetColumn, KeysetLeaf, keyset_after, keyset_order_spec, parse_keyset_sort,
     CoalesceExpr, CoalesceFilter, ConflictTarget, CreateDefault, CreateDefaultType,
     CreateModelInput, DatabaseDefault, FieldRef, Filter, FilterExpr, FilterOp, GeneratedDefault,
-    GeneratedValue, IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, LiteralDefault,
-    ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder, OrderClause, Orderable, Projection,
-    ReadSource, RelatedReadScope, RelationFilter, RelationHop, RelationInclude, SortDirection,
-    SqlColumnValue, SqlValue, Unorderable, UpdateModelInput, UpsertModelInput, VectorDistanceExpr,
-    VectorDistanceFilter, VectorMetric, ViewDescriptor, WriteSource, coalesce, is_orderable,
-    order_value_sql, wrap_filter,
+    GeneratedValue, IntoColumnName, IntoSqlValue, JsonFilter, JsonTextPath, KeysetColumn,
+    KeysetLeaf, LiteralDefault, ModelColumn, ModelDescriptor, ModelPrimaryKey, NullOrder,
+    OrderClause, Orderable, Projection, ReadSource, RelatedReadScope, RelationFilter, RelationHop,
+    RelationInclude, SortDirection, SqlColumnValue, SqlValue, Unorderable, UpdateModelInput,
+    UpsertModelInput, VectorDistanceExpr, VectorDistanceFilter, VectorMetric, ViewDescriptor,
+    WriteSource, coalesce, is_orderable, keyset_after, keyset_order_spec, order_value_sql,
+    parse_keyset_sort, wrap_filter,
 };
 /// PostGIS query surface (cratestack#842) — gated in
 /// `cratestack-sql` and forwarded through this crate's own

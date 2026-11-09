@@ -1,0 +1,28 @@
+// RPC twin of cursor_list.cstack: model.Note.list shares the REST dispatch.
+transport rpc
+
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+auth Operator {
+  id Int
+}
+
+model Note {
+  id Int @id
+  label String
+  rank Int?
+  hidden Boolean
+
+  @@paged
+  @@allow("read", auth() != null && hidden == false)
+}
+
+model Plain {
+  id Int @id
+  label String
+
+  @@allow("read", auth() != null)
+}

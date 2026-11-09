@@ -17,8 +17,8 @@
 mod descriptor;
 mod dialect;
 mod filter;
-mod keyset;
 mod idempotency;
+mod keyset;
 mod order;
 mod order_catalog;
 mod relation_path;

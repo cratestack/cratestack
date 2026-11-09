@@ -22,6 +22,14 @@ pub(crate) fn generate_axum_shared_support() -> proc_macro2::TokenStream {
                             CratestackError::BadRequest(format!("invalid value '{}' for offset: {error}", value))
                         })?);
                     }
+                    "cursor" => {
+                        if query.cursor.is_some() {
+                            return Err(CratestackError::BadRequest(
+                                "cursor must not be provided more than once".to_owned(),
+                            ));
+                        }
+                        query.cursor = Some(value);
+                    }
                     "fields" => {
                         query.selection.fields = Some(parse_csv_query_parameter("fields", &value)?);
                     }

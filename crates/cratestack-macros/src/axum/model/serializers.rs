@@ -88,6 +88,8 @@ pub(super) fn build_list_builder(
     let query_expr_builder_ident = &p.query_expr_builder_ident;
     let order_by_arms = &arms.order_by_arms;
     let order_catalog_ident = &p.order_catalog_ident;
+    let cursor_plan_ident = super::cursor::plan_ident(p);
+    let cursor_filter_ident = super::cursor::filter_ident(p);
 
     // `pub(super)` for MCP collection resources (cratestack#1040): a page
     // is built by the same builder `GET /<plural>` uses, so filtering,
@@ -105,7 +107,23 @@ pub(super) fn build_list_builder(
                 request = request.where_expr(#query_expr_builder_ident(filter)?);
             }
 
-            if let Some(sort) = &query.sort {
+            // Cursor mode sorts by the *effective* keyset order (requested
+            // columns + the primary-key tiebreaker) and bounds the query to
+            // the rows after the cursor row. The bound is an ordinary filter
+            // `AND`ed beside the caller's filters and the row policy, so the
+            // cursor can never widen what the caller may read.
+            let cursor_mode = apply_paging && query.cursor.is_some();
+            let cursor_columns = if cursor_mode {
+                Some(#cursor_plan_ident(query)?)
+            } else {
+                None
+            };
+            let effective_sort: Option<String> = match &cursor_columns {
+                Some(columns) => Some(::cratestack::keyset_order_spec(columns)),
+                None => query.sort.clone(),
+            };
+
+            if let Some(sort) = &effective_sort {
                 for raw_term in sort.split(',') {
                     let raw_term = raw_term.trim();
                     if raw_term.is_empty() {
@@ -152,9 +170,17 @@ pub(super) fn build_list_builder(
                 }
             }
 
+            if let (Some(columns), Some(cursor)) = (&cursor_columns, &query.cursor) {
+                if let Some(bound) = #cursor_filter_ident(columns, cursor)? {
+                    request = request.where_expr(bound);
+                }
+            }
+
             if apply_paging {
                 if let Some(limit) = query.limit {
-                    request = request.limit(limit);
+                    // One probe row beyond the page tells the handler whether
+                    // another page exists (`split_<model>_cursor_page`).
+                    request = request.limit(if cursor_mode { limit.saturating_add(1) } else { limit });
                 }
                 if let Some(offset) = query.offset {
                     request = request.offset(offset);

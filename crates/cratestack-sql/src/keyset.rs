@@ -116,10 +116,9 @@ where
     E: From<CratestackError>,
 {
     if columns.len() != values.len() || columns.is_empty() {
-        return Err(CratestackError::BadRequest(
-            "cursor does not match the sort order".to_owned(),
-        )
-        .into());
+        return Err(
+            CratestackError::BadRequest("cursor does not match the sort order".to_owned()).into(),
+        );
     }
     let mut terms = Vec::new();
     for (index, (column, value)) in columns.iter().zip(values).enumerate() {

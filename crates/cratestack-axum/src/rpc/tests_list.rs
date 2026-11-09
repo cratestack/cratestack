@@ -65,5 +65,8 @@ fn synthesize_list_query_carries_cursor_including_the_empty_start_token() {
         crate::parse_query_pairs(Some(&query)).expect("synthesized query parses")
     };
     assert_eq!(query(""), vec![("cursor".to_owned(), String::new())]);
-    assert_eq!(query("a-b_c"), vec![("cursor".to_owned(), "a-b_c".to_owned())]);
+    assert_eq!(
+        query("a-b_c"),
+        vec![("cursor".to_owned(), "a-b_c".to_owned())]
+    );
 }
