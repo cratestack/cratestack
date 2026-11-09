@@ -99,8 +99,9 @@ pub struct TypeRef {
 }
 
 impl TypeRef {
+    /// `Page<T>` or `CursorPage<T>`; emitters that name the envelope read `name`.
     pub fn is_page(&self) -> bool {
-        self.name == "Page"
+        matches!(self.name.as_str(), "Page" | "CursorPage")
     }
 
     pub fn page_item(&self) -> Option<&TypeRef> {
@@ -111,8 +112,9 @@ impl TypeRef {
         }
     }
 
+    /// `PageInput` or `CursorPageInput`.
     pub fn is_page_input(&self) -> bool {
-        self.name == "PageInput"
+        matches!(self.name.as_str(), "PageInput" | "CursorPageInput")
     }
 
     pub fn is_find_many(&self) -> bool {

@@ -53,6 +53,7 @@ async fn rest_client_lists_and_selects_and_calls_a_paged_procedure() {
                     offset: Some(0),
                     has_next_page: false,
                     has_previous_page: false,
+                    next_cursor: None,
                 },
             )
             .with_total_count(Some(1));

@@ -71,6 +71,9 @@ pub(super) fn build_axum_dtos() -> proc_macro2::TokenStream {
             pub selection: ModelSelectionQuery,
             pub limit: Option<i64>,
             pub offset: Option<i64>,
+            /// `?cursor=`: keyset paging (`Some("")` = first page). Mutually
+            /// exclusive with `offset`; `@@paged` models only.
+            pub cursor: Option<String>,
             pub sort: Option<String>,
             pub filters: Vec<::cratestack::QueryExpr>,
             /// Raw `?computedParams=` value, not yet decoded or validated

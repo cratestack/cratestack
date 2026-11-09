@@ -25,6 +25,8 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
     let total_count_block = &p.total_count_block;
     let list_success_value = &p.list_success_value;
     let list_result_log = &p.list_result_log;
+    let cursor_split_ident = super::cursor::split_ident(p);
+    let cursor_guards = super::cursor::cursor_request_guards(p);
 
     let rest_mount = build_list_rest_mount(p);
 
@@ -128,6 +130,7 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                     ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", "cratestack model list rejected negative offset");
                     return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(CratestackError::BadRequest("offset must be greater than or equal to 0".to_owned())));
                 }
+                #cursor_guards
                 if let Err(error) = #validate_selection_ident(&query.selection, state.db.#accessor_ident().descriptor()) {
                     ::cratestack::tracing::warn!(target: "cratestack", cratestack_route = canonical_route, cratestack_model = #model_name, cratestack_operation = "list", cratestack_error = error.code(),
                         cratestack_detail = error.detail().unwrap_or(""), "cratestack model list selection validation failed");
@@ -160,7 +163,16 @@ pub(super) fn build_list_handler(p: &ModelHandlerPrep) -> proc_macro2::TokenStre
                 #total_count_block
 
                 let result = match request.run(&ctx).await {
-                    Ok(records) => {
+                    Ok(mut records) => {
+                        // Cursor mode fetched `limit + 1`; trim the probe row
+                        // and mint `nextCursor` from the last row kept.
+                        let next_cursor = match #cursor_split_ident(&query, &mut records) {
+                            Ok(next_cursor) => next_cursor,
+                            Err(error) => {
+                                return ::cratestack::encode_transport_result_with_status_for::<_, #list_response_type>(&state.codec, &headers, &CAPABILITIES, axum::http::StatusCode::OK, Err(error));
+                            }
+                        };
+                        let _ = &next_cursor;
                         let mut values = Vec::with_capacity(records.len());
                         let mut error = None;
                         for record in &records {

@@ -389,3 +389,52 @@ mutation procedure credit(args: CreditInput): Account
     let amount = &schema.types[0].fields[1];
     assert_eq!(amount.ty.name, "Decimal");
 }
+
+#[test]
+fn parses_built_in_cursor_page_procedure_signature() {
+    let source = r#"
+model Post {
+  id Int @id
+}
+
+procedure feed(page: CursorPageInput): CursorPage<Post>
+"#;
+    let schema = parse_schema(source).expect("cursor page signature should parse");
+    let procedure = &schema.procedures[0];
+
+    assert_eq!(procedure.args[0].ty.name, "CursorPageInput");
+    assert!(procedure.args[0].ty.is_page_input());
+    assert!(procedure.return_type.is_cursor_page());
+    assert_eq!(procedure.return_type.page_item().unwrap().name, "Post");
+}
+
+#[test]
+fn cursor_page_types_keep_the_page_placement_rules() {
+    for (source, needle) in [
+        (
+            "procedure p(): CursorPageInput",
+            "only supported as a procedure argument type",
+        ),
+        (
+            "procedure p(a: CursorPageInput[]): Int",
+            "cannot be list-valued",
+        ),
+        (
+            "type T {\n  p CursorPage<T>\n}",
+            "only supported as a procedure return type",
+        ),
+        (
+            "model Post {\n  id Int @id\n}\nprocedure p(): CursorPage<Post>?",
+            "cannot be optional or list-valued",
+        ),
+        (
+            "model Post {\n  id Int @id\n}\nprocedure p(): CursorPage<Int>",
+            "declared model or type items",
+        ),
+    ] {
+        let error = parse_schema(source).expect_err(source);
+        let message = error.to_string();
+        assert!(message.contains(needle), "{source}: {message}");
+        assert!(message.contains("CursorPage"), "{source}: {message}");
+    }
+}

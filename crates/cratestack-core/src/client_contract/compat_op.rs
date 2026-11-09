@@ -147,7 +147,7 @@ fn args(old: &[Arg], new: &[Arg], reasons: &mut Vec<String>) {
         // `Page<T>`/`FindMany<T>` are emitted as bare fields with no
         // `serde(default)` whatever their arity, so `FindMany<T>?` cannot be
         // omitted by an old client (the parser refuses `Page<T>` here).
-        let builtin = matches!(added.ty.name.as_str(), "Page" | "FindMany");
+        let builtin = matches!(added.ty.name.as_str(), "Page" | "CursorPage" | "FindMany");
         if added.ty.arity != "optional" || builtin {
             reasons.push(format!(
                 "the new argument `{}` is {}, not a plain optional: an old client cannot send it",

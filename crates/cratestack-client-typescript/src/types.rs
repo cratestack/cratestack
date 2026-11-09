@@ -16,7 +16,7 @@ pub(crate) fn ts_type(type_ref: &TypeRef, enum_names: &BTreeSet<&str>) -> String
         let item = type_ref
             .page_item()
             .expect("validated Page<T> should include an item type");
-        return format!("Page<{}>", ts_type(item, enum_names));
+        return format!("{}<{}>", type_ref.name, ts_type(item, enum_names));
     }
 
     if type_ref.is_find_many() {

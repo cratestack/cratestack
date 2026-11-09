@@ -137,6 +137,8 @@ fn every_builtin_scalar_column_has_an_explicit_postgres_type() {
     let non_scalar = [
         "Page",
         "PageInput",
+        "CursorPage",
+        "CursorPageInput",
         "FindMany",
         "Vector",
         "Geography",

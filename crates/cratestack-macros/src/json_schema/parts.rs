@@ -60,6 +60,11 @@ pub(super) fn page(items: Value) -> Value {
     let mut page_info = counters();
     page_info.insert("hasNextPage".to_owned(), json!({ "type": "boolean" }));
     page_info.insert("hasPreviousPage".to_owned(), json!({ "type": "boolean" }));
+    // Omitted from the wire unless a cursor-paged list set it.
+    page_info.insert(
+        "nextCursor".to_owned(),
+        nullable(json!({ "type": "string" })),
+    );
     let mut properties = Map::new();
     properties.insert(
         "items".to_owned(),
@@ -80,4 +85,29 @@ fn counters() -> Map<String, Value> {
     counters.insert("limit".to_owned(), nullable(int()));
     counters.insert("offset".to_owned(), nullable(int()));
     counters
+}
+
+/// `cratestack_core::CursorPageInput`: `limit` and `cursor`, both
+/// `Option` with no serde default.
+pub(super) fn cursor_page_input() -> Value {
+    let mut properties = Map::new();
+    properties.insert("limit".to_owned(), nullable(int()));
+    properties.insert("cursor".to_owned(), nullable(json!({ "type": "string" })));
+    object_schema(properties, Vec::new())
+}
+
+/// `cratestack_core::CursorPage<T>` around an already-built item schema:
+/// `nextCursor` is omitted from the wire on the last page and accepted
+/// missing.
+pub(super) fn cursor_page(items: Value) -> Value {
+    let mut properties = Map::new();
+    properties.insert(
+        "items".to_owned(),
+        json!({ "type": "array", "items": items }),
+    );
+    properties.insert(
+        "nextCursor".to_owned(),
+        nullable(json!({ "type": "string" })),
+    );
+    object_schema(properties, vec!["items"])
 }

@@ -162,6 +162,7 @@ impl cratestack_schema::procedures::ProcedureRegistry for TestProcedures {
                 offset: Some(0),
                 has_next_page: false,
                 has_previous_page: false,
+                next_cursor: None,
             },
         )
         .with_total_count(Some(1)))

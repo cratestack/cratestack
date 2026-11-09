@@ -69,24 +69,28 @@ pub(crate) fn build_shared_context(
     // named model type (see `crate::types::ts_type`'s `is_page` branch),
     // so the ownership graph never sees it as a consumer edge — add it
     // by hand whenever any procedure's return type actually needs it.
-    if schema
-        .procedures
-        .iter()
-        .any(|procedure| procedure.return_type.is_page())
-    {
-        procedures_shared_names.push("Page".to_owned());
+    for wrapper in ["Page", "CursorPage"] {
+        if schema
+            .procedures
+            .iter()
+            .any(|procedure| procedure.return_type.name == wrapper)
+        {
+            procedures_shared_names.push(wrapper.to_owned());
+        }
     }
     // Same reasoning, for `PageInput` argument fields: `ts_type` inlines
     // the bare name as a literal rather than the ownership graph seeing a
     // consumer edge (`PageInput` isn't a declared `type`), so a procedure
     // arg wrapper interface referencing it needs the import added by hand
     // too.
-    if schema
-        .procedures
-        .iter()
-        .any(|procedure| procedure.args.iter().any(|arg| arg.ty.is_page_input()))
-    {
-        procedures_shared_names.push("PageInput".to_owned());
+    for input in ["PageInput", "CursorPageInput"] {
+        if schema
+            .procedures
+            .iter()
+            .any(|procedure| procedure.args.iter().any(|arg| arg.ty.name == input))
+        {
+            procedures_shared_names.push(input.to_owned());
+        }
     }
     // `FindMany<Model>` argument fields are different again: unlike
     // `Page`/`PageInput`, `ts_type` resolves them to a *per-model*

@@ -20,6 +20,8 @@ pub(super) const BUILTIN_TYPES: &[&str] = &[
     "Uuid",
     "Page",
     "PageInput",
+    "CursorPage",
+    "CursorPageInput",
     "FindMany",
     "Vector",
     "Geography",
@@ -159,22 +161,24 @@ pub(super) fn validate_type_ref(
     }
 
     if type_ref.is_page_input() {
+        let wrapper = type_ref.name.as_str();
         if !allow.page_input {
             return Err(span_error(
-                "built-in `PageInput` is currently only supported as a procedure argument type"
-                    .to_owned(),
+                format!(
+                    "built-in `{wrapper}` is currently only supported as a procedure argument type"
+                ),
                 span,
             ));
         }
         if type_ref.arity == cratestack_core::TypeArity::List {
             return Err(span_error(
-                "built-in `PageInput` cannot be list-valued".to_owned(),
+                format!("built-in `{wrapper}` cannot be list-valued"),
                 span,
             ));
         }
         if !type_ref.generic_args.is_empty() {
             return Err(span_error(
-                "built-in `PageInput` does not take generic arguments".to_owned(),
+                format!("built-in `{wrapper}` does not take generic arguments"),
                 span,
             ));
         }
@@ -182,47 +186,49 @@ pub(super) fn validate_type_ref(
     }
 
     if type_ref.is_page() {
+        let wrapper = type_ref.name.as_str();
         if !allow.page {
             return Err(span_error(
-                "built-in `Page<T>` is currently only supported as a procedure return type"
-                    .to_owned(),
+                format!(
+                    "built-in `{wrapper}<T>` is currently only supported as a procedure return type"
+                ),
                 span,
             ));
         }
         if type_ref.arity != cratestack_core::TypeArity::Required {
             return Err(span_error(
-                "built-in `Page<T>` cannot be optional or list-valued".to_owned(),
+                format!("built-in `{wrapper}<T>` cannot be optional or list-valued"),
                 span,
             ));
         }
         let Some(item) = type_ref.page_item() else {
             return Err(span_error(
-                "built-in `Page<T>` requires exactly one inner type".to_owned(),
+                format!("built-in `{wrapper}<T>` requires exactly one inner type"),
                 span,
             ));
         };
         if item.is_page() {
             return Err(span_error(
-                "nested `Page<Page<T>>` return types are unsupported".to_owned(),
+                format!("nested `{wrapper}<{wrapper}<T>>` return types are unsupported"),
                 span,
             ));
         }
         if item.arity != cratestack_core::TypeArity::Required {
             return Err(span_error(
-                "built-in `Page<T>` requires a required model or type item".to_owned(),
+                format!("built-in `{wrapper}<T>` requires a required model or type item"),
                 span,
             ));
         }
         if !item.generic_args.is_empty() {
             return Err(span_error(
-                "built-in `Page<T>` only supports a direct model or type item".to_owned(),
+                format!("built-in `{wrapper}<T>` only supports a direct model or type item"),
                 span,
             ));
         }
         if !page_item_type_names.contains(&item.name) {
             return Err(span_error(
                 format!(
-                    "built-in `Page<T>` only supports declared model or type items; `{}` is unsupported",
+                    "built-in `{wrapper}<T>` only supports declared model or type items; `{}` is unsupported",
                     item.name
                 ),
                 span,

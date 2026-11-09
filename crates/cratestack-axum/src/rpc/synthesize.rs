@@ -15,6 +15,9 @@ pub fn synthesize_list_query(input: &RpcListInput) -> Option<String> {
     if let Some(offset) = input.offset {
         pairs.push(("offset".to_owned(), offset.to_string()));
     }
+    if let Some(cursor) = &input.cursor {
+        pairs.push(("cursor".to_owned(), cursor.clone()));
+    }
     if let Some(fields) = &input.fields {
         pairs.push(("fields".to_owned(), fields.join(",")));
     }

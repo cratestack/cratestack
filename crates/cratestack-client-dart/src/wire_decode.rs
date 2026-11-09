@@ -100,8 +100,9 @@ fn decode_required_scalar(
             .expect("validated Page<T> should include an item type");
         let item_decode = decode_required_scalar("item", item, enum_names, site);
         return format!(
-            "Page<{}>.fromWire(cratestackAsValueMap({expr}), decodeItem: (item) => {item_decode})",
+            "{wrapper}<{}>.fromWire(cratestackAsValueMap({expr}), decodeItem: (item) => {item_decode})",
             dart_type(item, false),
+            wrapper = ty.name,
         );
     }
 

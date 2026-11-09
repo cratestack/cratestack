@@ -16,6 +16,7 @@ import type {
   {{ enum.name }},
 {% endfor %}
   Page,
+  CursorPage,
 } from "./models.js";
 import { reviveWireFields, revivePagedWireFields, reviveWireScalar } from "./models.js";
 import { toRpcListInput, type CratestackRpcListQuery } from "./queries.js";

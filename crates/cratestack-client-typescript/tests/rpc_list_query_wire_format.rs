@@ -117,6 +117,7 @@ import {{ toRpcListInput }} from "{import_specifier}";
 const input = toRpcListInput({{
   limit: 20,
   offset: 40,
+  cursor: "a-b_c",
   fields: ["id", "title"],
   include: ["author"],
   includeFields: {{ author: ["id", "name"] }},
@@ -175,6 +176,7 @@ console.log(JSON.stringify(emptyInput));
         vec!["id".to_owned(), "name".to_owned()],
     );
     let expected_input = RpcListInput {
+        cursor: Some("a-b_c".to_owned()),
         limit: Some(20),
         offset: Some(40),
         fields: Some(vec!["id".to_owned(), "title".to_owned()]),
