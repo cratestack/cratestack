@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.3 (2026-11-09)
+
 ### Dart: `cratestack_builder` no longer excludes the lockstep `cratestack_annotations`
 
 `cratestack_builder` constrained `cratestack_annotations` to `'>=0.8.10 <0.10.0'`, so on the 0.19.x line pub
