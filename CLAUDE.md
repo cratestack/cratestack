@@ -57,7 +57,7 @@ Most workflows are encoded in the `justfile` (`just --list`). The important ones
 - **Version bump:** `just bump 0.x.y` rewrites every `Cargo.toml` version literal and refreshes the lock.
 - **Release:** `just release 0.x.y` (bump → validate → publish in topo order → tag; `PUSH=1` to push).
   Do not hand-maintain publish order — it is topo-sorted from `cargo metadata` at recipe time.
-- **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|generate-wiremock|studio|migrate|init|run|eject|diff|print-ir|contract>`
+- **CLI:** `cargo run -p cratestack-cli -- <check|generate-dart|generate-typescript|generate-wiremock|studio|migrate|diff|print-ir|contract>` (`studio` takes `<init|run|eject>`; `migrate` takes `<diff|baseline>`)
 - **Regenerate committed example clients:** `just regen-examples` — rewrites the two committed generated
   clients (`examples/flutter-riverpod/client` via `generate-dart --preset riverpod`, and
   `examples/react-vite-swr/client` via `generate-typescript --swr`) in place. Takes an `*args=''`
@@ -251,7 +251,7 @@ tarballs that `cargo publish` includes explicitly. `just publish-studio` re-bund
   the threshold. Refactor PRs are scoped per-crate.
 - Don't commit generated build output, local DB state, or the studio tarballs (gitignored by design).
 - Changelog entries go under the `## Unreleased` heading at the top of each declared changelog
-  (`.ci/changelog-files.sh` — currently `CHANGELOG.md` and `dart-packages/cratestack_cbor/CHANGELOG.md`),
+  (`.ci/changelog-files.sh` — currently `CHANGELOG.md` and the `CHANGELOG.md` of `dart-packages/cratestack_cbor`, `cratestack_annotations` and `cratestack_builder`),
   never under the newest dated section. A release bump promotes `## Unreleased` into a dated section and
   re-seeds a fresh, empty one above it (`.ci/changelog-seed.sh`), so it's always there for the next PR.
 

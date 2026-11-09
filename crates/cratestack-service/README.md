@@ -33,7 +33,7 @@ table: those are application specifics, not framework surface.
 
 ```toml
 [dependencies]
-cratestack-service = "0.7"
+cratestack-service = "0.19"
 ```
 
 A `cratestack-api`/`cratestack-sqlite` service that wants the config/
@@ -41,7 +41,7 @@ health/telemetry/run surface without pulling in `sqlx`:
 
 ```toml
 [dependencies]
-cratestack-service = { version = "0.7", default-features = false }
+cratestack-service = { version = "0.19", default-features = false }
 ```
 
 With `postgres` disabled, `ServiceConfig` has no `database_url` field, the

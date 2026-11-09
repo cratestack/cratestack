@@ -36,9 +36,10 @@ use cratestack_sql::ModelDescriptor;
 
 /// Build the `CREATE TABLE IF NOT EXISTS` statement for a descriptor.
 ///
-/// Column types are best-effort: anything we can't infer falls back to
-/// SQLite's catch-all `TEXT` affinity, which is the safest default given
-/// our binding choices (UUID, DateTime, Decimal, JSON all bind as TEXT).
+/// Column types are not inferred: every column is declared `BLOB`, which
+/// gives SQLite's catch-all (`NONE`) affinity, so each value is stored as
+/// bound (UUID, DateTime, Decimal and JSON all bind as TEXT) with no
+/// coercion.
 /// The primary key is marked `PRIMARY KEY` inline.
 pub fn create_table_sql<M, PK>(descriptor: &ModelDescriptor<M, PK>) -> String {
     let mut sql = format!("CREATE TABLE IF NOT EXISTS {} (\n", descriptor.table_name);

@@ -21,9 +21,9 @@ All three are re-exported through the facade crates `cratestack-pg`, `cratestack
 ```toml
 [dependencies]
 # Server-side
-cratestack = { package = "cratestack-pg", version = "0.7" }
+cratestack = { package = "cratestack-pg", version = "0.19" }
 # OR embedded-side
-# cratestack = { package = "cratestack-sqlite", version = "0.7" }
+# cratestack = { package = "cratestack-sqlite", version = "0.19" }
 ```
 
 ## `include_server_schema!`

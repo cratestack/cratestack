@@ -86,8 +86,8 @@ The full list of deferred work — across the migrate crate *and* the
 rest of CrateStack — lives in the centralized [Roadmap]. The items
 specific to this crate are:
 
-- `cratestack migrate verify` — replay generated migrations against
-  an ephemeral Postgres / SQLite and compare to the snapshot.
+- A verify step — replay generated migrations against an ephemeral
+  Postgres / SQLite and compare to the snapshot (no CLI command yet).
 - `DropEnumVariant` — needs the Postgres swap-dance and a backfill
   plan for referencing rows.
 - SQLite/embedded baselining — `migrate baseline` is Postgres-only for

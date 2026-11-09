@@ -6,8 +6,8 @@
 //! The snapshot is written as pretty-printed JSON, one file per
 //! backend (`migrations/postgres/schema.snapshot.json`,
 //! `migrations/sqlite/schema.snapshot.json`). It must be committed
-//! to source control — `cratestack migrate verify` is the CI gate
-//! that confirms it hasn't been tampered with.
+//! to source control: `cratestack migrate diff` compares the schema
+//! against it.
 //!
 //! **Format version 2 (issue #205):** the snapshot stores
 //! [`Projections`] — the backend-agnostic IR — rather than a full

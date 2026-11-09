@@ -13,7 +13,7 @@
 //! offers nothing else.
 //!
 //! **The hard guarantee this crate exists for:** `cratestack-axum` — and
-//! therefore `axum`/`tower`/`hyper`/`tower-http`, a full server framework —
+//! therefore `axum`, a full server framework —
 //! is structurally absent from `Cargo.toml`, not merely switched off behind
 //! a feature. `examples/client-only-verification` (its own standalone
 //! `[workspace]` root, mirroring `examples/no-database-verification-api`'s

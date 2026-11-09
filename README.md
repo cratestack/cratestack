@@ -85,7 +85,7 @@ Add the facade that matches what you're building:
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-pg", version = "0.11" }
+cratestack = { package = "cratestack-pg", version = "0.19" }
 ```
 
 And point the macro at your schema:
@@ -113,10 +113,10 @@ All four expose their library as `cratestack`, so you select one with Cargo's
 
 | You're building | Dependency | Entry macro |
 | --- | --- | --- |
-| An HTTP service that owns a Postgres database | `cratestack = { package = "cratestack-pg", version = "0.11" }` | `include_server_schema!("schema.cstack", db = Postgres)` |
-| A procedures-only service with no database at all | `cratestack = { package = "cratestack-api", version = "0.11" }` | `include_server_schema!("schema.cstack", db = None)` |
-| A mobile / desktop / browser app with a local SQLite | `cratestack = { package = "cratestack-sqlite", version = "0.11" }` | `include_embedded_schema!("schema.cstack")` |
-| A crate that only *calls* a CrateStack service | `cratestack = { package = "cratestack-client", version = "0.11" }` | `include_client_schema!("../schemas/billing.cstack")` |
+| An HTTP service that owns a Postgres database | `cratestack = { package = "cratestack-pg", version = "0.19" }` | `include_server_schema!("schema.cstack", db = Postgres)` |
+| A procedures-only service with no database at all | `cratestack = { package = "cratestack-api", version = "0.19" }` | `include_server_schema!("schema.cstack", db = None)` |
+| A mobile / desktop / browser app with a local SQLite | `cratestack = { package = "cratestack-sqlite", version = "0.19" }` | `include_embedded_schema!("schema.cstack")` |
+| A crate that only *calls* a CrateStack service | `cratestack = { package = "cratestack-client", version = "0.19" }` | `include_client_schema!("../schemas/billing.cstack")` |
 
 **Pick exactly one per crate.** The macros are strictly disjoint by design and
 the split is enforced by CI, not just documented:
@@ -262,9 +262,9 @@ can break. Known limits worth knowing before you adopt it:
 
 - `db = Postgres` is the only sqlx backend today. The parser is wired so adding
   others is non-breaking at existing call sites.
-- Generated routers enforce a **single configured codec** rather than negotiating
-  per request. `application/cbor-seq` is a documented target, not an
-  implementation.
+- Generated routers negotiate the response codec per request from `Accept`
+  (a `CodecSet` serves CBOR and JSON side by side; a single configured codec
+  is also supported), and `@stream` procedures answer as `application/cbor-seq`.
 - The embedded backend does not enforce `@@allow` / `@@deny`. This is a design
   decision, not a gap — see above.
 - Exact typed non-Rust client generation across arbitrary projection shapes is

@@ -9,7 +9,7 @@ Add it as a dev-dependency of the crate that defines your provider:
 
 ```toml
 [dev-dependencies]
-cratestack-auth-conformance = "0.17"
+cratestack-auth-conformance = "0.19"
 ```
 
 ```rust

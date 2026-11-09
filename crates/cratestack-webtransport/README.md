@@ -43,7 +43,7 @@ extension webtransport {
 ```
 
 ```toml
-cratestack = { package = "cratestack-pg", version = "0.17", features = ["webtransport"] }
+cratestack = { package = "cratestack-pg", version = "0.19", features = ["webtransport"] }
 ```
 
 ```rust,ignore

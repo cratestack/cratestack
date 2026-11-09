@@ -17,7 +17,7 @@
 //! ### Try it
 //!
 //! ```bash
-//! curl -s http://127.0.0.1:3000/Article \
+//! curl -s http://127.0.0.1:3000/articles \
 //!   -H "x-auth-id: 1" \
 //!   -H "accept: application/json"
 //! ```
