@@ -1,0 +1,18 @@
+// A REST `subscription procedure` under `db = None`
+// (`tests/subscription_rate_limit_sse_rest.rs`): served as SSE at
+// `GET /$procs/countdown`.
+
+datasource db {
+  provider = "none"
+}
+
+type CountArgs {
+  to Int
+}
+
+type Tick {
+  n Int
+}
+
+subscription procedure countdown(args: CountArgs): Tick
+  @allow(auth() != null)

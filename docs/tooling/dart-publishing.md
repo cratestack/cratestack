@@ -462,7 +462,7 @@ because these are **pure Dart** packages:
 
 **They are sequenced, not parallel.** `publish-pubdev-builder` declares
 `needs: [prepare, publish-pubdev-annotations, preflight, publish-crates]`. Today the order is not
-load-bearing — `cratestack_builder` depends on `cratestack_annotations: '>=0.8.10 <0.10.0'`, already
+load-bearing — `cratestack_builder` depends on `cratestack_annotations: '>=0.8.10 <0.20.0'` (ceiling rewritten by `just bump`), already
 published, so it resolves either way — but on a release where the builder requires a version of the
 annotation package that the same run is publishing, parallel jobs would race and the builder's
 publish would fail version solving.
@@ -505,7 +505,15 @@ The rule, therefore:
 > Raise this constraint **only** when the builder begins using a newly-added annotation field.
 > Never as part of a routine version bump.
 
-Which leaves nothing for `just bump` to do here, and no reason to teach it otherwise.
+Which leaves nothing for `just bump` to do about the **floor**.
+
+> **Update (0.19.3): the ceiling is the exception, and `just bump` now rewrites it.** The
+> `cratestack_annotations` ceiling is a version relationship, not an API requirement. Treating the
+> whole line as untouchable let it sit at `<0.10.0` through 0.10.x - 0.19.x, so pub resolved the stale
+> 0.9.x annotations instead of the lockstep release. `just bump` now sets the ceiling to the next minor
+> after the new version (the `release_line.rs` rule, so the builder and the generated clients agree),
+> asserts the rewrite landed, and `builder_annotations_ceiling_follows_the_release_line` fails if they
+> diverge. The floor is still never touched.
 
 #### Corrected again, cratestack#754 — the number in this section was wrong
 

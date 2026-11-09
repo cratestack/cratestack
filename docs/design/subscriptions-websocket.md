@@ -553,6 +553,7 @@ interval. The interval matches `cratestack-sync`'s `KeepAlive` (`http/stream.rs:
 | Limit | Default | Exceeded → |
 |---|---|---|
 | Subscriptions per socket | 64 | `Error{resource_exhausted}` on that `Request`; socket stays |
+| Subscription opens (rate limit, opt-in) | the application's `RateLimitConfig` | `Error{resource_exhausted, details.retry_after_secs}` on that `Request`; socket stays |
 | Sockets per principal | 8 | Close 4429 at `Init`/upgrade |
 | Inbound frame size | `DEFAULT_BODY_LIMIT_BYTES` (2 MiB, request-response-size-bounds.md) | Close 1009 |
 | Per-subscription buffer | 64 events (as today) | That subscription ends `unavailable`; socket stays |
@@ -576,6 +577,44 @@ concrete multiplexing need.
 > depends on `cratestack-exec`, and the generated dispatcher calls no rate limiter. The admission
 > limits on a socket are `WebSocketLimits`' (subscriptions per socket, sockets per principal).
 > O5 was decided as proposed: unary over WS stays gated.
+
+> **Update (0.19.3):** resolved for subscription opens, opt-in. `WebSocketConfig::rate_limit(..)`
+> and `WebTransportConfig::rate_limit(..)` take a `cratestack_core::subscription_wire::SubscriptionRateLimit`
+> (the seam, an L0 trait: neither binding gains a dependency, so `cratestack-webtransport` stays
+> free of axum and `cratestack-exec`). `cratestack_axum::ratelimit::SubscriptionRateLimiter`
+> implements it over `OpExecutor::admit_rate_limit`, reusing the HTTP layer's key hashing, IPv6 /64
+> aggregation, `StoreErrorPolicy`, lookup timeout and warning throttle; `RateLimitLayer::for_subscriptions()`
+> builds one on the layer's own store and `RateLimitConfig`. Without `.rate_limit(..)` nothing
+> changes (not breaking).
+>
+> - **One token per `Request`** (one stream on WebTransport), charged after the per-socket
+>   (per-session) cap and before the subscription's policy, as HTTP charges before the handler.
+>   The upgrade/`Init` is not charged: sockets per principal already bound sessions. An unknown
+>   op id is charged too (fail closed, like HTTP's unresolved op).
+> - **Key**, HTTP's precedence on an already verified session: `princ:<sha256 of the principal
+>   key>`, else `ip:<peer>` (IPv6 aggregated to its /64), else the open is refused
+>   `failed_precondition` (HTTP's 412 rule, cratestack#416): a WebSocket served without
+>   `into_make_service_with_connect_info`. WebTransport always has the QUIC peer. No `auth:` key is
+>   minted, because identity is verified before admission. WS and WT share the namespace, so
+>   `Auto`'s WT-to-WS fallback does not buy a second budget. `princ:` is HTTP's bucket only when
+>   the application's `VerifiedPrincipal` string equals the binding's principal key (not so for
+>   COSE's `cose:<thumbprint>`).
+> - **Refusal:** `{id, err: {code: "resource_exhausted", details: {"retry_after_secs": N}}}` on that
+>   subscription's id, before `Ready`; the socket or session stays up and the slot is freed. The
+>   `details.retry_after_secs` member is additive and optional (frames carry no `Retry-After`
+>   header). No close code is used, and `4429` stays the session cap. Other refusals are that error's
+>   frame (`failed_precondition`, or `unavailable`/`internal` when `StoreErrorPolicy` refuses a store
+>   failure). A generated client reads it as a refusal (status 429, `details` intact) and `Auto`
+>   does not fall back.
+> - **Participation:** subscription ops cannot be `@no_rate_limit` (the parser refuses it on a
+>   subscription procedure; model feeds are always charged), so every open is charged.
+>   `SubscriptionRateLimiter::with_op_resolver` is a hook for parity.
+> - **SSE** (`/rpc/subscribe/{op}`, `GET /<plural>/$subscribe`, `GET /$procs/<name>`) needed no
+>   change: `RateLimitLayer` over the generated router charges the open once; tests now pin it. A
+>   WebSocket router merged *under* `.layer(RateLimitLayer)` additionally pays one token for the
+>   upgrade GET, and a browser upgrade has no `Authorization`, so without `ConnectInfo` it gets the
+>   layer's existing 412. Merge the WebSocket router outside the layer, or serve with
+>   `into_make_service_with_connect_info`.
 
 ## 6a. The WebTransport binding
 
@@ -670,7 +709,9 @@ WS and WebTransport share them.
   sends here are credentials (`Init`) or a policy-checked `Request`.
 - **Limits** reuse §6.6's table, enforced by our code. The QUIC bidirectional-stream limit is a
   hard ceiling set **above** the subscription limit (twice it, plus the control and CONNECT
-  streams). *As built:* setting it equal to the limit made the client's next stream open wait
+  streams). Opens are also rate limited when configured (§6.7, 0.19.3): one token per stream,
+  refused with `resource_exhausted` and `details.retry_after_secs`, session and QUIC stream credit
+  untouched. *As built:* setting it equal to the limit made the client's next stream open wait
   silently for credit, so the explicit `resource_exhausted` §6.6 promises could never be sent.
   Frames are capped while still incomplete, so a client cannot make the server buffer an unbounded
   frame. Keepalive is QUIC's own: PING
@@ -749,7 +790,8 @@ These are deployment requirements, written into the docs and the example's READM
 - **Client IP.** There are no forwarding headers on this path, and PROXY protocol over UDP is not
   widely supported. The binding uses the QUIC peer address and needs a balancer that preserves the
   source address. `trusted-proxy-client-ip.md`'s header logic does not apply here, and rate-limit
-  keys should prefer the principal.
+  keys prefer the principal. *As built (0.19.3, §6.7):* `princ:<hash>` first, then `ip:<QUIC peer>`
+  (IPv6 aggregated to its /64).
 - **Fallback is mandatory, not optional.** Some networks block UDP 443, and Safari before 26.4 has
   no WebTransport. Every generated client tries WebTransport, then WS, then SSE (§8), and the
   §2.1 contract is identical on all three, so application code cannot tell which one it got.
@@ -849,6 +891,10 @@ Neither pulls `axum`, so the `facade-disjointness` CI assertion is unchanged. `@
 - **Backplane:** imperative, at router construction, like every other store:
   `rpc_router(…).with_backplane(PgNotifyBackplane::new(pool.clone()))`. Defaults are listed in §4.1;
   decision O6.
+- **Rate limiting** (0.19.3, opt-in, §6.7): `.rate_limit(layer.for_subscriptions())` on
+  `WebSocketConfig` / `WebTransportConfig`, with `layer` the application's `RateLimitLayer`:
+  `db.subscriptions(registry).websocket(WebSocketConfig::new().rate_limit(layer.for_subscriptions()), auth)`.
+  Serve with `into_make_service_with_connect_info::<SocketAddr>()` so anonymous sockets have a peer.
 - **Disjointness:** `include_server_schema!(db = None)` gets subscription procedures and topics, with
   an in-process or Redis backplane, and no sqlx. Model feeds stay `db = Postgres`-only, because they
   need a model. The embedded and client macros emit no server subscription code.
@@ -858,7 +904,7 @@ Neither pulls `axum`, so the `facade-disjointness` CI assertion is unchanged. `@
 One span per subscription (`cratestack_operation = "subscription"`, `cratestack_op_id`, principal,
 binding: `sse` | `ws` | `webtransport`), closed with `delivered`, `dropped_by_policy`, and
 `end_reason` set to one of `cancel`, `disconnect`, `lagged`, `resync`, `stream_end`, `error`,
-`expired`. WebTransport sessions add QUIC statistics: RTT, lost packets, migrations, datagrams
+`expired`; a WebTransport stream refused by the rate limit ends `rate_limited`. WebTransport sessions add QUIC statistics: RTT, lost packets, migrations, datagrams
 dropped for size. The client reports which binding `auto` settled on, so operators can see how much
 traffic actually falls back. The metrics are an active-subscription
 gauge per op, lag and resync counters, refetch-query counts for class B, and backplane listener

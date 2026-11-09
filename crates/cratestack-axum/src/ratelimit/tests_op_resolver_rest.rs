@@ -121,3 +121,43 @@ async fn the_rest_ops_filter_cannot_see_through_nest() {
         StatusCode::PRECONDITION_FAILED
     );
 }
+
+/// The model-feed route `GET /<plural>/$subscribe` carries
+/// `rate_limited_by_default: true` (`transport/rest_subscribe.rs`), so the
+/// REST resolver charges its open (design `subscriptions-websocket.md` §6.7).
+#[tokio::test]
+async fn a_model_feed_subscribe_route_resolves_charged() {
+    const FEED: &[RouteTransportDescriptor] = &[RouteTransportDescriptor {
+        name: "Widget",
+        method: "GET",
+        path: "/widgets/$subscribe",
+        capabilities: CAPS,
+        idempotent_by_default: true,
+        rate_limited_by_default: true,
+    }];
+    let router = Router::new()
+        .route("/widgets/$subscribe", get(ok))
+        .route_layer(
+            RateLimitLayer::new(
+                Arc::new(InMemoryRateLimitStore::default()),
+                RateLimitConfig::new(1, 0.001),
+            )
+            .with_op_resolver(crate::idempotency::build_rest_op_resolver(FEED)),
+        );
+    let feed = || {
+        let mut request = Request::get("/widgets/$subscribe")
+            .body(Body::empty())
+            .unwrap();
+        let peer: std::net::SocketAddr = "192.0.2.1:1".parse().unwrap();
+        request.extensions_mut().insert(ConnectInfo(peer));
+        request
+    };
+    assert_eq!(
+        router.clone().oneshot(feed()).await.unwrap().status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        router.oneshot(feed()).await.unwrap().status(),
+        StatusCode::TOO_MANY_REQUESTS
+    );
+}

@@ -3,7 +3,7 @@
 //! Frames go to the socket's outbound queue; a queue too full to take one
 //! closes the socket (1013) rather than drop it silently.
 
-use cratestack_core::subscription_wire::ServerFrame;
+use cratestack_core::subscription_wire::{ServerFrame, SessionCharger};
 use cratestack_core::{SubscriptionDispatcher, SubscriptionOpen};
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
@@ -26,6 +26,7 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
     id: u64,
     out: mpsc::Sender<Outbound>,
     overflow: std::sync::Arc<tokio::sync::Notify>,
+    charger: SessionCharger,
 ) {
     let send = |frame| {
         let queued = queue(&out, Outbound::Frame(frame));
@@ -34,6 +35,13 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
         }
         queued
     };
+    // After the cheap local checks, before policy: the way HTTP charges
+    // before the handler. An unknown op is charged too (fail closed).
+    if let Err(refusal) = charger.admit(&open.op_id).await {
+        send(refusal.frame(id));
+        let _ = out.try_send(Outbound::Done(id));
+        return;
+    }
     match dispatcher.open(open).await {
         Err(error) => {
             send(ServerFrame::err(id, &error));

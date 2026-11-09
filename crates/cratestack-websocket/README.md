@@ -27,4 +27,11 @@ Limits (`WebSocketLimits`): 64 subscriptions per socket (`resource_exhausted` pa
 1024-frame outbound queue (close 1013), a ping every 15 s with 30 s to answer. A refusal sends
 `{id: 0, err}` before closing with 4401, 4403, 4400 or 4500.
 
+Rate limiting is opt-in: `WebSocketConfig::new().rate_limit(layer.for_subscriptions())`, with
+`layer` the application's `cratestack_axum::ratelimit::RateLimitLayer`, charges each `Request` one
+token in the HTTP layer's store (bucket `princ:<hash>`, else `ip:<peer>`). A throttled open is an
+`err` frame on that id, before `Ready`: `resource_exhausted` with `details.retry_after_secs`, and
+the socket stays open. Serve with `into_make_service_with_connect_info::<SocketAddr>()`, or an
+anonymous socket (no principal, no peer) is refused `failed_precondition`.
+
 [design]: https://github.com/cratestack/cratestack/blob/main/docs/design/subscriptions-websocket.md

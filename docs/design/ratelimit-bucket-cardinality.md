@@ -188,6 +188,25 @@ the map, then walk through unthrottled", which is cratestack#846's bypass in a
 different hat. The cap refuses only the marginal *new* identity; buckets that
 already exist keep being served.
 
+## Subscription sessions (0.19.3)
+
+WebSocket and WebTransport subscription opens are charged through
+`RateLimitLayer::for_subscriptions()` (design `subscriptions-websocket.md` §6.7), one token per
+`Request`. They mint only two key shapes, and neither is caller-mintable:
+
+- `princ:<sha256>` of the session's principal key. The session is already authenticated when the
+  open is charged, so the keyspace is bounded by the number of principals, as with HTTP's
+  `VerifiedPrincipal` branch. Unbudgeted.
+- `ip:<addr>` for an anonymous session (IPv6 aggregated to its /64 by the same `bucket_address`),
+  from the verified `ConnectInfo` peer or the QUIC peer. Unbudgeted, with the same bound as HTTP's
+  `ConnectInfo`-only branch. Without a peer the open is refused `failed_precondition` and no key
+  is built.
+
+No `auth:` key is ever minted here, because there is no unverified header to hash, so no
+`BucketBudget` is attached. WebSocket and WebTransport share the namespace, and `princ:` is the
+same bucket HTTP uses when the application's `VerifiedPrincipal` string equals the binding's
+principal key (it does not for COSE's `cose:<thumbprint>`). MCP keeps its own `mcp:` namespace.
+
 ## What is NOT bounded
 
 Stated plainly, because a security control that overstates its coverage is worse
