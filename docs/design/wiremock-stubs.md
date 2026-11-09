@@ -93,10 +93,10 @@ Read before designing, not assumed:
   `CratestackError::status_code()` (400/401/403/404/409/422/503/500/…) — out of
   scope for v1 (see §7), but real for a future error-stub slice to target.
   *(Update (0.7.11): #407 is closed — `@status(<code>)` now declares a REST
-  procedure's success status (#511). The generator does not read it: every
-  procedure mapping still answers `200`
-  (`crates/cratestack-mock-wiremock/src/mapping.rs`), so a `@status(202)`
-  procedure's stub disagrees with the real server.)*
+  procedure's success status (#511). Fixed in 0.19.3: the generator reads
+  it, so a `@status(202)` procedure's stub answers `202` like the real
+  server (`200` when absent; `@status` is REST-only, so RPC stubs stay
+  `200`). Before 0.19.3 every procedure mapping hardcoded `200`.)*
 - **Model CRUD routes are a different, richer shape.** `model` blocks get
   five REST routes each (`generate_model_axum_routes` in
   `crates/cratestack-macros/src/axum/model/routes.rs`): `GET`/`POST
@@ -382,7 +382,7 @@ static shape this section describes.
   the stateful treatment — see §9.4.
 - **Status codes.** `create` is `201`, matching
   `build_create_handler`'s literal `StatusCode::CREATED` — the one place
-  a model stub's status differs from every procedure stub's `200`.
+  a model stub's status differs from a default (no `@status`) procedure stub's `200`.
   `list`/`get`/`update`/`delete` are all `200`.
 - **The static baseline's response bodies mirror the default
   projection, not a full model dump.** A `get`/`list`/`create`/

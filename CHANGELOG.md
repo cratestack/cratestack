@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### WireMock procedure stubs honour `@status(<code>)`
+
+`cratestack-mock-wiremock` hardcoded `200` in every procedure stub, so a procedure declaring
+`@status(202)` (#511) was stubbed with a status the real server never returns. The generated mapping's
+`response.status` is now the procedure's declared `@status` and `200` when absent (RPC procedures, where
+`@status` is rejected at parse time, stay `200`). Regenerate committed stubs if you have any procedure
+with `@status`. Docs: `docs/design/wiremock-stubs.md` and the crate README updated.
+
 ### Documentation sweep: design docs, ADRs, tooling, contributing and READMEs brought up to 0.19.x (docs only)
 
 No behaviour change and nothing breaking. About eighty files: the design docs and ADRs under `docs/`
