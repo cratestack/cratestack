@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.3 (2026-11-09)
+
 ### `rusqlite` 0.41 bundles SQLite 3.54 (RUSTSEC-2026-0459) (dependency)
 
 `rusqlite` 0.40.2 to 0.41.1 and `libsqlite3-sys` 0.38.2 to 0.39.1. SQLite before 3.54.0 could return
