@@ -69,6 +69,12 @@ serde_json.workspace = true
 # needed (encode/decode are pure CPU-bound work), so this pulls a narrower
 # feature set than the example (no "async"/"tokio_rt"/"chrono_date").
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# The COSE envelope (issue #1010): the one implementation, shared with the
+# wasm build and the Rust client. Host only, like the napi runtime that
+# exposes it (`src/cose`).
+cratestack-cose.workspace = true
+bytes.workspace = true
+zeroize.workspace = true
 napi = { version = "3", default-features = false, features = ["napi9", "serde-json"] }
 napi-derive = "3"
 

@@ -111,11 +111,14 @@ mod addon {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod compact;
+mod cose;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use addon::*;
 #[cfg(not(target_arch = "wasm32"))]
 pub use compact::CompactKeys;
+#[cfg(not(target_arch = "wasm32"))]
+pub use cose::{ClientEnvelope, PendingSeal, canonical_query, contract_header_value};
 
 #[cfg(test)]
 mod tests {
