@@ -4541,6 +4541,22 @@ bump NEW:
 	# relationship; see docs/tooling/dart-publishing.md's "Corrected
 	# 2026-08-23" section for why bumping it would destroy that meaning.
 	perl -i -pe "s/^version: .*\$/version: {{NEW}}/" dart-packages/*/pubspec.yaml
+	# The builder's `cratestack_annotations` CEILING follows the release line
+	# (next minor after the new version), the one part of that constraint that
+	# IS a version relationship; the floor is an API requirement and is left
+	# alone. Missing this left it at `<0.10.0` through 0.19.x. Same rule as
+	# crates/cratestack-client-dart/src/release_line.rs; guarded by
+	# `builder_annotations_ceiling_follows_the_release_line`.
+	new_version="{{NEW}}"
+	new_major="${new_version%%.*}"
+	new_rest="${new_version#*.}"
+	new_minor="${new_rest%%.*}"
+	annotations_ceiling="${new_major}.$((new_minor + 1)).0"
+	perl -i -pe "s/^(  cratestack_annotations: '>=[0-9.]+ <)[0-9.]+(')/\${1}$annotations_ceiling\${2}/" dart-packages/cratestack_builder/pubspec.yaml
+	grep -q "^  cratestack_annotations: '>=[0-9.]* <${annotations_ceiling}'" dart-packages/cratestack_builder/pubspec.yaml || {
+	  echo "bump: cratestack_builder's cratestack_annotations ceiling was not rewritten to <${annotations_ceiling}" >&2
+	  exit 1
+	}
 	# Post-condition, because the rewrite above can still miss a file the
 	# glob doesn't reach (a new dart-packages/ layout, a nested pubspec) and
 	# a `version:` key that isn't where we expect is exactly the failure this

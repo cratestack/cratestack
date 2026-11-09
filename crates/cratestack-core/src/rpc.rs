@@ -118,4 +118,4 @@ pub use error_body::RpcErrorBody;
 // `TransactionAborted` (GHSA-r67q-4qqq-g9gm) added an arm to each.
 mod codes;
 
-pub use codes::{cratestack_error_code_to_rpc_code, rpc_code};
+pub use codes::{cratestack_error_code_to_rpc_code, rpc_code, rpc_code_to_cratestack_error_code};

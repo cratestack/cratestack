@@ -4,6 +4,7 @@
 //! cancelled, and the dispatcher's stream is dropped right there — which is
 //! how the subscription's backplane registration is released.
 
+use cratestack_core::subscription_wire::SessionCharger;
 use cratestack_core::{
     CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen,
 };
@@ -26,6 +27,8 @@ pub(crate) struct StreamCtx<D> {
     pub(crate) ctx: CratestackContext,
     /// `None` when the session is already at its subscription limit.
     pub(crate) permit: Option<OwnedSemaphorePermit>,
+    /// Who pays for this stream's open (design §6.7).
+    pub(crate) charger: SessionCharger,
 }
 
 pub(crate) async fn run<D: SubscriptionDispatcher>(
@@ -60,9 +63,16 @@ pub(crate) async fn run<D: SubscriptionDispatcher>(
         input,
         ctx: stream.ctx,
     };
-    drive(stream.dispatcher, open, id, codec, permit, send)
-        .instrument(span)
-        .await;
+    drive(
+        stream.dispatcher,
+        open,
+        id,
+        codec,
+        (permit, stream.charger),
+        send,
+    )
+    .instrument(span)
+    .await;
     // Read the client's half to its FIN before letting go. Dropping it
     // earlier sends STOP_SENDING, and a browser whose FIN for the `Request`
     // has not landed yet surfaces that as a rejected `writer.close()` on a
@@ -75,7 +85,7 @@ async fn drive<D: SubscriptionDispatcher>(
     open: SubscriptionOpen,
     id: u64,
     codec: WireCodec,
-    permit: Option<OwnedSemaphorePermit>,
+    (permit, charger): (Option<OwnedSemaphorePermit>, SessionCharger),
     mut send: SendHalf,
 ) {
     let span = tracing::Span::current();
@@ -92,6 +102,16 @@ async fn drive<D: SubscriptionDispatcher>(
         )
         .await;
     };
+
+    // After the session's subscription cap, before policy: the way HTTP
+    // charges before the handler. The permit is held, and freed on refusal.
+    let admitted = tokio::select! {
+        admitted = charger.admit(&open.op_id) => admitted,
+        () = send.stopped() => return span_end(&span, "cancel", 0),
+    };
+    if let Err(refusal) = admitted {
+        return finish_with(&span, &mut send, codec, refusal.frame(id), "rate_limited").await;
+    }
 
     let opened = tokio::select! {
         opened = dispatcher.open(open) => opened,

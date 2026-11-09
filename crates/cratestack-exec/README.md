@@ -11,7 +11,10 @@ cratestack#877).
 You do not depend on this crate directly. It arrives transitively through whichever facade
 your schema selected (`cratestack-pg`, `cratestack-api`), and the HTTP entry points stay
 `cratestack_axum::idempotency::IdempotencyLayer` and `cratestack_axum::ratelimit::RateLimitLayer`,
-which are thin adapters over `OpExecutor::admit` and `OpExecutor::admit_rate_limit`.
+which are thin adapters over `OpExecutor::admit` and `OpExecutor::admit_rate_limit`. So is
+`cratestack_axum::ratelimit::SubscriptionRateLimiter`, which the WebSocket and WebTransport
+bindings call through `cratestack_core::subscription_wire::SubscriptionRateLimit` to charge each
+subscription open; neither binding depends on this crate.
 
 ## What is here
 

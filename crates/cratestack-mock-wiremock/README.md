@@ -108,6 +108,7 @@ procedure hello(): Greeting
 
 ## Design choices worth knowing before you rely on this
 
+- **Procedure stubs answer the procedure's `@status(<code>)`** (REST only; `200` when absent and under `transport rpc`), the same status the real server returns.
 - **Procedures stay deterministic, not random.** Two runs against an unchanged schema produce byte-identical output (fixed per-scalar-type defaults: `String` -> `"string"`, `Int` -> `0`, `DateTime` -> a fixed epoch timestamp, etc. — see `src/values.rs`). Model CRUD *responses* are dynamic at request time (that's the point), but the generated *stub files* are just as deterministic — see "Installation" above.
 - **No request-body matching, still.** A stub matches on method + path (+ the `If-Match` request *header*, for an `@version` model's `update`/`delete` — see above) only; any request body is accepted (its content drives what gets echoed/stored for stateful fields, but a malformed or unexpected body doesn't make the stub itself fail to match). Real negative-path test coverage (validation errors, `404`s from bad input, auth rejection) needs hand-authored stubs layered on top.
 - **Self-referential schemas terminate, they don't hang.** A field whose type cycles back to a type already being expanded resolves to `null` (optional) or `[]` (list) instead of recursing forever; a `Required`-arity cycle with no such escape hatch is a hard [`WireMockGeneratorError::UnbreakableCycle`], not a stack overflow.

@@ -402,3 +402,8 @@ required-features = ["cose"]
 name = "compact_client_sealed_rpc"
 path = "tests/compact_client_sealed_rpc.rs"
 required-features = ["cose"]
+
+[[test]]
+name = "websocket_rate_limit"
+path = "tests/websocket_rate_limit.rs"
+required-features = ["websocket", "client-ws"]

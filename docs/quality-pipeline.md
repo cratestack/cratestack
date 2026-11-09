@@ -146,7 +146,9 @@ Every scanner is installed at the start of the `quality` job — see `.ci/qualit
 | **Pull Request** | `pr` | Scan PR diffs; fail on error-level findings; post PR check |
 | **Push to main** | `full` | Full scan; advisory except `cargo deny`, which fails the job; no PR check (already merged) |
 | **Weekly schedule** | `full` | Full scan; advisory except `cargo deny`; useful for catching retroactive vulnerabilities |
-| **Manual dispatch** | User choice | Run on demand |
+| **Manual dispatch** | `full` | Run on demand (the workflow has no scan-type input, so it is a full scan) |
+
+The workflow passes the scan type to `.ci/quality/run.sh` through the `SCAN_TYPE` environment variable. The script resolves it as: explicit argument, else `SCAN_TYPE`, else `pr`. Today only gitleaks branches on it (`pr` scans `origin/main..HEAD`; anything else scans all reachable history).
 
 ## Configuration & Customization
 

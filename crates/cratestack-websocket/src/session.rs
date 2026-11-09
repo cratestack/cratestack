@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
 use cratestack_core::subscription_wire::{
-    ClientMessage, Handshake, ServerFrame, authenticate_session, close_code, init_headers,
-    session_key,
+    ClientMessage, Handshake, ServerFrame, SessionCharger, authenticate_session, close_code,
+    init_headers, session_key,
 };
 use cratestack_core::{AuthProvider, CratestackContext, CratestackError, SubscriptionDispatcher};
 use cratestack_core::{SubscriptionOpen, subscription_wire::ClientFrame};
@@ -35,6 +35,7 @@ pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
     codec: WireCodec,
     handshake: Handshake,
     remote: IpAddr,
+    peer: Option<IpAddr>,
 ) {
     let span =
         tracing::info_span!("cratestack_websocket_session", %remote, close = tracing::field::Empty);
@@ -75,7 +76,8 @@ pub(crate) async fn run<A: AuthProvider, D: SubscriptionDispatcher>(
         {
             return;
         }
-        established(&shared, sink, stream, codec, &handshake, ctx, principal).await;
+        let charger = SessionCharger::new(shared.config.rate_limit.clone(), principal, peer);
+        established(&shared, sink, stream, codec, &handshake, ctx, charger).await;
     }
     .instrument(span)
     .await
@@ -88,7 +90,7 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
     codec: WireCodec,
     handshake: &Handshake,
     mut ctx: CratestackContext,
-    principal: Option<String>,
+    charger: SessionCharger,
 ) {
     let limits = &shared.config.limits;
     let (out, mut outbound) = mpsc::channel(limits.outbound_queue);
@@ -118,7 +120,7 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                             continue;
                         }
                         let request = SubscriptionOpen { op_id: op, input, ctx: ctx.clone() };
-                        let task = subscription::run(shared.dispatcher.clone(), request, id, out.clone(), overflow.clone());
+                        let task = subscription::run(shared.dispatcher.clone(), request, id, out.clone(), overflow.clone(), charger.clone());
                         open.insert(id, tokio::spawn(task.in_current_span()).abort_handle());
                     }
                     Ok(ClientMessage::Cancel { id }) => {
@@ -133,7 +135,7 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                             Ok(refreshed) => refreshed,
                             Err(error) => { refuse(&mut sink, codec, &error, "re-authentication failed").await; break; }
                         };
-                        if (shared.config.principal_key)(&refreshed) != principal {
+                        if (shared.config.principal_key)(&refreshed).as_deref() != charger.principal() {
                             let error = CratestackError::Forbidden("re-authentication named another principal".to_owned());
                             refuse(&mut sink, codec, &error, "principal changed").await;
                             break;

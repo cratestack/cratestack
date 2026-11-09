@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Dart: `cratestack_builder` no longer excludes the lockstep `cratestack_annotations`
+
+`cratestack_builder` constrained `cratestack_annotations` to `'>=0.8.10 <0.10.0'`, so on the 0.19.x line pub
+resolved the stale 0.9.x annotations instead of the matching release. The ceiling is now `<0.20.0`. Root
+cause: `just bump` only rewrote the `version:` line of each pubspec, so the hand-written ceiling went stale
+after cratestack#838 and nothing noticed. `just bump` now sets it to the next minor after the new version
+(the same rule generated clients use, `release_line.rs`) and fails if the rewrite does not land, and a
+`cratestack-client-dart` test pins it to the workspace release line. The floor (`0.8.10`) is an API
+requirement and is unchanged.
+
 ## 0.19.2 (2026-11-09)
 
 - No functional changes. Version kept in lockstep with the CrateStack

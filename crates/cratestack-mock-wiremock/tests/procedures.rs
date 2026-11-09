@@ -404,3 +404,34 @@ model Widget {
     );
     assert_eq!(package.files.len(), 5, "one file per model CRUD verb");
 }
+
+#[test]
+fn rest_procedure_stub_uses_the_declared_status_attribute() {
+    let schema = schema(&format!(
+        "{NO_DATASOURCE}
+type Greeting {{
+  message String
+}}
+
+mutation procedure submit(): Greeting
+@status(202)
+
+procedure hello(): Greeting
+"
+    ));
+
+    let package = generate_package(&schema, &WireMockGeneratorConfig::default())
+        .expect("generation should succeed");
+    let status_of = |name: &str| -> serde_json::Value {
+        let file = package
+            .files
+            .iter()
+            .find(|f| f.file_name == format!("mappings/{name}.json"))
+            .expect("mapping present");
+        serde_json::from_str::<serde_json::Value>(&file.contents).unwrap()["response"]["status"]
+            .clone()
+    };
+
+    assert_eq!(status_of("submit"), 202);
+    assert_eq!(status_of("hello"), 200);
+}
