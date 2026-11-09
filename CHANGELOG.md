@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### CI: quality pipeline honours the workflow's `SCAN_TYPE`
+
+`.ci/quality/run.sh` assigned `SCAN_TYPE="${1:-pr}"`, discarding the `SCAN_TYPE` environment variable that
+`.github/workflows/quality.yml` sets (`pr` on pull requests, `full` otherwise). Push, schedule and manual
+runs therefore did a `pr` scan, and gitleaks scanned `origin/main..HEAD` (empty on main) instead of the full
+history. Resolution is now: explicit argument, else `SCAN_TYPE`, else `pr`. Also corrects the stale script
+comment claiming the repo has no IaC files (it has one Dockerfile) and the manual-dispatch row of
+`docs/quality-pipeline.md`. Heads-up: the first push/scheduled run now scans full history and may surface
+findings the empty range hid.
+
 ### WireMock procedure stubs honour `@status(<code>)`
 
 `cratestack-mock-wiremock` hardcoded `200` in every procedure stub, so a procedure declaring

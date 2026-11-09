@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Quality check orchestrator — runs all scanners and produces SARIF reports
-# Usage: .ci/quality/run.sh [--scan-type=pr|full|scheduled]
+# Usage: .ci/quality/run.sh [pr|full|--scan-type=pr|full]
+# Precedence: explicit argument, else the SCAN_TYPE env var (set by
+# .github/workflows/quality.yml: pr on pull_request, full otherwise), else pr.
+# Only gitleaks branches on it today: pr scans origin/main..HEAD, anything else
+# scans all reachable history.
 
 set -euo pipefail
 
@@ -11,7 +15,7 @@ RULES_DIR="$PROJECT_ROOT/.ci/rules/semgrep"
 ACTIONLINT_SARIF_TEMPLATE="$PROJECT_ROOT/.ci/rules/actionlint/sarif.tmpl"
 GITLEAKS_BASELINE="$PROJECT_ROOT/.ci/baselines/gitleaks.toml"
 
-SCAN_TYPE="${1:-pr}"
+SCAN_TYPE="${1:-${SCAN_TYPE:-pr}}"
 if [[ "$SCAN_TYPE" == --scan-type=* ]]; then
   SCAN_TYPE="${SCAN_TYPE#--scan-type=}"
 fi
@@ -284,10 +288,10 @@ scan_gitleaks() {
 # GitHub Actions checker (its scanners are azure-arm, cloudformation,
 # dockerfile, helm, kubernetes, terraform, terraformplan-json,
 # terraformplan-snapshot, ansible — confirmed against a real trivy binary).
-# This repo has none of those IaC file types today, so this scanner
-# currently has nothing to check and will always report 0 config files
-# found — that's an accurate "not applicable" result, not a bug, and it's
-# kept for when/if this repo adds Terraform/Dockerfile/etc. GitHub Actions
+# This repo has exactly one such file today,
+# crates/cratestack-mock-wiremock/docker/Dockerfile, so this scanner has
+# almost nothing to check; it is kept for when this repo adds more
+# Terraform/Dockerfile/etc. GitHub Actions
 # workflow files are covered by actionlint below instead.
 # ============================================================================
 
