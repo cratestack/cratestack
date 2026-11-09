@@ -1,6 +1,8 @@
 ## Design proposal for #422: MSRV declaration + CI toolchain consumption (revised)
 
-> **Status: implemented.** The root `Cargo.toml` declares `rust-version = "1.95.0"` and CI runs a dedicated `msrv` job against it. This document is kept as the record of the judgement calls made under "Decisions needed" below, not as an open proposal.
+> **Status: implemented** (0.7.10, #422/#480). The root `Cargo.toml` declared `rust-version = "1.95.0"` and CI runs a dedicated `msrv` job against it, plus the three-way assertion in the `check` job. This document is kept as the record of the judgement calls made under "Decisions needed" below, not as an open proposal.
+>
+> **Update (0.9.1):** the toolchain moved to 1.98.0 and `rust-version` with it, in lockstep as the three-way assertion requires (`Cargo.toml` `rust-version = "1.98.0"`, `rust-toolchain.toml` `channel = "1.98.0"`, CI job `msrv (1.98.0)` in `.github/workflows/ci.yml`). The 1.95.0 figures and the `@stable` counts below are the state this proposal was written against. The separable half (2) also shipped: CI's `facade-disjointness` job builds the `examples/no-database-verification*` workspaces.
 
 This issue bundles two independent problems: (1) declaring/enforcing an MSRV, and (2) refreshing and wiring the `examples/no-database-verification*` verification workspaces into CI. Only (1) is blocked on a maintainer decision — (2) is mechanical and can ship as its own PR without waiting on this. This proposal covers only the blocked half, and now explicitly names that split as a decision rather than assuming it.
 

@@ -22,7 +22,7 @@ or proves only part of it, the table says so. It does not stretch a nearby test 
 | Schema validation | `crates/cratestack-parser/src/tests_mcp_*.rs` | `tests-host` |
 | Macro gate | `crates/cratestack-macros/tests/ui_mcp.rs` (trybuild), `src/include/mcp_gate/tests*.rs` | `tests-host` |
 | Facade graphs | `.github/workflows/ci.yml`, job `facade-disjointness`, step "rmcp absent without the mcp feature" | `facade-disjointness` |
-| **Third-party client** | `examples/mcp-operator/conformance/run.mjs` via `just mcp-conformance` (MCP Inspector CLI 2.8.0) | `mcp-example` (new in #1041) |
+| **Third-party client** | `examples/mcp-operator/conformance/run.mjs` via `just mcp-conformance` (MCP Inspector CLI, 2.8.0 when this plan was written; pinned at 2.13.0 in `examples/mcp-operator/conformance/package.json` as of 0.19.1) | `mcp-example` (new in #1041) |
 | Example provider and wiring | `examples/mcp-operator/tests/token.rs`, `tests/cli.rs` (no database), `tests/serve.rs` | `mcp-example`, `CRATESTACK_REQUIRE_DB=1` |
 
 The Inspector cases are cited as `conformance: "<case name>"`. They run over both stdio and

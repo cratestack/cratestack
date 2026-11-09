@@ -16,7 +16,7 @@ If your shop already runs Webpack 5, copy this example and skip the Vite version
 
 Identical to the Vite example — see [`../embedded-browser-vite/README.md`](../embedded-browser-vite/README.md#prerequisites).
 
-In short: Rust + `wasm32-unknown-unknown` target + `wasm-pack` + a wasm-capable clang (`brew install llvm` on macOS, or distro `clang` 14+ on Linux) + Node.js 18+ and pnpm.
+In short: Rust + `wasm32-unknown-unknown` target + `wasm-pack` + a wasm-capable clang (`brew install llvm` on macOS, or distro `clang` 14+ on Linux) + Node.js 24+ and pnpm 11 (pinned in `web/package.json`'s `packageManager`).
 
 ## Run
 

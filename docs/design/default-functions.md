@@ -1,6 +1,6 @@
 # Function-shaped `@default(...)` values
 
-Status: implemented by the PRs that close cratestack#1209 and cratestack#1234.
+Status: implemented by the PRs that close cratestack#1209 and cratestack#1234 (both released in 0.17.0).
 
 ## The problem
 

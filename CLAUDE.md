@@ -108,7 +108,7 @@ what that crate *is*:
 
 ### Four disjoint facades
 
-As of 0.4.0 the umbrella crate is split into facades consumers select via Cargo's `package =` rename —
+As of 0.4.2 the umbrella crate is split into facades consumers select via Cargo's `package =` rename —
 a fourth (`cratestack-client`) was added by cratestack#490:
 
 - `cratestack = { package = "cratestack-pg" }` — Postgres + Axum + Rust client runtime; for
@@ -158,7 +158,17 @@ The dependency flow is roughly: **parser → core/policy/sql → macros → back
   (`packages/cratestack-cbor-web`). `publish = false` (cdylib-only with no rlib; nothing could `cargo add`
   it usefully). `cratestack-studio-ui` — Leptos+Trunk web UI, excluded from the workspace to avoid forcing
   developers onto the wasm32 toolchain. `publish = false` (not a dependency, just a bundled web asset).
-- Tooling: `cratestack-cli`, `cratestack-lsp` (tower-lsp-server LSP for `.cstack`), `cratestack-migrate`,
+- Execution, auth and service batteries: `cratestack-exec` (L3 `OpExecutor`, the transport-neutral middle of
+  an operation), `cratestack-auth` (SigV4-style Ed25519 request signing, SD-JWT id tokens, JWKS resolution),
+  `cratestack-auth-conformance` (the `AuthProvider` conformance kit, a dev-dependency of provider tests),
+  `cratestack-cose` (COSE_Mac0 / COSE_Sign1 envelope over the CBOR codec's bytes, ADR 0006),
+  `cratestack-service` (service-bootstrap batteries: env-driven `ServiceConfig`, `/healthz`, tracing init),
+  `cratestack-outbox` (transactional outbox over the caller's own Postgres transaction, no schema macro), and
+  `cratestack-sync` (experimental offline sync engine, ADR 0020 — `publish = false` prototype).
+- Agent binding: `cratestack-mcp` — serves `@mcp(tool)` procedures and `@@mcp(resource)` models to agents
+  over MCP; reached through the `mcp` feature of `cratestack-pg`/`cratestack-api`, never depended on directly.
+- Tooling: `cratestack-mock-wiremock` (WireMock stubs derived from a schema's procedures/models),
+  `cratestack-cli`, `cratestack-lsp` (tower-lsp-server LSP for `.cstack`), `cratestack-migrate`,
   `cratestack-studio` (+ `-studio-ui` wasm app — see below).
 
 ### Decimal backend selection: additive, not mutually exclusive (cratestack#505)

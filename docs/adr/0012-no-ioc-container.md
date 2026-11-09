@@ -119,6 +119,13 @@ prohibited by this ADR even though *whether to build `OpExecutor` at all* is a
 separate, still-open decision (ADR 0015; `rpc-transport.md` §6.5). Likewise, how far
 the Store SPI should reach is ADR 0016 and is not decided here.
 
+> **Update (0.19.x):** two facts this ADR treats as current have moved. `OpExecutor` is no
+> longer an open question: ADR 0015 was accepted on 2026-09-03 and L3 exists as
+> `cratestack-exec`, taking its stores at construction, as the corollary requires. `AuditSink`
+> is no longer unwired: `SqlxRuntime::with_audit_sink` and the generated
+> `CratestackBuilder::with_audit_sink` install one (#473), so all three seams in fact (3) have a
+> caller.
+
 This is consistent with, and is the general case of, `extensions.md` §7's already-
 settled refusal of "a generic plugin/extensibility SDK for third-party extensions" —
 `extension <name>` recognises a closed, framework-maintained list.

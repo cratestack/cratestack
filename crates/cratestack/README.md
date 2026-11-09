@@ -25,10 +25,10 @@ cratestack = { package = "cratestack-api", version = "0.19" }
 cratestack = { package = "cratestack-sqlite", version = "0.19" }
 
 # Pure HTTP-client SDK — include_client_schema! plus the generated
-# Rust client runtime, with `cratestack-axum` (and therefore
-# `axum`/`tower`/`hyper`/`tower-http`) structurally absent from the
-# dependency graph. The shape you want for a crate that only ever
-# calls a cratestack server, never runs one.
+# Rust client runtime, with `cratestack-axum` (and therefore `axum`)
+# structurally absent from the dependency graph (`tower`/`hyper` still
+# arrive through `reqwest`). The shape you want for a crate that only
+# ever calls a cratestack server, never runs one.
 cratestack = { package = "cratestack-client", version = "0.19" }
 ```
 
@@ -74,7 +74,7 @@ use cratestack::include_server_schema;
 include_server_schema!("schema.cstack", db = Postgres);
 ```
 
-The macro emits `CrateStackClient` with typed `posts().create(...)`, `posts().find_many()...run(&ctx).await`, and an Axum router you can mount. Same `schema.cstack` works with `include_embedded_schema!` against `cratestack-sqlite` for an on-device store, or with `include_client_schema!` for a Rust HTTP client.
+The macro emits a `cratestack_schema` module: a `Cratestack` runtime (`Cratestack::builder(pool).build()`) with typed `post().create(...)`, `post().find_many()...run(&ctx).await`, and an Axum router you can mount. Same `schema.cstack` works with `include_embedded_schema!` against `cratestack-sqlite` for an on-device store, or with `include_client_schema!` for a Rust HTTP client.
 
 Full walkthrough: <https://cratestack.dev/getting-started/quickstart>.
 

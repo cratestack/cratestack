@@ -44,8 +44,11 @@ cratestack check --schema path/to/schema.cstack --format json
 
 Flags:
 
-- `--schema <PATH>` — path to the `.cstack` file (required)
+- `--schema <PATH>` — path to the `.cstack` file (required). For a multi-file schema, pass the
+  root; given a `part`, `check` checks the whole schema through its root and says so
 - `--format <human|json>` — output format (default `human`)
+- `--list-files` — after a successful check, list every file of the schema with its role
+  (`root`, `part`, `import`, `import part`); in JSON, a `files` array
 
 On success the human formatter writes `schema OK: <path>`; the JSON formatter prints a `{ ok: true, ... }` document. On error the human formatter renders a diagnostic and exits non-zero; the JSON formatter prints `{ ok: false, diagnostics: [...] }` and exits `1`.
 
@@ -151,9 +154,10 @@ Flags:
   dependencies. Before this flag existed (issue #617), all three were
   emitted unconditionally, for every schema and every transport. Purely
   additive — every other emitted file is byte-identical with and without
-  it. Unlike `--refine`, this composes with EVERY transport: `--tanstack`
-  gates the same `src/react-query.ts` that used to be unconditional there
-  too, it doesn't add support for a transport that lacked it before.
+  it. It composes with every transport (REST and RPC), as `--refine` does:
+  `--tanstack` gates the same `src/react-query.ts` that used to be
+  unconditional there too, it doesn't add support for a transport that
+  lacked it before.
   Composes freely with `--swr`/`--refine`.
 
   ```bash
@@ -162,6 +166,14 @@ Flags:
     --out packages/catalog-client \
     --tanstack
   ```
+- `--rtk` — additionally emit `src/rtk-api.ts`, a typed RTK Query
+  `createApi` endpoint set (one endpoint per model operation and per
+  `procedure`), with `providesTags`/`invalidatesTags` derived from the
+  schema, plus the `@reduxjs/toolkit`/`react-redux`/`@cratestack/adapter-rtk`
+  peer and dev dependencies. On an RPC schema it dispatches through
+  `@cratestack/adapter-rtk`'s base query, on a REST schema through the
+  package's own client (issue #906). Purely additive; composes with
+  `--swr`/`--refine`/`--tanstack` and every transport.
 - **Native CBOR is the only RPC codec.** The generated RPC runtime always
   uses the published `@cratestack/cbor` package (napi-rs on Node,
   wasm-bindgen in the browser); the `--no-native-cbor` JSON fallback was
@@ -196,9 +208,11 @@ or a hand-edit to committed generated code.
 ```bash
 cratestack generate-wiremock \
   --schema schemas/catalog.cstack \
-  --out wiremock/mappings \
+  --out wiremock \
   --base-path /api
 ```
+
+Files land under `<out>/mappings/`, the directory a WireMock root scans.
 
 Generates WireMock stub mappings straight from the schema's `model`/
 `procedure` declarations, so integration/e2e tests can run against a mock
@@ -345,7 +359,11 @@ Flags:
 
 ```bash
 cratestack print-ir --schema schemas/catalog.cstack
+cratestack print-ir --schema schemas/catalog.cstack --no-spans
 ```
+
+`--no-spans` zeroes every source position, so a schema split across files prints the same IR as
+the same schema in one file.
 
 ### `contract` — per-op contract digests and the compatible-contract lock
 

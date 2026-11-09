@@ -195,6 +195,17 @@ current source of truth for crate-to-layer assignment. See ADR 0017 for the remo
 and `docs/design/layering.md`'s own 2026-08-18 updates for the current-state description this
 ADR's Context section once provided.
 
+> **Update (0.19.x):** two present-tense claims above no longer describe `main`. **L3 is not
+> empty:** ADR 0015 was accepted on 2026-09-03 at "build L3 now", and `cratestack-exec`
+> (idempotency and rate-limit admission, ADR 0015 slices 1 and 2) is its member, assigned `3` in
+> `docs/adr/layers.toml`; `cratestack-axum` and `cratestack-mcp` (both L4) call it. **The
+> client-side back-edge is fixed:** `ClientStateStore` moved to
+> `cratestack_core::store::client_state` in 0.7.10 (#482), so neither `cratestack-client-store-*`
+> crate has a normal dependency on `cratestack-client-rust` (only `-store-sqlite` keeps it, as a
+> dev-dependency), and "the invariant ships red" no longer holds. Crates added since 2026-08-08
+> (`cratestack-exec`, `-cose`, `-mcp`, `-sync`, `-webtransport`, `-websocket`,
+> `-auth-conformance`) are assigned in `layers.toml`, not in this table.
+
 ## Alternatives considered
 
 **Keep CLAUDE.md's one-line flow and fix violations as found.** Strongest case: it costs

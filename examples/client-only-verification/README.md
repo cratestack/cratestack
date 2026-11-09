@@ -1,9 +1,10 @@
 # client-only-verification
 
 This crate is cratestack#490's headline piece of evidence: a real `cargo
-tree` proof that `cratestack-axum` — and therefore `axum`/`tower`/`hyper`/
-`tower-http`, a full server framework — is absent from a `cratestack-client`
-consumer's dependency graph.
+tree` proof that `cratestack-axum` — and therefore `axum`, a full server
+framework — is absent from a `cratestack-client` consumer's dependency graph.
+(`tower`/`hyper`/`tower-http` are present, through `reqwest`; see "Why
+`tower`/`hyper`/`tower-http` aren't asserted absent" below.)
 
 It is deliberately **not** a workspace member (see its entry in the parent
 repo's root `Cargo.toml` `[workspace] exclude` list, and its own
@@ -17,9 +18,10 @@ Unlike that crate, there's no Cargo feature to toggle here for a "present"
 half of the proof: this crate only ever builds `cratestack-client` with its
 default features, and `cratestack-client` has no feature that could ever
 pull `axum` in transitively — `crates/cratestack-client/Cargo.toml`'s
-`[features]` table only has `decimal-rust-decimal`/`decimal-bigdecimal`/
-`codec-json` plus the two extension-declaration gates, none of which touch
-`cratestack-axum`.
+`[features]` table has `decimal-rust-decimal`/`decimal-bigdecimal`/
+`codec-json`, the client transports `middleware`/`ws`/`cose`/`webtransport`,
+and the extension-declaration gates (`pgvector`, `postgis`, `rate_limit`,
+`websocket`), none of which touch `cratestack-axum`.
 (`cratestack-client` never forwarded a `grpc` feature of its own, precisely
 to avoid `cratestack-client-rust`'s former `grpc` feature pulling `tonic` —
 and through it, `axum` — into this crate's graph; now that gRPC/protobuf

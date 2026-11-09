@@ -8,11 +8,11 @@ Add it as a **dev** dependency; the annotation package is the runtime one.
 
 ```yaml
 dependencies:
-  cratestack_annotations: ^0.8.4
+  cratestack_annotations: ^0.19.1
 
 dev_dependencies:
   build_runner: ^2.15.0
-  cratestack_builder: ^0.8.4
+  cratestack_builder: ^0.19.1
 ```
 
 ```

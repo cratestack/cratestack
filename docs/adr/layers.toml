@@ -8,8 +8,8 @@
 # `crates/`. An unassigned crate fails the check; see ADR 0014's "unassigned
 # crate" rule.
 #
-# Scope: only packages whose manifest lives under `crates/` (36 as of this
-# writing, 35 of them workspace members — `cratestack-studio-ui` is excluded
+# Scope: only packages whose manifest lives under `crates/` (40 as of this
+# writing, 39 of them workspace members — `cratestack-studio-ui` is excluded
 # from the workspace and not covered here; cratestack#490's `cratestack-client`
 # is included). `examples/*` and
 # app-shaped workspace members are consumers of the layered architecture,
@@ -104,12 +104,13 @@ cratestack-rusqlite = 2
 cratestack-redis = 2
 cratestack-codec-cbor = 2
 cratestack-codec-json = 2
-# These two are the live #475 violation (client-store-* -> client-rust, an
-# L2 -> L4 edge). They stay at L2 per ADR 0011 §2 / layering.md §2's stated
-# assignment — the point of this check is to make the existing violation
-# visible and trackable via the allowlist
-# (.ci/layer-direction-allowlist.toml), not to launder it by reclassifying
-# the crates. Do not "fix" this file to make the edge legal.
+# These two were the #475 violation (client-store-* -> client-rust, an
+# L2 -> L4 edge), tracked via the allowlist
+# (.ci/layer-direction-allowlist.toml) until #482 (0.7.10) moved
+# `ClientStateStore` into `cratestack-core`; their only normal workspace
+# dependency is now `cratestack-core`. They stay at L2 per ADR 0011 §2 /
+# layering.md §2's stated assignment. Do not reclassify a crate here to make
+# an upward edge legal.
 cratestack-client-store-sqlite = 2
 cratestack-client-store-redis = 2
 # `cratestack-service` (new, "absorb service-bootstrap helpers into the
@@ -120,7 +121,7 @@ cratestack-client-store-redis = 2
 # putting this logic in `cratestack-pg` directly). Same reasoning
 # `cratestack-macros` used above: assign the lowest
 # number its REAL graph supports, not a role invented to fit the prose.
-# Its only normal workspace dependencies are `cratestack-core` (L1,
+# Its only normal workspace dependencies are `cratestack-core` (L0,
 # `CratestackError`) and, behind its optional `postgres` feature,
 # `cratestack-sqlx` (L2, `Migration`/`apply_pending`/`PgPool`) — both <= 2.
 # L2 is a complete, exception-free assignment: nothing in the workspace
@@ -141,7 +142,7 @@ cratestack-service = 2
 # `cratestack-sqlx`, the same posture `cratestack-sqlx` itself takes for its
 # own internal `cratestack_audit`/`cratestack_migrations` tables (bare DDL
 # constant + hand-written queries, no schema macro). Its only normal
-# workspace dependencies are `cratestack-core` (L1, `CratestackError`/
+# workspace dependencies are `cratestack-core` (L0, `CratestackError`/
 # `TransactionIsolation`) and `cratestack-sqlx` (L2, the `sqlx` re-export,
 # `run_in_isolated_tx_with_retries`, `cratestack_error_from_sqlx`) — both <= 2, so
 # L2 is a complete, exception-free assignment by the same "lowest number the
@@ -170,9 +171,9 @@ cratestack-outbox = 2
 # not by the lowest-supported-layer rule `cratestack-macros` and
 # `cratestack-auth` follow above: it is an adapter over a wire format, like
 # the codecs in this section, and its `auth` edge to `cratestack-auth`
-# (L1) needs L2 or above. Nothing depends on it yet;
-# its consumers-to-be are `cratestack-axum`, `cratestack-client-rust` and
-# the wasm/napi bindings (all L4), so the upper-bound half of the rule
+# (L1) needs L2 or above. Its dependents are `cratestack-axum`,
+# `cratestack-client-rust`, `cratestack-client-flutter` and
+# `cratestack-cbor-wasm` (all L4), so the upper-bound half of the rule
 # reads 2 <= 4 and needs no allowlist entry.
 cratestack-cose = 2
 # `cratestack-sync` (ADR 0020, Proposed — `publish = false` prototype): the
@@ -199,8 +200,8 @@ cratestack-sync = 2
 # exclusions layering.md §2 states for this layer are what keep the list
 # that short: nothing transport-shaped (no `http`/`tower`/`axum` edge) and
 # nothing backend-shaped (no `sqlx`/`rusqlite` edge). Depended on by
-# `cratestack-axum` (L4), so the upper-bound half of the rule reads
-# 3 <= 4 and needs no allowlist entry.
+# `cratestack-axum` and `cratestack-mcp` (both L4), so the upper-bound half
+# of the rule reads 3 <= 4 and needs no allowlist entry.
 cratestack-exec = 3
 
 # --- L4: Bindings --------------------------------------------------------

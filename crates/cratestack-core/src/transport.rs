@@ -128,11 +128,10 @@ pub enum OpKind {
     /// backpressure overflow or client disconnect. Emitted for
     /// `model.<X>.subscribe` when a model declares `@@subscribe`.
     /// Dispatched today via SSE (`GET /rpc/subscribe/{op_id}`, design
-    /// doc §3.4a) — the recommended first binding per issue #183's
-    /// spike decision; WebSocket (§3.4) remains speced but unbuilt,
-    /// gated on a real bidirectional/high-multiplexing need. Both
-    /// bindings share the same fire-and-forget semantics: no cursors,
-    /// no replay buffer.
+    /// doc §3.4a) — the first binding, per issue #183's spike
+    /// decision. WebSocket (design doc §3.4) shipped in 0.18.0 as
+    /// `cratestack-websocket`. Both bindings share the same
+    /// fire-and-forget semantics: no cursors, no replay buffer.
     Subscription,
 }
 

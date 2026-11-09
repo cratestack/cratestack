@@ -28,8 +28,11 @@ like a GitHub Release, so a throwaway test tag must never reach a registry):
   loop: it has no `@cratestack/*` dependency (only a `@refinedev/core` peer), and a missing Trusted
   Publisher entry on the newest name shouldn't abort the loop for the ten packages beside it.
 
-`publish-crates` soft-skips (logs a warning, exits 0, without failing the rest of the release)
-when `CARGO_REGISTRY_TOKEN` isn't set. The npm jobs are a **hard cutover, not a soft-skip**: they
+`publish-crates` no longer gets the chance to soft-skip a missing `CARGO_REGISTRY_TOKEN`: the
+`preflight` job ("publish pre-flight (credentials + artifacts)"), which every publish job `needs`,
+fails the release before anything publishes if the secret is unset or crates.io does not
+authenticate it. (The publish step's own "not set; skipping" branch is still in the YAML, but a
+tag-push run cannot reach it.) The npm jobs are a **hard cutover, not a soft-skip**: they
 authenticate via npm's OIDC Trusted Publishing (see below), which has no repo secret to check for
 absence — until the Trusted Publisher is configured on npmjs.com for each package, these jobs just
 fail rather than quietly no-op'ing. This tag is normally produced by the **"Prepare Release"** →
@@ -344,7 +347,8 @@ did). It was recovered by releasing `v0.7.6`, not by re-running.
 3. Add it as a repo secret named `CARGO_REGISTRY_TOKEN` (repo Settings → Secrets and variables →
    Actions) — `cargo publish` reads this env var automatically, no extra config needed.
 
-Once the secret exists, the next tag push publishes every workspace crate via `publish-crates`
+Until the secret exists (and crates.io accepts it), `preflight` fails every tag-push release. Once
+it does, the next tag push publishes every workspace crate via `publish-crates`
 (idempotent — already-published versions are skipped, so a re-run after a partial failure, e.g. a
 transient crates.io index lag, is safe).
 
@@ -379,10 +383,10 @@ Once the secret exists (with both scopes), the next "Prepare Release" bump PR th
 its auto-created tag genuinely trigger `release-cli.yml` — no manual `gh workflow run`/tag
 recreation needed. Confirmed working on `v0.4.15` and `v0.4.16`: both releases' `release-cli.yml`
 runs show `event: "push"` (not `workflow_dispatch`), i.e. the tag push genuinely cascaded. The
-PR-creation half (cratestack#531) has not yet been confirmed on a real `mode: real` dispatch — watch
-the next release-bump PR: `gh api repos/cratestack/cratestack/commits/<head-sha>/check-runs --jq
-.total_count` should be greater than zero and include the changelog and governance checks, not `0`
-like PR #528.
+PR-creation half (cratestack#531) is confirmed too: the `v0.19.1` bump PR (#1318, branch
+`release/v0.19.1`) has 55 check runs, the changelog and governance checks among them, not `0` like
+PR #528. To re-check a future one: `gh api repos/cratestack/cratestack/commits/<head-sha>/check-runs
+--jq .total_count`.
 
 ## PR creation itself: no longer a known limitation
 
@@ -401,7 +405,7 @@ future release.
 
 ## Provenance
 
-Both publish steps pass `npm publish --provenance`, which attaches a
+Every npm publish step passes `npm publish --provenance` (or sets it via npm config, below), which attaches a
 [Sigstore-signed provenance attestation](https://docs.npmjs.com/generating-provenance-statements)
 linking the published tarball back to this exact GitHub Actions run and commit. This needs:
 
@@ -415,10 +419,11 @@ linking the published tarball back to this exact GitHub Actions run and commit. 
   unbounded `npm@latest` — a fresh npm major has previously regressed Trusted Publishing on this
   repo), since Trusted Publishing's own >= 11.5.1 requirement is stricter than provenance's and
   isn't guaranteed by whatever npm version happens to ship bundled with a given Node release.
-- `publish-npm-cbor-node` is the one exception to the `--provenance` flag itself: `napi
-  prepublish`'s internal per-subpackage `npm publish` calls don't see a flag passed to the *outer*
-  command, so that job does `npm config set provenance true` instead — equivalent, but set globally
-  so it also covers the subpackage publishes, not just the main package's.
+- `publish-npm-cbor-node` is the one exception to the `--provenance` flag itself: since
+  cratestack#850 it publishes the platform subpackages in its own loop and then the main package,
+  each through `npm-publish.sh` without the flag, so that job does `npm config set provenance true`
+  instead — equivalent, but set in the user config so it covers every publish in the job, not just
+  one command's.
 
 No additional GitHub secret is needed for provenance — it's purely a CI-side capability enabled by
 the permission and the flag, on top of whatever auth method (Trusted Publishing, here) gets the
@@ -430,9 +435,10 @@ publish itself authorized.
 and may take a few minutes to become available"), not that anyone can install it. During npm's
 2026-09-03 publish incident two cbor-node subpackages stayed invisible for about an hour after a
 green exit (then appeared on their own), and a third was "staged" (`E409 Cannot publish over previously staged version`) after
-an earlier attempt had 401'd. `publish-npm-cbor-node` therefore ends with a step that polls
-`https://registry.npmjs.org/<name>/<version>` for every package it published and fails naming the
-ones that are not visible after six minutes.
+an earlier attempt had 401'd. A separate job, `verify-npm-cbor-node` (`needs:
+publish-npm-cbor-node`, tag push only), therefore polls
+`https://registry.npmjs.org/<name>/<version>` for every package `publish-npm-cbor-node` published and
+fails naming the ones that are not visible after 45 minutes. It does not block `@cratestack/cbor`.
 
 If that step fails: check <https://status.npmjs.org/> first. A staged or accepted version may still
 appear once the incident resolves — re-check with the same `curl` before doing anything. What you

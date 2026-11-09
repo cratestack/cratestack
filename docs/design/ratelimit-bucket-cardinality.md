@@ -46,7 +46,8 @@ The **store** applies it, in the same operation as the token consumption:
   refresh the score and charge the requested bucket; else `ZCARD <
   max_distinct` → `ZADD` and charge it; else charge the fallback. The scope key
   is `PEXPIRE`d on every hit. Zero extra round-trips.
-- **In-memory** — a `HashSet` per scope behind the same mutex as the buckets,
+- **In-memory** — a per-scope member map (`HashMap<String, Instant>`, last
+  use per member) behind the same mutex as the buckets,
   plus an amortised sweep (at most once per 60s) that drops buckets idle for a
   full `cratestack_core::bucket_ttl_secs`, and a hard `max_buckets` cap that
   fails closed.
@@ -88,7 +89,7 @@ Scoring by first admission rather than last use would reintroduce the `2N`
 exactly, which is why the score is written on every hit.
 
 Redis Lua is atomic but **not transactional**: a script that aborts partway (a
-mid-script `OOM`) can leave a set that was `SADD`ed but never `PEXPIRE`d, and
+mid-script `OOM`) can leave a set that was `ZADD`ed but never `PEXPIRE`d, and
 therefore never expires. Re-`PEXPIRE`ing on every admission repairs exactly that
 on the next admission, which is the second reason the refresh is unconditional.
 
@@ -228,7 +229,7 @@ than one that does not exist:
   separate quantities and are asserted separately (`_bucket_count`,
   `_scope_count`).
 - **A scope set that lost its TTL to an aborted script.** Redis Lua is atomic
-  but not transactional, so a mid-script failure between `SADD` and `PEXPIRE`
+  but not transactional, so a mid-script failure between `ZADD` and `PEXPIRE`
   leaves a set with no expiry. The next admission on that scope re-`PEXPIRE`s
   it, so it is self-repairing — but a scope that is never admitted to again
   keeps one set until the instance is flushed.

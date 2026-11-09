@@ -97,6 +97,24 @@ and [ADR-0003](https://cratestack.dev/internals/views-adr).
   applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, so `include_client_schema!` offers both CBOR and JSON.
+- `middleware` — forwards `cratestack-client-rust/middleware`, so the
+  generated client accepts a `reqwest_middleware::ClientWithMiddleware`.
+- `client-ws` / `client-webtransport` — the generated Rust client's
+  subscriptions over WebSocket / WebTransport (native targets; never
+  `axum`).
+- `websocket` / `webtransport` — serve the schema's subscriptions over
+  WebSocket / WebTransport for a schema that declares `extension websocket
+  { }` / `extension webtransport { }` (re-exported as
+  `cratestack::websocket` / `cratestack::webtransport`).
+- `mcp` — serve `@mcp(tool)` procedures and `@@mcp(resource: ...)` models
+  over MCP (ADR 0002): generates `cratestack_schema::mcp`. Off by default;
+  without it `rmcp` is absent from the graph.
+- `pgvector` / `postgis` — unlock `Vector(n)` / `Geography(...)` /
+  `Geometry(...)` fields for a schema that declares the matching
+  `extension { }` (without the feature, such a schema is a
+  `compile_error!`).
+- `rate_limit` — the `@no_rate_limit` procedure attribute (participation
+  only; `RateLimitLayer` itself is always compiled).
 - `crypto-aws-lc-rs` — **not implemented yet**, enabling it is a hard
   `compile_error!`. Reserved for a future FIPS-validated `aws-lc-rs`
   rustls provider; see `install_fips_crypto_provider()`'s doc comment

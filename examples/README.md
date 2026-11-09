@@ -7,7 +7,7 @@ Two homes for examples in this repository:
 - **`crates/cratestack-sqlite/examples/` and `crates/cratestack-pg/examples/`** — cargo-native examples that live inside the backend crate they exercise. Run via `cargo run --example <name> -p cratestack-sqlite` (or `-p cratestack-pg`). Use these when the example is small enough to fit one file and only needs that crate's dev-dependencies. Note the package is the **backend** crate, never `-p cratestack`: that name selects the documentation-only vitrine crate, which has no examples and no tests, so targeting it returns a false green rather than an error you'd notice.
 - **`examples/`** (this directory) — standalone workspace members with their own `Cargo.toml`, dependencies, tests, and binary entry. Use these when the example needs its own dependency surface (`clap` for a CLI, dev-dependencies for mock servers, etc.) or when the example is itself a multi-file template.
 
-All examples build and run under `cargo build --workspace` / `cargo test --workspace`.
+Every example listed under the root `Cargo.toml`'s `[workspace] members` builds and tests under `cargo build --workspace --exclude embedded_flutter_native` / `cargo test --workspace --exclude embedded_flutter_native` (that crate needs uncommitted `flutter_rust_bridge` glue). The standalone workspaces in its `exclude` list — `mcp-operator`, `auth-pluggable` and the `*-verification` crates — are run from their own directories.
 
 ## Phase A — Pure Rust (shipped in this release)
 
@@ -37,7 +37,7 @@ All examples build and run under `cargo build --workspace` / `cargo test --works
 | [`sync-notes/`](sync-notes) | `include_server_schema!` **and** `include_embedded_schema!` (one schema) | Prototype offline sync (`cratestack-sync`, ADR 0020 *Proposed*): three wasm/OPFS devices and a Postgres server; offline writes, server-side writes via REST, policy-checked replay, scope isolation, rejected-write rollback |
 | [`tauri-web/`](tauri-web) | `include_embedded_schema!` **and** `include_client_schema!` | Tauri 2 desktop shell. Webview hosts the embedded wasm (OPFS); native shell hosts the typed HTTP client called via Tauri commands. |
 
-Build prerequisites for all four:
+Build prerequisites for the wasm examples above:
 
 ```bash
 rustup target add wasm32-unknown-unknown
@@ -81,7 +81,7 @@ The bundled `examples/scripts/wasm-build.mjs` helper detects Homebrew LLVM at `/
 |---|---|---|
 | [`tauri-native/`](tauri-native) | `include_embedded_schema!` **and** `include_client_schema!` | Tauri 2 desktop shell with **everything CrateStack-shaped in native Rust**. Renderer is a pure view layer — every data op (local SQLite + remote HTTP) goes through Tauri commands. Compare with `tauri-web` to see the wasm-in-webview vs. native-Rust split. |
 | [`embedded-flutter/`](embedded-flutter) | `include_embedded_schema!` | Flutter app bridged via [`flutter_rust_bridge`](https://cjycode.com/flutter_rust_bridge/) 2.x. Material 3 UI over a Dart-generated API surface; same `ModelDelegate` shape as the CLI and browser examples. |
-| [`embedded-expo/`](embedded-expo) | `include_embedded_schema!` (via FFI dispatch) | React Native (Expo SDK 55) calling into a Rust cdylib through a local Expo native module. Uses `cratestack_rusqlite::ffi::{OperationRequest, OperationResponse}` as the JSON envelope across the JS↔native boundary. |
+| [`embedded-expo/`](embedded-expo) | `include_embedded_schema!` (via FFI dispatch) | React Native (Expo SDK 58) calling into a Rust cdylib through a local Expo native module. Uses `cratestack_rusqlite::ffi::{OperationRequest, OperationResponse}` as the JSON envelope across the JS↔native boundary. |
 
 The Rust side of all three is *checked* in CI, not tested — CI's `check`/`msrv` jobs run
 `just check`, which `cargo check --workspace`s everything except `embedded_flutter_native`
@@ -131,9 +131,9 @@ cd examples/react-vite-refine/web && pnpm install && pnpm run dev
 ```
 
 See [`react-vite-refine/README.md`](react-vite-refine/README.md) for the full run path, the
-deliberate "no sort/filter/pagination controls" decision, and the confirmed gaps in what this mock
-backend can prove (`If-Match` is sent but not enforced; `create` never honors a client-submitted
-primary key).
+deliberate "no sort/filter/pagination controls" decision, and what this mock backend can and
+can't prove (`If-Match` is enforced since #605, mirroring the real server; `create` still never
+honors a client-submitted primary key).
 
 ## Phase E — Generated Dart/Flutter client presets
 
@@ -254,7 +254,7 @@ cd examples/react-vite-swr && pnpm --filter react-vite-swr-web test
 
 ## Standalone verification crates (not workspace members)
 
-These two prove a dependency-graph property that only holds outside Cargo's workspace-wide feature
+These prove a dependency-graph property that only holds outside Cargo's workspace-wide feature
 unification, so each is deliberately listed in the root `Cargo.toml`'s `[workspace] exclude` array
 instead of `members` (see the comments there and their own READMEs for why) — run their checks from
 inside their own directory rather than via `-p` like the rest of this directory.
@@ -263,6 +263,9 @@ inside their own directory rather than via `-p` like the rest of this directory.
 |---|---|---|
 | [`no-database-verification/`](no-database-verification) | `include_server_schema!` (`db = None`) | Standalone crate with its own `Cargo.lock` proving via `cargo tree` that `sqlx`/`cratestack-sqlx` are absent from a `cratestack-pg`, `default-features = false` consumer by default, and present once the `postgres` feature is enabled |
 | [`no-database-verification-api/`](no-database-verification-api) | `include_server_schema!` (`db = None`) | Same `cargo tree` proof for a `cratestack-api` consumer, which never depends on `cratestack-sqlx` under any feature |
+| [`client-only-verification/`](client-only-verification) | `include_client_schema!` (`cratestack-client` facade) | `cargo tree` proof that `cratestack-axum`, and so `axum`, is absent from a `cratestack-client` consumer's graph (also with `--features cose`); the generated client round-trips over a non-`axum` HTTP server |
+| [`db-transaction-verification/`](db-transaction-verification) | `include_server_schema!` (`db = Postgres`) | A multi-write `db.transaction(...)` with no `sqlx` entry in the crate's `Cargo.toml` and no `sqlx::` path in its source (cratestack#513) |
+| [`declarative-query-verification/`](declarative-query-verification) | `include_server_schema!` (`db = Postgres`) | A two-aggregate `FILTER (WHERE …)` query declared in `.cstack`, with no `sqlx` dependency, no `sqlx::` path and no SQL string in `src/` (cratestack#867) |
 
 ```bash
 cd examples/no-database-verification && cargo tree | grep -i sqlx   # -> no output
@@ -292,7 +295,7 @@ Snapshot of what's been actually exercised end-to-end against a real runtime, vs
 | `embedded-expo` | ✅ | ✅ Android emulator | `npx expo run:android` on Pixel_10_Pro: 6 CRUD rows via React Native UI, persisted to `/data/data/.../files/cratestack-notes.db` (SQLite + WAL). **iOS: not tested — out of scope for now.** Build path is set up (podspec vendors `libembedded_expo_native.a`, Swift uses `@_silgen_name` against the same C ABI), but full `expo run:ios` needs an installed iOS Simulator runtime (Xcode → Settings → Components) that wasn't on the verification host. |
 | `react-vite-swr` | ✅ | ✅ | Real server booted against Postgres; `pnpm --filter react-vite-swr-web run dev` in a real browser (Claude Preview) — created a board via `useCreateBoard` and watched the list refresh with no manual refetch, opened its detail screen, toggled/deleted tasks via `useUpdateTask`/`useDeleteTask` (both invalidated the list live), watched the `estimateFocusMinutes` procedure hook's estimate recompute automatically each time. `pnpm run seed` (`tsx`, plain generated functions, no React) separately created data and called the procedure outside any component. |
 | `flutter-riverpod` | n/a (no Rust crate — reuses `react-vite-swr`'s server; `client/`'s own `flutter test` is the analog) | ✅ macOS desktop | Real `react-vite-swr` server booted against Postgres; `flutter run -d macos` — created a board via the generated `BoardCreateController` and watched the list refresh (`ref.invalidate(boardListProvider)`, no manual refetch), opened its detail screen, toggled/deleted tasks via the generated `TaskUpdateController`/`TaskDeleteController` (both invalidated the list live), watched the `estimateFocusMinutes` procedure provider's estimate recompute automatically each time. Two real bugs found and fixed live during this run (a missing `Accept` header in `CratestackDioAdapter`, and a controller auto-dispose race) — see `flutter-riverpod/README.md`. |
-| `react-vite-refine` | ✅ (5 offline tests, no Docker) | ✅ | Real stateful WireMock container (built from `crates/cratestack-mock-wiremock/docker/Dockerfile`) — `pnpm run verify` (`web/scripts/verify.ts`, outside React) drove create → list → update → delete → 404 live for all three models, confirmed the falsy `published: false` round trip, and confirmed (asserted, not assumed) that a stale `If-Match` gets `200` not `412` against this mock. Also driven by hand in a real browser (Claude Preview): added/edited/deleted rows on all three tabs, confirmed against the container's own state via `fetch`. See `react-vite-refine/README.md`'s "What this demo can't prove" for the two confirmed gaps this surfaced in `cratestack-mock-wiremock`. |
+| `react-vite-refine` | ✅ (6 offline tests, no Docker) | ✅ | Real stateful WireMock container (built from `crates/cratestack-mock-wiremock/docker/Dockerfile`) — `pnpm run verify` (`web/scripts/verify.ts`, outside React) drove create → list → update → delete → 404 live for all three models, confirmed the falsy `published: false` round trip, and confirmed (asserted, not assumed) that a stale `If-Match` got `200` not `412` against the mock of that time — since #605 the mock enforces `If-Match` and `verify.ts` asserts the `412`. Also driven by hand in a real browser (Claude Preview): added/edited/deleted rows on all three tabs, confirmed against the container's own state via `fetch`. See `react-vite-refine/README.md`'s "What this demo can't prove" for the two confirmed gaps this surfaced in `cratestack-mock-wiremock`. |
 | `mcp-operator` | ✅ (`tests/token.rs` and `tests/cli.rs` offline; `tests/serve.rs` against a Postgres testcontainer) | ✅ | `just mcp-conformance`: the MCP Inspector CLI 2.8.0 (`@modelcontextprotocol/client` 2.0.0) negotiates `2026-07-28` over stdio and over Streamable HTTP. It lists tools and resources, calls a tool, sees a policy-denied call return `isError`/`FORBIDDEN` without running, reads a record and a collection, and gets "resource not found" for a hidden row, the same as for a missing one. It is refused with no token, with a token for another audience, and as a legacy `initialize` client (cratestack#1041). |
 | `step-up-procedures` | ✅ (11 tests: the real server on a loopback port, the real generated REST and RPC clients) | ✅ | `cargo run -p step-up-procedures-example`: a 20-minute-old password session is refused `payInvoice` with `StepUpRequired` (`unmet: [max_age, amr]`), re-proves, and pays once on REST, an RPC unary call and an RPC batch; the ledger lists each invoice once. |
 
@@ -308,8 +311,8 @@ What "build-only" means: `cargo test`, `cargo check --workspace`, `vite build`, 
 ## How to run every example at once
 
 ```bash
-cargo test --workspace        # tests for every example
-cargo build --workspace       # builds every example binary
+cargo test --workspace --exclude embedded_flutter_native    # tests for every workspace-member example
+cargo build --workspace --exclude embedded_flutter_native   # builds every workspace-member example binary
 
 # Run a specific cargo example — the package is the BACKEND crate that owns it,
 # not `-p cratestack` (that is the empty vitrine crate; see "Two homes" above).

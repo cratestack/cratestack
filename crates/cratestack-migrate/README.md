@@ -55,9 +55,12 @@ The crate ships these surfaces:
   `cratestack_migrations` row.
 - **IR** (`ir::Op`) — CreateTable / DropTable / Add+Drop Column /
   Add+Drop Index / AlterColumn (type/nullability/default) /
-  Rename Table+Column / CreateEnum / AlterEnumAddVariant / DropEnum /
-  AddCheck / DropCheck / CreateView / DropView / ReplaceView /
-  CreateMaterializedView / DropMaterializedView.
+  Rename Table+Column / AddCheck / DropCheck / Add+Drop ForeignKey /
+  CreateView / DropView / ReplaceView / CreateMaterializedView /
+  DropMaterializedView / EnsureExtension. Enums are columns with a
+  membership `CHECK`, so adding or removing a variant is a
+  DropCheck + AddCheck pair (a removal is classified blocking, with
+  an `up.pre.sql` backfill scaffold on Postgres, since 0.17.0).
 - **Emitters** (`emit::postgres`, `emit::sqlite`) — render the IR
   to per-dialect SQL with up/down bodies, has_lossy /
   has_blocking flags, and explicit error stubs for destructive
@@ -88,8 +91,6 @@ specific to this crate are:
 
 - A verify step — replay generated migrations against an ephemeral
   Postgres / SQLite and compare to the snapshot (no CLI command yet).
-- `DropEnumVariant` — needs the Postgres swap-dance and a backfill
-  plan for referencing rows.
 - SQLite/embedded baselining — `migrate baseline` is Postgres-only for
   v1 (design doc `docs/design/migrate-baseline.md` §6).
 

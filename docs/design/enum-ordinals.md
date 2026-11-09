@@ -1,6 +1,6 @@
 # Explicit enum ordinals: a compact, append-only enum encoding
 
-Status: **implemented** (2026-10-26). Accepted by the maintainer the same day; all six slices of
+Status: **implemented** (2026-10-26; released in 0.17.0). Accepted by the maintainer the same day; all six slices of
 §9 are built, and an ordinal enum is stored and sent as its number end to end. Two open questions
 are decided: the syntax is `Pending = 1` (O4), and the query string takes names only (O2); §7
 records both. Where the build differs from the proposal below, an *As built* note says so, and

@@ -141,11 +141,9 @@ pub(crate) enum Command {
         /// `--refine` (#571) already went through.
         ///
         /// Purely additive: every other emitted file is byte-identical
-        /// with and without it. Unlike `--refine`, this composes with
-        /// EVERY transport — `--tanstack` gates the same
-        /// `src/react-query.ts` that used to be unconditional there too,
-        /// it doesn't add support for a transport that lacked it before.
-        /// Composes freely with `--swr`/`--refine`.
+        /// with and without it. Like `--refine`, it composes with EVERY
+        /// transport: it gates the same `src/react-query.ts` that used to
+        /// be unconditional, and adds no transport support. Composes freely with `--swr`/`--refine`.
         #[arg(long)]
         tanstack: bool,
         /// Also emit `src/rtk-api.ts` (issue #906): a typed RTK Query

@@ -148,6 +148,12 @@ links a second.
   rusqlite facade would compile happily. Accepting this ADR buys vocabulary and a
   reviewable rule, not a gate.
 
+  > **Update (0.19.x):** the `cargo tree` proof is now a CI gate. The `facade-disjointness`
+  > job in `.github/workflows/ci.yml` runs it in `examples/no-database-verification` (both
+  > feature states), `examples/no-database-verification-api` and
+  > `examples/client-only-verification` (the fourth facade, `cratestack-client`, added by
+  > cratestack#490, asserted `axum`-free) on every PR that is not docs-only.
+
 ### Foreclosed options
 
 Runtime backend selection (one binary, backend chosen by config). A single facade

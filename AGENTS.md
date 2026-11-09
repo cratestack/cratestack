@@ -21,7 +21,8 @@ just test-pg                                                # full suite with Do
 just test-pg-tc                                             # same via testcontainers
 ```
 
-`just all-checks` runs fmt, auto-fix, clippy with `-D warnings`, check, and `deny check`. Prefer
+`just all-checks` runs fmt, auto-fix, clippy with `-D warnings`, check, `just lint` (CI's no-`--fix`
+clippy), and `deny check`. Prefer
 running *it* over the individual commands above — the flags it sets are deliberate.
 
 **Never add `--all-features`.** It does not compile, for two independent reasons:
@@ -41,7 +42,8 @@ combination — neither, one, or both — is legal now; a schema picks its backe
 
 ## Testing Nuances
 
-- PG integration tests (`banking_*`, `policy_db_*`, `generated_client_rust`) require either:
+- PG integration tests (`banking_*` bar `banking_rate_limit`, and `policy_db_*`; the
+  `generated_client_rust*` suites need no database) require either:
   - `just test-pg` — brings up `compose.yml` Postgres, tears down on exit
   - `CRATESTACK_TEST_DATABASE_URL=...` + manual `docker compose up -d postgres`
   - `just test-pg-tc` — ephemeral containers per test binary (CI default)
@@ -74,21 +76,19 @@ Recorded here so a future reader does not mistake this for the drift that policy
 are consolidating sqlx usage, consolidate it — but do not remove it, and do not route it through a
 facade that does not exist.
 
-Two gaps that policy names as blocking its consumers, both filed against this repo, worth knowing
-about when touching the relevant code:
+Two gaps that policy named as blocking its consumers were filed against this repo. Both are
+closed; know the fixes when touching the relevant code:
 
-- **A server-internal write path.** `crates/cratestack-sqlx/src/query/write/create_exec.rs:46-58`
-  gates `create`/`update`/`delete` through the model's `@@allow` policies identically for a
-  procedure and for the generated REST route. Consumers therefore cannot let server code write
-  through the ORM without also opening a public CRUD route for that action — which is why they all
-  hand-write their writes instead. This is the single largest adoption blocker downstream.
-- **Per-call-site `ON CONFLICT DO NOTHING`.** The `DO NOTHING`-equivalent at
-  `crates/cratestack-sqlx/src/query/write/upsert_sql.rs:131-139` (`DO UPDATE SET pk = EXCLUDED.pk`,
-  preserving `RETURNING`) is selected by the **model descriptor** — it fires only when
-  `descriptor.upsert_update_columns` is empty. A model with any updatable column therefore cannot
-  express "insert, or read back without mutating" for one specific write, which is the shape
-  ledger-style idempotent inserts need. The alternative today is that a retry silently overwrites
-  a settled row.
+- **A server-internal write path** — closed in 0.7.10 (#486, ADR 0038 blocker B1). Writes are still
+  gated through the model's `@@allow` policies identically for a procedure and for the generated
+  route, but a policy can name `auth().isSystem()`, which only a context from
+  `cratestack_core::SystemContext::for_service("...")` satisfies, so server code can write through
+  the ORM without opening that action to end users. A route that must not exist at all is
+  suppressed with `@@internal("action")` on REST, RPC and every generated client (0.8.14, #743).
+- **Per-call-site `ON CONFLICT DO NOTHING`** — closed in 0.7.10 (#487, ADR 0038 blocker B3).
+  `.upsert(input).do_nothing()` (`crates/cratestack-sqlx/src/query/write/upsert_do_nothing*.rs`)
+  returns `UpsertOutcome::Inserted` or `UpsertOutcome::Existing` and never mutates a settled row,
+  whatever the descriptor's `upsert_update_columns`.
 
 ## Wasm Build Requirements
 
@@ -110,11 +110,14 @@ pnpm run package:vsix      # stages server binary first
 
 ## Version Bumping
 
-Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo and refreshes `Cargo.lock`.
+Use `just bump NEW_VERSION` — it rewrites every `Cargo.toml` in the repo, every `packages/*/package.json`,
+the `dart-packages/*` pubspecs and podspecs, and refreshes `Cargo.lock` and `pnpm-lock.yaml`.
 
 ## Release
 
-`just release VERSION` handles the full flow including topo-sorted crate publish order. See `RELEASE.md` for details.
+The preferred path is the "Prepare Release" workflow (`prepare-release.yml`): it opens the bump PR, and
+merging it tags (`cut-release-tag.yml`) and publishes (`release-cli.yml`). `just release VERSION` is the
+local fallback, including topo-sorted crate publish order. See `RELEASE.md` for details.
 
 ## Code Conventions
 

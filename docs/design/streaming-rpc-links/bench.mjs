@@ -15,11 +15,11 @@
 // with a simulated network hop per call (chain overhead as a fraction
 // of a realistic call — an empty-chain microbenchmark alone
 // exaggerates generator overhead into irrelevance, since real network
-// latency dwarfs it; see the design doc's Risks section).
+// latency dwarfs it; see the design doc's §3).
 //
 // Run: node docs/design/streaming-rpc-links/bench.mjs
 // No dependencies — plain Node, matches this repo's `engines.node
-// >=18` floor for the @cratestack/* packages this chain type lives in.
+// >=24` floor for the @cratestack/* packages this chain type lives in.
 
 const DEPTH = 4; // mirrors the ticket's "realistic depth (3-5 links)"
 const ITERATIONS = 200_000;

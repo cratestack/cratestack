@@ -85,9 +85,15 @@ match parse_schema_named("schema.cstack", source) {
 | `mixin`         | Reusable field set, applied via `@use(...)` on a model     |
 | `model`         | Entity with fields, relations, and policy attributes       |
 | `type`          | Named record type (`@computed` resolver fields supported)  |
-| `enum`          | Untyped identifier variants                                |
-| `procedure`     | `procedure` / `mutation procedure` with typed args/return  |
+| `enum`          | Identifier variants; optionally explicit ordinals and `@@reserved` (since 0.17.0) |
+| `procedure`     | `procedure` / `mutation procedure` / `subscription procedure` with typed args/return |
+| `view`          | Read-only projection over one or more models (ADR-0003), optionally `@@materialized` |
+| `query`         | Declarative parameterized custom SQL, policy-gated (since 0.11.0) |
+| `topic`         | A subscription topic (publish/subscribe, no model behind it) |
+| `transport`     | `transport rpc` (REST is the default)                      |
+| `extension`     | Opt-in capability blocks: `pgvector`, `postgis`, `rate_limit`, `websocket`, `webtransport` |
 | `mcp`           | `mcp { }` with `expose = [tools, resources]`, and `name = "..."` when resources are exposed; typed and validated |
+| `part` / `part of` / `import` | Multi-file schemas: split one schema, or share `type`/`enum`/`mixin` files (since 0.19.0; `load_schema`) |
 
 See the root README for the canonical capability matrix.
 

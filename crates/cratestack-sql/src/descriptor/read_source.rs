@@ -5,11 +5,12 @@
 //! These traits exist so the read-builder family
 //! (`FindMany` / `FindUnique` / `Aggregate` / `push_scoped_conditions`)
 //! can take *either* descriptor without the macro having to duplicate
-//! the entire query surface for views. They're additive — the
-//! existing builders still take `&'static ModelDescriptor<M, PK>`
-//! today; the genericization to `&'static dyn ReadSource<M, PK>` (or
-//! a blanket `D: ReadSource<M, PK>` bound) lands in a follow-up PR
-//! once the trait shape has settled.
+//! the entire query surface for views. The read builders in
+//! `cratestack-sqlx` (`FindMany`, `FindUnique`, `Aggregate`, ...) and
+//! `push_scoped_conditions` hold or take a `&'static dyn
+//! ReadSource<M, PK>` (`&dyn ReadSource<M, PK>` for the latter), which
+//! both `ModelDescriptor` and `ViewDescriptor` implement. The write
+//! builders still take `&'static ModelDescriptor<M, PK>`.
 //!
 //! **Why two traits?** [`ReadSource`] captures everything a read
 //! builder needs (table / view name, columns, primary key, soft-delete

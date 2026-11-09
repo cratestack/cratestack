@@ -1,6 +1,6 @@
 # Declarative, parameterized custom query in `.cstack` — spike
 
-Status: **accepted** (2026-09-02) and **implemented** (cratestack#867).
+Status: **accepted** (2026-09-02) and **implemented** (cratestack#867, released in 0.11.0).
 
 The recommendation table below was accepted as written by the accountable
 owner (@stephane-segning) in [epic cratestack#488's decision
@@ -38,6 +38,11 @@ the follow-up ticket that carried it, and shipped it.
 >   whether that type implements `sqlx::Encode` depends on the backend
 >   crate's feature set — a matrix that needs pinning down first. A money
 >   *result* column is unaffected. Widening the list later is additive.
+>   **Update (0.15.4):** the list was widened by the built-in `BigInt`
+>   (ADR 0019); it is now `String`, `Cuid`, `Int`, `BigInt`, `Float`,
+>   `Boolean`, `DateTime`, `Uuid`, `Bytes`
+>   (`crates/cratestack-parser/src/validate/query_signature.rs`,
+>   `BINDABLE_ARG_TYPES`). `Decimal` is still excluded.
 > - **Both an accessor and a free function.** §5 left the naming open;
 >   §8 sketched a free `run`. Both exist: `db.queries().<name>(args, ctx)`
 >   forwards to the module's own `run`, which is where the policy check
@@ -211,7 +216,7 @@ a structural mismatch with what `view` *is*.
 | Option | Failure mode for a typo | Verdict |
 |---|---|---|
 | **A. Parse SQL at macro time to extract and type `$N`** | Extracting *positions* (`$1`, `$2`, ...) from raw text is a cheap scan. Extracting *types* is not: Postgres itself only knows `$1`'s type by preparing the statement against a live catalog — the same job `sqlx::query!`'s compile-time macros do by requiring `DATABASE_URL` at build time. `cratestack-macros` has never required a live DB connection at macro-expansion time for anything (models, views, procedures all resolve types from the `.cstack` text alone), and starting here would be a new, unprecedented compile-time dependency. | Rejected |
-| **B. Declared separately, bound positionally** (recommended) | Args declared exactly like `procedure`'s `(name: Type, ...)` list (reusing `parse_procedure_args`, `crates/cratestack-parser/src/parse/procedures.rs:114-181, ` and `parse_type_ref`, `crates/cratestack-parser/src/parse/types.rs`). A new validator (mirroring `crates/cratestack-parser/src/validate/procedure.rs`'s pattern) scans the `@@sql(...)` body text for the `$N` substring pattern only — no SQL parsing — and checks two things: every `$N` referenced has `1 <= N <= args.len()`, and every declared arg is referenced by at least one `$N`. Both are compile-time `SchemaError`s. | Recommended |
+| **B. Declared separately, bound positionally** (recommended) | Args declared exactly like `procedure`'s `(name: Type, ...)` list (reusing `parse_procedure_args`, `crates/cratestack-parser/src/parse/procedures.rs:114-181, ` and `parse_type_ref`, `crates/cratestack-parser/src/parse/types.rs`). A new validator (mirroring `crates/cratestack-parser/src/validate/procedures.rs`'s pattern; built as `validate/query_placeholders.rs`) scans the `@@sql(...)` body text for the `$N` substring pattern only — no SQL parsing — and checks two things: every `$N` referenced has `1 <= N <= args.len()`, and every declared arg is referenced by at least one `$N`. Both are compile-time `SchemaError`s. | Recommended |
 
 Concrete failure messages (matching the existing style in
 `crates/cratestack-macros/src/policy/procedure/resolver.rs`'s

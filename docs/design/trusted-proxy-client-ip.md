@@ -1,6 +1,6 @@
 ## Design: trusted-proxy configuration for audit `client_ip` (#415)
 
-> **Status: decided and implemented.** The maintainer made the calls below; the
+> **Status: decided and implemented** (0.7.12, cratestack#415). The maintainer made the calls below; the
 > implementation (this PR) matches them. This section records what was decided and
 > where it deviated from the original sketch — the "Decisions needed"/"Options"
 > sections below are kept as the historical record of how the decision was reached,
@@ -208,6 +208,13 @@ feature doesn't actually close the spoofing gap for multi-hop chains.
 > in this sketch is blocked on it any more. The non-gRPC substance (hop-count
 > algorithm, module layout, the seven dispatch call sites, the CHANGELOG
 > migration note) is unaffected.
+>
+> **Update (0.19.x):** the follow-up PR this sketch was written for has shipped
+> (0.7.12, cratestack#415 — see "Decisions recorded" above), so the sketch is now
+> historical, not live guidance. Where it differs from what shipped:
+> `TrustedProxyConfig` (`crates/cratestack-axum/src/trusted_proxy/config.rs`) holds
+> `ipnet::IpNet` entries rather than `Vec<IpAddr>` (decision 2), and
+> `parse_client_ip` also takes the `ForwardedHeader` selector (post-review fix 1).
 
 1. **New module**, mirroring `crates/cratestack-axum/src/ratelimit/` and `.../idempotency/`
    (confirmed real precedent — both are multi-file, all comfortably under the 200-line

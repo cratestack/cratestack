@@ -1,10 +1,13 @@
 # Subscriptions: a WebSocket binding, subscription procedures, and multi-replica delivery
 
-Status: **proposed** (2026-10-28). Built so far: the WebTransport binding runtime (§11 S5b, crate
-`cratestack-webtransport`), with the S5b interop spike's results recorded in §6a.5. Nothing else
-here is built yet. It extends — it does not replace —
+Status: **implemented**, except S5c (`@datagram`) and S7 (§11). Proposed 2026-10-28. S5b (the
+WebTransport binding, `cratestack-webtransport`, cratestack#1238) and S5a (the generated dispatcher,
+`extension webtransport { }`) shipped in 0.17.1; S1–S4, S5 (the WebSocket binding,
+`cratestack-websocket`), S6 (the Rust, TypeScript and Dart clients, `examples/realtime-chat`) and
+the filter-exit events shipped in 0.18.0. §11's "as built" blocks record each slice; where they
+differ from the design sections, they win. It extends — it does not replace —
 [rpc-transport.md](rpc-transport.md) §3.4 (the WebSocket binding, specified since 2026-05-15 and
-never built) and §3.4a (the SSE binding, shipped in cratestack#390).
+not built until S5) and §3.4a (the SSE binding, shipped in cratestack#390).
 
 Scope: the `.cstack` grammar for subscriptions, `cratestack-macros` codegen for all subscription
 dispatch, `cratestack-axum`'s SSE and (new) WebSocket bindings, model-event delivery in
@@ -568,6 +571,12 @@ subscription `Request` through `OpExecutor::admit_rate_limit` (dispatch-side, pe
 nothing else. Unary-over-WS stays gated on the trigger rpc-transport.md §6.5 already names: a
 concrete multiplexing need.
 
+> **Update (0.18.0):** as built (S5), no subscription `Request` goes through
+> `OpExecutor::admit_rate_limit`: neither `cratestack-websocket` nor `cratestack-webtransport`
+> depends on `cratestack-exec`, and the generated dispatcher calls no rate limiter. The admission
+> limits on a socket are `WebSocketLimits`' (subscriptions per socket, sockets per principal).
+> O5 was decided as proposed: unary over WS stays gated.
+
 ## 6a. The WebTransport binding
 
 WebTransport is a first-class binding, not a future option. This is a deployment requirement: the
@@ -821,6 +830,13 @@ Neither pulls `axum`, so the `facade-disjointness` CI assertion is unchanged. `@
 
 ## 9. Server wiring and gating
 
+> **Update (0.18.0):** as built, the server facades' feature is `websocket`, not `ws`
+> (`cratestack-pg` and `cratestack-api`; `cratestack-pg` also has `webtransport`). `ws` is the
+> client-side feature (`cratestack-client-rust`, `cratestack-client`). The backplane is swapped on
+> the runtime handle, `Cratestack::builder(pool).with_backplane(..)` (or
+> `Cratestack::builder().with_backplane(..)` under `db = None`), not on `rpc_router(…)`; the S2 and
+> S4 status blocks in §11 have the details.
+
 - **Cargo:** a `ws` feature on `cratestack-axum` (enables `axum/ws`), forwarded by `cratestack-pg`
   and `cratestack-api`, and on `cratestack-client-rust`/`cratestack-client`. A `webtransport` feature
   on the same facades and client crates pulls in `cratestack-webtransport` (server) or its client
@@ -881,7 +897,8 @@ is S5a. S6 is listed last for dependency order only.
 - a native-client integration suite;
 - the Chromium end-to-end check, `just test-webtransport-browser` (CI job `webtransport-browser`).
 
-Not built: the multi-replica test (it needs S2's backplane). The `extension webtransport` gating
+Not built: the multi-replica test (it needs S2's backplane; built with S2 below —
+`webtransport_model_feed.rs` serves WebTransport from replica B). The `extension webtransport` gating
 and the generated wiring landed with S5a (below). Each server slice's PR should also carry the
 smallest client change that lets its integration test run through a generated client, not raw HTTP.
 
@@ -1332,6 +1349,11 @@ matched (§5.3: design, security argument and `update_many` limit).
     - SSE when chosen.
 
 ## 12. Decisions for the maintainer
+
+> **Update (0.18.0):** beyond the decisions marked below, O1 was built as proposed (S4:
+> subscription procedures and topics), O2 became moot (S1 status: one evaluator, no class-B
+> refetch, no tombstones), and O7's `Init` frame is what shipped on both sockets (S5, S5b); signed
+> upgrade tickets were not built. O8's Firefox/Safari check, O9 and O10 are not recorded as decided.
 
 - **O1. Is this the "new kind"?** The proposal: subscription procedures + topics (§3.2–3.4). The
   narrower alternative is filtered model feeds only (§3.1), which is S1–S3 alone.

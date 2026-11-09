@@ -83,8 +83,11 @@ unstateable.
 ## Not here yet
 
 Audit fan-out, row-level policy on subscriptions (slice 3), and `OpInput::ctx` (always
-`None`). No in-process caller (ADR 0018's `invoke_with_db` path) is wired to the executor
-yet. Both admissions are reachable from HTTP only today.
+`None`). Subscription events do pass the subscriber's read policy since 0.17.1, but that check
+runs outside L3 (`cratestack_axum::rpc::readable_events`), not here. No in-process caller (ADR
+0018's `invoke_with_db` path) is wired to the executor yet. Both admissions are reached from REST
+and RPC (through `cratestack-axum`'s layers) and from MCP's `tools/call` (`cratestack-mcp`, which
+admits before it invokes).
 
 [rpc]: https://github.com/cratestack/cratestack/blob/main/docs/design/rpc-transport.md
 [lay]: https://github.com/cratestack/cratestack/blob/main/docs/design/layering.md

@@ -11,6 +11,7 @@ The quality pipeline:
 - **Posts PR checks** via reviewdog with new findings only
 - **Retains full reports** as artifacts for history and compliance
 - **Fails PRs on new error-level findings**, warns on warnings
+- **Fails on any `cargo deny` violation**, on every trigger: `cargo deny` emits no SARIF, so its findings never reach reviewdog, and `.ci/quality/run.sh` fails the job itself (it is the same dependency gate `just all-checks` ends in)
 
 ```
 [PR/Push/Schedule] → [GitHub Actions workflow]
@@ -23,7 +24,7 @@ The quality pipeline:
                     ├─ Gitleaks (secrets)
                     ├─ cargo audit (Rust advisories)
                     ├─ cargo deny (Rust deps/licenses)
-                    ├─ Trivy (IaC config — no matching file types yet)
+                    ├─ Trivy (IaC config — one Dockerfile today)
                     └─ actionlint (GitHub Actions correctness)
                        ↓
                     [SARIF Merge]
@@ -87,7 +88,7 @@ The quality pipeline:
 - **Scope:** IaC misconfigurations — Terraform, CloudFormation, Kubernetes, Helm, Dockerfile, Ansible
 - **Detection:** Misconfigurations and bad practices in the file types above
 - **Output:** SARIF
-- **Note:** This repo has none of those file types yet, so it currently reports "0 config files found" — an accurate result, not a bug. It does **not** cover GitHub Actions workflows (see actionlint below).
+- **Note:** The only matching file in this repo today is `crates/cratestack-mock-wiremock/docker/Dockerfile`. It does **not** cover GitHub Actions workflows (see actionlint below).
 
 ### actionlint
 
@@ -143,8 +144,8 @@ Every scanner is installed at the start of the `quality` job — see `.ci/qualit
 | Trigger | Scan Type | Behavior |
 |---|---|---|
 | **Pull Request** | `pr` | Scan PR diffs; fail on error-level findings; post PR check |
-| **Push to main** | `full` | Full scan; advisory; no PR check (already merged) |
-| **Weekly schedule** | `full` | Full scan; Advisory; useful for catching retroactive vulnerabilities |
+| **Push to main** | `full` | Full scan; advisory except `cargo deny`, which fails the job; no PR check (already merged) |
+| **Weekly schedule** | `full` | Full scan; advisory except `cargo deny`; useful for catching retroactive vulnerabilities |
 | **Manual dispatch** | User choice | Run on demand |
 
 ## Configuration & Customization
@@ -229,8 +230,9 @@ and degrades to `-reporter=github-pr-annotations` in that case — plain
 GitHub Actions log annotations, which need no write permission at all.
 
 This step only runs on `pull_request` events, so pushes to `main` and
-scheduled scans are never gated on finding counts — they rely solely on
-`gate.sh`'s execution-correctness check. This is deliberate: re-implementing
+scheduled scans are never gated on SARIF finding counts — they rely on
+`gate.sh`'s execution-correctness check, plus the one exception above:
+`run.sh` exits non-zero on any `cargo deny` violation, on every trigger. This is deliberate: re-implementing
 "new vs. backlog" in `gate.sh` by counting total errors would fail every PR
 on pre-existing repository backlog, which the pipeline is explicitly required
 not to do.
@@ -243,6 +245,12 @@ Every suppression must be:
 - **Expiring:** Auto-expires on a set date; forces re-review quarterly
 
 Suppressions are stored in `.ci/baselines/` and reviewed alongside code.
+
+**What is actually wired today:** only `.ci/baselines/gitleaks.toml`, which `run.sh` passes to
+gitleaks as `--config`. There is no `semgrep-allowlist.yml` in the directory and nothing reads one,
+and no script enforces an `expires` date; the example below is the intended shape, not a working
+mechanism. The existing Semgrep rules scope themselves instead, in the rule file (`paths: exclude:`
+and patterns under `.ci/rules/semgrep/`).
 
 ### Example Workflow
 
@@ -353,7 +361,7 @@ Add to `.ci/baselines/` files and re-run quality checks.
 4. **Fine-grained reporting per module:** Reports are repository-wide
    - Workaround: Filter reports by path after merge
 
-5. **Trivy doesn't cover GitHub Actions:** its config scanner's default checks are Terraform/CloudFormation/Kubernetes/Helm/Dockerfile/Ansible — none of which this repo has yet, so it currently finds "0 config files." GitHub Actions correctness is covered by actionlint instead.
+5. **Trivy doesn't cover GitHub Actions:** its config scanner's default checks are Terraform/CloudFormation/Kubernetes/Helm/Dockerfile/Ansible — of which this repo has one Dockerfile (`crates/cratestack-mock-wiremock/docker/`). GitHub Actions correctness is covered by actionlint instead.
 
 ### What This Pipeline DOES Provide
 
