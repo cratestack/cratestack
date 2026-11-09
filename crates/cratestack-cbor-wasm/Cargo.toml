@@ -46,13 +46,15 @@ decimal-bigdecimal = [
     "cratestack-codec-json/decimal-bigdecimal",
 ]
 
-# Off by default, and kept out of `@cratestack/cbor-web`: the npm package is
-# built without it, byte for byte codec-only (CI's `js-cbor-wasm` and
-# `release-cli.yml`'s `publish-npm-cbor-web` assert that). Only the
-# `cratestack_cbor` Dart package's web artifact is built with it
-# (`just cbor-vendor-web`): a `ClientEnvelope` class that seals requests
-# and opens responses with `cratestack-cose` (cratestack#1026, ADR 0006
-# §11). The Promise-returning methods need `js-sys` and
+# Off by default, and kept out of `@cratestack/cbor-web`'s codec artifact
+# (`dist/wasm-pkg`): that stays byte for byte codec-only (CI's `js-cbor-wasm`
+# and `release-cli.yml`'s `publish-npm-cbor-web` assert that, through
+# `.ci/cbor-web-codec-only.sh`). Two artifacts are built with it: the
+# `cratestack_cbor` Dart package's web artifact (`just cbor-vendor-web`) and
+# `@cratestack/cbor-web`'s separate `./cose` one (`dist/wasm-pkg-cose`,
+# cratestack#1010): a `ClientEnvelope` class that seals requests and opens
+# responses with `cratestack-cose` (cratestack#1026, ADR 0006 §11), its key
+# in memory or behind a JS signing callback (`ClientEnvelope.external`). The Promise-returning methods need `js-sys` and
 # `wasm-bindgen-futures`, which only exist on the wasm target.
 cose = ["dep:bytes", "dep:cratestack-cose", "dep:js-sys", "dep:wasm-bindgen-futures", "dep:zeroize"]
 

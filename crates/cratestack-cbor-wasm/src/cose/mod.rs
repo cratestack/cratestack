@@ -1,8 +1,9 @@
 //! The COSE signed transport for the web (cratestack#1026, ADR 0006 §11):
 //! a `ClientEnvelope` class that seals requests and opens responses with
 //! `cratestack-cose`, the one implementation. Behind the `cose` feature,
-//! which `@cratestack/cbor-web` is built without; only the Dart package's
-//! web artifact has it.
+//! which the codec artifact of `@cratestack/cbor-web` is built without; the
+//! Dart package's web artifact and `@cratestack/cbor-web`'s separate
+//! `./cose` artifact (cratestack#1010) have it.
 //!
 //! ```text
 //! JS binding object ──▶ CallBinding ──▶ Binding ──▶ CoseEnvelope
@@ -19,10 +20,11 @@
 mod convert;
 mod envelope;
 mod error;
+mod external;
 mod opened;
 
 #[cfg(test)]
 mod tests;
 
 pub use envelope::ClientEnvelope;
-pub use opened::contract_header_value;
+pub use opened::{canonical_query, contract_header_value};

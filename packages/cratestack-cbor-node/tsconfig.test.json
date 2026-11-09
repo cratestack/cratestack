@@ -4,6 +4,7 @@
     "rootDir": ".",
     "noEmit": true,
     "declaration": false,
+    "resolveJsonModule": true,
     "declarationMap": false,
     "sourceMap": false
   },

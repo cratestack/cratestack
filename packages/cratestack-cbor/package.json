@@ -44,6 +44,20 @@
     "./web": {
       "types": "./dist/web.d.ts",
       "import": "./dist/web.js"
+    },
+    "./cose": {
+      "node": {
+        "types": "./dist/cose-node.d.ts",
+        "import": "./dist/cose-node.js"
+      },
+      "browser": {
+        "types": "./dist/cose-web.d.ts",
+        "import": "./dist/cose-web.js"
+      },
+      "default": {
+        "types": "./dist/cose-web.d.ts",
+        "import": "./dist/cose-web.js"
+      }
     }
   },
   "files": [

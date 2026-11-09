@@ -425,6 +425,10 @@ export class CratestackRuntime {
       signal: options.signal ?? null,
     });
 
+    if (!response.ok) {
+      // A `415` sends the op back to named bodies (see `./compact`).
+      compact?.noteFailure(response.status);
+    }
     const payload = await readResponsePayload(response, compact);
     if (!response.ok) {
       throw new CratestackHttpError(response, payload);

@@ -35,3 +35,12 @@ pub fn contract_header_value(contract_sha: &[u8]) -> Result<String, JsValue> {
         .map_err(|_| misuse("`contractSha` is 32 bytes"))?;
     Ok(cratestack_cose::contract_header_value(&digest))
 }
+
+/// The canonical form of a raw query string (the part after `?`, without
+/// it): the form `binding.query` must carry for the seal to match what the
+/// server rebuilds. Pairs ordered by key and re-encoded, by
+/// `cratestack_core::canonical_query`, so no client re-implements it.
+#[wasm_bindgen(js_name = canonicalQuery)]
+pub fn canonical_query(query: &str) -> String {
+    cratestack_core::canonical_query(Some(query))
+}

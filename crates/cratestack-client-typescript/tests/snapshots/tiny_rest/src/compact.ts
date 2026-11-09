@@ -41,6 +41,9 @@ export interface RestCompactCall {
   /** A compact response body as plain JSON text; also records that this op
    *  answers compact. */
   decodeResponse(text: string): string;
+  /** The op's answer was an HTTP `status` that is not a body to read: a
+   *  `415` sends the op back to named bodies (see the implementation). */
+  noteFailure(status: number): void;
 }
 
 function bytesOfBase64(encoded: string): Uint8Array {
@@ -160,6 +163,7 @@ export class RestCompactSession {
       this.encodingByIdempotencyKey.set(idempotencyKey, sendCompact);
     }
     const compactOps = this.compactOps;
+    const pins = this.encodingByIdempotencyKey;
     return {
       applyHeaders(headers: Headers, hasBody: boolean): void {
         headers.set("Accept", `${COMPACT_JSON_CONTENT_TYPE}, application/json`);
@@ -174,6 +178,18 @@ export class RestCompactSession {
       decodeResponse(text: string): string {
         compactOps.add(op);
         return keys.fromCompactJson(text, op, "response");
+      },
+      noteFailure(status: number): void {
+        // A `415` is the server refusing the compact request type (it did not
+        // understand the integer keys): this op goes back to named bodies from
+        // the next call, and a retry under the same `Idempotency-Key` too.
+        // The call that got it is not retried here.
+        if (status === 415) {
+          compactOps.delete(op);
+          if (idempotencyKey !== undefined) {
+            pins.set(idempotencyKey, false);
+          }
+        }
       },
     };
   }

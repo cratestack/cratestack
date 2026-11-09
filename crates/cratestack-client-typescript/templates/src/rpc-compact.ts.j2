@@ -49,6 +49,9 @@ export interface RpcCompactCall {
   /** A compact response body (or one `cbor-seq` item) as plain bytes; also
    *  records that this op answers compact. */
   decodeResponse(bytes: Uint8Array): Uint8Array;
+  /** The op's answer was an HTTP `status` that is not a body to read: a
+   *  `415` sends the op back to named bodies (see the implementation). */
+  noteFailure(status: number): void;
 }
 
 function bytesOfBase64(encoded: string): Uint8Array {
@@ -124,6 +127,7 @@ export class RpcCompactSession {
       this.encodingByIdempotencyKey.set(idempotencyKey, sendCompact);
     }
     const compactOps = this.compactOps;
+    const pins = this.encodingByIdempotencyKey;
     return {
       responseType: compactType,
       applyHeaders(headers: Headers): void {
@@ -160,6 +164,18 @@ export class RpcCompactSession {
           return new TextEncoder().encode(named);
         }
         return keys.fromCompact(bytes, op, "response");
+      },
+      noteFailure(status: number): void {
+        // A `415` is the server refusing the compact request type (it did not
+        // understand the integer keys): this op goes back to named bodies from
+        // the next call, and a retry under the same `Idempotency-Key` too.
+        // The call that got it is not retried here.
+        if (status === 415) {
+          compactOps.delete(op);
+          if (idempotencyKey !== undefined) {
+            pins.set(idempotencyKey, false);
+          }
+        }
       },
     };
   }

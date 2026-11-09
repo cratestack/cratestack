@@ -2,3 +2,4 @@
 # crates/cratestack-cbor-wasm. dist/ is already covered by the root
 # .gitignore (packages/*/dist/).
 /src/wasm-pkg
+/src/wasm-pkg-cose

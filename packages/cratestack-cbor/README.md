@@ -170,3 +170,34 @@ for real.
 ## License
 
 MIT
+
+## Signed mode (`@cratestack/cbor/cose`)
+
+`createCoseClient` seals requests and opens responses as COSE (ADR 0006), through `cratestack-cose`
+compiled to WASM (browser) or the native addon (Node): all signing, hashing and the canonical query are
+Rust's. The signer is a COSE_Mac0 session key (`{ type: "hmac" }`), an in-memory Ed25519 or P-256 key, or
+an external callback for a non-extractable key:
+
+```ts
+import { createCoseClient, createSealedLink } from "@cratestack/cbor/cose";
+
+const cose = await createCoseClient({
+  audience: "payments",
+  serverKeys: [{ alg: "ed25519", bytes: serverPublicKey }], // the static trust root
+  signer: {
+    type: "external",
+    alg: "esp256",
+    publicKey, // SEC1 point
+    sign: async (toBeSigned) =>
+      new Uint8Array(
+        await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, toBeSigned),
+      ),
+  },
+});
+// RPC: new CratestackRpcRuntime(origin, { links: [createSealedLink({ cose, contracts: OP_CONTRACTS })] })
+// REST: new CratestackRuntime(origin, { fetch: createSealedFetch({ cose, contracts: OP_CONTRACTS }) })
+```
+
+`cose` may be a function `({ route, method }) => CoseClient | undefined` to seal with Sign1 before a session,
+Mac0 after it, and not at all for anonymous calls. Every failed verification rejects with a `CoseFailure`
+whose `code` is `rejected` and whose message is empty.

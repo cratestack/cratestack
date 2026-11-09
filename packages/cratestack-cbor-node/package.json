@@ -26,6 +26,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./cose": {
+      "types": "./dist/cose.d.ts",
+      "import": "./dist/cose.js"
     }
   },
   "files": [

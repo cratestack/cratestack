@@ -9,6 +9,7 @@
 // the crate's suite whenever `cose` is on.
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
+mod external;
 mod misuse;
 mod support;
 mod vectors;

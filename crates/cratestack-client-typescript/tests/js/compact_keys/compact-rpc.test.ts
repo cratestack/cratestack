@@ -79,6 +79,37 @@ beforeEach(() => {
 });
 
 describe.each(layouts)("%s", (_name, mod) => {
+  it("a 415 to a compact request sends the op back to named, and a retry under its key too", async () => {
+    const { fetchFn, sent } = transport((_request, index) =>
+      index < 2
+        ? compactCbor("hi")
+        : index === 2
+          ? plainCbor({ code: "unsupported_media_type" }, 415)
+          : plainCbor("hi"),
+    );
+    const runtime = new mod.CratestackRpcRuntime("http://x.invalid", {
+      fetch: fetchFn,
+      compactKeys: true,
+    });
+    await runtime.call("procedure.echoName", { name: "a" });
+    await runtime.call("procedure.echoName", { name: "b" });
+    expect(sent[1]?.headers.get("content-type")).toBe(COMPACT_CBOR);
+    // The server refuses the compact request type: this call fails, not retried.
+    await expect(
+      runtime.call("procedure.echoName", { name: "c" }, { idempotencyKey: "k" }),
+    ).rejects.toBeDefined();
+    expect(sent).toHaveLength(3);
+    expect(sent[2]?.headers.get("content-type")).toBe(COMPACT_CBOR);
+    // From the next call the op is named again, even under the refused call's key.
+    await runtime.call("procedure.echoName", { name: "c" }, { idempotencyKey: "k" });
+    await runtime.call("procedure.echoName", { name: "d" });
+    expect(sent[3]?.headers.get("content-type")).toBe("application/cbor");
+    expect(sent[4]?.headers.get("content-type")).toBe("application/cbor");
+    expect(await createCborCodec().then((c) => c.decode(sent[4]?.body as Uint8Array))).toEqual({
+      name: "d",
+    });
+  });
+
   it("compactKeys off: unchanged headers, and the binding is never touched", async () => {
     const { fetchFn, sent } = transport(() => plainCbor("hi"));
     const runtime = new mod.CratestackRpcRuntime("http://x.invalid", { fetch: fetchFn });

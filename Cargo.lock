@@ -1259,14 +1259,17 @@ dependencies = [
 name = "cratestack-cbor-napi"
 version = "0.19.3"
 dependencies = [
+ "bytes",
  "cratestack-codec-cbor",
  "cratestack-codec-json",
  "cratestack-core",
+ "cratestack-cose",
  "napi",
  "napi-build",
  "napi-derive",
  "serde",
  "serde_json",
+ "zeroize",
 ]
 
 [[package]]

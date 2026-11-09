@@ -459,6 +459,11 @@ const terminalLink: RpcLinkNext = async (request) => {
     body,
     signal: request.signal,
   });
+  // An unsigned or signed `415` tells the compact layer the server does not
+  // read integer keys for this op (sealing or not, the status is the same).
+  if (!response.ok) {
+    request.compact?.noteFailure(response.status);
+  }
   return { response };
 };
 

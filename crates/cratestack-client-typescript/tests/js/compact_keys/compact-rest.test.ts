@@ -63,6 +63,28 @@ describe.each([
   ["default layout", plain],
   ["--swr layout", swr],
 ] as const)("%s", (_name, mod) => {
+  it("a 415 to a compact request sends the op back to named, and a retry under its key too", async () => {
+    const { fetchFn, sent } = transport((_request, index) =>
+      index === 0
+        ? compactResponse({ id: 1 })
+        : index === 1
+          ? plainResponse({ code: "unsupported_media_type" }, 415)
+          : plainResponse({ id: 1 }),
+    );
+    const runtime = new mod.CratestackRuntime("http://x.invalid", {
+      fetch: fetchFn,
+      compactKeys: true,
+    });
+    const options = { headers: { "Idempotency-Key": "k" } };
+    await runtime.post("/widgets", { name: "warm" });
+    await expect(runtime.post("/widgets", { name: "a" }, options)).rejects.toBeDefined();
+    expect(sent[1]?.headers.get("content-type")).toBe(COMPACT_JSON);
+    await runtime.post("/widgets", { name: "a" }, options);
+    await runtime.post("/widgets", { name: "b" });
+    expect(sent[2]?.headers.get("content-type")).toBe("application/json");
+    expect(sent[3]?.headers.get("content-type")).toBe("application/json");
+  });
+
   it("compactKeys off: unchanged headers, and the binding is never touched", async () => {
     const { fetchFn, sent } = transport(() => plainResponse({ id: 1 }));
     const runtime = new mod.CratestackRuntime("http://x.invalid", { fetch: fetchFn });

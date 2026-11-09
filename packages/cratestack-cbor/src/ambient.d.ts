@@ -87,3 +87,20 @@ declare module "@cratestack/cbor-web" {
   }
   export function createCompactKeys(tables: Uint8Array): Promise<CompactKeys>;
 }
+
+// The `./cose` subpaths of the same two packages (cratestack#1010): the signed
+// transport. Same role as above, a typecheck-time net for the toolchain-free
+// lane; the shape is `@cratestack/ts-types`' `CoseModule`.
+declare module "@cratestack/cbor-node/cose" {
+  import type { CoseClient, CoseClientOptions } from "@cratestack/ts-types";
+
+  export function createCoseClient(options: CoseClientOptions): Promise<CoseClient>;
+  export { CoseFailure } from "@cratestack/ts-types";
+}
+
+declare module "@cratestack/cbor-web/cose" {
+  import type { CoseClient, CoseClientOptions } from "@cratestack/ts-types";
+
+  export function createCoseClient(options: CoseClientOptions): Promise<CoseClient>;
+  export { CoseFailure } from "@cratestack/ts-types";
+}
