@@ -2,8 +2,10 @@
 //! (extensions.md: the schema declares participation, not numbers).
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 
+use cratestack_core::subscription_wire::SubscriptionRateLimit;
 use cratestack_core::{CratestackContext, DEFAULT_BODY_LIMIT_BYTES};
 
 use crate::origin::OriginPolicy;
@@ -55,6 +57,7 @@ pub struct WebTransportConfig {
     pub(crate) origins: OriginPolicy,
     pub(crate) limits: WebTransportLimits,
     pub(crate) principal_key: PrincipalKeyFn,
+    pub(crate) rate_limit: Option<Arc<dyn SubscriptionRateLimit>>,
 }
 
 impl WebTransportConfig {
@@ -73,6 +76,7 @@ impl WebTransportConfig {
             origins: OriginPolicy::SameOrigin,
             limits: WebTransportLimits::default(),
             principal_key: default_principal_key,
+            rate_limit: None,
         }
     }
 
@@ -95,6 +99,15 @@ impl WebTransportConfig {
 
     pub fn principal_key(mut self, principal_key: PrincipalKeyFn) -> Self {
         self.principal_key = principal_key;
+        self
+    }
+
+    /// Charge each subscription stream one token through `limiter`
+    /// (design §6.7), e.g. `rate_limit_layer.for_subscriptions()` from
+    /// `cratestack-axum`. Without it, opens are not rate limited. A refused
+    /// open is an `err` frame on that stream, then FIN; the session stays up.
+    pub fn rate_limit(mut self, limiter: impl SubscriptionRateLimit) -> Self {
+        self.rate_limit = Some(Arc::new(limiter));
         self
     }
 }

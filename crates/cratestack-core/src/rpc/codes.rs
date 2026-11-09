@@ -62,3 +62,47 @@ pub fn cratestack_error_code_to_rpc_code(code: &str) -> &'static str {
         _ => "internal",
     }
 }
+
+/// The inverse of [`cratestack_error_code_to_rpc_code`]: the REST-binding
+/// code an RPC code stands for, so a client can carry an RPC error in the
+/// REST envelope and read the same code back. Where several REST codes
+/// share one RPC code (`invalid_argument`, `internal`) the canonical one is
+/// returned; an unknown code is `INTERNAL_ERROR`, as in the forward map.
+pub fn rpc_code_to_cratestack_error_code(code: &str) -> &'static str {
+    match code {
+        "invalid_argument" => "BAD_REQUEST",
+        "unauthenticated" => "UNAUTHORIZED",
+        "permission_denied" => "FORBIDDEN",
+        "not_found" => "NOT_FOUND",
+        "conflict" => "CONFLICT",
+        "aborted" => "TRANSACTION_ABORTED",
+        "failed_precondition" => "PRECONDITION_FAILED",
+        "unavailable" => "UNAVAILABLE",
+        "resource_exhausted" => "TOO_MANY_REQUESTS",
+        _ => "INTERNAL_ERROR",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_inverse_map_round_trips_every_rpc_code() {
+        for code in [
+            "invalid_argument",
+            "unauthenticated",
+            "permission_denied",
+            "not_found",
+            "conflict",
+            "aborted",
+            "failed_precondition",
+            "unavailable",
+            "resource_exhausted",
+            "internal",
+        ] {
+            let rest = rpc_code_to_cratestack_error_code(code);
+            assert_eq!(cratestack_error_code_to_rpc_code(rest), code);
+        }
+    }
+}

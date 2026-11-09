@@ -66,10 +66,10 @@ async fn upgrade<A: AuthProvider, D: SubscriptionDispatcher>(
     let Ok((codec, negotiated)) = WireCodec::select(offered, uri.query()) else {
         return StatusCode::NOT_ACCEPTABLE.into_response();
     };
-    let remote = extensions
+    let peer = extensions
         .get::<ConnectInfo<SocketAddr>>()
-        .map(|info| info.0.ip())
-        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+        .map(|info| info.0.ip());
+    let remote = peer.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
     let handshake = Handshake {
         method: "GET",
         path: uri.path().to_owned(),
@@ -83,5 +83,5 @@ async fn upgrade<A: AuthProvider, D: SubscriptionDispatcher>(
     } else {
         ws
     };
-    ws.on_upgrade(move |socket| crate::session::run(shared, socket, codec, handshake, remote))
+    ws.on_upgrade(move |socket| crate::session::run(shared, socket, codec, handshake, remote, peer))
 }

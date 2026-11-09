@@ -541,7 +541,7 @@ different layers*, inconsistently:
 | Policy (procedure) | L1 `policy/src/eval.rs` | L1 (pure) | ⊥-generated `authorize_with_db` (`macros/src/procedure/instrument.rs:44`) |
 | Policy (row-level) | L1 `ReadPolicy` literals | **L2** — compiled into SQL, `sqlx/src/query/support/policy.rs` | inside the query |
 | Idempotency | L1 `core::store::idempotency` | L2 sqlx / redis | **L3** `exec::OpExecutor::admit` (adapted at L4) |
-| Rate limit | L1 `core::store::ratelimit` | L2 redis / L4 in-memory | **L3** `exec::OpExecutor::admit_rate_limit` (key, timeout and `429` at L4) |
+| Rate limit | L1 `core::store::ratelimit` | L2 redis / L4 in-memory | **L3** `exec::OpExecutor::admit_rate_limit` (key, timeout and `429` at L4); WS/WT subscription opens through `core::subscription_wire::SubscriptionRateLimit`, implemented at L4 axum, no new edges |
 | Audit (persistence) | — | L2 `sqlx/src/audit.rs` | L2, inside the mutation's transaction |
 | Audit (fan-out) | L1 `core::audit::AuditSink` | L1 (`MulticastAuditSink`) | **nowhere — no caller** |
 

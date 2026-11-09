@@ -1,0 +1,22 @@
+// A `subscription procedure` served over WebSocket under `db = None`, with the
+// generated dispatcher rate limited per open (`tests/websocket_rate_limit.rs`).
+
+transport rpc
+
+extension websocket {
+}
+
+datasource db {
+  provider = "none"
+}
+
+type CountArgs {
+  to Int
+}
+
+type Tick {
+  n Int
+}
+
+subscription procedure countdown(args: CountArgs): Tick
+  @allow(auth() != null)

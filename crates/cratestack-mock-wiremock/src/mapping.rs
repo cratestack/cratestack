@@ -8,15 +8,15 @@ use crate::config::WireMockGeneratorConfig;
 use crate::error::WireMockGeneratorError;
 use crate::values::synthesize;
 
-/// Every procedure — REST or RPC transport alike — is `POST`, always
-/// answers `200` on success (`crates/cratestack-macros/src/axum/
-/// procedure.rs` hardcodes `StatusCode::OK`; there is no per-procedure
-/// override yet, tracked upstream as cratestack#407), and carries its
-/// return type as the whole JSON body with no envelope. That's exactly
-/// what v1 stubs: request-match on method + path only (no body
-/// assertion — see the design doc's "How do callers vary responses?"
-/// open question for why), respond `200` with a synthesized instance of
-/// the declared return type.
+/// Every procedure — REST or RPC transport alike — is `POST` and carries
+/// its return type as the whole JSON body with no envelope. The success
+/// status is the procedure's `@status(<code>)` (2xx only, REST-only: the
+/// parser rejects it under `transport rpc`) and `200` otherwise, read the
+/// same way `procedure_success_status_tokens` does in
+/// `crates/cratestack-macros/src/axum/procedure/route_attrs.rs`. v1 stubs
+/// request-match on method + path only (no body assertion — see the design
+/// doc's "How do callers vary responses?" open question for why) and
+/// respond with a synthesized instance of the declared return type.
 pub(crate) fn build_procedure_mapping(
     schema: &Schema,
     config: &WireMockGeneratorConfig,
@@ -68,7 +68,7 @@ pub(crate) fn build_procedure_mapping(
             "urlPath": url_path,
         },
         "response": {
-            "status": 200,
+            "status": success_status(procedure),
             "headers": { "Content-Type": "application/json" },
             "jsonBody": body,
         },
@@ -83,4 +83,19 @@ pub(crate) fn build_procedure_mapping(
             },
         },
     }))
+}
+
+/// The procedure's declared `@status(<code>)`, defaulting to `200`.
+fn success_status(procedure: &Procedure) -> u16 {
+    procedure
+        .attributes
+        .iter()
+        .find_map(|attribute| {
+            attribute
+                .raw
+                .strip_prefix("@status(")
+                .and_then(|rest| rest.strip_suffix(')'))
+                .and_then(|inner| inner.trim().parse::<u16>().ok())
+        })
+        .unwrap_or(200)
 }

@@ -499,8 +499,11 @@ WebSocket gate is no longer the trigger. Epic: #875.
 > **Update (0.19.x):** two slices have shipped in `cratestack-exec`:
 > idempotency admission (0.11.1) and rate-limit admission (0.13.0, #877), with
 > `IdempotencyLayer`/`RateLimitLayer` as the thin HTTP adapters. Audit stays at
-> L2. The WS binding (0.18.0) serves subscriptions only and does not call the
-> executor.
+> L2. The WS binding (0.18.0) serves subscriptions only. From 0.19.3 its (and
+> the WebTransport binding's) subscription opens reach `admit_rate_limit`, opt-in,
+> through the L0 seam `core::subscription_wire::SubscriptionRateLimit`
+> (implemented at L4 by `cratestack_axum::ratelimit::SubscriptionRateLimiter`);
+> neither binding calls the executor itself.
 
 ## 5. Canonical request signing
 

@@ -413,7 +413,7 @@ futures-core = { version = "0.3", default-features = false }
 # gzips each body. Already in the graph through `cratestack-studio`, so this
 # adds no node; its default `rust_backend` keeps it free of C code.
 flate2 = "1"
-rusqlite = { version = "0.40.2", features = ["bundled", "fallible_uint"] }
+rusqlite = { version = "0.41.1", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
 # `cratestack-auth`'s `ServiceSigningKey::ephemeral` (test/local-dev signing
