@@ -13,7 +13,7 @@ pub(crate) fn dart_type(type_ref: &TypeRef, force_nullable: bool) -> String {
         let item = type_ref
             .page_item()
             .expect("validated Page<T> should include an item type");
-        let base = format!("Page<{}>", dart_type(item, false));
+        let base = format!("{}<{}>", type_ref.name, dart_type(item, false));
         return if force_nullable {
             format!("{base}?")
         } else {
