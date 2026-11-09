@@ -77,6 +77,7 @@ CratestackListQuery cratestackMergeFetchIntoListQuery(
     includeFields: fetchQuery.includeFields,
     limit: base.limit,
     offset: base.offset,
+    cursor: base.cursor,
     sort: base.sort,
     orderBy: base.orderBy,
     where: base.where,
@@ -142,6 +143,7 @@ class CratestackListQuery {
     this.includeFields = const <String, List<String>>{},
     this.limit,
     this.offset,
+    this.cursor,
     this.sort,
     this.orderBy,
     this.where,
@@ -157,6 +159,10 @@ class CratestackListQuery {
   final Map<String, List<String>> includeFields;
   final int? limit;
   final int? offset;
+  /// Keyset paging on `@@paged` models: an empty string starts at the
+  /// first page, a previous page's `pageInfo.nextCursor` continues. Mutually
+  /// exclusive with [offset]; use with a stable [sort].
+  final String? cursor;
   final String? sort;
   final String? orderBy;
   final String? where;
@@ -174,6 +180,7 @@ class CratestackListQuery {
     }
     if (limit != null) query['limit'] = limit;
     if (offset != null) query['offset'] = offset;
+    if (cursor != null) query['cursor'] = cursor;
     final effectiveSort = sort ?? orderBy;
     if (effectiveSort != null && effectiveSort.isNotEmpty) query['sort'] = effectiveSort;
     if (sort != null && orderBy != null && sort != orderBy) {
@@ -197,6 +204,7 @@ class CratestackListQuery {
         ) &&
         limit == other.limit &&
         offset == other.offset &&
+        cursor == other.cursor &&
         sort == other.sort &&
         orderBy == other.orderBy &&
         where == other.where &&
@@ -211,6 +219,7 @@ class CratestackListQuery {
         _cratestackMapHash<List<String>>(includeFields, valueHash: _cratestackListHash),
         limit,
         offset,
+        cursor,
         sort,
         orderBy,
         where,
@@ -286,6 +295,7 @@ class WidgetSelection {
   CratestackListQuery toListQuery({
     int? limit,
     int? offset,
+    String? cursor,
     String? sort,
     String? orderBy,
     String? where,
@@ -299,6 +309,7 @@ class WidgetSelection {
       includeFields: fetchQuery.includeFields,
       limit: limit,
       offset: offset,
+      cursor: cursor,
       sort: sort,
       orderBy: orderBy,
       where: where,
@@ -352,6 +363,7 @@ class WidgetListSelection {
   CratestackListQuery toListQuery({
     int? limit,
     int? offset,
+    String? cursor,
     String? sort,
     String? orderBy,
     String? where,
@@ -365,6 +377,7 @@ class WidgetListSelection {
       includeFields: fetchQuery.includeFields,
       limit: limit,
       offset: offset,
+      cursor: cursor,
       sort: sort,
       orderBy: orderBy,
       where: where,

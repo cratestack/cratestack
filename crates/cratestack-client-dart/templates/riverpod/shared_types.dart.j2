@@ -55,6 +55,7 @@ class PageInfo {
     this.offset,
     required this.hasNextPage,
     required this.hasPreviousPage,
+    this.nextCursor,
   });
 
   final int? limit;
@@ -62,12 +63,16 @@ class PageInfo {
   final bool hasNextPage;
   final bool hasPreviousPage;
 
+  /// Keyset cursor for the next page (cursor-paged list routes only).
+  final String? nextCursor;
+
   factory PageInfo.fromWire(CratestackValueMap value) {
     return PageInfo(
       limit: value['limit'] == null ? null : (value['limit'] as num).toInt(),
       offset: value['offset'] == null ? null : (value['offset'] as num).toInt(),
       hasNextPage: cratestackRequireWireValue('PageInfo', 'hasNextPage', value['hasNextPage']) as bool,
       hasPreviousPage: cratestackRequireWireValue('PageInfo', 'hasPreviousPage', value['hasPreviousPage']) as bool,
+      nextCursor: value['nextCursor'] as String?,
     );
   }
 
@@ -77,6 +82,7 @@ class PageInfo {
       'offset': offset,
       'hasNextPage': hasNextPage,
       'hasPreviousPage': hasPreviousPage,
+      if (nextCursor != null) 'nextCursor': nextCursor,
     };
   }
 }
@@ -138,6 +144,66 @@ class PageInput {
     return <String, Object?>{
       'limit': limit,
       'offset': offset,
+    };
+  }
+}
+
+/// Keyset-paging input for a procedure (`CursorPageInput`). A null or empty
+/// [cursor] is the first page; pass a previous [CursorPage.nextCursor] to
+/// continue.
+class CursorPageInput {
+  const CursorPageInput({this.limit, this.cursor});
+
+  final int? limit;
+  final String? cursor;
+
+  factory CursorPageInput.fromWire(CratestackValueMap value) {
+    return CursorPageInput(
+      limit: value['limit'] == null ? null : (value['limit'] as num).toInt(),
+      cursor: value['cursor'] as String?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'limit': limit,
+      'cursor': cursor,
+    };
+  }
+}
+
+/// Keyset-paged procedure result (`CursorPage<T>`); [nextCursor] is null on
+/// the last page.
+class CursorPage<T> {
+  const CursorPage({
+    required this.items,
+    this.nextCursor,
+  });
+
+  final IList<T> items;
+  final String? nextCursor;
+
+  factory CursorPage.fromWire(
+    CratestackValueMap value, {
+    required T Function(Object? item) decodeItem,
+  }) {
+    return CursorPage<T>(
+      items: cratestackAsValueList(cratestackRequireWireValue('CursorPage', 'items', value['items']))
+          .map((item) => decodeItem(item))
+          .toIList(),
+      nextCursor: value['nextCursor'] as String?,
+    );
+  }
+
+  CratestackValueMap toWire() {
+    return <String, Object?>{
+      'items': items.map((item) {
+        if (item is DateTime) return item.toUtc().toIso8601String();
+        if (item is Uint8List) return item.toList(growable: false);
+        if (item is String || item is num || item is bool || item == null) return item;
+        return (item as dynamic).toWire();
+      }).toList(growable: false),
+      if (nextCursor != null) 'nextCursor': nextCursor,
     };
   }
 }

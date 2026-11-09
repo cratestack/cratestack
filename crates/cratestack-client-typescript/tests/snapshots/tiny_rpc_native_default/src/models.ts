@@ -447,6 +447,8 @@ export interface PageInfo {
   offset: number | null;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
+  /** Keyset cursor for the next page; present only on cursor-paged list calls with more rows. */
+  nextCursor?: string | null;
 }
 
 export interface Page<T> {
@@ -462,6 +464,20 @@ export interface Page<T> {
 export interface PageInput {
   limit: number | null;
   offset: number | null;
+}
+
+// Mirrors cratestack-core::page::{CursorPageInput, CursorPage} exactly
+// (`#[serde(rename_all = "camelCase")]`): keyset paging for procedures.
+// `cursor` absent/empty is the first page; pass a previous page's
+// `nextCursor` to continue. `nextCursor` is omitted on the last page.
+export interface CursorPageInput {
+  limit: number | null;
+  cursor: string | null;
+}
+
+export interface CursorPage<T> {
+  items: T[];
+  nextCursor?: string | null;
 }
 
 // Shared building blocks for every `<Model>Where`/`<Model>FindMany`

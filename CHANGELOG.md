@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Cursor (keyset) pagination for generated list routes and procedures (cratestack#1304)
+
+Additive and non-breaking. Offset paging (`limit`/`offset`, `Page<T>`, `PageInput`) is untouched, and
+`pageInfo.nextCursor` is omitted from the wire unless a cursor request set it.
+
+- **List routes.** A `@@paged` model's `GET /<plural>` (and RPC `model.<M>.list`, via the new
+  `RpcListInput.cursor`) accepts `cursor=`: empty starts at the first page, a previous
+  `pageInfo.nextCursor` continues. The server sorts by the requested `sort` plus the primary key as a
+  unique tiebreaker, applies the cursor as a `WHERE` keyset bound `AND`ed beside filters and the read
+  policy (never `OFFSET`), fetches `limit + 1` to learn whether another page exists, and honours
+  `MAX_LIST_LIMIT`. `NULL` ordering is the framework's `NULLS LAST`. Refused with 400 `invalid_argument`:
+  `cursor` with `offset`, a cursor on a non-`@@paged` model, relation-path or non-comparable sort
+  fields, and a malformed, oversized (> 2048 chars) or other-sort-order cursor. Cursors are opaque
+  unsigned base64url tokens; they carry nothing the caller could not already send as a filter.
+- **Procedures.** New built-in `.cstack` types `CursorPageInput` (argument: `limit`, `cursor`) and
+  `CursorPage<T>` (return: `items`, `nextCursor`), with `cratestack::{CursorPageInput, CursorPage}`,
+  `CursorPage::from_rows`, `encode_cursor`/`decode_cursor` and `MAX_CURSOR_LEN` in `cratestack-core`.
+- **Both backends.** Postgres gets the generated route; `cratestack-sql` exports the dialect-agnostic
+  `parse_keyset_sort`/`keyset_after` (re-exported by `cratestack-pg`, `-api` and `-sqlite`), whose bound
+  is an ordinary `FilterExpr`, so the embedded rusqlite backend pages stably too (it has no generated
+  HTTP surface, so no route parameter).
+- **Clients.** Rust (`PageInfo::next_cursor`, `cursor` query pair), Dart (default and riverpod:
+  `PageInfo.nextCursor`, `CursorPageInput`, `CursorPage<T>`, `CratestackListQuery.cursor`) and
+  TypeScript (default, `--swr`, tanstack/rtk imports: the same types and `cursor` on the REST and RPC
+  list queries). `cratestack-mock-wiremock` stubs `CursorPage<T>`. Example clients regenerated.
+- Subscriptions reject `cursor`. Design: `docs/design/cursor-pagination.md`. MCP is exempt (ADR 0002 D5).
+
 ### Security: CBOR decode had no nesting depth limit and overflowed the stack on hostile input (#1315)
 
 A run of `0x81` (one-element array) headers about 8000 deep, then one integer, made `CborCodec::decode`

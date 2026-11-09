@@ -238,6 +238,7 @@ await client.widgets.list({{
     includeFields: {{ owner: ["id"] }},
     limit: 5,
     offset: 10,
+    cursor: "a-b_c",
     where: "published=true,authorId=42",
     or: "role=admin|role=owner",
     filters: {{ status: "active" }},
@@ -303,6 +304,7 @@ console.log("REST_LIST_QUERY_CHECK_OK");
     assert_eq!(value_of("includeFields[owner]"), "id");
     assert_eq!(value_of("limit"), "5");
     assert_eq!(value_of("offset"), "10");
+    assert_eq!(value_of("cursor"), "a-b_c");
     assert_eq!(value_of("where"), "published=true,authorId=42");
     assert_eq!(value_of("or"), "role=admin|role=owner");
     // `filters` must be spread as an individual top-level param — the exact

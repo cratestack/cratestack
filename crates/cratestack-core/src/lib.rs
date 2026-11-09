@@ -23,6 +23,7 @@ pub mod composite_id;
 pub mod context;
 pub mod credential;
 pub mod cuid;
+pub mod cursor;
 pub mod decimal;
 pub mod envelope;
 pub mod error;
@@ -103,6 +104,7 @@ pub use client_contract::{
     op_contract_digest, op_contract_digests, op_contract_json, op_keys,
 };
 pub use credential::Credential;
+pub use cursor::{MAX_CURSOR_LEN, cursor_scalar, decode_cursor, encode_cursor};
 #[cfg(feature = "decimal-bigdecimal")]
 pub use decimal::BigDecimal;
 #[cfg(all(feature = "decimal-rust-decimal", not(feature = "decimal-bigdecimal")))]
@@ -135,7 +137,7 @@ pub use op_list::{
     ModelOpIds, ModelVerb, detail_route_of, model_detail_route, model_list_route, model_op_key,
     model_subscribe_route, model_verbs, procedure_op_key, subscription_procedure_op_key,
 };
-pub use page::{MAX_LIST_LIMIT, Page, PageInfo, PageInput};
+pub use page::{CursorPage, CursorPageInput, MAX_LIST_LIMIT, Page, PageInfo, PageInput};
 pub use patch::deserialize_double_option;
 pub use projection::ProjectionDecoder;
 pub use schema::{

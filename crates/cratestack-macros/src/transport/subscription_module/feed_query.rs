@@ -25,6 +25,11 @@ pub(super) fn tokens() -> proc_macro2::TokenStream {
                 let ::cratestack::__private::SubscribeQuery { operations, rest } =
                     ::cratestack::__private::split_subscribe_query(query)?;
                 let list = super::axum::parse_model_list_query(rest.as_deref())?;
+                if list.cursor.is_some() {
+                    return Err(::cratestack::CratestackError::BadRequest(
+                        "cursor cannot be used on a subscription".to_owned(),
+                    ));
+                }
                 let filter = ::cratestack::FilterExpr::all(
                     list.filters.iter().map(build).collect::<Result<Vec<_>, _>>()?,
                 );

@@ -26,6 +26,7 @@ pub mod selection;
 pub mod spatial;
 mod sql_body;
 pub mod topic;
+mod type_ref_cursor;
 pub mod view;
 
 use std::collections::BTreeSet;

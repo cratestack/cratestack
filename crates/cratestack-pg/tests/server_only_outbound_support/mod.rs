@@ -171,6 +171,7 @@ macro_rules! so_out_impls {
                         offset: None,
                         has_next_page: false,
                         has_previous_page: false,
+                        next_cursor: None,
                     },
                 ))
             }

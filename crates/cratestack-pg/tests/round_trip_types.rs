@@ -117,7 +117,7 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
     // scalar is ever added to `BUILTIN_TYPES` without adding round-trip
     // coverage for it here, this fails the suite instead of silently
     // shipping an uncovered type. `Page`/`PageInput` aren't model-field-
-    // storable scalars — `Page<T>` is restricted to procedure return
+    // storable scalars — `Page<T>`/`CursorPage<T>` are restricted to procedure return
     // types and `PageInput` to procedure argument types, neither
     // round-trippable through a model's own ORM columns — so both are
     // excluded here, same as `Page` already was. `Vector(n)` (see
@@ -145,6 +145,8 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
         // Not model-field-storable scalars at all.
         "Page",
         "PageInput",
+        "CursorPage",
+        "CursorPageInput",
         "FindMany",
         // Storable, but gated on a Cargo feature + a Postgres extension.
         "Vector",

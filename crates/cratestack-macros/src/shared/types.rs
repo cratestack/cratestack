@@ -27,6 +27,9 @@ pub(crate) fn rust_type_tokens_with_scope(
             .page_item()
             .expect("validated Page<T> should include an item type");
         let item_type = rust_type_tokens_with_scope(item, custom_in_super);
+        if type_ref.is_cursor_page() {
+            return quote! { ::cratestack::CursorPage<#item_type> };
+        }
         return quote! { ::cratestack::Page<#item_type> };
     }
 

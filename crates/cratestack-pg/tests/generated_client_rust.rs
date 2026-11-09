@@ -360,6 +360,7 @@ async fn handle_list_sessions(uri: Uri, headers: HeaderMap) -> Response {
                 offset: None,
                 has_next_page: true,
                 has_previous_page: false,
+                next_cursor: None,
             },
         )
         .with_total_count(Some(2));
@@ -377,6 +378,7 @@ async fn handle_list_sessions(uri: Uri, headers: HeaderMap) -> Response {
             offset: None,
             has_next_page: true,
             has_previous_page: false,
+            next_cursor: None,
         },
     )
     .with_total_count(Some(2));
@@ -499,6 +501,7 @@ async fn handle_get_feed_page(
             offset: Some(offset),
             has_next_page: true,
             has_previous_page: offset > 0,
+            next_cursor: None,
         },
     )
     .with_total_count(Some(3));

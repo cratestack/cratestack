@@ -17,6 +17,8 @@ export interface CratestackFetchQuery<TComputedParams = never> {
   sort?: string[];
   limit?: number;
   offset?: number;
+  /** Keyset paging on `@@paged` models: `""` starts at the first page, a previous `pageInfo.nextCursor` continues. Mutually exclusive with `offset`; use with a stable `sort`. */
+  cursor?: string;
   /** Top-level filter expression in the server's `?where=` DSL, e.g. `"published=true,authorId=42"`. */
   where?: string;
   /** Disjunction filter in the server's `?or=` DSL, e.g. `"role=admin|role=owner"`. */
@@ -100,6 +102,9 @@ export function toSearchQuery<TComputedParams = never>(
   }
   if (query.offset !== undefined) {
     output.offset = query.offset;
+  }
+  if (query.cursor !== undefined) {
+    output.cursor = query.cursor;
   }
   if (query.where) {
     output.where = query.where;

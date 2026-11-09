@@ -13,6 +13,7 @@ mod builders;
 mod computed;
 #[cfg(test)]
 mod computed_tests;
+mod cursor;
 mod handler_subscribe;
 mod handlers_crud;
 mod handlers_list;
@@ -98,6 +99,7 @@ pub(crate) fn generate_model_axum_handlers(
     let parse_computed_params_fn = computed::build_parse_computed_params_fn(&p, &computed_fields);
     let serialize_helper = serializers::build_serialize_helper(&p, &arms, &computed_fields);
     let list_builder = serializers::build_list_builder(&p, &arms);
+    let cursor_helpers = cursor::build_cursor_helpers(&p, model, &model_names, enum_names);
     let list_handler = handlers_list::build_list_handler(&p);
     let create_handler = handlers_crud::build_create_handler(&p);
     let get_handler = handlers_crud::build_get_handler(&p);
@@ -115,6 +117,7 @@ pub(crate) fn generate_model_axum_handlers(
         #parse_computed_params_fn
         #serialize_helper
         #list_builder
+        #cursor_helpers
         #list_handler
         #create_handler
         #get_handler

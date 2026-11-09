@@ -22,6 +22,7 @@ import type {
   BoardSortField,
   TaskSortField,
   Page,
+  CursorPage,
 } from "./models.js";
 import {
   toSearchQuery,

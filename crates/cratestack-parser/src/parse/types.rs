@@ -100,7 +100,7 @@ pub(super) fn parse_type_ref(
 /// types, `FindMany<T>` for procedure arguments). Add new entries here as
 /// new generic builtins are introduced; the parsing logic below is
 /// otherwise fully shared.
-const GENERIC_BUILTIN_NAMES: &[&str] = &["Page", "FindMany"];
+const GENERIC_BUILTIN_NAMES: &[&str] = &["Page", "CursorPage", "FindMany"];
 
 fn parse_builtin_generic_type_ref(
     raw: &str,

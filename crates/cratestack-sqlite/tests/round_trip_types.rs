@@ -77,7 +77,14 @@ fn covered_scalar_types_match_parser_builtin_type_names_minus_page() {
         .filter(|name| {
             !matches!(
                 *name,
-                "Page" | "PageInput" | "FindMany" | "Vector" | "Geography" | "Geometry"
+                "Page"
+                    | "PageInput"
+                    | "CursorPage"
+                    | "CursorPageInput"
+                    | "FindMany"
+                    | "Vector"
+                    | "Geography"
+                    | "Geometry"
             )
         })
         .collect();
