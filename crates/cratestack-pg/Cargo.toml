@@ -309,7 +309,7 @@ testcontainers-modules.workspace = true
 # server over an in-memory `tokio::io::duplex`.
 tokio = { workspace = true, features = ["io-util"] }
 # `tests/websocket_subscriptions.rs` (`--features websocket`): its client.
-tokio-tungstenite = "0.29"
+tokio-tungstenite = "0.30"
 tower.workspace = true
 tracing-subscriber.workspace = true
 url.workspace = true

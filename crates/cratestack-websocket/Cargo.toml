@@ -48,4 +48,4 @@ tracing.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 tokio = { workspace = true, features = ["net", "time", "macros", "rt-multi-thread"] }
-tokio-tungstenite = "0.29"
+tokio-tungstenite = "0.30"
