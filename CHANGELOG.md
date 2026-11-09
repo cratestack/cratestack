@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### TypeScript clients can sign: `createCoseClient` in `@cratestack/cbor{,-web,-node}/cose`, sealed links for REST and RPC, a `415` falls back to named (part of #1010)
+
+Additive. `@cratestack/cbor/cose` (and `@cratestack/cbor-web/cose`, `@cratestack/cbor-node/cose`) export
+`createCoseClient`: COSE_Sign1 with an Ed25519 or P-256 key, COSE_Mac0 under a session key (HMAC), or an
+**external signer**, `sign(toBeSigned: Uint8Array) => Promise<Uint8Array>`, for a non-extractable WebCrypto
+key or a platform keystore (DER or raw `r || s`; ESP256 low-`s`; a signature that does not verify under the
+public key is refused before anything is sent). All signing, hashing, the canonical query and the AAD (binding
+version 2, payload type and accept included) are `cratestack-cose`, through WASM in the browser and the
+napi addon in Node; TypeScript carries bytes. Byte-identical to Rust: the shared vectors
+(`crates/cratestack-cose/tests/vectors`) are sealed to the same bytes by Rust native, wasm, napi and both
+packages. `createSealedLink({ cose, contracts: OP_CONTRACTS })` seals a generated RPC client's unary and
+batch calls, `createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath })` a generated REST client's
+(`fetch` option); `cose` may be a function picking Sign1 before a session, Mac0 after, or none (anonymous).
+Replies that do not open reject with `CoseFailure` (`rejected`, no detail); an unsigned success is never
+believed. A `415` to a compact request now sends the op back to named bodies from the next call
+(`noteFailure` in the generated compact layer, REST and RPC, sealed or not). The COSE code is a **separate
+wasm artifact** (`@cratestack/cbor-web/cose`, ~561 KB, 234 KB gzipped) so the codec bundle is unchanged;
+the napi addon grows by the COSE crypto and its prebuilt target list is unchanged. Not in this change:
+chunk-fed `StreamOpener` (the Rust `chain` stream opener does not exist yet, #1008) and a founder or
+intermediate trust chain (`serverKeys` is the static trust root). Design: `docs/design/ts-cose-signed-mode.md`.
+
 ### Documentation sweep: design docs, ADRs, tooling, contributing and READMEs brought up to 0.19.x (docs only)
 
 No behaviour change and nothing breaking. About eighty files: the design docs and ADRs under `docs/`

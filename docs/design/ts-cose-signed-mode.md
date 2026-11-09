@@ -1,8 +1,7 @@
 # COSE signed mode for the TypeScript clients
 
-Status: **in progress** (cratestack#1010). Phase 1 (the Rust bindings) and phase 2 (the package
-exports) are described as built; phase 3 (the generated runtimes) as planned and then as built, in
-the section that says so. ADR 0006 (`internals/cose-envelope-adr.md` in cratestack-docs) owns the
+Status: **implemented in part** (cratestack#1010): the Rust bindings, the package exports and the
+sealing link/fetch for the generated REST and RPC runtimes. Section 7 lists what is not. ADR 0006 (`internals/cose-envelope-adr.md` in cratestack-docs) owns the
 envelope; this note owns how TypeScript reaches it.
 
 ## 1. The rule
@@ -60,30 +59,41 @@ Mac0 under the session key after it, no seal for anonymous calls: the link takes
 would go without the link. Replacing the session key is a new client; there is no shared mutable
 key state to race.
 
-## 5. The link (phase 3)
+## 5. The link
 
 Sealing wraps the **fetch** a call is about to make, because that is where the exact wire bytes
 (after the codec and after compact keys) and the exact headers (`Idempotency-Key`, `If-Match`,
 `Cratestack-Contract`, the compact `Content-Type` and `Accept`) exist. It binds what the request
-carries, as the Rust client's `request_sealed` does.
+carries, as the Rust client's `request_sealed` does. It lives in `@cratestack/cbor/cose`
+(`packages/cratestack-cbor/src/sealed.ts`), not in generated code: a generated client composes it
+and gains no new file, so no generated tree changes for it.
 
-- **RPC.** An `RpcLink` (`createSealedLink`) that replaces `request.fetchFn` and passes the
-  request on; `route` is the op id (`batch` for `/rpc/batch`, CBOR both ways), `contractSha` is
-  `OP_CONTRACTS[route]`.
-- **REST.** A `fetch` wrapper (`createSealedFetch`) for `CratestackRuntime`'s `fetch` option: the
-  route template and path parameters come from matching the URL against the `"<METHOD> <template>"`
-  keys of `OP_CONTRACTS`; the query is canonicalised by Rust.
+- **RPC.** `createSealedLink({ cose, contracts: OP_CONTRACTS })` is an `RpcLink` that replaces
+  `request.fetchFn`; `route` is the op id (`batch` for `/rpc/batch`, which must be CBOR both
+  ways), `contractSha` is `OP_CONTRACTS[route]`.
+- **REST.** `createSealedFetch({ cose, contracts: OP_CONTRACTS, basePath })` is the `fetch`
+  option of `CratestackRuntime`: the route template and path parameters come from matching the URL
+  path against the `"<METHOD> <template>"` keys of `OP_CONTRACTS` (most literal template first); the
+  query is canonicalised by Rust (`canonicalQuery`).
 - **Headers.** `Content-Type` and `Accept` become the envelope's media type; the request's
-  type/accept become `Cratestack-Payload-Type` / `-Accept` (bound), through `selectorHeaders`.
-- **415.** A non-COSE `415` after a compact request tells the op's compact session to go back to
-  named (`noteFailure`, as the Rust client's `note_failure`); the call is not retried.
-- **Replies** that do not open throw `CoseFailure` `rejected`; a reply that is not COSE throws too
-  (`unsigned`), except the `415`/`426` hints above, which also throw but update compact state first.
+  type and accept list become `Cratestack-Payload-Type` / `-Accept` (bound), through
+  `selectorHeaders`; `Cratestack-Contract` is `contractHeader(OP_CONTRACTS[route])`.
+- **Mode per call.** `cose` is a `CoseClient`, or a function of `{ route, method }` returning one
+  or `undefined`: Sign1 before a session, Mac0 after, unsealed for anonymous calls.
+- **Replies.** A COSE reply is opened and returned as a `Response` whose body is the payload and
+  whose `Content-Type` is the type it was sealed under; one that does not open throws
+  `CoseFailure` `rejected`. An unsigned reply to a refused call (`!ok`) is returned untouched, a
+  hint and never proof; an unsigned *success* throws. `stream()` is not sealed.
+- **415.** The generated compact layers gain `noteFailure(status)`: a `415` to a request that went
+  out compact takes the op (and its `Idempotency-Key` pin) back to named bodies, as the Rust
+  client's `note_failure` does. The runtimes call it on any non-ok answer, sealed or not, since a
+  refusal is unsigned either way. The refused call is not retried.
 
 ## 6. Size and targets
 
-Measured in the PR: codec `wasm-pkg` unchanged; `wasm-pkg-cose` is the cose build; the napi
-`.node` delta; `napi.targets` unchanged (`just verify-napi-targets`).
+The codec artifact (`dist/wasm-pkg`) is built exactly as before. `dist/wasm-pkg-cose` is the same
+crate with `--features cose`: 561,214 bytes (234,452 gzipped) after `wasm-opt -O`, against 225,953
+(89,053 gzipped) for the codec alone. `napi.targets` is unchanged (`just verify-napi-targets`).
 
 ## 7. Not in this change
 
