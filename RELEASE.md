@@ -4,6 +4,9 @@ CrateStack publishes through the common public Rust and editor channels:
 
 * Rust crates: crates.io and docs.rs
 * CLI binaries and release notes: GitHub Releases
+* npm packages: npmjs.com (`@cratestack/cli`, the `@cratestack/api`, `@cratestack/cbor` families,
+  `@cratestack/refine`)
+* Dart packages: pub.dev (`cratestack_cbor`, `cratestack_annotations`, `cratestack_builder`)
 * VS Code extension: the VS Code Marketplace and Open VSX, plus `.vsix` files attached to GitHub
   Releases as a fallback — all three channels live, all published per tag by the same workflow
 * Documentation site: [cratestack.dev](https://cratestack.dev), a VitePress site (the vaam-apps Material 3 theme) built from `cratestack/cratestack-docs` and deployed to GitHub Pages on every push to its `main`
@@ -67,7 +70,10 @@ else happens on its own:
    subpackages); and `@cratestack/refine` — with provenance via npm's
    OIDC Trusted Publishing (no token at all). See
    [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md) for
-   the authoritative inventory and one-time setup.
+   the authoritative inventory and one-time setup. The same run publishes the
+   three Dart packages to pub.dev (`publish-pubdev-annotations`,
+   `publish-pubdev-builder`, `publish-pubdev-cbor`), also over OIDC
+   (pub.dev's Automated publishing, configured per package).
 3. ...and **"Release VS Code Extension"**
    (`.github/workflows/release-vscode.yml`): builds `cratestack-lsp` per
    platform, packages a `.vsix` per platform, and attaches all five to the
@@ -76,8 +82,9 @@ else happens on its own:
    identity — `AZURE_CLIENT_ID`/`AZURE_TENANT_ID`/`AZURE_SUBSCRIPTION_ID` on
    a `vscode-marketplace` GitHub Environment) and Open VSX (`OVSX_PAT`) are
    **both live**: each has published all five targets on v0.10.1 and v0.11.0.
-   Neither soft-skips any more, so an incomplete setup fails the release run
-   instead of passing quietly. Note Open VSX reaches Cursor/Windsurf/VSCodium
+   Each job still soft-skips (logs why, exits 0) when its credential is
+   missing, so a green run is not by itself evidence that a publish happened —
+   check the registry. Note Open VSX reaches Cursor/Windsurf/VSCodium
    but **not** VS Code, which can only see the Microsoft Marketplace — the two
    listings are separate publishes on separate credentials, and either can
    fail while the other succeeds. See
@@ -93,8 +100,10 @@ below for the mechanism.
 `release-cli.yml` also accepts a manual `workflow_dispatch` against an
 **existing** tag, for re-running a failed binary build — it validates the
 tag exists first and fails with a clear message otherwise; it never touches
-crates.io/npm on that path (see the jobs' own comments for why an npm/crates
-publish can't safely be retried against a throwaway dispatch).
+crates.io/npm/pub.dev on that path (see the jobs' own comments for why an
+npm/crates publish can't safely be retried against a throwaway dispatch).
+A dispatch with an empty `tag` and `rehearsal: true` (cratestack#652) instead
+runs every build and gate on the current branch and publishes nothing.
 
 **Known-good reference: `v0.4.16`** is the first release to go through the
 crates.io/npm/GitHub-Release side of this pipeline end-to-end with no manual
@@ -107,13 +116,14 @@ either documented as permanent workarounds (PR creation) or fixed and
 re-verified (the `RELEASE_PAT` trigger issue, and the `NPM_TOKEN` token-type
 issue).
 
-**npm publishing switched to Trusted Publishing after `v0.4.16`**: `publish-npm` and
-`publish-npm-api` no longer read `NPM_TOKEN` at all — they authenticate via npm's OIDC Trusted
-Publishing instead, which needs no GitHub secret but does need a one-time Trusted Publisher
-configured per package on npmjs.com (see
+**npm publishing switched to Trusted Publishing after `v0.4.16`**: the `publish-npm*` jobs
+(`publish-npm`, `publish-npm-api-family`, the cbor and refine jobs) no longer read `NPM_TOKEN` at
+all — they authenticate via npm's OIDC Trusted Publishing instead, which needs no GitHub secret but
+does need a one-time Trusted Publisher configured per package on npmjs.com (see
 [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md)). Unlike the old PAT, there's no
-secret to check for absence, so **until that's configured, both jobs fail** rather than
-soft-skipping — a deliberate hard cutover, not yet re-verified end-to-end against a real tag push.
+secret to check for absence, so **until that's configured, the job fails** rather than
+soft-skipping — a deliberate hard cutover. It works end to end on real tag pushes: `@cratestack/cli`
+0.19.1 on the registry was published by the `GitHub Actions` trusted publisher, with provenance.
 
 **`release-vscode.yml` is newer, and all three of its channels have now shipped.** The `build` job
 (per-platform `.vsix` packaging) and the GitHub-Release attach step have run clean since the
@@ -162,10 +172,11 @@ just release 0.3.4 dry          # rehearsal: dry-run publishes, no tag
 
 Underlying recipes you can also run individually:
 
-* `just bump 0.3.4` — rewrite `0.x.y` → `0.3.4` across every `Cargo.toml`
-  and every npm `package.json` (`packages/cratestack-cli-npm` and the
-  10-package `@cratestack/api` family), and refresh `Cargo.lock`.
-  Idempotent.
+* `just bump 0.3.4` — rewrite `0.x.y` → `0.3.4` across every `Cargo.toml`,
+  every `packages/*/package.json` (discovered by glob, so the cli wrapper,
+  the `@cratestack/api` and `@cratestack/cbor` families, refine and the
+  VS Code extension), every `dart-packages/*/pubspec.yaml` and podspec, and
+  refresh `Cargo.lock` and `pnpm-lock.yaml`. Idempotent.
 * `just release-check` — workspace check + workspace tests (skips
   `embedded_flutter_native`).
 * `just bundle-studio-ui` — refresh `embedded-ui.tar.gz` and
@@ -267,8 +278,8 @@ summary for that warning first.
 If a tag was already pushed without triggering anything (as happened on
 `v0.4.14`), the fastest recovery for that one tag is a manual
 `gh workflow run "Release CLI Binaries" -f tag=vX.Y.Z` — but note this
-dispatch path never publishes crates.io/npm (both jobs gate on
-`if: github.event_name == 'push'`), only binaries. Confirmed fixed and
+dispatch path never publishes crates.io/npm/pub.dev (the publish jobs gate on
+`github.event_name == 'push'`, or run dry in a rehearsal), only binaries. Confirmed fixed and
 re-verified on `v0.4.15` and `v0.4.16` (`gh run view` on the resulting
 `release-cli.yml` run shows `event: "push"`, not `workflow_dispatch`).
 
@@ -333,9 +344,12 @@ env var.
 Required credentials are intentionally read from the environment:
 
 * `CARGO_REGISTRY_TOKEN` for crates.io
-* npm's OIDC Trusted Publishing for `@cratestack/cli` and every package in the `@cratestack/api`
-  family — no GitHub secret at all, a per-package Trusted Publisher configured on npmjs.com
-  instead (see [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
+* npm's OIDC Trusted Publishing for every npm package (`@cratestack/cli`, the `@cratestack/api`
+  and `@cratestack/cbor` families, `@cratestack/refine`) — no GitHub secret at all, a per-package
+  Trusted Publisher configured on npmjs.com instead (see
+  [`docs/tooling/npm-publishing.md`](docs/tooling/npm-publishing.md))
+* pub.dev's Automated publishing (OIDC) for the three Dart packages — enabled on each package's
+  pub.dev Admin tab for repository `cratestack/cratestack`, tag pattern `v{{version}}`
 * No credential is required for the VS Code extension's `.vsix` fallback path — those files attach
   to the GitHub Release like the CLI binaries do. `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` /
   `AZURE_SUBSCRIPTION_ID` (Entra ID workload identity federation) and `OVSX_PAT` are all
@@ -353,10 +367,13 @@ Run from the repository root:
 
 ```sh
 cargo fmt --check
-cargo check --workspace --all-targets --all-features
-cargo test --workspace --all-features
+cargo check --workspace --exclude embedded_flutter_native --all-targets
+cargo test --workspace --exclude embedded_flutter_native
 cargo package -p cratestack-core --allow-dirty --no-verify
 ```
+
+(`just release-check` runs the middle two. Never add `--all-features`: it does not compile —
+see `CONTRIBUTING.md`.)
 
 On the first public release, sibling crates that depend on
 `cratestack-core` and each other cannot all complete `cargo package`
@@ -394,8 +411,10 @@ import json, sys, copy
 m = json.load(sys.stdin)
 pkgs = {p["name"]: p for p in m["packages"]
         if p["name"].startswith("cratestack") and p.get("publish") != []}
+# req "*" is a path-only edge, stripped at publish (e.g. a dev-dependency);
+# counting it reads cratestack-macros <-> cratestack-api as a cycle.
 graph = {n: {d["name"] for d in p["dependencies"]
-             if d["name"] in pkgs and d["name"] != n}
+             if d["name"] in pkgs and d["name"] != n and d["req"] != "*"}
          for n, p in pkgs.items()}
 order, remaining = [], copy.deepcopy(graph)
 while remaining:

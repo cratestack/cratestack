@@ -10,6 +10,14 @@ the historical record; where the two conflict, this amendment governs.
 revised). It joins L3 as an **admission-only** caller and does not widen L3's
 scope. See *Amendment 2026-09-24* below.
 
+> **Update (0.19.x):** the 2026-09-24 amendment's condition is met. ADR 0002
+> (`cratestack-docs/internals/mcp-operator-adr.md`) was accepted on 2026-09-25 and shipped in
+> 0.13.0; `cratestack-mcp` asks `cratestack-exec` for admission only, so that amendment applies
+> and fact 3 of the 2026-09-03 amendment ("`mcp { }` dispatches nothing") is no longer true of
+> the code. Slices 1 (idempotency, #876) and 2 (rate limiting, #877) have landed in
+> `cratestack-exec`; slice 3 (row-level policy replay for subscriptions) is not built
+> (`ROADMAP.md` lists it, and audit fan-out at L3 as slice 4, as planned).
+
 ## Date
 
 2026-08-08 (proposed); **2026-09-03 (accepted, amended — maintainer-delegated,

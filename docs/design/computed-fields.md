@@ -1,6 +1,6 @@
 # Computed fields (`@computed`) — resolver-backed response-time fields
 
-Status: implemented (v1). Source of truth for the `@computed` feature.
+Status: implemented (v1, released in 0.8.11). Source of truth for the `@computed` feature.
 
 ## Problem
 

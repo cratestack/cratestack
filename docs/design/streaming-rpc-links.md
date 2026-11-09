@@ -243,6 +243,11 @@ number that doesn't hold up at the margin that matters.
   usually actually looks like in production (CBOR default codec). This makes the follow-up ticket
   larger than "add a type and a chain," and it should say so explicitly.
 
+> **Update (0.6.0):** resolved by #277/#299, which shipped the `RpcStreamLink` chain together
+> with a hand-rolled CBOR-seq boundary scanner (`CborSeqBoundaryScanner`,
+> `packages/cratestack-ts-types/src/cbor-seq.ts`; generated as `rpc-cbor-seq.ts.j2` and
+> `rpc-stream-terminal.ts.j2`). The `// TODO: wire a CBOR-seq decoder` comment no longer exists.
+
 ## 6. Out of scope (confirmed unchanged by this spike)
 
 - REST streaming parity — RPC-only, per #182's own original scope.
@@ -254,4 +259,5 @@ number that doesn't hold up at the margin that matters.
 ## 7. Follow-up
 
 Filed as [#277](https://github.com/cratestack/cratestack/issues/277): implement `RpcStreamLink` per
-§4-5 above. Depends on resolving the CBOR-seq decoder TODO first (§5).
+§4-5 above. Depends on resolving the CBOR-seq decoder TODO first (§5). Done: merged as #299,
+released in 0.6.0.

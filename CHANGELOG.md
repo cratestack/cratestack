@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Documentation sweep: design docs, ADRs, tooling, contributing and READMEs brought up to 0.19.x (docs only)
+
+No behaviour change and nothing breaking. About eighty files: the design docs and ADRs under `docs/`
+(layering, RPC transport, subscriptions, route suppression, `no-database-mode`, `migrate baseline`,
+wiremock stubs and others) plus `docs/adr/layers.toml`, the tooling and publishing guides, the
+contributing and quality-pipeline docs, the root `AGENTS.md`/`README.md`/`ROADMAP.md`/`RELEASE.md`/
+`CONTRIBUTING.md`, and the crate, example and package READMEs now describe the 0.19.x surface.
+`CLAUDE.md` dates the facade split to 0.4.2 and lists `cratestack-mcp`, `-cose`, `-exec`, `-auth`,
+`-auth-conformance`, `-service`, `-outbox`, `-sync` and `-mock-wiremock`. Stale doc comments fixed:
+`OpKind::Subscription` (WebSocket shipped in 0.18.0), the `ReadSource` module doc (the read builders
+already take `&'static dyn ReadSource`), and the `--tanstack` help text (`--refine` also composes with
+every transport).
+
 ## 0.19.2 (2026-11-09)
 
 ### Documentation and metadata corrections: CLI list, version pins, facade claims (docs only)

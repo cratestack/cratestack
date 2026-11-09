@@ -1,8 +1,8 @@
 # Extensions — a declarative surface for opt-in framework capabilities
 
 Status: **implemented** (2026-07-23) — all six original follow-up tickets
-resolved: #153, #161, #154, #155, and #156 shipped as code (branches not
-yet pushed/PR'd — see §8 for exact branch names); #157 resolved as a
+resolved: #153, #161, #154, #155, and #156 shipped as code (released in
+0.7.2; §8 keeps the original branch names); #157 resolved as a
 decision (closed, split into shipping the Rust query-builder half as
 #163 and deferring client codegen). This document
 supersedes the rate-limiting half of the decision recorded in
@@ -121,8 +121,9 @@ not any schema they compile ever declares the extension, and it would mean
    turned it off, proving the forwarding chain actually works.
 3. **Implementation** (trait-level, swappable) — the extension's actual
    behavior is never hardcoded to one implementation. `rate_limit` already
-   has this shape today (`Arc<dyn RateLimitStore>`, three interchangeable
-   backends); `pgvector` gets the same treatment as its trait surface is
+   has this shape today (`Arc<dyn RateLimitStore>`, two interchangeable
+   backends: in-memory and Redis — `cratestack-sqlx` implements only
+   `IdempotencyStore`, as `layering.md` §4.2 notes); `pgvector` gets the same treatment as its trait surface is
    designed in the follow-up tickets (§8) — e.g. nothing in this proposal
    requires using pgvector's own index types if a user wants to plug in a
    different similarity-search backend behind the same generated column
@@ -247,7 +248,7 @@ doesn't know what Cargo features the consuming crate has.
   `transport/rest.rs` and `transport/rate_limit.rs` carry no `cfg` at all —
   `procedure_rate_limited_by_default` returns `true` unless it sees the raw
   `@no_rate_limit` attribute — and the actual feature check is a single
-  `cfg!(feature = "rate_limit")` in `include/extension_gate.rs:93`, which rejects
+  `cfg!(feature = "rate_limit")` in `include/extension_gate.rs:107`, which rejects
   the `extension rate_limit { }` declaration the parser requires before the
   attribute is legal. Second, there was no reader when that sentence was written
   and there is no *codegen* reader now either. The readers that shipped are
@@ -277,7 +278,7 @@ doesn't know what Cargo features the consuming crate has.
   stays exactly where it is today, constructed imperatively at app
   startup (`crates/cratestack-axum/src/ratelimit/{layer,config,store}.rs`).
 - **Implementation stays swappable:** `Arc<dyn RateLimitStore>` already has
-  three interchangeable backends; nothing here changes that trait boundary
+  two interchangeable backends (in-memory, Redis); nothing here changes that trait boundary
   or requires a specific one.
 - **Codegen surface:** a `rate_limited_by_default: bool` (or per-procedure
   descriptor field) analogous to `OpDescriptor.idempotent_by_default`
@@ -304,8 +305,9 @@ doesn't know what Cargo features the consuming crate has.
   rather than a generic "feature not enabled" message.
 - **DDL surface (phase 1 — see §8):** `cratestack-migrate` emits `CREATE
   EXTENSION IF NOT EXISTS vector;` once per schema that declares the
-  extension, before any DDL referencing a `Vector(n)` column — currently
-  no code path emits `CREATE EXTENSION` anywhere
+  extension, before any DDL referencing a `Vector(n)` column — at the time
+  of this proposal no code path emitted `CREATE EXTENSION` anywhere (#155
+  added it: `emit/postgres/tests/extensions.rs`)
   (the only existing reference is a manual test fixture,
   `crates/cratestack-pg/tests/banking_builder_extensions_tier7.rs:30`, not
   generated). Column DDL maps `Vector(n)` → Postgres `vector(n)` in
@@ -315,8 +317,8 @@ doesn't know what Cargo features the consuming crate has.
   case, not a silent fallback.
 - **Index DDL (phase 2 — deferred, see §8):** `ivfflat`/`hnsw` index
   support needs `AddIndex` (`crates/cratestack-migrate/src/ir/ops.rs:33-37`)
-  extended with a `using`/`method`/`opclass` field — there is currently no
-  `@@index(...)` attribute at all (only `@unique`,
+  extended with a `using`/`method`/`opclass` field — at the time of this
+  proposal there was no `@@index(...)` attribute at all (#156 added it) (only `@unique`,
   `crates/cratestack-migrate/src/convert/fields.rs:48-52`), so this phase
   also needs a new attribute, not just a new index kind.
 - **Implementation stays swappable (from phase 2 onward):** the DDL/type
@@ -411,6 +413,12 @@ framework-maintained entry, not a step toward third-party extensions.
   maintained list (`rate_limit`, `pgvector`) — not an arbitrary-extension
   mechanism. If a third-party-extension story is wanted later, that's a
   new design question, not an implicit consequence of this one.
+
+  > **Update (0.19.x):** the closed list has since grown to five, each a
+  > framework-maintained entry: `postgis` (§6b, 0.10.0), `webtransport`
+  > (0.17.1) and `websocket` (0.18.0), the last two the subscription
+  > bindings of `subscriptions-websocket.md`
+  > (`cratestack_core::ExtensionKind`, `crates/cratestack-core/src/schema.rs`).
 - Any change to the idempotency finding in the prior doc (§4.2 there is
   untouched — idempotency stays gated on `OpExecutor`, unrelated to this).
 - Deciding, in this doc, whether the `rate_limit` Cargo feature ships
@@ -471,7 +479,7 @@ being erased, only the rate-limit half is being reframed per §3. A new
 Epic issue should be opened for "Extensions" that references #139 as prior
 art and links this document as its source of truth, with the tickets in §8
 opened underneath it once the Epic is accepted. `docs/design/idempotency-rate-limit-declarative-surface.md`'s status line
-should be updated to point here rather than silently going stale.
+should be updated to point here rather than silently going stale (done: its status line now does).
 
 ## 10. Non-goals
 

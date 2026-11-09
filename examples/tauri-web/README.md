@@ -43,7 +43,7 @@ Why the root `package.json`: tauri-cli's `tauri.conf.json` discovery walks **dow
 
 - Everything from [`embedded-browser-vite`](../embedded-browser-vite#prerequisites) — Rust + `wasm32-unknown-unknown` target + `wasm-pack` + a wasm-capable clang.
 - **Tauri 2 system deps** for your platform — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/). On macOS the Xcode CLI tools cover it; on Linux you need GTK + WebKit GTK; on Windows, MSVC + WebView2.
-- **Node.js 18+ and pnpm**.
+- **Node.js 24+ and pnpm 11** (pinned in `package.json`'s `packageManager`).
 
 ## Run
 

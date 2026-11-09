@@ -1,9 +1,10 @@
 # Route suppression across REST, RPC and generated clients — spike
 
-Status: **proposed** (2026-08-12) — awaiting accountable-owner sign-off
-(@stephane-segning) per issue #514's acceptance criteria. **Not
-implemented. No implementation may merge under #514** — a follow-up
-ticket carries that once this is accepted or rejected.
+Status: **accepted and implemented** (0.8.14, cratestack#743, "implementing
+#514's accepted design"). Originally **proposed** (2026-08-12) — awaiting
+accountable-owner sign-off (@stephane-segning) per issue #514's acceptance
+criteria, with no implementation allowed to merge under #514 itself; the
+follow-up ticket that carried it is #743.
 
 > **Scope note (2026-08-18).** This spike originally covered a fourth
 > surface, gRPC (`include/server/grpc/service.rs`), and cited its
@@ -61,6 +62,15 @@ code this design can assume is already present. Every "§1" claim below
 was independently re-verified by reading the actual files on `main` at
 the commit this branch was cut from (`ea03dc6`); every PR #485 citation
 is explicitly marked as such.
+
+> **Update (0.8.14):** this paragraph describes `main` at `ea03dc6`.
+> cratestack#743 has since implemented the design:
+> `crates/cratestack-core/src/schema/internal_attribute.rs` now exists, with
+> `parse_internal_attribute` and `model_internal_actions(&Model) ->
+> BTreeSet<&'static str>` (not `BTreeSet<String>` as §Summary sketches), and
+> `axum/model/routes.rs` emits per-verb `MethodRouter`s merged with
+> `.merge()`. Read "does not exist on `main`" below as true at the time of
+> the spike only.
 
 ## Summary
 
@@ -577,6 +587,15 @@ to `Code::NotFound` was struck 2026-08-18 along with `transport grpc` —
 see the scope note above.)
 
 ## 8. Left for the implementation ticket, not decided here
+
+> **Update (0.8.14):** of the four items below, the batch regression test
+> landed with cratestack#743
+> (`crates/cratestack-pg/tests/internal_suppression.rs`,
+> `suppressed_op_in_batch_gets_a_per_frame_error_and_does_not_poison_siblings`),
+> and the `CHANGELOG.md` wording is the 0.8.14 entry "`@@internal("action")`
+> route suppression". REST's suppressed-verb 405 is still axum's bare 405
+> (the same test file asserts it), and no `cratestack-lsp`/`cratestack-cli
+> check` warning for a still-called suppressed action exists.
 
 - Whether REST's 405/404 responses for a suppressed action should gain
   a `CratestackErrorResponse` body (currently bare axum text) to match

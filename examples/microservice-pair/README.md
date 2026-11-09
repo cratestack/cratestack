@@ -36,6 +36,6 @@ The smoke tests assert:
 
 ## See Also
 
-- [`server_basic`](../../crates/cratestack/examples/server_basic.rs) — pure server, no upstream
+- [`server_basic`](../../crates/cratestack-pg/examples/server_basic.rs) — pure server, no upstream
 - [`client-stub-rust`](../client-stub-rust) — pure client, no owned database
 - [`client-multi-service`](../client-multi-service) — pure client, fans out to **two** upstreams

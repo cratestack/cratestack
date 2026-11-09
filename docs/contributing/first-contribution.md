@@ -107,7 +107,8 @@ cargo test --workspace --exclude embedded_flutter_native
 ```
 
 `just all-checks` is the canonical gate: formatting, `cargo fix`, clippy with
-`-D warnings`, a full check, and `cargo deny`. Run *it*, not your own
+`-D warnings`, a full check, `just lint` (the same no-`--fix` clippy CI runs), and
+`cargo deny`. Run *it*, not your own
 reconstruction of it — the flags it sets are deliberate.
 
 Two flags never to add:
@@ -122,8 +123,8 @@ Two flags never to add:
 
 ### About "all tests passed"
 
-Postgres-backed tests (`banking_*`, `policy_db_*`, `generated_client_rust`) **skip
-silently** when no database is configured — and a skipped test prints `ok`. A
+Postgres-backed tests (`banking_*` bar `banking_rate_limit`, `policy_db_*`, and many
+more) **skip silently** when no database is configured — and a skipped test prints `ok`. A
 green `cargo test` does not mean you exercised those paths.
 
 If your change touches the server backend, run them for real:
@@ -154,6 +155,10 @@ If your change is user-visible, add a line under the `## Unreleased` heading at
 the **top** of `CHANGELOG.md`. Don't create that heading yourself and don't file
 under the newest dated section — that one belongs to a released version. A CI job
 checks this.
+
+If that entry is a new `### ` heading, also fill in section 9 of the PR template
+(**Docs & Skills Parity**): a link for each companion repo, or `n/a — <reason>`. The
+`docs & skills parity (declaration)` CI job rejects a missing or bare `n/a`.
 
 ## 7. Open the pull request
 

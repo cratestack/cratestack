@@ -1,15 +1,15 @@
 # CrateStack Roadmap
 
-**Last updated: 2026-09-24 · current release: 0.12.0**
+**Last updated: 2026-11-09 · current release: 0.19.1**
 
 This is a map of where CrateStack is, what's being built, and what's been
 deliberately ruled out. It is not a schedule and not a commitment. CrateStack is
-pre-1.0 and moves fast — 0.2.0 shipped on 2026-05-12 and 0.12.0 on 2026-09-06,
+pre-1.0 and moves fast — 0.2.0 shipped on 2026-05-12 and 0.19.1 on 2026-11-08,
 so anything below marked "considering" may land next month or never.
 
 Three things this document tries to do that a changelog can't:
 
-1. Say what's **shipped** in one place, because the changelog is 7,000 lines.
+1. Say what's **shipped** in one place, because the changelog is 12,000 lines.
 2. Say what's **being worked on right now**, and what's unclaimed.
 3. Say what we've **decided against**, and why — so the same question doesn't
    get re-litigated every quarter.
@@ -51,6 +51,11 @@ rather than resolved on purpose.
 | LSP + VS Code extension (Marketplace + Open VSX) | 0.10.1 | `.cstack` language server |
 | WireMock stub generation | shipped | mock backends that can't drift from the schema |
 | `@cratestack/*` npm family (15 packages) | 0.6.0+ | fetch/axios runtimes, TanStack, RTK, Refine, zod/yup, CBOR |
+| MCP server (`cratestack-mcp`): `@mcp(tool)` procedures, `@@mcp(resource: ...)` models | 0.13.0 | stdio + Streamable HTTP, same policy check as REST and RPC |
+| COSE_Sign1 / COSE_Mac0 signed transport (`cratestack-cose`) | 0.13.0–0.15.4 | ADR 0006; Rust and Dart clients seal and open |
+| `BigInt` built-in scalar; field attributes a closed list | 0.15.4 | [ADR 0019](docs/adr/0019-int-and-bigint-built-in-types.md) PRs A and B; the `Int` cutover (PR C) is still pending, see below |
+| Subscriptions over WebSocket and WebTransport; generated clients subscribe | 0.17.1–0.18.0 | `cratestack-websocket`, `cratestack-webtransport`; events pass the subscriber's read policy (0.17.1) |
+| Multi-file schemas: `part` / `part of`, `import` | 0.19.0 | [#910](https://github.com/cratestack/cratestack/issues/910), ADR 0023 |
 
 ### The engineering discipline is also shipped
 
@@ -84,9 +89,12 @@ dispatch path, which is the second input shape that made building L3 correct.
 | 3 | Row-level policy replayed against streamed `ModelEvent<T>` | planned |
 | 4 | Audit fan-out | planned |
 
-Slice 3 closes a real correctness gap, not just a tidiness one: a subscriber on
-the SSE path authenticates but currently gets **no per-row filtering**, because
-`@@allow` is compiled into SQL and streamed events never pass through it.
+Slice 3 was scoped to close a real correctness gap: a subscriber authenticated
+but got **no per-row filtering**, because `@@allow` is compiled into SQL and
+streamed events never passed through it. That gap was closed outside L3 in
+0.17.1 (each `@@subscribe` event is now checked against the subscriber's read
+policy before it is sent); slice 3 itself, moving that check into `OpExecutor`,
+is still planned.
 
 ### 🆕 React Native (Expo + bare) as a client target ([#893](https://github.com/cratestack/cratestack/issues/893))
 
@@ -95,38 +103,33 @@ React Native is the one major mobile host with no client SDK coverage
 generation remains in progress). Scoped into five stories: a Rust-backed CBOR
 codec that runs on device, a `react-native` export condition across the shared
 packages, a generated RN client following the Dart preset pattern, a generated
-RTK Query endpoint set, and Expo + bare examples.
+RTK Query endpoint set (shipped in 0.12.0 as `generate-typescript --rtk`,
+[#906](https://github.com/cratestack/cratestack/issues/906)), and Expo + bare
+examples.
 
 Start at [#899](https://github.com/cratestack/cratestack/issues/899), a decision
 ticket: Hermes is gaining WebAssembly support, and if that lands broadly
 `@cratestack/cbor-web` may serve React Native with no native module at all.
 
-### 🆕 Multi-file schemas — `part` / `import` ([#910](https://github.com/cratestack/cratestack/issues/910))
-
-Split a large `.cstack` across thematic files (`part` / `part of`), and reuse a
-shared schema across services (`import`). Blocked at the front on
-[#915](https://github.com/cratestack/cratestack/issues/915), which settles
-`import` semantics before any parser work — including one product decision
-(whether imported `model`s create tables) reserved for the maintainer.
-
-### 🆕 `Int` and `BigInt` as built-in integer types: the breaking 0.16.0 release ([#1130](https://github.com/cratestack/cratestack/pull/1130))
+### 🚧 `Int` and `BigInt` as built-in integer types: `BigInt` shipped in 0.15.4, the `Int` cutover is pending ([#1130](https://github.com/cratestack/cratestack/pull/1130))
 
 Accepted on 2026-09-30 as [ADR 0019](docs/adr/0019-int-and-bigint-built-in-types.md),
 with the per-target changes, diagrams and the three-PR plan in
 [`docs/design/int-and-bigint.md`](docs/design/int-and-bigint.md) (§7). The ADR
-landed in #1130. **Handoff, 2026-10-09:** PR A and PR B are built and land on
-`main` together; PR C (the `Int` cutover) and the live-server TypeScript round
-trip B13 are not built and pass to a colleague. Landing A and B is not a
-release: B and C ship together in 0.16.0, so no release is cut from `main`
-until C lands. The ADR's "Amendment (PR B, 2026-10-09)" records where the build
-differs from the plan.
+landed in #1130. **Handoff, 2026-10-09:** PR A and PR B landed on `main`
+together; PR C (the `Int` cutover) and the live-server TypeScript round trip
+B13 are not built and pass to a colleague. The plan was to hold A and B until C
+and ship all three in 0.16.0; instead A and B shipped in **0.15.4**
+(2026-10-11), and 0.16.0 through 0.19.1 have been released without C. The ADR's
+"Amendment (PR B, 2026-10-09)" records where the build differs from the plan.
 
 The problem is precise: a schema `Int` is a Rust `i64` and a JSON number that
 carries every digit, and no JavaScript consumer can hold that range. TypeScript
 rounds anything above 2^53 without an error, `@cratestack/cbor-web` refuses to
 decode it, and Dart on dart2js rounds it. skyport-billing, which stores money as
-`i64` e8 units, is the reported victim. There is no per-field fix today: an
-attribute such as `@string` reports `schema OK` and changes nothing.
+`i64` e8 units, is the reported victim. Since 0.15.4 the per-field fix is to
+declare the field `BigInt`; an unknown attribute such as `@string`, which used
+to report `schema OK` and change nothing, is now a `check` error.
 
 What the ADR decides:
 
@@ -143,22 +146,23 @@ What the ADR decides:
   back to `Int` is a deliberate per-field edit, `Lossy` in `migrate diff`. The
   command ships in 0.16.0 and is deleted in 0.17.0.
 
-All three PRs ship together in **0.16.0**, one breaking release with no
-compatibility path and no release cut between them. A user regenerates every
-client and rebuilds every server in one upgrade.
+The ADR planned all three PRs as one breaking release (0.16.0). A and B
+shipped early, in 0.15.4; C is still unscheduled, and when it lands it is the
+breaking release in which a user regenerates every client and rebuilds every
+server.
 
 | PR | Scope | Status |
 | --- | --- | --- |
-| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)); validators on a `type` field and on a `model` procedure argument are enforced ([#1156](https://github.com/cratestack/cratestack/issues/1156), fixed by this merge) | **done, merged** (2026-10-09), unreleased |
-| B | `BigInt` end to end: core type and serde on both codecs, SQL, migrate, JSON Schema, MCP, TypeScript and Dart clients, fail-closed policies | **done, merged** (2026-10-09), unreleased. Tests: `cratestack-pg` `bigint_end_to_end`, `bigint_end_to_end_rpc`, `bigint_policies`, `bigint_wire_shapes`; `cratestack-sqlite` `bigint_round_trip` |
+| A | Field attributes become a closed list per declaration kind ([#679](https://github.com/cratestack/cratestack/issues/679) option (a)); validators on a `type` field and on a `model` procedure argument are enforced ([#1156](https://github.com/cratestack/cratestack/issues/1156), fixed by this merge) | **shipped in 0.15.4** (merged 2026-10-09) |
+| B | `BigInt` end to end: core type and serde on both codecs, SQL, migrate, JSON Schema, MCP, TypeScript and Dart clients, fail-closed policies | **shipped in 0.15.4** (merged 2026-10-09). Tests: `cratestack-pg` `bigint_end_to_end`, `bigint_end_to_end_rpc`, `bigint_policies`, `bigint_wire_shapes`; `cratestack-sqlite` `bigint_round_trip` |
 | B13 | The generated TypeScript client driven against a real server (JSON and `@cratestack/cbor-node`, `@cratestack/link-batch`, a REST body and query, TanStack and RTK keys) | **pending** (colleague). Until then the TypeScript claim rests on the client-side suites in `crates/cratestack-client-typescript/tests/js` |
 | C | `Int` becomes 32-bit: snapshot format 3, digest domains `v2`, the `int-to-bigint` codemod | **pending** (colleague); starts from design §7, "What C inherits from B" |
 | Docs and skills | The `cratestack-docs` pages and `cratestack-skills` entries named in design §4.4 | **pending** |
 
-B and C must ship together, or a hand edit from `Int` to `BigInt` would be a
-`Lossy` `ALTER` to the same type. A is technically independent and rides the
-same release. Until C lands, `Int` is still an `i64`, and the `## Unreleased`
-entry for B says so.
+The ADR required B and C to ship together, or a hand edit from `Int` to
+`BigInt` would be a `Lossy` `ALTER` to the same type; B shipped alone in 0.15.4
+regardless. Until C lands, `Int` is still an `i64`, and 0.15.4's changelog entry
+for B says so.
 
 #### Follow-ups for the colleague
 
@@ -189,30 +193,32 @@ edges that remain):
 
 Found by the end-to-end tests, both pre-existing and not `BigInt` bugs:
 
-- **The migrate emitter copies `@default(auth().x)` into the column as
-  `DEFAULT auth().x`**, which is invalid SQL (SQLSTATE 42601), for any scalar.
-  It should skip auth-derived defaults.
+- ~~**The migrate emitter copies `@default(auth().x)` into the column as
+  `DEFAULT auth().x`**, which is invalid SQL (SQLSTATE 42601), for any scalar.~~
+  **Fixed in 0.17.0** ([#1209](https://github.com/cratestack/cratestack/issues/1209)):
+  an auth-derived default never reaches DDL.
 - **A foreign-key violation (SQLSTATE 23503) is not mapped to a 4xx.** It answers
   `500`, for an `Int` key as much as a `BigInt` one.
 
 TypeScript:
 
-- `packages/cratestack-adapter-rtk` still declares `@reduxjs/toolkit` `^2.0.0`;
-  the generated clients now require `^2.2.7`.
+- ~~`packages/cratestack-adapter-rtk` still declares `@reduxjs/toolkit` `^2.0.0`;
+  the generated clients now require `^2.2.7`.~~ **Fixed:** it now declares
+  `^2.13.0`.
 - `just verify-typescript-floors` does not exercise RTK, so the new floor is
   pinned only by `tests/bigint_query_keys.rs`.
 - Refine: `withRefineId` (`packages/cratestack-refine/src/index.ts:58-65`) casts a
   record's key to `BaseKey`, and a `BigInt` id is a revived `bigint`. It works at
   runtime; returning `String(id)` for a `bigint` is the type-correct option.
 
-Filed, pre-existing, not caused by `BigInt` (open):
+Filed, pre-existing, not caused by `BigInt` — all three **fixed in 0.15.4**:
 
 - [#1153](https://github.com/cratestack/cratestack/issues/1153): the CBOR codec
-  ignores bytes after the first item, where the JSON codec refuses them.
+  ignored bytes after the first item, where the JSON codec refuses them.
 - [#1154](https://github.com/cratestack/cratestack/issues/1154): `generate-typescript
-  --swr` uses `<Model>ComputedParams` in `*.hooks.ts` without importing it.
+  --swr` used `<Model>ComputedParams` in `*.hooks.ts` without importing it.
 - [#1155](https://github.com/cratestack/cratestack/issues/1155): the generated
-  TypeScript client leaves `Decimal[]` fields as strings at runtime.
+  TypeScript client left `Decimal[]` fields as strings at runtime.
 
 Build and CI:
 
@@ -359,10 +365,10 @@ committed.
 - **[ADR 0016 — Store SPI scope](docs/adr/0016-store-spi-scope.md)** is at
   **Proposed**. How far the store SPI should reach is an open architectural
   question with a written analysis and no decision. 🔵
-- **ADR 0006–0010 are reserved but unwritten**: COSE envelope modes, migration
-  strategy, relation loading, privileged operations, multi-framework support.
-  The ADR index already warns the *titles* are stale. Each is a real decision
-  someone eventually has to make. 🔵
+- **ADR 0007–0010 are reserved but unwritten**: migration strategy, relation
+  loading, privileged operations, multi-framework support. (0006, COSE envelope
+  modes, was accepted on 2026-09-24.) The ADR index already warns the *titles*
+  are stale. Each is a real decision someone eventually has to make. 🔵
 
 ### Capability gaps
 
@@ -427,8 +433,8 @@ answer. It is not a positioning claim, and the README deliberately makes none.)*
 🔵 **Undecided, and genuinely a maintainer call.**
 
 There is currently no written definition of what 1.0 means for CrateStack — no
-milestone, no criteria, no target. Given the release cadence (eleven minor
-lines, 0.2 through 0.12, in under four months) and that breaking changes still
+milestone, no criteria, no target. Given the release cadence (eighteen minor
+lines, 0.2 through 0.19, in six months) and that breaking changes still
 land in minors, the useful question isn't "when" but "what has to be true".
 
 Candidate gates, offered as a starting point and **not** as a decision:
@@ -436,7 +442,7 @@ Candidate gates, offered as a starting point and **not** as a decision:
 - [ ] The four OpExecutor slices land, so an operation is visible whole at L3.
 - [ ] Wire-contract stability commitment — what may break in a minor after 1.0?
 - [ ] The `db =` promise resolved either way (MySQL ships, or the promise is withdrawn).
-- [ ] ADR 0016 decided; ADR 0006–0010 written or formally retired.
+- [ ] ADR 0016 decided; ADR 0007–0010 written or formally retired.
 - [ ] Non-Rust client generation exact across arbitrary projection shapes.
 - [ ] A deprecation policy, since four facades and 15 npm packages version together.
 

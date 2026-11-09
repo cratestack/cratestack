@@ -4,7 +4,7 @@
 publishes to on every `vX.Y.Z` tag push, alongside crates.io and npm — see
 [`docs/tooling/npm-publishing.md`](npm-publishing.md) for those two. Read
 [`docs/tooling/cratestack-cbor-development.md`](cratestack-cbor-development.md) first: it covers the
-package's toolchain pins, the four "looks like success but isn't" failure modes, and the vendoring
+package's toolchain pins, the six "looks like success but isn't" failure modes, and the vendoring
 recipes (`just cbor-vendor-native`, `cbor-vendor-web`, `cbor-vendor-android`) this document assumes you
 already understand.
 
@@ -17,13 +17,14 @@ gitignored (pub consults `.pubignore` instead of `.gitignore` when present — s
 gotcha 1). **This means any publish workflow MUST vendor every artifact set itself, immediately
 before publishing** — there is no committed fallback, and pub.dev gives **no signal** if a vendoring
 step is skipped or fails partway (see "Proof the archive-verification gate can fail" below).
-`release-cli.yml` does this across **four jobs**, not one, since the macOS/Windows platform-matrix slice
-(and later the iOS slice) landed: `publish-pubdev-cbor` itself installs toolchain → vendors the
+`release-cli.yml` does this across **five jobs**, not one, since the macOS/Windows platform-matrix slice
+(and later the iOS slice) landed: `build-cbor-glue` generates the flutter_rust_bridge glue once, on
+Linux; `publish-pubdev-cbor` itself installs toolchain → vendors the
 Linux/Android/web artifact sets (the ones `ubuntu-latest` can build without cross-compiling) → downloads
 the macOS xcframework, iOS xcframework, and Windows `.dll` built by the separate
 `build-cbor-macos`/`build-cbor-ios`/`build-cbor-windows` jobs (which run on
 `macos-latest`/`macos-latest`/`windows-latest`, the only hosts that can produce them) → verifies the
-archive → publishes, every release, unconditionally. See those three jobs' and `publish-pubdev-cbor`'s own
+archive → publishes, every release, unconditionally. See those jobs' and `publish-pubdev-cbor`'s own
 comments in `release-cli.yml` for the full per-step reasoning; not repeated here.
 
 ## Platform status at time of writing
@@ -121,19 +122,23 @@ configuration fails loudly instead of quietly no-op'ing.
 
 ## What the CI job actually does
 
-Four jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (never
-`workflow_dispatch` — see below):
+Five jobs in `.github/workflows/release-cli.yml`. They run on a tag push, and in a rehearsal
+(`workflow_dispatch` with `rehearsal: true`), which runs every build and gate but skips the publish
+step itself (see below):
 
-0. **`build-cbor-macos` / `build-cbor-ios` / `build-cbor-windows`** (each `needs: prepare` only, run in
+0. **`build-cbor-glue`** (`needs: prepare`, `ubuntu-latest`) installs the pinned
+   `flutter_rust_bridge_codegen`, runs `just cbor-vendor-glue` once, and uploads the generated glue as
+   the `cbor-frb-glue-release` artifact. **`build-cbor-macos` / `build-cbor-ios` / `build-cbor-windows`**
+   (each `needs: [prepare, build-cbor-glue]`, run in
    parallel with each other and with `publish-pubdev-cbor`'s own toolchain setup): each checks out the
    tag, installs a Rust toolchain targeting that platform (`macos-latest` additionally adds
    `x86_64-apple-darwin` for the macOS job, or all three `*-apple-ios*` triples for the iOS job — the
    runner's host arch is arm64 — via a `rustup target add` RUN step, not the toolchain action's
    `targets:` input, since that input targets `stable` rather than the pinned channel — see either job's
-   own comment for the E0463 failure this avoids), installs `just` and the pinned
-   `flutter_rust_bridge_codegen`, runs `just cbor-vendor-glue` (required on all three — the generated
-   `frb_generated.rs` is gitignored, not committed, so a fresh checkout needs it regenerated before any
-   `--features frb-glue` build, on every platform independently), then the platform-specific build (`just
+   own comment for the E0463 failure this avoids), installs `just`, restores the glue from
+   `cbor-frb-glue-release` and asserts it is present (required on all three — the generated
+   `frb_generated.rs` is gitignored, not committed, so a fresh checkout has none, and any
+   `--features frb-glue` build fails E0583 without it), then the platform-specific build (`just
    cbor-vendor-macos` — lipo + `xcodebuild -create-xcframework`, a versioned bundle — `just
    cbor-vendor-ios` — lipo the simulator arches + `xcodebuild -create-xcframework`, TWO flat/shallow
    bundle slices — or `just cbor-vendor-lib windows-x64`), and uploads the result as a named artifact
@@ -143,7 +148,8 @@ Four jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (n
    Windows uploads carry a single file (a zip, a `.dll`); the iOS upload carries the unpacked xcframework
    DIRECTORY itself — see "The macOS framework ships zipped; the iOS one does not" below for why that
    asymmetry is correct, not an oversight.
-1. **`publish-pubdev-cbor`** (`needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows]`)
+1. **`publish-pubdev-cbor`** (`needs: [prepare, build-cbor-macos, build-cbor-ios, build-cbor-windows,
+   preflight, publish-crates]`)
    installs its own toolchain: Rust (`dtolnay/rust-toolchain@stable`), `just`/`wasm-pack`
    (`taiki-e/install-action`), Flutter (`subosito/flutter-action` — **not** `dart-lang/setup-dart`, for
    the same reason `ci.yml`'s `cratestack-cbor-*` jobs use Flutter: this package's
@@ -158,7 +164,7 @@ Four jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (n
    cbor-vendor-native`, `cbor-vendor-web`, `cbor-vendor-android`. No "already vendored, skip" shortcut —
    a fresh tag checkout never has them, by design (they're gitignored). Then **downloads** the macOS
    xcframework, iOS xcframework, and Windows `.dll` the three jobs above built, via
-   `actions/download-artifact@v4` with an explicit `name:` per artifact (not `pattern:` — there are only
+   `actions/download-artifact@v8` with an explicit `name:` per artifact (not `pattern:` — there are only
    three, each with a known 1:1 destination directory, so no per-artifact-name subfolder juggling is
    needed). The iOS download's `path:` is the xcframework directory itself, not a parent — the artifact
    IS that directory's contents (see the job-0 bullet above), so this restores it in place rather than
@@ -166,15 +172,24 @@ Four jobs in `.github/workflows/release-cli.yml`, all tag-push-triggered only (n
 3. **Verifies the archive**, described in detail below. This is a hard gate: the job exits non-zero
    and never reaches the publish step if any artifact is missing from what `dart pub publish
    --dry-run` reports it would ship.
-4. Publishes: `dart pub publish --force`, authenticated via pub.dev's GitHub Actions OIDC
+4. Publishes: `dart pub publish --force` (with Flutter's `dart`, not the standalone SDK's — see the
+   step's comment, cratestack#633), authenticated via pub.dev's GitHub Actions OIDC
    (`id-token: write`, job-scoped — same permission npm's Trusted Publishing uses for its own OIDC
-   exchange). `--force` skips the interactive confirmation prompt (required for CI — the command
+   exchange). `dart-lang/setup-dart` runs immediately before this step, not with the other
+   toolchain steps, because the OIDC token it mints is short-lived (it expired on v0.8.2).
+   `--force` skips the interactive confirmation prompt (required for CI — the command
    would otherwise hang waiting on stdin); it does **not** skip real validation errors, only the
    confirm-to-proceed step for a package pub already considers publishable.
+5. **Verifies pub.dev serves the version**, polling `pub.dev/api/packages/cratestack_cbor` for up to
+   10 minutes, because `dart pub publish` exits 0 even when authentication fails (observed on v0.8.2).
 
-Same tag-push-only gate as every npm job in this workflow (`if: github.event_name == 'push'`): a
-`workflow_dispatch` re-run only rebuilds/re-attaches GitHub Release binaries, never touches crates.io,
-npm, or pub.dev — publishing to any of the three from a manually-dispatched run would let a throwaway
+The job-level gate is the same as every npm job's in this workflow: the job runs on a tag push or a
+rehearsal (`if: github.event_name == 'push' || needs.prepare.outputs.rehearsal == 'true'`). Within
+this job, the publish and version-served steps run only on a tag push (`if: github.event_name ==
+'push'`). A plain
+`workflow_dispatch` re-run against an existing tag only rebuilds/re-attaches GitHub Release binaries,
+and a rehearsal stops before every irreversible write; neither touches crates.io, npm, or pub.dev —
+publishing to any of the three from a manually-dispatched run would let a throwaway
 test tag reach a registry that cannot delete what it published.
 
 ## The verification gate, and why it must inspect archive *content*, not exit code
@@ -371,27 +386,22 @@ Verified directly inside a built Android APK
 not something to restructure unilaterally here. See cratestack#563's issue thread (slice 4) for the
 full record.
 
-## Generator seam: still blocked on publication
+## Generator seam: switched to `cratestack_cbor`
 
-`crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits `cbor: ^6.5.1` (the pure-Dart
-`package:cbor`) into every generated client, and **must**, until `cratestack_cbor` is actually live on
-pub.dev. The maintainer decision (cratestack#563, 2026-08-16) is that the generator will switch to
-`cratestack_cbor` as a hard replacement, not an opt-in flag — but flipping the template before the
-package exists on pub.dev would make every generated client's `dart pub get` fail with "package not
-found," including the committed `examples/flutter-riverpod/client` and its own CI drift check. That
-flip is explicitly **out of scope** for this publishing slice; it is the next piece of cratestack#563,
-sequenced strictly after the first real publish.
+`crates/cratestack-client-dart/templates/pubspec.yaml.j2` emits `cratestack_cbor` into every generated
+client, as the only codec a generated client has; the pure-Dart `package:cbor` (`cbor: ^6.5.1`) it
+emitted while `cratestack_cbor` was not yet on pub.dev is gone. The maintainer decision (cratestack#563,
+2026-08-16) was a hard replacement, not an opt-in flag, and the flip was sequenced strictly after the
+first real publish. The emitted requirement is `CRATESTACK_CBOR_FLOOR` in
+`crates/cratestack-client-dart/src/package_floors.rs` (see "What generated clients ask for" below).
 
 ## What was not verified here (be honest about this before relying on it)
 
-- **The actual OIDC exchange against pub.dev** — this repository has no live "Automated publishing"
-  configuration yet (blocked on the manual first-publish step above), so `publish-pubdev-cbor` has
-  never actually run against pub.dev's real servers. Everything else (toolchain install, all three
-  vendor recipes, the archive-verification gate, `dart pub publish --dry-run`'s exact output shape) was
-  verified by hand against this package as it exists today. The one thing that cannot be verified
-  before a real tag push is whether pub.dev's OIDC trust check itself behaves as documented once
-  configured — this matches the same category of unverified step `npm-publishing.md` flags for a
-  brand-new npm Trusted Publisher entry before its first real CI-triggered publish.
+- **The actual OIDC exchange against pub.dev** — when this was written, the repository had no live
+  "Automated publishing" configuration (blocked on the manual first-publish step above), so
+  `publish-pubdev-cbor` had never run against pub.dev's real servers. **That is no longer open:**
+  Automated publishing is configured, and the `v0.19.1` tag's `Release CLI Binaries` run published
+  `cratestack_cbor` through this job, version-served gate included (pub.dev serves 0.19.1).
 - **The macOS framework ships zipped; the iOS one does not, and neither is a packaging preference.**
   `dart pub publish` dereferences symlinks when it builds its archive. A macOS framework is a
   *versioned* bundle whose three symlinks (`Versions/Current`, the top-level binary, `Resources`) are
@@ -424,14 +434,11 @@ sequenced strictly after the first real publish.
 
 - **Linux arm64** is not vendored by this job and is not claimed by the package — nothing to verify
   here; see "Platform status" above.
-- **The macOS, iOS, and Windows legs (`build-cbor-macos`, `build-cbor-ios`, `build-cbor-windows`) have
-  not run on a real `macos-latest`/`macos-latest`/`windows-latest` GitHub-hosted runner as part of THIS
-  release job** — their steps were written against the landed `just cbor-vendor-macos`/`cbor-vendor-ios`/
-  `cbor-vendor-lib windows-x64` recipes and `ci.yml`'s equivalent jobs; the macOS and Windows ones do run
-  green on real runners already, but the iOS one (`cratestack-cbor-ios` in `ci.yml`) has never run
-  anywhere yet — this release job's `build-cbor-ios` is its first real execution in either workflow. The
-  first real test of the *release* legs specifically (as opposed to `ci.yml`'s jobs) is this workflow
-  running on a tag push. The macOS symlink question that used to sit here is no longer open — it was
+- **The macOS, iOS, and Windows legs (`build-cbor-macos`, `build-cbor-ios`, `build-cbor-windows`)** were
+  written against the landed `just cbor-vendor-macos`/`cbor-vendor-ios`/`cbor-vendor-lib windows-x64`
+  recipes and `ci.yml`'s equivalent jobs before either had run on a real runner. They have since run
+  green on real `macos-latest`/`windows-latest` runners in tag-push releases (the `v0.19.1` run among
+  them). The macOS symlink question that used to sit here is no longer open — it was
   measured and fixed; see the previous bullet.
 - **`pana`** (pub.dev's own scoring tool), if run, scores the package as it exists in this branch, not
   as pub.dev will score it after the package is live with real download/dependency history — some
@@ -454,19 +461,20 @@ because these are **pure Dart** packages:
   still applies and is still the one that matters.
 
 **They are sequenced, not parallel.** `publish-pubdev-builder` declares
-`needs: [prepare, publish-pubdev-annotations]`. Today the order is not load-bearing —
-`cratestack_builder` depends on `cratestack_annotations: ^0.8.5`, already published, so it resolves
-either way — but on a release where the builder requires a version of the annotation package that
-the same run is publishing, parallel jobs would race and the builder's publish would fail version
-solving.
+`needs: [prepare, publish-pubdev-annotations, preflight, publish-crates]`. Today the order is not
+load-bearing — `cratestack_builder` depends on `cratestack_annotations: '>=0.8.10 <0.10.0'`, already
+published, so it resolves either way — but on a release where the builder requires a version of the
+annotation package that the same run is publishing, parallel jobs would race and the builder's
+publish would fail version solving.
 
-### Outstanding: Automated publishing is not yet enabled on either package
+### Automated publishing is enabled on both packages
 
 Same bootstrap constraint described in "First publish" above: pub.dev can only automate publishing
-for a package that already exists, so both were first published by hand. Until a maintainer enables
-**Admin → Automated publishing** on each package (repository `cratestack/cratestack`, tag pattern
-`v{{version}}`), both jobs will fail on every tag push exactly as `publish-pubdev-cbor` did before
-its own setup was completed.
+for a package that already exists, so both were first published by hand. A maintainer has since
+enabled **Admin → Automated publishing** on each package (repository `cratestack/cratestack`, tag
+pattern `v{{version}}`): both jobs published 0.19.1 from the `v0.19.1` tag push. Without that
+setting, both jobs fail on every tag push, as `publish-pubdev-cbor` did before its own setup was
+completed.
 
 ### The inter-package constraint is deliberately not touched by `just bump`
 
@@ -474,7 +482,9 @@ its own setup was completed.
 would "become wrong at the first minor bump". That was wrong; the behaviour is correct and should be
 left alone.
 
-`cratestack_builder` declares `cratestack_annotations: ^0.8.10`, and `just bump`'s rewrite is anchored
+`cratestack_builder` declares `cratestack_annotations: ^0.8.10` (since widened to
+`'>=0.8.10 <0.10.0'`, cratestack#838; the pubspec's own comment records why that one change was not
+a routine bump), and `just bump`'s rewrite is anchored
 to a line starting `version:`, so this indented dependency line is never rewritten. Two reasons that
 is right:
 
@@ -529,7 +539,8 @@ different thing from what the packages publish as. That distinction is the whole
   (pub.dev's automated publishing is configured with tag pattern `v{{version}}`, so the pubspec and
   the tag must agree). Unchanged.
 - **What a generated client asks for** is now an API-compatibility floor —
-  `crates/cratestack-client-dart/src/package_floors.rs`, a pair of constants used by both the default
+  `crates/cratestack-client-dart/src/package_floors.rs`, constants (`CRATESTACK_ANNOTATIONS_FLOOR`,
+  `CRATESTACK_BUILDER_FLOOR`, `CRATESTACK_CBOR_FLOOR`) used by both the default
   preset (`context.rs`) and the riverpod preset (`riverpod/build_pubspec.rs`).
 
 It used to be `^{CARGO_PKG_VERSION}`. Because publishing runs off a tag pushed *after* the bump PR
@@ -537,12 +548,18 @@ merges, that meant every generated client spent each release cycle naming a vers
 serve yet. It took down `Prepare Release` for 0.8.14: five snapshot fixtures, three `flutter pub get`
 tests, and `just regen-examples --check`, all from one cause.
 
-Note that a *minor floor* (`^{major}.{minor}.0`, which `cratestack-client-typescript` still emits for
-`@cratestack/cbor`) would not have been enough. It is still derived from the current version, so it
+Note that a *minor floor* (`^{major}.{minor}.0`, which `cratestack-client-typescript` emitted for
+`@cratestack/cbor` until cratestack#779 gave it constant floors too) would not have been enough. It is still derived from the current version, so it
 moves at a minor bump and reopens the same window — narrower, not closed. A constant never moves, so
 it cannot name an unpublished version at any bump size. The wider payoff is that generator output
 stops being a function of the release version at all, which is what makes the committed snapshots and
 example clients survive a bump.
+
+> **Update (cratestack#838):** the floor is still a constant, but the emitted requirement is now a
+> range whose **ceiling** follows the release line (`>=FLOOR <NEXT_MINOR`, e.g. `>=0.9.3 <0.20.0` at 0.19.1, from
+> `crates/cratestack-client-dart/src/release_line.rs`), because a caret on a `0.x` floor refused
+> every release after the next minor bump. So generator output changes at a minor bump again, and
+> still survives a patch bump; `release_line.rs`'s module doc records the trade-off.
 
 Two guards keep the floors honest, since this section is itself the evidence that a comment cannot:
 
@@ -557,7 +574,7 @@ Two guards keep the floors honest, since this section is itself the evidence tha
 ## See also
 
 - [`docs/tooling/cratestack-cbor-development.md`](cratestack-cbor-development.md) — toolchain pins, the
-  vendor recipes this document's CI job runs, and the four development-time failure modes.
+  vendor recipes this document's CI job runs, and the six development-time failure modes.
 - [`docs/tooling/npm-publishing.md`](npm-publishing.md) — the npm/crates.io pipeline this sits
   alongside, and the source of the "verify the tarball before publishing" discipline this document
   applies to a second registry.

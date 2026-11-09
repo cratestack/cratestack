@@ -230,6 +230,13 @@ caller; row-level `@@allow` on subscriptions is still unenforced (slice 3).
 §5.1's table is updated for the one row that changed and is otherwise
 unchanged.
 
+> **Update (0.17.1):** row-level read policy on `@@subscribe` events is now
+> enforced, but not at L3: each event is checked against the subscriber's
+> read policy in-process before it is sent (`cratestack_sqlx::record_readable`,
+> `cratestack_axum::rpc::readable_events`; CHANGELOG 0.17.1, "Security:
+> `@@subscribe` events pass the subscriber's read policy"). `cratestack-exec`
+> still holds only idempotency and rate-limit admission.
+
 ### L4 — Bindings
 
 **Belongs here:** one wire protocol's worth of encode/decode/route/status
@@ -268,6 +275,11 @@ That "nothing above L1" is a real constraint that a plain integer
 comparison cannot express, because L5 depends on ⊥ and ⊥ must not depend on
 L2. ⊥ needs a *rule*, not a number; ADR 0014 records this as an open
 question rather than inventing an answer.
+
+> **Update (0.7.10):** ADR 0014's amendment resolved it the other way: the
+> "no integer works" claim did not survive the real graph, and
+> `docs/adr/layers.toml` gives `cratestack-macros` an integer layer (1),
+> since no L2 crate depends on it.
 
 `cratestack-cli`, `cratestack-lsp`,
 `cratestack-migrate` and `cratestack-studio` are tools, not layers; they
@@ -338,6 +350,13 @@ and false of the graph. Enumerating all thirty found these on the first
 pass, which is the honest argument for §8's enforcement ADR and is recorded
 as such rather than quietly repaired.
 
+> **Update (0.7.10):** both edges are fixed (#475, #482). `ClientStateStore`
+> and its companion types moved to `cratestack-core::store::client_state`
+> (`crates/cratestack-core/src/store/client_state.rs`), with
+> `cratestack-client-rust::state` kept as a re-export.
+> `cratestack-client-store-redis` no longer depends on `cratestack-client-rust`,
+> and `cratestack-client-store-sqlite` keeps it only as a dev-dependency.
+
 Two other things worth reading off the table. `cratestack-sqlite`'s
 `cratestack-client-rust` edge is a **target-gated** normal dependency
 (`Cargo.toml:63-64`, `cfg(not(target_arch = "wasm32"))`) added for hybrid
@@ -354,6 +373,11 @@ ran `cargo tree -i` and opened #465. It did not hold on the client side.
 cost/benefit call and is handed to an ADR (§8), not decided here — but the
 paper should be honest that the current enforcement mechanism is "someone
 notices", and that it has already missed once.
+
+> **Update (0.7.10):** ADR 0014 was accepted and layer direction is now
+> CI-enforced (#477): `docs/adr/layers.toml` assigns every crate a layer and
+> `.ci/layer-direction-check.sh` (CI job `layer direction (ADR 0014)`) fails
+> on an upward `cratestack-*` edge.
 
 ## 4. Where the model is already true
 
@@ -412,11 +436,17 @@ field, `SqlxRuntime` — there is no builder method that accepts a sink.
 Saying "three DI seams" flatters the design by one; the correct count is
 two working plus one reserved, and ADR 0015 turns that into an argument.
 
+> **Update (#473):** no longer true. `SqlxRuntime::with_audit_sink` /
+> `CratestackBuilder::with_audit_sink` install a sink, dispatched post-commit
+> from `crates/cratestack-sqlx/src/audit/sink.rs`; see §5.1's "Post-#473"
+> note. `AuditSink` is now the third working seam.
+
 Two corrections while we are counting. `cratestack-sqlx` implements
 `IdempotencyStore`, **not** `RateLimitStore` — there are exactly two
 production `RateLimitStore` impls, in-memory and Redis. `extensions.md`
 §2 layer 3 and §5 both say "three interchangeable backends"; that phrasing
 is wrong and should be corrected in that document, not just noted here.
+(Corrected there in 0.19.x.)
 
 The discipline around the seams is the interesting part. Across all of
 `cratestack-axum/src`, excluding `tests*` files, `dyn ` appears exactly
@@ -555,7 +585,8 @@ consequences other documents have had to work around:
   the SQL query builders and has no analogue for an in-memory
   outbox-sourced event" (restated as a scope limit in §6.5). That is not a
   policy gap; it is a layering gap. Policy lives at L2, and SSE does not go
-  through L2.
+  through L2. *(Closed in 0.17.1, at L2 rather than L3: see the update
+  note in §2's L3 section.)*
 - `idempotency-rate-limit-declarative-surface.md` §4.2 has had
   `@no_idempotency` codegen deferred *since it was written*, explicitly
   "gated on `OpExecutor`" — the ticket sketch in its §6 says so in its
@@ -813,10 +844,12 @@ Deliberately left open, each to its own ADR (§8) or existing document:
   more expensive than `cratestack-sql`'s existence suggests.
 - **Whether layer direction gets a CI check**, and in what form — including
   how ⊥ is expressed to a checker that only compares integers.
+  **Decided: ADR 0014 Accepted; CI-enforced since 0.7.10 (#477, see §3).**
 - **The two open client-side back-edges** (§3). Repairing them means moving
   `ClientStateStore` down out of `cratestack-client-rust/src/state.rs`, a
   breaking public-path change. That is a scoped ticket, not an
   architectural decision, and this paper does not schedule it.
+  **Done in 0.7.10 (#475, #482, see §3).**
 - **The composer-scaffold consolidation** (§5.3) — a `cratestack-macros`
   refactor ticket, sized and scoped in its own PR.
 - **Shared client IR** (§5.4) — a fix was once sketched by
@@ -844,7 +877,7 @@ numbered **0001–0005**, in the sibling documentation repository
 
 | # | File | Status |
 |---|---|---|
-| 0001 | `core-architecture-adr.md` | Proposed (updated 0.3.0, + RPC addendum) |
+| 0001 | `core-architecture-adr.md` | Proposed (updated 0.3.0, + RPC addendum) at the time; now Accepted, amended twice |
 | 0002 | `mcp-operator-adr.md` | Accepted (2026-09-25, cratestack-docs#104; revised 2026-09-24, cratestack-docs#96) |
 | 0003 | `views-adr.md` | Accepted |
 | 0004 | `schema-diff-adr.md` | Proposed |
@@ -899,12 +932,17 @@ the collision rule 1 forbids):
 
 | ADR | Filename | Status |
 |---|---|---|
-| 0006 | `docs/adr/0011-architecture-layer-model.md` | Accepted |
-| 0007 | `docs/adr/0012-no-ioc-container.md` | Accepted |
-| 0008 | `docs/adr/0013-facade-disjointness-invariant.md` | Accepted |
-| 0009 | `docs/adr/0014-layer-direction-enforcement.md` | Proposed |
-| 0010 | `docs/adr/0015-op-executor-l3.md` | Proposed |
-| 0011 | `docs/adr/0016-store-spi-scope.md` | Proposed |
+| 0011 | `docs/adr/0011-architecture-layer-model.md` | Accepted |
+| 0012 | `docs/adr/0012-no-ioc-container.md` | Accepted |
+| 0013 | `docs/adr/0013-facade-disjointness-invariant.md` | Accepted |
+| 0014 | `docs/adr/0014-layer-direction-enforcement.md` | Proposed at the time; now Accepted |
+| 0015 | `docs/adr/0015-op-executor-l3.md` | Proposed at the time; now Accepted (amended, 2026-09-03) |
+| 0016 | `docs/adr/0016-store-spi-scope.md` | Proposed |
+
+> **Update (0.19.x):** the ADRs were numbered 0011–0016, not from 0006 as
+> rule 1 above says: 0006 went to the COSE envelope ADR in `cratestack-docs`
+> (`internals/cose-envelope-adr.md`) and 0007–0010 are reserved by ADR 0001.
+> `docs/adr/README.md` holds the current numbering table across both repos.
 
 Two are `Accepted` because this paper settles them (the layer names and the
 dependency rule; the permanent refusal of an IoC container). One is
@@ -1018,7 +1056,7 @@ backends" was recorded as a drafting rumour. It is not — it is written in
 rather than the error being absorbed silently.
 
 **Additions.** §2 now says the layer table is illustrative and that ADR
-0006 carries the complete per-crate assignment (five crates had no home in
+0011 (numbered 0006 in that draft) carries the complete per-crate assignment (five crates had no home in
 either). §5.5 gained a third L1 breach, `MAX_BODY_BYTES` — a 413 bound
 living in an L1 contract module. The ⊥ paragraph now states that a
 compiler needs a *rule* rather than a number, because L5 depends on ⊥ and ⊥

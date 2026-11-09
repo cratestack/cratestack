@@ -1,6 +1,7 @@
 # Enforcing `@isolation` on procedures
 
-Status: **accepted for implementation** (2026-09-25). The maintainer decided
+Status: **implemented** (0.14.1, "Security: @isolation is enforced
+(GHSA-r67q-4qqq-g9gm)"); accepted for implementation 2026-09-25. The maintainer decided
 "enforce it now"; this document records the shape chosen and why. Security
 fix for GHSA-r67q-4qqq-g9gm (embargoed at the time of writing).
 

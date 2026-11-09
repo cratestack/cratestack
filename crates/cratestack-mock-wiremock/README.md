@@ -33,8 +33,8 @@ To call the generator from Rust:
 
 ```toml
 [dependencies]
-cratestack-mock-wiremock = "0.7.15"
-cratestack-parser = "0.7.15"
+cratestack-mock-wiremock = "0.19"
+cratestack-parser = "0.19"
 ```
 
 ```rust

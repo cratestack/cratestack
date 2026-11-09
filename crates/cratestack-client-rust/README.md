@@ -31,8 +31,8 @@ let client = cratestack_schema::client::Client::new(runtime);
 ```
 
 This is the REST transport. For a schema declaring `transport rpc`, the generated
-`cratestack_schema::rpc::Client` is built on top of `RpcClient` instead — see
-[RPC Transport](#rpc-transport) below.
+`cratestack_schema::client::Client` is constructed the same way, from a `CratestackClient`,
+but wraps it in an `RpcClient` internally — see [RPC Transport](#rpc-transport) below.
 
 ## RPC Transport
 

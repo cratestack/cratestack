@@ -1,6 +1,6 @@
 # Decimal-backend feature additivity (cratestack#505)
 
-Status: **implemented.** The maintainer chose Direction 2, the associated-type/marker shape (§7's
+Status: **implemented** (released in 0.8.0). The maintainer chose Direction 2, the associated-type/marker shape (§7's
 option (b)), and it has shipped — see §13 for what actually landed, how it differs in mechanism
 (not outcome) from §7's own sketch, and the verification evidence. §§1–12 below are the original
 spike/decision document, kept verbatim as the historical record of the evidence the decision was

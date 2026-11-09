@@ -52,7 +52,7 @@ tauri-native/
 
 - Rust + cargo.
 - **Tauri 2 system deps** — see [tauri.app/start/prerequisites](https://tauri.app/start/prerequisites/). On macOS, Xcode CLI tools cover it; on Linux, GTK + WebKit GTK; on Windows, MSVC + WebView2.
-- Node.js 20+ and pnpm.
+- Node.js 24+ and pnpm 11 (pinned in `package.json`'s `packageManager`).
 
 Notably **not** required, in contrast to Phase B: `wasm32-unknown-unknown`, `wasm-pack`, Homebrew LLVM, or any wasm bundler configuration.
 

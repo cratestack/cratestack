@@ -21,7 +21,8 @@ npx @cratestack/cli --help
 
 macOS (x64, arm64), Linux (x64, arm64), Windows (x64). See
 [cratestack-cli](https://github.com/cratestack/cratestack/tree/main/crates/cratestack-cli) for the
-full command reference (`check`, `generate-dart`, `generate-typescript`, `studio`, `print-ir`, `contract`).
+full command reference (`check`, `generate-dart`, `generate-typescript`, `generate-wiremock`, `studio`,
+`migrate`, `diff`, `print-ir`, `contract`).
 
 ## How it works
 

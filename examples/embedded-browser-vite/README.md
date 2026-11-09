@@ -23,7 +23,7 @@ The schema is intentionally minimal (one `Note` model) so the focus stays on the
   ```bash
   cargo install wasm-pack
   ```
-- **Node.js 18+ and pnpm** (npm/yarn work too if you adjust the scripts).
+- **Node.js 24+ and pnpm 11** (the repository's `package.json` `engines` and the example's pinned `packageManager`; pnpm 11 itself needs Node 22.13+). npm/yarn work too if you adjust the scripts.
 - **A wasm-capable clang** — `sqlite-wasm-rs` builds SQLite's C source to wasm via `cc-rs`, and Apple's stock Xcode clang doesn't ship the wasm32 backend.
 
   **macOS:**

@@ -134,6 +134,10 @@ grammar, dispatch, or generated clients.
   `views.rs:136`, `swr/context.rs:183`) was never tied to `transport grpc` and is
   still live. What the spike loses is breadth of precedent, not the precedent itself.
 
+  > **Update (0.19.x):** the spike is no longer awaiting sign-off. Its design was accepted and
+  > shipped as `@@internal("action")` route suppression in 0.8.14 (#743), on REST, RPC and every
+  > generated client.
+
 ### Deferred
 
 None. This is a full removal, not a phased one. Revisiting it — reintroducing gRPC or

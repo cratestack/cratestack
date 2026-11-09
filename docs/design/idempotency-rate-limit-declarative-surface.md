@@ -5,6 +5,12 @@ below (§4.1) has been reframed by [extensions.md](extensions.md), which
 proposes a `rate_limit` **extension** that declares capability-participation
 only (never tunable numbers). The idempotency finding (§4.2 onward) is
 unaffected and remains the current decision.
+**Update (0.11.1):** the idempotency follow-up of §6 shipped as #876 (ADR 0015
+slice 1): `cratestack-exec` (L3) owns idempotency admission
+(`OpExecutor::admit`, `crates/cratestack-exec/src/executor.rs`), and
+`@no_idempotency` takes effect on REST and RPC. Rate-limit admission followed
+in slice 2 (#877, 0.13.0, `OpExecutor::admit_rate_limit`). The "not yet consumed" and
+"unbuilt" statements in §4.2 describe the state before that release.
 **Update (cratestack#473):** every citation of "`AuditSink` selection" below
 was written when `AuditSink` had no installation path at all — a consumer
 could construct `NoopAuditSink`/`MulticastAuditSink` but had nowhere to hand

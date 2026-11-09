@@ -63,11 +63,11 @@ declarations matter.
 - **`include_server_schema!` / `include_embedded_schema!`** — not
   re-exported, deliberately. A consumer reaching for either gets a plain
   Rust name-resolution error at the call site.
-- **`extension rate_limit { }` / `extension pgvector { }`** — same as
-  `cratestack-api`: neither Cargo feature is forwarded here, so a schema
-  declaring either extension fails the same
-  `extension_gate.rs` `compile_error!` under this facade as it does under
-  `cratestack-api` today.
+- **Extensions without their feature.** A schema that declares `extension
+  rate_limit { }`, `pgvector`, `postgis`, `webtransport` or `websocket`
+  fails the `extension_gate.rs` `compile_error!` unless the matching
+  feature below is on; those features are schema-compatibility switches,
+  see "Features".
 
 ## Proving `cratestack-axum` is absent
 
@@ -131,13 +131,23 @@ CI's `facade-disjointness` job (`.github/workflows/ci.yml`) re-runs the
   applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
+- `middleware` — forwards `cratestack-client-rust/middleware`
+  (`reqwest_middleware::ClientWithMiddleware`).
+- `ws` — the generated client's subscriptions over WebSocket (native
+  targets; `tokio-tungstenite`, never `axum`).
+- `cose` — the signed client (`CratestackClient::with_envelope`), with
+  `cratestack-cose` re-exported as `cratestack::cose`; `axum` stays out.
+- `webtransport` — `extension webtransport { }` plus the client's
+  WebTransport binding (QUIC; never `axum`).
 - `pgvector` — enable when the schema declares `extension pgvector { }`.
+- `postgis` — enable when the schema declares `extension postgis { }`.
 - `rate_limit` — enable when the schema declares `extension rate_limit { }`.
+- `websocket` — enable when the schema declares `extension websocket { }`.
 
-The last two are **schema-compatibility switches, not feature
-implementations**. A client is generated from the same `.cstack` the server
-is built from, so a schema declaring either extension must still compile
-here — but neither extension has a client-side half. A `Vector(n)` field
+`pgvector`, `postgis`, `rate_limit` and `websocket` are
+**schema-compatibility switches, not feature implementations**. A client is generated from the same `.cstack` the server
+is built from, so a schema declaring one of these extensions must still compile
+here — but none of them needs a client-side runtime of its own. A `Vector(n)` field
 arrives as a plain `Vec<f32>` (the `pgvector` crate is only involved at the
 server's sqlx row-decode boundary), and `@no_rate_limit` only affects
 enforcement that lives in `cratestack-axum`, which this facade has no

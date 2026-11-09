@@ -94,7 +94,10 @@ pnpm run verify
 
 `scripts/verify.ts` drives the generated client directly (no React, no browser — same shape as
 `react-vite-swr`'s `scripts/seed.ts`), logs every request/response, and asserts on each one. A real
-run against a freshly built container produced (trimmed to the load-bearing lines):
+run against a freshly built container produced the transcript below (trimmed to the load-bearing
+lines). It was captured **before #605**, when the mock ignored `If-Match`; today's `verify.ts`
+instead logs `Replayed stale If-Match PATCH -> HTTP 412 (expected 412)` and then asserts the absent
+(`412`), `*` (`400`) and malformed (`400`) rows, and the `DELETE` sends the bumped `If-Match: "1"`:
 
 ```
 === Category (plain CRUD) ===
@@ -145,11 +148,11 @@ against the container's actual state via `fetch('/api/...')`), and covered by CI
 Offline coverage (no Docker, no network) lives in `tests/smoke.rs`: the schema parses with the
 three intended models, `--refine` emits the three distinct resource-manifest shapes, WireMock emits
 five mappings per model, the falsy `published` round trip is presence-tested not truthiness-tested,
-and — the trip-wire test — the `If-Match` gap below is asserted, not just documented, so it starts
-failing the moment it's no longer true.
+and the versioned model's stubs are asserted to enforce `If-Match` and return a bumped `ETag` (the
+trip-wire that once asserted the gap fired when #605 closed it, and was rewritten).
 
 ```bash
-cargo test -p react-vite-refine-example   # 5 tests, all pass, no DB/Docker needed
+cargo test -p react-vite-refine-example   # 6 tests, no DB/Docker needed
 ```
 
 ## Sorting, filtering, pagination — deliberately not built
@@ -176,8 +179,8 @@ renders. This is a deliberate scope choice for the mock-backend demo, not a limi
 
 ## What this demo can't prove
 
-Two confirmed, real gaps in `cratestack-mock-wiremock` (not bugs in this example) that a reader
-building on this pattern needs to know before they trust it too far:
+Two gaps in `cratestack-mock-wiremock` (not bugs in this example) were confirmed here; the first is
+now closed, the second is not. A reader building on this pattern needs to know both:
 
 **1. ~~The mock does not validate `If-Match`~~ — fixed in #605; optimistic locking IS demonstrated
 live.** This section previously documented a real gap: `cratestack-mock-wiremock` matched on method
@@ -226,13 +229,13 @@ it's a `create`-only concern with no separate code path here to regress independ
 |---|---|
 | [`schema.cstack`](schema.cstack) | `Category`/`Post`/`Tag` models — see comments for why each shape |
 | [`src/lib.rs`](src/lib.rs) | No server macro — just `SCHEMA_PATH`; this example has no Rust server at all |
-| [`tests/smoke.rs`](tests/smoke.rs) | Offline: schema shape, `--refine` manifest, WireMock mapping shape, the `If-Match` trip-wire |
+| [`tests/smoke.rs`](tests/smoke.rs) | Offline: schema shape, `--refine` manifest, WireMock mapping shape, that the stubs enforce `If-Match` |
 | `web/generated/` | Generated `--refine` TypeScript client — gitignored, produced by `just react-vite-refine-fixture` |
 | `wiremock/` | Generated WireMock stub mappings — gitignored, same recipe |
 | [`web/src/dataProvider.ts`](web/src/dataProvider.ts) | Wires the generated client + generated manifest into `createCratestackDataProvider` |
 | [`web/src/App.tsx`](web/src/App.tsx) | `<Refine>` + a hand-rolled tab switcher (no `routerProvider` — not needed) |
 | `web/src/pages/*Page.tsx` | One page per model, headless `@refinedev/core` hooks, no UI kit |
-| [`web/scripts/verify.ts`](web/scripts/verify.ts) | Live CRUD + `If-Match`-gap verification, outside React (see "Verification" above) |
+| [`web/scripts/verify.ts`](web/scripts/verify.ts) | Live CRUD + `If-Match` enforcement verification, outside React (see "Verification" above) |
 | [`web/vite.config.ts`](web/vite.config.ts) | The `/api` dev-server proxy (see "What this demo can't prove" — the mock has no CORS handling) |
 
 ## CI

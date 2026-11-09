@@ -54,7 +54,12 @@ src/
   models.ts
   client.ts
   queries.ts
+  compact.ts        # compact wire keys, opt-in per client (`compactKeys: true`)
 ```
+
+An RPC-transport package also carries `links.ts` and the CBOR helpers `cbor-argument.ts`,
+`cbor-item.ts`, `cbor-seq.ts` and `stream-terminal.ts` (see the `tiny_rpc_native_default`
+snapshot under `tests/snapshots/`).
 
 Generated content covers:
 
@@ -154,6 +159,22 @@ cratestack generate-typescript \
   --schema schemas/catalog.cstack \
   --out packages/catalog-client \
   --tanstack
+```
+
+## `--rtk` (`TypeScriptGeneratorConfig::rtk`)
+
+Adds `src/rtk-api.ts` (issue #906): a typed RTK Query `createApi` endpoint set, one endpoint
+per model operation and per `procedure`, dispatching through `@cratestack/adapter-rtk`'s base
+query on an RPC schema or through the package's own REST client on a REST schema. Tags
+(`providesTags`/`invalidatesTags`) are derived from the schema, never hand-written. Adds the
+`@reduxjs/toolkit`/`react-redux`/`@cratestack/adapter-rtk` peer and dev dependencies. Purely
+additive; composes with `--swr`/`--refine`/`--tanstack` and with every transport.
+
+```bash
+cratestack generate-typescript \
+  --schema schemas/catalog.cstack \
+  --out packages/catalog-client \
+  --rtk
 ```
 
 ## RPC codec: `@cratestack/cbor`

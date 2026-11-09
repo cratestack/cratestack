@@ -1,6 +1,8 @@
 # RPC transport — v1 design
 
 Status: **accepted** (2026-05-15) — HTTP surface **shipped** in PRs #20–#24.
+WebSocket subscription binding **shipped** in 0.18.0 (`cratestack-websocket`), as designed in
+[subscriptions-websocket.md](subscriptions-websocket.md).
 Scope: schemas declaring `transport rpc` in `.cstack`.
 
 ## Shipped vs. pending
@@ -15,7 +17,7 @@ Scope: schemas declaring `transport rpc` in `.cstack`.
 | `@stream` schema directive + stream-shaped `ProcedureRegistry` trait method | shipped | #282 |
 | Genuinely incremental delivery for `@stream` ops (`Body::from_stream`, mid-stream error sentinel, client-disconnect cancellation) | shipped | #283 |
 | SSE subscription binding (§3.4a, `@@subscribe` schema directive) — recommended first path | shipped | #183, #390 |
-| WebSocket binding + subscriptions (§3.4) | **pending**, gated on a real bidirectional/multiplexing case — design proposed in [subscriptions-websocket.md](subscriptions-websocket.md) | — |
+| WebSocket binding + subscriptions (§3.4) | shipped (subscriptions only; unary over WS still gated) — `cratestack-websocket`, `extension websocket { }`, designed in [subscriptions-websocket.md](subscriptions-websocket.md) §6 | 0.18.0 |
 | Batch parallelization | deferred (no observed contention) | — |
 
 Streaming now delivers incrementally, but only for ops explicitly marked
@@ -57,7 +59,7 @@ Subscriptions now ship over SSE (`@@subscribe`, §3.4a, cratestack#390):
 existing `CratestackEventBus`, reusing the `@stream` encoder's `Stream ->
 axum::body::Body::from_stream` shape with SSE framing instead of
 cbor-seq. Delivery rides the same outbox-drain mechanism `@@emit` has
-always used (`crates/cratestack-sqlx/src/descriptor.rs::
+always used (`crates/cratestack-sqlx/src/descriptor/drain.rs::
 drain_event_outbox`, invoked automatically once a mutating op's
 transaction commits) — no new delivery pipeline. Backpressure is a
 bounded per-subscription channel (`crates/cratestack-axum/src/rpc/
@@ -71,6 +73,13 @@ long-running server doesn't accumulate one permanently-registered
 handler per historical connection. The WS binding (§3.4) remains the
 only HTTP-surface gap, still gated on a concrete bidirectional/
 multiplexing case — see §6.
+
+> **Update (0.18.0):** the WS binding has shipped, for subscriptions
+> (`cratestack-websocket`, `GET /rpc/ws`, `/$ws` on REST); unary ops over WS
+> remain gated. Model-event delivery now goes through a
+> `SubscriptionBackplane` (Postgres `NOTIFY` by default) rather than the
+> in-process bus alone, and a WebTransport binding sits beside it. See
+> [subscriptions-websocket.md](subscriptions-websocket.md) §11.
 
 The REST binding is and remains the default. RPC is an alternative *generation
 style* — a schema picks one or the other via the `transport` directive, and
@@ -112,8 +121,9 @@ is the only dispatch key.
 | `procedure foo(...) @stream`                | `procedure.foo`             | `Sequence`     |
 
 The mutation-ness of a procedure is metadata on the descriptor, not part of
-the id. The `@stream` and `@@subscribe` syntaxes do not exist yet — they
-will be added together with the macro emitter for this binding.
+the id. The `@stream` and `@@subscribe` syntaxes did not exist when this was
+written; both have since shipped (`@stream` in 0.6.0, #282; `@@subscribe` in
+0.7.2, cratestack#390).
 
 ### 2.2 Op descriptor
 
@@ -126,6 +136,7 @@ pub struct OpDescriptor {
     pub input_ty: &'static str,
     pub output_ty: &'static str,
     pub idempotent_by_default: bool,
+    pub rate_limited_by_default: bool,
     pub auth_required: bool,
 }
 
@@ -324,8 +335,10 @@ future, `model.User.list @stream`).
     sequence. A stream that emits a tag-48900 item never resumes normal
     output afterward — end of body follows immediately after it.
   - A boundary-scanner walking the byte stream (see
-    `CborSeqChunkDecoder` in `cratestack-client-rust/src/streaming.rs`, and
-    its planned TypeScript port) detects this *structurally*: once its
+    `CborSeqChunkDecoder`, now defined in `cratestack-codec-cbor/src/seq.rs`
+    and re-exported from `cratestack-client-rust/src/streaming.rs`, and
+    its TypeScript port, `CborSeqBoundaryScanner` in
+    `packages/cratestack-ts-types/src/cbor-seq.ts`) detects this *structurally*: once its
     existing `minicbor`-based boundary detection lands on a complete
     top-level item, checking whether that item's leading byte(s) decode to
     major type 6 with tag number 48900 classifies it as an error envelope
@@ -353,6 +366,16 @@ future, `model.User.list @stream`).
   subscription binding alongside WS — see §3.4a.
 
 ### 3.4 WebSocket — `GET /rpc/ws` upgrade
+
+> **Update (0.18.0):** shipped for subscriptions only, with changes recorded
+> in [subscriptions-websocket.md](subscriptions-websocket.md) §6 and §11 (S5).
+> Authentication is **not** upgrade-time HMAC: the first frame must be a new
+> `Init` frame, authenticated by the router's `AuthProvider` (a native client
+> sends its headers on the upgrade and an empty `Init`; a browser puts them in
+> `Init`), and a further `Init` refreshes credentials. Two frame variants were
+> added (`Init`, `Ready`). The path is `/rpc/ws` (`/$ws` on REST schemas).
+> The §4 table's "upgrade-time HMAC" and §5's WS bullet describe this original
+> design, not what shipped.
 
 - Subprotocol offers: `cratestack.rpc.v1+cbor`, `cratestack.rpc.v1+json`.
   Server picks one. WS close 1002 if none acceptable.
@@ -426,7 +449,8 @@ one SSE event, reusing the encoder path already proven by streaming
 Implemented in cratestack#390: `@@subscribe` (a bare model-level
 attribute, mirroring `@@audit`/`@@soft_delete`; requires `@@emit(...)`
 on the same model and `transport rpc` on the schema — enforced at parse
-time) emits the `OpKind::Subscription` `model.<X>.subscribe` op
+time; the `transport rpc` requirement was lifted in 0.18.0, when REST gained
+`GET /<plural>/$subscribe`) emits the `OpKind::Subscription` `model.<X>.subscribe` op
 descriptor, and `GET /rpc/subscribe/{op_id}` dispatches it — header-
 based auth via the existing `AuthProvider`, then one `CratestackEventBus`
 registration per `@@emit`ted operation, bridged through a bounded
@@ -471,6 +495,12 @@ the service directly.
 0015](../adr/0015-op-executor-l3.md) is Accepted (amended) at alternative (a) —
 L3 lands in slices as `cratestack-exec`, starting with idempotency (#876); §6.5's
 WebSocket gate is no longer the trigger. Epic: #875.
+
+> **Update (0.19.x):** two slices have shipped in `cratestack-exec`:
+> idempotency admission (0.11.1) and rate-limit admission (0.13.0, #877), with
+> `IdempotencyLayer`/`RateLimitLayer` as the thin HTTP adapters. Audit stays at
+> L2. The WS binding (0.18.0) serves subscriptions only and does not call the
+> executor.
 
 ## 5. Canonical request signing
 
@@ -563,6 +593,13 @@ appears.
 designs the WS binding below, a WebTransport binding beside it, subscription procedures and
 topics, multi-replica delivery, and read-policy enforcement on streamed events. Until it is
 accepted, this section is the record of what is built.
+
+> **Update (0.18.0):** that successor is built (0.17.1 and 0.18.0; its §11
+> records each slice), and it is now the record of what is built. Both
+> "Still missing" items below have shipped: the WS frame loop
+> (`cratestack-websocket`, subscriptions only) and generated subscription
+> helpers in the Rust, TypeScript and Dart clients. `@@subscribe` no longer
+> requires `transport rpc`. The rest of this section is the SSE-era record.
 
 §3.4 specifies the wire shape for WebSocket subscriptions; §3.4a (added by
 issue #183's spike decision) specifies SSE as the recommended first path.

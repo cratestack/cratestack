@@ -4,7 +4,7 @@ Language Server Protocol implementation for `.cstack` schema files.
 
 ## Overview
 
-`cratestack-lsp` is a `tower-lsp` binary that surfaces parse and semantic diagnostics from `cratestack-parser`, plus a few editor conveniences. It is the language server bundled by `packages/cratestack-vscode`.
+`cratestack-lsp` is a [`tower-lsp-server`](https://crates.io/crates/tower-lsp-server) binary that surfaces parse and semantic diagnostics from `cratestack-parser`, plus a few editor conveniences. It is the language server bundled by `packages/cratestack-vscode`.
 
 ## Installation
 

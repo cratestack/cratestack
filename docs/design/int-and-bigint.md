@@ -9,6 +9,16 @@ decided explicitly, D3 (the `cratestack::BigInt` newtype), D4 (the codemod) and 
 attributes) accepted on the ADR's recommendations, and the release: all three pull requests of §7
 ship in **0.16.0**. Where PR B found this document wrong, the ADR's "Amendment (PR B, 2026-10-09)"
 and the "As built" notes in §3.2, §3.5 and §3.6 say so.
+
+> **Update (0.19.x):** the release did not go as planned. PR A and PR B shipped in **0.15.4**
+> (2026-10-11; see that `CHANGELOG.md` section), not 0.16.0, and without PR C. PR C, the `Int`
+> cutover, has still not landed as of 0.19.1: `Int` is an `i64` and a `BIGINT` column
+> (`crates/cratestack-migrate/src/emit/postgres/columns.rs`, `scalar_to_postgres`), introspection
+> still maps `int8` to `Int` (`crates/cratestack-migrate/src/introspect/postgres/types.rs`), and
+> `cratestack upgrade int-to-bigint` does not exist in `cratestack-cli`. B13 is still pending
+> (`ROADMAP.md`). Wherever this document says a PR "ships in 0.16.0", read it as the plan; the
+> `## Unreleased` entries it cites are the 0.15.4 entries now.
+
 Scope: every place a `.cstack` integer scalar reaches: parser, the three schema macros, the
 sqlx and rusqlite runtimes, `cratestack-migrate`, both codecs, JSON Schema, MCP, the Rust,
 TypeScript and Dart clients and their presets, the CBOR bridges, studio, WireMock, the contract
@@ -414,7 +424,8 @@ making the generated code run on the VM, dart2js and dart2wasm:
 
 ### 4.1 `cratestack upgrade int-to-bigint`
 
-One command, shipped in 0.16.0 and deleted in 0.17.0:
+One command, planned to ship in 0.16.0 and be deleted in 0.17.0 (not built as of 0.19.1; see the
+update note under the Status header):
 
 ```text
 cratestack upgrade int-to-bigint --schema <file>... [--migrations <dir>] [--check]
@@ -656,6 +667,9 @@ release with `BigInt` and the old `Int` would make every hand edit from `Int` to
 independent of B and C, and ships in the same 0.16.0 anyway, so the first 0.16.0 a user runs
 carries the closed attribute list, `BigInt` and the 32-bit `Int` at once. The workspace is at
 0.15.1 and #1127 (breaking) is already under `## Unreleased`, so 0.16.0 is the next minor.
+
+> **Update (0.19.x):** A and B were released in 0.15.4 without C, contrary to the paragraph
+> above; C and B13 are still pending as of 0.19.1. See the note under the Status header.
 
 **Status (2026-10-09).** PR A and PR B are built and land on `main` together. PR C and the
 live-server round trip B13 are not built; they are handed to a colleague. Landing A and B on `main`

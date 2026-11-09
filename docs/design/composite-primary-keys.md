@@ -16,7 +16,7 @@ Tracking: [#136](https://github.com/cratestack/cratestack/issues/136).
 | Migration DDL: real composite `PRIMARY KEY (a, b)` constraint | **shipped** | `cratestack-migrate` |
 | Codegen gate: clear `compile_error!` instead of a panic when `@@id` reaches `include_server_schema!`/`include_embedded_schema!`/`include_client_schema!` | **shipped** | `cratestack-macros` |
 | Query builders (`find_unique`/`update`/`delete`/`upsert`) accept a composite key | **pending** | `cratestack-sql`, `cratestack-sqlx`, `cratestack-rusqlite` |
-| Axum route + RPC envelope shape for composite-key CRUD | **pending** | `cratestack-macros::axum`, `cratestack-macros::transport::rpc`, `cratestack-axum::rpc::inputs` |
+| Axum route + RPC envelope shape for composite-key CRUD | **pending** | `cratestack-macros::axum`, `cratestack-macros::transport::rpc`, `cratestack-core::rpc::inputs` |
 | Generated clients (Rust/Dart/TypeScript) `get`/`update`/`delete` taking multiple key fields | **pending** | `cratestack-macros::client::{rest,rpc}`, `cratestack-client-dart`, `cratestack-client-typescript` |
 | Relation matching (`@relation(fields:[...], references:[...])`) against a composite target PK | **pending** | `cratestack-macros::relation::types` (`relation_link`) |
 | Policy relation/quantifier traversal through a composite-PK junction table | **pending** | `cratestack-policy`, `cratestack-sqlx::render::policy*`, `cratestack-rusqlite::render::relation` |
@@ -61,15 +61,15 @@ updating:
 
 None of this is hidden or deferred behind a flag — it simply hasn't been
 built yet. A model using `@@id([...])` fails loudly and immediately at
-`include_*_schema!` expansion time with a message pointing at this doc and
-the tracking issue, rather than silently generating incorrect SQL or
+`include_*_schema!` expansion time with a message pointing at the tracking
+issue (`cratestack_core::composite_id::composite_id_unsupported_message`), rather than silently generating incorrect SQL or
 panicking deep inside a `.expect()` with no context.
 
 ## 2. What's already there, concretely
 
 ### 2.1 Parser (`crates/cratestack-parser`)
 
-- `crates/cratestack-parser/src/validate/model_attributes.rs` — new
+- `crates/cratestack-parser/src/validate/composite_attributes.rs` — new
   `validate_composite_id_attribute`, following the same per-model `@@`-attribute
   validation pattern as `@@paged`/`@@retain`. Enforces:
   - well-formed `@@id([a, b, ...])` syntax (via
@@ -151,7 +151,7 @@ gating to be decided when that phase starts).
   composite-key models). Decide this before touching
   `cratestack-macros/src/axum/model/{handlers_crud,handlers_update,prep,builders}.rs`.
 - RPC: `RpcPkInput<Pk>`/`RpcUpdateInput<Pk, Patch>`
-  (`crates/cratestack-axum/src/rpc/inputs.rs`) need `Pk` to carry multiple
+  (`crates/cratestack-core/src/rpc/inputs.rs`) need `Pk` to carry multiple
   named fields — likely a per-model generated struct rather than widening
   the envelope itself. Update `cratestack-macros/src/transport/rpc.rs`
   dispatch-arm generation to match.

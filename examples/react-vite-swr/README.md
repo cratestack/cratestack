@@ -133,7 +133,9 @@ CRATESTACK_TEST_DATABASE_URL=postgres://cratestack:cratestack@localhost:55432/cr
 
 ## Scope / known gaps carried in from the swr layout
 
-- The `swr` layout doesn't support `@@paged` models yet — this schema doesn't use one, on purpose.
+- This schema declares no `@@paged` model. The `swr` layout does generate one (its list functions
+  revive a `Page<T>`; `crates/cratestack-client-typescript/tests/fixtures/swr_paged_model*.cstack`
+  are typechecked in that crate's tests), it just isn't exercised here.
 - `list()`'s server-side filtering (`where`/structured filters) isn't wired into the generated
   functions yet — `BoardDetailScreen` reads the full task list and filters by `boardId`
   client-side rather than relying on that.

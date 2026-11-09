@@ -7,6 +7,11 @@ cratestack#915 question 5, which the ticket reserved for the maintainer. Each an
 states the rejected alternative and the reason. Implementation is tracked by the epic's children
 (§17 lists which tickets this design closes).
 
+> **Update (0.19.1):** implemented. The loader, the three macros' `SCHEMA_FILES`, the CLI (#914),
+> the LSP (#921) and the split `react-vite-swr` example (#924) shipped in **0.19.0**;
+> `examples/shared-types-import` and the LSP's rename refusal in a file another schema imports
+> (§12) followed in **0.19.1** (`CHANGELOG.md`).
+
 Date: 2026-11-08.
 
 Scope: the `.cstack` grammar (`part "…"`, `part of "…"`, `import "…"`), the parser's file loader,
@@ -21,6 +26,9 @@ in `cratestack-docs/internals/` (grammar decisions are user-visible, so the ADR 
 **Evidence convention.** `path:line` anchors were READ on `main` at `a6f37c2` (v0.18.1).
 
 ## 1. What exists today
+
+*As of v0.18.1, before the implementation; the rows on loading and rebuild tracking describe the
+single-file loader that 0.19.0 replaced.*
 
 | Fact | Where |
 |---|---|

@@ -269,6 +269,14 @@ record of the reasoning rather than rewritten; the reasoning pattern (verify rea
 `[dependencies]`, place at the lowest layer the graph supports) is unaffected by one of its
 two worked examples no longer existing.
 
+> **Update (0.19.x):** the two `#475` edges this ADR tracked are gone. `ClientStateStore` moved to
+> `cratestack_core::store::client_state` in 0.7.10 (#482), so `cratestack-client-store-{sqlite,redis}`
+> no longer have a normal dependency on `cratestack-client-rust`, and
+> `.ci/layer-direction-allowlist.toml` holds no entries (its header only). The "client side,
+> open" and "Real. Unfixed." wording above is the state on 2026-08-08. L3 has also landed:
+> `cratestack-exec` (ADR 0015) is assigned `3` in `docs/adr/layers.toml`. The checker still does
+> not test same-layer acyclicity.
+
 ## Alternatives considered
 
 **Status quo — vigilance, with the table documented and nothing enforcing it.**

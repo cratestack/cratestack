@@ -9,6 +9,16 @@ this was found"). §4.2–§4.5 are proposals that wait on the decisions in
 does, and nothing beyond §4.1 may merge without the maintainer answering
 §8.
 
+> **Update (0.19.x):** §4.1 shipped in 0.11.1. Nothing beyond it has been
+> built: there is no generated `App` builder, no `cratestack_service::serve`
+> or `Env`, no facade `service` feature and no `cratestack new`, and
+> `justfile`'s `clippy_allow` still carries `-A clippy::manual_async_fn`
+> (§8.1 not done). §8's questions are still open, except the `CLAUDE.md`
+> half of §8.6: its CLI list no longer names a top-level `init` (only
+> `studio init`, which exists). Of the post-merge note below: rate limiting
+> did move to L3 (#877, 0.13.0); read-policy checks on subscription events
+> shipped in 0.17.1 at L2/L4, not as an L3 slice.
+
 Scope: the *user-facing* shape of a CrateStack service — what a
 developer writes in `main.rs`, where behaviour goes, how configuration
 and health and cross-cutting concerns are declared. Not the crate graph:

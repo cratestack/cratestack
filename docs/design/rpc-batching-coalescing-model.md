@@ -293,6 +293,14 @@ open design questions:
 
 ## 5. Follow-up
 
+> **Update (0.19.x):** a Dart RPC client generator now exists —
+> `generate-dart` emits an RPC runtime for `transport rpc` schemas
+> (`crates/cratestack-client-dart/templates/rpc_runtime/`), whose HTTP adapter
+> exposes an explicit `batch(...)` call to `/rpc/batch`. The coalescing port
+> this document maps onto Dio has **not** been built: nothing in the Dart
+> runtime queues, partitions or dedupes unary calls. The first bullet below
+> now applies to that port, not to the generator.
+
 - When a Dart/Flutter RPC client generator is scheduled, this document
   (§2 for the model, §3.3 for the piece-by-piece mapping) is the intended
   starting point — no new design spike should be needed first.

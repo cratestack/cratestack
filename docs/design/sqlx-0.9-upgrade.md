@@ -21,11 +21,13 @@
 > owning errors in the place they were made. The rest of the document is
 > left as the dated investigation record it is.
 
-Status: **investigation only, no maintainer decision made**. This document
+Status: **done** — the upgrade shipped in 0.9.1 (`sqlx` 0.8.6 → 0.9.0; the workspace
+`sqlx-core`/`sqlx-postgres` pins are now `=0.9.0`). See the SUPERSEDED box above.
+Originally: **investigation only, no maintainer decision made**. This document
 is the deliverable of a research spike; it does not implement anything, and
 nothing in the workspace `Cargo.toml`/`Cargo.lock` changed to produce it.
 Scope: whether/when to move the workspace's `sqlx-core`/`sqlx-postgres`
-pins (currently `=0.8.6`) to the `0.9` line, and what that touches.
+pins (`=0.8.6` at the time of this investigation) to the `0.9` line, and what that touches.
 Tracking: no issue exists yet for this work. Source of truth for the
 version claims below is the upstream sqlx release itself —
 [CHANGELOG.md @ `launchbadge/sqlx`](https://github.com/launchbadge/sqlx/blob/main/CHANGELOG.md)

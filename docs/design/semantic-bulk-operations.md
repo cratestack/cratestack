@@ -43,7 +43,9 @@ Confirmed in `crates/cratestack-macros/src/include/server/rpc_module/batch.rs`:
 
 - The dispatch loop calls `rpc_dispatch_inner(frame_state, frame_headers,
   &frame.op, ...)` per frame — the *same* dispatcher a unary call uses,
-  with a full independent `authenticate()` + policy + dispatch each time.
+  with a full independent policy + dispatch each time. (Authentication is
+  the exception: the envelope is authenticated once and every frame reuses
+  that verdict through `CachedAuthProvider` — `rpc-transport.md` §5.)
 - Each frame receives `headers.clone()` — a byte-identical copy of the
   outer HTTP request's headers.
 - The response is built with `StatusCode::OK` hardcoded, wrapped in
@@ -57,7 +59,7 @@ versioned updates through it would not be unsupported; it would be
 silently wrong, since all N records would be checked against whichever
 single precondition the caller happened to set.
 
-This is by design, and already written down: `docs/design/rpc-transport.md:437`
+This is by design, and already written down: `docs/design/rpc-transport.md` §6
 lists as an explicit non-goal — *"In-batch transactional mode. Each batch
 frame is its own tx."*
 
@@ -153,7 +155,7 @@ answer:
 | One transaction | **no** — frame per tx | yes, with per-item SAVEPOINT rollback |
 | One policy evaluation pass | **no** — N full dispatches | per-item, but no repeated auth/dispatch overhead |
 | Per-record `If-Match` | **structurally impossible** | yes (`Option<i64>` per item) |
-| Per-request overhead (auth, connection, framing) | paid N times internally | paid once |
+| Per-request overhead (dispatch, framing) | paid N times internally (auth once, cached per frame) | paid once |
 
 Note what the right column does *not* claim: `batch_create`/`batch_update`
 still issue N statements under SAVEPOINTs, not a single multi-row

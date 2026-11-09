@@ -139,6 +139,18 @@ demonstrated manually instead.
   applies.
 - `codec-json` *(default)* — forwards the JSON codec to the generated
   client runtime, alongside CBOR.
+- `middleware` — forwards `cratestack-client-rust/middleware`, so the
+  generated client accepts a `reqwest_middleware::ClientWithMiddleware`.
+- `client-ws` / `client-webtransport` — the generated Rust client's
+  subscriptions over WebSocket / WebTransport (native targets).
+- `websocket` — serve a `db = None` schema's `subscription procedure`s over
+  WebSocket (`extension websocket { }`), re-exported as
+  `cratestack::websocket`.
+- `mcp` — serve `@mcp(tool)` procedures over MCP (ADR 0002): generates
+  `cratestack_schema::mcp`. Off by default; without it `rmcp` is absent.
+- `postgis` — re-exports the PostGIS query types (a `db = None` schema has
+  no spatial columns of its own, but can build filters against another
+  service's contract).
 - `envelope` — the server envelope layer (ADR 0006, cratestack#1006):
   `cratestack::envelope_layer::EnvelopeLayer` opens signed requests and
   seals responses in front of the generated REST and RPC routers, through

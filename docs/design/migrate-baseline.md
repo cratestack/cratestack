@@ -1,6 +1,6 @@
 # Migration baselining against an existing live schema — design spike
 
-Status: **shipped** (2026-07-22 spike; implemented in #203–#205) — this
+Status: **shipped** (2026-07-22 spike; implemented in #203–#205, released in 0.7.2) — this
 document is the output of the spike requested in issue [#135][135]. See
 "Phasing" (§7) for the PR sequence that landed it: #203 (split `diff()`
 into projection + comparison), #204 (Postgres live-schema introspection),
@@ -30,6 +30,13 @@ against an already-populated database.
 [snapshot-empty]: ../../crates/cratestack-migrate/src/snapshot.rs
 
 ## 1. Current architecture (what exists today)
+
+> **Note (0.19.x):** this section describes the tree at spike time
+> (2026-07-22). Since #203–#205 (0.7.2), `cratestack-migrate` has an
+> `introspect::postgres` module behind its `postgres-introspect` feature,
+> `MigrateAction` has `Diff` and `Baseline`, and `cratestack-cli` depends on
+> `cratestack-sqlx` for the baseline row. `migrate verify` and `migrate drift`
+> still do not exist.
 
 Traced through the code, not from memory — file references throughout.
 
@@ -315,6 +322,14 @@ first as an explicit, deliberate act.
    arrays, domains, extension types) as unmapped drift rather than trying
    for full coverage in the first cut — matches "report drift, don't
    silently reconcile."
+
+> **Decided (as shipped in #205, 0.7.2):** Q1 took option (b): `migrate
+> baseline` writes the snapshot and records a synthetic row in
+> `cratestack_migrations`, and the new edge is on the CLI glue
+> (`cratestack-cli` → `cratestack-sqlx`, `crates/cratestack-cli/src/migrate/baseline_cmd.rs`),
+> not on `cratestack-migrate`. Q2: Postgres-only (`BaselineBackendArg` has one
+> value, `postgres`). Q3: the common scalar set, with everything else reported
+> as unmapped (`crates/cratestack-migrate/src/introspect/postgres/types.rs`).
 
 ## 7. Phasing — proposed follow-up PRs
 

@@ -22,11 +22,10 @@ codec — both backends compile the same Rust.
 > around it either — measured in cratestack#823, which was filed on the opposite assumption and
 > closed when the measurement contradicted it. (iOS was the other item on that hold list; it landed
 > in this repo's iOS platform-matrix slice and is no longer held.)
-> **This is the intended platform scope for the first pub.dev publish**, not a partial state to wait
-> out. Publishing infrastructure (CI workflow, version-locking, archive-verification gate) now
-> exists — see `docs/tooling/dart-publishing.md` for what's left: a one-time manual first publish
-> only a maintainer can perform, since pub.dev cannot automate the first version of a brand-new
-> package.
+> **This was the intended platform scope for the first pub.dev publish**, not a partial state to wait
+> out. The package is published: the one-time manual first publish is done, and every `vX.Y.Z` tag
+> now publishes it from CI (`publish-pubdev-cbor`, version-locked to the workspace; 0.19.1 is live).
+> See `docs/tooling/dart-publishing.md`.
 >
 > Proven for both `dart test` (as a Dart library) AND a real Flutter app — `flutter build linux` +
 > `flutter build web` (release, not the dev server), a real `flutter build apk` installed and run
@@ -35,7 +34,7 @@ codec — both backends compile the same Rust.
 > `dart-packages/cratestack_cbor/example/`. **The Windows, macOS, and iOS slices are unverified by
 > this repo's own toolchain** (Linux-only — see the Linux prerequisite note in this repo's
 > `CLAUDE.md`); `cratestack-cbor-windows`/`cratestack-cbor-macos`/`cratestack-cbor-ios` in
-> `.github/workflows/ci.yml` are their first real execution.
+> `.github/workflows/ci.yml` (and the `build-cbor-*` release jobs) are where they run for real.
 
 ## Prerequisites
 
@@ -99,7 +98,7 @@ artifacts are build output and are not committed. Run:
     just cbor-vendor-native
 ```
 
-## Four things that will bite you
+## Six things that will bite you
 
 These are not style preferences. Each one was found the hard way, and each fails in a way that
 looks like success.
@@ -393,8 +392,9 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
   `just cbor-example-verify` — the real `flutter build linux`/`flutter build web` proof. This is the
   single most expensive job in the workflow (a full Linux desktop compile plus a full dart2js web
   compile, on top of the Rust/wasm builds the package job already does); see that job's comments in
-  `ci.yml` for the CI-cost tradeoff and why it currently runs unscoped (this workflow has no path
-  filtering anywhere yet — this job doesn't invent one unilaterally).
+  `ci.yml` for the CI-cost tradeoff. It no longer runs unscoped: like the other `cratestack_cbor`
+  jobs it is gated on the `changes` job's `infra`/`cbor` outputs (and the workflow skips docs-only
+  pull requests).
 - **`flutter (cratestack_cbor android — APK build + jniLibs proof)`** installs `cargo-ndk` (pinned
   `=4.1.2`), the three Android rustup targets, and NDK 28.2.13676358 (matching Flutter's own default —
   GitHub's runner image ships an SDK but not reliably that exact NDK version), then vendors and runs
@@ -407,8 +407,9 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
   library is *present*, and a human running the emulator recipe is what proves it is *valid and
   loadable* — the two break-it proofs in the previous section are deliberately split the same way.
 - **`flutter (cratestack_cbor windows — real build, DLL + round-trip proof)`** runs on
-  `windows-latest`, installs `flutter_rust_bridge_codegen` (pinned `=2.13.0`) and pinned `binaryen`,
-  then `just cbor-vendor-glue` + `just cbor-vendor-lib windows-x64` + `just cbor-vendor-web` (the wasm
+  `windows-latest`, restores the frb glue the `cbor-glue` job generated (frb codegen is not run on
+  this leg) and installs pinned `binaryen`,
+  then `just cbor-vendor-lib windows-x64` + `just cbor-vendor-web` (the wasm
   pair must be vendored here too — `pubspec.yaml`'s `flutter: assets:` is unconditional and Flutter has
   no per-platform asset conditionals) followed by `just cbor-example-verify-windows` — a real
   `flutter build windows`, an assertion the vendored `.dll` landed beside the built `.exe`, and a
@@ -419,8 +420,8 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
 - **`flutter (cratestack_cbor macos — real build, xcframework + round-trip proof)`** runs on
   `macos-latest`, mirroring the Windows job's shape but proving a genuinely different mechanism (see
   `macos/cratestack_cbor.podspec`'s header comment): installs both `aarch64-apple-darwin` and
-  `x86_64-apple-darwin` rustup targets, `flutter_rust_bridge_codegen` (pinned `=2.13.0`) and pinned
-  `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-macos` (builds both Darwin arches,
+  `x86_64-apple-darwin` rustup targets, restores the `cbor-glue` job's frb glue, installs pinned
+  `binaryen`, then `just cbor-vendor-macos` (builds both Darwin arches,
   `lipo`s them into one universal binary, assembles a versioned `.framework`, then an `.xcframework` —
   see that recipe's own comment) + `just cbor-vendor-web`, followed by `just cbor-example-verify-macos`
   — which first **deletes the unpacked xcframework**, so the build is forced through the same
@@ -431,13 +432,13 @@ Six jobs in `.github/workflows/ci.yml` (plus the shared `cbor-glue` job both Win
   embedded binary, and a round-trip proof from the running app's captured stdout. Also this repo's toolchain's
   first-ever real execution of anything macOS-targeted; the exact command sequence was validated once
   already, on a throwaway spike branch (`spike/cbor-macos-xcframework`,
-  `.github/workflows/spike-cbor-macos.yml`) kept around for reference, before being turned into the real
+  `.github/workflows/spike-cbor-macos.yml`, since deleted), before being turned into the real
   `just cbor-vendor-macos`/`cbor-example-verify-macos` recipes this job actually runs.
 - **`flutter (cratestack_cbor ios — real build, xcframework + round-trip proof)`** runs on
   `macos-latest`, mirroring the macOS job's shape but for a genuinely different xcframework internal
   layout (see `ios/cratestack_cbor.podspec`'s header comment): installs `aarch64-apple-ios`,
-  `aarch64-apple-ios-sim`, and `x86_64-apple-ios` rustup targets, `flutter_rust_bridge_codegen` (pinned
-  `=2.13.0`) and pinned `binaryen`, then `just cbor-vendor-glue` + `just cbor-vendor-ios` (builds all
+  `aarch64-apple-ios-sim`, and `x86_64-apple-ios` rustup targets, restores the `cbor-glue` job's frb
+  glue, installs pinned `binaryen`, then `just cbor-vendor-ios` (builds all
   three iOS triples, `lipo`s the two simulator arches into one universal simulator binary, assembles TWO
   flat/shallow `.framework`s — device and simulator — then ONE `.xcframework` with both slices, and
   asserts zero symlinks in the result — see that recipe's own comment for the "why zero, and what to do
@@ -576,25 +577,18 @@ In the order they should land:
    xcframework's own internal shape (flat/shallow frameworks, no `Versions/A/...`, no symlinks,
    verified/asserted at vendor time by `just cbor-vendor-ios` rather than assumed — see that recipe's
    own header comment for the "zero symlinks" determination and its evidence).
-2. **pub.dev publish via GitHub Actions OIDC**, version-locked to the workspace version like the npm
-   packages — the CI workflow (`publish-pubdev-cbor` in `release-cli.yml`) and version-lockstep
-   (`just bump` now rewrites this package's `pubspec.yaml` too) both exist as of cratestack#563's
-   publish slice; see `docs/tooling/dart-publishing.md`. **What does not exist yet is the first real
-   publish** — pub.dev cannot automate a brand-new package's first version (verified against
-   dart.dev's own docs), so `cratestack_cbor` 0.8.0 is still unpublished until a maintainer runs the
-   manual bootstrap that document describes and enables Automated publishing on pub.dev's Admin tab.
-   Until then `publish-pubdev-cbor` fails on every tag push by design (same "hard cutover, not a
-   soft-skip" as the npm jobs) rather than quietly no-op'ing.
-3. **The generator seam.** `crates/cratestack-client-dart/templates/pubspec.yaml.j2` still emits
-   `cbor: ^6.5.1`. It must stay that way until `cratestack_cbor` is actually on pub.dev — the
-   template emits real dependencies, so naming an unpublished package breaks `dart pub get` for
-   every generated client, including the committed `examples/flutter-riverpod/client` and its drift
-   check. **Publish strictly precedes the seam** — still blocked on (2) above.
+2. **pub.dev publish via GitHub Actions OIDC** — done. `publish-pubdev-cbor` in `release-cli.yml`
+   publishes on every tag, version-locked to the workspace version like the npm packages (`just
+   bump` rewrites this package's `pubspec.yaml` too); the manual first publish and pub.dev's
+   Automated publishing setup are complete. See `docs/tooling/dart-publishing.md`.
+3. **The generator seam** — done. `crates/cratestack-client-dart/templates/pubspec.yaml.j2` emits
+   `cratestack_cbor` (no longer `cbor: ^6.5.1`), at the floor in
+   `crates/cratestack-client-dart/src/package_floors.rs`.
 
 ## See also
 
 - `docs/tooling/dart-publishing.md` — the pub.dev publish workflow, version-locking, the one-time
-  manual first-publish a maintainer must perform, and proof that the archive-verification gate is
+  manual first-publish (done) a new package needs, and proof that the archive-verification gate is
   load-bearing (not decorative): with the vendored `.so` files deleted, `dart pub publish --dry-run`
   reports the exact same single warning as a fully-vendored package.
 - `docs/tooling/npm-publishing.md` — the npm/crates.io release pipeline this sits alongside, and the

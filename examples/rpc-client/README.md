@@ -17,8 +17,8 @@ HTTP/CBOR to a remote `rpc-procedures-example` service.
 - A `RequestAuthorizer` that injects `x-auth-id` on every request so the server's
   `@allow(auth() != null)` gate passes.
 - The pure **`cratestack-client` facade** — the first committed client example to use it (see
-  the `Cargo.toml` note); `axum`/`tower`/`hyper` are structurally absent from the shipped
-  dependency graph.
+  the `Cargo.toml` note); `axum` is structurally absent from the shipped dependency graph
+  (`tower`/`hyper` still arrive through `reqwest`, the HTTP client underneath).
 
 This example is the client bookend to the `rpc-procedures` server example (unary + batch over
 the *unary* surface). For streaming (`procedure ...: T[]` → `RpcStream`), see

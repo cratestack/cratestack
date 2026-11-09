@@ -22,6 +22,9 @@ wiremock_stubs_do_not_validate_if_match_or_any_request_header` for what
 needs reconciling once both land). Model CRUD (§8) motivated by the
 `refine.dev` admin app, `packages/cratestack-refine`, and its planned
 no-database example, `examples/react-vite-refine`.
+**Update (0.19.x):** both landed. `examples/react-vite-refine` shipped in
+0.7.17, and the trip-wire was reconciled in #605: its `tests/smoke.rs` now
+asserts the inverse, `wiremock_stubs_enforce_if_match_on_the_versioned_model`.
 
 ## 1. The problem
 
@@ -89,6 +92,11 @@ Read before designing, not assumed:
   Error responses, by contrast, *do* carry real, varied status codes via
   `CratestackError::status_code()` (400/401/403/404/409/422/503/500/…) — out of
   scope for v1 (see §7), but real for a future error-stub slice to target.
+  *(Update (0.7.11): #407 is closed — `@status(<code>)` now declares a REST
+  procedure's success status (#511). The generator does not read it: every
+  procedure mapping still answers `200`
+  (`crates/cratestack-mock-wiremock/src/mapping.rs`), so a `@status(202)`
+  procedure's stub disagrees with the real server.)*
 - **Model CRUD routes are a different, richer shape.** `model` blocks get
   five REST routes each (`generate_model_axum_routes` in
   `crates/cratestack-macros/src/axum/model/routes.rs`): `GET`/`POST
@@ -191,7 +199,8 @@ reply type with a nested list of a nested type:
 ```
 
 `submitKycDocument.json` — the exact procedure `#407` was filed about —
-correctly reflects today's reality (`200`, not a synthesized `202`):
+correctly reflects today's reality (`200`, not a synthesized `202`;
+true when written, before `@status` existed — see §2):
 
 ```json
 { "response": { "status": 200, "jsonBody": { "status": "string" } } }
@@ -341,7 +350,10 @@ for consumers, not something `generate_package` enforces.
 
 `model` blocks get five verbs per model — `list`, `get`, `create`,
 `update`, `delete` — derived the same way the real server derives them,
-not re-implemented by hand. Route derivation is identical for both
+not re-implemented by hand. (Since 0.8.14 a verb `@@internal` suppresses
+gets no mapping: both generators filter through
+`cratestack_core::model_verbs`, `src/model_mapping.rs` and
+`src/model_state.rs` — see `route-suppression.md`.) Route derivation is identical for both
 transports and both stateful and static bodies; what differs (§9) is
 `transport rest`'s response is now backed by a real per-record store,
 while `transport rpc` and every procedure stay on the deterministic,
@@ -438,7 +450,7 @@ affected file as modified.
 
 The motivating consumer for model CRUD stubs is `packages/
 cratestack-refine`, a refine.dev admin app driven entirely by model
-CRUD, and a planned example
+CRUD, and a planned example (shipped since, 0.7.17)
 (`examples/react-vite-refine`) that runs a Vite + refine app against
 these stubs with **no database**. For that example to be a convincing
 demo rather than "a static JSON blob wearing a mock server's clothes",

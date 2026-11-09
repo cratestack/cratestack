@@ -46,4 +46,4 @@ See [`schema.cstack`](schema.cstack). A single `Note` model with id, title, body
 
 ## Notes
 
-- `cratestack` is currently a transitive dep because `include_embedded_schema!` still emits `::cratestack::*` paths for shared SQL helpers (`IntoSqlValue`, `FilterExpr`, ...). A 0.3.x follow-up will switch the macro to emit `::cratestack_core::*` + `::cratestack_sql::*` directly, removing the facade requirement and shedding the unused sqlx/axum weight for purely embedded consumers.
+- The crate depends on the `cratestack-sqlite` facade (renamed to `cratestack`) because `include_embedded_schema!` emits `::cratestack::*` paths for shared SQL helpers (`IntoSqlValue`, `FilterExpr`, ...). Since the 0.4 facade split that facade carries no sqlx and no axum: it is the rusqlite runtime plus the shared schema/parser/policy/SQL surface.

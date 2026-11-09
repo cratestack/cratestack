@@ -124,8 +124,9 @@ the split is enforced by CI, not just documented:
 - `cratestack-pg` does not pull `libsqlite3-sys`, so it coexists with the
   official `sqlx` umbrella without `links = "sqlite3"` collisions.
 - `cratestack-api` has no `cratestack-sqlx` dependency under any feature gate.
-- `cratestack-client` has no `cratestack-axum` — and therefore no
-  `axum`/`tower`/`hyper`/`tower-http` — in its graph under default features.
+- `cratestack-client` has no `cratestack-axum` — and therefore no `axum` —
+  in its graph under default features. (`tower`/`hyper`/`tower-http` are
+  there, through `reqwest`, the HTTP client the runtime builds on.)
 
 The `facade-disjointness` CI job proves the last two with a real `cargo tree` over
 [`examples/client-only-verification`](examples/client-only-verification) and
@@ -178,7 +179,7 @@ untrusted, and authorization is the server's job.
 | --- | --- | --- |
 | Rust | `include_client_schema!` | typed procedure clients + a reqwest-backed `Client` facade |
 | Dart / Flutter | `cratestack generate-dart` | models, selection builders, API facades, `--preset riverpod` layer, `--preset fespalier` (riverpod over fespalier's `HttpTransport`) |
-| TypeScript | `cratestack generate-typescript` | framework-neutral fetch client, TanStack Query hooks, `--swr` layer, `--rtk` RTK Query endpoint set |
+| TypeScript | `cratestack generate-typescript` | framework-neutral fetch client, `--tanstack` TanStack Query hooks, `--swr` layer, `--rtk` RTK Query endpoint set, `--refine` resource manifest |
 
 Every generated client speaks the same HTTP projection contract the routes parse,
 so `fields`, `include`, `sort`, and `where` behave identically across languages.
@@ -213,10 +214,12 @@ entry points stay `cratestack_axum::idempotency::IdempotencyLayer` and
 `@cratestack/ts-types`, `@cratestack/runtime-fetch`, `@cratestack/runtime-axios`,
 `@cratestack/adapter-tanstack-query`, `@cratestack/adapter-rtk`,
 `@cratestack/refine`, `@cratestack/validator-zod`, `@cratestack/validator-yup`,
-`@cratestack/link-batch`, `@cratestack/link-logger`, and the CBOR codecs
+`@cratestack/link-batch`, `@cratestack/link-logger`, the `@cratestack/api`
+compat umbrella over that family, and the CBOR codecs
 `@cratestack/cbor`, `@cratestack/cbor-node`, `@cratestack/cbor-web`.
 
-**Dart packages** — `cratestack_cbor` on pub.dev.
+**Dart packages** — `cratestack_cbor`, `cratestack_annotations`, and
+`cratestack_builder` on pub.dev.
 
 **Editor tooling** — the `CrateStack Schema` extension for `.cstack` files, on
 the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=cratestack.cratestack-vscode-plugin)

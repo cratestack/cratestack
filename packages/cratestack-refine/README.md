@@ -85,8 +85,8 @@ Pass this straight to refine's `<Refine dataProvider={dataProvider} .../>`.
 For a `transport rpc` schema, use `createCratestackRpcDataProvider` and an `RpcResourceMap` instead
 — same four facts per resource (`api`, `primaryKey`, `paged`, optional `versionField`), same
 `getList`/`getOne`/.../`custom` behavior, same filter-operator table and `@version` guarantee as
-REST. There is no generated manifest for RPC yet (`--refine` rejects RPC schemas — see above), so
-write it by hand:
+REST. `--refine` generates the manifest for an RPC schema too, typed `RpcResourceMap` (see above);
+written by hand, it looks like this:
 
 ```ts
 import { createCratestackRpcDataProvider } from "@cratestack/refine";

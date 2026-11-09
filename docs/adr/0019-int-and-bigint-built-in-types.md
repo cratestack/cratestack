@@ -15,6 +15,13 @@ the ADR's recommendations. Every question this ADR left open is now a recorded d
 | D5, field attributes | Closed list per declaration kind; supersedes the narrow route taken on cratestack#679 for field attributes. | The ADR's recommendation, accepted |
 | Release | PR A (D5), PR B (`BigInt` end to end) and PR C (the `Int` cutover) all ship in **0.16.0**, one breaking release, no compatibility path. | The ADR's recommendation, accepted |
 
+> **Update (0.19.x):** the release did not go as decided. PR A (closed field attributes) and
+> PR B (`BigInt`) shipped in **0.15.4** (2026-10-11; see that `CHANGELOG.md` section), not
+> 0.16.0. PR C, the `Int` cutover, has not landed as of 0.19.1: `Int` is still an `i64`, a
+> `BIGINT` column and a JSON number (`crates/cratestack-macros/src/shared/types.rs`), and
+> `cratestack upgrade int-to-bigint` does not exist in `cratestack-cli`. B13 is still pending
+> (`ROADMAP.md`). D4 and the Release row describe the plan, not what shipped.
+
 > **Placement note.** `docs/adr/README.md` sends decisions about the user-visible surface
 > (`.cstack` grammar, transport semantics, migration behaviour) to `cratestack-docs/internals/`.
 > This one changes all three. It is filed here, as ADR 0018 was, because it was asked for in this

@@ -1,6 +1,6 @@
 # Compact wire keys: integer field keys selected by the op contract
 
-Status: **implemented** (2026-11-06). Option C (§4) was accepted by the maintainer and built in
+Status: **implemented** (2026-11-06; released in 0.18.0). Option C (§4) was accepted by the maintainer and built in
 one change across the server, every generated client and the three bindings; §7 records the
 decisions taken. The mode is opt-in per client, so a client that does not enable it sends and
 receives exactly what it did before. This doc first compared four ways to stop repeating field
@@ -356,12 +356,17 @@ every generated client and server carries a **key-table artifact**:
   the same Rust call.
 
 **Every client already runs this codec.** Since the generators' `--no-native-cbor` fallbacks were
-removed (CHANGELOG, `## Unreleased`), every generated TypeScript RPC and Dart client encodes
+removed (CHANGELOG, 0.18.0), every generated TypeScript RPC and Dart client encodes
 through the Rust `CborCodec`. The compact mode therefore reaches every client with no
 per-language reimplementation, and the payload-size baseline (§8) measures every language at
 once. The one client outside it is the TypeScript REST runtime, which is JSON-only with no codec
 seam. It gets `+json` once it routes through the same binding, and moving it to CBOR is a
 separate lever (a transfer request goes from 193 to 130 B with names, §2).
+
+> **Update (0.18.0):** the TypeScript REST runtime did get `+json`: `compactKeys: true` on its
+> `CratestackClientOptions` loads `createCompactKeys` from the optional peer `@cratestack/cbor`
+> and sends/reads `application/vnd.cratestack.compact+json`
+> (`crates/cratestack-client-typescript/templates/src/rest-compact.ts.j2`). It stays JSON-only.
 
 **Transport parity** (CLAUDE.md). REST and RPC ship together, with every generated client and the
 swr, riverpod and fespalier layers. MCP is exempt (ADR 0002 D5) and stays JSON in any case.

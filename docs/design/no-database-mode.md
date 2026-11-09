@@ -69,6 +69,14 @@ Concretely, under `db = None`:
   `Cratestack` itself is a zero-field marker type (`#[derive(Clone, Copy)]
   pub struct Cratestack;`) with no `.pool()` method and no way to reach a
   `PgPool` from it at all.
+
+  > **Update (0.18.0):** one exception now exists. A `db = None` schema that
+  > declares a `topic` gets a `Cratestack` carrying a subscription backplane
+  > (`Clone`, no longer `Copy`), `db.topics().<topic>(key)`, and
+  > `Cratestack::builder().with_backplane(..)` — still no `PgPool`. Schemas
+  > without a `topic` keep the zero-field marker
+  > (`crates/cratestack-macros/src/include/server/runtime/none.rs`; CHANGELOG
+  > 0.18.0, "Topics work in `db = None` schemas").
 - Procedure dispatch and policy evaluation (`ProcedureRegistry`,
   `authorize_with_db`) are unaffected — procedures and their `@allow`
   policies never depended on a database connection to begin with, so this
@@ -78,10 +86,12 @@ Concretely, under `db = None`:
 ## 3. What it doesn't give up
 
 - **`transport rpc` or REST** — either transport style works under
-  `db = None`; this is orthogonal to the datasource. All five of this
-  repo's own procedures-only examples (`rpc-procedures`, `rpc-batch`,
+  `db = None`; this is orthogonal to the datasource. The four
+  procedures-only examples this epic migrated (`rpc-procedures`, `rpc-batch`,
   `rpc-streaming`, `rpc-batch-debounce`) use `transport rpc`, but nothing
-  about `db = None` requires it.
+  about `db = None` requires it — `examples/auth-pluggable` and
+  `examples/step-up-procedures` (`schema.cstack`) are REST `db = None`
+  services.
 - **`type`/`enum`/`procedure` declarations, `@allow` policies, `@stream`,
   auth providers, custom codecs** — all of the framework's non-model
   surface is fully available. Procedure args/returns can even use the
@@ -114,7 +124,7 @@ out explicitly:
 
 ```toml
 [dependencies]
-cratestack = { package = "cratestack-pg", version = "0.6", default-features = false }
+cratestack = { package = "cratestack-pg", version = "0.19", default-features = false }
 ```
 
 With `postgres` disabled, `sqlx`/`cratestack-sqlx` are not compiled at all
@@ -164,7 +174,8 @@ backend off. That works, but it reads backwards — a service that, by
 definition, never touches Postgres shouldn't have to depend on a crate
 named "pg" and then switch the pg part off to prove it.
 
-`cratestack-api` (`crates/cratestack-api`) is a **third facade**, following
+`cratestack-api` (`crates/cratestack-api`) is a **third facade** (a fourth, `cratestack-client`, followed in
+0.7.10, cratestack#490), following
 the exact structural pattern `cratestack-pg`/`cratestack-sqlite` already
 established: its own `Cargo.toml`, its own `[lib] name = "cratestack"`
 rename trick, its own `src/lib.rs` re-exporting the shared schema / parser
@@ -191,12 +202,12 @@ errors.
 
 ```toml
 # Recommended for new `db = None` services — named for what it is.
-cratestack = { package = "cratestack-api", version = "0.6" }
+cratestack = { package = "cratestack-api", version = "0.19" }
 ```
 
 ```toml
 # Still works, unchanged, for existing consumers of this pattern (#329).
-cratestack = { package = "cratestack-pg", version = "0.6", default-features = false }
+cratestack = { package = "cratestack-pg", version = "0.19", default-features = false }
 ```
 
 Pick `cratestack-api` for a new procedures-only service. If a project

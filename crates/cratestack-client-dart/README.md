@@ -59,6 +59,8 @@ The generator emits files for these template specs (REST/RPC, `default` preset):
 - `lib/src/models.dart`
 - `lib/src/queries.dart`
 - `lib/src/apis.dart`
+- `lib/src/dio_transport.dart` (`CratestackDioTransport`, the default `CratestackHttpTransport`
+  over Dio; the transport is pluggable since 0.16.0, #1204)
 - `example/main.dart`
 - `test/<library_name>_test.dart`
 

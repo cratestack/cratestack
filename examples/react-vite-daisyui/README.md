@@ -29,7 +29,7 @@ react-vite-daisyui/
 
 - Rust + `wasm32-unknown-unknown` target + [wasm-pack](https://rustwasm.github.io/wasm-pack/)
 - A wasm-capable clang. On macOS: `brew install llvm` (the shared `examples/scripts/wasm-build.mjs` helper auto-detects it).
-- Node.js 20+ and pnpm.
+- Node.js 24+ and pnpm 11 (pinned in `web/package.json`'s `packageManager`).
 
 ## Run
 
