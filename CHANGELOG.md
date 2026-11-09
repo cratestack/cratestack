@@ -23,6 +23,8 @@ the napi addon grows by the COSE crypto and its prebuilt target list is unchange
 chunk-fed `StreamOpener` (the Rust `chain` stream opener does not exist yet, #1008) and a founder or
 intermediate trust chain (`serverKeys` is the static trust root). Design: `docs/design/ts-cose-signed-mode.md`.
 
+## 0.19.3 (2026-11-09)
+
 ### `rusqlite` 0.41 bundles SQLite 3.54 (RUSTSEC-2026-0459) (dependency)
 
 `rusqlite` 0.40.2 to 0.41.1 and `libsqlite3-sys` 0.38.2 to 0.39.1. SQLite before 3.54.0 could return
