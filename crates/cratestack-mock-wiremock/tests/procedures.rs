@@ -242,6 +242,27 @@ procedure listItems(): Page<Item>
 }
 
 #[test]
+fn synthesizes_cursor_page_envelope_without_offset_paging_fields() {
+    let schema = schema(&format!(
+        "{NO_DATASOURCE}
+type Item {{
+  id Int
+}}
+
+procedure feed(page: CursorPageInput): CursorPage<Item>
+"
+    ));
+
+    let package = generate_package(&schema, &WireMockGeneratorConfig::default()).unwrap();
+    let mapping: serde_json::Value = serde_json::from_str(&package.files[0].contents).unwrap();
+    let body = &mapping["response"]["jsonBody"];
+
+    assert_eq!(body["items"].as_array().unwrap().len(), 1);
+    assert!(body.get("pageInfo").is_none() && body.get("totalCount").is_none());
+    assert!(body.get("nextCursor").is_none(), "a stub is the last page");
+}
+
+#[test]
 fn optional_self_reference_terminates_with_null_instead_of_looping_forever() {
     let schema = schema(&format!(
         "{NO_DATASOURCE}

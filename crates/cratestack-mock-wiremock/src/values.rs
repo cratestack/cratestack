@@ -38,6 +38,10 @@ pub(crate) fn synthesize(
 ) -> Result<Value, WireMockGeneratorError> {
     if let Some(item) = type_ref.page_item() {
         let inner = synthesize_named(schema, owner, item, in_progress)?;
+        if type_ref.is_cursor_page() {
+            // Last page: `nextCursor` is omitted from the wire.
+            return Ok(json!({ "items": [inner] }));
+        }
         return Ok(json!({
             "items": [inner],
             "totalCount": 1,
