@@ -100,7 +100,10 @@ impl<'a> Closure<'a> {
                 .and_then(|args| args.first());
             return item.map_or(KeyNode::Opaque, |item| KeyNode::page(self.node(item)));
         }
-        if matches!(name, "FindMany" | "PageInput") {
+        if matches!(
+            name,
+            "FindMany" | "PageInput" | "CursorPageInput" | "CursorPage"
+        ) {
             return KeyNode::Opaque;
         }
         self.names

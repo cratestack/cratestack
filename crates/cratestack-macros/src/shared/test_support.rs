@@ -52,7 +52,12 @@ pub(crate) fn builtin_scalars() -> Vec<&'static str> {
     cratestack_parser::builtin_type_names()
         .iter()
         .copied()
-        .filter(|name| !matches!(*name, "Page" | "PageInput" | "FindMany"))
+        .filter(|name| {
+            !matches!(
+                *name,
+                "Page" | "PageInput" | "FindMany" | "CursorPage" | "CursorPageInput"
+            )
+        })
         .collect()
 }
 
@@ -94,7 +99,13 @@ fn the_catalog_names_bigint_and_the_other_scalars() {
             "the parser no longer lists `{expected}`; the guards below would stop covering it: {scalars:?}"
         );
     }
-    for wrapper in ["Page", "PageInput", "FindMany"] {
+    for wrapper in [
+        "Page",
+        "PageInput",
+        "FindMany",
+        "CursorPage",
+        "CursorPageInput",
+    ] {
         assert!(!scalars.contains(&wrapper));
     }
 }

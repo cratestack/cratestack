@@ -54,6 +54,9 @@ pub(super) fn procedure_type_tokens(
             .page_item()
             .expect("validated Page<T> should include an item type");
         let item_type = procedure_type_tokens(item, types, enum_names);
+        if type_ref.is_cursor_page() {
+            return quote! { ::cratestack::CursorPage<#item_type> };
+        }
         return quote! { ::cratestack::Page<#item_type> };
     }
 
@@ -104,6 +107,7 @@ fn procedure_item_type_tokens(
         "Bytes" => quote! { Vec<u8> },
         "Uuid" => quote! { ::cratestack::uuid::Uuid },
         "PageInput" => quote! { ::cratestack::PageInput },
+        "CursorPageInput" => quote! { ::cratestack::CursorPageInput },
         other => {
             let item_ident = ident(other);
             if types.iter().any(|ty| ty.name == other) || enum_names.contains(other) {

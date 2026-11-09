@@ -1,0 +1,14 @@
+// Built-in `CursorPageInput` argument / `CursorPage<T>` return for procedures
+// (cratestack#1304). Postgres-free, like `page_input_procedure.cstack`.
+
+datasource db {
+  provider = "none"
+}
+
+type Entry {
+  id Int
+  title String
+}
+
+procedure feed(page: CursorPageInput): CursorPage<Entry>
+  @allow(auth() != null)

@@ -99,8 +99,17 @@ pub struct TypeRef {
 }
 
 impl TypeRef {
+    /// `Page<T>` or `CursorPage<T>` — the paginated-envelope family. Both
+    /// share declaration rules (procedure return only, one declared
+    /// model/type item); emitters that must name the envelope read
+    /// [`TypeRef::name`].
     pub fn is_page(&self) -> bool {
-        self.name == "Page"
+        matches!(self.name.as_str(), "Page" | "CursorPage")
+    }
+
+    /// Keyset (`nextCursor`) envelope, as opposed to offset `Page<T>`.
+    pub fn is_cursor_page(&self) -> bool {
+        self.name == "CursorPage"
     }
 
     pub fn page_item(&self) -> Option<&TypeRef> {
@@ -111,8 +120,9 @@ impl TypeRef {
         }
     }
 
+    /// `PageInput` or `CursorPageInput` — the pagination-input family.
     pub fn is_page_input(&self) -> bool {
-        self.name == "PageInput"
+        matches!(self.name.as_str(), "PageInput" | "CursorPageInput")
     }
 
     pub fn is_find_many(&self) -> bool {
