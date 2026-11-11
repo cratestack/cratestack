@@ -1,5 +1,25 @@
 ## Unreleased
 
+## 0.19.4 (2026-11-11)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.19.3..HEAD at 067ee14a81e990fc6b43c18759c5f4cee95414e6 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Features
+
+- COSE signed mode for generated TypeScript clients (part of #1010) (#1335)
+- cursor (keyset) pagination for list routes and procedures (#1304) (#1334)
+
+#### Fixes
+
+- bound CBOR decode nesting depth (security, #1315) (#1333)
+
 ## 0.19.3 (2026-11-09)
 
 - No functional changes. Version kept in lockstep with the CrateStack
