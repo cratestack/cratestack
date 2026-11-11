@@ -1134,11 +1134,11 @@ dependencies = [
 
 [[package]]
 name = "cratestack"
-version = "0.19.3"
+version = "0.19.4"
 
 [[package]]
 name = "cratestack-api"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1182,7 +1182,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-auth"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-auth-conformance"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-axum"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -1257,7 +1257,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-cbor-napi"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "bytes",
  "cratestack-codec-cbor",
@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-cbor-wasm"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "bytes",
  "console_error_panic_hook",
@@ -1295,7 +1295,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-cli"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1322,7 +1322,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "chrono",
  "cratestack-client-rust",
@@ -1338,7 +1338,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-dart"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "base64 0.23.1",
  "cratestack-core",
@@ -1351,7 +1351,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-flutter"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-stream",
  "axum",
@@ -1373,7 +1373,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-rust"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1405,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-store-redis"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "chrono",
  "cratestack-core",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-store-sqlite"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "axum",
  "chrono",
@@ -1430,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-client-typescript"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "base64 0.23.1",
  "cratestack-axum",
@@ -1445,7 +1445,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-cbor"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "allocation-counter",
  "cratestack-core",
@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-codec-json"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -1468,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-core"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "allocation-counter",
  "async-trait",
@@ -1498,7 +1498,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-cose"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "allocation-counter",
  "async-trait",
@@ -1532,7 +1532,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-exec"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "cratestack-core",
@@ -1542,7 +1542,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-lsp"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1552,7 +1552,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-macros"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "cratestack-api",
  "cratestack-core",
@@ -1568,7 +1568,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-mcp"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -1595,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-migrate"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "chrono",
  "cratestack-core",
@@ -1616,7 +1616,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-mock-wiremock"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-outbox"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "axum",
  "chrono",
@@ -1645,7 +1645,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-parser"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "ariadne",
  "chumsky",
@@ -1658,7 +1658,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-pg"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1705,7 +1705,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-policy"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "cratestack-core",
  "serde",
@@ -1713,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-redis"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -1733,7 +1733,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-rusqlite"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1753,7 +1753,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-service"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "axum",
  "cratestack-core",
@@ -1771,7 +1771,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sql"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "bigdecimal",
  "chrono",
@@ -1785,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sqlite"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "chrono",
  "cratestack-client-rust",
@@ -1806,7 +1806,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sqlx"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "bigdecimal",
@@ -1831,7 +1831,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-studio"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1867,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-sync"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1890,7 +1890,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-websocket"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "axum",
@@ -1908,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "cratestack-webtransport"
-version = "0.19.3"
+version = "0.19.4"
 dependencies = [
  "async-trait",
  "cratestack-codec-cbor",

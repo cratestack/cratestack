@@ -1,5 +1,19 @@
 ## Unreleased
 
+## 0.19.4 (2026-11-11)
+
+- Security: the native and web codecs now refuse CBOR nested deeper than 128
+  levels (arrays, maps and tags; a scalar is depth 0) with a
+  `CratestackCborCodecError` instead of overflowing the stack on hostile
+  input (cratestack#1315). The package inherits the default from the shared
+  Rust codec (`cratestack-codec-cbor`) through both the native and the wasm
+  backend; the limit is not configurable from Dart yet. Input that
+  legitimately nests deeper than 128 levels is now refused.
+- No other functional changes. The rest of this release (TypeScript COSE
+  signing, cursor pagination for generated list routes) does not touch this
+  package. Version kept in lockstep with the CrateStack workspace, which every
+  published CrateStack artifact shares.
+
 ## 0.19.3 (2026-11-09)
 
 - No functional changes. Version kept in lockstep with the CrateStack

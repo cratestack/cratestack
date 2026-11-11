@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.19.4 (2026-11-11)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+
 ## 0.19.3 (2026-11-09)
 
 ### Dart: `cratestack_builder` no longer excludes the lockstep `cratestack_annotations`

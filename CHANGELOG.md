@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.4 (2026-11-11)
+
 ### TypeScript clients can sign: `createCoseClient` in `@cratestack/cbor{,-web,-node}/cose`, sealed links for REST and RPC, a `415` falls back to named (part of #1010)
 
 Additive. `@cratestack/cbor/cose` (and `@cratestack/cbor-web/cose`, `@cratestack/cbor-node/cose`) export
