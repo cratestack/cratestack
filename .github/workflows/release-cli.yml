@@ -473,6 +473,11 @@ jobs:
       # one outward-facing write here that IS reversible — but publishing
       # release notes for a branch that is not a release would still be
       # visible to users, so a rehearsal does not create one.
+      #
+      # `make_latest: true` explicitly promotes the release once the CLI
+      # archives are uploaded. `release-vscode.yml` passes `make_latest: false`
+      # when it creates the release earlier, and GitHub's updateRelease API
+      # preserves the existing `false` flag unless `make_latest: true` is sent.
       - uses: softprops/action-gh-release@v3
         if: github.event_name == 'push'
         with:
@@ -480,6 +485,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true
+          make_latest: true
 
   # Only on a real tag push, never on a manual workflow_dispatch test run —
   # unlike a GitHub Release, an npm publish can't be deleted and retried

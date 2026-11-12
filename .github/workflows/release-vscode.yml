@@ -216,6 +216,17 @@ jobs:
   # which is redundant and, depending on ordering, could reorder or
   # duplicate content instead of leaving the notes it already generated
   # alone.
+  #
+  # `make_latest: false`: this job builds in ~12 minutes while release-cli.yml's
+  # `build` matrix takes ~19 minutes, so this job usually creates and publishes
+  # the GitHub Release first. Without `make_latest: false`, GitHub promotes the
+  # release to `/releases/latest` with only `.vsix` assets attached, leaving a
+  # ~7-minute window where `.github/actions/install-cratestack-cli` (and the
+  # `install-cratestack-cli` CI smoke test) resolves `latest` to the new tag and
+  # fails with HTTP 404 on the not-yet-uploaded CLI archives. Passing
+  # `make_latest: false` here keeps `releases/latest` pointing at the previous
+  # release until release-cli.yml's `release` job finishes uploading the CLI
+  # archives and promotes the release via `make_latest: true`.
   attach-github-release:
     name: attach vsix to GitHub Release
     needs: build
@@ -238,6 +249,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: dist/*.vsix
           fail_on_unmatched_files: true
+          make_latest: false
 
   # Requires the AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID repo
   # secrets (a user-assigned managed identity granted publish rights on the

@@ -60,9 +60,11 @@ jobs:
           set -euo pipefail
 
           # Signals, in the order they discriminate.
-          #   1. WARNING  — the marker was recovered from the log store. The capture
-          #                 defect HAPPENED and the build went green anyway. This is
-          #                 the one that would otherwise be invisible.
+          #   1. NOTE     — the marker was recovered from the log store (emitted as
+          #                 `WARNING:` in cratestack#718, reworded to `NOTE:` in
+          #                 cratestack#822). The capture defect HAPPENED and the build
+          #                 went green anyway. This is the one that would otherwise be
+          #                 invisible.
           #   2. red job  — a genuine failure; its output now says whether the log
           #                 store held the marker, which separates harness from app.
           #   3. unproven — cratestack#720's probe did not round-trip. The delivered
@@ -70,7 +72,7 @@ jobs:
           #                 emitter/nonce bug (above zero) from a mechanism that needs
           #                 replacing (zero). Reported only when the count is zero, so
           #                 a merely-slow probe does not generate daily noise.
-          WARN='WARNING: the live log capture never delivered the marker'
+          WARN='NOTE: the live log capture never delivered the marker'
           UNPROVEN='stream: readiness unproven'
           # `[^0-9]` so this does not also match "10 probe record(s)".
           PROBE_ZERO='readiness unproven[^\n]*[^0-9]0 probe record'
@@ -90,7 +92,7 @@ jobs:
           # the only way a watch like this can be trusted to still be watching.
           missing=0
           for probe_literal in \
-            "WARNING: the live log capture never delivered the marker" \
+            "NOTE: the live log capture never delivered the marker" \
             "stream: readiness unproven" \
             "probe record(s) delivered"
           do
@@ -192,7 +194,7 @@ jobs:
               # is what this grep returned on its first test — two irrelevant network
               # lines and none of the reported ones.
               printf '%s' "$log" | cut -f3- \
-                | grep -E ' (poll|launch|capture|stream): |WARNING: the live log capture|FAIL: built iOS|the marker (WAS captured|never arrived)' \
+                | grep -E ' (poll|launch|capture|stream): |NOTE: the live log capture|FAIL: built iOS|the marker (WAS captured|never arrived)' \
                 | cut -c1-200 | head -20 || echo "(none of the reported lines are present — the job predates the instrumentation, or failed before it)"
               echo '```'
               echo
