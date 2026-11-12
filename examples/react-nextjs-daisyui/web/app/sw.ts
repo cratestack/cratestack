@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
-import { defaultCache } from '@serwist/next/worker';
-import { Serwist } from 'serwist';
-import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist';
+import { defaultCache } from "@serwist/next/worker";
+import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
+import { Serwist } from "serwist";
 
 // Serwist's typed SW entry point. `swSrc` in `next.config.ts` points at this
 // file and Serwist generates a production-ready `/public/sw.js`.

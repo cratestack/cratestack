@@ -1,0 +1,7 @@
+{
+  "root": false,
+  "extends": "//",
+  "files": {
+    "includes": ["**", "!public", "!next-env.d.ts", "!tsconfig.json", "!app/globals.css"]
+  }
+}

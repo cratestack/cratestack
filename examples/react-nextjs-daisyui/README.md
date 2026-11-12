@@ -78,6 +78,10 @@ pnpm --filter react-nextjs-daisyui-example run dev
 # Production: builds wasm-release + napi-release + next build, then next start
 pnpm --filter react-nextjs-daisyui-example run build
 pnpm --filter react-nextjs-daisyui-example run start
+
+# Checks (CI runs all three): Biome lint, tsc, and the production build above
+pnpm --filter react-nextjs-daisyui-example run lint
+pnpm --filter react-nextjs-daisyui-example run typecheck
 ```
 
 Open `http://localhost:3000`. The Service Worker is registered only in production builds — `next dev` skips it so HMR isn't fighting Workbox.

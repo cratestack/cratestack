@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix: react-nextjs-daisyui example `lint` runs Biome and CI runs `next build` (`cratestack#1061`)
+
+`examples/react-nextjs-daisyui/web`'s `lint` script was `next lint`, which Next 16 removed (it failed with "Invalid project directory"). It is now `biome check .`, the linter the other JS examples use, with a nested `web/biome.json` that extends the root config and skips generated files (`public/`, `tsconfig.json`, `next-env.d.ts`, Tailwind `globals.css`); the example's sources are reformatted to match. The `js (react-nextjs-daisyui example)` CI job now also runs `lint` and the full `build` (release wasm with the pinned binaryen, the napi addon, then `next build --webpack`). Example tooling and CI only; no framework behaviour changes.
+
 ### Fix: replace polynomial trailing-slash regex (`/\/+$/`) in generated TypeScript runtimes (`cratestack#1236`)
 
 Generated TypeScript runtimes (`rest-runtime.ts.j2`, `rpc-runtime.ts.j2`, `rest-compact.ts.j2`, `subscriptions.ts.j2`) and `@cratestack/cbor`'s `createSealedFetch` now trim trailing slashes with a linear-time `trimTrailingSlashes` character scan instead of `.replace(/\/+$/, "")`, eliminating the CodeQL `js/polynomial-redos` alert while preserving identical URL normalization behavior. `examples/react-vite-swr/client` and runtime snapshots are updated.

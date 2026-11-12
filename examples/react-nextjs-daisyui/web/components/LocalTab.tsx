@@ -1,22 +1,16 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
-import type { LocalClient } from './useLocalNotes';
-import type { NoteView } from './protocol';
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { NoteView } from "./protocol";
+import type { LocalClient } from "./useLocalNotes";
 
 // "Local (wasm)" tab — writes hit the OPFS-backed SQLite first. The sync
 // engine pushes them up to the napi store in the background. Refreshes
 // after each mutation AND whenever `revision` ticks (the parent bumps it
 // after a sync round-trip so we re-pull server-authored merges).
 
-export function LocalTab({
-  client,
-  revision,
-}: {
-  client: LocalClient;
-  revision: number;
-}) {
+export function LocalTab({ client, revision }: { client: LocalClient; revision: number }) {
   const [notes, setNotes] = useState<NoteView[]>([]);
   const [onlyOpen, setOnlyOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +25,7 @@ export function LocalTab({
     }
   }, [client, onlyOpen]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is a deliberate trigger: re-fetch when the parent bumps it.
   useEffect(() => {
     void refresh();
   }, [refresh, revision]);
@@ -40,14 +35,14 @@ export function LocalTab({
       event.preventDefault();
       const form = event.currentTarget;
       const data = new FormData(form);
-      const title = String(data.get('title') ?? '').trim();
+      const title = String(data.get("title") ?? "").trim();
       if (!title) return;
       setPending(true);
       try {
         await client.add({
           title,
-          body: String(data.get('body') ?? ''),
-          pinned: data.get('pinned') === 'on',
+          body: String(data.get("body") ?? ""),
+          pinned: data.get("pinned") === "on",
         });
         form.reset();
         await refresh();
@@ -66,8 +61,8 @@ export function LocalTab({
         <div className="card-body">
           <h2 className="card-title">New local note</h2>
           <p className="text-sm text-base-content/70">
-            Stored in OPFS inside this browser. Writes show up immediately
-            and are pushed to the server on the next sync.
+            Stored in OPFS inside this browser. Writes show up immediately and are pushed to the
+            server on the next sync.
           </p>
           <form onSubmit={onSubmit} className="mt-2 space-y-3">
             <input
@@ -86,18 +81,10 @@ export function LocalTab({
             />
             <div className="flex items-center justify-between">
               <label className="label cursor-pointer gap-2">
-                <input
-                  type="checkbox"
-                  name="pinned"
-                  className="checkbox checkbox-primary"
-                />
+                <input type="checkbox" name="pinned" className="checkbox checkbox-primary" />
                 <span className="label-text">Pin to top</span>
               </label>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={pending}
-              >
+              <button type="submit" className="btn btn-primary" disabled={pending}>
                 {pending && <span className="loading loading-spinner loading-xs" />}
                 Save
               </button>
@@ -130,9 +117,7 @@ export function LocalTab({
             </label>
           </div>
           {notes.length === 0 ? (
-            <p className="text-base-content/60 italic">
-              No notes yet — add one above.
-            </p>
+            <p className="text-base-content/60 italic">No notes yet — add one above.</p>
           ) : (
             <ul className="space-y-2">
               {notes.map((note) => (
@@ -172,14 +157,14 @@ function LocalRow({
         <div className="flex items-center gap-2">
           {note.pinned && <span className="badge badge-warning badge-sm">pinned</span>}
           {note.completed && <span className="badge badge-success badge-sm">done</span>}
-          <h3 className={note.completed ? 'font-semibold line-through opacity-70' : 'font-semibold'}>
+          <h3
+            className={note.completed ? "font-semibold line-through opacity-70" : "font-semibold"}
+          >
             {note.title}
           </h3>
         </div>
         {note.body && (
-          <p className="mt-1 whitespace-pre-wrap text-sm text-base-content/80">
-            {note.body}
-          </p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-base-content/80">{note.body}</p>
         )}
         <p className="mt-1 text-xs text-base-content/50">
           updated {new Date(note.updatedAt).toLocaleString()}
