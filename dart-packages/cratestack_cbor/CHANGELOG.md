@@ -1,5 +1,26 @@
 ## Unreleased
 
+## 0.19.5 (2026-11-12)
+
+<!-- TODO: edit this section from the seed below -->
+<!-- seeded from v0.19.4..HEAD at e3903f05265c74e46a3e0704ab53b4862628b136 -->
+
+This is an auto-generated seed. Please rewrite into narrative prose describing
+the changes in this release, grouped by concern. Refer to existing entries in
+this file for the house prose style. Do not commit with this placeholder text.
+
+### Changes
+
+#### Fixes
+
+- prevent release-vscode from marking incomplete release latest and sync iOS watch literal (#1339)
+- release-vscode only holds back a release it created (#1340)
+- re-pin the riverpod preset for Flutter 3.50 and bump the cbor example's Gradle wrapper (#1341)
+
+#### Documentation
+
+- fix stale decimal-feature comments in 16 crate manifests (#1342)
+
 ## 0.19.4 (2026-11-11)
 
 - Security: the native and web codecs now refuse CBOR nested deeper than 128

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.19.5 (2026-11-12)
+
 ### Fix: the riverpod Dart preset resolves again on Flutter 3.50 (`riverpod_annotation` 4.0.7, `riverpod_generator` 4.0.9, `build_runner` 2.15.2+, `dart_mappable_builder` 4.9.1)
 
 Flutter stable 3.50.0 (Dart 3.14.0) pins `test_api` 0.7.14 and `matcher` 0.12.20 through `flutter_test`, and
