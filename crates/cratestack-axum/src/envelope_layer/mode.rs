@@ -5,7 +5,7 @@ use super::policy_request::PolicyRequest;
 /// How the layer treats one op's traffic (ADR 0006 §2).
 ///
 /// `#[non_exhaustive]` (API-review decision, 2026-09-26): a later mode
-/// (say, "signed requests only, unsigned responses") must not be a breaking
+/// (as [`Self::UnsignedRequestSealedReply`] was) must not be a breaking
 /// change for a policy that matches on this.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -27,17 +27,35 @@ pub enum EnvelopeMode {
     /// request that fails verification is still the `401`, never downgraded
     /// to unsigned.
     Optional,
+    /// Unsigned requests are accepted, but only ones whose reply can be
+    /// sealed (cratestack#1313): device enrollment, server identity
+    /// bootstrap, any op whose caller has no registered key yet but must
+    /// never be answered unauthenticated.
+    ///
+    /// A signed request is opened and answered sealed, as under `Optional`.
+    /// An unsigned one must carry exactly one well-formed
+    /// `Cratestack-Nonce`, an `Accept` that names `application/cose` with a
+    /// non-zero weight, and satisfy the [`super::ResponseSealPolicy`]; and
+    /// the op must not be a subscription (a stream cannot be sealed yet).
+    /// Otherwise it is refused with an unsigned `406` **before the handler
+    /// runs**, so no side effect happens that the caller could not
+    /// authenticate the answer to. Every reply that does leave is sealed, a
+    /// reply the layer cannot seal is replaced by a sealed error (as under
+    /// `Required`), and an unresolvable route fails closed like `Required`.
+    UnsignedRequestSealedReply,
     /// Plain traffic passes untouched. A request with a COSE body is still
     /// refused (`415`) rather than forwarded unverified.
     Off,
 }
 
 impl EnvelopeMode {
-    /// The stricter of two modes: `Required` over `Optional` over `Off`.
+    /// The stricter of two modes: `Required` over `UnsignedRequestSealedReply`
+    /// over `Optional` over `Off`.
     /// How a `/rpc/batch` call's frames combine (decision B1).
     pub(super) fn strictest(self, other: Self) -> Self {
         let rank = |mode: Self| match mode {
-            Self::Required => 2,
+            Self::Required => 3,
+            Self::UnsignedRequestSealedReply => 2,
             Self::Optional => 1,
             Self::Off => 0,
         };
@@ -137,7 +155,7 @@ impl EnvelopePolicy for WithUnresolved {
 
 #[cfg(test)]
 mod tests {
-    use super::EnvelopeMode::{Off, Optional, Required};
+    use super::EnvelopeMode::{Off, Optional, Required, UnsignedRequestSealedReply as Sealed};
 
     #[test]
     fn strictest_is_symmetric_and_ranks_required_first() {
@@ -145,6 +163,9 @@ mod tests {
             (Off, Optional, Optional),
             (Optional, Required, Required),
             (Off, Required, Required),
+            (Optional, Sealed, Sealed),
+            (Sealed, Required, Required),
+            (Off, Sealed, Sealed),
             (Off, Off, Off),
         ] {
             assert_eq!(a.strictest(b), expected);

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@modelcontextprotocol/inspector':
-        specifier: 2.13.0
-        version: 2.13.0
+        specifier: 2.14.0
+        version: 2.14.0
 
 packages:
 
@@ -58,9 +58,9 @@ packages:
       '@modelcontextprotocol/client':
         optional: true
 
-  '@modelcontextprotocol/inspector@2.13.0':
-    resolution: {integrity: sha512-k+eCnlMFWTVRops5+vGljX74f+eb7XsvTCB3ODWuEKXhIwKL2cLcnwsO3vOfXIp0gczjc1kzl8lS5+cwvGPYdA==}
-    engines: {node: '>=22.19.0'}
+  '@modelcontextprotocol/inspector@2.14.0':
+    resolution: {integrity: sha512-CP3ddu+PHACEA6LkUwrnY2yzZqBiwFZHylU5bst3l1LiNrRfUNn54QNZZ4yecaudctJ9vBollO0AdxhDIslAdg==}
+    engines: {node: ^22.23.4 || ^24.22.1 || >=26.12.1}
     hasBin: true
 
   '@modelcontextprotocol/server@2.4.0':
@@ -845,7 +845,7 @@ snapshots:
     optionalDependencies:
       '@modelcontextprotocol/client': 2.4.0
 
-  '@modelcontextprotocol/inspector@2.13.0':
+  '@modelcontextprotocol/inspector@2.14.0':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.9)
       '@modelcontextprotocol/client': 2.4.0
