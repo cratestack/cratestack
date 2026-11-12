@@ -1620,6 +1620,8 @@ version = "0.19.5"
 dependencies = [
  "cratestack-core",
  "cratestack-parser",
+ "regex",
+ "regex-syntax",
  "serde",
  "serde_json",
  "thiserror 2.0.21",

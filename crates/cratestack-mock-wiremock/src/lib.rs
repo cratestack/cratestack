@@ -64,12 +64,15 @@
 
 mod config;
 mod error;
+mod field_value;
 mod generator;
 mod mapping;
 mod model_attrs;
 mod model_mapping;
 mod model_record;
 mod model_state;
+mod regex_sample;
+mod validator_spec;
 mod values;
 
 pub use config::{GeneratedWireMockFile, GeneratedWireMockPackage, WireMockGeneratorConfig};
