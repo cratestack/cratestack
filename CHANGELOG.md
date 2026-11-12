@@ -11,7 +11,8 @@ that `riverpod_generator` 4.0.4 required. The preset's pubspec now pins `riverpo
 `riverpod` 3.4.3, the first release without a `test` dependency), `riverpod_generator: 4.0.9`, `build_runner:
 ">=2.15.2 <2.16.2"` and `dart_mappable_builder: 4.9.1`, all on `analyzer` 13.x (13.3.0 resolves, as for the
 `default` preset). `examples/flutter-riverpod/client` is regenerated. Affected: anyone regenerating a riverpod
-client; the new pins need Dart ^3.12.0 (Flutter 3.44+), so a project on an older Flutter must keep its already
+client; the new pins need `analyzer` 13.3, which needs `meta` ^1.18.3, so they resolve on Flutter 3.50 but not on
+Flutter 3.44.x, whose `flutter_test` pins `meta` 1.18.0. A project on an older Flutter must keep its already
 generated pubspec. The `default` preset is unchanged. Separately, the `dart-packages/cratestack_cbor` example app's
 Gradle wrapper moves from 9.1.0 to 9.3.1, the minimum Flutter 3.50 accepts; the published plugin ships no wrapper
 and consumers build with their own app's Gradle, so only the example is affected.
