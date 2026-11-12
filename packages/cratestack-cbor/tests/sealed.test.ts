@@ -266,4 +266,27 @@ describe("createSealedFetch (REST)", () => {
     const { fetchFn } = sealing(cose, seen);
     await expect(fetchFn("https://x/api/widgets/w1")).rejects.toBeInstanceOf(CoseFailure);
   });
+
+  it("normalizes trailing slashes in basePath in linear time", async () => {
+    const seen = newSeen();
+    const fetchFn = createSealedFetch({
+      cose: fakeCose(seen),
+      basePath: "/api///",
+      contracts: { "GET /widgets/search": SHA },
+      fetch: (async () => coseResponse()) as typeof fetch,
+    });
+    await fetchFn("https://x/api/widgets/search");
+    expect(seen.sealed[0]?.binding.route).toBe("/widgets/search");
+
+    const started = performance.now();
+    const pathological = `${"/".repeat(100_000)}a`;
+    const slowFetch = createSealedFetch({
+      cose: fakeCose(newSeen()),
+      basePath: pathological,
+      contracts: { "GET /widgets/search": SHA },
+      fetch: (async () => coseResponse()) as typeof fetch,
+    });
+    await slowFetch("https://x/widgets/search");
+    expect(performance.now() - started).toBeLessThan(200);
+  });
 });
