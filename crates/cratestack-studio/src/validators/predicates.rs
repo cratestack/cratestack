@@ -144,8 +144,10 @@ fn range_error(field: &Field, bound: i64, comparator: &str) -> FieldError {
 
 fn check_regex(field: &Field, value: &serde_json::Value, args: &str) -> Option<FieldError> {
     let s = value.as_str()?;
-    let pattern = args.trim().trim_matches('"');
-    let regex = regex::Regex::new(pattern).ok()?;
+    let pattern =
+        cratestack_core::schema::regex_literal::parse_regex_attribute(&format!("@regex({args})"))
+            .ok()?;
+    let regex = regex::Regex::new(&pattern).ok()?;
     (!regex.is_match(s)).then(|| FieldError {
         field: field.name.clone(),
         code: ValidationCode::Regex,

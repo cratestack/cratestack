@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fix: `@regex("...")` patterns are now unescaped like every other `.cstack` string literal (`cratestack#1314`)
+
+The pattern of `@regex("...")` reached the regex engine with only its quotes stripped, so
+`@regex("^\\+[0-9]{6,15}$")` compiled to `^\\+...` ("one or more backslashes") and rejected `+237670000001`
+with nothing at generation time pointing at the cause. The pattern is now unescaped once, in
+`cratestack_core::schema::regex_literal::parse_regex_attribute`, which the parser's compile check, the generated
+server validator and Studio's write-time check all call, so they agree. Recognised escapes are `\\`, `\"`, `\'`,
+`\n`, `\r`, `\t`; any other backslash sequence is a schema error that names the fix, with the field's span.
+Only `@regex` changes: `@default("...")`, `@@sql("...")` and policy literals keep their existing unescaping.
+Generated TypeScript/Dart clients, WireMock stubs and MCP schemas never carried the pattern, so nothing else moves.
+
+Affected: schemas that used a single backslash, e.g. `@regex("^\d+$")`, which used to work by accident and now fail
+to parse; write `@regex("^\\d+$")`. Schemas that doubled the backslash to match `+`, e.g. `@regex("^\\+[0-9]+$")`,
+used to match a literal backslash and now match `+`, which is what they said. `[+]` and `[0-9]` style patterns
+are unchanged.
+
 ### Fix: replace polynomial trailing-slash regex (`/\/+$/`) in generated TypeScript runtimes (`cratestack#1236`)
 
 Generated TypeScript runtimes (`rest-runtime.ts.j2`, `rpc-runtime.ts.j2`, `rest-compact.ts.j2`, `subscriptions.ts.j2`) and `@cratestack/cbor`'s `createSealedFetch` now trim trailing slashes with a linear-time `trimTrailingSlashes` character scan instead of `.replace(/\/+$/, "")`, eliminating the CodeQL `js/polynomial-redos` alert while preserving identical URL normalization behavior. `examples/react-vite-swr/client` and runtime snapshots are updated.
