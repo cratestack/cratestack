@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix: `generate-* --check` no longer reports gitignored files as drift when `--out` contains a symlinked directory (`cratestack#1235`)
+
+In a pnpm workspace the generated TypeScript package's `node_modules/` holds symlinked dependency directories. The drift walk followed them, and `git check-ignore` aborts the whole batch (exit 128, "beyond a symbolic link") for a path past a link; that exit was read as "nothing is ignored", so every gitignored file was reported `unexpected`. The walk now never follows symlinks (a symlink is listed as one entry, undescended, so a gitignored one such as `node_modules/dep` is filtered and a stray unignored one is reported as `unexpected`), and a batch exit of 128 inside a work tree falls back to per-path checks instead of disabling the filter. Outside a git work tree behaviour is unchanged. `drift.rs` is split into a `drift/` module, dropping its file-length allowlist entry. The `tar --exclude=./node_modules` workaround is no longer needed.
+
 ### Fix: replace polynomial trailing-slash regex (`/\/+$/`) in generated TypeScript runtimes (`cratestack#1236`)
 
 Generated TypeScript runtimes (`rest-runtime.ts.j2`, `rpc-runtime.ts.j2`, `rest-compact.ts.j2`, `subscriptions.ts.j2`) and `@cratestack/cbor`'s `createSealedFetch` now trim trailing slashes with a linear-time `trimTrailingSlashes` character scan instead of `.replace(/\/+$/, "")`, eliminating the CodeQL `js/polynomial-redos` alert while preserving identical URL normalization behavior. `examples/react-vite-swr/client` and runtime snapshots are updated.
