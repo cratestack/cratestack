@@ -26,8 +26,8 @@ pub use cratestack_codec_cbor::CborCodec;
 #[cfg(feature = "codec-json")]
 pub use cratestack_codec_json::JsonCodec;
 pub use cratestack_core::rpc::{
-    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcRequest, RpcResponseFrame, RpcSubscribeInput,
-    rpc_code,
+    RPC_BATCH_PATH, RPC_UNARY_PATH, RpcErrorBody, RpcFrameValue, RpcRequest, RpcResponseFrame,
+    RpcSubscribeInput, rpc_code,
 };
 
 pub use auth::{AuthorizationRequest, RequestAuthorizer};
@@ -62,8 +62,9 @@ pub use idempotency::RequestIdempotency;
 #[cfg(feature = "middleware")]
 pub use middleware::MiddlewareError;
 pub use remote_refusal::Challenges;
-pub use rpc::batch::{BatchBuilder, BatchResults};
+pub use rpc::batch::BatchBuilder;
 pub use rpc::batch_call::{BatchHandle, BatchableCall};
+pub use rpc::batch_results::BatchResults;
 pub use rpc::client::RpcClient;
 pub use rpc::error::{RpcClientError, RpcRemoteError, RpcStream};
 #[cfg(not(target_arch = "wasm32"))]

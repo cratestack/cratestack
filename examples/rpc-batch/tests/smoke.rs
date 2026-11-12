@@ -36,19 +36,19 @@ async fn batch_preserves_request_order_on_the_response() {
         RpcRequest {
             id: 42,
             op: "procedure.add".into(),
-            input: serde_json::json!({"args": {"a": 1, "b": 2}}),
+            input: serde_json::json!({"args": {"a": 1, "b": 2}}).into(),
             idem: None,
         },
         RpcRequest {
             id: 7,
             op: "procedure.multiply".into(),
-            input: serde_json::json!({"args": {"a": 3, "b": 4}}),
+            input: serde_json::json!({"args": {"a": 3, "b": 4}}).into(),
             idem: None,
         },
         RpcRequest {
             id: 99,
             op: "procedure.add".into(),
-            input: serde_json::json!({"args": {"a": 10, "b": 20}}),
+            input: serde_json::json!({"args": {"a": 10, "b": 20}}).into(),
             idem: None,
         },
     ])
@@ -63,9 +63,18 @@ async fn batch_preserves_request_order_on_the_response() {
     assert_eq!(responses[2].id, 99);
 
     // Values correct.
-    assert_eq!(responses[0].output.as_ref().unwrap()["value"], 3);
-    assert_eq!(responses[1].output.as_ref().unwrap()["value"], 12);
-    assert_eq!(responses[2].output.as_ref().unwrap()["value"], 30);
+    assert_eq!(
+        serde_json::Value::from(responses[0].output.clone().unwrap())["value"],
+        3
+    );
+    assert_eq!(
+        serde_json::Value::from(responses[1].output.clone().unwrap())["value"],
+        12
+    );
+    assert_eq!(
+        serde_json::Value::from(responses[2].output.clone().unwrap())["value"],
+        30
+    );
 }
 
 #[tokio::test]
@@ -76,19 +85,19 @@ async fn per_frame_error_does_not_poison_the_batch() {
         RpcRequest {
             id: 1,
             op: "procedure.add".into(),
-            input: serde_json::json!({"args": {"a": 1, "b": 1}}),
+            input: serde_json::json!({"args": {"a": 1, "b": 1}}).into(),
             idem: None,
         },
         RpcRequest {
             id: 2,
             op: "procedure.divide".into(),
-            input: serde_json::json!({"args": {"numerator": 10, "denominator": 0}}),
+            input: serde_json::json!({"args": {"numerator": 10, "denominator": 0}}).into(),
             idem: None,
         },
         RpcRequest {
             id: 3,
             op: "procedure.multiply".into(),
-            input: serde_json::json!({"args": {"a": 6, "b": 7}}),
+            input: serde_json::json!({"args": {"a": 6, "b": 7}}).into(),
             idem: None,
         },
     ])
@@ -99,9 +108,15 @@ async fn per_frame_error_does_not_poison_the_batch() {
 
     // First and third succeed.
     assert!(responses[0].error.is_none());
-    assert_eq!(responses[0].output.as_ref().unwrap()["value"], 2);
+    assert_eq!(
+        serde_json::Value::from(responses[0].output.clone().unwrap())["value"],
+        2
+    );
     assert!(responses[2].error.is_none());
-    assert_eq!(responses[2].output.as_ref().unwrap()["value"], 42);
+    assert_eq!(
+        serde_json::Value::from(responses[2].output.clone().unwrap())["value"],
+        42
+    );
 
     // Middle frame errors with the gRPC-style code from the RpcErrorBody
     // post-processor.
@@ -118,13 +133,13 @@ async fn unknown_op_in_batch_returns_per_frame_not_found() {
         RpcRequest {
             id: 1,
             op: "procedure.add".into(),
-            input: serde_json::json!({"args": {"a": 1, "b": 1}}),
+            input: serde_json::json!({"args": {"a": 1, "b": 1}}).into(),
             idem: None,
         },
         RpcRequest {
             id: 2,
             op: "procedure.does_not_exist".into(),
-            input: serde_json::json!(null),
+            input: serde_json::json!(null).into(),
             idem: None,
         },
     ])

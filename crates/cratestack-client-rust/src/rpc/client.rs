@@ -1,5 +1,4 @@
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::rpc::{RPC_BATCH_PATH, RpcRequest, RpcResponseFrame};
 use reqwest::Method;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -11,11 +10,6 @@ use crate::idempotency::RequestIdempotency;
 use crate::rpc::batch::BatchBuilder;
 use crate::rpc::error::{RpcClientError, client_error_to_rpc, decode_rpc_unary_response};
 use crate::streaming::pump_streamed_response_typed;
-
-// `RPC_BATCH_PATH` from core is the axum-template form `"/rpc/batch"`,
-// so we just reuse it. The unary path is templated (`/rpc/{op_id}`) so
-// we format it per call instead of using the constant directly.
-const RPC_BATCH_PATH_PLAIN: &str = RPC_BATCH_PATH;
 
 /// Thin RPC client built on top of the REST client's transport + codec
 /// plumbing.
@@ -106,34 +100,6 @@ where
             .await
             .map_err(client_error_to_rpc)?;
         decode_rpc_unary_response(&self.inner.codec, &response)
-    }
-
-    /// POST /rpc/batch — sequence of `RpcRequest` frames in, sequence of
-    /// `RpcResponseFrame` frames out. Per-frame errors do not poison the
-    /// batch (each frame's `output` / `error` is reported independently).
-    pub async fn batch(
-        &self,
-        requests: &[RpcRequest],
-    ) -> Result<Vec<RpcResponseFrame>, RpcClientError> {
-        let body = self
-            .inner
-            .codec
-            .encode(&requests)
-            .map_err(RpcClientError::Codec)?;
-        let response = self
-            .inner
-            .at(RouteRef::rpc("batch"))
-            .request_raw_with_query_and_accept(
-                Method::POST,
-                RPC_BATCH_PATH_PLAIN,
-                Some(body),
-                None,
-                &[],
-                None,
-            )
-            .await
-            .map_err(client_error_to_rpc)?;
-        decode_rpc_unary_response::<C, Vec<RpcResponseFrame>>(&self.inner.codec, &response)
     }
 
     /// POST /rpc/{op_id} — sequence response, item-at-a-time.

@@ -4,6 +4,7 @@
 // `rpc::batch::{BatchBuilder, BatchResults}`, which consume them.
 // -----------------------------------------------------------------------------
 
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::CratestackError;
 
 use crate::codec::HttpClientCodec;
@@ -23,17 +24,14 @@ use crate::rpc::error::RpcClientError;
 ///   Returns a typed [`BatchHandle`] for `.take(...)` on the results
 ///   after `batch.send().await` resolves.
 ///
-/// The input is converted at construction time so the same prepared call
-/// can flow into either consumption mode without re-borrowing it. Two forms
-/// are prepared, because the two modes have different wire constraints:
-///
-/// - **Eager** sends the input encoded *directly* by the request codec
-///   (cratestack#1312). A `serde_json::Value` detour would rewrite `Uuid`
-///   and `Bytes` into their JSON shapes (text, integer array) before CBOR
-///   encoding, and the server rejects those with `400 invalid_argument`.
-/// - **Batched** goes into an `RpcRequest` frame, whose `input` is a
-///   `serde_json::Value` by wire definition, so it keeps the JSON form.
-///   Binary-only shapes cannot ride that envelope yet.
+/// The input is encoded once, at construction time, by the request codec
+/// (cratestack#1312), so the same prepared call can flow into either
+/// consumption mode without re-borrowing it. A `serde_json::Value` detour
+/// would rewrite `Uuid` and `Bytes` into their JSON shapes (text, integer
+/// array) and the server rejects those over CBOR with `400
+/// invalid_argument`. The batched mode builds its `RpcRequest` frame from
+/// those same bytes as an [`RpcFrameValue`], which keeps a CBOR byte string
+/// lossless (cratestack#1352).
 ///
 /// Conversion errors surface lazily — eagerly on `.await`, per-handle on
 /// the batch path.
@@ -43,8 +41,6 @@ pub struct BatchableCall<C, O> {
     op_id: String,
     /// Request-codec bytes of the input, for the eager (`.await`) mode.
     input_body: Result<Vec<u8>, CratestackError>,
-    /// JSON form of the input, for the batch-frame envelope.
-    input_value: Result<serde_json::Value, CratestackError>,
     /// `fn() -> O` instead of `O` so `BatchableCall` is `Send` + `Sync`
     /// regardless of whether `O` is — the marker is variance-only.
     _output: std::marker::PhantomData<fn() -> O>,
@@ -74,14 +70,11 @@ where
         // reached the codec, silently dropping the clear. See
         // `crates/cratestack-pg/tests/rpc_batch_explicit_null_clear.rs`
         // for the regression test (fails if the strip is restored).
-        let input_value = serde_json::to_value(input)
-            .map_err(|error| CratestackError::Codec(format!("encode batch input: {error}")));
         let input_body = rpc.inner.codec.encode(input);
         Self {
             rpc,
             op_id: op_id.into(),
             input_body,
-            input_value,
             _output: std::marker::PhantomData,
         }
     }
@@ -96,7 +89,12 @@ where
     /// produces a per-handle `take(...)?` error rather than
     /// poisoning the whole batch.
     pub fn queue(self, batch: &mut BatchBuilder<C>) -> BatchHandle<O> {
-        let id = match self.input_value {
+        // The frame is read back out of the very bytes the eager path sends,
+        // so a `Uuid` / `Bytes` keeps its codec form (cratestack#1352).
+        let frame = self
+            .input_body
+            .and_then(|body| self.rpc.inner.codec.decode::<RpcFrameValue>(&body));
+        let id = match frame {
             Ok(value) => batch.push_frame(self.op_id, value),
             Err(error) => batch.push_failed_frame(error),
         };

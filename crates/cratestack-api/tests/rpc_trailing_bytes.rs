@@ -186,7 +186,7 @@ async fn batch_cbor_with_trailing_bytes_is_refused_before_dispatch() {
     let frames = vec![RpcRequest {
         id: 1,
         op: "procedure.ping".into(),
-        input: ping_input(),
+        input: ping_input().into(),
         idem: None,
     }];
     let clean = CborCodec.encode(&frames).expect("encode batch");

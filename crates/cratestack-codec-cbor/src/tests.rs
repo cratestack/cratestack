@@ -71,8 +71,9 @@ fn json_null_round_trips_as_cbor_null_through_this_codec() {
     // `serde_json::Value::Null` — which takes the `serialize_unit()`
     // path, not `serialize_none()` — now also encodes as `0xf6`. This
     // is the type the `/rpc/batch` envelope actually carries per frame
-    // (`RpcRequest.input`/`RpcResponseFrame.output` are opaque
-    // `serde_json::Value`, not `Option<T>`), so this is the case that
+    // (`RpcRequest.input`/`RpcResponseFrame.output` were opaque
+    // `serde_json::Value`, now `RpcFrameValue`, which serialises `Null` the
+    // same way; not `Option<T>`), so this is the case that
     // previously reached the wire as `0x80` on the batch path even
     // though `optional_none_round_trips_as_cbor_null` above was green.
     let codec = CborCodec;
