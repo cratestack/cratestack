@@ -2823,7 +2823,10 @@ jobs:
   react-nextjs-daisyui-example:
     needs: changes
     if: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.ts == 'true' }}
-    timeout-minutes: 20
+    # Dev wasm + release wasm + release napi addon + `next build`: on a cold
+    # rust-cache this can pass 20 minutes on a hosted runner (warm, the build
+    # alone is ~4 minutes locally).
+    timeout-minutes: 35
     name: js (react-nextjs-daisyui example)
     runs-on: ubuntu-latest
     steps:
@@ -2866,6 +2869,7 @@ jobs:
       # already on PATH, and that unpinned fetch has failed a real release
       # run before. The release wasm build in `prebuild` runs wasm-opt.
       - name: Install binaryen (wasm-opt), pinned
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           curl -fsSL -o binaryen.tar.gz \
