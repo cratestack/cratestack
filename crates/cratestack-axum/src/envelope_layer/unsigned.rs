@@ -1,6 +1,12 @@
 //! A plain request under `Optional` (decision D10): it runs unsigned, and
 //! its response is sealed only when it carries a valid `Cratestack-Nonce`
 //! and the [`super::ResponseSealPolicy`] asks for it.
+//!
+//! Under `UnsignedRequestSealedReply` (`seal_required`, cratestack#1313) the
+//! same path runs, but a request whose reply cannot be sealed is refused
+//! with the unsigned `406` before the handler runs, and the response is
+//! sealed strictly (a reply the layer cannot seal is replaced by a sealed
+//! error, as under `Required`).
 
 use std::sync::Arc;
 
@@ -18,6 +24,7 @@ use super::resolver::ResolvedRoute;
 use super::seal::{BindingInputs, Sealer};
 use super::seal_policy::UnsignedRequest;
 use super::service::{Inner, call};
+use super::unsealable::{self, Unsealable};
 use super::{media, payload, refusal, request};
 
 pub(super) async fn handle<S: Inner>(
@@ -26,17 +33,29 @@ pub(super) async fn handle<S: Inner>(
     mut parts: Parts,
     body: Body,
     route: ResolvedRoute,
+    seal_required: bool,
 ) -> Response {
+    let path = parts.uri.path().to_owned();
     let Some(nonce) = nonce(&parts) else {
+        if seal_required {
+            return unsealable::refuse(&parts.headers, &path, Unsealable::Nonce);
+        }
         return call(inner, Request::from_parts(parts, body)).await;
     };
     let accept_names_envelope = media::accept_names_envelope(&parts.headers, &*config.envelope);
     let view = UnsignedRequest::new(&parts.method, &route, &parts.headers, accept_names_envelope);
     if !config.seal_policy.seal_unsigned(&view) {
+        if seal_required {
+            return unsealable::refuse(&parts.headers, &path, Unsealable::Accept);
+        }
         return call(inner, Request::from_parts(parts, body)).await;
     }
+    // A stream cannot be sealed yet (ADR 0006 P1): refused before the
+    // handler runs, as a signed subscription is.
+    if seal_required && route.is_subscription() {
+        return unsealable::refuse(&parts.headers, &path, Unsealable::Stream);
+    }
 
-    let path = parts.uri.path().to_owned();
     // Looked up before the body is buffered, as `signed.rs` does: a route
     // the table does not cover is refused without reading a byte of it.
     let contract = match contract::for_unsigned(&config, &parts.method, &route, &parts.headers) {
@@ -60,7 +79,7 @@ pub(super) async fn handle<S: Inner>(
     // Binds this nonce and this payload, and nothing about who sent them:
     // the request was not signed (see `ResponseSealPolicy`).
     let digest = request_digest_unsigned(&nonce, &payload);
-    request::rewrite_accept(&mut parts.headers, false, &negotiated.accept());
+    request::rewrite_accept(&mut parts.headers, seal_required, &negotiated.accept());
     let inputs = BindingInputs::new(
         config,
         // `parts` goes on to the router, so the layer keeps its own copy.
@@ -75,7 +94,7 @@ pub(super) async fn handle<S: Inner>(
         inputs,
         request: digest,
         context: SealContext::empty(),
-        strict: false,
+        strict: seal_required,
         headers: parts.headers.clone(),
         path,
     };
