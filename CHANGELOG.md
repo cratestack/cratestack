@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Fix: `@regex("...")` patterns are now unescaped like every other `.cstack` string literal (`cratestack#1314`)
+
+The pattern of `@regex("...")` reached the regex engine with only its quotes stripped, so
+`@regex("^\\+[0-9]{6,15}$")` compiled to `^\\+...` ("one or more backslashes") and rejected `+237670000001`
+with nothing at generation time pointing at the cause. The pattern is now unescaped once, in
+`cratestack_core::schema::regex_literal::parse_regex_attribute`, which the parser's compile check, the generated
+server validator and Studio's write-time check all call, so they agree. Recognised escapes are `\\`, `\"`, `\'`,
+`\n`, `\r`, `\t`; any other backslash sequence is a schema error that names the fix, with the field's span.
+Only `@regex` changes: `@default("...")`, `@@sql("...")` and policy literals keep their existing unescaping.
+Generated TypeScript/Dart clients, WireMock stubs and MCP schemas never carried the pattern, so nothing else moves.
+
+Affected: schemas that used a single backslash, e.g. `@regex("^\d+$")`, which used to work by accident and now fail
+to parse; write `@regex("^\\d+$")`. Schemas that doubled the backslash to match `+`, e.g. `@regex("^\\+[0-9]+$")`,
+used to match a literal backslash and now match `+`, which is what they said. `[+]` and `[0-9]` style patterns
+are unchanged.
+
 ### Fix: the generated Rust client sends `Uuid` and `Bytes` in their CBOR forms on typed RPC calls (`cratestack#1312`)
 
 `BatchableCall::new` (behind every typed RPC method: model CRUD and unary procedures) converted the input with `serde_json::to_value` and then CBOR-encoded that value, so a `Uuid` went out as a text string and `Bytes` as an integer array. The generated server decodes the input with the request codec directly, expects the 16-byte / byte-string forms, and answered `400 invalid_argument "invalid request payload"`; `client.rpc().call(...)` worked because it encodes the caller's type directly. An awaited typed call now does the same (`RpcClient::call_encoded`), so every type whose CBOR form differs from its JSON form reaches the server intact. REST was never affected (it encodes the typed input with the codec directly). Not fixed here: `.queue(&mut batch)`. A `POST /rpc/batch` frame carries its `input` as a `serde_json::Value` (`RpcRequest`), on both client and server, so binary-only shapes still cannot ride a batch; that needs a codec-neutral payload type in the batch envelope and is a wire change, tracked separately.

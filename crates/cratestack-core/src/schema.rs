@@ -21,6 +21,7 @@ pub mod model;
 pub mod positions;
 pub mod procedure;
 pub mod query;
+pub mod regex_literal;
 pub mod rename_attribute;
 pub mod selection;
 pub mod spatial;
