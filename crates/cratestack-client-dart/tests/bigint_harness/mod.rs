@@ -303,10 +303,10 @@ impl Package {
         let path = self.dir.join("pubspec.yaml");
         let pubspec = fs::read_to_string(&path).expect("read pubspec.yaml");
         let relaxed = pubspec
-            .replace("riverpod_annotation: 4.0.3", "riverpod_annotation: any")
-            .replace("riverpod_generator: 4.0.4", "riverpod_generator: any")
-            .replace("dart_mappable_builder: 4.8.0", "dart_mappable_builder: any")
-            .replace("build_runner: \">=2.14.0 <2.15.2\"", "build_runner: any");
+            .replace("riverpod_annotation: 4.0.7", "riverpod_annotation: any")
+            .replace("riverpod_generator: 4.0.9", "riverpod_generator: any")
+            .replace("dart_mappable_builder: 4.9.1", "dart_mappable_builder: any")
+            .replace("build_runner: \">=2.15.2 <2.16.2\"", "build_runner: any");
         assert_ne!(pubspec, relaxed, "no riverpod pins found to relax");
         fs::write(&path, relaxed).expect("write pubspec.yaml");
     }

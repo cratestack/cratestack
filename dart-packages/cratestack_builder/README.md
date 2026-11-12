@@ -57,8 +57,9 @@ annotation carries them explicitly:
 
 ## Analyzer constraint
 
-The `analyzer` bound is `>=12.0.0 <13.0.0`, and the **upper bound is
-load-bearing**. Under CrateStack's riverpod preset this builder runs in the
-same `build_runner` pass as `riverpod_generator`, whose own constraint is
-`analyzer ^12.0.0`; allowing 13.x makes `pub get` fail in that package
-before codegen is reached. Raise it only alongside `riverpod_generator`.
+The `analyzer` bound is `>=12.0.0 <14.0.0`, spanning both majors on purpose.
+Under CrateStack's riverpod preset this builder runs in the same
+`build_runner` pass as `riverpod_generator`, whose `analyzer` constraint moved
+from `^12.0.0` to 13.x (4.0.6 and later); the range lets `pub get` resolve
+whichever major the rest of the build needs. Move the ceiling only alongside
+`riverpod_generator`.
