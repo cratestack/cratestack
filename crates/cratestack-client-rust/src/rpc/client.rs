@@ -50,28 +50,12 @@ where
         &self.inner
     }
 
-    /// RPC half of the per-call idempotency override — forwards to
-    /// [`CratestackClient::with_idempotency`], which documents the whole
-    /// mechanism.
-    ///
-    /// RPC needs this more than REST does: every RPC call is
-    /// `POST /rpc/{op_id}`, so the method-derived default marks
-    /// *everything* non-idempotent, reads included. The per-op truth is
-    /// the `idempotent_by_default` field on the `OpDescriptor` the
-    /// schema macro emits (`cratestack_core::OpDescriptor`):
-    ///
-    /// ```text
-    /// let response = rpc
-    ///     .clone()
-    ///     .with_idempotency(RequestIdempotency::new(OP.idempotent_by_default))
-    ///     .call::<_, Output>(OP.op_id, &input)
-    ///     .await?;
-    /// ```
-    ///
-    /// Streamed calls ([`Self::call_streaming`]) carry the extension
-    /// too, but a partially-consumed stream cannot be replayed from the
-    /// middleware layer — leave those at the non-idempotent default
-    /// unless the middleware only retries before the first byte.
+    /// RPC half of [`CratestackClient::with_idempotency`], which documents the
+    /// mechanism. RPC needs it more than REST: every call is `POST /rpc/{op_id}`,
+    /// so the method-derived default marks reads non-idempotent too. The per-op
+    /// truth is `OpDescriptor::idempotent_by_default`; pass it as
+    /// `RequestIdempotency::new(OP.idempotent_by_default)`. Streamed calls carry
+    /// the extension too, but a half-consumed stream cannot be replayed.
     pub fn with_idempotency(self, idempotency: RequestIdempotency) -> Self {
         Self {
             inner: self.inner.with_idempotency(idempotency),
@@ -101,6 +85,19 @@ where
             .codec
             .encode(input)
             .map_err(RpcClientError::Codec)?;
+        self.call_encoded(op_id, body).await
+    }
+
+    /// [`Self::call`] with the input already codec-encoded (cratestack#1312:
+    /// lets `BatchableCall` skip the `serde_json::Value` detour).
+    pub(crate) async fn call_encoded<O>(
+        &self,
+        op_id: &str,
+        body: Vec<u8>,
+    ) -> Result<O, RpcClientError>
+    where
+        O: DeserializeOwned,
+    {
         let path = format!("/rpc/{}", op_id);
         let response = self
             .inner
