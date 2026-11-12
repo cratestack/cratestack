@@ -217,16 +217,19 @@ jobs:
   # duplicate content instead of leaving the notes it already generated
   # alone.
   #
-  # `make_latest: false`: this job builds in ~12 minutes while release-cli.yml's
-  # `build` matrix takes ~19 minutes, so this job usually creates and publishes
-  # the GitHub Release first. Without `make_latest: false`, GitHub promotes the
-  # release to `/releases/latest` with only `.vsix` assets attached, leaving a
-  # ~7-minute window where `.github/actions/install-cratestack-cli` (and the
-  # `install-cratestack-cli` CI smoke test) resolves `latest` to the new tag and
-  # fails with HTTP 404 on the not-yet-uploaded CLI archives. Passing
-  # `make_latest: false` here keeps `releases/latest` pointing at the previous
-  # release until release-cli.yml's `release` job finishes uploading the CLI
-  # archives and promotes the release via `make_latest: true`.
+  # `make_latest: false` when this job creates the release: this job builds in
+  # ~12 minutes while release-cli.yml's `build` matrix takes ~19 minutes, so
+  # this job usually creates and publishes the GitHub Release first. Without
+  # `make_latest: false`, GitHub promotes the release to `/releases/latest`
+  # with only `.vsix` assets attached, leaving a ~7-minute window where
+  # `.github/actions/install-cratestack-cli` (and the `install-cratestack-cli`
+  # CI smoke test) resolves `latest` to the new tag and fails with HTTP 404 on
+  # the not-yet-uploaded CLI archives. Passing `make_latest: false` keeps
+  # `releases/latest` pointing at the previous release until release-cli.yml's
+  # `release` job finishes uploading the CLI archives and promotes the release
+  # via `make_latest: true`. When release-cli.yml finished first, the release
+  # already exists and is already latest, so the step below passes `legacy`
+  # instead of demoting it.
   attach-github-release:
     name: attach vsix to GitHub Release
     needs: build
@@ -244,12 +247,30 @@ jobs:
           merge-multiple: true
       - name: List vsix assets
         run: ls -la dist
+      # Only a release THIS job creates is held back from `latest`. If
+      # release-cli.yml got there first it has already published the release
+      # and promoted it with `make_latest: true`; passing `false` to that
+      # existing release would DEMOTE it (the action sends it on update too),
+      # leaving /releases/latest on the previous version. The two workflows
+      # run in parallel, so which one finishes first is not guaranteed.
+      # `legacy` leaves an existing newest-tag release as latest.
+      - name: Decide whether this job may promote the release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "make_latest=legacy" >> "$GITHUB_OUTPUT"
+          else
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: dist/*.vsix
           fail_on_unmatched_files: true
-          make_latest: false
+          make_latest: ${{ steps.latest.outputs.make_latest }}
 
   # Requires the AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_SUBSCRIPTION_ID repo
   # secrets (a user-assigned managed identity granted publish rights on the
