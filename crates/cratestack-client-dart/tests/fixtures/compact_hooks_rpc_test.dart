@@ -82,8 +82,8 @@ void main() {
     ]);
     final adapter = _adapter(transport, null);
     final saved = await adapter.prepareCall(_create, _author, options: const CratestackRpcCallOptions(
-      idempotencyKey: 'k', extra: {'k': 1}));
-    expect(saved.toJson().toString(), isNot(contains("'k': 1")));
+      idempotencyKey: 'k', extra: {'marker': 1}));
+    expect(jsonEncode(saved.toJson()), isNot(contains('marker')));
     await adapter.executePrepared(saved);
     expect(transport.requests.single.extra, isEmpty);
   });
