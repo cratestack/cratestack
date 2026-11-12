@@ -1,5 +1,15 @@
 ## Unreleased
 
+## 0.19.5 (2026-11-12)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+- Example app only: the Android build of `example/` moves its Gradle wrapper
+  from 9.1.0 to 9.3.1 and its Android Gradle Plugin from 9.0.1 to 9.1.1, the
+  minimums `flutter build apk` accepts on Flutter 3.50 (cratestack#1341). The
+  published plugin ships no Gradle wrapper and builds with the consuming
+  app's own Gradle, so nothing a dependent receives changes.
+
 ## 0.19.4 (2026-11-11)
 
 - Security: the native and web codecs now refuse CBOR nested deeper than 128

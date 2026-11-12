@@ -6,6 +6,8 @@
 
 Additive. `CratestackCallOptions` (REST) and `CratestackRpcCallOptions` (RPC) gain `extra` (`Map<String, Object?>`, default `const <String, Object?>{}`), merged into `CratestackHttpRequest.extra` after the adapter's own entries (so `options.extra` wins on key collision, while `useRustTransport` keeps its key when not overridden). `extra` is never sent on the wire and is not persisted by `prepare` / `prepareCall` / `executePrepared`; `CratestackFespalierTransport` forwards it as `TransportRequest.attributes`.
 
+## 0.19.5 (2026-11-12)
+
 ### Fix: the riverpod Dart preset resolves again on Flutter 3.50 (`riverpod_annotation` 4.0.7, `riverpod_generator` 4.0.9, `build_runner` 2.15.2+, `dart_mappable_builder` 4.9.1)
 
 Flutter stable 3.50.0 (Dart 3.14.0) pins `test_api` 0.7.14 and `matcher` 0.12.20 through `flutter_test`, and
@@ -19,8 +21,8 @@ client; the new pins need `analyzer` 13.3, which needs `meta` ^1.18.3, so they r
 Flutter 3.44.x, whose `flutter_test` pins `meta` 1.18.0. A project on an older Flutter must keep its already
 generated pubspec. The `default` preset is unchanged. Separately, the `dart-packages/cratestack_cbor` example app's
 Gradle wrapper moves from 9.1.0 to 9.3.1 and its Android Gradle Plugin from 9.0.1 to 9.1.1, the minimums Flutter 3.50
-accepts; the published plugin ships no wrapper
-and consumers build with their own app's Gradle, so only the example is affected.
+accepts; the published plugin ships no wrapper and consumers build with their own app's Gradle, so only the example is
+affected.
 
 ## 0.19.4 (2026-11-11)
 
