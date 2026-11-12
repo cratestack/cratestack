@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix: replace polynomial trailing-slash regex (`/\/+$/`) in generated TypeScript runtimes (`cratestack#1236`)
+
+Generated TypeScript runtimes (`rest-runtime.ts.j2`, `rpc-runtime.ts.j2`, `rest-compact.ts.j2`, `subscriptions.ts.j2`) and `@cratestack/cbor`'s `createSealedFetch` now trim trailing slashes with a linear-time `trimTrailingSlashes` character scan instead of `.replace(/\/+$/, "")`, eliminating the CodeQL `js/polynomial-redos` alert while preserving identical URL normalization behavior. `examples/react-vite-swr/client` and runtime snapshots are updated.
+
 ## 0.19.5 (2026-11-12)
 
 ### Fix: the riverpod Dart preset resolves again on Flutter 3.50 (`riverpod_annotation` 4.0.7, `riverpod_generator` 4.0.9, `build_runner` 2.15.2+, `dart_mappable_builder` 4.9.1)
