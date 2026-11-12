@@ -18,11 +18,12 @@ workspace = true
 
 [features]
 default = ["decimal-rust-decimal"]
-# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
-# (see that crate's Cargo.toml for the full rationale). Required because
+# Forwards to `cratestack-core`'s decimal backend features (see that crate's
+# Cargo.toml for the full rationale). Since cratestack#505 any combination
+# may be selected: neither, one, or both. The forward is still required:
 # `cratestack-core`'s dependency edge has `default-features = false` at the
-# workspace root — every direct consumer must explicitly re-select a
-# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# workspace root, so without it this crate's build may get no decimal type
+# at all (cratestack#521).
 # There was previously no `default` feature at all on this crate — nothing
 # else here needed one, since `postgres-introspect`/`pgvector` are
 # genuinely opt-in — so this is the first thing that makes one necessary.
