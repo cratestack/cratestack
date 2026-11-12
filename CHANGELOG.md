@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix: generated code no longer infers over `From` impls of `CratestackError` (`cratestack#1097`)
+
+Two generated sites relied on `CratestackError: From<_>` having a single candidate: the REST query-filter parser for `String` fields (`(Ok(value.to_owned()))?`, whose error type was left to inference) and the projection `decode_page` (`collect::<Result<Vec<_>, _>>()?`). Any crate in a build adding an `impl From<X> for CratestackError` (as `cratestack-cose` did during #1006) turned them into E0282/E0283 in every consuming crate. Both now name `CratestackError`. `tests/from_impl_ambiguity.rs` in `cratestack-pg`, `cratestack-api` and `cratestack-sqlite` define such an impl and expand a spread of fixture schemas, so a new inference site fails to compile. Affected: nobody at runtime; generated code only.
+
 ### Fix: replace polynomial trailing-slash regex (`/\/+$/`) in generated TypeScript runtimes (`cratestack#1236`)
 
 Generated TypeScript runtimes (`rest-runtime.ts.j2`, `rpc-runtime.ts.j2`, `rest-compact.ts.j2`, `subscriptions.ts.j2`) and `@cratestack/cbor`'s `createSealedFetch` now trim trailing slashes with a linear-time `trimTrailingSlashes` character scan instead of `.replace(/\/+$/, "")`, eliminating the CodeQL `js/polynomial-redos` alert while preserving identical URL normalization behavior. `examples/react-vite-swr/client` and runtime snapshots are updated.

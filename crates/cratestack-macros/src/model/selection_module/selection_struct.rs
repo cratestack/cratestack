@@ -74,7 +74,7 @@ pub(super) fn build_selection_block(
                     .items
                     .into_iter()
                     .map(|value| self.decode_one(value))
-                    .collect::<Result<Vec<_>, _>>()?;
+                    .collect::<Result<Vec<_>, ::cratestack::CratestackError>>()?;
                 Ok(::cratestack::Page::new(items, page.page_info).with_total_count(page.total_count))
             }
         }
