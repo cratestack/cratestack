@@ -157,6 +157,7 @@ pub(super) const READERS: &[(&str, &[&str])] = &[
         "@regex",
         &[
             "cratestack-macros/src/validators/emit.rs",
+            "cratestack-macros/src/validators/parse.rs",
             "cratestack-studio/src/validators/predicates.rs",
         ],
     ),
