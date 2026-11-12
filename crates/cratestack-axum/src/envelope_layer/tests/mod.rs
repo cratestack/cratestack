@@ -79,4 +79,6 @@ mod rpc_modes;
 #[cfg(feature = "cose")]
 mod rpc_rules;
 #[cfg(feature = "cose")]
+mod sealed_reply;
+#[cfg(feature = "cose")]
 mod streams;
