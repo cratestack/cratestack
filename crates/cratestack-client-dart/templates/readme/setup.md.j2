@@ -171,6 +171,16 @@ const options = {% if is_rpc %}CratestackRpcCallOptions{% else %}CratestackCallO
 );
 ```
 
+Per-call transport attributes (never sent):
+
+```dart
+const options = {% if is_rpc %}CratestackRpcCallOptions{% else %}CratestackCallOptions{% endif %}(
+  extra: {'confirm': 'Pay order 42'}, // reaches CratestackHttpRequest.extra
+);
+```
+
+`extra` is merged into `CratestackHttpRequest.extra` after the adapter's own entries, so a key it shares with one of them wins. It reaches only a transport that reads `extra`{% if is_fespalier_preset %} (`CratestackFespalierTransport` forwards it as `TransportRequest.attributes`){% endif %}. It does not survive `prepare` / `executePrepared`: the persisted prepared call holds no `extra`.
+
 ## Riverpod Setup
 
 Generated providers include:

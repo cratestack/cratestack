@@ -117,6 +117,33 @@ void main() {
     }
   });
 
+  group('call option extra', () {
+    test('travels in extra on call, stream and batch, never on the wire', () async {
+      final transport = RecordingTransport(
+        (request) => request.uri.path.endsWith('/rpc/batch')
+            ? _answer(200, 'application/cbor', cbor.cbor.encode(const <Object?>[]))
+            : CratestackHttpResponse.buffered(status: 204),
+      );
+      const options = CratestackRpcCallOptions(extra: {'k': 1});
+      final adapter = _adapter(transport);
+      await adapter.call('x', {}, options: options);
+      await adapter.stream('x', {}, options: options).toList();
+      await adapter.batch(const <RpcRequest>[], options: options);
+      expect(transport.requests, hasLength(3));
+      for (final request in transport.requests) {
+        expect(request.extra['k'], 1);
+        expect(request.headers.keys, isNot(contains('k')));
+        expect(request.headers.values, isNot(contains('1')));
+      }
+    });
+
+    test('a call without extra sends an empty extra', () async {
+      final transport = RecordingTransport();
+      await _adapter(transport).call('x', {});
+      expect(transport.requests.single.extra, isEmpty);
+    });
+  });
+
   group('responses', () {
     test('call decodes a CBOR answer and a JSON answer', () async {
       expect(

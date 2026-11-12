@@ -76,6 +76,18 @@ void main() {
     );
   });
 
+  test('call option extra is not kept by a prepared call', () async {
+    final transport = _Script([
+      (_) => _answer(204, 'application/cbor', const <int>[]),
+    ]);
+    final adapter = _adapter(transport, null);
+    final saved = await adapter.prepareCall(_create, _author, options: const CratestackRpcCallOptions(
+      idempotencyKey: 'k', extra: {'k': 1}));
+    expect(saved.toJson().toString(), isNot(contains("'k': 1")));
+    await adapter.executePrepared(saved);
+    expect(transport.requests.single.extra, isEmpty);
+  });
+
   test('prepared compact bytes survive adapter recreation and validate contracts', () async {
     final named = await _named(codec, _author);
     final transport = _Script([

@@ -142,6 +142,18 @@ void main() {
       );
     });
 
+    test('call option extra reaches the attributes next to useRustTransport', () async {
+      final fake = FakeTransport((_, __) => fakeResponse(204));
+      await _adapter(fake, useRustTransport: true).execute(
+        _get,
+        options: const CratestackCallOptions(extra: {'k': 1}),
+      );
+      final request = fake.requests.single.request;
+      expect(request.attributes['k'], 1);
+      expect(request.attributes[cratestackUseRustTransportExtraKey], isTrue);
+      expect(request.headers.keys, isNot(contains('k')));
+    });
+
     test('the answer is decoded by its own Content-Type', () async {
       final fake = FakeTransport(
         (_, __) => _answer(200, 'application/cbor', cbor.cbor.encode({'n': 2})),

@@ -59,8 +59,9 @@ final class CratestackHttpRequest {
   final Future<void>? abort;
 
   /// Transport-local attributes that are NOT sent on the wire (for example
-  /// [cratestackUseRustTransportExtraKey]). A transport forwards the ones it
-  /// understands to its own machinery and ignores the rest.
+  /// [cratestackUseRustTransportExtraKey], or a call option's `extra`). A
+  /// transport forwards the ones it understands to its own machinery and
+  /// ignores the rest.
   final Map<String, Object?> extra;
 }
 
