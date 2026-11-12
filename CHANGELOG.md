@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix: the generated Rust client sends `Uuid` and `Bytes` in their CBOR forms on typed RPC calls (`cratestack#1312`)
+
+`BatchableCall::new` (behind every typed RPC method: model CRUD and unary procedures) converted the input with `serde_json::to_value` and then CBOR-encoded that value, so a `Uuid` went out as a text string and `Bytes` as an integer array. The generated server decodes the input with the request codec directly, expects the 16-byte / byte-string forms, and answered `400 invalid_argument "invalid request payload"`; `client.rpc().call(...)` worked because it encodes the caller's type directly. An awaited typed call now does the same (`RpcClient::call_encoded`), so every type whose CBOR form differs from its JSON form reaches the server intact. REST was never affected (it encodes the typed input with the codec directly). Not fixed here: `.queue(&mut batch)`. A `POST /rpc/batch` frame carries its `input` as a `serde_json::Value` (`RpcRequest`), on both client and server, so binary-only shapes still cannot ride a batch; that needs a codec-neutral payload type in the batch envelope and is a wire change, tracked separately.
+
 ### Fix: replace polynomial trailing-slash regex (`/\/+$/`) in generated TypeScript runtimes (`cratestack#1236`)
 
 Generated TypeScript runtimes (`rest-runtime.ts.j2`, `rpc-runtime.ts.j2`, `rest-compact.ts.j2`, `subscriptions.ts.j2`) and `@cratestack/cbor`'s `createSealedFetch` now trim trailing slashes with a linear-time `trimTrailingSlashes` character scan instead of `.replace(/\/+$/, "")`, eliminating the CodeQL `js/polynomial-redos` alert while preserving identical URL normalization behavior. `examples/react-vite-swr/client` and runtime snapshots are updated.
