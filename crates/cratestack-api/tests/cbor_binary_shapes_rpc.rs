@@ -95,7 +95,5 @@ async fn typed_procedure_call_carries_uuid_and_bytes_in_cbor_form() {
     assert_eq!(reply.data, sent.input.data);
 }
 
-// Not covered, deliberately: `.queue(&mut batch)`. A batch frame's `input` is
-// a `serde_json::Value` by wire definition (`cratestack_core::rpc::RpcRequest`,
-// and the server decodes the frames into it), so binary-only shapes cannot ride
-// `POST /rpc/batch` until that envelope gets a codec-neutral payload type.
+// The batched path (`.queue(&mut batch)`) is covered in
+// `cbor_binary_shapes_rpc_batch.rs` (cratestack#1352).
