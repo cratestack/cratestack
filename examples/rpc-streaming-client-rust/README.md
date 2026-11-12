@@ -7,7 +7,7 @@ Rust binary that consumes an `application/cbor-seq` stream from a `transport rpc
 - **Typed streaming method generation.** The schema declares `procedure ticks(args: TickerArgs): Tick[]` — return arity `T[]` makes the macro emit a streaming method on the generated client. `client.procedures().ticks(&args)` returns `RpcStream<Tick>` (= `tokio::sync::mpsc::Receiver<Result<Tick, RpcClientError>>`). No hand-defined wire types in this example.
 - **Streaming-from-first-byte.** Items arrive on the channel as cbor-seq frames parse off the wire — no full-body buffering. Time-to-first-item is the time to one chunk.
 - **The error split.** Non-2xx responses (auth failure, unknown op, server error) surface from the outer `Result` before the channel ever opens. Per-item failures (mid-stream decode error, transport reset) appear as terminal `Err` items on the channel.
-- **Auth via `RequestAuthorizer`.** `CratestackClient::with_request_authorizer(...)` on the runtime flows through to every generated method automatically — no per-call header argument needed.
+- **Auth via `RequestAuthorizer`.** `CratestackClient::with_request_authorizer(...)` on the runtime flows through to every generated method automatically — no per-call header argument needed. The example's `x-auth-id` authorizer is demo-only; signed transport uses a COSE envelope (`with_envelope`, ADR 0006), not the deprecated `HmacEnvelope`. (COSE envelopes do not yet cover streams: `envelope_streams_unsupported`.)
 
 ## Run
 
