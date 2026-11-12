@@ -89,7 +89,7 @@ fn ping_frame(id: u64) -> RpcRequest {
     RpcRequest {
         id,
         op: "procedure.ping".into(),
-        input: serde_json::json!({ "args": { "nonce": id.to_string() } }),
+        input: serde_json::json!({ "args": { "nonce": id.to_string() } }).into(),
         idem: None,
     }
 }

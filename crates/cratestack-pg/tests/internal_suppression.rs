@@ -309,13 +309,13 @@ mod rpc_suppression {
             cratestack::rpc::RpcRequest {
                 id: 1,
                 op: "model.Widget.create".into(),
-                input: serde_json::json!({"name": "should not dispatch"}),
+                input: serde_json::json!({"name": "should not dispatch"}).into(),
                 idem: None,
             },
             cratestack::rpc::RpcRequest {
                 id: 2,
                 op: "model.Widget.does_not_exist".into(),
-                input: serde_json::json!(null),
+                input: serde_json::json!(null).into(),
                 idem: None,
             },
         ];

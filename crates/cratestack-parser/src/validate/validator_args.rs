@@ -48,14 +48,9 @@ pub(crate) fn parse_range_args(raw: &str) -> Result<(Option<i64>, Option<i64>), 
 /// Parse `@regex("pattern")` into the pattern string. Validates the regex
 /// compiles so we fail at schema-load time rather than first request.
 pub(crate) fn parse_regex_arg(raw: &str) -> Result<String, String> {
-    let inner = strip_attribute_parens(raw, "regex")?;
-    let trimmed = inner.trim();
-    let stripped = trimmed
-        .strip_prefix('"')
-        .and_then(|s| s.strip_suffix('"'))
-        .ok_or_else(|| "@regex argument must be a quoted string literal".to_owned())?;
-    regex::Regex::new(stripped).map_err(|e| format!("@regex pattern is not a valid regex: {e}"))?;
-    Ok(stripped.to_owned())
+    let pattern = cratestack_core::schema::regex_literal::parse_regex_attribute(raw)?;
+    regex::Regex::new(&pattern).map_err(|e| format!("@regex pattern is not a valid regex: {e}"))?;
+    Ok(pattern)
 }
 
 fn strip_attribute_parens(raw: &str, name: &str) -> Result<String, String> {

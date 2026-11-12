@@ -81,7 +81,11 @@ async fn response_to_frame_still_succeeds_comfortably_under_the_bound() {
         "small body should decode cleanly: {frame:?}"
     );
     assert_eq!(
-        frame.output.as_ref().and_then(|v| v.get("ok")),
-        Some(&serde_json::Value::Bool(true)),
+        frame
+            .output
+            .clone()
+            .map(serde_json::Value::from)
+            .and_then(|v| v.get("ok").cloned()),
+        Some(serde_json::Value::Bool(true)),
     );
 }

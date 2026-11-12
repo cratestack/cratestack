@@ -35,13 +35,7 @@ pub(super) fn parse_range_args(raw: &str) -> Result<(Option<i64>, Option<i64>), 
 }
 
 pub(super) fn parse_regex_arg(raw: &str) -> Result<String, String> {
-    let inner = strip_attr_parens(raw, "regex")?;
-    let trimmed = inner.trim();
-    let stripped = trimmed
-        .strip_prefix('"')
-        .and_then(|s| s.strip_suffix('"'))
-        .ok_or_else(|| "expected quoted string".to_owned())?;
-    Ok(stripped.to_owned())
+    cratestack_core::schema::regex_literal::parse_regex_attribute(raw)
 }
 
 fn strip_attr_parens(raw: &str, name: &str) -> Result<String, String> {
@@ -62,4 +56,15 @@ fn split_kv_args(input: &str) -> Vec<String> {
 fn split_kv(part: &str) -> Result<(String, String), String> {
     let (key, value) = part.split_once(':').ok_or("expected key: value")?;
     Ok((key.trim().to_owned(), value.trim().to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_regex_arg;
+
+    #[test]
+    fn regex_arg_is_unescaped_before_it_reaches_the_regex_engine() {
+        let pattern = parse_regex_arg(r#"@regex("^\\+[0-9]{6,15}$")"#).unwrap();
+        assert_eq!(pattern, r"^\+[0-9]{6,15}$");
+    }
 }

@@ -1,5 +1,4 @@
 use cratestack_codec_cbor::CborCodec;
-use cratestack_core::rpc::{RPC_BATCH_PATH, RpcRequest, RpcResponseFrame};
 use reqwest::Method;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -11,11 +10,6 @@ use crate::idempotency::RequestIdempotency;
 use crate::rpc::batch::BatchBuilder;
 use crate::rpc::error::{RpcClientError, client_error_to_rpc, decode_rpc_unary_response};
 use crate::streaming::pump_streamed_response_typed;
-
-// `RPC_BATCH_PATH` from core is the axum-template form `"/rpc/batch"`,
-// so we just reuse it. The unary path is templated (`/rpc/{op_id}`) so
-// we format it per call instead of using the constant directly.
-const RPC_BATCH_PATH_PLAIN: &str = RPC_BATCH_PATH;
 
 /// Thin RPC client built on top of the REST client's transport + codec
 /// plumbing.
@@ -50,28 +44,12 @@ where
         &self.inner
     }
 
-    /// RPC half of the per-call idempotency override — forwards to
-    /// [`CratestackClient::with_idempotency`], which documents the whole
-    /// mechanism.
-    ///
-    /// RPC needs this more than REST does: every RPC call is
-    /// `POST /rpc/{op_id}`, so the method-derived default marks
-    /// *everything* non-idempotent, reads included. The per-op truth is
-    /// the `idempotent_by_default` field on the `OpDescriptor` the
-    /// schema macro emits (`cratestack_core::OpDescriptor`):
-    ///
-    /// ```text
-    /// let response = rpc
-    ///     .clone()
-    ///     .with_idempotency(RequestIdempotency::new(OP.idempotent_by_default))
-    ///     .call::<_, Output>(OP.op_id, &input)
-    ///     .await?;
-    /// ```
-    ///
-    /// Streamed calls ([`Self::call_streaming`]) carry the extension
-    /// too, but a partially-consumed stream cannot be replayed from the
-    /// middleware layer — leave those at the non-idempotent default
-    /// unless the middleware only retries before the first byte.
+    /// RPC half of [`CratestackClient::with_idempotency`], which documents the
+    /// mechanism. RPC needs it more than REST: every call is `POST /rpc/{op_id}`,
+    /// so the method-derived default marks reads non-idempotent too. The per-op
+    /// truth is `OpDescriptor::idempotent_by_default`; pass it as
+    /// `RequestIdempotency::new(OP.idempotent_by_default)`. Streamed calls carry
+    /// the extension too, but a half-consumed stream cannot be replayed.
     pub fn with_idempotency(self, idempotency: RequestIdempotency) -> Self {
         Self {
             inner: self.inner.with_idempotency(idempotency),
@@ -101,6 +79,19 @@ where
             .codec
             .encode(input)
             .map_err(RpcClientError::Codec)?;
+        self.call_encoded(op_id, body).await
+    }
+
+    /// [`Self::call`] with the input already codec-encoded (cratestack#1312:
+    /// lets `BatchableCall` skip the `serde_json::Value` detour).
+    pub(crate) async fn call_encoded<O>(
+        &self,
+        op_id: &str,
+        body: Vec<u8>,
+    ) -> Result<O, RpcClientError>
+    where
+        O: DeserializeOwned,
+    {
         let path = format!("/rpc/{}", op_id);
         let response = self
             .inner
@@ -109,34 +100,6 @@ where
             .await
             .map_err(client_error_to_rpc)?;
         decode_rpc_unary_response(&self.inner.codec, &response)
-    }
-
-    /// POST /rpc/batch — sequence of `RpcRequest` frames in, sequence of
-    /// `RpcResponseFrame` frames out. Per-frame errors do not poison the
-    /// batch (each frame's `output` / `error` is reported independently).
-    pub async fn batch(
-        &self,
-        requests: &[RpcRequest],
-    ) -> Result<Vec<RpcResponseFrame>, RpcClientError> {
-        let body = self
-            .inner
-            .codec
-            .encode(&requests)
-            .map_err(RpcClientError::Codec)?;
-        let response = self
-            .inner
-            .at(RouteRef::rpc("batch"))
-            .request_raw_with_query_and_accept(
-                Method::POST,
-                RPC_BATCH_PATH_PLAIN,
-                Some(body),
-                None,
-                &[],
-                None,
-            )
-            .await
-            .map_err(client_error_to_rpc)?;
-        decode_rpc_unary_response::<C, Vec<RpcResponseFrame>>(&self.inner.codec, &response)
     }
 
     /// POST /rpc/{op_id} — sequence response, item-at-a-time.
