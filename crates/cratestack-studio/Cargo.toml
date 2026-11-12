@@ -44,11 +44,12 @@ default = ["embed-ui", "decimal-rust-decimal"]
 # the bundle is empty, the server transparently falls back to a
 # placeholder page.
 embed-ui = ["dep:rust-embed"]
-# Forwards to `cratestack-core`'s mutually-exclusive decimal backend choice
-# (see that crate's Cargo.toml for the full rationale). Required because
+# Forwards to `cratestack-core`'s decimal backend features (see that crate's
+# Cargo.toml for the full rationale). Since cratestack#505 any combination
+# may be selected: neither, one, or both. The forward is still required:
 # `cratestack-core`'s dependency edge has `default-features = false` at the
-# workspace root — every direct consumer must explicitly re-select a
-# backend, or `cratestack-core` fails to compile at all (cratestack#495).
+# workspace root, so without it this crate's build may get no decimal type
+# at all (cratestack#521).
 # Also forwards to `cratestack-sql`/`cratestack-migrate`/`cratestack-parser`/
 # `cratestack-sqlx` (added for cratestack#507's routed-write outbox reuse —
 # see that dependency's own comment below), this crate's direct
