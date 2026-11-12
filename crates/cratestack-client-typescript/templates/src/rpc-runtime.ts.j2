@@ -497,7 +497,7 @@ export class CratestackRpcRuntime {
   private readonly streamChain: RpcStreamLinkNext;
 
   constructor(origin: string, options: CratestackRpcClientOptions = {}) {
-    this.origin = origin.replace(/\/+$/, "");
+    this.origin = trimTrailingSlashes(origin);
     this.basePath = options.basePath ?? "{{ base_path }}";
     // `.bind(globalThis)` — see `rest-runtime.ts.j2`'s identical line
     // for why: some browsers' `fetch` throws `TypeError: Illegal
@@ -779,7 +779,7 @@ export class CratestackRpcRuntime {
   }
 
   private url(path: string): string {
-    const normalizedBase = this.basePath === "/" ? "" : this.basePath.replace(/\/+$/, "");
+    const normalizedBase = trimTrailingSlashes(this.basePath);
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     return new URL(`${normalizedBase}${normalizedPath}`, `${this.origin}/`).toString();
   }
@@ -835,4 +835,12 @@ export async function readErrorBody(response: Response, codec: CratestackRpcCode
       message: `RPC call returned status ${response.status} with an undecodable error body`,
     };
   }
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return value.slice(0, end);
 }

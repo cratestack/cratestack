@@ -50,6 +50,14 @@ function bytesOfBase64(encoded: string): Uint8Array {
   return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return value.slice(0, end);
+}
+
 interface RouteTemplate {
   readonly op: string;
   readonly method: string;
@@ -129,7 +137,7 @@ export class RestCompactSession {
    *  template with the most literal segments wins (`/widgets/search` over
    *  `/widgets/{id}`). */
   opOf(method: string, path: string): string | undefined {
-    const segments = (path.split("?", 1)[0] ?? "").replace(/\/+$/, "").split("/");
+    const segments = trimTrailingSlashes(path.split("?", 1)[0] ?? "").split("/");
     let best: RouteTemplate | undefined;
     for (const template of this.templates) {
       if (matches(template, method.toUpperCase(), segments) && (best === undefined || template.literals > best.literals)) {

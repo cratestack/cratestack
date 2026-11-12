@@ -178,10 +178,18 @@ export async function subscriptionHeaders(host: SubscriptionHost, extra?: Header
 }
 
 export function resolveUrl(host: SubscriptionHost, path: string, query?: string): string {
-  const base = host.basePath === "/" ? "" : host.basePath.replace(/\/+$/, "");
+  const base = trimTrailingSlashes(host.basePath);
   const url = new URL(`${base}${path}`, `${host.origin}/`);
   if (query) url.search = query;
   return url.toString();
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return value.slice(0, end);
 }
 
 function canWebTransport(url: string): boolean {

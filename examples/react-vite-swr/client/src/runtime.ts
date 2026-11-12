@@ -271,7 +271,7 @@ export class CratestackRuntime {
   private readonly compact: RestCompactSession | undefined;
 
   constructor(origin: string, options: CratestackClientOptions = {}) {
-    this.origin = origin.replace(/\/+$/, "");
+    this.origin = trimTrailingSlashes(origin);
     this.basePath = options.basePath ?? "/api";
     // `.bind(globalThis)`, not the bare global — some browsers' `fetch`
     // is spec'd to throw `TypeError: Illegal invocation` when called
@@ -458,7 +458,7 @@ export class CratestackRuntime {
   }
 
   private url(path: string, query?: Record<string, unknown>): string {
-    const normalizedBase = this.basePath === "/" ? "" : this.basePath.replace(/\/+$/, "");
+    const normalizedBase = trimTrailingSlashes(this.basePath);
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     const url = new URL(`${normalizedBase}${normalizedPath}`, `${this.origin}/`);
     appendQuery(url.searchParams, query);
@@ -534,4 +534,12 @@ function appendQueryValue(searchParams: URLSearchParams, key: string, value: unk
   }
 
   searchParams.append(key, String(value));
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return value.slice(0, end);
 }

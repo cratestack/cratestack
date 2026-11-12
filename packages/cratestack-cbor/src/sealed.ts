@@ -182,6 +182,14 @@ export function createSealedLink(options: {
   };
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  return value.slice(0, end);
+}
+
 interface RestTemplate {
   readonly key: string;
   readonly method: string;
@@ -239,7 +247,7 @@ export function createSealedFetch(options: {
   fetch?: typeof fetch;
 }): typeof fetch {
   const templates = restTemplates(options.contracts);
-  const basePath = (options.basePath ?? "").replace(/\/+$/, "");
+  const basePath = trimTrailingSlashes(options.basePath ?? "");
   const underlying = options.fetch ?? fetch.bind(globalThis);
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = urlOf(input);
