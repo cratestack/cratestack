@@ -95,9 +95,17 @@ async fn a_timeout_resets_the_connection() {
         "the timeout must drop the wedged connection and the next claim reconnect; \
          wedged {wedged:?}, clients now {after:?}"
     );
+    // The server only notices the dropped socket asynchronously, so wait
+    // (bounded) for that event rather than checking once.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut now = after;
+    while wedged.iter().any(|id| now.contains(id)) && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        now = client_ids(&mut admin).await;
+    }
     assert!(
-        wedged.iter().all(|id| !after.contains(id)),
-        "the wedged connection {wedged:?} must be closed, clients now {after:?}"
+        wedged.iter().all(|id| !now.contains(id)),
+        "the wedged connection {wedged:?} must be closed, clients now {now:?}"
     );
 
     // Replay of the timed-out nonce: the SET may have landed (the server
