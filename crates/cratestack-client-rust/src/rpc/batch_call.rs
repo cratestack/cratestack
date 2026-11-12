@@ -23,14 +23,27 @@ use crate::rpc::error::RpcClientError;
 ///   Returns a typed [`BatchHandle`] for `.take(...)` on the results
 ///   after `batch.send().await` resolves.
 ///
-/// The input is eagerly converted to `serde_json::Value` at
-/// construction time so the same prepared call can flow into either
-/// consumption mode without re-borrowing the input. Conversion errors
-/// surface lazily — eagerly on `.await`, per-handle on the batch path.
+/// The input is converted at construction time so the same prepared call
+/// can flow into either consumption mode without re-borrowing it. Two forms
+/// are prepared, because the two modes have different wire constraints:
+///
+/// - **Eager** sends the input encoded *directly* by the request codec
+///   (cratestack#1312). A `serde_json::Value` detour would rewrite `Uuid`
+///   and `Bytes` into their JSON shapes (text, integer array) before CBOR
+///   encoding, and the server rejects those with `400 invalid_argument`.
+/// - **Batched** goes into an `RpcRequest` frame, whose `input` is a
+///   `serde_json::Value` by wire definition, so it keeps the JSON form.
+///   Binary-only shapes cannot ride that envelope yet.
+///
+/// Conversion errors surface lazily — eagerly on `.await`, per-handle on
+/// the batch path.
 #[must_use = "BatchableCall does nothing until `.await`ed or `.queue(&mut batch)`d"]
 pub struct BatchableCall<C, O> {
     rpc: RpcClient<C>,
     op_id: String,
+    /// Request-codec bytes of the input, for the eager (`.await`) mode.
+    input_body: Result<Vec<u8>, CratestackError>,
+    /// JSON form of the input, for the batch-frame envelope.
     input_value: Result<serde_json::Value, CratestackError>,
     /// `fn() -> O` instead of `O` so `BatchableCall` is `Send` + `Sync`
     /// regardless of whether `O` is — the marker is variance-only.
@@ -63,9 +76,11 @@ where
         // for the regression test (fails if the strip is restored).
         let input_value = serde_json::to_value(input)
             .map_err(|error| CratestackError::Codec(format!("encode batch input: {error}")));
+        let input_body = rpc.inner.codec.encode(input);
         Self {
             rpc,
             op_id: op_id.into(),
+            input_body,
             input_value,
             _output: std::marker::PhantomData,
         }
@@ -102,10 +117,8 @@ where
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            let value = self.input_value.map_err(RpcClientError::Codec)?;
-            self.rpc
-                .call::<serde_json::Value, O>(&self.op_id, &value)
-                .await
+            let body = self.input_body.map_err(RpcClientError::Codec)?;
+            self.rpc.call_encoded::<O>(&self.op_id, body).await
         })
     }
 }
@@ -140,60 +153,4 @@ impl<O> std::fmt::Debug for BatchHandle<O> {
 }
 
 #[cfg(test)]
-mod no_null_strip_tests {
-    use cratestack_codec_cbor::CborCodec;
-    use cratestack_core::CratestackCodec;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    struct Req {
-        required: String,
-        #[serde(default)]
-        optional: Option<String>,
-        #[serde(default)]
-        nested: Option<Inner>,
-    }
-
-    #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    struct Inner {
-        #[serde(default)]
-        maybe: Option<String>,
-        kept: String,
-    }
-
-    /// cratestack#677: `BatchableCall::new` no longer strips `null` object
-    /// entries before handing the value to the codec (that workaround for
-    /// the `0x80`-vs-`0xf6` mis-encoding was obsoleted by cratestack#657's
-    /// `serialize_unit_as_null` fix, and was actively dropping explicit
-    /// nullable-column clears — see `crates/cratestack-pg/tests/
-    /// rpc_batch_explicit_null_clear.rs` for the production-path
-    /// regression test). This is the narrower codec-level guarantee the
-    /// removal now leans on: an explicit `null`, nested or not, must
-    /// still reach the wire as CBOR null and decode cleanly.
-    #[test]
-    fn unstripped_null_reaches_wire_as_cbor_null_and_decodes_cleanly() {
-        let value = serde_json::json!({
-            "required": "x",
-            "optional": null,
-            "nested": { "maybe": null, "kept": "k" },
-        });
-        let bytes = CborCodec.encode(&value).expect("encode");
-        assert!(
-            bytes.contains(&0xf6),
-            "an explicit null, nested or not, must reach the wire as RFC 8949 null (0xf6): {bytes:02x?}"
-        );
-        let decoded: Req = CborCodec
-            .decode(&bytes)
-            .expect("an unstripped null must decode, not error");
-        assert_eq!(decoded.required, "x");
-        assert_eq!(decoded.optional, None, "top-level null decodes to None");
-        assert_eq!(
-            decoded.nested,
-            Some(Inner {
-                maybe: None,
-                kept: "k".to_owned(),
-            }),
-            "nested null decodes to None, sibling field untouched"
-        );
-    }
-}
+mod no_null_strip_tests;
