@@ -2,24 +2,13 @@
 
 ## 0.19.5 (2026-11-12)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.19.4..HEAD at e3903f05265c74e46a3e0704ab53b4862628b136 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Fixes
-
-- prevent release-vscode from marking incomplete release latest and sync iOS watch literal (#1339)
-- release-vscode only holds back a release it created (#1340)
-- re-pin the riverpod preset for Flutter 3.50 and bump the cbor example's Gradle wrapper (#1341)
-
-#### Documentation
-
-- fix stale decimal-feature comments in 16 crate manifests (#1342)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+- Example app only: the Android build of `example/` moves its Gradle wrapper
+  from 9.1.0 to 9.3.1 and its Android Gradle Plugin from 9.0.1 to 9.1.1, the
+  minimums `flutter build apk` accepts on Flutter 3.50 (cratestack#1341). The
+  published plugin ships no Gradle wrapper and builds with the consuming
+  app's own Gradle, so nothing a dependent receives changes.
 
 ## 0.19.4 (2026-11-11)
 

@@ -4,24 +4,13 @@
 
 ## 0.19.5 (2026-11-12)
 
-<!-- TODO: edit this section from the seed below -->
-<!-- seeded from v0.19.4..HEAD at e3903f05265c74e46a3e0704ab53b4862628b136 -->
-
-This is an auto-generated seed. Please rewrite into narrative prose describing
-the changes in this release, grouped by concern. Refer to existing entries in
-this file for the house prose style. Do not commit with this placeholder text.
-
-### Changes
-
-#### Fixes
-
-- prevent release-vscode from marking incomplete release latest and sync iOS watch literal (#1339)
-- release-vscode only holds back a release it created (#1340)
-- re-pin the riverpod preset for Flutter 3.50 and bump the cbor example's Gradle wrapper (#1341)
-
-#### Documentation
-
-- fix stale decimal-feature comments in 16 crate manifests (#1342)
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+- README: the "Analyzer constraint" section now describes the bound the
+  package already declares, `analyzer: '>=12.0.0 <14.0.0'`, instead of an
+  older `<13.0.0` that it no longer used. The range spans both majors because
+  CrateStack's riverpod preset now pins `riverpod_generator` 4.0.9, which is
+  on `analyzer` 13.x (cratestack#1341, Flutter 3.50). Text only.
 
 ## 0.19.4 (2026-11-11)
 
