@@ -4,8 +4,8 @@
 // `rpc::batch::{BatchBuilder, BatchResults}`, which consume them.
 // -----------------------------------------------------------------------------
 
-use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::CratestackError;
+use cratestack_core::rpc::RpcFrameValue;
 
 use crate::codec::HttpClientCodec;
 use crate::rpc::batch::BatchBuilder;
