@@ -35,13 +35,6 @@ added = "2026-08-29"
 reason = "test module; split by concern when the module it covers is next touched"
 
 [[file]]
-path = "crates/cratestack-cli/src/drift.rs"
-lines = 505
-issue = "#TBD"
-added = "2026-08-29"
-reason = "pre-existing; split by concern (extract inline tests first)"
-
-[[file]]
 path = "crates/cratestack-parser/src/tests_procedures.rs"
 lines = 474
 issue = "#TBD"
