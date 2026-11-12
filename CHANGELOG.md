@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fix: `/rpc/batch` frames carry `Uuid` and `Bytes` in their CBOR forms (`cratestack#1352`)
+
+A batch frame's `input` and `output` were `serde_json::Value`, which has no byte-string arm. Over CBOR the server decoded the frames through `deserialize_any`, so a byte string (a `Uuid`, a `Bytes` field) failed with `invalid type: byte array` and the whole batch got `400`; a CBOR tag other than a bignum failed likewise. That left three failures: the Rust client's `.queue(&mut batch)` sent a `Uuid` as text, which the typed server decode refused as `invalid_argument`; an output carrying a `Uuid` could not be turned into a response frame; and a TypeScript batch containing a `Uint8Array`, which the TS client already writes as a native CBOR byte string, was refused with `400` for the whole batch. `RpcRequest.input` and `RpcResponseFrame.output` are now `cratestack_core::rpc::RpcFrameValue`, a `serde_json::Value` plus a `Bytes` arm that is lossless for CBOR byte strings (serde only, no new dependency, still builds for `wasm32`, works with custom codecs). The wire is unchanged and JSON output is byte-identical (objects keep sorted keys, numbers stay `serde_json::Number`); CBOR output is byte-identical for anything JSON can represent. TS and Dart clients need no change. `BatchableCall::queue` now builds its frame from the same bytes the awaited path sends. Limits that remain: map keys must be strings, CBOR tags other than bignums are still refused, and `f16`/`f32` widen to `f64`.
+
+**Breaking** for Rust code that builds or reads batch frames by hand: `RpcRequest { input: serde_json::json!(..).into(), .. }`, `serde_json::Value::from(frame.output.unwrap())`, or `RpcFrameValue::encode_with(&codec, &v)` / `frame.input.decode_with::<_, T>(&codec)` replace direct `serde_json::Value` use. `RpcResponseFrame::ok` takes `impl Into<RpcFrameValue>`. `BatchResults` gained a codec type parameter, `BatchResults<C = CborCodec>`, which `BatchBuilder::send` fills in; it decodes each output the way a unary response is decoded.
+
 ### Fix: `@regex("...")` patterns are now unescaped like every other `.cstack` string literal (`cratestack#1314`)
 
 The pattern of `@regex("...")` reached the regex engine with only its quotes stripped, so

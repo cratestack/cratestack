@@ -74,7 +74,7 @@ fn batch_body(nonce: &str) -> Vec<u8> {
     let frames = vec![RpcRequest {
         id: 1,
         op: "procedure.ping".to_owned(),
-        input: serde_json::json!({ "args": { "nonce": nonce } }),
+        input: serde_json::json!({ "args": { "nonce": nonce } }).into(),
         idem: None,
     }];
     CborCodec.encode(&frames).expect("encode")

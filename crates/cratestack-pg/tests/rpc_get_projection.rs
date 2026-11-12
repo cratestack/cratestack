@@ -451,7 +451,8 @@ async fn rpc_batch_frames_carry_independent_projections() {
             input: cratestack::serde_json::json!({
                 "id": 1,
                 "fields": ["id"],
-            }),
+            })
+            .into(),
             idem: None,
         },
         RpcRequest {
@@ -460,7 +461,8 @@ async fn rpc_batch_frames_carry_independent_projections() {
             input: cratestack::serde_json::json!({
                 "id": 2,
                 "fields": ["id", "storageKey"],
-            }),
+            })
+            .into(),
             idem: None,
         },
     ];
@@ -488,7 +490,9 @@ async fn rpc_batch_frames_carry_independent_projections() {
 
     assert_eq!(responses[0].id, 1);
     assert!(responses[0].error.is_none(), "frame 0: {:?}", responses[0]);
-    let out0 = responses[0].output.as_ref().expect("frame 0 has output");
+    let out0 = cratestack::serde_json::Value::from(
+        responses[0].output.clone().expect("frame 0 has output"),
+    );
     assert_eq!(
         out0.as_object().unwrap().len(),
         1,
@@ -497,7 +501,9 @@ async fn rpc_batch_frames_carry_independent_projections() {
 
     assert_eq!(responses[1].id, 2);
     assert!(responses[1].error.is_none(), "frame 1: {:?}", responses[1]);
-    let out1 = responses[1].output.as_ref().expect("frame 1 has output");
+    let out1 = cratestack::serde_json::Value::from(
+        responses[1].output.clone().expect("frame 1 has output"),
+    );
     assert_eq!(
         out1.as_object().unwrap().len(),
         2,

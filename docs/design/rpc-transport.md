@@ -241,11 +241,13 @@ On both input types:
      marker — see `RpcUpdateInput`'s own doc comment, which hit this first for
      `patch`). Computed-field params types are bags of optionals, so they'd hit
      the same corruption head-on if carried as `Value`.
-  2. `/rpc/batch` re-encodes each frame's opaque `input` back through
-     `serde_json::Value` before re-dispatching it
+  2. `/rpc/batch` re-encodes each frame's opaque `input` (an
+     `RpcFrameValue`, a `serde_json::Value` plus a byte-string arm) back
+     through the request codec before re-dispatching it
      (`crates/cratestack-macros/src/include/server/rpc_module/batch.rs`'s
      `build_batch_block`) — a `String` field survives that round trip
-     byte-for-byte; a nested object wouldn't.
+     byte-for-byte. (Before cratestack#1352 the frame was a `serde_json::Value`,
+     which also could not carry a CBOR byte string at all.)
 
 Server-side, `cratestack-axum::rpc::synthesize_get_query` /
 `synthesize_list_query` turn the decoded fields and `computed_params` string
@@ -272,7 +274,10 @@ available to hand-written Dart callers.
 
 The frame is wrapped here because the wire carries N requests.
 
-- Request body = codec-encoded sequence of `Request` frames.
+- Request body = codec-encoded sequence of `Request` frames. A frame's
+  `input` / `output` is an `RpcFrameValue` (cratestack#1352): JSON-shaped
+  values plus CBOR byte strings, so `Uuid` and `Bytes` ride a CBOR batch in
+  their CBOR forms, exactly as on the unary route.
 - Response body = codec-encoded sequence of `Response | Error` frames,
   **same order as the request sequence** so order-only clients can zip
   without an `id` lookup.

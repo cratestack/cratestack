@@ -271,7 +271,7 @@ impl BatchDebouncer {
             frames.push(RpcRequest {
                 id: pending.id,
                 op: pending.op,
-                input: pending.input,
+                input: pending.input.into(),
                 idem: None,
             });
         }

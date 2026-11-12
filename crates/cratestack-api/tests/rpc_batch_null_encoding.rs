@@ -88,7 +88,7 @@ async fn batch_null_survives_the_wire_as_cbor_null_both_directions() {
     let frames = vec![RpcRequest {
         id: 1,
         op: "procedure.echoNote".into(),
-        input: serde_json::json!({ "args": { "note": null } }),
+        input: serde_json::json!({ "args": { "note": null } }).into(),
         idem: None,
     }];
     let raw_request_body = CborCodec.encode(&frames).expect("batch body should encode");
@@ -159,7 +159,7 @@ async fn batch_null_survives_the_wire_as_cbor_null_both_directions() {
     );
     assert_eq!(
         frame.output,
-        Some(serde_json::json!({ "note": null })),
+        Some(serde_json::json!({ "note": null }).into()),
         "echoed output should decode back to a real JSON null for `note`",
     );
 }
