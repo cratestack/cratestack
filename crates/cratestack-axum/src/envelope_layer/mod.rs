@@ -42,18 +42,17 @@
 //! 2. The [`BindingResolver`] names the generated op (route and path
 //!    parameters), once. Not an op: see [`Resolution`] (D6; under a
 //!    `Required` policy a matched route nobody resolved fails closed, S2).
-//! 3. The [`EnvelopePolicy`] picks [`EnvelopeMode::Required`], `Optional`
-//!    or `Off` for the op, seeing a [`PolicyRequest`] (no headers). There
-//!    is no default (D9). A `/rpc/batch` call runs under the strictest mode
-//!    of `batch` and every frame's op (B1).
+//! 3. The [`EnvelopePolicy`] picks `Required`, `Optional`,
+//!    `UnsignedRequestSealedReply` or `Off` for the op ([`PolicyRequest`]; no
+//!    default, D9). `/rpc/batch` runs under the strictest of its frames' (B1).
 //!    The op's row in the accepted-contract table is found from it, and the
 //!    `Cratestack-Contract` header picks which accepted digest the request
 //!    is opened under; one that names none is an unsigned `426` (see
 //!    `contract.rs` for the rules).
-//! 4. A request whose `Content-Type` is an envelope type is opened. Under
-//!    `Required` a request that is not is refused. Under `Optional` it runs
-//!    unsigned, and its response is sealed only if it carries a valid
-//!    `Cratestack-Nonce` and the [`ResponseSealPolicy`] agrees (D10).
+//! 4. An envelope `Content-Type` is opened; under `Required` anything else
+//!    is refused. Under `Optional` it runs unsigned, sealed only with a valid
+//!    `Cratestack-Nonce` the [`ResponseSealPolicy`] accepts (D10); under
+//!    `UnsignedRequestSealedReply` one not answerable sealed is a `406`.
 //! 5. An opened request reaches the router as the plain request it wraps,
 //!    with the negotiated `Content-Type`/`Accept`, and gains the
 //!    `cratestack_core::VerifiedSigner` (recorded on the handler's context,
@@ -165,6 +164,7 @@ mod server_envelope_arc;
 mod service;
 mod signed;
 mod unresolved;
+mod unsealable;
 mod unsigned;
 
 #[cfg(test)]
