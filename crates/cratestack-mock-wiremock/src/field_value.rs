@@ -9,8 +9,7 @@
 //! unchanged [`crate::values::synthesize`] path.
 
 use cratestack_core::{
-    Field, Schema, TypeArity, validate_email, validate_iso4217, validate_length,
-    validate_length_bytes, validate_range_i64, validate_uri,
+    Field, Schema, TypeArity, validate_email, validate_iso4217, validate_length, validate_uri,
 };
 use serde_json::{Value, json};
 
@@ -31,14 +30,10 @@ pub(crate) fn synthesize_field(
         return synthesize(schema, owner, &field.ty, in_progress);
     }
     let one = match scalar {
-        "String" => string_value(&spec),
+        "String" => Value::String(string_value(field, &spec).0),
         "Bytes" => bytes_value(&spec),
         _ => int_value(&spec, scalar == "BigInt"),
-    }
-    .ok_or_else(|| WireMockGeneratorError::UnsatisfiableValidators {
-        owner: owner.to_owned(),
-        field: field.name.clone(),
-    })?;
+    };
     Ok(match field.ty.arity {
         TypeArity::List => Value::Array(vec![one]),
         _ => one,
@@ -46,57 +41,82 @@ pub(crate) fn synthesize_field(
 }
 
 /// Zero clamped into the `@range`: the lower bound for a positive-only
-/// range, the upper bound for a negative-only one.
-fn int_value(spec: &ValidatorSpec, big: bool) -> Option<Value> {
+/// range, the upper bound for a negative-only one. The parser guarantees
+/// `min <= max`, so the result always satisfies the range.
+fn int_value(spec: &ValidatorSpec, big: bool) -> Value {
     let (min, max) = spec.range;
     let n = 0i64
         .max(min.unwrap_or(i64::MIN))
         .min(max.unwrap_or(i64::MAX));
-    validate_range_i64("f", n, min, max).ok()?;
-    Some(if big { json!(n.to_string()) } else { json!(n) })
+    if big { json!(n.to_string()) } else { json!(n) }
 }
 
-fn bytes_value(spec: &ValidatorSpec) -> Option<Value> {
-    let (min, max) = spec.length;
-    let bytes = vec![0u8; min.unwrap_or(0)];
-    validate_length_bytes("f", &bytes, min, max).ok()?;
-    Some(json!(bytes))
+/// `@length(min)` zero bytes (the parser guarantees `min <= max`).
+fn bytes_value(spec: &ValidatorSpec) -> Value {
+    json!(vec![0u8; spec.length.0.unwrap_or(0)])
 }
 
-fn string_value(spec: &ValidatorSpec) -> Option<Value> {
+/// The `String` placeholder plus the raw validator attributes it still
+/// fails (empty when it satisfies all of them). When no candidate
+/// satisfies everything the best one wins: fewest failures, ties to the
+/// first (a `@regex` sample before the plain fallback).
+pub(crate) fn string_value(field: &Field, spec: &ValidatorSpec) -> (String, Vec<String>) {
     let (min, max) = spec.length;
     let mut candidates: Vec<String> = Vec::new();
     if let Some(pattern) = spec.regexes.first() {
         // Lengthen unbounded repetitions until `@length`'s minimum is met.
         candidates
             .extend((0..=min.unwrap_or(0).min(256) as u32).filter_map(|e| sample(pattern, e)));
-    } else if spec.iso4217 {
+    }
+    if spec.iso4217 {
         candidates.push("EUR".to_owned());
     } else if spec.email {
         candidates.push("user@example.com".to_owned());
     } else if spec.uri {
         candidates.push("https://example.com".to_owned());
-    } else {
-        let mut text = "string".to_owned();
-        while text.chars().count() < min.unwrap_or(0) {
-            text.push('a');
-        }
-        candidates.push(text.chars().take(max.unwrap_or(usize::MAX)).collect());
     }
+    let mut text = "string".to_owned();
+    while text.chars().count() < min.unwrap_or(0) {
+        text.push('a');
+    }
+    candidates.push(text.chars().take(max.unwrap_or(usize::MAX)).collect());
     candidates
         .into_iter()
-        .find(|c| satisfies(spec, c))
-        .map(Value::String)
+        .map(|c| {
+            let failed = failures(field, spec, &c);
+            (c, failed)
+        })
+        .reduce(|best, next| {
+            if next.1.len() < best.1.len() {
+                next
+            } else {
+                best
+            }
+        })
+        .expect("the plain fallback candidate is always present")
 }
 
-fn satisfies(spec: &ValidatorSpec, value: &str) -> bool {
+/// The field's raw validator attributes that `value` violates, judged by
+/// the same checks the generated server code runs.
+fn failures(field: &Field, spec: &ValidatorSpec, value: &str) -> Vec<String> {
     let (min, max) = spec.length;
-    validate_length("f", value, min, max).is_ok()
-        && (!spec.email || validate_email("f", value).is_ok())
-        && (!spec.uri || validate_uri("f", value).is_ok())
-        && (!spec.iso4217 || validate_iso4217("f", value).is_ok())
-        && spec
-            .regexes
-            .iter()
-            .all(|p| regex::Regex::new(p).is_ok_and(|re| re.is_match(value)))
+    field
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            let raw = attribute.raw.as_str();
+            let ok = match raw.split('(').next().unwrap_or(raw) {
+                "@length" => validate_length("f", value, min, max).is_ok(),
+                "@email" => validate_email("f", value).is_ok(),
+                "@uri" => validate_uri("f", value).is_ok(),
+                "@iso4217" => validate_iso4217("f", value).is_ok(),
+                "@regex" => spec
+                    .regex_for(raw)
+                    .is_none_or(|p| regex::Regex::new(p).is_ok_and(|re| re.is_match(value))),
+                _ => true,
+            };
+            !ok
+        })
+        .map(|attribute| attribute.raw.clone())
+        .collect()
 }

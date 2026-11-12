@@ -65,6 +65,7 @@
 mod config;
 mod error;
 mod field_value;
+mod gaps;
 mod generator;
 mod mapping;
 mod model_attrs;

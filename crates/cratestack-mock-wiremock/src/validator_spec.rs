@@ -33,6 +33,15 @@ impl ValidatorSpec {
         spec
     }
 
+    /// The pattern a raw `@regex(...)` attribute carries.
+    pub(crate) fn regex_for(&self, raw: &str) -> Option<&str> {
+        let pattern = regex_arg(raw)?;
+        self.regexes
+            .iter()
+            .find(|p| **p == pattern)
+            .map(String::as_str)
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         *self == Self::default()
     }

@@ -132,15 +132,79 @@ model Account {{
     );
 }
 
+const KEY: &str = "cratestackUnsatisfiedValidators";
+
+fn mappings(src: &str) -> Vec<(String, Value)> {
+    let schema = cratestack_parser::parse_schema(src).expect("parses");
+    let package = generate_package(&schema, &WireMockGeneratorConfig::default())
+        .expect("generation still succeeds");
+    package
+        .files
+        .iter()
+        .map(|f| {
+            (
+                f.file_name.clone(),
+                serde_json::from_str(&f.contents).unwrap(),
+            )
+        })
+        .collect()
+}
+
 #[test]
-fn unsatisfiable_validators_fail_loudly() {
-    let src = format!(
-        "{NO_DB}type T {{\n  m String @email @length(max: 4)\n}}\nprocedure p(input: T): T\n"
-    );
-    let schema = cratestack_parser::parse_schema(&src).expect("parses");
-    let err = generate_package(&schema, &WireMockGeneratorConfig::default()).unwrap_err();
-    assert!(
-        err.to_string().contains("no deterministic placeholder"),
-        "{err}"
-    );
+fn unsatisfiable_procedure_validators_are_noted_in_metadata() {
+    for transport in ["", "transport rpc\n"] {
+        let src = format!(
+            "{NO_DB}{transport}
+type T {{
+  m String @regex(\"^a$\") @length(min: 3)
+  ok String @iso4217
+}}
+type Out {{
+  t T
+}}
+procedure p(input: T): Out
+"
+        );
+        let all = mappings(&src);
+        let mapping = &all.iter().find(|(n, _)| n.ends_with("p.json")).unwrap().1;
+        // The best candidate (ties go to the first) is still emitted.
+        assert_eq!(mapping["response"]["jsonBody"]["t"]["m"], "a");
+        assert_eq!(mapping["response"]["jsonBody"]["t"]["ok"], "EUR");
+        assert_eq!(
+            mapping["metadata"][KEY],
+            serde_json::json!([{ "path": "t.m", "validators": ["@length(min: 3)"] }]),
+        );
+        assert_eq!(mapping["metadata"]["cratestack"]["generated"], true);
+    }
+}
+
+#[test]
+fn unsatisfiable_model_validators_are_noted_on_every_model_mapping() {
+    let src = "datasource db {\n  provider = \"postgresql\"\n  url = env(\"U\")\n}\n
+model Account {
+  id Int @id
+  code String @email @length(max: 4)
+}
+";
+    for transport in ["", "transport rpc\n"] {
+        let all = mappings(&format!("{transport}{src}"));
+        assert!(all.len() >= 5);
+        for (name, mapping) in all {
+            let note = &mapping["metadata"][KEY];
+            assert_eq!(note[0]["path"], "code", "{name}");
+            assert_eq!(
+                note[0]["validators"],
+                serde_json::json!(["@length(max: 4)"]),
+                "{name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn satisfiable_schemas_carry_no_note() {
+    let all = mappings(&format!(
+        "{NO_DB}{FIELDS}\ntype Out {{\n  line Line\n}}\nprocedure g(input: Out): Out\n"
+    ));
+    assert!(all.iter().all(|(_, m)| m["metadata"].get(KEY).is_none()));
 }

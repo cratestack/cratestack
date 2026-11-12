@@ -1065,10 +1065,30 @@ and `BigInt` fields that carry a validator; every other field keeps `values::syn
 | `@regex` | a sample from the pattern's HIR (`regex-syntax`): literals, a printable class member, repetitions at their minimum (lengthened until a `@length` minimum is met), first alternation branch |
 
 Each candidate is verified with `cratestack_core::validate_*` and `regex::Regex::is_match`,
-the checks the generated code calls. If none passes (`@email` with `@length(max: 4)`; a
-pattern relying on look-around-style assertions the sampler emits as empty), generation fails
-with `UnsatisfiableValidators` rather than emitting an invalid value. `Decimal` is not
-synthesized by this crate at all today, so `@range` on it is out of scope. A validated
-`String` whose placeholder contains `"`, `'`, `\`, `{` or `}` is served as a frozen field,
-because stateful defaults are spliced into a Handlebars template. Validators on list fields
-are refused by the parser, so lists need no rule.
+the checks the generated code calls.
+
+**When no candidate satisfies every validator** (`@email` with `@length(max: 4)`; a `@regex`
+sample that misses a `@length` minimum; a pattern relying on look-around-style assertions the
+sampler emits as empty), generation still succeeds. The *best* candidate is emitted (fewest
+violated validators; ties go to the first, so a `@regex` sample before the plain fallback) and
+the gap is recorded in the existing top-level `metadata` object of every mapping the owner
+produces (procedure, REST/stateful model, RPC/static model), beside `metadata.cratestack`:
+
+```json
+"metadata": {
+  "cratestack": { "generated": true, "procedure": "post", "kind": "mutation" },
+  "cratestackUnsatisfiedValidators": [
+    { "path": "line.note", "validators": ["@regex(\"^a$\")", "@length(min: 3)"] }
+  ]
+}
+```
+
+`path` is the dotted field path from the response body root (list and `Page<T>` wrappers add no
+segment; a model's path starts at the field); `validators` are the field's raw attributes the
+emitted value violates; entries are sorted by `path`. The key is absent when everything is
+satisfied. WireMock stores `metadata` verbatim, so it is queryable but never affects matching.
+The generator has no warnings channel back to the CLI, so the metadata is the only report.
+`Decimal` is not synthesized by this crate at all today, so `@range` on it is out of scope. A
+validated `String` whose placeholder contains `"`, `'`, `\`, `{` or `}` is served as a frozen
+field, because stateful defaults are spliced into a Handlebars template. Validators on list
+fields are refused by the parser, so lists need no rule.

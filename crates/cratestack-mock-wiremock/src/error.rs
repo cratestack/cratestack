@@ -91,17 +91,6 @@ pub enum WireMockGeneratorError {
     #[error("{0}")]
     CompositePrimaryKeyUnsupported(String),
 
-    /// No placeholder satisfies a field's validators together (e.g. an
-    /// `@email` with a `@length(max: 5)`, or a `@regex` this generator
-    /// cannot sample). Fails loudly rather than emit a value the real
-    /// server's `validate` would reject (cratestack#1307).
-    #[error(
-        "{owner}'s field `{field}` has validators (@length/@range/@regex/@email/@uri/@iso4217) \
-         that no deterministic placeholder satisfies together; see \
-         docs/design/wiremock-stubs.md's \"Validators\" section"
-    )]
-    UnsatisfiableValidators { owner: String, field: String },
-
     /// Serializing the assembled mapping (schema-derived example value
     /// plus the request/response envelope) to JSON failed. `serde_json`
     /// only fails on a handful of programmer-error conditions (e.g. a
