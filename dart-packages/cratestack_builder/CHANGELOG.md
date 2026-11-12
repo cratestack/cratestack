@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.19.5 (2026-11-12)
+
+- No functional changes. Version kept in lockstep with the CrateStack
+  workspace, which every published CrateStack artifact shares.
+- README: the "Analyzer constraint" section now describes the bound the
+  package already declares, `analyzer: '>=12.0.0 <14.0.0'`, instead of an
+  older `<13.0.0` that it no longer used. The range spans both majors because
+  CrateStack's riverpod preset now pins `riverpod_generator` 4.0.9, which is
+  on `analyzer` 13.x (cratestack#1341, Flutter 3.50). Text only.
+
 ## 0.19.4 (2026-11-11)
 
 - No functional changes. Version kept in lockstep with the CrateStack
