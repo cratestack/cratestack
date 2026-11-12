@@ -20,7 +20,8 @@ static MISCONFIGURED: LogThrottle = LogThrottle::new(Duration::from_secs(60));
 /// - A COSE body: the unsigned `415`, always (nothing to bind it to).
 /// - [`Resolution::NotAnOp`], or no matched route (a `404`): untouched.
 /// - A route in the allow-list: untouched.
-/// - Otherwise, when the policy's `unresolved_mode` is `Required`, fail
+/// - Otherwise, when the policy's `unresolved_mode` is `Required` (or
+///   `UnsignedRequestSealedReply`, whose replies must be sealed), fail
 ///   closed (S2): a generated path with another method gets the layer's own
 ///   `405`, and a matched route nobody resolved gets an unsigned `500`
 ///   ("envelope misconfigured", logged). Unsigned because there is no op,
@@ -40,7 +41,10 @@ pub(super) async fn handle<S: Inner>(
     if enveloped {
         return refusal::unsupported_envelope(headers, path);
     }
-    let strict = config.policy.unresolved_mode() == EnvelopeMode::Required;
+    let strict = matches!(
+        config.policy.unresolved_mode(),
+        EnvelopeMode::Required | EnvelopeMode::UnsignedRequestSealedReply
+    );
     let allowed = matched
         .as_deref()
         .and_then(|matched| mount_prefix::strip(matched, &config.mount_prefix))
