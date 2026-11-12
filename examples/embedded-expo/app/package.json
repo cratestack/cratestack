@@ -13,7 +13,7 @@
   "dependencies": {
     "expo": "^58.0.21",
     "expo-file-system": "^58.0.13",
-    "expo-modules-core": "^58.0.29",
+    "expo-modules-core": "^58.0.30",
     "react": "19.3.1",
     "react-native": "0.86.2"
   },
