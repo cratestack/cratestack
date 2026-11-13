@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fix: react-nextjs-daisyui example `lint` runs Biome and CI runs `next build` (`cratestack#1061`)
+
+`examples/react-nextjs-daisyui/web`'s `lint` script was `next lint`, which Next 16 removed (it failed with "Invalid project directory"). It is now `biome check .`, the linter the other JS examples use, with a nested `web/biome.json` that extends the root config and skips generated files (`public/`, `tsconfig.json`, `next-env.d.ts`, Tailwind `globals.css`); the example's sources are reformatted to match. The `js (react-nextjs-daisyui example)` CI job now also runs `lint` and the full `build` (release wasm with the pinned binaryen, the napi addon, then `next build --webpack`). Example tooling and CI only; no framework behaviour changes.
+
 ### Deprecation: `HmacEnvelope` and `SealedEnvelope` are deprecated in favour of COSE_Mac0; removal planned for the next minor release (`cratestack#1018`)
 
 `cratestack_core::HmacEnvelope` and `SealedEnvelope` now carry `#[deprecated(since = "0.19.6")]`. The HS256 envelope MACs a JSON re-serialization of the body while the wire carries CBOR, and costs 147 B of overhead per message against 41 B for COSE_Mac0 (ADR 0006). **Migration:** build a `cratestack_cose::CoseEnvelope` in `CoseMode::Mac0` (`CoseEnvelope::server(CoseMode::Mac0, ..)` / `CoseEnvelope::client(CoseMode::Mac0, ..)`) over the same `KeyProvider` secrets (`KeyProviderMacKeys`), serve it with `cratestack-axum`'s `envelope_layer`, and seal client calls with `CratestackClient::with_envelope` (`cratestack-client`'s `cose` feature). Mac0 binds the request's audience, method, route and contract as external AAD and rejects replays through a nonce store. Affected: code that names either type now gets a `deprecated` warning (an error under `-D warnings`); behaviour is unchanged until removal in the next minor release (0.20). `KeyProvider`, `NonceStore`, `InMemoryNonceStore` and `StaticKeyProvider` are not deprecated. The `rpc-client` and `rpc-streaming-client-rust` examples no longer point readers at `HmacEnvelope`.

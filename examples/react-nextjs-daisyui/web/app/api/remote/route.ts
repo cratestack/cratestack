@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { loadAddon } from '../addon';
+import { NextResponse } from "next/server";
+import { loadAddon } from "../addon";
 
 // Remote tab: fan out to an upstream CrateStack service over the typed
 // HTTP client living inside the napi addon. The browser never sees the
@@ -11,18 +11,15 @@ import { loadAddon } from '../addon';
 // the client choose it; we accept it here purely so the example demo can
 // be wired up against any running service.
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const baseUrl = url.searchParams.get('url');
+    const baseUrl = url.searchParams.get("url");
     if (!baseUrl) {
-      return NextResponse.json(
-        { error: 'missing ?url query parameter' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "missing ?url query parameter" }, { status: 400 });
     }
     const addon = loadAddon();
     const articles = await addon.fetchRemoteArticles(baseUrl);

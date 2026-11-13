@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import { loadAddon } from '../addon';
+import { NextResponse } from "next/server";
+import { loadAddon } from "../addon";
 
 // Server-owned notes — backed by the napi addon's SQLite file. Reads the
 // full list, ordered by updatedAt desc.
@@ -8,8 +8,8 @@ import { loadAddon } from '../addon';
 // at build time. The data is per-process and the source of truth for the
 // "server-side embedded" tab.
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export async function GET() {
   try {
@@ -31,14 +31,14 @@ export async function POST(request: Request) {
       pinned?: boolean;
     };
     if (!body.title) {
-      return NextResponse.json({ error: 'title required' }, { status: 400 });
+      return NextResponse.json({ error: "title required" }, { status: 400 });
     }
     const addon = loadAddon();
     const now = new Date().toISOString();
     const note = addon.upsertNote({
       id: crypto.randomUUID(),
       title: body.title,
-      body: body.body ?? '',
+      body: body.body ?? "",
       pinned: Boolean(body.pinned),
       completed: false,
       createdAt: now,
