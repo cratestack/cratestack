@@ -211,7 +211,7 @@ fn synthesize_object(
     in_progress.push(type_name.to_owned());
     let mut object = Map::with_capacity(fields.len());
     for field in fields {
-        let value = synthesize(schema, owner, &field.ty, in_progress);
+        let value = crate::field_value::synthesize_field(schema, owner, field, in_progress);
         // Pop before propagating an error too, so a caller that catches
         // and continues (none does today, but this keeps the invariant
         // "in_progress reflects only the still-active call stack" true

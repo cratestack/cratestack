@@ -12,8 +12,8 @@ use cratestack_core::{Model, Schema};
 use serde_json::{Map, Value, json};
 
 use crate::error::WireMockGeneratorError;
+use crate::field_value::synthesize_field;
 use crate::model_attrs::{is_relation_field, is_server_only_field};
-use crate::values::synthesize;
 
 /// Builds a synthesized example instance of `model`'s default
 /// projection — the JSON body a `get`/`create`/`update`/`delete`
@@ -41,7 +41,7 @@ pub(crate) fn synthesize_model_record(
         if is_relation_field(model_names, field) || is_server_only_field(field) {
             continue;
         }
-        let value = synthesize(schema, &owner, &field.ty, &mut in_progress)?;
+        let value = synthesize_field(schema, &owner, field, &mut in_progress)?;
         object.insert(field.name.clone(), value);
     }
     Ok(Value::Object(object))
