@@ -122,9 +122,9 @@ pub(super) fn build_batch_block() -> proc_macro2::TokenStream {
             let mut responses: Vec<::cratestack::rpc::RpcResponseFrame> =
                 Vec::with_capacity(frames.len());
             for frame in frames {
-                // Re-encode the frame's opaque `input` value back to
-                // codec bytes so we can route it through the same
-                // dispatcher as unary.
+                // Re-encode the frame's opaque `input` (an `RpcFrameValue`,
+                // which keeps CBOR byte strings) back to codec bytes so we
+                // can route it through the same dispatcher as unary.
                 let input_bytes = match ::cratestack::__private::encode_rpc_value(
                     &state.codec, &headers, &frame.input,
                 ).await {

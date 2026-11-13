@@ -101,7 +101,7 @@ fn batch_body() -> Vec<u8> {
     let frame = |id: u64| RpcRequest {
         id,
         op: "procedure.ping".into(),
-        input: serde_json::json!({ "args": { "nonce": id.to_string() } }),
+        input: serde_json::json!({ "args": { "nonce": id.to_string() } }).into(),
         idem: None,
     };
     CborCodec.encode(&vec![frame(1), frame(2)]).unwrap()

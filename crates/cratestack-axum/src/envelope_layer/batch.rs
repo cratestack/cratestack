@@ -149,3 +149,6 @@ pub(super) fn signed_verdict(
         Some(&ops),
     ))
 }
+
+#[cfg(test)]
+mod frame_ops_tests;

@@ -58,9 +58,11 @@ pub struct RpcRequest {
     /// Dotted op id, e.g. `"model.User.list"` or
     /// `"procedure.publishPost"`.
     pub op: String,
-    /// Codec-encoded input payload, kept opaque at the batch envelope
-    /// layer so each frame can be decoded against its own input type.
-    pub input: serde_json::Value,
+    /// Input payload, kept opaque at the batch envelope layer so each frame
+    /// can be decoded against its own input type. An [`RpcFrameValue`] keeps
+    /// a CBOR byte string (`Uuid`, `Bytes`) lossless, which a
+    /// `serde_json::Value` cannot (cratestack#1352).
+    pub input: RpcFrameValue,
     /// Optional idempotency key, per-frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idem: Option<String>,
@@ -71,16 +73,16 @@ pub struct RpcRequest {
 pub struct RpcResponseFrame {
     pub id: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<serde_json::Value>,
+    pub output: Option<RpcFrameValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<RpcErrorBody>,
 }
 
 impl RpcResponseFrame {
-    pub fn ok(id: u64, output: serde_json::Value) -> Self {
+    pub fn ok(id: u64, output: impl Into<RpcFrameValue>) -> Self {
         Self {
             id,
-            output: Some(output),
+            output: Some(output.into()),
             error: None,
         }
     }
@@ -102,8 +104,11 @@ impl RpcResponseFrame {
 // preserved rather than flattened. Glob-re-exported so every existing
 // `cratestack_core::rpc::RpcListInput` path — and `cratestack-axum::rpc`'s
 // verbatim re-export of it — resolves unchanged.
+mod frame_value;
 mod inputs;
 mod subscribe_input;
+
+pub use frame_value::RpcFrameValue;
 
 pub use inputs::*;
 pub use subscribe_input::RpcSubscribeInput;

@@ -7,8 +7,9 @@
 //! exactly the same thing and none of them carries its own copy of the
 //! policy code.
 //!
-//! Values cross this boundary as `serde_json::Value`, the same opaque
-//! codec value `RpcRequest::input` / `RpcResponseFrame::output` already use:
+//! Values cross this boundary as `serde_json::Value`, a JSON-shaped
+//! opaque codec value like `RpcRequest::input` / `RpcResponseFrame::output`
+//! (those are `RpcFrameValue`, which adds a byte-string arm):
 //! the binding decodes its wire codec into it and encodes items back out,
 //! so a dispatcher never knows which codec or transport it is serving.
 
