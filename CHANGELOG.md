@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Deprecation: `HmacEnvelope` and `SealedEnvelope` are deprecated in favour of COSE_Mac0; removal planned for the next minor release (`cratestack#1018`)
+
+`cratestack_core::HmacEnvelope` and `SealedEnvelope` now carry `#[deprecated(since = "0.19.6")]`. The HS256 envelope MACs a JSON re-serialization of the body while the wire carries CBOR, and costs 147 B of overhead per message against 41 B for COSE_Mac0 (ADR 0006). **Migration:** build a `cratestack_cose::CoseEnvelope` in `CoseMode::Mac0` (`CoseEnvelope::server(CoseMode::Mac0, ..)` / `CoseEnvelope::client(CoseMode::Mac0, ..)`) over the same `KeyProvider` secrets (`KeyProviderMacKeys`), serve it with `cratestack-axum`'s `envelope_layer`, and seal client calls with `CratestackClient::with_envelope` (`cratestack-client`'s `cose` feature). Mac0 binds the request's audience, method, route and contract as external AAD and rejects replays through a nonce store. Affected: code that names either type now gets a `deprecated` warning (an error under `-D warnings`); behaviour is unchanged until removal in the next minor release (0.20). `KeyProvider`, `NonceStore`, `InMemoryNonceStore` and `StaticKeyProvider` are not deprecated. The `rpc-client` and `rpc-streaming-client-rust` examples no longer point readers at `HmacEnvelope`.
+
 ### Fix: generated code no longer infers over `From` impls of `CratestackError` (`cratestack#1097`)
 
 Two generated sites relied on `CratestackError: From<_>` having a single candidate: the REST query-filter parser for `String` fields (`(Ok(value.to_owned()))?`, whose error type was left to inference) and the projection `decode_page` (`collect::<Result<Vec<_>, _>>()?`). Any crate in a build adding an `impl From<X> for CratestackError` (as `cratestack-cose` did during #1006) turned them into E0282/E0283 in every consuming crate. Both now name `CratestackError`. `tests/from_impl_ambiguity.rs` in `cratestack-pg`, `cratestack-api` and `cratestack-sqlite` define such an impl and expand a spread of fixture schemas, so a new inference site fails to compile. Affected: nobody at runtime; generated code only.

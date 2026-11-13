@@ -22,7 +22,7 @@ include_client_schema!("schema.cstack");
 /// Injects the `x-auth-id` header on every request. The server example
 /// reads it via a `HeaderAuthProvider` so any positive integer
 /// authenticates as that caller id. Real apps replace this with a
-/// signing authorizer (`HmacEnvelope`, JWT, etc.).
+/// signing authorizer (a COSE_Mac0 envelope via `CratestackClient::with_envelope`, JWT, etc.).
 pub struct StaticAuthId(pub i64);
 
 #[async_trait::async_trait]
