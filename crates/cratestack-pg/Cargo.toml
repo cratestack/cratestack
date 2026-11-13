@@ -448,3 +448,11 @@ required-features = ["webtransport"]
 name = "websocket_subscriptions"
 path = "tests/websocket_subscriptions.rs"
 required-features = ["websocket", "client-ws"]
+
+# Subscription items carry `Uuid` and `Bytes` in their CBOR forms over both
+# sockets (cratestack#1360). The procedure tests need no database; the model
+# feed one is Postgres-backed.
+[[test]]
+name = "subscription_cbor_binary_shapes"
+path = "tests/subscription_cbor_binary_shapes.rs"
+required-features = ["websocket", "client-ws", "webtransport", "client-webtransport"]

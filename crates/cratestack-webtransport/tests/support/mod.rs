@@ -210,6 +210,11 @@ impl Stream {
 
     /// The next server frame; `None` at the clean end of the stream.
     pub async fn next(&mut self) -> Option<ServerFrame> {
+        self.next_as().await
+    }
+
+    /// The next frame, decoded as `T` with the session's codec.
+    pub async fn next_as<T: serde::de::DeserializeOwned>(&mut self) -> Option<T> {
         loop {
             if let Some(bytes) = self.queued.pop_front() {
                 return Some(self.codec.decode(&bytes).unwrap());

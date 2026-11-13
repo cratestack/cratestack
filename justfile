@@ -475,7 +475,7 @@ test-ci-db-webtransport *args='':
 # a subscription procedure on one socket. `required-features = ["websocket"]`,
 # so `test-ci-db` never builds it.
 test-ci-db-websocket *args='':
-	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features websocket,client-ws --test websocket_subscriptions {{args}}
+	CRATESTACK_REQUIRE_DB=1 CRATESTACK_USE_TESTCONTAINERS=1 cargo test -p cratestack-pg --features websocket,client-ws,webtransport,client-webtransport --test websocket_subscriptions --test subscription_cbor_binary_shapes {{args}}
 
 # Headless Chromium, through Playwright, against `cratestack-webtransport`'s
 # `browser_harness` example, speaking the binding's JSON codec via the
