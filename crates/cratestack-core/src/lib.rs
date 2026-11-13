@@ -114,6 +114,8 @@ pub use decimal::Decimal;
 pub use decimal::DecimalValue;
 #[cfg(feature = "decimal-rust-decimal")]
 pub use decimal::RustDecimal;
+// Re-exports the deprecated `HmacEnvelope`/`SealedEnvelope` (cratestack#1018) until removal.
+#[allow(deprecated)]
 pub use envelope::{
     HmacEnvelope, InMemoryNonceStore, KeyProvider, NonceStore, SealedEnvelope, StaticKeyProvider,
 };

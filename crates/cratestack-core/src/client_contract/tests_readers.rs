@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use super::attrs::DROPPED_ATTRIBUTES;
 use super::tests_readers_symbols::SYMBOL_READERS;
 use super::tests_readers_table::READERS;
+use super::tests_readers_table_tail::TAIL_READERS;
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir)
@@ -75,7 +76,11 @@ fn readers_of(name: &str, crates: &Path) -> Vec<String> {
 
 #[test]
 fn the_reader_table_covers_exactly_the_drop_list() {
-    let table: Vec<&str> = READERS.iter().map(|(n, _)| *n).collect();
+    let table: Vec<&str> = READERS
+        .iter()
+        .chain(TAIL_READERS)
+        .map(|(n, _)| *n)
+        .collect();
     let dropped: Vec<&str> = DROPPED_ATTRIBUTES.iter().map(|(n, _)| *n).collect();
     assert_eq!(table, dropped);
 }
@@ -87,7 +92,7 @@ fn no_dropped_attribute_has_a_new_reader() {
     if !crates.join("cratestack-macros/src").is_dir() {
         return; // a packaged crate has no sibling sources to read
     }
-    for (name, pinned) in READERS {
+    for (name, pinned) in READERS.iter().chain(TAIL_READERS) {
         assert_eq!(
             readers_of(name, &crates),
             *pinned,

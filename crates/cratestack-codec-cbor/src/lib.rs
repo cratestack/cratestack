@@ -48,7 +48,7 @@ impl CratestackCodec for CborCodec {
         // already encodes correctly as `0xf6`), but `serde_json::Value`'s
         // `Serialize` impl calls `serialize_unit()` for `Value::Null`. That
         // matters here because `POST /rpc/batch` carries every frame's
-        // input/output as opaque `serde_json::Value` (the batch envelope
+        // input/output as an opaque `serde_json::Value`-shaped `RpcFrameValue` (the batch envelope
         // can't know each frame's real Rust type up front — see
         // `RpcRequest`/`RpcResponseFrame` in `cratestack-core::rpc`), so a
         // `null` anywhere in a batched frame used to round-trip through

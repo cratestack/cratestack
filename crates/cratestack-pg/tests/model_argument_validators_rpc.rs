@@ -122,7 +122,7 @@ async fn batch_model_arguments_are_validated() {
         .map(|(id, case)| RpcRequest {
             id: id as u64,
             op: format!("procedure.{}", case.procedure),
-            input: case.body.clone(),
+            input: case.body.clone().into(),
             idem: None,
         })
         .collect();

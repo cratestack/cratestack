@@ -10,7 +10,7 @@ Core types, traits, and error handling shared across the CrateStack workspace.
 - **Auth context**: `CratestackContext`, `PrincipalContext`, `CratestackAuthIdentity`, `AuthProvider`
 - **Schema AST**: `Schema`, `Model`, `Field`, `Procedure`, `MixinDecl`, `TypeDecl`, `EnumDecl`
 - **Audit**: `AuditEvent`, `AuditOperation`, `AuditActor`, `AuditSink`, `NoopAuditSink`, `MulticastAuditSink`
-- **Signed envelope**: `HmacEnvelope` (HS256), `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
+- **Signed envelope** (`HmacEnvelope`, HS256, *deprecated since 0.19.6*, use COSE_Mac0 from `cratestack-cose`): `KeyProvider`, `StaticKeyProvider`, `NonceStore`, `InMemoryNonceStore`
 - **Codec/envelope traits**: `CratestackCodec`; the async signing seam `CratestackEnvelope` with its `Binding` (the COSE external-AAD inputs), `BodyShape`, `PathParams`, the provisional `StreamSealer`/`StreamOpener`, and the zero-cost `NoEnvelope` (ADR 0006)
 - **Event bus**: `CratestackEventBus`, `ModelEvent<T>`, `ModelEventKind`, `CratestackEventEnvelope`
 - **Transaction isolation**: `TransactionIsolation`
@@ -183,7 +183,7 @@ Accepts `read_committed` / `read committed`, `repeatable_read` / `repeatable rea
 
 ## Signed Envelope (HMAC-SHA-256)
 
-`HmacEnvelope<K: KeyProvider>` seals and opens HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. It is a standalone async API: it does **not** implement `CratestackEnvelope`, and ADR 0006 replaces it with COSE_Mac0 mode (deprecated in its phase P2).
+`HmacEnvelope<K: KeyProvider>` seals and opens HS256-signed messages. Production multi-replica deployments back the `NonceStore` with Redis so replay rejection holds cluster-wide. It is a standalone async API: it does **not** implement `CratestackEnvelope`, and ADR 0006 replaces it with COSE_Mac0 mode (`cratestack_cose::CoseEnvelope` in `CoseMode::Mac0`). `HmacEnvelope` and `SealedEnvelope` are `#[deprecated(since = "0.19.6")]` (cratestack#1018) and are removed in the next minor release.
 
 ## Envelope seam (ADR 0006)
 

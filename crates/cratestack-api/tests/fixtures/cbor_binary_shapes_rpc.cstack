@@ -1,0 +1,18 @@
+// cratestack#1312 fixture: a procedure whose input and output carry the
+// two types whose CBOR form differs from their JSON form, `Uuid` (16-byte
+// string vs text) and `Bytes` (byte string vs integer array / base64).
+// Dedicated to `tests/cbor_binary_shapes_rpc.rs`.
+
+transport rpc
+
+datasource db {
+  provider = "none"
+}
+
+type Blob {
+  id Uuid
+  data Bytes
+}
+
+procedure echo(input: Blob): Blob
+  @allow(auth() != null)

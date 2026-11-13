@@ -416,6 +416,7 @@ flate2 = "1"
 rusqlite = { version = "0.41.1", features = ["bundled", "fallible_uint"] }
 redis = "1.2.0"
 regex = "1"
+regex-syntax = "0.8"
 # `cratestack-auth`'s `ServiceSigningKey::ephemeral` (test/local-dev signing
 # identity minting via `SysRng.try_fill_bytes` — rand 0.10's rename of 0.8's
 # `OsRng`, i.e. still the OS entropy source, not a thread-local PRNG).

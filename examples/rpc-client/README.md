@@ -15,7 +15,9 @@ HTTP/CBOR to a remote `rpc-procedures-example` service.
   `.queue()` each, then one `POST /rpc/batch` round-trip and collect each result by its
   `BatchHandle`.
 - A `RequestAuthorizer` that injects `x-auth-id` on every request so the server's
-  `@allow(auth() != null)` gate passes.
+  `@allow(auth() != null)` gate passes. This is demo-only auth; for signed transport, enable the
+  `cose` feature and seal calls with `CratestackClient::with_envelope` (a COSE_Mac0 or Sign1
+  envelope, ADR 0006). The deprecated `HmacEnvelope` is not used here.
 - The pure **`cratestack-client` facade** — the first committed client example to use it (see
   the `Cargo.toml` note); `axum` is structurally absent from the shipped dependency graph
   (`tower`/`hyper` still arrive through `reqwest`, the HTTP client underneath).

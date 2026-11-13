@@ -3811,7 +3811,8 @@ mod transport_rpc_schema {
                 op: "procedure.ping".into(),
                 input: serde_json::json!({
                     "args": { "nonce": "first" }
-                }),
+                })
+                .into(),
                 idem: None,
             },
             cratestack::rpc::RpcRequest {
@@ -3819,7 +3820,8 @@ mod transport_rpc_schema {
                 op: "procedure.bump".into(),
                 input: serde_json::json!({
                     "args": { "nonce": "second" }
-                }),
+                })
+                .into(),
                 idem: None,
             },
         ];
@@ -3841,10 +3843,12 @@ mod transport_rpc_schema {
             responses[1]
         );
 
-        let out0 = responses[0].output.as_ref().expect("ok frame has output");
+        let out0 =
+            serde_json::Value::from(responses[0].output.clone().expect("ok frame has output"));
         assert_eq!(out0.get("nonce").and_then(|v| v.as_str()), Some("first"));
 
-        let out1 = responses[1].output.as_ref().expect("ok frame has output");
+        let out1 =
+            serde_json::Value::from(responses[1].output.clone().expect("ok frame has output"));
         assert_eq!(out1.get("nonce").and_then(|v| v.as_str()), Some("second!"));
     }
 
@@ -3861,13 +3865,13 @@ mod transport_rpc_schema {
             cratestack::rpc::RpcRequest {
                 id: 1,
                 op: "procedure.does_not_exist".into(),
-                input: serde_json::json!(null),
+                input: serde_json::json!(null).into(),
                 idem: None,
             },
             cratestack::rpc::RpcRequest {
                 id: 2,
                 op: "procedure.bump".into(),
-                input: serde_json::json!({"args": {"nonce": "x"}}),
+                input: serde_json::json!({"args": {"nonce": "x"}}).into(),
                 idem: None,
             },
         ];
@@ -3918,13 +3922,13 @@ mod transport_rpc_schema {
             cratestack::rpc::RpcRequest {
                 id: 1,
                 op: "procedure.ping".into(),
-                input: serde_json::json!({"args": {"nonce": "ok"}}),
+                input: serde_json::json!({"args": {"nonce": "ok"}}).into(),
                 idem: None,
             },
             cratestack::rpc::RpcRequest {
                 id: 2,
                 op: "procedure.does_not_exist".into(),
-                input: serde_json::json!(null),
+                input: serde_json::json!(null).into(),
                 idem: None,
             },
         ];

@@ -105,7 +105,7 @@ async fn a_batch_judges_each_frame() {
     let frame = |id: u64, op: &str| RpcRequest {
         id,
         op: op.into(),
-        input: serde_json::json!({ "args": { "amount": 5 } }),
+        input: serde_json::json!({ "args": { "amount": 5 } }).into(),
         idem: None,
     };
     let batch = vec![
