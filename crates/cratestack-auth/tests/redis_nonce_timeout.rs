@@ -5,13 +5,15 @@
 //! * A timed-out claim answers `NonceStoreUnavailable`, never
 //!   `NonceReused`: a retry would queue behind the original SET on the same
 //!   socket, find the key it just wrote, and turn a first use into a 401.
-//! * The wedged connection is dropped: the next claim opens exactly one new
-//!   connection instead of failing on the old one indefinitely.
+//! * The wedged connection is dropped: the next claim runs on a NEW server
+//!   connection (a different client id), and the wedged one is gone. Judged
+//!   by client id, not by `total_connections_received`, which also counts
+//!   the abandoned manager's background reconnects (3 seen in CI).
 
 mod redis_support;
 
 use cratestack_auth::{AuthError, nonce_store_from_redis_url};
-use redis_support::{SERIAL, claim, connections_received, run_tag};
+use redis_support::{SERIAL, claim, client_ids, connections_received, run_tag};
 
 const PAUSE_MS: u64 = 800;
 
@@ -59,10 +61,16 @@ async fn a_timeout_resets_the_connection() {
     let mut admin = redis.connection().await;
     let store = nonce_store_from_redis_url(Some(&redis.url)).expect("url");
     let run = run_tag();
+    let idle = client_ids(&mut admin).await;
     claim(store.as_ref(), &format!("{run}-warm"))
         .await
         .expect("warm-up claim opens the shared connection");
-    let before = connections_received(&mut admin).await;
+    let warm = client_ids(&mut admin).await;
+    let wedged: Vec<u64> = warm.difference(&idle).copied().collect();
+    assert!(
+        !wedged.is_empty(),
+        "the warm-up claim must open the store's connection"
+    );
 
     pause(&mut admin).await;
     let slow = format!("{run}-slow");
@@ -77,14 +85,27 @@ async fn a_timeout_resets_the_connection() {
     claim(store.as_ref(), &format!("{run}-fresh"))
         .await
         .expect("a new nonce after the pause is accepted");
-    // Without the reset the next claim reuses the wedged socket and opens
-    // none. With it, the store connects once; redis-rs' ConnectionManager may
-    // also start its own background reconnect for the abandoned manager,
-    // which can add one short-lived connection (seen in CI), so allow 1..=2.
-    let opened = connections_received(&mut admin).await - before;
+    // Without the reset the next claim reuses the wedged socket and no new
+    // client id appears. With it, the store connects afresh (any extra
+    // background reconnect only adds more new ids, never fewer).
+    let after = client_ids(&mut admin).await;
+    let fresh: Vec<u64> = after.difference(&warm).copied().collect();
     assert!(
-        (1..=2).contains(&opened),
-        "the timeout must drop the wedged connection and the next claim reconnect; opened {opened}"
+        !fresh.is_empty(),
+        "the timeout must drop the wedged connection and the next claim reconnect; \
+         wedged {wedged:?}, clients now {after:?}"
+    );
+    // The server only notices the dropped socket asynchronously, so wait
+    // (bounded) for that event rather than checking once.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut now = after;
+    while wedged.iter().any(|id| now.contains(id)) && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        now = client_ids(&mut admin).await;
+    }
+    assert!(
+        wedged.iter().all(|id| !now.contains(id)),
+        "the wedged connection {wedged:?} must be closed, clients now {now:?}"
     );
 
     // Replay of the timed-out nonce: the SET may have landed (the server

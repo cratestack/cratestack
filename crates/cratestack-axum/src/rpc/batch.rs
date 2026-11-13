@@ -2,7 +2,7 @@
 
 use axum::http::HeaderMap;
 use cratestack_core::CratestackError;
-use cratestack_core::rpc::{RpcErrorBody, RpcResponseFrame};
+use cratestack_core::rpc::{RpcErrorBody, RpcFrameValue, RpcResponseFrame};
 
 use crate::HttpTransport;
 
@@ -12,17 +12,19 @@ use super::util::synthesize_error_for_status;
 /// Convert an [`axum::Response`] returned by an inner dispatch arm into a
 /// single batch response frame.
 ///
-/// Success bodies (2xx) are decoded as `serde_json::Value` via the same
+/// Success bodies (2xx) are decoded as an [`RpcFrameValue`] via the same
 /// codec the request used and become `RpcResponseFrame::ok`. Error
 /// bodies (4xx/5xx) — which have already been post-processed by
 /// [`super::convert_handler_error_response`] inside `rpc_dispatch_inner` —
 /// are decoded as [`RpcErrorBody`] and inlined into
 /// `RpcResponseFrame::error` directly.
 ///
-/// Wire limitation: success outputs must be representable as
-/// `serde_json::Value`. For CRUD/procedure outputs this is fine; if a
-/// future op returns CBOR-only types (e.g. raw byte strings without a
-/// JSON representation) the frame becomes an `internal` error.
+/// An [`RpcFrameValue`] keeps a CBOR byte string (a `Uuid`, a `Bytes`
+/// field) as bytes, so an output carrying one survives the round trip
+/// through the frame (cratestack#1352; a `serde_json::Value` here used to
+/// turn such a frame into an error). Limits that remain: map keys must be
+/// strings, CBOR tags other than bignums are refused, and `f16`/`f32`
+/// widen to `f64`.
 pub async fn response_to_frame<C>(
     id: u64,
     response: axum::response::Response,
@@ -49,7 +51,7 @@ where
     };
 
     if status.is_success() {
-        match decode_rpc_body::<_, serde_json::Value>(codec, headers, &body_bytes) {
+        match decode_rpc_body::<_, RpcFrameValue>(codec, headers, &body_bytes) {
             Ok(value) => RpcResponseFrame::ok(id, value),
             Err(error) => RpcResponseFrame::err(id, &error),
         }

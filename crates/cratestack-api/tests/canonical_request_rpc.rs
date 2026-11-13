@@ -79,7 +79,7 @@ async fn a_batch_is_authenticated_once_as_the_whole_batch_body() {
     let frame = |id: u64| RpcRequest {
         id,
         op: "procedure.ping".into(),
-        input: serde_json::json!({ "args": { "nonce": id.to_string() } }),
+        input: serde_json::json!({ "args": { "nonce": id.to_string() } }).into(),
         idem: None,
     };
     let body = CborCodec.encode(&vec![frame(1), frame(2)]).unwrap();

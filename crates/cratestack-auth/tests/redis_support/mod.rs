@@ -14,6 +14,8 @@
 // Each test binary uses a different subset of these helpers.
 #![allow(dead_code)]
 
+use std::collections::BTreeSet;
+
 use chrono::{Duration, Utc};
 use cratestack_auth::{AuthError, NonceStore};
 use testcontainers::runners::AsyncRunner;
@@ -110,6 +112,26 @@ pub async fn connections_received(conn: &mut redis::aio::MultiplexedConnection) 
         .trim()
         .parse()
         .expect("numeric connection counter")
+}
+
+/// Ids of every ordinary client connected to the server (`CLIENT LIST TYPE
+/// normal`), the admin connection included. A connection id is never
+/// reused, so diffing two snapshots tells which connections appeared or
+/// went away, unlike the global `total_connections_received` counter,
+/// which also counts the abandoned `ConnectionManager`'s own background
+/// reconnects and so varies with timing.
+pub async fn client_ids(conn: &mut redis::aio::MultiplexedConnection) -> BTreeSet<u64> {
+    let list: String = redis::cmd("CLIENT")
+        .arg("LIST")
+        .arg("TYPE")
+        .arg("normal")
+        .query_async(conn)
+        .await
+        .expect("CLIENT LIST");
+    list.lines()
+        .filter_map(|line| line.split_whitespace().find_map(|f| f.strip_prefix("id=")))
+        .map(|id| id.parse().expect("numeric client id"))
+        .collect()
 }
 
 pub async fn claim(store: &dyn NonceStore, nonce: &str) -> Result<(), AuthError> {

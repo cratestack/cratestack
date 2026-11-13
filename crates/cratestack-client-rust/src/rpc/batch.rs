@@ -30,10 +30,11 @@
 use cratestack_core::CratestackError;
 
 use crate::codec::HttpClientCodec;
-use crate::remote_refusal::Challenges;
-use crate::rpc::batch_call::BatchHandle;
+use cratestack_core::rpc::RpcFrameValue;
+
+use crate::rpc::batch_results::BatchResults;
 use crate::rpc::client::RpcClient;
-use crate::rpc::error::{RpcClientError, RpcRemoteError, http_status_for_rpc_code};
+use crate::rpc::error::RpcClientError;
 
 /// Accumulates queued [`BatchableCall`]s into a single
 /// `POST /rpc/batch` round-trip. Build via [`RpcClient::batch_builder`]
@@ -83,7 +84,7 @@ where
         id
     }
 
-    pub(crate) fn push_frame(&mut self, op_id: String, input: serde_json::Value) -> u64 {
+    pub(crate) fn push_frame(&mut self, op_id: String, input: RpcFrameValue) -> u64 {
         let id = self.next_id();
         self.frames.push(cratestack_core::rpc::RpcRequest {
             id,
@@ -108,72 +109,22 @@ where
     /// couldn't be parsed). Per-frame failures — both pre-send input
     /// encoding errors and server-side `RpcErrorBody` — are deferred
     /// to the matching `BatchResults::take(handle)?` call.
-    pub async fn send(self) -> Result<BatchResults, RpcClientError> {
+    pub async fn send(self) -> Result<BatchResults<C>, RpcClientError> {
         let encode_errors = self.encode_errors;
-        let frames = if self.frames.is_empty() {
-            std::collections::HashMap::new()
+        let (content_type, frames) = if self.frames.is_empty() {
+            (String::new(), std::collections::HashMap::new())
         } else {
-            let response_frames = self.rpc.batch(&self.frames).await?;
-            response_frames.into_iter().map(|f| (f.id, f)).collect()
+            let (content_type, response_frames) = self.rpc.batch_response(&self.frames).await?;
+            (
+                content_type,
+                response_frames.into_iter().map(|f| (f.id, f)).collect(),
+            )
         };
-        Ok(BatchResults {
+        Ok(BatchResults::new(
+            self.rpc.inner.codec.clone(),
+            content_type,
             frames,
             encode_errors,
-        })
-    }
-}
-
-/// Per-handle results from a sent batch. Each handle can be `take`n
-/// exactly once.
-pub struct BatchResults {
-    frames: std::collections::HashMap<u64, cratestack_core::rpc::RpcResponseFrame>,
-    encode_errors: std::collections::HashMap<u64, CratestackError>,
-}
-
-impl BatchResults {
-    /// Extract the typed output for one queued op. Returns:
-    ///
-    /// - `Ok(output)` — the server emitted an `output` for this frame
-    ///   and it decoded into `O`.
-    /// - `Err(RpcClientError::Codec(_))` — the input failed to encode
-    ///   before send, or the output failed to decode.
-    /// - `Err(RpcClientError::Remote(RpcRemoteError { body, .. }))` —
-    ///   the server emitted an `error` frame for this op. The
-    ///   `status` field is derived from the gRPC-style code in the
-    ///   body since `/rpc/batch` returns 200 at the HTTP level
-    ///   regardless of per-frame outcomes.
-    /// - `Err(RpcClientError::InvalidResponse(_))` — the server
-    ///   omitted this frame entirely or the frame had neither
-    ///   `output` nor `error` set.
-    pub fn take<O>(&mut self, handle: BatchHandle<O>) -> Result<O, RpcClientError>
-    where
-        O: serde::de::DeserializeOwned,
-    {
-        if let Some(error) = self.encode_errors.remove(&handle.id) {
-            return Err(RpcClientError::Codec(error));
-        }
-        let frame = self.frames.remove(&handle.id).ok_or_else(|| {
-            RpcClientError::InvalidResponse(format!(
-                "batch response missing frame for id {}",
-                handle.id,
-            ))
-        })?;
-        match (frame.output, frame.error) {
-            (Some(output), None) => serde_json::from_value::<O>(output).map_err(|error| {
-                RpcClientError::Codec(CratestackError::Codec(format!(
-                    "decode batch output for id {}: {error}",
-                    handle.id,
-                )))
-            }),
-            (None, Some(body)) => Err(RpcClientError::Remote(RpcRemoteError {
-                status: http_status_for_rpc_code(&body.code),
-                body,
-                challenges: Challenges::default(),
-            })),
-            (Some(_), Some(_)) | (None, None) => Err(RpcClientError::InvalidResponse(format!(
-                "batch frame {} has both `output` and `error` set, or neither",
-                handle.id,
-            ))),
-        }
+        ))
     }
 }

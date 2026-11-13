@@ -548,14 +548,17 @@ async fn handle_batch(body: Bytes) -> Response<Body> {
 }
 
 fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcResponseFrame {
-    use cratestack::rpc::{RpcErrorBody, RpcResponseFrame};
+    use cratestack::rpc::{RpcErrorBody, RpcFrameValue, RpcResponseFrame};
 
     match req.op.as_str() {
         "model.Widget.get" => {
-            let input: cratestack::rpc::RpcGetInput<i64> =
-                serde_json::from_value(req.input).expect("decode RpcGetInput");
+            let input: cratestack::rpc::RpcGetInput<i64> = req
+                .input
+                .decode_with(&CborCodec)
+                .expect("decode RpcGetInput");
             if input.id == 1 {
-                let value = serde_json::to_value(widget(1, "Alpha")).expect("encode widget");
+                let value = RpcFrameValue::encode_with(&CborCodec, &widget(1, "Alpha"))
+                    .expect("encode widget");
                 RpcResponseFrame {
                     id: req.id,
                     output: Some(value),
@@ -575,9 +578,12 @@ fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcRespo
             }
         }
         "model.Widget.create" => {
-            let input: cratestack_schema::CreateWidgetInput =
-                serde_json::from_value(req.input).expect("decode CreateWidgetInput");
-            let value = serde_json::to_value(widget(input.id, &input.name)).expect("encode widget");
+            let input: cratestack_schema::CreateWidgetInput = req
+                .input
+                .decode_with(&CborCodec)
+                .expect("decode CreateWidgetInput");
+            let value = RpcFrameValue::encode_with(&CborCodec, &widget(input.id, &input.name))
+                .expect("encode widget");
             RpcResponseFrame {
                 id: req.id,
                 output: Some(value),
@@ -585,9 +591,12 @@ fn dispatch_frame(req: cratestack::rpc::RpcRequest) -> cratestack::rpc::RpcRespo
             }
         }
         "procedure.ping" => {
-            let input: cratestack_schema::procedures::ping::Args =
-                serde_json::from_value(req.input).expect("decode ping::Args");
-            let value = serde_json::to_value(input.args).expect("encode PingArgs");
+            let input: cratestack_schema::procedures::ping::Args = req
+                .input
+                .decode_with(&CborCodec)
+                .expect("decode ping::Args");
+            let value =
+                RpcFrameValue::encode_with(&CborCodec, &input.args).expect("encode PingArgs");
             RpcResponseFrame {
                 id: req.id,
                 output: Some(value),

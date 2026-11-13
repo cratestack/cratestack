@@ -34,6 +34,12 @@ use axum::http::{HeaderValue, Response, StatusCode, header};
 use axum::routing::post;
 use cratestack::include_client_schema;
 use cratestack_client_rust::{CborCodec, ClientConfig, CratestackClient};
+
+/// The `model.Note.update` frame input, as the server decodes it from CBOR.
+#[derive(serde::Deserialize)]
+struct PatchEnvelope {
+    patch: cratestack_schema::UpdateNoteInput,
+}
 use cratestack_core::CratestackCodec;
 
 include_client_schema!("tests/fixtures/rpc_batch_explicit_null_clear.cstack");
@@ -104,9 +110,11 @@ async fn explicit_null_clear_reaches_server_distinct_from_untouched() {
     // assertion for the "silent data loss" claim in #677.
     let clear_frames: Vec<cratestack::rpc::RpcRequest> =
         CborCodec.decode(clear_body).expect("decode clear batch");
-    let clear_patch: cratestack_schema::UpdateNoteInput =
-        serde_json::from_value(clear_frames[0].input["patch"].clone())
-            .expect("decode UpdateNoteInput");
+    let clear_patch: cratestack_schema::UpdateNoteInput = clear_frames[0]
+        .input
+        .decode_with::<_, PatchEnvelope>(&CborCodec)
+        .expect("decode UpdateNoteInput")
+        .patch;
     assert_eq!(
         clear_patch.note,
         Some(None),
@@ -116,9 +124,11 @@ async fn explicit_null_clear_reaches_server_distinct_from_untouched() {
     let untouched_frames: Vec<cratestack::rpc::RpcRequest> = CborCodec
         .decode(untouched_body)
         .expect("decode untouched batch");
-    let untouched_patch: cratestack_schema::UpdateNoteInput =
-        serde_json::from_value(untouched_frames[0].input["patch"].clone())
-            .expect("decode UpdateNoteInput");
+    let untouched_patch: cratestack_schema::UpdateNoteInput = untouched_frames[0]
+        .input
+        .decode_with::<_, PatchEnvelope>(&CborCodec)
+        .expect("decode UpdateNoteInput")
+        .patch;
     assert_eq!(
         untouched_patch.note, None,
         "an untouched field must decode to None (#663 contract)"
@@ -154,10 +164,13 @@ async fn spawn_capturing_server(
                 let responses: Vec<cratestack::rpc::RpcResponseFrame> = requests
                     .into_iter()
                     .map(|req| {
-                        let note_value = serde_json::to_value(cratestack_schema::Note {
-                            id: 1,
-                            note: Some("whatever".to_owned()),
-                        })
+                        let note_value = cratestack::rpc::RpcFrameValue::encode_with(
+                            &CborCodec,
+                            &cratestack_schema::Note {
+                                id: 1,
+                                note: Some("whatever".to_owned()),
+                            },
+                        )
                         .expect("encode Note");
                         cratestack::rpc::RpcResponseFrame {
                             id: req.id,

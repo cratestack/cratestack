@@ -5,6 +5,7 @@
 // -----------------------------------------------------------------------------
 
 use cratestack_core::CratestackError;
+use cratestack_core::rpc::RpcFrameValue;
 
 use crate::codec::HttpClientCodec;
 use crate::rpc::batch::BatchBuilder;
@@ -23,15 +24,23 @@ use crate::rpc::error::RpcClientError;
 ///   Returns a typed [`BatchHandle`] for `.take(...)` on the results
 ///   after `batch.send().await` resolves.
 ///
-/// The input is eagerly converted to `serde_json::Value` at
-/// construction time so the same prepared call can flow into either
-/// consumption mode without re-borrowing the input. Conversion errors
-/// surface lazily — eagerly on `.await`, per-handle on the batch path.
+/// The input is encoded once, at construction time, by the request codec
+/// (cratestack#1312), so the same prepared call can flow into either
+/// consumption mode without re-borrowing it. A `serde_json::Value` detour
+/// would rewrite `Uuid` and `Bytes` into their JSON shapes (text, integer
+/// array) and the server rejects those over CBOR with `400
+/// invalid_argument`. The batched mode builds its `RpcRequest` frame from
+/// those same bytes as an [`RpcFrameValue`], which keeps a CBOR byte string
+/// lossless (cratestack#1352).
+///
+/// Conversion errors surface lazily — eagerly on `.await`, per-handle on
+/// the batch path.
 #[must_use = "BatchableCall does nothing until `.await`ed or `.queue(&mut batch)`d"]
 pub struct BatchableCall<C, O> {
     rpc: RpcClient<C>,
     op_id: String,
-    input_value: Result<serde_json::Value, CratestackError>,
+    /// Request-codec bytes of the input, for the eager (`.await`) mode.
+    input_body: Result<Vec<u8>, CratestackError>,
     /// `fn() -> O` instead of `O` so `BatchableCall` is `Send` + `Sync`
     /// regardless of whether `O` is — the marker is variance-only.
     _output: std::marker::PhantomData<fn() -> O>,
@@ -61,12 +70,11 @@ where
         // reached the codec, silently dropping the clear. See
         // `crates/cratestack-pg/tests/rpc_batch_explicit_null_clear.rs`
         // for the regression test (fails if the strip is restored).
-        let input_value = serde_json::to_value(input)
-            .map_err(|error| CratestackError::Codec(format!("encode batch input: {error}")));
+        let input_body = rpc.inner.codec.encode(input);
         Self {
             rpc,
             op_id: op_id.into(),
-            input_value,
+            input_body,
             _output: std::marker::PhantomData,
         }
     }
@@ -81,7 +89,12 @@ where
     /// produces a per-handle `take(...)?` error rather than
     /// poisoning the whole batch.
     pub fn queue(self, batch: &mut BatchBuilder<C>) -> BatchHandle<O> {
-        let id = match self.input_value {
+        // The frame is read back out of the very bytes the eager path sends,
+        // so a `Uuid` / `Bytes` keeps its codec form (cratestack#1352).
+        let frame = self
+            .input_body
+            .and_then(|body| self.rpc.inner.codec.decode::<RpcFrameValue>(&body));
+        let id = match frame {
             Ok(value) => batch.push_frame(self.op_id, value),
             Err(error) => batch.push_failed_frame(error),
         };
@@ -102,10 +115,8 @@ where
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            let value = self.input_value.map_err(RpcClientError::Codec)?;
-            self.rpc
-                .call::<serde_json::Value, O>(&self.op_id, &value)
-                .await
+            let body = self.input_body.map_err(RpcClientError::Codec)?;
+            self.rpc.call_encoded::<O>(&self.op_id, body).await
         })
     }
 }
@@ -140,60 +151,4 @@ impl<O> std::fmt::Debug for BatchHandle<O> {
 }
 
 #[cfg(test)]
-mod no_null_strip_tests {
-    use cratestack_codec_cbor::CborCodec;
-    use cratestack_core::CratestackCodec;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    struct Req {
-        required: String,
-        #[serde(default)]
-        optional: Option<String>,
-        #[serde(default)]
-        nested: Option<Inner>,
-    }
-
-    #[derive(Serialize, Deserialize, PartialEq, Debug)]
-    struct Inner {
-        #[serde(default)]
-        maybe: Option<String>,
-        kept: String,
-    }
-
-    /// cratestack#677: `BatchableCall::new` no longer strips `null` object
-    /// entries before handing the value to the codec (that workaround for
-    /// the `0x80`-vs-`0xf6` mis-encoding was obsoleted by cratestack#657's
-    /// `serialize_unit_as_null` fix, and was actively dropping explicit
-    /// nullable-column clears — see `crates/cratestack-pg/tests/
-    /// rpc_batch_explicit_null_clear.rs` for the production-path
-    /// regression test). This is the narrower codec-level guarantee the
-    /// removal now leans on: an explicit `null`, nested or not, must
-    /// still reach the wire as CBOR null and decode cleanly.
-    #[test]
-    fn unstripped_null_reaches_wire_as_cbor_null_and_decodes_cleanly() {
-        let value = serde_json::json!({
-            "required": "x",
-            "optional": null,
-            "nested": { "maybe": null, "kept": "k" },
-        });
-        let bytes = CborCodec.encode(&value).expect("encode");
-        assert!(
-            bytes.contains(&0xf6),
-            "an explicit null, nested or not, must reach the wire as RFC 8949 null (0xf6): {bytes:02x?}"
-        );
-        let decoded: Req = CborCodec
-            .decode(&bytes)
-            .expect("an unstripped null must decode, not error");
-        assert_eq!(decoded.required, "x");
-        assert_eq!(decoded.optional, None, "top-level null decodes to None");
-        assert_eq!(
-            decoded.nested,
-            Some(Inner {
-                maybe: None,
-                kept: "k".to_owned(),
-            }),
-            "nested null decodes to None, sibling field untouched"
-        );
-    }
-}
+mod no_null_strip_tests;

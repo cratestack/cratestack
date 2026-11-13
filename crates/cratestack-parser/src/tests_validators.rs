@@ -123,3 +123,34 @@ model Account {
     )
     .expect("@range on Decimal should be accepted at parse time");
 }
+
+#[test]
+fn accepts_escaped_backslash_in_regex_pattern() {
+    // cratestack#1314: `\\+` is the regex `\+` (a literal plus).
+    parse_schema(
+        r#"
+model Account {
+  id Int @id
+  phone String @regex("^\\+[0-9]{6,15}$")
+}
+"#,
+    )
+    .expect("an escaped backslash is a valid string literal escape");
+}
+
+#[test]
+fn rejects_unknown_escape_in_regex_pattern_with_a_span() {
+    let error = parse_schema(
+        r#"
+model Account {
+  id Int @id
+  digits String @regex("^\d+$")
+}
+"#,
+    )
+    .expect_err("`\\d` is not a string escape; `\\\\d` is the spelling");
+
+    let message = error.to_string();
+    assert!(message.contains("unknown escape `\\d`"), "error: {message}");
+    assert!(message.contains("Account.digits"), "error: {message}");
+}

@@ -1047,3 +1047,48 @@ after — they weren't counted toward the 6.
   invents that the real header parser doesn't have. A negative
   `If-Match` simply can never equal a non-negative stored version, so it
   always falls through to the "stale" case — never silently accepted.
+
+## 11. Validators: placeholders must satisfy the contract (cratestack#1307)
+
+A stub value is part of the contract, so it must pass the validators the real server's
+generated `validate` runs (`@range`, `@length`, `@regex`, `@email`, `@uri`, `@iso4217`).
+`field_value::synthesize_field` replaces the per-type default for `String`, `Bytes`, `Int`
+and `BigInt` fields that carry a validator; every other field keeps `values::synthesize`.
+
+| Validator | Placeholder |
+| --- | --- |
+| `@range` (`Int`, `BigInt`) | `0` clamped into `[min, max]` (the minimum for `min: 1`); `BigInt` stays a decimal string |
+| `@length` (`String`) | `"string"` padded with `a` to `min`, truncated to `max` |
+| `@length` (`Bytes`) | `min` zero bytes |
+| `@iso4217` | `"EUR"` |
+| `@email` / `@uri` | `"user@example.com"` / `"https://example.com"` |
+| `@regex` | a sample from the pattern's HIR (`regex-syntax`): literals, a printable class member, repetitions at their minimum (lengthened until a `@length` minimum is met), first alternation branch |
+
+Each candidate is verified with `cratestack_core::validate_*` and `regex::Regex::is_match`,
+the checks the generated code calls.
+
+**When no candidate satisfies every validator** (`@email` with `@length(max: 4)`; a `@regex`
+sample that misses a `@length` minimum; a pattern relying on look-around-style assertions the
+sampler emits as empty), generation still succeeds. The *best* candidate is emitted (fewest
+violated validators; ties go to the first, so a `@regex` sample before the plain fallback) and
+the gap is recorded in the existing top-level `metadata` object of every mapping the owner
+produces (procedure, REST/stateful model, RPC/static model), beside `metadata.cratestack`:
+
+```json
+"metadata": {
+  "cratestack": { "generated": true, "procedure": "post", "kind": "mutation" },
+  "cratestackUnsatisfiedValidators": [
+    { "path": "line.note", "validators": ["@regex(\"^a$\")", "@length(min: 3)"] }
+  ]
+}
+```
+
+`path` is the dotted field path from the response body root (list and `Page<T>` wrappers add no
+segment; a model's path starts at the field); `validators` are the field's raw attributes the
+emitted value violates; entries are sorted by `path`. The key is absent when everything is
+satisfied. WireMock stores `metadata` verbatim, so it is queryable but never affects matching.
+The generator has no warnings channel back to the CLI, so the metadata is the only report.
+`Decimal` is not synthesized by this crate at all today, so `@range` on it is out of scope. A
+validated `String` whose placeholder contains `"`, `'`, `\`, `{` or `}` is served as a frozen
+field, because stateful defaults are spliced into a Handlebars template. Validators on list
+fields are refused by the parser, so lists need no rule.
