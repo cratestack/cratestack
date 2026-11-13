@@ -8,7 +8,7 @@
 //! `list`'s paging, ordering and inclusion parameters mean nothing for a
 //! stream of single events and are refused rather than ignored.
 
-use cratestack_core::rpc::RpcSubscribeInput;
+use cratestack_core::rpc::{RpcFrameValue, RpcSubscribeInput};
 use cratestack_core::{CratestackError, ModelEventKind, SubscriptionStream};
 use futures_util::StreamExt;
 
@@ -76,15 +76,17 @@ pub fn subscribe_input_query(input: serde_json::Value) -> Result<Option<String>,
 
 /// `items` with each event's record narrowed to `fields` (`None`: all).
 pub fn project_event_fields(
-    items: SubscriptionStream<serde_json::Value>,
+    items: SubscriptionStream<RpcFrameValue>,
     fields: Option<Vec<String>>,
-) -> SubscriptionStream<serde_json::Value> {
+) -> SubscriptionStream<RpcFrameValue> {
     let Some(fields) = fields else {
         return items;
     };
     Box::pin(items.map(move |item| {
         item.map(|mut event| {
-            if let Some(serde_json::Value::Object(data)) = event.get_mut("data") {
+            if let RpcFrameValue::Object(map) = &mut event
+                && let Some(RpcFrameValue::Object(data)) = map.get_mut("data")
+            {
                 data.retain(|key, _| fields.iter().any(|field| field == key));
             }
             event

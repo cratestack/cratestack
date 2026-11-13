@@ -119,8 +119,8 @@ async fn established<A: AuthProvider, D: SubscriptionDispatcher>(
                             if send(&mut sink, codec, &ServerFrame::err(id, &error)).await.is_err() { break; }
                             continue;
                         }
-                        let request = SubscriptionOpen { op_id: op, input, ctx: ctx.clone() };
-                        let task = subscription::run(shared.dispatcher.clone(), request, id, out.clone(), overflow.clone(), charger.clone());
+                        let request = SubscriptionOpen { op_id: op, input: input.into(), ctx: ctx.clone() };
+                        let task = subscription::run(shared.dispatcher.clone(), request, id, out.clone(), overflow.clone(), charger.clone(), codec);
                         open.insert(id, tokio::spawn(task.in_current_span()).abort_handle());
                     }
                     Ok(ClientMessage::Cancel { id }) => {

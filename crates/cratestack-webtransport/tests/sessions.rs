@@ -21,7 +21,10 @@ async fn init_headers_authenticate_the_session() {
         .subscribe(1, "test.whoami", serde_json::Value::Null)
         .await;
     who.next().await.unwrap();
-    assert_eq!(who.next().await.unwrap().next, Some(serde_json::json!("7")));
+    assert_eq!(
+        who.next().await.unwrap().next,
+        Some(serde_json::json!("7").into())
+    );
 }
 
 #[tokio::test]
@@ -37,7 +40,10 @@ async fn connect_headers_authenticate_a_native_client_with_an_empty_init() {
         .subscribe(1, "test.whoami", serde_json::Value::Null)
         .await;
     who.next().await.unwrap();
-    assert_eq!(who.next().await.unwrap().next, Some(serde_json::json!("9")));
+    assert_eq!(
+        who.next().await.unwrap().next,
+        Some(serde_json::json!("9").into())
+    );
 }
 
 #[tokio::test]

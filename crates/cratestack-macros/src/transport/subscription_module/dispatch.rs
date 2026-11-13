@@ -90,12 +90,13 @@ pub(super) fn tokens(
         #backplane
 
         impl #generics ::cratestack::SubscriptionDispatcher for #ty {
-            fn open(
+            fn open<C: ::cratestack::CratestackCodec>(
                 &self,
                 request: ::cratestack::SubscriptionOpen,
+                codec: C,
             ) -> impl ::core::future::Future<
                 Output = Result<
-                    ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
+                    ::cratestack::SubscriptionStream<::cratestack::rpc::RpcFrameValue>,
                     ::cratestack::CratestackError,
                 >,
             > + Send {
@@ -103,7 +104,7 @@ pub(super) fn tokens(
                 async move {
                     let ::cratestack::SubscriptionOpen { op_id, input, ctx } = request;
                     let query = #input_query;
-                    this.open_query(&op_id, query, ctx).await
+                    this.open_query(&op_id, query, ctx, codec).await
                 }
             }
         }
@@ -112,14 +113,16 @@ pub(super) fn tokens(
             /// Opens `op_id` with its input as a query string: a model
             /// feed's `list` filters (`status=open&operations=created`), a
             /// subscription procedure's JSON-valued arguments
-            /// (`args={"roomId":"r1"}`).
-            pub async fn open_query(
+            /// (`args={"roomId":"r1"}`). Items are encoded with `codec`
+            /// (the SSE endpoints pass the JSON one).
+            pub async fn open_query<C: ::cratestack::CratestackCodec>(
                 &self,
                 op_id: &str,
                 query: Option<String>,
                 ctx: ::cratestack::CratestackContext,
+                codec: C,
             ) -> Result<
-                ::cratestack::SubscriptionStream<::cratestack::serde_json::Value>,
+                ::cratestack::SubscriptionStream<::cratestack::rpc::RpcFrameValue>,
                 ::cratestack::CratestackError,
             > {
                 match op_id {

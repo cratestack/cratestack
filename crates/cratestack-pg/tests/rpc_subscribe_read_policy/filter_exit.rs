@@ -95,11 +95,14 @@ async fn an_update_out_of_a_filter_or_the_read_policy_is_a_filter_exit() {
     // The same filter through the dispatcher, as WebTransport and WebSocket send it.
     let mut dispatched = db
         .subscriptions()
-        .open(SubscriptionOpen {
-            op_id: op.to_owned(),
-            input: json!({"filters": [{"key": "body__contains", "value": "keep"}]}),
-            ctx: caller(1),
-        })
+        .open(
+            SubscriptionOpen {
+                op_id: op.to_owned(),
+                input: json!({"filters": [{"key": "body__contains", "value": "keep"}]}),
+                ctx: caller(1),
+            },
+            cratestack::JsonCodec,
+        )
         .await
         .expect("a filtered feed opens");
 
@@ -161,6 +164,7 @@ async fn an_update_out_of_a_filter_or_the_read_policy_is_a_filter_exit() {
     .ok()
     .flatten()
     {
+        let event = cratestack::serde_json::Value::from(event);
         if event["operation"] == "Updated" && exit.is_none() {
             exit = Some(event);
         }

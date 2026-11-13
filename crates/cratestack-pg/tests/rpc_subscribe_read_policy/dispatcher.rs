@@ -63,17 +63,23 @@ async fn an_owner_receives_its_own_readable_records_as_json() {
     let db = cratestack_schema::Cratestack::builder(pool.clone()).build();
     let dispatch = db.subscriptions();
     let mut owner = dispatch
-        .open(open("model.SubNote.subscribe", Json::Null, caller(1)))
+        .open(
+            open("model.SubNote.subscribe", Json::Null, caller(1)),
+            cratestack::JsonCodec,
+        )
         .await
         .expect("an owner may subscribe");
     // No row passes `ownerId == auth().id` without an id: refused at open.
     // (An empty object is the same as no input.)
     let refused = dispatch
-        .open(open(
-            "model.SubNote.subscribe",
-            json!({}),
-            CratestackContext::anonymous(),
-        ))
+        .open(
+            open(
+                "model.SubNote.subscribe",
+                json!({}),
+                CratestackContext::anonymous(),
+            ),
+            cratestack::JsonCodec,
+        )
         .await;
     assert!(
         matches!(refused, Err(CratestackError::Unauthorized(_))),
@@ -99,6 +105,7 @@ async fn an_owner_receives_its_own_readable_records_as_json() {
         .expect("an event within 5s")
         .expect("the feed does not end")
         .expect("an item, not an error");
+    let event = cratestack::serde_json::Value::from(event);
     assert_eq!(event["model"], "SubNote");
     assert_eq!(event["operation"], "Created");
     assert_eq!(event["data"]["id"], 1);
@@ -122,18 +129,20 @@ async fn refusals_happen_at_open() {
 
     let error = refused(
         dispatch
-            .open(open("model.Nope.subscribe", Json::Null, caller(1)))
+            .open(
+                open("model.Nope.subscribe", Json::Null, caller(1)),
+                cratestack::JsonCodec,
+            )
             .await,
     );
     assert!(matches!(error, CratestackError::NotFound(_)), "{error:?}");
 
     let error = refused(
         dispatch
-            .open(open(
-                "model.SubNote.subscribe",
-                json!({"where": {}}),
-                caller(1),
-            ))
+            .open(
+                open("model.SubNote.subscribe", json!({"where": {}}), caller(1)),
+                cratestack::JsonCodec,
+            )
             .await,
     );
     assert!(matches!(error, CratestackError::BadRequest(_)), "{error:?}");
@@ -142,7 +151,10 @@ async fn refusals_happen_at_open() {
     // event, so the feed is refused rather than decided on a missing value.
     let error = refused(
         dispatch
-            .open(open("model.SubSecret.subscribe", Json::Null, caller(1)))
+            .open(
+                open("model.SubSecret.subscribe", Json::Null, caller(1)),
+                cratestack::JsonCodec,
+            )
             .await,
     );
     assert!(matches!(error, CratestackError::Internal(_)), "{error:?}");

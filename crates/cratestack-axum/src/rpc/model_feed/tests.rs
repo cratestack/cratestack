@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use cratestack_codec_json::JsonCodec;
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::{BackplaneMessage, BackplaneReceiver, CratestackError, ModelEventKind};
 use futures_util::StreamExt;
 use futures_util::stream;
@@ -9,9 +11,9 @@ use super::{FeedEvent, model_events, model_feed, route_event};
 async fn collect(
     items: Vec<Result<u32, CratestackError>>,
     readable: impl FnMut(&u32) -> Result<bool, CratestackError> + Send + 'static,
-) -> Vec<Result<serde_json::Value, CratestackError>> {
+) -> Vec<Result<RpcFrameValue, CratestackError>> {
     let mut readable = readable;
-    model_feed(stream::iter(items), move |item: u32| {
+    model_feed(stream::iter(items), JsonCodec, move |item: u32| {
         let verdict = readable(&item).map(|readable| readable.then_some(item));
         async move { verdict }
     })
@@ -19,7 +21,7 @@ async fn collect(
     .await
 }
 
-fn unavailable(message: &str) -> impl Fn(&Result<serde_json::Value, CratestackError>) -> bool + '_ {
+fn unavailable(message: &str) -> impl Fn(&Result<RpcFrameValue, CratestackError>) -> bool + '_ {
     move |item| matches!(item, Err(CratestackError::Unavailable(m)) if m == message)
 }
 
@@ -33,7 +35,13 @@ async fn readable_events_pass_and_the_rest_are_dropped() {
         .iter()
         .map(|r| r.as_ref().unwrap().clone())
         .collect();
-    assert_eq!(values, [serde_json::json!(2), serde_json::json!(4)]);
+    assert_eq!(
+        values,
+        [
+            RpcFrameValue::from(serde_json::json!(2)),
+            RpcFrameValue::from(serde_json::json!(4))
+        ]
+    );
     // A feed that simply stops lost its backplane: one terminal error.
     assert_eq!(out.len(), 3);
     assert!(unavailable("subscription interrupted")(&out[2]));
@@ -61,7 +69,10 @@ async fn an_undecided_policy_is_the_terminal_error() {
     .await;
     // Item 1, then the error; never item 3 with item 2 silently skipped.
     assert_eq!(out.len(), 2);
-    assert_eq!(out[0].as_ref().unwrap(), &serde_json::json!(1));
+    assert_eq!(
+        out[0].as_ref().unwrap(),
+        &RpcFrameValue::from(serde_json::json!(1))
+    );
     assert!(unavailable("db down")(&out[1]));
 }
 

@@ -167,11 +167,14 @@ async fn a_table_that_could_not_be_upgraded_still_drains_and_serves_large_events
     let db = Cratestack::builder(pool.clone()).build();
     let mut feed = db
         .subscriptions()
-        .open(SubscriptionOpen {
-            op_id: "model.SubNote.subscribe".to_owned(),
-            input: json!({}),
-            ctx: caller(),
-        })
+        .open(
+            SubscriptionOpen {
+                op_id: "model.SubNote.subscribe".to_owned(),
+                input: json!({}),
+                ctx: caller(),
+            },
+            cratestack::JsonCodec,
+        )
         .await
         .expect("the feed opens");
     // Over Postgres' 8000-byte NOTIFY limit: the listener reads the row.
@@ -186,6 +189,7 @@ async fn a_table_that_could_not_be_upgraded_still_drains_and_serves_large_events
     )
     .await
     {
+        let event = cratestack::serde_json::Value::from(event);
         bodies.push(event["data"]["body"].as_str().map(str::len));
     }
     assert_eq!(bodies, [Some(10_000), Some(5)], "both events arrive");

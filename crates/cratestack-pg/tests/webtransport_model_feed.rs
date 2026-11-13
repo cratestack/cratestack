@@ -158,7 +158,7 @@ async fn model_feeds_over_webtransport_pass_the_read_policy() {
     }
 
     let frame = owner_feed.next().await.expect("an item frame");
-    let event = frame.next.expect("an item, not an error or end");
+    let event = serde_json::Value::from(frame.next.expect("an item, not an error or end"));
     assert_eq!(event["model"], "WtNote");
     assert_eq!(event["data"]["id"], 1);
     // Nothing else reaches the owner: note 2 is archived, note 3 is owner

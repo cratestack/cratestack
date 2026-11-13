@@ -1,9 +1,10 @@
-//! [`RpcFrameValue`]: the codec-neutral payload of a batch frame
-//! (cratestack#1352).
+//! [`RpcFrameValue`]: the codec-neutral payload of a batch or subscription
+//! frame (cratestack#1352, cratestack#1360).
 //!
-//! A batch frame's `input` / `output` used to be a `serde_json::Value`, which
+//! A frame's `input` / `output` / `next` used to be a `serde_json::Value`, which
 //! has no byte-string arm: a CBOR `Uuid` (16-byte string) or `Bytes` could not
-//! be decoded into it, so the whole `POST /rpc/batch` was refused. This type is
+//! be decoded into it, so the whole `POST /rpc/batch` was refused (and a
+//! subscription item could only be a `serde_json::to_value`, never a byte string). This type is
 //! a `serde_json::Value` plus a [`RpcFrameValue::Bytes`] arm. It is serde-only
 //! (no new dependency, builds for `wasm32`) and codec-neutral, so it also works
 //! with custom codecs.
@@ -25,7 +26,7 @@ mod de;
 #[cfg(test)]
 mod tests;
 
-/// A lossless, codec-neutral value for a batch frame's payload.
+/// A lossless, codec-neutral value for a batch or subscription frame's payload.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RpcFrameValue {
     Null,

@@ -1,3 +1,5 @@
+use cratestack_core::rpc::RpcFrameValue;
+
 use super::*;
 use crate::frame::{ClientFrame, ClientMessage, ServerFrame};
 
@@ -98,7 +100,7 @@ fn a_null_item_is_still_an_item() {
             .unwrap();
         let mut decoder = FrameDecoder::new(codec, 1024);
         let frame: ServerFrame = codec.decode(&decoder.feed(&bytes).unwrap()[0]).unwrap();
-        assert_eq!(frame.next, Some(serde_json::Value::Null), "{codec:?}");
+        assert_eq!(frame.next, Some(RpcFrameValue::Null), "{codec:?}");
         assert!(frame.end.is_none() && frame.ready.is_none() && frame.err.is_none());
     }
 }
@@ -121,7 +123,7 @@ fn client_frames_classify_by_the_key_present() {
         ClientMessage::Request {
             id: 4,
             op: "op".into(),
-            input: serde_json::Value::Null
+            input: RpcFrameValue::Null
         }
     );
     let both = ClientFrame {

@@ -154,6 +154,8 @@ wasm-bindgen-futures = "0.4"
 
 [dev-dependencies]
 async-stream = "0.3"
+# `subscription/frames/tests.rs`: a `Uuid` item in its byte-string form.
+uuid.workspace = true
 axum.workspace = true
 # `middleware`-feature tests only (`tests/middleware.rs`): the
 # `reqwest_middleware::Middleware` trait's `handle` takes a

@@ -42,7 +42,10 @@ pub(crate) fn generate_subscription_procedure_axum(
                     return ::cratestack::__private::encode_subscribe_error(&error);
                 }
             };
-            match super::subscriptions::#open(&state.db, &state.registry, raw_query, ctx).await {
+            match super::subscriptions::#open(
+                &state.db, &state.registry, raw_query, ctx, ::cratestack::__private::SseCodec,
+            )
+            .await {
                 Ok(stream) => ::cratestack::__private::encode_subscription_sse_response(stream),
                 Err(error) => ::cratestack::__private::encode_subscribe_error(&error),
             }

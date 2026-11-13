@@ -4,8 +4,12 @@
 
 use axum::extract::ws::Message;
 use cratestack_codec_cbor::CborCodec;
+use cratestack_codec_json::JsonCodec;
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::subscription_wire::{ClientFrame, ServerFrame};
-use cratestack_core::{CratestackCodec, CratestackError};
+use cratestack_core::{
+    CratestackCodec, CratestackError, SubscriptionDispatcher, SubscriptionOpen, SubscriptionStream,
+};
 
 /// Subprotocol for CBOR frames.
 pub const CBOR_PROTOCOL: &str = "cratestack.rpc.v1+cbor";
@@ -51,6 +55,19 @@ impl WireCodec {
             Some(other) => Err(CratestackError::NotAcceptable(format!(
                 "unsupported WebSocket codec `{other}`; expected `cbor` or `json`",
             ))),
+        }
+    }
+
+    /// Opens `open` with this socket's codec, so a dispatcher encodes each
+    /// item the way this socket's frames are (cratestack#1360).
+    pub(crate) async fn open<D: SubscriptionDispatcher>(
+        self,
+        dispatcher: &D,
+        open: SubscriptionOpen,
+    ) -> Result<SubscriptionStream<RpcFrameValue>, CratestackError> {
+        match self {
+            Self::Cbor => dispatcher.open(open, CborCodec).await,
+            Self::Json => dispatcher.open(open, JsonCodec).await,
         }
     }
 

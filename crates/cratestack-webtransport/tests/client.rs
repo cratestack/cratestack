@@ -44,12 +44,15 @@ async fn subscriptions_share_a_session_and_end_cleanly() {
         .unwrap();
     let mut who = client.subscribe("test.whoami", json!(null)).await.unwrap();
 
-    assert_eq!(who.next().await.unwrap().unwrap(), json!("7"));
+    assert_eq!(who.next().await.unwrap().unwrap(), json!("7").into());
     let mut seen = Vec::new();
     while let Some(item) = items.next().await {
         seen.push(item.unwrap());
     }
-    assert_eq!(seen, [json!({"i": 0}), json!({"i": 1}), json!({"i": 2})]);
+    assert_eq!(
+        seen,
+        [json!({"i": 0}), json!({"i": 1}), json!({"i": 2})].map(Into::into)
+    );
 }
 
 #[tokio::test]
@@ -67,7 +70,10 @@ async fn refusals_and_terminal_errors_are_refused() {
         .subscribe("test.fail_mid", json!(null))
         .await
         .unwrap();
-    assert_eq!(failing.next().await.unwrap().unwrap(), json!("first"));
+    assert_eq!(
+        failing.next().await.unwrap().unwrap(),
+        json!("first").into()
+    );
     assert_eq!(
         refused_code(failing.next().await.unwrap().unwrap_err()),
         "unavailable"

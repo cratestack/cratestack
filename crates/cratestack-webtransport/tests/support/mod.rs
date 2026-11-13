@@ -8,9 +8,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::{
-    AuthRefusal, CratestackContext, CratestackError, SubscriptionDispatcher, SubscriptionOpen,
-    SubscriptionStream, Value,
+    AuthRefusal, CratestackCodec, CratestackContext, CratestackError, SubscriptionDispatcher,
+    SubscriptionOpen, SubscriptionStream, Value,
 };
 use cratestack_webtransport::{
     CBOR_PROTOCOL, CertificateDer, ClientFrame, FrameDecoder, OriginPolicy, PrivateKeyDer,
@@ -70,15 +71,16 @@ impl Drop for DropFlag {
 }
 
 impl SubscriptionDispatcher for Dispatcher {
-    async fn open(
+    async fn open<C: CratestackCodec>(
         &self,
         open: SubscriptionOpen,
-    ) -> Result<SubscriptionStream<serde_json::Value>, CratestackError> {
+        _codec: C,
+    ) -> Result<SubscriptionStream<RpcFrameValue>, CratestackError> {
         match open.op_id.as_str() {
             "test.items" => {
                 let n = open.input["n"].as_u64().unwrap_or(0);
                 Ok(Box::pin(stream::iter(
-                    (0..n).map(|i| Ok(serde_json::json!({ "i": i }))),
+                    (0..n).map(|i| Ok(serde_json::json!({ "i": i }).into())),
                 )))
             }
             "test.forever" => {
@@ -87,17 +89,17 @@ impl SubscriptionDispatcher for Dispatcher {
                     (0u64, flag),
                     |(i, flag)| async move {
                         tokio::time::sleep(Duration::from_millis(10)).await;
-                        Some((Ok(serde_json::json!(i)), (i + 1, flag)))
+                        Some((Ok(serde_json::json!(i).into()), (i + 1, flag)))
                     },
                 )))
             }
             "test.fail_mid" => Ok(Box::pin(stream::iter([
-                Ok(serde_json::json!("first")),
+                Ok(serde_json::json!("first").into()),
                 Err(CratestackError::Unavailable("subscription lagged".into())),
             ]))),
             "test.whoami" => {
                 let who = cratestack_webtransport::default_principal_key(&open.ctx);
-                Ok(Box::pin(stream::iter([Ok(serde_json::json!(who))])))
+                Ok(Box::pin(stream::iter([Ok(serde_json::json!(who).into())])))
             }
             "test.refuse" => Err(CratestackError::Forbidden(
                 "not a member of this room".into(),

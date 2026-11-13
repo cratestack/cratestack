@@ -433,7 +433,6 @@ async fn a_model_event_is_binary_on_the_cbor_wire() {
     }
     #[derive(Debug, Deserialize)]
     struct Event {
-        #[serde(rename = "eventId")]
         event_id: uuid::Uuid,
         data: Record,
     }

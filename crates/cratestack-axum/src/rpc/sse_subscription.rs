@@ -20,14 +20,21 @@ use cratestack_core::SubscriptionStream;
 use cratestack_core::rpc::RpcErrorBody;
 use futures_util::future::{Either, select};
 use futures_util::stream::{self, StreamExt};
+use serde::Serialize;
 
 use super::sse::{format_error_event, format_message_event, sse_response};
+
+/// The codec the SSE binding hands a dispatcher: SSE is JSON only, so an item
+/// is encoded exactly as it was before dispatchers took a codec (cratestack#1360).
+pub use cratestack_codec_json::JsonCodec as SseCodec;
 
 /// How long a subscription may stay quiet before a keepalive comment.
 pub(crate) const KEEPALIVE: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Encode a subscription's items as a `text/event-stream` response.
-pub fn encode_subscription_sse_response(items: SubscriptionStream<serde_json::Value>) -> Response {
+pub fn encode_subscription_sse_response<T: Serialize + Send + 'static>(
+    items: SubscriptionStream<T>,
+) -> Response {
     let ready = stream::once(async {
         Ok::<_, std::convert::Infallible>(Bytes::from_static(
             b"event: ready\ndata: {\"id\":1,\"ready\":{}}\n\n",

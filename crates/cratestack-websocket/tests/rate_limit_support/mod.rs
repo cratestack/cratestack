@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use cratestack_core::rpc::RpcFrameValue;
 use cratestack_core::subscription_wire::{
     SubscriptionCharge, SubscriptionRateLimit, SubscriptionRefusal,
 };
@@ -95,17 +96,19 @@ impl AuthProvider for Auth {
 struct Dispatch;
 
 impl SubscriptionDispatcher for Dispatch {
-    fn open(
+    fn open<C: CratestackCodec>(
         &self,
         request: SubscriptionOpen,
+        _codec: C,
     ) -> impl core::future::Future<
-        Output = Result<SubscriptionStream<serde_json::Value>, CratestackError>,
+        Output = Result<SubscriptionStream<RpcFrameValue>, CratestackError>,
     > + Send {
         let to = request.input["to"].as_u64().unwrap_or(0);
         core::future::ready(Ok(match request.op_id.as_str() {
-            "forever" => Box::pin(stream::pending()) as SubscriptionStream<serde_json::Value>,
-            _ => Box::pin(stream::iter((1..=to).map(|n| Ok(serde_json::json!(n)))))
-                as SubscriptionStream<serde_json::Value>,
+            "forever" => Box::pin(stream::pending()) as SubscriptionStream<RpcFrameValue>,
+            _ => Box::pin(stream::iter(
+                (1..=to).map(|n| Ok(serde_json::json!(n).into())),
+            )) as SubscriptionStream<RpcFrameValue>,
         }))
     }
 }
